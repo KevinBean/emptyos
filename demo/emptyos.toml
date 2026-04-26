@@ -95,7 +95,12 @@ timeout = 30
 
 [capabilities.think.ollama]
 host = "http://ollama:11434"
-model = "phi3:mini"
+# qwen2.5:0.5b — ~400MB on disk, ~1GB RAM at runtime. Fits comfortably on
+# a 4GB VPS where phi3:mini (3.8B params, 1.5GB KV cache alone) gets
+# OOM-killed by the kernel during model load. Quality is "small but
+# coherent" — enough to prove the system works. Visitors who want quality
+# paste an OpenAI key in Settings (BYOK).
+model = "qwen2.5:0.5b"
 
 # Same host for the plugin-side health check (so the boot log shows
 # "Connected to http://ollama:11434" instead of warning about localhost).
