@@ -68,6 +68,11 @@ providers = ["ollama"]
 host = "http://ollama:11434"
 model = "phi3:mini"
 
+# Same host for the plugin-side health check (so the boot log shows
+# "Connected to http://ollama:11434" instead of warning about localhost).
+[plugins.ollama]
+host = "http://ollama:11434"
+
 # --- Spend cap (defense in depth) ---
 # Even with BYOK as the primary path, set a hard monthly budget on every
 # cloud provider so a misconfigured deployment can't surprise you with a

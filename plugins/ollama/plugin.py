@@ -9,7 +9,15 @@ class OllamaPlugin(BasePlugin):
     name = "ollama"
 
     def _host(self) -> str:
-        return self.config("host", "http://localhost:11434")
+        # Honor [plugins.ollama].host first (plugin-specific config), then
+        # fall back to [capabilities.think.ollama].host (where users typically
+        # configure the LLM endpoint), then default to localhost. This keeps
+        # the plugin's connectivity warning accurate without forcing users to
+        # duplicate the host setting in two TOML sections.
+        host = self.config("host", "")
+        if not host and hasattr(self, "kernel"):
+            host = self.kernel.config.get("capabilities.think.ollama.host", "")
+        return host or "http://localhost:11434"
 
     async def connect(self):
         """Verify Ollama is reachable."""
