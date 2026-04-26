@@ -1275,7 +1275,57 @@
     return Math.sqrt(sum / data.length);
   }
 
-  async function startRecording(continuous = true) {
+  // Web Speech API path — used when the server's listen capability can only
+  // route to a browser-side provider (i.e. demo + most stranger installs that
+  // don't run whisper). Skips audio upload entirely: browser captures, browser
+  // transcribes, we send the resulting text via /api/chat_text. The server
+  // never sees raw audio bytes.
+  let webSpeechRecognition = null;
+
+  async function startWebSpeechRecording(continuous) {
+    const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!Recognition) {
+      pushTrace('<span>err · Web Speech API not supported in this browser (try Chrome / Edge / Safari)</span>', 'err');
+      setState('idle'); isContinuous = false;
+      return;
+    }
+    isContinuous = continuous;
+    try {
+      webSpeechRecognition = new Recognition();
+      webSpeechRecognition.continuous = false;
+      webSpeechRecognition.interimResults = false;
+      webSpeechRecognition.lang = 'en-US';
+      audioElement.pause();  // half-duplex: don't pick up our own TTS
+      setState('listening');
+      webSpeechRecognition.onresult = (e) => {
+        const text = (e.results[0][0].transcript || '').trim();
+        webSpeechRecognition = null;
+        if (!text) { setState('idle'); return; }
+        sendText(text);  // routes to /api/chat_text — same as typing
+      };
+      webSpeechRecognition.onerror = (e) => {
+        webSpeechRecognition = null;
+        const msg = e.error || 'speech recognition failed';
+        if (msg !== 'no-speech' && msg !== 'aborted') {
+          pushTrace(`<span>err · listen: ${escAura(msg)}</span>`, 'err');
+        }
+        setState('idle'); isContinuous = false;
+      };
+      webSpeechRecognition.onend = () => {
+        // If neither result nor error fired, end is the only signal
+        webSpeechRecognition = null;
+      };
+      webSpeechRecognition.start();
+    } catch (err) {
+      pushTrace(`<span>err · listen start: ${escAura(err.message || err)}</span>`, 'err');
+      setState('idle'); isContinuous = false;
+    }
+  }
+
+  // Server-side STT path — uploads recorded audio to /api/chat_stream where
+  // the daemon transcribes via whisper / openai. Only used on installs that
+  // have a server-side STT provider configured.
+  async function startMediaRecording(continuous) {
     try {
       isContinuous = continuous;
       const stream = await navigator.mediaDevices.getUserMedia({audio: {echoCancellation: true, noiseSuppression: true}});
@@ -1312,6 +1362,30 @@
     }
   }
 
+  // Decide which path to use based on what the server reports as available.
+  // Cached after first probe to avoid an extra HTTP per click.
+  let _listenPathCache = null;
+  async function getListenPath() {
+    if (_listenPathCache) return _listenPathCache;
+    try {
+      const data = await fetch('/api/health?full=true').then(r => r.json());
+      const providers = (data.capabilities || {}).listen || [];
+      const serverSide = providers.find(p => p.available && p.name !== 'browser-speech' && p.name !== 'human');
+      _listenPathCache = serverSide ? 'server' : 'browser';
+    } catch (e) {
+      _listenPathCache = 'browser';  // safe default — Web Speech needs no daemon STT
+    }
+    return _listenPathCache;
+  }
+
+  async function startRecording(continuous = true) {
+    const path = await getListenPath();
+    if (path === 'server') {
+      return startMediaRecording(continuous);
+    }
+    return startWebSpeechRecording(continuous);
+  }
+
   function updateVoiceMeter() {
     if (!isRecording) return;
     analyser.getByteTimeDomainData(dataArray);
@@ -1330,6 +1404,11 @@
   }
 
   function stopRecording() {
+    if (webSpeechRecognition) {
+      try { webSpeechRecognition.stop(); } catch (e) {}
+      // onresult / onend handlers will transition state from here
+      return;
+    }
     if (mediaRecorder && isRecording) {
       mediaRecorder.stop();
       mediaRecorder.stream.getTracks().forEach(track => track.stop());
