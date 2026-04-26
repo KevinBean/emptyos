@@ -982,7 +982,24 @@
     const d = new Date();
     return String(d.getHours()).padStart(2,'0') + ':' + String(d.getMinutes()).padStart(2,'0');
   }
+  // Tracks user-text we've just rendered locally (timestamp ms). The user_text
+  // event handler consults this to avoid double-rendering when both the
+  // optimistic local append and a server echo fire for the same text.
+  var _recentUserTexts = [];
+  function rememberUserText(text) {
+    _recentUserTexts.push({text: text.trim(), at: Date.now()});
+    // Keep only the last 5 / past 5s
+    var cutoff = Date.now() - 5000;
+    _recentUserTexts = _recentUserTexts.filter(function(e){ return e.at > cutoff; }).slice(-5);
+  }
+  function recentlyRenderedUserText(text) {
+    var t = (text || '').trim();
+    var cutoff = Date.now() - 2000;
+    return _recentUserTexts.some(function(e){ return e.text === t && e.at > cutoff; });
+  }
+
   function appendUserTurn(text) {
+    rememberUserText(text);
     const el = document.createElement('div');
     el.className = 'turn turn-user';
     el.innerHTML = `<div class="turn-ts">${fmtTurnTs()}</div>
@@ -1458,6 +1475,10 @@
         let event;
         try { event = JSON.parse(line); } catch (e) { console.error(e); continue; }
         if (event.type === 'user_text') {
+          // Skip if we've already rendered this exact text in the last 2s
+          // (sendText optimistically renders before the POST). Safety belt
+          // for the text path; audio paths still see this event normally.
+          if (recentlyRenderedUserText(event.text)) continue;
           appendUserTurn(event.text);
         } else if (event.type === 'text') {
           appendAuraDelta(event.delta);
