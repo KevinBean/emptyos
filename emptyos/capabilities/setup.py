@@ -130,6 +130,8 @@ def build_capabilities(config: Config, settings=None, kernel=None) -> Capability
     # legitimate final fallback per Dev Rule #2 — unlike generative modalities
     # (speak/draw) where a human can't fulfil the call.
     see = SeeCapability()
+    if kernel is not None:
+        _register_browser_see(see, kernel, config)
     see.add_provider(HumanSeeProvider())
     registry.register("see", see)
 
@@ -190,6 +192,22 @@ def _register_browser_listen(listen, kernel, config: Config):
     listen.add_provider(BrowserListenProvider(
         kernel,
         default_lang=section.get("language", "en-US"),
+        default_timeout=float(section.get("timeout", 30)),
+    ))
+
+
+def _register_browser_see(see, kernel, config: Config):
+    """Register the browser-side getUserMedia camera-snapshot provider.
+
+    Returns a base64 data URL of the frame. Apps that need raw bytes can
+    decode via emptyos.sdk.utils.parse_data_url.
+    """
+    section = config.get_section("capabilities.see.browser-webcam") or {}
+    if section.get("enabled", True) is False:
+        return
+    from emptyos.capabilities.providers.browser import BrowserSeeProvider
+    see.add_provider(BrowserSeeProvider(
+        kernel,
         default_timeout=float(section.get("timeout", 30)),
     ))
 

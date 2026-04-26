@@ -346,3 +346,27 @@ def streak_from_dates(dates: set[str] | list[str], from_date: date | None = None
         streak += 1
         d -= timedelta(days=1)
     return streak
+
+
+def parse_data_url(data_url: str) -> tuple[str, bytes]:
+    """Decode a data URL into (mime_type, raw_bytes).
+
+    Used by apps consuming the browser-webcam see provider, which returns
+    a base64 data URL like 'data:image/jpeg;base64,/9j/4AAQ...'. Apps that
+    need the raw image bytes (to save, transcode, or pass to a vision
+    model) call this.
+
+    Raises ValueError if the input isn't a base64-encoded data URL.
+    """
+    import base64
+    if not isinstance(data_url, str) or not data_url.startswith("data:"):
+        raise ValueError("not a data URL")
+    try:
+        header, payload = data_url.split(",", 1)
+    except ValueError:
+        raise ValueError("malformed data URL: missing comma separator")
+    if ";base64" not in header:
+        raise ValueError("only base64-encoded data URLs are supported")
+    mime = header[len("data:"):].split(";", 1)[0] or "application/octet-stream"
+    raw = base64.b64decode(payload)
+    return mime, raw

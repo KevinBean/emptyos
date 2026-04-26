@@ -38,12 +38,13 @@ seed_on_boot = true
 hide_apps = [
     "hands-free",        # continuous-speech voice workflow — Web Speech API one-shot
                          # mode isn't a great fit; revisit when streaming STT lands
-    "gesture",           # webcam-based; browser-see provider lands in v0.3.0
     "music-studio",      # personal-tier ComfyUI gen — not in repo at all
 ]
-# Note: voice-assistant IS available in the demo from v0.2.7 onward — it uses
-# the browser-speech listen provider (Web Speech API in the visitor's browser)
-# + edge-tts for speaking back. No GPU, no whisper, no voice-api service needed.
+# Note from v0.2.12 onward, voice-assistant + gesture are both available:
+#   - listen   uses browser-speech (Web Speech API in the visitor's browser)
+#   - see      uses browser-webcam (getUserMedia in the visitor's browser)
+#   - speak    uses edge-tts (free Microsoft voices, in-process)
+# All three need only the visitor's device — no whisper, no voice-api, no GPU.
 
 # --- Cloud consent ---
 # Pre-approved: visitors opt in by entering their own key (BYOK) at runtime.
@@ -82,6 +83,15 @@ timeout = 30
 # Pure-Python in-process TTS. No API key, no GPU.
 [capabilities.speak]
 providers = ["edge-tts"]
+
+# --- See capability — browser-side webcam snapshot via getUserMedia ---
+# Returns a base64 JPEG data URL. Apps that need raw bytes use
+# emptyos.sdk.utils.parse_data_url.
+[capabilities.see]
+providers = ["browser-webcam"]
+
+[capabilities.see.browser-webcam]
+timeout = 30
 
 [capabilities.think.ollama]
 host = "http://ollama:11434"

@@ -107,10 +107,7 @@ class EmptyOSRealtime {
         if (req.capability === "listen") {
             this._captureSpeech(req);
         } else if (req.capability === "see") {
-            // Camera capture lands in v0.3.0; reject cleanly for now so the
-            // capability chain falls through to the next provider (typically
-            // human / file-upload).
-            this._sendCaptureResponse(req.id, {error: "browser webcam capture not yet implemented"});
+            this._captureWebcam(req);
         } else {
             this._sendCaptureResponse(req.id, {error: "unknown capability " + req.capability});
         }
@@ -174,6 +171,64 @@ class EmptyOSRealtime {
         } catch (err) {
             cleanup();
             this._sendCaptureResponse(req.id, {error: String(err.message || err)});
+        }
+    }
+
+    async _captureWebcam(req) {
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+            this._sendCaptureResponse(req.id, {error: "getUserMedia not available — needs HTTPS or localhost"});
+            return;
+        }
+
+        const indicator = document.createElement("div");
+        indicator.className = "eos-capture-cam";
+        indicator.style.cssText = "position:fixed;bottom:20px;right:20px;background:#111;color:white;padding:12px 16px;border-radius:12px;font-size:13px;z-index:10000;box-shadow:0 2px 12px rgba(0,0,0,0.4);font-family:system-ui,sans-serif;display:flex;align-items:center;gap:10px";
+        indicator.innerHTML = '<span style="display:inline-block;width:8px;height:8px;background:#10b981;border-radius:50%"></span>' +
+            '<span>Camera: ' + (req.prompt || 'capturing snapshot') + '</span>';
+        document.body.appendChild(indicator);
+
+        const cleanup = (stream) => {
+            indicator.remove();
+            if (stream) stream.getTracks().forEach(t => t.stop());
+        };
+
+        let stream = null;
+        try {
+            stream = await navigator.mediaDevices.getUserMedia({
+                video: {width: {ideal: 1280}, height: {ideal: 720}},
+                audio: false,
+            });
+
+            // Headless capture into a hidden video + canvas
+            const video = document.createElement("video");
+            video.autoplay = true;
+            video.playsInline = true;
+            video.muted = true;
+            video.srcObject = stream;
+            await new Promise((res, rej) => {
+                video.onloadedmetadata = res;
+                video.onerror = rej;
+                setTimeout(rej, 5000);  // bail if metadata never lands
+            });
+            await video.play();
+
+            // Give the sensor a beat to expose properly — first frame is
+            // usually black or auto-exposure stretched.
+            await new Promise(res => setTimeout(res, 350));
+
+            const canvas = document.createElement("canvas");
+            canvas.width = video.videoWidth || 1280;
+            canvas.height = video.videoHeight || 720;
+            const ctx = canvas.getContext("2d");
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+            const dataUrl = canvas.toDataURL("image/jpeg", 0.85);
+
+            cleanup(stream);
+            this._sendCaptureResponse(req.id, {image: dataUrl, width: canvas.width, height: canvas.height});
+        } catch (err) {
+            cleanup(stream);
+            const msg = err && err.name ? `${err.name}: ${err.message || ''}` : String(err);
+            this._sendCaptureResponse(req.id, {error: msg});
         }
     }
 
