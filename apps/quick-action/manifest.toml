@@ -1,0 +1,58 @@
+[app]
+id = "quick-action"
+name = "Quick Action"
+version = "1.1.0"
+description = "One input, agent figures out what to do — capture, route, act"
+aliases = ["capture"]
+
+[app.entry]
+module = "app"
+class = "QuickActionApp"
+
+[provides.cli]
+commands = ["quick-action", "capture"]
+
+[provides.web]
+prefix = "/quick-action"
+
+[provides.events]
+emits = ["capture:saved", "capture:archived"]
+
+[provides.export]
+enabled = true
+mode = "standalone"
+fallbacks = ["vault:indexeddb", "think:byok-openai", "events:local-bus", "call_app:bundled", "viewer:none"]
+
+[requires]
+capabilities = ["read", "write", "think"]
+apps = []
+# task / projects / journal are optional routing targets — quick-action falls
+# through to plain capture when any are absent. Don't list as requires.
+services = []
+events = []
+
+[provides.settings]
+schema = [{key = "quick-action.auto_classify", label = "AI Auto-classify", type = "toggle", default = true}]
+
+[provides.assistant]
+commands = [
+    {slash = "/inbox", method = "add", arg = "text"},
+]
+
+[[contributes.voice-assistant.intent]]
+verb = "capture.add"
+method = "voice_capture"
+example = "remember to look into hetzner pricing later"
+description = "Save a one-line capture to the inbox (AI-tagged)"
+args = { text = "string" }
+always = true
+
+[[contributes.tour.step]]
+id = "capture.try"
+group = "core"
+priority = 100
+route = "/quick-action/"
+spotlight = "#capture-text"
+title = "One box, anything goes"
+body = "Type a thought — a task, a journal line, a note, a project idea. EmptyOS routes it to the right app for you. This is the fastest way in."
+requires = ["read", "write", "think"]

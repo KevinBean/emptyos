@@ -1,0 +1,1689 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Aura — MK1</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Major+Mono+Display&family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,500;0,9..144,600;1,9..144,400&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  /*
+    Aura — Studio Console / Instrument
+    -----------------------------------
+    Aura is a piece of broadcast / studio gear. The waveform is the
+    instrument's display; the mic is a chunky REC lozenge; state is shown
+    by transport-style lamps. Display type is industrial mono; voice is
+    a humanist serif so Aura still reads as a person.
+  */
+
+  :root {
+    --graphite-deep: #0c0a07;
+    --graphite:      #14110d;
+    --graphite-soft: #1d1a14;
+    --graphite-hover:#221e17;
+    --rule:          #2a241b;
+    --rule-strong:   #3b3326;
+    --cream:         #e8dccb;
+    --cream-soft:    #b9ad99;
+    --cream-faint:   #6b6052;
+    --amber:         #ff8b3d;
+    --amber-deep:    #b85a1d;
+    --teal:          #5fb3a8;
+    --vermillion:    #d24a36;
+    --vermillion-deep:#b73c2a;
+
+    --display: 'Major Mono Display', ui-monospace, monospace;
+    --serif:   'Fraunces', Georgia, serif;
+    --mono:    'JetBrains Mono', ui-monospace, monospace;
+  }
+
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0;
+    height: 100vh;
+    overflow: hidden;
+    background: var(--graphite-deep);
+    color: var(--cream);
+    font-family: var(--serif);
+    font-size: 15px;
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* Subtle vignette + amber lamp glow from top-left, like a desk lamp */
+  body::before {
+    content: '';
+    position: fixed; inset: 0;
+    pointer-events: none;
+    background:
+      radial-gradient(ellipse 60% 50% at 18% 12%, rgba(255, 139, 61, 0.045), transparent 70%),
+      radial-gradient(ellipse 100% 100% at 50% 100%, rgba(0,0,0,0.45), transparent 60%);
+    z-index: 0;
+  }
+
+  /* Page-load reveal */
+  @keyframes rise {
+    from { opacity: 0; transform: translateY(6px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  .console {
+    position: relative;
+    z-index: 1;
+    display: grid;
+    grid-template-columns: 52px 1fr;
+    grid-template-rows: 60px 1fr auto;
+    grid-template-areas:
+      "rail brand"
+      "rail transcript"
+      "rail instrument";
+    height: 100vh;
+  }
+
+  /* ── Left rail — rack-mount label edge ──────────────────────────── */
+  .rail {
+    grid-area: rail;
+    background: var(--graphite-soft);
+    border-right: 1px solid var(--rule-strong);
+    position: relative;
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+  .rail:hover { background: var(--graphite-hover); }
+  .rail-stack {
+    position: absolute;
+    inset: 0;
+    display: flex; flex-direction: column;
+    align-items: center;
+    padding: 18px 0;
+    gap: 14px;
+    font-family: var(--mono);
+    font-size: 0.7rem;
+    letter-spacing: 0.14em;
+    color: var(--cream-faint);
+    text-transform: uppercase;
+  }
+  .rail-text {
+    writing-mode: vertical-rl;
+    transform: rotate(180deg);
+    white-space: nowrap;
+  }
+  .rail-sep {
+    width: 12px; height: 1px;
+    background: var(--rule-strong);
+  }
+  .rail-companion { color: var(--amber); }
+
+  /* Companion picker (slide-out from rail) */
+  .picker {
+    position: fixed;
+    top: 0; left: 52px; bottom: 0;
+    width: 280px;
+    background: var(--graphite-soft);
+    border-right: 1px solid var(--rule-strong);
+    transform: translateX(-100%);
+    transition: transform 0.22s cubic-bezier(0.4, 0.1, 0.2, 1);
+    z-index: 80;
+    padding: 24px 22px;
+    display: flex; flex-direction: column;
+    gap: 18px;
+  }
+  .picker.show { transform: translateX(0); }
+  .picker-label {
+    font-family: var(--mono);
+    font-size: 0.7rem;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--cream-faint);
+  }
+  .picker-list { display: flex; flex-direction: column; gap: 2px; }
+  .picker-row {
+    display: flex; align-items: baseline;
+    gap: 10px;
+    padding: 9px 12px;
+    cursor: pointer;
+    color: var(--cream-soft);
+    border-left: 2px solid transparent;
+    transition: color 0.15s, background 0.15s, border-color 0.15s;
+    font-family: var(--serif);
+    font-size: 1rem;
+  }
+  .picker-row:hover { color: var(--cream); background: var(--graphite); }
+  .picker-row.active {
+    color: var(--cream);
+    border-left-color: var(--amber);
+    background: var(--graphite);
+  }
+  .picker-row .ch {
+    font-family: var(--mono);
+    font-size: 0.78rem;
+    color: var(--amber);
+    letter-spacing: 0.08em;
+    width: 24px;
+  }
+  .picker-row.active .ch { color: var(--amber); }
+
+  /* ── Brand bar ──────────────────────────────────────────────────── */
+  .brand {
+    grid-area: brand;
+    border-bottom: 1px solid var(--rule);
+    background: var(--graphite);
+    display: flex; align-items: center;
+    padding: 0 24px;
+    gap: 16px;
+    animation: rise 280ms ease-out 0ms both;
+  }
+  .lamp {
+    width: 10px; height: 10px;
+    border-radius: 50%;
+    background: var(--amber);
+    box-shadow: 0 0 12px var(--amber), inset 0 0 3px rgba(255,255,255,0.35);
+    animation: lamp-breath 6s ease-in-out infinite;
+    flex-shrink: 0;
+  }
+  @keyframes lamp-breath {
+    0%, 100% { opacity: 0.55; box-shadow: 0 0 6px var(--amber); }
+    50%      { opacity: 1;    box-shadow: 0 0 14px var(--amber), 0 0 28px rgba(255, 139, 61, 0.4); }
+  }
+  .brand-name {
+    font-family: var(--display);
+    font-size: 1.1rem;
+    letter-spacing: 0.34em;
+    color: var(--cream);
+    text-transform: uppercase;
+  }
+  .brand-meta {
+    flex: 1;
+    font-family: var(--mono);
+    font-size: 0.75rem;
+    letter-spacing: 0.06em;
+    color: var(--cream-faint);
+    text-transform: uppercase;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+  .brand-meta strong {
+    color: var(--cream-soft);
+    font-weight: 500;
+  }
+  .brand-actions {
+    display: flex; gap: 4px;
+    margin-left: auto;
+  }
+  .icon-btn {
+    background: transparent;
+    border: 1px solid transparent;
+    color: var(--cream-faint);
+    width: 34px; height: 34px;
+    border-radius: 3px;
+    cursor: pointer;
+    font-family: var(--mono);
+    font-size: 0.95rem;
+    transition: background 0.15s, color 0.15s, border-color 0.15s;
+    display: inline-flex; align-items: center; justify-content: center;
+  }
+  .icon-btn:hover { background: var(--graphite-soft); color: var(--amber); border-color: var(--rule-strong); }
+  .icon-btn.active { color: var(--amber); border-color: var(--amber-deep); }
+
+  /* ── Transcript ─────────────────────────────────────────────────── */
+  .transcript-wrap {
+    grid-area: transcript;
+    overflow-y: auto;
+    background: var(--graphite-deep);
+    animation: rise 280ms ease-out 80ms both;
+  }
+  .transcript-wrap::-webkit-scrollbar { width: 8px; }
+  .transcript-wrap::-webkit-scrollbar-thumb {
+    background: var(--rule-strong); border-radius: 4px;
+  }
+  .transcript {
+    max-width: 760px;
+    margin: 0 auto;
+    padding: 36px 32px 28px;
+  }
+  .turn {
+    display: grid;
+    grid-template-columns: 64px 1fr;
+    gap: 20px;
+    margin-bottom: 22px;
+    align-items: baseline;
+  }
+  .turn-ts {
+    font-family: var(--mono);
+    font-size: 0.78rem;
+    color: var(--cream-faint);
+    letter-spacing: 0.04em;
+    padding-top: 4px;
+  }
+  .turn-body {
+    font-family: var(--serif);
+    font-size: 1.06rem;
+    line-height: 1.65;
+  }
+  .turn-role {
+    font-family: var(--mono);
+    font-size: 0.7rem;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--cream-faint);
+    margin-right: 10px;
+  }
+  .turn-user .turn-body { color: var(--cream-soft); font-style: italic; }
+  .turn-aura .turn-body { color: var(--cream); }
+  .turn-aura.streaming .turn-body::after {
+    content: '▮';
+    color: var(--amber);
+    animation: cursor-blink 1.05s steps(2) infinite;
+    margin-left: 2px;
+  }
+  @keyframes cursor-blink {
+    50% { opacity: 0; }
+  }
+
+  /* Inline patch-bay annotation (tool firings, errors, skips) */
+  .patch {
+    grid-column: 2 / -1;
+    font-family: var(--mono);
+    font-size: 0.78rem;
+    letter-spacing: 0.04em;
+    margin: 6px 0 14px;
+    color: var(--cream-faint);
+  }
+  .patch-line { padding: 5px 0; opacity: 0; animation: rise 280ms ease-out forwards; }
+  .patch-line.tool  { color: var(--amber); }
+  .patch-line.err   { color: var(--vermillion); }
+  .patch-line.skip  { color: var(--cream-faint); }
+  .patch-line .arr  { color: var(--cream-faint); margin: 0 6px; }
+
+  /* Inline confirm card (replaces center modal) */
+  .patch-confirm {
+    grid-column: 2 / -1;
+    background: var(--graphite-deep);
+    border: 1px solid var(--rule-strong);
+    border-left: 3px solid var(--vermillion);
+    padding: 14px 16px;
+    margin: 10px 0 18px;
+    font-family: var(--mono);
+    font-size: 0.85rem;
+    color: var(--cream);
+    opacity: 0;
+    animation: rise 280ms ease-out forwards;
+  }
+  .patch-confirm-head {
+    font-size: 0.7rem;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--vermillion);
+    margin-bottom: 8px;
+  }
+  .patch-confirm-desc {
+    font-family: var(--serif);
+    font-size: 1rem;
+    line-height: 1.5;
+    color: var(--cream);
+    margin-bottom: 6px;
+  }
+  .patch-confirm-args {
+    color: var(--cream-faint);
+    margin-bottom: 12px;
+    word-break: break-word;
+  }
+  .patch-confirm-actions {
+    display: flex; gap: 8px;
+  }
+
+  /* Voice-intent cards (entity/task/stat) — inline in transcript */
+  .aura-card {
+    grid-column: 2 / -1;
+    background: var(--graphite-soft);
+    border: 1px solid var(--rule);
+    border-left: 3px solid var(--amber);
+    padding: 12px 14px;
+    margin: 6px 0 16px;
+    opacity: 0; transform: translateY(4px);
+    transition: opacity 0.3s, transform 0.3s;
+  }
+  .aura-card.show { opacity: 1; transform: translateY(0); }
+  .aura-card-title {
+    font-family: var(--mono);
+    font-size: 0.7rem;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--cream-faint);
+    margin-bottom: 8px;
+  }
+  .aura-card-stat { display: flex; align-items: baseline; gap: 10px; padding: 3px 0; }
+  .aura-card-stat-value {
+    font-family: var(--display);
+    font-size: 1.2rem;
+    letter-spacing: 0.04em;
+    color: var(--amber);
+  }
+  .aura-card-stat-label {
+    font-family: var(--serif);
+    font-size: 0.95rem;
+    color: var(--cream-soft);
+  }
+  .aura-card-entity-title { font-family: var(--serif); font-size: 1.05rem; margin-bottom: 4px; color: var(--cream); }
+  .aura-card-entity-subtitle { font-size: 0.85rem; color: var(--cream-soft); margin-bottom: 8px; font-style: italic; }
+  .aura-card-entity-fields { display: flex; flex-direction: column; gap: 3px; font-size: 0.85rem; color: var(--cream-soft); }
+  .aura-card-entity-fields strong { font-family: var(--mono); font-size: 0.78rem; color: var(--cream-faint); margin-right: 6px; font-weight: 400; }
+
+  .aura-card-task-row {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 6px 0;
+    font-family: var(--serif);
+    font-size: 0.95rem;
+    color: var(--cream);
+    border-bottom: 1px solid var(--rule);
+  }
+  .aura-card-task-row:last-child { border-bottom: none; }
+  .aura-card-task-row.done { opacity: 0.45; text-decoration: line-through; }
+  .aura-card-task-tag {
+    font-family: var(--mono);
+    font-size: 0.66rem;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    padding: 2px 7px;
+    border: 1px solid var(--rule-strong);
+    color: var(--cream-faint);
+  }
+  .aura-card-task-tag.overdue { border-color: var(--vermillion); color: var(--vermillion); }
+  .aura-card-task-tag.today   { border-color: var(--amber); color: var(--amber); }
+
+  /* ── Instrument bar ─────────────────────────────────────────────── */
+  .instrument {
+    grid-area: instrument;
+    background: linear-gradient(180deg, var(--graphite-soft) 0%, var(--graphite) 100%);
+    border-top: 1px solid var(--rule-strong);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.025);
+    padding: 18px 22px 22px;
+    animation: rise 280ms ease-out 160ms both;
+  }
+  .instrument-head {
+    font-family: var(--mono);
+    font-size: 0.66rem;
+    letter-spacing: 0.28em;
+    text-transform: uppercase;
+    color: var(--cream-faint);
+    margin-bottom: 12px;
+    display: flex; align-items: center; gap: 12px;
+  }
+  .instrument-head::before, .instrument-head::after {
+    content: ''; flex: 1; height: 1px; background: var(--rule);
+  }
+  .instrument-row {
+    display: grid;
+    grid-template-columns: 160px 1fr 170px;
+    gap: 22px;
+    align-items: stretch;
+    min-height: 96px;
+  }
+
+  /* REC lozenge (mic button) */
+  .rec-cluster { display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
+  .rec-btn {
+    display: inline-flex; align-items: center; gap: 8px;
+    width: 124px; height: 44px;
+    padding: 0 14px;
+    background: var(--graphite-deep);
+    border: 1px solid var(--rule-strong);
+    border-radius: 4px;
+    color: var(--cream-soft);
+    font-family: var(--mono);
+    font-size: 0.85rem;
+    letter-spacing: 0.18em;
+    cursor: pointer;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.04), 0 1px 0 rgba(0,0,0,0.4);
+    transition: background 0.18s, color 0.18s, border-color 0.18s, box-shadow 0.18s, transform 0.06s;
+    user-select: none;
+  }
+  .rec-btn:hover { color: var(--cream); border-color: var(--cream-faint); }
+  .rec-btn:active { transform: translateY(1px); }
+  .rec-btn.compact { width: auto; height: 36px; padding: 0 14px; font-size: 0.78rem; }
+  .rec-btn.danger {
+    background: var(--vermillion);
+    border-color: var(--vermillion);
+    color: var(--cream);
+  }
+  .rec-btn.danger:hover { background: var(--vermillion-deep); border-color: var(--vermillion-deep); color: var(--cream); }
+  .rec-dot {
+    width: 10px; height: 10px;
+    border-radius: 50%;
+    background: var(--rule-strong);
+    box-shadow: inset 0 0 2px rgba(0,0,0,0.6);
+    transition: background 0.18s, box-shadow 0.18s;
+  }
+  body.state-listening .rec-btn {
+    background: var(--amber-deep);
+    color: var(--cream);
+    border-color: var(--amber);
+    box-shadow:
+      inset 0 1px 0 rgba(255,255,255,0.12),
+      0 0 0 1px rgba(255, 139, 61, 0.4),
+      0 0 18px rgba(255, 139, 61, 0.32);
+    transform: translateY(1px);
+  }
+  body.state-listening .rec-dot {
+    background: var(--amber);
+    box-shadow: 0 0 10px var(--amber), inset 0 0 2px rgba(255,255,255,0.3);
+    animation: rec-pulse 1.2s ease-in-out infinite;
+  }
+  @keyframes rec-pulse {
+    0%, 100% { opacity: 0.65; }
+    50%      { opacity: 1; }
+  }
+  .rec-hint {
+    font-family: var(--mono);
+    font-size: 0.66rem;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--cream-faint);
+    padding-left: 4px;
+  }
+
+  /* Oscilloscope */
+  .scope {
+    position: relative;
+    background: var(--graphite-deep);
+    border: 1px solid var(--rule-strong);
+    border-radius: 3px;
+    overflow: hidden;
+  }
+  .scope canvas {
+    display: block;
+    width: 100%; height: 100%;
+  }
+  .scope-readout {
+    position: absolute;
+    top: 8px; left: 12px;
+    font-family: var(--mono);
+    font-size: 0.7rem;
+    letter-spacing: 0.1em;
+    color: var(--cream-faint);
+    pointer-events: none;
+    text-transform: uppercase;
+  }
+  .scope-readout .v { color: var(--amber); }
+  body.state-speaking .scope-readout .v { color: var(--teal); }
+
+  /* State lamps */
+  .lamps {
+    display: flex; flex-direction: column;
+    justify-content: center;
+    gap: 7px;
+    padding: 4px 0;
+  }
+  .lamp-row {
+    display: flex; align-items: center;
+    gap: 10px;
+    font-family: var(--mono);
+    font-size: 0.78rem;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--cream-faint);
+    transition: color 0.18s;
+  }
+  .lamp-dot {
+    width: 9px; height: 9px;
+    border-radius: 50%;
+    background: var(--rule-strong);
+    border: 1px solid var(--rule-strong);
+    transition: background 0.18s, box-shadow 0.18s, border-color 0.18s;
+    flex-shrink: 0;
+  }
+  body.state-listening .lamp-row.l-listen { color: var(--amber); }
+  body.state-listening .lamp-row.l-listen .lamp-dot {
+    background: var(--amber);
+    border-color: var(--amber);
+    box-shadow: 0 0 8px var(--amber);
+  }
+  body.state-thinking .lamp-row.l-think { color: var(--amber); }
+  body.state-thinking .lamp-row.l-think .lamp-dot {
+    background: var(--amber);
+    border-color: var(--amber);
+    box-shadow: 0 0 8px var(--amber);
+  }
+  body.state-speaking .lamp-row.l-speak { color: var(--teal); }
+  body.state-speaking .lamp-row.l-speak .lamp-dot {
+    background: var(--teal);
+    border-color: var(--teal);
+    box-shadow: 0 0 8px var(--teal);
+  }
+
+  /* Text-mode area, hidden by default */
+  .text-area {
+    display: none;
+    margin-top: 14px;
+    gap: 10px;
+    align-items: stretch;
+  }
+  body.text-mode .text-area { display: flex; }
+  body.text-mode .icon-btn[data-act="text-toggle"] {
+    color: var(--amber);
+    border-color: var(--amber-deep);
+  }
+  .text-area textarea {
+    flex: 1;
+    background: var(--graphite-deep);
+    border: 1px solid var(--rule-strong);
+    border-radius: 3px;
+    color: var(--cream);
+    padding: 10px 12px;
+    font-family: var(--serif);
+    font-size: 1rem;
+    line-height: 1.5;
+    min-height: 44px;
+    max-height: 140px;
+    resize: none;
+    outline: none;
+    transition: border-color 0.15s;
+  }
+  .text-area textarea:focus { border-color: var(--amber); }
+  .send-btn {
+    align-self: stretch;
+    padding: 0 18px;
+    background: var(--graphite-deep);
+    border: 1px solid var(--rule-strong);
+    border-radius: 3px;
+    color: var(--cream);
+    cursor: pointer;
+    font-family: var(--mono);
+    font-size: 0.78rem;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.04);
+  }
+  .send-btn:hover { color: var(--amber); border-color: var(--cream-faint); }
+
+  /* ── Settings drawer ────────────────────────────────────────────── */
+  .settings-drawer {
+    position: fixed; top: 0; right: 0; bottom: 0;
+    width: min(440px, 92vw);
+    background: var(--graphite-soft);
+    border-left: 1px solid var(--rule-strong);
+    transform: translateX(100%);
+    transition: transform 0.3s cubic-bezier(0.4, 0.1, 0.2, 1);
+    z-index: 90;
+    display: flex; flex-direction: column;
+    box-shadow: -10px 0 30px rgba(0,0,0,0.5);
+  }
+  .settings-drawer.show { transform: translateX(0); }
+  .settings-header {
+    padding: 22px 24px 16px;
+    display: flex; align-items: baseline; gap: 12px;
+    border-bottom: 1px solid var(--rule);
+  }
+  .settings-header h3 {
+    margin: 0;
+    font-family: var(--display);
+    font-size: 1rem;
+    letter-spacing: 0.32em;
+    color: var(--cream);
+    text-transform: uppercase;
+    flex: 1;
+  }
+  .settings-tabs {
+    display: flex;
+    padding: 0 24px;
+    border-bottom: 1px solid var(--rule);
+  }
+  .settings-tab {
+    background: transparent;
+    border: none;
+    color: var(--cream-faint);
+    padding: 12px 14px;
+    font-family: var(--mono);
+    font-size: 0.72rem;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    margin-right: 8px;
+    transition: color 0.15s, border-color 0.15s;
+  }
+  .settings-tab:hover { color: var(--cream); }
+  .settings-tab.active {
+    color: var(--cream);
+    border-bottom-color: var(--amber);
+  }
+  .settings-panel { display: none; flex: 1; flex-direction: column; min-height: 0; }
+  .settings-panel.active { display: flex; }
+  .history-controls {
+    padding: 12px 24px;
+    display: flex; gap: 12px; align-items: center;
+    border-bottom: 1px solid var(--rule);
+  }
+  .history-controls label {
+    font-family: var(--mono);
+    font-size: 0.7rem;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--cream-faint);
+  }
+  .history-controls select {
+    background: var(--graphite-deep);
+    border: 1px solid var(--rule-strong);
+    color: var(--cream);
+    padding: 6px 10px;
+    border-radius: 3px;
+    font-family: var(--mono);
+    font-size: 0.85rem;
+    flex: 1;
+  }
+  .history-list { flex: 1; overflow-y: auto; padding: 10px 24px 18px; }
+  .history-row {
+    padding: 14px 0;
+    border-bottom: 1px solid var(--rule);
+  }
+  .history-meta {
+    font-family: var(--mono);
+    font-size: 0.7rem;
+    letter-spacing: 0.06em;
+    color: var(--cream-faint);
+    margin-bottom: 6px;
+    text-transform: uppercase;
+  }
+  .history-user {
+    font-family: var(--serif);
+    font-style: italic;
+    color: var(--cream-soft);
+    margin-bottom: 6px;
+    line-height: 1.5;
+  }
+  .history-assistant {
+    font-family: var(--serif);
+    color: var(--cream);
+    line-height: 1.55;
+  }
+  .history-empty {
+    padding: 36px 20px;
+    text-align: center;
+    color: var(--cream-faint);
+    font-family: var(--serif);
+    font-style: italic;
+  }
+  .settings-section {
+    flex: 1;
+    overflow-y: auto;
+    padding: 22px 24px;
+    color: var(--cream-soft);
+    font-family: var(--serif);
+    line-height: 1.65;
+  }
+  .settings-section p + p { margin-top: 14px; }
+  .settings-section .small {
+    font-family: var(--mono);
+    font-size: 0.78rem;
+    letter-spacing: 0.06em;
+    color: var(--cream-faint);
+    margin-top: 18px;
+  }
+
+  /* ── Mobile ─────────────────────────────────────────────────────── */
+  @media (max-width: 720px) {
+    .console {
+      grid-template-columns: 1fr;
+      grid-template-rows: 38px 52px 1fr auto;
+      grid-template-areas:
+        "rail"
+        "brand"
+        "transcript"
+        "instrument";
+    }
+    .rail {
+      border-right: none;
+      border-bottom: 1px solid var(--rule);
+      cursor: default;
+    }
+    .rail-stack {
+      flex-direction: row;
+      padding: 0 14px;
+      gap: 14px;
+      align-items: center;
+    }
+    .rail-text { writing-mode: horizontal-tb; transform: none; }
+    .picker { left: 0; width: 100%; }
+    .brand { padding: 0 14px; }
+    .brand-meta { display: none; }
+    .transcript { padding: 22px 18px; }
+    .turn { grid-template-columns: 1fr; gap: 4px; }
+    .turn-ts { padding-top: 0; }
+    .patch, .patch-confirm, .aura-card { grid-column: 1 / -1; }
+    .instrument { padding: 14px 16px; }
+    .instrument-row {
+      grid-template-columns: 1fr;
+      gap: 12px;
+    }
+    .scope { height: 80px; }
+    .lamps {
+      flex-direction: row;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 12px 18px;
+    }
+  }
+
+  /* Capability gap banner — surfaces missing listen/think/speak with a fix link. */
+  .cap-gap-banner {
+    display: none;
+    margin: 14px 18px 0;
+    padding: 10px 14px;
+    border: 1px solid var(--vermillion-deep);
+    background: rgba(210, 74, 54, 0.08);
+    color: var(--cream);
+    border-radius: 4px;
+    font-family: var(--mono);
+    font-size: 12px;
+    align-items: center;
+    gap: 10px;
+    line-height: 1.5;
+  }
+  .cap-gap-banner.show { display: flex; }
+  .cap-gap-banner .lamp-warn {
+    width: 8px; height: 8px; border-radius: 50%; background: var(--vermillion); flex-shrink: 0;
+    box-shadow: 0 0 6px var(--vermillion);
+  }
+  .cap-gap-banner a {
+    color: var(--amber); text-decoration: none; border-bottom: 1px dashed var(--amber-deep);
+    margin-left: auto; padding-left: 14px;
+  }
+  .cap-gap-banner a:hover { color: var(--cream); border-bottom-color: var(--cream); }
+</style>
+</head>
+<body class="state-idle">
+
+<div class="console">
+
+  <!-- Left rail (rack-mount edge) -->
+  <aside class="rail" id="rail" aria-label="Open companion picker">
+    <div class="rail-stack">
+      <div class="rail-text" id="rail-day">—</div>
+      <div class="rail-text" id="rail-date">—</div>
+      <div class="rail-sep"></div>
+      <div class="rail-text rail-companion" id="rail-companion">AURA</div>
+    </div>
+  </aside>
+
+  <!-- Brand bar -->
+  <header class="brand">
+    <span class="lamp"></span>
+    <span class="brand-name">AURA</span>
+    <span class="brand-meta" id="brand-meta">01·AURA·MK1 · companion: <strong id="brand-companion">AURA</strong> · <span id="brand-time">—</span></span>
+    <div class="brand-actions">
+      <button class="icon-btn" data-act="text-toggle" id="btn-text-toggle" title="Toggle text mode" aria-label="Toggle text mode">⌨</button>
+      <button class="icon-btn" id="btn-settings" title="Settings" aria-label="Settings">⚙</button>
+      <button class="icon-btn" id="btn-back" title="Back" aria-label="Back" onclick="window.history.back()">×</button>
+    </div>
+  </header>
+
+  <!-- Capability gap banner — populated by checkCapabilities() at boot -->
+  <div class="cap-gap-banner" id="cap-gap-banner" role="status">
+    <span class="lamp-warn"></span>
+    <span id="cap-gap-msg">Voice features need setup.</span>
+    <a id="cap-gap-fix" href="/system">Fix this →</a>
+  </div>
+
+  <!-- Transcript -->
+  <main class="transcript-wrap">
+    <div class="transcript" id="transcript">
+      <div class="turn turn-aura">
+        <div class="turn-ts">—</div>
+        <div class="turn-body"><span class="turn-role">Aura</span>Hello. Press REC to speak — or hit ⌨ to type. I'll listen, think, and try to help without getting in the way.</div>
+      </div>
+    </div>
+  </main>
+
+  <!-- Instrument bar -->
+  <section class="instrument">
+    <div class="instrument-head">Instrument</div>
+    <div class="instrument-row">
+      <div class="rec-cluster">
+        <button class="rec-btn" id="rec-btn" aria-label="Record">
+          <span class="rec-dot"></span>
+          <span>REC</span>
+        </button>
+        <span class="rec-hint" id="rec-hint">tap to talk</span>
+      </div>
+
+      <div class="scope">
+        <div class="scope-readout">LVL <span class="v" id="scope-lvl">—</span></div>
+        <canvas id="scope-canvas"></canvas>
+      </div>
+
+      <div class="lamps">
+        <div class="lamp-row l-listen"><span class="lamp-dot"></span>Listening</div>
+        <div class="lamp-row l-think"><span class="lamp-dot"></span>Thinking</div>
+        <div class="lamp-row l-speak"><span class="lamp-dot"></span>Speaking</div>
+      </div>
+    </div>
+
+    <div class="text-area">
+      <textarea id="text-input" placeholder="type a message…" rows="1"></textarea>
+      <button class="send-btn" id="text-send">Send</button>
+    </div>
+  </section>
+</div>
+
+<!-- Companion picker (slides out of rail) -->
+<aside class="picker" id="picker">
+  <div class="picker-label">Channel</div>
+  <div class="picker-list" id="picker-list">
+    <div class="picker-row active" data-companion=""><span class="ch">CH 0</span><span>Aura</span></div>
+  </div>
+</aside>
+
+<!-- Settings drawer -->
+<div class="settings-drawer" id="settings-drawer">
+  <div class="settings-header">
+    <h3>Aura · Settings</h3>
+    <button class="icon-btn" id="settings-close" aria-label="Close">×</button>
+  </div>
+  <div class="settings-tabs">
+    <button class="settings-tab active" data-tab="history">History</button>
+    <button class="settings-tab" data-tab="about">About</button>
+  </div>
+
+  <div class="settings-panel active" data-panel="history">
+    <div class="history-controls">
+      <label>Channel</label>
+      <select id="history-filter"><option value="">All</option></select>
+    </div>
+    <div class="history-list" id="history-list"></div>
+  </div>
+
+  <div class="settings-panel" data-panel="about">
+    <div class="settings-section">
+      <p>Aura is the EmptyOS voice companion — a mind-companion, not a smart speaker.</p>
+      <p>She can capture notes, journal entries, and tasks, and step aside for specialist companions when the conversation needs one.</p>
+      <p class="small">More controls coming — voice prefs, intent permissions, companion editing.</p>
+    </div>
+  </div>
+</div>
+
+<script>
+  // ── Capability gap check — surface missing listen/think/speak at boot ─
+  (async function checkCapabilities() {
+    try {
+      const r = await fetch('/api/capabilities/full');
+      if (!r.ok) return;
+      const data = await r.json();
+      const need = ['listen', 'think', 'speak'];
+      const missing = need.filter(c => {
+        const cap = data.capabilities && data.capabilities[c];
+        return !cap || !cap.active;
+      });
+      if (!missing.length) return;
+      const banner = document.getElementById('cap-gap-banner');
+      const msg = document.getElementById('cap-gap-msg');
+      const fix = document.getElementById('cap-gap-fix');
+      if (!banner) return;
+      const labels = { listen: 'voice input', think: 'a language model', speak: 'voice output' };
+      const human = missing.map(c => labels[c] || c).join(', ');
+      msg.textContent = 'Aura needs ' + human + ' before she can run end-to-end.';
+      fix.href = '/system?capability=' + encodeURIComponent(missing[0]);
+      banner.classList.add('show');
+    } catch (e) { /* silent — banner stays hidden */ }
+  })();
+
+  // ── Element refs ────────────────────────────────────────────────────
+  const body = document.body;
+  const recBtn = document.getElementById('rec-btn');
+  const recHint = document.getElementById('rec-hint');
+  const transcriptEl = document.getElementById('transcript');
+  const transcriptWrap = transcriptEl.parentElement;
+  const scopeCanvas = document.getElementById('scope-canvas');
+  const scopeLvl = document.getElementById('scope-lvl');
+  const brandCompanion = document.getElementById('brand-companion');
+  const brandTime = document.getElementById('brand-time');
+  const railDay = document.getElementById('rail-day');
+  const railDate = document.getElementById('rail-date');
+  const railCompanion = document.getElementById('rail-companion');
+  const picker = document.getElementById('picker');
+  const pickerList = document.getElementById('picker-list');
+
+  function escAura(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  }
+  function getCSS(name) {
+    return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  }
+
+  // ── Clock + date ─────────────────────────────────────────────────────
+  function refreshClock() {
+    const d = new Date();
+    const hh = String(d.getHours()).padStart(2, '0');
+    const mm = String(d.getMinutes()).padStart(2, '0');
+    const ss = String(d.getSeconds()).padStart(2, '0');
+    brandTime.textContent = `${hh}:${mm}:${ss}`;
+    railDay.textContent = d.toLocaleDateString(undefined, {weekday: 'short'}).toUpperCase();
+    railDate.textContent = d.toLocaleDateString(undefined, {month: 'short', day: '2-digit'}).toUpperCase();
+  }
+  refreshClock();
+  setInterval(refreshClock, 1000);
+
+  // ── State driver ────────────────────────────────────────────────────
+  function setState(state) {
+    body.className = body.className.replace(/state-\w+/g, '').trim();
+    body.classList.add(`state-${state}`);
+    if (state === 'idle') { stopWaveform(); scopeLvl.textContent = '—'; recHint.textContent = 'tap to talk'; }
+    else if (state === 'listening') { recHint.textContent = 'recording'; }
+    else if (state === 'thinking')  { drawThinkingPulse(); recHint.textContent = 'thinking'; scopeLvl.textContent = '—'; }
+    else if (state === 'speaking')  { recHint.textContent = 'speaking'; }
+  }
+
+  // ── Transcript / turns ──────────────────────────────────────────────
+  let currentTurnEl = null;
+  function fmtTurnTs() {
+    const d = new Date();
+    return String(d.getHours()).padStart(2,'0') + ':' + String(d.getMinutes()).padStart(2,'0');
+  }
+  function appendUserTurn(text) {
+    const el = document.createElement('div');
+    el.className = 'turn turn-user';
+    el.innerHTML = `<div class="turn-ts">${fmtTurnTs()}</div>
+      <div class="turn-body"><span class="turn-role">You</span>${escAura(text)}</div>`;
+    transcriptEl.appendChild(el);
+
+    const aura = document.createElement('div');
+    aura.className = 'turn turn-aura streaming';
+    aura.innerHTML = `<div class="turn-ts">${fmtTurnTs()}</div>
+      <div class="turn-body"><span class="turn-role">Aura</span><span class="aura-text"></span></div>`;
+    transcriptEl.appendChild(aura);
+    currentTurnEl = aura;
+    scrollToBottom();
+  }
+  function appendAuraDelta(delta) {
+    if (!currentTurnEl) return;
+    const t = currentTurnEl.querySelector('.aura-text');
+    t.textContent = (t.textContent || '') + delta;
+    scrollToBottom();
+  }
+  function finishAuraTurn() {
+    if (currentTurnEl) currentTurnEl.classList.remove('streaming');
+    currentTurnEl = null;
+  }
+  function scrollToBottom() {
+    transcriptWrap.scrollTop = transcriptWrap.scrollHeight;
+  }
+
+  // Inline patch annotations (replaces right-column trace)
+  function pushPatch(text, kind) {
+    const el = document.createElement('div');
+    el.className = 'patch';
+    const line = document.createElement('div');
+    line.className = 'patch-line ' + (kind || '');
+    line.innerHTML = text;
+    el.appendChild(line);
+    transcriptEl.appendChild(el);
+    scrollToBottom();
+    return el;
+  }
+  function pushTrace(html, kind) { return pushPatch(html, kind); }
+
+  // ── Card renderers (inline in transcript) ───────────────────────────
+  const CARD_RENDERERS = {
+    'stat-tile': function(data) {
+      const items = Array.isArray(data) ? data : [data];
+      return items.map(it => `
+        <div class="aura-card-stat">
+          <span class="aura-card-stat-value">${escAura(it.value)}</span>
+          <span class="aura-card-stat-label">${escAura(it.label || '')}</span>
+        </div>`).join('');
+    },
+    'entity-card': function(data) {
+      const fields = (data.fields || []).map(f =>
+        `<span><strong>${escAura(f.label)}</strong> ${escAura(f.value)}</span>`
+      ).join('');
+      return `
+        <div class="aura-card-entity-title">${escAura(data.title || '')}</div>
+        ${data.subtitle ? `<div class="aura-card-entity-subtitle">${escAura(data.subtitle)}</div>` : ''}
+        ${fields ? `<div class="aura-card-entity-fields">${fields}</div>` : ''}`;
+    },
+    'task-list': function(data) {
+      const rows = Array.isArray(data) ? data : [];
+      if (!rows.length) return '<div class="aura-card-stat-label">No tasks.</div>';
+      return rows.map(r => {
+        const tone = (r.tone || '').toLowerCase();
+        const tag = r.tag ? `<span class="aura-card-task-tag ${tone}">${escAura(r.tag)}</span>` : '';
+        const cls = r.done ? 'done' : '';
+        return `<div class="aura-card-task-row ${cls}"><span>${escAura(r.text)}</span>${tag}</div>`;
+      }).join('');
+    },
+  };
+  function renderCard(event) {
+    const fn = CARD_RENDERERS[event.renderer];
+    if (!fn) { console.warn('Unknown card renderer:', event.renderer); return; }
+    const card = document.createElement('div');
+    card.className = 'aura-card';
+    card.innerHTML = (event.title ? `<div class="aura-card-title">${escAura(event.title)}</div>` : '') + fn(event.data);
+    transcriptEl.appendChild(card);
+    scrollToBottom();
+    requestAnimationFrame(() => card.classList.add('show'));
+  }
+
+  // ── Oscilloscope ────────────────────────────────────────────────────
+  const scopeCtx = scopeCanvas.getContext('2d');
+  let scopeRAF = null;
+  let frameTrail = [];   // last N frames for phosphor decay
+  const TRAIL_LEN = 10;
+
+  function resizeScope() {
+    const dpr = window.devicePixelRatio || 1;
+    scopeCanvas.width  = scopeCanvas.clientWidth  * dpr;
+    scopeCanvas.height = scopeCanvas.clientHeight * dpr;
+    scopeCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+  window.addEventListener('resize', resizeScope);
+  setTimeout(resizeScope, 0);
+
+  function drawGraticule() {
+    const W = scopeCanvas.clientWidth, H = scopeCanvas.clientHeight;
+    scopeCtx.clearRect(0, 0, W, H);
+    scopeCtx.strokeStyle = 'rgba(107, 96, 82, 0.18)';
+    scopeCtx.lineWidth = 1;
+    const step = 24;
+    scopeCtx.beginPath();
+    for (let x = step; x < W; x += step) { scopeCtx.moveTo(x + 0.5, 0); scopeCtx.lineTo(x + 0.5, H); }
+    for (let y = step; y < H; y += step) { scopeCtx.moveTo(0, y + 0.5); scopeCtx.lineTo(W, y + 0.5); }
+    scopeCtx.stroke();
+    // centre baseline (slightly stronger)
+    scopeCtx.strokeStyle = 'rgba(107, 96, 82, 0.32)';
+    scopeCtx.beginPath();
+    scopeCtx.moveTo(0, H/2 + 0.5); scopeCtx.lineTo(W, H/2 + 0.5);
+    scopeCtx.stroke();
+  }
+
+  function drawIdleLine() {
+    const W = scopeCanvas.clientWidth, H = scopeCanvas.clientHeight;
+    drawGraticule();
+    scopeCtx.strokeStyle = 'rgba(232, 220, 203, 0.18)';
+    scopeCtx.lineWidth = 1;
+    scopeCtx.beginPath();
+    scopeCtx.moveTo(0, H/2);
+    scopeCtx.lineTo(W, H/2);
+    scopeCtx.stroke();
+  }
+
+  function captureFrame(getData) {
+    const buf = getData();
+    if (!buf) return null;
+    // sample at canvas-width resolution
+    const W = scopeCanvas.clientWidth;
+    const samples = new Float32Array(W);
+    for (let x = 0; x < W; x++) {
+      const idx = Math.floor((x / W) * buf.length);
+      samples[x] = (buf[idx] - 128) / 128;
+    }
+    return samples;
+  }
+
+  function drawWaveLine(samples, color, alpha) {
+    const W = scopeCanvas.clientWidth, H = scopeCanvas.clientHeight;
+    scopeCtx.strokeStyle = color;
+    scopeCtx.globalAlpha = alpha;
+    scopeCtx.lineWidth = 2;
+    scopeCtx.lineJoin = 'round';
+    scopeCtx.beginPath();
+    for (let x = 0; x < W; x++) {
+      const y = H/2 + samples[x] * (H * 0.42);
+      if (x === 0) scopeCtx.moveTo(x, y);
+      else scopeCtx.lineTo(x, y);
+    }
+    scopeCtx.stroke();
+    scopeCtx.globalAlpha = 1;
+  }
+
+  function tickPhosphor(getData, color) {
+    const samples = captureFrame(getData);
+    if (samples) {
+      frameTrail.push(samples);
+      if (frameTrail.length > TRAIL_LEN) frameTrail.shift();
+    }
+    drawGraticule();
+    // halo (blurred wide) — cheap glow
+    if (samples) {
+      scopeCtx.save();
+      scopeCtx.shadowColor = color;
+      scopeCtx.shadowBlur = 12;
+      drawWaveLine(samples, color, 0.7);
+      scopeCtx.restore();
+    }
+    // decaying trail
+    for (let i = 0; i < frameTrail.length - 1; i++) {
+      const a = (i + 1) / frameTrail.length * 0.35;
+      drawWaveLine(frameTrail[i], color, a);
+    }
+    // crisp head
+    if (samples) drawWaveLine(samples, color, 1);
+  }
+
+  function stopWaveform() {
+    if (scopeRAF) cancelAnimationFrame(scopeRAF);
+    scopeRAF = null;
+    frameTrail = [];
+    drawIdleLine();
+  }
+
+  function startListeningWave() {
+    if (scopeRAF) cancelAnimationFrame(scopeRAF);
+    frameTrail = [];
+    const buf = new Uint8Array(analyser.fftSize);
+    const color = getCSS('--amber') || '#ff8b3d';
+    const tick = () => {
+      if (!isRecording) return;
+      analyser.getByteTimeDomainData(buf);
+      tickPhosphor(() => buf, color);
+      // RMS readout
+      let sum = 0;
+      for (let i = 0; i < buf.length; i++) { const d = (buf[i]-128); sum += d*d; }
+      const rms = Math.sqrt(sum / buf.length);
+      const db = rms > 0 ? Math.round(20 * Math.log10(rms / 128)) : -60;
+      scopeLvl.textContent = `${db.toString().padStart(3,' ')} dB`;
+      scopeRAF = requestAnimationFrame(tick);
+    };
+    tick();
+  }
+
+  // TTS analyser is wired lazily on first speak (createMediaElementSource
+  // can only be called once per audio element).
+  let ttsAnalyser = null;
+  function ensureTTSAnalyser() {
+    if (ttsAnalyser) return;
+    if (!audioContext) audioContext = new (window.AudioContext || window.webkitAudioContext)();
+    try {
+      const src = audioContext.createMediaElementSource(audioElement);
+      ttsAnalyser = audioContext.createAnalyser();
+      ttsAnalyser.fftSize = 512;
+      src.connect(ttsAnalyser);
+      ttsAnalyser.connect(audioContext.destination);
+    } catch (e) { console.warn('TTS analyser wiring failed', e); }
+  }
+  function startSpeakingWave() {
+    ensureTTSAnalyser();
+    if (!ttsAnalyser) return;
+    if (scopeRAF) cancelAnimationFrame(scopeRAF);
+    frameTrail = [];
+    const buf = new Uint8Array(ttsAnalyser.fftSize);
+    const color = getCSS('--teal') || '#5fb3a8';
+    const tick = () => {
+      if (!body.classList.contains('state-speaking')) return;
+      ttsAnalyser.getByteTimeDomainData(buf);
+      tickPhosphor(() => buf, color);
+      scopeLvl.textContent = 'OUT';
+      scopeRAF = requestAnimationFrame(tick);
+    };
+    tick();
+  }
+
+  function drawThinkingPulse() {
+    if (scopeRAF) cancelAnimationFrame(scopeRAF);
+    frameTrail = [];
+    const start = performance.now();
+    const color = getCSS('--amber') || '#ff8b3d';
+    const tick = (now) => {
+      if (!body.classList.contains('state-thinking')) return;
+      const t = (now - start) / 1000;
+      const W = scopeCanvas.clientWidth;
+      const samples = new Float32Array(W);
+      for (let x = 0; x < W; x++) {
+        const phase = (x / W) * Math.PI * 4 - t * 2.4;
+        samples[x] = Math.sin(phase) * 0.18;
+      }
+      drawGraticule();
+      scopeCtx.save();
+      scopeCtx.shadowColor = color;
+      scopeCtx.shadowBlur = 8;
+      drawWaveLine(samples, color, 0.6);
+      scopeCtx.restore();
+      drawWaveLine(samples, color, 0.95);
+      scopeRAF = requestAnimationFrame(tick);
+    };
+    scopeRAF = requestAnimationFrame(tick);
+  }
+
+  // ── Recording + VAD ─────────────────────────────────────────────────
+  let mediaRecorder, audioChunks = [];
+  let isRecording = false;
+  let audioContext, analyser, microphone, dataArray, animationId;
+  const audioElement = new Audio();
+  let messages = [];
+  let wakeLock = null;
+  let isContinuous = false;
+  let vadSilenceStart = 0;
+  let vadSpeaking = false;
+  const VAD_THRESHOLD = 5;
+  const VAD_SILENCE_MS = 1500;
+
+  async function acquireWakeLock() {
+    if (!('wakeLock' in navigator)) return;
+    try {
+      if (!wakeLock || wakeLock.released) wakeLock = await navigator.wakeLock.request('screen');
+    } catch (err) { console.warn('Wake Lock failed:', err); }
+  }
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible' && isRecording) acquireWakeLock();
+  });
+
+  function getRMS(data) {
+    let sum = 0;
+    for (let i = 0; i < data.length; i++) { const d = data[i] - 128; sum += d * d; }
+    return Math.sqrt(sum / data.length);
+  }
+
+  async function startRecording(continuous = true) {
+    try {
+      isContinuous = continuous;
+      const stream = await navigator.mediaDevices.getUserMedia({audio: {echoCancellation: true, noiseSuppression: true}});
+      acquireWakeLock();
+      if (!audioContext) audioContext = new (window.AudioContext || window.webkitAudioContext)();
+      if (audioContext.state === 'suspended') await audioContext.resume();
+      analyser = audioContext.createAnalyser();
+      microphone = audioContext.createMediaStreamSource(stream);
+      microphone.connect(analyser);
+      analyser.fftSize = 512;
+      dataArray = new Uint8Array(analyser.frequencyBinCount);
+
+      mediaRecorder = new MediaRecorder(stream);
+      audioChunks = [];
+      mediaRecorder.ondataavailable = e => { if (e.data.size > 0) audioChunks.push(e.data); };
+      mediaRecorder.onstop = async () => {
+        cancelAnimationFrame(animationId);
+        microphone.disconnect();
+        const audioBlob = new Blob(audioChunks, {type: 'audio/webm'});
+        await processAudio(audioBlob);
+      };
+      mediaRecorder.start(100);
+      isRecording = true; vadSpeaking = false; vadSilenceStart = 0;
+      setState('listening');
+      audioElement.pause();
+      resizeScope();
+      startListeningWave();
+      updateVoiceMeter();
+    } catch (err) {
+      console.error(err);
+      pushTrace(`<span>err · mic blocked: ${escAura(err.message || err)}</span>`, 'err');
+      setState('idle');
+      isContinuous = false;
+    }
+  }
+
+  function updateVoiceMeter() {
+    if (!isRecording) return;
+    analyser.getByteTimeDomainData(dataArray);
+    const rms = getRMS(dataArray);
+    if (rms > VAD_THRESHOLD) {
+      vadSpeaking = true;
+      vadSilenceStart = 0;
+    } else if (vadSpeaking) {
+      if (vadSilenceStart === 0) vadSilenceStart = Date.now();
+      else if (Date.now() - vadSilenceStart > VAD_SILENCE_MS) {
+        vadSpeaking = false;
+        stopRecording();
+      }
+    }
+    animationId = requestAnimationFrame(updateVoiceMeter);
+  }
+
+  function stopRecording() {
+    if (mediaRecorder && isRecording) {
+      mediaRecorder.stop();
+      mediaRecorder.stream.getTracks().forEach(track => track.stop());
+      isRecording = false;
+      setState('thinking');
+    }
+  }
+
+  // ── NDJSON event-stream consumer (shared by audio + text) ────────
+  async function consumeStream(res, opts) {
+    opts = opts || {};
+    const onDoneIdle = opts.onDoneIdle || (() => setState('idle'));
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let audioQueue = [];
+    let isPlaying = false;
+    let streamDone = false;
+
+    async function playNextAudio() {
+      if (isPlaying || audioQueue.length === 0) {
+        if (audioQueue.length === 0 && streamDone && !isPlaying) onDoneIdle();
+        return;
+      }
+      isPlaying = true;
+      setState('speaking');
+      const url = audioQueue.shift();
+      audioElement.src = url;
+      try { await audioElement.play(); startSpeakingWave(); }
+      catch (e) { console.error(e); isPlaying = false; playNextAudio(); }
+    }
+    audioElement.onended = () => { isPlaying = false; playNextAudio(); };
+
+    while (true) {
+      const {value, done} = await reader.read();
+      if (done) {
+        streamDone = true;
+        finishAuraTurn();
+        if (!isPlaying && audioQueue.length === 0) onDoneIdle();
+        break;
+      }
+      buffer += decoder.decode(value, {stream: true});
+      const lines = buffer.split('\n');
+      buffer = lines.pop();
+      for (const line of lines) {
+        if (!line.trim()) continue;
+        let event;
+        try { event = JSON.parse(line); } catch (e) { console.error(e); continue; }
+        if (event.type === 'user_text') {
+          appendUserTurn(event.text);
+        } else if (event.type === 'text') {
+          appendAuraDelta(event.delta);
+        } else if (event.type === 'audio') {
+          audioQueue.push(event.url);
+          playNextAudio();
+        } else if (event.type === 'card') {
+          renderCard(event);
+        } else if (event.type === 'confirm_required') {
+          handleConfirmRequired(event);
+        } else if (event.type === 'companion_switch') {
+          activeCompanion = event.companion || null;
+          updateCompanionUI();
+        } else if (event.type === 'done') {
+          messages = event.messages;
+          if (event.companion !== undefined) { activeCompanion = event.companion || null; updateCompanionUI(); }
+          finishAuraTurn();
+        } else if (event.type === 'error') {
+          pushTrace(`<span>err · ${escAura(event.error)}</span>`, 'err');
+          finishAuraTurn();
+          setState('idle');
+          isContinuous = false;
+          streamDone = true;
+          audioQueue = [];
+          isPlaying = false;
+        }
+      }
+    }
+  }
+
+  let activeCompanion = null;
+
+  async function processAudio(blob) {
+    if (blob.size < 500) { setState('idle'); isContinuous = false; return; }
+    const formData = new FormData();
+    formData.append('audio', blob, 'recording.webm');
+    formData.append('messages', JSON.stringify(messages));
+    if (activeCompanion) formData.append('companion', activeCompanion);
+    try {
+      const res = await fetch('/voice-assistant/api/chat_stream', {method: 'POST', body: formData});
+      await consumeStream(res, {onDoneIdle: () => {
+        if (isContinuous) startRecording(true);
+        else setState('idle');
+      }});
+    } catch (err) {
+      console.error(err);
+      setState('idle'); isContinuous = false;
+    }
+  }
+
+  async function sendText(text) {
+    const trimmed = (text || '').trim();
+    if (!trimmed) return;
+    appendUserTurn(trimmed);
+    setState('thinking');
+    try {
+      const res = await fetch('/voice-assistant/api/chat_text', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({text: trimmed, messages, companion: activeCompanion}),
+      });
+      await consumeStream(res, {onDoneIdle: () => setState('idle')});
+    } catch (err) {
+      console.error(err);
+      setState('idle');
+    }
+  }
+
+  // ── Confirm gate (inline patch card in transcript) ─────────────────
+  let pendingConfirm = null;
+  function handleConfirmRequired(event) {
+    pendingConfirm = {verb: event.verb, args: event.args};
+    const argsPretty = Object.entries(event.args || {})
+      .map(([k, v]) => `${escAura(k)}: ${escAura(typeof v === 'string' ? v : JSON.stringify(v))}`)
+      .join(' · ');
+    const card = document.createElement('div');
+    card.className = 'patch-confirm';
+    card.innerHTML = `
+      <div class="patch-confirm-head">Confirm · ${escAura(event.verb)}</div>
+      <div class="patch-confirm-desc">${escAura(event.description || event.verb)}</div>
+      <div class="patch-confirm-args">${argsPretty || '—'}</div>
+      <div class="patch-confirm-actions">
+        <button class="rec-btn compact" data-act="skip"><span>SKIP</span></button>
+        <button class="rec-btn compact danger" data-act="run"><span>RUN</span></button>
+      </div>`;
+    transcriptEl.appendChild(card);
+    scrollToBottom();
+    card.querySelector('[data-act="skip"]').addEventListener('click', () => { card.remove(); cancelPendingConfirm(); });
+    card.querySelector('[data-act="run"]').addEventListener('click', async () => { card.remove(); await runPendingConfirm(); });
+  }
+
+  async function runPendingConfirm() {
+    if (!pendingConfirm) return;
+    const {verb, args} = pendingConfirm;
+    pendingConfirm = null;
+    try {
+      const res = await fetch('/voice-assistant/api/confirm-intent', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({verb, args}),
+      });
+      const out = await res.json();
+      if (out.error) { pushTrace(`<span>err · ${escAura(out.error)}</span>`, 'err'); return; }
+      if (out.say) {
+        if (currentTurnEl) appendAuraDelta(' ' + out.say);
+        else {
+          const el = document.createElement('div');
+          el.className = 'turn turn-aura';
+          el.innerHTML = `<div class="turn-ts">${fmtTurnTs()}</div>
+            <div class="turn-body"><span class="turn-role">Aura</span>${escAura(out.say)}</div>`;
+          transcriptEl.appendChild(el);
+        }
+        pushTrace(`tool · ${escAura(verb)} <span class="arr">→</span> ok`, 'tool');
+      }
+      if (out.card) renderCard({renderer: out.card.renderer, data: out.card.data, title: out.card.title});
+    } catch (e) { console.error(e); }
+  }
+  function cancelPendingConfirm() {
+    if (!pendingConfirm) return;
+    const verb = pendingConfirm.verb;
+    pendingConfirm = null;
+    pushTrace(`skip · ${escAura(verb)}`, 'skip');
+  }
+
+  // ── Text input ──────────────────────────────────────────────────────
+  const textInput = document.getElementById('text-input');
+  const textSend = document.getElementById('text-send');
+  function autoGrow() {
+    textInput.style.height = 'auto';
+    textInput.style.height = Math.min(textInput.scrollHeight, 140) + 'px';
+  }
+  textInput.addEventListener('input', autoGrow);
+  textInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      const t = textInput.value;
+      textInput.value = ''; autoGrow();
+      sendText(t);
+    }
+  });
+  textSend.addEventListener('click', () => {
+    const t = textInput.value;
+    textInput.value = ''; autoGrow();
+    sendText(t);
+  });
+
+  // ── Text-mode toggle ────────────────────────────────────────────────
+  const textToggleBtn = document.getElementById('btn-text-toggle');
+  textToggleBtn.addEventListener('click', () => {
+    const on = body.classList.toggle('text-mode');
+    textToggleBtn.classList.toggle('active', on);
+    if (on) setTimeout(() => textInput.focus(), 60);
+  });
+
+  // ── Settings drawer ─────────────────────────────────────────────────
+  const settingsDrawer = document.getElementById('settings-drawer');
+  document.getElementById('btn-settings').addEventListener('click', async () => {
+    settingsDrawer.classList.add('show');
+    await loadCompanionsForFilter();
+    activateSettingsTab('history');
+  });
+  document.getElementById('settings-close').addEventListener('click', () => settingsDrawer.classList.remove('show'));
+  document.querySelectorAll('.settings-tab').forEach(t => {
+    t.addEventListener('click', () => activateSettingsTab(t.dataset.tab));
+  });
+  function activateSettingsTab(name) {
+    document.querySelectorAll('.settings-tab').forEach(t => t.classList.toggle('active', t.dataset.tab === name));
+    document.querySelectorAll('.settings-panel').forEach(p => p.classList.toggle('active', p.dataset.panel === name));
+    if (name === 'history') renderHistory();
+  }
+
+  // ── History ─────────────────────────────────────────────────────────
+  const historyList = document.getElementById('history-list');
+  const historyFilter = document.getElementById('history-filter');
+  let historyCompanionsLoaded = false;
+  async function loadCompanionsForFilter() {
+    if (historyCompanionsLoaded) return;
+    try {
+      const res = await fetch('/voice-assistant/api/companions');
+      const list = await res.json();
+      list.forEach(c => {
+        const o = document.createElement('option');
+        o.value = c.id; o.textContent = c.name;
+        historyFilter.appendChild(o);
+      });
+      historyCompanionsLoaded = true;
+    } catch (e) { console.error(e); }
+  }
+  function fmtTime(iso) {
+    try {
+      const d = new Date(iso);
+      return d.toLocaleString(undefined, {month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'});
+    } catch { return iso; }
+  }
+  async function renderHistory() {
+    const companion = historyFilter.value;
+    const url = '/voice-assistant/api/history?limit=100' + (companion ? `&companion=${encodeURIComponent(companion)}` : '');
+    historyList.innerHTML = '<div class="history-empty">Loading…</div>';
+    try {
+      const res = await fetch(url);
+      const rows = await res.json();
+      if (!rows || !rows.length) { historyList.innerHTML = '<div class="history-empty">No chats yet.</div>'; return; }
+      historyList.innerHTML = rows.map(r => `
+        <div class="history-row">
+          <div class="history-meta">${escAura(fmtTime(r.time))} · ${escAura(r.companion || 'aura')}</div>
+          <div class="history-user">${escAura(r.user || '')}</div>
+          <div class="history-assistant">${escAura(r.assistant || '')}</div>
+        </div>`).join('');
+    } catch (e) {
+      historyList.innerHTML = '<div class="history-empty">Could not load history.</div>';
+      console.error(e);
+    }
+  }
+  historyFilter.addEventListener('change', renderHistory);
+
+  // ── Companion picker (rail click) ───────────────────────────────────
+  async function loadCompanions() {
+    try {
+      const res = await fetch('/voice-assistant/api/companions');
+      const list = await res.json();
+      pickerList.innerHTML = '';
+      const aura = document.createElement('div');
+      aura.className = 'picker-row active';
+      aura.dataset.companion = '';
+      aura.innerHTML = `<span class="ch">CH 0</span><span>Aura</span>`;
+      aura.addEventListener('click', () => switchCompanion(null));
+      pickerList.appendChild(aura);
+      list.forEach((c, i) => {
+        const row = document.createElement('div');
+        row.className = 'picker-row';
+        row.dataset.companion = c.id;
+        row.innerHTML = `<span class="ch">CH ${i+1}</span><span>${escAura(c.name)}</span>`;
+        row.addEventListener('click', () => switchCompanion(c.id));
+        pickerList.appendChild(row);
+      });
+    } catch (e) { console.error(e); }
+  }
+  function switchCompanion(id) {
+    activeCompanion = id || null;
+    updateCompanionUI();
+    const row = pickerList.querySelector(`.picker-row[data-companion="${id || ''}"]`);
+    const name = row ? row.textContent.replace(/^CH\s*\d+/, '').trim() : 'Aura';
+    pushTrace(`switch <span class="arr">→</span> ${escAura(name)}`, 'tool');
+    picker.classList.remove('show');
+  }
+  function updateCompanionUI() {
+    pickerList.querySelectorAll('.picker-row').forEach(r => {
+      r.classList.toggle('active', (r.dataset.companion || '') === (activeCompanion || ''));
+    });
+    let label = 'Aura';
+    const row = pickerList.querySelector(`.picker-row[data-companion="${activeCompanion || ''}"]`);
+    if (row) label = row.textContent.replace(/^CH\s*\d+/, '').trim();
+    brandCompanion.textContent = label.toUpperCase();
+    railCompanion.textContent = label.toUpperCase();
+  }
+  loadCompanions();
+
+  // Rail toggles picker
+  document.getElementById('rail').addEventListener('click', (e) => {
+    e.stopPropagation();
+    picker.classList.toggle('show');
+  });
+  document.addEventListener('click', (e) => {
+    if (!picker.contains(e.target) && !document.getElementById('rail').contains(e.target)) {
+      picker.classList.remove('show');
+    }
+  });
+
+  // ── iOS audio unlock ────────────────────────────────────────────────
+  let audioUnlocked = false;
+  function unlockAudio() {
+    if (audioUnlocked) return;
+    audioElement.src = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=';
+    audioElement.play().then(() => { audioUnlocked = true; }).catch(() => {});
+  }
+
+  // ── Voice trigger ──────────────────────────────────────────────────
+  function toggleVoice() {
+    unlockAudio();
+    if (body.classList.contains('state-speaking') || body.classList.contains('state-thinking')) {
+      audioElement.pause();
+      isContinuous = false;
+      setState('idle');
+      return;
+    }
+    if (isRecording) {
+      isContinuous = false;
+      stopRecording();
+    } else {
+      startRecording(true);
+    }
+  }
+  recBtn.addEventListener('click', toggleVoice);
+  // Spacebar push-to-talk when not focused on text input.
+  document.addEventListener('keydown', (e) => {
+    if (e.code !== 'Space') return;
+    if (document.activeElement === textInput) return;
+    if (e.repeat) return;
+    e.preventDefault();
+    toggleVoice();
+  });
+
+  // First paint
+  drawIdleLine();
+  setState('idle');
+</script>
+</body>
+</html>

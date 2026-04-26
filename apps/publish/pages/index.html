@@ -1,0 +1,932 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Publish - EmptyOS</title>
+<link rel="stylesheet" href="/static/theme.css">
+<link rel="stylesheet" href="/static/eos-components.css">
+<style>
+.pub-hero { padding:32px 0 8px; animation:fadeDown 0.4s ease }
+.pub-hero h1 { font-size:28px; font-weight:700; color:var(--text-heading); margin-bottom:4px }
+.pub-hero .desc { font-size:14px; color:var(--text-secondary) }
+
+.site-tabs { display:flex; gap:4px; margin-bottom:16px; flex-wrap:wrap; align-items:center; animation:fadeDown 0.4s ease 0.03s both }
+.site-tab { padding:8px 16px; border-radius:8px; font-size:13px; font-weight:600; cursor:pointer; border:1px solid var(--border); background:var(--bg-card); color:var(--text-secondary); transition:all 0.15s }
+.site-tab:hover { border-color:color-mix(in srgb,var(--accent) 40%,transparent); color:var(--text) }
+.site-tab.active { background:var(--accent); color:#fff; border-color:var(--accent) }
+.site-tab-add { padding:8px 12px; border-radius:8px; font-size:16px; cursor:pointer; border:1px dashed var(--border); background:transparent; color:var(--text-muted); transition:all 0.15s; line-height:1 }
+.site-tab-add:hover { border-color:var(--accent); color:var(--accent) }
+.site-mode { display:inline-block; font-size:10px; padding:2px 8px; border-radius:4px; margin-left:8px; vertical-align:middle; font-weight:500 }
+.site-mode.project { background:color-mix(in srgb,var(--accent) 15%,transparent); color:var(--accent) }
+.site-mode.blog { background:color-mix(in srgb,var(--success) 15%,transparent); color:var(--success) }
+
+.stats-row { display:grid; grid-template-columns:repeat(4,1fr); gap:8px; margin-bottom:16px; animation:fadeDown 0.4s ease 0.05s both }
+
+.toolbar { display:flex; gap:8px; margin-bottom:16px; flex-wrap:wrap; animation:fadeDown 0.4s ease 0.1s both }
+.toolbar .btn { padding:8px 16px; border-radius:8px; font-size:13px; font-weight:600; cursor:pointer; border:none; transition:transform 0.1s }
+.toolbar .btn:active { transform:scale(0.95) }
+.btn-build { background:var(--accent); color:#fff }
+.btn-deploy { background:var(--success); color:#000 }
+.btn-deploy:disabled { opacity:0.4; cursor:not-allowed }
+.toolbar .info { margin-left:auto; font-size:12px; color:var(--text-muted); align-self:center }
+
+.filter-pills { display:flex; gap:8px; margin-bottom:12px; flex-wrap:wrap; animation:fadeDown 0.4s ease 0.12s both }
+
+.post-list { display:flex; flex-direction:column; gap:8px; animation:cardIn 0.35s ease 0.15s both }
+.post-list .eos-entity-card { margin-bottom:0 }
+.post-list .eos-entity-card.is-draft { border-style:dashed; background:color-mix(in srgb,var(--warning) 4%,var(--bg-card)) }
+.pi-summary { font-size:12px; color:var(--text-secondary); display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden }
+.pi-btn { background:none; border:1px solid var(--border); border-radius:6px; color:var(--accent); font-size:13px; padding:4px 8px; cursor:pointer; transition:all 0.15s; text-decoration:none; display:inline-flex; align-items:center; justify-content:center }
+.pi-btn:hover { background:color-mix(in srgb,var(--accent) 12%,transparent); border-color:var(--accent) }
+
+.preview-panel { display:none; position:fixed; top:0; right:0; bottom:0; width:min(600px,85vw); background:var(--bg); border-left:1px solid var(--border); z-index:200; overflow-y:auto; animation:slideIn 0.25s ease }
+.preview-panel.open { display:block }
+.preview-header { display:flex; align-items:center; justify-content:space-between; padding:16px; border-bottom:1px solid var(--border) }
+.preview-header h3 { font-size:16px; font-weight:600; color:var(--text-heading) }
+.preview-close { font-size:20px; color:var(--text-muted); cursor:pointer; padding:4px 8px; border-radius:6px; background:none; border:none }
+.preview-close:hover { color:var(--text); background:color-mix(in srgb,var(--text) 5%,transparent) }
+.preview-body { padding:24px }
+.preview-body .article { line-height:1.7 }
+.preview-body .article h1 { font-size:1.5rem; color:var(--text-heading); margin:24px 0 8px }
+.preview-body .article h2 { font-size:1.2rem; color:var(--text-heading); margin:16px 0 8px }
+.preview-body .article p { margin:12px 0 }
+.preview-body .article code { font-family:var(--mono); font-size:0.85em; background:var(--bg-card); padding:2px 8px; border-radius:4px }
+.preview-body .article pre { background:var(--bg-card); border:1px solid var(--border); border-radius:8px; padding:16px; overflow-x:auto; margin:12px 0 }
+.preview-body .article pre code { background:none; padding:0 }
+.preview-body .article blockquote { border-left:3px solid var(--accent); padding:8px 16px; margin:12px 0; color:var(--text-secondary); background:var(--bg-card); border-radius:0 8px 8px 0 }
+.preview-body .article img { max-width:100%; border-radius:8px }
+.preview-body .article table { width:100%; border-collapse:collapse; margin:12px 0 }
+.preview-body .article th { text-align:left; font-size:11px; color:var(--text-muted); text-transform:uppercase; padding:8px 8px; border-bottom:1px solid var(--border) }
+.preview-body .article td { padding:8px 8px; border-bottom:1px solid var(--border); font-size:13px }
+
+.overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,0.5); z-index:199 }
+.overlay.open { display:block }
+
+.empty-state { text-align:center; padding:48px 24px; color:var(--text-muted) }
+.empty-state .icon { font-size:48px; margin-bottom:12px; opacity:0.3 }
+.empty-state p { font-size:14px; margin-top:8px }
+.empty-state code { font-family:var(--mono); font-size:12px; background:var(--bg-card); padding:2px 8px; border-radius:4px }
+
+.log { background:var(--bg-card); border:1px solid var(--border); border-radius:14px; padding:16px; margin-top:16px; font-family:var(--mono); font-size:12px; color:var(--text-secondary); max-height:200px; overflow-y:auto; display:none }
+
+/* Suggestion cards */
+.suggest-card { background:var(--bg-card); border:1px solid var(--border); border-radius:8px; padding:12px; cursor:pointer; transition:border-color 0.15s,transform 0.15s; text-decoration:none; display:block; color:var(--text) }
+.suggest-card:hover { border-color:var(--accent); transform:translateY(-1px); text-decoration:none }
+.suggest-title { font-size:13px; font-weight:600; color:var(--text-heading); margin-bottom:4px }
+.suggest-pitch { font-size:11px; color:var(--text-secondary); line-height:1.4 }
+.suggest-type { display:inline-block; font-size:10px; color:var(--accent); background:var(--accent-bg); padding:2px 8px; border-radius:4px; margin-top:8px }
+
+/* Settings panel chrome comes from shared .eos-settings-panel */
+.sf-actions { display:flex; gap:8px; margin-top:24px; padding-top:16px; border-top:1px solid var(--border) }
+.sf-save { padding:8px 24px; background:var(--accent); color:#fff; border:none; border-radius:8px; font-size:13px; font-weight:600; cursor:pointer; font-family:inherit }
+.sf-save:active { transform:scale(0.95) }
+.sf-cancel { padding:8px 24px; background:transparent; border:1px solid var(--border); border-radius:8px; font-size:13px; color:var(--text-secondary); cursor:pointer; font-family:inherit }
+
+@media (max-width:600px) {
+  .stats-row { grid-template-columns:repeat(2,1fr) }
+  .preview-panel { width:100vw }
+}
+</style>
+</head>
+<body>
+<script src="/static/realtime.js"></script>
+<script src="/static/eos.js"></script>
+<script src="/static/eos-components.js"></script>
+<script>EOS.nav('publish');
+if(window.EOS&&EOS.registerActions){EOS.registerActions({},[],{description:"Publish vault notes as a static website — blog, projects, digital garden.",quickActions:[{label:"Draft idea",msg:"I want to draft a new blog post. Ask me the topic and help me outline it."},{label:"Ready to publish",msg:"Which of my drafts look ready to publish and which need more work?"},{label:"Improve title",msg:"Suggest a better title and hook for the post I am editing."}]});}
+</script>
+
+<div class="page">
+  <div class="pub-hero">
+    <h1>Publish</h1>
+    <div class="desc" id="source-info">Loading...</div>
+  </div>
+
+  <div class="site-tabs" id="site-tabs"></div>
+
+  <div class="stats-row" id="stats-row">
+    <div class="eos-stat-card"><div class="eos-stat-val" id="s-posts">-</div><div class="eos-stat-lbl" id="s-posts-lbl">Content</div></div>
+    <div class="eos-stat-card"><div class="eos-stat-val" id="s-tags">-</div><div class="eos-stat-lbl">Tags</div></div>
+    <div class="eos-stat-card"><div class="eos-stat-val" id="s-built">-</div><div class="eos-stat-lbl">Last Build</div></div>
+    <div class="eos-stat-card"><div class="eos-stat-val" id="s-deployed">-</div><div class="eos-stat-lbl">Deployed</div></div>
+  </div>
+
+  <div class="toolbar">
+    <a class="btn btn-build" href="/publish/pages/writer.html" style="text-decoration:none;display:inline-flex;align-items:center;gap:4px">&#9998; New Post</a>
+    <button class="btn btn-build" onclick="doBuild()">Build Site</button>
+    <button class="btn btn-deploy" id="btn-preview-site" onclick="previewSite()" disabled style="background:var(--warning);color:#000">Preview Site</button>
+    <button class="btn btn-deploy" id="btn-deploy" onclick="doDeploy()" disabled>Deploy</button>
+    <button class="btn btn-deploy" id="btn-deploy-firebase" onclick="doDeployFirebase()" disabled>Cloud Deploy</button>
+    <a class="btn btn-deploy" id="btn-visit" href="#" target="_blank" style="display:none;background:var(--accent);text-decoration:none;color:#fff">Visit Site &#8599;</a>
+    <button class="btn-settings" onclick="openSettings()">&#9881; Site</button>
+    <button class="btn-settings" onclick="openAppSettings()">&#9881; App</button>
+    <a href="/publish/pages/guide.html" style="font-size:12px;color:var(--text-muted);align-self:center">Format Guide</a>
+    <span class="info" id="toolbar-info"></span>
+  </div>
+
+  <div class="filter-pills" id="filter-pills"></div>
+  <div class="post-list" id="post-list"></div>
+  <div class="eos-empty-state" id="empty" style="display:none">
+    <span class="eos-empty-state-icon">&#128221;</span>
+    <p class="eos-empty-state-message" id="empty-msg">No publishable notes found</p>
+    <p id="empty-hint" style="font-size:12px;margin:0">Create notes in your source folder with <code>publish: true</code> in frontmatter</p>
+  </div>
+
+  <!-- Vault Suggestions -->
+  <div id="suggestions-section" style="margin-top:24px">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+      <span style="font-size:12px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px">Ideas from your vault</span>
+      <button class="pi-btn" onclick="loadSuggestions()" title="Refresh suggestions" style="font-size:11px;padding:2px 8px">&#8635; Refresh</button>
+    </div>
+    <div id="suggestions-list" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:8px"></div>
+  </div>
+
+  <div class="log" id="log"></div>
+</div>
+
+<div class="overlay" id="overlay" onclick="closeAll()"></div>
+
+<div class="eos-settings-panel" id="settings-panel">
+  <div class="sp-head">
+    <h3>Site Settings — <span id="sf-site-label">Site</span></h3>
+    <button class="preview-close" onclick="closeSettings()">&times;</button>
+  </div>
+  <div class="sp-body">
+    <div class="sf-group">
+      <label class="sf-label">Profile Name</label>
+      <input class="sf-input" id="sf-name" placeholder="My Blog">
+      <div class="sf-hint">Internal name shown in the site switcher tabs.</div>
+    </div>
+    <div class="sf-group">
+      <label class="sf-label">Site Title</label>
+      <input class="sf-input" id="sf-site-name" placeholder="My Site">
+    </div>
+    <div class="sf-group">
+      <label class="sf-label">Description</label>
+      <input class="sf-input" id="sf-site-desc" placeholder="A few words about your site">
+    </div>
+    <div class="sf-group">
+      <label class="sf-label">Author</label>
+      <input class="sf-input" id="sf-author" placeholder="Your name">
+    </div>
+    <div class="sf-group">
+      <label class="sf-label">Source Folder</label>
+      <input class="sf-input" id="sf-source" placeholder="30_Resources/Published">
+      <div class="sf-hint">Relative to vault root. Only notes here with <code>publish: true</code> are included.</div>
+    </div>
+    <div class="sf-group">
+      <label class="sf-label">Theme</label>
+      <select class="sf-select" id="sf-theme">
+        <option value="eos">EOS</option>
+        <option value="void-dark">Void Dark</option>
+        <option value="warm-dark">Warm Dark</option>
+        <option value="nord">Nord</option>
+        <option value="soft-light">Soft Light</option>
+      </select>
+    </div>
+    <div class="sf-group">
+      <label class="sf-label">GitHub Repo</label>
+      <input class="sf-input" id="sf-repo" placeholder="username/repo">
+      <div class="sf-hint">For static-hosting deploys (e.g. via git push). Leave empty if not deploying yet.</div>
+    </div>
+    <div class="sf-group">
+      <label class="sf-label">Author Bio</label>
+      <input class="sf-input" id="sf-bio" placeholder="One-line description about you">
+    </div>
+    <div class="sf-group">
+      <label class="sf-label">Social Links</label>
+      <input class="sf-input" id="sf-social" placeholder="https://linkedin.com/in/you, https://github.com/you, mailto:you@email.com">
+      <div class="sf-hint">Comma-separated URLs. Shows on homepage hero and author card.</div>
+    </div>
+    <div class="sf-group">
+      <label class="sf-label">Custom Domain</label>
+      <input class="sf-input" id="sf-domain" placeholder="example.com">
+      <div class="sf-hint">Writes a CNAME file for custom-domain static hosting. Also enables absolute URLs in RSS + OG:image.</div>
+    </div>
+    <div class="sf-group">
+      <label class="sf-label">Favicon</label>
+      <input class="sf-input" id="sf-favicon" placeholder="favicon.svg">
+      <div class="sf-hint">Filename inside the source folder. Supports .svg, .png, .ico. Leave empty for no favicon.</div>
+    </div>
+    <div class="sf-group">
+      <label class="sf-label" style="display:flex;align-items:center;gap:8px;cursor:pointer">
+        <input type="checkbox" id="sf-search-engines" style="width:auto;margin:0">
+        <span>Allow search engines to index this site</span>
+      </label>
+      <div class="sf-hint">When off: adds <code>&lt;meta name="robots" content="noindex, nofollow"&gt;</code> to every page and writes a <code>robots.txt</code> that blocks all crawlers.</div>
+    </div>
+    <div class="sf-group">
+      <label class="sf-label" style="display:flex;align-items:center;gap:8px;cursor:pointer">
+        <input type="checkbox" id="sf-analytics-enabled" style="width:auto;margin:0">
+        <span>Enable privacy-first analytics</span>
+      </label>
+      <div class="sf-hint">Injects a tiny beacon into every page. No cookies, no fingerprinting.</div>
+      <input class="sf-input" id="sf-analytics-url" placeholder="Collector URL (leave empty to inherit global)" style="margin-top:6px">
+      <div class="sf-hint">For real visitors, point this at a public Cloudflare Worker. For local preview testing, leave empty.</div>
+      <a id="sf-analytics-link" href="#" target="_blank" rel="noopener" style="display:inline-block;margin-top:8px;font-size:13px;color:var(--accent);text-decoration:none">View analytics for this site &rarr;</a>
+    </div>
+    <div id="sf-mode-hint" style="padding:12px;background:var(--bg-card);border:1px solid var(--border);border-radius:10px;font-size:12px;color:var(--text-secondary);line-height:1.5;margin-top:4px"></div>
+    <div class="sf-actions">
+      <button class="sf-save" onclick="saveSettings()">Save</button>
+      <button class="sf-cancel" onclick="closeSettings()">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<div class="preview-panel" id="preview-panel">
+  <div class="preview-header">
+    <h3 id="preview-title">Preview</h3>
+    <button class="preview-close" onclick="closePreview()">&times;</button>
+  </div>
+  <div class="preview-body" id="preview-body"></div>
+</div>
+
+<script>
+var posts = [];
+var drafts = [];
+var currentFilter = 'published';
+var config = {};
+var podcastStatus = {};
+var coverStatus = {};
+var allSites = [];
+var activeSiteId = 'default';
+
+async function init() {
+  try {
+    var [sitesData, cfg, podStatus, covStatus] = await Promise.all([
+      EOS.api('/publish/api/sites'),
+      EOS.api('/publish/api/config'),
+      EOS.api('/publish/api/podcast-status').catch(function() { return {podcasts:{}}; }),
+      EOS.api('/publish/api/cover-status').catch(function() { return {covers:{}}; })
+    ]);
+
+    allSites = (sitesData && sitesData.sites) || [];
+    activeSiteId = (sitesData && sitesData.active) || 'default';
+    podcastStatus = (podStatus && podStatus.podcasts) || {};
+    coverStatus = (covStatus && covStatus.covers) || {};
+    config = cfg || {};
+    posts = config.sources || [];
+    drafts = config.drafts || [];
+
+    renderSiteTabs();
+
+    // Update header with mode
+    var mode = config.site_mode || 'blog';
+    var modeLabel = mode === 'project' ? 'Project Site' : 'Blog';
+    document.getElementById('source-info').innerHTML =
+      esc(config.source_folder || '?') + ' &bull; ' + esc(config.config?.site_name || 'My Site')
+      + ' <span class="site-mode ' + mode + '">' + modeLabel + '</span>';
+
+    // Stats — show pages + posts breakdown
+    document.getElementById('s-posts').textContent = (config.page_count || 0) + (config.post_count || 0);
+    document.getElementById('s-posts-lbl').textContent =
+      (config.page_count || 0) + ' pages, ' + (config.post_count || 0) + ' posts';
+    var allTags = new Set();
+    posts.forEach(function(p) { (p.tags || []).forEach(function(t) { allTags.add(t); }); });
+    document.getElementById('s-tags').textContent = allTags.size;
+
+    var lb = config.last_build;
+    document.getElementById('s-built').textContent = lb ? timeAgo(lb) : 'Never';
+
+    var ld = config.last_deploy;
+    document.getElementById('s-deployed').textContent = ld ? timeAgo(ld) : 'Never';
+
+    // Enable preview + deploy if we have a built site
+    if (config.last_build_stats && (config.last_build_stats.pages > 0 || config.last_build_stats.posts > 0)) {
+      document.getElementById('btn-preview-site').disabled = false;
+      document.getElementById('btn-deploy').disabled = false;
+      document.getElementById('btn-deploy-firebase').disabled = false;
+    }
+
+    // Show visit button if site has been deployed
+    updateVisitButton();
+
+    renderPosts();
+  } catch(e) {
+    document.getElementById('source-info').textContent = 'Error loading: ' + e.message;
+  }
+}
+
+function renderSiteTabs() {
+  var el = document.getElementById('site-tabs');
+  var mode = config.site_mode || 'blog';
+  var html = allSites.map(function(s) {
+    var isActive = s.id === activeSiteId;
+    var cls = isActive ? 'site-tab active' : 'site-tab';
+    var badge = isActive ? ' <span class="site-mode ' + mode + '">' + (mode === 'project' ? 'Project' : 'Blog') + '</span>' : '';
+    return '<button class="' + cls + '" onclick="switchSite(\'' + esc(s.id) + '\')"'
+      + ' oncontextmenu="event.preventDefault();siteContextMenu(event,\'' + esc(s.id) + '\')">'
+      + esc(s.name || s.id) + badge + '</button>';
+  }).join('');
+  html += '<button class="site-tab-add" onclick="addSite()" title="Add site">+</button>';
+  el.innerHTML = html;
+}
+
+async function switchSite(siteId) {
+  if (siteId === activeSiteId) return;
+  await EOS.post('/publish/api/sites/activate', { site_id: siteId });
+  init();
+}
+
+async function addSite() {
+  EOS_UI.formModal('New Site', [
+    { key: 'name', label: 'Site Name', type: 'text', placeholder: 'My Blog' },
+    { key: 'source_folder', label: 'Source Folder', type: 'text', placeholder: '30_Resources/Published' },
+    { key: 'site_name', label: 'Title (shown on site)', type: 'text', placeholder: 'My Blog' },
+    { key: 'theme', label: 'Theme', type: 'select', options: ['void-dark','warm-dark','nord','soft-light','eos'], value: 'void-dark' },
+  ], async function(data) {
+    var result = await EOS.post('/publish/api/sites', data);
+    if (result.error) { EOS_UI.toast(result.error, false); return; }
+    await EOS.post('/publish/api/sites/activate', { site_id: result.site.id });
+    EOS_UI.toast('Site created: ' + data.name, true);
+    init();
+  });
+}
+
+function siteContextMenu(event, siteId) {
+  // Right-click: delete option (only if more than 1 site)
+  if (allSites.length <= 1) return;
+  var site = allSites.find(function(s) { return s.id === siteId; });
+  EOS_UI.confirm('Delete site "' + (site ? site.name : siteId) + '"?', async function() {
+    await fetch('/publish/api/sites/' + encodeURIComponent(siteId), { method: 'DELETE' });
+    EOS_UI.toast('Site deleted', true);
+    init();
+  });
+}
+
+var _filterBar = null;
+function renderFilterPills() {
+  var cats = [
+    { key: 'published', label: 'Published', count: posts.length },
+    { key: 'drafts', label: 'Drafts', count: drafts.length },
+    { key: 'all', label: 'All', count: posts.length + drafts.length }
+  ];
+  if (!_filterBar) {
+    _filterBar = EOS_UI.filterBar('filter-pills', cats, function(key) {
+      currentFilter = key;
+      renderPosts();
+    }, { includeAll: false, initial: currentFilter });
+  } else {
+    _filterBar.update(cats);
+    _filterBar.setActive(currentFilter);
+  }
+}
+
+function setFilter(key) {
+  currentFilter = key;
+  if (_filterBar) _filterBar.setActive(key);
+  renderPosts();
+}
+
+function visibleItems() {
+  if (currentFilter === 'drafts') return drafts;
+  if (currentFilter === 'all') return drafts.concat(posts);
+  return posts;
+}
+
+function renderPosts() {
+  renderFilterPills();
+  var list = document.getElementById('post-list');
+  var empty = document.getElementById('empty');
+  var items = visibleItems();
+
+  if (!items.length) {
+    list.innerHTML = '';
+    empty.style.display = 'block';
+    if (currentFilter === 'drafts') {
+      document.getElementById('empty-msg').textContent = 'No drafts';
+      document.getElementById('empty-hint').innerHTML = 'Save a post with <code>publish: false</code> to keep it here until it\u2019s ready';
+    } else {
+      document.getElementById('empty-msg').textContent = 'No publishable notes found';
+      document.getElementById('empty-hint').innerHTML = 'Create notes in your source folder with <code>publish: true</code> in frontmatter';
+    }
+    return;
+  }
+  empty.style.display = 'none';
+
+  list.innerHTML = items.map(function(p) {
+    var badges = [];
+    if (p.draft) {
+      badges.push({label: 'Draft', variant: 'status-draft'});
+    } else if (p.type === 'page') {
+      badges.push({label: p.layout === 'landing' ? 'Landing' : 'Page', variant: 'neutral'});
+    }
+    (p.tags || []).forEach(function(t) { badges.push({label: t, variant: 'neutral'}); });
+
+    var publishBtn = p.draft
+      ? '<button class="pi-btn" onclick="publishDraft(\'' + esc(p.path.replace(/\\/g,'/')) + '\')" title="Publish now">&#10004;</button>'
+      : '';
+
+    var actions =
+        (p.draft ? '' : '<button class="pi-btn" onclick="previewPost(\'' + esc(p.slug) + '\')" title="Preview">&#128065;</button>')
+      + '<a class="pi-btn" href="/publish/pages/writer.html?edit=' + encodeURIComponent(p.slug) + '" title="Edit">&#9998;</a>'
+      + publishBtn
+      + (p.type === 'post' && !p.draft ? coverButton(p.slug) : '')
+      + (p.type === 'post' && !p.draft ? podcastButton(p.slug) : '')
+      + '<button class="pi-btn" onclick="EOS.openInViewer(\'' + EOS.escPath(p.relative || p.path) + '\')" title="Open external">&#8599;</button>';
+
+    return EOS_UI.entityCard({
+      title: p.title,
+      badges: badges,
+      body: p.summary ? '<div class="pi-summary">' + esc(p.summary) + '</div>' : undefined,
+      meta: '<span>' + esc(p.date) + ' \u2022 ' + p.reading_time + ' min read</span>',
+      actions: actions,
+      className: p.draft ? 'is-draft' : '',
+    });
+  }).join('');
+}
+
+function publishDraft(path) {
+  EOS_UI.confirm('Publish this draft? It will appear on the site after the next build.', async function() {
+    try {
+      var r = await EOS.post('/publish/api/toggle-publish', { path: path, publish: true });
+      if (r && r.error) { toast(r.error, false); return; }
+      toast('Published \u2014 run Build to update site', true);
+      init();
+    } catch(e) {
+      toast('Failed: ' + e.message, false);
+    }
+  });
+}
+
+async function previewPost(slug) {
+  document.getElementById('preview-title').textContent = 'Loading...';
+  document.getElementById('preview-body').innerHTML = '<div style="color:var(--text-muted)">Rendering...</div>';
+  document.getElementById('overlay').classList.add('open');
+  document.getElementById('preview-panel').classList.add('open');
+
+  try {
+    var data = await EOS.api('/publish/api/preview?slug=' + encodeURIComponent(slug));
+    if (data.error) {
+      document.getElementById('preview-body').innerHTML = '<div style="color:var(--danger)">' + esc(data.error) + '</div>';
+      return;
+    }
+    document.getElementById('preview-title').textContent = data.title;
+    var tagsHtml = (data.tags || []).map(function(t) { return '<span class="eos-badge eos-badge-neutral">' + esc(t) + '</span>'; }).join(' ');
+    document.getElementById('preview-body').innerHTML =
+      '<div style="color:var(--text-muted);font-size:12px;margin-bottom:16px">' + esc(data.date) + ' ' + tagsHtml + '</div>'
+      + '<div class="article">' + data.html + '</div>';
+  } catch(e) {
+    document.getElementById('preview-body').innerHTML = '<div style="color:var(--danger)">Preview failed: ' + esc(e.message) + '</div>';
+  }
+}
+
+function closePreview() {
+  document.getElementById('overlay').classList.remove('open');
+  document.getElementById('preview-panel').classList.remove('open');
+}
+
+function closeAll() {
+  closePreview();
+  closeSettings();
+}
+
+async function doBuild() {
+  var logEl = document.getElementById('log');
+  logEl.style.display = 'block';
+  logEl.textContent = 'Building site...\n';
+  document.getElementById('toolbar-info').textContent = 'Building...';
+
+  try {
+    var result = await EOS.post('/publish/api/build', {});
+    if (result.error) {
+      logEl.textContent += 'ERROR: ' + result.error + '\n';
+      document.getElementById('toolbar-info').textContent = 'Build failed';
+      return;
+    }
+    logEl.textContent += 'Built ' + result.pages + ' pages, ' + result.tags + ' tags, ' + result.images + ' images\n';
+    logEl.textContent += 'Output: ' + result.output + '\n';
+    document.getElementById('toolbar-info').textContent = 'Built ' + result.pages + ' pages';
+    document.getElementById('s-built').textContent = 'Just now';
+    document.getElementById('btn-preview-site').disabled = false;
+    document.getElementById('btn-deploy').disabled = false;
+    document.getElementById('btn-deploy-firebase').disabled = false;
+
+    if (typeof EOS_UI !== 'undefined' && EOS_UI.toast) {
+      EOS_UI.toast('Site built: ' + result.pages + ' pages', true);
+    }
+  } catch(e) {
+    logEl.textContent += 'ERROR: ' + e.message + '\n';
+    document.getElementById('toolbar-info').textContent = 'Build failed';
+  }
+}
+
+async function doDeploy() {
+  if (!config.config?.repo) {
+    openSettings();
+    if (typeof EOS_UI !== 'undefined' && EOS_UI.toast) {
+      EOS_UI.toast('Set a GitHub repo first', false);
+    }
+    return;
+  }
+
+  var logEl = document.getElementById('log');
+  logEl.style.display = 'block';
+  logEl.textContent += '\nDeploying site...\n';
+  document.getElementById('toolbar-info').textContent = 'Deploying...';
+  document.getElementById('btn-deploy').disabled = true;
+
+  try {
+    var result = await EOS.post('/publish/api/deploy', {});
+    if (result.error) {
+      logEl.textContent += 'ERROR: ' + result.error + '\n';
+      document.getElementById('toolbar-info').textContent = 'Deploy failed';
+      document.getElementById('btn-deploy').disabled = false;
+      return;
+    }
+    if (result.status === 'nothing_changed') {
+      logEl.textContent += result.message + '\n';
+      document.getElementById('toolbar-info').textContent = 'Already up to date';
+      document.getElementById('btn-deploy').disabled = false;
+      return;
+    }
+    logEl.textContent += 'Deployed! ' + result.url + '\n';
+    document.getElementById('toolbar-info').innerHTML = '<a href="' + result.url + '" target="_blank" style="color:var(--accent)">' + result.url + '</a>';
+    document.getElementById('s-deployed').textContent = 'Just now';
+    document.getElementById('btn-deploy').disabled = false;
+    updateVisitButton(result.url);
+
+    if (typeof EOS_UI !== 'undefined' && EOS_UI.toast) {
+      EOS_UI.toast('Deployed to ' + result.url, true);
+    }
+  } catch(e) {
+    logEl.textContent += 'ERROR: ' + e.message + '\n';
+    document.getElementById('toolbar-info').textContent = 'Deploy failed';
+    document.getElementById('btn-deploy').disabled = false;
+  }
+}
+
+async function doDeployFirebase() {
+  var logEl = document.getElementById('log');
+  logEl.style.display = 'block';
+  logEl.textContent += '\nDeploying to Firebase...\n';
+  document.getElementById('toolbar-info').textContent = 'Deploying to Firebase...';
+  document.getElementById('btn-deploy-firebase').disabled = true;
+
+  try {
+    var result = await EOS.post('/publish/api/deploy/firebase', {});
+    if (result.error) {
+      logEl.textContent += 'ERROR: ' + result.error + '\n';
+      document.getElementById('toolbar-info').textContent = 'Firebase deploy failed';
+      if (typeof EOS_UI !== 'undefined' && EOS_UI.toast) EOS_UI.toast(result.error, false);
+    } else {
+      logEl.textContent += 'Deployed! ' + result.url + '\n';
+      document.getElementById('toolbar-info').innerHTML = '<a href="' + result.url + '" target="_blank" style="color:var(--accent)">' + result.url + '</a>';
+      document.getElementById('s-deployed').textContent = 'Just now';
+      updateVisitButton(result.url);
+      if (typeof EOS_UI !== 'undefined' && EOS_UI.toast) EOS_UI.toast('Deployed to Firebase: ' + result.url, true);
+    }
+  } catch(e) {
+    logEl.textContent += 'ERROR: ' + e.message + '\n';
+    document.getElementById('toolbar-info').textContent = 'Firebase deploy failed';
+  }
+  document.getElementById('btn-deploy-firebase').disabled = false;
+}
+
+function timeAgo(isoStr) {
+  var d = new Date(isoStr);
+  var diff = (Date.now() - d.getTime()) / 1000;
+  if (diff < 60) return 'Just now';
+  if (diff < 3600) return Math.floor(diff / 60) + 'm ago';
+  if (diff < 86400) return Math.floor(diff / 3600) + 'h ago';
+  return Math.floor(diff / 86400) + 'd ago';
+}
+
+function podcastButton(slug) {
+  var has = podcastStatus[slug];
+  if (has) {
+    return '<button class="pi-btn" onclick="event.stopPropagation();viewPodcast(\'' + esc(slug) + '\')" title="View Podcast" style="color:var(--success)">&#127911;</button>'
+      + '<button class="pi-btn" onclick="event.stopPropagation();generatePodcast(\'' + esc(slug) + '\')" title="Regenerate Podcast" style="font-size:10px">&#8635;</button>';
+  }
+  return '<button class="pi-btn" onclick="event.stopPropagation();generatePodcast(\'' + esc(slug) + '\')" title="Generate Podcast">&#127911;</button>';
+}
+
+function coverButton(slug) {
+  var has = coverStatus[slug];
+  if (has && has.embedded) {
+    return '<button class="pi-btn" onclick="event.stopPropagation();viewCover(\'' + esc(slug) + '\')" title="View Cover (embedded)" style="color:var(--success)">&#127912;</button>'
+      + '<button class="pi-btn" onclick="event.stopPropagation();generateCover(\'' + esc(slug) + '\')" title="Regenerate Cover" style="font-size:10px">&#8635;</button>';
+  }
+  if (has) {
+    // Image exists but not yet approved — amber dot
+    return '<button class="pi-btn" onclick="event.stopPropagation();previewCover(\'' + esc(slug) + '\')" title="Review pending cover" style="color:var(--warning, #d97706)">&#127912;</button>';
+  }
+  return '<button class="pi-btn" onclick="event.stopPropagation();generateCover(\'' + esc(slug) + '\')" title="Generate Cover Image">&#127912;</button>';
+}
+
+function viewCover(slug) {
+  var info = coverStatus[slug];
+  if (!info) return;
+  window.open('/publish/api/site-file?path=media/' + info.file, '_blank');
+}
+
+var lastCoverMeta = {};  // slug -> { summary, image_prompt }
+
+async function generateCover(slug, opts) {
+  opts = opts || {};
+  var logEl = document.getElementById('log');
+  logEl.style.display = 'block';
+  logEl.textContent += '\nGenerating cover image for "' + slug + '"...\n';
+  if (opts.rewrite_brief) {
+    logEl.textContent += 'Rewriting visual brief via art-director agent...\n';
+  } else {
+    logEl.textContent += 'Using summary + image_prompt from frontmatter (or generating if missing)...\n';
+  }
+  logEl.textContent += 'ComfyUI rendering (30-90s)...\n';
+
+  try {
+    var result = await EOS.post('/publish/api/generate-cover', {
+      slug: slug,
+      rewrite_brief: !!opts.rewrite_brief,
+    });
+    if (result.error) {
+      logEl.textContent += 'ERROR: ' + result.error + '\n';
+      if (typeof EOS_UI !== 'undefined' && EOS_UI.toast) EOS_UI.toast(result.error, false);
+      return;
+    }
+    lastCoverMeta[slug] = {
+      summary: result.summary || '',
+      image_prompt: result.image_prompt || '',
+    };
+    if (result.summary) logEl.textContent += 'Summary: ' + result.summary + '\n';
+    if (result.image_prompt) logEl.textContent += 'Image prompt: ' + result.image_prompt + '\n';
+    logEl.textContent += 'Cover ready — review it to approve or reject.\n';
+    coverStatus[slug] = { file: result.cover_file, size_kb: 0, embedded: false };
+    renderPosts();
+    previewCover(slug);
+  } catch(e) {
+    logEl.textContent += 'ERROR: ' + e.message + '\n';
+  }
+}
+
+function previewCover(slug) {
+  var info = coverStatus[slug];
+  if (!info) return;
+  var src = '/publish/api/source-media?file=' + encodeURIComponent(info.file) + '&t=' + Date.now();
+  var meta = lastCoverMeta[slug] || {};
+  var metaHtml = '';
+  if (meta.summary || meta.image_prompt) {
+    metaHtml =
+      '<details style="margin:10px 0 0;font-size:0.85rem;color:var(--text-muted)">' +
+        '<summary style="cursor:pointer">Article metadata used (from frontmatter)</summary>' +
+        '<div style="margin-top:6px;padding:8px;background:var(--bg-alt, rgba(0,0,0,0.03));border-radius:6px">' +
+          (meta.summary ? '<div><strong>summary:</strong> ' + esc(meta.summary) + '</div>' : '') +
+          (meta.image_prompt ? '<div style="margin-top:6px"><strong>image_prompt:</strong> ' + esc(meta.image_prompt) + '</div>' : '') +
+          '<div style="margin-top:8px;font-size:0.8rem;opacity:0.7">Edit these fields in the note itself to guide future regenerations.</div>' +
+        '</div>' +
+      '</details>';
+  }
+  var body =
+    '<div style="text-align:center">' +
+      '<img src="' + src + '" style="max-width:100%;max-height:60vh;border:1px solid var(--border);border-radius:8px;background:var(--bg-alt,#f5f5f5)" alt="Cover preview" ' +
+        'onerror="this.insertAdjacentHTML(\'afterend\',\'<p style=color:var(--text-muted)>Preview unavailable — check the file directly.</p>\');this.style.display=\'none\'">' +
+      '<p style="color:var(--text-muted);font-size:0.85rem;margin:12px 0 0">' +
+        'AI-generated. <strong>Regenerate</strong> reuses the visual brief (new rendering, same concept). ' +
+        '<strong>Rewrite brief</strong> asks the art-director for a new concept.' +
+      '</p>' +
+      metaHtml +
+    '</div>' +
+    '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:20px;flex-wrap:wrap">' +
+      '<button class="eos-btn" onclick="rejectCover(\'' + esc(slug) + '\')">&#10005; Reject</button>' +
+      '<button class="eos-btn" onclick="rewriteBrief(\'' + esc(slug) + '\')" title="Ask the art-director for a new visual concept">&#9998; Rewrite brief</button>' +
+      '<button class="eos-btn" onclick="regenerateCover(\'' + esc(slug) + '\')" title="Same concept, new rendering">&#8635; Regenerate</button>' +
+      '<button class="eos-btn eos-btn-primary" onclick="approveCover(\'' + esc(slug) + '\')">&#10003; Approve &amp; Embed</button>' +
+    '</div>';
+  EOS_UI.modal({ title: 'Cover preview — ' + slug, body: body, width: '680px' });
+}
+
+async function rewriteBrief(slug) {
+  EOS_UI.closeModal();
+  await generateCover(slug, { rewrite_brief: true });
+}
+
+async function approveCover(slug) {
+  try {
+    var result = await EOS.post('/publish/api/approve-cover', { slug: slug });
+    if (result.error) {
+      if (EOS_UI.toast) EOS_UI.toast(result.error, false);
+      return;
+    }
+    coverStatus[slug] = { file: result.cover_file, size_kb: 0, embedded: true };
+    EOS_UI.closeModal();
+    renderPosts();
+    if (EOS_UI.toast) EOS_UI.toast('Cover embedded. Click Build to publish.', true);
+  } catch(e) {
+    if (EOS_UI.toast) EOS_UI.toast('Failed: ' + e.message, false);
+  }
+}
+
+async function rejectCover(slug) {
+  try {
+    var result = await EOS.post('/publish/api/reject-cover', { slug: slug });
+    if (result.error) {
+      if (EOS_UI.toast) EOS_UI.toast(result.error, false);
+      return;
+    }
+    delete coverStatus[slug];
+    EOS_UI.closeModal();
+    renderPosts();
+    if (EOS_UI.toast) EOS_UI.toast('Cover discarded.', true);
+  } catch(e) {
+    if (EOS_UI.toast) EOS_UI.toast('Failed: ' + e.message, false);
+  }
+}
+
+async function regenerateCover(slug) {
+  EOS_UI.closeModal();
+  await generateCover(slug);
+}
+
+function viewPodcast(slug) {
+  var info = podcastStatus[slug];
+  if (!info) return;
+  // Open the post page which has the embedded podcast
+  window.open('/publish/api/site-file?path=posts/' + slug + '.html', '_blank');
+}
+
+function generatePodcast(slug) {
+  function _doGenerate() {
+    var logEl = document.getElementById('log');
+    logEl.style.display = 'block';
+    logEl.textContent += '\nGenerating slideshow podcast for "' + slug + '"...\n';
+    logEl.textContent += 'Steps: script → voice synthesis → scene images → slideshow\n';
+    logEl.textContent += 'This may take 3-8 minutes...\n';
+    EOS.post('/publish/api/generate-podcast', {
+      slug: slug, language: 'en', duration: 'auto', video: true
+    }).then(function(result) {
+      if (result.error) { logEl.textContent += 'ERROR: ' + result.error + '\n'; return; }
+      logEl.textContent += 'Podcast ready! ' + result.segments + ' segments\n';
+      if (result.has_slideshow) logEl.textContent += 'Slideshow: ' + result.scene_images + ' scene images\n';
+      if (result.local_audio) logEl.textContent += 'Audio: ' + result.local_audio + '\n';
+      if (result.auto_embedded) logEl.textContent += 'Auto-embedded into post. Click Build to update site.\n';
+      EOS_UI.toast('Podcast generated! Click Build to publish.', true);
+    }).catch(function(e) { logEl.textContent += 'ERROR: ' + e.message + '\n'; });
+  }
+  if (podcastStatus[slug]) {
+    EOS_UI.confirm('A podcast already exists for this post. Regenerate?', _doGenerate);
+  } else {
+    _doGenerate();
+  }
+}
+
+async function loadSuggestions() {
+  var list = document.getElementById('suggestions-list');
+  list.innerHTML = '<div style="padding:12px;color:var(--text-muted);font-size:12px">Scanning vault...</div>';
+
+  try {
+    var result = await EOS.post('/publish/api/suggest-topics', {});
+    var topics = result.topics || [];
+    if (!topics.length) {
+      list.innerHTML = EOS_UI.emptyState({message:'No suggestions found. Click Refresh to try again.'});
+      return;
+    }
+
+    var chipHtml = (result.provenance && result.provenance.mode) ? '<div style="grid-column:1/-1;margin-bottom:4px">' + EOS_UI.provenance(result.provenance) + '</div>' : '';
+    list.innerHTML = chipHtml + topics.map(function(t) {
+      var path = encodeURIComponent(t.path || '');
+      return '<a class="suggest-card" href="/publish/pages/writer.html?load=' + path + '">'
+        + '<div class="suggest-title">' + esc(t.title) + '</div>'
+        + '<div class="suggest-pitch">' + esc(t.pitch || '') + '</div>'
+        + '<span class="suggest-type">' + esc(t.type || 'post') + '</span>'
+        + '</a>';
+    }).join('');
+  } catch(e) {
+    list.innerHTML = '<div style="padding:12px;color:var(--text-muted);font-size:12px">Could not load suggestions. Click Refresh to try again.</div>';
+  }
+}
+
+function previewSite() {
+  window.open('/publish/api/site-file?path=index.html', '_blank');
+}
+
+function updateVisitButton(url) {
+  var btn = document.getElementById('btn-visit');
+  // Use provided URL, or derive from config
+  if (!url) {
+    var c = config.config || {};
+    var domain = c.domain;
+    var repo = c.repo;
+    if (domain && config.last_deploy) {
+      url = 'https://' + domain;
+    } else if (repo && config.last_deploy) {
+      var parts = repo.split('/');
+      url = 'https://' + parts[0] + '.github.io/' + parts[1];
+    }
+  }
+  if (url) {
+    btn.href = url;
+    btn.style.display = '';
+  } else {
+    btn.style.display = 'none';
+  }
+}
+
+function esc(s) { var d = document.createElement('div'); d.textContent = s || ''; return d.innerHTML; }
+
+// --- Settings (now edits active site profile) ---
+
+async function openSettings() {
+  document.getElementById('overlay').classList.add('open');
+  document.getElementById('settings-panel').classList.add('open');
+
+  // Load current values from active site profile
+  var site = allSites.find(function(s) { return s.id === activeSiteId; }) || {};
+  document.getElementById('sf-site-label').textContent = site.name || site.id || 'Site';
+  document.getElementById('sf-name').value = site.name || '';
+  document.getElementById('sf-site-name').value = site.site_name || '';
+  document.getElementById('sf-site-desc').value = site.site_description || '';
+  document.getElementById('sf-author').value = site.author || '';
+  document.getElementById('sf-source').value = site.source_folder || '30_Resources/Published';
+  document.getElementById('sf-theme').value = site.theme || 'void-dark';
+  document.getElementById('sf-repo').value = site.repo || '';
+  document.getElementById('sf-bio').value = site.author_bio || '';
+  document.getElementById('sf-social').value = site.social_links || '';
+  document.getElementById('sf-domain').value = site.domain || '';
+  document.getElementById('sf-favicon').value = site.favicon || '';
+  document.getElementById('sf-search-engines').checked = site.search_engines !== false;
+  var analytics = site.analytics || {};
+  document.getElementById('sf-analytics-enabled').checked = !!analytics.enabled;
+  document.getElementById('sf-analytics-url').value = analytics.collector_url || '';
+  document.getElementById('sf-analytics-link').href = '/web-analytics/#' + encodeURIComponent(site.id || '');
+
+  // Show mode hint
+  var mode = config.site_mode || 'blog';
+  var hint = document.getElementById('sf-mode-hint');
+  if (mode === 'project') {
+    hint.innerHTML = '<strong>Mode: Project Site</strong> &#8212; A page with <code>layout: landing</code> in frontmatter was detected. The homepage shows a hero with feature cards. Other pages get a docs sidebar.<br><br>To switch to blog mode, remove <code>layout: landing</code> from the page frontmatter.';
+  } else {
+    hint.innerHTML = '<strong>Mode: Blog</strong> &#8212; The homepage shows featured posts in a card grid.<br><br>To switch to project mode, create a page with <code>layout: landing</code> in its frontmatter. Sections become feature cards, links become CTA buttons.';
+  }
+}
+
+function closeSettings() {
+  document.getElementById('overlay').classList.remove('open');
+  document.getElementById('settings-panel').classList.remove('open');
+}
+
+async function saveSettings() {
+  var data = {
+    name: document.getElementById('sf-name').value.trim() || 'Untitled',
+    site_name: document.getElementById('sf-site-name').value.trim(),
+    site_description: document.getElementById('sf-site-desc').value.trim(),
+    author: document.getElementById('sf-author').value.trim(),
+    source_folder: document.getElementById('sf-source').value.trim() || '30_Resources/Published',
+    theme: document.getElementById('sf-theme').value,
+    repo: document.getElementById('sf-repo').value.trim(),
+    author_bio: document.getElementById('sf-bio').value.trim(),
+    social_links: document.getElementById('sf-social').value.trim(),
+    domain: document.getElementById('sf-domain').value.trim(),
+    favicon: document.getElementById('sf-favicon').value.trim(),
+    search_engines: document.getElementById('sf-search-engines').checked,
+    analytics: {
+      enabled: document.getElementById('sf-analytics-enabled').checked,
+      collector_url: document.getElementById('sf-analytics-url').value.trim(),
+    },
+  };
+
+  try {
+    var resp = await fetch('/publish/api/sites/' + encodeURIComponent(activeSiteId), {
+      method: 'PUT', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(data)
+    });
+    var result = await resp.json();
+    if (result && result.error) {
+      EOS_UI.toast(result.error, false);
+      return;
+    }
+    closeSettings();
+    if (typeof EOS_UI !== 'undefined' && EOS_UI.toast) {
+      EOS_UI.toast('Site settings saved', true);
+    }
+    init();
+  } catch(e) {
+    EOS_UI.toast('Failed to save: ' + e.message, false);
+  }
+}
+
+// App Settings slide-out (shared helper) — global schema from manifest
+var _appSettings = EOS_UI.settingsPanel({
+    id: 'app-settings-panel',
+    title: 'Publish — App Settings',
+    fields: [
+        {key: 'publish.active_site', label: 'Active Site Profile', type: 'text', default: 'default',
+         hint: 'The site profile ID shown by default. Usually switched by clicking site tabs.'},
+    ],
+});
+function openAppSettings() { _appSettings.open(); }
+
+// Keyboard shortcut
+document.addEventListener('keydown', function(e) {
+  if (e.key === 'Escape') closeAll();
+});
+
+// Hands-Free gesture override — ILoveYou triggers a build. "I love this draft
+// enough to ship it." The binding only applies while on /publish/.
+if (EOS.handsFree) {
+    EOS.handsFree.registerGesture('ILoveYou', function() { doBuild(); }, 'Build site');
+}
+
+init();
+</script>
+</body>
+</html>

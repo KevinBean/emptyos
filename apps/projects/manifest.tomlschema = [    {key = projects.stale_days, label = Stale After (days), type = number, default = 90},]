@@ -1,0 +1,5 @@
+
+[provides.settings]
+schema = [
+    {key = "projects.stale_days", label = "Stale After (days)", type = "number", default = 90},
+]

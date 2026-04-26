@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>Quotes - EmptyOS</title>
+<link rel="stylesheet" href="/static/theme.css">
+<link rel="stylesheet" href="/static/eos-components.css">
+<style>
+* { margin:0; padding:0; box-sizing:border-box }
+body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif; background:var(--bg); color:var(--text); min-height:100dvh; padding:env(safe-area-inset-top) 16px calc(env(safe-area-inset-bottom) + 80px); -webkit-font-smoothing:antialiased; overscroll-behavior-y:contain; display:flex; flex-direction:column }
+
+.quote-hero { display:flex; flex-direction:column; align-items:center; justify-content:center; min-height:50vh; text-align:center; padding:24px; animation:fadeDown 0.6s ease }
+.quote-text { font-size:22px; font-weight:300; line-height:1.6; color:var(--text-heading); max-width:480px; font-style:italic; transition:opacity 0.3s }
+.quote-text::before { content:'"'; font-size:48px; color:var(--accent); display:block; margin-bottom:-8px; font-style:normal; line-height:1 }
+.quote-author { font-size:14px; color:var(--text-secondary); margin-top:16px; font-weight:500; letter-spacing:0.5px }
+.quote-author::before { content:'-- '; color:var(--accent) }
+
+.quote-actions { display:flex; gap:12px; margin-top:32px; justify-content:center }
+.qa-btn { width:48px; height:48px; border-radius:50%; border:1px solid var(--border); background:var(--bg-card); color:var(--text-secondary); font-size:20px; cursor:pointer; display:flex; align-items:center; justify-content:center; transition:all 0.2s }
+.qa-btn:active { transform:scale(0.9); border-color:var(--accent) }
+.qa-btn.favorited { color:#f59e0b; border-color:#f59e0b; background:rgba(245,158,11,0.1) }
+.qa-btn.refresh:active { transform:scale(0.9) rotate(180deg) }
+
+.divider { width:60px; height:1px; background:var(--border); margin:24px auto }
+
+.history-section { flex:1; animation:cardIn 0.35s ease 0.2s both }
+.fav-count { font-size:12px; color:var(--text-muted); margin-left:8px }
+.history-item { display:flex; align-items:center; gap:12px; padding:12px 0; border-bottom:1px solid var(--border); cursor:pointer; transition:background 0.1s }
+.history-item:last-child { border-bottom:none }
+.history-item:active { background:color-mix(in srgb,var(--accent) 6%,transparent) }
+.hi-star { font-size:16px; color:var(--text-muted); flex-shrink:0 }
+.hi-star.fav { color:#f59e0b }
+.hi-text { flex:1; font-size:13px; color:var(--text-secondary); overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
+</style>
+</head>
+<body>
+<script src="/static/realtime.js"></script>
+<script src="/static/eos.js"></script>
+<script src="/static/eos-components.js"></script>
+<script>EOS.nav('quotes');
+if(window.EOS&&EOS.registerActions){EOS.registerActions({},[],{description:"Daily inspirational quote — random pick from your saved collection.",quickActions:[{label:"Reflect on this",msg:"Help me reflect on the quote currently shown. What does it mean for me today?"},{label:"Related quotes",msg:"Suggest related quotes on similar themes."},{label:"New quote",msg:"Give me another quote."}]});}
+</script>
+
+<div class="page">
+    <!-- Main quote display -->
+    <div class="quote-hero">
+        <div class="quote-text" id="quote-text">...</div>
+        <div class="quote-author" id="quote-author"></div>
+        <div class="quote-actions">
+            <button class="qa-btn" id="fav-btn" onclick="toggleFavorite()" title="Favorite">&#9734;</button>
+            <button class="qa-btn refresh" onclick="loadQuote()" title="New quote">&#x21bb;</button>
+            <button class="qa-btn" onclick="openAppSettings()" title="Settings">&#9881;</button>
+        </div>
+    </div>
+
+    <div class="divider"></div>
+
+    <!-- History / Favorites -->
+    <div class="history-section">
+        <div class="eos-section-title">
+            Recent Quotes <span class="fav-count" id="fav-count"></span>
+        </div>
+        <div id="history"></div>
+    </div>
+</div>
+
+<script>
+var currentQuote = '';
+var favorites = JSON.parse(localStorage.getItem('eos-quotes-fav') || '[]');
+var quoteHistory = JSON.parse(localStorage.getItem('eos-quotes-history') || '[]');
+
+function parseQuote(raw) {
+    var parts = (raw || '').split(' - ');
+    if (parts.length >= 2) {
+        var author = parts.pop().trim();
+        return { text: parts.join(' - ').trim(), author: author };
+    }
+    return { text: raw, author: '' };
+}
+
+async function loadQuote() {
+    var textEl = document.getElementById('quote-text');
+    textEl.style.opacity = '0.3';
+    try {
+        var data = await EOS.api('/quotes/api/quote');
+        currentQuote = data.quote || '';
+        var q = parseQuote(currentQuote);
+        textEl.textContent = q.text;
+        document.getElementById('quote-author').textContent = q.author;
+        textEl.style.opacity = '1';
+
+        // Add to history
+        if (currentQuote && !quoteHistory.some(function(h) { return h.text === currentQuote; })) {
+            quoteHistory.unshift({ text: currentQuote, timestamp: new Date().toISOString(), fav: false });
+            if (quoteHistory.length > 50) quoteHistory = quoteHistory.slice(0, 50);
+            localStorage.setItem('eos-quotes-history', JSON.stringify(quoteHistory));
+            renderHistory();
+        }
+
+        updateFavButton();
+    } catch(e) {
+        textEl.textContent = 'The OS itself is empty. You fill it.';
+        document.getElementById('quote-author').textContent = 'EmptyOS';
+        textEl.style.opacity = '1';
+    }
+}
+
+function toggleFavorite() {
+    if (!currentQuote) return;
+    var idx = favorites.indexOf(currentQuote);
+    if (idx >= 0) {
+        favorites.splice(idx, 1);
+    } else {
+        favorites.push(currentQuote);
+    }
+    localStorage.setItem('eos-quotes-fav', JSON.stringify(favorites));
+
+    // Update history entry
+    var hi = quoteHistory.find(function(h) { return h.text === currentQuote; });
+    if (hi) hi.fav = idx < 0;
+    localStorage.setItem('eos-quotes-history', JSON.stringify(quoteHistory));
+
+    updateFavButton();
+    renderHistory();
+}
+
+function updateFavButton() {
+    var btn = document.getElementById('fav-btn');
+    var isFav = favorites.indexOf(currentQuote) >= 0;
+    btn.classList.toggle('favorited', isFav);
+    btn.innerHTML = isFav ? '&#9733;' : '&#9734;';
+}
+
+function renderHistory() {
+    var el = document.getElementById('history');
+    var favCount = favorites.length;
+    document.getElementById('fav-count').textContent = favCount ? favCount + ' favorited' : '';
+
+    if (!quoteHistory.length) { el.innerHTML = '<div class="eos-empty">No quotes yet</div>'; return; }
+    el.innerHTML = quoteHistory.map(function(h) {
+        var isFav = favorites.indexOf(h.text) >= 0;
+        var q = parseQuote(h.text);
+        return '<div class="history-item" onclick="showFromHistory(\'' + escAttr(h.text.replace(/'/g, "\\'")) + '\')">' +
+            '<span class="hi-star ' + (isFav ? 'fav' : '') + '">' + (isFav ? '&#9733;' : '&#9734;') + '</span>' +
+            '<span class="hi-text">' + esc(q.text) + '</span>' +
+            '</div>';
+    }).join('');
+}
+
+function showFromHistory(raw) {
+    currentQuote = raw;
+    var q = parseQuote(raw);
+    document.getElementById('quote-text').textContent = q.text;
+    document.getElementById('quote-author').textContent = q.author;
+    updateFavButton();
+    window.scrollTo({top: 0, behavior: 'smooth'});
+}
+
+// App Settings slide-out (shared helper)
+var _appSettings = EOS_UI.settingsPanel({
+    id: 'app-settings-panel',
+    title: 'Quotes Settings',
+    fields: [
+        {key: 'quotes.auto_refresh', label: 'New Quote Daily', type: 'boolean', default: true,
+         hint: 'Auto-emits quotes:shown once a day.'},
+    ],
+});
+function openAppSettings() { _appSettings.open(); }
+
+// Init
+loadQuote();
+renderHistory();
+</script>
+</body>
+</html>

@@ -1,0 +1,13 @@
+[plugin]
+id = "applio"
+name = "Applio"
+version = "1.0.0"
+description = "AI voice conversion via Applio (port 6969)"
+
+[plugin.entry]
+module = "plugin"
+class = "ApplioPlugin"
+
+[provides]
+services = ["applio"]
+tags = ["audio", "voice-conversion"]

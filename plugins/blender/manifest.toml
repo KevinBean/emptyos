@@ -1,0 +1,13 @@
+[plugin]
+id = "blender"
+name = "Blender"
+version = "1.0.0"
+description = "3D modeling, rendering, and animation via Blender"
+
+[plugin.entry]
+module = "plugin"
+class = "BlenderPlugin"
+
+[provides]
+services = ["blender"]
+tags = ["3d", "gpu", "render", "animation"]

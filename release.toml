@@ -1,0 +1,194 @@
+# EmptyOS Release Manifest
+# Defines distribution tiers and packaging rules.
+#
+# Usage: python scripts/package-release.py <tier> [--check] [--platform=<name>]
+
+[release]
+version = "0.2.2"
+
+# ── Platforms ─────────────────────────────────────────────────
+# Named deployment profiles. Plugins declare compatibility in
+# their manifest [platforms].supports = [...] array. Tiers with
+# target_platform auto-filter incompatible plugins at package
+# time. CLI --platform=<name> overrides the tier's target.
+
+[platforms.laptop]
+description = "Local dev machine — GPU, camera, mic, desktop apps"
+caps = ["gpu", "camera", "mic", "desktop"]
+
+[platforms.vps-cpu]
+description = "Cloud VPS, CPU only (Hetzner CX23, DO $6 droplet)"
+caps = []
+
+[platforms.vps-gpu]
+description = "Cloud GPU droplet (DO GPU, RunPod, Lambda)"
+caps = ["gpu"]
+
+[platforms.docker]
+description = "Container, no hardware assumptions"
+caps = []
+
+# ── Tiers ─────────────────────────────────────────────────────
+
+[tiers.core]
+description = "Minimum OS — vault basics, task management, search, generic home"
+apps = [
+    "quick-action",
+    "note",
+    "task",
+    "link",
+    "search",
+    "settings",
+    "system-log",
+    "run",
+    "hub",
+]
+plugins = [
+    "health",
+    "notifications",
+]
+skills = []
+
+[tiers.demo]
+description = "VPS showcase — core + narrative apps, cloud LLM only"
+extends = "core"
+target_platform = "vps-cpu"
+apps = [
+    "assistant",
+    "boards",
+    "focus",
+    "journal",
+    "projects",
+    "publish",
+    "quotes",
+    "reactor",
+]
+plugins = [
+    "ollama",
+]
+skills = []
+
+[tiers.standard]
+description = "Full community OS — productivity, AI, creative (end-user value)"
+extends = "core"
+apps = [
+    "agent",
+    "app-analytics",
+    "assistant",
+    "billing",
+    "boards",
+    "calendar",
+    "canvas",
+    "dictionary",
+    "expense",
+    "focus",
+    "gesture",
+    "geocode",
+    "git",
+    "github-connector",
+    "hands-free",
+    "journal",
+    "music-library",
+    "people",
+    "projects",
+    "providers",
+    "publish",
+    "quotes",
+    "reactor",
+    "reports",
+    "routing",
+    "tour",
+    "voice-assistant",
+    "weather",
+]
+plugins = [
+    "ollama",
+    "comfyui",
+    "voice-api",
+    "edge-tts",
+    "applio",
+    "blender",
+    "telegram",
+    "obsidian",
+    "global-hotkey",
+    "system-tray",
+    "webcam",
+]
+skills = [
+    "vault-cleanup-studio",
+    "vault-journal-planner",
+    "vault-knowledge-synthesis",
+    "vault-link-index",
+    "vault-moc-manager",
+    "vault-note-factory",
+    "vault-obsidian-format",
+    "vault-semantic-search",
+    "vault-task-aggregator",
+    "dev-app-optimizer",
+    "dev-new-app",
+    "dev-project-builder",
+    "tool-pdf-reader",
+    "tool-word-document",
+    "tool-google-maps",
+    "tool-comfyui-image",
+    "tool-blender-cable-routing",
+    "tool-atp-emtp",
+]
+
+[tiers.dev]
+description = "Meta / developer tooling — extends standard with app-gen, benchmarks, release tooling"
+extends = "standard"
+apps = [
+    "app-gen",
+    "model-bench",
+    "release",
+    "tests",
+    "tmpl",
+    "web-analytics",
+]
+plugins = []
+skills = []
+
+# ── Always included (platform layer) ─────────────────────────
+
+[include]
+paths = [
+    "emptyos/",
+    "emptyos.example.toml",
+    "pyproject.toml",
+    "release.toml",
+    ".eos-personal",
+    ".eos-branding",
+    ".gitignore",
+    ".github/",
+    "scripts/check-personal.py",
+    "scripts/check-branding.py",
+    "restart.bat",
+    "service.bat",
+    "tests/",
+    "docs/DESIGN.md",
+    "docs/APPS.md",
+    "docs/GETTING-STARTED.md",
+    "docs/APP-DEVELOPMENT.md",
+    "CLAUDE.md",
+    "README.md",
+    "LICENSE",
+]
+
+# ── Never included ────────────────────────────────────────────
+
+[exclude]
+patterns = [
+    "apps/personal/",
+    "engines/personal/",
+    "data/",
+    "emptyos.toml",
+    ".claude/vault-connection.json",
+    ".claude/settings.local.json",
+    "boot.vbs",
+    "registry.json",
+    "emptyos_test.log",
+    "*.pyc",
+    "__pycache__/",
+    ".claude/skills/",
+]

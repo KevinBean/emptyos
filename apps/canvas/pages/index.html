@@ -1,0 +1,1392 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Canvas - EmptyOS</title>
+<link rel="stylesheet" href="/static/theme.css">
+<link rel="stylesheet" href="/static/eos-components.css">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --canvas-grid: var(--border);
+    --node-bg: var(--bg-card);
+    --node-border: var(--border);
+    --node-shadow: 0 4px 20px var(--shadow);
+    --node-focus: var(--accent);
+    --edge-color: var(--text-muted);
+    --edge-active: var(--accent);
+  }
+
+  body { margin: 0; overflow: hidden; background: var(--bg); color: var(--text); }
+
+  #eos-page {
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 0;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .toolbar {
+    position: absolute;
+    top: 70px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 100;
+    background: var(--bg-card);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 8px 12px;
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    box-shadow: 0 4px 24px var(--shadow);
+    max-width: calc(100vw - 40px);
+    flex-wrap: nowrap;
+  }
+
+  .toolbar select, .toolbar input[type="text"] {
+    background: var(--bg-input);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 8px 12px;
+    border-radius: 999px;
+    outline: none;
+    font-size: 13px;
+    transition: border-color 0.2s;
+    font-family: inherit;
+  }
+  .toolbar select { min-width: 140px; max-width: 200px; cursor: pointer; }
+  .toolbar input[type="text"] { width: 140px; }
+  .toolbar select:focus, .toolbar input[type="text"]:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 15%, transparent);
+  }
+
+  .toolbar .btn {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    color: var(--text-secondary);
+    padding: 8px 16px;
+    border-radius: 999px;
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 500;
+    transition: border-color 0.2s, color 0.2s, transform 0.15s, box-shadow 0.2s;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    box-shadow: 0 1px 3px var(--shadow);
+    white-space: nowrap;
+  }
+  .toolbar .btn:hover:not(:disabled) {
+    border-color: var(--accent);
+    color: var(--accent);
+    transform: translateY(-1px);
+  }
+  .toolbar .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+  .toolbar .btn.primary {
+    background: var(--accent);
+    color: #fff;
+    border: none;
+    box-shadow: 0 2px 10px color-mix(in srgb, var(--accent) 30%, transparent);
+  }
+  .toolbar .btn.primary:hover:not(:disabled) { filter: brightness(1.1); color: #fff; }
+  .toolbar .sep { width: 1px; height: 18px; background: var(--border); margin: 0 2px; }
+
+  .save-status {
+    font-size: 12px;
+    color: var(--text-muted);
+    padding: 0 8px;
+    min-width: 70px;
+    text-align: center;
+    white-space: nowrap;
+  }
+  .save-status.dirty { color: var(--warning, #fab005); }
+  .save-status.saved { color: var(--success, #40c057); }
+  .save-status.saving { color: var(--accent); }
+  .save-status.error  { color: var(--danger, #fa5252); }
+
+  .viewport {
+    flex: 1;
+    position: relative;
+    overflow: hidden;
+    cursor: grab;
+    background-image: radial-gradient(var(--canvas-grid) 1px, transparent 1px);
+    background-size: 40px 40px;
+  }
+  .viewport:active { cursor: grabbing; }
+
+  .canvas {
+    position: absolute;
+    top: 0; left: 0;
+    width: 0; height: 0;
+    transform-origin: 0 0;
+  }
+
+  .edges-layer {
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    overflow: visible;
+    pointer-events: none;
+    z-index: 1;
+  }
+  .edge-path {
+    fill: none;
+    stroke: var(--edge-color);
+    stroke-width: 3;
+    stroke-linecap: round;
+    transition: stroke 0.2s;
+  }
+  .edge-marker-default { fill: var(--edge-color); }
+  .edge-marker-active  { fill: var(--edge-active); }
+  .edge-path.active {
+    stroke: var(--edge-active);
+    stroke-dasharray: 8 8;
+    animation: dash 1s linear infinite;
+  }
+  @keyframes dash { to { stroke-dashoffset: -16; } }
+
+  .node {
+    position: absolute;
+    background: var(--node-bg);
+    border: 1px solid var(--node-border);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--node-shadow);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    display: flex;
+    flex-direction: column;
+    z-index: 2;
+    transition: box-shadow 0.2s, border-color 0.2s;
+    user-select: none;
+  }
+  .node.color-blue { --node-bg: color-mix(in srgb, #4dabf7 10%, var(--bg-card)); --node-focus: #4dabf7; --node-border: color-mix(in srgb, #4dabf7 30%, transparent); }
+  .node.color-green { --node-bg: color-mix(in srgb, #40c057 10%, var(--bg-card)); --node-focus: #40c057; --node-border: color-mix(in srgb, #40c057 30%, transparent); }
+  .node.color-yellow { --node-bg: color-mix(in srgb, #fab005 10%, var(--bg-card)); --node-focus: #fab005; --node-border: color-mix(in srgb, #fab005 30%, transparent); }
+  .node.color-red { --node-bg: color-mix(in srgb, #fa5252 10%, var(--bg-card)); --node-focus: #fa5252; --node-border: color-mix(in srgb, #fa5252 30%, transparent); }
+  .node.color-purple { --node-bg: color-mix(in srgb, #be4bdb 10%, var(--bg-card)); --node-focus: #be4bdb; --node-border: color-mix(in srgb, #be4bdb 30%, transparent); }
+
+  .node:hover { border-color: var(--border-strong); }
+  .node.selected {
+    border-color: var(--node-focus);
+    box-shadow: 0 0 0 1px var(--node-focus), var(--node-shadow);
+    z-index: 3;
+  }
+
+  .node-header {
+    height: 28px;
+    background: color-mix(in srgb, var(--text) 5%, transparent);
+    border-radius: calc(var(--radius-lg) - 0px) calc(var(--radius-lg) - 0px) 0 0;
+    cursor: grab;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    padding: 0 12px;
+    border-bottom: 1px solid var(--border);
+  }
+  .node-header:active { cursor: grabbing; }
+
+  .node-colors { display: none; gap: 8px; margin-right: auto; }
+  .node:hover .node-colors, .node.selected .node-colors { display: flex; }
+  .color-dot {
+    width: 12px; height: 12px; border-radius: 50%; cursor: pointer;
+    border: 1px solid color-mix(in srgb, var(--text) 20%, transparent);
+    transition: transform 0.1s;
+  }
+  .color-dot:hover { transform: scale(1.2); }
+  .color-dot.default { background: var(--text-muted); }
+  .color-dot.blue { background: #4dabf7; }
+  .color-dot.green { background: #40c057; }
+  .color-dot.yellow { background: #fab005; }
+  .color-dot.red { background: #fa5252; }
+  .color-dot.purple { background: #be4bdb; }
+
+  .node-spark {
+    width: 20px; height: 20px;
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer; opacity: 0; font-size: 13px;
+    transition: opacity 0.2s, transform 0.2s;
+    margin-right: 8px;
+  }
+  .node:hover .node-spark, .node.selected .node-spark { opacity: 1; }
+  .node-spark:hover { transform: scale(1.3); }
+  @keyframes pulse {
+    0% { transform: scale(1); } 50% { transform: scale(1.3); } 100% { transform: scale(1); }
+  }
+
+  .node-delete {
+    width: 12px; height: 12px;
+    background: var(--danger);
+    border-radius: 50%;
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity 0.2s;
+  }
+  .node:hover .node-delete, .node.selected .node-delete { opacity: 1; }
+
+  .node-content { flex: 1; padding: 12px; overflow: hidden; position: relative; }
+
+  .node-prov {
+    position: absolute;
+    top: 6px;
+    left: 8px;
+    z-index: 4;
+    pointer-events: none;
+    opacity: 0.85;
+  }
+  .node-textarea {
+    width: 100%; height: 100%;
+    background: transparent;
+    border: none;
+    color: var(--text);
+    resize: none;
+    font-family: inherit;
+    font-size: 14px;
+    line-height: 1.5;
+    outline: none;
+  }
+
+  /* Vault-note nodes — linked to a real vault file */
+  .node.type-vault_note .node-content {
+    display: flex; flex-direction: column; gap: 8px;
+    padding: 12px 12px 8px;
+  }
+  .node-vault-title {
+    font-weight: 600; font-size: 13px; color: var(--text);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .node-vault-section { font-size: 11px; color: var(--text-muted); }
+  .node-vault-body {
+    flex: 1; overflow: hidden; font-size: 12px; line-height: 1.4;
+    color: var(--text-secondary); white-space: pre-wrap;
+  }
+  .node-vault-actions { font-size: 11px; color: var(--text-muted); }
+  .node-vault-actions a { margin-right: 4px; }
+
+  /* ✨ mini-menu (brainstorm / critique / next_steps) */
+  .node-spark-menu {
+    position: absolute; z-index: 100;
+    background: var(--bg-card); border: 1px solid var(--border);
+    border-radius: var(--radius); box-shadow: 0 6px 20px var(--shadow);
+    padding: 4px; min-width: 140px;
+  }
+  .node-spark-menu button {
+    display: block; width: 100%; text-align: left;
+    background: transparent; border: none; color: var(--text);
+    padding: 8px 12px; border-radius: 6px; cursor: pointer; font-size: 13px;
+  }
+  .node-spark-menu button:hover { background: color-mix(in srgb, var(--accent) 12%, transparent); }
+
+  /* Vault-drop overlay */
+  .vault-drop-hint {
+    position: absolute; inset: 0; z-index: 200;
+    background: color-mix(in srgb, var(--accent) 8%, transparent);
+    border: 2px dashed var(--accent);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 16px; color: var(--accent); pointer-events: none;
+    opacity: 0; transition: opacity 0.15s;
+  }
+  .vault-drop-hint.active { opacity: 1; }
+
+  .handle {
+    position: absolute;
+    width: 12px; height: 12px;
+    background: var(--node-border);
+    border: 2px solid var(--node-bg);
+    border-radius: 50%;
+    z-index: 4;
+    cursor: crosshair;
+    transition: background 0.2s, transform 0.2s;
+    opacity: 0;
+  }
+  .node:hover .handle, .node.selected .handle { opacity: 1; }
+  .handle:hover { background: var(--node-focus); transform: scale(1.2); }
+  .handle.top { top: -6px; left: calc(50% - 6px); }
+  .handle.right { right: -6px; top: calc(50% - 6px); }
+  .handle.bottom { bottom: -6px; left: calc(50% - 6px); }
+  .handle.left { left: -6px; top: calc(50% - 6px); }
+
+  .resizer {
+    position: absolute;
+    bottom: 0; right: 0;
+    width: 16px; height: 16px;
+    cursor: se-resize;
+    z-index: 5;
+  }
+  .resizer::after {
+    content: '';
+    position: absolute;
+    bottom: 4px; right: 4px;
+    width: 6px; height: 6px;
+    border-right: 2px solid var(--border-strong);
+    border-bottom: 2px solid var(--border-strong);
+  }
+
+  .minimap {
+    position: absolute;
+    bottom: 20px;
+    right: 20px;
+    width: 200px;
+    height: 150px;
+    background: color-mix(in srgb, var(--bg-surface) 80%, transparent);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    z-index: 100;
+    backdrop-filter: blur(8px);
+    overflow: hidden;
+    transition: opacity 0.3s;
+    box-shadow: 0 4px 12px var(--shadow);
+  }
+  .minimap:hover { opacity: 1 !important; }
+  .minimap-viewport {
+    position: absolute;
+    border: 1px solid var(--accent);
+    background: color-mix(in srgb, var(--accent) 10%, transparent);
+    z-index: 2;
+    pointer-events: none;
+  }
+  .minimap-nodes { position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
+  .minimap-node { position: absolute; background: var(--border-strong); border-radius: 4px; }
+
+  .shortcut-hint {
+    position: absolute;
+    bottom: 20px;
+    left: 20px;
+    z-index: 100;
+    background: color-mix(in srgb, var(--bg-surface) 85%, transparent);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 12px 16px;
+    font-size: 11px;
+    color: var(--text-muted);
+    backdrop-filter: blur(8px);
+    line-height: 1.7;
+    max-width: 280px;
+    transition: opacity 0.3s;
+  }
+  .shortcut-hint kbd {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 2px 8px;
+    font-size: 10px;
+    font-family: ui-monospace, monospace;
+    color: var(--text);
+  }
+  .shortcut-hint.hidden { opacity: 0; pointer-events: none; }
+</style>
+</head>
+<body>
+<div id="eos-page">
+  <div class="toolbar">
+    <select id="board-picker" title="Switch board"></select>
+    <button class="btn" id="btn-new" title="New board (Ctrl+Shift+N)">＋</button>
+    <button class="btn" id="btn-delete-board" title="Delete this board">🗑</button>
+    <div class="sep"></div>
+    <button class="btn" id="btn-undo" title="Undo (Ctrl+Z)">↶</button>
+    <button class="btn" id="btn-redo" title="Redo (Ctrl+Shift+Z)">↷</button>
+    <div class="sep"></div>
+    <button class="btn" id="btn-add-node" title="Add card (double-click empty canvas)">✨ Card</button>
+    <button class="btn" id="btn-cleanup" title="Auto-layout by edges">🧹</button>
+    <button class="btn" id="btn-reset-view" title="Fit all cards">🎯</button>
+    <button class="btn" id="btn-promote" title="Promote connected cluster to a project">🚀</button>
+    <div class="sep"></div>
+    <span class="save-status" id="save-status">—</span>
+    <button class="btn primary" id="btn-save" title="Save (Ctrl+S)">💾</button>
+    <button class="btn" onclick="openAppSettings()" title="Settings">&#9881;</button>
+  </div>
+
+  <div class="viewport" id="viewport">
+    <div class="canvas" id="canvas">
+      <svg class="edges-layer" id="edges-layer"
+           width="40000" height="40000"
+           viewBox="-20000 -20000 40000 40000"
+           style="left: -20000px; top: -20000px; width: 40000px; height: 40000px;">
+        <defs>
+          <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto" markerUnits="userSpaceOnUse">
+            <polygon points="0 0, 10 3.5, 0 7" class="edge-marker-default" />
+          </marker>
+          <marker id="arrowhead-active" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto" markerUnits="userSpaceOnUse">
+            <polygon points="0 0, 10 3.5, 0 7" class="edge-marker-active" />
+          </marker>
+        </defs>
+      </svg>
+      <div id="nodes-container"></div>
+    </div>
+  </div>
+
+  <div class="minimap" id="minimap">
+    <div class="minimap-viewport" id="minimap-viewport"></div>
+    <div class="minimap-nodes" id="minimap-nodes"></div>
+  </div>
+
+  <div class="vault-drop-hint" id="vault-drop-hint">Drop vault note…</div>
+
+  <div class="shortcut-hint" id="shortcut-hint">
+    <kbd>dbl-click</kbd> new card ·
+    <kbd>Tab</kbd> child ·
+    <kbd>Del</kbd> delete ·
+    <kbd>Space</kbd>+drag pan ·
+    <kbd>Ctrl+Z</kbd> undo ·
+    <kbd>Ctrl+S</kbd> save
+  </div>
+</div>
+
+<script src="/static/eos.js"></script>
+<script src="/static/eos-components.js"></script>
+<script>
+EOS.nav('canvas');
+
+const STATE = {
+  boardId: 'inbox',
+  panX: 0, panY: 0, zoom: 1,
+  nodes: [],
+  edges: [],
+  selectedNodeId: null,
+  dirty: false,
+  saving: false,
+};
+
+const HISTORY = { past: [], future: [], MAX: 50 };
+
+const viewport = document.getElementById('viewport');
+const canvas = document.getElementById('canvas');
+const edgesLayer = document.getElementById('edges-layer');
+const nodesContainer = document.getElementById('nodes-container');
+const boardPicker = document.getElementById('board-picker');
+const minimap = document.getElementById('minimap');
+const saveStatusEl = document.getElementById('save-status');
+const shortcutHint = document.getElementById('shortcut-hint');
+
+let autosaveTimer = null;
+let statusTimer = null;
+let isNodeDragging = false;
+let isResizing = false;
+let isDrawingEdge = false;
+let edgeStartInfo = null;
+let tempEdgePos = null;
+
+function genId() { return Math.random().toString(36).substr(2, 9); }
+
+// ---------- history (undo/redo) ----------
+function snapshot() {
+  return JSON.stringify({ nodes: STATE.nodes, edges: STATE.edges });
+}
+function pushHistory() {
+  HISTORY.past.push(snapshot());
+  if (HISTORY.past.length > HISTORY.MAX) HISTORY.past.shift();
+  HISTORY.future.length = 0;
+  updateHistoryButtons();
+}
+function restore(snap) {
+  const parsed = JSON.parse(snap);
+  STATE.nodes = parsed.nodes || [];
+  STATE.edges = parsed.edges || [];
+  STATE.selectedNodeId = null;
+  render();
+}
+function undo() {
+  if (!HISTORY.past.length) return;
+  HISTORY.future.push(snapshot());
+  restore(HISTORY.past.pop());
+  markDirty();
+  updateHistoryButtons();
+}
+function redo() {
+  if (!HISTORY.future.length) return;
+  HISTORY.past.push(snapshot());
+  restore(HISTORY.future.pop());
+  markDirty();
+  updateHistoryButtons();
+}
+function updateHistoryButtons() {
+  document.getElementById('btn-undo').disabled = HISTORY.past.length === 0;
+  document.getElementById('btn-redo').disabled = HISTORY.future.length === 0;
+}
+
+// ---------- save status ----------
+function setStatus(kind, text, sticky = false) {
+  saveStatusEl.className = 'save-status ' + kind;
+  saveStatusEl.textContent = text;
+  if (statusTimer) { clearTimeout(statusTimer); statusTimer = null; }
+  if (!sticky && kind === 'saved') {
+    statusTimer = setTimeout(() => {
+      if (!STATE.dirty && !STATE.saving) saveStatusEl.textContent = '';
+    }, 2000);
+  }
+}
+function markDirty() {
+  STATE.dirty = true;
+  setStatus('dirty', 'Unsaved', true);
+  scheduleAutosave();
+}
+function scheduleAutosave() {
+  if (autosaveTimer) clearTimeout(autosaveTimer);
+  autosaveTimer = setTimeout(() => { if (STATE.dirty && !STATE.saving) saveBoard(true); }, 2500);
+}
+
+// ---------- board management ----------
+async function loadBoardList() {
+  try {
+    const res = await EOS.api('/canvas/api/boards');
+    const boards = (res && res.boards) || [];
+    const current = STATE.boardId;
+    const names = boards.map(b => b.board_id);
+    if (!names.includes(current)) names.unshift(current);
+    if (!names.includes('inbox')) names.push('inbox');
+    boardPicker.innerHTML = names.map(n =>
+      `<option value="${EOS.escapeHtml ? EOS.escapeHtml(n) : n}"${n === current ? ' selected' : ''}>${n}</option>`
+    ).join('');
+  } catch (e) { /* silent */ }
+}
+
+async function loadBoard(boardId) {
+  try {
+    const res = await EOS.api(`/canvas/api/board?board=${encodeURIComponent(boardId)}`);
+    if (res) {
+      STATE.boardId = boardId;
+      STATE.nodes = res.nodes || [];
+      STATE.edges = res.edges || [];
+      STATE.selectedNodeId = null;
+      STATE.dirty = false;
+      HISTORY.past = []; HISTORY.future = [];
+      updateHistoryButtons();
+      centerView();
+      render();
+      setStatus('saved', res.updated ? 'Loaded' : 'New board');
+      const url = new URL(window.location);
+      url.searchParams.set('board', boardId);
+      window.history.replaceState({}, '', url);
+    }
+  } catch (e) {
+    EOS_UI.toast('Failed to load board', 'error');
+  }
+}
+
+async function saveBoard(isAuto = false) {
+  if (STATE.saving) return;
+  // Flush textarea values before save (in case input handler raced)
+  STATE.nodes.forEach(n => {
+    const el = document.getElementById(`node-text-${n.id}`);
+    if (el) n.text = el.value;
+  });
+  STATE.saving = true;
+  setStatus('saving', isAuto ? 'Autosaving…' : 'Saving…', true);
+  try {
+    const res = await fetch('/canvas/api/board', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        board_id: STATE.boardId,
+        nodes: STATE.nodes,
+        edges: STATE.edges,
+      }),
+    });
+    if (res.ok) {
+      STATE.dirty = false;
+      setStatus('saved', 'Saved');
+      if (!isAuto) EOS_UI.toast('Saved', 'success');
+      loadBoardList();
+    } else {
+      setStatus('error', 'Save failed', true);
+      EOS_UI.toast('Failed to save', 'error');
+    }
+  } catch (e) {
+    setStatus('error', 'Save failed', true);
+    EOS_UI.toast('Failed to save', 'error');
+  } finally {
+    STATE.saving = false;
+  }
+}
+
+function createNewBoard() {
+  EOS_UI.formModal('New board', [
+    {key: 'name', label: 'Board name', type: 'text', required: true, hint: 'Letters, numbers, - and _ only'},
+  ], async function(vals) {
+    const clean = (vals.name || '').trim().replace(/[^a-zA-Z0-9_-]/g, '-');
+    if (!clean) { EOS_UI.toast('Invalid name', 'warning'); return; }
+    STATE.boardId = clean;
+    STATE.nodes = [];
+    STATE.edges = [];
+    STATE.selectedNodeId = null;
+    HISTORY.past = []; HISTORY.future = [];
+    updateHistoryButtons();
+    render();
+    centerView();
+    await saveBoard();
+    await loadBoardList();
+    boardPicker.value = clean;
+  });
+}
+
+function promoteClusterToProject() {
+  if (!STATE.nodes.length) { EOS_UI.toast('Board is empty', 'warning'); return; }
+  if (STATE.dirty) { EOS_UI.toast('Save first', 'warning'); return; }
+  const suggested = STATE.boardId === 'inbox' ? '' : STATE.boardId;
+  EOS_UI.formModal('Promote cluster to project', [
+    {key: 'project_id', label: 'Project ID', type: 'text', required: true,
+     default: suggested, hint: 'The largest connected subgraph becomes tasks in this project.'},
+  ], async function(vals) {
+    const pid = (vals.project_id || '').trim().replace(/[^a-zA-Z0-9_-]/g, '-');
+    if (!pid) { EOS_UI.toast('Invalid project id', 'warning'); return; }
+    try {
+      const res = await fetch('/canvas/api/promote', {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ board_id: STATE.boardId, project_id: pid }),
+      });
+      const data = await res.json();
+      if (data.ok) {
+        EOS_UI.toast(`Promoted ${data.nodes_promoted} cards → ${data.tasks_created} tasks in ${pid}`, 'success');
+      } else {
+        EOS_UI.toast(data.error || 'Promote failed', 'error');
+      }
+    } catch (e) { EOS_UI.toast('Promote failed', 'error'); }
+  });
+}
+
+async function deleteCurrentBoard() {
+  if (STATE.boardId === 'inbox') { EOS_UI.toast("Can't delete inbox", 'warning'); return; }
+  const ok = await EOS_UI.confirm({
+    message: `Delete board "${STATE.boardId}"? This can't be undone.`,
+    action: 'Delete',
+  });
+  if (!ok) return;
+  try {
+    const res = await fetch('/canvas/api/board/delete', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ board_id: STATE.boardId }),
+    });
+    if (res.ok) {
+      EOS_UI.toast('Deleted', 'success');
+      await loadBoard('inbox');
+      await loadBoardList();
+    } else {
+      EOS_UI.toast('Delete failed', 'error');
+    }
+  } catch (e) { EOS_UI.toast('Delete failed', 'error'); }
+}
+
+// ---------- events ----------
+function setupEvents() {
+  document.getElementById('btn-save').onclick = () => saveBoard(false);
+  document.getElementById('btn-add-node').onclick = addNodeCenter;
+  document.getElementById('btn-reset-view').onclick = centerView;
+  document.getElementById('btn-cleanup').onclick = autoLayout;
+  document.getElementById('btn-new').onclick = createNewBoard;
+  document.getElementById('btn-delete-board').onclick = deleteCurrentBoard;
+  document.getElementById('btn-undo').onclick = undo;
+  document.getElementById('btn-redo').onclick = redo;
+  document.getElementById('btn-promote').onclick = promoteClusterToProject;
+
+  boardPicker.addEventListener('change', async () => {
+    const target = boardPicker.value;
+    if (target === STATE.boardId) return;
+    if (STATE.dirty) {
+      const ok = await EOS_UI.confirm({message: 'Discard unsaved changes?', action: 'Discard'});
+      if (!ok) { boardPicker.value = STATE.boardId; return; }
+    }
+    loadBoard(target);
+  });
+
+  let isPanning = false;
+  let isSpacePressed = false;
+  let startX, startY;
+
+  window.addEventListener('keydown', e => {
+    const inField = ['TEXTAREA', 'INPUT', 'SELECT'].includes(document.activeElement.tagName);
+    if (e.code === 'Space' && !inField) {
+      isSpacePressed = true;
+      viewport.style.cursor = 'grab';
+      e.preventDefault();
+      return;
+    }
+    if (inField) return;
+    const mod = e.ctrlKey || e.metaKey;
+    if (mod && e.key.toLowerCase() === 's') { e.preventDefault(); saveBoard(false); return; }
+    if (mod && e.key.toLowerCase() === 'z' && !e.shiftKey) { e.preventDefault(); undo(); return; }
+    if (mod && ((e.key.toLowerCase() === 'z' && e.shiftKey) || e.key.toLowerCase() === 'y')) { e.preventDefault(); redo(); return; }
+    if (mod && e.shiftKey && e.key.toLowerCase() === 'n') { e.preventDefault(); createNewBoard(); return; }
+    if ((e.key === 'Delete' || e.key === 'Backspace') && STATE.selectedNodeId) {
+      e.preventDefault();
+      pushHistory();
+      const id = STATE.selectedNodeId;
+      STATE.nodes = STATE.nodes.filter(n => n.id !== id);
+      STATE.edges = STATE.edges.filter(ed => ed.sourceId !== id && ed.targetId !== id);
+      STATE.selectedNodeId = null;
+      markDirty();
+      render();
+      return;
+    }
+    if (e.key === 'Escape') { STATE.selectedNodeId = null; renderNodes(); return; }
+    if (e.key === 'Tab' && STATE.selectedNodeId) {
+      e.preventDefault();
+      const src = STATE.nodes.find(n => n.id === STATE.selectedNodeId);
+      if (!src) return;
+      pushHistory();
+      const child = {
+        id: genId(),
+        x: src.x + src.width + 80,
+        y: src.y,
+        width: 250, height: 200, text: '', color: src.color || 'default',
+      };
+      STATE.nodes.push(child);
+      STATE.edges.push({ id: genId(), sourceId: src.id, sourceSide: 'right', targetId: child.id, targetSide: 'left' });
+      STATE.selectedNodeId = child.id;
+      markDirty();
+      render();
+      setTimeout(() => { const t = document.getElementById(`node-text-${child.id}`); if (t) t.focus(); }, 10);
+      return;
+    }
+  });
+  window.addEventListener('keyup', e => {
+    if (e.code === 'Space') { isSpacePressed = false; viewport.style.cursor = 'default'; }
+  });
+
+  viewport.addEventListener('mousedown', e => {
+    if (e.target === viewport || isSpacePressed || e.button === 1) {
+      isPanning = true;
+      startX = e.clientX - STATE.panX;
+      startY = e.clientY - STATE.panY;
+      viewport.style.cursor = 'grabbing';
+      if (STATE.selectedNodeId) {
+        const prev = document.getElementById(`node-${STATE.selectedNodeId}`);
+        if (prev) prev.classList.remove('selected');
+        STATE.selectedNodeId = null;
+      }
+    }
+  });
+
+  window.addEventListener('mousemove', e => {
+    if (isPanning) {
+      STATE.panX = e.clientX - startX;
+      STATE.panY = e.clientY - startY;
+      updateTransform();
+    }
+    if (!isPanning && !isNodeDragging && !isResizing && !isDrawingEdge) {
+      const rect = minimap.getBoundingClientRect();
+      const dist = Math.hypot(
+        Math.max(rect.left - e.clientX, 0, e.clientX - rect.right),
+        Math.max(rect.top - e.clientY, 0, e.clientY - rect.bottom)
+      );
+      minimap.style.opacity = dist < 50 ? '0.2' : '1';
+    }
+  });
+
+  window.addEventListener('mouseup', () => {
+    if (isPanning) { isPanning = false; viewport.style.cursor = isSpacePressed ? 'grab' : 'default'; }
+  });
+
+  viewport.addEventListener('wheel', e => {
+    e.preventDefault();
+    const rect = viewport.getBoundingClientRect();
+    const mouseX = e.clientX - rect.left;
+    const mouseY = e.clientY - rect.top;
+    const zoomPointX = (mouseX - STATE.panX) / STATE.zoom;
+    const zoomPointY = (mouseY - STATE.panY) / STATE.zoom;
+    const zoomFactor = 1.1;
+    const direction = e.deltaY > 0 ? -1 : 1;
+    let newZoom = STATE.zoom * (direction > 0 ? zoomFactor : 1/zoomFactor);
+    newZoom = Math.min(Math.max(newZoom, 0.1), 5);
+    STATE.panX = mouseX - zoomPointX * newZoom;
+    STATE.panY = mouseY - zoomPointY * newZoom;
+    STATE.zoom = newZoom;
+    updateTransform();
+  }, { passive: false });
+
+  viewport.addEventListener('dblclick', e => {
+    if (e.target === viewport || e.target.tagName === 'svg') {
+      const rect = viewport.getBoundingClientRect();
+      const cx = (e.clientX - rect.left - STATE.panX) / STATE.zoom;
+      const cy = (e.clientY - rect.top - STATE.panY) / STATE.zoom;
+      pushHistory();
+      const node = {
+        id: genId(),
+        x: cx - 125, y: cy - 100, width: 250, height: 200, text: '', color: 'default'
+      };
+      STATE.nodes.push(node);
+      STATE.selectedNodeId = node.id;
+      markDirty();
+      render();
+      setTimeout(() => { const t = document.getElementById(`node-text-${node.id}`); if (t) t.focus(); }, 10);
+    }
+  });
+
+  // Warn on navigation with unsaved changes
+  window.addEventListener('beforeunload', e => {
+    if (STATE.dirty) { e.preventDefault(); e.returnValue = ''; }
+  });
+
+  // Drag-and-drop of a vault path (plain text) → vault-note node
+  const dropHint = document.getElementById('vault-drop-hint');
+  viewport.addEventListener('dragover', e => {
+    if (!e.dataTransfer) return;
+    if (Array.from(e.dataTransfer.types || []).includes('text/plain')) {
+      e.preventDefault();
+      if (dropHint) dropHint.classList.add('active');
+    }
+  });
+  viewport.addEventListener('dragleave', () => { if (dropHint) dropHint.classList.remove('active'); });
+  viewport.addEventListener('drop', async e => {
+    if (dropHint) dropHint.classList.remove('active');
+    const raw = (e.dataTransfer && e.dataTransfer.getData('text/plain')) || '';
+    if (!raw || !/\.md($|[?#])/i.test(raw)) return;
+    e.preventDefault();
+    try {
+      const res = await fetch('/canvas/api/node/vault', {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ board_id: STATE.boardId, path: raw.trim() }),
+      });
+      const data = await res.json();
+      if (data.ok) {
+        await loadBoard(STATE.boardId);
+        EOS_UI.toast(`Linked: ${data.path}`, 'success');
+      } else {
+        EOS_UI.toast(data.error || 'Drop failed', 'error');
+      }
+    } catch (err) { EOS_UI.toast('Drop failed', 'error'); }
+  });
+}
+
+function updateTransform() {
+  canvas.style.transform = `translate(${STATE.panX}px, ${STATE.panY}px) scale(${STATE.zoom})`;
+  viewport.style.backgroundPosition = `${STATE.panX}px ${STATE.panY}px`;
+  viewport.style.backgroundSize = `${40 * STATE.zoom}px ${40 * STATE.zoom}px`;
+  updateMinimap();
+}
+
+function centerView() {
+  if (STATE.nodes.length === 0) {
+    STATE.panX = viewport.clientWidth / 2;
+    STATE.panY = viewport.clientHeight / 2;
+    STATE.zoom = 1;
+  } else {
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    STATE.nodes.forEach(n => {
+      minX = Math.min(minX, n.x);
+      minY = Math.min(minY, n.y);
+      maxX = Math.max(maxX, n.x + n.width);
+      maxY = Math.max(maxY, n.y + n.height);
+    });
+    const padding = 50;
+    const boxW = maxX - minX + padding * 2;
+    const boxH = maxY - minY + padding * 2;
+    const scaleX = viewport.clientWidth / boxW;
+    const scaleY = viewport.clientHeight / boxH;
+    STATE.zoom = Math.min(scaleX, scaleY, 1);
+    const cx = minX + (maxX - minX) / 2;
+    const cy = minY + (maxY - minY) / 2;
+    STATE.panX = viewport.clientWidth / 2 - cx * STATE.zoom;
+    STATE.panY = viewport.clientHeight / 2 - cy * STATE.zoom;
+  }
+  updateTransform();
+}
+
+function autoLayout() {
+  if (STATE.nodes.length === 0) return;
+  pushHistory();
+  const incoming = new Map();
+  const outgoing = new Map();
+  STATE.nodes.forEach(n => { incoming.set(n.id, []); outgoing.set(n.id, []); });
+  STATE.edges.forEach(e => {
+    if (incoming.has(e.targetId)) incoming.get(e.targetId).push(e.sourceId);
+    if (outgoing.has(e.sourceId)) outgoing.get(e.sourceId).push(e.targetId);
+  });
+  const roots = STATE.nodes.filter(n => incoming.get(n.id).length === 0);
+  const nodeLevels = new Map();
+  const visited = new Set();
+  function assignLevel(nodeId, level) {
+    if (visited.has(nodeId)) return;
+    visited.add(nodeId);
+    nodeLevels.set(nodeId, Math.max(level, nodeLevels.get(nodeId) || 0));
+    outgoing.get(nodeId).forEach(childId => assignLevel(childId, level + 1));
+  }
+  if (roots.length === 0 && STATE.nodes.length > 0) roots.push(STATE.nodes[0]);
+  roots.forEach(r => assignLevel(r.id, 0));
+  STATE.nodes.forEach(n => { if (!visited.has(n.id)) assignLevel(n.id, 0); });
+  const levels = [];
+  nodeLevels.forEach((level, nodeId) => {
+    if (!levels[level]) levels[level] = [];
+    levels[level].push(STATE.nodes.find(n => n.id === nodeId));
+  });
+  const startX = 100;
+  levels.forEach((levelNodes, levelIndex) => {
+    let currentY = 100;
+    levelNodes.forEach(n => {
+      n.x = startX + (levelIndex * 400);
+      n.y = currentY;
+      currentY += n.height + 50;
+    });
+  });
+  markDirty();
+  render();
+  centerView();
+  EOS_UI.toast('Auto-layout applied', 'success');
+}
+
+// ---------- vault-note hydration ----------
+async function hydrateVaultNode(node) {
+  const bodyEl = document.getElementById(`vault-body-${node.id}`);
+  const titleEl = document.getElementById(`vault-title-${node.id}`);
+  const sectionEl = document.getElementById(`vault-section-${node.id}`);
+  if (!bodyEl) return;
+  try {
+    const res = await fetch(`/canvas/api/vault-preview?path=${encodeURIComponent(node.path || '')}`);
+    const data = await res.json();
+    if (data.ok) {
+      if (titleEl && data.title) titleEl.textContent = data.title;
+      if (sectionEl) sectionEl.textContent = data.section ? `## ${data.section}` : '';
+      bodyEl.textContent = (data.body || '').slice(0, 400);
+    } else {
+      bodyEl.textContent = data.error || 'Note not found';
+      bodyEl.style.color = 'var(--text-muted)';
+    }
+  } catch (e) {
+    bodyEl.textContent = 'Preview failed';
+  }
+}
+
+// ---------- ✨ mini-menu: brainstorm / critique / next_steps ----------
+let _sparkMenu = null;
+function closeSparkMenu() { if (_sparkMenu) { _sparkMenu.remove(); _sparkMenu = null; } }
+document.addEventListener('click', closeSparkMenu);
+
+function openThinkMenu(node, anchor) {
+  closeSparkMenu();
+  const menu = document.createElement('div');
+  menu.className = 'node-spark-menu';
+  const rect = anchor.getBoundingClientRect();
+  menu.style.top = `${rect.bottom + 4}px`;
+  menu.style.left = `${Math.max(8, rect.left - 80)}px`;
+  menu.innerHTML = [
+    `<button data-kind="brainstorm">✨ Brainstorm (3)</button>`,
+    `<button data-kind="critique">🔴 Critique (2)</button>`,
+    `<button data-kind="next_steps">🎯 Next steps (3)</button>`,
+  ].join('');
+  document.body.appendChild(menu);
+  _sparkMenu = menu;
+  menu.addEventListener('click', e => e.stopPropagation());
+  menu.querySelectorAll('button').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      closeSparkMenu();
+      await runNodeThink(node, btn.dataset.kind);
+    });
+  });
+}
+
+async function runNodeThink(node, kind) {
+  const textarea = document.getElementById(`node-text-${node.id}`);
+  const text = (textarea ? textarea.value : node.text || '').trim();
+  if (!text) { EOS_UI.toast('Add some text first', 'warning'); return; }
+  node.text = text;
+  if (STATE.dirty) { await saveBoard(true); }
+  EOS_UI.toast(`Running ${kind.replace('_', ' ')}…`, 'info');
+  try {
+    const res = await fetch('/canvas/api/node/think', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ board_id: STATE.boardId, node_id: node.id, prompt_kind: kind }),
+    });
+    const data = await res.json();
+    if (data.ok) {
+      await loadBoard(STATE.boardId);
+      const prov = data.provenance || {};
+      const chip = prov.provider ? ` · ${prov.mode || ''} ${prov.provider}`.trim() : '';
+      EOS_UI.toast(`${kind.replace('_', ' ')}: ${(data.ideas || []).length} children${chip}`, 'success');
+    } else {
+      EOS_UI.toast(data.error || 'Think failed', 'error');
+    }
+  } catch (e) { EOS_UI.toast('Think failed', 'error'); }
+}
+
+async function runNodeSearch(node) {
+  const textarea = document.getElementById(`node-text-${node.id}`);
+  const text = (textarea ? textarea.value : node.text || '').trim();
+  if (!text) { EOS_UI.toast('Add some text first', 'warning'); return; }
+  node.text = text;
+  if (STATE.dirty) { await saveBoard(true); }
+  EOS_UI.toast('Searching vault…', 'info');
+  try {
+    const res = await fetch('/canvas/api/node/search', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ board_id: STATE.boardId, node_id: node.id }),
+    });
+    const data = await res.json();
+    if (data.ok) {
+      await loadBoard(STATE.boardId);
+      EOS_UI.toast(`${data.count || 0} vault matches`, data.count ? 'success' : 'warning');
+    } else {
+      EOS_UI.toast(data.error || 'Search failed', 'error');
+    }
+  } catch (e) { EOS_UI.toast('Search failed', 'error'); }
+}
+
+function addNodeCenter() {
+  const cx = (viewport.clientWidth / 2 - STATE.panX) / STATE.zoom;
+  const cy = (viewport.clientHeight / 2 - STATE.panY) / STATE.zoom;
+  pushHistory();
+  const node = { id: genId(), x: cx - 125, y: cy - 100, width: 250, height: 200, text: '', color: 'default' };
+  STATE.nodes.push(node);
+  STATE.selectedNodeId = node.id;
+  markDirty();
+  render();
+  setTimeout(() => { const t = document.getElementById(`node-text-${node.id}`); if (t) t.focus(); }, 10);
+}
+
+function render() { updateTransform(); renderNodes(); renderEdges(); }
+
+function renderNodes() {
+  nodesContainer.innerHTML = '';
+  STATE.nodes.forEach(node => {
+    const el = document.createElement('div');
+    const typeCls = node.type ? `type-${node.type}` : 'type-text';
+    el.className = `node color-${node.color || 'default'} ${typeCls} ${STATE.selectedNodeId === node.id ? 'selected' : ''}`;
+    el.id = `node-${node.id}`;
+    el.style.left = `${node.x}px`;
+    el.style.top = `${node.y}px`;
+    el.style.width = `${node.width}px`;
+    el.style.height = `${node.height}px`;
+
+    const provHtml = node.provenance && node.provenance.provider
+      ? `<div class="node-prov">${EOS_UI.provenance(node.provenance)}</div>`
+      : '';
+
+    const isVault = node.type === 'vault_note';
+    const contentHtml = isVault
+      ? `<div class="node-content">
+           <div class="node-vault-title" id="vault-title-${node.id}">${esc(node.path || '')}</div>
+           <div class="node-vault-section" id="vault-section-${node.id}"></div>
+           <div class="node-vault-body" id="vault-body-${node.id}">Loading…</div>
+           <div class="node-vault-actions" id="vault-actions-${node.id}">${EOS.noteActions ? EOS.noteActions(node.path || '') : esc(node.path || '')}</div>
+         </div>`
+      : `<div class="node-content">
+           <textarea class="node-textarea" id="node-text-${node.id}" placeholder="Type something...">${(node.text || '').replace(/</g, '&lt;')}</textarea>
+         </div>`;
+
+    el.innerHTML = `
+      ${provHtml}
+      <div class="node-header" id="header-${node.id}">
+        <div class="node-colors">
+          <div class="color-dot default" data-color="default" title="Default"></div>
+          <div class="color-dot blue" data-color="blue" title="Blue"></div>
+          <div class="color-dot green" data-color="green" title="Green"></div>
+          <div class="color-dot yellow" data-color="yellow" title="Yellow"></div>
+          <div class="color-dot red" data-color="red" title="Red"></div>
+          <div class="color-dot purple" data-color="purple" title="Purple"></div>
+        </div>
+        ${isVault ? '' : `<div class="node-spark" id="spark-${node.id}" title="Think on this card">✨</div>`}
+        ${isVault ? '' : `<div class="node-spark" id="search-${node.id}" title="Search vault for this" style="margin-right:6px">🔍</div>`}
+        <div class="node-delete" id="del-${node.id}" title="Delete Card"></div>
+      </div>
+      ${contentHtml}
+      <div class="handle top" data-node="${node.id}" data-side="top"></div>
+      <div class="handle right" data-node="${node.id}" data-side="right"></div>
+      <div class="handle bottom" data-node="${node.id}" data-side="bottom"></div>
+      <div class="handle left" data-node="${node.id}" data-side="left"></div>
+      <div class="resizer" id="resizer-${node.id}"></div>
+    `;
+    nodesContainer.appendChild(el);
+
+    if (isVault) {
+      hydrateVaultNode(node);
+    } else {
+      const textarea = document.getElementById(`node-text-${node.id}`);
+      textarea.addEventListener('input', (e) => { node.text = e.target.value; markDirty(); });
+      textarea.addEventListener('focus', () => { STATE.selectedNodeId = node.id; el.classList.add('selected'); });
+    }
+
+    el.querySelectorAll('.color-dot').forEach(dot => {
+      dot.addEventListener('mousedown', e => {
+        e.stopPropagation();
+        pushHistory();
+        node.color = e.target.dataset.color;
+        el.className = `node color-${node.color} ${STATE.selectedNodeId === node.id ? 'selected' : ''}`;
+        markDirty();
+      });
+    });
+
+    if (!isVault) {
+      document.getElementById(`spark-${node.id}`).addEventListener('click', (e) => {
+        e.stopPropagation();
+        openThinkMenu(node, e.currentTarget);
+      });
+      document.getElementById(`search-${node.id}`).addEventListener('click', (e) => {
+        e.stopPropagation();
+        runNodeSearch(node, e.currentTarget);
+      });
+    }
+
+    el.addEventListener('mousedown', () => {
+      if (STATE.selectedNodeId !== node.id) {
+        const prev = STATE.selectedNodeId && document.getElementById(`node-${STATE.selectedNodeId}`);
+        if (prev) prev.classList.remove('selected');
+        STATE.selectedNodeId = node.id;
+        el.classList.add('selected');
+      }
+    });
+
+    document.getElementById(`del-${node.id}`).addEventListener('click', (e) => {
+      e.stopPropagation();
+      pushHistory();
+      STATE.nodes = STATE.nodes.filter(n => n.id !== node.id);
+      STATE.edges = STATE.edges.filter(ed => ed.sourceId !== node.id && ed.targetId !== node.id);
+      if (STATE.selectedNodeId === node.id) STATE.selectedNodeId = null;
+      markDirty();
+      render();
+    });
+
+    const header = document.getElementById(`header-${node.id}`);
+    header.addEventListener('mousedown', e => {
+      if (e.target.classList.contains('color-dot') || e.target.classList.contains('node-delete') || e.target.classList.contains('node-spark')) return;
+      e.stopPropagation();
+      isNodeDragging = true;
+      let startX = e.clientX, startY = e.clientY;
+      let startNodeX = node.x, startNodeY = node.y;
+      let moved = false;
+      const onMove = ev => {
+        const dx = (ev.clientX - startX) / STATE.zoom;
+        const dy = (ev.clientY - startY) / STATE.zoom;
+        if (!moved && (Math.abs(dx) > 2 || Math.abs(dy) > 2)) { pushHistory(); moved = true; }
+        let newX = startNodeX + dx;
+        let newY = startNodeY + dy;
+        if (ev.shiftKey) { newX = Math.round(newX / 20) * 20; newY = Math.round(newY / 20) * 20; }
+        node.x = newX; node.y = newY;
+        el.style.left = `${node.x}px`; el.style.top = `${node.y}px`;
+        renderEdges(); updateMinimap();
+      };
+      const onUp = () => {
+        isNodeDragging = false;
+        if (moved) markDirty();
+        window.removeEventListener('mousemove', onMove);
+        window.removeEventListener('mouseup', onUp);
+      };
+      window.addEventListener('mousemove', onMove);
+      window.addEventListener('mouseup', onUp);
+    });
+
+    const resizer = document.getElementById(`resizer-${node.id}`);
+    resizer.addEventListener('mousedown', e => {
+      e.stopPropagation();
+      isResizing = true;
+      let startX = e.clientX, startY = e.clientY;
+      let startW = node.width, startH = node.height;
+      let moved = false;
+      const onMove = ev => {
+        const dx = (ev.clientX - startX) / STATE.zoom;
+        const dy = (ev.clientY - startY) / STATE.zoom;
+        if (!moved && (Math.abs(dx) > 2 || Math.abs(dy) > 2)) { pushHistory(); moved = true; }
+        node.width = Math.max(100, startW + dx);
+        node.height = Math.max(80, startH + dy);
+        el.style.width = `${node.width}px`; el.style.height = `${node.height}px`;
+        renderEdges(); updateMinimap();
+      };
+      const onUp = () => {
+        isResizing = false;
+        if (moved) markDirty();
+        window.removeEventListener('mousemove', onMove);
+        window.removeEventListener('mouseup', onUp);
+      };
+      window.addEventListener('mousemove', onMove);
+      window.addEventListener('mouseup', onUp);
+    });
+
+    el.querySelectorAll('.handle').forEach(handle => {
+      handle.addEventListener('mousedown', e => {
+        e.stopPropagation();
+        isDrawingEdge = true;
+        const side = handle.dataset.side;
+        edgeStartInfo = { nodeId: node.id, side };
+        const updateTempEdge = (ev) => {
+          const rect = viewport.getBoundingClientRect();
+          tempEdgePos = { x: (ev.clientX - rect.left - STATE.panX) / STATE.zoom, y: (ev.clientY - rect.top - STATE.panY) / STATE.zoom };
+          renderEdges();
+        };
+        updateTempEdge(e);
+        const onMove = ev => updateTempEdge(ev);
+        const onUp = (ev) => {
+          isDrawingEdge = false;
+          tempEdgePos = null;
+          const dropTarget = document.elementFromPoint(ev.clientX, ev.clientY);
+          if (dropTarget && dropTarget.classList.contains('handle')) {
+            const targetNodeId = dropTarget.dataset.node;
+            const targetSide = dropTarget.dataset.side;
+            if (targetNodeId !== node.id) {
+              pushHistory();
+              STATE.edges.push({ id: genId(), sourceId: node.id, sourceSide: side, targetId: targetNodeId, targetSide: targetSide });
+              markDirty();
+            }
+          }
+          renderEdges();
+          window.removeEventListener('mousemove', onMove);
+          window.removeEventListener('mouseup', onUp);
+        };
+        window.addEventListener('mousemove', onMove);
+        window.addEventListener('mouseup', onUp);
+      });
+    });
+  });
+  updateMinimap();
+}
+
+function updateMinimap() {
+  if (STATE.nodes.length === 0) {
+    document.getElementById('minimap-nodes').innerHTML = '';
+    document.getElementById('minimap-viewport').style.display = 'none';
+    return;
+  }
+  document.getElementById('minimap-viewport').style.display = 'block';
+
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  STATE.nodes.forEach(n => {
+    minX = Math.min(minX, n.x); minY = Math.min(minY, n.y);
+    maxX = Math.max(maxX, n.x + n.width); maxY = Math.max(maxY, n.y + n.height);
+  });
+
+  const vpW = viewport.clientWidth / STATE.zoom;
+  const vpH = viewport.clientHeight / STATE.zoom;
+  const vpX = -STATE.panX / STATE.zoom;
+  const vpY = -STATE.panY / STATE.zoom;
+
+  minX = Math.min(minX, vpX); minY = Math.min(minY, vpY);
+  maxX = Math.max(maxX, vpX + vpW); maxY = Math.max(maxY, vpY + vpH);
+
+  const padding = 200;
+  minX -= padding; minY -= padding; maxX += padding; maxY += padding;
+
+  const mapW = 200, mapH = 150;
+  const scale = Math.min(mapW / (maxX - minX), mapH / (maxY - minY));
+  const offsetX = (mapW - (maxX - minX) * scale) / 2;
+  const offsetY = (mapH - (maxY - minY) * scale) / 2;
+
+  const palette = {purple: '#be4bdb', blue: '#4dabf7', green: '#40c057', yellow: '#fab005', red: '#fa5252'};
+  let nodesHtml = '';
+  STATE.nodes.forEach(n => {
+    const nx = (n.x - minX) * scale + offsetX;
+    const ny = (n.y - minY) * scale + offsetY;
+    const nw = Math.max(2, n.width * scale);
+    const nh = Math.max(2, n.height * scale);
+    const bg = palette[n.color] || 'var(--border-strong)';
+    nodesHtml += `<div class="minimap-node" style="left:${nx}px;top:${ny}px;width:${nw}px;height:${nh}px;background:${bg}"></div>`;
+  });
+  document.getElementById('minimap-nodes').innerHTML = nodesHtml;
+
+  const vx = (vpX - minX) * scale + offsetX;
+  const vy = (vpY - minY) * scale + offsetY;
+  const mv = document.getElementById('minimap-viewport');
+  mv.style.left = `${vx}px`; mv.style.top = `${vy}px`;
+  mv.style.width = `${vpW * scale}px`; mv.style.height = `${vpH * scale}px`;
+}
+
+function getNodeHandlePos(node, side) {
+  switch (side) {
+    case 'top': return { x: node.x + node.width / 2, y: node.y };
+    case 'right': return { x: node.x + node.width, y: node.y + node.height / 2 };
+    case 'bottom': return { x: node.x + node.width / 2, y: node.y + node.height };
+    case 'left': return { x: node.x, y: node.y + node.height / 2 };
+    default: return { x: node.x + node.width / 2, y: node.y + node.height / 2 };
+  }
+}
+
+function createSVGPath(p1, p2, side1, side2) {
+  const offset = 80;
+  let cp1 = { ...p1 };
+  if (side1 === 'top') cp1.y -= offset; else if (side1 === 'bottom') cp1.y += offset;
+  else if (side1 === 'left') cp1.x -= offset; else if (side1 === 'right') cp1.x += offset;
+  let cp2 = { ...p2 };
+  if (side2 === 'top') cp2.y -= offset; else if (side2 === 'bottom') cp2.y += offset;
+  else if (side2 === 'left') cp2.x -= offset; else if (side2 === 'right') cp2.x += offset;
+  if (!side2) cp2 = p2;
+  return `M ${p1.x} ${p1.y} C ${cp1.x} ${cp1.y}, ${cp2.x} ${cp2.y}, ${p2.x} ${p2.y}`;
+}
+
+const SVG_NS = 'http://www.w3.org/2000/svg';
+
+function makeSvgPath(d, {active=false, id=null} = {}) {
+  const p = document.createElementNS(SVG_NS, 'path');
+  p.setAttribute('d', d);
+  p.setAttribute('class', 'edge-path' + (active ? ' active' : ''));
+  p.setAttribute('marker-end', active ? 'url(#arrowhead-active)' : 'url(#arrowhead)');
+  p.setAttribute('fill', 'none');
+  if (id) p.setAttribute('id', id);
+  return p;
+}
+
+function renderEdges() {
+  // Preserve <defs>; remove everything after it and re-append
+  const defs = edgesLayer.querySelector('defs');
+  while (edgesLayer.lastChild && edgesLayer.lastChild !== defs) {
+    edgesLayer.removeChild(edgesLayer.lastChild);
+  }
+
+  STATE.edges.forEach(edge => {
+    const sourceNode = STATE.nodes.find(n => n.id === edge.sourceId);
+    const targetNode = STATE.nodes.find(n => n.id === edge.targetId);
+    if (!sourceNode || !targetNode) return;
+    const p1 = getNodeHandlePos(sourceNode, edge.sourceSide);
+    const p2 = getNodeHandlePos(targetNode, edge.targetSide);
+    const d = createSVGPath(p1, p2, edge.sourceSide, edge.targetSide);
+    const el = makeSvgPath(d, {id: `edge-${edge.id}`});
+    el.style.pointerEvents = 'stroke';
+    el.addEventListener('dblclick', () => {
+      pushHistory();
+      STATE.edges = STATE.edges.filter(e => e.id !== edge.id);
+      markDirty();
+      renderEdges();
+    });
+    el.addEventListener('mouseenter', () => {
+      el.setAttribute('stroke', 'var(--edge-active)');
+      el.setAttribute('marker-end', 'url(#arrowhead-active)');
+    });
+    el.addEventListener('mouseleave', () => {
+      el.removeAttribute('stroke');
+      el.setAttribute('marker-end', 'url(#arrowhead)');
+    });
+    edgesLayer.appendChild(el);
+  });
+
+  if (isDrawingEdge && tempEdgePos && edgeStartInfo) {
+    const sourceNode = STATE.nodes.find(n => n.id === edgeStartInfo.nodeId);
+    if (sourceNode) {
+      const p1 = getNodeHandlePos(sourceNode, edgeStartInfo.side);
+      const d = createSVGPath(p1, tempEdgePos, edgeStartInfo.side, null);
+      edgesLayer.appendChild(makeSvgPath(d, {active: true}));
+    }
+  }
+
+}
+
+async function init() {
+  const urlParams = new URLSearchParams(window.location.search);
+  let requestedBoard = urlParams.get('board');
+  if (!requestedBoard) {
+    try {
+      const r = await EOS.api('/settings/api/get?key=canvas.default_board');
+      requestedBoard = (r && r.value) || 'inbox';
+    } catch (e) { requestedBoard = 'inbox'; }
+  }
+  STATE.boardId = requestedBoard;
+  await loadBoardList();
+  await loadBoard(requestedBoard);
+  setupEvents();
+  updateHistoryButtons();
+  setTimeout(() => shortcutHint.classList.add('hidden'), 8000);
+}
+
+init();
+
+// ----- App Settings (shared helper) -----
+var _appSettings = EOS_UI.settingsPanel({
+    id: 'app-settings-panel',
+    title: 'Canvas Settings',
+    fields: [
+        {key: 'canvas.default_board', label: 'Default board', type: 'text', default: 'inbox',
+         hint: 'Board name loaded when the app opens with no ?board= param.'},
+    ],
+});
+function openAppSettings() { _appSettings.open(); }
+</script>
+</body>
+</html>

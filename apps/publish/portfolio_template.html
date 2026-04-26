@@ -1,0 +1,1286 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{PORTFOLIO_NAME} — {PORTFOLIO_TITLE}</title>
+<meta name="description" content="{PORTFOLIO_SUBTITLE}">
+<link rel="icon" type="image/svg+xml" href="favicon.svg">
+<link rel="stylesheet" href="/static/theme.css?v=20260418">
+<link rel="stylesheet" href="/static/eos-components.css?v=20260418">
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+
+:root {
+  --p-bg: #0c0e13;
+  --p-bg-2: #13161d;
+  --p-bg-card: #181c24;
+  --p-bg-card-hover: #1e2330;
+  --p-text: #9ca3b4;
+  --p-text-h: #e8ecf4;
+  --p-text-m: #4a5168;
+  --p-border: rgba(255,255,255,0.06);
+  --p-blue: #3b8bff;
+  --p-blue-g: rgba(59,139,255,0.08);
+  --p-gold: #e5a84b;
+  --p-gold-g: rgba(229,168,75,0.08);
+  --p-teal: #40c9b0;
+  --p-teal-g: rgba(64,201,176,0.08);
+  --p-violet: #a87cff;
+  --p-violet-g: rgba(168,124,255,0.08);
+  --p-red: #ff6b6b;
+  --p-font: 'Space Grotesk', -apple-system, sans-serif;
+  --p-mono: 'JetBrains Mono', monospace;
+  --bg:var(--p-bg); --bg-card:var(--p-bg-card); --bg-surface:var(--p-bg-2);
+  --text:var(--p-text); --text-heading:var(--p-text-h); --text-muted:var(--p-text-m);
+  --text-secondary:var(--p-text-m); --border:var(--p-border); --accent:var(--p-blue);
+  --mono:var(--p-mono); --radius-lg:12px;
+}
+/* Light mode overrides */
+.light{
+  --p-bg:#f5f6f8;--p-bg-2:#eceef2;--p-bg-card:#ffffff;--p-bg-card-hover:#f0f2f5;
+  --p-text:#4a4f5e;--p-text-h:#1a1e2c;--p-text-m:#8890a0;
+  --p-border:rgba(0,0,0,0.08);
+  --p-blue:#2563eb;--p-blue-g:rgba(37,99,235,0.08);
+  --p-gold:#b8860b;--p-gold-g:rgba(184,134,11,0.08);
+  --p-teal:#0d9488;--p-teal-g:rgba(13,148,136,0.08);
+  --p-violet:#7c3aed;--p-violet-g:rgba(124,58,237,0.08);
+  --p-red:#dc2626;
+  --bg:var(--p-bg);--bg-card:var(--p-bg-card);--bg-surface:var(--p-bg-2);
+  --text:var(--p-text);--text-heading:var(--p-text-h);--text-muted:var(--p-text-m);
+  --text-secondary:var(--p-text-m);--border:var(--p-border);--accent:var(--p-blue);
+}
+
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth}
+body,html.theme-eos body,html.theme-void-dark body,html.theme-warm-dark body,html.theme-nord body,html.theme-soft-light body{
+  background:var(--p-bg)!important;color:var(--p-text)!important;
+  font-family:var(--p-font)!important;font-size:15px;line-height:1.65;
+  -webkit-font-smoothing:antialiased;padding-top:0!important;
+  transition:background 0.3s,color 0.3s;
+}
+.eos-nav,nav.nav,.nav-container{display:none!important}
+
+/* === NAV === */
+.pn{position:fixed;top:0;left:0;right:0;z-index:100;display:flex;align-items:center;height:56px;padding:0 40px;background:rgba(12,14,19,0.92);backdrop-filter:blur(20px);border-bottom:1px solid var(--p-border);transition:background 0.3s}
+.light .pn{background:rgba(245,246,248,0.92)}
+.pn-name{font-weight:700;font-size:15px;color:var(--p-text-h);letter-spacing:-0.01em}
+.pn-name span{color:var(--p-blue);font-weight:400;margin-left:8px;font-size:13px}
+.pn-links{margin-left:auto;display:flex;gap:32px;align-items:center}
+.pn-links a{font-size:13px;color:var(--p-text-m);text-decoration:none;font-weight:500;transition:color 0.2s;letter-spacing:0.02em}
+.pn-links a:hover,.pn-links a.active{color:var(--p-text-h)}
+.pn-cta{font-size:12px;padding:6px 16px;background:var(--p-blue);color:#fff;border:none;border-radius:6px;font-weight:600;text-decoration:none;cursor:pointer;transition:opacity 0.2s;font-family:var(--p-font)}
+.pn-cta:hover{opacity:0.85}
+
+/* === HERO === */
+.hero{padding:140px 40px 60px;max-width:900px;margin:0 auto;position:relative;z-index:1}
+.hero-sup{font-family:var(--p-mono);font-size:13px;color:var(--p-blue);letter-spacing:0.08em;margin-bottom:16px;font-weight:500}
+.hero h1{font-size:clamp(36px,6vw,56px);font-weight:700;color:var(--p-text-h);letter-spacing:-0.03em;line-height:1.1;margin-bottom:20px}
+.hero h1 em{font-style:normal;color:var(--p-blue);font-weight:400}
+.hero-sub{font-size:17px;color:var(--p-text);max-width:540px;line-height:1.6;margin-bottom:40px}
+.hero-stats{display:flex;gap:40px;flex-wrap:wrap}
+.hero-stat .val{font-size:28px;font-weight:700;color:var(--p-text-h)}
+.hero-stat .val em{font-style:normal;color:var(--p-gold)}
+.hero-stat .lbl{font-family:var(--p-mono);font-size:11px;color:var(--p-text-m);letter-spacing:0.06em;margin-top:2px}
+/* Domain cards */
+.hero-domains{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px;margin-top:48px}
+.hero-domain{background:var(--p-bg-card);border:1px solid var(--p-border);border-radius:12px;padding:24px 20px;cursor:pointer;transition:all 0.25s ease;position:relative;overflow:hidden;text-decoration:none;display:block}
+.hero-domain:hover{transform:translateY(-2px);border-color:rgba(255,255,255,0.12)}
+.light .hero-domain:hover{border-color:rgba(0,0,0,0.15)}
+.hero-domain::before{content:'';position:absolute;top:0;left:0;right:0;height:3px}
+.hero-domain[data-f="ai"]::before{background:linear-gradient(90deg,var(--p-violet),transparent)}
+.hero-domain[data-f="ai"]:hover{box-shadow:0 8px 24px rgba(168,124,255,0.12)}
+.hero-domain[data-f="data-science"]::before{background:linear-gradient(90deg,var(--p-blue),transparent)}
+.hero-domain[data-f="data-science"]:hover{box-shadow:0 8px 24px rgba(59,139,255,0.12)}
+.hero-domain[data-f="engineering"]::before{background:linear-gradient(90deg,var(--p-gold),transparent)}
+.hero-domain[data-f="engineering"]:hover{box-shadow:0 8px 24px rgba(229,168,75,0.12)}
+.hero-domain[data-f="digital-transformation"]::before{background:linear-gradient(90deg,var(--p-teal),transparent)}
+.hero-domain[data-f="digital-transformation"]:hover{box-shadow:0 8px 24px rgba(64,201,176,0.12)}
+.hero-domain h3{font-size:15px;font-weight:600;color:var(--p-text-h);margin-bottom:8px;letter-spacing:-0.01em}
+.hero-domain-count{font-family:var(--p-mono);font-size:12px;color:var(--p-text-m);margin-bottom:10px}
+.hero-domain-tags{font-family:var(--p-mono);font-size:11px;color:var(--p-text-m);line-height:1.6}
+.hero-domain[data-f="ai"] h3{color:var(--p-violet)}
+.hero-domain[data-f="data-science"] h3{color:var(--p-blue)}
+.hero-domain[data-f="engineering"] h3{color:var(--p-gold)}
+.hero-domain[data-f="digital-transformation"] h3{color:var(--p-teal)}
+.hero-domain .arrow{font-size:12px;margin-top:12px;color:var(--p-text-m);font-family:var(--p-mono);transition:color 0.2s}
+.hero-domain:hover .arrow{color:var(--p-text-h)}
+/* subtle gradient accent line */
+.hero::after{content:'';position:absolute;bottom:0;left:40px;right:40px;height:1px;background:linear-gradient(90deg,var(--p-blue),var(--p-gold),var(--p-teal),transparent)}
+
+/* === SECTION === */
+.sec{padding:80px 40px;max-width:1100px;margin:0 auto;position:relative;z-index:1}
+.sec-label{font-family:var(--p-mono);font-size:12px;letter-spacing:0.1em;color:var(--p-text-m);margin-bottom:12px;font-weight:500}
+.sec-title{font-size:24px;font-weight:700;color:var(--p-text-h);letter-spacing:-0.02em;margin-bottom:32px}
+
+/* === FILTERS === */
+.filters{display:flex;gap:8px;margin-bottom:28px;flex-wrap:wrap}
+.fbtn{padding:7px 18px;border:1px solid var(--p-border);border-radius:20px;font-size:13px;font-weight:500;color:var(--p-text-m);cursor:pointer;transition:all 0.2s;background:transparent;font-family:var(--p-font)}
+.fbtn:hover{border-color:rgba(255,255,255,0.15);color:var(--p-text)}
+.fbtn.on{background:var(--p-text-h);color:var(--p-bg);border-color:var(--p-text-h)}
+
+/* === PROJECT CARDS === */
+.pgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:20px;transition:opacity 0.15s}
+.pgrid.fading{opacity:0;transform:translateY(4px)}
+.pcard{background:var(--p-bg-card);border:1px solid var(--p-border);border-radius:14px;padding:0;cursor:pointer;transition:all 0.25s ease;overflow:hidden;animation:cardIn 0.35s ease both}
+.pcard:hover{border-color:rgba(255,255,255,0.12);transform:translateY(-2px);box-shadow:0 12px 40px rgba(0,0,0,0.3)}
+/* Color stripe top */
+.pcard-stripe{height:3px;width:100%}
+.pcard[data-cat="ai"] .pcard-stripe{background:linear-gradient(90deg,var(--p-violet),transparent)}
+.pcard[data-cat="data-science"] .pcard-stripe{background:linear-gradient(90deg,var(--p-blue),transparent)}
+.pcard[data-cat="engineering"] .pcard-stripe{background:linear-gradient(90deg,var(--p-gold),transparent)}
+.pcard[data-cat="digital-transformation"] .pcard-stripe{background:linear-gradient(90deg,var(--p-teal),transparent)}
+.pcard-body{padding:24px 24px 20px}
+.pcard-head{display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:14px}
+.pcard-cats{display:flex;gap:6px;flex-wrap:wrap}
+.pcard-cat{font-family:var(--p-mono);font-size:11px;font-weight:500;letter-spacing:0.06em;padding:3px 10px;border-radius:4px;background:rgba(255,255,255,0.04);color:var(--p-text-m)}
+.pcard-cat[data-cat="ai"]{background:var(--p-violet-g);color:var(--p-violet)}
+.pcard-cat[data-cat="data-science"]{background:var(--p-blue-g);color:var(--p-blue)}
+.pcard-cat[data-cat="engineering"]{background:var(--p-gold-g);color:var(--p-gold)}
+.pcard-cat[data-cat="digital-transformation"]{background:var(--p-teal-g);color:var(--p-teal)}
+.pcard-date{font-family:var(--p-mono);font-size:11px;color:var(--p-text-m)}
+.pcard-ctx{font-family:var(--p-mono);font-size:10px;color:var(--p-text-m);margin-bottom:12px;letter-spacing:0.04em}
+.pcard h3{font-size:17px;font-weight:600;color:var(--p-text-h);line-height:1.3;margin-bottom:10px;letter-spacing:-0.01em}
+.pcard-sum{font-size:13.5px;color:var(--p-text);line-height:1.55;margin-bottom:14px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.pcard-tags{display:flex;gap:6px;flex-wrap:wrap}
+.ptag{font-family:var(--p-mono);font-size:10px;padding:2px 8px;border-radius:4px;background:rgba(255,255,255,0.04);color:var(--p-text-m)}
+.pcard-arrow{font-size:13px;color:var(--p-text-m);margin-top:12px;font-family:var(--p-mono);transition:color 0.2s}
+.pcard:hover .pcard-arrow{color:var(--p-text-h)}
+
+/* === REPOS === */
+.rgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:16px}
+.rcard{background:var(--p-bg-card);border:1px solid var(--p-border);border-radius:12px;padding:20px;text-decoration:none;display:block;transition:all 0.25s ease;color:inherit}
+.rcard:hover{border-color:rgba(255,255,255,0.12);transform:translateY(-2px);box-shadow:0 8px 24px rgba(0,0,0,0.2)}
+.light .rcard:hover{border-color:rgba(0,0,0,0.15);box-shadow:0 8px 24px rgba(0,0,0,0.08)}
+.rcard-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;gap:10px}
+.rcard-name{font-family:var(--p-mono);font-size:13px;font-weight:600;color:var(--p-text-h);letter-spacing:-0.01em;word-break:break-all}
+.rcard-lang{font-family:var(--p-mono);font-size:10px;padding:2px 8px;border-radius:4px;background:var(--p-blue-g);color:var(--p-blue);flex-shrink:0;letter-spacing:0.04em}
+.rcard-desc{font-size:13.5px;color:var(--p-text);line-height:1.5;margin-bottom:12px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.rcard-meta{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.rcard-tag{font-family:var(--p-mono);font-size:10px;padding:2px 8px;border-radius:4px;background:rgba(255,255,255,0.04);color:var(--p-text-m)}
+.light .rcard-tag{background:rgba(0,0,0,0.04)}
+.rcard-stars{font-family:var(--p-mono);font-size:11px;color:var(--p-gold);margin-left:auto}
+
+/* === SKILLS === */
+.skills-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:16px}
+.skill-group{background:var(--p-bg-card);border:1px solid var(--p-border);border-radius:12px;padding:20px}
+.skill-group h4{font-size:13px;font-weight:600;color:var(--p-text-h);margin-bottom:12px;letter-spacing:-0.01em}
+.skill-items{display:flex;flex-wrap:wrap;gap:6px}
+.skill-item{font-family:var(--p-mono);font-size:11px;padding:4px 10px;border-radius:5px;background:rgba(255,255,255,0.04);color:var(--p-text)}
+
+/* === ABOUT === */
+.about-grid{display:grid;grid-template-columns:1fr 1fr;gap:40px;align-items:start}
+.about-text{font-size:15px;line-height:1.7;color:var(--p-text)}
+.about-text strong{color:var(--p-text-h)}
+.about-text h2{font-size:16px;font-weight:600;color:var(--p-text-h);margin:28px 0 10px}
+.about-text h2:first-child{margin-top:0}
+.about-text ul{margin:8px 0 16px 18px}
+.about-text li{margin-bottom:4px}
+.about-text a{color:var(--p-blue);text-decoration:none}
+.about-sidebar{display:flex;flex-direction:column;gap:16px}
+.about-card{background:var(--p-bg-card);border:1px solid var(--p-border);border-radius:12px;padding:20px}
+.about-card h4{font-size:12px;font-weight:600;color:var(--p-text-m);letter-spacing:0.06em;margin-bottom:10px;font-family:var(--p-mono)}
+.about-card-item{font-size:14px;color:var(--p-text);margin-bottom:6px;display:flex;align-items:baseline;gap:8px}
+.about-card-item .dot{width:4px;height:4px;border-radius:50%;background:var(--p-blue);flex-shrink:0;margin-top:7px}
+
+/* === CONTACT === */
+.contact{display:flex;gap:16px;justify-content:center;padding:60px 40px 40px}
+.contact a{font-family:var(--p-mono);font-size:13px;color:var(--p-text-m);text-decoration:none;padding:12px 28px;border:1px solid var(--p-border);border-radius:8px;transition:all 0.2s;letter-spacing:0.02em}
+.contact a:hover{border-color:var(--p-blue);color:var(--p-blue)}
+.footer{text-align:center;padding:20px;font-size:11px;color:var(--p-text-m);font-family:var(--p-mono);letter-spacing:0.04em;border-top:1px solid var(--p-border)}
+.footer .cross-site-links{display:block;margin-bottom:8px}
+.footer .cross-site-links a{color:var(--p-text-m);text-decoration:none;transition:color 0.2s}
+.footer .cross-site-links a:hover{color:var(--p-text-h)}
+
+/* === DETAIL PANEL === */
+.dp{position:fixed;inset:0;z-index:200;transform:translateY(100%);transition:transform 0.4s cubic-bezier(0.4,0,0.15,1);pointer-events:none}
+.dp.open{transform:translateY(0);pointer-events:auto}
+.dp-bg{position:absolute;inset:0;background:rgba(0,0,0,0.6)}
+.dp-sheet{position:absolute;top:0;left:0;right:0;bottom:0;background:var(--p-bg-2);overflow-y:auto}
+.dp-close{position:fixed;top:16px;right:24px;z-index:210;background:var(--p-bg-card);border:1px solid var(--p-border);color:var(--p-text-m);padding:8px 16px;border-radius:8px;font-family:var(--p-mono);font-size:12px;cursor:pointer;transition:all 0.2s}
+.dp-close:hover{border-color:var(--p-text-m);color:var(--p-text-h)}
+.dp-hero{padding:80px 40px 48px;max-width:800px;margin:0 auto;border-bottom:1px solid var(--p-border)}
+.dp-hero-cats{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px}
+.dp-hero-cat{font-family:var(--p-mono);font-size:11px;letter-spacing:0.06em;padding:4px 12px;border-radius:5px;display:inline-block}
+.dp-hero h1{font-size:clamp(24px,4vw,36px);font-weight:700;color:var(--p-text-h);letter-spacing:-0.02em;line-height:1.2;margin-bottom:12px}
+.dp-hero-meta{display:flex;gap:20px;flex-wrap:wrap;font-family:var(--p-mono);font-size:12px;color:var(--p-text-m);margin-bottom:20px}
+.dp-hero-tags{display:flex;gap:6px;flex-wrap:wrap}
+/* Key metrics row */
+.dp-metrics{display:flex;gap:32px;flex-wrap:wrap;padding:24px 0 0}
+.dp-metric .val{font-size:24px;font-weight:700;color:var(--p-text-h)}
+.dp-metric .val em{font-style:normal;color:var(--p-gold)}
+.dp-metric .lbl{font-family:var(--p-mono);font-size:10px;color:var(--p-text-m);letter-spacing:0.06em;margin-top:2px}
+/* Body content */
+.dp-content{max-width:800px;margin:0 auto;padding:40px 40px 100px}
+.dp-content h2{font-size:20px;font-weight:600;color:var(--p-text-h);margin:40px 0 14px;letter-spacing:-0.01em;padding-top:8px;border-top:1px solid var(--p-border)}
+.dp-content h2:first-child{border-top:none;margin-top:0}
+.dp-content h3{font-size:15px;font-weight:600;color:var(--p-text-h);margin:24px 0 8px}
+.dp-content p{line-height:1.7;margin-bottom:14px;color:var(--p-text)}
+.dp-content ul,.dp-content ol{margin:8px 0 14px 20px}
+.dp-content li{line-height:1.6;margin-bottom:4px;color:var(--p-text)}
+.dp-content strong{color:var(--p-text-h)}
+.dp-content a{color:var(--p-blue);text-decoration:none}
+.dp-content code{font-family:var(--p-mono);background:rgba(255,255,255,0.06);padding:2px 6px;border-radius:4px;font-size:0.88em}
+.dp-content pre{background:rgba(255,255,255,0.04);padding:18px;border-radius:10px;overflow-x:auto;margin:14px 0;border:1px solid var(--p-border)}
+.dp-content pre code{background:none;padding:0;font-size:13px}
+.dp-content table{width:100%;border-collapse:collapse;margin:14px 0;font-size:13px}
+.dp-content th,.dp-content td{border:1px solid var(--p-border);padding:8px 12px;text-align:left}
+.dp-content th{background:rgba(255,255,255,0.03);font-weight:600;color:var(--p-text-h)}
+.dp-content tr:hover td{background:rgba(255,255,255,0.02)}
+/* Charts */
+.p-chart-wrap{background:var(--p-bg-card);border:1px solid var(--p-border);border-radius:12px;padding:20px;margin:20px 0 28px;position:relative}
+.p-chart-wrap canvas{width:100%!important;max-height:350px}
+
+/* Mermaid diagrams */
+.dp-content pre.mermaid{background:var(--p-bg-card);border:1px solid var(--p-border);border-radius:12px;padding:24px;margin:20px 0 28px;text-align:center;overflow-x:auto;min-height:60px}
+.dp-content pre.mermaid svg{max-width:100%;height:auto}
+
+/* Live Demos */
+.p-demo-wrap{background:var(--p-bg-card);border:1px solid var(--p-border);border-radius:12px;padding:24px;margin:24px 0 28px;position:relative}
+.p-demo-wrap .pd-head{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:6px;flex-wrap:wrap}
+.p-demo-wrap .pd-title{font-family:var(--p-mono);font-size:11px;letter-spacing:0.08em;color:var(--p-blue);font-weight:600}
+.p-demo-wrap .pd-badge{font-family:var(--p-mono);font-size:10px;letter-spacing:0.06em;padding:3px 10px;border-radius:4px;background:var(--p-teal-g);color:var(--p-teal)}
+.p-demo-wrap .pd-sub{font-size:12.5px;color:var(--p-text-m);margin-bottom:14px}
+.p-demo-wrap .pd-row{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px}
+.p-demo-wrap .pd-input{flex:1;min-width:200px;background:var(--p-bg-2);border:1px solid var(--p-border);border-radius:8px;padding:9px 12px;color:var(--p-text-h);font-family:var(--p-mono);font-size:12.5px;outline:none;transition:border-color 0.2s}
+.p-demo-wrap .pd-input:focus{border-color:var(--p-blue)}
+.p-demo-wrap textarea.pd-input{min-height:100px;resize:vertical;font-family:var(--p-mono);line-height:1.5}
+.p-demo-wrap .pd-btn{background:var(--p-bg-2);border:1px solid var(--p-border);color:var(--p-text-h);padding:9px 16px;border-radius:8px;font-family:var(--p-mono);font-size:12px;cursor:pointer;font-weight:500;transition:all 0.15s;letter-spacing:0.02em}
+.p-demo-wrap .pd-btn:hover{border-color:var(--p-blue);color:var(--p-blue)}
+.p-demo-wrap .pd-btn.primary{background:var(--p-blue);color:#fff;border-color:var(--p-blue)}
+.p-demo-wrap .pd-btn.primary:hover{opacity:0.9;color:#fff}
+.p-demo-wrap .pd-btn.ghost{border-color:transparent;color:var(--p-text-m)}
+.p-demo-wrap .pd-btn.ghost:hover{color:var(--p-text);border-color:transparent}
+.p-demo-wrap .pd-btn:disabled{opacity:0.5;cursor:not-allowed}
+.p-demo-wrap .pd-status{font-family:var(--p-mono);font-size:11.5px;padding:8px 12px;border-radius:6px;margin:10px 0 0}
+.p-demo-wrap .pd-status.info{background:var(--p-blue-g);color:var(--p-blue)}
+.p-demo-wrap .pd-status.ok{background:var(--p-teal-g);color:var(--p-teal)}
+.p-demo-wrap .pd-status.warn{background:var(--p-gold-g);color:var(--p-gold)}
+.p-demo-wrap .pd-status.err{background:rgba(255,107,107,0.1);color:var(--p-red)}
+.p-demo-wrap .pd-summary{display:flex;gap:24px;flex-wrap:wrap;padding:12px 0;margin-top:14px;border-top:1px dashed var(--p-border)}
+.p-demo-wrap .pd-summary .s-val{font-size:19px;font-weight:700;color:var(--p-text-h);letter-spacing:-0.01em}
+.p-demo-wrap .pd-summary .s-lbl{font-family:var(--p-mono);font-size:10px;color:var(--p-text-m);letter-spacing:0.06em;text-transform:uppercase;margin-top:2px}
+.p-demo-wrap .pd-table-wrap{max-height:360px;overflow:auto;border:1px solid var(--p-border);border-radius:8px;margin-top:12px;background:var(--p-bg-2)}
+.p-demo-wrap .pd-table{width:100%;border-collapse:collapse;font-size:12.5px}
+.p-demo-wrap .pd-table thead{position:sticky;top:0;z-index:1;background:var(--p-bg-card)}
+.p-demo-wrap .pd-table th{padding:9px 12px;text-align:left;font-family:var(--p-mono);font-size:10.5px;letter-spacing:0.06em;color:var(--p-text-m);font-weight:500;text-transform:uppercase;border-bottom:1px solid var(--p-border);cursor:pointer;user-select:none;white-space:nowrap}
+.p-demo-wrap .pd-table th:hover{color:var(--p-text-h)}
+.p-demo-wrap .pd-table th .pd-sort{display:inline-block;margin-left:4px;color:var(--p-text-m);font-size:9px}
+.p-demo-wrap .pd-table th.active .pd-sort{color:var(--p-blue)}
+.p-demo-wrap .pd-table td{padding:8px 12px;border-bottom:1px solid var(--p-border);color:var(--p-text);vertical-align:top}
+.p-demo-wrap .pd-table tr:last-child td{border-bottom:none}
+.p-demo-wrap .pd-table td.url{max-width:420px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:var(--p-mono);font-size:11.5px}
+.p-demo-wrap .pd-table td.url a{color:var(--p-blue);text-decoration:none}
+.p-demo-wrap .pd-table td.url a:hover{text-decoration:underline}
+.p-demo-wrap .pd-table td.mono{font-family:var(--p-mono);font-size:11px;color:var(--p-text-m)}
+
+/* === LIGHT MODE ELEMENT OVERRIDES === */
+.light .pcard{box-shadow:0 1px 3px rgba(0,0,0,0.06)}
+.light .pcard:hover{box-shadow:0 8px 24px rgba(0,0,0,0.1)}
+.light .skill-group{box-shadow:0 1px 3px rgba(0,0,0,0.04)}
+.light .about-card{box-shadow:0 1px 3px rgba(0,0,0,0.04)}
+.light .dp-sheet{background:var(--p-bg)}
+.light .dp-close{background:var(--p-bg-card)}
+.light .p-chart-wrap{box-shadow:0 1px 3px rgba(0,0,0,0.04)}
+.light .skill-item{background:rgba(0,0,0,0.04)}
+.light .ptag{background:rgba(0,0,0,0.04)}
+.light .hero::after{background:linear-gradient(90deg,var(--p-blue),var(--p-gold),var(--p-teal),transparent)}
+.light .fbtn.on{background:var(--p-text-h);color:#fff}
+/* Theme toggle button */
+.pn-theme{background:none;border:1px solid var(--p-border);color:var(--p-text-m);width:32px;height:32px;border-radius:8px;cursor:pointer;font-size:16px;display:flex;align-items:center;justify-content:center;transition:all 0.2s;margin-right:8px}
+.pn-theme:hover{border-color:var(--p-text);color:var(--p-text-h)}
+
+/* === RESPONSIVE === */
+@media(max-width:768px){
+  .pn{padding:0 20px}
+  .pn-links{gap:16px}
+  .hero,.sec{padding-left:20px;padding-right:20px}
+  .hero{padding-top:100px}
+  .hero-stats{gap:24px}
+  .hero-domains{grid-template-columns:1fr}
+  .pgrid{grid-template-columns:1fr}
+  .about-grid{grid-template-columns:1fr}
+  .dp-hero,.dp-content{padding-left:20px;padding-right:20px}
+  .dp-metrics{gap:20px}
+  .skills-grid{grid-template-columns:1fr}
+}
+@media(max-width:500px){
+  .pn-links a:not(.pn-cta){display:none}
+  .hero h1{font-size:32px}
+  .contact{flex-direction:column;align-items:center}
+}
+@keyframes cardIn{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
+</style>
+</head>
+<body>
+
+<!-- Nav -->
+<nav class="pn" id="nav">
+  <div class="pn-name">{PORTFOLIO_NAME} <span>{PORTFOLIO_TITLE}</span></div>
+  <div class="pn-links" id="navLinks">
+    <a href="#projects">Projects</a>
+    {PORTFOLIO_REPOS_NAV}
+    <a href="#skills">Skills</a>
+    <a href="#about">About</a>
+    <button class="pn-theme" id="themeToggle" onclick="toggleTheme()" title="Toggle light/dark mode">&#9790;</button>
+    <a href="{PORTFOLIO_LINKEDIN}" target="_blank" class="pn-cta">Let's Connect</a>
+  </div>
+</nav>
+
+<!-- Hero -->
+<section class="hero" id="hero">
+  <div class="hero-sup">{PORTFOLIO_HERO_SUP}</div>
+  <h1>{PORTFOLIO_TAGLINE}</h1>
+  <p class="hero-sub">{PORTFOLIO_SUBTITLE}</p>
+  <div class="hero-stats">{PORTFOLIO_STATS}</div>
+  <div class="hero-domains" id="heroDomains">{PORTFOLIO_DOMAINS}</div>
+</section>
+
+<!-- Projects -->
+<section class="sec" id="projects">
+  <div class="sec-label">SELECTED WORK</div>
+  <div class="sec-title">Projects</div>
+  <div class="filters" id="filterBar"></div>
+  <div class="pgrid" id="projectGrid"></div>
+</section>
+
+<!-- Repositories (optional) -->
+{PORTFOLIO_REPOS_SECTION}
+
+<!-- Skills -->
+<section class="sec" id="skills">
+  <div class="sec-label">COMPETENCIES</div>
+  <div class="sec-title">Technical Skills</div>
+  <div class="skills-grid" id="skillsGrid">{PORTFOLIO_SKILLS}</div>
+</section>
+
+<!-- About -->
+<section class="sec" id="about">
+  <div class="sec-label">BACKGROUND</div>
+  <div class="sec-title">About Me</div>
+  <div class="about-grid">
+    <div class="about-text" id="aboutContent"></div>
+    <div class="about-sidebar">{PORTFOLIO_SIDEBAR}</div>
+  </div>
+</section>
+
+<div class="footer">{PORTFOLIO_CROSS_SITE}&copy; 2026 {PORTFOLIO_NAME} &middot; Built with EmptyOS</div>
+
+<!-- Detail Panel -->
+<div class="dp" id="dp">
+  <div class="dp-bg"></div>
+  <button class="dp-close" id="dpClose">ESC &times;</button>
+  <div class="dp-sheet" id="dpSheet">
+    <div class="dp-hero" id="dpHero"></div>
+    <div class="dp-content" id="dpContent"></div>
+  </div>
+</div>
+
+<script src="/static/eos-components.js?v=20260418"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10.9.3/dist/mermaid.min.js"></script>
+<script>
+(function(){
+'use strict';
+// Mermaid init lives in renderMermaid() — called per-panel open so the current
+// light/dark theme is respected. Module-level init would be dead code with
+// startOnLoad:false.
+var projects=[], activeFilter='all', activeTag=null;
+
+// Domain card click → scroll + filter
+window.goFilter=function(cat){
+  activeFilter=cat;
+  renderFilters();
+  renderGrid();
+  setTimeout(function(){
+    document.getElementById('projects').scrollIntoView({behavior:'smooth'});
+  },150);
+};
+
+// URL param pre-filter (?filter=data-science)
+(function(){
+  var params=new URLSearchParams(window.location.search);
+  var f=params.get('filter');
+  if(f)activeFilter=f;
+})();
+
+// Theme toggle — respect EmptyOS global light theme when user hasn't set a per-site override
+(function(){
+  var saved=localStorage.getItem('p-theme');
+  var globalLight=/\btheme-soft-light\b/.test(document.documentElement.className);
+  if(saved==='light' || (saved===null && globalLight))document.documentElement.classList.add('light');
+  updateThemeIcon();
+})();
+window.toggleTheme=function(){
+  document.documentElement.classList.toggle('light');
+  var isLight=document.documentElement.classList.contains('light');
+  localStorage.setItem('p-theme',isLight?'light':'dark');
+  updateThemeIcon();
+};
+function updateThemeIcon(){
+  var btn=document.getElementById('themeToggle');
+  if(btn)btn.innerHTML=document.documentElement.classList.contains('light')?'&#9788;':'&#9790;';
+}
+
+var CATS=[
+  {key:'ai',label:'AI & ML'},
+  {key:'data-science',label:'Data Science'},
+  {key:'engineering',label:'Engineering & Modelling'},
+  {key:'digital-transformation',label:'Digital Transformation & BA'}
+];
+// Context and metrics are read from project frontmatter (passed via PORTFOLIO_DATA)
+var CAT_CTX={}, CAT_METRICS={};
+
+function esc(s){return typeof EOS_UI!=='undefined'&&EOS_UI.esc?EOS_UI.esc(s||''):(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
+
+function catColor(g){return g==='ai'?'violet':g==='data-science'?'blue':g==='engineering'?'gold':'teal'}
+
+// --- Render ---
+function renderFilters(){
+  var el=document.getElementById('filterBar');
+  var all=[{key:'all',label:'All'}].concat(CATS);
+  el.innerHTML=all.map(function(c){
+    return '<button class="fbtn'+(c.key===activeFilter?' on':'')+'" data-k="'+c.key+'">'+esc(c.label)+'</button>';
+  }).join('');
+  el.querySelectorAll('.fbtn').forEach(function(b){
+    b.onclick=function(){activeFilter=b.dataset.k;activeTag=null;renderFilters();renderGrid()};
+  });
+}
+
+function renderGrid(){
+  var el=document.getElementById('projectGrid');
+  el.classList.add('fading');
+  setTimeout(function(){
+    var list=projects;
+    if(activeFilter!=='all') list=list.filter(function(p){var gs=p.categoryGroups||[p.categoryGroup];return gs.indexOf(activeFilter)!==-1});
+    if(activeTag) list=list.filter(function(p){return p.tags&&p.tags.indexOf(activeTag)!==-1});
+    el.innerHTML=list.map(function(p,i){
+      var tags=(p.tags||[]).slice(0,4).map(function(t){return '<span class="ptag">'+esc(t)+'</span>'}).join('');
+      var ctx=CAT_CTX[p.slug]||'';
+      var labels=p.categoryLabels||(p.categoryLabel?[p.categoryLabel]:[]);
+      var groups=p.categoryGroups||(p.categoryGroup?[p.categoryGroup]:[]);
+      var catChips=labels.map(function(l,k){return '<span class="pcard-cat" data-cat="'+esc(groups[k]||'')+'">'+esc(l)+'</span>'}).join('');
+      return '<div class="pcard" data-cat="'+esc(p.categoryGroup)+'" data-slug="'+esc(p.slug)+'" style="animation-delay:'+(i*0.06)+'s">'+
+        '<div class="pcard-stripe"></div>'+
+        '<div class="pcard-body">'+
+          '<div class="pcard-head">'+
+            '<span class="pcard-cats">'+catChips+'</span>'+
+            '<span class="pcard-date">'+esc(p.date)+'</span>'+
+          '</div>'+
+          (ctx?'<div class="pcard-ctx">'+esc(ctx)+'</div>':'')+
+          '<h3>'+esc(p.title)+'</h3>'+
+          '<div class="pcard-sum">'+esc(p.summary)+'</div>'+
+          '<div class="pcard-tags">'+tags+'</div>'+
+          '<div class="pcard-arrow">View case study &rarr;</div>'+
+        '</div>'+
+      '</div>';
+    }).join('');
+    el.classList.remove('fading');
+    el.querySelectorAll('.pcard').forEach(function(card){
+      card.onclick=function(){openDetail(card.dataset.slug)};
+    });
+  },120);
+}
+
+// --- Detail ---
+function openDetail(slug){
+  var item=projects.find(function(p){return p.slug===slug});
+  if(!item) return;
+  if(item.body){showDetail(item);return}
+  if(window.PORTFOLIO_DATA){
+    var found=window.PORTFOLIO_DATA.projects.find(function(p){return p.slug===slug});
+    if(found){showDetail(found);return}
+  }
+  fetch('/portfolio/api/projects/'+encodeURIComponent(slug))
+    .then(function(r){return r.json()}).then(showDetail);
+}
+
+function showDetail(data){
+  var labels=data.categoryLabels||(data.categoryLabel?[data.categoryLabel]:[]);
+  var groups=data.categoryGroups||(data.categoryGroup?[data.categoryGroup]:[]);
+  var catChipsHtml=labels.map(function(l,k){
+    var col=catColor(groups[k]||'');
+    var s=col==='violet'?'background:var(--p-violet-g);color:var(--p-violet)':
+      col==='blue'?'background:var(--p-blue-g);color:var(--p-blue)':
+      col==='gold'?'background:var(--p-gold-g);color:var(--p-gold)':
+      'background:var(--p-teal-g);color:var(--p-teal)';
+    return '<div class="dp-hero-cat" style="'+s+'">'+esc(l)+'</div>';
+  }).join('');
+  var tags=(data.tags||[]).map(function(t){return '<span class="ptag">'+esc(t)+'</span>'}).join('');
+  var ctx=CAT_CTX[data.slug]||'';
+  var metrics=CAT_METRICS[data.slug]||[];
+  var metricsHtml=metrics.map(function(m){
+    return '<div class="dp-metric"><div class="val"><em>'+m.val+'</em></div><div class="lbl">'+m.lbl+'</div></div>';
+  }).join('');
+
+  document.getElementById('dpHero').innerHTML=
+    '<div class="dp-hero-cats">'+catChipsHtml+'</div>'+
+    '<h1>'+esc(data.title)+'</h1>'+
+    '<div class="dp-hero-meta">'+
+      '<span>'+esc(data.date)+'</span>'+
+      (ctx?'<span>'+esc(ctx)+'</span>':'')+
+    '</div>'+
+    '<div class="dp-hero-tags">'+tags+'</div>'+
+    (metricsHtml?'<div class="dp-metrics">'+metricsHtml+'</div>':'');
+
+  var rendered=renderMd(data.body||'');
+  rendered=rendered.replace(/<!--\s*chart:(\S+)\s*-->/g,function(_,id){
+    return '<div class="p-chart-wrap"><canvas id="cv-'+id+'"></canvas></div>';
+  });
+  rendered=rendered.replace(/<!--\s*demo:(\S+)\s*-->/g,function(_,id){
+    return '<div id="demo-'+id+'" class="p-demo-wrap" data-demo="'+id+'"></div>';
+  });
+  document.getElementById('dpContent').innerHTML=rendered;
+
+  var dp=document.getElementById('dp');
+  dp.classList.add('open');
+  document.body.style.overflow='hidden';
+  document.getElementById('dpSheet').scrollTop=0;
+  setTimeout(function(){renderCharts(data.slug);renderDemos(data.slug);renderMermaid()},150);
+}
+
+function closeDetail(){
+  document.getElementById('dp').classList.remove('open');
+  document.body.style.overflow='';
+  destroyCharts();
+}
+document.getElementById('dpClose').onclick=closeDetail;
+document.querySelector('.dp-bg').onclick=closeDetail;
+document.addEventListener('keydown',function(e){if(e.key==='Escape'&&document.getElementById('dp').classList.contains('open'))closeDetail()});
+
+// --- Markdown ---
+function renderMd(text){
+  if(typeof EOS!=='undefined'&&typeof EOS_UI!=='undefined'&&EOS_UI.renderMarkdown)return EOS_UI.renderMarkdown(text);
+  if(!text)return'';
+  var cbs=[];
+  var html=text.replace(/```(\w*)\n([\s\S]*?)```/g,function(_,l,c){
+    var i=cbs.length;
+    var esc=c.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    if(l==='mermaid')cbs.push('<pre class="mermaid">'+esc+'</pre>');
+    else cbs.push('<pre><code>'+esc+'</code></pre>');
+    return'\x00CB'+i+'\x00';
+  });
+  html=html.replace(/`([^`]+)`/g,function(_,c){return'<code>'+c.replace(/</g,'&lt;')+'</code>'});
+  var lines=html.split('\n'),out=[],inT=false,hd=false;
+  for(var i=0;i<lines.length;i++){
+    var ln=lines[i].trim();
+    if(ln.startsWith('|')&&ln.endsWith('|')){
+      if(/^[\|\s\-:]+$/.test(ln)){hd=true;continue}
+      if(!inT){out.push('<table>');inT=true}
+      var cs=ln.split('|').filter(Boolean).map(function(c){return c.trim()});
+      var tg=!hd?'th':'td';
+      out.push('<tr>'+cs.map(function(c){return'<'+tg+'>'+c+'</'+tg+'>'}).join('')+'</tr>');
+      if(!hd)hd=true;
+    }else{if(inT){out.push('</table>');inT=false;hd=false}out.push(lines[i])}
+  }
+  if(inT)out.push('</table>');
+  html=out.join('\n');
+  html=html.replace(/^#### (.+)$/gm,'<h4>$1</h4>').replace(/^### (.+)$/gm,'<h3>$1</h3>').replace(/^## (.+)$/gm,'<h2>$1</h2>').replace(/^# (.+)$/gm,'<h1>$1</h1>');
+  html=html.replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>').replace(/\*(.+?)\*/g,'<em>$1</em>');
+  html=html.replace(/\[([^\]]+)\]\(([^)]+)\)/g,'<a href="$2">$1</a>');
+  html=html.replace(/^- (.+)$/gm,'<li>$1</li>').replace(/^\d+\. (.+)$/gm,'<li>$1</li>');
+  html=html.replace(/((?:<li>.*<\/li>\n?)+)/g,'<ul>$1</ul>');
+  html=html.replace(/\n{2,}/g,'</p>\n<p>');
+  html='<p>'+html+'</p>';
+  html=html.replace(/<p>\s*(<h[1-4]|<pre|<table|<ul)/g,'$1').replace(/(<\/h[1-4]>|<\/pre>|<\/table>|<\/ul>)\s*<\/p>/g,'$1').replace(/<p>\s*<\/p>/g,'');
+  for(var ci=0;ci<cbs.length;ci++)html=html.replace('\x00CB'+ci+'\x00',cbs[ci]);
+  return html;
+}
+
+// --- Charts ---
+var _ci=[];
+function destroyCharts(){_ci.forEach(function(c){c.destroy()});_ci=[]}
+function synWeekly(base,amp,years,spike){
+  var d=[];for(var y=0;y<years;y++)for(var w=0;w<52;w++){
+    var s=Math.sin((w/52)*Math.PI*2-Math.PI/2)*amp;var t=y*2;var n=(Math.random()-0.5)*8;
+    var sv=(spike&&y===3&&w>10&&w<30)?40+Math.random()*20:0;
+    d.push(Math.round((base+s+t+n+sv)*10)/10)}return d}
+function weekLabels(sy,n){var l=[];for(var y=0;y<n;y++)for(var w=0;w<52;w++){if(w===0)l.push(''+(sy+y));else if(w%13===0)l.push('Q'+(Math.floor(w/13)+1));else l.push('')}return l}
+var CO={responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{color:'#9ca3b4',font:{family:"'JetBrains Mono',monospace",size:11}}},tooltip:{backgroundColor:'#181c24',titleColor:'#e8ecf4',bodyColor:'#9ca3b4',borderColor:'rgba(59,139,255,0.2)',borderWidth:1}},scales:{x:{ticks:{color:'#4a5168',font:{size:10}},grid:{color:'rgba(255,255,255,0.03)'}},y:{ticks:{color:'#4a5168',font:{size:10}},grid:{color:'rgba(255,255,255,0.03)'}}}};
+function mk(id,cfg){var el=document.getElementById(id);if(!el)return;el.parentElement.style.height='320px';_ci.push(new Chart(el,cfg))}
+function renderCharts(slug){destroyCharts();if(typeof Chart==='undefined')return;if(slug==='fuel-price-forecasting')renderFuelCharts();if(slug==='emergency-response')renderERCharts();if(slug==='ai-essay-grading')renderGradingCharts();if(slug==='llm-mcq-benchmarking')renderMCQCharts();if(slug==='digital-twin-validation'||slug==='cable-sheath-voltage-validation')renderDTCharts();if(slug==='ai-chatbot-integration')renderChatbotCharts()}
+
+function renderFuelCharts(){
+  // Replays study data from the vault's demo_data folder
+  // (fuel_weekly.json — AIP TGP 2019-2023 + Brent crude).
+  var F=(window.DEMO_DATA||{}).fuel_weekly;
+  if(!F){console.warn('fuel_weekly dataset missing — fuel charts skipped');return}
+  var CITIES=[
+    {name:'Sydney',     c:'#3b8bff'},
+    {name:'Melbourne',  c:'#e5a84b'},
+    {name:'Brisbane',   c:'#40c9b0'},
+    {name:'Perth',      c:'#ff6b6b'},
+    {name:'National Average', label:'National', c:'#999', dash:[5,3]}
+  ];
+  var lb=F.weekly.dates;
+  mk('cv-fuel-timeseries',{type:'line',data:{labels:lb,datasets:CITIES.map(function(city){
+    return {label:city.label||city.name,data:F.weekly.series[city.name],borderColor:city.c,backgroundColor:'transparent',borderWidth:city.dash?2:1.5,pointRadius:0,borderDash:city.dash||[],tension:0.3};
+  })},options:Object.assign({},CO,{plugins:Object.assign({},CO.plugins,{title:{display:true,text:'Weekly Petrol TGP — Australian Major Cities (2019–2023, AIP)',color:'#9ca3b4',font:{family:"'JetBrains Mono',monospace",size:12}}}),scales:{x:{ticks:{color:'#4a5168',font:{size:10},maxTicksLimit:12,autoSkip:true},grid:{color:'rgba(255,255,255,0.03)'}},y:{title:{display:true,text:'cpl',color:'#4a5168'},ticks:{color:'#4a5168',font:{size:10}},grid:{color:'rgba(255,255,255,0.03)'}}}})});
+  // Average per city over full series
+  var barCities=CITIES.map(function(city){return city.label||city.name});
+  var avg=CITIES.map(function(city){
+    var s=F.weekly.series[city.name].filter(function(v){return v!=null});
+    return Math.round(s.reduce(function(a,b){return a+b},0)/s.length * 10)/10;
+  });
+  mk('cv-fuel-city-comparison',{type:'bar',data:{labels:barCities,datasets:[{label:'Avg cpl (2019–2023)',data:avg,backgroundColor:CITIES.map(function(city){return city.c+'88'}),borderColor:CITIES.map(function(city){return city.c}),borderWidth:1}]},options:Object.assign({},CO,{indexAxis:'y',plugins:Object.assign({},CO.plugins,{title:{display:true,text:'Average Petrol TGP by City (cpl, 2019–2023)',color:'#9ca3b4',font:{family:"'JetBrains Mono',monospace",size:12}}})})});
+  // Brent USD vs National petrol cpl — real monthly-aligned data
+  var bp=F.brent_vs_petrol_monthly;
+  var pts=bp.months.map(function(m,i){return {x:bp.brent_usd[i],y:bp.petrol_cpl_national[i]}});
+  mk('cv-fuel-correlation',{type:'scatter',data:{datasets:[{label:'Monthly (Jan 2019–Dec 2023)',data:pts,backgroundColor:'#3b8bff55',borderColor:'#3b8bff',pointRadius:4}]},options:Object.assign({},CO,{plugins:Object.assign({},CO.plugins,{title:{display:true,text:'Brent Crude (USD/bbl) vs National Petrol TGP (cpl) — Monthly',color:'#9ca3b4',font:{family:"'JetBrains Mono',monospace",size:12}}}),scales:{x:{title:{display:true,text:'Brent (USD/bbl)',color:'#4a5168'},ticks:{color:'#4a5168'},grid:{color:'rgba(255,255,255,0.03)'}},y:{title:{display:true,text:'Petrol (cpl)',color:'#4a5168'},ticks:{color:'#4a5168'},grid:{color:'rgba(255,255,255,0.03)'}}}})});
+}
+
+function mountFuelForecast(el){
+  // Replays the capstone notebook's SARIMAX rolling 1-step-ahead forecast
+  // on NSW U91 daily FuelWatch data (NSW model.ipynb, cell 26). The Python
+  // model output — predictions + 95% CI + confusion matrix — is precomputed
+  // once and loaded as window.DEMO_DATA.fuel_sarimax_nsw at build time.
+  var S=(window.DEMO_DATA||{}).fuel_sarimax_nsw;
+  if(!S){el.innerHTML='<div class="pd-status err">SARIMAX replay data not in demo_data/ — run <code>python demo_data/_build_sarimax.py</code> from the portfolio source folder.</div>';return}
+  el.innerHTML=
+    '<div class="pd-head">'+
+      '<div class="pd-title">LIVE DEMO &middot; SARIMAX REPLAY (NSW U91, DEC 2023)</div>'+
+      '<div class="pd-badge">real model output</div>'+
+    '</div>'+
+    '<div class="pd-sub">Replays the capstone notebook&rsquo;s <code>SARIMAX(1,1,15)(1,1,1,27)</code> rolling 1-step-ahead forecast on NSW U91 FuelWatch data. Hover to inspect per-day predictions and the 95% confidence interval. Toggle <strong>full window</strong> vs <strong>test only</strong> to zoom.</div>'+
+    '<div class="pd-row">'+
+      '<button class="pd-btn" id="fs-zoom-full">Full window (train + test)</button>'+
+      '<button class="pd-btn primary" id="fs-zoom-test">Test only (Dec 2023)</button>'+
+    '</div>'+
+    '<div id="fs-metrics" class="ff-metrics"></div>'+
+    '<div class="pd-chart-box" style="height:340px"><canvas id="fs-chart"></canvas></div>'+
+    '<div class="fs-eval-row">'+
+      '<div class="fs-cm-card">'+
+        '<div class="fs-cm-label">Confusion matrix &middot; pct-change classification (&plusmn;5%)</div>'+
+        '<div id="fs-cm"></div>'+
+      '</div>'+
+      '<div class="fs-caveat">'+
+        '<div class="fs-caveat-head">&#9888; Honest reading</div>'+
+        '<div class="fs-caveat-body" id="fs-caveat"></div>'+
+      '</div>'+
+    '</div>';
+
+  if(!document.getElementById('ff-style')){
+    var s=document.createElement('style');s.id='ff-style';
+    s.textContent=
+      '.ff-metrics{display:flex;gap:24px;flex-wrap:wrap;padding:12px 14px;margin-top:6px;background:var(--p-bg-2);border:1px solid var(--p-border);border-radius:8px}'+
+      '.ff-metrics .m .val{font-size:18px;font-weight:700;color:var(--p-text-h);letter-spacing:-0.01em;font-family:var(--p-mono)}'+
+      '.ff-metrics .m .val.good{color:var(--p-teal)}'+
+      '.ff-metrics .m .val.warn{color:var(--p-gold)}'+
+      '.ff-metrics .m .val.bad{color:var(--p-red)}'+
+      '.ff-metrics .m .lbl{font-family:var(--p-mono);font-size:10px;color:var(--p-text-m);letter-spacing:0.06em;text-transform:uppercase;margin-top:2px}'+
+      '.fs-eval-row{display:grid;grid-template-columns:minmax(260px,1fr) minmax(260px,1fr);gap:16px;margin-top:14px}'+
+      '@media(max-width:700px){.fs-eval-row{grid-template-columns:1fr}}'+
+      '.fs-cm-card,.fs-caveat{background:var(--p-bg-2);border:1px solid var(--p-border);border-radius:8px;padding:14px}'+
+      '.fs-cm-label,.fs-caveat-head{font-family:var(--p-mono);font-size:10.5px;letter-spacing:0.06em;color:var(--p-text-m);text-transform:uppercase;margin-bottom:10px}'+
+      '.fs-caveat-head{color:var(--p-gold)}'+
+      '.fs-caveat-body{font-size:12.5px;line-height:1.55;color:var(--p-text)}'+
+      '.fs-cm-grid{display:grid;grid-template-columns:auto repeat(3,60px);gap:4px;font-family:var(--p-mono);font-size:11px}'+
+      '.fs-cm-grid .fs-cm-h{color:var(--p-text-m);font-size:10px;letter-spacing:0.04em;text-transform:uppercase;text-align:center;padding:4px}'+
+      '.fs-cm-grid .fs-cm-rh{color:var(--p-text-m);font-size:10px;letter-spacing:0.04em;text-transform:uppercase;text-align:right;padding:8px 6px}'+
+      '.fs-cm-grid .fs-cm-cell{text-align:center;padding:10px 6px;border-radius:6px;background:rgba(255,255,255,0.03);color:var(--p-text-h);font-weight:600}'+
+      '.fs-cm-grid .fs-cm-cell.diag{background:var(--p-teal-g);color:var(--p-teal)}'+
+      '.fs-cm-grid .fs-cm-cell.off{background:rgba(255,107,107,0.1);color:var(--p-red)}'+
+      '.fs-cm-grid .fs-cm-cell.zero{color:var(--p-text-m);font-weight:400}';
+    document.head.appendChild(s);
+  }
+
+  var allDates=S.train.dates.concat(S.test.dates);
+  var trainLen=S.train.prices.length;
+  var testLen=S.test.actual.length;
+  var trainSeries=S.train.prices.concat(Array(testLen).fill(null));
+  var testActualSeries=Array(trainLen).fill(null).concat(S.test.actual);
+  var testPredSeries=Array(trainLen).fill(null).concat(S.test.pred);
+  var ciLoSeries=Array(trainLen).fill(null).concat(S.test.ci_lo);
+  var ciHiSeries=Array(trainLen).fill(null).concat(S.test.ci_hi);
+
+  var mae=0, mape=0;
+  for(var i=0;i<testLen;i++){
+    var a=S.test.actual[i], p=S.test.pred[i];
+    mae += Math.abs(a-p);
+    if(a) mape += Math.abs((a-p)/a);
+  }
+  mae=mae/testLen; mape=mape/testLen*100;
+
+  el.querySelector('#fs-metrics').innerHTML=
+    '<div class="m"><div class="val">'+trainLen+'</div><div class="lbl">Train days</div></div>'+
+    '<div class="m"><div class="val">'+testLen+'</div><div class="lbl">Test days</div></div>'+
+    '<div class="m"><div class="val">'+mae.toFixed(2)+' cpl</div><div class="lbl">Test MAE</div></div>'+
+    '<div class="m"><div class="val good">'+mape.toFixed(2)+'%</div><div class="lbl">Test MAPE</div></div>'+
+    '<div class="m"><div class="val">'+(S.eval.accuracy*100).toFixed(1)+'%</div><div class="lbl">Class accuracy</div></div>'+
+    '<div class="m"><div class="val warn">'+(S.eval.macro_f1*100).toFixed(1)+'%</div><div class="lbl">Macro F1</div></div>';
+
+  var labels=S.eval.labels, cm=S.eval.confusion_matrix;
+  var cmHtml='<div class="fs-cm-grid"><div></div>';
+  labels.forEach(function(l){cmHtml+='<div class="fs-cm-h">pred '+l+'</div>'});
+  for(var r=0;r<labels.length;r++){
+    cmHtml+='<div class="fs-cm-rh">actual '+labels[r]+'</div>';
+    for(var col=0;col<labels.length;col++){
+      var v=cm[r][col];
+      var cls= v===0 ? 'zero' : (r===col ? 'diag' : 'off');
+      cmHtml+='<div class="fs-cm-cell '+cls+'">'+v+'</div>';
+    }
+  }
+  cmHtml+='</div>';
+  el.querySelector('#fs-cm').innerHTML=cmHtml;
+
+  var actualUp=cm[2][0]+cm[2][1]+cm[2][2];
+  var actualDown=cm[0][0]+cm[0][1]+cm[0][2];
+  var actualNoChange=cm[1][0]+cm[1][1]+cm[1][2];
+  var caughtUp=cm[2][2], caughtDown=cm[0][0];
+  el.querySelector('#fs-caveat').innerHTML=
+    'The <strong>'+(S.eval.accuracy*100).toFixed(1)+'%</strong> headline accuracy is inflated by class imbalance &mdash; only '+actualUp+' actual up-day'+(actualUp!==1?'s':'')+' and '+actualDown+' down-day'+(actualDown!==1?'s':'')+' in '+testLen+' test days, vs '+actualNoChange+' no-change days. The model caught '+caughtUp+'/'+actualUp+' up and '+caughtDown+'/'+actualDown+' down events. <strong>Macro F1 ('+(S.eval.macro_f1*100).toFixed(1)+'%)</strong> is the fair metric &mdash; it weights each class equally. Forecasting turning-point direction on a daily commodity series is genuinely hard; the headline is good for price level, not for direction.';
+
+  var chart=null;
+  function draw(zoom){
+    var slice=zoom==='test'?[Math.max(0,trainLen-7),allDates.length]:[0,allDates.length];
+    var sd=allDates.slice(slice[0],slice[1]);
+    var st=trainSeries.slice(slice[0],slice[1]);
+    var sa=testActualSeries.slice(slice[0],slice[1]);
+    var sp=testPredSeries.slice(slice[0],slice[1]);
+    var slo=ciLoSeries.slice(slice[0],slice[1]);
+    var shi=ciHiSeries.slice(slice[0],slice[1]);
+    if(chart){chart.destroy();var idx=_ci.indexOf(chart);if(idx>=0)_ci.splice(idx,1)}
+    chart=new Chart(el.querySelector('#fs-chart'),{
+      type:'line',
+      data:{labels:sd,datasets:[
+        {label:'Train (actual)',data:st,borderColor:'#3b8bff',backgroundColor:'transparent',borderWidth:1.2,pointRadius:0,tension:0.2},
+        {label:'Test actual',data:sa,borderColor:'#40c9b0',backgroundColor:'transparent',borderWidth:2,pointRadius:zoom==='test'?4:2,tension:0},
+        {label:'SARIMAX predicted',data:sp,borderColor:'#e5a84b',backgroundColor:'transparent',borderWidth:2,pointRadius:zoom==='test'?4:2,tension:0},
+        {label:'95% CI upper',data:shi,borderColor:'rgba(229,168,75,0.25)',backgroundColor:'rgba(229,168,75,0.08)',borderWidth:1,pointRadius:0,fill:'+1'},
+        {label:'95% CI lower',data:slo,borderColor:'rgba(229,168,75,0.25)',backgroundColor:'transparent',borderWidth:1,pointRadius:0}
+      ]},
+      options:Object.assign({},CO,{
+        interaction:{mode:'index',intersect:false},
+        plugins:Object.assign({},CO.plugins,{
+          title:{display:true,text:'NSW U91 — SARIMAX rolling 1-step forecast ('+(zoom==='test'?'Dec 2023 test window':'full Jan 2022 – Dec 2023')+')',color:'#9ca3b4',font:{family:"'JetBrains Mono',monospace",size:12}},
+          legend:{labels:{color:'#9ca3b4',font:{family:"'JetBrains Mono',monospace",size:11},filter:function(l){return l.text!=='95% CI lower'}}}
+        }),
+        scales:{
+          x:{ticks:{color:'#4a5168',font:{size:10},maxTicksLimit:10,autoSkip:true},grid:{color:'rgba(255,255,255,0.03)'}},
+          y:{title:{display:true,text:'cpl',color:'#4a5168'},ticks:{color:'#4a5168',font:{size:10}},grid:{color:'rgba(255,255,255,0.03)'}}
+        }
+      })
+    });
+    _ci.push(chart);
+  }
+  el.querySelector('#fs-zoom-full').onclick=function(){
+    el.querySelector('#fs-zoom-full').classList.add('primary');
+    el.querySelector('#fs-zoom-test').classList.remove('primary');
+    draw('full');
+  };
+  el.querySelector('#fs-zoom-test').onclick=function(){
+    el.querySelector('#fs-zoom-test').classList.add('primary');
+    el.querySelector('#fs-zoom-full').classList.remove('primary');
+    draw('test');
+  };
+  draw('test');
+}
+function renderERCharts(){
+  var sol=['Airtable','WebEOC','NocoDB','Engel System','DisasterLAN','Veoci','D4H'],sc=[87,82,72,65,58,51,48];
+  mk('cv-er-solution-comparison',{type:'bar',data:{labels:sol,datasets:[{label:'Score',data:sc,backgroundColor:sol.map(function(s){return s==='Airtable'?'#3b8bff88':'rgba(255,255,255,0.08)'}),borderColor:sol.map(function(s){return s==='Airtable'?'#3b8bff':'rgba(255,255,255,0.15)'}),borderWidth:1}]},options:Object.assign({},CO,{indexAxis:'y',plugins:Object.assign({},CO.plugins,{title:{display:true,text:'Solution Comparison — Weighted Score',color:'#9ca3b4',font:{family:"'JetBrains Mono',monospace",size:12}}})})});
+  mk('cv-er-test-results',{type:'doughnut',data:{labels:['Passed (77)','Failed (4)'],datasets:[{data:[77,4],backgroundColor:['#40c9b0','#ff6b6b'],borderColor:['#13161d','#13161d'],borderWidth:2}]},options:{responsive:true,maintainAspectRatio:false,plugins:{title:{display:true,text:'81 Test Cases — 95% Pass Rate',color:'#9ca3b4',font:{family:"'JetBrains Mono',monospace",size:12}},legend:{labels:{color:'#9ca3b4',font:{family:"'JetBrains Mono',monospace",size:11}}}}}});
+  mk('cv-er-radar',{type:'radar',data:{labels:['Cost','Usability','Functionality','Security','Scalability','Support'],datasets:[{label:'Airtable',data:[90,92,78,85,80,75],borderColor:'#3b8bff',backgroundColor:'#3b8bff18',pointBackgroundColor:'#3b8bff'},{label:'WebEOC',data:[30,65,95,90,85,80],borderColor:'#e5a84b',backgroundColor:'#e5a84b18',pointBackgroundColor:'#e5a84b'},{label:'NocoDB',data:[88,60,72,70,78,45],borderColor:'#40c9b0',backgroundColor:'#40c9b018',pointBackgroundColor:'#40c9b0'}]},options:{responsive:true,maintainAspectRatio:false,plugins:{title:{display:true,text:'Top 3 — Multi-Criteria Comparison',color:'#9ca3b4',font:{family:"'JetBrains Mono',monospace",size:12}},legend:{labels:{color:'#9ca3b4',font:{family:"'JetBrains Mono',monospace",size:11}}}},scales:{r:{grid:{color:'rgba(255,255,255,0.05)'},pointLabels:{color:'#9ca3b4',font:{size:11}},ticks:{display:false},suggestedMin:0,suggestedMax:100}}}});
+}
+function renderGradingCharts(){
+  // Illustrative values — the real study dataset is confidential student coursework.
+  // Shape mirrors the qualitative finding (noisy near 0, weak positive trend, sample
+  // degradation at high T) without displaying the real per-temperature statistics.
+  var ts=[0,0.2,0.4,0.6,0.8,1,1.2,1.4,1.6,1.8,2],cr=[null,0.02,0.08,0.04,0.18,0.11,0.06,0.15,0.22,0.19,0.28],sa=[50,50,50,50,50,50,50,50,48,36,30];
+  mk('cv-grading-temperature',{type:'line',data:{labels:ts.map(function(t){return t.toFixed(1)}),datasets:[{label:'Pearson r',data:cr,borderColor:'#3b8bff',backgroundColor:'#3b8bff18',pointBackgroundColor:cr.map(function(v){return v===null?'transparent':v>0.15?'#e5a84b':'#3b8bff'}),pointRadius:6,pointBorderWidth:2,tension:0.3,fill:true,spanGaps:true}]},options:Object.assign({},CO,{plugins:Object.assign({},CO.plugins,{title:{display:true,text:'Temperature vs Human-AI Correlation (illustrative)',color:'#9ca3b4',font:{family:"'JetBrains Mono',monospace",size:12}}}),scales:{x:{title:{display:true,text:'Temperature',color:'#4a5168'},ticks:{color:'#4a5168'},grid:{color:'rgba(255,255,255,0.03)'}},y:{title:{display:true,text:'Pearson r',color:'#4a5168'},ticks:{color:'#4a5168'},grid:{color:'rgba(255,255,255,0.03)'},suggestedMin:-0.15,suggestedMax:0.3}}})});
+  mk('cv-grading-samples',{type:'bar',data:{labels:ts.map(function(t){return t.toFixed(1)}),datasets:[{label:'Valid Samples',data:sa,backgroundColor:sa.map(function(s){return s<40?'#ff6b6b88':'#3b8bff88'}),borderColor:sa.map(function(s){return s<40?'#ff6b6b':'#3b8bff'}),borderWidth:1}]},options:Object.assign({},CO,{plugins:Object.assign({},CO.plugins,{title:{display:true,text:'Valid Outputs per Temperature (illustrative)',color:'#9ca3b4',font:{family:"'JetBrains Mono',monospace",size:12}}}),scales:{x:{title:{display:true,text:'Temperature',color:'#4a5168'},ticks:{color:'#4a5168'},grid:{color:'rgba(255,255,255,0.03)'}},y:{ticks:{color:'#4a5168'},grid:{color:'rgba(255,255,255,0.03)'},suggestedMin:0,suggestedMax:50}}})});
+  var hs=[],gs=[];for(var i=0;i<45;i++){var h=55+Math.random()*40;var g=68+(h-75)*0.3+(Math.random()-0.5)*12;hs.push(Math.round(h));gs.push(Math.round(Math.max(55,Math.min(95,g))))}
+  mk('cv-grading-scatter',{type:'scatter',data:{datasets:[{label:'Essays',data:hs.map(function(h,i){return{x:h,y:gs[i]}}),backgroundColor:'#3b8bff33',borderColor:'#3b8bff',pointRadius:5},{label:'Perfect Agreement',data:[{x:55,y:55},{x:95,y:95}],type:'line',borderColor:'#4a5168',borderDash:[6,4],pointRadius:0,borderWidth:1}]},options:Object.assign({},CO,{plugins:Object.assign({},CO.plugins,{title:{display:true,text:'Human vs GPT Scores — Central Tendency Bias (illustrative)',color:'#9ca3b4',font:{family:"'JetBrains Mono',monospace",size:12}}}),scales:{x:{title:{display:true,text:'Human Score',color:'#4a5168'},ticks:{color:'#4a5168'},grid:{color:'rgba(255,255,255,0.03)'},min:50,max:100},y:{title:{display:true,text:'GPT Score',color:'#4a5168'},ticks:{color:'#4a5168'},grid:{color:'rgba(255,255,255,0.03)'},min:50,max:100}}})});
+}
+
+// --- MCQ Benchmarking Charts ---
+function renderMCQCharts(){
+  // Model accuracy comparison
+  mk('cv-mcq-model-accuracy',{type:'bar',data:{labels:['GPT-3','GPT-3.5','GPT-4'],datasets:[{label:'Overall Accuracy (%)',data:[62,71,84],backgroundColor:['#ff6b6b88','#e5a84b88','#3b8bff88'],borderColor:['#ff6b6b','#e5a84b','#3b8bff'],borderWidth:1}]},options:Object.assign({},CO,{plugins:Object.assign({},CO.plugins,{title:{display:true,text:'Overall Accuracy by Model Generation (illustrative)',color:'#9ca3b4',font:{family:"'JetBrains Mono',monospace",size:12}}}),scales:{x:{ticks:{color:'#9ca3b4',font:{size:12}},grid:{display:false}},y:{ticks:{color:'#4a5168'},grid:{color:'rgba(255,255,255,0.03)'},suggestedMin:0,suggestedMax:100}}})});
+  // Domain heatmap as grouped bar
+  var domains=['Factual','Definitions','Reasoning','Contextual','Numerical'];
+  mk('cv-mcq-domain-heatmap',{type:'bar',data:{labels:domains,datasets:[
+    {label:'GPT-3',data:[72,68,45,52,58],backgroundColor:'#ff6b6b66',borderColor:'#ff6b6b',borderWidth:1},
+    {label:'GPT-3.5',data:[80,76,60,63,69],backgroundColor:'#e5a84b66',borderColor:'#e5a84b',borderWidth:1},
+    {label:'GPT-4',data:[94,91,73,78,82],backgroundColor:'#3b8bff66',borderColor:'#3b8bff',borderWidth:1}
+  ]},options:Object.assign({},CO,{plugins:Object.assign({},CO.plugins,{title:{display:true,text:'Accuracy by Question Domain (%) (illustrative)',color:'#9ca3b4',font:{family:"'JetBrains Mono',monospace",size:12}}}),scales:{x:{ticks:{color:'#9ca3b4'},grid:{display:false}},y:{ticks:{color:'#4a5168'},grid:{color:'rgba(255,255,255,0.03)'},suggestedMin:0,suggestedMax:100}}})});
+  // Error patterns
+  mk('cv-mcq-error-patterns',{type:'bar',data:{labels:['Plausible Distractor','Negation Blindness','Multi-Concept','Off-Topic','Partial Credit'],datasets:[{label:'Error Frequency (%)',data:[40,25,22,8,5],backgroundColor:['#ff6b6b88','#e5a84b88','#3b8bff88','#40c9b088','#9ca3b488'],borderColor:['#ff6b6b','#e5a84b','#3b8bff','#40c9b0','#9ca3b4'],borderWidth:1}]},options:Object.assign({},CO,{indexAxis:'y',plugins:Object.assign({},CO.plugins,{title:{display:true,text:'Most Common Error Patterns (illustrative)',color:'#9ca3b4',font:{family:"'JetBrains Mono',monospace",size:12}}}),scales:{x:{ticks:{color:'#4a5168'},grid:{color:'rgba(255,255,255,0.03)'},suggestedMax:50},y:{ticks:{color:'#9ca3b4'},grid:{display:false}}}})});
+}
+
+// --- Digital Twin Charts ---
+function renderDTCharts(){
+  var methods=['CIGRE area-r','CIGRE phys-r','Image area-r','Image phys-r','IEEE 575 GMR','Image GMR'];
+  var meanErr=[9.31,5.79,7.89,4.36,16.48,17.98];
+  var maxErr=[25.90,20.15,28.45,22.70,16.57,24.94];
+  mk('cv-dt-method-accuracy',{type:'bar',data:{labels:methods,datasets:[
+    {label:'|Mean Error| (%)',data:meanErr,backgroundColor:'#40c9b088',borderColor:'#40c9b0',borderWidth:1},
+    {label:'Max Abs Error (%)',data:maxErr,backgroundColor:'rgba(255,255,255,0.04)',borderColor:'#4a5168',borderWidth:1,borderDash:[4,4]}
+  ]},options:Object.assign({},CO,{plugins:Object.assign({},CO.plugins,{title:{display:true,text:'Algorithm Accuracy vs Reference (%)',color:'#9ca3b4',font:{family:"'JetBrains Mono',monospace",size:12}}}),scales:{x:{ticks:{color:'#9ca3b4',font:{size:10}},grid:{display:false}},y:{ticks:{color:'#4a5168'},grid:{color:'rgba(255,255,255,0.03)'},suggestedMin:0,suggestedMax:30}}})});
+  // Per-case |error| for top 3 best-mean-error methods
+  var caseLabels=['Boring 2m','Flat 400mm','Flat 650mm','Single 2.5m','Bundle 350mm','Single 3m'];
+  mk('cv-dt-case-heatmap',{type:'bar',data:{labels:caseLabels,datasets:[
+    {label:'Image phys-r',data:[8.3,2.1,7.9,10.6,1.4,12.1],backgroundColor:'#40c9b066',borderColor:'#40c9b0',borderWidth:1},
+    {label:'CIGRE phys-r',data:[3.8,3.0,0.4,4.4,6.4,4.8],backgroundColor:'#3b8bff66',borderColor:'#3b8bff',borderWidth:1},
+    {label:'Image area-r',data:[6.3,1.0,5.2,8.6,5.1,10.2],backgroundColor:'#e5a84b66',borderColor:'#e5a84b',borderWidth:1}
+  ]},options:Object.assign({},CO,{plugins:Object.assign({},CO.plugins,{title:{display:true,text:'Per-Case |Error| — Top 3 Methods (%)',color:'#9ca3b4',font:{family:"'JetBrains Mono',monospace",size:12}}}),scales:{x:{ticks:{color:'#9ca3b4',font:{size:10}},grid:{display:false}},y:{ticks:{color:'#4a5168'},grid:{color:'rgba(255,255,255,0.03)'},suggestedMin:0,suggestedMax:15}}})});
+  // Conservative rate — cases where algorithm predicts >= reference (safety-side)
+  var conservative=[9,9,5,4,0,0];
+  mk('cv-dt-convergence',{type:'bar',data:{labels:methods,datasets:[
+    {label:'Cases Above Reference (of 12)',data:conservative,backgroundColor:'#3b8bff88',borderColor:'#3b8bff',borderWidth:1}
+  ]},options:Object.assign({},CO,{plugins:Object.assign({},CO.plugins,{title:{display:true,text:'Conservative Rate — Cases Where Algorithm ≥ Reference',color:'#9ca3b4',font:{family:"'JetBrains Mono',monospace",size:12}}}),scales:{x:{ticks:{color:'#9ca3b4',font:{size:10}},grid:{display:false}},y:{title:{display:true,text:'Cases (out of 12)',color:'#4a5168'},ticks:{color:'#4a5168',stepSize:2},grid:{color:'rgba(255,255,255,0.03)'},suggestedMin:0,suggestedMax:12}}})});
+}
+
+// --- Chatbot Charts ---
+function renderChatbotCharts(){
+  // Platform comparison radar
+  var platforms=['Platform A','Platform B','Platform C','Platform D'];
+  mk('cv-chatbot-platform-scores',{type:'radar',data:{labels:['AI Accuracy','Customisation','Human Handoff','Knowledge Base','Pricing','Analytics'],datasets:[
+    {label:platforms[0],data:[88,75,90,85,70,65],borderColor:'#3b8bff',backgroundColor:'#3b8bff18',pointBackgroundColor:'#3b8bff'},
+    {label:platforms[1],data:[62,85,70,60,90,88],borderColor:'#e5a84b',backgroundColor:'#e5a84b18',pointBackgroundColor:'#e5a84b'},
+    {label:platforms[2],data:[55,60,80,50,85,45],borderColor:'#40c9b0',backgroundColor:'#40c9b018',pointBackgroundColor:'#40c9b0'},
+    {label:platforms[3],data:[70,70,65,72,75,70],borderColor:'#9ca3b4',backgroundColor:'#9ca3b418',pointBackgroundColor:'#9ca3b4'}
+  ]},options:{responsive:true,maintainAspectRatio:false,plugins:{title:{display:true,text:'Platform Evaluation — 6 Criteria Comparison',color:'#9ca3b4',font:{family:"'JetBrains Mono',monospace",size:12}},legend:{labels:{color:'#9ca3b4',font:{family:"'JetBrains Mono',monospace",size:11}}}},scales:{r:{grid:{color:'rgba(255,255,255,0.05)'},pointLabels:{color:'#9ca3b4',font:{size:11}},ticks:{display:false},suggestedMin:0,suggestedMax:100}}}});
+  // Weekly chat volume over time
+  var weeks=[];for(var i=1;i<=16;i++)weeks.push('W'+i);
+  var vol=[12,18,22,28,35,32,40,38,45,42,48,52,44,46,50,47];
+  mk('cv-chatbot-metrics',{type:'line',data:{labels:weeks,datasets:[{label:'Weekly Conversations',data:vol,borderColor:'#3b8bff',backgroundColor:'#3b8bff18',pointRadius:4,tension:0.3,fill:true}]},options:Object.assign({},CO,{plugins:Object.assign({},CO.plugins,{title:{display:true,text:'Chat Volume — First 16 Weeks',color:'#9ca3b4',font:{family:"'JetBrains Mono',monospace",size:12}}}),scales:{x:{ticks:{color:'#4a5168'},grid:{color:'rgba(255,255,255,0.03)'}},y:{title:{display:true,text:'Conversations',color:'#4a5168'},ticks:{color:'#4a5168'},grid:{color:'rgba(255,255,255,0.03)'},suggestedMin:0}}})});
+  // Resolution breakdown donut
+  mk('cv-chatbot-resolution',{type:'doughnut',data:{labels:['AI Resolved (72%)','Human Handoff (20%)','Abandoned (8%)'],datasets:[{data:[72,20,8],backgroundColor:['#40c9b0','#3b8bff','#ff6b6b'],borderColor:['#13161d','#13161d','#13161d'],borderWidth:2}]},options:{responsive:true,maintainAspectRatio:false,plugins:{title:{display:true,text:'Conversation Resolution Breakdown',color:'#9ca3b4',font:{family:"'JetBrains Mono',monospace",size:12}},legend:{labels:{color:'#9ca3b4',font:{family:"'JetBrains Mono',monospace",size:11}}}}}});
+}
+
+// --- Mermaid ---
+function renderMermaid(){
+  if(typeof mermaid==='undefined')return;
+  var nodes=document.querySelectorAll('#dpContent pre.mermaid');
+  if(!nodes.length)return;
+  // Re-initialise theme each time to respect the user's current light/dark toggle.
+  var isLight=document.documentElement.classList.contains('light');
+  try{
+    mermaid.initialize({
+      startOnLoad:false,
+      theme:isLight?'default':'dark',
+      securityLevel:'loose',
+      flowchart:{curve:'basis',htmlLabels:true,useMaxWidth:true},
+      themeVariables:isLight?{}:{
+        background:'#181c24',primaryColor:'#1e2330',primaryTextColor:'#e8ecf4',
+        primaryBorderColor:'#3b8bff',lineColor:'#4a5168',secondaryColor:'#13161d',
+        tertiaryColor:'#13161d'
+      }
+    });
+    mermaid.run({nodes:nodes});
+  }catch(e){console.warn('mermaid render failed:',e)}
+}
+
+// --- Live Demos ---
+function renderDemos(slug){
+  var wraps=document.querySelectorAll('#dpContent .p-demo-wrap[data-demo]');
+  wraps.forEach(function(el){
+    var demo=el.getAttribute('data-demo');
+    if(demo==='sitemap-extractor')mountSitemapExtractor(el);
+    if(demo==='solution-scorer')mountSolutionScorer(el);
+    if(demo==='fuel-forecast')mountFuelForecast(el);
+  });
+}
+
+function mountSolutionScorer(el){
+  // Per-criterion scores (0-100) — from the study's ISO/IEC 25010 radar analysis.
+  // Only the top-3 shortlist has a per-criterion decomposition in the case study;
+  // the other 4 solutions were eliminated earlier and have overall scores only.
+  var SOLUTIONS=[
+    {name:'Airtable', s:[90,92,78,85,80,75], highlight:true},
+    {name:'WebEOC',   s:[30,65,95,90,85,80]},
+    {name:'NocoDB',   s:[88,60,72,70,78,45]}
+  ];
+  var CRIT=[
+    {key:'cost',          label:'Cost-effectiveness', hint:'Volunteer-org budget reality',         def:5},
+    {key:'usability',     label:'Usability',          hint:'Minimal training required',            def:4},
+    {key:'functionality', label:'Functionality',      hint:'Feature depth for Must-Haves',         def:4},
+    {key:'security',      label:'Security',           hint:'Access control + data protection',     def:4},
+    {key:'scalability',   label:'Scalability',        hint:'Growth + integration capability',      def:3},
+    {key:'support',       label:'Support',            hint:'Vendor responsiveness + docs',         def:3}
+  ];
+  var PRESETS={
+    study: {label:'Study defaults',    weights:[5,4,4,4,3,3]},
+    equal: {label:'All equal',         weights:[3,3,3,3,3,3]},
+    cost:  {label:'Cost-first',        weights:[5,3,2,2,1,1]},
+    feat:  {label:'Feature-first',     weights:[1,2,5,5,4,4]},
+    vol:   {label:'Volunteer-friendly',weights:[5,5,3,3,2,2]}
+  };
+
+  el.innerHTML=
+    '<div class="pd-head">'+
+      '<div class="pd-title">LIVE DEMO &middot; WEIGHTED SOLUTION SCORER</div>'+
+      '<div class="pd-badge">client-side</div>'+
+    '</div>'+
+    '<div class="pd-sub">Adjust each criterion&rsquo;s weight (0&ndash;5). Rankings recompute live across the shortlisted 3 solutions from the study&rsquo;s radar analysis. Try <strong>Cost-first</strong> vs <strong>Feature-first</strong> presets &mdash; the winner flips.</div>'+
+    '<div class="pd-row" id="ss-presets"></div>'+
+    '<div id="ss-sliders" class="ss-sliders"></div>'+
+    '<div id="ss-winner" class="ss-winner"></div>'+
+    '<div class="pd-chart-box"><canvas id="ss-bars"></canvas></div>'+
+    '<details class="ss-details"><summary>Show score matrix (solution &times; criterion, 0&ndash;100)</summary><div id="ss-matrix"></div></details>';
+
+  // Inject scoped CSS only once
+  if(!document.getElementById('ss-style')){
+    var style=document.createElement('style');style.id='ss-style';
+    style.textContent=
+      '.ss-sliders{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px;margin:6px 0 14px}'+
+      '.ss-row{background:var(--p-bg-2);border:1px solid var(--p-border);border-radius:8px;padding:10px 12px}'+
+      '.ss-row-head{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px;gap:8px}'+
+      '.ss-row-label{font-size:12.5px;color:var(--p-text-h);font-weight:600;letter-spacing:-0.01em}'+
+      '.ss-row-val{font-family:var(--p-mono);font-size:13px;font-weight:700;color:var(--p-blue);min-width:14px;text-align:right}'+
+      '.ss-row-hint{font-family:var(--p-mono);font-size:10.5px;color:var(--p-text-m);letter-spacing:0.02em;margin-bottom:6px;display:block}'+
+      '.ss-slider{width:100%;appearance:none;-webkit-appearance:none;height:4px;border-radius:2px;background:rgba(255,255,255,0.1);outline:none;margin:2px 0}'+
+      '.light .ss-slider{background:rgba(0,0,0,0.08)}'+
+      '.ss-slider::-webkit-slider-thumb{-webkit-appearance:none;width:16px;height:16px;border-radius:50%;background:var(--p-blue);cursor:pointer;transition:transform 0.1s}'+
+      '.ss-slider::-webkit-slider-thumb:active{transform:scale(1.2)}'+
+      '.ss-slider::-moz-range-thumb{width:16px;height:16px;border-radius:50%;background:var(--p-blue);cursor:pointer;border:none}'+
+      '.ss-winner{display:flex;align-items:center;gap:14px;background:var(--p-blue-g);border:1px solid rgba(59,139,255,0.25);border-radius:10px;padding:12px 16px;margin:12px 0}'+
+      '.ss-winner .lbl{font-family:var(--p-mono);font-size:10.5px;letter-spacing:0.08em;color:var(--p-text-m);text-transform:uppercase}'+
+      '.ss-winner .name{font-size:20px;font-weight:700;color:var(--p-text-h);letter-spacing:-0.01em}'+
+      '.ss-winner .score{font-family:var(--p-mono);font-size:12px;color:var(--p-blue);font-weight:600;margin-left:auto}'+
+      '.ss-winner .moved{font-family:var(--p-mono);font-size:10.5px;color:var(--p-gold);letter-spacing:0.04em}'+
+      '.pd-chart-box{position:relative;height:280px;margin-top:8px;background:var(--p-bg-2);border:1px solid var(--p-border);border-radius:8px;padding:12px}'+
+      '.ss-details{margin-top:14px;font-size:12.5px}'+
+      '.ss-details summary{cursor:pointer;font-family:var(--p-mono);font-size:11px;color:var(--p-text-m);letter-spacing:0.04em;padding:6px 0;text-transform:uppercase}'+
+      '.ss-details summary:hover{color:var(--p-text)}'+
+      '.ss-details table{width:100%;border-collapse:collapse;margin-top:8px;font-size:12px}'+
+      '.ss-details th,.ss-details td{padding:6px 10px;border-bottom:1px solid var(--p-border);text-align:center;font-family:var(--p-mono)}'+
+      '.ss-details th{color:var(--p-text-m);font-size:10.5px;letter-spacing:0.04em;text-transform:uppercase;font-weight:500}'+
+      '.ss-details td:first-child{text-align:left;color:var(--p-text-h);font-weight:600}';
+    document.head.appendChild(style);
+  }
+
+  // Presets
+  var presetsEl=el.querySelector('#ss-presets');
+  Object.keys(PRESETS).forEach(function(k){
+    var b=document.createElement('button');
+    b.className='pd-btn'+(k==='study'?' primary':'');
+    b.textContent=PRESETS[k].label;
+    b.onclick=function(){applyPreset(k)};
+    presetsEl.appendChild(b);
+  });
+
+  // Sliders
+  var slEl=el.querySelector('#ss-sliders');
+  CRIT.forEach(function(c,i){
+    var row=document.createElement('div');row.className='ss-row';
+    row.innerHTML=
+      '<div class="ss-row-head"><div class="ss-row-label">'+c.label+'</div><div class="ss-row-val" id="ss-v-'+c.key+'">'+c.def+'</div></div>'+
+      '<span class="ss-row-hint">'+c.hint+'</span>'+
+      '<input type="range" min="0" max="5" step="1" value="'+c.def+'" class="ss-slider" data-idx="'+i+'">';
+    slEl.appendChild(row);
+  });
+  slEl.querySelectorAll('input[type="range"]').forEach(function(inp){
+    inp.addEventListener('input',function(){update()});
+  });
+
+  // Matrix reference
+  var m='<table><thead><tr><th>Solution</th>'+
+    CRIT.map(function(c){return '<th>'+c.label.split(' ')[0]+'</th>'}).join('')+
+    '<th>Avg</th></tr></thead><tbody>'+
+    SOLUTIONS.map(function(sol){
+      var avg=Math.round(sol.s.reduce(function(a,b){return a+b},0)/sol.s.length);
+      return '<tr><td>'+esc(sol.name)+'</td>'+
+        sol.s.map(function(v){return '<td>'+v+'</td>'}).join('')+
+        '<td style="color:var(--p-blue)">'+avg+'</td></tr>';
+    }).join('')+
+    '</tbody></table>';
+  el.querySelector('#ss-matrix').innerHTML=m;
+
+  // Chart
+  var chart=null;
+  var lastRank=null;
+  function currentWeights(){
+    var out=[];
+    slEl.querySelectorAll('input[type="range"]').forEach(function(inp){out[parseInt(inp.dataset.idx)]=parseInt(inp.value)});
+    return out;
+  }
+  function compute(w){
+    var totalW=w.reduce(function(a,b){return a+b},0);
+    if(totalW===0)totalW=1;
+    return SOLUTIONS.map(function(sol){
+      var raw=sol.s.reduce(function(a,v,i){return a+v*w[i]},0);
+      return {name:sol.name,highlight:!!sol.highlight,score:raw/totalW};
+    }).sort(function(a,b){return b.score-a.score});
+  }
+  function update(){
+    var w=currentWeights();
+    w.forEach(function(v,i){el.querySelector('#ss-v-'+CRIT[i].key).textContent=v});
+    var ranked=compute(w);
+    var winner=ranked[0];
+    var wasRank=lastRank?lastRank.indexOf(winner.name):-1;
+    var moved='';
+    if(lastRank && wasRank>0) moved='&uarr; from #'+(wasRank+1);
+    else if(lastRank && lastRank[0]!==winner.name) moved='&harr; new leader';
+    el.querySelector('#ss-winner').innerHTML=
+      '<div><div class="lbl">Winner under these weights</div>'+
+      '<div class="name">'+esc(winner.name)+' <span class="moved">'+moved+'</span></div></div>'+
+      '<div class="score">'+winner.score.toFixed(1)+' / 100</div>';
+    lastRank=ranked.map(function(r){return r.name});
+    drawChart(ranked);
+  }
+  function drawChart(ranked){
+    var ctx=el.querySelector('#ss-bars');
+    var labels=ranked.map(function(r){return r.name});
+    var data=ranked.map(function(r){return parseFloat(r.score.toFixed(1))});
+    var colors=ranked.map(function(r,i){
+      if(i===0)return '#3b8bff';
+      if(r.highlight)return '#3b8bff88';
+      return 'rgba(255,255,255,0.1)';
+    });
+    var borders=ranked.map(function(r,i){
+      if(i===0)return '#3b8bff';
+      if(r.highlight)return '#3b8bff';
+      return 'rgba(255,255,255,0.2)';
+    });
+    if(chart){
+      chart.data.labels=labels;
+      chart.data.datasets[0].data=data;
+      chart.data.datasets[0].backgroundColor=colors;
+      chart.data.datasets[0].borderColor=borders;
+      chart.update('none');
+      return;
+    }
+    if(typeof Chart==='undefined')return;
+    chart=new Chart(ctx,{
+      type:'bar',
+      data:{labels:labels,datasets:[{label:'Weighted score',data:data,backgroundColor:colors,borderColor:borders,borderWidth:1}]},
+      options:{
+        indexAxis:'y',responsive:true,maintainAspectRatio:false,animation:{duration:250},
+        plugins:{
+          legend:{display:false},
+          tooltip:{backgroundColor:'#181c24',titleColor:'#e8ecf4',bodyColor:'#9ca3b4',borderColor:'rgba(59,139,255,0.2)',borderWidth:1,callbacks:{label:function(c){return c.parsed.x.toFixed(1)+' / 100'}}}
+        },
+        scales:{
+          x:{min:0,max:100,ticks:{color:'#4a5168',font:{size:10}},grid:{color:'rgba(255,255,255,0.03)'}},
+          y:{ticks:{color:'#9ca3b4',font:{family:"'JetBrains Mono',monospace",size:11}},grid:{display:false}}
+        }
+      }
+    });
+    _ci.push(chart);
+  }
+  function applyPreset(k){
+    var w=PRESETS[k].weights;
+    slEl.querySelectorAll('input[type="range"]').forEach(function(inp){inp.value=w[parseInt(inp.dataset.idx)]});
+    update();
+  }
+  update();
+}
+
+function mountSitemapExtractor(el){
+  var ex='<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'+
+    '  <url><loc>https://example.com/</loc><lastmod>2024-09-15</lastmod><priority>1.0</priority><changefreq>weekly</changefreq></url>\n'+
+    '  <url><loc>https://example.com/products/widget-pro</loc><lastmod>2024-08-22</lastmod><priority>0.8</priority><changefreq>monthly</changefreq></url>\n'+
+    '  <url><loc>https://example.com/products/widget-lite</loc><lastmod>2024-08-22</lastmod><priority>0.8</priority><changefreq>monthly</changefreq></url>\n'+
+    '  <url><loc>https://example.com/docs/getting-started</loc><lastmod>2024-07-03</lastmod><priority>0.9</priority><changefreq>weekly</changefreq></url>\n'+
+    '  <url><loc>https://example.com/docs/api-reference</loc><lastmod>2024-09-01</lastmod><priority>0.9</priority><changefreq>weekly</changefreq></url>\n'+
+    '  <url><loc>https://example.com/docs/integration-guide</loc><lastmod>2024-06-12</lastmod><priority>0.7</priority><changefreq>monthly</changefreq></url>\n'+
+    '  <url><loc>https://example.com/blog/launch-announcement</loc><lastmod>2024-03-18</lastmod><priority>0.6</priority><changefreq>yearly</changefreq></url>\n'+
+    '  <url><loc>https://example.com/blog/case-study-acme</loc><lastmod>2024-05-02</lastmod><priority>0.6</priority><changefreq>yearly</changefreq></url>\n'+
+    '  <url><loc>https://example.com/blog/v2-release-notes</loc><lastmod>2024-09-10</lastmod><priority>0.6</priority><changefreq>monthly</changefreq></url>\n'+
+    '  <url><loc>https://example.com/pricing</loc><lastmod>2024-09-14</lastmod><priority>0.8</priority><changefreq>monthly</changefreq></url>\n'+
+    '  <url><loc>https://example.com/about</loc><lastmod>2024-04-20</lastmod><priority>0.5</priority><changefreq>yearly</changefreq></url>\n'+
+    '  <url><loc>https://example.com/contact</loc><lastmod>2024-04-20</lastmod><priority>0.5</priority><changefreq>yearly</changefreq></url>\n'+
+    '  <url><loc>https://example.com/support</loc><lastmod>2024-07-25</lastmod><priority>0.6</priority><changefreq>monthly</changefreq></url>\n'+
+    '  <url><loc>https://example.com/support/faq</loc><lastmod>2024-07-25</lastmod><priority>0.5</priority><changefreq>monthly</changefreq></url>\n'+
+    '  <url><loc>https://example.com/changelog</loc><lastmod>2024-09-12</lastmod><priority>0.4</priority><changefreq>weekly</changefreq></url>\n'+
+    '</urlset>';
+
+  el.innerHTML=
+    '<div class="pd-head">'+
+      '<div class="pd-title">LIVE DEMO &middot; SITEMAP EXTRACTOR</div>'+
+      '<div class="pd-badge">client-side</div>'+
+    '</div>'+
+    '<div class="pd-sub">Paste a sitemap URL, fetch and parse it, then export a CSV for bulk knowledge-base upload. Runs entirely in your browser &mdash; no server round-trip.</div>'+
+    '<div class="pd-row">'+
+      '<input type="url" class="pd-input" id="sx-url" placeholder="https://www.sitemaps.org/sitemap.xml" value="https://www.sitemaps.org/sitemap.xml">'+
+      '<button class="pd-btn primary" id="sx-fetch">Fetch &amp; parse</button>'+
+      '<button class="pd-btn" id="sx-example">Load example</button>'+
+    '</div>'+
+    '<div class="pd-row">'+
+      '<textarea class="pd-input" id="sx-xml" placeholder="...or paste sitemap XML here"></textarea>'+
+    '</div>'+
+    '<div class="pd-row">'+
+      '<button class="pd-btn" id="sx-parse">Parse pasted XML</button>'+
+      '<button class="pd-btn ghost" id="sx-clear">Clear</button>'+
+      '<button class="pd-btn ghost" id="sx-csv" disabled>&#11123; Export CSV</button>'+
+    '</div>'+
+    '<div class="pd-status info" id="sx-status">Try it: click <strong>Fetch &amp; parse</strong> on the default URL, or <strong>Load example</strong> for an embedded sitemap.</div>'+
+    '<div id="sx-out"></div>';
+
+  var sxUrl=el.querySelector('#sx-url');
+  var sxXml=el.querySelector('#sx-xml');
+  var status=el.querySelector('#sx-status');
+  var out=el.querySelector('#sx-out');
+  var csvBtn=el.querySelector('#sx-csv');
+  var state={rows:[],sort:{key:'loc',dir:1}};
+
+  function setStatus(kind,text){
+    status.className='pd-status '+kind;
+    status.innerHTML=text;
+  }
+  function parseXml(text){
+    if(!text||!text.trim())return {error:'Empty input.'};
+    var doc;
+    try{doc=new DOMParser().parseFromString(text,'text/xml')}catch(e){return {error:'Parse error: '+e.message}}
+    var perr=doc.querySelector('parsererror');
+    if(perr)return {error:'Invalid XML &mdash; not a parseable sitemap.'};
+    var urls=doc.querySelectorAll('url');
+    var idx=doc.querySelectorAll('sitemap');
+    if(urls.length===0&&idx.length>0){
+      var nested=[];
+      idx.forEach(function(s){var l=s.querySelector('loc');if(l)nested.push((l.textContent||'').trim())});
+      return {error:'This is a <strong>sitemap index</strong> &mdash; it lists other sitemaps. Fetch one of its children:<br>'+nested.slice(0,5).map(function(u){return '&nbsp;&bull; <code>'+esc(u)+'</code>'}).join('<br>')};
+    }
+    if(urls.length===0)return {error:'No <code>&lt;url&gt;</code> entries found.'};
+    var rows=[];
+    urls.forEach(function(u){
+      var loc=u.querySelector('loc');
+      var lm=u.querySelector('lastmod');
+      var pr=u.querySelector('priority');
+      var cf=u.querySelector('changefreq');
+      rows.push({
+        loc:loc?(loc.textContent||'').trim():'',
+        lastmod:lm?(lm.textContent||'').trim():'',
+        priority:pr?(pr.textContent||'').trim():'',
+        changefreq:cf?(cf.textContent||'').trim():''
+      });
+    });
+    return {rows:rows};
+  }
+  function render(res){
+    if(res.error){setStatus('err',res.error);out.innerHTML='';csvBtn.disabled=true;return}
+    state.rows=res.rows;
+    csvBtn.disabled=false;
+    var years={};var withLastmod=0;var latest='';
+    res.rows.forEach(function(r){
+      if(r.lastmod){withLastmod++;var y=r.lastmod.slice(0,4);if(/^\d{4}$/.test(y))years[y]=(years[y]||0)+1;if(r.lastmod>latest)latest=r.lastmod}
+    });
+    var yearList=Object.keys(years).sort();
+    var yearSummary=yearList.length?yearList.map(function(y){return y+'('+years[y]+')'}).join(' &middot; '):'&mdash;';
+    var summary='<div class="pd-summary">'+
+      '<div><div class="s-val">'+res.rows.length+'</div><div class="s-lbl">URLs extracted</div></div>'+
+      '<div><div class="s-val">'+withLastmod+'</div><div class="s-lbl">with lastmod</div></div>'+
+      '<div><div class="s-val">'+(latest||'&mdash;')+'</div><div class="s-lbl">most recent</div></div>'+
+      '<div><div class="s-val" style="font-size:13px;font-family:var(--p-mono)">'+yearSummary+'</div><div class="s-lbl">by year</div></div>'+
+    '</div>';
+    out.innerHTML=summary+renderTable();
+    attachSort();
+    setStatus('ok','Parsed <strong>'+res.rows.length+' URL'+(res.rows.length===1?'':'s')+'</strong>. Click a column header to sort. Export CSV to feed a chatbot knowledge base.');
+  }
+  function renderTable(){
+    var sorted=state.rows.slice().sort(function(a,b){
+      var k=state.sort.key;var av=(a[k]||'').toLowerCase();var bv=(b[k]||'').toLowerCase();
+      if(k==='priority'){av=parseFloat(av)||0;bv=parseFloat(bv)||0}
+      return av<bv?-state.sort.dir:av>bv?state.sort.dir:0;
+    });
+    var headers=[['loc','URL'],['lastmod','Last modified'],['priority','Priority'],['changefreq','Change freq']];
+    var thead=headers.map(function(h){
+      var active=state.sort.key===h[0]?' active':'';
+      var arrow=state.sort.key===h[0]?(state.sort.dir===1?'&#9650;':'&#9660;'):'';
+      return '<th class="'+active+'" data-k="'+h[0]+'">'+h[1]+'<span class="pd-sort">'+arrow+'</span></th>';
+    }).join('');
+    var tbody=sorted.map(function(r){
+      return '<tr>'+
+        '<td class="url" title="'+esc(r.loc)+'"><a href="'+esc(r.loc)+'" target="_blank" rel="noopener">'+esc(r.loc)+'</a></td>'+
+        '<td class="mono">'+esc(r.lastmod||'&mdash;')+'</td>'+
+        '<td class="mono">'+esc(r.priority||'&mdash;')+'</td>'+
+        '<td class="mono">'+esc(r.changefreq||'&mdash;')+'</td>'+
+      '</tr>';
+    }).join('');
+    return '<div class="pd-table-wrap"><table class="pd-table"><thead><tr>'+thead+'</tr></thead><tbody>'+tbody+'</tbody></table></div>';
+  }
+  function attachSort(){
+    out.querySelectorAll('.pd-table th').forEach(function(th){
+      th.onclick=function(){
+        var k=th.dataset.k;
+        if(state.sort.key===k)state.sort.dir=-state.sort.dir;else{state.sort.key=k;state.sort.dir=1}
+        out.innerHTML=out.querySelector('.pd-summary').outerHTML+renderTable();
+        attachSort();
+      };
+    });
+  }
+  function downloadCsv(){
+    if(!state.rows.length)return;
+    var header=['loc','lastmod','priority','changefreq'];
+    var lines=[header.join(',')];
+    state.rows.forEach(function(r){
+      lines.push(header.map(function(k){
+        var v=(r[k]||'').replace(/"/g,'""');
+        return /[",\n]/.test(v)?'"'+v+'"':v;
+      }).join(','));
+    });
+    var blob=new Blob([lines.join('\n')],{type:'text/csv;charset=utf-8'});
+    var u=URL.createObjectURL(blob);
+    var a=document.createElement('a');
+    a.href=u;a.download='sitemap-'+new Date().toISOString().slice(0,10)+'.csv';
+    document.body.appendChild(a);a.click();document.body.removeChild(a);
+    setTimeout(function(){URL.revokeObjectURL(u)},1000);
+  }
+  el.querySelector('#sx-fetch').onclick=function(){
+    var url=(sxUrl.value||'').trim();
+    if(!url){setStatus('warn','Enter a sitemap URL first, or click Load example.');return}
+    setStatus('info','Fetching <code>'+esc(url)+'</code>&hellip;');
+    fetch(url,{mode:'cors',headers:{'Accept':'application/xml,text/xml,*/*'}})
+      .then(function(r){if(!r.ok)throw new Error('HTTP '+r.status);return r.text()})
+      .then(function(txt){sxXml.value=txt;render(parseXml(txt))})
+      .catch(function(e){
+        setStatus('warn','Browser blocked the fetch (CORS or network): <code>'+esc(e.message)+'</code>. Most sitemaps don&rsquo;t send CORS headers. Server-side tools bypass this &mdash; the Python version in the case study does. In-browser, paste the XML into the textarea, or click <strong>Load example</strong>.');
+      });
+  };
+  el.querySelector('#sx-example').onclick=function(){
+    sxXml.value=ex;render(parseXml(ex));
+    setStatus('ok','Loaded embedded sample (15 URLs across docs, blog, products).');
+  };
+  el.querySelector('#sx-parse').onclick=function(){render(parseXml(sxXml.value))};
+  el.querySelector('#sx-clear').onclick=function(){
+    sxXml.value='';out.innerHTML='';csvBtn.disabled=true;state.rows=[];
+    setStatus('info','Cleared. Fetch a sitemap, paste XML, or load the example.');
+  };
+  csvBtn.onclick=downloadCsv;
+}
+
+// --- Scroll nav ---
+function setupScrollNav(){
+  var links=document.querySelectorAll('#navLinks a[href^="#"]');
+  links.forEach(function(a){a.addEventListener('click',function(e){e.preventDefault();var t=document.querySelector(a.getAttribute('href'));if(t)t.scrollIntoView({behavior:'smooth'})})});
+  var secs=['projects','repos','skills','about'];
+  var tick=false;
+  window.addEventListener('scroll',function(){if(!tick){requestAnimationFrame(function(){
+    var sy=window.scrollY+120,cur='';
+    secs.forEach(function(id){var el=document.getElementById(id);if(el&&el.offsetTop<=sy)cur=id});
+    links.forEach(function(a){a.classList.toggle('active',a.getAttribute('href')==='#'+cur)});
+    tick=false});tick=true}});
+}
+
+// --- Init ---
+function init(){
+  if(window.PORTFOLIO_DATA){loadData(window.PORTFOLIO_DATA.projects,window.PORTFOLIO_DATA.about)}
+  else{Promise.all([
+    fetch('/portfolio/api/projects').then(function(r){return r.json()}),
+    fetch('/portfolio/api/about').then(function(r){return r.json()})
+  ]).then(function(res){loadData(res[0],res[1].body)})}
+}
+function loadData(list,about){
+  projects=list;
+  // Populate context/metrics from project frontmatter
+  projects.forEach(function(p){
+    if(p.context)CAT_CTX[p.slug]=p.context;
+    if(p.metrics)CAT_METRICS[p.slug]=p.metrics;
+  });
+  renderFilters();
+  renderGrid();
+  // Domain card counts are rendered server-side from project frontmatter — no client-side refresh needed.
+  // About — only render the first few sections (Background, What Makes Me Different)
+  var aboutHtml=renderMd(about||'');
+  // Strip "Let's Connect" and "Education" and "Publications" sections (shown in sidebar)
+  aboutHtml=aboutHtml.replace(/<h2>Education[\s\S]*$/i,'');
+  document.getElementById('aboutContent').innerHTML=aboutHtml;
+  setupScrollNav();
+}
+
+if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init);else init();
+})();
+</script>
+</body>
+</html>

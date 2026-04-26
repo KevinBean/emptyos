@@ -1,0 +1,38 @@
+[app]
+id = "search"
+name = "Search"
+version = "1.0.0"
+description = "Vault search with AI-powered answers"
+
+[app.entry]
+module = "app"
+class = "SearchApp"
+
+[requires]
+capabilities = ["read", "search", "think"]
+apps = []
+# bookmarks + quickref are optional extra-result sources — _search_app_sources()
+# wraps both calls in try/except. Search works on vault contents alone.
+services = []
+connectors = []
+
+[provides.cli]
+commands = ["search"]
+
+[provides.web]
+prefix = "/search"
+
+[provides.events]
+emits = ["search:query"]
+
+[provides.settings]
+schema = [
+    {key = "search.ai_timeout", label = "AI Answer Timeout (seconds)", type = "number", default = 30},
+    {key = "search.ai_providers", label = "AI Provider Order (comma-separated)", type = "text", default = "ollama,claude-cli,openai"},
+    {key = "search.semantic", label = "Semantic Search (LLM keyword expansion)", type = "toggle", default = true},
+]
+
+[provides.assistant]
+commands = [
+    {slash = "/search", method = "_search", arg = "query"},
+]

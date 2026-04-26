@@ -1,0 +1,777 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Writer - Publish - EmptyOS</title>
+<link rel="stylesheet" href="/static/theme.css">
+<link rel="stylesheet" href="/static/eos-components.css">
+<style>
+/* Frontmatter bar */
+.fm-bar { display:flex; gap:8px; flex-wrap:wrap; padding:12px 0; animation:fadeDown 0.3s ease }
+.fm-group { display:flex; flex-direction:column; gap:4px }
+.fm-group.grow { flex:1; min-width:140px }
+.fm-label { font-size:10px; font-weight:600; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.5px }
+.fm-input { padding:8px 12px; background:var(--bg-card); border:1px solid var(--border); border-radius:8px; font-size:13px; color:var(--text); font-family:inherit; outline:none }
+.fm-input:focus { border-color:var(--accent) }
+.fm-select { padding:8px 12px; background:var(--bg-card); border:1px solid var(--border); border-radius:8px; font-size:13px; color:var(--text); font-family:inherit; outline:none; cursor:pointer }
+
+/* Toolbar */
+.ed-toolbar { display:flex; gap:2px; padding:8px 8px; background:var(--bg-card); border:1px solid var(--border); border-radius:8px 8px 0 0; flex-wrap:wrap; align-items:center }
+.tb-btn { padding:4px 8px; background:none; border:1px solid transparent; border-radius:6px; color:var(--text-secondary); font-size:13px; cursor:pointer; font-family:var(--mono); transition:all 0.12s; min-width:28px; text-align:center }
+.tb-btn:hover { background:var(--bg-card-hover); color:var(--text); border-color:var(--border) }
+.tb-btn:active { transform:scale(0.92) }
+.tb-sep { width:1px; height:20px; background:var(--border); margin:0 4px }
+.tb-label { font-size:11px; color:var(--text-muted); margin:0 4px }
+
+/* Editor panes */
+.editor-wrap { display:grid; grid-template-columns:1fr 1px 1fr; border:1px solid var(--border); border-top:none; border-radius:0 0 8px 8px; min-height:55vh; animation:fadeDown 0.3s ease 0.05s both }
+.ed-pane { padding:16px; overflow-y:auto; min-width:0 }
+.ed-textarea { width:100%; height:100%; min-height:50vh; background:transparent; border:none; color:var(--text); font-family:var(--mono); font-size:14px; line-height:1.7; resize:none; outline:none }
+.ed-textarea::placeholder { color:var(--text-muted) }
+.ed-divider { background:var(--border) }
+.ed-preview { font-family:var(--font); font-size:15px; line-height:1.7; color:var(--text) }
+.ed-preview h1 { font-size:1.6rem; color:var(--text-heading); margin:24px 0 8px; font-weight:700 }
+.ed-preview h2 { font-size:1.3rem; color:var(--text-heading); margin:16px 0 8px; font-weight:600 }
+.ed-preview h3 { font-size:1.1rem; color:var(--text-heading); margin:16px 0 8px; font-weight:600 }
+.ed-preview p { margin:12px 0 }
+.ed-preview ul,.ed-preview ol { margin:8px 0; padding-left:24px }
+.ed-preview li { margin:4px 0 }
+.ed-preview code { font-family:var(--mono); font-size:0.85em; background:var(--bg-card); padding:2px 8px; border-radius:4px }
+.ed-preview pre { background:var(--bg-card); border:1px solid var(--border); border-radius:8px; padding:16px; overflow-x:auto; margin:12px 0 }
+.ed-preview pre code { background:none; padding:0 }
+.ed-preview blockquote { border-left:3px solid var(--accent); padding:8px 16px; margin:12px 0; color:var(--text-secondary); background:var(--bg-card); border-radius:0 8px 8px 0 }
+.ed-preview img { max-width:100%; border-radius:8px; margin:12px 0 }
+.ed-preview table { width:100%; border-collapse:collapse; margin:12px 0 }
+.ed-preview th { text-align:left; font-size:11px; color:var(--text-muted); text-transform:uppercase; padding:8px; border-bottom:1px solid var(--border) }
+.ed-preview td { padding:8px; border-bottom:1px solid var(--border); font-size:13px }
+.ed-preview .callout { border-left:3px solid var(--accent); padding:12px 16px; margin:12px 0; background:var(--bg-card); border-radius:0 8px 8px 0 }
+.ed-preview .callout-title { font-weight:600; color:var(--text-heading) }
+.ed-preview a { color:var(--accent) }
+.ed-preview .wikilink-private { color:var(--text-muted) }
+
+/* AI bar */
+.ai-bar { display:flex; gap:8px; padding:12px 0; flex-wrap:wrap; align-items:center; animation:fadeDown 0.3s ease 0.1s both }
+.ai-btn { padding:8px 16px; background:var(--bg-card); border:1px solid var(--border); border-radius:8px; font-size:12px; font-weight:500; color:var(--text-secondary); cursor:pointer; transition:all 0.15s }
+.ai-btn:hover { border-color:var(--accent); color:var(--accent) }
+.ai-btn:active { transform:scale(0.95) }
+.ai-btn.loading { opacity:0.5; pointer-events:none }
+.ai-label { font-size:11px; color:var(--text-muted); font-weight:600; text-transform:uppercase; letter-spacing:0.5px }
+
+/* Action bar */
+.action-bar { display:flex; gap:8px; padding:8px 0; justify-content:flex-end; align-items:center }
+.action-bar .status { font-size:12px; color:var(--text-muted); margin-right:auto }
+.btn-save { padding:8px 24px; background:var(--bg-card); border:1px solid var(--border); border-radius:8px; font-size:13px; font-weight:600; color:var(--text); cursor:pointer }
+.btn-save:hover { border-color:var(--accent) }
+.btn-publish { padding:8px 24px; background:var(--accent); color:#fff; border:none; border-radius:8px; font-size:13px; font-weight:600; cursor:pointer }
+.btn-publish:active { transform:scale(0.95) }
+
+/* Template picker */
+.tmpl-bar { display:flex; gap:8px; padding:8px 0; flex-wrap:wrap }
+.tmpl-chip { padding:4px 12px; background:var(--bg-card); border:1px solid var(--border); border-radius:14px; font-size:11px; color:var(--text-secondary); cursor:pointer; transition:all 0.12s }
+.tmpl-chip:hover { border-color:var(--accent); color:var(--accent) }
+
+/* Suggestions panel */
+.suggest-panel { display:none; margin:12px 0 }
+.suggest-panel.open { display:block }
+.suggest-card { background:var(--bg-card); border:1px solid var(--border); border-radius:8px; padding:12px; margin-bottom:8px; cursor:pointer; transition:border-color 0.15s }
+.suggest-card:hover { border-color:var(--accent) }
+.suggest-title { font-size:14px; font-weight:600; color:var(--text-heading) }
+.suggest-pitch { font-size:12px; color:var(--text-secondary); margin-top:4px }
+.suggest-meta { font-size:11px; color:var(--text-muted); margin-top:4px }
+
+/* Wider page for editor */
+.page.writer-page { max-width:1200px }
+
+/* Chat panel */
+.chat-panel { display:none; margin:12px 0; background:var(--bg-card); border:1px solid var(--border); border-radius:8px; overflow:hidden }
+.chat-panel.open { display:flex; flex-direction:column; height:50vh; max-height:500px }
+.chat-head { display:flex; align-items:center; gap:8px; padding:12px 16px; border-bottom:1px solid var(--border); background:var(--bg) }
+.chat-title { font-size:13px; font-weight:600; color:var(--text-heading); flex:1 }
+.chat-close { cursor:pointer; color:var(--text-muted); font-size:18px; padding:0 8px; background:transparent; border:none }
+.chat-msgs { flex:1; overflow-y:auto; padding:16px; display:flex; flex-direction:column; gap:12px }
+.chat-msg { max-width:88%; padding:12px 16px; border-radius:14px; font-size:13px; line-height:1.5; word-wrap:break-word }
+.chat-msg.user { align-self:flex-end; background:var(--accent); color:#fff; border-bottom-right-radius:4px }
+.chat-msg.assistant { align-self:flex-start; background:var(--bg); border:1px solid var(--border); color:var(--text); border-bottom-left-radius:4px }
+.chat-msg.assistant .chat-applied { display:inline-block; margin-top:8px; font-size:11px; color:var(--success,#34d399) }
+.chat-input-row { display:flex; gap:8px; padding:12px 16px; border-top:1px solid var(--border); background:var(--bg) }
+.chat-input { flex:1; padding:8px 12px; background:var(--bg-card); border:1px solid var(--border); border-radius:8px; color:var(--text); font-size:13px; outline:none; font-family:inherit }
+.chat-input:focus { border-color:var(--accent) }
+.chat-send { padding:8px 16px; background:var(--accent); color:#fff; border:none; border-radius:8px; font-size:13px; font-weight:600; cursor:pointer }
+.chat-send:disabled { opacity:0.5 }
+.chat-spin { display:inline-block; width:14px; height:14px; border:2px solid var(--border); border-top-color:var(--accent); border-radius:50%; animation:chat-spin 0.6s linear infinite; vertical-align:middle }
+@keyframes chat-spin { to { transform:rotate(360deg) } }
+
+/* Responsive */
+@media (max-width:700px) {
+  .editor-wrap { grid-template-columns:1fr !important; }
+  .ed-divider { height:1px }
+  .fm-bar { flex-direction:column }
+}
+</style>
+</head>
+<body>
+<script src="/static/realtime.js"></script>
+<script src="/static/eos.js"></script>
+<script src="/static/eos-components.js"></script>
+<script>EOS.nav('publish');</script>
+
+<div class="page writer-page">
+  <!-- Back + title -->
+  <div style="display:flex;align-items:center;gap:10px;padding:16px 0 4px">
+    <a href="/publish/" style="color:var(--text-muted);font-size:13px">&larr; Back</a>
+    <h1 style="font-size:20px;font-weight:700;color:var(--text-heading)">Writer</h1>
+    <a href="/publish/pages/guide.html" style="margin-left:auto;font-size:12px;color:var(--text-muted)">Format Guide</a>
+  </div>
+
+  <!-- Frontmatter -->
+  <div class="fm-bar">
+    <div class="fm-group grow">
+      <span class="fm-label">Title</span>
+      <input class="fm-input" id="fm-title" placeholder="Post title...">
+    </div>
+    <div class="fm-group">
+      <span class="fm-label">Type</span>
+      <select class="fm-select" id="fm-type">
+        <option value="post">Post</option>
+        <option value="page">Page</option>
+      </select>
+    </div>
+    <div class="fm-group grow">
+      <span class="fm-label">Tags</span>
+      <input class="fm-input" id="fm-tags" placeholder="AI, tutorial, engineering">
+    </div>
+  </div>
+  <div style="padding-bottom:8px">
+    <span class="fm-label">Summary</span>
+    <textarea class="fm-input" id="fm-summary" rows="2" placeholder="A short description for SEO and post listings..." style="width:100%;resize:vertical;font-family:inherit;line-height:1.5"></textarea>
+  </div>
+  <div style="padding-bottom:8px">
+    <span class="fm-label">Image prompt <span style="font-weight:normal;opacity:0.6">(used for cover generation — edit to steer the art-director)</span></span>
+    <textarea class="fm-input" id="fm-image-prompt" rows="2" placeholder="Visual brief for the cover. Leave empty to auto-generate on first cover render." style="width:100%;resize:vertical;font-family:inherit;line-height:1.5"></textarea>
+  </div>
+
+  <!-- Templates -->
+  <div class="tmpl-bar">
+    <span class="fm-label" style="align-self:center;margin-right:4px">Template:</span>
+    <button class="tmpl-chip" onclick="loadTemplate('blank')">Blank</button>
+    <button class="tmpl-chip" onclick="loadTemplate('blog')">Blog Post</button>
+    <button class="tmpl-chip" onclick="loadTemplate('tutorial')">Tutorial</button>
+    <button class="tmpl-chip" onclick="loadTemplate('project')">Project Showcase</button>
+    <button class="tmpl-chip" onclick="loadTemplate('til')">TIL</button>
+    <button class="tmpl-chip" onclick="loadTemplate('about')">About Page</button>
+  </div>
+
+  <!-- Topic suggestions -->
+  <div class="suggest-panel" id="suggest-panel"></div>
+
+  <!-- Toolbar -->
+  <div class="ed-toolbar">
+    <button class="tb-btn" onclick="wrap('**','**')" title="Bold (Ctrl+B)"><b>B</b></button>
+    <button class="tb-btn" onclick="wrap('*','*')" title="Italic (Ctrl+I)"><i>I</i></button>
+    <button class="tb-btn" onclick="wrap('~~','~~')" title="Strikethrough">S</button>
+    <button class="tb-btn" onclick="wrap('`','`')" title="Inline Code">&lt;/&gt;</button>
+    <span class="tb-sep"></span>
+    <button class="tb-btn" onclick="insertLine('# ')" title="Heading 1">H1</button>
+    <button class="tb-btn" onclick="insertLine('## ')" title="Heading 2">H2</button>
+    <button class="tb-btn" onclick="insertLine('### ')" title="Heading 3">H3</button>
+    <span class="tb-sep"></span>
+    <button class="tb-btn" onclick="insertLine('- ')" title="Bullet List">&#8226;</button>
+    <button class="tb-btn" onclick="insertLine('1. ')" title="Numbered List">1.</button>
+    <button class="tb-btn" onclick="insertLine('- [ ] ')" title="Checkbox">&#9744;</button>
+    <span class="tb-sep"></span>
+    <button class="tb-btn" onclick="insertLink()" title="Link (Ctrl+K)">&#128279;</button>
+    <button class="tb-btn" onclick="insertImage()" title="Image">&#128247;</button>
+    <button class="tb-btn" onclick="insertVideo()" title="YouTube Video">&#9654;</button>
+    <span class="tb-sep"></span>
+    <button class="tb-btn" onclick="insertCodeBlock()" title="Code Block">```</button>
+    <button class="tb-btn" onclick="insertTable()" title="Table">&#9638;</button>
+    <button class="tb-btn" onclick="insertLine('> ')" title="Blockquote">&gt;</button>
+    <button class="tb-btn" onclick="insertCallout()" title="Callout">&#9432;</button>
+    <span class="tb-sep"></span>
+    <button class="tb-btn" onclick="insertLine('---')" title="Horizontal Rule">&#8212;</button>
+  </div>
+
+  <!-- Editor + Preview -->
+  <div class="editor-wrap">
+    <div class="ed-pane">
+      <textarea class="ed-textarea" id="editor" placeholder="Start writing..."></textarea>
+    </div>
+    <div class="ed-divider"></div>
+    <div class="ed-pane ed-preview" id="preview">
+      <p style="color:var(--text-muted)">Preview will appear here...</p>
+    </div>
+  </div>
+
+  <!-- AI bar -->
+  <div class="ai-bar">
+    <span class="ai-label">AI:</span>
+    <button class="ai-btn" onclick="aiAction('polish')">Polish</button>
+    <button class="ai-btn" onclick="aiAction('expand')">Expand</button>
+    <button class="ai-btn" onclick="aiAction('compress')">Compress</button>
+    <button class="ai-btn" onclick="aiAction('translate')">Translate</button>
+    <button class="ai-btn" onclick="aiAction('outline')">Outline</button>
+    <button class="ai-btn" onclick="aiAction('suggest_title')">Suggest Title</button>
+    <input id="review-focus" type="text" placeholder="Review focus (optional, e.g. 'check LinkedIn fit')" style="flex:1;min-width:200px;padding:6px 10px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:12px" />
+    <button class="ai-btn" onclick="aiReview()">Review</button>
+    <button class="ai-btn" onclick="toggleChat()" style="background:color-mix(in srgb,var(--accent) 15%,transparent);border-color:var(--accent);color:var(--accent)">&#128172; Chat</button>
+    <span id="ai-provenance-slot"></span>
+  </div>
+
+  <!-- Review panel -->
+  <div class="suggest-panel" id="review-panel" style="padding:14px;max-height:60vh;overflow-y:auto;font-size:13px;line-height:1.6"></div>
+
+  <!-- Chat panel -->
+  <div class="chat-panel" id="chat-panel">
+    <div class="chat-head">
+      <span class="chat-title">&#9999; Editor Chat</span>
+      <span style="font-size:11px;color:var(--text-muted)">Asks see full article. Edits are previewed in editor — Ctrl+Z to undo.</span>
+      <button class="chat-close" onclick="toggleChat()">&times;</button>
+    </div>
+    <div class="chat-msgs" id="chat-msgs">
+      <div style="text-align:center;color:var(--text-muted);font-size:12px;padding:20px">Ask me to discuss, critique, or revise. Try: "make the opening punchier" or "is the closing too soft?"</div>
+    </div>
+    <div class="chat-input-row">
+      <input id="chat-input" class="chat-input" placeholder="Ask or instruct..." onkeydown="if(event.key==='Enter'){event.preventDefault();chatSend()}" />
+      <button class="chat-send" id="chat-send" onclick="chatSend()">Send</button>
+    </div>
+  </div>
+
+  <!-- Action bar -->
+  <div class="action-bar">
+    <span class="status" id="status"></span>
+    <button class="btn-save" onclick="saveDraft()">Save Draft</button>
+    <button class="btn-publish" onclick="publishPost()">Publish</button>
+  </div>
+</div>
+
+<script>
+var editor = document.getElementById('editor');
+var preview = document.getElementById('preview');
+var previewTimer = null;
+var editingPath = null; // set when editing existing post
+
+// --- URL params (edit mode) ---
+var params = new URLSearchParams(window.location.search);
+if (params.get('edit')) {
+  loadPost(params.get('edit'));
+} else if (params.get('load')) {
+  loadSuggestion(decodeURIComponent(params.get('load')));
+}
+
+// --- Live Preview ---
+editor.addEventListener('input', function() {
+  clearTimeout(previewTimer);
+  previewTimer = setTimeout(updatePreview, 300);
+});
+
+function updatePreview() {
+  var md = editor.value;
+  if (!md.trim()) {
+    preview.innerHTML = '<p style="color:var(--text-muted)">Preview will appear here...</p>';
+    return;
+  }
+  if (typeof EOS_UI !== 'undefined' && EOS_UI.renderMarkdown) {
+    preview.innerHTML = EOS_UI.renderMarkdown(md);
+  } else {
+    preview.innerHTML = '<pre>' + esc(md) + '</pre>';
+  }
+}
+
+// --- Keyboard shortcuts ---
+editor.addEventListener('keydown', function(e) {
+  if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+    e.preventDefault();
+    saveDraft();
+    return;
+  }
+  if ((e.ctrlKey || e.metaKey) && e.key === 'b') { e.preventDefault(); wrap('**','**'); return; }
+  if ((e.ctrlKey || e.metaKey) && e.key === 'i') { e.preventDefault(); wrap('*','*'); return; }
+  if ((e.ctrlKey || e.metaKey) && e.key === 'k') { e.preventDefault(); insertLink(); return; }
+  if (e.key === 'Tab') {
+    e.preventDefault();
+    var s = editor.selectionStart, end = editor.selectionEnd;
+    editor.value = editor.value.substring(0, s) + '    ' + editor.value.substring(end);
+    editor.selectionStart = editor.selectionEnd = s + 4;
+  }
+});
+
+// --- Toolbar functions ---
+function wrap(before, after) {
+  var s = editor.selectionStart, e = editor.selectionEnd;
+  var sel = editor.value.substring(s, e) || 'text';
+  editor.value = editor.value.substring(0, s) + before + sel + after + editor.value.substring(e);
+  editor.selectionStart = s + before.length;
+  editor.selectionEnd = s + before.length + sel.length;
+  editor.focus();
+  updatePreview();
+}
+
+function insertLine(prefix) {
+  var s = editor.selectionStart;
+  var before = editor.value.substring(0, s);
+  var lineStart = before.lastIndexOf('\n') + 1;
+  var needNewline = s > 0 && editor.value[s-1] !== '\n' ? '\n' : '';
+  editor.value = editor.value.substring(0, s) + needNewline + prefix + editor.value.substring(s);
+  editor.selectionStart = editor.selectionEnd = s + needNewline.length + prefix.length;
+  editor.focus();
+  updatePreview();
+}
+
+function insertLink() {
+  var sel = editor.value.substring(editor.selectionStart, editor.selectionEnd) || 'link text';
+  var s = editor.selectionStart, e = editor.selectionEnd;
+  EOS_UI.formModal('Insert Link', [
+    {key: 'url', label: 'URL', placeholder: 'https://...'},
+  ], function(v) {
+    if (!v.url) return;
+    var md = '[' + sel + '](' + v.url + ')';
+    editor.value = editor.value.substring(0, s) + md + editor.value.substring(e);
+    editor.selectionStart = editor.selectionEnd = s + md.length;
+    editor.focus();
+    updatePreview();
+  });
+}
+
+function insertImage() {
+  var s = editor.selectionStart;
+  EOS_UI.formModal('Insert Image', [
+    {key: 'url', label: 'Image filename or URL', placeholder: 'image-name.png or https://...'},
+  ], function(v) {
+    if (!v.url) return;
+    var md = v.url.match(/^https?:\/\//) ? '![](' + v.url + ')' : '![[' + v.url + ']]';
+    editor.value = editor.value.substring(0, s) + '\n' + md + '\n' + editor.value.substring(s);
+    editor.focus();
+    updatePreview();
+  });
+}
+
+function insertVideo() {
+  var s = editor.selectionStart;
+  EOS_UI.formModal('Insert Video', [
+    {key: 'url', label: 'Video URL', placeholder: 'YouTube or Bilibili URL'},
+  ], function(v) {
+    if (!v.url) return;
+    var videoId = '';
+    var m = v.url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/)([a-zA-Z0-9_-]+)/);
+    if (m) videoId = m[1];
+    var md = videoId
+      ? '<div class="video-embed"><iframe src="https://www.youtube.com/embed/' + videoId + '" frameborder="0" allowfullscreen></iframe></div>'
+      : '<a href="' + v.url + '">Watch Video</a>';
+    editor.value = editor.value.substring(0, s) + '\n' + md + '\n' + editor.value.substring(s);
+    editor.focus();
+    updatePreview();
+  });
+}
+
+function insertCodeBlock() {
+  var s = editor.selectionStart, e = editor.selectionEnd;
+  var sel = editor.value.substring(s, e) || 'code here';
+  EOS_UI.formModal('Insert Code Block', [
+    {key: 'lang', label: 'Language', placeholder: 'python, javascript, bash…'},
+  ], function(v) {
+    var md = '\n```' + (v.lang || '') + '\n' + sel + '\n```\n';
+    editor.value = editor.value.substring(0, s) + md + editor.value.substring(e);
+    editor.focus();
+    updatePreview();
+  });
+}
+
+function insertTable() {
+  var s = editor.selectionStart;
+  var md = '\n| Column 1 | Column 2 | Column 3 |\n|----------|----------|----------|\n| cell     | cell     | cell     |\n';
+  editor.value = editor.value.substring(0, s) + md + editor.value.substring(s);
+  editor.focus();
+  updatePreview();
+}
+
+function insertCallout() {
+  var s = editor.selectionStart;
+  EOS_UI.formModal('Insert Callout', [
+    {key: 'type', label: 'Type', type: 'select', options: ['note', 'tip', 'warning', 'danger'], value: 'note'},
+  ], function(v) {
+    var md = '\n> [!' + (v.type || 'note') + '] Title\n> Content here\n';
+    editor.value = editor.value.substring(0, s) + md + editor.value.substring(s);
+    editor.focus();
+    updatePreview();
+  });
+}
+
+// --- Templates ---
+var TEMPLATES = {
+  blank: '',
+  blog: '## Introduction\n\nWhat this post is about and why it matters.\n\n## Main Point\n\nYour key insight or argument.\n\n## Details\n\nSupporting evidence, examples, or explanation.\n\n## Conclusion\n\nKey takeaway for the reader.\n',
+  tutorial: '## Prerequisites\n\n- Requirement 1\n- Requirement 2\n\n## Step 1: Setup\n\nExplain the first step.\n\n```bash\n# commands here\n```\n\n## Step 2: Implementation\n\nExplain the next step.\n\n```python\n# code here\n```\n\n## Step 3: Testing\n\nHow to verify it works.\n\n## Summary\n\nWhat we built and next steps.\n',
+  project: '## Overview\n\nOne paragraph describing the project.\n\n## Features\n\n- Feature 1\n- Feature 2\n- Feature 3\n\n## Tech Stack\n\n| Technology | Purpose |\n|------------|--------|\n| Python     | Backend |\n| FastAPI    | API    |\n\n## Demo\n\n[Live Demo](https://example.com)\n\n## Screenshots\n\n![[screenshot.png]]\n',
+  til: '## What I Learned\n\nBrief description of the concept.\n\n## Why It Matters\n\nWhy this is useful or interesting.\n\n## Example\n\n```python\n# demonstration\n```\n\n## Reference\n\n- [Link](https://example.com)\n',
+  about: '## Background\n\nYour professional background.\n\n## Focus Areas\n\n- Area 1\n- Area 2\n- Area 3\n\n## Contact\n\n- [LinkedIn](https://linkedin.com/in/you)\n- [GitHub](https://github.com/you)\n- [Email](mailto:you@example.com)\n'
+};
+
+function loadTemplate(name) {
+  var apply = function() {
+    editor.value = TEMPLATES[name] || '';
+    if (name === 'about') document.getElementById('fm-type').value = 'page';
+    updatePreview();
+    editor.focus();
+  };
+  if (editor.value.trim()) {
+    EOS_UI.confirm({message: 'Replace current content with template?', action: 'Replace', danger: false}, apply);
+  } else {
+    apply();
+  }
+}
+
+// --- AI Actions ---
+async function aiAction(action) {
+  var sel = editor.value.substring(editor.selectionStart, editor.selectionEnd);
+  var text = sel || editor.value;
+  if (!text.trim()) { toast('Write something first'); return; }
+
+  var btn = event.target;
+  btn.classList.add('loading');
+  btn.textContent += '...';
+
+  try {
+    var result = await EOS.post('/publish/api/ai-write', { action: action, text: text });
+    if (result.error) { toast(result.error, false); return; }
+    var provSlot = document.getElementById('ai-provenance-slot');
+    if (provSlot && result.provenance && result.provenance.mode) {
+      provSlot.innerHTML = EOS_UI.provenance(result.provenance);
+    }
+
+    if (action === 'suggest_title') {
+      if (result.title) document.getElementById('fm-title').value = result.title;
+      if (result.summary) document.getElementById('fm-summary').value = result.summary;
+      toast('Title and summary suggested', true);
+    } else if (sel) {
+      // Replace selection
+      var s = editor.selectionStart, e = editor.selectionEnd;
+      editor.value = editor.value.substring(0, s) + result.text + editor.value.substring(e);
+      updatePreview();
+      toast('Applied: ' + action, true);
+    } else {
+      editor.value = result.text;
+      updatePreview();
+      toast('Applied: ' + action, true);
+    }
+  } catch(e) {
+    toast('AI error: ' + e.message, false);
+  } finally {
+    btn.classList.remove('loading');
+    btn.textContent = btn.textContent.replace('...', '');
+  }
+}
+
+// --- Review (critique, not replacement) ---
+var _lastReviewMd = '';
+
+async function aiReview() {
+  var text = editor.value;
+  if (!text.trim()) { toast('Write something first'); return; }
+
+  var btn = event.target;
+  btn.classList.add('loading');
+  var origLabel = btn.textContent;
+  btn.textContent = 'Reviewing...';
+
+  var focus = (document.getElementById('review-focus').value || '').trim();
+  var panel = document.getElementById('review-panel');
+  panel.classList.add('open');
+  panel.innerHTML = '<p style="color:var(--text-muted)">' + (focus ? 'Reviewing with focus: ' + esc(focus) : 'Running editorial audit') + '...</p>';
+
+  try {
+    var result = await EOS.post('/publish/api/ai-write', { action: 'review', text: text, focus: focus });
+    if (result.error) {
+      panel.innerHTML = '<p style="color:var(--accent)">' + esc(result.error) + '</p>';
+      return;
+    }
+    _lastReviewMd = result.review || '';
+    var body = (typeof EOS_UI !== 'undefined' && EOS_UI.renderMarkdown)
+      ? EOS_UI.renderMarkdown(_lastReviewMd)
+      : '<pre>' + esc(_lastReviewMd) + '</pre>';
+    var actions = '<div style="margin-top:14px;padding-top:10px;border-top:1px solid var(--border);display:flex;gap:8px;flex-wrap:wrap">'
+      + '<button class="ai-btn" onclick="applyReviewFixes()" style="background:var(--accent);color:var(--bg);border:none">Apply top fixes</button>'
+      + '<button class="ai-btn" onclick="aiReview()">Re-run</button>'
+      + '</div>';
+    var close = '<button onclick="document.getElementById(\'review-panel\').classList.remove(\'open\')" style="float:right;cursor:pointer;background:transparent;border:none;color:var(--text-muted);font-size:20px;padding:0 4px">&times;</button>';
+    panel.innerHTML = close + body + actions;
+    toast('Review complete', true);
+  } catch(e) {
+    panel.innerHTML = '<p style="color:var(--accent)">Review failed: ' + esc(e.message) + '</p>';
+  } finally {
+    btn.classList.remove('loading');
+    btn.textContent = origLabel;
+  }
+}
+
+async function applyReviewFixes() {
+  if (!_lastReviewMd) { toast('Run a review first'); return; }
+  EOS_UI.confirm('Replace editor contents with the revised article? Ctrl+Z to undo.', async function() {
+    var panel = document.getElementById('review-panel');
+    var origPanel = panel.innerHTML;
+    panel.innerHTML = '<p style="color:var(--text-muted)">Applying fixes...</p>';
+    try {
+      var result = await EOS.post('/publish/api/ai-write', {
+        action: 'apply_review',
+        text: editor.value,
+        review: _lastReviewMd,
+      });
+      if (result.error) {
+        panel.innerHTML = origPanel;
+        toast(result.error, false);
+        return;
+      }
+      editor.value = result.text || editor.value;
+      updatePreview();
+      panel.classList.remove('open');
+      toast('Fixes applied — review the diff and save when ready', true);
+    } catch(e) {
+      panel.innerHTML = origPanel;
+      toast('Apply failed: ' + e.message, false);
+    }
+  });
+}
+
+// --- Editor Chat ---
+var _chatHistory = [];
+var _chatBusy = false;
+
+function toggleChat() {
+  var panel = document.getElementById('chat-panel');
+  panel.classList.toggle('open');
+  if (panel.classList.contains('open')) {
+    setTimeout(function() { document.getElementById('chat-input').focus(); }, 100);
+  }
+}
+
+function chatAppendMsg(role, text, applied) {
+  var msgs = document.getElementById('chat-msgs');
+  var welcome = msgs.querySelector('div[style*="text-align:center"]');
+  if (welcome) welcome.remove();
+  var div = document.createElement('div');
+  div.className = 'chat-msg ' + role;
+  if (role === 'assistant') {
+    var html = (typeof EOS_UI !== 'undefined' && EOS_UI.renderMarkdown)
+      ? EOS_UI.renderMarkdown(text)
+      : esc(text).replace(/\n/g, '<br>');
+    if (applied) html += '<div class="chat-applied">&#10003; Applied to editor</div>';
+    div.innerHTML = html;
+  } else {
+    div.textContent = text;
+  }
+  msgs.appendChild(div);
+  msgs.scrollTop = msgs.scrollHeight;
+  return div;
+}
+
+async function chatSend() {
+  if (_chatBusy) return;
+  var input = document.getElementById('chat-input');
+  var msg = input.value.trim();
+  if (!msg) return;
+  input.value = '';
+
+  chatAppendMsg('user', msg);
+  var assistDiv = chatAppendMsg('assistant', '<span class="chat-spin"></span>');
+
+  _chatBusy = true;
+  document.getElementById('chat-send').disabled = true;
+
+  try {
+    var result = await EOS.post('/publish/api/ai-write', {
+      action: 'chat',
+      text: editor.value,
+      message: msg,
+      history: _chatHistory,
+    });
+    if (result.error) {
+      assistDiv.innerHTML = '<span style="color:#f87171">' + esc(result.error) + '</span>';
+      return;
+    }
+    var reply = result.reply || '(no reply)';
+    var revised = result.revised_article;
+    var applied = false;
+    if (revised && revised.trim() && revised.trim() !== editor.value.trim()) {
+      editor.value = revised;
+      updatePreview();
+      applied = true;
+    }
+    var html = (typeof EOS_UI !== 'undefined' && EOS_UI.renderMarkdown)
+      ? EOS_UI.renderMarkdown(reply)
+      : esc(reply).replace(/\n/g, '<br>');
+    if (applied) html += '<div class="chat-applied">&#10003; Applied to editor — Ctrl+Z to undo</div>';
+    assistDiv.innerHTML = html;
+    _chatHistory.push({ role: 'user', content: msg });
+    _chatHistory.push({ role: 'assistant', content: reply });
+  } catch(e) {
+    assistDiv.innerHTML = '<span style="color:#f87171">Error: ' + esc(e.message) + '</span>';
+  } finally {
+    _chatBusy = false;
+    document.getElementById('chat-send').disabled = false;
+    document.getElementById('chat-msgs').scrollTop = document.getElementById('chat-msgs').scrollHeight;
+  }
+}
+
+// --- Topic Suggestions ---
+async function suggestTopics() {
+  var panel = document.getElementById('suggest-panel');
+  panel.classList.add('open');
+  panel.innerHTML = '<p style="color:var(--text-muted);font-size:13px">Scanning vault for publishable topics...</p>';
+
+  try {
+    var result = await EOS.post('/publish/api/suggest-topics', {});
+    if (result.error) { panel.innerHTML = '<p style="color:var(--danger)">' + esc(result.error) + '</p>'; return; }
+    var topics = result.topics || [];
+    if (!topics.length) { panel.innerHTML = EOS_UI.emptyState({message:'No suggestions found.'}); return; }
+
+    panel.innerHTML = topics.map(function(t) {
+      return '<div class="suggest-card" onclick="loadSuggestion(\'' + esc(t.path || '') + '\')">'
+        + '<div class="suggest-title">' + esc(t.title) + '</div>'
+        + '<div class="suggest-pitch">' + esc(t.pitch) + '</div>'
+        + '<div class="suggest-meta">' + esc(t.type || 'post') + ' &middot; ' + esc(t.path || '') + '</div>'
+        + '</div>';
+    }).join('');
+  } catch(e) {
+    panel.innerHTML = '<p style="color:var(--danger)">Error: ' + esc(e.message) + '</p>';
+  }
+}
+
+async function loadSuggestion(path) {
+  if (!path) return;
+  try {
+    var data = await EOS.api('/publish/api/load-post?path=' + encodeURIComponent(path));
+    if (data.content) {
+      editor.value = data.content;
+      if (data.title) document.getElementById('fm-title').value = data.title;
+      updatePreview();
+      document.getElementById('suggest-panel').classList.remove('open');
+      toast('Loaded from vault', true);
+    }
+  } catch(e) { toast('Failed to load: ' + e.message, false); }
+}
+
+// --- Save / Publish ---
+// Fields the writer UI owns directly. Anything else in the original frontmatter
+// (image_prompt, cover, featured, custom user fields) is preserved verbatim.
+var OWNED_FM_KEYS = ['title', 'date', 'publish', 'type', 'tags', 'summary', 'image_prompt'];
+var preservedFm = '';  // Lines from the loaded post's frontmatter for non-owned keys
+
+function buildFrontmatter(publish) {
+  var title = document.getElementById('fm-title').value.trim() || 'Untitled';
+  var type = document.getElementById('fm-type').value;
+  var tags = document.getElementById('fm-tags').value.trim();
+  var summary = document.getElementById('fm-summary').value.trim();
+  var imagePrompt = document.getElementById('fm-image-prompt').value.trim();
+  var today = new Date().toISOString().slice(0, 10);
+
+  var fm = '---\ntitle: "' + title.replace(/"/g, '\\"') + '"\n';
+  fm += 'date: ' + today + '\n';
+  fm += 'publish: ' + publish + '\n';
+  fm += 'type: ' + type + '\n';
+  if (tags) {
+    fm += 'tags:\n';
+    tags.split(',').forEach(function(t) {
+      t = t.trim();
+      if (t) fm += '  - ' + t + '\n';
+    });
+  }
+  if (summary) fm += 'summary: "' + summary.replace(/"/g, '\\"') + '"\n';
+  if (imagePrompt) fm += 'image_prompt: "' + imagePrompt.replace(/"/g, '\\"') + '"\n';
+  if (preservedFm) fm += preservedFm;
+  fm += '---\n\n';
+  return fm;
+}
+
+// Split raw frontmatter text into "owned" vs "preserved" lines.
+// Handles multi-line list blocks (key: then indented - items) by continuing until the
+// next top-level key or end-of-block.
+function splitFrontmatter(raw) {
+  var preserved = '';
+  var lines = raw.split('\n');
+  var i = 0;
+  while (i < lines.length) {
+    var line = lines[i];
+    var m = /^([a-zA-Z_][\w-]*)\s*:/.exec(line);
+    if (!m) { i++; continue; }
+    var key = m[1];
+    var block = line + '\n';
+    i++;
+    // Capture indented continuation lines (list items, folded blocks)
+    while (i < lines.length && /^\s+/.test(lines[i])) {
+      block += lines[i] + '\n';
+      i++;
+    }
+    if (OWNED_FM_KEYS.indexOf(key) < 0) {
+      preserved += block;
+    }
+  }
+  return preserved;
+}
+
+async function saveDraft() {
+  await savePost(false);
+}
+
+async function publishPost() {
+  await savePost(true);
+}
+
+async function savePost(publish) {
+  var title = document.getElementById('fm-title').value.trim();
+  if (!title) { toast('Title is required', false); return; }
+  var content = buildFrontmatter(publish) + editor.value;
+
+  document.getElementById('status').textContent = 'Saving...';
+  try {
+    var result = await EOS.post('/publish/api/save-draft', {
+      title: title,
+      content: content,
+      path: editingPath || ''
+    });
+    if (result.error) {
+      document.getElementById('status').textContent = result.error;
+      toast(result.error, false);
+      return;
+    }
+    editingPath = result.path;
+    document.getElementById('status').textContent = publish ? 'Published!' : 'Draft saved';
+    toast(publish ? 'Published! Run Build to update site.' : 'Draft saved to vault', true);
+  } catch(e) {
+    document.getElementById('status').textContent = 'Save failed';
+    toast('Save failed: ' + e.message, false);
+  }
+}
+
+// --- Load existing post ---
+async function loadPost(slug) {
+  try {
+    var sources = await EOS.api('/publish/api/sources?include_drafts=1');
+    var post = (sources || []).find(function(p) { return p.slug === slug; });
+    if (post) {
+      var raw = await EOS.api('/publish/api/load-post?path=' + encodeURIComponent(post.path || post.relative));
+      editor.value = raw.content || '';
+      // Preserve any frontmatter fields the writer UI doesn't render
+      preservedFm = raw.raw_frontmatter ? splitFrontmatter(raw.raw_frontmatter) : '';
+      document.getElementById('fm-title').value = post.title || '';
+      document.getElementById('fm-type').value = post.type || 'post';
+      document.getElementById('fm-tags').value = (post.tags || []).join(', ');
+      document.getElementById('fm-summary').value = post.summary || '';
+      document.getElementById('fm-image-prompt').value = raw.image_prompt || '';
+      editingPath = post.path || '';
+      updatePreview();
+    } else {
+      toast('Post not found', false);
+    }
+  } catch(e) {
+    toast('Failed to load post', false);
+  }
+}
+
+// --- Helpers ---
+function toast(msg, ok) {
+  if (typeof EOS_UI !== 'undefined' && EOS_UI.toast) EOS_UI.toast(msg, ok);
+}
+function esc(s) { var d = document.createElement('div'); d.textContent = s || ''; return d.innerHTML; }
+</script>
+</body>
+</html>

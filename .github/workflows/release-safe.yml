@@ -1,0 +1,15 @@
+name: Release Safe
+on: [push, pull_request]
+
+jobs:
+  check-personal:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Check for personal data in committed code
+        run: python scripts/check-personal.py
+      - name: Check for third-party branding in user-facing code
+        run: python scripts/check-branding.py

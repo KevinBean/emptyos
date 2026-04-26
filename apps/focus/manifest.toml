@@ -1,0 +1,50 @@
+[app]
+id = "focus"
+name = "Focus"
+version = "1.0.0"
+description = "Pomodoro focus timer with task suggestions"
+dimensions = ["occupational"]
+
+[app.entry]
+module = "app"
+class = "FocusApp"
+
+[requires]
+capabilities = ["think", "write"]
+apps = ["task"]
+
+[provides.cli]
+commands = ["focus"]
+
+[provides.web]
+prefix = "/focus"
+
+[provides.events]
+emits = ["focus:completed"]
+
+[provides.settings]
+schema = [
+    {key = "focus.daily_goal", label = "Sessions per Day", type = "number", default = 4},
+    {key = "focus.work_min", label = "Work Duration (min)", type = "number", default = 25},
+    {key = "focus.break_min", label = "Break Duration (min)", type = "number", default = 5},
+    {key = "focus.long_break_min", label = "Long Break (min)", type = "number", default = 15},
+]
+
+[provides.assistant]
+commands = [
+    {slash = "/focus", method = "suggest_task"},
+    {slash = "/focus-done", method = "complete_session"},
+    {slash = "/focus-stats", method = "today_stats"},
+]
+
+[[contributes.hub.panel]]
+id = "focus-today"
+method = "panel_focus_today"
+renderer = "stat-tile"
+group = "dashboard"
+priority = 150
+
+[[contributes.voice-assistant.context]]
+id = "focus-status"
+method = "assistant_context"
+priority = 80

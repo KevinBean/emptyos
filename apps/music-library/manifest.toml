@@ -1,0 +1,35 @@
+[app]
+id = "music-library"
+name = "Music Library"
+version = "1.0.0"
+description = "Browse, play, and edit songs in your vault. Generate AI lyrics. No GPU required — pure vault + LLM."
+dimensions = ["intellectual"]
+
+[app.entry]
+module = "app"
+class = "MusicLibraryApp"
+
+[requires]
+capabilities = ["read", "write", "search", "think"]
+
+[provides.web]
+prefix = "/music-library"
+
+[provides.cli]
+commands = ["music", "lyrics"]
+
+[provides.events]
+emits = ["music:updated", "music:lyrics_created"]
+listens = []
+
+[provides.settings]
+schema = [
+    {key = "music-library.songs_dir", label = "Songs Directory (relative to vault)", type = "text", default = "Music/Songs"},
+    {key = "music-library.default_language", label = "Default Lyrics Language", type = "select", options = ["en", "zh", "ja"], default = "en"},
+    {key = "music-library.default_style", label = "Default Lyrics Style", type = "text", default = ""},
+]
+
+[provides.assistant]
+commands = [
+    {slash = "/music", method = "list_songs"},
+]

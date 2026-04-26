@@ -1,0 +1,31 @@
+[app]
+id = "note"
+name = "Note Manager"
+version = "1.0.0"
+description = "Create, read, list, and update notes"
+
+[app.entry]
+module = "app"
+class = "NoteApp"
+
+[provides.cli]
+commands = ["note"]
+
+[provides.web]
+prefix = "/note"
+
+[provides.events]
+emits = ["note:created", "note:updated"]
+
+[requires]
+capabilities = ["read", "write", "search", "think"]
+services = []
+events = []
+
+[[contributes.voice-assistant.intent]]
+verb = "note.create"
+method = "voice_create_note"
+example = "make a note titled hetzner research with the body four core box is forty euro"
+description = "Create a titled note in the vault"
+args = { title = "string", body = "string" }
+always = false

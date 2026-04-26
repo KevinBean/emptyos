@@ -1,0 +1,108 @@
+{
+  "_comment": "LTX-2.3 image-to-video workflow for the music-studio MV 'video' mode. Takes a still image ({image}) + scene prompt ({prompt}) and outputs a short MP4. Adapted from the vault's test_ltx23_i2v.py validation script (10_Projects/YouTube-Music-Channel/scripts/), which proved LTXVAddGuide works with LTX-2.3 GGUF + LTX23 VAE. Output MP4 is saved as 'eos-mv_*.mp4' so the music-studio downloader picks it up.",
+  "_requires": "ComfyUI-GGUF (UnetLoaderGGUF), Lightricks LTX-Video nodes (LTXVPreprocess, LTXVAddGuide, LTXVConditioning, LTXVScheduler, EmptyLTXVLatentVideo), VHS_VideoCombine. Models: LTX-2.3-distilled-Q3_K_M.gguf (UNet), gemma_3_12B_it_fp8_e4m3fn.safetensors + ltx-2.3_text_projection_bf16.safetensors (CLIP), LTX23_video_vae_bf16.safetensors (VAE). Adjust filenames in nodes 1/2/3 if your install differs.",
+  "1": {
+    "class_type": "UnetLoaderGGUF",
+    "inputs": {"unet_name": "LTX-2.3-distilled-Q3_K_M.gguf"}
+  },
+  "2": {
+    "class_type": "DualCLIPLoader",
+    "inputs": {
+      "clip_name1": "gemma_3_12B_it_fp8_e4m3fn.safetensors",
+      "clip_name2": "ltx-2.3_text_projection_bf16.safetensors",
+      "type": "ltxv"
+    }
+  },
+  "3": {
+    "class_type": "VAELoader",
+    "inputs": {"vae_name": "LTX23_video_vae_bf16.safetensors"}
+  },
+  "50": {
+    "class_type": "LoadImage",
+    "inputs": {"image": "{image}"}
+  },
+  "52": {
+    "class_type": "LTXVPreprocess",
+    "inputs": {"image": ["50", 0], "img_compression": 40}
+  },
+  "4": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {"text": "{prompt}", "clip": ["2", 0]}
+  },
+  "5": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {"text": "blurry, low quality, distorted, worst quality, ugly, static image, no motion", "clip": ["2", 0]}
+  },
+  "30": {
+    "class_type": "EmptyLTXVLatentVideo",
+    "inputs": {"width": "{width}", "height": "{height}", "length": "{frames}", "batch_size": 1}
+  },
+  "40": {
+    "class_type": "LTXVAddGuide",
+    "inputs": {
+      "positive": ["4", 0],
+      "negative": ["5", 0],
+      "vae": ["3", 0],
+      "latent": ["30", 0],
+      "image": ["52", 0],
+      "frame_idx": 0,
+      "strength": 0.9
+    }
+  },
+  "7": {
+    "class_type": "LTXVConditioning",
+    "inputs": {
+      "positive": ["40", 0],
+      "negative": ["40", 1],
+      "frame_rate": 25
+    }
+  },
+  "8": {
+    "class_type": "LTXVScheduler",
+    "inputs": {
+      "steps": 8, "max_shift": 2.05, "base_shift": 0.95,
+      "stretch": true, "terminal": 0.1, "latent": ["40", 2]
+    }
+  },
+  "9a": {
+    "class_type": "RandomNoise",
+    "inputs": {"noise_seed": "{seed}"}
+  },
+  "9b": {
+    "class_type": "CFGGuider",
+    "inputs": {
+      "model": ["1", 0],
+      "positive": ["7", 0],
+      "negative": ["7", 1],
+      "cfg": 1.0
+    }
+  },
+  "9c": {
+    "class_type": "KSamplerSelect",
+    "inputs": {"sampler_name": "euler"}
+  },
+  "9": {
+    "class_type": "SamplerCustomAdvanced",
+    "inputs": {
+      "noise": ["9a", 0],
+      "guider": ["9b", 0],
+      "sampler": ["9c", 0],
+      "sigmas": ["8", 0],
+      "latent_image": ["40", 2]
+    }
+  },
+  "10": {
+    "class_type": "VAEDecode",
+    "inputs": {"samples": ["9", 0], "vae": ["3", 0]}
+  },
+  "11": {
+    "class_type": "VHS_VideoCombine",
+    "inputs": {
+      "images": ["10", 0],
+      "frame_rate": 25, "loop_count": 0,
+      "filename_prefix": "eos-mv",
+      "format": "video/h264-mp4",
+      "pingpong": false, "save_output": true
+    }
+  }
+}

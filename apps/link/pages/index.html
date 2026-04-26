@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Links - EmptyOS</title>
+<link rel="stylesheet" href="/static/theme.css">
+<link rel="stylesheet" href="/static/eos-components.css">
+<style>
+.link-hero { padding:32px 0 16px; animation:fadeDown 0.4s ease }
+.link-hero h1 { font-size:28px; font-weight:700; color:var(--text-heading); margin-bottom:4px }
+.link-hero .desc { font-size:14px; color:var(--text-secondary) }
+
+.stats-row { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin-bottom:16px; animation:fadeDown 0.4s ease 0.05s both }
+
+.section-title { font-size:14px; font-weight:600; color:var(--text-heading); text-transform:uppercase; letter-spacing:0.5px; margin:24px 0 12px; display:flex; align-items:center; gap:8px }
+.section-title .badge { background:var(--accent); color:#fff; font-size:11px; padding:2px 8px; border-radius:8px; font-weight:600 }
+
+.lookup-bar { position:relative; margin-bottom:24px; animation:fadeDown 0.4s ease 0.1s both }
+.lookup-bar input { width:100%; padding:12px 16px 12px 42px; background:var(--bg-card); border:1px solid var(--border); border-radius:14px; font-size:15px; color:var(--text); outline:none; font-family:inherit; transition:border-color 0.2s,box-shadow 0.2s }
+.lookup-bar input:focus { border-color:color-mix(in srgb,var(--accent) 60%,transparent); box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 10%,transparent) }
+.lookup-bar input::placeholder { color:var(--text-muted) }
+.lookup-bar .icon { position:absolute; left:14px; top:50%; transform:translateY(-50%); font-size:16px; color:var(--text-muted); pointer-events:none }
+
+.link-list { display:flex; flex-direction:column; gap:8px; margin-bottom:16px }
+.link-item { display:flex; align-items:center; gap:12px; padding:12px 16px; background:var(--bg-card); border:1px solid var(--border); border-radius:14px; cursor:pointer; transition:border-color 0.2s,background 0.15s }
+.link-item:hover { border-color:color-mix(in srgb,var(--accent) 40%,transparent); background:var(--bg-card-hover) }
+.link-item .li-icon { font-size:16px; flex-shrink:0 }
+.link-item .li-title { flex:1; font-size:14px; font-weight:500; color:var(--text-heading); overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
+.link-item .li-meta { font-size:11px; color:var(--text-muted); font-family:var(--mono) }
+.li-btn { background:none; border:1px solid var(--border); border-radius:6px; color:var(--accent); font-size:13px; padding:4px 8px; cursor:pointer; transition:all 0.15s }
+.li-btn:hover { background:color-mix(in srgb,var(--accent) 12%,transparent); border-color:var(--accent) }
+
+.result-box { background:var(--bg-card); border:1px solid var(--border); border-radius:14px; padding:16px; margin-bottom:16px; display:none; animation:cardIn 0.3s ease }
+.result-box.show { display:block }
+.result-box h3 { font-size:15px; font-weight:600; color:var(--text-heading); margin-bottom:12px }
+
+.empty-msg { text-align:center; padding:24px; color:var(--text-muted); font-size:13px }
+
+@media(max-width:500px) {
+  .stats-row { grid-template-columns:1fr; }
+}
+</style>
+</head>
+<body>
+<script src="/static/realtime.js"></script>
+<script src="/static/eos.js"></script>
+<script src="/static/eos-components.js"></script>
+<script>EOS.nav('link');
+if(window.EOS&&EOS.registerActions){EOS.registerActions({},[],{description:"Vault link graph — broken links, orphans, hub notes, backlinks.",quickActions:[{label:"Broken links",msg:"Show me the broken links and suggest how to fix each."},{label:"Orphans to adopt",msg:"Which orphan notes look important enough to link back into the graph?"},{label:"Hub notes",msg:"Which notes are the biggest hubs in my vault and why?"}]});}
+</script>
+
+<div class="page">
+  <div class="link-hero">
+    <h1>Links</h1>
+    <div class="desc">Wikilinks, backlinks, and orphan detection</div>
+  </div>
+
+  <div class="stats-row" id="link-stats"></div>
+
+  <div class="section-title">&#128279; Backlink Lookup</div>
+  <div class="lookup-bar">
+    <span class="icon">&#128269;</span>
+    <input type="text" id="bl-input" placeholder="Enter note title to find backlinks..." autocomplete="off">
+  </div>
+
+  <div class="result-box" id="backlink-results">
+    <h3 id="bl-heading">Backlinks</h3>
+    <div class="link-list" id="bl-list"></div>
+  </div>
+
+  <div class="result-box" id="outgoing-results">
+    <h3 id="og-heading">Outgoing Links</h3>
+    <div class="link-list" id="og-list"></div>
+  </div>
+
+  <div class="section-title">&#128683; Orphan Notes <span class="badge" id="orphan-badge">0</span></div>
+  <div class="link-list" id="orphan-list"></div>
+  <div class="empty-msg" id="orphan-empty" style="display:none">No orphan notes found</div>
+</div>
+
+<script>
+var blTimer = null;
+
+async function loadStats() {
+  try {
+    var data = await EOS.api('/link/api/stats');
+    EOS_UI.statCards('link-stats', [
+      {value: data.total_notes || data.notes || 0, label: 'Notes'},
+      {value: data.total_links || data.links || 0, label: 'Links'},
+      {value: data.total_orphans || data.orphans || 0, label: 'Orphans'},
+    ]);
+  } catch(e) {}
+}
+
+async function loadOrphans() {
+  try {
+    var data = await EOS.api('/link/api/orphans');
+    var orphans = data.orphans || data || [];
+    var badge = document.getElementById('orphan-badge');
+    var list = document.getElementById('orphan-list');
+    var empty = document.getElementById('orphan-empty');
+    badge.textContent = orphans.length;
+    if (!orphans.length) { list.innerHTML = ''; empty.style.display = 'block'; return; }
+    empty.style.display = 'none';
+    list.innerHTML = orphans.map(function(o) {
+      var title = typeof o === 'string' ? EOS.fileName(o) : (o.title || o.name || EOS.fileName(o.path || ''));
+      var path = typeof o === 'string' ? o : (o.path || '');
+      var safe = EOS.escPath(path);
+      return '<div class="link-item" onclick="EOS.viewNote(\'' + safe + '\')">'
+        + '<span class="li-icon">&#128196;</span>'
+        + '<span class="li-title">' + esc(title) + '</span>'
+        + '<button class="li-btn" onclick="event.stopPropagation();EOS.openInViewer(\'' + safe + '\')" title="Open external">&#8599;</button>'
+        + '</div>';
+    }).join('');
+  } catch(e) {
+    document.getElementById('orphan-list').innerHTML = '<div class="empty-msg">Failed to load orphans</div>';
+  }
+}
+
+async function lookupBacklinks() {
+  var title = document.getElementById('bl-input').value.trim();
+  var blBox = document.getElementById('backlink-results');
+  var ogBox = document.getElementById('outgoing-results');
+  if (!title) { blBox.classList.remove('show'); ogBox.classList.remove('show'); return; }
+
+  // Backlinks
+  try {
+    var data = await EOS.api('/link/api/backlinks?title=' + encodeURIComponent(title));
+    var links = data.backlinks || data || [];
+    document.getElementById('bl-heading').textContent = 'Backlinks to "' + title + '" (' + links.length + ')';
+    if (links.length) {
+      document.getElementById('bl-list').innerHTML = links.map(function(l) {
+        var name = typeof l === 'string' ? EOS.fileName(l) : (l.title || l.name || EOS.fileName(l.path || ''));
+        var path = typeof l === 'string' ? l : (l.path || '');
+        var safe = EOS.escPath(path);
+        return '<div class="link-item" onclick="EOS.viewNote(\'' + safe + '\')">'
+          + '<span class="li-icon">&#8592;</span>'
+          + '<span class="li-title">' + esc(name) + '</span>'
+          + '<button class="li-btn" onclick="event.stopPropagation();EOS.openInViewer(\'' + safe + '\')" title="Open external">&#8599;</button>'
+          + '</div>';
+      }).join('');
+    } else {
+      document.getElementById('bl-list').innerHTML = EOS_UI.emptyState({message:'No backlinks found'});
+    }
+    blBox.classList.add('show');
+  } catch(e) {
+    blBox.classList.remove('show');
+  }
+
+  // Outgoing
+  try {
+    var data2 = await EOS.api('/link/api/outgoing?path=' + encodeURIComponent(title));
+    var outgoing = data2.outgoing || data2.links || data2 || [];
+    document.getElementById('og-heading').textContent = 'Outgoing from "' + title + '" (' + outgoing.length + ')';
+    if (outgoing.length) {
+      document.getElementById('og-list').innerHTML = outgoing.map(function(l) {
+        var name = typeof l === 'string' ? l : (l.title || l.target || l.name || '');
+        return '<div class="link-item">'
+          + '<span class="li-icon">&#8594;</span>'
+          + '<span class="li-title">' + esc(name) + '</span>'
+          + '</div>';
+      }).join('');
+    } else {
+      document.getElementById('og-list').innerHTML = '<div class="empty-msg">No outgoing links</div>';
+    }
+    ogBox.classList.add('show');
+  } catch(e) {
+    ogBox.classList.remove('show');
+  }
+}
+
+// Events
+document.getElementById('bl-input').addEventListener('input', function() {
+  clearTimeout(blTimer);
+  blTimer = setTimeout(lookupBacklinks, 400);
+});
+document.getElementById('bl-input').addEventListener('keydown', function(e) {
+  if (e.key === 'Enter') { clearTimeout(blTimer); lookupBacklinks(); }
+});
+
+// Init
+loadStats();
+loadOrphans();
+</script>
+</body>
+</html>

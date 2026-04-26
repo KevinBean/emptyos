@@ -1,0 +1,28 @@
+[app]
+id = "model-bench"
+name = "Model Bench"
+version = "1.0.0"
+description = "Compare LLM models on real app scenarios from the system"
+dimensions = ["occupational"]
+
+[app.entry]
+module = "app"
+class = "ModelBenchApp"
+
+[requires]
+capabilities = ["think", "read", "search"]
+services = []
+connectors = []
+
+[provides.cli]
+commands = ["model-bench"]
+
+[provides.web]
+prefix = "/model-bench"
+
+[provides.events]
+emits = [
+    "model-bench:completed",
+    "model-bench:chain_applied",
+    "model-bench:agent_run_completed",
+]

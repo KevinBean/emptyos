@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Format Guide - Publish - EmptyOS</title>
+<link rel="stylesheet" href="/static/theme.css">
+<link rel="stylesheet" href="/static/eos-components.css">
+<style>
+.guide-hero { padding:32px 0 8px; animation:fadeDown 0.3s ease }
+.guide-hero h1 { font-size:24px; font-weight:700; color:var(--text-heading) }
+.guide-hero .desc { font-size:14px; color:var(--text-secondary); margin-top:4px }
+
+.section { margin:32px 0 }
+.section-title { font-size:16px; font-weight:700; color:var(--text-heading); margin-bottom:12px; padding-bottom:8px; border-bottom:1px solid var(--border) }
+
+.example { display:grid; grid-template-columns:1fr 1fr; gap:0; border:1px solid var(--border); border-radius:8px; overflow:hidden; margin-bottom:12px }
+.example-source { padding:12px 16px; background:var(--bg-card); font-family:var(--mono); font-size:12px; line-height:1.6; color:var(--text-secondary); white-space:pre-wrap; position:relative; border-right:1px solid var(--border) }
+.example-render { padding:12px 16px; font-size:14px; line-height:1.6; color:var(--text) }
+.example-render h1 { font-size:1.5rem; color:var(--text-heading); margin:0 0 8px }
+.example-render h2 { font-size:1.2rem; color:var(--text-heading); margin:0 0 4px }
+.example-render h3 { font-size:1.05rem; color:var(--text-heading); margin:0 0 4px }
+.example-render p { margin:8px 0 }
+.example-render code { font-family:var(--mono); font-size:0.85em; background:var(--bg-card); padding:2px 8px; border-radius:4px }
+.example-render pre { background:var(--bg-card); border:1px solid var(--border); border-radius:6px; padding:12px; overflow-x:auto; margin:8px 0 }
+.example-render pre code { background:none; padding:0; font-size:12px }
+.example-render blockquote { border-left:3px solid var(--accent); padding:8px 12px; margin:8px 0; color:var(--text-secondary); background:var(--bg-card); border-radius:0 6px 6px 0 }
+.example-render table { width:100%; border-collapse:collapse }
+.example-render th { text-align:left; font-size:11px; color:var(--text-muted); padding:4px 8px; border-bottom:1px solid var(--border) }
+.example-render td { padding:4px 8px; border-bottom:1px solid var(--border); font-size:13px }
+.example-render ul,.example-render ol { margin:8px 0; padding-left:24px }
+.example-render img { max-width:100%; border-radius:6px }
+.example-render a { color:var(--accent) }
+.example-render .callout { border-left:3px solid var(--accent); padding:8px 12px; margin:8px 0; background:var(--bg-card); border-radius:0 6px 6px 0 }
+.example-render .callout-note { border-left-color:var(--accent) }
+.example-render .callout-warning { border-left-color:var(--warning) }
+.example-render .callout-tip { border-left-color:var(--success) }
+
+.copy-btn { position:absolute; top:6px; right:6px; padding:2px 8px; background:var(--bg); border:1px solid var(--border); border-radius:4px; font-size:10px; color:var(--text-muted); cursor:pointer }
+.copy-btn:hover { color:var(--accent); border-color:var(--accent) }
+
+.fm-table { width:100%; border-collapse:collapse; margin:12px 0 }
+.fm-table th { text-align:left; font-size:11px; color:var(--text-muted); text-transform:uppercase; padding:8px 12px; border-bottom:1px solid var(--border) }
+.fm-table td { padding:8px 12px; border-bottom:1px solid var(--border); font-size:13px }
+.fm-table code { font-family:var(--mono); font-size:12px; background:var(--bg-card); padding:2px 4px; border-radius:4px }
+
+.tip-box { background:var(--accent-bg); border:1px solid color-mix(in srgb,var(--accent) 20%,transparent); border-radius:8px; padding:16px; margin:16px 0; font-size:13px; color:var(--text) }
+.tip-box strong { color:var(--accent) }
+
+@media (max-width:600px) {
+  .example { grid-template-columns:1fr }
+  .example-source { border-right:none; border-bottom:1px solid var(--border) }
+}
+</style>
+</head>
+<body>
+<script src="/static/realtime.js"></script>
+<script src="/static/eos.js"></script>
+<script src="/static/eos-components.js"></script>
+<script>EOS.nav('publish');</script>
+
+<div class="page">
+  <div class="guide-hero">
+    <div style="display:flex;align-items:center;gap:10px">
+      <a href="/publish/" style="color:var(--text-muted);font-size:13px">&larr; Back</a>
+      <h1>Format Guide</h1>
+    </div>
+    <div class="desc">All supported markdown features and how they render on your published site</div>
+  </div>
+
+  <div class="tip-box">
+    <strong>Tip:</strong> Use the <a href="/publish/pages/writer.html">Writer</a> to create posts with live preview. The toolbar handles most formatting — but knowing the markdown helps for advanced layouts.
+  </div>
+
+  <!-- Basic Formatting -->
+  <div class="section">
+    <div class="section-title">Basic Formatting</div>
+    <div class="example">
+      <div class="example-source"><button class="copy-btn" onclick="copySource(this)">Copy</button>**bold text**
+*italic text*
+~~strikethrough~~
+`inline code`</div>
+      <div class="example-render"><strong>bold text</strong><br><em>italic text</em><br><del>strikethrough</del><br><code>inline code</code></div>
+    </div>
+  </div>
+
+  <!-- Headings -->
+  <div class="section">
+    <div class="section-title">Headings</div>
+    <div class="example">
+      <div class="example-source"><button class="copy-btn" onclick="copySource(this)">Copy</button># Heading 1
+## Heading 2
+### Heading 3
+#### Heading 4</div>
+      <div class="example-render"><h1>Heading 1</h1><h2>Heading 2</h2><h3>Heading 3</h3><h4 style="font-size:0.95rem;color:var(--text-heading)">Heading 4</h4></div>
+    </div>
+  </div>
+
+  <!-- Lists -->
+  <div class="section">
+    <div class="section-title">Lists</div>
+    <div class="example">
+      <div class="example-source"><button class="copy-btn" onclick="copySource(this)">Copy</button>- Bullet item 1
+- Bullet item 2
+  - Nested item
+
+1. Numbered item
+2. Second item
+
+- [ ] Task to do
+- [x] Task done</div>
+      <div class="example-render">
+        <ul><li>Bullet item 1</li><li>Bullet item 2<ul><li>Nested item</li></ul></li></ul>
+        <ol><li>Numbered item</li><li>Second item</li></ol>
+        <ul style="list-style:none;padding-left:4px"><li>&#9744; Task to do</li><li>&#9745; Task done</li></ul>
+      </div>
+    </div>
+  </div>
+
+  <!-- Links & Images -->
+  <div class="section">
+    <div class="section-title">Links & Images</div>
+    <div class="example">
+      <div class="example-source"><button class="copy-btn" onclick="copySource(this)">Copy</button>[Link text](https://example.com)
+
+![[image-name.png]]
+
+![Alt text](https://picsum.photos/200)</div>
+      <div class="example-render">
+        <p><a href="#">Link text</a></p>
+        <p><em>(Vault image embed — auto-resolved)</em></p>
+        <p><img src="https://picsum.photos/200" alt="Alt text" style="max-width:200px"></p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Code Blocks -->
+  <div class="section">
+    <div class="section-title">Code Blocks</div>
+    <div class="example">
+      <div class="example-source"><button class="copy-btn" onclick="copySource(this)">Copy</button>```python
+def hello():
+    print("Hello!")
+```
+
+```bash
+npm install emptyos
+```</div>
+      <div class="example-render">
+        <pre><code><span style="color:var(--accent)">def</span> hello():
+    <span style="color:var(--warning)">print</span>(<span style="color:var(--success)">"Hello!"</span>)</code></pre>
+        <pre><code>npm install emptyos</code></pre>
+      </div>
+    </div>
+  </div>
+
+  <!-- Tables -->
+  <div class="section">
+    <div class="section-title">Tables</div>
+    <div class="example">
+      <div class="example-source"><button class="copy-btn" onclick="copySource(this)">Copy</button>| Feature  | Status  |
+|----------|---------|
+| Markdown | Working |
+| Images   | Working |
+| Deploy   | Working |</div>
+      <div class="example-render">
+        <table><thead><tr><th>Feature</th><th>Status</th></tr></thead>
+        <tbody><tr><td>Markdown</td><td>Working</td></tr><tr><td>Images</td><td>Working</td></tr><tr><td>Deploy</td><td>Working</td></tr></tbody></table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Blockquotes -->
+  <div class="section">
+    <div class="section-title">Blockquotes</div>
+    <div class="example">
+      <div class="example-source"><button class="copy-btn" onclick="copySource(this)">Copy</button>> This is a blockquote.
+> It can span multiple lines.</div>
+      <div class="example-render"><blockquote>This is a blockquote. It can span multiple lines.</blockquote></div>
+    </div>
+  </div>
+
+  <!-- Callouts -->
+  <div class="section">
+    <div class="section-title">Callouts</div>
+    <div class="example">
+      <div class="example-source"><button class="copy-btn" onclick="copySource(this)">Copy</button>> [!note] Important
+> This is a note callout.
+
+> [!warning] Caution
+> Be careful with this.
+
+> [!tip] Pro Tip
+> This makes things easier.</div>
+      <div class="example-render">
+        <div class="callout callout-note"><strong class="callout-title">Important</strong><br>This is a note callout.</div>
+        <div class="callout callout-warning" style="border-left-color:var(--warning)"><strong class="callout-title">Caution</strong><br>Be careful with this.</div>
+        <div class="callout callout-tip" style="border-left-color:var(--success)"><strong class="callout-title">Pro Tip</strong><br>This makes things easier.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Video Embeds -->
+  <div class="section">
+    <div class="section-title">Video Embeds</div>
+    <div class="example">
+      <div class="example-source"><button class="copy-btn" onclick="copySource(this)">Copy</button>&lt;div class="video-embed"&gt;
+  &lt;iframe src="https://www.youtube.com/embed/VIDEO_ID"
+    frameborder="0" allowfullscreen&gt;
+  &lt;/iframe&gt;
+&lt;/div&gt;</div>
+      <div class="example-render">
+        <p><em>Use the toolbar's video button (&#9654;) to auto-generate this from a YouTube URL.</em></p>
+        <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:8px;padding:24px;text-align:center;color:var(--text-muted)">&#9654; YouTube video embed (16:9 responsive)</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Audio Embeds -->
+  <div class="section">
+    <div class="section-title">Audio Embeds</div>
+    <div class="example">
+      <div class="example-source"><button class="copy-btn" onclick="copySource(this)">Copy</button>&lt;audio controls src="audio-file.mp3"&gt;&lt;/audio&gt;
+
+&lt;audio controls&gt;
+  &lt;source src="podcast.mp3" type="audio/mpeg"&gt;
+&lt;/audio&gt;</div>
+      <div class="example-render">
+        <p><em>HTML audio player — renders as a native browser player.</em></p>
+        <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:8px;padding:14px;text-align:center;color:var(--text-muted)">&#9835; Audio player (native browser controls)</div>
+        <p style="font-size:12px;color:var(--text-muted);margin-top:6px">Supports .mp3, .wav, .ogg, .m4a formats.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Horizontal Rule -->
+  <div class="section">
+    <div class="section-title">Horizontal Rule</div>
+    <div class="example">
+      <div class="example-source"><button class="copy-btn" onclick="copySource(this)">Copy</button>---</div>
+      <div class="example-render"><hr style="border:none;border-top:1px solid var(--border);margin:8px 0"></div>
+    </div>
+  </div>
+
+  <!-- Frontmatter -->
+  <div class="section">
+    <div class="section-title">Frontmatter Fields</div>
+    <p style="font-size:13px;color:var(--text-secondary);margin-bottom:12px">YAML metadata at the top of each file, between <code>---</code> markers. The Writer UI fills these automatically.</p>
+    <table class="fm-table">
+      <thead><tr><th>Field</th><th>Required</th><th>Description</th><th>Example</th></tr></thead>
+      <tbody>
+        <tr><td><code>title</code></td><td>Yes</td><td>Post/page title</td><td><code>"My First Post"</code></td></tr>
+        <tr><td><code>date</code></td><td>Yes</td><td>Publication date</td><td><code>2026-04-12</code></td></tr>
+        <tr><td><code>publish</code></td><td>Yes</td><td>Must be <code>true</code> to publish</td><td><code>true</code></td></tr>
+        <tr><td><code>type</code></td><td>No</td><td><code>post</code> (default) or <code>page</code></td><td><code>post</code></td></tr>
+        <tr><td><code>tags</code></td><td>No</td><td>List of tags for categorization</td><td><code>[AI, tutorial]</code></td></tr>
+        <tr><td><code>summary</code></td><td>No</td><td>Short description (SEO, post listing)</td><td><code>"How I built..."</code></td></tr>
+        <tr><td><code>nav_order</code></td><td>Pages only</td><td>Position in site navigation</td><td><code>1</code></td></tr>
+        <tr><td><code>nav_label</code></td><td>Pages only</td><td>Display name in nav menu</td><td><code>About</code></td></tr>
+        <tr><td><code>slug</code></td><td>No</td><td>Custom URL slug (auto-generated from filename if omitted)</td><td><code>my-post</code></td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- AI Writing Tips -->
+  <div class="section">
+    <div class="section-title">Using AI to Write Posts</div>
+    <div class="tip-box">
+      <strong>Recommended workflow:</strong>
+      <ol style="margin:8px 0;padding-left:20px;font-size:13px">
+        <li><strong>Outline first</strong> — Type your topic, select all, click "Outline" to get a structure</li>
+        <li><strong>Draft freely</strong> — Write rough content under each heading without worrying about polish</li>
+        <li><strong>Expand</strong> — Select thin sections and click "Expand" to add depth</li>
+        <li><strong>Polish</strong> — Select all and click "Polish" for grammar and flow</li>
+        <li><strong>Compress</strong> — If too long, select verbose sections and click "Compress"</li>
+        <li><strong>Suggest Title</strong> — Click to auto-generate title and SEO summary</li>
+        <li><strong>Translate</strong> — Select text to translate between Chinese and English</li>
+      </ol>
+    </div>
+    <div class="tip-box">
+      <strong>Suggest from Vault:</strong> Click "Suggest from Vault" in the template bar. AI scans your notes and recommends the best candidates for blog posts. Click a suggestion to load it as a starting draft.
+    </div>
+  </div>
+
+</div>
+
+<script>
+function copySource(btn) {
+  var source = btn.parentElement.textContent.replace('Copy', '').trim();
+  navigator.clipboard.writeText(source).then(function() {
+    btn.textContent = 'Copied!';
+    setTimeout(function() { btn.textContent = 'Copy'; }, 1500);
+  });
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>System Log - EmptyOS</title>
+<link rel="stylesheet" href="/static/theme.css">
+<link rel="stylesheet" href="/static/eos-components.css">
+<style>
+.stats { display: flex; gap: 12px; margin-bottom: 16px; }
+.stat-box { flex: 1; background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 16px; text-align: center; }
+.stat-box .value { font-size: 1.4rem; font-weight: 700; color: var(--text-heading); }
+.stat-box .label { font-size: 11px; color: var(--text-muted); }
+.stat-box.warn .value { color: var(--warning); }
+.stat-box.err .value { color: var(--danger); }
+
+/* Event feed */
+.event { display: flex; gap: 12px; padding: 8px 0; border-bottom: 1px solid var(--border); font-size: 13px; animation: cardIn 0.2s ease; }
+.event:last-child { border-bottom: none; }
+.event-time { font-family: var(--mono); color: var(--text-muted); min-width: 55px; font-size: 11px; }
+.event-type { color: var(--accent); min-width: 160px; font-weight: 500; font-size: 12px; }
+.event-source { color: var(--text-secondary); font-size: 12px; }
+.event-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); margin-top: 8px; flex-shrink: 0; }
+
+/* Log entry */
+.log-entry { padding: 12px 12px; border-bottom: 1px solid var(--border); animation: cardIn 0.2s ease; }
+.log-entry:last-child { border-bottom: none; }
+.log-header { display: flex; gap: 8px; align-items: center; font-size: 12px; }
+.log-time { font-family: var(--mono); color: var(--text-muted); font-size: 11px; }
+.log-level { padding: 2px 8px; border-radius: 4px; font-size: 10px; font-weight: 700; text-transform: uppercase; }
+.log-level.info { background: rgba(59,130,246,0.12); color: #60a5fa; }
+.log-level.warn { background: rgba(245,158,11,0.12); color: #f59e0b; }
+.log-level.error { background: rgba(239,68,68,0.12); color: #ef4444; }
+.log-level.debug { background: rgba(156,163,175,0.12); color: #9ca3af; }
+.log-source { color: var(--accent); font-weight: 600; font-size: 12px; }
+.log-msg { font-size: 13px; color: var(--text); margin-top: 4px; line-height: 1.4; }
+.log-data { font-size: 11px; color: var(--text-muted); font-family: var(--mono); margin-top: 2px; max-height: 40px; overflow: hidden; }
+.log-job { font-size: 10px; color: var(--text-secondary); }
+
+/* Type tags */
+.type-chart { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; }
+.type-tag { padding: 4px 8px; border-radius: 8px; font-size: 11px; background: var(--bg-card); border: 1px solid var(--border); cursor: pointer; transition: all 0.15s; }
+.type-tag:hover { border-color: var(--accent); }
+.type-count { font-weight: 700; color: var(--accent); margin-left: 4px; }
+
+/* Filters */
+.filter-bar { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; align-items: center; }
+.filter-bar select, .filter-bar input { padding: 8px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-card); color: var(--text); font-size: 12px; }
+
+.live-indicator { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--success); margin-right: 8px; animation: pulse 2s infinite; }
+@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+</style>
+</head>
+<body>
+<script src="/static/realtime.js"></script>
+<script src="/static/eos.js"></script>
+<script src="/static/eos-components.js"></script>
+<script>EOS.nav('system-log');</script>
+
+<div class="page">
+    <div class="eos-header">
+        <div>
+            <h1><span class="live-indicator"></span>System Log</h1>
+            <div style="font-size:13px;color:var(--text-secondary)">Events, logs, errors — everything in one place</div>
+        </div>
+    </div>
+
+    <div class="stats" id="stats">
+        <div class="stat-box"><div class="value" id="s-total">-</div><div class="label">Events</div></div>
+        <div class="stat-box"><div class="value" id="s-logs">-</div><div class="label">Logs</div></div>
+        <div class="stat-box warn"><div class="value" id="s-warns">-</div><div class="label">Warnings</div></div>
+        <div class="stat-box err"><div class="value" id="s-errors">-</div><div class="label">Errors</div></div>
+    </div>
+
+    <div class="eos-tabs">
+        <div class="eos-tab active" onclick="switchTab('events')">Events</div>
+        <div class="eos-tab" onclick="switchTab('logs')">System Logs</div>
+        <div class="eos-tab" onclick="switchTab('errors')">Errors</div>
+    </div>
+
+    <!-- Events tab -->
+    <div id="tab-events" class="eos-tab-content active">
+        <div class="eos-section-title">Event Types</div>
+        <div class="type-chart" id="types"></div>
+        <div class="eos-section-title">Live Feed</div>
+        <div class="card" id="event-feed" style="max-height:60vh;overflow-y:auto">
+            <div style="color:var(--text-muted);padding:8px">Loading...</div>
+        </div>
+    </div>
+
+    <!-- Logs tab -->
+    <div id="tab-logs" class="eos-tab-content">
+        <div class="filter-bar">
+            <select id="f-level" onchange="loadLogs()">
+                <option value="">All levels</option>
+                <option value="info">Info</option>
+                <option value="warn">Warn</option>
+                <option value="error">Error</option>
+                <option value="debug">Debug</option>
+            </select>
+            <select id="f-source" onchange="loadLogs()">
+                <option value="">All sources</option>
+            </select>
+            <input type="text" id="f-job" placeholder="job_id…" oninput="loadLogsDebounced()" style="width:130px;font-family:var(--mono);font-size:11px">
+            <input type="text" id="f-search" placeholder="Search..." oninput="filterLogs()" style="flex:1;min-width:100px">
+            <button class="eos-btn eos-btn-ghost" style="font-size:11px;padding:4px 10px" onclick="loadLogs()">Refresh</button>
+        </div>
+        <div id="filter-pills" style="margin-bottom:8px;display:none"></div>
+        <div class="card" id="log-feed" style="max-height:60vh;overflow-y:auto">
+            <div style="color:var(--text-muted);padding:8px">Loading...</div>
+        </div>
+    </div>
+
+    <!-- Errors tab -->
+    <div id="tab-errors" class="eos-tab-content">
+        <div class="card" id="error-feed" style="max-height:60vh;overflow-y:auto">
+            <div style="color:var(--text-muted);padding:8px">Loading...</div>
+        </div>
+    </div>
+</div>
+
+<script>
+var currentTab = 'events';
+var allLogs = [];
+
+function switchTab(name) {
+    currentTab = name;
+    ['events','logs','errors'].forEach(function(t, i) {
+        document.querySelectorAll('.eos-tab')[i].classList.toggle('active', t === name);
+        var el = document.getElementById('tab-' + t);
+        if (el) el.classList.toggle('active', t === name);
+    });
+    if (name === 'logs') loadLogs();
+    if (name === 'errors') loadErrors();
+}
+
+// --- Events tab ---
+async function loadEvents() {
+    try {
+        var summary = await EOS.api('/system-log/api/summary');
+        document.getElementById('s-total').textContent = summary.total_events;
+        document.getElementById('s-types').textContent = Object.keys(summary.by_type).length;
+        document.getElementById('types').innerHTML = Object.entries(summary.by_type).map(function(e) {
+            return '<span class="type-tag">' + esc(e[0]) + '<span class="type-count">' + e[1] + '</span></span>';
+        }).join('');
+
+        var events = await EOS.api('/system-log/api/recent?limit=50');
+        renderEvents(events);
+    } catch(e) { console.error(e); }
+}
+
+function renderEvents(events) {
+    document.getElementById('event-feed').innerHTML = events.map(function(e) {
+        return '<div class="event">' +
+            '<div class="event-dot"></div>' +
+            '<span class="event-time">' + (e.timestamp || '').slice(11,19) + '</span>' +
+            '<span class="event-type">' + esc(e.type) + '</span>' +
+            '<span class="event-source">' + esc(e.source) + '</span>' +
+        '</div>';
+    }).join('') || EOS_UI.emptyState({message:'No events'});
+}
+
+// --- Logs tab ---
+var _logsDebounce = null;
+function loadLogsDebounced() {
+    clearTimeout(_logsDebounce);
+    _logsDebounce = setTimeout(loadLogs, 250);
+}
+
+function renderFilterPills() {
+    var level = document.getElementById('f-level').value;
+    var source = document.getElementById('f-source').value;
+    var job = document.getElementById('f-job').value.trim();
+    var pills = document.getElementById('filter-pills');
+    var bits = [];
+    if (source) bits.push('<span class="eos-badge">source: '+esc(source)+' <a href="#" onclick="clearFilter(\'f-source\');return false" style="margin-left:4px;color:var(--text-muted);text-decoration:none">×</a></span>');
+    if (level) bits.push('<span class="eos-badge">level: '+esc(level)+' <a href="#" onclick="clearFilter(\'f-level\');return false" style="margin-left:4px;color:var(--text-muted);text-decoration:none">×</a></span>');
+    if (job) bits.push('<span class="eos-badge">job_id: '+esc(job)+' <a href="#" onclick="clearFilter(\'f-job\');return false" style="margin-left:4px;color:var(--text-muted);text-decoration:none">×</a></span>');
+    if (bits.length) {
+        pills.innerHTML = '<span style="font-size:11px;color:var(--text-muted);margin-right:6px">Filtering:</span>' + bits.join(' ');
+        pills.style.display = 'block';
+    } else {
+        pills.style.display = 'none';
+    }
+}
+
+function clearFilter(id) {
+    var el = document.getElementById(id);
+    if (el) el.value = '';
+    loadLogs();
+}
+
+async function loadLogs() {
+    var level = document.getElementById('f-level').value;
+    var source = document.getElementById('f-source').value;
+    var job = document.getElementById('f-job').value.trim();
+    var url = '/system-log/api/logs?limit=200';
+    if (level) url += '&level=' + level;
+    if (source) url += '&source=' + encodeURIComponent(source);
+    if (job) url += '&job_id=' + encodeURIComponent(job);
+    renderFilterPills();
+    try {
+        allLogs = await EOS.api(url);
+        document.getElementById('s-logs').textContent = allLogs.length;
+        renderLogs(allLogs);
+        // Populate source filter (only when no source is pinned, else preserve)
+        var sources = {};
+        allLogs.forEach(function(l) { sources[l.source] = (sources[l.source] || 0) + 1; });
+        var sel = document.getElementById('f-source');
+        var curVal = sel.value;
+        // Ensure the currently-pinned source is in the list even if it has 0 rows in this batch
+        if (curVal && !(curVal in sources)) sources[curVal] = 0;
+        sel.innerHTML = '<option value="">All sources</option>' +
+            Object.entries(sources).sort(function(a,b) { return b[1]-a[1]; }).map(function(e) {
+                return '<option value="' + escAttr(e[0]) + '"' + (e[0] === curVal ? ' selected' : '') + '>' + esc(e[0]) + ' (' + e[1] + ')</option>';
+            }).join('');
+    } catch(e) {
+        document.getElementById('log-feed').innerHTML = '<div style="color:var(--danger);padding:8px">Failed to load logs</div>';
+    }
+}
+
+function filterLogs() {
+    var q = (document.getElementById('f-search').value || '').toLowerCase();
+    if (!q) { renderLogs(allLogs); return; }
+    renderLogs(allLogs.filter(function(l) {
+        return l.message.toLowerCase().indexOf(q) >= 0 || l.source.toLowerCase().indexOf(q) >= 0 || JSON.stringify(l.data || {}).toLowerCase().indexOf(q) >= 0;
+    }));
+}
+
+function renderLogs(logs) {
+    document.getElementById('log-feed').innerHTML = logs.map(function(l) {
+        var ts = new Date(l.ts * 1000);
+        var timeStr = ts.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit', second:'2-digit'});
+        var dateStr = ts.toLocaleDateString([], {month:'short', day:'numeric'});
+        var dataStr = l.data && Object.keys(l.data).length ? JSON.stringify(l.data).slice(0, 120) : '';
+        return '<div class="log-entry">' +
+            '<div class="log-header">' +
+                '<span class="log-time">' + dateStr + ' ' + timeStr + '</span>' +
+                '<span class="log-level ' + l.level + '">' + l.level + '</span>' +
+                '<span class="log-source">' + esc(l.source) + '</span>' +
+                (l.job_id ? '<span class="log-job">' + esc(l.job_id) + '</span>' : '') +
+            '</div>' +
+            '<div class="log-msg">' + esc(l.message) + '</div>' +
+            (dataStr ? '<div class="log-data">' + esc(dataStr) + '</div>' : '') +
+        '</div>';
+    }).join('') || EOS_UI.emptyState({message:'No logs'});
+}
+
+// --- Errors tab ---
+async function loadErrors() {
+    try {
+        var data = await EOS.api('/system-log/api/logs/errors');
+        var errors = data.errors || [];
+        var warnings = data.warnings || [];
+        document.getElementById('s-errors').textContent = errors.length;
+        document.getElementById('s-warns').textContent = warnings.length;
+        var all = errors.concat(warnings).sort(function(a, b) { return b.ts - a.ts; });
+        document.getElementById('error-feed').innerHTML = all.map(function(l) {
+            var ts = new Date(l.ts * 1000);
+            var timeStr = ts.toLocaleString([], {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit'});
+            return '<div class="log-entry">' +
+                '<div class="log-header">' +
+                    '<span class="log-time">' + timeStr + '</span>' +
+                    '<span class="log-level ' + l.level + '">' + l.level + '</span>' +
+                    '<span class="log-source">' + esc(l.source) + '</span>' +
+                '</div>' +
+                '<div class="log-msg">' + esc(l.message) + '</div>' +
+            '</div>';
+        }).join('') || EOS_UI.emptyState({message:'No errors in the last 24 hours'});
+    } catch(e) {
+        document.getElementById('error-feed').innerHTML = '<div style="color:var(--text-muted);padding:8px">Log database not available yet (restart needed)</div>';
+    }
+}
+
+// --- Live events ---
+EOS.on('*', function(data, event) {
+    if (currentTab !== 'events') return;
+    var feed = document.getElementById('event-feed');
+    var el = document.createElement('div');
+    el.className = 'event';
+    el.innerHTML = '<div class="event-dot" style="background:var(--success)"></div>' +
+        '<span class="event-time">' + (event.timestamp || '').slice(11,19) + '</span>' +
+        '<span class="event-type">' + esc(event.type) + '</span>' +
+        '<span class="event-source">' + esc(event.source) + '</span>';
+    feed.prepend(el);
+    if (feed.children.length > 60) feed.lastChild.remove();
+    var counter = document.getElementById('s-total');
+    counter.textContent = parseInt(counter.textContent || '0') + 1;
+});
+
+// Auto-refresh logs tab (pause when hidden)
+setInterval(function() { if (currentTab === 'logs' && !document.hidden) loadLogs(); }, 10000);
+
+// Init — honor URL params (?source=&level=&job_id=&q=) so other apps can deep-link
+// to a filtered log view (e.g. music-studio's "📜 logs" link on each MV tile).
+(function applyUrlParams() {
+    var qs = new URLSearchParams(location.search);
+    var source = qs.get('source') || '';
+    var level = qs.get('level') || '';
+    var job = qs.get('job_id') || '';
+    var q = qs.get('q') || '';
+    var hasFilter = source || level || job || q;
+    if (level) {
+        var lvl = document.getElementById('f-level');
+        // Pre-create the option so the dropdown reflects the value pre-load
+        if (lvl && lvl.querySelector('option[value="'+level+'"]')) lvl.value = level;
+    }
+    if (source) {
+        var src = document.getElementById('f-source');
+        if (src) {
+            var opt = document.createElement('option');
+            opt.value = source; opt.textContent = source; opt.selected = true;
+            src.appendChild(opt);
+        }
+    }
+    if (job) document.getElementById('f-job').value = job;
+    if (q) document.getElementById('f-search').value = q;
+    if (hasFilter) {
+        switchTab('logs');  // also calls loadLogs(), which re-applies q via filterLogs after render
+        if (q) setTimeout(filterLogs, 100);
+    }
+})();
+
+loadEvents();
+loadErrors();
+</script>
+</body>
+</html>

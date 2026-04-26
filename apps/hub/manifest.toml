@@ -1,0 +1,44 @@
+[app]
+id = "hub"
+name = "Home"
+version = "1.0.0"
+description = "Generic home dashboard — aggregates panel contributions from any installed app. Zero hard dependencies."
+
+[app.entry]
+module = "app"
+class = "HubApp"
+
+[requires]
+capabilities = []
+apps = []
+connectors = []
+
+[provides.cli]
+commands = ["hub"]
+
+[provides.web]
+prefix = "/hub"
+
+[provides.events]
+emits = ["hub:refreshed"]
+
+[provides.settings]
+schema = [
+    {key = "hub.show_welcome", label = "Show welcome card when no panels", type = "toggle", default = true},
+]
+
+# Hub's own panels — minimal: a welcome card when no other app has contributed anything,
+# and an apps launcher chips row so the page is never empty.
+
+[[contributes.hub.panel]]
+id = "hub-welcome"
+method = "panel_welcome"
+renderer = "accent-card"
+priority = 25
+
+[[contributes.hub.panel]]
+id = "hub-launcher"
+title = "Apps"
+method = "panel_launcher"
+renderer = "chips"
+priority = 900

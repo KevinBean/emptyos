@@ -1,0 +1,535 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Coding Agent · EmptyOS</title>
+<link rel="stylesheet" href="/static/theme.css">
+<link rel="stylesheet" href="/static/eos-components.css">
+<link rel="stylesheet" href="/static/eos-chat-shell.css">
+<script src="/static/realtime.js"></script>
+<script src="/static/eos-components.js"></script>
+<style>
+  :root { --agent-sidebar-w: 260px; --agent-topnav-h: 46px; }
+  body {
+    margin: 0; height: 100dvh; overflow: hidden;
+    display: grid;
+    grid-template-columns: var(--agent-sidebar-w) 1fr;
+    background: var(--bg); color: var(--text);
+  }
+  /* theme.css forces body padding-top for the global nav; keep it so the
+     shared EOS top-nav sits in that slot, and push our grid down instead of
+     leaving a blank strip. */
+  #sidebar, #main { height: calc(100dvh - var(--agent-topnav-h)); }
+
+  #sidebar {
+    border-right: 1px solid var(--border);
+    background: var(--bg-surface, var(--bg-card, var(--bg)));
+    padding: 16px 12px;
+    overflow-y: auto;
+    display: flex; flex-direction: column; gap: 12px;
+  }
+  #sidebar h1 { font-size: 14px; margin: 0; display: flex; justify-content: space-between; align-items: center; gap: 8px; color: var(--text-heading); }
+  #sidebar .sidebar-sub { font-size: 10.5px; color: var(--text-secondary); margin: 0 0 8px; }
+  #sidebar .sidebar-sub code { font-size: 10px; padding: 2px 4px; border-radius: 4px; background: color-mix(in srgb, var(--text) 8%, transparent); }
+  #sidebar .sidebar-links { display: flex; gap: 8px; align-items: center; }
+  #sidebar .sidebar-links a,
+  #sidebar .sidebar-links button.btn-settings {
+    text-decoration: none; color: inherit; font-size: 12px; opacity: 0.55;
+    background: none; border: none; cursor: pointer; padding: 0;
+  }
+  #sidebar .sidebar-links a:hover,
+  #sidebar .sidebar-links button.btn-settings:hover { opacity: 1; }
+
+  #new-session-btn {
+    width: 100%; padding: 8px; border: none; border-radius: 8px;
+    background: var(--accent); color: white; cursor: pointer;
+    font-size: 13px; font-weight: 500; transition: opacity 0.15s;
+  }
+  #new-session-btn:hover { opacity: 0.88; }
+
+  #session-list-wrap { display: flex; flex-direction: column; gap: 2px; margin-top: 2px; flex: 1; overflow-y: auto; }
+  #session-header { display: flex; justify-content: space-between; align-items: center; font-size: 10.5px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-muted, var(--text-secondary)); margin: 8px 2px 4px; }
+  #session-header button { background: none; border: none; color: inherit; font-size: 10px; cursor: pointer; text-decoration: underline; opacity: 0.6; }
+  #session-header button:hover { opacity: 1; }
+
+  .session-item {
+    padding: 8px 12px; border-radius: 6px;
+    cursor: pointer; font-size: 13px;
+    color: var(--text-secondary);
+    display: flex; align-items: center; gap: 8px;
+    transition: background 0.1s;
+  }
+  .session-item .s-body { flex: 1; min-width: 0; }
+  .session-item .s-body > div:first-child {
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .session-item:hover { background: color-mix(in srgb, var(--accent) 8%, transparent); color: var(--text); }
+  .session-item.active { background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--text-heading); }
+  .session-item .meta { display: block; font-size: 10px; opacity: 0.6; margin-top: 2px; font-family: var(--font-mono, ui-monospace, monospace); }
+  .session-item .sess-actions {
+    display: flex; align-items: center; gap: 2px;
+    opacity: 0.35; transition: opacity 0.15s;
+    flex-shrink: 0;
+  }
+  .session-item:hover .sess-actions { opacity: 1; }
+  .session-item .del,
+  .session-item .arch {
+    background: none; border: none; color: var(--text-muted, var(--text-secondary));
+    font-size: 13px; cursor: pointer; padding: 2px 4px; border-radius: 4px;
+  }
+  .session-item .del:hover { background: color-mix(in srgb, var(--danger, #da3633) 20%, transparent); color: var(--danger, #da3633); }
+  .session-item .arch:hover { background: color-mix(in srgb, var(--accent) 18%, transparent); color: var(--accent); }
+
+  #main { display: flex; flex-direction: column; min-width: 0; }
+
+  /* ─── Status header above transcript ─────────────────────────── */
+  #status-header {
+    display: flex; align-items: center; gap: 12px;
+    padding: 8px 24px; font-size: 12px;
+    background: var(--bg-surface, var(--bg-card, var(--bg)));
+    border-bottom: 1px solid var(--border);
+    color: var(--text-secondary);
+  }
+  #status-header.show { display: flex; }
+  #status-header .hdr-session {
+    flex: 0 1 auto; min-width: 0; max-width: 280px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    color: var(--text-heading); font-weight: 500;
+  }
+  #status-header .hdr-spacer { flex: 1; }
+  .hdr-chip {
+    display: inline-flex; align-items: center; gap: 4px;
+    padding: 4px 8px; border-radius: 8px;
+    border: 1px solid var(--border);
+    background: color-mix(in srgb, var(--text) 4%, transparent);
+    font-size: 11.5px; cursor: pointer;
+    transition: background 0.15s;
+  }
+  .hdr-chip:hover { background: color-mix(in srgb, var(--accent) 10%, transparent); color: var(--text); }
+  .hdr-chip.model { color: var(--accent); font-family: var(--font-mono, ui-monospace, monospace); }
+  .hdr-chip.offline { color: var(--danger, #da3633); border-color: color-mix(in srgb, var(--danger, #da3633) 40%, transparent); }
+  .hdr-chip .dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; display: inline-block; }
+  .hdr-chip.tools { color: var(--text-secondary); }
+  .hdr-chip.cost { color: var(--text-secondary); font-family: var(--font-mono, ui-monospace, monospace); }
+
+  /* ─── Slash autocomplete dropdown ─────────────────────────────── */
+  #slash-palette {
+    display: none; position: absolute;
+    bottom: 56px; left: 20px; right: 20px;
+    max-width: 520px;
+    background: var(--bg-surface, var(--bg-card, var(--bg)));
+    border: 1px solid var(--border);
+    border-radius: 8px; box-shadow: 0 6px 24px rgba(0,0,0,0.2);
+    padding: 8px; z-index: 40; max-height: 240px; overflow-y: auto;
+  }
+  #slash-palette.show { display: block; }
+  .slash-item {
+    display: flex; align-items: baseline; gap: 12px;
+    padding: 8px 12px; border-radius: 6px;
+    cursor: pointer; font-size: 13px;
+    color: var(--text);
+  }
+  .slash-item.active, .slash-item:hover {
+    background: color-mix(in srgb, var(--accent) 14%, transparent);
+  }
+  .slash-item .sc-name { color: var(--accent); font-family: var(--font-mono, ui-monospace, monospace); font-weight: 500; }
+  .slash-item .sc-args { font-family: var(--font-mono, ui-monospace, monospace); font-size: 11.5px; color: var(--text-muted, var(--text-secondary)); }
+  .slash-item .sc-badge { font-size: 10px; padding: 2px 4px; border-radius: 4px; background: color-mix(in srgb, var(--accent) 18%, transparent); color: var(--accent); font-weight: 600; letter-spacing: .02em; }
+  .slash-item .sc-help { color: var(--text-secondary); font-size: 12px; flex: 1; }
+
+  #input-wrap { position: relative; }
+  #transcript {
+    flex: 1; overflow-y: auto; padding: 24px 32px;
+    font-size: 14px; line-height: 1.65;
+    background: var(--bg);
+  }
+  #empty-state {
+    padding: 56px 32px 40px; text-align: center;
+    color: var(--text-secondary); font-size: 13px;
+    max-width: 620px; margin: 0 auto; line-height: 1.65;
+  }
+  #empty-state h2 { font-size: 22px; color: var(--text-heading); margin: 0 0 12px; letter-spacing: -0.01em; }
+  #empty-state .tagline { font-size: 13px; margin: 0 0 24px; opacity: 0.8; }
+  #empty-state .tools { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin: 16px 0 24px; }
+  #empty-state .tool-chip {
+    font-family: var(--font-mono, ui-monospace, monospace); font-size: 11px;
+    padding: 4px 8px; border: 1px solid var(--border); border-radius: 8px;
+    background: color-mix(in srgb, var(--accent) 6%, transparent);
+    color: var(--accent);
+  }
+  #empty-state code {
+    font-size: 11.5px; padding: 2px 8px; border-radius: 4px;
+    background: color-mix(in srgb, var(--text) 8%, transparent);
+    color: var(--text-heading);
+  }
+  #empty-state .hint { font-size: 12px; opacity: 0.65; margin-top: 16px; }
+  #empty-state .hint a { color: var(--accent); text-decoration: underline; }
+
+  .turn { margin-bottom: 24px; max-width: 860px; }
+  .turn-role {
+    font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.1em;
+    color: var(--text-muted, var(--text-secondary)); margin-bottom: 8px;
+    font-weight: 600;
+  }
+
+  /* Per-turn footer — mirrors the CLI "· 1.4s · 1,477 tokens · $0.0006" line.
+     Sits directly below an assistant turn on agent:done. */
+  .turn-footer {
+    font-size: 11px; color: var(--text-muted, var(--text-secondary));
+    margin-top: 8px; font-variant-numeric: tabular-nums;
+    opacity: 0.75;
+  }
+  .turn-footer .sep { opacity: 0.5; margin: 0 8px; }
+
+  /* Compaction + plan-mode + nudge inline notices.
+     Dimmed so they don't compete with the conversation. */
+  .inline-notice {
+    font-size: 11.5px; color: var(--text-muted, var(--text-secondary));
+    padding: 4px 12px; border-left: 2px solid var(--border);
+    margin: 4px 0 12px; max-width: 860px; opacity: 0.85;
+  }
+  .inline-notice.notice-compaction { border-color: color-mix(in srgb, var(--accent) 40%, transparent); }
+  .inline-notice.notice-hint       { border-color: var(--warning); color: var(--warning); }
+  .inline-notice.notice-loop       { border-color: var(--danger); color: var(--danger); }
+  .inline-notice.orient-notice     { border-color: color-mix(in srgb, var(--accent) 30%, transparent); white-space: pre-line; }
+
+  /* Plan-mode banner — sticky, between the session header and the transcript.
+     Yellow accent so it's unmistakable that non-readonly tools are blocked. */
+  #plan-banner {
+    display: none;  /* toggled via JS when plan mode flips on */
+    margin: 0 0 12px; padding: 8px 16px;
+    background: color-mix(in srgb, var(--warning) 12%, var(--bg));
+    border: 1px solid color-mix(in srgb, var(--warning) 55%, transparent);
+    border-radius: 6px; color: var(--warning);
+    font-size: 12.5px; font-weight: 500;
+    display: none;
+  }
+  #plan-banner.on { display: block; }
+  #plan-banner .cmd { font-family: var(--font-mono); background: rgba(0,0,0,0.06); padding: 2px 8px; border-radius: 4px; }
+
+  /* Live TaskList panel — shown only when the agent has called TaskList at
+     least once this session. Sits between the header and the transcript;
+     collapses to just its title bar on ▾ click. Auto-updates on every
+     TaskList tool_call. Hidden entirely when state.tasks is empty. */
+  #tasklist-panel {
+    display: none;
+    margin: 0 0 12px; padding: 0;
+    border: 1px solid var(--border); border-radius: 6px;
+    background: color-mix(in srgb, var(--accent) 3%, var(--bg-card, var(--bg)));
+    font-size: 12.5px; overflow: hidden;
+  }
+  #tasklist-panel.on { display: block; }
+  #tasklist-panel .header {
+    padding: 8px 12px; cursor: pointer;
+    display: flex; justify-content: space-between; align-items: center;
+    font-size: 11.5px; color: var(--text-secondary);
+    border-bottom: 1px solid var(--border);
+    user-select: none;
+  }
+  #tasklist-panel.collapsed .header { border-bottom: none; }
+  #tasklist-panel .header-label { font-weight: 600; letter-spacing: 0.02em; }
+  #tasklist-panel .header-progress { font-family: var(--font-mono); font-size: 11px; opacity: 0.7; }
+  #tasklist-panel .header-chevron { font-size: 11px; opacity: 0.5; }
+  #tasklist-panel .body { padding: 8px 16px 12px; }
+  #tasklist-panel.collapsed .body { display: none; }
+  #tasklist-panel .task-row {
+    display: flex; gap: 8px; align-items: flex-start;
+    padding: 4px 0; line-height: 1.45;
+  }
+  #tasklist-panel .task-row .mark {
+    font-family: var(--font-mono); font-weight: 600;
+    min-width: 1.6em; text-align: center; flex-shrink: 0;
+  }
+  #tasklist-panel .task-row.completed { opacity: 0.55; }
+  #tasklist-panel .task-row.completed .content { text-decoration: line-through; }
+  #tasklist-panel .task-row.completed .mark { color: var(--success, #2ea043); }
+  #tasklist-panel .task-row.in_progress .mark { color: var(--warning, #d4a017); }
+  #tasklist-panel .task-row.in_progress { font-weight: 500; }
+  #tasklist-panel .task-row.pending .mark { color: var(--text-muted); }
+  #tasklist-panel .task-row .id { font-family: var(--font-mono); font-size: 11px; opacity: 0.5; min-width: 1.4em; }
+
+  /* /skills catalog rendering — click-to-fill-input buttons. */
+  .turn-content .skill-list { list-style: none; padding-left: 0; }
+  .turn-content .skill-list li { margin-bottom: 8px; font-size: 12px; line-height: 1.5; }
+  .turn-content .skill-invoke {
+    background: none; border: 1px solid var(--border); color: var(--accent);
+    font-family: var(--font-mono, ui-monospace, monospace); cursor: pointer;
+    padding: 2px 8px; border-radius: 4px; font-size: 11.5px;
+  }
+  .turn-content .skill-invoke:hover { background: color-mix(in srgb, var(--accent) 10%, transparent); }
+  .turn-content .dim, .dim { color: var(--text-muted, var(--text-secondary)); opacity: 0.75; }
+  .turn-role.user { color: var(--accent); }
+  .turn-role.assistant { color: color-mix(in srgb, var(--accent) 70%, var(--text)); }
+
+  .turn-content { word-wrap: break-word; overflow-wrap: break-word; }
+  /* streaming (pre-markdown) preserves newlines; rendered markdown resets */
+  .turn-content.streaming { white-space: pre-wrap; }
+
+  /* User messages get a subtle card; assistant messages flow open */
+  .turn.user .turn-content {
+    padding: 12px 16px; border-radius: 8px;
+    background: color-mix(in srgb, var(--accent) 8%, transparent);
+    border: 1px solid color-mix(in srgb, var(--accent) 18%, transparent);
+    white-space: pre-wrap;
+  }
+
+  /* ─── Rendered markdown inside assistant turns ─────────────────── */
+  .turn-content.markdown h2 { font-size: 18px; margin: 16px 0 8px; color: var(--text-heading); line-height: 1.3; }
+  .turn-content.markdown h3 { font-size: 15px; margin: 16px 0 8px; color: var(--text-heading); }
+  .turn-content.markdown h4, .turn-content.markdown h5 { font-size: 13px; margin: 12px 0 4px; color: var(--text-heading); font-weight: 600; }
+  .turn-content.markdown h2:first-child, .turn-content.markdown h3:first-child { margin-top: 0; }
+  .turn-content.markdown p { margin: 0 0 12px; }
+  .turn-content.markdown ul, .turn-content.markdown ol { margin: 0 0 12px; padding-left: 24px; }
+  .turn-content.markdown li { margin-bottom: 4px; }
+  .turn-content.markdown hr { margin: 16px 0; border: none; border-top: 1px solid var(--border); }
+  .turn-content.markdown blockquote { margin: 8px 0; padding: 8px 12px; border-left: 3px solid var(--border); color: var(--text-secondary); }
+  .turn-content.markdown a { color: var(--accent); text-decoration: underline; }
+  .turn-content.markdown strong { color: var(--text-heading); font-weight: 600; }
+  .turn-content.markdown code {
+    font-family: var(--font-mono, ui-monospace, monospace); font-size: 0.9em;
+    padding: 2px 8px; border-radius: 4px;
+    background: color-mix(in srgb, var(--text) 10%, transparent);
+    color: var(--text-heading);
+  }
+  .turn-content.markdown pre,
+  .turn-content.markdown .obs-code-block {
+    margin: 12px 0;
+    padding: 12px 16px;
+    background: var(--bg-surface, color-mix(in srgb, var(--text) 6%, transparent));
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow-x: auto;
+    font-family: var(--font-mono, ui-monospace, monospace); font-size: 12.5px;
+    line-height: 1.5;
+  }
+  .turn-content.markdown pre code,
+  .turn-content.markdown .obs-code-block code {
+    background: none; padding: 0; color: var(--text);
+  }
+  .turn-content.markdown table { border-collapse: collapse; margin: 12px 0; font-size: 13px; }
+  .turn-content.markdown th, .turn-content.markdown td { padding: 8px 12px; border: 1px solid var(--border); }
+  .turn-content.markdown th { background: var(--bg-surface, color-mix(in srgb, var(--text) 6%, transparent)); font-weight: 600; }
+
+  /* ─── Tool calls (inline, between text segments) ───────────────── */
+  .tool-call {
+    margin: 12px 0; padding: 8px 12px; border-radius: 8px;
+    background: color-mix(in srgb, var(--accent) 5%, transparent);
+    border: 1px solid color-mix(in srgb, var(--accent) 20%, transparent);
+    font-family: var(--font-mono, ui-monospace, monospace); font-size: 12px;
+  }
+  .tool-call .tc-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
+  .tool-call .tc-name { color: var(--accent); font-weight: 600; }
+  .tool-call .tc-status { font-size: 11px; opacity: 0.65; color: var(--text-secondary); }
+  .tool-call details summary { cursor: pointer; opacity: 0.65; font-size: 11px; color: var(--text-secondary); }
+  .tool-call details summary:hover { opacity: 1; }
+  .tool-call pre {
+    margin: 8px 0 0; padding: 8px 12px;
+    background: color-mix(in srgb, var(--text) 6%, transparent);
+    border-radius: 4px;
+    font-size: 11.5px; max-height: 260px; overflow: auto; white-space: pre-wrap;
+    color: var(--text);
+  }
+  .tool-error {
+    background: color-mix(in srgb, var(--danger, #da3633) 6%, transparent);
+    border-color: color-mix(in srgb, var(--danger, #da3633) 30%, transparent);
+  }
+  .tool-error .tc-name { color: var(--danger, #da3633); }
+
+  /* ─── Rich tool-result extras (diff, bash exit, meta) ─────────── */
+  .tool-call .tc-section { margin: 8px 0 0; }
+  .tool-call .tc-section-label {
+    font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em;
+    color: var(--text-muted, var(--text-secondary));
+    margin-bottom: 4px;
+  }
+  .tool-call pre.diff {
+    margin: 0; padding: 8px 12px;
+    background: color-mix(in srgb, var(--text) 4%, transparent);
+    border-radius: 4px;
+    font-size: 11.5px; max-height: 320px; overflow: auto;
+    white-space: pre; line-height: 1.45;
+    color: var(--text);
+  }
+  .tool-call pre.diff .d-add { color: var(--success); display: block; }
+  .tool-call pre.diff .d-del { color: var(--danger); display: block; }
+  .tool-call pre.diff .d-hunk { color: var(--accent); display: block; opacity: 0.75; }
+  .tool-call pre.diff .d-hdr { color: var(--text-muted, var(--text-secondary)); display: block; opacity: 0.7; }
+  .tool-call pre.diff .d-ctx { color: var(--text-secondary); display: block; opacity: 0.85; }
+  .tool-call .tc-meta { margin-top: 8px; font-size: 11px; color: var(--text-secondary); }
+  .tool-call .tc-meta code { background: none; padding: 0; font-size: inherit; color: var(--text); }
+  .tc-exit { padding: 2px 8px; border-radius: 8px; font-size: 10.5px; font-weight: 600; margin-right: 4px; }
+  .tc-exit.ok { background: color-mix(in srgb, var(--success) 16%, transparent); color: var(--success); }
+  .tc-exit.bad { background: color-mix(in srgb, var(--danger) 18%, transparent); color: var(--danger); }
+  .hdr-chip.files { color: var(--accent); cursor: help; }
+
+  /* ─── Sidebar toggle ───────────────────────────────────
+     Desktop: hidden when sidebar is visible (a collapse-arrow inside the
+     sidebar header does the work). Shown at far-left only when the sidebar
+     is collapsed, so users can bring it back.
+     Mobile (<=720px): always visible as the drawer handle. */
+  #sidebar-toggle {
+    display: none; position: fixed; top: 54px; left: 10px; z-index: 50;
+    width: 30px; height: 30px; border: 1px solid var(--border);
+    background: var(--bg-surface, var(--bg-card, var(--bg)));
+    color: var(--text); border-radius: 6px; font-size: 14px; cursor: pointer;
+    opacity: 0.55; transition: opacity 0.15s;
+  }
+  #sidebar-toggle:hover { opacity: 1; }
+  @media (min-width: 721px) {
+    body.sidebar-hidden { grid-template-columns: 0 1fr; }
+    body.sidebar-hidden #sidebar { padding: 0; border-right: none; overflow: hidden; }
+    body.sidebar-hidden #sidebar-toggle { display: block; }
+  }
+  #hdr-sidebar-toggle {
+    background: transparent; cursor: pointer;
+    font: inherit; padding: 4px 8px;
+  }
+  #sidebar-scrim {
+    display: none; position: fixed; inset: 0;
+    background: rgba(0,0,0,0.45); z-index: 45;
+  }
+  @media (max-width: 720px) {
+    body { grid-template-columns: 1fr; }
+    #sidebar-toggle { display: block; }
+    #sidebar {
+      position: fixed; inset: 0 auto 0 0; width: 82vw; max-width: 320px;
+      z-index: 50; transform: translateX(-100%); transition: transform 0.2s;
+      box-shadow: 2px 0 18px rgba(0,0,0,0.25); height: 100dvh;
+    }
+    body.sidebar-open #sidebar { transform: translateX(0); }
+    body.sidebar-open #sidebar-scrim { display: block; }
+    #status-header { padding-left: 54px; font-size: 11px; gap: 8px; flex-wrap: wrap; }
+    #status-header .hdr-session { max-width: 140px; font-size: 12px; }
+    .hdr-chip { font-size: 10.5px; padding: 2px 8px; }
+    #transcript { padding: 16px 16px 24px; font-size: 14.5px; }
+    .turn { max-width: 100%; }
+    #input-area { padding: 12px 12px env(safe-area-inset-bottom, 12px); gap: 8px; }
+    #input-box { font-size: 16px; /* iOS: prevents zoom on focus */ padding: 8px 12px; }
+    #send-btn, #cancel-btn { padding: 12px 16px; font-size: 13px; }
+    #slash-palette { left: 8px; right: 8px; bottom: 60px; }
+    .tool-call { font-size: 11.5px; }
+    .tool-call pre.diff { font-size: 11px; max-height: 240px; }
+  }
+
+  #input-area {
+    border-top: 1px solid var(--border);
+    padding: 12px 24px; background: var(--bg-surface, var(--bg-card, var(--bg)));
+    display: flex; gap: 8px; align-items: flex-end;
+  }
+  #input-box {
+    flex: 1; padding: 12px 12px;
+    background: var(--bg); color: var(--text);
+    border: 1px solid var(--border); border-radius: 8px;
+    font-family: inherit; font-size: 13.5px; line-height: 1.5;
+    resize: none; min-height: 40px; max-height: 180px;
+  }
+  #input-box:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+  #send-btn, #cancel-btn {
+    padding: 12px 16px; border: none; border-radius: 8px; cursor: pointer;
+    background: var(--accent); color: white; font-size: 13px; font-weight: 500;
+    height: 40px;
+  }
+  #send-btn:hover, #cancel-btn:hover { opacity: 0.9; }
+  #cancel-btn { background: var(--danger, #da3633); display: none; }
+  #status-bar {
+    padding: 4px 24px; font-size: 11px; color: var(--text-secondary);
+    min-height: 20px; background: var(--bg-surface, var(--bg-card, var(--bg)));
+    border-top: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
+  }
+</style>
+</head>
+<body>
+<button id="sidebar-toggle" title="Sessions" aria-label="Open sessions">&#9776;</button>
+<div id="sidebar-scrim"></div>
+<aside id="sidebar">
+  <h1>
+    Coding Agent
+    <span class="sidebar-links">
+      <button class="btn-settings" onclick="openAgentSettings()" title="Settings">&#9881;</button>
+      <a href="/" title="Home">home</a>
+    </span>
+  </h1>
+  <p class="sidebar-sub">same brain as <code>eos chat</code></p>
+  <button id="new-session-btn">+ New session</button>
+  <div id="session-list-wrap">
+    <div id="session-header">
+      <span id="session-count"></span>
+      <button id="clear-empty-btn" title="Delete sessions with no messages">clear empty</button>
+    </div>
+    <div id="session-list"></div>
+  </div>
+</aside>
+<main id="main">
+  <div id="status-header">
+    <button class="hdr-chip" id="hdr-sidebar-toggle" title="Toggle sidebar" aria-label="Toggle sidebar">&#9776;</button>
+    <span class="hdr-session" id="hdr-session"></span>
+    <span class="hdr-spacer"></span>
+    <span class="hdr-chip model" id="hdr-model" title="Click to change provider"><span class="dot"></span> <span id="hdr-model-name">…</span></span>
+    <span class="hdr-chip tools" id="hdr-tools" title="Click to list tools"><span id="hdr-tools-count">?</span> tools</span>
+    <span class="hdr-chip files" id="hdr-files" style="display:none" title="Files touched this session"><span id="hdr-files-count">0 files</span></span>
+    <span class="hdr-chip" id="hdr-undo" style="display:none" title="Revert the last Write/Edit (click to run /revert)">↶ <span id="hdr-undo-count">0</span></span>
+    <span class="hdr-chip" id="hdr-policy" title="Tool approval policy"><span id="hdr-policy-name">ask</span></span>
+    <span class="hdr-chip cost" id="hdr-cost" style="display:none" title="Running session cost"><span id="hdr-cost-val">$0.00</span></span>
+  </div>
+  <div id="plan-banner">
+    ⚑ <strong>Plan mode</strong> · investigation only — Write/Edit/Bash-write/RestartDaemon/CallApp are blocked.
+    Type <span class="cmd">/execute</span> to proceed or <span class="cmd">/scrap</span> to discard the plan.
+  </div>
+  <div id="tasklist-panel">
+    <div class="header" id="tasklist-header">
+      <span><span class="header-label">Task list</span> <span class="header-progress" id="tasklist-progress"></span></span>
+      <span class="header-chevron" id="tasklist-chevron">▾</span>
+    </div>
+    <div class="body" id="tasklist-body"></div>
+  </div>
+  <div id="transcript"><div id="empty-state">
+    <h2>Coding Agent</h2>
+    <p class="tagline">Claude-Code-like tool-use loop. Reads files, edits code, runs commands, calls other EmptyOS apps — all permission-gated.</p>
+    <div class="tools">
+      <span class="tool-chip">Bash</span>
+      <span class="tool-chip">Read</span>
+      <span class="tool-chip">Write</span>
+      <span class="tool-chip">Edit</span>
+      <span class="tool-chip">Grep</span>
+      <span class="tool-chip">Glob</span>
+      <span class="tool-chip">call_app</span>
+    </div>
+    <p>Click <strong>+ New session</strong> to start, or resume one from the sidebar.</p>
+    <p class="hint">Same agent runs in terminal via <code>eos chat</code>. Ask vault questions instead? Use <a href="/assistant/">Assistant</a>.</p>
+  </div></div>
+  <div id="status-bar"></div>
+  <div id="input-wrap">
+    <div id="slash-palette"></div>
+    <div id="input-area">
+      <textarea id="input-box" placeholder="Ask the agent…  Type / for commands.  (Shift+Enter = newline)" rows="1"></textarea>
+      <button id="send-btn">Send</button>
+      <button id="cancel-btn">Cancel</button>
+    </div>
+  </div>
+</main>
+<script src="/static/eos.js"></script>
+<script>EOS.nav('agent');</script>
+<script src="/agent/pages/agent.js"></script>
+<script>
+  var _agentSettings = EOS_UI.settingsPanel({
+    id: 'agent-settings-panel',
+    title: 'Agent Settings',
+    fields: [
+      {key: 'agent.default_provider', label: 'Default Provider', type: 'select',
+       options: ['openai-nano', 'openai-mini', 'openai', 'anthropic_sdk', 'ollama', 'claude-cli'],
+       default: 'openai-mini',
+       hint: 'Standard = openai-mini (gpt-5.4-mini) · Fast = openai-nano · Pro = openai (full gpt-5.4). Or pick a specific backend.'},
+      {key: 'agent.max_iters', label: 'Max Iterations per Turn', type: 'number',
+       default: 25,
+       hint: 'Safety cap on tool-use loop iterations.'},
+      {key: 'agent.tool_policy', label: 'Tool Policy', type: 'select',
+       options: ['ask', 'auto', 'deny'],
+       default: 'ask',
+       hint: 'Global overlay; per-tool auto defaults still apply. Use "deny" as a kill switch.'},
+    ],
+  });
+  function openAgentSettings() { _agentSettings.open(); }
+</script>
+</body>
+</html>

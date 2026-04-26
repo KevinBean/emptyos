@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Tests - EmptyOS</title>
+<link rel="stylesheet" href="/static/theme.css">
+<link rel="stylesheet" href="/static/eos-components.css">
+<style>
+.toolbar { display: flex; gap: 8px; align-items: center; margin-bottom: 16px; flex-wrap: wrap; }
+.toolbar input { padding: 8px 10px; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 6px; color: var(--text); min-width: 200px; }
+.stats { display: flex; gap: 16px; margin-bottom: 16px; color: var(--text-secondary); font-size: 13px; }
+.stats b { color: var(--text); }
+.test-list { display: grid; grid-template-columns: 1fr; gap: 0; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+.test-row { display: grid; grid-template-columns: 1fr auto auto auto; gap: 12px; align-items: center; padding: 10px 14px; border-bottom: 1px solid var(--border); background: var(--bg); }
+.test-row:last-child { border-bottom: none; }
+.test-row:hover { background: var(--bg-secondary); }
+.test-row.running { background: rgba(100, 150, 255, 0.08); }
+.test-name { font-family: monospace; font-size: 13px; }
+.test-name .sub { color: var(--text-secondary); font-size: 11px; margin-top: 2px; }
+.badge { padding: 3px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; font-family: monospace; white-space: nowrap; }
+.badge.pass { background: rgba(0, 180, 80, 0.15); color: #1fc66b; }
+.badge.fail { background: rgba(255, 70, 70, 0.15); color: #ff6565; }
+.badge.none { background: var(--bg-secondary); color: var(--text-secondary); }
+.badge.running { background: rgba(100, 150, 255, 0.15); color: #5c9cff; }
+.btn-run { padding: 4px 10px; font-size: 12px; }
+.output-box { margin-top: 20px; padding: 16px; background: #0d0d0d; border: 1px solid var(--border); border-radius: 8px; white-space: pre-wrap; font-family: monospace; font-size: 12px; max-height: 600px; overflow-y: auto; color: #ddd; display: none; }
+.output-box .ansi-pass { color: #1fc66b; }
+.output-box .ansi-fail { color: #ff6565; }
+.output-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+</style>
+</head>
+<body>
+<div class="page-shell">
+<div class="page-header">
+    <h1>Tests</h1>
+    <p class="subtitle">Pytest suite — run, track, triage</p>
+</div>
+
+<div class="toolbar">
+    <button class="btn btn-primary" onclick="runAll()">Run All</button>
+    <input type="text" id="filter" placeholder="Filter files (e.g. task, journal)" oninput="renderList()">
+    <input type="text" id="kfilter" placeholder="pytest -k expression (optional)">
+    <button class="btn" onclick="loadList()">Refresh</button>
+</div>
+
+<div class="stats" id="stats"></div>
+<div class="test-list" id="list"></div>
+
+<div class="output-header" id="outputHeader" style="display:none">
+    <h2 style="margin:0;font-size:14px;color:var(--text-secondary)">Output</h2>
+    <button class="btn" onclick="hideOutput()">Close</button>
+</div>
+<div id="output" class="output-box"></div>
+</div>
+
+<script src="/static/eos-components.js"></script>
+<script src="/static/eos.js"></script>
+<script>EOS.nav('tests');</script>
+<script>
+let ALL_TESTS = [];
+
+async function loadList() {
+    const resp = await fetch(EOS.api('/api/list'));
+    const data = await resp.json();
+    ALL_TESTS = data.tests || [];
+    renderList();
+}
+
+function renderList() {
+    const q = document.getElementById('filter').value.toLowerCase();
+    const filtered = q ? ALL_TESTS.filter(t => t.name.toLowerCase().includes(q)) : ALL_TESTS;
+
+    let pass = 0, fail = 0, unrun = 0;
+    for (const t of ALL_TESTS) {
+        if (!t.last_run) unrun++;
+        else if (t.last_run.failed || t.last_run.errors || t.last_run.exit_code < 0) fail++;
+        else pass++;
+    }
+    document.getElementById('stats').innerHTML =
+        `<span><b>${ALL_TESTS.length}</b> files</span>` +
+        `<span><b class="ansi-pass" style="color:#1fc66b">${pass}</b> passing</span>` +
+        `<span><b style="color:#ff6565">${fail}</b> failing</span>` +
+        `<span><b>${unrun}</b> never run</span>`;
+
+    const list = document.getElementById('list');
+    list.innerHTML = filtered.map(t => renderRow(t)).join('') || '<div style="padding:20px;text-align:center;color:var(--text-secondary)">No tests match</div>';
+}
+
+function renderRow(t) {
+    const last = t.last_run;
+    let badge = '<span class="badge none">never run</span>';
+    let sub = `${(t.size/1024).toFixed(1)} KB`;
+    if (last) {
+        const failing = last.failed || last.errors || last.exit_code < 0;
+        const cls = failing ? 'fail' : 'pass';
+        const txt = failing
+            ? `${last.failed||0}f ${last.errors||0}e`
+            : `${last.passed||0} passed`;
+        badge = `<span class="badge ${cls}">${txt}</span>`;
+        sub += ` · last ${last.wall_time}s · ${last.timestamp || ''}`;
+    }
+    return `
+        <div class="test-row" id="row-${esc(t.path)}">
+            <div class="test-name">
+                ${esc(t.name)}
+                <div class="sub">${sub}</div>
+            </div>
+            ${badge}
+            <button class="btn btn-run" onclick="runOne('${esc(t.path)}')">Run</button>
+            <button class="btn btn-run" onclick="runOne('${esc(t.path)}', true)" title="Use -k filter above">Run k</button>
+        </div>
+    `;
+}
+
+function esc(s) { return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+async function runOne(path, useFilter) {
+    const k = useFilter ? document.getElementById('kfilter').value : '';
+    const row = document.getElementById('row-' + path);
+    if (row) { row.classList.add('running'); row.querySelector('.badge').outerHTML = '<span class="badge running">running...</span>'; }
+    showOutput(`$ pytest ${path}${k ? ' -k ' + k : ''}\n\nRunning...`);
+
+    const resp = await fetch(EOS.api('/api/run'), {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({path, filter: k})
+    });
+    const data = await resp.json();
+    if (data.error) { showOutput('Error: ' + data.error); return; }
+    showOutput(data.output || '(no output)');
+    await loadList();
+}
+
+async function runAll() {
+    if (!await EOS_UI.confirm({message: 'Run the full system suite? This may take several minutes.', action: 'Run all'})) return;
+    showOutput('$ pytest tests/ --ignore=tests/personal\n\nRunning...');
+    const resp = await fetch(EOS.api('/api/run-all'), {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({timeout: 1800})
+    });
+    const data = await resp.json();
+    showOutput(data.output || '(no output)');
+    await loadList();
+}
+
+function showOutput(text) {
+    const box = document.getElementById('output');
+    box.textContent = text;
+    box.style.display = 'block';
+    document.getElementById('outputHeader').style.display = 'flex';
+    box.scrollTop = box.scrollHeight;
+}
+
+function hideOutput() {
+    document.getElementById('output').style.display = 'none';
+    document.getElementById('outputHeader').style.display = 'none';
+}
+
+loadList();
+</script>
+</body>
+</html>

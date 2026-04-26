@@ -1,0 +1,31 @@
+[app]
+id = "git"
+name = "Git"
+version = "1.0.0"
+description = "Version control for notes and projects"
+dimensions = ["occupational"]
+
+[app.entry]
+module = "app"
+class = "GitApp"
+
+[provides.cli]
+commands = ["git"]
+
+[provides.web]
+prefix = "/git"
+
+[provides.project-tools]
+tools = [
+    {id = "git-status", label = "Git Status", method = "status_at", type = "development"},
+    {id = "git-log", label = "Recent Commits", method = "log_at", type = "development"},
+    {id = "git-branches", label = "Branches", method = "branches_at", type = "development"},
+]
+
+[provides.events]
+emits = ["git:saved", "git:pushed", "git:pulled"]
+
+[requires]
+capabilities = ["think"]
+services = []
+events = []

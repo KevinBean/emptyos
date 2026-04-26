@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>App Analytics - EmptyOS</title>
+<link rel="stylesheet" href="/static/theme.css">
+<link rel="stylesheet" href="/static/eos-components.css">
+<style>
+.aa-grid-2 { display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-top:16px; }
+@media (max-width:800px) { .aa-grid-2 { grid-template-columns:1fr; } }
+.aa-card { background:var(--bg-card); border:1px solid var(--border); border-radius:14px; padding:16px 16px; }
+.aa-card-title { font-size:12px; color:var(--text-secondary); text-transform:uppercase; letter-spacing:0.5px; margin-bottom:12px; }
+.aa-table { width:100%; border-collapse:collapse; font-size:13px; }
+.aa-table th { text-align:left; color:var(--text-muted); font-size:11px; text-transform:uppercase; padding:8px 8px; border-bottom:1px solid var(--border); }
+.aa-table td { padding:8px 8px; border-bottom:1px solid var(--border); }
+.aa-table .num { text-align:right; font-variant-numeric:tabular-nums; }
+.aa-table tr.danger td { color:var(--danger); }
+.aa-tod { display:flex; gap:2px; align-items:flex-end; height:60px; }
+.aa-tod-bar { flex:1; background:var(--accent); border-radius:4px 4px 0 0; min-width:8px; transition:height 0.3s; position:relative; }
+.aa-tod-bar:hover::after { content:attr(data-tip); position:absolute; bottom:100%; left:50%; transform:translateX(-50%); background:var(--bg-card); border:1px solid var(--border); padding:2px 8px; border-radius:4px; font-size:10px; white-space:nowrap; }
+.aa-tod-labels { display:flex; gap:2px; }
+.aa-tod-labels span { flex:1; text-align:center; font-size:9px; color:var(--text-muted); min-width:8px; }
+.aa-heatmap-wrap { margin-top:8px; }
+.aa-app-select { padding:4px 8px; background:var(--bg-card); border:1px solid var(--border); color:var(--text); border-radius:6px; font-size:12px; margin-left:8px; }
+.aa-streak-bar { display:inline-block; height:10px; background:var(--accent); border-radius:4px; min-width:2px; }
+/* Vault tab styles */
+.va-hero { display:flex; gap:12px; margin-bottom:24px; margin-top:16px; }
+.va-hero-card { flex:1; background:var(--bg-card); border:1px solid var(--border); border-radius:14px; padding:16px; text-align:center; }
+.va-hero-val { font-size:28px; font-weight:700; color:var(--accent); }
+.va-hero-lbl { font-size:13px; color:var(--text-secondary); margin-top:4px; }
+.va-para-bar { display:flex; align-items:center; gap:12px; margin-bottom:8px; }
+.va-para-label { width:100px; font-size:14px; font-weight:500; text-align:right; flex-shrink:0; }
+.va-para-track { flex:1; height:24px; background:var(--bg-card); border:1px solid var(--border); border-radius:6px; overflow:hidden; position:relative; }
+.va-para-fill { height:100%; background:var(--accent); border-radius:6px; transition:width 0.6s ease; }
+.va-para-count { font-size:13px; color:var(--text-secondary); width:70px; flex-shrink:0; }
+.va-file-list { background:var(--bg-card); border:1px solid var(--border); border-radius:14px; overflow:hidden; font-size:14px; max-height:360px; overflow-y:auto; }
+.va-file-item { display:flex; justify-content:space-between; padding:8px 12px; border-top:1px solid var(--border); }
+.va-file-item:first-child { border-top:none; }
+.va-file-item:hover { background:color-mix(in srgb, var(--bg-card) 95%, var(--accent) 5%); }
+.va-file-name { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex:1; margin-right:12px; }
+.va-file-meta { color:var(--text-secondary); font-family:'SF Mono',Consolas,monospace; font-size:13px; flex-shrink:0; }
+.va-section-title { font-size:18px; font-weight:600; color:var(--text-heading, var(--text)); margin:24px 0 12px; }
+.va-empty { text-align:center; padding:32px; color:var(--text-secondary); }
+</style>
+</head>
+<body>
+<script src="/static/realtime.js"></script>
+<script src="/static/eos.js"></script>
+<script src="/static/eos-components.js"></script>
+<script>EOS.nav('app-analytics');</script>
+
+<div class="page">
+    <div class="eos-header">
+        <div>
+            <h1>App Analytics</h1>
+            <div style="font-size:13px;color:var(--text-secondary);margin-top:2px">Usage tracking + vault health. Informs what to build next.</div>
+        </div>
+        <button class="btn-settings" onclick="openAppSettings()" title="Settings">&#9881; Settings</button>
+    </div>
+
+    <div class="eos-tabs" style="margin-bottom:16px">
+        <div class="eos-tab active" data-tab="usage" onclick="EOS_UI.switchTab('usage')">Usage</div>
+        <div class="eos-tab" data-tab="vault" onclick="EOS_UI.switchTab('vault'); loadVault()">Vault</div>
+    </div>
+
+    <div id="tab-usage" class="eos-tab-content active">
+        <div id="aa-stats" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px"></div>
+        <div id="aa-content"></div>
+    </div>
+
+    <div id="tab-vault" class="eos-tab-content">
+        <div id="va-content"><div class="va-empty">Loading vault data...</div></div>
+    </div>
+</div>
+
+<script>
+function esc(s) { return EOS_UI.esc(String(s == null ? '' : s)); }
+
+/* ═══════════════ USAGE TAB ═══════════════ */
+
+async function loadUsage() {
+    try {
+        var [summary, unused, errors, tod, streaks] = await Promise.all([
+            EOS.api('/app-analytics/api/summary'),
+            EOS.api('/app-analytics/api/unused?days=30'),
+            EOS.api('/app-analytics/api/errors-vs-usage?days=30'),
+            EOS.api('/app-analytics/api/time-of-day?days=30'),
+            EOS.api('/app-analytics/api/streaks'),
+        ]);
+        renderUsage(summary, unused, errors, tod, streaks);
+    } catch(e) {
+        document.getElementById('aa-content').innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:40px">Failed to load — is the daemon running?</div>';
+    }
+}
+
+function renderUsage(summary, unused, errors, tod, streaks) {
+    setTimeout(function() {
+        EOS_UI.statCards('aa-stats', [
+            { label: 'Views today', value: summary.views_today },
+            { label: 'Views (7d)', value: summary.views_7d },
+            { label: 'Active apps (7d)', value: summary.active_apps_7d },
+            { label: 'Unused (30d)', value: summary.unused_apps_30d, variant: summary.unused_apps_30d > 10 ? 'warning' : 'accent' },
+        ]);
+    }, 10);
+
+    var todMax = Math.max(1, ...Object.values(tod));
+    var todBars = '';
+    var todLabels = '';
+    for (var h = 0; h < 24; h++) {
+        var k = String(h).padStart(2, '0');
+        var v = tod[k] || 0;
+        var pct = Math.max(2, Math.round(v / todMax * 56));
+        todBars += '<div class="aa-tod-bar" style="height:' + pct + 'px" data-tip="' + k + ':00 — ' + v + '"></div>';
+        todLabels += '<span>' + (h % 3 === 0 ? k : '') + '</span>';
+    }
+
+    var unusedHtml = '';
+    if (unused.length === 0) {
+        unusedHtml = '<div style="color:var(--text-muted);font-size:12px">All apps were used in the last 30 days.</div>';
+    } else {
+        unusedHtml = '<table class="aa-table"><tr><th>App</th><th>Last seen</th><th class="num">Days ago</th></tr>';
+        unused.slice(0, 15).forEach(function(r) {
+            unusedHtml += '<tr><td>' + esc(r.name || r.app_id) + '</td><td>' + esc(r.last_seen || 'never') + '</td><td class="num">' + (r.days_ago != null ? r.days_ago : '—') + '</td></tr>';
+        });
+        unusedHtml += '</table>';
+        if (unused.length > 15) unusedHtml += '<div style="font-size:11px;color:var(--text-muted);margin-top:4px">+' + (unused.length - 15) + ' more</div>';
+    }
+
+    var errHtml = '';
+    var errRows = errors.filter(function(r) { return r.errors > 0; });
+    if (errRows.length === 0) {
+        errHtml = EOS_UI.emptyState({message:'No errors in the last 30 days.'});
+    } else {
+        errHtml = '<table class="aa-table"><tr><th>App</th><th class="num">Views</th><th class="num">Events</th><th class="num">Errors</th><th class="num">Priority</th></tr>';
+        errRows.slice(0, 15).forEach(function(r) {
+            var cls = r.priority > 5 ? ' class="danger"' : '';
+            errHtml += '<tr' + cls + '><td>' + esc(r.app) + '</td><td class="num">' + r.views + '</td><td class="num">' + r.events + '</td><td class="num">' + r.errors + '</td><td class="num">' + r.priority + '</td></tr>';
+        });
+        errHtml += '</table>';
+    }
+
+    var topStreaks = streaks.filter(function(r) { return r.current_weeks > 0; }).slice(0, 10);
+    var streakHtml = '';
+    if (topStreaks.length === 0) {
+        streakHtml = EOS_UI.emptyState({message:'No active weekly streaks yet.'});
+    } else {
+        var maxStreak = Math.max(1, ...topStreaks.map(function(r) { return r.current_weeks; }));
+        streakHtml = '<table class="aa-table"><tr><th>App</th><th class="num">Current</th><th class="num">Longest</th><th>Streak</th></tr>';
+        topStreaks.forEach(function(r) {
+            var w = Math.max(8, Math.round(r.current_weeks / maxStreak * 100));
+            streakHtml += '<tr><td>' + esc(r.app) + '</td><td class="num">' + r.current_weeks + 'w</td><td class="num">' + r.longest_weeks + 'w</td><td><div class="aa-streak-bar" style="width:' + w + 'px"></div></td></tr>';
+        });
+        streakHtml += '</table>';
+    }
+
+    var activeApps = errors.filter(function(r) { return r.views > 0 || r.events > 0; }).map(function(r) { return r.app; });
+    var heatmapOpts = activeApps.map(function(a) { return '<option value="' + esc(a) + '">' + esc(a) + '</option>'; }).join('');
+
+    document.getElementById('aa-content').innerHTML =
+        '<div class="aa-grid-2">' +
+            '<div class="aa-card"><div class="aa-card-title">What to delete (unused 30d)</div>' + unusedHtml + '</div>' +
+            '<div class="aa-card"><div class="aa-card-title">What to fix (errors vs usage)</div>' + errHtml + '</div>' +
+        '</div>' +
+        '<div class="aa-grid-2">' +
+            '<div class="aa-card"><div class="aa-card-title">When you work</div>' +
+                '<div class="aa-tod">' + todBars + '</div>' +
+                '<div class="aa-tod-labels">' + todLabels + '</div>' +
+            '</div>' +
+            '<div class="aa-card"><div class="aa-card-title">Weekly streaks</div>' + streakHtml + '</div>' +
+        '</div>' +
+        '<div class="aa-card" style="margin-top:16px">' +
+            '<div class="aa-card-title">Your habits <select class="aa-app-select" id="aa-heatmap-app" onchange="loadHeatmap()">' + heatmapOpts + '</select></div>' +
+            '<div class="aa-heatmap-wrap" id="aa-heatmap"></div>' +
+        '</div>';
+
+    var hashApp = (location.hash || '').replace(/^#app=/, '');
+    if (hashApp) {
+        var sel = document.getElementById('aa-heatmap-app');
+        if (sel) sel.value = decodeURIComponent(hashApp);
+    }
+    loadHeatmap();
+}
+
+async function loadHeatmap() {
+    var sel = document.getElementById('aa-heatmap-app');
+    if (!sel || !sel.value) return;
+    var app = sel.value;
+    history.replaceState(null, '', location.pathname + '#app=' + encodeURIComponent(app));
+    try {
+        var data = await EOS.api('/app-analytics/api/heatmap?app=' + encodeURIComponent(app) + '&days=90');
+        EOS_UI.heatmap('aa-heatmap', data, 90);
+    } catch(e) {}
+}
+
+/* ═══════════════ VAULT TAB ═══════════════ */
+
+var _vaultLoaded = false;
+
+function vaFileList(items, metaFn) {
+    if (!items.length) return '<div class="va-empty">No files</div>';
+    return '<div class="va-file-list">' + items.map(function(f) {
+        return '<div class="va-file-item"><span class="va-file-name">' + esc(f.path) + '</span><span class="va-file-meta">' + metaFn(f) + '</span></div>';
+    }).join('') + '</div>';
+}
+
+async function loadVault() {
+    if (_vaultLoaded) return;
+    _vaultLoaded = true;
+    try {
+        var [stats, recent, largest, stale] = await Promise.all([
+            EOS.api('/app-analytics/api/vault/stats'),
+            EOS.api('/app-analytics/api/vault/recent?limit=20'),
+            EOS.api('/app-analytics/api/vault/largest?limit=20'),
+            EOS.api('/app-analytics/api/vault/stale?days=90&limit=20'),
+        ]);
+        renderVault(stats, recent, largest, stale);
+    } catch(e) {
+        document.getElementById('va-content').innerHTML = '<div class="va-empty">Failed to load vault data</div>';
+    }
+}
+
+function renderVault(stats, recent, largest, stale) {
+    var heroHtml =
+        '<div class="va-hero">' +
+            '<div class="va-hero-card"><div class="va-hero-val">' + (stats.total_files || 0).toLocaleString() + '</div><div class="va-hero-lbl">Total Files</div></div>' +
+            '<div class="va-hero-card"><div class="va-hero-val">' + (stats.total_size_mb || 0) + ' MB</div><div class="va-hero-lbl">Total Size</div></div>' +
+            '<div class="va-hero-card"><div class="va-hero-val">' + Object.keys(stats.para || {}).length + '</div><div class="va-hero-lbl">PARA Folders</div></div>' +
+        '</div>';
+
+    var paraEntries = Object.entries(stats.para || {});
+    var maxCount = Math.max(1, ...paraEntries.map(function(e) { return e[1].count; }));
+    var paraHtml = paraEntries.map(function(e) {
+        var label = e[0], d = e[1];
+        return '<div class="va-para-bar">' +
+            '<span class="va-para-label">' + esc(label) + '</span>' +
+            '<div class="va-para-track"><div class="va-para-fill" style="width:' + (d.count / maxCount * 100).toFixed(1) + '%"></div></div>' +
+            '<span class="va-para-count">' + d.count + ' / ' + d.size_mb + 'MB</span>' +
+        '</div>';
+    }).join('');
+
+    var recentHtml = vaFileList(recent, function(f) {
+        var d = new Date(f.modified * 1000);
+        return d.toLocaleDateString() + ' ' + d.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+    });
+    var largestHtml = vaFileList(largest, function(f) { return f.size_kb + ' KB'; });
+    var staleHtml = vaFileList(stale, function(f) { return f.days_stale + 'd ago'; });
+
+    document.getElementById('va-content').innerHTML =
+        heroHtml +
+        '<div class="va-section-title">PARA Distribution</div>' +
+        '<div id="va-para-bars">' + paraHtml + '</div>' +
+        '<div class="va-section-title">Files</div>' +
+        '<div class="eos-tabs">' +
+            '<div class="eos-tab active" data-tab="va-recent" onclick="EOS_UI.switchTab(\'va-recent\')">Recent</div>' +
+            '<div class="eos-tab" data-tab="va-largest" onclick="EOS_UI.switchTab(\'va-largest\')">Largest</div>' +
+            '<div class="eos-tab" data-tab="va-stale" onclick="EOS_UI.switchTab(\'va-stale\')">Stale (90d+)</div>' +
+        '</div>' +
+        '<div id="tab-va-recent" class="eos-tab-content active">' + recentHtml + '</div>' +
+        '<div id="tab-va-largest" class="eos-tab-content">' + largestHtml + '</div>' +
+        '<div id="tab-va-stale" class="eos-tab-content">' + staleHtml + '</div>';
+}
+
+/* ═══════════════ SETTINGS ═══════════════ */
+
+var _appSettings = EOS_UI.settingsPanel({
+    id: 'app-settings-panel',
+    title: 'App Analytics Settings',
+    fields: [
+        { key: 'app-analytics.retention_days', label: 'Retention (days)', type: 'number', default: 365,
+          hint: 'Delete usage data older than this.' },
+    ],
+});
+function openAppSettings() { _appSettings.open(); }
+
+loadUsage();
+</script>
+</body>
+</html>

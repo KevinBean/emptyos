@@ -1,0 +1,1351 @@
+/* ═══════════════════════════════════════════════════════════
+   Boards App — inherits the EmptyOS design system (theme.css).
+   All colours come from --bg / --bg-card / --text / --accent etc.
+   — theming flips (light / midnight / amber) cascade through.
+   ═══════════════════════════════════════════════════════════ */
+
+/* Local palette tokens — defined once, referenced via var().
+   The pill-* palette is a discrete user-selectable category palette
+   for select columns / kanban groups / timeline bars (not status
+   semantics — users pick a colour per option). */
+:root {
+    --boards-pill-blue-fg: #6495ed;     --boards-pill-blue-bg: rgba(100,149,237,0.15);
+    --boards-pill-amber-fg: #ffbf00;    --boards-pill-amber-bg: rgba(255,191,0,0.15);
+    --boards-pill-green-fg: #50c878;    --boards-pill-green-bg: rgba(80,200,120,0.15);
+    --boards-pill-emerald-fg: #34d399;  --boards-pill-emerald-bg: rgba(52,211,153,0.15);
+    --boards-pill-red-fg: #dc5050;      --boards-pill-red-bg: rgba(220,80,80,0.15);
+    --boards-pill-purple-fg: #a855f7;   --boards-pill-purple-bg: rgba(168,85,247,0.15);
+    --boards-pill-orange-fg: #fb923c;   --boards-pill-orange-bg: rgba(251,146,60,0.15);
+    --boards-pill-gray-fg: #a0a0b4;     --boards-pill-gray-bg: rgba(160,160,180,0.12);
+    --boards-danger-fg: #e88686;
+}
+
+body {
+    font-family: var(--font);
+    background: var(--bg);
+    color: var(--text);
+    margin: 0;
+    padding-top: 44px;             /* room for EOS.nav('boards') */
+    padding-bottom: env(safe-area-inset-bottom);
+    -webkit-font-smoothing: antialiased;
+}
+
+/* ── App Shell ── */
+.app-shell {
+    display: flex;
+    flex-direction: column;
+    height: calc(100vh - 44px);
+    overflow: hidden;
+}
+
+/* ── Top Bar ── */
+.board-topbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    flex-wrap: wrap;            /* actions wrap below title on narrow screens */
+    padding: 0.75rem 1.25rem;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg);
+    z-index: 10;
+    flex-shrink: 0;
+}
+
+.board-topbar h1 {
+    font-size: 1.1rem;
+    font-weight: 700;
+    margin: 0;
+    display: flex;
+    align-items: baseline;
+    gap: 0.5rem;
+    min-width: 0;
+    flex: 0 1 auto;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.board-topbar h1 .board-emoji { font-size: 1.2rem; }
+
+.board-topbar .board-desc {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    font-weight: 400;
+    margin-left: 0.5rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 36rem;
+}
+
+.topbar-actions {
+    display: flex;
+    gap: 0.4rem;
+    align-items: center;
+    flex-wrap: wrap;            /* chips + buttons wrap together */
+    justify-content: flex-end;
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+/* Narrow screens — hide the description and tighten further. */
+@media (max-width: 900px) {
+    .board-topbar .board-desc { display: none; }
+    .board-topbar { padding: 0.6rem 1rem; }
+    .board-search { max-width: 12rem; }
+}
+
+/* ── Buttons ── */
+.btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.45rem 0.9rem;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: var(--bg-card);
+    color: var(--text);
+    font-size: 0.8rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.15s;
+    white-space: nowrap;
+}
+
+.btn:hover {
+    background: var(--bg-card-hover);
+    border-color: rgba(255,255,255,0.12);
+}
+
+.btn-primary {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #fff;
+}
+
+.btn-primary:hover {
+    background: var(--accent-dim);
+    box-shadow: 0 0 16px var(--accent-bg);
+}
+
+.btn-sm {
+    padding: 0.3rem 0.6rem;
+    font-size: 0.75rem;
+}
+
+.btn-icon {
+    padding: 0.4rem;
+    border-radius: 8px;
+    width: 32px;
+    height: 32px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+/* View tabs (.eos-view-tabs / .eos-view-tab) live in eos-components.css.
+   Only board-specific topbar padding is set here. */
+.eos-view-tabs { padding: 0 1.75rem; background: var(--bg); }
+
+/* ── View Container ──
+   view-area clips (no scroll); each panel manages its own scroll internally.
+   This guarantees position:sticky inside a panel anchors to the panel, not
+   to some ambiguous ancestor. */
+.view-area {
+    flex: 1;
+    overflow: hidden;
+    padding: 0;
+    min-height: 0;
+}
+
+.view-panel { display: none; height: 100%; }
+.view-panel.active { display: block; }
+
+/* ═══════════════════════════════════════════════════════════
+   READ-ONLY MODE (system-database boards: jobs, reminders, media, etc.)
+   ═══════════════════════════════════════════════════════════ */
+.board-readonly-banner {
+    padding: var(--space-2) var(--space-4);
+    background: color-mix(in srgb, var(--warning) 10%, transparent);
+    border-bottom: 1px solid color-mix(in srgb, var(--warning) 25%, transparent);
+    color: var(--text-secondary);
+    font-size: 13px;
+}
+.board-readonly-banner a { color: var(--accent); text-decoration: none; }
+.board-readonly-banner a:hover { text-decoration: underline; }
+.board-readonly-banner.board-source-missing {
+    background: color-mix(in srgb, var(--danger) 12%, transparent);
+    border-bottom-color: color-mix(in srgb, var(--danger) 30%, transparent);
+    color: var(--text);
+}
+.board-readonly-banner.board-source-missing code {
+    background: color-mix(in srgb, var(--danger) 18%, transparent);
+    padding: 1px 6px; border-radius: 4px; font-size: 12px;
+}
+
+body.board-readonly .board-edit-only { display: none !important; }
+body.board-readonly .cell-editable { cursor: default; }
+body.board-readonly .cell-editable:hover { background: transparent; }
+
+/* ═══════════════════════════════════════════════════════════
+   GALLERY VIEW (cover-grid for cover-having boards: media, places, recipes)
+   ═══════════════════════════════════════════════════════════ */
+.board-gallery {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+    gap: var(--space-4);
+    padding: var(--space-4);
+    align-content: start;
+}
+.board-gallery-card {
+    display: flex; flex-direction: column;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+    cursor: pointer;
+    transition: transform 120ms ease, border-color 120ms ease, background 120ms ease;
+}
+.board-gallery-card:hover {
+    transform: translateY(-2px);
+    background: var(--bg-card-hover);
+    border-color: var(--border-strong);
+}
+.board-gallery-cover-wrap {
+    position: relative;
+    aspect-ratio: 2 / 3;
+    background: var(--bg-surface);
+    overflow: hidden;
+}
+.board-gallery-cover {
+    width: 100%; height: 100%; object-fit: cover; display: block;
+}
+.board-gallery-cover-fallback {
+    width: 100%; height: 100%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 48px; font-weight: 300;
+    color: var(--text-muted);
+    background: var(--bg-surface);
+}
+.board-gallery-badge {
+    position: absolute; top: var(--space-1); left: var(--space-1);
+}
+.board-gallery-body {
+    padding: var(--space-2) var(--space-3) var(--space-3);
+    display: flex; flex-direction: column; gap: 2px;
+}
+.board-gallery-title {
+    font-size: 13px; font-weight: 600; line-height: 1.3;
+    color: var(--text-heading);
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+.board-gallery-subtitle {
+    font-size: 12px; color: var(--text-secondary);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.board-gallery-meta {
+    margin-top: var(--space-1);
+    display: flex; flex-wrap: wrap; gap: 6px;
+    font-size: 11px; color: var(--text-muted);
+}
+.board-gallery-meta-item:not(:last-child)::after {
+    content: '·'; margin-left: 6px;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   TABLE VIEW
+   ═══════════════════════════════════════════════════════════ */
+/* Table panel is a normal block; wrap fills it (height:100%) and is the
+   single scroll container for the table. Sticky th anchors to the wrap. */
+.board-table-wrap {
+    height: 100%;
+    overflow: auto;
+    position: relative;
+    padding: 0;
+}
+
+.board-table {
+    /* `border-collapse: separate` — Chrome requires this for `position: sticky`
+       on <th> to work reliably. `border-collapse: collapse` (the previous
+       value) silently breaks sticky table headers in Chromium. */
+    border-collapse: separate;
+    border-spacing: 0;
+    font-size: 0.84rem;
+    table-layout: auto;
+    min-width: 100%;
+}
+
+.board-table th {
+    text-align: left;
+    padding: 0.55rem 0.85rem;
+    font-weight: 600;
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--text-secondary);
+    border-bottom: 1px solid var(--border);
+    position: sticky;
+    top: 0;
+    background: var(--bg);
+    z-index: 2;
+    cursor: pointer;
+    user-select: none;
+    white-space: nowrap;
+}
+
+.board-table th:hover { color: var(--text); }
+.board-table th .sort-icon { margin-left: 0.25rem; opacity: 0.4; font-size: 0.65rem; }
+.board-table th.sorted .sort-icon { opacity: 1; color: var(--accent); }
+
+.board-table td {
+    padding: 0.55rem 0.85rem;
+    border-bottom: 1px solid rgba(255,255,255,0.035);
+    color: var(--text);
+    vertical-align: middle;
+    max-width: 320px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;       /* single-line rows — forces h-scroll if needed */
+}
+
+.board-table tr { transition: background 0.1s; }
+.board-table tr:hover td { background: var(--bg-card); }
+
+/* Inline editing */
+.cell-editable { cursor: pointer; border-radius: var(--radius); padding: 0.2rem 0.4rem; }
+.cell-editable:hover { background: rgba(255,255,255,0.06); }
+
+/* Inline cell editor (.eos-cell-edit-input), pill palette (.eos-pill-*),
+   and the kanban shell (.eos-kanban*) live in eos-components.css. */
+
+/* ═══════════════════════════════════════════════════════════
+   CALENDAR VIEW
+   ═══════════════════════════════════════════════════════════ */
+.calendar-grid {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 1px;
+    background: var(--border);
+    margin: 1.25rem 1.75rem;
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+}
+
+.calendar-day-header {
+    background: var(--bg-card);
+    padding: 0.5rem;
+    text-align: center;
+    font-size: 0.72rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--text-secondary);
+}
+
+.calendar-day {
+    background: var(--bg);
+    min-height: 100px;
+    padding: 0.4rem;
+}
+
+.calendar-day.other-month { opacity: 0.35; }
+.calendar-day.today { background: rgba(124,106,247,0.06); }
+
+.calendar-day-num {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    margin-bottom: 0.25rem;
+}
+
+.today .calendar-day-num {
+    background: var(--accent);
+    color: #fff;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.calendar-item {
+    font-size: 0.7rem;
+    padding: 0.15rem 0.35rem;
+    margin-bottom: 2px;
+    border-radius: 3px;
+    background: rgba(124,106,247,0.15);
+    color: var(--accent);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    cursor: pointer;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   CHART VIEW
+   ═══════════════════════════════════════════════════════════ */
+.chart-container {
+    padding: 2rem;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 2rem;
+    justify-content: center;
+}
+
+.chart-widget {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 1.5rem;
+    min-width: 300px;
+    max-width: 500px;
+    flex: 1;
+}
+
+.chart-widget h3 {
+    font-size: 0.85rem;
+    font-weight: 600;
+    margin: 0 0 1rem;
+    color: var(--text-secondary);
+}
+
+/* Bar chart */
+.bar-chart { display: flex; flex-direction: column; gap: 0.5rem; }
+
+.bar-row {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+.bar-label {
+    font-size: 0.78rem;
+    min-width: 80px;
+    text-align: right;
+    color: var(--text-secondary);
+}
+
+.bar-track {
+    flex: 1;
+    height: 24px;
+    background: rgba(255,255,255,0.04);
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+.bar-fill {
+    height: 100%;
+    border-radius: 4px;
+    transition: width 0.6s cubic-bezier(0.22, 1, 0.36, 1);
+    display: flex;
+    align-items: center;
+    padding-left: 0.5rem;
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: rgba(255,255,255,0.85);
+}
+
+/* Donut chart */
+.donut-wrap {
+    display: flex;
+    align-items: center;
+    gap: 1.5rem;
+}
+
+.donut-svg { width: 140px; height: 140px; }
+
+.donut-legend {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+}
+
+.donut-legend-item {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.78rem;
+}
+
+.donut-legend-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   BOARD SELECTOR / HOME
+   ═══════════════════════════════════════════════════════════ */
+.boards-home {
+    padding: 2.5rem;
+    max-width: 900px;
+    margin: 0 auto;
+}
+
+.boards-home h1 {
+    font-size: 1.6rem;
+    font-weight: 700;
+    margin: 0 0 0.5rem;
+}
+
+.boards-home .subtitle {
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+    margin-bottom: 2rem;
+}
+
+.board-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: 1rem;
+    margin-bottom: 2.5rem;
+}
+
+.board-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 1.25rem;
+    cursor: pointer;
+    transition: all 0.15s;
+}
+
+.board-card:hover {
+    border-color: var(--accent);
+    box-shadow: 0 0 24px var(--accent-bg);
+    transform: translateY(-2px);
+}
+
+.board-card-title {
+    font-weight: 600;
+    font-size: 1rem;
+    margin-bottom: 0.3rem;
+}
+
+.board-card-desc {
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    margin-bottom: 0.6rem;
+}
+
+.board-card-meta {
+    display: flex;
+    gap: 0.5rem;
+    font-size: 0.72rem;
+    color: var(--text-secondary);
+}
+
+.board-card-meta span {
+    background: var(--bg);
+    padding: 0.15em 0.5em;
+    border-radius: 999px;
+}
+
+.section-label {
+    font-size: 0.75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--text-secondary);
+    margin-bottom: 0.75rem;
+}
+
+/* ── New Board Card ── */
+.board-card-new {
+    border-style: dashed;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    font-size: 0.9rem;
+    color: var(--text-secondary);
+    min-height: 120px;
+}
+
+.board-card-new:hover { color: var(--accent); }
+
+/* ═══════════════════════════════════════════════════════════
+   MODAL / SLIDE-OUT
+   ═══════════════════════════════════════════════════════════ */
+.modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.6);
+    backdrop-filter: blur(4px);
+    z-index: 100;
+    display: none;
+    align-items: center;
+    justify-content: center;
+}
+
+.modal-overlay.open { display: flex; }
+
+.modal-box {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 2rem;
+    max-width: 520px;
+    width: 90%;
+    max-height: 80vh;
+    overflow-y: auto;
+}
+
+.modal-box h2 {
+    font-size: 1.15rem;
+    font-weight: 700;
+    margin: 0 0 1.25rem;
+}
+
+.form-group {
+    margin-bottom: 1rem;
+}
+
+.form-group label {
+    display: block;
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    margin-bottom: 0.3rem;
+}
+
+.form-input {
+    width: 100%;
+    padding: 0.5rem 0.75rem;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    color: var(--text);
+    font-size: 0.85rem;
+    font-family: inherit;
+    outline: none;
+    transition: border-color 0.15s;
+    box-sizing: border-box;
+}
+
+.form-input:focus { border-color: var(--accent); }
+
+.form-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.5rem;
+    margin-top: 1.5rem;
+}
+
+/* ── Empty state ── */
+.empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 4rem 2rem;
+    color: var(--text-secondary);
+    text-align: center;
+}
+
+.empty-state .icon { font-size: 3rem; margin-bottom: 1rem; opacity: 0.4; }
+.empty-state p { font-size: 0.9rem; max-width: 320px; }
+
+/* ── Responsive ── */
+@media (max-width: 768px) {
+    .board-topbar { padding: 0.75rem 1rem; }
+    .eos-view-tabs { padding: 0 1rem; }
+    .eos-kanban { padding: 1rem; }
+    .boards-home { padding: 1.5rem; }
+    .board-grid { grid-template-columns: 1fr; }
+    .calendar-grid { margin: 1rem; }
+    .chart-container { padding: 1rem; }
+}
+
+/* ═════════════════════════════════════════════════════════════
+   Monday-class layout: persistent shell, sidebar, detail panel.
+   ═════════════════════════════════════════════════════════════ */
+
+.boards-shell {
+    display: grid;
+    grid-template-columns: 240px 1fr;
+    height: calc(100vh - 44px);
+    overflow: hidden;
+    transition: grid-template-columns 0.18s ease;
+}
+.boards-shell:has(.boards-nav.collapsed) { grid-template-columns: 52px 1fr; }
+.boards-shell:has(.board-detail.open) { grid-template-columns: 240px 1fr 400px; }
+.boards-shell:has(.boards-nav.collapsed):has(.board-detail.open) { grid-template-columns: 52px 1fr 400px; }
+
+/* ── Left sidebar ── */
+.boards-nav {
+    background: var(--bg-card);
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    min-width: 0;
+}
+.boards-nav-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.9rem 0.8rem;
+    border-bottom: 1px solid var(--border);
+    gap: 0.3rem;
+}
+.boards-nav-home {
+    color: var(--text);
+    text-decoration: none;
+    font-weight: 600;
+    font-size: 0.95rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.boards-nav-toggle {
+    background: transparent;
+    border: 1px solid transparent;
+    color: var(--text-secondary);
+    cursor: pointer;
+    border-radius: var(--radius);
+    padding: 0.2rem 0.5rem;
+    font-size: 0.85rem;
+}
+.boards-nav-toggle:hover { background: var(--bg-card-hover); color: var(--text); }
+.boards-nav.collapsed .boards-nav-toggle { transform: rotate(180deg); }
+.boards-nav-list {
+    flex: 1;
+    overflow-y: auto;
+    padding: 0.5rem 0.35rem;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+.boards-nav-item {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.4rem 0.6rem;
+    border-radius: var(--radius);
+    text-decoration: none;
+    color: var(--text);
+    font-size: 0.85rem;
+    transition: background 0.1s;
+    overflow: hidden;
+}
+.boards-nav-item:hover { background: var(--bg-card-hover); }
+.boards-nav-item.active { background: var(--accent-bg); color: var(--text); }
+.boards-nav-icon { font-size: 0.9rem; flex-shrink: 0; }
+.boards-nav-label { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.boards-nav.collapsed .boards-nav-label,
+.boards-nav.collapsed .boards-nav-home,
+.boards-nav.collapsed .boards-nav-new { display: none; }
+.boards-nav-new {
+    margin: 0.5rem 0.5rem 0.75rem;
+    padding: 0.5rem;
+    background: transparent;
+    border: 1px dashed var(--border);
+    color: var(--text-secondary);
+    border-radius: var(--radius);
+    cursor: pointer;
+    font-size: 0.8rem;
+    transition: all 0.12s;
+}
+.boards-nav-new:hover { border-color: var(--accent); color: var(--accent); }
+
+/* ── Topbar additions: search + group-by ── */
+.board-search {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 0.35rem 0.7rem;
+    border-radius: var(--radius);
+    font-size: 0.8rem;
+    min-width: 180px;
+}
+.board-search:focus { outline: 1px solid var(--accent); border-color: var(--accent); }
+.board-groupby, .board-view-select {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 0.32rem 0.5rem;
+    border-radius: var(--radius);
+    font-size: 0.8rem;
+    cursor: pointer;
+    min-width: 10rem;
+    max-width: 16rem;
+    text-overflow: ellipsis;
+}
+
+/* ── Table: groups + clickable file cell ── */
+.board-table-file {
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+    font-size: 0.72rem;
+    color: var(--text-secondary);
+    white-space: nowrap;
+}
+.board-table-expand {
+    background: transparent;
+    border: 1px solid transparent;
+    color: var(--text-secondary);
+    cursor: pointer;
+    border-radius: 3px;
+    padding: 0 0.3rem;
+    font-size: 0.9rem;
+    line-height: 1;
+}
+.board-table-expand:hover { background: var(--accent-bg); color: var(--text); }
+.board-table-row:hover { background: var(--bg-card-hover); }
+
+.group-header td {
+    padding: 0.5rem 0.8rem !important;
+    background: var(--bg-card-hover);
+    cursor: pointer;
+    font-size: 0.78rem;
+    user-select: none;
+    border-top: 1px solid var(--border);
+}
+.group-header:hover td { background: var(--accent-bg); }
+.group-chevron { margin-right: 0.4rem; color: var(--text-secondary); font-size: 0.85rem; }
+.group-count {
+    margin-left: 0.6rem;
+    color: var(--text-secondary);
+    font-size: 0.72rem;
+    background: var(--bg-card);
+    padding: 0.1rem 0.4rem;
+    border-radius: 999px;
+}
+.group-agg {
+    margin-left: 0.8rem;
+    color: var(--text-secondary);
+    font-size: 0.72rem;
+}
+
+/* ── Item detail slide-out ── */
+.board-detail {
+    background: var(--bg-card);
+    border-left: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    transform: translateX(100%);
+    transition: transform 0.2s ease;
+    min-width: 0;
+}
+.board-detail.open { transform: translateX(0); }
+.board-detail-header {
+    padding: 1rem;
+    border-bottom: 1px solid var(--border);
+    position: relative;
+}
+.board-detail-header h2 {
+    margin: 0.2rem 0 0.3rem;
+    font-size: 1.05rem;
+    padding-right: 2rem;
+}
+.board-detail-close {
+    position: absolute;
+    top: 0.6rem;
+    right: 0.6rem;
+    background: transparent;
+    border: 0;
+    color: var(--text-secondary);
+    font-size: 1.5rem;
+    cursor: pointer;
+    line-height: 1;
+}
+.board-detail-close:hover { color: var(--text); }
+.board-detail-path {
+    font-size: 0.7rem;
+    color: var(--text-secondary);
+    word-break: break-all;
+}
+.board-detail-body {
+    flex: 1;
+    overflow-y: auto;
+    padding: 1rem;
+}
+.board-detail-section { margin-bottom: 1.5rem; }
+.board-detail-section h3 {
+    margin: 0 0 0.6rem;
+    font-size: 0.78rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--text-secondary);
+}
+.board-detail-activity .activity-row {
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    gap: 0.5rem;
+    padding: 0.4rem 0;
+    border-bottom: 1px solid var(--border);
+    font-size: 0.78rem;
+    align-items: center;
+}
+.board-detail-activity .activity-label {
+    background: var(--accent-bg);
+    color: var(--text);
+    padding: 0.1rem 0.4rem;
+    border-radius: 999px;
+    font-size: 0.7rem;
+    text-transform: capitalize;
+}
+.board-detail-activity .activity-detail { color: var(--text-secondary); }
+.board-detail-activity .activity-time {
+    color: var(--text-secondary);
+    font-size: 0.7rem;
+    white-space: nowrap;
+}
+
+/* ── Timeline view ── */
+.timeline-wrap {
+    padding: 1.25rem 1.5rem;
+    overflow: auto;
+    font-size: 0.8rem;
+}
+.timeline-header {
+    display: grid;
+    grid-template-columns: 200px 1fr;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 0.3rem;
+    margin-bottom: 0.5rem;
+    position: sticky;
+    top: 0;
+    background: var(--bg);
+    z-index: 1;
+}
+.timeline-header-ticks { display: grid; gap: 0; }
+.timeline-tick {
+    border-left: 1px solid var(--border);
+    font-size: 0.65rem;
+    color: var(--text-secondary);
+    padding: 0 0.2rem;
+    min-width: 16px;
+    min-height: 18px;
+    white-space: nowrap;
+}
+.timeline-body { display: flex; flex-direction: column; gap: 2px; }
+.timeline-row {
+    display: grid;
+    grid-template-columns: 200px 1fr;
+    gap: 0.5rem;
+    align-items: center;
+    min-height: 34px;
+}
+.timeline-row-label {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    padding: 0.3rem 0.5rem;
+    border-right: 1px solid var(--border);
+    cursor: pointer;
+    font-size: 0.78rem;
+}
+.timeline-row-label:hover { background: var(--bg-card-hover); color: var(--accent); }
+.timeline-row-track {
+    position: relative;
+    height: 26px;
+    border-radius: 4px;
+    background: repeating-linear-gradient(90deg, transparent, transparent calc(100% / 7 - 1px), var(--border) calc(100% / 7 - 1px), var(--border) calc(100% / 7));
+}
+.timeline-bar {
+    position: absolute;
+    top: 3px;
+    height: 20px;
+    line-height: 20px;
+    min-width: 6px;                      /* always clickable, even on 1-day spans */
+    padding: 0 0.5rem;
+    font-size: 0.72rem;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    cursor: pointer;
+    box-shadow: 0 1px 3px var(--shadow);
+    transition: filter 0.1s;
+}
+.timeline-bar:hover { filter: brightness(1.08); }
+/* Label rendered outside-right when the bar itself is too narrow for text. */
+.timeline-outside-label {
+    position: absolute;
+    top: 3px;
+    height: 20px;
+    line-height: 20px;
+    font-size: 0.74rem;
+    color: var(--text);
+    white-space: nowrap;
+    pointer-events: none;                /* clicks fall through to the bar/track */
+    max-width: 260px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.btn-danger { background: var(--boards-pill-red-bg); color: var(--boards-danger-fg); border-color: rgba(220,80,80,0.3); }
+.btn-danger:hover { background: rgba(220, 80, 80, 0.3); }
+
+/* ── Person chips (person/designer/checker/approver/multi-person) ── */
+.person-chip {
+    display: inline-flex; align-items: center; gap: 4px;
+    padding: 2px 8px 2px 2px;
+    background: var(--bg-card-hover);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    font-size: 0.78rem;
+    line-height: 1.2;
+    white-space: nowrap;
+}
+.person-chip-unknown { color: var(--text-muted); font-style: italic; }
+.person-avatar {
+    width: 20px; height: 20px; border-radius: 50%;
+    background: var(--accent);
+    color: #fff;
+    font-size: 0.7rem; font-weight: 600;
+    display: inline-flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+}
+.person-name { max-width: 110px; overflow: hidden; text-overflow: ellipsis; }
+.person-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; margin-left: 2px; }
+.person-dot-ok { background: var(--success); }
+.person-dot-busy { background: var(--warning); }
+.person-dot-overloaded { background: var(--danger); }
+.person-stack { display: inline-flex; gap: 3px; flex-wrap: wrap; align-items: center; }
+.person-overflow {
+    font-size: 0.7rem; color: var(--text-muted);
+    background: var(--bg-card-hover); padding: 1px 7px; border-radius: 999px;
+    border: 1px solid var(--border);
+}
+
+/* Filter pill shown in the topbar when a person click-to-filter is active. */
+.filter-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    white-space: nowrap;
+    flex-shrink: 0;
+    line-height: 1.2;
+    background: var(--accent-bg);
+    color: var(--accent);
+    border: 1px solid var(--accent);
+    border-radius: 999px;
+    padding: 0.28rem 0.75rem;
+    font-size: 0.78rem;
+    font-family: inherit;
+    cursor: pointer;
+    margin-right: 0.3rem;
+    transition: background 0.12s, color 0.12s;
+}
+.filter-pill:hover { background: var(--accent); color: var(--bg); }
+#filter-pill-host { display: inline-flex; align-items: center; }
+
+/* Chips cursor hint for the new click-to-filter interaction. */
+.person-chip { cursor: pointer; }
+.person-chip:hover { border-color: var(--accent); }
+
+/* Smaller screens: collapse shell to single column; detail becomes overlay. */
+@media (max-width: 860px) {
+    .boards-shell { grid-template-columns: 1fr !important; }
+    .boards-nav { display: none; }
+    .board-detail {
+        position: fixed;
+        top: 0; right: 0; bottom: 0;
+        width: min(92vw, 440px);
+        z-index: 100;
+    }
+}
+
+/* ── Link-record column (Phase B) ──────────────────────────── */
+.link-record-stack {
+    display: inline-flex;
+    flex-wrap: wrap;
+    gap: 0.25rem;
+    align-items: center;
+}
+.link-record-chip {
+    display: inline-block;
+    padding: 0.14rem 0.55rem;
+    border-radius: 999px;
+    background: var(--accent-bg);
+    color: var(--accent);
+    border: 1px solid var(--accent);
+    font-size: 0.75rem;
+    line-height: 1.3;
+    max-width: 14rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    cursor: pointer;
+}
+.link-record-chip:hover { background: var(--accent); color: var(--bg); }
+
+/* ── Backlinks panel in item detail ───────────────────────── */
+#detail-backlinks { display: flex; flex-direction: column; gap: 0.35rem; }
+.backlink-row {
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    gap: 0.5rem;
+    align-items: center;
+    padding: 0.4rem 0.6rem;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.85rem;
+}
+.backlink-row:hover { background: var(--bg-card-hover); border-color: var(--accent); }
+.backlink-board { font-size: 0.72rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; }
+.backlink-title { color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.backlink-col { font-size: 0.7rem; color: var(--text-muted); font-style: italic; }
+
+/* ── Column header ⋮ menu + "+ Column" (Phase E) ──────────────────── */
+/* NOTE: do NOT override the sticky `position` on th here — absolute-positioned
+   children anchor to the sticky th since sticky is itself a positioned value. */
+.board-table th .th-label { cursor: pointer; }
+.col-menu-btn {
+    position: absolute;
+    right: 4px;
+    top: 50%;
+    transform: translateY(-50%);
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    font-size: 1rem;
+    line-height: 1;
+    padding: 2px 6px;
+    border-radius: 3px;
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity 0.1s, background 0.1s;
+}
+.board-table th:hover .col-menu-btn { opacity: 1; }
+.col-menu-btn:hover { background: var(--bg-card-hover); color: var(--text); }
+
+.col-menu-dropdown {
+    position: absolute;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: 0 4px 16px rgba(0,0,0,0.25);
+    z-index: 200;
+    min-width: 160px;
+    padding: 0.25rem;
+}
+.col-menu-item {
+    display: block;
+    width: 100%;
+    text-align: left;
+    background: transparent;
+    border: none;
+    color: var(--text);
+    padding: 0.4rem 0.6rem;
+    font-size: 0.85rem;
+    border-radius: 4px;
+    cursor: pointer;
+    font-family: inherit;
+}
+.col-menu-item:hover { background: var(--bg-card-hover); }
+.col-menu-danger { color: var(--danger); }
+.col-menu-danger:hover { background: rgba(220, 80, 80, 0.12); }
+
+/* Column modal helpers */
+.col-modal-hint {
+    font-size: 0.78rem;
+    color: var(--text-muted);
+    margin-top: 0.3rem;
+    line-height: 1.35;
+}
+.col-modal-hint code {
+    background: var(--bg-card-hover);
+    padding: 0.05rem 0.3rem;
+    border-radius: 3px;
+    font-size: 0.88em;
+}
+.col-modal-error {
+    color: var(--danger);
+    font-size: 0.82rem;
+    margin: 0.4rem 0 0.2rem;
+    min-height: 1em;
+}
+.column-modal-extras .form-group { margin-top: 0.4rem; }
+
+/* ── Column-level filters (Phase F) ─────────────────────── */
+.filter-popover {
+    position: absolute;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+    padding: 0.75rem;
+    min-width: 240px;
+    z-index: 210;
+}
+.filter-popover-title {
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--text-muted);
+    margin-bottom: 0.45rem;
+}
+.filter-popover-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.4rem;
+}
+.filter-pill-col {
+    background: rgba(100,149,237,0.12);
+    color: var(--boards-pill-blue-fg);
+    border: 1px solid var(--boards-pill-blue-fg);
+}
+.filter-pill-col:hover {
+    background: var(--boards-pill-blue-fg);
+    color: var(--bg);
+}
+
+/* ── Column reorder + visibility (Phase G) ────────────────── */
+.board-table th.col-dragging { opacity: 0.4; }
+.board-table th.col-drop-target {
+    background: var(--accent-bg);
+    box-shadow: inset 3px 0 0 var(--accent);
+}
+.hidden-cols-chip {
+    background: rgba(160,160,180,0.12);
+    color: var(--text-secondary);
+    border: 1px solid var(--border);
+}
+.hidden-cols-chip:hover {
+    background: var(--bg-card-hover);
+    color: var(--text);
+}
+.hidden-col-row {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+    padding: 0.25rem 0.1rem;
+    font-size: 0.85rem;
+    cursor: pointer;
+    user-select: none;
+}
+.hidden-col-row:hover { color: var(--text); }
+#hidden-cols-popover { max-width: 260px; max-height: 60vh; overflow-y: auto; }
+
+/* ── Bulk edit (Phase H) ──────────────────────────────────── */
+/* The File cell stays a table-cell (not flex), with its inner contents
+   aligned via an inline-flex wrapper so the select-all/highlight layout works. */
+.file-cell-inner {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    min-width: 0;
+}
+.file-cell-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 14rem;
+}
+.row-select {
+    cursor: pointer;
+    margin: 0;
+}
+.th-select-all {
+    cursor: pointer;
+    margin-right: 0.4rem;
+}
+.board-table tr.row-selected td {
+    background: var(--accent-bg) !important;
+}
+.board-table tr.row-selected td:first-child {
+    box-shadow: inset 3px 0 0 var(--accent);
+}
+/* Segmented bulk-edit button — solid-filled to read as an action, not a filter chip. */
+.bulk-action {
+    display: inline-flex;
+    align-items: stretch;
+    border-radius: 999px;
+    overflow: hidden;
+    box-shadow: 0 0 0 1px var(--accent);
+    background: var(--accent);
+    color: #fff;
+    font-family: inherit;
+    line-height: 1;
+}
+.bulk-action-main,
+.bulk-action-clear {
+    background: transparent;
+    color: inherit;
+    border: none;
+    padding: 0.3rem 0.75rem;
+    font-size: 0.78rem;
+    font-weight: 600;
+    cursor: pointer;
+    font-family: inherit;
+    letter-spacing: 0.02em;
+}
+.bulk-action-main:hover { background: rgba(255,255,255,0.12); }
+.bulk-action-clear {
+    padding: 0.3rem 0.6rem;
+    border-left: 1px solid rgba(255,255,255,0.28);
+    font-weight: 700;
+}
+.bulk-action-clear:hover { background: rgba(255,255,255,0.18); }
+
+/* ── Kanban axis picker toolbar ───────────────────────────── */
+.kanban-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.6rem 1.25rem 0.3rem;
+}
+.kanban-axis-label {
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--text-muted);
+}
+/* Only apply flex layout when the panel is active — else it overrides
+   `.view-panel { display: none }` and stays visible behind other views. */
+#view-kanban.view-panel.active {
+    display: flex;
+    flex-direction: column;
+}
+#view-kanban.active .eos-kanban { flex: 1; min-height: 0; }
+
+/* Manage-saved-views modal rows */
+.manage-views-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+    margin-bottom: 0.75rem;
+    max-height: 50vh;
+    overflow-y: auto;
+}
+.manage-view-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    padding: 0.45rem 0.7rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+}
+.manage-view-name { font-size: 0.88rem; }
+/* .btn-danger styles already defined earlier in this file — no duplicate. */
+
+/* ═══════════════════════════════════════════════════════════
+   EMBED MODE — /boards/?id=X&embed=1
+   Other apps iframe a board view inline. Hide the boards-app chrome so
+   only the rendered view is visible. ?embed=1&chrome=0 also hides the
+   view-tabs row. The host (parent app) provides its own surrounding UI.
+   ═══════════════════════════════════════════════════════════ */
+body.embed-mode { padding: 0; margin: 0; background: transparent; }
+body.embed-mode .boards-nav { display: none; }
+body.embed-mode .board-topbar { display: none; }
+body.embed-mode .board-detail { display: none !important; }
+body.embed-mode .boards-home { display: none !important; }
+body.embed-mode #board-view { height: 100vh; }
+body.embed-mode .app-shell { padding: 0; }
+body.embed-mode .eos-fab-pill,
+body.embed-mode .eos-fab-dial,
+body.embed-mode .eos-nav,
+body.embed-mode #eos-nav,
+body.embed-mode .eos-bottom-nav { display: none !important; }
+body.embed-mode.embed-no-chrome #view-tabs { display: none; }

@@ -1,0 +1,87 @@
+[app]
+id = "projects"
+name = "Projects"
+version = "1.0.0"
+description = "Project portfolio — scan vault, parse status, track progress"
+dimensions = ["occupational"]
+
+[app.entry]
+module = "app"
+class = "ProjectsApp"
+
+[requires]
+capabilities = ["read", "write", "search", "think"]
+apps = ["github-connector", "git", "reports"]
+
+[provides.cli]
+commands = ["projects"]
+
+[provides.web]
+prefix = "/projects"
+
+[provides.events]
+emits = ["projects:refreshed", "projects:status_changed", "projects:task_toggled", "projects:task_added", "projects:created", "projects:doc_created", "projects:stage_changed", "projects:calc_attached", "projects:feature_toggled", "projects:sprint_created", "projects:sprint_closed", "projects:milestone_created", "projects:release_created"]
+
+[provides.settings]
+schema = [
+    {key = "projects.stale_days", label = "Stale After (days)", type = "number", default = 90},
+]
+
+[provides.export]
+enabled = true
+mode = "standalone"
+fallbacks = ["vault:indexeddb", "think:byok-openai", "events:local-bus", "call_app:bundled", "viewer:none"]
+
+[provides.assistant]
+commands = [
+    {slash = "/projects", method = "list_projects"},
+    {slash = "/deadlines", method = "get_deadlines"},
+    {slash = "/project-tasks", method = "get_all_tasks"},
+    {slash = "/project-add", method = "add_task_to_project"},
+]
+
+[[contributes.hub.needs_attention]]
+id = "overdue-deadlines"
+method = "slot_needs_attention"
+limit = 3
+priority = 8
+
+[[contributes.hub.today]]
+id = "deadlines-today"
+method = "slot_today"
+limit = 3
+priority = 8
+
+[[contributes.hub.resume]]
+id = "active-projects"
+method = "slot_resume"
+limit = 3
+priority = 10
+
+# ── Legacy-parity panels ──
+
+[[contributes.hub.panel]]
+id = "upcoming-deadlines"
+title = "📆 Upcoming Deadlines"
+method = "panel_upcoming_deadlines"
+renderer = "deadline-row"
+priority = 200
+
+[[contributes.hub.panel]]
+id = "project-countdowns"
+method = "panel_project_countdowns"
+renderer = "countdown-tile"
+group = "countdowns"
+priority = 190
+
+[[contributes.hub.panel]]
+id = "projects-pipeline"
+method = "panel_projects_pipeline"
+renderer = "stat-tile"
+group = "dashboard"
+priority = 150
+
+[[contributes.voice-assistant.context]]
+id = "active-projects"
+method = "assistant_context"
+priority = 100

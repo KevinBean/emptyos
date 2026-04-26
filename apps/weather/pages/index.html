@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>Weather - EmptyOS</title>
+<link rel="stylesheet" href="/static/theme.css">
+<link rel="stylesheet" href="/static/eos-components.css">
+<style>
+body { min-height:100dvh; padding:env(safe-area-inset-top) 16px calc(env(safe-area-inset-bottom) + 80px); overscroll-behavior-y:contain }
+
+.weather-hero { text-align:center; padding:24px 0 }
+.weather-icon { font-size:64px; margin-bottom:8px }
+.weather-temp { font-size:56px; font-weight:800; color:var(--text-heading); line-height:1 }
+.weather-desc { font-size:16px; color:var(--text-secondary); margin-top:4px; text-transform:capitalize }
+.weather-city { font-size:14px; color:var(--text-muted); margin-top:2px }
+.weather-feels { font-size:13px; color:var(--text-muted); margin-top:4px }
+.weather-source { font-size:11px; color:var(--text-muted); margin-top:8px; letter-spacing:0.5px; text-transform:uppercase }
+
+.detail-row { display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px; margin:16px 0 }
+.detail-card { background:var(--bg-card); border:1px solid var(--border); border-radius:14px; padding:12px; text-align:center }
+.detail-val { font-size:20px; font-weight:700; color:var(--text-heading) }
+.detail-label { font-size:11px; color:var(--text-secondary); text-transform:uppercase }
+
+.forecast-section { margin:16px 0 }
+.forecast-section h3 { font-size:13px; color:var(--text-secondary); text-transform:uppercase; letter-spacing:0.5px; margin-bottom:12px }
+.forecast-row { display:flex; gap:8px; overflow-x:auto; padding-bottom:8px }
+.forecast-card { min-width:80px; background:var(--bg-card); border:1px solid var(--border); border-radius:14px; padding:12px; text-align:center; flex-shrink:0 }
+.fc-time { font-size:12px; color:var(--text-muted) }
+.fc-icon { font-size:24px; margin:4px 0 }
+.fc-temp { font-size:16px; font-weight:700; color:var(--text-heading) }
+.fc-pop { font-size:11px; color:#3b82f6 }
+
+.history-section { margin:16px 0 }
+.history-section h3 { font-size:13px; color:var(--text-secondary); text-transform:uppercase; letter-spacing:0.5px; margin-bottom:8px }
+.history-bars { display:flex; align-items:flex-end; gap:4px; height:80px }
+.history-bar { flex:1; display:flex; flex-direction:column; align-items:center; gap:2px }
+.history-bar-fill { width:100%; border-radius:4px 4px 0 0 }
+.history-bar-label { font-size:9px; color:var(--text-muted) }
+
+.setup-box { background:var(--bg-card); border:1px solid var(--border); border-radius:14px; padding:24px; text-align:center; margin:32px 0 }
+.setup-box h3 { color:var(--text-heading); margin:0 0 8px }
+.setup-box p { color:var(--text-secondary); font-size:14px; margin:0 0 12px }
+.setup-box a { color:var(--accent) }
+
+.refresh-btn { position:fixed; bottom:24px; right:24px; width:48px; height:48px; border-radius:50%; background:var(--bg-card); border:1px solid var(--border); color:var(--text-secondary); cursor:pointer; font-size:20px; display:flex; align-items:center; justify-content:center }
+.refresh-btn:hover { border-color:var(--accent); color:var(--accent) }
+</style>
+</head>
+<body>
+
+<div id="content"></div>
+<button class="refresh-btn" onclick="refresh()" title="Refresh">&#8635;</button>
+
+<script src="/static/eos.js"></script>
+<script>EOS.nav('weather');</script>
+<script src="/static/eos-components.js"></script>
+<script>
+const API='/weather/api';
+
+const OWM_ICONS={
+  '01d':'&#9728;','01n':'&#127769;','02d':'&#9925;','02n':'&#9925;',
+  '03d':'&#9729;','03n':'&#9729;','04d':'&#9729;','04n':'&#9729;',
+  '09d':'&#127783;','09n':'&#127783;','10d':'&#127782;','10n':'&#127782;',
+  '11d':'&#9889;','11n':'&#9889;','13d':'&#10052;','13n':'&#10052;',
+  '50d':'&#127787;','50n':'&#127787;',
+};
+function weatherIcon(data){
+  if (data.emoji) return data.emoji;
+  return OWM_ICONS[data.icon] || '&#9729;';
+}
+
+async function loadWeather(){
+  const el=document.getElementById('content');
+  const data=await fetch(API+'/current').then(r=>r.json());
+
+  if(data.error){
+    el.innerHTML=`<div class="setup-box">
+      <h3>Weather Setup</h3>
+      <p>${esc(data.error)}</p>
+      <p style="font-size:12px;color:var(--text-muted)">Open <a href="/settings/">Settings</a> to set your latitude/longitude — keyless Open-Meteo will pick up automatically. For richer data add an OpenWeatherMap API key in <code>emptyos.toml</code>.</p>
+    </div>`;
+    return;
+  }
+
+  const unit=data.unit||'C';
+  const source=data.source||'';
+  const hasTemp = data.temp !== undefined && data.temp !== null;
+
+  let html=`<div class="weather-hero">
+      <div class="weather-icon">${weatherIcon(data)}</div>`;
+
+  if (hasTemp) {
+    html += `
+      <div class="weather-temp">${Math.round(data.temp)}°${unit}</div>
+      <div class="weather-desc">${esc(data.description||data.condition||'')}</div>
+      <div class="weather-city">${esc(data.city||'')}${data.country?', '+esc(data.country):''}</div>`;
+    if (data.feels_like != null) {
+      html += `<div class="weather-feels">Feels like ${Math.round(data.feels_like)}°${unit}${data.temp_max!=null?` &middot; H:${Math.round(data.temp_max)}° L:${Math.round(data.temp_min)}°`:''}</div>`;
+    }
+  } else if (data.summary || data.description) {
+    html += `<div class="weather-desc" style="font-size:20px">${esc(data.summary||data.description||'')}</div>`;
+  }
+  html += `<div class="weather-source">${esc(source)}${data.stale?' &middot; cached':''}</div></div>`;
+
+  if (hasTemp && (data.humidity != null || data.wind_speed != null || data.sunrise)) {
+    html += `<div class="detail-row">
+      ${data.humidity!=null?`<div class="detail-card"><div class="detail-val">${data.humidity}%</div><div class="detail-label">Humidity</div></div>`:''}
+      ${data.wind_speed!=null?`<div class="detail-card"><div class="detail-val">${data.wind_speed}</div><div class="detail-label">Wind ${data.speed_unit||''}</div></div>`:''}
+      ${data.sunrise?`<div class="detail-card"><div class="detail-val">${new Date(data.sunrise*1000).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}</div><div class="detail-label">Sunrise</div></div>`:''}
+    </div>`;
+  }
+
+  // Forecast (OWM only)
+  const forecast=data.forecast||[];
+  if(forecast.length){
+    html+=`<div class="forecast-section"><h3>Next 24 Hours</h3><div class="forecast-row">`;
+    html+=forecast.map(f=>`
+      <div class="forecast-card">
+        <div class="fc-time">${f.dt?f.dt.slice(11,16):''}</div>
+        <div class="fc-icon">${OWM_ICONS[f.icon]||'&#9729;'}</div>
+        <div class="fc-temp">${Math.round(f.temp||0)}°</div>
+        ${f.pop>0?`<div class="fc-pop">${Math.round(f.pop*100)}%</div>`:''}
+      </div>
+    `).join('');
+    html+=`</div></div>`;
+  }
+
+  // History
+  try {
+    const history=await fetch(API+'/history?days=14').then(r=>r.json());
+    if(history && history.length>1){
+      const maxT=Math.max(...history.map(h=>h.temp_max||h.temp||0));
+      const minT=Math.min(...history.map(h=>h.temp_min||h.temp||0));
+      const range=maxT-minT||1;
+      html+=`<div class="history-section"><h3>Temperature History</h3><div class="history-bars">`;
+      html+=history.map(h=>{
+        const height=Math.max(4,((h.temp||0)-minT)/range*60);
+        return `<div class="history-bar">
+          <div style="font-size:10px;color:var(--text-secondary)">${Math.round(h.temp||0)}°</div>
+          <div class="history-bar-fill" style="height:${height}px;background:var(--accent)"></div>
+          <div class="history-bar-label">${(h.date||'').slice(8)}</div>
+        </div>`;
+      }).join('');
+      html+=`</div></div>`;
+    }
+  } catch (_) { /* history endpoint is best-effort */ }
+
+  el.innerHTML=html;
+}
+
+async function refresh(){
+  await fetch(API+'/refresh',{method:'POST'});
+  loadWeather();
+}
+
+const esc = EOS_UI.esc;
+
+loadWeather();
+</script>
+</body>
+</html>

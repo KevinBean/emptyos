@@ -1,0 +1,32 @@
+[app]
+id = "canvas"
+name = "Canvas"
+version = "1.0.0"
+description = "Infinite canvas for note cards, connections, pan/zoom, and vault-backed boards"
+dimensions = ["intellectual", "occupational"]
+
+[app.entry]
+module = "app"
+class = "CanvasApp"
+
+[requires]
+capabilities = ["read", "write", "think", "search"]
+apps = ["projects"]
+
+[provides.web]
+prefix = "/canvas"
+
+[provides.events]
+emits = ["canvas:board_saved", "canvas:board_deleted", "canvas:node_added", "canvas:promoted"]
+
+[provides.settings]
+schema = [
+    {key = "canvas.default_board", label = "Default board", type = "text", default = "inbox"},
+]
+
+[[contributes.hub.panel]]
+id = "canvas-recent"
+method = "panel_recent_boards"
+renderer = "chips"
+priority = 80
+group = "dashboard"

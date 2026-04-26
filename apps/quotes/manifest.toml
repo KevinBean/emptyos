@@ -1,0 +1,41 @@
+[app]
+id = "quotes"
+name = "Quotes"
+version = "1.0.0"
+description = "A simple quote of the day app that picks a random inspirational quote and shows it. Store quotes in app data."
+
+[app.entry]
+module = "app"
+class = "QuotesApp"
+
+[requires]
+capabilities = ["think", "read", "write"]
+apps = []
+connectors = []
+
+[provides.cli]
+commands = ["quotes"]
+
+[provides.web]
+prefix = "/quotes"
+
+[provides.events]
+emits = ["quotes:shown", "quotes:generated"]
+[provides.settings]
+schema = [{key = "quotes.auto_refresh", label = "New Quote Daily", type = "toggle", default = true}]
+
+[provides.assistant]
+commands = [
+    {slash = "/quotes", method = "get_quote"},
+]
+
+[[contributes.hub.panel]]
+id = "quote"
+method = "panel_quote"
+renderer = "quote"
+priority = 260
+
+[[contributes.voice-assistant.context]]
+id = "daily-quote"
+method = "assistant_context"
+priority = 200

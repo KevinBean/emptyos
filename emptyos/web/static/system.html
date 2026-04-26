@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>System — EmptyOS</title>
+<link rel="stylesheet" href="/static/theme.css">
+<link rel="stylesheet" href="/static/eos-components.css">
+<style>
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; background: var(--bg); color: var(--text); margin: 0; }
+.wrap { max-width: 920px; margin: 0 auto; padding: 24px 20px 80px; }
+.page-head { display: flex; align-items: baseline; gap: 16px; margin-bottom: 20px; flex-wrap: wrap; }
+.page-head h1 { font-size: 22px; font-weight: 600; margin: 0; }
+.page-head .sub { color: var(--text-muted); font-size: 13px; }
+.page-head .right { margin-left: auto; display: flex; gap: 8px; align-items: center; }
+.cap-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 10px; margin-bottom: 14px; overflow: hidden; }
+.cap-card.focus { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.cap-head { padding: 14px 16px; display: flex; align-items: center; gap: 12px; cursor: pointer; user-select: none; }
+.cap-head:hover { background: var(--bg-hover, rgba(255,255,255,0.02)); }
+.cap-name { font-size: 16px; font-weight: 600; flex: 1; text-transform: lowercase; letter-spacing: 0.2px; }
+.cap-active { color: var(--text-muted); font-size: 12px; }
+.cap-active b { color: var(--text); font-weight: 600; }
+.cap-chev { color: var(--text-muted); font-size: 11px; transition: transform 0.15s; }
+.cap-card.open .cap-chev { transform: rotate(90deg); }
+.cap-body { padding: 0 16px 14px; display: none; border-top: 1px solid var(--border); }
+.cap-card.open .cap-body { display: block; }
+.prov-row { padding: 12px 0; border-bottom: 1px dashed var(--border); }
+.prov-row:last-child { border-bottom: none; }
+.prov-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.prov-name { font-weight: 600; font-family: var(--mono, 'Consolas', monospace); font-size: 13px; }
+.prov-domain { color: var(--text-muted); font-size: 11px; }
+.prov-reason { color: var(--text-muted); font-size: 12px; margin-top: 6px; line-height: 1.5; }
+.prov-recovery { margin-top: 10px; padding: 10px 12px; background: var(--bg); border-radius: 6px; font-size: 12px; }
+.prov-recovery .rec-hint { color: var(--text-secondary); margin-bottom: 8px; line-height: 1.5; }
+.prov-recovery .rec-cmd { font-family: var(--mono, 'Consolas', monospace); padding: 6px 10px; background: rgba(0,0,0,0.25); border-radius: 4px; display: inline-block; margin: 4px 0; user-select: all; cursor: text; }
+.prov-recovery .rec-buttons { margin-top: 8px; display: flex; gap: 6px; flex-wrap: wrap; }
+.consent-bar { background: var(--bg-card); border: 1px solid var(--accent); border-radius: 10px; padding: 12px 16px; margin-bottom: 18px; }
+.consent-bar h3 { margin: 0 0 6px; font-size: 14px; }
+.pending-row { display: flex; gap: 8px; align-items: center; padding: 6px 0; font-size: 13px; }
+.pending-row .pend-prov { font-family: var(--mono, 'Consolas', monospace); }
+.dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; }
+.dot.ok { background: #22c55e; }
+.dot.err { background: #ef4444; }
+.dot.warn { background: #fbbf24; }
+.section-title { font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: var(--text-muted); margin: 24px 0 10px; font-weight: 600; }
+</style>
+</head>
+<body>
+<script src="/static/eos.js"></script>
+<script src="/static/eos-components.js"></script>
+<script src="/static/eos-tour.js"></script>
+<script>EOS.nav('settings');</script>
+
+<div class="wrap">
+  <div class="page-head">
+    <h1>System</h1>
+    <span class="sub">Capabilities, providers, and what to do when something is missing.</span>
+    <div class="right">
+      <button class="eos-btn eos-btn-sm eos-btn-ghost" onclick="loadAll()">↻ Refresh</button>
+      <a class="eos-btn eos-btn-sm eos-btn-ghost" href="/topology">Topology →</a>
+    </div>
+  </div>
+
+  <div id="consent-area"></div>
+  <div id="caps-area"></div>
+  <div id="empty-area"></div>
+</div>
+
+<script>
+var STATE = { caps: {}, consent: {}, network_mode: 'local', focus: null };
+
+function getFocusFromURL() {
+  var p = new URLSearchParams(location.search);
+  return p.get('capability') || null;
+}
+
+async function loadAll() {
+  STATE.focus = getFocusFromURL();
+  var area = document.getElementById('caps-area');
+  area.innerHTML = '<div style="padding:40px;text-align:center;color:var(--text-muted)">Probing providers…</div>';
+  try {
+    var res = await fetch('/api/capabilities/full');
+    var data = await res.json();
+    STATE.caps = data.capabilities || {};
+    STATE.consent = data.consent || {};
+    STATE.network_mode = data.network_mode || 'local';
+    render();
+  } catch (e) {
+    area.innerHTML = EOS_UI.errorState({message: 'Could not load /api/capabilities/full: ' + e.message, onRetry: 'loadAll()'});
+  }
+}
+
+function recoveryHTML(rec, providerName) {
+  if (!rec) return '';
+  var esc = EOS_UI.esc;
+  var hint = '';
+  var cmd = '';
+  var buttons = '';
+  if (rec.kind === 'env_var') {
+    hint = 'Set the <code>' + esc(rec.name) + '</code> environment variable, then restart EmptyOS.';
+    cmd = '<div class="rec-cmd">setx ' + esc(rec.name) + ' &lt;your-key&gt;</div>';
+    buttons = '<a class="eos-btn eos-btn-sm" href="/settings#env">Open Settings →</a>';
+  } else if (rec.kind === 'service') {
+    hint = esc(rec.hint || 'Start the service, then refresh this page.');
+    if (rec.url) cmd = '<div class="rec-cmd">' + esc(rec.url) + '</div>';
+  } else if (rec.kind === 'plugin') {
+    hint = esc(rec.launcher || ('Load the ' + rec.id + ' plugin.'));
+    cmd = '<div class="rec-cmd">[plugins.' + esc(rec.id) + ']  # in emptyos.toml</div>';
+  } else if (rec.kind === 'config') {
+    hint = 'Edit ' + esc(rec.path || 'emptyos.toml') + ' under <code>' + esc(rec.section || '') + '</code>.';
+  } else if (rec.kind === 'consent') {
+    hint = 'This cloud provider is awaiting your approval before EmptyOS sends data to it.';
+    buttons = '<button class="eos-btn eos-btn-sm" onclick="approveProvider(\'' + esc(rec.provider || providerName) + '\')">Approve for this session</button>';
+  }
+  return '<div class="prov-recovery">' +
+    '<div class="rec-hint">' + hint + '</div>' +
+    cmd +
+    (buttons ? '<div class="rec-buttons">' + buttons + '</div>' : '') +
+    '</div>';
+}
+
+function providerRowHTML(p) {
+  var esc = EOS_UI.esc;
+  var dot = p.available ? '<span class="dot ok" title="available"></span>'
+                        : '<span class="dot err" title="not available"></span>';
+  var prov = '';
+  if (p.is_cloud) {
+    prov = ' ' + EOS_UI.provenance({mode:'cloud', provider: p.name, model: p.model || ''});
+  } else {
+    prov = ' ' + EOS_UI.provenance({mode:'local', provider: p.name, model: p.model || ''});
+  }
+  var domainTag = (p.domain && p.domain !== 'default') ? '<span class="prov-domain">· domain: ' + esc(p.domain) + '</span>' : '';
+  var reason = '';
+  if (!p.available && p.reason) {
+    reason = '<div class="prov-reason">' + esc(p.reason) + '</div>';
+  }
+  var recovery = !p.available ? recoveryHTML(p.recovery, p.name) : '';
+  return '<div class="prov-row">' +
+    '<div class="prov-head">' + dot + '<span class="prov-name">' + esc(p.name) + '</span>' + prov + domainTag + '</div>' +
+    reason + recovery +
+    '</div>';
+}
+
+function capCardHTML(name, cap) {
+  var esc = EOS_UI.esc;
+  var allOk = cap.providers.length > 0 && cap.providers.every(function(p){ return p.available; });
+  var anyOk = cap.providers.some(function(p){ return p.available; });
+  var dot = allOk ? '<span class="dot ok"></span>'
+                  : (anyOk ? '<span class="dot warn" title="degraded — some providers offline"></span>'
+                           : '<span class="dot err" title="no provider available"></span>');
+  var activeLine = cap.active
+    ? '<span class="cap-active">active: <b>' + esc(cap.active) + '</b></span>'
+    : '<span class="cap-active" style="color:#ef4444">no provider available</span>';
+  var bodyRows = cap.providers.length
+    ? cap.providers.map(providerRowHTML).join('')
+    : EOS_UI.emptyState({message: 'No providers registered for this capability.', icon: '∅'});
+  var openCls = (STATE.focus === name || !anyOk) ? ' open' : '';
+  var focusCls = (STATE.focus === name) ? ' focus' : '';
+  return '<div class="cap-card' + openCls + focusCls + '" id="cap-' + esc(name) + '">' +
+    '<div class="cap-head" onclick="toggleCap(\'' + esc(name) + '\')">' +
+      dot +
+      '<span class="cap-name">' + esc(name) + '</span>' +
+      activeLine +
+      '<span class="cap-chev">▶</span>' +
+    '</div>' +
+    '<div class="cap-body">' + bodyRows + '</div>' +
+  '</div>';
+}
+
+function toggleCap(name) {
+  var card = document.getElementById('cap-' + name);
+  if (card) card.classList.toggle('open');
+}
+
+function consentHTML() {
+  var c = STATE.consent || {};
+  var pend = c.pending || [];
+  if (!pend.length && c.policy !== 'never') return '';
+  var esc = EOS_UI.esc;
+  var rows = pend.map(function(p) {
+    return '<div class="pending-row">' +
+      '<span class="dot warn"></span>' +
+      '<span class="pend-prov">' + esc(p.provider) + '</span>' +
+      '<span style="color:var(--text-muted);font-size:12px">— ' + esc(p.capability || '') + '</span>' +
+      '<button class="eos-btn eos-btn-sm" style="margin-left:auto" onclick="resolvePending(\'' + esc(p.id) + '\', true)">Approve</button>' +
+      '<button class="eos-btn eos-btn-sm eos-btn-ghost" onclick="resolvePending(\'' + esc(p.id) + '\', false)">Deny</button>' +
+    '</div>';
+  }).join('');
+  var policyNote = c.policy === 'never' ? '<div style="color:var(--text-muted);font-size:12px;margin-top:6px">Cloud consent policy: <b>never</b> — every cloud provider is blocked. Change in Settings.</div>' : '';
+  return '<div class="consent-bar">' +
+    '<h3>Cloud consent' + (pend.length ? ' (' + pend.length + ' pending)' : '') + '</h3>' +
+    rows + policyNote +
+  '</div>';
+}
+
+async function approveProvider(name) {
+  await fetch('/api/cloud/approve', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({provider: name})});
+  loadAll();
+}
+
+async function resolvePending(id, approved) {
+  await fetch('/api/cloud/consent', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({id: id, approved: approved})});
+  loadAll();
+}
+
+function render() {
+  document.getElementById('consent-area').innerHTML = consentHTML();
+  var caps = STATE.caps;
+  var names = Object.keys(caps).sort();
+  if (!names.length) {
+    document.getElementById('caps-area').innerHTML = EOS_UI.emptyState({message: 'No capabilities registered.'});
+    return;
+  }
+  // Order: missing → degraded → ok
+  function score(name) {
+    var c = caps[name];
+    if (!c.providers.length) return 0;
+    if (!c.providers.some(function(p){ return p.available; })) return 0;
+    if (!c.providers.every(function(p){ return p.available; })) return 1;
+    return 2;
+  }
+  names.sort(function(a, b) { return score(a) - score(b) || a.localeCompare(b); });
+
+  var html = '<div class="section-title">Capabilities</div>';
+  html += names.map(function(n) { return capCardHTML(n, caps[n]); }).join('');
+  document.getElementById('caps-area').innerHTML = html;
+
+  if (STATE.focus) {
+    var el = document.getElementById('cap-' + STATE.focus);
+    if (el) el.scrollIntoView({behavior: 'smooth', block: 'start'});
+  }
+}
+
+loadAll();
+</script>
+</body>
+</html>

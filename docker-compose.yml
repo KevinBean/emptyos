@@ -1,0 +1,66 @@
+# docker-compose.yml — EmptyOS reference deployment
+#
+# Quick start:
+#   1. Copy emptyos.example.toml to emptyos.toml and edit it
+#   2. Pick a network mode: local | private | public (see comments below)
+#   3. docker compose up -d
+#
+# Environment variables (optional, override emptyos.toml):
+#   EOS_NETWORK_MODE       - local | private | public
+#   EOS_NETWORK_AUTH_TOKEN - required in public mode
+#   EOS_CLOUD_CONSENT      - ask | always | never
+#   EOS_DEMO_ENABLED       - true | false
+
+services:
+  emptyos:
+    build: .
+    image: emptyos:latest
+    container_name: emptyos
+    restart: unless-stopped
+    ports:
+      - "9000:9000"
+    volumes:
+      # Your markdown vault — EmptyOS treats this as its hard drive
+      - ./vault:/vault
+      # Machine config (gitignored, machine-specific)
+      - ./emptyos.toml:/app/emptyos.toml:ro
+      # Runtime state — persist events, syslog, app state across restarts
+      - emptyos-data:/app/data
+    environment:
+      # Uncomment and set for public mode:
+      # - EOS_NETWORK_MODE=public
+      # - EOS_NETWORK_AUTH_TOKEN=change-me-to-a-long-random-token
+      - EOS_CLOUD_CONSENT=ask
+    # Uncomment the depends_on block if you want the built-in Ollama sidecar
+    # depends_on:
+    #   - ollama
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:9000/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+  # --- Optional local LLM sidecar ---
+  # Uncomment to run Ollama alongside EmptyOS for a self-contained deployment.
+  # Point capabilities.think.ollama.host at http://ollama:11434 in emptyos.toml.
+  # ollama:
+  #   image: ollama/ollama:latest
+  #   container_name: emptyos-ollama
+  #   restart: unless-stopped
+  #   volumes:
+  #     - ollama-models:/root/.ollama
+  #   ports:
+  #     - "11434:11434"
+  #   # GPU (Linux + NVIDIA Container Toolkit):
+  #   # deploy:
+  #   #   resources:
+  #   #     reservations:
+  #   #       devices:
+  #   #         - driver: nvidia
+  #   #           count: all
+  #   #           capabilities: [gpu]
+
+volumes:
+  emptyos-data:
+  # ollama-models:

@@ -1,0 +1,5 @@
+
+[provides.settings]
+schema = [
+    {key = "journal.default_mood", label = "Default Mood", type = "select", options = ["great", "good", "okay", "low", "bad"], default = "good"},
+]

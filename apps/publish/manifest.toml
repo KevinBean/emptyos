@@ -1,0 +1,35 @@
+[app]
+id = "publish"
+name = "Publish"
+version = "0.1.0"
+description = "Publish vault notes as a static website — blog, projects, digital garden"
+dimensions = ["occupational"]
+
+[app.entry]
+module = "app"
+class = "PublishApp"
+
+[provides.cli]
+commands = ["publish"]
+
+[provides.web]
+prefix = "/publish"
+
+[provides.events]
+emits = ["publish:built", "publish:deployed"]
+
+[provides.settings]
+# Per-site settings are managed in sites.json via the in-app UI.
+# Only the active site selector is exposed as a global setting.
+schema = [
+    {key = "publish.active_site", label = "Active Site Profile", type = "text", default = "default"},
+]
+
+[requires]
+capabilities = ["read", "write", "think", "search", "draw"]
+apps = ["link"]
+services = []
+# Optionally integrates with these if installed (graceful fallback when absent):
+#   web-analytics — embeds tracking beacon when available
+#   podcast       — /api/generate-podcast endpoint when available
+#   staff         — uses staff agents for AI polish; falls back to self.think()

@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Note - EmptyOS</title>
+<link rel="stylesheet" href="/static/theme.css">
+<link rel="stylesheet" href="/static/eos-components.css">
+<style>
+.note-hero { padding:32px 0 8px; animation:fadeDown 0.4s ease }
+.note-hero h1 { font-size:28px; font-weight:700; color:var(--text-heading); margin-bottom:4px }
+.note-hero .desc { font-size:14px; color:var(--text-secondary) }
+
+.search-bar { position:relative; margin-bottom:16px; animation:fadeDown 0.4s ease 0.05s both }
+.search-bar input { width:100%; padding:12px 16px 12px 42px; background:var(--bg-card); border:1px solid var(--border); border-radius:14px; font-size:15px; color:var(--text); outline:none; font-family:inherit; transition:border-color 0.2s,box-shadow 0.2s }
+.search-bar input:focus { border-color:color-mix(in srgb,var(--accent) 60%,transparent); box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 10%,transparent) }
+.search-bar input::placeholder { color:var(--text-muted) }
+.search-bar .icon { position:absolute; left:14px; top:50%; transform:translateY(-50%); font-size:16px; color:var(--text-muted); pointer-events:none }
+
+.toolbar { display:flex; gap:8px; margin-bottom:16px; flex-wrap:wrap; animation:fadeDown 0.4s ease 0.1s both }
+.toolbar select { padding:8px 12px; background:var(--bg-card); border:1px solid var(--border); border-radius:8px; font-size:13px; color:var(--text); font-family:inherit; outline:none; cursor:pointer }
+.toolbar select:focus { border-color:var(--accent) }
+.btn-create { padding:8px 16px; background:var(--accent); color:#fff; border:none; border-radius:8px; font-size:13px; font-weight:600; cursor:pointer; transition:transform 0.1s; margin-left:auto }
+.btn-create:active { transform:scale(0.95) }
+
+.note-list { margin-bottom:24px; animation:cardIn 0.35s ease 0.15s both }
+.note-list .eos-entity-card .eec-sub { font-family:var(--mono) }
+.ni-btn { background:none; border:1px solid var(--border); border-radius:6px; color:var(--accent); font-size:13px; padding:4px 8px; cursor:pointer; transition:all 0.15s }
+.ni-btn:hover { background:color-mix(in srgb,var(--accent) 12%,transparent); border-color:var(--accent) }
+
+.create-form { background:var(--bg-card); border:1px solid var(--border); border-radius:14px; padding:16px; margin-bottom:24px; display:none; animation:cardIn 0.3s ease }
+.create-form.show { display:block }
+.create-form h3 { font-size:16px; font-weight:600; color:var(--text-heading); margin-bottom:12px }
+.cf-row { display:flex; gap:8px; margin-bottom:12px }
+.cf-row input,.cf-row select { flex:1; padding:12px 12px; background:var(--bg); border:1px solid var(--border); border-radius:8px; font-size:14px; color:var(--text); font-family:inherit; outline:none }
+.cf-row input:focus,.cf-row select:focus { border-color:color-mix(in srgb,var(--accent) 60%,transparent) }
+.cf-row input::placeholder { color:var(--text-muted) }
+.cf-textarea { width:100%; min-height:120px; padding:12px; background:var(--bg); border:1px solid var(--border); border-radius:8px; font-size:14px; color:var(--text); font-family:inherit; outline:none; resize:vertical; margin-bottom:12px }
+.cf-textarea:focus { border-color:color-mix(in srgb,var(--accent) 60%,transparent) }
+.cf-textarea::placeholder { color:var(--text-muted) }
+.cf-actions { display:flex; gap:8px; justify-content:flex-end }
+.cf-cancel { padding:8px 16px; background:var(--bg); border:1px solid var(--border); border-radius:8px; font-size:13px; color:var(--text-secondary); cursor:pointer; font-family:inherit }
+.cf-submit { padding:8px 16px; background:var(--accent); color:#fff; border:none; border-radius:8px; font-size:13px; font-weight:600; cursor:pointer; font-family:inherit }
+.cf-submit:active { transform:scale(0.95) }
+
+.empty-state { text-align:center; padding:40px 24px; color:var(--text-muted); font-size:14px }
+.empty-state .icon { font-size:40px; margin-bottom:8px; opacity:0.3 }
+.status-msg { font-size:12px; color:var(--text-muted); margin-bottom:8px; min-height:18px }
+</style>
+</head>
+<body>
+<script src="/static/realtime.js"></script>
+<script src="/static/eos.js"></script>
+<script src="/static/eos-components.js"></script>
+<script>EOS.nav('note');
+if(window.EOS&&EOS.registerActions){EOS.registerActions({},[],{description:"Vault notes — create, read, list, update markdown notes with frontmatter.",quickActions:[{label:"New note",msg:"Help me draft a new note. Ask me what topic and scaffold it."},{label:"Summarize",msg:"Summarize the notes I have open or most recent."},{label:"Link related",msg:"What other notes are related to the one I am viewing?"}]});}
+</script>
+
+<div class="page">
+  <div class="note-hero">
+    <h1>Notes</h1>
+    <div class="desc">Browse, search, and create vault notes</div>
+  </div>
+
+  <div class="search-bar">
+    <span class="icon">&#128269;</span>
+    <input type="text" id="search-input" placeholder="Search notes..." autocomplete="off">
+  </div>
+
+  <div class="toolbar">
+    <select id="folder-select" onchange="loadNotes()">
+      <option value="">All folders</option>
+    </select>
+    <button class="btn-create" onclick="toggleCreate()">+ New Note</button>
+  </div>
+
+  <div class="create-form" id="create-form">
+    <h3>Create Note</h3>
+    <div class="cf-row">
+      <input type="text" id="cf-title" placeholder="Note title">
+      <input type="text" id="cf-folder" placeholder="Folder (optional)">
+    </div>
+    <div class="cf-row">
+      <input type="text" id="cf-tags" placeholder="Tags (comma-separated)">
+    </div>
+    <textarea class="cf-textarea" id="cf-content" placeholder="Content..."></textarea>
+    <div class="cf-actions">
+      <button class="cf-cancel" onclick="toggleCreate()">Cancel</button>
+      <button class="cf-submit" onclick="createNote()">Create</button>
+    </div>
+  </div>
+
+  <div class="status-msg" id="status"></div>
+  <div class="note-list" id="note-list"></div>
+  <div class="eos-empty-state" id="empty" style="display:none">
+    <span class="eos-empty-state-icon">&#128196;</span>
+    <p class="eos-empty-state-message">No notes found</p>
+  </div>
+</div>
+
+<script>
+var searchTimer = null;
+var currentNotes = [];
+
+async function loadFolders() {
+  try {
+    var data = await EOS.api('/note/api/list');
+    var folders = new Set();
+    (data.notes || data || []).forEach(function(n) {
+      var f = n.folder || n.path || '';
+      if (f) folders.add(typeof f === 'string' ? f.split('/')[0] : '');
+    });
+    var sel = document.getElementById('folder-select');
+    folders.forEach(function(f) {
+      if (f) { var o = document.createElement('option'); o.value = f; o.textContent = f; sel.appendChild(o); }
+    });
+  } catch(e) {}
+}
+
+async function loadNotes() {
+  var folder = document.getElementById('folder-select').value;
+  var statusEl = document.getElementById('status');
+  statusEl.textContent = 'Loading...';
+  try {
+    var url = '/note/api/list' + (folder ? '?folder=' + encodeURIComponent(folder) : '');
+    var data = await EOS.api(url);
+    currentNotes = data.notes || data || [];
+    renderNotes(currentNotes);
+    statusEl.textContent = currentNotes.length + ' note' + (currentNotes.length !== 1 ? 's' : '');
+  } catch(e) {
+    statusEl.textContent = 'Failed to load notes';
+    document.getElementById('note-list').innerHTML = '';
+    document.getElementById('empty').style.display = 'block';
+  }
+}
+
+async function doSearch() {
+  var q = document.getElementById('search-input').value.trim();
+  if (!q) { loadNotes(); return; }
+  document.getElementById('status').textContent = 'Searching...';
+  try {
+    var data = await EOS.api('/note/api/search?q=' + encodeURIComponent(q));
+    var results = data.results || data.notes || data || [];
+    renderNotes(results);
+    document.getElementById('status').textContent = results.length + ' result' + (results.length !== 1 ? 's' : '');
+  } catch(e) {
+    document.getElementById('status').textContent = 'Search failed';
+  }
+}
+
+function renderNotes(notes) {
+  var list = document.getElementById('note-list');
+  var empty = document.getElementById('empty');
+  if (!notes.length) {
+    list.innerHTML = '';
+    empty.style.display = 'block';
+    return;
+  }
+  empty.style.display = 'none';
+  list.innerHTML = notes.map(function(n) {
+    var title = n.title || n.name || EOS.fileName(n.path || '');
+    var folder = n.folder || '';
+    var path = n.path || '';
+    var safe = EOS.escPath(path);
+    var actions =
+      '<button class="ni-btn" onclick="event.stopPropagation();EOS.viewNote(\'' + safe + '\')" title="View">&#128065;</button>'
+      + '<button class="ni-btn" onclick="event.stopPropagation();EOS.openInViewer(\'' + safe + '\')" title="Open external">&#8599;</button>';
+    return EOS_UI.entityCard({
+      title: '\uD83D\uDCC4 ' + title,
+      subtitle: folder || undefined,
+      actions: actions,
+      onClick: "EOS.viewNote('" + safe + "')",
+    });
+  }).join('');
+}
+
+function toggleCreate() {
+  document.getElementById('create-form').classList.toggle('show');
+}
+
+async function createNote() {
+  var title = document.getElementById('cf-title').value.trim();
+  if (!title) { EOS_UI.toast('Title is required', false); return; }
+  var folder = document.getElementById('cf-folder').value.trim();
+  var tags = document.getElementById('cf-tags').value.trim();
+  var content = document.getElementById('cf-content').value;
+  try {
+    await EOS.post('/note/api/create', {
+      title: title,
+      folder: folder || undefined,
+      tags: tags ? tags.split(',').map(function(t) { return t.trim(); }) : [],
+      content: content
+    });
+    document.getElementById('cf-title').value = '';
+    document.getElementById('cf-folder').value = '';
+    document.getElementById('cf-tags').value = '';
+    document.getElementById('cf-content').value = '';
+    toggleCreate();
+    loadNotes();
+  } catch(e) {
+    EOS_UI.toast('Failed to create note: ' + e.message, false);
+  }
+}
+
+// Init
+document.getElementById('search-input').addEventListener('input', function() {
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(doSearch, 350);
+});
+document.getElementById('search-input').addEventListener('keydown', function(e) {
+  if (e.key === 'Enter') { clearTimeout(searchTimer); doSearch(); }
+});
+
+loadFolders();
+loadNotes();
+</script>
+</body>
+</html>

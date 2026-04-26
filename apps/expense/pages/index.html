@@ -1,0 +1,750 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>Expense - EmptyOS</title>
+<link rel="stylesheet" href="/static/theme.css">
+<link rel="stylesheet" href="/static/eos-components.css">
+<style>
+* { margin:0; padding:0; box-sizing:border-box }
+body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif; background:var(--bg); color:var(--text); min-height:100dvh; padding:env(safe-area-inset-top) 16px calc(env(safe-area-inset-bottom) + 80px); -webkit-font-smoothing:antialiased; overscroll-behavior-y:contain }
+
+@keyframes fadeDown { from{opacity:0;transform:translateY(-10px)} to{opacity:1;transform:translateY(0)} }
+@keyframes cardIn { from{opacity:0;transform:translateY(12px)} to{opacity:1;transform:translateY(0)} }
+@keyframes shimmer { 0%{background-position:-200% 0} 100%{background-position:200% 0} }
+@keyframes confettiBurst { 0%{opacity:1;transform:translateY(0) scale(1)} 100%{opacity:0;transform:translateY(-80px) scale(0.5)} }
+
+/* Toast */
+.toast { position:fixed; top:20px; left:50%; z-index:100; transform:translateX(-50%) translateY(-60px); padding:10px 24px; border-radius:12px; font-size:16px; font-weight:500; box-shadow:0 4px 20px rgba(0,0,0,0.4); backdrop-filter:blur(12px); transition:transform 0.3s; white-space:nowrap; max-width:90vw; text-align:center }
+.toast.show { transform:translateX(-50%) translateY(0) }
+.toast-ok { background:rgba(16,185,129,0.9); color:#fff }
+.toast-err { background:rgba(239,68,68,0.9); color:#fff }
+
+/* Header */
+.header { display:flex; align-items:center; justify-content:space-between; margin-bottom:16px; animation:fadeDown 0.4s }
+.header h1 { font-size:24px; font-weight:700; color:var(--text-heading) }
+.month-nav { display:flex; align-items:center; gap:8px }
+.month-nav button { background:var(--bg-card); border:1px solid var(--border); color:var(--text-secondary); width:34px; height:34px; border-radius:10px; font-size:18px; cursor:pointer; transition:all 0.15s }
+.month-nav button:active { transform:scale(0.93); border-color:var(--accent) }
+.month-nav span { font-size:15px; color:var(--accent); min-width:90px; text-align:center; font-weight:600 }
+
+/* Entry bar */
+.entry-bar { display:flex; gap:8px; margin-bottom:6px; animation:fadeDown 0.4s ease 0.05s both }
+.entry-wrap { position:relative; flex:1 }
+.entry-dollar { position:absolute; left:12px; top:50%; transform:translateY(-50%); color:var(--text-secondary); font-size:18px; font-weight:500; pointer-events:none }
+.entry-input { width:100%; background:var(--bg-card); border:1px solid var(--border); border-radius:14px; padding:14px 14px 14px 30px; font-size:17px; color:var(--text); outline:none; font-family:inherit; transition:border-color 0.2s,box-shadow 0.2s }
+.entry-input:focus { border-color:color-mix(in srgb,var(--accent) 60%,transparent); box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 10%,transparent) }
+.entry-input::placeholder { color:var(--text-secondary) }
+.entry-btn { padding:14px 20px; background:var(--accent); color:#fff; border:none; border-radius:12px; font-size:17px; font-weight:600; cursor:pointer; transition:transform 0.1s,opacity 0.15s; min-width:60px }
+.entry-btn:active { transform:scale(0.96) }
+.entry-btn:disabled { opacity:0.5 }
+.cat-preview { height:22px; margin-bottom:8px; display:flex; align-items:center; font-size:13px; color:var(--text-muted) }
+.cat-chip { display:inline-block; padding:2px 10px; border-radius:6px; font-size:13px; font-weight:500 }
+
+/* Presets */
+.presets { display:flex; gap:6px; flex-wrap:wrap; margin-bottom:14px }
+.preset { padding:7px 12px; border-radius:10px; font-size:13px; font-weight:500; background:var(--bg-card); border:1px solid var(--border); color:var(--text); cursor:pointer; transition:all 0.12s; display:flex; align-items:center; gap:5px; user-select:none }
+.preset:active { transform:scale(0.95); border-color:var(--accent) }
+.preset .amt { color:var(--accent); font-weight:600 }
+.preset.logging { opacity:0.5; pointer-events:none }
+.preset .preset-edit { font-size:11px; color:var(--text-muted); margin-left:2px; padding:2px; border-radius:4px; opacity:0; transition:opacity 0.15s }
+.preset:hover .preset-edit { opacity:1 }
+
+/* Hero */
+.hero { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:16px }
+.hero-card { background:var(--bg-card); border:1px solid var(--border); border-radius:16px; padding:14px; animation:cardIn 0.35s ease both }
+.hero-card:nth-child(2) { animation-delay:0.06s }
+.hero-card.wide { grid-column:1/-1; animation-delay:0.12s }
+.hero-label { font-size:12px; color:var(--text-secondary); text-transform:uppercase; letter-spacing:0.5px; margin-bottom:4px }
+.hero-val { font-size:28px; font-weight:700; color:var(--text-heading) }
+.hero-val.sm { font-size:22px }
+.hero-sub { font-size:13px; color:var(--text-secondary); margin-top:2px }
+.trend-up { color:#ef4444 } .trend-down { color:#10b981 }
+
+/* Budget bar */
+.budget-bar { height:6px; border-radius:3px; background:var(--border); overflow:hidden; margin-top:8px }
+.budget-fill { height:100%; border-radius:3px; transition:width 0.5s }
+.budget-ok { background:#10b981 }
+.budget-warn { background:#f59e0b }
+.budget-over { background:#ef4444 }
+
+/* Budget remaining card */
+.budget-remaining { background:var(--bg-card); border:1px solid var(--border); border-radius:12px; padding:10px 14px; margin-bottom:16px; display:flex; align-items:center; justify-content:space-between; animation:cardIn 0.35s ease 0.18s both }
+.budget-remaining .br-label { font-size:13px; color:var(--text-secondary) }
+.budget-remaining .br-val { font-size:20px; font-weight:700 }
+.budget-remaining .br-daily { font-size:12px; color:var(--text-muted) }
+
+/* Sparkline */
+.sparkline-wrap { display:flex; align-items:flex-end; gap:2px; height:32px; margin-top:6px }
+.sparkline-bar { flex:1; border-radius:2px 2px 0 0; background:var(--accent); opacity:0.7; transition:height 0.3s; min-width:4px }
+.sparkline-bar.today { opacity:1; background:var(--text-heading) }
+.sparkline-label { display:flex; justify-content:space-between; font-size:10px; color:var(--text-muted); margin-top:2px }
+
+/* Donut */
+.donut-section { display:flex; gap:16px; margin-bottom:16px; flex-wrap:wrap; align-items:flex-start }
+.legend { flex:1; min-width:140px }
+.legend-row { display:flex; align-items:center; gap:8px; padding:5px 0; font-size:14px }
+.legend-dot { width:10px; height:10px; border-radius:50%; flex-shrink:0 }
+.legend-name { flex:1 }
+.legend-amt { font-weight:600; color:var(--text-heading) }
+.legend-pct { font-size:12px; color:var(--text-muted); min-width:34px; text-align:right }
+
+/* Entry list */
+.entries { max-height:500px; overflow-y:auto }
+.entry-item { display:flex; align-items:center; padding:10px 0; border-bottom:1px solid var(--border); gap:8px; cursor:pointer; transition:background 0.1s }
+.entry-item:active { background:color-mix(in srgb,var(--accent) 6%,transparent) }
+.entry-date { font-size:11px; color:var(--text-muted); min-width:38px; font-family:var(--mono) }
+.entry-desc { flex:1; font-size:14px }
+.entry-cat { font-size:11px; padding:2px 8px; border-radius:8px }
+.entry-amt { font-weight:700; font-size:15px; color:var(--text-heading); font-family:var(--mono); min-width:56px; text-align:right }
+
+/* Tabs — uses shared .eos-tabs / .eos-tab / .eos-tab-content from eos-components.css */
+
+/* Modal */
+.modal-bg { position:fixed; inset:0; background:rgba(0,0,0,0.5); z-index:50; display:none; align-items:flex-end; justify-content:center; backdrop-filter:blur(4px) }
+.modal-bg.show { display:flex }
+.modal { background:var(--bg-card); border-radius:16px 16px 0 0; padding:20px; width:100%; max-width:500px; max-height:70dvh; overflow-y:auto; animation:cardIn 0.25s }
+.modal-handle { width:40px; height:4px; background:var(--border); border-radius:2px; margin:0 auto 16px }
+.modal h3 { margin-bottom:12px }
+.modal input,.modal select { width:100%; padding:10px; border:1px solid var(--border); border-radius:10px; background:var(--bg); color:var(--text); font-size:15px; margin-bottom:8px }
+.modal-actions { display:flex; gap:8px; margin-top:12px }
+.modal-actions button { flex:1; padding:12px; border:none; border-radius:10px; font-size:15px; font-weight:600; cursor:pointer }
+.btn-save { background:var(--accent); color:#fff }
+.btn-delete { background:#ef4444; color:#fff }
+.btn-cancel { background:var(--bg); color:var(--text-secondary); border:1px solid var(--border) !important }
+
+/* Week compare */
+.compare { display:flex; gap:10px; margin-bottom:16px }
+.compare-card { flex:1; background:var(--bg-card); border:1px solid var(--border); border-radius:12px; padding:12px; text-align:center }
+.compare-val { font-size:20px; font-weight:700; color:var(--text-heading) }
+.compare-label { font-size:11px; color:var(--text-muted) }
+
+/* AI Insight */
+.insight-box { background:var(--bg-card); border:1px solid var(--border); border-radius:12px; padding:14px; font-size:14px; line-height:1.5; white-space:pre-wrap; min-height:60px }
+.insight-btn { padding:8px 16px; background:var(--bg-card); border:1px solid var(--border); border-radius:10px; cursor:pointer; font-size:13px; margin-bottom:10px; transition:border-color 0.15s }
+.insight-btn:hover { border-color:var(--accent) }
+
+/* ── Heatmap (spending) ── */
+.heatmap-wrap { margin-bottom:16px }
+.heatmap-months { display:flex; justify-content:space-between; font-size:10px; color:var(--text-muted); margin-bottom:4px; padding:0 2px }
+.heatmap-grid { display:grid; grid-template-columns:repeat(auto-fill, 14px); gap:2px; justify-content:center }
+.hm-cell { width:12px; height:12px; border-radius:2px; background:var(--border); transition:background 0.2s; cursor:default }
+.hm-cell[title]:hover { outline:1px solid var(--text-muted) }
+.hm-0 { background:var(--border) }
+.hm-1 { background:#10b98140 }
+.hm-2 { background:#f59e0b60 }
+.hm-3 { background:#ef444480 }
+.hm-4 { background:#ef4444 }
+.heatmap-legend { display:flex; gap:4px; align-items:center; margin-top:6px; justify-content:flex-end; font-size:10px; color:var(--text-muted) }
+.heatmap-legend span { margin:0 4px }
+
+/* ── Recurring expenses ── */
+.recurring-list { margin-bottom:16px }
+.recurring-item { display:flex; align-items:center; padding:10px 0; border-bottom:1px solid var(--border); gap:8px }
+.recurring-name { flex:1; font-size:14px }
+.recurring-freq { font-size:12px; color:var(--text-muted); min-width:60px }
+.recurring-amt { font-weight:700; font-size:14px; color:var(--text-heading); font-family:var(--mono); min-width:55px; text-align:right }
+.recurring-toggle { width:40px; height:22px; border-radius:11px; border:none; cursor:pointer; position:relative; transition:background 0.2s }
+.recurring-toggle.on { background:var(--accent) }
+.recurring-toggle.off { background:var(--border) }
+.recurring-toggle::after { content:''; position:absolute; top:2px; left:2px; width:18px; height:18px; border-radius:50%; background:#fff; transition:transform 0.2s }
+.recurring-toggle.on::after { transform:translateX(18px) }
+.recurring-next { font-size:11px; color:var(--text-muted) }
+.recurring-add { display:flex; gap:8px; margin-bottom:12px; flex-wrap:wrap }
+.recurring-add input { flex:1; min-width:80px; padding:8px; border:1px solid var(--border); border-radius:8px; background:var(--bg-card); color:var(--text); font-size:13px }
+.recurring-add select { padding:8px; border:1px solid var(--border); border-radius:8px; background:var(--bg-card); color:var(--text); font-size:13px }
+.recurring-add button { padding:8px 14px; background:var(--accent); color:#fff; border:none; border-radius:8px; font-size:13px; cursor:pointer }
+
+/* ── Preset management modal ── */
+.preset-list-modal { max-height:300px; overflow-y:auto }
+.preset-modal-item { display:flex; align-items:center; padding:10px 0; border-bottom:1px solid var(--border); gap:8px }
+.preset-modal-item input { flex:1; padding:8px; border:1px solid var(--border); border-radius:8px; background:var(--bg); color:var(--text); font-size:14px }
+.preset-modal-item .del-preset { width:32px; height:32px; border:none; background:rgba(239,68,68,0.1); color:#ef4444; border-radius:8px; cursor:pointer; font-size:16px }
+
+/* ── Income ── */
+.income-form { display:flex; flex-direction:column; gap:8px; margin-bottom:16px; background:var(--bg-card); border:1px solid var(--border); border-radius:12px; padding:14px }
+.income-form .row { display:flex; gap:8px }
+.income-form input,.income-form select { flex:1; padding:10px; border:1px solid var(--border); border-radius:10px; background:var(--bg); color:var(--text); font-size:14px }
+.income-form button { padding:10px 20px; background:var(--accent); color:#fff; border:none; border-radius:10px; font-size:15px; font-weight:600; cursor:pointer }
+.income-form button:active { transform:scale(0.96) }
+.income-item { display:flex; align-items:center; padding:10px 0; border-bottom:1px solid var(--border); gap:8px }
+.income-item .inc-date { font-size:11px; color:var(--text-muted); min-width:38px; font-family:var(--mono) }
+.income-item .inc-source { flex:1; font-size:14px }
+.income-item .inc-type { font-size:11px; padding:2px 8px; border-radius:8px; background:color-mix(in srgb,var(--accent) 15%,transparent); color:var(--accent) }
+.income-item .inc-amt { font-weight:700; font-size:15px; color:#10b981; font-family:var(--mono); min-width:56px; text-align:right }
+.income-item .inc-del { width:28px; height:28px; border:none; background:rgba(239,68,68,0.1); color:#ef4444; border-radius:8px; cursor:pointer; font-size:14px; opacity:0; transition:opacity 0.15s }
+.income-item:hover .inc-del { opacity:1 }
+.empty { text-align:center; padding:32px; color:var(--text-muted) }
+.section-title { font-size:13px; font-weight:600; color:var(--text-secondary); text-transform:uppercase; letter-spacing:0.5px; margin-bottom:8px; margin-top:8px }
+@media(max-width:500px) { .hero { grid-template-columns:1fr } .hero-card.wide { grid-column:auto } }
+</style>
+</head>
+<body>
+<script src="/static/realtime.js"></script>
+<script src="/static/eos.js"></script>
+<script src="/static/eos-components.js"></script>
+<script>EOS.nav('expense');</script>
+<script>
+var _appSettings = EOS_UI.settingsPanel({
+    id: 'expense-settings-panel',
+    title: 'Expense Settings',
+    fields: [
+        {key: 'expense.budget', label: 'Monthly Budget ($)', type: 'number', default: 3000, hint: 'Monthly spending target'},
+        {key: 'expense.default_category', label: 'Default Category', type: 'select', options: ['Dining','Groceries','Transport','Shopping','Bills','Health','Entertainment','Other'], default: 'Other'},
+        {key: 'expense.alert_threshold', label: 'Budget Alert at %', type: 'number', default: 80, hint: 'Show warning when spending exceeds this % of budget'},
+    ],
+});
+function openAppSettings() { _appSettings.open(); }
+</script>
+<script>
+if(window.EOS&&EOS.registerActions){EOS.registerActions({add_expense:function(){var i=document.querySelector(".eq-input");if(i)i.focus()},load_insight:function(){loadInsight()},switch_tab:function(t){switchTab(t)}},[{name:"add_expense",description:"Focus the quick-add expense input",params:[]},{name:"load_insight",description:"Generate AI spending insights",params:[]},{name:"switch_tab",description:"Switch tab: overview, list, presets, recurring",params:["tab_name"]}],{description:"Expense tracker — monthly breakdown, category chart, presets, recurring.",quickActions:[{label:"Spending insights",msg:"Analyze my spending this month."},{label:"Add expense",msg:"Help me log an expense."},{label:"Monthly summary",msg:"How much spent this month by category?"}]});}
+</script>
+
+<div id="toast" class="toast toast-ok"></div>
+
+<!-- Edit Entry Modal -->
+<div class="modal-bg" id="modal-bg" onclick="if(event.target===this)closeModal()">
+    <div class="modal">
+        <div class="modal-handle"></div>
+        <h3 id="modal-title">Edit Entry</h3>
+        <input id="m-date" type="date">
+        <input id="m-amount" type="number" step="0.01" placeholder="Amount">
+        <input id="m-desc" type="text" placeholder="Description">
+        <input id="m-cat" type="text" placeholder="Category">
+        <div class="modal-actions">
+            <button class="btn-cancel" onclick="closeModal()">Cancel</button>
+            <button class="btn-delete" onclick="deleteEntry()">Delete</button>
+            <button class="btn-save" onclick="saveEntry()">Save</button>
+        </div>
+    </div>
+</div>
+
+<!-- Preset Management Modal -->
+<div class="modal-bg" id="preset-modal-bg" onclick="if(event.target===this)closePresetModal()">
+    <div class="modal">
+        <div class="modal-handle"></div>
+        <h3>Manage Presets</h3>
+        <div class="preset-list-modal" id="preset-list-modal"></div>
+        <div style="margin-top:12px">
+            <input id="new-preset-input" type="text" placeholder="New preset (e.g. 5 coffee)" style="margin-bottom:8px">
+            <div class="modal-actions">
+                <button class="btn-cancel" onclick="closePresetModal()">Done</button>
+                <button class="btn-save" onclick="addNewPreset()">Add Preset</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="page">
+    <div class="header">
+        <h1>Expense</h1>
+        <div style="display:flex;align-items:center;gap:8px">
+            <button class="btn-settings" onclick="openAppSettings()" style="background:var(--bg-card);border:1px solid var(--border);color:var(--text-secondary);width:34px;height:34px;border-radius:10px;font-size:18px;cursor:pointer">&#9881;</button>
+            <div class="month-nav">
+                <button onclick="changeMonth(-1)">&#8249;</button>
+                <span id="month-label"></span>
+                <button onclick="changeMonth(1)">&#8250;</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="entry-bar">
+        <div class="entry-wrap">
+            <span class="entry-dollar">$</span>
+            <input class="entry-input" id="input" placeholder="35 lunch coffee" autocomplete="off">
+        </div>
+        <button class="entry-btn" id="btn" onclick="addExpense()">Add</button>
+    </div>
+    <div class="cat-preview" id="preview"></div>
+
+    <div class="presets" id="presets"></div>
+    <div style="text-align:right;margin-bottom:12px">
+        <button onclick="openPresetModal()" style="background:none;border:none;color:var(--text-muted);font-size:12px;cursor:pointer;text-decoration:underline">Manage presets</button>
+    </div>
+
+    <div class="eos-tabs">
+        <div class="eos-tab active" data-tab="home" onclick="switchTab('home')">Home</div>
+        <div class="eos-tab" data-tab="trends" onclick="switchTab('trends')">Trends</div>
+        <div class="eos-tab" data-tab="history" onclick="switchTab('history')">History</div>
+        <div class="eos-tab" data-tab="income" onclick="switchTab('income')">Income</div>
+        <div class="eos-tab" data-tab="more" onclick="switchTab('more')">More</div>
+    </div>
+
+    <div class="eos-tab-content active" id="tab-home">
+        <div class="hero" id="hero"></div>
+        <!-- Budget remaining today -->
+        <div class="budget-remaining" id="budget-remaining" style="display:none"></div>
+        <div class="donut-section" id="donut"></div>
+        <div class="section-title">Recent</div>
+        <div class="entries" id="recent"></div>
+    </div>
+
+    <div class="eos-tab-content" id="tab-trends">
+        <div class="compare" id="compare"></div>
+        <button class="insight-btn" onclick="loadInsight()">&#10024; AI Insight</button>
+        <div class="insight-box" id="insight" style="display:none"></div>
+    </div>
+
+    <div class="eos-tab-content" id="tab-history">
+        <div class="entries" id="all-entries"></div>
+    </div>
+
+    <div class="eos-tab-content" id="tab-income">
+        <div class="income-summary" id="income-summary"></div>
+        <div class="income-form">
+            <div class="row">
+                <input id="inc-gross" type="number" step="0.01" placeholder="Gross amount">
+                <input id="inc-tax" type="number" step="0.01" placeholder="Tax (optional)">
+            </div>
+            <div class="row">
+                <input id="inc-source" type="text" placeholder="Source (e.g. Acme Corp)">
+                <select id="inc-type">
+                    <option value="salary">Salary</option>
+                    <option value="freelance">Freelance</option>
+                    <option value="investment">Investment</option>
+                    <option value="refund">Refund</option>
+                    <option value="other">Other</option>
+                </select>
+            </div>
+            <div class="row">
+                <input id="inc-date" type="date">
+                <input id="inc-note" type="text" placeholder="Note (optional)">
+            </div>
+            <button onclick="addIncome()">Add Income</button>
+        </div>
+        <div class="section-title">Income Entries</div>
+        <div class="entries" id="income-list"></div>
+    </div>
+
+    <!-- More tab: heatmap, recurring, sparkline -->
+    <div class="eos-tab-content" id="tab-more">
+        <div class="section-title">Spending Heatmap (90 days)</div>
+        <div class="heatmap-wrap" id="heatmap-section"></div>
+
+        <div class="section-title">Recurring Expenses</div>
+        <div class="recurring-add">
+            <input id="rec-name" placeholder="Name (e.g. Netflix)">
+            <input id="rec-amount" type="number" step="0.01" placeholder="Amount">
+            <input id="rec-cat" placeholder="Category">
+            <select id="rec-freq">
+                <option value="weekly">Weekly</option>
+                <option value="fortnightly">Fortnightly</option>
+                <option value="monthly" selected>Monthly</option>
+                <option value="quarterly">Quarterly</option>
+                <option value="yearly">Yearly</option>
+            </select>
+            <button onclick="addRecurring()">Add</button>
+        </div>
+        <div class="recurring-list" id="recurring-list"></div>
+        <button style="width:100%;padding:10px;background:var(--bg-card);border:1px solid var(--border);border-radius:10px;color:var(--text-secondary);font-size:13px;cursor:pointer;margin-bottom:16px" onclick="checkRecurring()">Check & auto-log due recurring</button>
+    </div>
+</div>
+
+<script>
+var COLORS = ['#8b5cf6','#3b82f6','#10b981','#f59e0b','#ef4444','#ec4899','#06b6d4','#84cc16','#f97316','#6366f1','#14b8a6','#e11d48'];
+var CAT_KW = {'Dining':['lunch','dinner','breakfast','cafe','coffee','restaurant','food','eat','meal','takeaway','mcdonald','kfc','subway','pizza','sushi','thai','chinese','indian','noodle','burger','pad','curry','salad','bakery','snack'],'Groceries':['coles','woolworths','aldi','costco','iga','grocery','fruit','vegetables','meat','milk','bread','eggs'],'Transport':['uber','taxi','bus','train','tram','fuel','petrol','parking','toll','rego'],'Shopping':['amazon','ebay','kmart','target','jb','officeworks','bunnings','ikea','uniqlo','online'],'Bills':['electricity','gas','water','internet','phone','rent','insurance','netflix','spotify'],'Health':['pharmacy','chemist','doctor','dentist','gym','supplement','vitamin','protein'],'Entertainment':['movie','cinema','concert','ticket','game','bar','pub','drinks','beer','wine']};
+var curMonth = new Date().toISOString().slice(0,7);
+var editingEntry = null;
+var recentEntries = [];
+var cachedForecast = null;
+
+function toast(msg,ok){var el=document.getElementById('toast');el.textContent=msg;el.className='toast '+(ok!==false?'toast-ok':'toast-err')+' show';setTimeout(function(){el.classList.remove('show')},2500)}
+function esc(s){var d=document.createElement('div');d.textContent=s;return d.innerHTML}
+
+function detectCat(t){t=t.toLowerCase();for(var c in CAT_KW)if(CAT_KW[c].some(function(k){return t.includes(k)}))return c;return ''}
+
+function parseInput(text){
+    // AA split: "50 lunch AA 2" -> $25
+    var aa=text.match(/^(\d+\.?\d*)\s+(.+?)\s+AA\s*(\d+)\s*$/i);
+    if(aa){var split=parseFloat(aa[1])/parseInt(aa[3]);return{amount:split,category:detectCat(aa[2])||'Other',note:aa[2]+' (AA/'+aa[3]+')'}}
+    var m=text.match(/^(\d+\.?\d*)\s*(.*)/);
+    if(!m)return null;
+    var amt=parseFloat(m[1]),rest=m[2].trim();
+    return{amount:amt,category:detectCat(rest)||'Other',note:rest}
+}
+
+// Live preview
+document.getElementById('input').addEventListener('input',function(){
+    var p=parseInput(this.value);var el=document.getElementById('preview');
+    if(p&&p.amount>0){var ci=Object.keys(CAT_KW).indexOf(p.category);var col=COLORS[(ci>=0?ci:7)%COLORS.length];
+        el.innerHTML='<span class="cat-chip" style="background:'+col+'22;color:'+col+'">'+p.category+'</span><span style="margin-left:6px;color:var(--text-secondary)">$'+p.amount.toFixed(2)+'</span>'+(p.note.includes('AA')?'<span style="margin-left:6px;font-size:12px;color:var(--text-muted)">split</span>':'')
+    }else{el.innerHTML='<span style="color:var(--text-muted)">amount description (e.g. 35 lunch coffee, 50 dinner AA 2)</span>'}
+});
+
+async function addExpense(){
+    var input=document.getElementById('input');var p=parseInput(input.value.trim());
+    if(!p||p.amount<=0){toast('Enter amount + description',false);return}
+    // Duplicate check
+    var dup=recentEntries.find(function(e){return e.description&&p.note&&e.description.toLowerCase().includes(p.note.toLowerCase().slice(0,10))&&Math.abs(e.amount-p.amount)<0.01});
+    if(dup&&!confirm('Similar to recent: "'+dup.description+' $'+dup.amount+'". Add anyway?'))return;
+    // Large amount check
+    if(p.amount>200&&!confirm('$'+p.amount.toFixed(2)+' is a large amount. Continue?'))return;
+
+    var btn=document.getElementById('btn');btn.disabled=true;btn.textContent='...';
+    try{await EOS.api('/expense/api/add',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({amount:p.amount,category:p.category,description:p.note})});
+        // Show budget remaining in toast
+        var budgetMsg = '';
+        if(cachedForecast && cachedForecast.budget) {
+            var remaining = cachedForecast.budget - (cachedForecast.total || 0) - p.amount;
+            budgetMsg = ' | Budget: $' + Math.max(0, remaining).toFixed(0) + ' left';
+        }
+        toast('$'+p.amount.toFixed(2)+' '+p.category + budgetMsg);
+        input.value='';document.getElementById('preview').innerHTML='';loadData()
+    }catch(e){toast('Error: '+e.message,false)}
+    btn.disabled=false;btn.textContent='Add'
+}
+document.getElementById('input').addEventListener('keydown',function(e){if(e.key==='Enter')addExpense()});
+
+// Presets
+async function loadPresets(){
+    try{
+        var presets=await EOS.api('/expense/api/presets');
+        var el=document.getElementById('presets');
+        if(!presets||!presets.length){el.innerHTML='';return}
+        el.innerHTML=presets.map(function(p,i){
+            var m=p.text.match(/^(\d+\.?\d*)\s*(.*)/);var amt=m?'$'+parseFloat(m[1]).toFixed(0):'';var label=m?m[2]:p.text;
+            return '<div class="preset" onclick="logPreset('+i+')" id="pre-'+i+'"><span class="amt">'+amt+'</span> '+esc(label)+'</div>'
+        }).join('')
+    }catch(e){}
+}
+async function logPreset(i){
+    var presets=await EOS.api('/expense/api/presets');
+    if(!presets[i])return;
+    var el=document.getElementById('pre-'+i);el.classList.add('logging');
+    var p=parseInput(presets[i].text);
+    if(p){try{await EOS.api('/expense/api/add',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({amount:p.amount,category:p.category,description:p.note})});
+        var budgetMsg = '';
+        if(cachedForecast && cachedForecast.budget) {
+            var remaining = cachedForecast.budget - (cachedForecast.total || 0) - p.amount;
+            budgetMsg = ' | Budget: $' + Math.max(0, remaining).toFixed(0) + ' left';
+        }
+        toast('$'+p.amount.toFixed(2)+' '+p.category + budgetMsg);loadData()}catch(e){toast('Error',false)}}
+    setTimeout(function(){el.classList.remove('logging')},500)
+}
+
+// Preset management modal
+async function openPresetModal(){
+    var presets = [];
+    try { presets = await EOS.api('/expense/api/presets'); } catch(e) {}
+    var el = document.getElementById('preset-list-modal');
+    el.innerHTML = (presets||[]).map(function(p, i) {
+        return '<div class="preset-modal-item"><input value="'+esc(p.text)+'" data-idx="'+i+'"><button class="del-preset" onclick="deletePreset('+i+')">x</button></div>';
+    }).join('') || '<div class="empty" style="padding:12px">No presets yet</div>';
+    document.getElementById('preset-modal-bg').classList.add('show');
+}
+function closePresetModal(){ document.getElementById('preset-modal-bg').classList.remove('show'); loadPresets(); }
+async function addNewPreset(){
+    var text = document.getElementById('new-preset-input').value.trim();
+    if(!text) return;
+    try{
+        await EOS.api('/expense/api/presets/add',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:text})});
+        document.getElementById('new-preset-input').value = '';
+        openPresetModal();
+    }catch(e){toast('Error adding preset',false)}
+}
+async function deletePreset(idx){
+    if(!await EOS_UI.confirm('Delete this preset?'))return;
+    try{
+        await EOS.api('/expense/api/presets/delete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({index:idx})});
+        openPresetModal();
+    }catch(e){toast('Error deleting preset',false)}
+}
+
+// Month nav
+function changeMonth(d){var dt=new Date(curMonth+'-01');dt.setMonth(dt.getMonth()+d);curMonth=dt.toISOString().slice(0,7);document.getElementById('month-label').textContent=curMonth;loadData()}
+
+function switchTab(name){
+    EOS_UI.switchTab(name);
+    if(name==='history')loadHistory();
+    if(name==='trends')loadTrends();
+    if(name==='income')loadIncome();
+    if(name==='more')loadMore();
+}
+
+// Entry rendering
+function renderEntries(entries,tid,limit){
+    var el=document.getElementById(tid);var items=limit?entries.slice(-limit).reverse():entries;
+    if(!items.length){el.innerHTML='<div class="empty">No entries</div>';return}
+    el.innerHTML=items.map(function(e){
+        var ci=Object.keys(CAT_KW).indexOf(e.category);var col=COLORS[(ci>=0?ci:7)%COLORS.length];
+        return '<div class="entry-item" onclick=\'openEdit('+JSON.stringify(e).replace(/'/g,"&#39;")+')\' style="animation:cardIn 0.3s ease both">'
+            +'<span class="entry-date">'+(e.date||'').slice(5)+'</span>'
+            +'<span class="entry-desc">'+esc(e.description||e.note||'')+'</span>'
+            +'<span class="entry-cat" style="background:'+col+'18;color:'+col+'">'+esc(e.category||'')+'</span>'
+            +'<span class="entry-amt">$'+(typeof e.amount==='number'?e.amount.toFixed(2):e.amount)+'</span></div>'
+    }).join('')
+}
+
+// Edit modal
+function openEdit(entry){
+    editingEntry=entry;
+    document.getElementById('m-date').value=entry.date||'';
+    document.getElementById('m-amount').value=entry.amount||'';
+    document.getElementById('m-desc').value=entry.description||entry.note||'';
+    document.getElementById('m-cat').value=entry.category||'';
+    document.getElementById('modal-bg').classList.add('show')
+}
+function closeModal(){document.getElementById('modal-bg').classList.remove('show');editingEntry=null}
+async function saveEntry(){
+    if(!editingEntry)return;
+    var updated={date:document.getElementById('m-date').value,amount:parseFloat(document.getElementById('m-amount').value),description:document.getElementById('m-desc').value,category:document.getElementById('m-cat').value};
+    try{await EOS.api('/expense/api/edit',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({original:editingEntry,updated:updated})});toast('Updated');closeModal();loadData()}catch(e){toast('Error',false)}
+}
+async function deleteEntry(){
+    if(!editingEntry||!await EOS_UI.confirm('Delete $'+editingEntry.amount+' '+editingEntry.category+'?'))return;
+    try{await EOS.api('/expense/api/delete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({entry:editingEntry})});toast('Deleted');closeModal();loadData()}catch(e){toast('Error',false)}
+}
+
+// ── Sparkline (7-day mini bars) ──────────────────────────────
+function renderSparkline(heatmapData) {
+    var days = [];
+    var today = new Date();
+    for (var i = 6; i >= 0; i--) {
+        var d = new Date(today); d.setDate(d.getDate() - i);
+        var key = d.toISOString().slice(0,10);
+        days.push({date: key, amount: heatmapData[key] || 0, isToday: i === 0});
+    }
+    var max = Math.max.apply(null, days.map(function(d){return d.amount})) || 1;
+    var bars = days.map(function(d) {
+        var h = Math.max(2, (d.amount / max) * 30);
+        return '<div class="sparkline-bar'+(d.isToday?' today':'')+'" style="height:'+h+'px" title="'+d.date+': $'+d.amount.toFixed(0)+'"></div>';
+    }).join('');
+    var labels = '<div class="sparkline-label"><span>'+days[0].date.slice(5)+'</span><span>Today</span></div>';
+    return '<div class="sparkline-wrap">'+bars+'</div>'+labels;
+}
+
+// ── Budget remaining today ───────────────────────────────────
+function renderBudgetRemaining(forecast) {
+    var el = document.getElementById('budget-remaining');
+    if (!forecast || !forecast.budget) { el.style.display='none'; return; }
+    var spent = forecast.total || 0;
+    var remaining = forecast.budget - spent;
+    var daysLeft = daysRemainingInMonth();
+    var dailyBudget = daysLeft > 0 ? (remaining / daysLeft) : 0;
+    var color = remaining < 0 ? '#ef4444' : remaining < forecast.budget * 0.2 ? '#f59e0b' : '#10b981';
+    el.style.display = 'flex';
+    el.innerHTML = '<div><div class="br-label">Budget Remaining</div><div class="br-daily">$'+dailyBudget.toFixed(0)+'/day for '+daysLeft+' days</div></div><div class="br-val" style="color:'+color+'">$'+remaining.toFixed(0)+'</div>';
+}
+
+function daysRemainingInMonth() {
+    var now = new Date();
+    var end = new Date(now.getFullYear(), now.getMonth()+1, 0);
+    return end.getDate() - now.getDate() + 1;
+}
+
+// Main data load
+async function loadData(){
+    document.getElementById('month-label').textContent=curMonth;
+    try{
+        var [summary,entries,forecast,heatmap]=await Promise.all([
+            EOS.api('/expense/api/summary?month='+curMonth),
+            EOS.api('/expense/api/list?limit=15&month='+curMonth),
+            EOS.api('/expense/api/forecast'),
+            EOS.api('/expense/api/heatmap').catch(function(){return{dates:{}}})
+        ]);
+        recentEntries=Array.isArray(entries)?entries:[];
+        cachedForecast = forecast;
+        var total=summary.total||0,count=summary.count||0;
+
+        // Hero with budget bar + sparkline
+        var budgetPct=forecast.budget_pct||0;
+        var barClass=budgetPct>100?'budget-over':budgetPct>80?'budget-warn':'budget-ok';
+        var sparkHTML = renderSparkline(heatmap.dates || heatmap || {});
+        document.getElementById('hero').innerHTML=
+            '<div class="hero-card card-in"><div class="hero-label">This Month</div><div class="hero-val">$'+total.toFixed(0)+'</div><div class="hero-sub">'+count+' entries</div><div class="budget-bar"><div class="budget-fill '+barClass+'" style="width:'+Math.min(100,budgetPct)+'%"></div></div><div style="font-size:11px;color:var(--text-muted);margin-top:4px">'+budgetPct+'% of $'+forecast.budget+' budget</div></div>'
+            +'<div class="hero-card card-in"><div class="hero-label">Forecast</div><div class="hero-val sm">$'+forecast.forecast.toFixed(0)+'</div><div class="hero-sub">avg $'+forecast.daily_avg.toFixed(0)+'/day</div><div class="hero-sub '+(forecast.on_track?'trend-down':'trend-up')+'">'+(forecast.on_track?'On track':'Over budget')+'</div></div>'
+            +'<div class="hero-card wide card-in"><div class="hero-label">Last 7 Days</div>'+sparkHTML+'</div>';
+
+        // Budget remaining
+        renderBudgetRemaining(forecast);
+
+        // Donut
+        var cats=Object.entries(summary.by_category||{}).sort(function(a,b){return b[1]-a[1]});
+        if(cats.length>0&&total>0){
+            var r=50,cx=60,cy=60,C=2*Math.PI*r,off=0;
+            var circles=cats.map(function(e,i){var pct=e[1]/total,dash=pct*C;var c='<circle cx="'+cx+'" cy="'+cy+'" r="'+r+'" fill="none" stroke="'+COLORS[i%COLORS.length]+'" stroke-width="14" stroke-dasharray="'+dash.toFixed(1)+' '+(C-dash).toFixed(1)+'" stroke-dashoffset="-'+off.toFixed(1)+'" style="transition:stroke-dasharray 0.5s"/>';off+=dash;return c}).join('');
+            var svg='<div><svg width="130" height="130" viewBox="0 0 120 120" style="transform:rotate(-90deg)">'+circles+'</svg></div>';
+            var legend='<div class="legend">'+cats.slice(0,8).map(function(e,i){return '<div class="legend-row"><span class="legend-dot" style="background:'+COLORS[i%COLORS.length]+'"></span><span class="legend-name">'+e[0]+'</span><span class="legend-amt">$'+e[1].toFixed(0)+'</span><span class="legend-pct">'+(e[1]/total*100).toFixed(0)+'%</span></div>'}).join('')+'</div>';
+            document.getElementById('donut').innerHTML=svg+legend
+        }else{document.getElementById('donut').innerHTML=''}
+
+        renderEntries(recentEntries,'recent',10)
+    }catch(e){console.error(e)}
+}
+
+async function loadHistory(){
+    try{var entries=await EOS.api('/expense/api/list?limit=100&month='+curMonth);renderEntries(Array.isArray(entries)?entries:[],'all-entries')}catch(e){document.getElementById('all-entries').innerHTML='<div class="empty">Error</div>'}
+}
+
+async function loadTrends(){
+    try{
+        var wc=await EOS.api('/expense/api/week-compare');
+        var diff=wc.diff;var pct=wc.pct_change;
+        document.getElementById('compare').innerHTML=
+            '<div class="compare-card"><div class="compare-val">$'+wc.this_week.toFixed(0)+'</div><div class="compare-label">This Week</div></div>'
+            +'<div class="compare-card"><div class="compare-val">$'+wc.last_week.toFixed(0)+'</div><div class="compare-label">Last Week</div></div>'
+            +'<div class="compare-card"><div class="compare-val '+(diff>0?'trend-up':'trend-down')+'">'+(diff>0?'+':'')+pct+'%</div><div class="compare-label">Change</div></div>'
+    }catch(e){}
+}
+
+async function loadInsight(){
+    var el=document.getElementById('insight');el.style.display='block';el.textContent='Thinking...';
+    try{var data=await EOS.api('/expense/api/ai-insight?month='+curMonth);el.textContent=data.insight}catch(e){el.textContent='Error loading insight'}
+}
+
+// ── More tab: Heatmap + Recurring ────────────────────────────
+async function loadMore(){
+    loadHeatmap();
+    loadRecurring();
+}
+
+async function loadHeatmap(){
+    try{
+        var data = await EOS.api('/expense/api/heatmap');
+        var dates = data.dates || data || {};
+        var el = document.getElementById('heatmap-section');
+        var cells = [];
+        var today = new Date();
+        // Determine thresholds from data
+        var vals = Object.values(dates).filter(function(v){return v>0});
+        var maxVal = vals.length ? Math.max.apply(null, vals) : 100;
+        var t1 = maxVal * 0.25, t2 = maxVal * 0.5, t3 = maxVal * 0.75;
+
+        for(var i=89; i>=0; i--){
+            var d = new Date(today); d.setDate(d.getDate()-i);
+            var key = d.toISOString().slice(0,10);
+            var amt = dates[key] || 0;
+            var cls = amt === 0 ? 'hm-0' : amt <= t1 ? 'hm-1' : amt <= t2 ? 'hm-2' : amt <= t3 ? 'hm-3' : 'hm-4';
+            cells.push('<div class="hm-cell '+cls+'" title="'+key+': $'+amt.toFixed(0)+'"></div>');
+        }
+        el.innerHTML = '<div class="heatmap-grid">'+cells.join('')+'</div>'
+            +'<div class="heatmap-legend"><span>Less</span><div class="hm-cell hm-0"></div><div class="hm-cell hm-1"></div><div class="hm-cell hm-2"></div><div class="hm-cell hm-3"></div><div class="hm-cell hm-4"></div><span>More</span></div>';
+    }catch(e){ document.getElementById('heatmap-section').innerHTML='<div class="empty">Could not load heatmap</div>'; }
+}
+
+async function loadRecurring(){
+    try{
+        var data = await EOS.api('/expense/api/recurring');
+        var items = Array.isArray(data) ? data : (data.items || []);
+        var el = document.getElementById('recurring-list');
+        if(!items.length){ el.innerHTML='<div class="empty">No recurring expenses</div>'; return; }
+        el.innerHTML = items.map(function(r, i){
+            var on = r.enabled !== false;
+            return '<div class="recurring-item">'
+                +'<button class="recurring-toggle '+(on?'on':'off')+'" onclick="toggleRecurring('+i+')"></button>'
+                +'<span class="recurring-name">'+esc(r.name||r.description||'')+'</span>'
+                +'<span class="recurring-freq">'+esc(r.frequency||'monthly')+'</span>'
+                +'<span class="recurring-next">'+(r.next_due||'')+'</span>'
+                +'<span class="recurring-amt">$'+(typeof r.amount==='number'?r.amount.toFixed(2):r.amount)+'</span>'
+                +'</div>';
+        }).join('');
+    }catch(e){ document.getElementById('recurring-list').innerHTML='<div class="empty">Could not load recurring</div>'; }
+}
+
+async function addRecurring(){
+    var name = document.getElementById('rec-name').value.trim();
+    var amount = parseFloat(document.getElementById('rec-amount').value);
+    var cat = document.getElementById('rec-cat').value.trim() || 'Bills';
+    var freq = document.getElementById('rec-freq').value;
+    if(!name||!amount){toast('Enter name and amount',false);return}
+    try{
+        await EOS.api('/expense/api/recurring',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:name,amount:amount,category:cat,frequency:freq})});
+        toast('Added recurring: '+name);
+        document.getElementById('rec-name').value='';
+        document.getElementById('rec-amount').value='';
+        document.getElementById('rec-cat').value='';
+        loadRecurring();
+    }catch(e){toast('Error',false)}
+}
+
+async function toggleRecurring(idx){
+    try{
+        await EOS.api('/expense/api/recurring/toggle',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({index:idx})});
+        loadRecurring();
+    }catch(e){toast('Error toggling',false)}
+}
+
+async function checkRecurring(){
+    try{
+        var r = await EOS.api('/expense/api/recurring/check',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({})});
+        var logged = r.logged || 0;
+        toast(logged > 0 ? 'Auto-logged '+logged+' recurring expense'+(logged>1?'s':'') : 'No recurring expenses due');
+        if(logged > 0) loadData();
+    }catch(e){toast('Error checking recurring',false)}
+}
+
+// ── Income tab ──────────────────────────────────────────────
+async function loadIncome(){
+    try{
+        var [entries, summary] = await Promise.all([
+            EOS.api('/expense/api/income?month='+curMonth),
+            EOS.api('/expense/api/income/summary?month='+curMonth)
+        ]);
+        var items = Array.isArray(entries) ? entries : (entries.entries || []);
+        EOS_UI.statCards('income-summary', [
+            {label:'Gross', value:'$'+(summary.income_gross||0).toFixed(0), color:'#10b981'},
+            {label:'Net', value:'$'+(summary.income_net||0).toFixed(0), color:'#10b981'},
+            {label:'Entries', value:items.length}
+        ]);
+        var listEl = document.getElementById('income-list');
+        if(!items.length){ listEl.innerHTML='<div class="empty">No income entries this month</div>'; return; }
+        listEl.innerHTML = items.slice().reverse().map(function(e){
+            return '<div class="income-item">'
+                +'<span class="inc-date">'+(e.date||'').slice(5)+'</span>'
+                +'<span class="inc-source">'+esc(e.source||e.note||'Income')+'</span>'
+                +'<span class="inc-type">'+esc(e.type||'salary')+'</span>'
+                +'<span class="inc-amt">+$'+(e.net||e.gross||0).toFixed(2)+'</span>'
+                +'<button class="inc-del" data-date="'+esc(e.date)+'" data-gross="'+e.gross+'" title="Delete">&times;</button>'
+                +'</div>';
+        }).join('');
+        listEl.querySelectorAll('.inc-del').forEach(function(btn){
+            btn.onclick=function(){ deleteIncome(this.dataset.date, parseFloat(this.dataset.gross)); };
+        });
+    }catch(e){ console.error(e); document.getElementById('income-list').innerHTML='<div class="empty">Error loading income</div>'; }
+}
+
+async function addIncome(){
+    var gross = parseFloat(document.getElementById('inc-gross').value);
+    if(!gross || gross <= 0){ toast('Enter gross amount', false); return; }
+    var tax = parseFloat(document.getElementById('inc-tax').value) || 0;
+    var body = {
+        gross: gross,
+        tax: tax,
+        net: gross - tax,
+        source: document.getElementById('inc-source').value.trim(),
+        type: document.getElementById('inc-type').value,
+        date: document.getElementById('inc-date').value || new Date().toISOString().slice(0,10),
+        note: document.getElementById('inc-note').value.trim()
+    };
+    try{
+        await EOS.api('/expense/api/income',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+        toast('+$'+gross.toFixed(2)+' income logged');
+        document.getElementById('inc-gross').value='';
+        document.getElementById('inc-tax').value='';
+        document.getElementById('inc-source').value='';
+        document.getElementById('inc-note').value='';
+        document.getElementById('inc-date').value='';
+        loadIncome();
+    }catch(e){ toast('Error: '+(e.message||e), false); }
+}
+
+function deleteIncome(date, gross){
+    EOS_UI.confirm('Delete income entry $'+gross.toFixed(2)+' on '+date+'?', async function(){
+        try{
+            await EOS.api('/expense/api/income',{method:'DELETE',headers:{'Content-Type':'application/json'},body:JSON.stringify({date:date,gross:gross})});
+            toast('Income entry deleted');
+            loadIncome();
+        }catch(e){ toast('Error deleting', false); }
+    });
+}
+
+if (EOS.keys) {
+    EOS.keys.register('n', 'New expense', function() { showAdd(); });
+    EOS.keys.register('r', 'Refresh data', function() { loadData(); });
+}
+loadData();loadPresets();
+EOS.on('expense:added',function(){loadData()});
+</script>
+</body>
+</html>

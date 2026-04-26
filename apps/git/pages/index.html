@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Git - EmptyOS</title>
+<link rel="stylesheet" href="/static/theme.css">
+<link rel="stylesheet" href="/static/eos-components.css">
+<style>
+* { margin:0; padding:0; box-sizing:border-box }
+body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif; background:var(--bg); color:var(--text); min-height:100dvh; padding:env(safe-area-inset-top) 16px calc(env(safe-area-inset-bottom)+80px); -webkit-font-smoothing:antialiased }
+
+.repo-switcher { display:flex; gap:8px; margin-bottom:16px }
+.repo-btn { flex:1; padding:12px 12px; border-radius:14px; border:1px solid var(--border); background:var(--bg-card); color:var(--text-secondary); font-size:13px; font-weight:600; cursor:pointer; text-align:center; transition:all 0.2s }
+.repo-btn.active { background:var(--accent); color:#fff; border-color:var(--accent) }
+.repo-btn:not(.active):hover { border-color:var(--accent); color:var(--accent) }
+
+.stats-row { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin-bottom:16px }
+
+.action-bar { display:flex; gap:8px; margin-bottom:16px }
+.action-bar input { flex:1; border-radius:14px; padding:12px 16px; font-size:14px; background:var(--bg-card); border:1px solid var(--border); color:var(--text); outline:none; font-family:inherit; transition:border-color 0.2s }
+.action-bar input:focus { border-color:color-mix(in srgb,var(--accent) 60%,transparent) }
+.action-bar input::placeholder { color:var(--text-secondary) }
+.btn { border-radius:8px; padding:12px 16px; font-size:13px; font-weight:600; border:none; cursor:pointer; transition:transform 0.1s; white-space:nowrap }
+.btn:active { transform:scale(0.95) }
+.btn:disabled { opacity:0.5; cursor:not-allowed }
+.btn-primary { background:var(--accent); color:#fff }
+.btn-secondary { background:var(--bg-card); border:1px solid var(--border); color:var(--text) }
+.btn-secondary:hover { border-color:var(--accent); color:var(--accent) }
+
+.quick-actions { display:flex; gap:8px; margin-bottom:16px }
+
+.section { margin-bottom:16px }
+.section-hdr { display:flex; align-items:center; justify-content:space-between; margin-bottom:8px; cursor:pointer; user-select:none }
+.section-hdr h3 { font-size:14px; font-weight:600; color:var(--text-heading) }
+.section-hdr .toggle { font-size:12px; color:var(--text-secondary); transition:transform 0.2s }
+.section-hdr .toggle.open { transform:rotate(90deg) }
+
+.card { background:var(--bg-card); border:1px solid var(--border); border-radius:14px; overflow:hidden }
+
+.log-table { width:100%; border-collapse:collapse; font-size:13px }
+.log-table th { text-align:left; padding:12px 12px; font-size:11px; font-weight:600; color:var(--text-secondary); text-transform:uppercase; letter-spacing:0.5px; border-bottom:1px solid var(--border) }
+.log-table td { padding:8px 12px; border-bottom:1px solid color-mix(in srgb,var(--border) 50%,transparent); vertical-align:top }
+.log-table tr:last-child td { border-bottom:none }
+.log-hash { font-family:var(--mono); font-size:12px; color:var(--accent); font-weight:500 }
+.log-msg { color:var(--text-heading); font-weight:500 }
+.log-meta { color:var(--text-secondary); font-size:12px }
+
+.diff-pre { padding:16px; font-family:var(--mono); font-size:12px; line-height:1.6; white-space:pre-wrap; word-break:break-all; max-height:400px; overflow:auto; color:var(--text) }
+.diff-pre .add { color:var(--success,#10b981) }
+.diff-pre .del { color:var(--danger,#ef4444) }
+.diff-pre .hdr { color:var(--accent); font-weight:600 }
+
+.branch-list { padding:8px 0 }
+.branch-item { padding:8px 16px; font-size:13px; display:flex; align-items:center; gap:8px }
+.branch-item.current { font-weight:600; color:var(--accent) }
+.branch-dot { width:8px; height:8px; border-radius:50%; background:var(--border) }
+.branch-item.current .branch-dot { background:var(--accent) }
+
+.empty { padding:24px; text-align:center; color:var(--text-secondary); font-size:13px }
+</style>
+</head>
+<body>
+<div class="repo-switcher" id="repo-switcher"></div>
+
+<div class="stats-row" id="stats"></div>
+
+<div class="action-bar">
+  <input type="text" id="commit-msg" placeholder="Commit message..." />
+  <button class="btn btn-primary" id="btn-commit" onclick="doCommit()">Commit</button>
+</div>
+<div class="quick-actions">
+  <button class="btn btn-secondary" onclick="doAction('push')">Push</button>
+  <button class="btn btn-secondary" onclick="doAction('pull')">Pull</button>
+  <button class="btn btn-secondary" onclick="loadAll()">Refresh</button>
+</div>
+
+<div class="section">
+  <div class="section-hdr" onclick="toggleSection('log')">
+    <h3>Commit Log</h3><span class="toggle open" id="tog-log">&#9654;</span>
+  </div>
+  <div class="card" id="sec-log">
+    <table class="log-table"><thead><tr><th>Hash</th><th>Message</th><th>Author</th><th>Date</th></tr></thead>
+    <tbody id="log-body"><tr><td colspan="4" class="empty">Loading...</td></tr></tbody></table>
+  </div>
+</div>
+
+<div class="section">
+  <div class="section-hdr" onclick="toggleSection('diff')">
+    <h3>Current Diff</h3><span class="toggle" id="tog-diff">&#9654;</span>
+  </div>
+  <div class="card" id="sec-diff" style="display:none">
+    <pre class="diff-pre" id="diff-content">Loading...</pre>
+  </div>
+</div>
+
+<div class="section">
+  <div class="section-hdr" onclick="toggleSection('branches')">
+    <h3>Branches</h3><span class="toggle" id="tog-branches">&#9654;</span>
+  </div>
+  <div class="card" id="sec-branches" style="display:none">
+    <div class="branch-list" id="branch-list">Loading...</div>
+  </div>
+</div>
+
+<script src="/static/eos.js"></script>
+<script src="/static/eos-components.js"></script>
+<script src="/static/realtime.js"></script>
+<script>
+EOS.nav('git');
+if(window.EOS&&EOS.registerActions){EOS.registerActions({},[],{description:"Version control dashboard for vault and code repos — status, history, diffs.",quickActions:[{label:"Explain status",msg:"Summarize the current repo status and suggest what I should commit, stash, or revert."},{label:"Commit message",msg:"Based on the current diff, draft a concise commit message."},{label:"Recent history",msg:"Summarize the recent commits in plain language — what's been happening?"}]});}
+
+let currentRepo = 'emptyos';
+let repos = [];
+const q = () => `?repo=${currentRepo}`;
+
+function toggleSection(id) {
+  const sec = document.getElementById('sec-' + id);
+  const tog = document.getElementById('tog-' + id);
+  const open = sec.style.display === 'none';
+  sec.style.display = open ? '' : 'none';
+  tog.classList.toggle('open', open);
+}
+
+function renderRepoButtons() {
+  const el = document.getElementById('repo-switcher');
+  el.innerHTML = repos.map(r =>
+    `<button class="repo-btn${r.id === currentRepo ? ' active' : ''}" onclick="switchRepo('${r.id}')">${esc(r.label)}</button>`
+  ).join('');
+}
+
+async function loadRepos() {
+  try {
+    repos = await EOS.api('/git/api/repos');
+    renderRepoButtons();
+  } catch(e) { console.error('repos', e); }
+}
+
+function switchRepo(id) {
+  currentRepo = id;
+  renderRepoButtons();
+  loadAll();
+}
+
+async function loadStats() {
+  try {
+    const d = await EOS.api('/git/api/stats' + q());
+    EOS_UI.statCards('stats', [
+      {value: d.branch || '--', label: 'Branch'},
+      {value: d.recent_commits ?? '--', label: 'Commits'},
+      {value: d.uncommitted_changes ?? 0, label: 'Uncommitted',
+       variant: (d.uncommitted_changes > 0 ? 'danger' : undefined)},
+    ]);
+  } catch(e) { console.error('stats', e); }
+}
+
+async function loadLog() {
+  try {
+    const commits = await EOS.api('/git/api/log-detail' + q() + '&count=20');
+    const tb = document.getElementById('log-body');
+    if (!commits.length) { tb.innerHTML = '<tr><td colspan="4">'+EOS_UI.emptyState({message:'No commits'})+'</td></tr>'; return; }
+    tb.innerHTML = commits.map(c => `<tr>
+      <td><span class="log-hash">${c.short}</span></td>
+      <td><span class="log-msg">${esc(c.message)}</span></td>
+      <td><span class="log-meta">${esc(c.author)}</span></td>
+      <td><span class="log-meta">${esc(c.ago)}</span></td>
+    </tr>`).join('');
+  } catch(e) { console.error('log', e); }
+}
+
+async function loadDiff() {
+  try {
+    const d = await EOS.api('/git/api/diff' + q());
+    const pre = document.getElementById('diff-content');
+    if (!d.diff || !d.diff.trim()) { pre.innerHTML = EOS_UI.emptyState({message:'No changes'}); return; }
+    pre.innerHTML = d.diff.split('\n').map(l => {
+      if (l.startsWith('+++') || l.startsWith('---') || l.startsWith('diff ')) return `<span class="hdr">${esc(l)}</span>`;
+      if (l.startsWith('+')) return `<span class="add">${esc(l)}</span>`;
+      if (l.startsWith('-')) return `<span class="del">${esc(l)}</span>`;
+      return esc(l);
+    }).join('\n');
+  } catch(e) { console.error('diff', e); }
+}
+
+async function loadBranches() {
+  try {
+    const branches = await EOS.api('/git/api/branches' + q());
+    const el = document.getElementById('branch-list');
+    if (!branches.length) { el.innerHTML = EOS_UI.emptyState({message:'No branches'}); return; }
+    el.innerHTML = branches.map(b => `<div class="branch-item${b.current ? ' current' : ''}">
+      <span class="branch-dot"></span>${esc(b.name)}</div>`).join('');
+  } catch(e) { console.error('branches', e); }
+}
+
+function loadData() { loadStats(); loadLog(); loadDiff(); }
+function loadAll() { loadData(); loadBranches(); }
+
+async function doCommit() {
+  const input = document.getElementById('commit-msg');
+  const msg = input.value.trim();
+  if (!msg) { EOS_UI.toast('Enter a commit message', false); return; }
+  const btn = document.getElementById('btn-commit');
+  btn.disabled = true;
+  try {
+    const d = await EOS.post('/git/api/save', { message: msg, repo: currentRepo });
+    if (d.error) { EOS_UI.toast(d.error, false); return; }
+    EOS_UI.toast('Committed!');
+    input.value = '';
+    loadData();
+  } catch(e) { EOS_UI.toast('Commit failed', false); }
+  finally { btn.disabled = false; }
+}
+
+async function doAction(action) {
+  try {
+    const d = await EOS.post('/git/api/' + action, { repo: currentRepo });
+    EOS_UI.toast(d.result || (action + ' done'));
+    if (action === 'pull') loadAll(); else loadData();
+  } catch(e) { EOS_UI.toast(action + ' failed', false); }
+}
+
+document.getElementById('commit-msg').addEventListener('keydown', e => { if (e.key === 'Enter') doCommit(); });
+
+loadRepos();
+loadAll();
+
+// Live refresh on git events
+if (window.EOS_RT) {
+  EOS_RT.on('vault:changed', () => { if (currentRepo === 'vault') loadData(); });
+  EOS_RT.on('git:saved', loadData);
+  EOS_RT.on('git:pushed', loadData);
+  EOS_RT.on('git:pulled', loadAll);
+}
+// Visibility-aware polling
+let statsTimer = setInterval(loadStats, 30000);
+document.addEventListener('visibilitychange', () => {
+  clearInterval(statsTimer);
+  if (!document.hidden) {
+    loadStats();
+    statsTimer = setInterval(loadStats, 30000);
+  }
+});
+</script>
+</body>
+</html>

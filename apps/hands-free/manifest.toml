@@ -1,0 +1,34 @@
+[app]
+id = "hands-free"
+name = "Hands-Free"
+version = "0.1.0"
+description = "Gesture-as-push-to-talk control mode. Open_Palm raises hand → voice command → gesture confirms. Routes through the command palette; no new app wiring needed. Camera + mic bytes stay on the device (Web Speech API uses Google servers for STT — noted in consent)."
+dimensions = ["intellectual", "physical"]
+
+[app.entry]
+module = "app"
+class = "HandsFreeApp"
+
+[requires]
+capabilities = ["think"]
+apps = ["gesture"]
+
+[provides.cli]
+commands = ["hands-free"]
+
+[provides.web]
+prefix = "/hands-free"
+
+[provides.events]
+emits = ["handsfree:dispatched"]
+subscribes = [
+    "gesture:detected",
+    "focus:completed",
+    "task:completed",
+    "task:added",
+    "capture:saved",
+    "journal:entry",
+    "journal:milestone",
+]
+
+[provides.settings]

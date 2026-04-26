@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>EmptyOS — Offline</title>
+<link rel="manifest" href="/manifest.webmanifest">
+<meta name="theme-color" content="#1a1a2e">
+<link rel="stylesheet" href="/static/theme.css">
+<style>
+body { min-height: 100vh; margin: 0; display: flex; align-items: center; justify-content: center;
+       font-family: system-ui, -apple-system, sans-serif; background: var(--bg, #0f0f1a); color: var(--fg, #e6edf3); }
+.wrap { max-width: 420px; padding: 32px; text-align: center; }
+h1 { margin: 0 0 12px; font-size: 22px; font-weight: 600; }
+p { margin: 0 0 20px; line-height: 1.5; color: var(--muted, #8b949e); }
+code { background: rgba(255,255,255,0.06); padding: 2px 6px; border-radius: 4px; font-size: 13px; }
+button { padding: 10px 20px; background: var(--accent, #238636); color: white; border: 0;
+         border-radius: 6px; font-size: 14px; font-weight: 600; cursor: pointer; }
+button:hover { filter: brightness(1.1); }
+.hint { margin-top: 18px; font-size: 12px; color: var(--muted, #8b949e); opacity: 0.8; }
+</style>
+</head>
+<body>
+<div class="wrap">
+<h1>EmptyOS is unreachable</h1>
+<p>The daemon isn't responding. If you're off your home network, check that your laptop is on and reachable.</p>
+<button onclick="location.reload()">Try again</button>
+<div class="hint">This page is cached locally so you can see it even when the daemon is down.</div>
+</div>
+</body>
+</html>

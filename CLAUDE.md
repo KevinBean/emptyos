@@ -1,0 +1,459 @@
+# CLAUDE.md — EmptyOS
+
+> **EmptyOS — a mind companion. Think and create with you, not for you.**
+
+## What Is This
+
+EmptyOS is an AI-powered operating system — a **mind companion** that thinks and creates alongside the user. **An OS is just a human doing things** — reading, writing, thinking, searching. Tools are optional accelerators. A markdown vault serves as the **hard drive** — mounted externally, swappable, human-readable. Kernel state lives in SQLite/JSON.
+
+**North star: with you, not for you.** Features that augment the user's judgment (surface, suggest, assist, generate-for-review) are the default. Features that replace judgment (autopilot, silent auto-decisions) need strong justification. This is the constraint that separates EmptyOS from autonomous-agent framings.
+
+Three runtime modes: **daemon** (port 9000, apps + events + agents), **CLI** (one-shot commands), **conversation** (AI coding tool loads codebase as context, evolves the system). Conversation mode is the primary growth mechanism. See `docs/DESIGN.md` for architecture, philosophy, and the consciousness model.
+
+Non-Claude-Code AI tools: see `AGENTS.md`.
+
+## Quick Start (fresh clone)
+
+```bash
+cp emptyos.toml.example emptyos.toml   # then set notes.path = "D:/YourVault"
+pip install -e .
+restart.bat                            # Windows; or: python -m emptyos start
+# → http://localhost:9000
+```
+
+In a Claude Code session: `/eos-session-resume` to pick up the last session, `/eos-session-wrapup` to close one out.
+
+## Principles
+
+1. **Everything can be generated** — apps, UIs, configs, pipelines
+2. **Everything is reusable** — extract shared work into the platform (`sdk/`)
+3. **Everything is connected** — event bus over imports; topology graph IS the architecture
+4. **Atomic code, like atomic notes** — apps are atoms (manifest + app.py); value is in connections
+5. **Self-testing, self-fixing** — health checks + graceful fallback
+6. **The system is expressive** — every app has a UI (custom or auto-generated)
+7. **Self-documenting** — `eos app info <id>` generates docs from manifest + code; no separate dev docs
+8. **Vault is external** — mounted, swappable, human-readable
+9. **Reactive vault population** — `git:saved` → reactor → journal entry; one action ripples to related notes
+10. **The system is alive** — Growth Agent + vault emergence + self-audit loop
+
+## Architecture
+
+```
+┌──────────────────────────────────────────────────────┐
+│  Apps (ALL first-class, no runtime tiers)             │
+│  apps/           — core, git-tracked, shipped        │
+│  apps/personal/  — user apps, gitignored, local      │
+├──────────────────────────────────────────────────────┤
+│  Platform Runtime                                    │
+│  Services:    vault watcher, scheduler, real-time,   │
+│               compute workers (GPU job queue)        │
+│  Libraries:   frontend (theme.css + eos.js)          │
+│  Connectors:  ollama, comfyui, voice-api, obsidian   │
+├──────────────────────────────────────────────────────┤
+│  Kernel                                              │
+│  Config, 9 Capabilities, EventBus, ServiceRegistry,  │
+│  AppLoader, PluginLoader, WorkerPool, Providers      │
+└──────────────────────────────────────────────────────┘
+Vault (external) ← mounted via emptyos.toml: notes.path = "D:/YourVault"
+```
+
+### 9 Capabilities
+
+| Capability | Providers |
+|---|---|
+| **think** | ollama, openai, claude-cli, human (domains: text, code, reason) |
+| **read** | filesystem, human |
+| **write** | filesystem, human |
+| **search** | grep, human |
+| **speak** | edge-tts (in-process) → openai-tts (cloud) → kokoro → xtts (via voice-api :8602) |
+| **listen** | openai-whisper (cloud) → whisper (local, via voice-api :8602) |
+| **draw** | comfyui |
+| **animate** | comfyui-ltx (image-to-video via user-supplied workflow JSON); cloud providers (Runway/Luma/Kling) plug in here |
+| **see** | webcam (OpenCV, local) → human (upload a file) |
+
+### 13 Plugins
+
+| Plugin | Type | Purpose |
+|---|---|---|
+| health | service | Heartbeat, capability probes, GPU VRAM monitoring |
+| notifications | service | Vault + Telegram push |
+| ollama | enhancer (think) | Local LLM |
+| comfyui | enhancer (draw) | GPU image/video/music generation |
+| edge-tts | enhancer (speak) | Free in-process TTS via Microsoft Edge voices |
+| voice-api | enhancer (speak+listen) | Kokoro + XTTS (TTS) + Whisper (STT), :8602 |
+| webcam | enhancer (see) + service | Local camera capture via OpenCV |
+| applio | service | AI voice conversion |
+| obsidian | service (registers `viewer`) | URI scheme + cross-platform apps for viewing/editing notes |
+| telegram | service | Two-way bot — commands + push notifications |
+| blender | service | 3D modeling, cable routing, headless rendering |
+| global-hotkey | service | Global OS keyboard shortcuts → EventBus |
+| system-tray | service | Native system tray icon (Windows/macOS) |
+
+**Service plugins** expose named services — apps access via `self.require("name")`.
+**Enhancer plugins** inject providers into capabilities at startup (`priority=0`); capability falls back to next provider if plugin is absent/offline. No app code changes — "Graceful Enhancement" pattern. See `docs/DESIGN.md`.
+
+**Obsidian is a dependency, not a given.** EmptyOS uses the external markdown vault as its "hard drive" (`notes.path`) and Obsidian as the **vault viewer** — cross-platform desktop/mobile apps + the `obsidian://` URI scheme that every `EOS.noteActions()` link uses. The `obsidian` plugin registers service `viewer` and owns the URI templates; swap the plugin (or override its `uri_templates` in config) to switch viewers. Sync is independent — the vault is plain files, so Syncthing/git/iCloud all work without Obsidian Sync. Search runs through EmptyOS's own grep provider against the vault files — no Obsidian CLI dependency.
+
+## Storage & Vault
+
+### Two domains
+
+| Domain | What | Location |
+|---|---|---|
+| **Vault (user knowledge)** | Anything a human wrote, edits, or needs after reset — journal, contacts, jobs, expenses, items | External `notes.path` in emptyos.toml, markdown + frontmatter |
+| **data/ (machine telemetry)** | Event history, syslog, billing counters, chat sessions, activity logs | `data/` (SQLite/JSON) |
+
+**Rule:** Human-authored or recovery-critical → vault. High-frequency operational bookkeeping → `data/`.
+
+### VaultLibrary standard
+
+All vault-backed collections use `VaultLibrary` (SDK). Each item is a `.md` note with frontmatter + type tag (e.g. `tags: [song]`). Query by tag via `vault_query()`, not folder. Folder is default creation location only. See `emptyos/sdk/vault_library.py`.
+
+### Project standard
+
+Every `10_Projects/` entry is a **directory**, never a flat `.md`. Defined as `PROJECT_STRUCTURE` in `apps/projects/app.py`.
+
+```
+10_Projects/{project-id}/
+├── {project-id}.md      # Main note (frontmatter + tasks + notes)
+├── docs/                # Specs, meeting notes, research
+├── assets/              # Images, PDFs, attachments
+└── log/                 # Activity logs, changelogs
+```
+
+All creation paths enforce this. `POST /api/projects/{id}/upgrade` converts flat files. `GET /api/structure` reports compliance.
+
+## Task ↔ Project Data Flow
+
+Projects is the **write endpoint**, task app is the **read-only aggregator**.
+
+```
+Capture #dev   → projects.add_task_to_project("emptyos-development")
+Capture other  → task.add() → projects.add_task_to_project("inbox")
+Task app       → scans entire vault for - [ ] lines (cross-project view)
+```
+
+- `task.add(text)` routes to inbox by default, or specific project via `project=` kwarg
+- Quick-action tag → project routing: `_TAG_PROJECT` in `apps/quick-action/app.py`
+- Task UI shows `[Project Name]` badges for tasks in `10_Projects/`
+
+## Project Structure
+
+```
+D:\emptyos\
+├── emptyos/
+│   ├── kernel/             # Config, EventBus, ServiceRegistry, loaders
+│   ├── capabilities/       # 9 capabilities + providers
+│   ├── sdk/                # BaseApp, BasePlugin, decorators, VaultLibrary, srs, utils
+│   ├── cli/                # eos command (Typer) — daemon client mode
+│   ├── web/                # FastAPI server + auto-UI + topology
+│   │   └── static/         # theme.css, eos.js, eos-components.*, eos-keys.*
+│   └── runtime/            # vault watcher, vault_index, scheduler, realtime, vault_map
+├── apps/                   # Core apps (git-tracked)
+├── apps/personal/          # User apps (gitignored)
+├── plugins/                # 13 plugins (auto-discovered, loaded before apps)
+├── engines/personal/       # User engines (gitignored)
+├── data/                   # Runtime state
+├── emptyos.toml            # Machine config (.gitignored)
+└── restart.bat             # Kill + boot
+```
+
+Loaders scan both `apps/` and `apps/personal/` — all apps equal at runtime. Fresh `git clone` gives only core. See `docs/DESIGN.md` "Core vs Personal".
+
+## Apps
+
+Live inventory is authoritative — `eos app list`, or browse `apps/` + `apps/personal/`. Every app is self-documenting: `eos app info <id>` generates docs from manifest + code. Don't maintain an app catalog here — it drifts.
+
+To scaffold a new app, invoke the `eos-new-app` skill (or `eos-new-plugin` for plugins). It generates manifest, `app.py`, `pages/`, and a `tests/test_sys_<id>.py` skeleton.
+
+## App Development Pattern
+
+An app = backend (`app.py`) + API (`@web_route`) + UI (`pages/`). **UI is not optional** — every POST implies a form, every GET list implies a table. See `docs/DESIGN.md` "UI Philosophy" and `docs/APP-DEVELOPMENT.md`.
+
+```python
+class MyApp(BaseApp):
+    data = await self.read("file.md")
+    result = await self.think("Analyze this", domain="code")
+    await self.write("output.md", result)
+
+    tasks = await self.call_app("task", "list_tasks")
+    await self.emit("myapp:done", {"key": "value"})
+
+    async for chunk in self.think_stream("Summarize"):
+        yield chunk
+```
+
+### Manifest
+
+```toml
+[app]
+id = "myapp"
+name = "My App"
+version = "1.0.0"
+description = "What it does"
+
+[app.entry]
+module = "app"
+class = "MyAppClass"
+
+[requires]
+capabilities = ["read", "write", "think"]
+apps = ["task", "journal"]
+
+[provides.cli]
+commands = ["myapp"]
+
+[provides.web]
+prefix = "/myapp"
+
+[provides.events]
+emits = ["myapp:done"]
+```
+
+### App Sub-Patterns
+
+Each pattern below has a dedicated rule file with full examples + manifest snippets. Read the rule file before building.
+
+| Pattern | When to use | Reference |
+|---|---|---|
+| **Settings panel** | App has `[provides.settings]` — mandatory ⚙ button + `EOS_UI.settingsPanel()` | `.claude/rules/app-ui-patterns.md` |
+| **Hash-route detail view** | App has `showDetail(id)` — bookmarkable URLs + back button via `EOS_UI.hashRoute()` | `.claude/rules/app-ui-patterns.md` |
+| **Addons** | User-extensible URL slots → `[[apps.<id>.<slot>_addons]]` config + `GET /<app>/api/<slot>/{ctx}` | `.claude/rules/addons.md` |
+| **Hub panels** | Glanceable signal on `/hub/` → `[[contributes.hub.panel]]` + `panel_*` method (20 renderers, priority bands, lazy hydration) | `.claude/rules/hub-panels.md` |
+| **Voice intents** | App verb callable from Aura → `[[contributes.voice-assistant.intent]]` + `voice_*` method (scope-narrowing, card renderers) | `.claude/rules/voice-intents.md` |
+| **Boards as view layer** | Render data another app owns → `source.type = "app"` + expose `list_all`/`set_field` + `SETTABLE_FIELDS` whitelist; auto-instantiated as readonly system-database boards | `.claude/rules/boards-as-view-layer.md` |
+| **Standalone export** | App should run without the daemon → `[provides.export]` + optional `export.py` hook (`export_state` / `stub_routes` / `client_overrides`); one-way snapshot, no sync | `.claude/rules/app-conventions-for-export.md` |
+| **Tour steps** | App should appear in the product tour → `[[contributes.tour.step]]` with `route` + `spotlight` selector + optional `requires`; capability-missing steps auto-rewrite to `/system` | `.claude/rules/tour-steps.md` |
+
+Triggers: `eos app export <id>` for export bundles. Debug surfaces: `/hub/debug/panels`, `/voice-assistant/debug/intents`.
+
+## Web & CLI Access
+
+| URL | What |
+|---|---|
+| `http://localhost:9000/` | Home — app launcher, stats, events |
+| `http://localhost:9000/topology` | Live dependency graph |
+| `http://localhost:9000/system` | Capability Inspector — providers, status, recovery hints |
+| `http://localhost:9000/docs` | FastAPI Swagger — all API routes |
+| `http://localhost:9000/{app}/` | App UI (custom or auto-generated) |
+| `ws://localhost:9000/ws` | WebSocket — live events |
+
+```bash
+eos                     # System status
+eos start               # Boot daemon (port 9000)
+eos health              # Full health check
+eos app list            # All apps
+eos app info <id>       # Self-documenting app details
+
+# App commands (auto-routed to running daemon, or local kernel)
+eos capture "idea"
+eos task list
+eos journal add "good day" good
+eos search "cable rating"
+```
+
+CLI detects running daemon → proxies via HTTP (shared kernel). No daemon → falls back to local kernel.
+
+## Development Rules
+
+1. **Apps use capabilities, never direct tools** — `self.read()` not `open()`
+2. **Human is always the final fallback** — in interactive mode
+3. **All apps are equal** — no runtime tiers, same manifest/lifecycle (`release.toml` tiers are for release bundling only)
+4. **Apps declare, platform provides** — manifest dependencies validated on load
+5. **Events over imports** — apps communicate via bus, not coupling
+6. **Self-documenting** — improve `eos app info`, don't write READMEs
+7. **Custom UI at `pages/`** — auto-generated UI for apps without it
+8. **Vault-map driven** — `{vault}/30_Resources/EmptyOS/_vault-map.toml` (auto-generated by `emptyos/runtime/vault_map.py` on first boot) declares where each app's data lives. Apps read via `self.vault_config("key")`, never hardcode. `self.vault_write()` → `{vault}/30_Resources/EmptyOS/{app}/`. `self.search()` reads the whole vault.
+9. **Extract shared, then reuse** — build specific first in one app, extract to `sdk/` when a second app needs it
+10. **Everything self-testable** — if you can't test it from `localhost:9000` or CLI, it's not done
+11. **Reactive vault population** — user actions emit events (e.g. `git:saved`, `capture:saved`); `apps/reactor/` chains them into journal entries + related notes
+12. **Prompts are first-class artifacts**
+    - Named `UPPERCASE` constants at module top, never inline
+    - Always `system=` kwarg for persona/rules; user message for the specific request
+    - Every content prompt says what NOT to do (negative examples are highest-leverage)
+    - Temperature: parsing 0.1–0.3, analysis 0.3–0.5, creative 0.6–0.8
+    - No thin prompts — user-facing content needs host personas + quality standards + structure
+13. **No personal data in committed code** — no personal paths, names, coordinates, API keys in git-tracked files. Use `emptyos.toml` (gitignored) for machine config. `.eos-personal` defines banned patterns. Files under `.claude/` with machine-specific data (e.g. `vault-connection.json` — already in `.gitignore`) must be gitignored.
+14. **No third-party branding in user-facing text** — App UIs, prompts, error messages must not mention Obsidian/Suno/Kindle/etc. Use generic terms: "markdown vault", "source URL", "Open external". **Exception:** plugin code that integrates with a specific service may reference it. `.eos-branding` + `scripts/check-branding.py` enforce.
+15. **Community apps, personal config** — `apps/` are generic; machine-specific customization lives in `emptyos.toml` `[apps.<id>]`, read via `self.app_config(key, default)`. VaultLibrary accepts `extra_fields` from config. Same codebase, different behavior per machine. `apps/personal/` is for apps whose **logic** is personal, not customized community apps.
+16. **Wellbeing wheel as design lens** — the 8 dimensions (physical, social, intellectual, emotional, spiritual, environmental, financial, occupational) are a rubric applied in reasoning, **never a feature added to UIs**. When suggesting work, reviewing apps, or proposing features, silently score against wheel balance: prefer suggestions that feed thin dimensions over those that fatten already-dominant ones (typically occupational/intellectual). Resist adding dimension pickers, tag prompts, or wheel displays — the wheel shapes *what gets built and what gets refused*, not what the user sees. Canonical list + aliases live in `emptyos/sdk/dimensions.py`; read passive metadata from app manifests (`dimensions = [...]`) when available.
+17. **No localhost assumptions in app logic** — apps use `self.*` capabilities, never hardcode `localhost`, `127.0.0.1`, or port numbers. Host/port come from `[network]` config, which is derived from `network.mode` (`local` / `private` / `public`). The same code must run on a user's laptop, a Tailscale-private machine, a VPS, or a demo container without edits.
+18. **Cloud consent is mandatory** — any provider whose host is not localhost/127.0.0.1/private-IP is `is_cloud=True` and must pass through the consent gate in `Capability.execute()`. Never add cloud-specific code paths in apps — the provider chain handles routing, the consent gate handles approval. See `docs/DESIGN.md` "Cloud Provider Consent".
+19. **No vault data to cloud by default** — cloud providers receive prompts, not raw vault content. If an app needs to send vault content to a cloud model, it must be explicit per-request or via an opt-in config flag. Never embed large vault excerpts in system prompts that hit cloud.
+20. **Docker-bootable** — the system must work from `docker run -v /vault:/vault -v ./emptyos.toml:/app/emptyos.toml emptyos`. No hardcoded absolute paths, no assumptions about the host OS, no Windows-only code in runtime paths (Windows-only tooling like `restart.bat` is fine).
+
+## Vault Data Layer
+
+Vault is the source of truth for app data. **VaultIndex** (`emptyos/runtime/vault_index.py`) indexes all vault markdown in memory on startup (~800ms for 3000+ files), updates incrementally via `vault:changed`.
+
+### Three Layers in a Vault Note
+
+```
+--- frontmatter ---          ← Layer 1: Structured (indexed, queryable)
+company: Acme Corp
+tags: [job-application]
+---
+
+## Timeline                  ← Layer 2: Semi-structured (section names indexed)
+- 2026-04-02 — interview
+
+## Notes                     ← Layer 3: Unstructured (human prose, LLM-summarizable)
+Panel was friendly...
+```
+
+### BaseApp Vault API
+
+| Method | Layer | Purpose |
+|---|---|---|
+| `vault_query(tags, **props)` | 1 | Find notes by tags + frontmatter properties |
+| `vault_get_properties(path)` | 1 | Read all frontmatter fields |
+| `vault_update(path, props)` | 1 | Mutate frontmatter fields |
+| `vault_sections(path)` | 2 | List `##` section names |
+| `vault_read_section(path, name)` | 2+3 | Read content of a `##` section |
+| `vault_append_section(path, name, text)` | 2 | Append to a `##` section |
+| `vault_read_body(path)` | 3 | Read everything after frontmatter |
+| `vault_create_note(path, fm, body)` | all | Create new note |
+
+### Convention (not enforced)
+
+Tags in frontmatter identify note types (`job-application`, `person`, `daily`, `song`). Apps query by tag. Apps handle missing fields with `.get()` defaults. No schema enforcement — the vault notes ARE the schema.
+
+Two access patterns coexist: **VaultIndex** (target — `vault_query`, `vault_update`) and **vault_config + file I/O** (legacy — `vault_config()` → `Path.glob()` → parse). Apps migrate when touched. Safe migration rule: only migrate an app when its notes have queryable frontmatter. Otherwise add tags first via a vault script — never silently return empty data.
+
+For vault operations and connection state, see `.claude/rules/vault-operator.md`.
+
+## Tech Stack
+
+Python 3.11+, FastAPI, Typer, Rich, aiohttp, SQLite, APScheduler, watchfiles.
+
+## Dev Log
+
+Three layers, different purposes:
+
+| Layer | Where | When |
+|---|---|---|
+| **Breadcrumbs** (reactor) | Daily journal note (`50_Journal/`) | Automatic — `git:saved` ripples |
+| **Session summaries** (`/devlog`) | `10_Projects/emptyos/log/YYYY-MM-DD.md` | End of session — invoke `/devlog` |
+| **Raw history** | `git log` | Every commit |
+
+At session end for meaningful changes, invoke `/eos-session-wrapup`. See `.claude/rules/docs-sync.md` for triggers.
+
+## Testing
+
+Tests (pytest + Playwright) cover apps, UI components (modal/sidebar/chat), user stories, accessibility, visual baselines, edge cases. System suite is CI-safe; personal tests gitignored. See `tests/conftest.py` for fixtures and `tests/helpers.py` for shared assertions.
+
+```bash
+python -m pytest tests/ --ignore=tests/personal -v    # CI / release-safe
+python -m pytest tests/test_sys_<app>.py -v           # single app (after UI change)
+python -m pytest tests/ -k "not test_ui" -v           # API-only fast path
+python -m pytest -m "dogfood and not llm" -v          # dogfood — "is it usable?"
+```
+
+Always invoke as `python -m pytest`, never bare `pytest` — the `pytest` binary may resolve to a different Python than the one running the daemon (common on Windows with multiple Python installs), causing pytest-playwright plugin discovery to fail silently (`fixture 'page' not found`).
+
+Requires daemon at `localhost:9000`. One-time setup: `pip install playwright pytest-playwright pytest-timeout pytest-rerunfailures httpx && playwright install chromium`. Test data uses `TEST_PREFIX = "PLAYWRIGHT-TEST-"`, cleaned by session autouse fixture. Pass `--timeout=60 --reruns 2` on release / CI runs: `--timeout` kills hung tests, `--reruns 2` retries UI flakes that surface when the daemon is under heavy parallel load — 1 retry isn't always enough because the immediate retry runs while the daemon is still swamped; 2 retries gives the daemon a chance to catch up.
+
+### Four layers, four questions
+
+Distinct purposes — don't conflate or duplicate:
+
+| Layer | Files | Answers |
+|---|---|---|
+| **System** | `test_sys_<app>.py` | Does each button/endpoint work? (smoke) |
+| **User story** | `test_user_stories.py` | Does one deep per-app flow work end-to-end? |
+| **Journey** | `test_journeys.py` | Do cross-app event chains ripple? |
+| **Dogfood** | `test_dogfood.py` + `test_dogfood_<app>.py` | Could I use this for a week/month without noticing something broken? |
+
+Dogfood tests are narrative, ordered (`test_01_*` → `test_07_*`), and thread state via class-level `state: dict`. `test_dogfood.py` = week-in-the-life across apps; `test_dogfood_<app>.py` = month-in-the-life per rot-prone app (apps not used daily, which silently drift). Dogfood earns its keep when it either spans ≥2 apps or catches interleaving/aggregation bugs that endpoint tests miss. Below that bar, `test_user_stories.py` is the right home. LLM-hitting steps use `@pytest.mark.llm` so `-m "dogfood and not llm"` stays fast and free.
+
+CI (`.github/workflows/dogfood.yml`) boots the daemon against a throwaway vault and runs the non-LLM dogfood suite on every push to `main` and every PR. Personal-app dogfood files skip gracefully when their app isn't in the fresh clone via a class-scoped `@pytest.fixture(autouse=True)` availability check.
+
+See `.claude/rules/testing.md` for full workflow (when to run, story tests, adding tests for new apps).
+
+## External Service Launch Pattern
+
+External services (Ollama, ComfyUI, voice-api, Blender) use embedded runtimes with relative paths. Two launch contexts, same rules:
+
+**restart.bat** — `pushd` + `start /b` for headless background:
+```batch
+pushd D:\ComfyUI_windows_portable
+start /b "" .\python_embeded\python.exe -s ComfyUI\main.py --windows-standalone-build >nul 2>nul
+popd
+```
+
+**Plugin `auto_start()`** — embedded python directly with `CREATE_NO_WINDOW`:
+```python
+subprocess.Popen([python_exe, "-s", main_py, "--flags"],
+                 cwd=launcher_dir, creationflags=subprocess.CREATE_NO_WINDOW,
+                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+```
+
+Rules:
+- **Never** `start /min` or `cmd /c start` (both open windows)
+- **Always** set `cwd` to the service directory — launcher scripts use relative paths
+- Config: `emptyos.toml` `[plugins.<id>]` `launcher = "path/to/run.bat"`
+- Health check: poll service endpoint (e.g. `/system_stats`) until ready, 60s timeout
+
+## Development Gotchas
+
+The architecturally load-bearing ones are inline below. Generic Python/web/integration quirks (Windows paths, FLUX params, Claude CLI flags, staff-agent lock, etc.) live in `.claude/rules/dev-gotchas.md`.
+
+- **Vault read-modify-write races**: any write path that does `read → mutate → write` on the same file yields the event loop between awaits. If a user-triggered POST and a reactor-driven event handler (the reactor subscribes ~30 events) both hit the same file at nearly the same instant, both read the pre-write content and the later write wipes the earlier writer's entry. Serialize with an `asyncio.Lock` keyed by the unit of isolation (date, entity id, path). Journal is the reference implementation — `apps/journal/app.py` `_daily_lock()` wraps `_add_entry` / `api_milestone` / `api_three_things`; emits stay **outside** the lock so handlers can recurse through `call_app("journal", …)` without deadlocking. Extract to `BaseApp` when a second app (likely capture or task) needs the same pattern.
+- **Vault frontmatter tags must be block-style**: write `tags:\n  - a\n  - b`, not `tags: [a, b]`. The `VaultIndex` YAML parser (`emptyos/runtime/vault_index.py`) does handle inline arrays as a defense, but mixing styles across apps is a smell — stick to block style so notes render identically across every app and any future parser that doesn't handle inline arrays won't silently drop them from tag queries.
+- **Normalize loose field shapes at the write boundary**: if an API param is typed `dict | None` but callers in the wild pass a plain string (source titles, tag lists, ids), coerce once in the write function, not at every read site. Pattern: a small `_coerce_<field>(x) -> dict` helper next to the write; downstream reads can still use it defensively for legacy rows. Example: `apps/personal/media/highlights.py` `_coerce_source()`.
+
+## Shared Frontend
+
+**Design language — read this before touching a page.** `docs/FRONTEND-DESIGN-LANGUAGE.md` is the visual + interaction DNA: token usage, spacing/radius/type scales, AI-surface treatment, motion discipline, forbidden patterns. Audits run via `/eos-ui-audit-and-consolidate`.
+
+- `emptyos/web/static/eos-components.css` + `.js` — shared UI (toast, hero, donut, tabs, modal, entry list, ring, heatmap). Use `EOS_UI.modal()`, `EOS_UI.formModal()`, `EOS_UI.statCards()`, `EOS_UI.confirm()`, `EOS_UI.entityCard()`, `EOS_UI.emptyState()`, `EOS_UI.errorState()`, `EOS_UI.provenance()` in new pages. Status/priority/age badges: `.eos-badge` + `.eos-badge-status-*` / `-priority-*` / `-age-*` (no more hand-rolled status pill CSS per app). AI provenance chip: `.eos-badge-provenance` + `-local`/`-cloud`/`-user` variants — pair with `BaseApp.last_provenance()` to return provenance from the API after a `self.think()` call. Floating pill FABs: `.eos-fab-pill` + `-icon` + `-label` (used by capture, assistant, voice, hands-free).
+- `emptyos/web/static/eos-keys.js` + `.css` — keyboard shortcuts (command palette, go-to nav, help)
+- `emptyos/web/static/eos-map.js` + `.css` — Leaflet wrapper (`EOS_MAP.create(container, {center, zoom, tiles:'osm'|'aerial'|'both'|'both-aerial'})` → `.setMarkers(items, {latFor, lngFor, popupFor, iconFor, onClick})`, `.setPolylines(lines, {styleFor})`, `.fitBounds()`, `.invalidateSize()`). `iconFor` returns `{className, size, html?}`; `html` lets you render arbitrary content inside the marker (e.g. trip-stop numbers). Leaflet loads on demand via CDN; drop to raw Leaflet via `.L()` / `.map()`. Consumers: `apps/personal/places/`, `apps/personal/scan-map/`.
+- **Geo stack**: `apps/geocode/` (address ↔ lat/lon via OSM Nominatim) + `apps/routing/` (multi-stop routes via OSRM) + `EOS_MAP`. Both geo apps cache + throttle; both configurable via `[apps.<id>]` `user_agent` + `base_url`. Frontend helpers: `EOS.geocode(address, limit)`, `EOS.reverseGeocode(lat, lon)`, `EOS.getRoute(points, profile)`, `EOS.fmtDistance(m)`, `EOS.fmtDuration(s)`. (Named `getRoute`, not `route` — `EOS.route` is the client-side SPA router.) **Public-mode gate:** both apps expose `GET /api/status`; when `network.mode = "public"` *and* still using the demo URL, `.enabled = false` with a human `reason`. Handlers short-circuit, and UIs consuming the gate (e.g. `apps/personal/places/`) hide the geocode/trip buttons. Self-hosters pointing `base_url` at their own OSRM/Nominatim stay enabled in all modes.
+- **Vault paths are always clickable** — use `EOS.noteActions(path)`, never plain `esc(path)`. Renders view + edit + open-external links.
+- `emptyos/web/clustering.py` — auto-clustering for home screen
+- `emptyos/web/auto_ui.py` — auto-generated UI for apps without `pages/`
+
+### Keyboard Shortcuts
+
+- `Ctrl+K` / `Cmd+K` — command palette
+- `g` + letter — go-to nav (g-t=Tasks, g-j=Journal, g-e=Expense, g-s=Search, g-a=Assistant)
+- `?` or `Ctrl+/` — shortcut help
+- `/` — focus search input
+- `Esc` — close overlays
+- Data-driven: `GET /api/shortcuts`; editable in settings "Shortcuts" tab
+
+## Session Continuation
+
+```bash
+python -m emptyos          # System status
+python -m emptyos health   # Full health check
+python -m emptyos start    # Boot daemon on port 9000 (or restart.bat on Windows)
+```
+
+In a Claude Code session, `/eos-session-resume` reads `{vault}/10_Projects/emptyos/log/_next.md` (written by the previous `/eos-session-wrapup`) and briefs you on where to pick up.
+
+**Reading this file means you're in conversation mode** — the system's most powerful runtime. You have the full architecture in context. You can create apps, extract patterns, wire events, make architectural decisions coherent with the consciousness model. The daemon serves what exists; you evolve what's next.
+
+For recent work, use `git log` and `10_Projects/emptyos/log/`. Don't maintain changelogs here.
+
+## Key Files
+
+- `docs/DESIGN.md` — architecture, philosophy, consciousness model, mechanism layers
+- `docs/APP-DEVELOPMENT.md` — building apps
+- `docs/FRONTEND-DESIGN-LANGUAGE.md` — visual + interaction DNA for every page
+- `docs/GETTING-STARTED.md` — public onboarding
+- `AGENTS.md` — non-Claude-Code AI self-config
+- `emptyos.toml` — machine config (gitignored)
+- `emptyos/kernel/__init__.py` — kernel boot sequence
+- `emptyos/sdk/base_app.py` — BaseApp with all capabilities
+- `emptyos/sdk/vault_library.py` — vault-backed collection standard
+- `emptyos/sdk/utils.py` — `parse_llm_json`, `streak_from_dates`, etc.
+- `emptyos/sdk/srs.py` — SM-2 spaced repetition scheduler
+- `emptyos/web/server.py` — FastAPI server + auto-UI + topology
+- `emptyos/runtime/vault_index.py` — in-memory vault index
+- `emptyos/runtime/vault_map.py` — app-specific path discovery + auto-heal
+- `emptyos/capabilities/providers/claude_cli.py` — Claude Code provider
+- `emptyos/capabilities/providers/openai_compat.py` — OpenAI/Ollama provider
+- `.claude/rules/` — testing, docs-sync, vault-operator, addons, hub-panels, voice-intents, tour-steps, app-ui-patterns, app-conventions-for-export, boards-as-view-layer, dev-gotchas
+- `restart.bat` — kill python, check external services, boot EmptyOS

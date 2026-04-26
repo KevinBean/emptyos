@@ -1,0 +1,23 @@
+[app]
+id = "hello"
+name = "Hello World"
+version = "1.0.0"
+description = "Example EmptyOS app — demonstrates CLI, web, and events"
+
+[app.entry]
+module = "app"
+class = "HelloApp"
+
+[provides.cli]
+commands = ["hello"]
+
+[provides.web]
+prefix = "/hello"
+
+[provides.events]
+emits = ["hello:greeted"]
+
+[requires]
+capabilities = []
+services = []
+events = ["kernel:started"]

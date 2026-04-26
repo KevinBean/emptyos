@@ -1,0 +1,348 @@
+/* Report print stylesheet — drives the PDF export and the in-app preview.
+ *
+ * Formal typography, explicit page geometry, auto-numbered figures/tables,
+ * running headers/footers via Playwright page.pdf template.
+ */
+
+@page {
+    size: A4;
+    margin: 20mm 18mm 22mm;
+}
+
+@page :first {
+    margin: 0;
+}
+
+:root {
+    --doc-fg: #1b1e24;
+    --doc-muted: #5b6370;
+    --doc-border: #d5d9df;
+    --doc-accent: #1f5ca8;
+    --doc-bg-soft: #f6f7f9;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+    margin: 0;
+    padding: 0;
+    color: var(--doc-fg);
+    font-family: "Times New Roman", "Source Serif Pro", Georgia, serif;
+    font-size: 11pt;
+    line-height: 1.5;
+    background: #fff;
+}
+
+body.report-doc {
+    counter-reset: section-num figure-num table-num;
+}
+
+/* --- Title page --------------------------------------------------------- */
+
+.report-title-page {
+    page-break-after: always;
+    break-after: page;
+    min-height: 100vh;
+    padding: 40mm 20mm 20mm;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+}
+
+.report-title-page .doc-type {
+    letter-spacing: 0.25em;
+    text-transform: uppercase;
+    color: var(--doc-accent);
+    font-size: 11pt;
+    font-weight: 700;
+    margin-bottom: 8mm;
+}
+
+.report-title-page .doc-title {
+    font-size: 32pt;
+    line-height: 1.15;
+    margin: 0 0 6mm 0;
+    font-weight: 700;
+    color: var(--doc-fg);
+}
+
+.report-title-page .doc-subtitle {
+    font-size: 14pt;
+    color: var(--doc-muted);
+    margin: 0 0 6mm 0;
+    font-style: italic;
+}
+
+.report-title-page .title-meta {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 20mm;
+    font-size: 10.5pt;
+}
+
+.report-title-page .title-meta th,
+.report-title-page .title-meta td {
+    padding: 4pt 8pt;
+    text-align: left;
+    border-bottom: 1px solid var(--doc-border);
+}
+
+.report-title-page .title-meta th {
+    color: var(--doc-muted);
+    font-weight: 600;
+    width: 30%;
+    white-space: nowrap;
+}
+
+/* --- Table of contents -------------------------------------------------- */
+
+.report-toc {
+    page-break-after: always;
+    break-after: page;
+}
+
+.report-toc h1 {
+    margin-top: 0;
+    font-size: 18pt;
+    border-bottom: 2px solid var(--doc-accent);
+    padding-bottom: 3mm;
+}
+
+.report-toc .toc-list {
+    list-style: none;
+    padding-left: 0;
+}
+
+.report-toc .toc-list li {
+    padding: 2pt 0;
+    border-bottom: 1px dotted var(--doc-border);
+}
+
+.report-toc .toc-list a {
+    color: var(--doc-fg);
+    text-decoration: none;
+    font-size: 11pt;
+}
+
+/* --- Sections ----------------------------------------------------------- */
+
+.report-section {
+    page-break-before: always;
+    break-before: page;
+    counter-increment: section-num;
+}
+
+.report-section > h1 {
+    font-size: 18pt;
+    margin: 0 0 6mm 0;
+    padding-bottom: 3mm;
+    border-bottom: 2px solid var(--doc-accent);
+    color: var(--doc-fg);
+    break-after: avoid-page;
+}
+
+.report-section h2 {
+    font-size: 13pt;
+    margin: 7mm 0 3mm 0;
+    color: var(--doc-fg);
+    break-after: avoid-page;
+}
+
+.report-section h3 {
+    font-size: 11.5pt;
+    margin: 5mm 0 2mm 0;
+    font-style: italic;
+    break-after: avoid-page;
+}
+
+.report-section p {
+    margin: 0 0 3mm 0;
+    text-align: justify;
+    hyphens: auto;
+    orphans: 2;
+    widows: 2;
+}
+
+.report-section ul,
+.report-section ol {
+    margin: 0 0 3mm 6mm;
+    padding-left: 4mm;
+}
+
+.report-section li {
+    margin-bottom: 1mm;
+}
+
+.report-section code {
+    font-family: "Consolas", "Courier New", monospace;
+    font-size: 9.5pt;
+    background: var(--doc-bg-soft);
+    padding: 0 3pt;
+    border-radius: 2pt;
+}
+
+.report-section pre {
+    background: var(--doc-bg-soft);
+    padding: 3mm 4mm;
+    border-left: 3pt solid var(--doc-accent);
+    font-size: 9pt;
+    line-height: 1.35;
+    overflow-x: auto;
+    page-break-inside: avoid;
+}
+
+.report-section pre code {
+    background: transparent;
+    padding: 0;
+}
+
+.report-section a {
+    color: var(--doc-accent);
+}
+
+/* Section status badge next to heading */
+.section-status {
+    display: inline-block;
+    margin-left: 4mm;
+    padding: 1pt 6pt;
+    font-size: 8.5pt;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    border-radius: 10pt;
+    background: var(--doc-bg-soft);
+    color: var(--doc-muted);
+    vertical-align: middle;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    font-weight: 600;
+}
+
+.status-draft        { background: #fff4cc; color: #856400; }
+.status-ready        { background: #dcecff; color: #1f5ca8; }
+.status-approved     { background: #d6f2dd; color: #13663b; }
+.status-needs-review { background: #ffe0cc; color: #8a3b00; }
+
+/* --- Figures ------------------------------------------------------------ */
+
+.report-figure {
+    margin: 5mm auto;
+    text-align: center;
+    page-break-inside: avoid;
+    break-inside: avoid;
+}
+
+.report-figure img {
+    max-width: 95%;
+    max-height: 150mm;
+    height: auto;
+    border: 1px solid var(--doc-border);
+}
+
+.report-figure figcaption {
+    margin-top: 2mm;
+    font-size: 9.5pt;
+    font-style: italic;
+    color: var(--doc-muted);
+}
+
+/* --- Tables ------------------------------------------------------------- */
+
+.report-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 3mm 0 5mm 0;
+    font-size: 10pt;
+    page-break-inside: auto;
+}
+
+.report-table thead {
+    display: table-header-group;  /* repeat on each printed page */
+}
+
+.report-table th,
+.report-table td {
+    border: 1px solid var(--doc-border);
+    padding: 2pt 5pt;
+    vertical-align: top;
+    text-align: left;
+}
+
+.report-table thead th {
+    background: var(--doc-accent);
+    color: #fff;
+    font-weight: 600;
+    text-align: left;
+}
+
+.report-table tbody tr:nth-child(even) {
+    background: var(--doc-bg-soft);
+}
+
+.report-table.empty caption {
+    caption-side: top;
+    padding: 4mm 0;
+    font-style: italic;
+    color: var(--doc-muted);
+    text-align: left;
+}
+
+/* Signoff block */
+.signoff-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 6mm 0;
+    font-size: 10pt;
+}
+
+.signoff-table th,
+.signoff-table td {
+    border: 1px solid var(--doc-border);
+    padding: 4pt 6pt;
+}
+
+.signoff-table thead th {
+    background: var(--doc-bg-soft);
+    font-weight: 600;
+}
+
+.signoff-table tbody td.sig {
+    min-height: 14mm;
+    height: 14mm;
+}
+
+/* --- Callouts (inherited syntax from publish renderer) ------------------ */
+
+.callout {
+    border-left: 3pt solid var(--doc-accent);
+    background: var(--doc-bg-soft);
+    padding: 3mm 4mm;
+    margin: 3mm 0;
+    page-break-inside: avoid;
+}
+
+.callout-title {
+    display: block;
+    margin-bottom: 2mm;
+    color: var(--doc-accent);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    font-size: 9.5pt;
+}
+
+.callout-warning { border-left-color: #c27a1a; }
+.callout-warning .callout-title { color: #c27a1a; }
+.callout-danger  { border-left-color: #b43a3a; }
+.callout-danger  .callout-title  { color: #b43a3a; }
+.callout-success { border-left-color: #13663b; }
+.callout-success .callout-title  { color: #13663b; }
+
+/* --- Requirement / risk anchor links ------------------------------------ */
+
+.req-link {
+    font-family: "Consolas", monospace;
+    font-size: 9.5pt;
+    color: var(--doc-accent);
+    text-decoration: none;
+    background: var(--doc-bg-soft);
+    padding: 0 3pt;
+    border-radius: 2pt;
+}

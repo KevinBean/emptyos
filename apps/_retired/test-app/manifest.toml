@@ -1,0 +1,22 @@
+[app]
+id = "test-app"
+name = "Test App"
+version = "1.0.0"
+description = "test app"
+
+[app.entry]
+module = "app"
+class = "TestApp"
+
+[requires]
+capabilities = ["think", "read", "write"]
+apps = []
+
+[provides.cli]
+commands = ["run"]
+
+[provides.web]
+prefix = "/test-app"
+
+[provides.events]
+emits = []

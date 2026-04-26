@@ -1,0 +1,127 @@
+# EmptyOS Configuration
+# Copy to emptyos.toml and edit for your machine.
+#
+# EmptyOS is built on human capabilities: think, read, write, search.
+# Without any tools configured, it asks YOU to fulfill these.
+# Add providers to automate what you want automated.
+
+[os]
+name = "My EmptyOS"
+data_dir = "./data"
+log_level = "INFO"
+
+# Notes directory — any folder of text/markdown files.
+# Works with any markdown vault, plain folders, anything.
+# Leave empty if you don't use a notes system.
+[notes]
+path = ""
+watch = false
+
+# --- Network / deployment mode ---
+# EmptyOS runs the same code locally or on a server. The `mode` picks the
+# trust level of the network it's accessible on.
+#
+#   "local"   — only this machine (127.0.0.1, no auth). Default.
+#   "private" — your own trusted network: Tailscale, WireGuard, LAN, VPN.
+#               Binds 0.0.0.0; the network layer is the gate.
+#   "public"  — internet-exposed (VPS, Docker, cloud). auth_token REQUIRED.
+#
+# `host` and `auth_token` below are overrides — usually you just pick a mode.
+[network]
+mode = "local"
+port = 9000
+# host = "127.0.0.1"         # override the mode default
+# auth_token = ""              # required in "public" mode
+
+# --- Demo mode (orthogonal to network mode) ---
+# When enabled: shows demo banner, disables GPU capabilities, enables BYOK
+# in settings. Can layer on top of "public" (hosted demo) or "local" (local
+# test of the demo UX).
+[demo]
+enabled = false
+# reset_on_restart = false   # ephemeral vault for hosted demos
+# seed_on_boot = false       # on first boot, run every app's demo/seed.py (idempotent)
+
+# --- Cloud Consent ---
+# Controls what happens when a capability falls back to a cloud provider
+# (OpenAI, Anthropic, or any non-localhost/private-IP host).
+#   "ask"    — prompt on first use per session (default)
+#   "always" — proceed without prompting
+#   "never"  — skip cloud providers entirely
+[cloud]
+consent = "ask"
+
+# --- Capabilities ---
+# Each capability tries providers in order. "human" is always the final fallback.
+# You only need to configure what you want to automate.
+
+# Think: answer questions, summarize, generate text.
+# Without providers, EmptyOS asks you. With an LLM, it answers automatically.
+#
+# [capabilities.think]
+# providers = ["ollama"]   # try these in order; human is always last
+#
+# [capabilities.think.ollama]
+# host = "http://localhost:11434"
+# model = "llama3.1"
+#
+# [capabilities.think.openai]
+# host = "https://api.openai.com"  # or any OpenAI-compatible endpoint
+# model = "gpt-5-mini"
+# api_key_env = "OPENAI_API_KEY"
+#
+# [capabilities.think.lmstudio]
+# host = "http://localhost:1234"
+# model = "default"
+
+# Read/Write: filesystem providers are always available if [notes.path] is set.
+# Search: grep is always available. Add more providers for smarter search.
+
+# --- Legacy format (also works) ---
+# [llm]
+# default_provider = "ollama"
+# [llm.providers.ollama]
+# host = "http://localhost:11434"
+# model = "llama3.1"
+
+[services.gpu]
+comfyui = ""
+tts = ""
+
+[scheduler]
+enabled = true
+timezone = "UTC"
+
+# --- Plugins ---
+# Plugins extend capabilities. Set autostart = true + launcher path
+# to include in the system boot sequence (eos boot --generate).
+#
+# [plugins]
+# path = "./plugins"
+#
+# [plugins.ollama]
+# host = "http://localhost:11434"
+# model = "llama3.1"
+#
+# [plugins.comfyui]
+# host = "http://localhost:8188"
+# launcher = "C:/path/to/ComfyUI/run_nvidia_gpu.bat"
+# autostart = true
+#
+# [plugins.voice-api]
+# host = "http://localhost:8601"
+#
+# [plugins.webcam]
+# device = 0          # camera index
+# width = 1280
+# height = 720
+# warmup_frames = 3   # skip initial frames while sensor auto-exposes
+
+# --- System Startup ---
+# Non-plugin programs to launch on boot (via eos boot --generate).
+# [startup]
+# obsidian = "C:/path/to/Obsidian.exe"
+
+[apps]
+path = "./apps"
+autostart = []

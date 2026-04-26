@@ -1,0 +1,16 @@
+[plugin]
+id = "obsidian"
+name = "Obsidian Viewer"
+version = "1.0.0"
+description = "Declares Obsidian as EmptyOS's vault viewer — owns URI templates (obsidian://open, obsidian://new) used by every note link. Swap this plugin (or override uri_templates in config) to route note links through a different viewer."
+
+[plugin.entry]
+module = "plugin"
+class = "ObsidianPlugin"
+
+[provides]
+services = ["viewer"]
+tags = ["vault", "viewer"]
+
+[platforms]
+supports = ["laptop"]

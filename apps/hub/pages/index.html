@@ -1,0 +1,556 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>EmptyOS</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="/static/theme.css">
+<link rel="stylesheet" href="/static/eos-components.css">
+<link rel="stylesheet" href="/static/eos-keys.css">
+<style>
+:root { --hub-gap: 16px; }
+.hub-wrap { max-width: 980px; margin: 0 auto; padding: 24px 20px 64px; }
+.hub-header { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 20px; gap: 16px; flex-wrap: wrap; }
+.hub-title { font-size: 22px; font-weight: 600; letter-spacing: -0.01em; }
+.hub-meta { font-size: 12px; color: var(--text-muted); }
+.hub-empty { padding: 48px 24px; text-align: center; color: var(--text-muted); }
+.hub-empty h2 { margin: 0 0 8px; color: var(--text); font-weight: 500; }
+.panel { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 14px 16px; margin-bottom: var(--hub-gap); }
+.panel-title { font-size: 12px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--text-muted); margin-bottom: 10px; }
+.err { color: var(--danger); font-size: 12px; }
+
+/* tiles-row */
+.r-tiles-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px; }
+.r-tile { display: block; padding: 12px; background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-sm); text-decoration: none; color: var(--text); text-align: center; transition: background 0.12s; }
+.r-tile:hover { background: var(--bg-card-hover); }
+.r-tile-val { font-size: 24px; font-weight: 600; line-height: 1.1; }
+.r-tile-val.warn { color: var(--warning); }
+.r-tile-val.bad { color: var(--danger); }
+.r-tile-val.good { color: var(--success); }
+.r-tile-label { font-size: 11px; color: var(--text-muted); margin-top: 4px; text-transform: uppercase; letter-spacing: 0.03em; }
+
+/* stat-tile (grouped dashboard) */
+.r-dashboard-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px; margin-bottom: var(--hub-gap); }
+.r-stat-tile { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 12px; text-decoration: none; color: var(--text); }
+.r-stat-tile:hover { background: var(--bg-card-hover); }
+.r-stat-val { font-size: 20px; font-weight: 600; }
+.r-stat-label { font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.03em; }
+.r-stat-sub { font-size: 12px; color: var(--text-muted); margin-top: 4px; }
+
+/* accent-card */
+.r-accent-card { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 16px 18px; background: var(--accent-tint-weak); border: 1px solid var(--accent, var(--border)); border-radius: var(--radius-lg); text-decoration: none; color: var(--text); margin-bottom: var(--hub-gap); }
+.r-accent-card-label { font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 4px; }
+.r-accent-card-text { font-size: 15px; line-height: 1.4; }
+.r-accent-card-btn { padding: 6px 12px; background: var(--accent, var(--text)); color: var(--bg-card); border-radius: var(--radius-sm); font-size: 12px; font-weight: 500; white-space: nowrap; }
+
+/* hero-weather (consumed by header chrome) */
+.hub-hero-weather { font-size: 13px; color: var(--text-muted); }
+
+/* plain-list / task-list / deadline-row */
+.r-list { display: flex; flex-direction: column; gap: 4px; }
+.r-list-row { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: var(--radius-sm); text-decoration: none; color: var(--text); transition: background 0.12s; }
+.r-list-row:hover { background: var(--bg-card-hover); }
+.r-list-icon { font-size: 14px; }
+.r-list-body { flex: 1; min-width: 0; }
+.r-list-title { font-size: 14px; line-height: 1.3; }
+.r-list-sub { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+.r-list-badge { padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 500; background: var(--bg-card-hover); }
+.r-list-badge.overdue { background: color-mix(in srgb, var(--danger) 12%, transparent); color: var(--danger); }
+.r-list-badge.today { background: var(--accent-bg); color: var(--accent, var(--text)); }
+.r-list-source { font-size: 11px; color: var(--text-muted); }
+.r-list-row.done .r-list-title { text-decoration: line-through; opacity: 0.6; }
+
+/* chips */
+.r-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.r-chip { padding: 6px 10px; background: var(--bg-card-hover); border: 1px solid var(--border); border-radius: 999px; font-size: 12px; text-decoration: none; color: var(--text); transition: background 0.12s; }
+.r-chip:hover { background: var(--accent-bg); }
+
+/* countdown-tile (grouped) */
+.r-countdowns { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px; margin-bottom: var(--hub-gap); }
+.r-countdown { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 12px; text-decoration: none; color: var(--text); }
+.r-countdown:hover { background: var(--bg-card-hover); }
+.r-countdown-days { font-size: 22px; font-weight: 600; }
+.r-countdown-label { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+.r-countdown-date { font-size: 11px; color: var(--text-muted); margin-top: 4px; }
+
+/* compare-tile (grouped month-compare) */
+.r-compare-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px; margin-bottom: var(--hub-gap); }
+.r-compare { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 12px; }
+.r-compare-label { font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.03em; }
+.r-compare-vals { display: flex; align-items: baseline; gap: 8px; margin-top: 4px; }
+.r-compare-now { font-size: 18px; font-weight: 600; }
+.r-compare-prev { font-size: 13px; color: var(--text-muted); }
+.r-compare-delta { font-size: 12px; }
+.r-compare-delta.up { color: var(--success); }
+.r-compare-delta.down { color: var(--danger); }
+
+/* text-card */
+.r-text-card { padding: 14px 16px; background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-lg); }
+.r-text-card-title { font-size: 12px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 8px; }
+.r-text-card-body { font-size: 14px; line-height: 1.5; color: var(--text); }
+
+/* quote */
+.r-quote { padding: 16px 18px; font-style: italic; color: var(--text-muted); text-align: center; font-size: 14px; line-height: 1.5; }
+.r-quote-attr { display: block; margin-top: 6px; font-size: 12px; font-style: normal; }
+
+/* bar (progress goal) */
+.r-bars { display: flex; flex-direction: column; gap: 10px; }
+.r-bar-row { display: block; }
+.r-bar-head { display: flex; justify-content: space-between; align-items: baseline; font-size: 13px; margin-bottom: 4px; }
+.r-bar-name { color: var(--text); }
+.r-bar-detail { font-size: 11px; color: var(--text-muted); }
+.r-bar-track { height: 6px; background: var(--bg-card-hover); border-radius: 999px; overflow: hidden; }
+.r-bar-fill { height: 100%; background: var(--accent, var(--text)); border-radius: 999px; transition: width 0.3s ease; }
+
+/* checklist (toggleable) */
+.r-checklist { display: flex; flex-direction: column; gap: 4px; }
+.r-check-row { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: var(--radius-sm); cursor: pointer; transition: background 0.12s; }
+.r-check-row:hover { background: var(--bg-card-hover); }
+.r-check-box { width: 16px; height: 16px; border: 1.5px solid var(--border); border-radius: 4px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-size: 11px; color: var(--bg-card); background: var(--bg-card); }
+.r-check-row.done .r-check-box { background: var(--success, var(--text)); border-color: var(--success, var(--text)); }
+.r-check-row.done .r-check-text { text-decoration: line-through; opacity: 0.6; }
+.r-check-text { font-size: 14px; flex: 1; }
+
+/* next-up */
+.r-nextup { display: flex; align-items: center; gap: 14px; padding: 4px 2px; }
+.r-nextup-time { font-size: 22px; font-weight: 600; color: var(--accent, var(--text)); min-width: 70px; }
+.r-nextup-body { flex: 1; min-width: 0; }
+.r-nextup-event { font-size: 14px; color: var(--text); }
+.r-nextup-tag { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+
+/* smart search bar */
+.hub-search { position: relative; margin: 0 0 24px; }
+.hub-search-input { width: 100%; box-sizing: border-box; background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 11px 14px 11px 36px; font-size: 14px; font-family: inherit; color: var(--text); outline: none; transition: border-color 0.15s, box-shadow 0.15s; }
+.hub-search-input:focus { border-color: color-mix(in srgb, var(--accent) 60%, transparent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 12%, transparent); }
+.hub-search-input::placeholder { color: var(--text-muted); }
+.hub-search-icon { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); font-size: 14px; color: var(--text-muted); pointer-events: none; }
+.hub-search-kbd { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); font-family: var(--font-mono, ui-monospace, monospace); font-size: 11px; color: var(--text-muted); background: var(--bg-card-hover); border: 1px solid var(--border); border-radius: 4px; padding: 2px 6px; pointer-events: none; }
+.hub-search-results { position: absolute; top: calc(100% + 4px); left: 0; right: 0; background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); z-index: 50; display: none; max-height: 320px; overflow-y: auto; box-shadow: 0 4px 14px var(--shadow); }
+.hub-search-results.open { display: block; }
+.hub-sr-item { display: flex; align-items: center; gap: 10px; padding: 8px 12px; cursor: pointer; border-bottom: 1px solid var(--border); }
+.hub-sr-item:last-child { border-bottom: none; }
+.hub-sr-item.active, .hub-sr-item:hover { background: var(--accent-bg); }
+.hub-sr-icon { font-size: 16px; }
+.hub-sr-name { font-size: 13px; color: var(--text); flex-shrink: 0; }
+.hub-sr-desc { font-size: 12px; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; min-width: 0; }
+.hub-sr-fallback { padding: 10px 12px; font-size: 12px; color: var(--text-muted); }
+.hub-sr-fallback strong { color: var(--text); font-weight: 500; }
+
+/* media-card */
+.r-media-card { display: flex; align-items: center; gap: 12px; padding: 12px 14px; background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-lg); text-decoration: none; color: var(--text); }
+.r-media-card:hover { background: var(--bg-card-hover); }
+.r-media-emoji { font-size: 28px; }
+.r-media-title { font-size: 14px; font-weight: 500; }
+.r-media-subtitle { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+</style>
+</head>
+<body>
+<div id="eos-nav"></div>
+
+<div class="hub-wrap">
+  <div class="hub-header">
+    <div>
+      <div class="hub-title" id="hub-title">EmptyOS</div>
+      <div class="hub-meta" id="hub-meta"></div>
+    </div>
+    <div style="display:flex;align-items:center;gap:10px">
+      <div class="hub-hero-weather" id="hub-hero-weather"></div>
+      <button class="btn-settings" onclick="openHubSettings()" title="Hub settings" aria-label="Hub settings" style="background:none;border:1px solid var(--border);border-radius:6px;padding:4px 8px;cursor:pointer;color:var(--text-muted);font-size:14px">&#9881;</button>
+    </div>
+  </div>
+
+  <div class="hub-search">
+    <span class="hub-search-icon">&#128269;</span>
+    <input class="hub-search-input" id="hub-search-input" type="text" placeholder="Search apps, vault, commands…" autocomplete="off" spellcheck="false">
+    <span class="hub-search-kbd" id="hub-search-kbd">/</span>
+    <div class="hub-search-results" id="hub-search-results"></div>
+  </div>
+
+  <div id="hub-blocks"></div>
+</div>
+
+<script src="/static/eos.js"></script>
+<script src="/static/eos-components.js"></script>
+<script src="/static/eos-keys.js"></script>
+<script>
+function esc(s) {
+  if (s == null) return '';
+  return String(s).replace(/[&<>"']/g, function(c) {
+    return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
+  });
+}
+
+function hrefAttr(url) {
+  return url ? ' href="' + esc(url) + '"' : '';
+}
+
+var RENDERERS = {
+
+  'accent-card': function(items){
+    var d = items[0].data;
+    var btn = d.button_label ? '<span class="r-accent-card-btn">' + esc(d.button_label) + '</span>' : '';
+    return '<a class="r-accent-card"' + hrefAttr(d.url) + '>' +
+      '<div>' +
+        '<div class="r-accent-card-label">' + esc(d.label || '') + '</div>' +
+        '<div class="r-accent-card-text">' + esc(d.text || '') + '</div>' +
+      '</div>' + btn +
+    '</a>';
+  },
+
+  'hero-weather': function(items){
+    var d = items[0].data;
+    var s = (d.emoji || '') + ' ' + (d.temperature != null ? d.temperature + '°' : '');
+    document.getElementById('hub-hero-weather').textContent = s;
+    return '';
+  },
+
+  'tiles-row': function(items){
+    var d = items[0].data;
+    if (!Array.isArray(d)) d = [d];
+    return '<div class="panel"><div class="r-tiles-row">' + d.map(function(t){
+      return '<a class="r-tile"' + hrefAttr(t.href) + '>' +
+        '<div class="r-tile-val ' + esc(t.tone || '') + '">' + esc(t.value) + '</div>' +
+        '<div class="r-tile-label">' + esc(t.label) + '</div>' +
+      '</a>';
+    }).join('') + '</div></div>';
+  },
+
+  'stat-tile': function(items){
+    /* When grouped (group="dashboard"), render all items as a tile grid.
+       When standalone, render single tile. */
+    var tiles = items.map(function(p){
+      var d = p.data;
+      return '<a class="r-stat-tile"' + hrefAttr(d.href) + '>' +
+        '<div class="r-stat-val">' + esc(d.value) + '</div>' +
+        '<div class="r-stat-label">' + esc(d.label) + '</div>' +
+        (d.sub ? '<div class="r-stat-sub">' + esc(d.sub) + '</div>' : '') +
+      '</a>';
+    }).join('');
+    return '<div class="r-dashboard-grid">' + tiles + '</div>';
+  },
+
+  'plain-list': function(items, block){
+    var d = items[0].data;
+    if (!Array.isArray(d)) d = [d];
+    if (!d.length) return '';
+    var rows = d.map(function(r){
+      var sub = r.subtitle ? '<div class="r-list-sub">' + esc(r.subtitle) + '</div>' : '';
+      return '<a class="r-list-row"' + hrefAttr(r.href) + '>' +
+        (r.icon ? '<span class="r-list-icon">' + esc(r.icon) + '</span>' : '') +
+        '<div class="r-list-body"><div class="r-list-title">' + esc(r.title) + '</div>' + sub + '</div>' +
+      '</a>';
+    }).join('');
+    var hdr = block.title ? '<div class="panel-title">' + esc(block.title) + '</div>' : '';
+    return '<div class="panel">' + hdr + '<div class="r-list">' + rows + '</div></div>';
+  },
+
+  'task-list': function(items, block){
+    var d = items[0].data;
+    if (!Array.isArray(d) || !d.length) return '';
+    var rows = d.map(function(t){
+      var doneCls = t.done ? ' done' : '';
+      var badge = t.tone ? '<span class="r-list-badge ' + esc(t.tone) + '">' + esc(t.tone) + '</span>' : '';
+      return '<a class="r-list-row' + doneCls + '"' + hrefAttr(t.href || '/task/') + '>' +
+        '<div class="r-list-body"><div class="r-list-title">' + esc(t.text || t.title) + '</div></div>' + badge +
+      '</a>';
+    }).join('');
+    var hdr = block.title ? '<div class="panel-title">' + esc(block.title) + '</div>' : '';
+    return '<div class="panel">' + hdr + '<div class="r-list">' + rows + '</div></div>';
+  },
+
+  'deadline-row': function(items, block){
+    var d = items[0].data;
+    if (!Array.isArray(d) || !d.length) return '';
+    var rows = d.map(function(r){
+      var badge = r.days_remaining != null
+        ? '<span class="r-list-badge">' + esc(r.days_remaining) + 'd</span>'
+        : '';
+      var sub = r.subtitle ? '<div class="r-list-sub">' + esc(r.subtitle) + '</div>' : '';
+      return '<a class="r-list-row"' + hrefAttr(r.href) + '>' +
+        '<div class="r-list-body"><div class="r-list-title">' + esc(r.title) + '</div>' + sub + '</div>' + badge +
+      '</a>';
+    }).join('');
+    var hdr = block.title ? '<div class="panel-title">' + esc(block.title) + '</div>' : '';
+    return '<div class="panel">' + hdr + '<div class="r-list">' + rows + '</div></div>';
+  },
+
+  'chips': function(items, block){
+    var all = [];
+    items.forEach(function(p){
+      var d = p.data;
+      if (!Array.isArray(d)) d = [d];
+      all = all.concat(d);
+    });
+    if (!all.length) return '';
+    var chips = all.map(function(c){
+      return '<a class="r-chip"' + hrefAttr(c.href) + '>' + esc(c.title || c.label) + '</a>';
+    }).join('');
+    var hdr = block.title ? '<div class="panel-title">' + esc(block.title) + '</div>' : '';
+    return '<div class="panel">' + hdr + '<div class="r-chips">' + chips + '</div></div>';
+  },
+
+  'countdown-tile': function(items){
+    var tiles = items.map(function(p){
+      var d = p.data;
+      return '<a class="r-countdown"' + hrefAttr(d.href) + '>' +
+        '<div class="r-countdown-days">' + esc(d.days) + 'd</div>' +
+        '<div class="r-countdown-label">' + esc(d.label) + '</div>' +
+        (d.date ? '<div class="r-countdown-date">' + esc(d.date) + '</div>' : '') +
+      '</a>';
+    }).join('');
+    return '<div class="r-countdowns">' + tiles + '</div>';
+  },
+
+  'compare-tile': function(items){
+    var tiles = items.map(function(p){
+      var d = p.data;
+      var deltaCls = (d.delta_pct || 0) >= 0 ? 'up' : 'down';
+      var deltaSign = (d.delta_pct || 0) >= 0 ? '+' : '';
+      return '<div class="r-compare">' +
+        '<div class="r-compare-label">' + esc(d.label) + '</div>' +
+        '<div class="r-compare-vals">' +
+          '<span class="r-compare-now">' + esc(d.now) + '</span>' +
+          '<span class="r-compare-prev">vs ' + esc(d.prev) + '</span>' +
+          (d.delta_pct != null ? '<span class="r-compare-delta ' + deltaCls + '">' + deltaSign + d.delta_pct + '%</span>' : '') +
+        '</div>' +
+      '</div>';
+    }).join('');
+    return '<div class="r-compare-grid">' + tiles + '</div>';
+  },
+
+  'text-card': function(items){
+    var d = items[0].data;
+    return '<div class="r-text-card">' +
+      (d.title ? '<div class="r-text-card-title">' + esc(d.title) + '</div>' : '') +
+      '<div class="r-text-card-body">' + esc(d.body || d.text || '') + '</div>' +
+    '</div>';
+  },
+
+  'quote': function(items){
+    var d = items[0].data;
+    return '<div class="panel"><div class="r-quote">' + esc(d.text || d.quote || '') +
+      (d.author ? '<span class="r-quote-attr">— ' + esc(d.author) + '</span>' : '') +
+    '</div></div>';
+  },
+
+  'bar': function(items, block){
+    /* Goals progress bars. Each panel returns dict {name,pct,detail} or list of same.
+       When grouped (group="goals"), all bars render as one stacked panel. */
+    var all = [];
+    items.forEach(function(p){
+      var d = p.data;
+      if (!Array.isArray(d)) d = [d];
+      all = all.concat(d);
+    });
+    if (!all.length) return '';
+    var rows = all.map(function(b){
+      var pct = Math.max(0, Math.min(100, Number(b.pct) || 0));
+      return '<div class="r-bar-row">' +
+        '<div class="r-bar-head"><span class="r-bar-name">' + esc(b.name || '') + '</span>' +
+          '<span class="r-bar-detail">' + esc(b.detail || (pct + '%')) + '</span></div>' +
+        '<div class="r-bar-track"><div class="r-bar-fill" style="width:' + pct + '%"></div></div>' +
+      '</div>';
+    }).join('');
+    var hdr = block.title ? '<div class="panel-title">' + esc(block.title) + '</div>' : '';
+    return '<div class="panel">' + hdr + '<div class="r-bars">' + rows + '</div></div>';
+  },
+
+  'checklist': function(items, block){
+    var d = items[0].data;
+    if (!Array.isArray(d) || !d.length) return '';
+    var endpoint = (d[0] && d[0].toggle_endpoint) || '';
+    var rows = d.map(function(it){
+      var doneCls = it.done ? ' done' : '';
+      var idx = it.toggle_index;
+      var onclick = (endpoint && idx != null)
+        ? ' onclick="hubToggleCheck(this,\'' + esc(endpoint) + '\',' + idx + ')"'
+        : '';
+      return '<div class="r-check-row' + doneCls + '"' + onclick + '>' +
+        '<div class="r-check-box">' + (it.done ? '✓' : '') + '</div>' +
+        '<div class="r-check-text">' + esc(it.text || '') + '</div>' +
+      '</div>';
+    }).join('');
+    var hdr = block.title ? '<div class="panel-title">' + esc(block.title) + '</div>' : '';
+    return '<div class="panel">' + hdr + '<div class="r-checklist">' + rows + '</div></div>';
+  },
+
+  'next-up': function(items, block){
+    var d = items[0].data;
+    if (!d) return '';
+    var hdr = block.title ? '<div class="panel-title">' + esc(block.title) + '</div>' : '';
+    return '<div class="panel">' + hdr + '<div class="r-nextup">' +
+      '<div class="r-nextup-time">' + esc(d.time || '') + '</div>' +
+      '<div class="r-nextup-body">' +
+        '<div class="r-nextup-event">' + esc(d.event || '') + '</div>' +
+        (d.tag ? '<div class="r-nextup-tag">' + esc(d.tag) + '</div>' : '') +
+      '</div>' +
+    '</div></div>';
+  },
+
+  'slot-list': function(items, block){
+    var d = items[0].data;
+    if (!Array.isArray(d) || !d.length) return '';
+    var rows = d.map(function(r){
+      var title = r.title || r.text || '';
+      var sub = r.subtitle ? '<div class="r-list-sub">' + esc(r.subtitle) + '</div>' : '';
+      var badge = (r.badge || r.tag)
+        ? '<span class="r-list-badge">' + esc(r.badge || r.tag) + '</span>' : '';
+      return '<a class="r-list-row"' + hrefAttr(r.href) + '>' +
+        '<div class="r-list-body"><div class="r-list-title">' + esc(title) + '</div>' + sub + '</div>' + badge +
+      '</a>';
+    }).join('');
+    var hdr = block.title ? '<div class="panel-title">' + esc(block.title) + '</div>' : '';
+    return '<div class="panel">' + hdr + '<div class="r-list">' + rows + '</div></div>';
+  },
+
+  'media-card': function(items){
+    var d = items[0].data;
+    if (!d) return '';
+    return '<a class="r-media-card"' + hrefAttr(d.href) + '>' +
+      (d.emoji ? '<div class="r-media-emoji">' + esc(d.emoji) + '</div>' : '') +
+      '<div>' +
+        '<div class="r-media-title">' + esc(d.title || '') + '</div>' +
+        (d.subtitle ? '<div class="r-media-subtitle">' + esc(d.subtitle) + '</div>' : '') +
+      '</div>' +
+    '</a>';
+  },
+};
+
+async function hubToggleCheck(rowEl, endpoint, index){
+  rowEl.classList.toggle('done');
+  var box = rowEl.querySelector('.r-check-box');
+  if (box) box.textContent = rowEl.classList.contains('done') ? '✓' : '';
+  try {
+    await fetch(endpoint, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({index: index})});
+  } catch (e) { /* leave optimistic toggle */ }
+}
+
+async function loadPanels() {
+  var blocksEl = document.getElementById('hub-blocks');
+  blocksEl.innerHTML = '<div class="hub-meta">Loading…</div>';
+  try {
+    var res = await fetch('/hub/api/panels');
+    var json = await res.json();
+    renderBlocks(json.blocks || []);
+  } catch (e) {
+    blocksEl.innerHTML = '<div class="err">Failed to load panels: ' + esc(String(e)) + '</div>';
+  }
+}
+
+function renderBlocks(blocks) {
+  var blocksEl = document.getElementById('hub-blocks');
+  if (!blocks.length) {
+    blocksEl.innerHTML = '<div class="hub-empty">' +
+      '<h2>Empty by default</h2>' +
+      '<p>No apps have contributed panels yet. Try <a href="/quick-action/">capture</a> or <a href="/task/">tasks</a>.</p>' +
+    '</div>';
+    return;
+  }
+  var html = blocks.map(function(b){
+    var fn = RENDERERS[b.renderer];
+    if (!fn) {
+      return '<div class="panel err">Unknown renderer: <code>' + esc(b.renderer) + '</code> (panel <code>' + esc(b.id) + '</code>, source <code>' + esc(b.items[0].source) + '</code>)</div>';
+    }
+    try {
+      return fn(b.items, b);
+    } catch (e) {
+      return '<div class="panel err">Render error in ' + esc(b.id) + ': ' + esc(String(e)) + '</div>';
+    }
+  }).join('');
+  blocksEl.innerHTML = html;
+  document.getElementById('hub-meta').textContent = blocks.length + ' panel' + (blocks.length === 1 ? '' : 's');
+}
+
+document.addEventListener('DOMContentLoaded', loadPanels);
+
+// ── Settings panel (mandatory because manifest declares [provides.settings]) ──
+var _hubSettings = EOS_UI.settingsPanel({
+  id: 'hub-settings-panel',
+  title: 'Hub Settings',
+  fields: [
+    {key: 'hub.show_welcome', label: 'Show welcome card when no panels', type: 'boolean', default: true,
+     hint: 'Hides the EmptyOS welcome accent-card on the home page.'},
+  ],
+});
+function openHubSettings() { _hubSettings.open(); }
+
+// ── Smart search bar ──
+(function(){
+  var input = document.getElementById('hub-search-input');
+  var results = document.getElementById('hub-search-results');
+  var kbdHint = document.getElementById('hub-search-kbd');
+  if (!input || !results) return;
+  var apps = [];
+  var idx = -1;
+
+  fetch('/api/apps').then(function(r){return r.json();}).then(function(list){
+    apps = (list || []).filter(function(a){ return a && a.web_prefix; });
+  }).catch(function(){});
+
+  function render(matches, q){
+    if (!matches.length) {
+      var safeQ = esc(q);
+      results.innerHTML = '<div class="hub-sr-fallback">No app match. Press <strong>Enter</strong> to search vault for &ldquo;' + safeQ + '&rdquo;.</div>';
+    } else {
+      results.innerHTML = matches.map(function(a, i){
+        return '<div class="hub-sr-item' + (i===idx?' active':'') + '" data-href="' + esc(a.web_prefix) + '/">' +
+          '<span class="hub-sr-icon">' + esc(a.icon || '\u25A2') + '</span>' +
+          '<span class="hub-sr-name">' + esc(a.name || a.id) + '</span>' +
+          '<span class="hub-sr-desc">' + esc((a.description || '').slice(0, 60)) + '</span>' +
+        '</div>';
+      }).join('');
+    }
+    results.classList.add('open');
+  }
+
+  input.addEventListener('input', function(){
+    var q = this.value.trim().toLowerCase();
+    if (!q) { results.classList.remove('open'); idx = -1; return; }
+    var matches = apps.filter(function(a){
+      return (a.name||'').toLowerCase().indexOf(q) >= 0 ||
+             (a.id||'').toLowerCase().indexOf(q) >= 0 ||
+             (a.description||'').toLowerCase().indexOf(q) >= 0;
+    }).slice(0, 8);
+    idx = matches.length ? 0 : -1;
+    render(matches, q);
+  });
+
+  input.addEventListener('keydown', function(e){
+    var items = results.querySelectorAll('.hub-sr-item');
+    if (e.key === 'ArrowDown') {
+      e.preventDefault(); idx = Math.min(idx + 1, items.length - 1); paintActive(items);
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault(); idx = Math.max(idx - 1, 0); paintActive(items);
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      if (idx >= 0 && items[idx]) location.href = items[idx].dataset.href;
+      else if (this.value.trim()) location.href = '/search/?q=' + encodeURIComponent(this.value.trim());
+    } else if (e.key === 'Escape') {
+      results.classList.remove('open'); this.blur();
+    }
+  });
+
+  results.addEventListener('click', function(e){
+    var item = e.target.closest('.hub-sr-item');
+    if (item && item.dataset.href) location.href = item.dataset.href;
+  });
+
+  function paintActive(items){
+    items.forEach(function(el, i){ el.classList.toggle('active', i === idx); });
+  }
+
+  document.addEventListener('click', function(e){
+    if (!e.target.closest('.hub-search')) results.classList.remove('open');
+  });
+
+  // "/" focuses (handled globally in eos-keys.js too, but local keeps it snappy)
+  document.addEventListener('keydown', function(e){
+    if (e.key === '/' && document.activeElement !== input && !e.target.matches('input, textarea, [contenteditable]')) {
+      e.preventDefault();
+      input.focus();
+    }
+  });
+})();
+</script>
+</body>
+</html>

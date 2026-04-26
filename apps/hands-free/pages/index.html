@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Hands-Free — EmptyOS</title>
+<link rel="stylesheet" href="/static/theme.css">
+<link rel="stylesheet" href="/static/eos-components.css">
+<style>
+* { margin:0; padding:0; box-sizing:border-box }
+body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif; background:var(--bg); color:var(--text); min-height:100dvh; padding:24px; -webkit-font-smoothing:antialiased }
+.wrap { max-width:1100px; margin:0 auto; display:grid; grid-template-columns:minmax(0,1fr) 360px; gap:24px }
+@media (max-width:900px){ .wrap { grid-template-columns:1fr } }
+.panel { background:var(--bg-card); border:1px solid var(--border); border-radius:14px; padding:24px }
+.panel + .panel { margin-top:16px }
+.panel h2 { font-size:13px; font-weight:600; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.05em; margin-bottom:16px }
+.hero { display:flex; justify-content:space-between; align-items:center; margin-bottom:16px }
+.hero h1 { font-size:22px; font-weight:700 }
+.hero .sub { font-size:12px; color:var(--text-muted); margin-top:4px }
+.btn { padding:12px 16px; background:var(--accent); color:#fff; border:none; border-radius:8px; font-size:14px; font-weight:600; cursor:pointer }
+.btn.ghost { background:transparent; color:var(--text); border:1px solid var(--border) }
+
+.status-grid { display:grid; grid-template-columns:1fr 1fr; gap:12px }
+.stat { background:var(--bg); border:1px solid var(--border); border-radius:14px; padding:16px }
+.stat .k { font-size:11px; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.04em; margin-bottom:4px }
+.stat .v { font-size:16px; font-weight:600 }
+.stat .v code { font-family:var(--mono); font-size:13px }
+.stat.good { border-color:color-mix(in srgb, #4caf50 40%, var(--border)) }
+.stat.warn { border-color:color-mix(in srgb, #ff9800 40%, var(--border)) }
+
+.consent { background:color-mix(in srgb, var(--accent) 6%, transparent); border:1px solid color-mix(in srgb, var(--accent) 25%, var(--border)); border-radius:14px; padding:12px 16px; margin-top:12px; font-size:13px; line-height:1.55 }
+.consent b { color:var(--accent) }
+
+.cheat table { width:100%; border-collapse:collapse; font-size:13px }
+.cheat td { padding:8px 0; border-bottom:1px dashed var(--border) }
+.cheat td.em { width:34px; font-size:18px; text-align:center }
+.cheat td.g { font-family:var(--mono); color:var(--text-muted); width:110px }
+.cheat td.a { font-weight:500 }
+.cheat tr:last-child td { border-bottom:none }
+
+.intent-list { font-size:13px; display:grid; grid-template-columns:auto 1fr; gap:8px 16px; padding:4px 0 }
+.intent-list kbd { font-family:var(--mono); font-size:12px; background:var(--bg); border:1px solid var(--border); border-radius:6px; padding:2px 8px; white-space:nowrap }
+
+.hist-row { display:grid; grid-template-columns:64px 1fr auto; gap:12px; padding:8px 0; border-bottom:1px dashed var(--border); font-size:13px; align-items:baseline }
+.hist-row:last-child { border-bottom:none }
+.hist-row .t { font-family:var(--mono); font-size:11px; color:var(--text-muted) }
+.hist-row .m { overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
+.hist-row .m .tx { color:var(--text) }
+.hist-row .m .in { color:var(--text-muted); font-size:12px }
+.hist-row .o { font-size:11px; padding:2px 8px; border-radius:999px; background:var(--bg); border:1px solid var(--border); color:var(--text-muted) }
+.hist-empty { font-size:12px; color:var(--text-muted); padding:8px 0 }
+
+.provider-badge { display:inline-flex; align-items:center; gap:8px; padding:4px 12px; border-radius:999px; background:var(--bg); border:1px solid var(--border); font-size:12px; font-family:var(--mono) }
+.provider-badge.os { border-color:color-mix(in srgb, #4caf50 45%, var(--border)); color:#4caf50 }
+.provider-badge.ws { border-color:color-mix(in srgb, #ff9800 45%, var(--border)); color:#ff9800 }
+</style>
+</head>
+<body>
+<script src="/static/eos.js"></script>
+<script src="/static/eos-components.js"></script>
+<script>EOS.nav && EOS.nav('hands-free');</script>
+
+<div class="wrap">
+    <div>
+        <div class="panel">
+            <div class="hero">
+                <div>
+                    <h1>Hands-Free</h1>
+                    <div class="sub">Gesture push-to-talk · voice intents · no keyboard, no mouse</div>
+                </div>
+                <div>
+                    <button class="btn" onclick="_settings.open()">&#9881; Settings</button>
+                </div>
+            </div>
+
+            <div class="status-grid" id="status-grid">
+                <div class="stat"><div class="k">Trigger</div><div class="v" id="st-trigger">—</div></div>
+                <div class="stat"><div class="k">Hold time</div><div class="v" id="st-hold">—</div></div>
+                <div class="stat"><div class="k">STT provider</div><div class="v"><span class="provider-badge" id="st-stt">—</span></div></div>
+                <div class="stat"><div class="k">Platform</div><div class="v" id="st-plat">—</div></div>
+                <div class="stat"><div class="k">Cleanup threshold</div><div class="v"><span id="st-thresh">—</span> words</div></div>
+                <div class="stat"><div class="k">Auto-confirm</div><div class="v"><span id="st-auto">—</span> ms</div></div>
+                <div class="stat"><div class="k">Voice-out</div><div class="v" id="st-voiceout">—</div></div>
+                <div class="stat"><div class="k">TTS rate</div><div class="v" id="st-ttsrate">—</div></div>
+            </div>
+
+            <div class="consent" id="consent-notice">Loading provider info…</div>
+        </div>
+
+        <div class="panel">
+            <h2>Recent dispatches</h2>
+            <div id="history"><div class="hist-empty">Nothing yet. Toggle the 🖐 chip on any page to get started.</div></div>
+            <div style="margin-top:12px; display:flex; gap:10px; align-items:center">
+                <button class="btn ghost" onclick="refreshHistory()">Refresh</button>
+                <button class="btn ghost" onclick="clearHistory()">Clear</button>
+            </div>
+        </div>
+
+        <div class="panel">
+            <h2>Proactive announcements</h2>
+            <div id="proactive-list"><div class="hist-empty">No proactive announcements queued. Enable them in Settings.</div></div>
+            <div style="margin-top:12px; display:flex; gap:10px; align-items:center; flex-wrap:wrap">
+                <select id="proactive-test-key" style="padding:8px 10px; background:var(--bg); border:1px solid var(--border); border-radius:8px; color:var(--text); font-size:13px">
+                    <option value="capture:saved">capture:saved → Captured.</option>
+                    <option value="focus:completed">focus:completed → Focus session complete.</option>
+                    <option value="task:completed">task:completed → Task completed.</option>
+                    <option value="task:added">task:added → Task added.</option>
+                    <option value="journal:entry">journal:entry → Journal entry saved.</option>
+                    <option value="journal:milestone">journal:milestone → Milestone saved.</option>
+                </select>
+                <button class="btn" onclick="testAnnounce()">Fire test announcement</button>
+                <button class="btn ghost" onclick="testRitual()">Fire ritual now</button>
+                <span class="hint" style="font-size:11px; color:var(--text-muted)">Turn the 🖐 chip on in another tab to hear it spoken.</span>
+            </div>
+        </div>
+    </div>
+
+    <div>
+        <div class="panel cheat">
+            <h2>Gesture cheat sheet</h2>
+            <table>
+                <tr><td class="em">✋</td><td class="g">Open_Palm</td><td class="a">Hold 1s → open palette + listen</td></tr>
+                <tr><td class="em">✊</td><td class="g">Closed_Fist</td><td class="a">Cancel listening · hold 2s to exit</td></tr>
+                <tr><td class="em">👍</td><td class="g">Thumb_Up</td><td class="a">Fire now / confirm</td></tr>
+                <tr><td class="em">👎</td><td class="g">Thumb_Down</td><td class="a">Retry / undo (within 3s)</td></tr>
+                <tr><td class="em">☝️</td><td class="g">Pointing_Up</td><td class="a">Hold → finger-tip scroll (move hand up/down)</td></tr>
+                <tr><td class="em">✌️</td><td class="g">Victory</td><td class="a">Quick-capture (skip palette)</td></tr>
+                <tr><td class="em">🤟</td><td class="g">ILoveYou</td><td class="a">App-registered favorite / approve</td></tr>
+            </table>
+            <div style="margin-top:10px; font-size:12px; color:var(--text-muted); line-height:1.55">
+                Pages can override the three action gestures by calling <code>EOS.handsFree.registerGesture(name, fn, desc)</code>. Example: the task app binds <code>Pointing_Up</code> to "complete top focus task" when you're on <code>/task/</code>.
+            </div>
+        </div>
+
+        <div class="panel">
+            <h2>Voice intents</h2>
+            <div class="intent-list">
+                <kbd>capture &lt;text&gt;</kbd><span>Save to inbox (LLM-tagged)</span>
+                <kbd>new task &lt;text&gt;</kbd><span>Add task to inbox project</span>
+                <kbd>note &lt;text&gt;</kbd><span>Note to self</span>
+                <kbd>ask &lt;question&gt;</kbd><span>Ask the vault · read answer aloud</span>
+                <kbd>what / who / when / …</kbd><span>Same as ask (wh-question)</span>
+                <kbd>tell me more / why / go on</kbd><span>Follow-up · uses last Q+A as context</span>
+                <kbd>read inbox / tasks / journal</kbd><span>Read queue · gestures navigate</span>
+                <kbd>go to &lt;app&gt;</kbd><span>Navigate</span>
+                <kbd>open &lt;app&gt;</kbd><span>Same as go to</span>
+                <kbd>&lt;app name&gt;</kbd><span>Fuzzy match to palette</span>
+            </div>
+            <div style="margin-top:10px; font-size:12px; color:var(--text-muted); line-height:1.55">
+                Everything else falls through to the command palette's fuzzy matcher. Per-app shortcuts registered via <code>EOS.keys.register</code> are also addressable by their description.
+            </div>
+            <div style="margin-top:12px; display:flex; gap:8px; align-items:center">
+                <button class="btn ghost" onclick="testTts()">Test voice-out</button>
+                <span class="hint" style="font-size:11px; color:var(--text-muted)">Plays a short phrase using the configured TTS rate and voice.</span>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+var _settings = EOS_UI.settingsPanel({
+    id: 'handsfree-settings',
+    title: 'Hands-Free Settings',
+    fields: [
+        {key: 'hands-free.trigger_gesture', label: 'Trigger gesture', type: 'select', default: 'Open_Palm',
+         options: ['Open_Palm','Thumb_Up','Pointing_Up','Victory','ILoveYou'],
+         hint: 'Gesture that starts voice listening when held.'},
+        {key: 'hands-free.hold_ms', label: 'Hold duration (ms)', type: 'number', default: 1000, min: 400, max: 4000,
+         hint: 'How long the trigger gesture must be held before listening starts.'},
+        {key: 'hands-free.stt_provider', label: 'STT provider', type: 'select', default: 'os-native',
+         options: [
+            {value: 'os-native', label: 'os-native — Windows Voice Typing (local)'},
+            {value: 'web-speech', label: 'web-speech — Web Speech API (Google, cloud)'},
+         ],
+         hint: 'os-native only works when the daemon is on the same machine as the browser.'},
+        {key: 'hands-free.mic_language', label: 'Microphone language', type: 'text', default: 'en-US',
+         hint: 'BCP-47 code used by web-speech. os-native uses your Windows settings.'},
+        {key: 'hands-free.cleanup_threshold_words', label: 'LLM cleanup threshold (words)', type: 'number', default: 8, min: 0, max: 40,
+         hint: 'Transcripts longer than this get polished by the LLM (punctuation + obvious mis-hears).'},
+        {key: 'hands-free.auto_confirm_ms', label: 'Auto-confirm delay (ms)', type: 'number', default: 3000, min: 1000, max: 10000,
+         hint: 'How long the confirm card waits before firing the resolved intent.'},
+        {key: 'hands-free.voice_out', label: 'Voice-out (TTS read-back)', type: 'select', default: 'confirm-only',
+         options: [
+            {value: 'off',          label: 'off — no speech (default pre-V3)'},
+            {value: 'confirm-only', label: 'confirm-only — speak intent labels'},
+            {value: 'full',         label: 'full — also read Q&A answers'},
+         ],
+         hint: 'Turns hands-free into eyes-free. full mode reads vault Q&A answers aloud.'},
+        {key: 'hands-free.tts_rate', label: 'TTS rate', type: 'number', default: 1.1, min: 0.7, max: 1.5,
+         hint: 'Playback speed (1.0 = normal). Some voices sound clearer at 0.9–1.1.'},
+        {key: 'hands-free.tts_voice_hint', label: 'TTS voice hint', type: 'text', default: '',
+         hint: 'Substring match against OS voice name or language (e.g. "Samantha", "en-GB"). Empty = system default.'},
+        {key: 'hands-free.proactive_enabled', label: 'Proactive voice (announce events)', type: 'boolean', default: false,
+         hint: 'When on, the system speaks short announcements for events you pick below. Silent by default.'},
+        {key: 'hands-free.proactive_events', label: 'Events to announce', type: 'textarea', default: '',
+         placeholder: 'focus:completed\ntask:completed\ncapture:saved',
+         hint: 'One event key per line (or comma-separated). Available: focus:completed, task:completed, task:added, capture:saved, journal:entry, journal:milestone.'},
+        {key: 'hands-free.proactive_quiet_start', label: 'Quiet hours start (24h)', type: 'text', default: '22:00',
+         hint: 'No proactive speech between quiet-start and quiet-end. Local time.'},
+        {key: 'hands-free.proactive_quiet_end', label: 'Quiet hours end (24h)', type: 'text', default: '07:00',
+         hint: ''},
+        {key: 'hands-free.proactive_min_gap_sec', label: 'Min gap between announcements (sec)', type: 'number', default: 45, min: 5, max: 3600,
+         hint: 'Throttle. Back-to-back events within this window are skipped.'},
+        {key: 'hands-free.read_autoadvance', label: 'Read-aloud auto-advance', type: 'boolean', default: true,
+         hint: 'When reading a queue (read inbox / read tasks / read journal), auto-advance to the next item after each read. Turn off for manual Pointing_Up control.'},
+        {key: 'hands-free.read_voice_nav', label: 'Read-aloud voice navigation', type: 'boolean', default: false,
+         hint: 'Say "next" / "back" / "stop" / "act" between items to navigate. Opens a ~3s listen window after each read. Uses Web Speech API (cloud STT).'},
+        {key: 'hands-free.finger_scroll_enabled', label: 'Finger-tip scroll', type: 'boolean', default: true,
+         hint: 'While holding Pointing_Up, moving your fingertip up or down in the frame scrolls the page. Release to stop. Pages that register Pointing_Up override this.'},
+        {key: 'hands-free.finger_scroll_gain', label: 'Scroll speed (px/sec)', type: 'number', default: 900, min: 100, max: 3000,
+         hint: 'Maximum scroll speed at full finger displacement. Lower = more deliberate.'},
+        {key: 'hands-free.finger_scroll_deadzone', label: 'Scroll deadzone', type: 'number', default: 0.06, min: 0, max: 0.3,
+         hint: 'Fraction of frame height where small hand motion does not scroll. 0.06 = ~6% neutral zone.'},
+        {key: 'hands-free.finger_scroll_smooth_alpha', label: 'Scroll smoothing (EMA alpha)', type: 'number', default: 0.25, min: 0.05, max: 0.6,
+         hint: 'Higher = more responsive, lower = smoother (recommended 0.2–0.35).'},
+        {key: 'hands-free.finger_scroll_inertia_decay', label: 'Inertia decay (per-frame)', type: 'number', default: 0.94, min: 0.9, max: 0.99,
+         hint: 'Higher = longer glide after finger is lost; lower = stops faster.'},
+        {key: 'hands-free.finger_scroll_inertia_ms', label: 'Inertia window (ms)', type: 'number', default: 450, min: 0, max: 1500,
+         hint: 'Maximum time to keep scrolling after a brief recognition gap.'},
+        {key: 'hands-free.cursor_enabled', label: 'Cursor mode (in-browser)', type: 'boolean', default: false,
+         hint: 'Move a page-local cursor with your index fingertip; pinch (thumb↔index) to click. Only affects this page, not the OS pointer.'},
+        {key: 'hands-free.cursor_smooth_alpha', label: 'Cursor smoothing (EMA alpha)', type: 'number', default: 0.25, min: 0.05, max: 0.6,
+         hint: 'Higher = more responsive, lower = smoother (recommended 0.2–0.35).'},
+        {key: 'hands-free.cursor_dwell_ms', label: 'Dwell-to-click (ms, 0=off)', type: 'number', default: 800, min: 0, max: 3000,
+         hint: 'Auto-click if the cursor stays still for this long.'},
+        {key: 'hands-free.cursor_pinch_on', label: 'Pinch threshold (on)', type: 'number', default: 0.05, min: 0.01, max: 0.2,
+         hint: 'Normalised thumb↔index distance to consider a pinch (click down).'},
+        {key: 'hands-free.cursor_pinch_off', label: 'Pinch threshold (off)', type: 'number', default: 0.07, min: 0.01, max: 0.2,
+         hint: 'Distance to release the pinch (click up).'},
+        {key: 'hands-free.ritual_enabled', label: 'Ambient ritual (daily prompt)', type: 'boolean', default: false,
+         hint: 'Speaks the ritual prompt once a day, listens for your answer, saves it. Fires only when the 🖐 chip is on.'},
+        {key: 'hands-free.ritual_time', label: 'Ritual time (HH:MM, local)', type: 'text', default: '07:00', hint: ''},
+        {key: 'hands-free.ritual_prompt', label: 'Ritual prompt', type: 'textarea', default: "Good morning. What's today's intention?",
+         hint: 'The TTS prompt read aloud at the scheduled time.'},
+        {key: 'hands-free.ritual_action', label: 'Ritual action', type: 'select', default: 'capture',
+         options: [
+            {value: 'capture', label: 'capture — save to inbox'},
+            {value: 'journal-milestone', label: 'journal-milestone — append to today\'s milestones'},
+            {value: 'task', label: 'task — add to task inbox'},
+         ],
+         hint: 'Where to route your spoken response.'},
+    ],
+    onSave: function() { EOS_UI.toast('Settings saved. Reload any open page with the 🖐 chip to apply.', true); loadConfig(); },
+});
+
+async function loadConfig() {
+    var cfg = await EOS.api('/hands-free/api/config');
+    document.getElementById('st-trigger').textContent = cfg.trigger_gesture || '—';
+    document.getElementById('st-hold').textContent = (cfg.hold_ms || 0) + 'ms';
+    var sttEl = document.getElementById('st-stt');
+    sttEl.textContent = cfg.stt_provider || '—';
+    sttEl.className = 'provider-badge ' + (cfg.stt_provider === 'os-native' ? 'os' : 'ws');
+    document.getElementById('st-plat').textContent = cfg.platform || '—';
+    document.getElementById('st-thresh').textContent = cfg.cleanup_threshold_words || '—';
+    document.getElementById('st-auto').textContent = cfg.auto_confirm_ms || '—';
+    document.getElementById('st-voiceout').textContent = cfg.voice_out || '—';
+    document.getElementById('st-ttsrate').textContent = (cfg.tts_rate != null) ? cfg.tts_rate : '—';
+
+    var notice = document.getElementById('consent-notice');
+    if (cfg.stt_provider === 'os-native') {
+        if (cfg.os_dictate_supported) {
+            notice.innerHTML = '<b>os-native</b> — The overlay will trigger <code>Win+H</code> on this machine so Windows Voice Typing handles transcription. Works only when the daemon and the browser share the host; remote access (Tailscale/VPS) will silently fall back to the web-speech provider.';
+        } else {
+            notice.innerHTML = '<b>os-native not available</b> — current platform <code>' + (cfg.platform || '?') + '</code> does not support <code>Win+H</code>. Switch to <b>web-speech</b> in settings.';
+        }
+    } else if (cfg.stt_provider === 'web-speech') {
+        notice.innerHTML = '<b>web-speech</b> — Audio is sent to your browser\'s built-in speech recognizer. On Chrome and Edge this means Google\'s cloud STT. Works in any browser context including remote access.';
+    } else {
+        notice.innerHTML = '<b>' + (cfg.stt_provider || '?') + '</b> — provider not wired in v1.';
+    }
+}
+
+async function refreshHistory() {
+    var r = await EOS.api('/hands-free/api/history?limit=30');
+    var host = document.getElementById('history');
+    var items = r.history || [];
+    if (!items.length) {
+        host.innerHTML = '<div class="hist-empty">Nothing yet. Toggle the 🖐 chip on any page to get started.</div>';
+        return;
+    }
+    host.innerHTML = items.map(function(h) {
+        var t = (h.ts || '').slice(11, 19);
+        var tx = h.transcript || '';
+        var intent = h.intent || '?';
+        var target = h.target ? (' → ' + h.target) : '';
+        return '<div class="hist-row">' +
+            '<span class="t">' + t + '</span>' +
+            '<span class="m"><span class="tx">' + (tx ? EOS_UI.esc(tx) : '<i style="color:var(--text-muted)">(no transcript)</i>') + '</span><br><span class="in">' + EOS_UI.esc(intent) + EOS_UI.esc(target) + '</span></span>' +
+            '<span class="o">' + EOS_UI.esc(h.outcome || '') + '</span>' +
+        '</div>';
+    }).join('');
+}
+
+async function clearHistory() {
+    if (!await EOS_UI.confirm({message: 'Clear all hands-free history?', action: 'Clear', danger: true})) return;
+    await EOS.post('/hands-free/api/history/clear', {});
+    refreshHistory();
+    EOS_UI.toast('History cleared', true);
+}
+
+function testTts() {
+    if (!window.EOS || !EOS.handsFree || typeof EOS.handsFree._speak !== 'function') {
+        EOS_UI.toast('Voice-out not ready yet — try again in a moment', false);
+        return;
+    }
+    var ok = EOS.handsFree._speak('Voice-out is working. Hands-free is now eyes-free.');
+    if (!ok) EOS_UI.toast('speechSynthesis unavailable in this browser', false);
+}
+
+async function testAnnounce() {
+    var key = document.getElementById('proactive-test-key').value;
+    var r = await EOS.post('/hands-free/api/proactive/test', {key: key});
+    if (r && r.ok) {
+        EOS_UI.toast('Queued: ' + (r.entry && r.entry.text), true);
+        refreshProactive();
+    } else {
+        EOS_UI.toast('Test failed: ' + (r && r.reason || 'unknown'), false);
+    }
+}
+
+async function testRitual() {
+    var r = await EOS.post('/hands-free/api/ritual/test', {});
+    if (r && r.ok) {
+        EOS_UI.toast('Ritual queued: will speak next poll', true);
+        refreshProactive();
+    } else {
+        EOS_UI.toast('Ritual test failed: ' + (r && r.reason || 'unknown'), false);
+    }
+}
+
+async function refreshProactive() {
+    var r = await EOS.api('/hands-free/api/proactive/pending?since=0');
+    var host = document.getElementById('proactive-list');
+    var items = (r && r.announcements) || [];
+    if (!items.length) {
+        host.innerHTML = '<div class="hist-empty">No proactive announcements queued. Enable them in Settings.</div>';
+        return;
+    }
+    items = items.slice(-20).reverse();
+    host.innerHTML = items.map(function(a) {
+        var t = (a.iso || '').slice(11, 19);
+        return '<div class="hist-row">' +
+            '<span class="t">' + t + '</span>' +
+            '<span class="m"><span class="tx">' + EOS_UI.esc(a.text || '') + '</span><br><span class="in">' + EOS_UI.esc(a.key || '') + '</span></span>' +
+            '<span class="o">#' + (a.id || '') + '</span>' +
+        '</div>';
+    }).join('');
+}
+
+loadConfig();
+refreshHistory();
+refreshProactive();
+setInterval(refreshHistory, 8000);
+setInterval(refreshProactive, 8000);
+</script>
+</body>
+</html>

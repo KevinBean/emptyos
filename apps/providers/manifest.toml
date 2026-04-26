@@ -1,0 +1,23 @@
+[app]
+id = "providers"
+name = "Providers"
+version = "1.0.0"
+description = "Manage think-capability providers — local LLMs, cloud APIs, Claude CLI. Edits the live capability chain without a restart."
+
+[app.entry]
+module = "app"
+class = "ProvidersApp"
+
+[requires]
+capabilities = ["think"]
+apps = []
+connectors = []
+
+[provides.cli]
+commands = ["providers"]
+
+[provides.web]
+prefix = "/providers"
+
+[provides.events]
+emits = ["providers:changed"]

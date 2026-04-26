@@ -1,0 +1,514 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>Providers - EmptyOS</title>
+<link rel="stylesheet" href="/static/theme.css">
+<link rel="stylesheet" href="/static/eos-components.css">
+<style>
+* { margin:0; padding:0; box-sizing:border-box }
+body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif; background:var(--bg); color:var(--text); min-height:100dvh; padding:env(safe-area-inset-top) 16px calc(env(safe-area-inset-bottom) + 80px); -webkit-font-smoothing:antialiased }
+.providers-table { width:100%; border-collapse:collapse; font-size:13px; margin-bottom:12px }
+.providers-table th { text-align:left; padding:8px 8px; color:var(--text-muted); font-weight:500; border-bottom:1px solid var(--border); font-size:11px; text-transform:uppercase; letter-spacing:0.5px }
+.providers-table td { padding:8px; border-bottom:1px solid color-mix(in srgb,var(--border) 50%,transparent); vertical-align:middle }
+.providers-table .v-id { font-family:var(--mono); font-weight:600 }
+.providers-table .v-model { font-family:var(--mono); font-size:11px; color:var(--text-secondary) }
+.providers-table .v-mode { font-family:var(--mono); font-size:11px; color:#d29922 }
+.providers-table .v-actions { display:flex; gap:4px; justify-content:flex-end }
+.toggle-on { color:var(--accent); font-weight:600 }
+.toggle-off { color:var(--text-muted) }
+.provider-form { background:var(--bg-card); border:1px solid var(--border); border-radius:14px; padding:16px; margin-bottom:16px }
+.provider-form .form-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:12px 12px; margin-bottom:12px }
+.provider-form label { display:flex; flex-direction:column; gap:4px; font-size:12px; color:var(--text-muted) }
+.provider-form label .hint { font-size:10px; color:var(--text-muted); font-weight:400 }
+.provider-form input, .provider-form select { padding:8px 8px; border:1px solid var(--border); border-radius:6px; background:var(--bg-secondary,var(--bg)); color:var(--text); font-size:13px; font-family:inherit }
+.provider-form .form-actions { display:flex; gap:8px; justify-content:flex-end }
+.discover-list { display:flex; flex-direction:column; gap:8px; margin-top:12px }
+.discover-row { display:flex; align-items:center; gap:12px; padding:8px 12px; background:var(--bg-secondary,#0d1117); border:1px solid var(--border); border-radius:8px; font-size:13px }
+.discover-row .name { font-family:var(--mono); flex:1 }
+.discover-row .size { font-family:var(--mono); font-size:11px; color:var(--text-muted) }
+.live-card { background:var(--bg-card); border:1px solid var(--border); border-radius:14px; padding:12px 16px; margin-bottom:16px }
+.live-card .live-list { display:flex; flex-direction:column; gap:4px; margin-top:8px }
+.live-row { display:flex; align-items:center; gap:8px; font-size:13px; font-family:var(--mono); padding:4px 0 }
+.live-row .num { color:var(--text-muted); width:24px; text-align:right }
+.live-row .vid { flex:1 }
+.live-row .cloud-tag { font-size:10px; padding:2px 8px; border-radius:4px; background:color-mix(in srgb,#d29922 15%,transparent); color:#d29922 }
+.cap-card { background:var(--bg-card); border:1px solid var(--border); border-radius:14px; padding:12px 16px; margin-bottom:12px }
+.cap-card .cap-hdr { display:flex; align-items:baseline; gap:12px; margin-bottom:8px; flex-wrap:wrap }
+.cap-card .cap-name { font-family:var(--mono); font-size:14px; font-weight:600; color:var(--accent) }
+.cap-card .cap-meta { font-size:11px; color:var(--text-muted); margin-left:auto }
+.cap-card .managed-tag { font-size:10px; padding:2px 8px; border-radius:4px; background:color-mix(in srgb,var(--accent) 15%,transparent); color:var(--accent) }
+.cap-chain { margin:8px 0 8px; padding-left:8px; border-left:2px solid var(--border) }
+.cap-chain .chain-label { font-size:11px; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.5px; margin-bottom:4px }
+.cap-chain .chain-empty { font-size:12px; color:var(--text-muted); font-style:italic; padding:4px 0 }
+.empty { text-align:center; padding:32px; color:var(--text-muted) }
+.consent-bar { background:var(--bg-card); border:1px solid var(--border); border-radius:14px; padding:12px 16px; margin-bottom:16px; display:flex; flex-wrap:wrap; align-items:center; gap:12px }
+.consent-bar .label { font-size:12px; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.5px }
+.consent-bar .btns { display:flex; gap:8px }
+.consent-bar .consent-btn { font-size:12px; padding:4px 12px; border-radius:6px; border:1px solid var(--border); background:transparent; color:var(--text-secondary); cursor:pointer; font-family:inherit }
+.consent-bar .consent-btn.active { background:color-mix(in srgb,var(--accent) 15%,transparent); border-color:var(--accent); color:var(--accent); font-weight:600 }
+.consent-bar .hint { font-size:11px; color:var(--text-muted); flex:1; min-width:220px }
+.consent-bar .approved { font-family:var(--mono); font-size:10px; color:var(--text-muted) }
+</style>
+</head>
+<body>
+<script src="/static/realtime.js"></script>
+<script src="/static/eos.js"></script>
+<script src="/static/eos-components.js"></script>
+<script>EOS.nav('providers');
+if(window.EOS&&EOS.registerActions){EOS.registerActions({},[],{description:"Manage the live think capability chain — local LLMs, cloud APIs, Claude CLI."});}
+</script>
+
+<div class="eos-header">
+  <h1>Providers</h1>
+  <div style="display:flex;gap:8px;align-items:center">
+    <a class="eos-btn eos-btn-sm" href="/model-bench/" title="Open Model Bench">Bench &rarr;</a>
+  </div>
+</div>
+
+<div class="consent-bar" id="consent-bar">
+  <span class="label">Cloud consent</span>
+  <div class="btns">
+    <button class="consent-btn" data-policy="ask" onclick="setConsentPolicy('ask')">Ask each time</button>
+    <button class="consent-btn" data-policy="always" onclick="setConsentPolicy('always')">Always allow</button>
+    <button class="consent-btn" data-policy="never" onclick="setConsentPolicy('never')">Never allow</button>
+  </div>
+  <span class="hint" id="consent-hint">Loading...</span>
+</div>
+
+<div class="consent-bar" id="llm-scan-bar">
+  <span class="label">Local LLM scan</span>
+  <div class="btns">
+    <button class="consent-btn" data-scan-mode="off" onclick="setScanMode('off')">Off</button>
+    <button class="consent-btn" data-scan-mode="classify" onclick="setScanMode('classify')">Classify</button>
+    <button class="consent-btn" data-scan-mode="redact" onclick="setScanMode('redact')">Redact</button>
+  </div>
+  <span class="hint" id="llm-scan-hint">A local model inspects outbound prompts before they hit cloud providers. Off by default — Classify flags sensitive content in the consent modal; Redact rewrites the prompt with placeholders (higher latency).</span>
+  <div id="llm-scan-extras" style="display:none;flex-wrap:wrap;gap:10px;align-items:center;width:100%;margin-top:6px;padding-top:8px;border-top:1px solid var(--border)">
+    <label style="font-size:11px;color:var(--text-muted);display:flex;align-items:center;gap:6px">On flag:
+      <select id="llm-scan-onflag" onchange="setScanOnFlag(this.value)" style="font-size:12px;padding:3px 6px;border-radius:6px;border:1px solid var(--border);background:var(--bg);color:var(--text)">
+        <option value="warn">warn (show in consent modal)</option>
+        <option value="block">block (skip cloud provider)</option>
+      </select>
+    </label>
+    <label style="font-size:11px;color:var(--text-muted);display:flex;align-items:center;gap:6px">Local provider:
+      <select id="llm-scan-provider" onchange="setScanProvider(this.value)" style="font-size:12px;padding:3px 6px;border-radius:6px;border:1px solid var(--border);background:var(--bg);color:var(--text);min-width:160px">
+        <option value="">(auto — first local)</option>
+      </select>
+    </label>
+    <label style="font-size:11px;color:var(--text-muted);display:flex;align-items:center;gap:6px">Max chars:
+      <input id="llm-scan-maxchars" type="number" min="100" max="20000" step="500" value="4000" onchange="setScanMaxChars(this.value)" style="width:80px;font-size:12px;padding:3px 6px;border-radius:6px;border:1px solid var(--border);background:var(--bg);color:var(--text)">
+    </label>
+    <label style="font-size:11px;color:var(--text-muted);display:flex;align-items:center;gap:6px" title="Hard cap on scan latency — caller's downstream timeout stays safe">Timeout (s):
+      <input id="llm-scan-timeout" type="number" min="0.5" max="120" step="0.5" value="5" onchange="setScanTimeout(this.value)" style="width:70px;font-size:12px;padding:3px 6px;border-radius:6px;border:1px solid var(--border);background:var(--bg);color:var(--text)">
+    </label>
+  </div>
+</div>
+
+<div class="eos-tabs">
+  <div class="eos-tab active" onclick="switchTab('configured')">Configured</div>
+  <div class="eos-tab" onclick="switchTab('live')">Live chain</div>
+  <div class="eos-tab" onclick="switchTab('capabilities')">All capabilities</div>
+</div>
+
+<div class="eos-tab-content active" id="tab-configured">
+  <p style="font-size:12px;color:var(--text-muted);margin:0 0 12px">
+    Two sources feed the <code>think</code> chain: <b>emptyos.toml</b> seeds (read-only — edit the config file + restart) and <b>user-added</b> rows (editable here, toggle-able at runtime).
+  </p>
+  <div id="providers-list"><div class="empty">Loading...</div></div>
+
+  <div class="provider-form" id="provider-form">
+    <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:10px">
+      <b id="provider-form-title">Add provider</b>
+      <button class="eos-btn eos-btn-xs" onclick="discoverOllama()">Discover Ollama models</button>
+    </div>
+    <div class="form-grid">
+      <label>ID <span class="hint">short unique name</span>
+        <input id="pf-id" placeholder="ollama-qwen14b">
+      </label>
+      <label>Provider type
+        <select id="pf-provider-type">
+          <option value="openai_compat">openai_compat (ollama, openai, ...)</option>
+          <option value="claude_cli">claude_cli</option>
+        </select>
+      </label>
+      <label>Display name <span class="hint">optional</span>
+        <input id="pf-display" placeholder="Qwen 2.5 14B (local)">
+      </label>
+      <label>Host <span class="hint">openai_compat only</span>
+        <input id="pf-host" placeholder="http://localhost:11434">
+      </label>
+      <label>Model
+        <input id="pf-model" placeholder="qwen2.5:14b">
+      </label>
+      <label>Mode / effort <span class="hint">optional</span>
+        <input id="pf-mode" placeholder="low / medium / high">
+      </label>
+      <label>API key env var <span class="hint">optional, for cloud</span>
+        <input id="pf-api-key-env" placeholder="OPENAI_API_KEY">
+      </label>
+      <label>provider_name <span class="hint">optional; used for consent grouping</span>
+        <input id="pf-provider-name" placeholder="ollama / openai / claude">
+      </label>
+    </div>
+    <div class="form-actions">
+      <button class="eos-btn eos-btn-xs" onclick="resetForm()">Clear</button>
+      <button class="eos-btn eos-btn-primary eos-btn-xs" onclick="saveProvider()">Save provider</button>
+    </div>
+  </div>
+
+  <div id="discover-panel" style="display:none"></div>
+</div>
+
+<div class="eos-tab-content" id="tab-live">
+  <p style="font-size:12px;color:var(--text-muted);margin:0 0 12px">
+    The actual order <code>think</code> tries providers right now. Combines <code>emptyos.toml</code> seeds, your enabled rows, and the human fallback.
+  </p>
+  <div class="live-card" id="live-card"><div class="empty">Loading...</div></div>
+</div>
+
+<div class="eos-tab-content" id="tab-capabilities">
+  <p style="font-size:12px;color:var(--text-muted);margin:0 0 12px">
+    Read-only view of every capability and the providers loaded into it. Non-think capabilities get providers from plugins (voice-api, comfyui, obsidian-cli) — install/uninstall those to change the chain.
+  </p>
+  <div id="capabilities-list"><div class="empty">Loading...</div></div>
+</div>
+
+<script>
+var tabs = ['configured', 'live', 'capabilities'];
+
+function switchTab(name) {
+  tabs.forEach(function(t, i) {
+    document.querySelectorAll('.eos-tab')[i].classList.toggle('active', t === name);
+    document.getElementById('tab-' + t).classList.toggle('active', t === name);
+  });
+  if (name === 'live') loadLive();
+  if (name === 'capabilities') loadCapabilities();
+}
+
+function _row(v, seeded) {
+  var idCell = '<td class="v-id">' + EOS_UI.esc(v.id)
+    + '<div style="font-size:10px;color:var(--text-muted)">' + EOS_UI.esc(v.variant_id || '') + '</div></td>';
+  var enabledCell, actionsCell;
+  if (seeded) {
+    enabledCell = '<td><span class="eos-badge" title="Seeded from emptyos.toml — edit the config file + restart">toml</span></td>';
+    actionsCell = '<td class="v-actions"><span style="font-size:10px;color:var(--text-muted)">read-only</span></td>';
+  } else {
+    enabledCell = '<td><button class="eos-btn eos-btn-xs ' + (v.enabled ? 'toggle-on' : 'toggle-off')
+      + '" onclick="toggleProvider(\'' + EOS_UI.esc(v.id).replace(/\'/g, '\\\'') + '\')">'
+      + (v.enabled ? 'ON' : 'OFF') + '</button></td>';
+    actionsCell = '<td class="v-actions">'
+      + '<button class="eos-btn eos-btn-xs" onclick="editProvider(' + JSON.stringify(JSON.stringify(v)).slice(1,-1) + ')">Edit</button>'
+      + '<button class="eos-btn eos-btn-xs" onclick="deleteProvider(\'' + EOS_UI.esc(v.id).replace(/\'/g, '\\\'') + '\')">Delete</button>'
+      + '</td>';
+  }
+  return '<tr>' + enabledCell + idCell
+    + '<td>' + EOS_UI.esc(v.provider_name || v.provider_type) + '<div style="font-size:10px;color:var(--text-muted)">' + EOS_UI.esc(v.provider_type) + '</div></td>'
+    + '<td class="v-model">' + EOS_UI.esc(v.model || '') + '</td>'
+    + '<td class="v-mode">' + EOS_UI.esc(v.mode || '') + '</td>'
+    + '<td class="v-model">' + EOS_UI.esc(v.host || '') + '</td>'
+    + actionsCell + '</tr>';
+}
+
+async function loadProviders() {
+  var el = document.getElementById('providers-list');
+  el.innerHTML = '<div class="empty" style="padding:12px">Loading...</div>';
+  try {
+    var results = await Promise.all([
+      EOS.api('/providers/api/providers'),
+      EOS.api('/providers/api/providers/seeded').catch(function() { return {providers: []}; }),
+    ]);
+    var userRows = (results[0] && results[0].providers) || [];
+    var seededRows = (results[1] && results[1].providers) || [];
+
+    if (!userRows.length && !seededRows.length) {
+      el.innerHTML = EOS_UI.emptyState({message:'No providers yet. Add one below, or click Discover Ollama models to auto-enroll installed local models.'});
+      return;
+    }
+
+    var html = '';
+    if (seededRows.length) {
+      html += '<div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;margin:4px 0 6px">Seeded from emptyos.toml</div>';
+      html += '<table class="providers-table">'
+        + '<tr><th>Source</th><th>ID</th><th>Provider</th><th>Model</th><th>Mode</th><th>Host</th><th></th></tr>';
+      seededRows.forEach(function(v) { html += _row(v, true); });
+      html += '</table>';
+    }
+    if (userRows.length) {
+      if (seededRows.length) {
+        html += '<div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;margin:14px 0 6px">User-added</div>';
+      }
+      html += '<table class="providers-table">'
+        + '<tr><th>Enabled</th><th>ID</th><th>Provider</th><th>Model</th><th>Mode</th><th>Host</th><th></th></tr>';
+      userRows.forEach(function(v) { html += _row(v, false); });
+      html += '</table>';
+    }
+    el.innerHTML = html;
+  } catch (e) {
+    el.innerHTML = '<div class="empty" style="padding:12px">Error: ' + EOS_UI.esc(e.message) + '</div>';
+  }
+}
+
+function _pf(field) { return document.getElementById('pf-' + field); }
+function resetForm() {
+  ['id','display','host','model','mode','api-key-env','provider-name'].forEach(function(k) { _pf(k).value = ''; });
+  _pf('provider-type').value = 'openai_compat';
+  document.getElementById('provider-form-title').textContent = 'Add provider';
+  _pf('id').disabled = false;
+}
+function editProvider(jsonStr) {
+  var v;
+  try { v = JSON.parse(jsonStr); } catch (e) { return; }
+  _pf('id').value = v.id || '';
+  _pf('id').disabled = true;
+  _pf('provider-type').value = v.provider_type || 'openai_compat';
+  _pf('display').value = v.display_name || '';
+  _pf('host').value = v.host || '';
+  _pf('model').value = v.model || '';
+  _pf('mode').value = v.mode || '';
+  _pf('api-key-env').value = v.api_key_env || '';
+  _pf('provider-name').value = v.provider_name || '';
+  document.getElementById('provider-form-title').textContent = 'Edit provider: ' + v.id;
+  document.getElementById('provider-form').scrollIntoView({behavior: 'smooth', block: 'start'});
+}
+async function saveProvider() {
+  var payload = {
+    id: _pf('id').value.trim(),
+    provider_type: _pf('provider-type').value,
+    display_name: _pf('display').value.trim(),
+    host: _pf('host').value.trim(),
+    model: _pf('model').value.trim(),
+    mode: _pf('mode').value.trim(),
+    api_key_env: _pf('api-key-env').value.trim(),
+    provider_name: _pf('provider-name').value.trim(),
+    enabled: true,
+  };
+  if (!payload.id) { EOS_UI.toast('id is required'); return; }
+  try {
+    var r = await fetch('/providers/api/providers', {
+      method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload),
+    }).then(function(x) { return x.json(); });
+    if (r.error) { EOS_UI.toast(r.error); return; }
+    EOS_UI.toast(r.created ? 'Provider added' : 'Provider updated');
+    resetForm();
+    loadProviders();
+  } catch (e) { EOS_UI.toast('Error: ' + e.message); }
+}
+async function toggleProvider(id) {
+  try {
+    var r = await fetch('/providers/api/providers/' + encodeURIComponent(id) + '/toggle', {method: 'POST'}).then(function(x) { return x.json(); });
+    if (r.error) { EOS_UI.toast(r.error); return; }
+    loadProviders();
+  } catch (e) { EOS_UI.toast('Error: ' + e.message); }
+}
+async function deleteProvider(id) {
+  if (!await EOS_UI.confirm('Delete provider "' + id + '"?')) return;
+  try {
+    await fetch('/providers/api/providers/' + encodeURIComponent(id), {method: 'DELETE'});
+    EOS_UI.toast('Deleted');
+    loadProviders();
+  } catch (e) { EOS_UI.toast('Error: ' + e.message); }
+}
+async function discoverOllama() {
+  var panel = document.getElementById('discover-panel');
+  panel.style.display = 'block';
+  panel.innerHTML = '<div class="empty" style="padding:12px">Querying Ollama...</div>';
+  try {
+    var host = _pf('host').value.trim() || 'http://localhost:11434';
+    var data = await EOS.api('/providers/api/providers/discover/ollama?host=' + encodeURIComponent(host));
+    if (data.error) { panel.innerHTML = '<div class="empty" style="padding:12px">' + EOS_UI.esc(data.error) + '</div>'; return; }
+    if (!data.models.length) { panel.innerHTML = EOS_UI.emptyState({message:'No models installed at ' + data.host}); return; }
+    var rows = data.models.map(function(m) {
+      return '<div class="discover-row">'
+        + '<span class="name">' + EOS_UI.esc(m.name) + '</span>'
+        + '<span class="size">' + (m.size_gb ? m.size_gb + ' GB' : '-') + '</span>'
+        + '<button class="eos-btn eos-btn-xs" onclick="addDiscovered(\'' + EOS_UI.esc(m.suggested_id).replace(/\'/g, '\\\'') + '\', \'' + EOS_UI.esc(m.name).replace(/\'/g, '\\\'') + '\', \'' + EOS_UI.esc(data.host).replace(/\'/g, '\\\'') + '\')">+ Enroll</button>'
+      + '</div>';
+    }).join('');
+    panel.innerHTML = '<div style="margin-top:12px"><b>Ollama models at ' + EOS_UI.esc(data.host) + '</b><div class="discover-list">' + rows + '</div></div>';
+  } catch (e) {
+    panel.innerHTML = '<div class="empty" style="padding:12px">Error: ' + EOS_UI.esc(e.message) + '</div>';
+  }
+}
+async function addDiscovered(id, model, host) {
+  var payload = {
+    id: id, provider_type: 'openai_compat', provider_name: 'ollama',
+    display_name: model, host: host, model: model, enabled: true,
+  };
+  try {
+    var r = await fetch('/providers/api/providers', {
+      method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload),
+    }).then(function(x) { return x.json(); });
+    if (r.error) { EOS_UI.toast(r.error); return; }
+    EOS_UI.toast('Enrolled: ' + id);
+    loadProviders();
+  } catch (e) { EOS_UI.toast('Error: ' + e.message); }
+}
+
+async function loadCapabilities() {
+  var el = document.getElementById('capabilities-list');
+  el.innerHTML = '<div class="empty">Loading...</div>';
+  try {
+    var data = await EOS.api('/providers/api/providers/capabilities');
+    var caps = (data && data.capabilities) || [];
+    if (!caps.length) { el.innerHTML = EOS_UI.emptyState({message:'No capabilities'}); return; }
+    el.innerHTML = caps.map(function(cap) {
+      var totalProviders = (cap.chains || []).reduce(function(n, c) { return n + (c.providers || []).length; }, 0);
+      var chains = (cap.chains || []).map(function(chain) {
+        if (!chain.providers || !chain.providers.length) {
+          return '<div class="cap-chain"><div class="chain-label">' + EOS_UI.esc(chain.label) + '</div><div class="chain-empty">no providers</div></div>';
+        }
+        var rows = chain.providers.map(function(p, i) {
+          return '<div class="live-row">'
+            + '<span class="num">' + (i + 1) + '.</span>'
+            + '<span class="vid">' + EOS_UI.esc(p.variant_id) + '</span>'
+            + (p.is_cloud ? '<span class="cloud-tag">cloud</span>' : '')
+          + '</div>';
+        }).join('');
+        return '<div class="cap-chain"><div class="chain-label">' + EOS_UI.esc(chain.label) + '</div>' + rows + '</div>';
+      }).join('');
+      return '<div class="cap-card">'
+        + '<div class="cap-hdr">'
+          + '<span class="cap-name">' + EOS_UI.esc(cap.capability) + '</span>'
+          + (cap.managed_here ? '<span class="managed-tag">editable here</span>' : '')
+          + '<span class="cap-meta">' + totalProviders + ' provider' + (totalProviders === 1 ? '' : 's') + '</span>'
+        + '</div>'
+        + chains
+      + '</div>';
+    }).join('');
+  } catch (e) {
+    el.innerHTML = '<div class="empty">Error: ' + EOS_UI.esc(e.message) + '</div>';
+  }
+}
+
+async function loadLive() {
+  var el = document.getElementById('live-card');
+  el.innerHTML = '<div class="empty">Loading...</div>';
+  try {
+    var data = await EOS.api('/providers/api/providers/live');
+    var rows = (data && data.providers) || [];
+    if (!rows.length) { el.innerHTML = EOS_UI.emptyState({message:'No providers in chain'}); return; }
+    var html = '<b>think capability — provider order:</b><div class="live-list">';
+    rows.forEach(function(p, i) {
+      html += '<div class="live-row">'
+        + '<span class="num">' + (i + 1) + '.</span>'
+        + '<span class="vid">' + EOS_UI.esc(p.variant_id) + '</span>'
+        + (p.is_cloud ? '<span class="cloud-tag">cloud</span>' : '')
+      + '</div>';
+    });
+    html += '</div>';
+    el.innerHTML = html;
+  } catch (e) {
+    el.innerHTML = '<div class="empty">Error: ' + EOS_UI.esc(e.message) + '</div>';
+  }
+}
+
+var _consentHints = {
+  ask:    'Each new cloud provider prompts for approval on first use this session.',
+  always: 'All cloud providers run without prompting. Persists across restart.',
+  never:  'Cloud providers are skipped; capability falls through to local / human.',
+};
+async function loadConsent() {
+  try {
+    var data = await EOS.api('/api/cloud/status');
+    var policy = (data && data.policy) || 'ask';
+    document.querySelectorAll('#consent-bar .consent-btn').forEach(function(b) {
+      b.classList.toggle('active', b.getAttribute('data-policy') === policy);
+    });
+    var hint = _consentHints[policy] || '';
+    var approved = (data && data.approved) || [];
+    if (policy === 'ask' && approved.length) {
+      hint += ' Approved this session: ' + approved.join(', ');
+    }
+    document.getElementById('consent-hint').textContent = hint;
+  } catch (e) {
+    document.getElementById('consent-hint').textContent = 'Error loading consent state: ' + e.message;
+  }
+}
+async function setConsentPolicy(policy) {
+  try {
+    var r = await fetch('/api/cloud/policy', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({policy: policy}),
+    }).then(function(x) { return x.json(); });
+    if (r.error) { EOS_UI.toast(r.error); return; }
+    EOS_UI.toast('Cloud consent: ' + policy);
+    loadConsent();
+  } catch (e) { EOS_UI.toast('Error: ' + e.message); }
+}
+
+var _scanHints = {
+  off:      'No semantic scan. Deterministic regex scanner still runs.',
+  classify: 'Local LLM checks each outbound prompt and surfaces sensitive content in the consent modal (~1-3s per call).',
+  redact:   'Local LLM rewrites sensitive spans as [NAME] / [EMAIL] / [ADDRESS] before the cloud provider sees them (higher latency, may alter intent).',
+};
+async function loadLlmScan() {
+  try {
+    var data = await EOS.api('/api/cloud/llm-scan');
+    var cfg = (data && data.config) || {mode: 'off', on_flag: 'warn', provider: '', max_chars: 4000};
+    document.querySelectorAll('#llm-scan-bar .consent-btn').forEach(function(b) {
+      b.classList.toggle('active', b.getAttribute('data-scan-mode') === cfg.mode);
+    });
+    document.getElementById('llm-scan-hint').textContent = _scanHints[cfg.mode] || '';
+    document.getElementById('llm-scan-extras').style.display = (cfg.mode === 'off') ? 'none' : 'flex';
+    document.getElementById('llm-scan-onflag').value = cfg.on_flag || 'warn';
+    document.getElementById('llm-scan-maxchars').value = cfg.max_chars || 4000;
+    document.getElementById('llm-scan-timeout').value = (cfg.timeout != null ? cfg.timeout : 5);
+
+    var sel = document.getElementById('llm-scan-provider');
+    var locals = (data && data.local_providers) || [];
+    var current = sel.value;
+    sel.innerHTML = '<option value="">(auto &mdash; first local)</option>' + locals.map(function(p) {
+      return '<option value="' + EOS_UI.esc(p.variant_id) + '">' + EOS_UI.esc(p.variant_id) + '</option>';
+    }).join('');
+    sel.value = cfg.provider || '';
+    if (!locals.length && cfg.mode !== 'off') {
+      document.getElementById('llm-scan-hint').textContent += ' No local think provider loaded — scan will be skipped.';
+    }
+  } catch (e) {
+    document.getElementById('llm-scan-hint').textContent = 'Error loading scan settings: ' + e.message;
+  }
+}
+async function _saveLlmScan(body, toastMsg) {
+  try {
+    var r = await fetch('/api/cloud/llm-scan', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(body),
+    }).then(function(x) { return x.json(); });
+    if (r.error) { EOS_UI.toast(r.error); return; }
+    if (toastMsg) EOS_UI.toast(toastMsg);
+    loadLlmScan();
+  } catch (e) { EOS_UI.toast('Error: ' + e.message); }
+}
+function setScanMode(mode)       { _saveLlmScan({mode: mode}, 'LLM scan: ' + mode); }
+function setScanOnFlag(val)      { _saveLlmScan({on_flag: val}, 'On flag: ' + val); }
+function setScanProvider(val)    { _saveLlmScan({provider: val}, val ? 'Scanner: ' + val : 'Scanner: auto'); }
+function setScanMaxChars(val)    { _saveLlmScan({max_chars: parseInt(val, 10) || 4000}, 'Max chars: ' + val); }
+function setScanTimeout(val)     { _saveLlmScan({timeout: parseFloat(val) || 5}, 'Timeout: ' + val + 's'); }
+
+loadProviders();
+loadConsent();
+loadLlmScan();
+EOS.on('providers:changed', function() {
+  loadProviders();
+  loadLlmScan();
+  if (document.getElementById('tab-live').classList.contains('active')) loadLive();
+});
+EOS.on('cloud:consent_decided', loadConsent);
+EOS.on('cloud:consent_requested', loadConsent);
+EOS.on('cloud:scan_findings', function(data) {
+  // Auto-approved cloud call had scanner findings. Surface as a toast so
+  // the user knows something was flagged even though no modal fired.
+  if (!data || !data.findings || !data.findings.length) return;
+  var reasons = data.findings.map(function(f) {
+    return (f.preview || f.pattern || '').toString();
+  }).filter(Boolean).join('; ');
+  var msg = '[' + (data.provider || '?') + '] scanner flagged'
+    + (reasons ? ': ' + reasons : '')
+    + (data.policy_reason === 'always' ? ' (auto-approved)' : ' (session-approved)');
+  EOS_UI.toast(msg);
+});
+</script>
+</body>
+</html>

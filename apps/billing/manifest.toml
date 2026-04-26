@@ -1,0 +1,34 @@
+[app]
+id = "billing"
+name = "Billing"
+version = "2.0.0"
+description = "LLM + image cost tracking — real tokens, daily stats, budget alerts"
+dimensions = ["financial"]
+
+[app.entry]
+module = "app"
+class = "BillingApp"
+
+[requires]
+capabilities = ["write", "think"]
+events = ["think:executed", "studio:generated"]
+
+[provides.cli]
+commands = ["billing"]
+
+[provides.web]
+prefix = "/billing"
+
+[provides.events]
+emits = ["billing:budget_alert", "billing:report_generated"]
+
+[provides.settings]
+schema = [
+    {key = "billing.daily_budget", label = "Daily Budget ($)", type = "number", default = 0},
+    {key = "billing.alert_threshold", label = "Alert at % of Budget", type = "number", default = 80},
+]
+
+[provides.assistant]
+commands = [
+    {slash = "/billing", method = "today_summary"},
+]

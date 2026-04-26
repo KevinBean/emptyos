@@ -1,0 +1,24 @@
+[app]
+id = "voice-assistant"
+name = "Aura"
+version = "0.1.0"
+description = "Conversational voice assistant using listen, think, and speak capabilities."
+
+[app.entry]
+module = "app"
+class = "VoiceAssistantApp"
+
+[requires]
+capabilities = ["think", "listen", "speak"]
+
+[provides.events]
+emits = ["voice-assistant:chat"]
+
+[provides.web]
+prefix = "/voice-assistant"
+
+[[contributes.hub.panel]]
+id = "voice-assistant-panel"
+method = "panel_assistant"
+renderer = "accent-card"
+priority = 80

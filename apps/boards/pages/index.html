@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <title>Boards — EmptyOS</title>
+    <link rel="stylesheet" href="/static/theme.css">
+    <link rel="stylesheet" href="/static/eos-components.css">
+    <link rel="stylesheet" href="/boards/pages/style.css">
+</head>
+<body>
+<div class="boards-shell">
+    <!-- Left sidebar — persistent board switcher (A1) -->
+    <aside class="boards-nav" id="boards-nav">
+        <div class="boards-nav-header">
+            <a class="boards-nav-home" href="#" onclick="goHome();return false;" title="Home">📊 Boards</a>
+            <button class="boards-nav-toggle" onclick="toggleNav()" title="Collapse ([)">‹</button>
+        </div>
+        <div class="boards-nav-list" id="boards-nav-list"></div>
+        <button class="boards-nav-new" onclick="openModal('create-modal')">＋ New board</button>
+    </aside>
+
+    <div class="app-shell">
+    <!-- HOME: Board selector -->
+    <div id="home-view" class="boards-home">
+        <h1>📊 Boards</h1>
+        <p class="subtitle">Visual work management backed by your Markdown Vault</p>
+        <div class="section-label">Your Boards</div>
+        <div class="board-grid" id="boards-grid"></div>
+        <div class="section-label">Create from Preset</div>
+        <div class="board-grid" id="presets-grid"></div>
+    </div>
+
+    <!-- BOARD: Active board view -->
+    <div id="board-view" style="display:none;flex-direction:column;height:100%;">
+        <div class="board-topbar">
+            <h1>
+                <span class="board-emoji">📊</span>
+                <span id="board-title">Board</span>
+                <span class="board-desc" id="board-desc"></span>
+            </h1>
+            <div class="topbar-actions">
+                <span id="filter-pill-host"></span>
+                <span id="filters-chip-host"></span>
+                <span id="bulk-chip-host"></span>
+                <input class="board-search" id="board-search" type="search" placeholder="Search… (/)" oninput="onSearchInput()">
+                <select class="board-groupby" id="board-groupby" onchange="onGroupByChange()" title="Group rows">
+                    <option value="">No groups</option>
+                </select>
+                <select class="board-view-select" id="view-select" onchange="onViewSelectChange()" title="Saved views">
+                    <option value="">Views…</option>
+                </select>
+                <button class="btn btn-sm" onclick="openSaveViewModal()" title="Save current filter+view as a named view">☆ Save view</button>
+                <button class="btn btn-sm board-edit-only" onclick="addItem()">+ Add Item</button>
+                <button class="btn btn-sm board-edit-only" onclick="openColumnModal('add')" title="Add a new column">+ Column</button>
+                <button class="btn btn-sm" id="readonly-toggle-btn" onclick="toggleReadonly()" title="Toggle view-only / edit mode">🔒 View</button>
+                <button class="btn btn-sm" onclick="exportBoard()">⬇ Export</button>
+                <button class="btn btn-sm" onclick="openAppSettings()" title="Settings">&#9881;</button>
+            </div>
+        </div>
+        <div id="board-readonly-banner" class="board-readonly-banner" style="display:none"></div>
+        <div id="view-tabs"></div>
+        <div class="view-area">
+            <div id="view-table" class="view-panel"><div class="board-table-wrap"><table class="board-table"><thead><tr id="table-head"></tr></thead><tbody id="table-body"></tbody></table></div></div>
+            <div id="view-kanban" class="view-panel">
+                <div class="kanban-toolbar">
+                    <label class="kanban-axis-label">Group by</label>
+                    <select id="kanban-axis-select" class="board-groupby" onchange="onKanbanAxisChange()"></select>
+                </div>
+                <div class="eos-kanban" id="kanban-board"></div>
+            </div>
+            <div id="view-calendar" class="view-panel"><div id="calendar-container"></div></div>
+            <div id="view-timeline" class="view-panel"><div id="timeline-container"></div></div>
+            <div id="view-chart" class="view-panel"><div class="chart-container" id="chart-container"></div></div>
+            <div id="view-gallery" class="view-panel"><div id="gallery-container" class="board-gallery"></div></div>
+        </div>
+    </div>
+    </div><!-- /app-shell -->
+
+    <!-- Item detail slide-out (A2) -->
+    <aside class="board-detail" id="board-detail" aria-hidden="true">
+        <div class="board-detail-header">
+            <button class="board-detail-close" onclick="closeItemDetail()" title="Close (Esc)">×</button>
+            <h2 id="detail-title">Item</h2>
+            <div id="detail-path" class="board-detail-path"></div>
+        </div>
+        <div class="board-detail-body">
+            <div class="board-detail-section">
+                <h3>Fields</h3>
+                <div id="detail-fields"></div>
+                <button class="btn btn-primary btn-sm" onclick="saveItemDetail()">Save changes</button>
+                <button class="btn btn-sm" onclick="suggestCandidates()" id="suggest-btn" style="margin-left:0.5rem;display:none">🎯 Suggest candidates</button>
+                <button class="btn btn-danger btn-sm" onclick="archiveCurrentItem()" style="margin-left:0.5rem">Archive</button>
+                <div id="suggest-results"></div>
+            </div>
+            <div class="board-detail-section" id="detail-backlinks-section" style="display:none">
+                <h3>Linked from</h3>
+                <div id="detail-backlinks"></div>
+            </div>
+            <div class="board-detail-section">
+                <h3>Activity</h3>
+                <div id="detail-activity" class="board-detail-activity"><em>Loading…</em></div>
+            </div>
+        </div>
+    </aside>
+</div>
+
+<!-- Create Board Modal -->
+<div class="modal-overlay" id="create-modal">
+    <div class="modal-box">
+        <h2>Create Board</h2>
+        <div class="form-group"><label>Board ID</label><input class="form-input" id="new-board-id" placeholder="my-board"></div>
+        <div class="form-group"><label>Name</label><input class="form-input" id="new-board-name" placeholder="My Board"></div>
+        <div class="form-group"><label>Source Tag</label><input class="form-input" id="new-board-tag" placeholder="Tag for vault notes"></div>
+        <div class="form-actions">
+            <button class="btn" onclick="closeModal('create-modal')">Cancel</button>
+            <button class="btn btn-primary" onclick="submitCreateBoard()">Create</button>
+        </div>
+    </div>
+</div>
+
+<!-- Column header ⋮ menu (absolutely positioned) -->
+<div id="col-menu" class="col-menu-dropdown" style="display:none">
+    <button class="col-menu-item" onclick="colMenuAction('filter')">Filter…</button>
+    <button class="col-menu-item" onclick="colMenuAction('hide')">Hide column</button>
+    <button class="col-menu-item" onclick="colMenuAction('edit')">Edit column…</button>
+    <button class="col-menu-item col-menu-danger" onclick="colMenuAction('delete')">Delete column</button>
+</div>
+
+<!-- Filter popover — appears below the column header -->
+<div id="filter-popover" class="filter-popover" style="display:none">
+    <div class="filter-popover-title" id="filter-popover-title"></div>
+    <div class="form-group" style="margin-bottom:0.45rem">
+        <select class="form-input" id="filter-op-select" onchange="onFilterOpChange()"></select>
+    </div>
+    <div class="form-group" id="filter-value-host" style="margin-bottom:0.5rem"></div>
+    <div class="filter-popover-actions">
+        <button class="btn btn-sm" onclick="closeFilterPopover()">Cancel</button>
+        <button class="btn btn-sm btn-primary" onclick="applyFilterFromPopover()">Apply</button>
+    </div>
+</div>
+
+<!-- Add / Edit Column Modal -->
+<div class="modal-overlay" id="column-modal">
+    <div class="modal-box">
+        <h2 id="column-modal-title">Add column</h2>
+        <div class="form-group">
+            <label>ID <span style="color:var(--text-muted);font-size:0.78rem">(frontmatter key, a-z and -)</span></label>
+            <input class="form-input" id="col-modal-id" placeholder="status">
+        </div>
+        <div class="form-group">
+            <label>Label</label>
+            <input class="form-input" id="col-modal-label" placeholder="Status">
+        </div>
+        <div class="form-group">
+            <label>Type</label>
+            <select class="form-input" id="col-modal-type" onchange="onColumnTypeChange()"></select>
+            <div id="col-modal-hint" class="col-modal-hint"></div>
+        </div>
+        <div id="col-modal-extras" class="column-modal-extras"></div>
+        <div id="col-modal-error" class="col-modal-error"></div>
+        <div class="form-actions">
+            <button class="btn btn-danger" id="col-modal-delete-btn" onclick="deleteColumnFromModal()" style="display:none">Delete</button>
+            <span style="flex:1"></span>
+            <button class="btn" onclick="closeModal('column-modal')">Cancel</button>
+            <button class="btn btn-primary" onclick="saveColumnFromModal()">Save</button>
+        </div>
+    </div>
+</div>
+
+<!-- Bulk Edit Modal -->
+<div class="modal-overlay" id="bulk-edit-modal">
+    <div class="modal-box">
+        <h2 id="bulk-edit-title">Bulk edit</h2>
+        <div class="form-group">
+            <label>Column to update</label>
+            <select class="form-input" id="bulk-edit-col" onchange="onBulkColChange()"></select>
+        </div>
+        <div id="bulk-edit-value-host" class="form-group"></div>
+        <div id="bulk-edit-error" class="col-modal-error"></div>
+        <div id="bulk-edit-progress" class="col-modal-hint" style="display:none"></div>
+        <div class="form-actions">
+            <button class="btn" onclick="closeModal('bulk-edit-modal')">Cancel</button>
+            <button class="btn btn-primary" id="bulk-edit-apply" onclick="applyBulkEdit()">Apply to selected</button>
+        </div>
+    </div>
+</div>
+
+<!-- Save View Modal -->
+<div class="modal-overlay" id="save-view-modal">
+    <div class="modal-box">
+        <h2>Save current view</h2>
+        <div class="form-group"><label>Name</label><input class="form-input" id="save-view-name" placeholder="Alice's queue"></div>
+        <div class="form-group"><label>Description (optional)</label><input class="form-input" id="save-view-desc" placeholder=""></div>
+        <div class="form-actions">
+            <button class="btn" onclick="closeModal('save-view-modal')">Cancel</button>
+            <button class="btn btn-primary" onclick="submitSaveView()">Save</button>
+        </div>
+    </div>
+</div>
+
+<!-- Add Item Modal -->
+<div class="modal-overlay" id="add-modal">
+    <div class="modal-box">
+        <h2>Add Item</h2>
+        <div id="add-item-fields"></div>
+        <div class="form-actions">
+            <button class="btn" onclick="closeModal('add-modal')">Cancel</button>
+            <button class="btn btn-primary" onclick="submitAddItem()">Add</button>
+        </div>
+    </div>
+</div>
+
+<script src="/static/eos.js"></script>
+<script src="/static/eos-components.js"></script>
+<script src="/boards/pages/boards.js"></script>
+
+</body>
+</html>

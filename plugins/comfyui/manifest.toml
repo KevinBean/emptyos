@@ -1,0 +1,13 @@
+[plugin]
+id = "comfyui"
+name = "ComfyUI"
+version = "1.0.0"
+description = "GPU image generation via ComfyUI"
+
+[plugin.entry]
+module = "plugin"
+class = "ComfyUIPlugin"
+
+[provides]
+services = ["comfyui"]
+tags = ["gpu", "image"]

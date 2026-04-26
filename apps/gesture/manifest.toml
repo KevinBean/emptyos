@@ -1,0 +1,32 @@
+[app]
+id = "gesture"
+name = "Gesture"
+version = "0.1.0"
+description = "Real-time hand-gesture demo — browser camera + MediaPipe. Maps gestures to actions, emits gesture:detected. Camera bytes stay on the device."
+dimensions = ["intellectual", "physical"]
+
+[app.entry]
+module = "app"
+class = "GestureApp"
+
+[requires]
+capabilities = []
+apps = []
+connectors = []
+
+[provides.cli]
+commands = ["gesture"]
+
+[provides.web]
+prefix = "/gesture"
+
+[provides.events]
+emits = ["gesture:detected"]
+
+[[contributes.hub.panel]]
+id = "gesture-stats"
+title = "✋ Gesture"
+method = "panel_gesture_stats"
+renderer = "tiles-row"
+priority = 180
+group = "dashboard"

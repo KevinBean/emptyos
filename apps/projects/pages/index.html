@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Projects - EmptyOS</title>
+<link rel="stylesheet" href="/static/theme.css">
+<link rel="stylesheet" href="/static/eos-components.css">
+<style>
+/* View toggle */
+.view-toggle { display: flex; gap: 4px; }
+.view-btn { padding: 8px 12px; font-size: 12px; border-radius: 8px; cursor: pointer; background: var(--bg-card); border: 1px solid var(--border); color: var(--text-secondary); transition: all 0.15s; }
+.view-btn.active { background: var(--accent-bg); color: var(--accent); border-color: var(--accent); }
+
+/* Kanban layout (.eos-kanban + .eos-kanban-col / -items / -card-host) lives in
+   eos-components.css. Per-column styling: header pills are coloured by
+   STATUS_COLORS in app.js — no per-column CSS needed. */
+#projects-kanban-mount[data-show-archived="true"] { /* hook for archived-only tweaks */ }
+
+/* Project card tweaks (shared .eos-entity-card styles come from eos-components.css) */
+.project-name { font-weight: 600; color: var(--text-heading); font-size: 14px; margin-bottom: 4px; }
+.project-meta { font-size: 11px; color: var(--text-muted); display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.project-deadline { font-size: 11px; }
+.project-deadline.overdue { color: var(--danger); font-weight: 600; }
+.project-deadline.soon { color: var(--warning); }
+
+/* Progress bar */
+.progress-bar { height: 4px; background: var(--border); border-radius: 4px; margin-top: 8px; overflow: hidden; }
+.progress-fill { height: 100%; border-radius: 4px; background: var(--accent); transition: width 0.5s; }
+.progress-fill.done { background: var(--success); }
+
+/* List view */
+.project-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 12px; }
+.list-card { padding: 16px; }
+.list-card .eec-title { font-size: 15px; }
+
+/* Detail panel */
+.detail-back { font-size: 13px; color: var(--accent); cursor: pointer; margin-bottom: 12px; }
+.detail-title { font-size: 22px; font-weight: 700; color: var(--text-heading); margin-bottom: 4px; }
+.detail-goal { font-size: 14px; color: var(--text-secondary); margin-bottom: 16px; padding: 12px; background: var(--bg-card); border-radius: 8px; border: 1px solid var(--border); }
+.task-item { display: flex; align-items: center; gap: 12px; padding: 8px 0; border-bottom: 1px solid var(--border); cursor: pointer; transition: background 0.1s; }
+.task-item:hover { background: var(--bg-card); }
+.task-check { width: 18px; height: 18px; border: 2px solid var(--border-strong); border-radius: 4px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; font-size: 12px; }
+.task-check.done { background: var(--success); border-color: var(--success); color: var(--accent-ink); }
+.task-text { font-size: 14px; flex: 1; }
+.task-text.done { text-decoration: line-through; color: var(--text-muted); }
+
+/* Detail tabs */
+.detail-tabs { display: flex; gap: 0; margin-bottom: 16px; border-bottom: 2px solid var(--border); }
+.detail-tab { padding: 8px 16px; font-size: 13px; font-weight: 600; cursor: pointer; color: var(--text-muted); border-bottom: 2px solid transparent; margin-bottom: -2px; transition: all 0.15s; }
+.detail-tab:hover { color: var(--text); }
+.detail-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+.detail-tab .tab-count { font-weight: 400; font-size: 11px; color: var(--text-muted); margin-left: 4px; }
+
+/* Doc list */
+.doc-item { display: flex; align-items: center; gap: 12px; padding: 12px 8px; border-bottom: 1px solid var(--border); cursor: pointer; transition: background 0.1s; border-radius: 6px; }
+.doc-item:hover { background: var(--bg-card); }
+.doc-icon { font-size: 16px; flex-shrink: 0; }
+.doc-name { font-size: 14px; font-weight: 500; flex: 1; color: var(--text-heading); }
+.doc-name.main { color: var(--accent); }
+.doc-meta { font-size: 11px; color: var(--text-muted); white-space: nowrap; }
+.doc-badge { font-size: 10px; padding: 2px 8px; border-radius: 4px; background: var(--accent-bg); color: var(--accent); }
+
+/* Type badge */
+.type-badge { font-size: 10px; padding: 2px 8px; border-radius: 4px; font-weight: 500; }
+.type-engineering { background: color-mix(in srgb, var(--warning) 15%, transparent); color: var(--warning); }
+.type-development { background: rgba(59,130,246,0.15); color: #3b82f6; }
+.type-personal { background: color-mix(in srgb, var(--text-muted) 10%, transparent); color: var(--text-muted); }
+
+/* Stage progress */
+.stage-bar { display: flex; gap: 2px; margin: 8px 0; }
+.stage-step { flex: 1; text-align: center; padding: 4px 4px; font-size: 10px; border-radius: 6px; background: var(--bg-card); border: 1px solid var(--border); color: var(--text-muted); transition: all 0.2s; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.stage-step.completed { background: var(--success); color: var(--accent-ink); border-color: var(--success); opacity: 0.7; }
+.stage-step.current { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 600; }
+
+/* Task meta */
+.task-meta { margin-left: 32px; padding: 2px 0 4px 0; }
+.task-meta-item { font-size: 11px; color: var(--text-muted); padding: 2px 0; }
+.task-meta-item .meta-type { font-weight: 600; color: var(--text-secondary); }
+.meta-type-need { color: var(--warning); }
+.meta-type-calc { color: var(--accent); }
+
+/* Dependency styling */
+.task-item.task-blocked { opacity: 0.5; }
+.task-item.task-ready { border-left: 3px solid var(--success); padding-left: 8px; }
+.blocked-label { font-size: 10px; color: var(--danger); margin-top: 2px; }
+.dep-badge { display: inline-block; font-size: 10px; padding: 0 4px; border-radius: 4px; margin-right: 4px; }
+.dep-badge-blocks { background: color-mix(in srgb, var(--danger) 15%, transparent); color: var(--danger); }
+.dep-badge-depends { background: color-mix(in srgb, var(--warning) 15%, transparent); color: var(--warning); }
+
+/* Calc results */
+.calc-item { display: flex; align-items: center; gap: 12px; padding: 12px 8px; border-bottom: 1px solid var(--border); border-radius: 6px; }
+.calc-item:hover { background: var(--bg-card); }
+
+/* Dev status */
+.git-line { font-size: 12px; font-family: var(--font-mono, monospace); padding: 2px 0; color: var(--text-secondary); }
+.git-added { color: var(--success); }
+.git-modified { color: var(--warning); }
+.git-deleted { color: var(--danger); }
+
+/* Sprint cards */
+.sprint-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px; padding: 16px; margin-bottom: 12px; }
+.sprint-card.active { border-color: var(--accent); }
+.sprint-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+.sprint-name { font-weight: 600; font-size: 14px; color: var(--text-heading); }
+.sprint-dates { font-size: 11px; color: var(--text-muted); }
+.sprint-goal { font-size: 12px; color: var(--text-secondary); margin-bottom: 8px; }
+.sprint-stats { display: flex; gap: 12px; font-size: 12px; }
+.sprint-stat { color: var(--text-muted); }
+.sprint-stat strong { color: var(--text); }
+
+/* Milestone cards */
+.ms-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px; padding: 16px; margin-bottom: 12px; }
+.ms-card.closed { opacity: 0.6; }
+.ms-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+.ms-id { font-weight: 700; font-size: 14px; color: var(--accent); }
+.ms-name { font-size: 13px; color: var(--text-heading); }
+.ms-target { font-size: 11px; color: var(--text-muted); }
+
+/* Release cards */
+.rel-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px; padding: 16px; margin-bottom: 12px; }
+.rel-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+.rel-version { font-weight: 700; font-size: 15px; color: var(--text-heading); }
+.rel-date { font-size: 11px; color: var(--text-muted); }
+.rel-notes { font-size: 12px; color: var(--text-secondary); }
+.rel-notes li { padding: 2px 0; }
+
+/* Feature settings */
+.feat-toggle { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--border); }
+.feat-toggle:last-child { border-bottom: none; }
+.feat-label { font-size: 13px; font-weight: 500; }
+.feat-switch { position: relative; width: 36px; height: 20px; cursor: pointer; }
+.feat-switch input { opacity: 0; width: 0; height: 0; }
+.feat-slider { position: absolute; inset: 0; background: var(--border); border-radius: 8px; transition: 0.2s; }
+.feat-slider:before { content: ""; position: absolute; height: 14px; width: 14px; left: 3px; bottom: 3px; background: #fff; border-radius: 50%; transition: 0.2s; }
+.feat-switch input:checked + .feat-slider { background: var(--accent); }
+.feat-switch input:checked + .feat-slider:before { transform: translateX(16px); }
+
+/* Velocity chart */
+.vel-bar { display: inline-block; background: var(--accent); border-radius: 4px; min-width: 2px; vertical-align: bottom; margin-right: 4px; transition: height 0.3s; }
+
+/* Status dropdown */
+.status-select { padding: 4px 8px; font-size: 12px; border-radius: 6px; border: 1px solid var(--border); background: var(--bg-input); color: var(--text); }
+
+/* Type-specific fields in create modal */
+.type-fields { margin-top: 8px; }
+.type-fields.hidden { display: none; }
+
+/* Timeline view */
+.timeline-container { overflow-x: auto; padding: 8px 0; }
+.timeline-row { display: flex; align-items: center; margin-bottom: 4px; height: 28px; }
+.timeline-label { width: 160px; flex-shrink: 0; font-size: 12px; color: var(--text-heading); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding-right: 8px; cursor: pointer; }
+.timeline-bar-area { flex: 1; position: relative; height: 20px; }
+.timeline-bar { position: absolute; height: 16px; border-radius: 4px; top: 2px; cursor: pointer; transition: opacity 0.15s; min-width: 4px; }
+.timeline-bar:hover { opacity: 0.8; }
+.timeline-fill { height: 100%; border-radius: 4px; opacity: 0.4; }
+.timeline-axis { display: flex; border-bottom: 1px solid var(--border); margin-bottom: 8px; padding-left: 160px; }
+.timeline-month { flex: 1; font-size: 10px; color: var(--text-muted); text-align: center; }
+.timeline-today { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--danger); opacity: 0.6; z-index: 1; }
+
+/* Calendar view */
+.cal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+.cal-nav { cursor: pointer; padding: 4px 12px; border-radius: 6px; background: var(--bg-card); border: 1px solid var(--border); font-size: 13px; }
+.cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; }
+.cal-day-header { text-align: center; font-size: 11px; color: var(--text-muted); font-weight: 600; padding: 4px 0; }
+.cal-cell { min-height: 80px; background: var(--bg-card); border: 1px solid var(--border); border-radius: 6px; padding: 4px; font-size: 11px; }
+.cal-cell.today { border-color: var(--accent); }
+.cal-cell.empty { background: transparent; border-color: transparent; }
+.cal-date { font-weight: 600; color: var(--text-heading); margin-bottom: 2px; }
+.cal-dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; margin-right: 2px; }
+.cal-task { font-size: 10px; color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding: 2px 0; cursor: pointer; }
+.cal-task:hover { color: var(--accent); }
+.cal-task.is-deadline { color: var(--danger); font-weight: 600; }
+
+@media (max-width: 1100px) {
+    .kanban { grid-template-columns: repeat(3, 1fr); }
+}
+@media (max-width: 700px) {
+    .kanban { grid-template-columns: 1fr; }
+    .kanban-col { min-height: auto; }
+}
+</style>
+</head>
+<body>
+<script src="/static/realtime.js"></script>
+<script src="/static/eos.js"></script>
+<script src="/static/eos-components.js"></script>
+<script>EOS.nav('projects');</script>
+<script>
+if(window.EOS&&EOS.registerActions){EOS.registerActions({filter:function(q){filterProjects(q)},set_view:function(v){setView(v)},show_health:function(){showHealth()},open_project:function(id){if(id)showDetail(id)}},[{name:"filter",description:"Filter projects",params:["query"]},{name:"set_view",description:"View: grid or list",params:["view"]},{name:"show_health",description:"AI project health",params:[]},{name:"open_project",description:"Open a project detail view by ID",params:["project_id"]}],{description:"Projects — status, tasks, health assessment, kanban view.",quickActions:[{label:"Health check",msg:"AI health assessment of my projects."},{label:"Stale projects",msg:"Which projects have no recent activity?"}]});}
+</script>
+
+<div class="page">
+    <!-- Header -->
+    <div class="eos-header">
+        <div>
+            <h1>Projects</h1>
+            <div style="font-size:13px;color:var(--text-secondary)" id="subtitle">Loading...</div>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center">
+            <div class="view-toggle">
+                <div class="view-btn active" id="btn-kanban" onclick="setView('kanban')">Kanban</div>
+                <div class="view-btn" id="btn-list" onclick="setView('list')">List</div>
+                <div class="view-btn" id="btn-timeline" onclick="setView('timeline')">Timeline</div>
+                <div class="view-btn" id="btn-calendar" onclick="setView('calendar')">Calendar</div>
+            </div>
+            <button class="eos-btn-sm eos-btn-ghost" id="btn-archive" onclick="toggleArchived()" style="font-size:11px">Show Archived</button>
+            <button class="eos-btn-sm eos-btn-ghost" onclick="openAsBoard()" title="Open in Boards (kanban / table / timeline / chart)" style="font-size:11px">Open as Board</button>
+            <button class="btn-settings" onclick="openAppSettings()" title="App Settings">&#9881; Settings</button>
+            <button class="eos-btn-sm" onclick="openCreate()">+ New</button>
+        </div>
+    </div>
+
+    <!-- Stats -->
+    <div class="eos-hero" id="stats-row"></div>
+
+    <!-- Search -->
+    <div style="margin-bottom:12px">
+        <input type="text" id="search" placeholder="Search projects..." oninput="filterProjects()" style="border-radius:14px;padding:12px 16px">
+    </div>
+
+    <!-- Category chips (tag-based filter) -->
+    <div id="category-bar" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px"></div>
+
+    <!-- Main content -->
+    <div id="main-view"></div>
+
+    <!-- Detail view -->
+    <div id="detail-view" style="display:none"></div>
+</div>
+
+<!-- Create Modal -->
+<div class="eos-modal-bg" id="create-modal" onclick="if(event.target===this)EOS_UI.closeModal('create-modal')">
+    <div class="eos-modal">
+        <div class="eos-modal-handle"></div>
+        <h3>New Project</h3>
+        <input type="text" id="new-name" placeholder="Project name">
+        <textarea id="new-goal" rows="2" placeholder="Goal / purpose" style="font-family:var(--font)"></textarea>
+        <div style="display:flex;gap:8px">
+            <select id="new-type" onchange="onTypeChange()" style="flex:1">
+                <option value="personal">Personal</option>
+                <option value="engineering">Engineering</option>
+                <option value="development">Development</option>
+            </select>
+            <select id="new-status" style="flex:1">
+                <option value="idea">Idea</option>
+                <option value="active">Active</option>
+            </select>
+        </div>
+        <input type="date" id="new-deadline">
+        <div class="type-fields hidden" id="dev-fields">
+            <input type="text" id="new-repo" placeholder="Repository path (e.g. D:/emptyos)">
+        </div>
+        <div id="template-picker" style="margin-top:8px"></div>
+        <div class="eos-modal-actions">
+            <button onclick="EOS_UI.closeModal('create-modal')" style="background:var(--bg);color:var(--text-secondary);border:1px solid var(--border)">Cancel</button>
+            <button onclick="submitCreate()" style="background:var(--accent);color:var(--accent-ink)">Create</button>
+        </div>
+    </div>
+</div>
+
+<!-- Add Task Modal -->
+<div class="eos-modal-bg" id="task-modal" onclick="if(event.target===this)EOS_UI.closeModal('task-modal')">
+    <div class="eos-modal">
+        <div class="eos-modal-handle"></div>
+        <h3>Add Task</h3>
+        <input type="text" id="task-text" placeholder="Task description" onkeydown="if(event.key==='Enter')submitTask()">
+        <input type="date" id="task-due">
+        <input type="hidden" id="task-project-id">
+        <div class="eos-modal-actions">
+            <button onclick="EOS_UI.closeModal('task-modal')" style="background:var(--bg);color:var(--text-secondary);border:1px solid var(--border)">Cancel</button>
+            <button onclick="submitTask()" style="background:var(--accent);color:var(--accent-ink)">Add</button>
+        </div>
+    </div>
+</div>
+
+<!-- AI Health Modal -->
+<div class="eos-modal-bg" id="health-modal" onclick="if(event.target===this)EOS_UI.closeModal('health-modal')">
+    <div class="eos-modal">
+        <div class="eos-modal-handle"></div>
+        <h3>Project Health Assessment</h3>
+        <div id="health-content" style="font-size:14px;line-height:1.6;white-space:pre-wrap">Loading...</div>
+        <div class="eos-modal-actions" style="margin-top:16px">
+            <button onclick="EOS_UI.closeModal('health-modal')" style="background:var(--accent);color:var(--accent-ink)">Close</button>
+        </div>
+    </div>
+</div>
+
+<!-- New Doc Modal -->
+<div class="eos-modal-bg" id="doc-modal" onclick="if(event.target===this)EOS_UI.closeModal('doc-modal')">
+    <div class="eos-modal">
+        <div class="eos-modal-handle"></div>
+        <h3>New Document</h3>
+        <input type="text" id="doc-title" placeholder="Document title" onkeydown="if(event.key==='Enter')submitDoc()">
+        <select id="doc-template">
+            <option value="blank">Blank</option>
+            <option value="meeting">Meeting Note</option>
+            <option value="spec">Spec / Design</option>
+            <option value="research">Research Note</option>
+        </select>
+        <input type="hidden" id="doc-project-id">
+        <div class="eos-modal-actions">
+            <button onclick="EOS_UI.closeModal('doc-modal')" style="background:var(--bg);color:var(--text-secondary);border:1px solid var(--border)">Cancel</button>
+            <button onclick="submitDoc()" style="background:var(--accent);color:var(--accent-ink)">Create</button>
+        </div>
+    </div>
+</div>
+
+<!-- Project Settings slide-out (per-project frontmatter editor) -->
+<div class="eos-settings-panel" id="project-settings-panel">
+    <div class="sp-head">
+        <h3 id="ps-title">Project Settings</h3>
+        <button class="eos-btn-sm eos-btn-ghost" onclick="closeProjectSettings()">Close</button>
+    </div>
+    <div class="sp-body">
+        <div class="sf-group">
+            <label class="sf-label">Status</label>
+            <select class="sf-select" id="ps-status"></select>
+        </div>
+        <div class="sf-group">
+            <label class="sf-label">Stage</label>
+            <select class="sf-select" id="ps-stage"></select>
+            <div class="sf-hint" id="ps-stage-hint"></div>
+        </div>
+        <div class="sf-group">
+            <label class="sf-label">Deadline</label>
+            <input type="date" class="sf-input" id="ps-deadline">
+        </div>
+        <div class="sf-group">
+            <label class="sf-label">Tags</label>
+            <input type="text" class="sf-input" id="ps-tags" placeholder="project, emptyos, dev">
+            <div class="sf-hint">Comma-separated. Used for category filtering.</div>
+        </div>
+        <div class="sf-section">Features</div>
+        <div id="ps-features"></div>
+    </div>
+    <div class="sp-foot">
+        <button class="eos-btn-sm eos-btn-ghost" onclick="closeProjectSettings()">Cancel</button>
+        <button class="eos-btn-sm" onclick="saveProjectSettings()" style="background:var(--accent);color:var(--accent-ink)">Save</button>
+    </div>
+</div>
+
+<script src="pages/tabs.js"></script>
+<script src="pages/dialogs.js"></script>
+<script src="pages/app.js"></script>
+<!-- Former inline code moved to pages/{app,tabs,dialogs}.js — see each file's header. -->
+</body>
+</html>

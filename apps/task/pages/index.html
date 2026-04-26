@@ -1,0 +1,668 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Tasks — EmptyOS</title>
+  <link rel="stylesheet" href="/static/theme.css">
+  <link rel="stylesheet" href="/static/eos-components.css">
+  <style>
+    body { padding-top:44px; padding-bottom:env(safe-area-inset-bottom); }
+    .stats-bar { display:grid; grid-template-columns:repeat(4,1fr); gap:8px; margin-bottom:16px; animation:fadeDown 0.4s ease }
+    .decay-bar { display:flex; height:8px; border-radius:4px; overflow:hidden; margin-bottom:16px; background:var(--border); animation:fadeDown 0.4s ease 0.05s both }
+    .decay-seg { height:100%; transition:width 0.6s ease; min-width:0 }
+    .decay-fresh{background:var(--success)} .decay-aging{background:var(--warning)} .decay-stale{background:var(--danger)} .decay-zombie{background:var(--purple)}
+    .decay-legend { display:flex; gap:12px; margin-bottom:16px; flex-wrap:wrap; font-size:11px; color:var(--text-muted) }
+    .decay-legend span { display:flex; align-items:center; gap:4px }
+    .decay-dot { width:8px; height:8px; border-radius:50%; display:inline-block }
+    .add-bar { display:flex; gap:8px; margin-bottom:16px; animation:fadeDown 0.4s ease 0.08s both }
+    .add-bar input[type="text"] { flex:1; background:var(--bg-card); border:1px solid var(--border); border-radius:14px; padding:12px 16px; font-size:15px; color:var(--text); outline:none; font-family:inherit; transition:border-color 0.2s }
+    .add-bar input[type="text"]:focus{border-color:var(--accent)} .add-bar input[type="text"]::placeholder{color:var(--text-secondary)}
+    .add-bar input[type="date"] { background:var(--bg-card); border:1px solid var(--border); border-radius:14px; padding:12px 12px; font-size:13px; color:var(--text); outline:none; font-family:inherit; min-width:130px }
+    .search-bar { margin-bottom:12px; animation:fadeDown 0.4s ease 0.1s both }
+    .search-bar input { width:100%; background:var(--bg-card); border:1px solid var(--border); border-radius:14px; padding:12px 16px 12px 36px; font-size:14px; color:var(--text); outline:none; font-family:inherit; transition:border-color 0.2s }
+    .search-bar input:focus{border-color:var(--accent)} .search-bar input::placeholder{color:var(--text-secondary)}
+    .search-wrap{position:relative} .search-icon{position:absolute;left:12px;top:50%;transform:translateY(-50%);color:var(--text-secondary);font-size:14px;pointer-events:none}
+    .toolbar-row { display:flex; align-items:center; justify-content:space-between; margin-bottom:16px }
+    .focus-section { margin-bottom:24px }
+    .focus-card { background:var(--bg-card); border-left:3px solid var(--accent); border-radius:14px; padding:16px 16px; margin-bottom:8px; display:flex; align-items:center; gap:12px; animation:cardIn 0.35s ease both; box-shadow:0 0 0 1px var(--border) }
+    .focus-card:nth-child(2){animation-delay:0.05s} .focus-card:nth-child(3){animation-delay:0.1s}
+    .focus-score { min-width:36px; height:36px; border-radius:50%; background:var(--accent); color:var(--accent-ink); display:flex; align-items:center; justify-content:center; font-size:13px; font-weight:700; flex-shrink:0 }
+    .focus-text{flex:1;min-width:0} .focus-text .task-name{font-weight:600;color:var(--text-heading);font-size:14px} .focus-text .task-meta{font-size:12px;color:var(--text-secondary);margin-top:2px}
+    .tier-group{margin-bottom:24px}
+    .tier-header { font-size:12px; font-weight:600; text-transform:uppercase; letter-spacing:1px; padding:8px 0; display:flex; align-items:center; gap:8px; color:var(--text-secondary) }
+    .tier-dot{width:8px;height:8px;border-radius:50%;display:inline-block}
+    .tier-count { background:var(--bg-card); padding:2px 8px; border-radius:8px; font-size:11px; color:var(--text-muted); border:1px solid var(--border) }
+    .task-item { display:flex; align-items:flex-start; gap:12px; padding:12px 16px; border-radius:8px; margin-bottom:4px; transition:all 0.2s; position:relative; background:var(--bg-card); border-left:3px solid transparent; animation:cardIn 0.35s ease both }
+    .task-item:hover{box-shadow:0 2px 8px var(--shadow)}
+    .task-item.completing{opacity:0;transform:translateX(40px) scale(0.95);transition:all 0.4s ease-out}
+    .task-item.tier-fresh{border-left-color:var(--success)} .task-item.tier-aging{border-left-color:var(--warning)} .task-item.tier-stale{border-left-color:var(--danger)} .task-item.tier-zombie{border-left-color:var(--purple)}
+    .task-item.tier-zombie .task-text{text-decoration:line-through;color:var(--text-muted)}
+    .task-cb { width:22px; height:22px; border-radius:50%; border:2px solid var(--border-strong); cursor:pointer; flex-shrink:0; margin-top:2px; transition:all 0.2s; display:flex; align-items:center; justify-content:center }
+    .task-cb:hover{border-color:var(--accent);background:var(--accent-bg);transform:scale(1.1)}
+    .task-cb.done{background:var(--success);border-color:var(--success);transform:scale(1.1)} .task-cb.done::after{content:"\2713";color:var(--accent-ink);font-size:13px;font-weight:700}
+    .task-body{flex:1;min-width:0} .task-text{font-size:14px;color:var(--text);line-height:1.4;word-break:break-word} .task-file{font-size:11px;color:var(--text-muted);margin-top:2px}
+    .project-badge{display:inline-block;font-size:10px;font-weight:600;padding:2px 8px;border-radius:8px;background:rgba(6,182,212,0.15);color:#06b6d4;text-decoration:none;vertical-align:middle;margin-right:2px}
+    .task-due { font-size:11px; padding:4px 12px; border-radius:6px; white-space:nowrap; flex-shrink:0; font-weight:500 }
+    .task-actions{display:flex;gap:4px;opacity:0;transition:opacity 0.2s} .task-item:hover .task-actions{opacity:1}
+    .task-actions button{background:var(--bg);border:1px solid var(--border);color:var(--text-secondary);border-radius:6px;padding:4px 12px;font-size:11px;cursor:pointer;transition:all 0.15s}
+    .task-actions button:hover{border-color:var(--accent);color:var(--accent)}
+    .tier-fresh .tier-dot{background:var(--success)} .tier-aging .tier-dot{background:var(--warning)} .tier-stale .tier-dot{background:var(--danger)} .tier-zombie .tier-dot{background:var(--purple)}
+    .due-fresh{background:color-mix(in srgb,var(--success) 15%,transparent);color:var(--success)} .due-aging{background:color-mix(in srgb,var(--warning) 15%,transparent);color:var(--warning)} .due-stale{background:color-mix(in srgb,var(--danger) 15%,transparent);color:var(--danger)} .due-zombie{background:color-mix(in srgb,var(--purple) 15%,transparent);color:var(--purple)} .due-future{background:var(--bg);color:var(--text-secondary)}
+    .cal-nav{display:flex;align-items:center;gap:12px;margin-bottom:12px}
+    .cal-nav button{background:var(--bg-card);border:1px solid var(--border);color:var(--text);padding:8px 16px;border-radius:8px;cursor:pointer;font-size:14px;transition:all 0.15s}
+    .cal-nav button:hover{border-color:var(--accent)} .cal-nav .cal-title{font-size:16px;font-weight:600;color:var(--text-heading);flex:1;text-align:center}
+    .calendar-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:4px}
+    .cal-header{text-align:center;font-size:11px;color:var(--text-muted);padding:8px 0;font-weight:600;text-transform:uppercase}
+    .cal-day{min-height:80px;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;padding:4px;font-size:11px;position:relative;overflow:hidden;cursor:pointer;transition:all 0.2s}
+    .cal-day:hover{border-color:var(--accent);box-shadow:0 2px 8px var(--shadow)}
+    .cal-day.today{border-color:var(--accent);border-width:2px;background:color-mix(in srgb,var(--accent) 5%,var(--bg-card))}
+    .cal-day.other-month{opacity:0.35} .cal-day.selected{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 8%,var(--bg-card))}
+    .cal-num{font-weight:600;color:var(--text-secondary);padding:2px 4px}
+    .cal-dots{display:flex;gap:4px;padding:2px 4px;flex-wrap:wrap} .cal-dot{width:6px;height:6px;border-radius:50%} .cal-dot.open-dot{background:var(--accent)} .cal-dot.done-dot{background:var(--success)}
+    .cal-day-tasks{background:var(--bg-card);border:1px solid var(--border);border-radius:14px;padding:16px;margin-top:12px;animation:cardIn 0.25s ease}
+    .cal-day-tasks h3{margin:0 0 12px;font-size:15px;color:var(--text-heading)}
+    .cal-day-task{padding:8px 0;border-bottom:1px solid var(--border);font-size:13px;display:flex;align-items:center;gap:8px}
+    .cal-day-task:last-child{border-bottom:none} .cal-day-task.done-task{color:var(--text-muted);text-decoration:line-through}
+    .cal-task-dot{width:6px;height:6px;border-radius:50%;flex-shrink:0}
+    .refresh-btn{background:var(--bg-card);border:1px solid var(--border);color:var(--text-muted);padding:8px 16px;border-radius:8px;cursor:pointer;font-size:13px;transition:all 0.2s;display:flex;align-items:center;gap:8px}
+    .refresh-btn:hover{border-color:var(--accent);color:var(--accent)} .refresh-btn.spinning .refresh-icon{animation:spin 0.8s linear infinite} .refresh-icon{display:inline-block}
+    @keyframes spin{to{transform:rotate(360deg)}}
+    .empty-state{text-align:center;padding:48px 24px;color:var(--text-muted)} .empty-state .icon{font-size:40px;margin-bottom:12px;opacity:0.6}
+    .confetti-particle{position:fixed;width:8px;height:8px;border-radius:50%;z-index:999;pointer-events:none}
+    @media(max-width:640px){.stats-bar{grid-template-columns:repeat(2,1fr)} .calendar-grid{font-size:10px} .cal-day{min-height:56px} .task-actions{opacity:1} .add-bar{flex-wrap:wrap} .add-bar input[type="date"]{flex:1;min-width:0}}
+    @media(max-width:400px){.stat-num{font-size:22px}}
+  </style>
+</head>
+<body>
+  <div class="page">
+    <div class="page-header">
+      <div class="toolbar-row">
+        <div>
+          <h1 class="eos-header" style="margin:0"><span>Tasks</span></h1>
+          <div style="font-size:13px;color:var(--text-secondary);margin-top:2px">Vault task manager with decay tracking</div>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <button class="eos-btn eos-btn-sm eos-btn-ghost" onclick="openAsBoard()" title="Open in Boards (kanban / table / calendar)">Open as Board</button>
+          <button class="btn-settings" onclick="openAppSettings()" title="Settings">&#9881; Settings</button>
+          <button class="refresh-btn" onclick="doRefresh()" title="Rebuild index from vault">
+            <span class="refresh-icon">&#x21bb;</span> Refresh
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Stats -->
+    <div class="stats-bar" id="stats"></div>
+
+    <!-- Decay bar -->
+    <div id="decay-section">
+      <div class="decay-bar" id="decay-bar"></div>
+      <div class="decay-legend" id="decay-legend"></div>
+    </div>
+
+    <!-- Add task -->
+    <div class="add-bar">
+      <input type="text" id="add-text" placeholder="Add a task..." onkeydown="if(event.key==='Enter')addTask()">
+      <input type="date" id="add-date">
+      <button class="eos-btn eos-btn-sm" onclick="addTask()">Add</button>
+    </div>
+
+    <!-- Search -->
+    <div class="search-bar">
+      <div class="search-wrap">
+        <span class="search-icon">&#x1F50D;</span>
+        <input type="text" id="search-input" placeholder="Filter tasks..." oninput="filterTasks()">
+      </div>
+    </div>
+
+    <!-- Focus -->
+    <div class="focus-section" id="focus-section"></div>
+
+    <!-- Tabs -->
+    <div class="eos-tabs">
+      <div class="eos-tab active" data-tab="list" onclick="switchTab('list')">List</div>
+      <div class="eos-tab" data-tab="calendar" onclick="switchTab('calendar')">Calendar</div>
+    </div>
+
+    <!-- List view -->
+    <div id="view-list" class="eos-tab-content active"></div>
+
+    <!-- Calendar view -->
+    <div id="view-calendar" class="eos-tab-content"></div>
+  </div>
+
+  <!-- Toast -->
+  <div class="eos-toast" id="toast"></div>
+
+  <script src="/static/eos-components.js"></script>
+  <script src="/static/eos.js"></script>
+  <script>
+    EOS.nav('task');
+
+    if(window.EOS&&EOS.registerActions){EOS.registerActions({
+        add_task:function(t){var i=document.getElementById("add-text");if(t)i.value=t;i.focus()},
+        refresh_tasks:function(){doRefresh()},
+        switch_tab:function(t){switchTab(t)},
+        complete_by_text:function(q){
+            if(!q)return;
+            var needle=String(q).toLowerCase();
+            var rows=document.querySelectorAll('#view-list .task-item');
+            for(var i=0;i<rows.length;i++){
+                var txt=rows[i].querySelector('.task-text');
+                if(txt&&txt.textContent.toLowerCase().indexOf(needle)!==-1){
+                    var cb=rows[i].querySelector('.task-cb');
+                    if(cb&&!cb.classList.contains('done'))cb.click();
+                    return;
+                }
+            }
+            showToast('No task matched "'+q+'"','err');
+        },
+        snooze_by_text:function(q){
+            if(!q)return;
+            var parts=String(q).split(',');var needle=parts[0].trim().toLowerCase();var days=parseInt(parts[1])||7;
+            for(var i=0;i<allTasks.length;i++){
+                if(allTasks[i].text.toLowerCase().indexOf(needle)!==-1){
+                    snoozeTask(allTasks[i].file,allTasks[i].line,days);return;
+                }
+            }
+            showToast('No task matched "'+needle+'"','err');
+        }
+    },[
+        {name:"add_task",description:"Focus task input with optional text",params:["text"]},
+        {name:"refresh_tasks",description:"Rescan vault for tasks",params:[]},
+        {name:"switch_tab",description:"Switch tab: active, done, calendar",params:["tab_name"]},
+        {name:"complete_by_text",description:"Mark a task done by matching text in its title",params:["query"]},
+        {name:"snooze_by_text",description:"Snooze a task by matching text. Format: 'query' or 'query, days'",params:["query_and_days"]}
+    ],{description:"Task manager — active/done tabs, calendar, snooze, vault-scan refresh.",quickActions:[{label:"What is overdue?",msg:"List my overdue tasks by urgency."},{label:"Focus now",msg:"Which task should I tackle right now?"},{label:"Refresh",msg:"Scan vault for new tasks."}]});}
+
+    var allTasks = [];
+    var calendarData = {};
+    var calMonth = new Date().getMonth();
+    var calYear = new Date().getFullYear();
+    var selectedCalDay = null;
+    var searchQuery = '';
+
+    function projectBadge(file) {
+      var norm = file.replace(/\\/g, '/');
+      var m = norm.match(/10_Projects\/([^/]+?)(?:\.md|\/)/);
+      if (!m) return '';
+      var slug = m[1];
+      var name = slug.replace(/-/g, ' ').replace(/\b\w/g, function(c) { return c.toUpperCase(); });
+      return '<a href="/projects/#' + esc(slug) + '" class="project-badge">' + esc(name) + '</a> ';
+    }
+
+    // ----- Init -----
+    async function init() {
+      await Promise.all([loadTasks(), loadFocus(), loadCalendar()]);
+    }
+
+    // ----- Load tasks -----
+    async function loadTasks() {
+      try {
+        allTasks = await EOS.api('/task/api/tasks');
+        renderStats();
+        renderDecay();
+        renderList();
+      } catch (e) {
+        document.getElementById('view-list').innerHTML =
+          EOS_UI.errorState({message:'Failed to load tasks'});
+      }
+    }
+
+    // ----- Load focus -----
+    async function loadFocus() {
+      try {
+        var focus = await EOS.api('/task/api/focus');
+        renderFocus(focus);
+      } catch (e) {
+        document.getElementById('focus-section').innerHTML = '';
+      }
+    }
+
+    // ----- Load calendar data -----
+    async function loadCalendar() {
+      try {
+        calendarData = await EOS.api('/task/api/calendar');
+      } catch (e) {
+        calendarData = {};
+      }
+    }
+
+    // ----- Stats (4 counters) -----
+    function renderStats() {
+      var today = new Date().toISOString().slice(0, 10);
+      var weekEnd = new Date();
+      weekEnd.setDate(weekEnd.getDate() + 7);
+      var weekStr = weekEnd.toISOString().slice(0, 10);
+
+      var overdue = allTasks.filter(function(t) { return t.due && t.due < today; }).length;
+      var todayCount = allTasks.filter(function(t) { return t.due === today; }).length;
+      var weekCount = allTasks.filter(function(t) { return t.due && t.due >= today && t.due <= weekStr; }).length;
+
+      EOS_UI.statCards('stats', [
+        {value: overdue,    label: 'Overdue',    variant: 'danger'},
+        {value: todayCount, label: 'Today',      variant: 'warning'},
+        {value: weekCount,  label: 'This Week',  variant: 'accent'},
+        {value: '-',        label: 'Done Today', variant: 'success'},
+      ]);
+      EOS.api('/task/api/tasks?status=done').then(function(done) {
+        var n = done.filter(function(t) { return t.done_date === today; }).length;
+        var cell = document.querySelector('#stats .eos-stat-card:nth-child(4) .eos-stat-val');
+        if (cell) cell.textContent = String(n);
+      }).catch(function() {});
+    }
+
+    // ----- Decay bar -----
+    function renderDecay() {
+      var counts = { fresh: 0, aging: 0, stale: 0, zombie: 0 };
+      for (var i = 0; i < allTasks.length; i++) {
+        var tier = allTasks[i].tier || 'fresh';
+        if (counts[tier] !== undefined) counts[tier]++;
+        else counts.fresh++;
+      }
+      var total = allTasks.length || 1;
+
+      var bar = document.getElementById('decay-bar');
+      bar.innerHTML =
+        '<div class="decay-seg decay-fresh" style="width:' + (counts.fresh / total * 100) + '%"></div>' +
+        '<div class="decay-seg decay-aging" style="width:' + (counts.aging / total * 100) + '%"></div>' +
+        '<div class="decay-seg decay-stale" style="width:' + (counts.stale / total * 100) + '%"></div>' +
+        '<div class="decay-seg decay-zombie" style="width:' + (counts.zombie / total * 100) + '%"></div>';
+
+      document.getElementById('decay-legend').innerHTML =
+        '<span><span class="decay-dot" style="background:var(--success)"></span> Fresh ' + counts.fresh + '</span>' +
+        '<span><span class="decay-dot" style="background:var(--warning)"></span> Aging ' + counts.aging + '</span>' +
+        '<span><span class="decay-dot" style="background:var(--danger)"></span> Stale ' + counts.stale + '</span>' +
+        '<span><span class="decay-dot" style="background:var(--purple)"></span> Zombie ' + counts.zombie + '</span>';
+    }
+
+    // ----- Focus -----
+    function renderFocus(items) {
+      var el = document.getElementById('focus-section');
+      if (!items || !items.length) { el.innerHTML = ''; return; }
+      el.innerHTML = '<div class="eos-section-title">Focus — Top 3 Priority</div>' +
+        items.map(function(t) {
+          return '<div class="focus-card">' +
+            '<div class="focus-score">' + t.focus_score + '</div>' +
+            '<div class="focus-text">' +
+              '<div class="task-name">' + esc(t.text) + '</div>' +
+              '<div class="task-meta">' + EOS.noteActions(t.file) + (t.due ? ' &middot; Due ' + t.due : '') + '</div>' +
+            '</div>' +
+          '</div>';
+        }).join('');
+    }
+
+    // ----- Search / filter -----
+    function filterTasks() {
+      searchQuery = document.getElementById('search-input').value.toLowerCase();
+      renderList();
+    }
+
+    // ----- List (grouped by tier) -----
+    function renderList() {
+      var el = document.getElementById('view-list');
+      var tasks = allTasks;
+
+      if (searchQuery) {
+        tasks = tasks.filter(function(t) {
+          return (t.text && t.text.toLowerCase().indexOf(searchQuery) >= 0) ||
+                 (t.file && t.file.toLowerCase().indexOf(searchQuery) >= 0);
+        });
+      }
+
+      if (!tasks.length) {
+        el.innerHTML = EOS_UI.emptyState({
+          icon: searchQuery ? '🔍' : '✅',
+          message: searchQuery ? 'No matching tasks' : 'No open tasks',
+        });
+        return;
+      }
+
+      var tiers = ['fresh', 'aging', 'stale', 'zombie'];
+      var tierLabels = {
+        fresh: 'Fresh (< 7 days)',
+        aging: 'Aging (7–30 days)',
+        stale: 'Stale (30–90 days)',
+        zombie: 'Zombie (> 90 days)'
+      };
+      var grouped = {};
+      var undated = [];
+      for (var i = 0; i < tasks.length; i++) {
+        var t = tasks[i];
+        if (!t.due) { undated.push(t); continue; }
+        var tier = t.tier || 'fresh';
+        if (!grouped[tier]) grouped[tier] = [];
+        grouped[tier].push(t);
+      }
+
+      var html = '';
+      var itemIdx = 0;
+      for (var ti = 0; ti < tiers.length; ti++) {
+        var tierKey = tiers[ti];
+        var items = grouped[tierKey];
+        if (!items || !items.length) continue;
+        html += '<div class="tier-group tier-' + tierKey + '">' +
+          '<div class="tier-header"><span class="tier-dot"></span>' +
+          tierLabels[tierKey] + ' <span class="tier-count">' + items.length + '</span></div>';
+        for (var j = 0; j < items.length; j++) {
+          html += taskRow(items[j], tierKey, itemIdx++);
+        }
+        html += '</div>';
+      }
+
+      if (undated.length) {
+        html += '<div class="tier-group">' +
+          '<div class="tier-header" style="color:var(--text-muted)">No Due Date <span class="tier-count">' + undated.length + '</span></div>';
+        for (var k = 0; k < undated.length; k++) {
+          html += taskRow(undated[k], 'none', itemIdx++);
+        }
+        html += '</div>';
+      }
+
+      el.innerHTML = html;
+    }
+
+    function taskRow(t, tier, idx) {
+      var dueClass = t.due ? 'due-' + tier : 'due-future';
+      var dueLabel = t.due
+        ? (t.overdue_days > 0 ? t.overdue_days + 'd overdue' : t.due)
+        : '';
+      var tierClass = tier !== 'none' ? ' tier-' + tier : '';
+      var delay = Math.min(idx * 0.03, 0.3);
+      return '<div class="task-item' + tierClass + '" style="animation-delay:' + delay + 's">' +
+        '<div class="task-cb" onclick="toggleTask(\'' + escAttr(t.file) + '\',' + t.line + ',this)"></div>' +
+        '<div class="task-body">' +
+          '<div class="task-text">' + esc(t.text) + '</div>' +
+          '<div class="task-file">' + projectBadge(t.file) + EOS.noteActions(t.file) + '</div>' +
+        '</div>' +
+        (dueLabel ? '<span class="task-due ' + dueClass + '">' + dueLabel + '</span>' : '') +
+        '<div class="task-actions">' +
+          '<button onclick="snoozeTask(\'' + escAttr(t.file) + '\',' + t.line + ',7)">+7d</button>' +
+          '<button onclick="snoozeTask(\'' + escAttr(t.file) + '\',' + t.line + ',30)">+30d</button>' +
+        '</div>' +
+      '</div>';
+    }
+
+    // ----- Add task -----
+    async function addTask() {
+      var text = document.getElementById('add-text').value.trim();
+      if (!text) return;
+      var date = document.getElementById('add-date').value;
+      try {
+        await EOS.post('/task/api/refresh', {});
+        document.getElementById('add-text').value = '';
+        document.getElementById('add-date').value = '';
+        showToast('Task index refreshed', 'ok');
+        await Promise.all([loadTasks(), loadFocus(), loadCalendar()]);
+        if (document.querySelector('.eos-tab[data-tab="calendar"].active')) renderCalendar();
+      } catch (e) {
+        showToast('Failed to add task', 'err');
+      }
+    }
+
+    // ----- Toggle -----
+    async function toggleTask(file, line, cbEl) {
+      cbEl.classList.add('done');
+      var row = cbEl.closest('.task-item');
+
+      playDone();
+      confetti(cbEl);
+
+      setTimeout(function() { row.classList.add('completing'); }, 200);
+
+      try {
+        await EOS.post('/task/api/toggle', { file: file, line: line });
+        showToast('Task completed!', 'ok');
+        setTimeout(async function() {
+          await Promise.all([loadTasks(), loadFocus(), loadCalendar()]);
+          if (document.querySelector('.eos-tab[data-tab="calendar"].active')) renderCalendar();
+        }, 500);
+      } catch (e) {
+        cbEl.classList.remove('done');
+        row.classList.remove('completing');
+        showToast('Failed to toggle task', 'err');
+      }
+    }
+
+    // ----- Confetti -----
+    function confetti(anchor) {
+      var rect = anchor ? anchor.getBoundingClientRect() : { left: window.innerWidth / 2, top: window.innerHeight / 2 };
+      var colors = ['var(--success)', '#3b82f6', 'var(--warning)', 'var(--danger)', 'var(--purple)'];
+      for (var i = 0; i < 15; i++) {
+        var c = document.createElement('div');
+        c.className = 'confetti-particle';
+        c.style.background = colors[Math.floor(Math.random() * 5)];
+        c.style.left = rect.left + 'px';
+        c.style.top = rect.top + 'px';
+        document.body.appendChild(c);
+        var dx = (Math.random() - 0.5) * 200;
+        var dy = -100 - Math.random() * 200;
+        c.animate([
+          { transform: 'translate(0,0) scale(1)', opacity: 1 },
+          { transform: 'translate(' + dx + 'px,' + dy + 'px) scale(0.3)', opacity: 0 }
+        ], { duration: 800, easing: 'ease-out' });
+        (function(el) { setTimeout(function() { el.remove(); }, 800); })(c);
+      }
+    }
+
+    // ----- Completion sound -----
+    function playDone() {
+      try {
+        var ctx = new (window.AudioContext || window.webkitAudioContext)();
+        [523, 659, 784].forEach(function(f, i) {
+          var o = ctx.createOscillator();
+          var g = ctx.createGain();
+          o.connect(g); g.connect(ctx.destination);
+          o.frequency.value = f; o.type = 'sine';
+          g.gain.value = 0.08;
+          o.start(ctx.currentTime + i * 0.12);
+          o.stop(ctx.currentTime + i * 0.12 + 0.15);
+        });
+      } catch (e) {}
+    }
+
+    // ----- Snooze -----
+    async function snoozeTask(file, line, days) {
+      try {
+        var res = await EOS.post('/task/api/snooze', { file: file, line: line, days: days });
+        showToast('Snoozed to ' + res.new_due, 'ok');
+        await Promise.all([loadTasks(), loadFocus(), loadCalendar()]);
+        if (document.querySelector('.eos-tab[data-tab="calendar"].active')) renderCalendar();
+      } catch (e) {
+        showToast('Failed to snooze', 'err');
+      }
+    }
+
+    // ----- Refresh -----
+    async function openAsBoard() {
+      try {
+        var j = await EOS.post('/boards/api/boards/from-preset', {preset_id: 'task-tracker'});
+        if (j && j.id) {
+          window.location.href = '/boards/#' + encodeURIComponent(j.id);
+        } else {
+          showToast(j && j.error ? j.error : 'Could not open board', 'err');
+        }
+      } catch (e) {
+        showToast('Could not open board: ' + e, 'err');
+      }
+    }
+
+    async function doRefresh() {
+      var btn = document.querySelector('.refresh-btn');
+      btn.classList.add('spinning');
+      try {
+        var res = await EOS.post('/task/api/refresh', {});
+        showToast('Refreshed: ' + res.open + ' open, ' + res.done + ' done', 'ok');
+        await Promise.all([loadTasks(), loadFocus(), loadCalendar()]);
+        if (document.querySelector('.eos-tab[data-tab="calendar"].active')) renderCalendar();
+      } catch (e) {
+        showToast('Refresh failed', 'err');
+      }
+      btn.classList.remove('spinning');
+    }
+
+    // ----- Tabs -----
+    function switchTab(tab) {
+      document.querySelectorAll('.eos-tab').forEach(function(t) {
+        t.classList.toggle('active', t.dataset.tab === tab);
+      });
+      document.getElementById('view-list').classList.toggle('active', tab === 'list');
+      document.getElementById('view-calendar').classList.toggle('active', tab === 'calendar');
+      if (tab === 'calendar') renderCalendar();
+    }
+
+    // ----- Calendar -----
+    function renderCalendar() {
+      var el = document.getElementById('view-calendar');
+      var today = new Date();
+      var todayStr = today.toISOString().slice(0, 10);
+
+      var first = new Date(calYear, calMonth, 1);
+      var last = new Date(calYear, calMonth + 1, 0);
+      var startDay = first.getDay();
+      var daysInMonth = last.getDate();
+
+      var monthNames = ['January','February','March','April','May','June',
+        'July','August','September','October','November','December'];
+
+      var html = '<div class="cal-nav">' +
+        '<button onclick="calPrev()">&#x25C0;</button>' +
+        '<span class="cal-title">' + monthNames[calMonth] + ' ' + calYear + '</span>' +
+        '<button onclick="calNext()">&#x25B6;</button>' +
+        '<button onclick="calToday()">Today</button>' +
+        '</div>';
+
+      html += '<div class="calendar-grid">';
+      var dayNames = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+      for (var d = 0; d < dayNames.length; d++) {
+        html += '<div class="cal-header">' + dayNames[d] + '</div>';
+      }
+
+      var prevLast = new Date(calYear, calMonth, 0).getDate();
+      for (var i = 0; i < startDay; i++) {
+        var day = prevLast - startDay + 1 + i;
+        html += '<div class="cal-day other-month"><div class="cal-num">' + day + '</div></div>';
+      }
+
+      for (var dd = 1; dd <= daysInMonth; dd++) {
+        var dateStr = calYear + '-' + String(calMonth + 1).padStart(2, '0') + '-' + String(dd).padStart(2, '0');
+        var isToday = dateStr === todayStr;
+        var isSelected = dateStr === selectedCalDay;
+        var tasks = calendarData[dateStr] || [];
+
+        var openCount = tasks.filter(function(t) { return !t.done; }).length;
+        var doneCount = tasks.filter(function(t) { return t.done; }).length;
+
+        html += '<div class="cal-day' + (isToday ? ' today' : '') + (isSelected ? ' selected' : '') +
+          '" onclick="selectCalDay(\'' + dateStr + '\')">';
+        html += '<div class="cal-num">' + dd + '</div>';
+        if (tasks.length) {
+          html += '<div class="cal-dots">';
+          for (var oi = 0; oi < Math.min(openCount, 5); oi++) html += '<div class="cal-dot open-dot"></div>';
+          for (var di = 0; di < Math.min(doneCount, 3); di++) html += '<div class="cal-dot done-dot"></div>';
+          html += '</div>';
+        }
+        html += '</div>';
+      }
+
+      var totalCells = startDay + daysInMonth;
+      var remaining = totalCells % 7 === 0 ? 0 : 7 - (totalCells % 7);
+      for (var ri = 1; ri <= remaining; ri++) {
+        html += '<div class="cal-day other-month"><div class="cal-num">' + ri + '</div></div>';
+      }
+
+      html += '</div>';
+
+      // Day detail panel
+      if (selectedCalDay && calendarData[selectedCalDay]) {
+        var dayTasks = calendarData[selectedCalDay];
+        html += '<div class="cal-day-tasks">';
+        html += '<h3>' + selectedCalDay + ' — ' + dayTasks.length + ' task' + (dayTasks.length !== 1 ? 's' : '') + '</h3>';
+        for (var ti = 0; ti < dayTasks.length; ti++) {
+          var t = dayTasks[ti];
+          var dotColor = t.done ? 'var(--success)' : 'var(--accent)';
+          html += '<div class="cal-day-task' + (t.done ? ' done-task' : '') + '">' +
+            '<div class="cal-task-dot" style="background:' + dotColor + '"></div>' +
+            esc(t.text) + '</div>';
+        }
+        html += '</div>';
+      } else if (selectedCalDay) {
+        html += '<div class="cal-day-tasks"><h3>' + selectedCalDay + '</h3>' + EOS_UI.emptyState({message:'No tasks on this day'}) + '</div>';
+      }
+
+      el.innerHTML = html;
+    }
+
+    function selectCalDay(dateStr) {
+      selectedCalDay = selectedCalDay === dateStr ? null : dateStr;
+      renderCalendar();
+    }
+
+    function calPrev() { calMonth--; if (calMonth < 0) { calMonth = 11; calYear--; } selectedCalDay = null; renderCalendar(); }
+    function calNext() { calMonth++; if (calMonth > 11) { calMonth = 0; calYear++; } selectedCalDay = null; renderCalendar(); }
+    function calToday() { var d = new Date(); calMonth = d.getMonth(); calYear = d.getFullYear(); selectedCalDay = d.toISOString().slice(0,10); renderCalendar(); }
+
+    // ----- Toast (uses eos-components) -----
+    function showToast(msg, type) {
+      var el = document.getElementById('toast');
+      el.textContent = msg;
+      el.className = 'eos-toast eos-toast-' + (type || 'ok') + ' show';
+      setTimeout(function() { el.classList.remove('show'); }, 2500);
+    }
+
+    // ----- HTML escape -----
+    function esc(s) {
+      if (!s) return '';
+      var d = document.createElement('div');
+      d.textContent = s;
+      return d.innerHTML;
+    }
+    function escAttr(s) {
+      return esc(s).replace(/'/g, "\\'");
+    }
+
+    // ----- Keyboard Shortcuts -----
+    if (EOS.keys) {
+        EOS.keys.register('n', 'New task', function() { document.getElementById('add-text').focus(); });
+        EOS.keys.register('r', 'Refresh tasks', function() { doRefresh(); });
+    }
+
+    // ----- Hands-Free gesture override -----
+    // Pointing_Up while on this page → complete the top focus task, no voice needed.
+    if (EOS.handsFree) {
+        EOS.handsFree.registerGesture('Pointing_Up', async function() {
+            try {
+                var focusList = await EOS.api('/task/api/focus');
+                var top = Array.isArray(focusList) ? focusList[0] : (focusList && focusList.tasks && focusList.tasks[0]);
+                if (!top || !top.file) {
+                    if (window.EOS_UI) EOS_UI.toast('No focus task to complete', false);
+                    return;
+                }
+                await EOS.post('/task/api/toggle', {file: top.file, line: top.line});
+                if (window.EOS_UI) EOS_UI.toast('Completed: ' + (top.text || top.title || 'top task'), true);
+                setTimeout(function() { if (typeof loadTasks === 'function') loadTasks(); if (typeof loadFocus === 'function') loadFocus(); }, 300);
+            } catch (e) {
+                if (window.EOS_UI) EOS_UI.toast('Could not complete top task', false);
+            }
+        }, 'Complete top focus task');
+    }
+
+    // ----- App Settings slide-out (shared helper) -----
+    var _appSettings = EOS_UI.settingsPanel({
+        id: 'app-settings-panel',
+        title: 'Task Settings',
+        fields: [
+            {key: 'task.zombie_days', label: 'Zombie Threshold (days)', type: 'number', default: 90, min: 1,
+             hint: 'Tasks with no activity for this many days are flagged zombie.'},
+            {key: 'task.focus_top_n', label: 'Focus Suggestions', type: 'number', default: 3, min: 1,
+             hint: 'Number of tasks surfaced in the Focus section.'},
+        ],
+    });
+    function openAppSettings() { _appSettings.open(); }
+
+    // ----- Go -----
+    init();
+  </script>
+</body>
+</html>

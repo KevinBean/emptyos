@@ -1,0 +1,27 @@
+[app]
+id = "calendar"
+name = "Calendar"
+version = "0.1.0"
+description = "A unified view of your schedule, aggregating tasks, journal entries, and external events."
+
+[app.entry]
+module = "app"
+class = "CalendarApp"
+
+[requires]
+capabilities = []
+apps = ["task"]
+
+[provides.web]
+prefix = "/calendar"
+
+[[contributes.hub.panel]]
+id = "calendar-agenda"
+method = "panel_agenda"
+renderer = "task-list"
+priority = 90
+
+[[contributes.voice-assistant.context]]
+id = "todays-agenda"
+method = "assistant_context"
+priority = 70

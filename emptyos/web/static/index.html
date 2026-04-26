@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>EmptyOS</title>
+<link rel="stylesheet" href="/static/theme.css">
+<link rel="stylesheet" href="/static/eos-components.css">
+<style>
+body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif; background:var(--bg); color:var(--text); min-height:100dvh; padding:env(safe-area-inset-top) 16px calc(env(safe-area-inset-bottom)+80px); -webkit-font-smoothing:antialiased }
+
+/* Header */
+.home-header { text-align:center; padding:20px 0 12px; animation:fadeDown 0.4s }
+.home-header h1 { font-size:20px; font-weight:700; color:var(--text-heading) }
+.home-sub { font-size:13px; color:var(--text-secondary); margin-top:2px }
+
+/* Health ring */
+.health-section { display:flex; flex-direction:column; align-items:center; margin-bottom:16px; animation:cardIn 0.4s ease 0.1s both }
+.h-ring { position:relative; width:130px; height:130px }
+.h-ring svg { transform:rotate(-90deg) }
+.h-ring .bg { stroke:var(--border); fill:none; stroke-width:9 }
+.h-ring .fill { fill:none; stroke-width:9; stroke-linecap:round; transition:stroke-dashoffset 1s }
+.h-center { position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center }
+.h-score { font-size:34px; font-weight:800; color:var(--text-heading) }
+.h-label { font-size:10px; color:var(--text-muted); text-transform:uppercase; letter-spacing:1px }
+.dims { display:grid; grid-template-columns:repeat(5,1fr); gap:4px; width:100%; max-width:380px; margin-top:10px }
+.dim { text-align:center }
+.dim-bar { height:3px; border-radius:2px; background:var(--border); overflow:hidden; margin:3px auto 0; width:75% }
+.dim-fill { height:100%; border-radius:2px; transition:width 0.5s }
+.dim-name { font-size:9px; color:var(--text-muted) }
+.dim-val { font-size:12px; font-weight:600; color:var(--text-heading) }
+
+/* What now */
+.wn { background:var(--bg-card); border:1px solid var(--border); border-radius:14px; padding:14px; margin-bottom:14px; cursor:pointer; transition:border-color 0.2s; animation:cardIn 0.4s ease 0.15s both }
+.wn:hover { border-color:var(--accent) }
+.wn-label { font-size:10px; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.5px }
+.wn-action { font-size:16px; font-weight:600; color:var(--text-heading); margin-top:3px }
+
+/* Quick actions */
+.qa-row { display:grid; grid-template-columns:repeat(4,1fr); gap:8px; margin-bottom:16px }
+.qa { background:var(--bg-card); border:1px solid var(--border); border-radius:12px; padding:12px 6px; text-align:center; cursor:pointer; text-decoration:none; color:var(--text); transition:all 0.12s; animation:cardIn 0.3s ease both }
+.qa:nth-child(2){animation-delay:0.05s} .qa:nth-child(3){animation-delay:0.1s} .qa:nth-child(4){animation-delay:0.15s}
+.qa:active { transform:scale(0.95); border-color:var(--accent) }
+.qa-icon { font-size:20px }
+.qa-label { font-size:10px; color:var(--text-secondary); margin-top:3px }
+
+/* Widgets row */
+.widgets { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:16px }
+.w { background:var(--bg-card); border:1px solid var(--border); border-radius:12px; padding:12px; animation:cardIn 0.35s ease both }
+.w:nth-child(2){animation-delay:0.05s}
+.w-label { font-size:10px; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.5px }
+.w-val { font-size:20px; font-weight:700; color:var(--text-heading); margin-top:2px }
+.w-sub { font-size:11px; color:var(--text-secondary); margin-top:1px }
+
+/* Countdowns */
+.cd-row { display:flex; gap:8px; overflow-x:auto; margin-bottom:16px; padding-bottom:4px }
+.cd { flex-shrink:0; background:var(--bg-card); border:1px solid var(--border); border-radius:10px; padding:10px 14px; text-align:center; min-width:110px }
+.cd-days { font-size:22px; font-weight:800; color:var(--accent) }
+.cd-name { font-size:10px; color:var(--text-muted); margin-top:2px }
+
+/* App clusters */
+.cluster { margin-bottom:16px }
+.cluster-hdr { display:flex; align-items:center; gap:6px; margin-bottom:8px; cursor:pointer; user-select:none }
+.cluster-hdr:hover .cl-name { color:var(--accent) }
+.cl-icon { font-size:1.1rem }
+.cl-name { font-size:13px; font-weight:600; color:var(--text-heading); transition:color 0.15s }
+.cl-count { font-size:10px; color:var(--text-muted); background:var(--bg-card); border:1px solid var(--border); border-radius:8px; padding:1px 6px }
+.cl-toggle { font-size:10px; color:var(--text-muted); transition:transform 0.2s; margin-left:auto }
+.cl-toggle.open { transform:rotate(90deg) }
+.app-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:6px }
+.app-grid.collapsed { display:none }
+.ac { background:var(--bg-card); border:1px solid var(--border); border-radius:10px; padding:10px; cursor:pointer; transition:border-color 0.15s; text-decoration:none; color:var(--text) }
+.ac:hover { border-color:var(--accent) }
+.ac-name { font-size:13px; font-weight:600; color:var(--text-heading) }
+.ac-desc { font-size:10px; color:var(--text-muted); margin-top:2px; line-height:1.3; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden }
+
+.section-title { font-size:11px; font-weight:600; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.5px; margin-bottom:8px; margin-top:16px }
+.empty { text-align:center; padding:16px; color:var(--text-muted); font-size:12px }
+
+@media(max-width:400px) { .qa-row{grid-template-columns:repeat(3,1fr)} .widgets{grid-template-columns:1fr} .dims{grid-template-columns:repeat(3,1fr)} }
+</style>
+</head>
+<body>
+<script src="/static/realtime.js"></script>
+<script src="/static/eos.js"></script>
+<script src="/static/eos-components.js"></script>
+
+<nav class="nav">
+    <a href="/" class="current">Home</a>
+    <a href="/briefing/">Briefing</a>
+    <a href="/task/">Tasks</a>
+    <a href="/expense/">Expense</a>
+    <a href="/english/">English</a>
+    <a href="/journal/">Journal</a>
+</nav>
+
+<div class="page">
+    <div class="home-header">
+        <h1 id="greeting">EmptyOS</h1>
+        <div class="home-sub" id="date-label"></div>
+    </div>
+
+    <!-- Health Score -->
+    <div class="health-section">
+        <div class="h-ring">
+            <svg width="130" height="130" viewBox="0 0 140 140">
+                <circle class="bg" cx="70" cy="70" r="56"/>
+                <circle class="fill" id="ring" cx="70" cy="70" r="56" stroke-dasharray="352" stroke-dashoffset="352"/>
+            </svg>
+            <div class="h-center">
+                <div class="h-score" id="score">--</div>
+                <div class="h-label" id="score-label"></div>
+            </div>
+        </div>
+        <div class="dims" id="dims"></div>
+    </div>
+
+    <!-- What Now -->
+    <div class="wn" id="wn" onclick="goWN()">
+        <div class="wn-label">What Now</div>
+        <div class="wn-action" id="wn-text">Loading...</div>
+    </div>
+
+    <!-- Quick Actions -->
+    <div class="qa-row">
+        <a class="qa" href="/expense/"><div class="qa-icon">💰</div><div class="qa-label">Expense</div></a>
+        <a class="qa" href="/journal/"><div class="qa-icon">📓</div><div class="qa-label">Journal</div></a>
+        <a class="qa" href="/speaking/"><div class="qa-icon">🎤</div><div class="qa-label">English</div></a>
+        <a class="qa" href="/task/"><div class="qa-icon">✅</div><div class="qa-label">Tasks</div></a>
+    </div>
+
+    <!-- Widgets -->
+    <div class="widgets" id="widgets"></div>
+
+    <!-- Countdowns -->
+    <div class="cd-row" id="cds"></div>
+
+    <!-- All Apps (clustered) -->
+    <div class="section-title">All Apps</div>
+    <div id="clusters"></div>
+</div>
+
+<script>
+var wnUrl = '/briefing/';
+var h = new Date().getHours();
+document.getElementById('greeting').textContent = h < 12 ? 'Good morning' : h < 18 ? 'Good afternoon' : 'Good evening';
+document.getElementById('date-label').textContent = new Date().toLocaleDateString('en-AU', {weekday:'long', month:'long', day:'numeric'});
+
+function rc(s) { return s >= 80 ? '#10b981' : s >= 60 ? '#f59e0b' : '#ef4444'; }
+
+async function loadHealth() {
+    try {
+        var d = await EOS.api('/hub/api/health-score');
+        var s = d.total || 0;
+        var ring = document.getElementById('ring');
+        ring.style.strokeDashoffset = 352 - (352 * s / 100);
+        ring.style.stroke = rc(s);
+        document.getElementById('score').textContent = s;
+        document.getElementById('score-label').textContent = s >= 80 ? 'Excellent' : s >= 60 ? 'Good' : s >= 40 ? 'Fair' : 'Low';
+        var dims = d.dimensions || {};
+        document.getElementById('dims').innerHTML = Object.entries(dims).map(function(e) {
+            // Dimensions can be {score, max} objects OR plain numbers
+            var val = typeof e[1] === 'object' ? (e[1].score || 0) : e[1];
+            var max = typeof e[1] === 'object' ? (e[1].max || 20) : 20;
+            var c = val >= 15 ? '#10b981' : val >= 10 ? '#f59e0b' : '#ef4444';
+            return '<div class="dim"><div class="dim-val">'+val+'</div><div class="dim-bar"><div class="dim-fill" style="width:'+(val/max*100)+'%;background:'+c+'"></div></div><div class="dim-name">'+e[0]+'</div></div>';
+        }).join('');
+    } catch(e) { console.error('health:', e); }
+}
+
+async function loadWN() {
+    try {
+        var d = await EOS.api('/hub/api/what-now');
+        document.getElementById('wn-text').textContent = d.label || d.action || 'Start your day';
+        wnUrl = d.url || '/briefing/';
+    } catch(e) {}
+}
+function goWN() { location.href = wnUrl; }
+
+async function loadWidgets() {
+    var html = '';
+    try {
+        var w = await EOS.api('/hub/api/weather');
+        // Weather API may return {temperature, description} or {current: {temperature, description}}
+        var temp = w.temperature || (w.current && w.current.temperature) || '?';
+        var desc = w.description || (w.current && w.current.description) || '';
+        html += '<div class="w"><div class="w-label">Weather</div><div class="w-val">'+Math.round(temp)+'&deg;</div><div class="w-sub">'+desc+'</div></div>';
+    } catch(e) {}
+    try {
+        var t = await EOS.api('/hub/api/today');
+        html += '<div class="w"><div class="w-label">Today</div><div class="w-val">'+(t.total_events||0)+'</div><div class="w-sub">events tracked</div></div>';
+    } catch(e) {}
+    document.getElementById('widgets').innerHTML = html || '';
+}
+
+async function loadCDs() {
+    try {
+        var d = await EOS.api('/hub/api/countdowns');
+        var cds = Array.isArray(d) ? d : [];
+        document.getElementById('cds').innerHTML = cds.map(function(c) {
+            var name = c.label || c.name || '?';
+            var dir = c.direction === 'up' || c.counting_up ? 'waiting' : 'left';
+            return '<div class="cd"><div class="cd-days">'+Math.abs(c.days)+'</div><div class="cd-name">'+name+'</div></div>';
+        }).join('');
+    } catch(e) { console.error('cds:', e); }
+}
+
+async function loadClusters() {
+    try {
+        var clusters = await EOS.api('/api/apps/clusters');
+        document.getElementById('clusters').innerHTML = clusters.map(function(c,i) {
+            var apps = c.apps.map(function(a) {
+                return '<a class="ac" '+(a.web_prefix?'href="'+a.web_prefix+'/"':'')+'><div class="ac-name">'+a.name+'</div><div class="ac-desc">'+a.description+'</div></a>';
+            }).join('');
+            return '<div class="cluster"><div class="cluster-hdr" onclick="toggleCl('+i+')"><span class="cl-icon">'+c.icon+'</span><span class="cl-name">'+c.name+'</span><span class="cl-count">'+c.count+'</span><span class="cl-toggle open" id="ct-'+i+'">&#9654;</span></div><div class="app-grid" id="cg-'+i+'">'+apps+'</div></div>';
+        }).join('');
+    } catch(e) {}
+}
+
+function toggleCl(i) {
+    var g = document.getElementById('cg-'+i);
+    var t = document.getElementById('ct-'+i);
+    g.classList.toggle('collapsed');
+    t.classList.toggle('open');
+}
+
+// Load everything in parallel
+Promise.all([loadHealth(), loadWN(), loadWidgets(), loadCDs(), loadClusters()]);
+
+// Live updates refresh health + widgets
+['expense:added','task:completed','journal:entry','speaking:session_ended','focus:completed','healing:mood-logged','nutrition:logged'].forEach(function(e) {
+    EOS.on(e, function() { loadHealth(); loadWidgets(); });
+});
+</script>
+</body>
+</html>

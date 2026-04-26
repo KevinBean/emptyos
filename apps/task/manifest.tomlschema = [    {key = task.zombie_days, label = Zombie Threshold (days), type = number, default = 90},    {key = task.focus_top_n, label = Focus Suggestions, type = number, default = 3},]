@@ -1,0 +1,6 @@
+
+[provides.settings]
+schema = [
+    {key = "task.zombie_days", label = "Zombie Threshold (days)", type = "number", default = 90},
+    {key = "task.focus_top_n", label = "Focus Suggestions", type = "number", default = 3},
+]

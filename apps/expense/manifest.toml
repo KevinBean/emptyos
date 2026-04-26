@@ -1,0 +1,53 @@
+[app]
+id = "expense"
+name = "Expense"
+version = "1.0.0"
+description = "Expense tracking — add, summarize, analyze spending"
+dimensions = ["financial"]
+
+[app.entry]
+module = "app"
+class = "ExpenseApp"
+
+[requires]
+capabilities = ["think"]
+services = []
+connectors = []
+
+[provides.cli]
+commands = ["expense"]
+
+[provides.web]
+prefix = "/expense"
+
+[provides.events]
+emits = ["expense:added", "expense:income-added"]
+
+[provides.settings]
+schema = [
+    {key = "expense.budget", label = "Monthly Budget ($)", type = "number", default = 3000},
+    {key = "expense.default_category", label = "Default Category", type = "select", options = ["Dining", "Groceries", "Transport", "Shopping", "Bills", "Health", "Entertainment", "Other"], default = "Other"},
+    {key = "expense.alert_threshold", label = "Budget Alert at %", type = "number", default = 80},
+]
+
+[provides.assistant]
+commands = [
+    {slash = "/expenses", method = "summary"},
+    {slash = "/expense-list", method = "list_expenses"},
+]
+
+# ── Hub panels ──
+
+[[contributes.hub.panel]]
+id = "expense-month"
+method = "panel_month_spend"
+renderer = "stat-tile"
+group = "dashboard"
+priority = 150
+
+[[contributes.hub.panel]]
+id = "expense-month-compare"
+method = "panel_month_compare"
+renderer = "compare-tile"
+group = "month-compare"
+priority = 220

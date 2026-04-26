@@ -1,0 +1,638 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>Journal - EmptyOS</title>
+<link rel="stylesheet" href="/static/theme.css">
+<link rel="stylesheet" href="/static/eos-components.css">
+<style>
+* { margin:0; padding:0; box-sizing:border-box }
+body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif; background:var(--bg); color:var(--text); min-height:100dvh; padding:env(safe-area-inset-top) 16px calc(env(safe-area-inset-bottom) + 80px); -webkit-font-smoothing:antialiased; overscroll-behavior-y:contain }
+
+/* Streak badge */
+.streak { position:absolute; top:12px; right:16px; background:var(--bg-card); border:1px solid var(--border); border-radius:14px; padding:8px 16px; font-size:13px; font-weight:600; color:var(--text-heading); display:flex; align-items:center; gap:4px; animation:fadeDown 0.4s }
+
+/* Date nav */
+.date-nav { display:flex; align-items:center; justify-content:center; gap:12px; margin-bottom:16px; animation:fadeDown 0.4s ease 0.05s both }
+.date-nav button { background:var(--bg-card); border:1px solid var(--border); color:var(--text-secondary); width:34px; height:34px; border-radius:8px; font-size:18px; cursor:pointer; transition:all 0.15s; display:flex; align-items:center; justify-content:center }
+.date-nav button:active { transform:scale(0.93); border-color:var(--accent) }
+.date-label { font-size:15px; color:var(--accent); min-width:180px; text-align:center; font-weight:600 }
+.btn-today { padding:8px 16px; font-size:12px; font-weight:600; border-radius:8px; background:var(--accent); color:var(--accent-ink); border:none; cursor:pointer; transition:transform 0.1s }
+.btn-today:active { transform:scale(0.95) }
+
+/* Heatmap */
+.heatmap-wrap { background:var(--bg-card); border:1px solid var(--border); border-radius:14px; padding:16px; margin-bottom:16px; animation:cardIn 0.35s ease 0.1s both }
+.heatmap-grid { display:flex; flex-wrap:wrap; gap:4px }
+.hm-cell { width:13px; height:13px; border-radius:4px; background:var(--border); cursor:default; position:relative }
+.hm-1 { background:color-mix(in srgb,var(--accent) 25%,var(--border)) }
+.hm-2 { background:color-mix(in srgb,var(--accent) 50%,var(--border)) }
+.hm-3 { background:color-mix(in srgb,var(--accent) 75%,var(--border)) }
+.hm-4 { background:var(--accent) }
+.hm-cell[data-tip]:hover::after { content:attr(data-tip); position:absolute; bottom:calc(100% + 6px); left:50%; transform:translateX(-50%); background:var(--bg-card); border:1px solid var(--border); color:var(--text); font-size:11px; padding:4px 8px; border-radius:6px; white-space:nowrap; z-index:10; pointer-events:none }
+.heatmap-stats { display:flex; gap:16px; margin-top:12px; font-size:12px; color:var(--text-muted) }
+.heatmap-stats strong { color:var(--text-heading) }
+
+/* Wellbeing wheel strip */
+.wheel-wrap { background:var(--bg-card); border:1px solid var(--border); border-radius:14px; padding:12px 12px; margin-bottom:16px; animation:cardIn 0.35s ease 0.12s both }
+.wheel-wrap h4 { margin:0 0 8px; font-size:11px; font-weight:600; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.5px }
+.wheel-strip { display:grid; grid-template-columns:repeat(8,1fr); gap:8px }
+.wt { position:relative; overflow:hidden; border:1px solid var(--border); border-radius:8px; padding:8px 2px; text-align:center; background:var(--bg-card) }
+.wt.empty { opacity:0.3 }
+.wt.active { border-color:var(--accent) }
+.wt-fill { position:absolute; left:0; bottom:0; width:100%; background:color-mix(in srgb,var(--accent) 22%,transparent); transition:height 0.4s }
+.wt-icon { font-size:17px; line-height:1; position:relative }
+.wt-count { font-size:10px; font-weight:700; color:var(--text-heading); margin-top:4px; position:relative }
+.wt-label { font-size:9px; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.3px; position:relative }
+
+/* Mood + Weather row */
+.mood-weather { display:flex; align-items:center; gap:8px; margin-bottom:16px; flex-wrap:wrap; animation:fadeDown 0.4s ease 0.15s both }
+.mood-btn { width:40px; height:40px; border-radius:50%; border:2px solid var(--border); background:var(--bg-card); cursor:pointer; font-size:20px; display:flex; align-items:center; justify-content:center; transition:all 0.2s; -webkit-tap-highlight-color:transparent }
+.mood-btn:active { transform:scale(0.92) }
+.mood-btn.selected { border-color:var(--accent); background:color-mix(in srgb,var(--accent) 12%,var(--bg-card)); box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 15%,transparent) }
+.weather-chip { margin-left:auto; background:var(--bg-card); border:1px solid var(--border); border-radius:14px; padding:4px 12px; font-size:12px; color:var(--text-secondary); display:flex; align-items:center; gap:4px; white-space:nowrap }
+
+/* Entry area */
+.entry-area { margin-bottom:16px; animation:fadeDown 0.4s ease 0.2s both }
+.entry-textarea { width:100%; min-height:150px; background:var(--bg-card); border:1px solid var(--border); border-radius:14px; padding:16px; font-size:15px; color:var(--text); outline:none; font-family:inherit; resize:vertical; transition:border-color 0.2s,box-shadow 0.2s; line-height:1.6 }
+.entry-textarea:focus { border-color:color-mix(in srgb,var(--accent) 60%,transparent); box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 10%,transparent) }
+.entry-textarea::placeholder { color:var(--text-secondary) }
+.entry-footer { display:flex; align-items:center; gap:8px; margin-top:8px }
+.char-count { font-size:11px; color:var(--text-muted); font-family:var(--mono) }
+.entry-footer .spacer { flex:1 }
+.autosave-status { font-size:11px; color:var(--text-muted); transition:color 0.2s }
+.autosave-status.saved { color:var(--success) }
+
+/* Template chips */
+.tpl-chips { display:flex; gap:8px; flex-wrap:wrap }
+.tpl-chip { padding:8px 12px; border-radius:8px; font-size:12px; font-weight:500; background:var(--bg-card); border:1px solid var(--border); color:var(--text-secondary); cursor:pointer; transition:all 0.12s; user-select:none }
+.tpl-chip:active { transform:scale(0.95); border-color:var(--accent); color:var(--accent) }
+
+/* Submit button */
+.submit-btn { padding:12px 24px; background:var(--accent); color:var(--accent-ink); border:none; border-radius:8px; font-size:14px; font-weight:600; cursor:pointer; transition:transform 0.1s,opacity 0.15s }
+.submit-btn:active { transform:scale(0.96) }
+.submit-btn:disabled { opacity:0.5 }
+
+/* Milestone + Three things */
+.extras { display:grid; gap:12px; margin-bottom:16px; animation:cardIn 0.35s ease 0.25s both }
+.extra-card { background:var(--bg-card); border:1px solid var(--border); border-radius:14px; padding:16px }
+.extra-label { font-size:12px; font-weight:600; color:var(--text-secondary); text-transform:uppercase; letter-spacing:0.5px; margin-bottom:8px; display:flex; align-items:center; gap:8px }
+.extra-input { width:100%; background:var(--bg); border:1px solid var(--border); border-radius:8px; padding:12px 12px; font-size:14px; color:var(--text); outline:none; font-family:inherit; transition:border-color 0.2s }
+.extra-input:focus { border-color:color-mix(in srgb,var(--accent) 60%,transparent) }
+.extra-input::placeholder { color:var(--text-muted) }
+.three-inputs { display:flex; flex-direction:column; gap:8px }
+.thing-row { display:flex; align-items:center; gap:8px }
+.thing-num { font-size:13px; font-weight:700; color:var(--accent); min-width:18px }
+.thing-row .extra-input { flex:1 }
+
+/* Action row */
+.action-row { display:flex; gap:8px; margin-bottom:16px; flex-wrap:wrap; animation:cardIn 0.35s ease 0.3s both }
+.action-btn { padding:12px 16px; border-radius:8px; font-size:13px; font-weight:600; background:var(--bg-card); border:1px solid var(--border); color:var(--text); cursor:pointer; transition:all 0.15s; display:flex; align-items:center; gap:8px }
+.action-btn:active { transform:scale(0.95); border-color:var(--accent) }
+.action-btn.loading { opacity:0.5; pointer-events:none }
+
+/* Search */
+.search-wrap { position:relative; flex:1; min-width:160px }
+.search-input { width:100%; background:var(--bg-card); border:1px solid var(--border); border-radius:8px; padding:12px 12px 12px 34px; font-size:13px; color:var(--text); outline:none; font-family:inherit; transition:border-color 0.2s }
+.search-input:focus { border-color:color-mix(in srgb,var(--accent) 60%,transparent) }
+.search-icon { position:absolute; left:11px; top:50%; transform:translateY(-50%); font-size:14px; color:var(--text-muted); pointer-events:none }
+.search-results { background:var(--bg-card); border:1px solid var(--border); border-radius:14px; margin-top:8px; max-height:240px; overflow-y:auto; display:none }
+.search-results.show { display:block }
+.sr-item { padding:12px 16px; border-bottom:1px solid var(--border); cursor:pointer; transition:background 0.1s }
+.sr-item:last-child { border-bottom:none }
+.sr-item:active { background:color-mix(in srgb,var(--accent) 6%,transparent) }
+.sr-date { font-size:12px; color:var(--accent); font-weight:600; font-family:var(--mono) }
+.sr-snippet { font-size:13px; color:var(--text-secondary); margin-top:2px }
+
+/* AI Reflect output */
+.reflect-box { background:var(--bg-card); border:1px solid var(--border); border-radius:14px; padding:16px; margin-bottom:16px; font-size:14px; line-height:1.7; color:var(--text-secondary); display:none; animation:cardIn 0.35s }
+.reflect-box.show { display:block }
+
+/* Today's entries (read-only list under textarea) */
+.today-entries { margin:8px 0 16px }
+.today-entry { display:flex; align-items:flex-start; gap:12px; padding:8px 0; border-bottom:1px solid var(--border); font-size:13px }
+.today-entry:last-child { border-bottom:none }
+.te-time { font-family:var(--mono); font-size:12px; color:var(--text-muted); min-width:44px }
+.te-mood { font-size:14px; min-width:22px; text-align:center }
+.te-text { flex:1; color:var(--text-secondary); line-height:1.5; word-break:break-word }
+
+/* Recent entries */
+.recent-list { animation:cardIn 0.35s ease 0.35s both }
+.recent-day { display:flex; align-items:center; gap:12px; padding:12px 0; border-bottom:1px solid var(--border); cursor:pointer; transition:background 0.1s }
+.recent-day:last-child { border-bottom:none }
+.recent-day:active { background:color-mix(in srgb,var(--accent) 6%,transparent) }
+.rd-date { font-size:13px; font-weight:600; color:var(--text-heading); min-width:56px; font-family:var(--mono) }
+.rd-mood { font-size:18px; min-width:26px; text-align:center }
+.rd-preview { flex:1; font-size:13px; color:var(--text-secondary); overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
+.rd-count { font-size:11px; color:var(--text-muted); background:var(--bg); padding:2px 8px; border-radius:6px }
+
+@media(max-width:400px) {
+    .date-label { min-width:140px; font-size:13px }
+    .hm-cell { width:11px; height:11px }
+    .mood-btn { width:36px; height:36px; font-size:18px }
+}
+</style>
+</head>
+<body>
+<script src="/static/realtime.js"></script>
+<script src="/static/eos.js"></script>
+<script src="/static/eos-components.js"></script>
+<script>EOS.nav('journal');</script>
+<script>
+if(window.EOS&&EOS.registerActions){EOS.registerActions({go_today:function(){goToday()},select_mood:function(m){selectMood(m)},ai_reflect:function(){aiReflect()},do_search:function(q){var i=document.getElementById("search-input");if(i){i.value=q;doSearch()}},pin_entry:function(q){
+    if(!q)return;var needle=String(q).toLowerCase();
+    var textarea=document.getElementById('entry-text');
+    if(textarea&&textarea.value.toLowerCase().indexOf(needle)!==-1){
+        var ds=document.getElementById('date-label');
+        var dateStr=ds?ds.textContent:'';
+        EOS.post('/journal/api/pin',{date:dateStr,time:'',text:needle}).then(function(r){
+            EOS_UI.toast(r.pinned?'Pinned':'Unpinned');
+        });return;
+    }
+    var days=document.querySelectorAll('.recent-day');
+    for(var i=0;i<days.length;i++){
+        if(days[i].textContent.toLowerCase().indexOf(needle)!==-1){
+            var dateEl=days[i].querySelector('.rd-date');
+            var preview=days[i].querySelector('.rd-preview');
+            EOS.post('/journal/api/pin',{date:dateEl?dateEl.textContent:'',time:'',text:preview?preview.textContent:q}).then(function(r){
+                EOS_UI.toast(r.pinned?'Pinned':'Unpinned');
+            });return;
+        }
+    }
+    EOS_UI.toast('No entry matched "'+q+'"',false);
+}},[{name:"go_today",description:"Navigate to today",params:[]},{name:"select_mood",description:"Set mood: great/good/okay/low/bad",params:["mood"]},{name:"ai_reflect",description:"Generate AI reflection",params:[]},{name:"do_search",description:"Search journal entries",params:["query"]},{name:"pin_entry",description:"Pin/unpin a journal entry by matching text",params:["query"]}],{description:"Daily journal — mood, entries, AI reflection, heatmap, search.",quickActions:[{label:"Reflect",msg:"Generate an AI reflection for today."},{label:"Mood trend",msg:"How has my mood been this week?"},{label:"Write prompt",msg:"Give me a journaling prompt."}]});}
+</script>
+
+<div class="page" style="position:relative">
+    <!-- Streak badge -->
+    <div class="streak" id="streak"><span>🔥</span> <span id="streak-count">0</span> days</div>
+
+    <!-- Header -->
+    <div class="eos-header">
+        <h1>Journal</h1>
+        <button class="btn-settings" onclick="openAppSettings()" title="Settings">&#9881; Settings</button>
+    </div>
+
+    <!-- Date navigation -->
+    <div class="date-nav">
+        <button onclick="changeDate(-1)">◀</button>
+        <span class="date-label" id="date-label"></span>
+        <button onclick="changeDate(1)">▶</button>
+        <button class="btn-today" onclick="goToday()">Today</button>
+    </div>
+
+    <!-- Heatmap -->
+    <div class="heatmap-wrap">
+        <div class="heatmap-grid" id="heatmap"></div>
+        <div class="heatmap-stats" id="heatmap-stats"></div>
+    </div>
+
+    <!-- Wellbeing wheel strip -->
+    <div class="wheel-wrap">
+        <h4>Today's Wellbeing Signals</h4>
+        <div class="wheel-strip" id="wheel-strip"></div>
+    </div>
+
+    <!-- Mood selector + Weather -->
+    <div class="mood-weather">
+        <button class="mood-btn" data-mood="great" onclick="selectMood('great')">😊</button>
+        <button class="mood-btn" data-mood="good" onclick="selectMood('good')">🙂</button>
+        <button class="mood-btn selected" data-mood="okay" onclick="selectMood('okay')">😐</button>
+        <button class="mood-btn" data-mood="low" onclick="selectMood('low')">😔</button>
+        <button class="mood-btn" data-mood="bad" onclick="selectMood('bad')">😢</button>
+        <div class="weather-chip" id="weather">--</div>
+    </div>
+
+    <!-- Entry textarea -->
+    <div class="entry-area">
+        <textarea class="entry-textarea" id="entry-text" placeholder="What's on your mind?"></textarea>
+        <div class="entry-footer">
+            <span class="char-count" id="char-count">0</span>
+            <span class="autosave-status" id="autosave"></span>
+            <span class="spacer"></span>
+            <div class="tpl-chips" id="tpl-chips"></div>
+            <button class="submit-btn" id="submit-btn" onclick="submitEntry()">Submit</button>
+        </div>
+    </div>
+
+    <!-- Today's entries (read-only) -->
+    <div class="today-entries" id="today-entries"></div>
+
+    <!-- Milestone + Three things -->
+    <div class="extras">
+        <div class="extra-card">
+            <div class="extra-label"><span>🎯</span> Today's Milestone</div>
+            <input class="extra-input" id="milestone" placeholder="What did you achieve today?" />
+        </div>
+        <div class="extra-card">
+            <div class="extra-label"><span>✨</span> 3 Good Things Today</div>
+            <div class="three-inputs">
+                <div class="thing-row"><span class="thing-num">1</span><input class="extra-input" id="thing1" placeholder="Something good..." /></div>
+                <div class="thing-row"><span class="thing-num">2</span><input class="extra-input" id="thing2" placeholder="Something good..." /></div>
+                <div class="thing-row"><span class="thing-num">3</span><input class="extra-input" id="thing3" placeholder="Something good..." /></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- AI Reflect + Search -->
+    <div class="action-row">
+        <button class="action-btn" id="reflect-btn" onclick="aiReflect()"><span>🤖</span> AI Reflect</button>
+        <div class="search-wrap">
+            <span class="search-icon">🔍</span>
+            <input class="search-input" id="search-input" placeholder="Search journal..." oninput="doSearch()" />
+        </div>
+    </div>
+
+    <!-- AI Reflection output -->
+    <div class="reflect-box" id="reflect-box"></div>
+
+    <!-- Search results -->
+    <div class="search-results" id="search-results"></div>
+
+    <!-- Recent entries -->
+    <div class="eos-section-title">Recent Entries</div>
+    <div class="recent-list" id="recent"></div>
+</div>
+
+<script>
+const MOODS = {great:'😊', good:'🙂', okay:'😐', low:'😔', bad:'😢'};
+let currentDate = new Date();
+let selectedMood = 'okay';
+let autoSaveTimer = null;
+let submitting = false;
+
+// --- Date helpers ---
+function fmtDate(d) {
+    return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+}
+function fmtLabel(d) {
+    return d.toLocaleDateString('en-US', {weekday:'long', day:'numeric', month:'long', year:'numeric'});
+}
+function isToday(d) {
+    const t = new Date();
+    return d.getFullYear()===t.getFullYear() && d.getMonth()===t.getMonth() && d.getDate()===t.getDate();
+}
+
+function changeDate(delta) {
+    currentDate.setDate(currentDate.getDate() + delta);
+    loadAll();
+}
+function goToday() {
+    currentDate = new Date();
+    loadAll();
+}
+
+// --- Mood ---
+function selectMood(mood) {
+    selectedMood = mood;
+    document.querySelectorAll('.mood-btn').forEach(b => {
+        b.classList.toggle('selected', b.dataset.mood === mood);
+    });
+}
+
+// --- Auto-save ---
+function setupAutosave() {
+    const ta = document.getElementById('entry-text');
+    ta.addEventListener('input', () => {
+        document.getElementById('char-count').textContent = ta.value.length;
+        clearTimeout(autoSaveTimer);
+        const st = document.getElementById('autosave');
+        st.textContent = '';
+        st.classList.remove('saved');
+        if (ta.value.trim()) {
+            autoSaveTimer = setTimeout(async () => {
+                try {
+                    await EOS.post('/journal/api/entry', {date: fmtDate(currentDate), text: ta.value.trim(), mood: selectedMood});
+                    st.textContent = '✓ saved';
+                    st.classList.add('saved');
+                    loadRecent();
+                    loadHeatmap();
+                } catch(e) {}
+            }, 1000);
+        }
+    });
+}
+
+// --- Submit ---
+async function submitEntry() {
+    const ta = document.getElementById('entry-text');
+    const text = ta.value.trim();
+    if (!text || submitting) return;
+    submitting = true;
+    document.getElementById('submit-btn').disabled = true;
+    try {
+        await EOS.post('/journal/api/entry', {date: fmtDate(currentDate), text, mood: selectedMood});
+        ta.value = '';
+        document.getElementById('char-count').textContent = '0';
+        document.getElementById('autosave').textContent = '';
+        loadToday();
+        loadRecent();
+        loadHeatmap();
+        loadStreak();
+    } catch(e) {
+        document.getElementById('autosave').textContent = '✗ failed';
+    } finally {
+        submitting = false;
+        document.getElementById('submit-btn').disabled = false;
+    }
+}
+
+// --- Milestone ---
+function setupMilestone() {
+    const el = document.getElementById('milestone');
+    let timer;
+    el.addEventListener('input', () => {
+        clearTimeout(timer);
+        timer = setTimeout(() => {
+            if (el.value.trim()) {
+                EOS.post('/journal/api/milestone', {date: fmtDate(currentDate), text: el.value.trim()}).catch(()=>{});
+            }
+        }, 800);
+    });
+}
+
+// --- Three things ---
+function setupThreeThings() {
+    let timer;
+    const save = () => {
+        clearTimeout(timer);
+        timer = setTimeout(() => {
+            const things = [
+                document.getElementById('thing1').value.trim(),
+                document.getElementById('thing2').value.trim(),
+                document.getElementById('thing3').value.trim(),
+            ];
+            if (things.some(t => t)) {
+                EOS.post('/journal/api/three-things', {date: fmtDate(currentDate), things}).catch(()=>{});
+            }
+        }, 800);
+    };
+    ['thing1','thing2','thing3'].forEach(id => document.getElementById(id).addEventListener('input', save));
+}
+
+// --- Templates ---
+async function loadTemplates() {
+    try {
+        const data = await EOS.api('/journal/api/templates');
+        const wrap = document.getElementById('tpl-chips');
+        wrap.innerHTML = data.map(t => `<button class="tpl-chip" onclick="insertTemplate('${escAttr(t.content)}')">${esc(t.name)}</button>`).join('');
+    } catch(e) {
+        document.getElementById('tpl-chips').innerHTML =
+            ['Morning','Evening','Weekly'].map(n => `<button class="tpl-chip" onclick="insertTemplate('## ${n}\\n\\n')">${n}</button>`).join('');
+    }
+}
+function insertTemplate(content) {
+    const ta = document.getElementById('entry-text');
+    ta.value += content.replace(/\\n/g, '\n');
+    ta.focus();
+    document.getElementById('char-count').textContent = ta.value.length;
+}
+
+// --- AI Reflect ---
+async function aiReflect() {
+    const btn = document.getElementById('reflect-btn');
+    const box = document.getElementById('reflect-box');
+    btn.classList.add('loading');
+    btn.innerHTML = '<span>🤖</span> Reflecting...';
+    try {
+        const data = await EOS.post('/journal/api/ai-reflect', {days: 7});
+        var chip = (data.provenance && data.provenance.mode) ? '<div style="margin-bottom:8px">' + EOS_UI.provenance(data.provenance) + '</div>' : '';
+        box.innerHTML = chip + esc(data.reflection || 'No reflection generated.').replace(/\n/g, '<br>');
+        box.classList.add('show');
+    } catch(e) {
+        box.innerHTML = '<span style="color:var(--text-muted)">Could not generate reflection.</span>';
+        box.classList.add('show');
+    } finally {
+        btn.classList.remove('loading');
+        btn.innerHTML = '<span>🤖</span> AI Reflect';
+    }
+}
+
+// --- Search ---
+let searchTimer;
+function doSearch() {
+    clearTimeout(searchTimer);
+    const q = document.getElementById('search-input').value.trim();
+    const wrap = document.getElementById('search-results');
+    if (!q) { wrap.classList.remove('show'); return; }
+    searchTimer = setTimeout(async () => {
+        try {
+            const results = await EOS.api('/journal/api/search?q=' + encodeURIComponent(q));
+            if (results.length === 0) {
+                wrap.innerHTML = EOS_UI.emptyState({message:'No results found'});
+            } else {
+                wrap.innerHTML = results.map(r => `
+                    <div class="sr-item" onclick="jumpToDate('${escAttr(r.date)}')">
+                        <div class="sr-date">${esc(r.date)}</div>
+                        <div class="sr-snippet">${esc(r.snippet)}</div>
+                    </div>
+                `).join('');
+            }
+            wrap.classList.add('show');
+        } catch(e) { wrap.classList.remove('show'); }
+    }, 400);
+}
+function jumpToDate(dateStr) {
+    currentDate = new Date(dateStr + 'T12:00:00');
+    document.getElementById('search-results').classList.remove('show');
+    document.getElementById('search-input').value = '';
+    loadAll();
+}
+
+// --- Weather ---
+async function loadWeather() {
+    try {
+        const w = await EOS.api('/briefing/api/weather');
+        document.getElementById('weather').innerHTML = `${esc(w.description)} ${w.temperature || ''}°`;
+    } catch(e) {}
+}
+
+// --- Streak ---
+async function loadStreak() {
+    try {
+        const data = await EOS.api('/journal/api/recent?days=90');
+        let streak = 0;
+        const today = new Date();
+        for (let i = 0; i < 90; i++) {
+            const d = new Date(today);
+            d.setDate(d.getDate() - i);
+            const ds = fmtDate(d);
+            if (data.find(r => r.date === ds && r.entry_count > 0)) { streak++; }
+            else if (i > 0) break; // allow today to be empty
+            else break;
+        }
+        document.getElementById('streak-count').textContent = streak;
+    } catch(e) {}
+}
+
+// --- Heatmap ---
+async function loadHeatmap() {
+    try {
+        const data = await EOS.api('/journal/api/heatmap?months=6');
+        const dates = data.dates || data || {};
+        const grid = document.getElementById('heatmap');
+        const cells = [];
+        const end = new Date();
+        const start = new Date();
+        start.setMonth(start.getMonth() - 6);
+        let totalEntries = 0, activeDays = 0;
+        for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+            const ds = fmtDate(d);
+            const count = (typeof dates === 'object' && !Array.isArray(dates)) ? (dates[ds] || 0) : 0;
+            const level = count === 0 ? 0 : count <= 1 ? 1 : count <= 2 ? 2 : count <= 4 ? 3 : 4;
+            if (count > 0) { totalEntries += count; activeDays++; }
+            cells.push(`<div class="hm-cell hm-${level}" data-tip="${ds}: ${count} entries"></div>`);
+        }
+        grid.innerHTML = cells.join('');
+        document.getElementById('heatmap-stats').innerHTML =
+            `<span><strong>${totalEntries}</strong> entries</span><span><strong>${activeDays}</strong> active days</span>`;
+    } catch(e) {
+        document.getElementById('heatmap').innerHTML = '<div style="color:var(--text-muted);font-size:12px">Could not load heatmap</div>';
+    }
+}
+
+// --- Load today's data ---
+const WB_DIMS = [
+    ['physical','🏃','Body'],
+    ['social','👥','Social'],
+    ['intellectual','📚','Mind'],
+    ['emotional','❤️','Heart'],
+    ['spiritual','🕯️','Spirit'],
+    ['environmental','🏠','Space'],
+    ['financial','💰','Money'],
+    ['occupational','💼','Work'],
+];
+
+function renderWheelStrip(by) {
+    const el = document.getElementById('wheel-strip');
+    if (!el) return;
+    if (!by) { el.innerHTML = ''; return; }
+    const max = Math.max(1, ...WB_DIMS.map(([k]) => (by[k]?.total ?? 0)));
+    el.innerHTML = WB_DIMS.map(([key, icon, label]) => {
+        const v = by[key] || {total:0, captures:0, habits_done:0, habits_total:0, journal:0};
+        const total = v.total || 0;
+        const cls = total === 0 ? 'empty' : 'active';
+        const fill = total === 0 ? 0 : Math.min(100, (total / max) * 100);
+        const tip = `${label}: ${total} signals (${v.captures||0} captures, ${v.habits_done||0}/${v.habits_total||0} habits, ${v.journal||0} notes)`;
+        return `<div class="wt ${cls}" title="${tip}">
+            <div class="wt-fill" style="height:${fill}%"></div>
+            <div class="wt-icon">${icon}</div>
+            <div class="wt-count">${total}</div>
+            <div class="wt-label">${label}</div>
+        </div>`;
+    }).join('');
+}
+
+async function loadToday() {
+    const ds = fmtDate(currentDate);
+    document.getElementById('date-label').textContent = fmtLabel(currentDate);
+    try {
+        const data = await EOS.api('/journal/api/today?date=' + ds);
+        // Don't populate the textarea with data.content — it's the rendered
+        // section markdown. Doing so caused autosave/submit to POST the whole
+        // section back as a single entry's text, cascading into corruption.
+        renderTodayEntries(data.entries || []);
+        if (data.mood && MOODS[data.mood]) selectMood(data.mood);
+        renderWheelStrip(data.by_dimension);
+    } catch(e) {}
+}
+
+function renderTodayEntries(entries) {
+    const el = document.getElementById('today-entries');
+    if (!el) return;
+    if (!entries || !entries.length) {
+        el.innerHTML = '<div class="eos-empty">No entries yet today</div>';
+        return;
+    }
+    el.innerHTML = entries.map(e => `
+        <div class="today-entry">
+            <span class="te-time">${esc(e.time || '')}</span>
+            <span class="te-mood">${esc(e.emoji || '')}</span>
+            <span class="te-text">${esc(e.text || '')}</span>
+        </div>
+    `).join('');
+}
+
+// --- Recent entries ---
+async function loadRecent() {
+    try {
+        const data = await EOS.api('/journal/api/recent?days=14');
+        const el = document.getElementById('recent');
+        if (!data || data.length === 0) {
+            el.innerHTML = '<div class="eos-empty">No recent entries</div>';
+            return;
+        }
+        el.innerHTML = data.map(d => `
+            <div class="recent-day" onclick="jumpToDate('${escAttr(d.date)}')">
+                <span class="rd-date">${esc((d.date||'').slice(5))}</span>
+                <span class="rd-mood">${MOODS[d.mood] || ''}</span>
+                <span class="rd-preview">${esc(d.preview || '')}</span>
+                <span class="rd-count">${d.entry_count || d.entries || 0}</span>
+            </div>
+        `).join('');
+    } catch(e) {
+        document.getElementById('recent').innerHTML = '<div class="eos-empty">Could not load recent entries</div>';
+    }
+}
+
+// --- Load all ---
+function loadAll() {
+    loadToday();
+    loadRecent();
+    loadHeatmap();
+    loadStreak();
+}
+
+// --- Init ---
+loadAll();
+loadWeather();
+loadTemplates();
+setupAutosave();
+setupMilestone();
+setupThreeThings();
+
+// Keyboard: Ctrl+Enter to submit
+document.getElementById('entry-text').addEventListener('keydown', e => {
+    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); submitEntry(); }
+});
+
+// Keyboard shortcuts
+if (EOS.keys) {
+    EOS.keys.register('n', 'New entry', function() { document.getElementById('entry-text').focus(); });
+    EOS.keys.register('r', 'Refresh', function() { loadToday(); loadRecent(); loadHeatmap(); loadStreak(); });
+}
+
+// Hands-Free gesture overrides
+// Thumb_Up/Down on the journal page records today's mood milestone without
+// typing anything. The ambient "how did today feel" signal.
+if (EOS.handsFree) {
+    var _recordMood = async function(label) {
+        try {
+            await EOS.post('/journal/api/milestone', {text: 'Mood: ' + label});
+            if (window.EOS_UI) EOS_UI.toast('Mood saved: ' + label, true);
+            if (typeof loadToday === 'function') loadToday();
+        } catch (e) {
+            if (window.EOS_UI) EOS_UI.toast('Mood save failed', false);
+        }
+    };
+    EOS.handsFree.registerGesture('Thumb_Up', function() { _recordMood('good'); }, "Mark today 'good'");
+    EOS.handsFree.registerGesture('Thumb_Down', function() { _recordMood('bad'); }, "Mark today 'bad'");
+}
+
+// Live updates
+EOS.on('journal:entry', () => { loadToday(); loadRecent(); loadHeatmap(); loadStreak(); });
+
+// --- App Settings slide-out (shared helper) ---
+var _appSettings = EOS_UI.settingsPanel({
+    id: 'app-settings-panel',
+    title: 'Journal Settings',
+    fields: [
+        {key: 'journal.default_mood', label: 'Default Mood', type: 'select',
+         options: ['great', 'good', 'okay', 'low', 'bad'], default: 'good',
+         hint: 'Mood preselected when opening a new day.'},
+    ],
+});
+function openAppSettings() { _appSettings.open(); }
+</script>
+</body>
+</html>

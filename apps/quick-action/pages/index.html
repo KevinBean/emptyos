@@ -1,0 +1,589 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>Quick Action - EmptyOS</title>
+<link rel="stylesheet" href="/static/theme.css">
+<link rel="stylesheet" href="/static/eos-components.css">
+<style>
+* { margin:0; padding:0; box-sizing:border-box }
+body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif; background:var(--bg); color:var(--text); min-height:100dvh; padding:env(safe-area-inset-top) 16px calc(env(safe-area-inset-bottom) + 80px); -webkit-font-smoothing:antialiased; overscroll-behavior-y:contain }
+
+.capture-area { animation:fadeDown 0.4s }
+.capture-box { width:100%; min-height:120px; background:var(--bg-card); border:1px solid var(--border); border-radius:14px; padding:16px; font-size:16px; color:var(--text); outline:none; font-family:inherit; resize:vertical; line-height:1.6; transition:border-color 0.2s,box-shadow 0.2s }
+.capture-box:focus { border-color:color-mix(in srgb,var(--accent) 60%,transparent); box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 10%,transparent) }
+.capture-box::placeholder { color:var(--text-muted); font-size:16px }
+
+.capture-footer { display:flex; align-items:center; gap:8px; margin-top:12px }
+.tag-chips { display:flex; gap:8px; flex:1; flex-wrap:wrap }
+.tag-chip { padding:4px 12px; border-radius:14px; font-size:12px; font-weight:500; border:1px solid var(--border); background:var(--bg-card); color:var(--text-secondary); cursor:pointer; transition:all 0.15s; user-select:none }
+.tag-chip:active { transform:scale(0.95) }
+.tag-chip.active { border-color:var(--accent); color:var(--accent); font-weight:600 }
+.submit-btn { padding:12px 24px; background:var(--accent); color:#fff; border:none; border-radius:14px; font-size:15px; font-weight:600; cursor:pointer; transition:transform 0.1s,opacity 0.15s; min-width:80px }
+.submit-btn:active { transform:scale(0.96) }
+.submit-btn:disabled { opacity:0.5 }
+.plan-btn { padding:12px 18px; background:transparent; color:var(--accent); border:1px solid var(--accent); border-radius:14px; font-size:14px; font-weight:600; cursor:pointer; transition:transform 0.1s,opacity 0.15s }
+.plan-btn:active { transform:scale(0.96) }
+.plan-btn:disabled { opacity:0.5 }
+
+/* Plan preview panel */
+.plan-panel { margin-top:16px; padding:16px; background:var(--bg-card); border:1px solid var(--border); border-radius:14px; animation:fadeDown 0.3s }
+.plan-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:12px }
+.plan-title { font-size:11px; font-weight:600; color:var(--text-muted); text-transform:uppercase; letter-spacing:1.5px }
+.plan-close { background:transparent; border:none; color:var(--text-muted); font-size:22px; cursor:pointer; line-height:1; padding:0 4px }
+.plan-loading, .plan-running { font-size:13px; color:var(--text-muted); padding:8px 0 }
+.plan-empty em { font-size:13px; color:var(--text-muted) }
+.plan-say { margin-top:6px; font-size:14px; color:var(--text); line-height:1.5 }
+.plan-followup { display:flex; gap:8px; margin-top:10px; align-items:flex-start }
+.plan-followup textarea { flex:1; min-height:48px; padding:8px 10px; font-size:13px; background:var(--bg); color:var(--text); border:1px solid var(--border); border-radius:8px; font-family:inherit; resize:vertical }
+.plan-followup textarea:focus { outline:none; border-color:var(--accent) }
+.plan-step { display:flex; flex-direction:row; flex-wrap:nowrap; gap:10px; padding:10px; border:1px solid var(--border); border-radius:10px; margin-bottom:8px; cursor:pointer; align-items:flex-start; width:100%; box-sizing:border-box }
+.plan-step input[type=checkbox] { flex:0 0 auto; width:18px; height:18px; margin-top:3px; cursor:pointer }
+.plan-step-error { opacity:0.65 }
+.plan-step-body { flex:1 1 auto; min-width:0; overflow-wrap:anywhere }
+.plan-step-verb { font-size:13px; font-weight:600; color:var(--accent); font-family:var(--mono); overflow-wrap:anywhere }
+.plan-step-args { font-size:12px; color:var(--text-muted); font-family:var(--mono); margin-top:2px; overflow-wrap:anywhere; white-space:pre-wrap }
+.plan-step-desc { font-size:12px; color:var(--text-secondary); margin-top:4px }
+.plan-step-err { font-size:12px; color:#ef4444; margin-top:4px }
+.plan-actions { display:flex; gap:8px; justify-content:flex-end; margin-top:12px }
+.plan-cancel { padding:8px 14px; background:transparent; border:1px solid var(--border); color:var(--text); border-radius:10px; font-size:13px; cursor:pointer }
+.plan-run { padding:8px 14px; background:var(--accent); color:#fff; border:none; border-radius:10px; font-size:13px; font-weight:600; cursor:pointer }
+.plan-run:disabled { opacity:0.5 }
+.plan-results { margin-top:12px }
+.plan-result { padding:8px 12px; border-radius:8px; font-size:13px; margin-bottom:6px; font-family:var(--mono); word-break:break-word }
+.plan-result-ok { background:rgba(16,185,129,0.12); color:#10b981 }
+.plan-result-error { background:rgba(239,68,68,0.12); color:#ef4444 }
+.plan-result-skipped { background:rgba(142,142,147,0.12); color:var(--text-muted) }
+
+.classify-result { margin-top:12px; padding:8px 16px; background:color-mix(in srgb,var(--accent) 8%,var(--bg-card)); border:1px solid color-mix(in srgb,var(--accent) 20%,var(--border)); border-radius:8px; font-size:13px; color:var(--accent); display:none; animation:fadeDown 0.3s }
+.classify-result.show { display:flex; align-items:center; gap:8px }
+
+.char-hint { font-size:11px; color:var(--text-muted); font-family:var(--mono); margin-top:8px }
+
+/* Triage: card chrome comes from shared .eos-entity-card */
+.triage-header { display:flex; align-items:center; gap:10px; margin:20px 0 10px; font-size:11px; font-weight:600; color:var(--text-muted); text-transform:uppercase; letter-spacing:1.5px }
+.triage-header .spacer { flex:1 }
+.triage-tool-btn { padding:4px 10px; border-radius:8px; font-size:11px; font-weight:600; border:1px solid var(--border); background:transparent; color:var(--text-muted); cursor:pointer; letter-spacing:0.5px; transition:color 0.15s,border-color 0.15s }
+.triage-tool-btn:hover:not(:disabled) { color:var(--accent); border-color:var(--accent) }
+.triage-tool-btn:disabled { opacity:0.5; cursor:default }
+.triage-text { white-space:pre-wrap; word-break:break-word; font-size:14px; line-height:1.5; color:var(--text) }
+.triage-btn { padding:8px 16px; border-radius:8px; font-size:12px; font-weight:600; border:none; cursor:pointer; transition:transform 0.1s }
+.triage-btn:active { transform:scale(0.95) }
+.triage-btn.task { background:rgba(59,130,246,0.15); color:#3b82f6 }
+.triage-btn.done { background:rgba(16,185,129,0.15); color:#10b981 }
+.triage-btn.dismiss { background:rgba(142,142,147,0.15); color:var(--text-muted) }
+.triage-btn.keep { background:rgba(16,185,129,0.15); color:#10b981 }
+.triage-btn.journal { background:rgba(139,92,246,0.15); color:#8b5cf6 }
+.triage-btn.plan { background:transparent; color:var(--accent); border:1px solid var(--accent) }
+.pending-badge { display:inline-flex; align-items:center; justify-content:center; min-width:20px; height:20px; border-radius:8px; background:#ef4444; color:#fff; font-size:11px; font-weight:700; padding:0 8px }
+</style>
+</head>
+<body>
+<script src="/static/realtime.js"></script>
+<script src="/static/eos.js"></script>
+<script src="/static/eos-components.js"></script>
+<script>EOS.nav('quick-action');
+if(window.EOS&&EOS.registerActions){EOS.registerActions({},[],{description:"Fast capture inbox — thoughts, ideas, tasks, questions. Each entry ripples to a daily journal section.",quickActions:[{label:"Triage inbox",msg:"Walk through my recent captures and suggest what to do with each: make it a task, file it, expand it, or archive it."},{label:"Patterns",msg:"Look at my recent captures and find any patterns or themes."},{label:"To tasks",msg:"Which recent captures should become tasks?"}]});}
+</script>
+
+<div class="page">
+    <div class="eos-header">
+        <h1>Quick Action</h1>
+        <button class="btn-settings" onclick="openAppSettings()" title="Settings">&#9881; Settings</button>
+    </div>
+
+    <!-- Input area -->
+    <div class="capture-area">
+        <textarea class="capture-box" id="capture-text" placeholder="Type a thought, or describe what to do (e.g. &quot;add a task to call mom and another to buy milk&quot;)" autofocus></textarea>
+        <div class="char-hint" id="char-hint"></div>
+
+        <!-- Smart classification hint -->
+        <div class="classify-result" id="classify-hint">
+            <span id="classify-icon"></span>
+            <span id="classify-label"></span>
+        </div>
+
+        <div class="capture-footer">
+            <div class="tag-chips" id="tags">
+                <div class="tag-chip" data-tag="" onclick="setTag(this)">None</div>
+                <div class="tag-chip" data-tag="task" onclick="setTag(this)">Task</div>
+                <div class="tag-chip" data-tag="idea" onclick="setTag(this)">Idea</div>
+                <div class="tag-chip" data-tag="note" onclick="setTag(this)">Note</div>
+                <div class="tag-chip" data-tag="expense" onclick="setTag(this)">Expense</div>
+                <div class="tag-chip" data-tag="journal" onclick="setTag(this)">Journal</div>
+                <div class="tag-chip" data-tag="dev" onclick="setTag(this)">Dev</div>
+            </div>
+            <button class="plan-btn" id="plan-btn" onclick="planAction()" title="Let the agent plan what to do">&#129302; Plan &amp; Run</button>
+            <button class="submit-btn" id="submit-btn" onclick="submit()">Save</button>
+        </div>
+
+        <!-- Plan preview / results -->
+        <div class="plan-panel" id="plan-panel" style="display:none">
+            <div class="plan-header">
+                <span class="plan-title">Plan</span>
+                <button class="plan-close" onclick="closePlan()" aria-label="Close plan">&times;</button>
+            </div>
+            <div class="plan-empty" id="plan-empty" style="display:none">
+                <em>The agent needs more context:</em>
+                <div class="plan-say" id="plan-say"></div>
+                <div class="plan-followup">
+                    <textarea id="plan-clarify" rows="2" placeholder="Clarify and re-plan…"></textarea>
+                    <button class="plan-run" onclick="clarifyAndReplan()">Re-plan</button>
+                </div>
+            </div>
+            <div class="plan-steps" id="plan-steps"></div>
+            <div class="plan-actions" id="plan-actions" style="display:none">
+                <button class="plan-cancel" onclick="closePlan()">Cancel</button>
+                <button class="plan-run" id="plan-run" onclick="runPlan()">Run selected</button>
+            </div>
+            <div class="plan-results" id="plan-results"></div>
+        </div>
+    </div>
+
+    <!-- Inbox -->
+    <div class="triage-header">
+        <span>Inbox</span>
+        <span class="pending-badge" id="pending-badge" style="display:none"></span>
+        <span class="spacer"></span>
+        <button class="triage-tool-btn" id="dedupe-btn" onclick="dedupeInbox()" title="Remove duplicate captures">Dedupe</button>
+    </div>
+    <div id="triage-list"></div>
+</div>
+
+<script>
+var selectedTag = '';
+var classifyTimer = null;
+
+var TAG_PATTERNS = {
+    task: /\b(todo|buy|fix|call|email|schedule|remind|book|send|pay|submit)\b/i,
+    expense: /\$[\d]+|spent|paid|cost|bought|\b\d+\s*(dollars|usd|aud)\b/i,
+    journal: /\b(feeling|felt|today|mood|grateful|happy|sad|stressed|tired)\b/i,
+    idea: /\b(idea|what if|maybe|could|should try|concept|thought)\b/i,
+    dev: /\b(bug|refactor|deploy|migrate|api|endpoint|app|plugin|feature|fix(?:ed)?|implement|pr|merge|test)\b/i
+};
+
+function setTag(el) {
+    document.querySelectorAll('.tag-chip').forEach(function(c) { c.classList.remove('active'); });
+    el.classList.add('active');
+    selectedTag = el.dataset.tag;
+}
+
+function smartClassify(text) {
+    if (!text || text.length < 5) {
+        document.getElementById('classify-hint').classList.remove('show');
+        return;
+    }
+
+    var icons = { task: '&#9744;', expense: '&#x1f4b0;', journal: '&#x1f4dd;', idea: '&#x1f4a1;', note: '&#x1f4cb;' };
+    var detected = 'note';
+
+    for (var tag in TAG_PATTERNS) {
+        if (TAG_PATTERNS[tag].test(text)) { detected = tag; break; }
+    }
+
+    var hint = document.getElementById('classify-hint');
+    document.getElementById('classify-icon').innerHTML = icons[detected] || '&#x1f4cb;';
+    document.getElementById('classify-label').textContent = 'Looks like: ' + detected;
+    hint.classList.add('show');
+
+    // Auto-select tag if none is explicitly chosen
+    if (!selectedTag) {
+        document.querySelectorAll('.tag-chip').forEach(function(c) {
+            c.classList.toggle('active', c.dataset.tag === detected);
+        });
+    }
+}
+
+function autoResize(el) { el.style.height = 'auto'; el.style.height = Math.min(el.scrollHeight, 300) + 'px'; }
+
+async function submit() {
+    var text = document.getElementById('capture-text').value.trim();
+    if (!text) return;
+
+    var btn = document.getElementById('submit-btn');
+    btn.disabled = true;
+
+    var tag = selectedTag || '';
+    // Use auto-detected tag if none selected
+    if (!tag) {
+        var activeChip = document.querySelector('.tag-chip.active');
+        if (activeChip) tag = activeChip.dataset.tag;
+    }
+
+    try {
+        await EOS.post('/quick-action/api/add', { text: text, tag: tag });
+
+        document.getElementById('capture-text').value = '';
+        document.getElementById('capture-text').style.height = '';
+        document.getElementById('char-hint').textContent = '';
+        document.getElementById('classify-hint').classList.remove('show');
+        selectedTag = '';
+        document.querySelectorAll('.tag-chip').forEach(function(c) { c.classList.remove('active'); });
+
+        EOS_UI.toast('Captured');
+        loadTriage();
+    } catch(e) {
+        EOS_UI.toast('Failed to save', false);
+    } finally {
+        btn.disabled = false;
+    }
+}
+
+// Text input handlers
+var textEl = document.getElementById('capture-text');
+textEl.addEventListener('input', function() {
+    var len = textEl.value.length;
+    document.getElementById('char-hint').textContent = len > 0 ? len + ' chars' : '';
+    clearTimeout(classifyTimer);
+    classifyTimer = setTimeout(function() { smartClassify(textEl.value); }, 300);
+});
+
+// Keyboard: Ctrl+Enter or Cmd+Enter to submit
+textEl.addEventListener('keydown', function(e) {
+    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); submit(); }
+});
+
+// ═══ Triage ═══
+
+async function loadTriage() {
+    var el = document.getElementById('triage-list');
+    el.innerHTML = '<div class="eos-empty">Loading...</div>';
+    try {
+        var items = await EOS.api('/quick-action/api/list?limit=50');
+        if (!items.length) { el.innerHTML = '<div class="eos-empty">Inbox zero! Nothing to triage.</div>'; return; }
+        triageItems = items;
+        el.innerHTML = items.map(function(c, i) {
+            var actions =
+                '<button class="triage-btn plan" onclick="triagePlan(' + i + ')" title="Let the agent figure out what to do">&#129302; Plan</button>' +
+                '<button class="triage-btn task" onclick="triageToTask(' + i + ')">To Task</button>' +
+                '<button class="triage-btn done" onclick="triageToDone(' + i + ')" title="Already finished — record as completed task">Done</button>' +
+                '<button class="triage-btn journal" onclick="triageToJournal(' + i + ')">To Journal</button>' +
+                '<button class="triage-btn dismiss" onclick="triageDismiss(' + i + ')">Dismiss</button>' +
+                '<button class="triage-btn keep" onclick="triageKeep(' + i + ')">Keep</button>';
+            return EOS_UI.entityCard({
+                id: 'triage-' + i,
+                body: '<div class="triage-text">' + esc(c.text) + '</div>',
+                meta: esc(c.timestamp || '') + (c.tag ? ' #' + esc(c.tag) : ''),
+                actions: actions,
+            });
+        }).join('');
+        updateBadge(items.length);
+    } catch(e) { el.innerHTML = '<div class="eos-empty">Failed to load</div>'; }
+}
+
+var triageItems = [];
+
+function _triageFeedback(card, icon, color, label, text, link) {
+    card.style.borderColor = color;
+    card.innerHTML =
+        '<div style="display:flex;align-items:center;gap:10px">' +
+            '<span style="font-size:20px">' + icon + '</span>' +
+            '<div style="flex:1">' +
+                '<div style="font-size:13px;color:' + color + ';font-weight:600">' + label + '</div>' +
+                '<div style="font-size:12px;color:var(--text-muted);margin-top:2px">' + esc(text).slice(0, 60) + '</div>' +
+            '</div>' +
+            '<a href="' + link + '" style="font-size:12px;color:var(--accent);text-decoration:none;font-weight:600">View &rarr;</a>' +
+        '</div>';
+    setTimeout(function() { card.style.opacity = '0'; card.style.transition = 'opacity 0.5s'; setTimeout(function() { card.remove(); }, 500); }, 2500);
+    updateBadgeDecrement();
+}
+
+async function triageToTask(idx) {
+    var item = triageItems[idx]; if (!item) return; triageItems[idx] = null;
+    var card = document.getElementById('triage-' + idx);
+    try {
+        var res = await EOS.post('/quick-action/api/to-task', { text: item.text, timestamp: item.timestamp, tag: item.tag || '' });
+        var target = res.project ? '/projects/#' + res.project : '/task/';
+        var label = res.project ? 'Added to ' + res.project : 'Converted to task';
+        _triageFeedback(card, '✅', '#3b82f6', label, item.text, target);
+        EOS_UI.toast('Converted to task');
+    } catch(e) { EOS_UI.toast('Failed', false); }
+}
+
+async function triageToDone(idx) {
+    var item = triageItems[idx]; if (!item) return; triageItems[idx] = null;
+    var card = document.getElementById('triage-' + idx);
+    try {
+        var res = await EOS.post('/quick-action/api/to-done-task', { text: item.text, timestamp: item.timestamp, tag: item.tag || '' });
+        if (res.error) throw new Error(res.error);
+        var target = res.project ? '/projects/#' + res.project : '/task/?status=done';
+        _triageFeedback(card, '✓', '#10b981', 'Logged as done', item.text, target);
+        EOS_UI.toast('Logged as done');
+    } catch(e) { EOS_UI.toast('Failed', false); }
+}
+
+async function triageDismiss(idx) {
+    var item = triageItems[idx]; if (!item) return; triageItems[idx] = null;
+    var card = document.getElementById('triage-' + idx);
+    try {
+        await EOS.post('/quick-action/api/dismiss', { text: item.text, timestamp: item.timestamp });
+        card.style.opacity = '0'; card.style.transform = 'translateX(-100px)'; card.style.transition = 'all 0.3s';
+        setTimeout(function() { card.remove(); }, 300);
+        EOS_UI.toast('Dismissed');
+        updateBadgeDecrement();
+    } catch(e) { EOS_UI.toast('Failed', false); }
+}
+
+async function triageToJournal(idx) {
+    var item = triageItems[idx]; if (!item) return; triageItems[idx] = null;
+    var card = document.getElementById('triage-' + idx);
+    try {
+        await EOS.post('/quick-action/api/to-journal', { text: item.text, timestamp: item.timestamp });
+        _triageFeedback(card, '📓', '#8b5cf6', 'Written to journal', item.text, '/journal/');
+        EOS_UI.toast('Added to journal');
+        updateBadgeDecrement();
+    } catch(e) { EOS_UI.toast('Failed', false); }
+}
+
+// Triage → dispatcher: pre-fill the input with the item's text and run the
+// planner. On successful run we silently dismiss the original capture — it's
+// been acted on.
+function triagePlan(idx) {
+    var item = triageItems[idx]; if (!item) return;
+    _pendingTriageDismiss = { idx: idx, timestamp: item.timestamp, text: item.text };
+    var ta = document.getElementById('capture-text');
+    ta.value = item.text;
+    autoResize(ta);
+    ta.focus();
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+    planAction();
+}
+
+function triageKeep(idx) {
+    var card = document.getElementById('triage-' + idx);
+    card.style.opacity = '0.4';
+    card.querySelector('.triage-actions').innerHTML = '<span style="font-size:12px;color:var(--text-muted)">Keeping in inbox</span>';
+}
+
+async function dedupeInbox() {
+    var btn = document.getElementById('dedupe-btn');
+    btn.disabled = true; btn.textContent = 'Deduping…';
+    try {
+        var res = await EOS.post('/quick-action/api/dedupe', {});
+        var n = res.removed || 0;
+        EOS_UI.toast(n ? ('Removed ' + n + ' duplicate' + (n === 1 ? '' : 's')) : 'No duplicates found');
+        if (n) loadTriage();
+    } catch(e) {
+        EOS_UI.toast('Dedupe failed', false);
+    } finally {
+        btn.disabled = false; btn.textContent = 'Dedupe';
+    }
+}
+
+function updateBadge(count) {
+    var badge = document.getElementById('pending-badge');
+    if (count > 0) { badge.textContent = count; badge.style.display = ''; }
+    else { badge.style.display = 'none'; }
+}
+
+function updateBadgeDecrement() {
+    var badge = document.getElementById('pending-badge');
+    var n = parseInt(badge.textContent || '0') - 1;
+    if (n > 0) { badge.textContent = n; }
+    else { badge.style.display = 'none'; }
+}
+
+// ═══ Init ═══
+
+loadTriage();
+
+// Load pending count for badge
+EOS.api('/quick-action/api/pending').then(function(d) {
+    updateBadge(d.pending || 0);
+}).catch(function(){});
+
+EOS.on('capture:saved', function() { loadTriage(); });
+
+// ═══ Plan & Run (Phase 3) ═══════════════════════════════════════════════
+// Routes typed input through voice-assistant's plan/execute dispatcher.
+// User confirms via per-step checkboxes; failed steps don't block others.
+
+var currentPlan = null;
+// When a triage item kicks off a plan, remember it so we can auto-dismiss
+// after a successful run. Cleared if the user cancels or the run fails.
+var _pendingTriageDismiss = null;
+
+async function planAction() {
+    var text = document.getElementById('capture-text').value.trim();
+    if (!text) { EOS_UI.toast('Type something first', false); return; }
+
+    var btn = document.getElementById('plan-btn');
+    btn.disabled = true;
+    btn.textContent = 'Planning…';
+
+    var panel = document.getElementById('plan-panel');
+    panel.style.display = 'block';
+    document.getElementById('plan-empty').style.display = 'none';
+    document.getElementById('plan-actions').style.display = 'none';
+    document.getElementById('plan-results').innerHTML = '';
+    document.getElementById('plan-steps').innerHTML = '<div class="plan-loading">Thinking…</div>';
+
+    try {
+        var resp = await fetch('/voice-assistant/api/plan', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({text: text})
+        });
+        var plan = await resp.json();
+        if (plan.error) throw new Error(plan.error);
+        currentPlan = plan;
+        renderPlan(plan);
+    } catch (e) {
+        document.getElementById('plan-steps').innerHTML =
+            '<div class="plan-result plan-result-error">Plan failed: ' + esc(e.message) + '</div>';
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = '&#129302; Plan &amp; Run';
+    }
+}
+
+function renderPlan(plan) {
+    var steps = plan.calls || [];
+    var stepsEl = document.getElementById('plan-steps');
+    var emptyEl = document.getElementById('plan-empty');
+    var actionsEl = document.getElementById('plan-actions');
+
+    if (steps.length === 0) {
+        stepsEl.innerHTML = '';
+        emptyEl.style.display = 'block';
+        document.getElementById('plan-say').textContent =
+            plan.say || '(no clarifying message — try rephrasing)';
+        actionsEl.style.display = 'none';
+        return;
+    }
+
+    emptyEl.style.display = 'none';
+    stepsEl.innerHTML = steps.map(function(c, i) {
+        var argsStr = JSON.stringify(c.args || {});
+        var hasErr = !!c.error;
+        return '<label class="plan-step' + (hasErr ? ' plan-step-error' : '') + '">' +
+            '<input type="checkbox" data-idx="' + i + '" ' +
+                (hasErr ? 'disabled' : 'checked') + '>' +
+            '<div class="plan-step-body">' +
+                '<div class="plan-step-verb">→ ' + esc(c.verb) + '</div>' +
+                '<div class="plan-step-args">' + esc(argsStr) + '</div>' +
+                (c.description ? '<div class="plan-step-desc">' + esc(c.description) + '</div>' : '') +
+                (hasErr ? '<div class="plan-step-err">⚠ ' + esc(c.error) + '</div>' : '') +
+            '</div>' +
+        '</label>';
+    }).join('');
+    actionsEl.style.display = 'flex';
+}
+
+async function runPlan() {
+    if (!currentPlan) return;
+    var btn = document.getElementById('plan-run');
+    btn.disabled = true;
+    btn.textContent = 'Running…';
+
+    var checked = document.querySelectorAll('#plan-steps input[type=checkbox]:checked');
+    var indices = Array.prototype.slice.call(checked).map(function(cb) {
+        return parseInt(cb.getAttribute('data-idx'), 10);
+    });
+
+    var resultsEl = document.getElementById('plan-results');
+    if (indices.length === 0) {
+        resultsEl.innerHTML = '<div class="plan-result plan-result-skipped">Nothing selected.</div>';
+        btn.disabled = false; btn.textContent = 'Run selected';
+        return;
+    }
+    resultsEl.innerHTML = '<div class="plan-running">Executing ' + indices.length +
+        ' step' + (indices.length === 1 ? '' : 's') + '…</div>';
+
+    try {
+        var resp = await fetch('/voice-assistant/api/execute-plan', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({plan: currentPlan, only_indices: indices})
+        });
+        var data = await resp.json();
+        if (data.error) throw new Error(data.error);
+        renderResults(data.results || []);
+        // Any step succeeded? If we got here from a triage card, drop the
+        // original capture — the agent has handled it.
+        var anyOk = (data.results || []).some(function(r) { return r.ok; });
+        if (anyOk && _pendingTriageDismiss) {
+            try {
+                await EOS.post('/quick-action/api/dismiss', {
+                    text: _pendingTriageDismiss.text,
+                    timestamp: _pendingTriageDismiss.timestamp
+                });
+                EOS_UI.toast('Triaged & dismissed');
+            } catch (_) { /* leave the capture; user can dismiss manually */ }
+        }
+        _pendingTriageDismiss = null;
+        // Reset input on success — user can keep flowing.
+        document.getElementById('capture-text').value = '';
+        autoResize(document.getElementById('capture-text'));
+        loadTriage();
+        EOS.api('/quick-action/api/pending').then(function(d) {
+            updateBadge(d.pending || 0);
+        }).catch(function(){});
+    } catch (e) {
+        resultsEl.innerHTML = '<div class="plan-result plan-result-error">Run failed: ' +
+            esc(e.message) + '</div>';
+    } finally {
+        btn.disabled = false;
+        btn.textContent = 'Run selected';
+    }
+}
+
+function renderResults(results) {
+    document.getElementById('plan-results').innerHTML = results.map(function(r) {
+        if (r.skipped)
+            return '<div class="plan-result plan-result-skipped">⊘ ' + esc(r.verb) + ' (skipped)</div>';
+        if (r.error)
+            return '<div class="plan-result plan-result-error">✗ ' + esc(r.verb) + ': ' + esc(r.error) + '</div>';
+        var say = (r.result && r.result.say) ? r.result.say : 'ok';
+        return '<div class="plan-result plan-result-ok">✓ ' + esc(r.verb) + ' — ' + esc(say) + '</div>';
+    }).join('');
+
+    // If any successful step returned a navigate target, follow it after a
+    // short pause so the user sees the result toast before the page changes.
+    // Last-write-wins: the final navigate in the result list takes priority.
+    var navTarget = null;
+    results.forEach(function(r) {
+        if (r.ok && r.result && typeof r.result.navigate === 'string' && r.result.navigate) {
+            navTarget = r.result.navigate;
+        }
+    });
+    if (navTarget) {
+        EOS_UI.toast('Opening ' + navTarget);
+        setTimeout(function() {
+            try { window.location.href = navTarget; } catch (e) {}
+        }, 800);
+    }
+}
+
+async function clarifyAndReplan() {
+    var clar = (document.getElementById('plan-clarify').value || '').trim();
+    if (!clar) return;
+    // Stitch the original input + clarification into a single re-plan request.
+    var ta = document.getElementById('capture-text');
+    var combined = (ta.value || '').trim();
+    combined = combined ? combined + '\n\nClarification: ' + clar : clar;
+    ta.value = combined;
+    document.getElementById('plan-clarify').value = '';
+    await planAction();
+}
+
+function closePlan() {
+    document.getElementById('plan-panel').style.display = 'none';
+    currentPlan = null;
+    _pendingTriageDismiss = null;
+}
+
+// ═══ App Settings slide-out (shared helper) ═══
+var _appSettings = EOS_UI.settingsPanel({
+    id: 'app-settings-panel',
+    title: 'Quick Action Settings',
+    fields: [
+        {key: 'quick-action.auto_classify', label: 'AI Auto-classify', type: 'boolean', default: true,
+         hint: 'Suggest a tag based on the text as you type.'},
+    ],
+});
+function openAppSettings() { _appSettings.open(); }
+</script>
+</body>
+</html>

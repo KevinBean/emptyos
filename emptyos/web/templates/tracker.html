@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>APP_NAME - EmptyOS</title>
+<link rel="stylesheet" href="/static/theme.css">
+<style>
+/* Hero stats */
+.hero-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 16px; }
+.hero-card { text-align: center; padding: 16px 8px; background: var(--bg-card); border: 1px solid var(--border); border-radius: 10px; }
+.hero-val { font-size: 1.5rem; font-weight: 700; color: var(--text-heading); }
+.hero-label { font-size: 0.7rem; color: var(--text-muted); margin-top: 2px; text-transform: uppercase; letter-spacing: 0.5px; }
+
+/* Quick add */
+.quick-bar { display: flex; gap: 8px; margin-bottom: 16px; }
+.quick-input-wrap { flex: 1; position: relative; }
+.quick-prefix { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--text-muted); font-weight: 600; }
+.quick-input { width: 100%; padding: 12px 12px 12px 28px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg-card); color: var(--text); font-size: 1rem; transition: border-color 0.2s, box-shadow 0.2s; }
+.quick-input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 15%, transparent); }
+.quick-btn { padding: 12px 20px; background: var(--accent); color: #fff; border: none; border-radius: 10px; font-weight: 600; cursor: pointer; transition: opacity 0.15s, transform 0.1s; min-width: 70px; }
+.quick-btn:active { transform: scale(0.96); }
+.quick-preview { font-size: 0.8rem; color: var(--text-secondary); margin-top: 4px; min-height: 18px; }
+
+/* Donut chart */
+.chart-section { display: flex; gap: 16px; align-items: flex-start; margin-bottom: 16px; flex-wrap: wrap; }
+.donut-wrap { flex-shrink: 0; }
+.donut-center { font-size: 1.1rem; font-weight: 700; fill: var(--text-heading); }
+.legend { flex: 1; min-width: 150px; }
+.legend-item { display: flex; align-items: center; gap: 8px; padding: 4px 0; font-size: 0.85rem; }
+.legend-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+.legend-name { flex: 1; }
+.legend-val { font-weight: 600; color: var(--text-heading); }
+.legend-pct { font-size: 0.75rem; color: var(--text-muted); min-width: 36px; text-align: right; }
+
+/* Entry list */
+.entry-list { max-height: 400px; overflow-y: auto; }
+.entry-item { display: flex; justify-content: space-between; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--border); font-size: 0.9rem; cursor: pointer; transition: background 0.15s; }
+.entry-item:hover { background: color-mix(in srgb, var(--accent) 5%, transparent); margin: 0 -12px; padding: 10px 12px; border-radius: 6px; }
+.entry-main { flex: 1; }
+.entry-desc { color: var(--text); }
+.entry-meta { font-size: 0.75rem; color: var(--text-muted); margin-top: 2px; }
+.entry-amount { font-weight: 600; color: var(--text-heading); font-size: 1rem; }
+.entry-cat { font-size: 0.75rem; padding: 2px 8px; border-radius: 10px; background: color-mix(in srgb, var(--accent) 10%, transparent); color: var(--accent); }
+
+/* Tabs */
+.tabs { display: flex; border-bottom: 1px solid var(--border); margin-bottom: 16px; gap: 0; }
+.tab { flex: 1; text-align: center; padding: 10px; font-size: 0.85rem; color: var(--text-muted); cursor: pointer; border-bottom: 2px solid transparent; transition: color 0.2s, border-color 0.2s; }
+.tab.active { color: var(--accent); border-bottom-color: var(--accent); font-weight: 600; }
+
+/* Toast */
+.toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); padding: 10px 20px; border-radius: 10px; font-size: 0.9rem; z-index: 100; animation: toastIn 0.3s; }
+.toast-ok { background: var(--success); color: #fff; }
+.toast-err { background: var(--error); color: #fff; }
+@keyframes toastIn { from { opacity:0; transform: translateX(-50%) translateY(10px); } to { opacity:1; transform: translateX(-50%) translateY(0); } }
+
+/* Sections */
+.tab-content { display: none; }
+.tab-content.active { display: block; }
+.section-gap { margin-bottom: 16px; }
+.empty-state { text-align: center; padding: 32px; color: var(--text-muted); }
+
+/* Animations */
+.fade-up { animation: fadeUp 0.3s ease-out; }
+@keyframes fadeUp { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:translateY(0); } }
+</style>
+</head>
+<body>
+<script src="/static/realtime.js"></script>
+<script src="/static/eos.js"></script>
+<script>
+window.APP_CONFIG = APP_CONFIG_JSON;
+</script>
+<script>EOS.nav(APP_CONFIG.app_id);</script>
+
+<div class="page">
+    <div class="page-header">
+        <h1 id="app-name"></h1>
+        <div class="desc" id="app-desc"></div>
+    </div>
+
+    <div class="tabs">
+        <div class="tab active" onclick="switchTab('home')">Home</div>
+        <div class="tab" onclick="switchTab('history')">History</div>
+        <div class="tab" onclick="switchTab('stats')">Stats</div>
+    </div>
+
+    <!-- Home tab -->
+    <div class="tab-content active" id="tab-home">
+        <div class="hero-stats" id="hero"></div>
+
+        <div class="quick-bar">
+            <div class="quick-input-wrap">
+                <span class="quick-prefix" id="quick-prefix"></span>
+                <input class="quick-input" id="quick-input" placeholder="" autocomplete="off">
+            </div>
+            <button class="quick-btn" id="quick-btn" onclick="quickAdd()">Add</button>
+        </div>
+        <div class="quick-preview" id="preview"></div>
+
+        <div class="chart-section" id="chart-section"></div>
+
+        <div class="section-title">Recent</div>
+        <div class="entry-list" id="recent-entries"></div>
+    </div>
+
+    <!-- History tab -->
+    <div class="tab-content" id="tab-history">
+        <div class="entry-list" id="all-entries"></div>
+    </div>
+
+    <!-- Stats tab -->
+    <div class="tab-content" id="tab-stats">
+        <div id="stats-content"></div>
+    </div>
+</div>
+
+<script>
+var C = window.APP_CONFIG;
+var prefix = C.prefix;
+
+document.getElementById('app-name').textContent = C.app_name;
+document.getElementById('app-desc').textContent = C.description;
+document.getElementById('quick-prefix').textContent = C.quick_add_prefix || '';
+document.getElementById('quick-input').placeholder = C.quick_add_placeholder || 'Type...';
+document.getElementById('quick-input').style.paddingLeft = C.quick_add_prefix ? '28px' : '12px';
+
+var CHART_COLORS = ['#ef4444','#3b82f6','#10b981','#f59e0b','#8b5cf6','#ec4899','#06b6d4','#84cc16','#f97316','#6366f1','#14b8a6','#e11d48'];
+
+function switchTab(name) {
+    document.querySelectorAll('.tab').forEach(function(t,i) { t.classList.toggle('active', ['home','history','stats'][i]===name); });
+    document.querySelectorAll('.tab-content').forEach(function(t) { t.classList.remove('active'); });
+    document.getElementById('tab-'+name).classList.add('active');
+    if (name === 'history') loadHistory();
+    if (name === 'stats') loadStats();
+}
+
+function toast(msg, ok) {
+    var el = document.createElement('div');
+    el.className = 'toast ' + (ok ? 'toast-ok' : 'toast-err');
+    el.textContent = msg;
+    document.body.appendChild(el);
+    setTimeout(function() { el.remove(); }, 2500);
+}
+
+// Hero stats
+async function loadHero() {
+    if (!C.hero_stat) return;
+    try {
+        var data = await EOS.api(prefix + C.hero_stat);
+        var el = document.getElementById('hero');
+        var keys = C.hero_fields || Object.keys(data).filter(function(k) { return typeof data[k] !== 'object'; }).slice(0,3);
+        el.innerHTML = keys.map(function(k) {
+            var v = data[k];
+            if (typeof v === 'number' && v > 100) v = v.toLocaleString();
+            if (typeof v === 'number' && v % 1 !== 0) v = v.toFixed(1);
+            return '<div class="hero-card fade-up"><div class="hero-val">' + (C.hero_prefix||'') + v + '</div><div class="hero-label">' + k.replace(/_/g,' ') + '</div></div>';
+        }).join('');
+    } catch(e) { console.error('Hero load error:', e); }
+}
+
+// Donut chart
+async function loadChart() {
+    if (!C.chart || !C.chart_field) return;
+    try {
+        var data = await EOS.api(prefix + C.chart);
+        var catData = data[C.chart_field];
+        if (!catData || typeof catData !== 'object') return;
+
+        var entries = Object.entries(catData).sort(function(a,b) { return b[1]-a[1]; });
+        var total = entries.reduce(function(s,e) { return s+e[1]; }, 0);
+        if (total === 0) return;
+
+        // SVG donut
+        var r = 50, cx = 60, cy = 60, circumference = 2 * Math.PI * r;
+        var offset = 0;
+        var circles = entries.map(function(e, i) {
+            var pct = e[1] / total;
+            var dash = pct * circumference;
+            var c = '<circle cx="'+cx+'" cy="'+cy+'" r="'+r+'" fill="none" stroke="'+CHART_COLORS[i%CHART_COLORS.length]+'" stroke-width="16" stroke-dasharray="'+dash+' '+(circumference-dash)+'" stroke-dashoffset="-'+offset+'" />';
+            offset += dash;
+            return c;
+        }).join('');
+
+        var svg = '<svg width="130" height="130" viewBox="0 0 120 120" style="transform:rotate(-90deg)">' + circles + '</svg>';
+
+        // Legend
+        var legend = entries.slice(0,8).map(function(e, i) {
+            var pct = (e[1]/total*100).toFixed(0);
+            var val = typeof e[1] === 'number' && e[1] % 1 !== 0 ? e[1].toFixed(1) : e[1];
+            return '<div class="legend-item"><span class="legend-dot" style="background:'+CHART_COLORS[i%CHART_COLORS.length]+'"></span><span class="legend-name">'+e[0]+'</span><span class="legend-val">'+(C.hero_prefix||'')+val+'</span><span class="legend-pct">'+pct+'%</span></div>';
+        }).join('');
+
+        document.getElementById('chart-section').innerHTML = '<div class="donut-wrap">'+svg+'</div><div class="legend">'+legend+'</div>';
+    } catch(e) { console.error('Chart error:', e); }
+}
+
+// Quick add
+async function quickAdd() {
+    var input = document.getElementById('quick-input');
+    var text = input.value.trim();
+    if (!text) return;
+    document.getElementById('quick-btn').textContent = '...';
+    try {
+        var body = {};
+        body[C.quick_add_field || 'text'] = text;
+        await EOS.api(prefix + C.quick_add, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body) });
+        toast('Added!', true);
+        input.value = '';
+        loadHero(); loadChart(); loadRecent();
+    } catch(e) {
+        toast('Error: ' + e.message, false);
+    }
+    document.getElementById('quick-btn').textContent = C.quick_add_btn || 'Add';
+}
+document.getElementById('quick-input').addEventListener('keydown', function(e) { if (e.key==='Enter') quickAdd(); });
+
+// Entry list
+function renderEntries(entries, targetId, limit) {
+    var el = document.getElementById(targetId);
+    var items = (limit ? entries.slice(0, limit) : entries);
+    if (!items.length) { el.innerHTML = '<div class="empty-state">No entries yet</div>'; return; }
+
+    var displayField = C.entry_display || 'description';
+    var amountField = C.entry_amount || 'amount';
+    var catField = C.entry_category || 'category';
+    var dateField = C.entry_date || 'date';
+
+    el.innerHTML = items.map(function(e) {
+        var desc = e[displayField] || e.text || e.name || e.note || JSON.stringify(e).slice(0,50);
+        var amount = e[amountField];
+        var amountStr = amount != null ? (C.hero_prefix||'') + (typeof amount==='number' ? amount.toFixed(2) : amount) : '';
+        var cat = e[catField] || '';
+        var date = (e[dateField] || e.timestamp || '').slice(0,10);
+        return '<div class="entry-item fade-up"><div class="entry-main"><div class="entry-desc">'+desc+'</div><div class="entry-meta">'+date+'</div></div>'
+            + (cat ? '<span class="entry-cat">'+cat+'</span>' : '')
+            + (amountStr ? '<span class="entry-amount">'+amountStr+'</span>' : '')
+            + '</div>';
+    }).join('');
+}
+
+async function loadRecent() {
+    if (!C.entry_list) return;
+    try {
+        var data = await EOS.api(prefix + C.entry_list);
+        var entries = Array.isArray(data) ? data : data.entries || [];
+        renderEntries(entries, 'recent-entries', 10);
+    } catch(e) { console.error('Recent load error:', e); }
+}
+
+async function loadHistory() {
+    if (!C.entry_list) return;
+    try {
+        var data = await EOS.api(prefix + C.entry_list + '?limit=100');
+        var entries = Array.isArray(data) ? data : data.entries || [];
+        renderEntries(entries, 'all-entries');
+    } catch(e) { console.error('History load error:', e); }
+}
+
+async function loadStats() {
+    var el = document.getElementById('stats-content');
+    if (!C.hero_stat) { el.innerHTML = '<div class="empty-state">No stats endpoint</div>'; return; }
+    try {
+        var data = await EOS.api(prefix + C.hero_stat);
+        el.innerHTML = '<div class="card" style="padding:16px"><pre style="font-size:0.85rem;white-space:pre-wrap">' + JSON.stringify(data, null, 2) + '</pre></div>';
+    } catch(e) { el.innerHTML = '<div class="empty-state">Error loading stats</div>'; }
+}
+
+// Live event updates
+if (C.events && C.events.length) {
+    C.events.forEach(function(evt) {
+        EOS.on(evt, function() { loadHero(); loadChart(); loadRecent(); });
+    });
+}
+
+// Init
+document.getElementById('quick-btn').textContent = C.quick_add_btn || 'Add';
+loadHero();
+loadChart();
+loadRecent();
+</script>
+</body>
+</html>
