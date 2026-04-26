@@ -143,6 +143,33 @@
 <body>
 <div id="eos-nav"></div>
 
+<!-- Always-visible "Take the tour" button. Demo visitors can re-trigger the
+     2-minute walkthrough at any time. The orchestrator (eos-tour.js) handles
+     state in localStorage; clicking re-starts from step 0. Hidden if the
+     tour app isn't loaded (script defines window.EOS.tour only then). -->
+<button id="hub-tour-btn"
+        title="Take the 2-minute product tour"
+        onclick="if (window.EOS && EOS.tour) EOS.tour.start();"
+        style="position:fixed;bottom:24px;right:24px;z-index:200;
+               padding:10px 16px;border:none;border-radius:24px;
+               background:var(--accent);color:var(--accent-ink);
+               font-size:13px;font-weight:600;cursor:pointer;
+               box-shadow:0 4px 14px var(--shadow);
+               display:flex;align-items:center;gap:6px;
+               font-family:inherit">
+  <span style="font-size:14px">&#127881;</span>
+  Take the tour
+</button>
+<script>
+// Hide the button if the tour app isn't loaded (no EOS.tour after eos-tour.js)
+setTimeout(function(){
+  if (!window.EOS || !window.EOS.tour) {
+    var b = document.getElementById('hub-tour-btn');
+    if (b) b.style.display = 'none';
+  }
+}, 200);
+</script>
+
 <div class="hub-wrap">
   <div class="hub-header">
     <div>
@@ -162,6 +189,7 @@
 
 <script src="/static/realtime.js"></script>
 <script src="/static/eos.js"></script>
+<script src="/static/eos-tour.js"></script>
 <script src="/static/eos-components.js"></script>
 <script src="/static/eos-keys.js"></script>
 <script>
