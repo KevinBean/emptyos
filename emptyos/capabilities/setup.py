@@ -27,7 +27,7 @@ if TYPE_CHECKING:
     from emptyos.kernel.config import Config
 
 
-def build_capabilities(config: Config, settings=None) -> CapabilityRegistry:
+def build_capabilities(config: Config, settings=None, kernel=None) -> CapabilityRegistry:
     """Build all capabilities from config. Human providers are always last (fallback).
 
     `settings` is the optional SettingsService; when present, per-provider overrides
@@ -113,7 +113,8 @@ def build_capabilities(config: Config, settings=None) -> CapabilityRegistry:
     # --- Listen (STT) — baseline cloud providers from config, plugins append local engines ---
     listen = ListenCapability()
     _register_openai_listen(listen, config)
-    _register_browser_listen(listen, kernel, config)
+    if kernel is not None:
+        _register_browser_listen(listen, kernel, config)
     registry.register("listen", listen)
 
     # --- Draw (image generation) — providers added by plugins ---

@@ -45,7 +45,7 @@ class Kernel:
 
         # Build capabilities from config (with settings overlay for model overrides)
         from emptyos.capabilities.setup import build_capabilities
-        self.capabilities = build_capabilities(self.config, settings=self.settings)
+        self.capabilities = build_capabilities(self.config, settings=self.settings, kernel=self)
 
         # Cloud consent manager — gates cloud providers in the capability chain.
         # Resolution order: settings (user override, persisted) > emptyos.toml > default.
