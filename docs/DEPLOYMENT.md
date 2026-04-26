@@ -234,7 +234,72 @@ The container's own `[demo].reset_on_restart = true` flag handles the daemon's `
 
 If you ever update `demo/vault/` content (add new sample notes via `git pull` from a release), the cron picks them up automatically — `git checkout` always pulls from the current HEAD's state.
 
-### Step 6 — Front the demo with Cloudflare (free)
+### Step 5.5 — Demo data lifecycle
+
+The demo's vault content (`demo/vault/` in this repo) is bind-mounted into the container at `/vault`. Three operations you'll do over time:
+
+#### Get new seed files from a fresh release onto the VPS
+
+When you ship a release that adds notes to `demo/vault/`:
+
+```bash
+cd /opt/emptyos
+git pull origin main
+docker compose -f docker-compose.demo.yml --env-file .env.demo restart emptyos-demo
+```
+
+The bind-mount means new files appear immediately; restart clears in-memory state.
+
+#### Manually reset the demo to clean seeded state right now
+
+When visitors have polluted the vault and you want it pristine before a daily cron fires:
+
+```bash
+cd /opt/emptyos
+git checkout demo/vault/                    # discard all visitor edits
+docker compose -f docker-compose.demo.yml --env-file .env.demo restart emptyos-demo
+```
+
+`git checkout demo/vault/` reverts the directory to its committed state (i.e. throws away anything visitors created/edited that isn't in git). Then restart clears the daemon's session state.
+
+#### Automate the reset (daily cron)
+
+Edit the crontab:
+
+```bash
+crontab -e
+```
+
+Add (or update existing demo-restart line to match):
+
+```cron
+0 4 * * *  cd /opt/emptyos && git checkout demo/vault/ && docker compose -f docker-compose.demo.yml --env-file .env.demo restart emptyos-demo >> /var/log/emptyos-demo-reset.log 2>&1
+```
+
+Verify:
+
+```bash
+crontab -l | grep emptyos
+```
+
+Now every 04:00 UTC: discard visitor edits → restart → demo serves the seed content unchanged.
+
+#### Add more seed content
+
+1. Edit / add files under `demo/vault/` locally in `D:/emptyos`
+2. Commit + push to private + `python scripts/release-public.py vX.Y.Z`
+3. On VPS: `git pull origin main` (or wait for the daily cron to do `git checkout`, which pulls the latest committed state)
+
+The personal-data scan (`scripts/check-personal.py`) runs at release time, so any sensitive content accidentally added gets caught before shipping.
+
+#### Why bind-mount + git, not a Docker volume?
+
+Two reasons:
+- **Inspectable**: you can read demo content directly on the host (`cat demo/vault/...`) without docker exec
+- **Versioned**: the seed lives in git; updates ship via normal release flow; rollback is `git checkout` to a tag
+- The trade-off: visitor edits persist on the host until `git checkout` discards them. The daily cron handles this automatically.
+
+
 
 Caddy's built-in rate limiter requires a custom build. Cloudflare's free tier gives you the same protection plus DDoS shielding without touching Caddy.
 
