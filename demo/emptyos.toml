@@ -32,6 +32,16 @@ enabled = true
 reset_on_restart = true
 seed_on_boot = true
 
+# Apps that genuinely can't work in a CPU-only public demo (no mic, no camera,
+# no GPU, no separate voice-api service). The kernel filters these out at load
+# time — they're invisible to nav and routing. Strangers see only what works.
+hide_apps = [
+    "voice-assistant",   # needs whisper STT (no mic on a VPS anyway)
+    "hands-free",        # voice-driven workflow
+    "gesture",           # webcam-based
+    "music-studio",      # personal-tier ComfyUI gen (won't be loaded anyway, but explicit)
+]
+
 # --- Cloud consent ---
 # Pre-approved: visitors opt in by entering their own key (BYOK) at runtime.
 # The key is session-scoped (browser localStorage), never persisted server-side.

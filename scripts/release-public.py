@@ -39,10 +39,31 @@ import argparse
 import os
 import re
 import shutil
+import stat
 import subprocess
 import sys
 import tempfile
 from pathlib import Path
+
+
+def _force_writable_then_remove(func, path, exc_info):
+    """shutil.rmtree onexc handler — Windows leaves git pack files read-only."""
+    try:
+        os.chmod(path, stat.S_IWRITE | stat.S_IREAD)
+        func(path)
+    except Exception:
+        pass
+
+
+def rmtree_force(path: Path) -> None:
+    """rmtree that handles Windows read-only file annoyance."""
+    if not Path(path).exists():
+        return
+    # Python 3.12+ uses onexc; older uses onerror. Try both.
+    try:
+        shutil.rmtree(path, onexc=_force_writable_then_remove)
+    except TypeError:
+        shutil.rmtree(path, onerror=lambda f, p, e: _force_writable_then_remove(f, p, e))
 
 # Windows consoles default to cp1252 which can't encode the unicode arrows /
 # checkmarks used in status output. Reconfigure stdout/stderr to utf-8 so the
@@ -164,34 +185,104 @@ def sweep_cruft(temp_dir: Path) -> None:
     print(f"    OK: removed {removed or 'no cruft found'}")
 
 
-def commit_and_push(temp_dir: Path, version: str, message: str, dry_run: bool) -> None:
-    step("Initialize snapshot repo")
-    run(["git", "init", "-q", "-b", PUBLIC_BRANCH], cwd=temp_dir)
-    # Use the same name+email as the private repo's last committer so the
-    # public commit is attributed consistently.
+def commit_and_push(snapshot_src: Path, version: str, message: str, dry_run: bool) -> None:
+    """Append-mode release.
+
+    Clones the existing public repo, wipes its tracked files (preserving .git),
+    copies the fresh snapshot in, commits the diff as a single squashed commit
+    on top of the existing history, tags it, and pushes. This way public history
+    accumulates one commit per release instead of being force-pushed.
+
+    For the very first release into an empty repo, this falls through to a
+    plain `git init` + first commit.
+    """
+    step(f"Clone existing public repo from {PUBLIC_REMOTE}")
+    work = snapshot_src.parent / "release-work"
+    if work.exists():
+        rmtree_force(work)
+    clone_result = subprocess.run(
+        ["git", "clone", "--depth", "50", PUBLIC_REMOTE, str(work)],
+        capture_output=True, text=True,
+    )
+    is_first_release = clone_result.returncode != 0 or not (work / ".git").exists()
+    if is_first_release:
+        print("    Public repo is empty or unreachable — initializing first commit")
+        if work.exists():
+            rmtree_force(work)
+        work.mkdir(parents=True, exist_ok=True)
+        run(["git", "init", "-q", "-b", PUBLIC_BRANCH], cwd=work)
+    else:
+        # Switch to the right branch (handle case where remote uses a different default)
+        try:
+            run(["git", "checkout", PUBLIC_BRANCH], cwd=work)
+        except SystemExit:
+            run(["git", "checkout", "-b", PUBLIC_BRANCH], cwd=work)
+        print(f"    OK: cloned (history depth ~50 commits)")
+
+    # Configure committer identity from the private repo's last committer
     name = run(["git", "log", "-1", "--format=%an"], cwd=ROOT, capture=True)
     email = run(["git", "log", "-1", "--format=%ae"], cwd=ROOT, capture=True)
-    run(["git", "config", "user.name", name], cwd=temp_dir)
-    run(["git", "config", "user.email", email], cwd=temp_dir)
-    run(["git", "add", "-A"], cwd=temp_dir)
+    run(["git", "config", "user.name", name], cwd=work)
+    run(["git", "config", "user.email", email], cwd=work)
+
+    step("Replace tracked files with fresh snapshot")
+    # Remove every tracked file (and stage the deletions). .git/ is preserved
+    # because it isn't tracked.
+    if not is_first_release:
+        # `git rm -rf .` only removes tracked files; untracked stay (we have none).
+        run(["git", "rm", "-rfq", "."], cwd=work)
+    # Now overlay the snapshot
+    for item in snapshot_src.iterdir():
+        if item.name == ".git":
+            continue
+        dest = work / item.name
+        if dest.exists():
+            if dest.is_dir(): shutil.rmtree(dest)
+            else: dest.unlink()
+        if item.is_dir():
+            shutil.copytree(item, dest)
+        else:
+            shutil.copy2(item, dest)
+    run(["git", "add", "-A"], cwd=work)
+
+    # Check if there's actually a diff (snapshot may be identical to last release)
+    diff_check = subprocess.run(
+        ["git", "diff", "--cached", "--quiet"], cwd=work, capture_output=True,
+    )
+    if diff_check.returncode == 0:
+        print("    NOTE: snapshot is identical to current public HEAD — skipping commit")
+        if dry_run:
+            print(f"\n  [DRY RUN] Nothing to push; tag {version} would still be created if missing")
+        return
 
     step(f"Commit snapshot as {version}")
-    run(["git", "commit", "-q", "-m", message], cwd=temp_dir)
+    run(["git", "commit", "-q", "-m", message], cwd=work)
 
     step(f"Tag snapshot {version}")
-    run(["git", "tag", "-a", version, "-m", f"EmptyOS {version}"], cwd=temp_dir)
+    # If the tag already exists locally (from a previous attempt), force-replace
+    existing_tag = subprocess.run(["git", "tag", "--list", version], cwd=work, capture_output=True, text=True)
+    if existing_tag.stdout.strip():
+        run(["git", "tag", "-d", version], cwd=work)
+    run(["git", "tag", "-a", version, "-m", f"EmptyOS {version}"], cwd=work)
 
     if dry_run:
-        sha = run(["git", "rev-parse", "HEAD"], cwd=temp_dir, capture=True)
-        print(f"\n  [DRY RUN] Would force-push {sha[:8]} to {PUBLIC_REMOTE} {PUBLIC_BRANCH}")
+        sha = run(["git", "rev-parse", "HEAD"], cwd=work, capture=True)
+        print(f"\n  [DRY RUN] Would push commit {sha[:8]} to {PUBLIC_REMOTE} {PUBLIC_BRANCH} (fast-forward)")
         print(f"  [DRY RUN] Would push tag {version}")
         return
 
-    step(f"Force-push to {PUBLIC_REMOTE}")
-    run(["git", "remote", "add", "origin", PUBLIC_REMOTE], cwd=temp_dir)
-    run(["git", "push", "-f", "origin", PUBLIC_BRANCH], cwd=temp_dir)
-    run(["git", "push", "-f", "origin", version], cwd=temp_dir)
-    print(f"    OK: pushed {PUBLIC_BRANCH} + tag {version}")
+    step(f"Push to {PUBLIC_REMOTE}")
+    # First-release path needed an `origin` remote added; clone path already has it.
+    if is_first_release:
+        run(["git", "remote", "add", "origin", PUBLIC_REMOTE], cwd=work)
+        run(["git", "push", "-u", "origin", PUBLIC_BRANCH], cwd=work)
+    else:
+        run(["git", "push", "origin", PUBLIC_BRANCH], cwd=work)
+    # Tags can collide with previous attempts — force-push tag refs only
+    run(["git", "push", "-f", "origin", version], cwd=work)
+    print(f"    OK: pushed commit + tag {version}")
+    # Cleanup the work tree
+    rmtree_force(work)
 
 
 def tag_private(version: str) -> None:

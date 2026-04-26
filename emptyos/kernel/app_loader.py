@@ -128,13 +128,23 @@ class AppLoader:
         if personal_path.exists():
             scan_dirs.append(personal_path)
 
+        # Demo-mode app suppression — for public demos that don't have the
+        # infra (camera, GPU, voice-api service) for some apps. Listing an app
+        # here removes it from the loader entirely; it's invisible to nav,
+        # routing, and dependency resolution.
+        hide = set(self.kernel.config.get("demo.hide_apps", []) or [])
+
         for scan_dir in scan_dirs:
             for manifest_file in sorted(scan_dir.glob("*/manifest.toml")):
                 # Skip _example, _retired, and other underscore-prefixed dirs
                 if manifest_file.parent.name.startswith("_"):
                     continue
+                if manifest_file.parent.name in hide:
+                    continue
                 try:
                     manifest = AppManifest.from_toml(manifest_file)
+                    if manifest.id in hide:
+                        continue
                     # Only warn on real canonical-id collisions, not when a new
                     # app's id happens to match an alias from another app —
                     # `in self.manifests` would match either via __contains__.
