@@ -79,6 +79,13 @@ def host_is_local(host: str) -> bool:
     if hostname.endswith(".lan") or hostname.endswith(".home.arpa"):
         return True
 
+    # Single-segment hostnames (no dots, not an IP) cannot be public DNS —
+    # public domains require at least one TLD dot. They're Docker compose
+    # service names ("ollama", "redis"), /etc/hosts aliases, NetBIOS names,
+    # or short hostnames added via container --network. All are local.
+    if "." not in hostname and ":" not in hostname:
+        return True
+
     # Default: treat unknown hostnames as cloud
     return False
 
