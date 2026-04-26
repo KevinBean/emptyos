@@ -240,6 +240,38 @@ Caddy's built-in rate limiter requires a custom build. Cloudflare's free tier gi
 
 This catches scrapers and abusive traffic before it reaches your VPS. Visitors hitting the demo through a normal browser see no friction.
 
+### Step 6.5 — Redeploying after upstream changes
+
+When the upstream repo gets a new release and you want to update the demo, the script `scripts/redeploy-demo.sh` does the safe sequence in one command:
+
+```bash
+cd /opt/emptyos
+bash scripts/redeploy-demo.sh
+```
+
+What it does:
+1. `git fetch + git reset --hard origin/main` — force-syncs local to public, handles any history divergence (e.g. if public was force-pushed during a snapshot transition)
+2. `docker compose down`
+3. `docker compose build --no-cache` — full rebuild, so dep changes in `pyproject.toml` actually take effect (Docker's layer cache otherwise reuses stale `pip install` results)
+4. `docker compose up -d`
+5. Polls `/api/health` for up to 60s
+6. Smoke-checks that critical Python deps (`fastapi`, `edge_tts`, `multipart`, etc.) are installed
+7. Greps the startup log for known-good / known-bad lines
+
+Safe to re-run. Doesn't touch the data volume — user-created content survives across rebuilds and is wiped only by the daily reset cron.
+
+If you'd rather run the steps manually:
+
+```bash
+cd /opt/emptyos
+git fetch origin && git reset --hard origin/main
+docker compose -f docker-compose.demo.yml --env-file .env.demo down
+docker compose -f docker-compose.demo.yml --env-file .env.demo build --no-cache
+docker compose -f docker-compose.demo.yml --env-file .env.demo up -d
+```
+
+The `--no-cache` is the load-bearing bit — without it, Docker may reuse the cached pip-install layer and silently keep an old set of dependencies.
+
 ### Step 7 — Cost ceiling (defense in depth)
 
 `demo/emptyos.toml` ships with `[billing.budgets]` set to $5/month for OpenAI + Anthropic. Even though you're not shipping a server-side cloud key, this guarantees that if you (or a fork) ever does, the spend is capped. `apps/billing/` disables the provider when the budget trips.
