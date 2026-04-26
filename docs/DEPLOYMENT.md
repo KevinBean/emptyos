@@ -220,11 +220,19 @@ That's it for the proxy — rate limiting comes from Cloudflare in step 6.
 
 ### Step 5 — Reset cadence
 
-`demo/emptyos.toml` sets `reset_on_restart = true` — every container restart wipes user-created data and reseeds. Cron a daily reset:
+The demo vault (`./demo/vault`) is bind-mounted into the container, so visitor-created notes persist across restarts on the host filesystem. To actually wipe them, the daily reset has to discard the working-tree changes (`git checkout`) and then restart the container:
 
 ```cron
-0 4 * * *  cd /home/eos/emptyos && docker compose -f docker-compose.demo.yml --env-file .env.demo restart emptyos-demo
+0 4 * * *  cd /home/eos/emptyos && git checkout demo/vault/ && docker compose -f docker-compose.demo.yml --env-file .env.demo restart emptyos-demo
 ```
+
+What this does:
+1. `git checkout demo/vault/` — discards any visitor edits, restoring the seeded content from the latest committed state
+2. Container restart — clears the daemon's in-memory state (sessions, autoloaded apps, anything cached)
+
+The container's own `[demo].reset_on_restart = true` flag handles the daemon's `data/` directory (events DB, syslog DB) — those wipe on restart automatically. Vault files need the explicit `git checkout` because bind mounts bypass the daemon's filesystem layer.
+
+If you ever update `demo/vault/` content (add new sample notes via `git pull` from a release), the cron picks them up automatically — `git checkout` always pulls from the current HEAD's state.
 
 ### Step 6 — Front the demo with Cloudflare (free)
 
