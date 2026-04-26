@@ -390,6 +390,9 @@ class LibraryMixin:
         """Find a cover image in the same directory as a song note.
 
         Returns vault-relative path to the best cover image, or None.
+        In album folders (multiple .md per dir), only matches images
+        whose name contains this song's stem — otherwise every song
+        in the album would share the first screenshot found.
         """
         path = self.songs._find_file(filename)
         if not path:
@@ -397,17 +400,25 @@ class LibraryMixin:
         song_dir = path.parent
         vault = self.app.kernel.config.notes_path
         img_exts = {".png", ".jpg", ".jpeg", ".webp"}
+        is_shared = _md_count(song_dir) > 1
+        song_stem = path.stem.lower()
+
         candidates = []
         for f in song_dir.iterdir():
             if f.suffix.lower() not in img_exts:
                 continue
             name_l = f.name.lower()
-            if "cover" in name_l and "vertical" not in name_l and "wide" not in name_l:
-                # Prefer cover_final > cover_flux > cover*
+            is_cover = "cover" in name_l and "vertical" not in name_l and "wide" not in name_l
+            is_screenshot = "screenshot" in name_l
+            if not (is_cover or is_screenshot):
+                continue
+            if is_shared and song_stem and song_stem not in name_l:
+                continue
+            if is_cover:
                 rank = 0 if "final" in name_l else 1
-                candidates.append((rank, f))
-            elif "screenshot" in name_l:
-                candidates.append((5, f))
+            else:
+                rank = 5
+            candidates.append((rank, f))
         if not candidates:
             return None
         candidates.sort(key=lambda x: x[0])
@@ -417,14 +428,20 @@ class LibraryMixin:
         return best.name
 
     async def all_covers(self) -> dict[str, str | None]:
-        """Find cover art for all songs in one pass, grouped by directory."""
+        """Find cover art for all songs in one pass, grouped by directory.
+
+        Per-directory image scan is cached; per-song selection then filters
+        by song stem when the dir is shared (album folder), so each song
+        in an album gets its own screenshot rather than all sharing one.
+        """
         vault = self.app.kernel.config.notes_path
         if not vault:
             return {}
         songs = self.songs.list()
         img_exts = {".png", ".jpg", ".jpeg", ".webp"}
         result: dict[str, str | None] = {}
-        dir_cache: dict[str, str | None] = {}
+        # Cache: dir_key → (is_shared, [(rank, name_l, abs_path), ...])
+        dir_cache: dict[str, tuple[bool, list]] = {}
 
         for s in songs:
             path_str = s.get("path", "")
@@ -434,26 +451,36 @@ class LibraryMixin:
             full = vault / path_str
             dir_key = str(full.parent)
             if dir_key not in dir_cache:
-                # Scan directory once for cover images
-                best = None
+                images: list = []
                 try:
-                    candidates = []
                     for f in full.parent.iterdir():
-                        if f.suffix.lower() not in img_exts:
+                        if not f.is_file() or f.suffix.lower() not in img_exts:
                             continue
                         name_l = f.name.lower()
-                        if "cover" in name_l and "vertical" not in name_l and "wide" not in name_l:
-                            rank = 0 if "final" in name_l else 1
-                            candidates.append((rank, f))
-                        elif "screenshot" in name_l:
-                            candidates.append((5, f))
-                    if candidates:
-                        candidates.sort(key=lambda x: x[0])
-                        best = str(candidates[0][1].relative_to(vault)).replace("\\", "/")
+                        is_cover = "cover" in name_l and "vertical" not in name_l and "wide" not in name_l
+                        is_screenshot = "screenshot" in name_l
+                        if not (is_cover or is_screenshot):
+                            continue
+                        rank = (0 if "final" in name_l else 1) if is_cover else 5
+                        images.append((rank, name_l, f))
                 except Exception:
                     pass
-                dir_cache[dir_key] = best
-            result[s["file"]] = dir_cache[dir_key]
+                dir_cache[dir_key] = (_md_count(full.parent) > 1, images)
+
+            is_shared, images = dir_cache[dir_key]
+            song_stem = full.stem.lower()
+            picks = [
+                (rank, f) for rank, name_l, f in images
+                if not is_shared or (song_stem and song_stem in name_l)
+            ]
+            if not picks:
+                result[s["file"]] = None
+                continue
+            picks.sort(key=lambda x: x[0])
+            try:
+                result[s["file"]] = str(picks[0][1].relative_to(vault)).replace("\\", "/")
+            except ValueError:
+                result[s["file"]] = picks[0][1].name
         return result
 
     def resolve_audio_path(self, vault_rel_path: str):
