@@ -1,23 +1,28 @@
 # docker-compose.demo.yml — public demo deployment for EmptyOS
 #
+# Hardened for public-internet exposure:
+#   - Read-only root filesystem (writable paths bind-mounted explicitly)
+#   - All Linux capabilities dropped except those needed
+#   - no-new-privileges set so an exploit can't gain extra rights via setuid
+#   - CPU + memory caps so one container can't OOM the host
+#   - Ollama not exposed on the host network — only reachable from emptyos-demo
+#   - Restart on failure but with backoff to dampen crash-loops
+#
 # Differences from docker-compose.yml:
 #   - Mounts demo/vault (curated sample content, no personal data)
 #   - Uses demo/emptyos.toml (mode=public, demo.enabled=true, cloud.consent=always)
-#   - Runs an Ollama sidecar with a small CPU-friendly model (phi3:mini)
+#   - Runs an Ollama sidecar with a small CPU-friendly model (qwen2.5:1.5b)
 #   - Auth token is required — set EOS_NETWORK_AUTH_TOKEN in .env.demo
 #
 # First-time setup:
 #   python scripts/demo-setup.py --output ./demo/vault --force
 #   echo "EOS_NETWORK_AUTH_TOKEN=$(python -c 'import secrets;print(secrets.token_urlsafe(32))')" > .env.demo
 #   docker compose -f docker-compose.demo.yml --env-file .env.demo up -d
-#   # Pull the model into the Ollama volume (one-time):
 #   docker exec emptyos-demo-ollama ollama pull qwen2.5:1.5b
 #
-# RAM note: a 4GB VPS (Hetzner CX22/CX23) needs ~4GB swap added before
-# running this. phi3:mini's KV cache + model overflows the 4GB. Add swap:
+# RAM note: a 4GB VPS (Hetzner CX22/CX23) needs ~4GB swap added first.
 #   fallocate -l 4G /swapfile && chmod 600 /swapfile && mkswap /swapfile && swapon /swapfile
 #   echo '/swapfile none swap sw 0 0' >> /etc/fstab
-# Then qwen2.5:0.5b (~400MB) runs comfortably with headroom for the daemon.
 
 services:
   emptyos-demo:
@@ -25,8 +30,36 @@ services:
     image: emptyos:latest
     container_name: emptyos-demo
     restart: unless-stopped
+
+    # Resource caps — one container can't starve the host. Numbers tuned
+    # for a 4GB / 2-vCPU VPS with the daemon + UI.
+    deploy:
+      resources:
+        limits:
+          cpus: "1.5"
+          memory: 1500M
+        reservations:
+          memory: 256M
+
+    # Hardening
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN              # uvicorn drops privs at start
+      - SETUID
+      - SETGID
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+      - /var/tmp:size=16m,mode=1777
+      - /root/.cache:size=64m
+
     ports:
-      - "9000:9000"
+      - "127.0.0.1:9000:9000"   # bind to loopback only — Caddy reverse-proxies
+                                # external traffic. Even if ufw is misconfigured,
+                                # 9000 is unreachable from the public internet.
     volumes:
       - ./demo/vault:/vault
       - ./demo/emptyos.toml:/app/emptyos.toml:ro
@@ -34,6 +67,8 @@ services:
     environment:
       - EOS_NETWORK_AUTH_TOKEN=${EOS_NETWORK_AUTH_TOKEN:?set EOS_NETWORK_AUTH_TOKEN in .env.demo}
       - EOS_DEMO_ENABLED=true
+      # Per-IP rate limit (requests per 10s window). 0 disables.
+      - EOS_RATE_LIMIT_PER_10S=60
     depends_on:
       ollama:
         condition: service_started
@@ -48,6 +83,20 @@ services:
     image: ollama/ollama:latest
     container_name: emptyos-demo-ollama
     restart: unless-stopped
+
+    # Resource caps for Ollama. qwen2.5:1.5b uses ~1.5-2GB at runtime.
+    deploy:
+      resources:
+        limits:
+          cpus: "1.5"
+          memory: 2200M
+
+    # Hardening — Ollama needs a writable model dir (volume) but nothing else
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
     volumes:
       - ollama-models:/root/.ollama
     # No port exposure — only emptyos-demo talks to ollama over the compose network

@@ -1125,6 +1125,45 @@ __ERR__
             _prefix_to_app[_p] = _aid
     _SKIP_EXTS = (".js", ".css", ".ico", ".png", ".svg", ".woff", ".woff2", ".map", ".json")
 
+    # --- Per-IP rate limit ---
+    # Defense-in-depth alongside Cloudflare/Caddy. Sliding 10-second window.
+    # Threshold is configurable via EOS_RATE_LIMIT_PER_10S env var; 0 disables.
+    # On hits, returns HTTP 429 with a small JSON body. Excludes /static/ and
+    # /ws so streaming + asset loads don't trip it.
+    import os as _os, time as _time, collections as _collections
+    _RATE_LIMIT = int(_os.environ.get("EOS_RATE_LIMIT_PER_10S", "0") or 0)
+    _rate_buckets: dict[str, "_collections.deque[float]"] = {}
+
+    def _client_ip(request: Request) -> str:
+        # Caddy/Cloudflare set X-Forwarded-For; fall back to direct client.
+        xff = (request.headers.get("x-forwarded-for") or "").split(",")
+        ip = xff[0].strip() if xff and xff[0].strip() else (request.client.host if request.client else "unknown")
+        return ip
+
+    if _RATE_LIMIT > 0:
+        @server.middleware("http")
+        async def _rate_limit_middleware(request: Request, call_next):
+            path = request.url.path
+            # Skip static + websocket — these are bursty by nature
+            if path.startswith("/static/") or path.startswith("/ws"):
+                return await call_next(request)
+            ip = _client_ip(request)
+            now = _time.time()
+            cutoff = now - 10.0
+            bucket = _rate_buckets.setdefault(ip, _collections.deque(maxlen=_RATE_LIMIT * 2))
+            # Drop expired entries from the left
+            while bucket and bucket[0] < cutoff:
+                bucket.popleft()
+            if len(bucket) >= _RATE_LIMIT:
+                from fastapi.responses import JSONResponse
+                return JSONResponse(
+                    {"error": "rate limited", "retry_after_s": 10},
+                    status_code=429,
+                    headers={"Retry-After": "10"},
+                )
+            bucket.append(now)
+            return await call_next(request)
+
     # --- BYOK middleware ---
     # Visitors can paste their own OpenAI/Anthropic key in Settings; the
     # frontend sends it as X-User-{Provider}-Key on every request. We stash
