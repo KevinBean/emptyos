@@ -469,9 +469,13 @@ class VoiceAssistantApp(BaseApp):
         if not user_text:
             return ndjson_response(empty_stream("text required"))
 
-        return await self._chat_response(user_text, messages, companion_id)
+        # Text path — UI already rendered the user message optimistically,
+        # so we suppress the user_text event to avoid duplication. Audio path
+        # callers leave echo_user_text=True since the UI doesn't know what
+        # was transcribed until the server says so.
+        return await self._chat_response(user_text, messages, companion_id, echo_user_text=False)
 
-    async def _chat_response(self, user_text: str, messages: list, companion_id: str | None):
+    async def _chat_response(self, user_text: str, messages: list, companion_id: str | None, echo_user_text: bool = True):
         """Shared post-input chat pipeline used by both audio and text endpoints."""
         messages.append({"role": "user", "content": user_text})
 
@@ -490,7 +494,8 @@ class VoiceAssistantApp(BaseApp):
         scoped_verbs = {e.get("verb") for e in scoped_intents}
 
         async def event_stream():
-            yield {"type": "user_text", "text": user_text}
+            if echo_user_text:
+                yield {"type": "user_text", "text": user_text}
 
             # Notify frontend of companion switch
             if switch_target == "__aura__":
