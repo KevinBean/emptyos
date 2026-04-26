@@ -95,12 +95,18 @@ timeout = 30
 
 [capabilities.think.ollama]
 host = "http://ollama:11434"
-# qwen2.5:0.5b — ~400MB on disk, ~1GB RAM at runtime. Fits comfortably on
-# a 4GB VPS where phi3:mini (3.8B params, 1.5GB KV cache alone) gets
-# OOM-killed by the kernel during model load. Quality is "small but
-# coherent" — enough to prove the system works. Visitors who want quality
-# paste an OpenAI key in Settings (BYOK).
-model = "qwen2.5:0.5b"
+# qwen2.5:1.5b — ~1GB on disk, ~2GB RAM at runtime. Fits a 4GB VPS once
+# you've added 4GB swap (see docker-compose.demo.yml header).
+# Why not qwen2.5:0.5b? At 500M params it can hold a conversation but
+# can't reliably emit the [INTENT:app.verb(...)] tokens the voice-assistant
+# uses for tool-calling — visitors get "I can't help with that" replies for
+# anything that needs an app integration. 1.5b is the sweet spot for CPU
+# inference + tool use.
+# Why not phi3:mini or qwen2.5:7b? OOM-killed on a 4GB VPS even with swap.
+# Visitors who want gpt-4-class quality paste their own OpenAI key
+# (Settings → Demo → BYOK) — the key stays browser-side, never touches
+# the server.
+model = "qwen2.5:1.5b"
 
 # Same host for the plugin-side health check (so the boot log shows
 # "Connected to http://ollama:11434" instead of warning about localhost).

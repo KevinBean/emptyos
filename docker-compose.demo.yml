@@ -11,7 +11,7 @@
 #   echo "EOS_NETWORK_AUTH_TOKEN=$(python -c 'import secrets;print(secrets.token_urlsafe(32))')" > .env.demo
 #   docker compose -f docker-compose.demo.yml --env-file .env.demo up -d
 #   # Pull the model into the Ollama volume (one-time):
-#   docker exec emptyos-demo-ollama ollama pull qwen2.5:0.5b
+#   docker exec emptyos-demo-ollama ollama pull qwen2.5:1.5b
 #
 # RAM note: a 4GB VPS (Hetzner CX22/CX23) needs ~4GB swap added before
 # running this. phi3:mini's KV cache + model overflows the 4GB. Add swap:
