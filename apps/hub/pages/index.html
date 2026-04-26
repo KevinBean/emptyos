@@ -147,16 +147,20 @@
      2-minute walkthrough at any time. The orchestrator (eos-tour.js) handles
      state in localStorage; clicking re-starts from step 0. Hidden if the
      tour app isn't loaded (script defines window.EOS.tour only then). -->
+<!-- Bottom-LEFT — bottom-right is taken by the page-assistant FAB
+     (pa-fab @ 90px) + capture FAB (cap-fab @ 144px) + their stack.
+     Left edge is clear, equally visible, no z-index war. -->
 <button id="hub-tour-btn"
         title="Take the 2-minute product tour"
         onclick="if (window.EOS && EOS.tour) EOS.tour.start();"
-        style="position:fixed;bottom:24px;right:24px;z-index:200;
-               padding:10px 16px;border:none;border-radius:24px;
+        style="position:fixed;bottom:calc(env(safe-area-inset-bottom,0px) + 20px);left:20px;z-index:9991;
+               padding:10px 16px;border:none;border-radius:999px;
                background:var(--accent);color:var(--accent-ink);
                font-size:13px;font-weight:600;cursor:pointer;
                box-shadow:0 4px 14px var(--shadow);
                display:flex;align-items:center;gap:6px;
-               font-family:inherit">
+               font-family:inherit;
+               -webkit-tap-highlight-color:transparent">
   <span style="font-size:14px">&#127881;</span>
   Take the tour
 </button>
