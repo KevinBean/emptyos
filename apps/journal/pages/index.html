@@ -290,26 +290,33 @@ function selectMood(mood) {
     });
 }
 
-// --- Auto-save ---
+// --- Char count + draft (NO auto-POST) ---
+// Earlier versions auto-POSTed every 1s of idle to /api/entry — but that
+// endpoint APPENDS a new entry rather than overwriting a draft, so each
+// keystroke pause created a duplicate journal entry. Now we just keep
+// the char counter live and stash a local draft so the user doesn't lose
+// in-progress text on accidental reload. Submit is the only thing that
+// posts.
+const DRAFT_KEY = 'eos.journal.draft';
 function setupAutosave() {
     const ta = document.getElementById('entry-text');
+    // Restore any local draft for today
+    try {
+        const draft = JSON.parse(localStorage.getItem(DRAFT_KEY) || '{}');
+        if (draft.date === fmtDate(currentDate) && draft.text) {
+            ta.value = draft.text;
+            document.getElementById('char-count').textContent = draft.text.length;
+        }
+    } catch (e) {}
+
     ta.addEventListener('input', () => {
         document.getElementById('char-count').textContent = ta.value.length;
-        clearTimeout(autoSaveTimer);
-        const st = document.getElementById('autosave');
-        st.textContent = '';
-        st.classList.remove('saved');
-        if (ta.value.trim()) {
-            autoSaveTimer = setTimeout(async () => {
-                try {
-                    await EOS.post('/journal/api/entry', {date: fmtDate(currentDate), text: ta.value.trim(), mood: selectedMood});
-                    st.textContent = '✓ saved';
-                    st.classList.add('saved');
-                    loadRecent();
-                    loadHeatmap();
-                } catch(e) {}
-            }, 1000);
-        }
+        // Local-only draft — never POSTed
+        try {
+            localStorage.setItem(DRAFT_KEY, JSON.stringify({
+                date: fmtDate(currentDate), text: ta.value,
+            }));
+        } catch (e) {}
     });
 }
 
@@ -325,6 +332,8 @@ async function submitEntry() {
         ta.value = '';
         document.getElementById('char-count').textContent = '0';
         document.getElementById('autosave').textContent = '';
+        // Clear the local draft once it's safely landed
+        try { localStorage.removeItem(DRAFT_KEY); } catch (e) {}
         loadToday();
         loadRecent();
         loadHeatmap();
