@@ -223,8 +223,10 @@ That's it for the proxy — rate limiting comes from Cloudflare in step 6.
 The demo vault (`./demo/vault`) is bind-mounted into the container, so visitor-created notes persist across restarts on the host filesystem. To actually wipe them, the daily reset has to discard the working-tree changes (`git checkout`) and then restart the container:
 
 ```cron
-0 4 * * *  cd /home/eos/emptyos && git checkout demo/vault/ && docker compose -f docker-compose.demo.yml --env-file .env.demo restart emptyos-demo
+0 4 * * *  cd /opt/emptyos && git checkout demo/vault/ && python3 scripts/refresh-demo-dates.py && docker compose -f docker-compose.demo.yml --env-file .env.demo restart emptyos-demo >> /var/log/emptyos-demo-reset.log 2>&1
 ```
+
+The `refresh-demo-dates.py` step shifts every 📅 / ✅ ISO date in `demo/vault/` by `today - SEED_BASELINE` days, preserving the relative spread (overdue / today / week / done buckets) but anchoring everything to today. Without this, the seed dates drift further from "today" each day until the pulse-stats panel looks broken. Skip it only if you don't want date-relative tasks.
 
 What this does:
 1. `git checkout demo/vault/` — discards any visitor edits, restoring the seeded content from the latest committed state
