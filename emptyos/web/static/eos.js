@@ -176,7 +176,7 @@
         {id:'search', prefix:'/search', name:'Search'},
     ];
 
-    function _renderNav(navApps, currentApp) {
+    function _renderNav(navApps, currentApp, currentLabel) {
         var nav = document.createElement('nav');
         nav.className = 'nav';
         var isHome = !currentApp || currentApp === 'hub';
@@ -186,7 +186,7 @@
             links += '<a href="' + a.prefix + '/"' + cls + '>' + a.name + '</a>';
         });
         if (currentApp && currentApp !== 'hub' && !navApps.some(function(a) { return a.id === currentApp; })) {
-            links += '<a href="#" class="current">' + currentApp + '</a>';
+            links += '<a href="#" class="current">' + (currentLabel || currentApp) + '</a>';
         }
         links += '<span class="nav-theme" onclick="EOS.cycleTheme()" title="Cycle theme (full list in Settings)">◐</span>';
         links += '<span class="nav-more" onclick="EOS.toggleDrawer()" title="All Apps">⋯</span>';
@@ -213,13 +213,19 @@
             var apps = Array.isArray(data) ? data : (data && data.apps) || [];
             if (!apps.length) return;
             var loaded = {};
+            var nameById = {};
             apps.forEach(function(a) {
                 var id = (a && (a.id || a.name || a)) + '';
                 loaded[id] = true;
+                if (a && a.name) nameById[id] = a.name;
             });
             var filtered = navApps.filter(function(a) { return loaded[a.id]; });
-            // Only re-render if we actually pruned something (avoid flicker)
-            if (filtered.length !== navApps.length) _renderNav(filtered, currentApp);
+            var currentLabel = nameById[currentApp];
+            var pruned = filtered.length !== navApps.length;
+            var needsLabel = currentApp && currentApp !== 'hub' &&
+                !filtered.some(function(a) { return a.id === currentApp; }) &&
+                currentLabel && currentLabel !== currentApp;
+            if (pruned || needsLabel) _renderNav(filtered, currentApp, currentLabel);
         }).catch(function(){ /* fall back to whatever we already rendered */ });
 
         // App drawer (created once)

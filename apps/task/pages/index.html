@@ -15,10 +15,10 @@
     .decay-legend { display:flex; gap:12px; margin-bottom:16px; flex-wrap:wrap; font-size:11px; color:var(--text-muted) }
     .decay-legend span { display:flex; align-items:center; gap:4px }
     .decay-dot { width:8px; height:8px; border-radius:50%; display:inline-block }
-    .add-bar { display:flex; gap:8px; margin-bottom:16px; animation:fadeDown 0.4s ease 0.08s both }
-    .add-bar input[type="text"] { flex:1; background:var(--bg-card); border:1px solid var(--border); border-radius:14px; padding:12px 16px; font-size:15px; color:var(--text); outline:none; font-family:inherit; transition:border-color 0.2s }
+    .add-bar { display:flex; gap:8px; margin-bottom:16px; animation:fadeDown 0.4s ease 0.08s both; align-items:stretch }
+    .add-bar input[type="text"] { flex:1 1 240px; min-width:0; background:var(--bg-card); border:1px solid var(--border); border-radius:14px; padding:12px 16px; font-size:15px; color:var(--text); outline:none; font-family:inherit; transition:border-color 0.2s }
     .add-bar input[type="text"]:focus{border-color:var(--accent)} .add-bar input[type="text"]::placeholder{color:var(--text-secondary)}
-    .add-bar input[type="date"] { background:var(--bg-card); border:1px solid var(--border); border-radius:14px; padding:12px 12px; font-size:13px; color:var(--text); outline:none; font-family:inherit; min-width:130px }
+    .add-bar input[type="date"] { flex:0 0 160px; background:var(--bg-card); border:1px solid var(--border); border-radius:14px; padding:12px 12px; font-size:13px; color:var(--text); outline:none; font-family:inherit }
     .search-bar { margin-bottom:12px; animation:fadeDown 0.4s ease 0.1s both }
     .search-bar input { width:100%; background:var(--bg-card); border:1px solid var(--border); border-radius:14px; padding:12px 16px 12px 36px; font-size:14px; color:var(--text); outline:none; font-family:inherit; transition:border-color 0.2s }
     .search-bar input:focus{border-color:var(--accent)} .search-bar input::placeholder{color:var(--text-secondary)}
@@ -70,7 +70,7 @@
     @keyframes spin{to{transform:rotate(360deg)}}
     .empty-state{text-align:center;padding:48px 24px;color:var(--text-muted)} .empty-state .icon{font-size:40px;margin-bottom:12px;opacity:0.6}
     .confetti-particle{position:fixed;width:8px;height:8px;border-radius:50%;z-index:999;pointer-events:none}
-    @media(max-width:640px){.stats-bar{grid-template-columns:repeat(2,1fr)} .calendar-grid{font-size:10px} .cal-day{min-height:56px} .task-actions{opacity:1} .add-bar{flex-wrap:wrap} .add-bar input[type="date"]{flex:1;min-width:0}}
+    @media(max-width:640px){.stats-bar{grid-template-columns:repeat(2,1fr)} .calendar-grid{font-size:10px} .cal-day{min-height:56px} .task-actions{opacity:1} .add-bar{flex-wrap:wrap} .add-bar input[type="text"]{flex:1 1 100%} .add-bar input[type="date"]{flex:1 1 0;min-width:0}}
     @media(max-width:400px){.stat-num{font-size:22px}}
   </style>
 </head>

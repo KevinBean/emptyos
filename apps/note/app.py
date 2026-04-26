@@ -107,7 +107,21 @@ class NoteApp(BaseApp):
     @web_route("GET", "/api/list")
     async def api_list(self, request):
         folder = request.query_params.get("folder", "")
-        return await self.list_notes(folder)
+        rels = await self.list_notes(folder)
+        base = self._notes_dir()
+        out = []
+        for rel in rels:
+            rel_norm = rel.replace("\\", "/")
+            parts = rel_norm.rsplit("/", 1)
+            sub = parts[0] if len(parts) == 2 else ""
+            name = parts[-1]
+            title = name[:-3] if name.endswith(".md") else name
+            out.append({
+                "title": title,
+                "path": str(base / rel),
+                "folder": sub,
+            })
+        return out
 
     @web_route("GET", "/api/get")
     async def api_get(self, request):

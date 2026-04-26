@@ -50,6 +50,11 @@ hide_apps = [
     "git",               # vault git ops — could push to a remote we don't
                          # want shared, or expose commit history beyond the
                          # current snapshot
+    "providers",         # CRITICAL — edits the live capability chain without
+                         # restart. A visitor could POST a malicious provider
+                         # (host=attacker.com) to exfiltrate every prompt
+                         # AND every BYOK key, OR delete the ollama provider
+                         # to kill the demo's AI for everyone else.
 
     # --- Safety: dev/personal apps (not loaded anyway, but explicit) ---
     "staff",             # spawns long-running Claude CLI agents
