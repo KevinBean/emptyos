@@ -27,10 +27,10 @@ priority = 80
 id = "voice-assistant.aura"
 group = "core"
 priority = 500
-route = "/voice-assistant/"
-spotlight = "#rec-btn"
-title = "Talk to Aura"
-body = "This is <strong>REC</strong> — press it after the tour to talk to Aura. Aura uses your browser's mic (Web Speech API), routes the transcript through a local model (qwen2.5:1.5b) by default, and reads the reply back via TTS. <strong>Tool-use is wired up</strong> — try <em>list my tasks</em> or <em>add a task to call mom tomorrow</em>."
+route = "/hub/"
+spotlight = ".pa-fab"
+title = "Talk to the assistant"
+body = "The <strong>🤖 assistant</strong> pill lives bottom-right on every page — click it after the tour to open an in-page chat drawer (no navigation away). It listens via your browser's mic, routes through a local model (qwen2.5:1.5b) by default, and speaks the reply back. <strong>Tool-use is wired</strong> — try <em>list my tasks</em> or <em>add a task to call mom tomorrow</em>."
 # Only `think` is the real prerequisite — listen/speak inflate the requires
 # unnecessarily and trigger a false rewrite to /system on otherwise-fine demos.
 requires = ["think"]
