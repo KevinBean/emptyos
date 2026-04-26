@@ -30,7 +30,7 @@ priority = 500
 route = "/voice-assistant/"
 spotlight = "#rec-btn"
 title = "Talk to Aura"
-body = "Press <strong>REC</strong> and speak — Aura uses your browser's mic (Web Speech API), then routes the transcript through the local model (qwen2.5:1.5b) and reads the reply back via edge-tts. Or hit <strong>⌨</strong> to type. Try <em>list my tasks</em>."
+body = "This is the conversational interface — Aura. Press <strong>REC</strong> and speak, or hit <strong>⌨</strong> to type. Aura runs through a local model (qwen2.5:1.5b) by default; <strong>tool-use is wired up</strong>, so try <em>list my tasks</em> or <em>add a task to call mom tomorrow</em> — Aura invokes the right app and reports back. For instant gpt-4o-mini quality, paste an OpenAI key in Settings → Demo (next step)."
 # Only `think` is the real prerequisite — listen/speak inflate the requires
 # unnecessarily and trigger a false rewrite to /system on otherwise-fine demos.
 requires = ["think"]

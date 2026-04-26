@@ -27,4 +27,4 @@ priority = 600
 route = "/settings/?tab=demo"
 spotlight = "#byok-openai"
 title = "Bring Your Own Key"
-body = "The local model is fast enough to prove things work, not enough for impressive output. Paste your own OpenAI key here — stored in your browser only, sent as a per-request header, never persisted server-side. Aura instantly switches to gpt-4o-mini-class quality."
+body = "The demo runs a tiny local model so visitors get a working AI without you paying a bill. For real quality, paste <strong>your own OpenAI key</strong> here — stored only in your browser, sent as a per-request header on think calls, never persisted server-side. Aura, search summaries, capture classification, lyric writing — every AI-using surface instantly switches to gpt-4o-mini-class quality. <strong>Your key, your bill, your control.</strong>"

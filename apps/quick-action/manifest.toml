@@ -56,3 +56,13 @@ spotlight = "#capture-text"
 title = "One box, anything goes"
 body = "Type a thought — a task, a journal line, a note, a project idea. EmptyOS routes it to the right app for you. This is the fastest way in."
 requires = ["read", "write", "think"]
+
+[[contributes.tour.step]]
+id = "capture.plan"
+group = "core"
+priority = 150
+route = "/quick-action/"
+spotlight = "#plan-btn"
+title = "Let the agent plan it"
+body = "Type something more ambitious — \"draft an email to the landlord about the leak and add a follow-up task for Friday\" — then hit <strong>Plan & Run</strong>. The agent reads your input, picks the right apps, and shows you the plan before executing. You confirm; it runs."
+requires = ["think"]
