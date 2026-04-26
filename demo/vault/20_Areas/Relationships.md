@@ -11,8 +11,6 @@ Quality > quantity. Two hours of full attention beats ten hours of
 half-listening.
 
 ## Tasks
-- [ ] Send Maya the seed catalogue she asked about
-- [ ] Plan the trip out to Maya's farm in late summer
-- [ ] Follow up with Ren about the data-engineering role
-- [ ] Call grandparents this Sunday
-- [x] Coffee with Maya (Apr 18)
+- [ ] Plan the trip out to Maya's farm in late summer 📅 2026-06-15
+- [ ] Call grandparents this Sunday 📅 2026-05-03
+- [x] Coffee with Maya ✅ 2026-04-18
