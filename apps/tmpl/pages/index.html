@@ -43,8 +43,13 @@
 let selectedTemplate = '';
 
 async function loadTemplates() {
-    const resp = await fetch(EOS.api('/api/list'));
-    const data = await resp.json();
+    let data;
+    try {
+        data = await EOS.api('/tmpl/api/list');
+    } catch (e) {
+        document.getElementById('templates').innerHTML = '<p style="color:var(--danger)">Failed to load templates: ' + esc(e.message) + '</p>';
+        return;
+    }
     const templates = Array.isArray(data) ? data : data.templates || [];
     document.getElementById('templates').innerHTML = templates.length
         ? templates.map(t => `<div class="tmpl-card" onclick="preview('${esc(t.name || t.id)}')"><h3>${esc(t.name || t.id)}</h3><p>${esc(t.description || '')}</p></div>`).join('')
@@ -55,16 +60,14 @@ async function preview(name) {
     selectedTemplate = name;
     document.getElementById('preview-section').style.display = '';
     document.getElementById('preview-title').textContent = name;
-    const resp = await fetch(EOS.api('/api/preview/' + encodeURIComponent(name)));
-    const data = await resp.json();
+    const data = await EOS.api('/tmpl/api/preview/' + encodeURIComponent(name));
     document.getElementById('preview').textContent = data.content || data.preview || JSON.stringify(data, null, 2);
 }
 
 async function useTemplate() {
     const name = document.getElementById('note-name').value;
     if (!name || !selectedTemplate) return;
-    const resp = await fetch(EOS.api('/api/use'), {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({template: selectedTemplate, name})});
-    const data = await resp.json();
+    const data = await EOS.post('/tmpl/api/use', {template: selectedTemplate, name});
     document.getElementById('use-result').innerHTML = data.ok
         ? '<span style="color:#22c55e">Note created: ' + esc(data.path || name) + '</span>'
         : '<span style="color:#ef4444">' + esc(data.error || 'Failed') + '</span>';

@@ -12,3 +12,12 @@ path = "00_Inbox"
 
 [note]
 path = "30_Resources"
+
+[music]
+songs_dir = "30_Resources/Music"
+
+[music-studio]
+songs_dir = "30_Resources/Music"
+
+[music-library]
+songs_dir = "30_Resources/Music"
