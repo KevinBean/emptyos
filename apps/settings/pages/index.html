@@ -100,6 +100,7 @@ if(window.EOS&&EOS.registerActions){EOS.registerActions({},[],{description:"Syst
         <div class="eos-tab" onclick="switchTab('apps')">Apps</div>
         <div class="eos-tab" onclick="switchTab('shortcuts')">Shortcuts</div>
         <div class="eos-tab" onclick="switchTab('system')">System</div>
+        <div class="eos-tab" id="tab-btn-demo" onclick="switchTab('demo')" style="display:none">Demo</div>
     </div>
 
     <div class="eos-tab-content active" id="tab-preferences">
@@ -117,13 +118,17 @@ if(window.EOS&&EOS.registerActions){EOS.registerActions({},[],{description:"Syst
     <div class="eos-tab-content" id="tab-system">
         <div id="system-content"></div>
     </div>
+
+    <div class="eos-tab-content" id="tab-demo">
+        <div id="demo-content"></div>
+    </div>
 </div>
 
 <script>
 var currentValues = {};
 
 function switchTab(name) {
-    var tabs = ['preferences','apps','shortcuts','system'];
+    var tabs = ['preferences','apps','shortcuts','system','demo'];
     tabs.forEach(function(t, i) {
         var el = document.querySelectorAll('.eos-tab')[i];
         if (el) el.classList.toggle('active', t === name);
@@ -131,8 +136,83 @@ function switchTab(name) {
     document.querySelectorAll('.eos-tab-content').forEach(function(t) { t.classList.remove('active'); });
     document.getElementById('tab-' + name).classList.add('active');
     if (name === 'shortcuts' && !shortcutsRendered) loadShortcutsTab();
+    if (name === 'demo') loadDemoTab();
     // Re-apply the current search filter so it targets the newly visible tab.
     filterSettings();
+}
+
+// --- Demo tab (BYOK) ---
+// Only visible on demo deployments. Lets visitors paste their own
+// OpenAI/Anthropic key — stored in localStorage, sent as
+// X-User-{Provider}-Key on every request, never persisted server-side.
+async function detectDemoMode() {
+    try {
+        var data = await EOS.api('/api/health');
+        // demo_enabled is exposed in the boot banner; we infer from the
+        // app name as a fallback (config-driven on most demo instances).
+        var name = (data.name || '').toLowerCase();
+        return name.indexOf('demo') >= 0;
+    } catch (e) { return false; }
+}
+
+function loadDemoTab() {
+    var el = document.getElementById('demo-content');
+    if (!el || el.dataset.loaded === '1') return;
+    el.dataset.loaded = '1';
+    var openaiKey = (window.EOS && EOS.byok) ? EOS.byok.get('openai') : '';
+    var anthropicKey = (window.EOS && EOS.byok) ? EOS.byok.get('anthropic') : '';
+    el.innerHTML =
+        '<div class="section"><div class="section-hdr"><span class="section-icon">&#128273;</span><span class="section-name">Bring Your Own Key (BYOK)</span></div>' +
+        '<div class="setting-group" style="padding:14px">' +
+            '<p style="margin:0 0 10px;font-size:13px;color:var(--text-muted)">' +
+                'The demo runs on a small CPU-only VPS with a tiny local model — fast enough to prove things work, not enough for impressive output. ' +
+                'Paste your own OpenAI or Anthropic key to switch to gpt-4o-mini / claude-haiku-class quality. ' +
+                'Your key is stored only in your browser (localStorage). It is sent as an HTTP header on every AI-using request and never persisted on the server. Other visitors never see it.' +
+            '</p>' +
+            '<div style="display:flex;flex-direction:column;gap:10px">' +
+                '<label style="font-size:12px;color:var(--text-muted)">OpenAI API key</label>' +
+                '<div style="display:flex;gap:8px">' +
+                    '<input type="password" id="byok-openai" placeholder="sk-..." value="' + esc(openaiKey) + '" style="flex:1;padding:8px 12px;border:1px solid var(--border);border-radius:8px;background:var(--bg);color:var(--text);font-family:var(--mono);font-size:13px" autocomplete="off">' +
+                    '<button class="eos-btn" onclick="saveByok(\'openai\')">Save</button>' +
+                    '<button class="eos-btn" style="background:transparent;color:var(--text-muted)" onclick="clearByok(\'openai\')">Clear</button>' +
+                '</div>' +
+                '<label style="font-size:12px;color:var(--text-muted);margin-top:6px">Anthropic API key (optional)</label>' +
+                '<div style="display:flex;gap:8px">' +
+                    '<input type="password" id="byok-anthropic" placeholder="sk-ant-..." value="' + esc(anthropicKey) + '" style="flex:1;padding:8px 12px;border:1px solid var(--border);border-radius:8px;background:var(--bg);color:var(--text);font-family:var(--mono);font-size:13px" autocomplete="off">' +
+                    '<button class="eos-btn" onclick="saveByok(\'anthropic\')">Save</button>' +
+                    '<button class="eos-btn" style="background:transparent;color:var(--text-muted)" onclick="clearByok(\'anthropic\')">Clear</button>' +
+                '</div>' +
+            '</div>' +
+            '<p style="margin:14px 0 0;font-size:11px;color:var(--text-muted)">' +
+                '<strong>Where to get a key:</strong> ' +
+                '<a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener">OpenAI</a>' +
+                ' &middot; ' +
+                '<a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener">Anthropic</a>' +
+            '</p>' +
+        '</div></div>';
+}
+
+function esc(s) {
+    if (s == null) return '';
+    return String(s).replace(/[&<>"']/g, function(c){
+        return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
+    });
+}
+
+function saveByok(provider) {
+    if (!window.EOS || !EOS.byok) return;
+    var input = document.getElementById('byok-' + provider);
+    if (!input) return;
+    EOS.byok.set(provider, input.value.trim());
+    showSaved();
+}
+
+function clearByok(provider) {
+    if (!window.EOS || !EOS.byok) return;
+    EOS.byok.set(provider, '');
+    var input = document.getElementById('byok-' + provider);
+    if (input) input.value = '';
+    showSaved();
 }
 
 function showSaved() {
@@ -432,6 +512,16 @@ function editGoKey(key) {
 }
 
 loadSettings();
+
+// Reveal the Demo tab on demo deployments. Detection is best-effort —
+// `/api/health` returns the daemon's display name, and demo configs use
+// a name containing "demo" by convention.
+detectDemoMode().then(function(isDemo) {
+    if (isDemo) {
+        var btn = document.getElementById('tab-btn-demo');
+        if (btn) btn.style.display = '';
+    }
+});
 
 // Wire the search input. Debounce not needed — filter is DOM-only.
 (function() {

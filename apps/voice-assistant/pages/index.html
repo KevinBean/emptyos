@@ -982,6 +982,19 @@
     const d = new Date();
     return String(d.getHours()).padStart(2,'0') + ':' + String(d.getMinutes()).padStart(2,'0');
   }
+  // BYOK header injector — picks up keys from EOS.byok (set by Settings →
+  // Demo). Both chat_text and chat_stream use raw fetch (multipart for
+  // audio, JSON for text), so EOS.api's auto-injection doesn't fire here;
+  // we add the headers explicitly.
+  function _byokHeaders() {
+    if (!window.EOS || !EOS.byok) return {};
+    var keys = EOS.byok.list();
+    var headers = {};
+    if (keys.openai) headers['X-User-OpenAI-Key'] = keys.openai;
+    if (keys.anthropic) headers['X-User-Anthropic-Key'] = keys.anthropic;
+    return headers;
+  }
+
   // Tracks user-text we've just rendered locally (timestamp ms). The user_text
   // event handler consults this to avoid double-rendering when both the
   // optimistic local append and a server echo fire for the same text.
@@ -1518,7 +1531,7 @@
     formData.append('messages', JSON.stringify(messages));
     if (activeCompanion) formData.append('companion', activeCompanion);
     try {
-      const res = await fetch('/voice-assistant/api/chat_stream', {method: 'POST', body: formData});
+      const res = await fetch('/voice-assistant/api/chat_stream', {method: 'POST', body: formData, headers: _byokHeaders()});
       await consumeStream(res, {onDoneIdle: () => {
         if (isContinuous) startRecording(true);
         else setState('idle');
@@ -1537,7 +1550,7 @@
     try {
       const res = await fetch('/voice-assistant/api/chat_text', {
         method: 'POST',
-        headers: {'Content-Type': 'application/json'},
+        headers: Object.assign({'Content-Type': 'application/json'}, _byokHeaders()),
         body: JSON.stringify({text: trimmed, messages, companion: activeCompanion}),
       });
       await consumeStream(res, {onDoneIdle: () => setState('idle')});

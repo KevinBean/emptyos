@@ -66,7 +66,21 @@ consent = "always"
 # want server-side cloud as a fallback, add it explicitly + cap the spend
 # via [billing.budgets.openai] below.
 [capabilities.think]
-providers = ["ollama"]
+# openai first: when a visitor has set a BYOK key in Settings, the openai
+# provider becomes available and wins (faster + better quality). Without
+# BYOK, openai's available() returns false (no env var on the demo) and
+# the chain falls through to ollama (slow but free).
+providers = ["openai", "ollama"]
+
+[capabilities.think.openai]
+host = "https://api.openai.com"
+model = "gpt-4o-mini"
+# Note: OPENAI_API_KEY is intentionally NOT set in .env.demo — visitors
+# supply their own via Settings → Demo → BYOK. The provider's _api_key()
+# reads the BYOK contextvar (set by the X-User-OpenAI-Key middleware in
+# server.py) before falling back to env.
+api_key_env = "OPENAI_API_KEY"
+timeout = 30
 
 # --- Listen capability — browser-side STT via Web Speech API ---
 # No API key, no whisper service. The visitor's browser captures speech

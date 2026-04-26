@@ -70,6 +70,23 @@ class OpenAICompatThinkProvider(ToolCapableProvider):
             self.name = provider_name
 
     def _api_key(self) -> str:
+        # BYOK first: if the current request supplied a user key for this
+        # provider (via X-User-{Name}-Key header), use it. Otherwise fall
+        # back to the server's env var. The contextvar is per-request, so
+        # one visitor's key never bleeds into another visitor's call.
+        try:
+            from emptyos.capabilities.byok import get_byok_key
+            host = (self.host or "").lower()
+            if "openai.com" in host:
+                user_key = get_byok_key("openai")
+            elif "anthropic.com" in host:
+                user_key = get_byok_key("anthropic")
+            else:
+                user_key = ""
+            if user_key:
+                return user_key
+        except Exception:
+            pass
         return os.environ.get(self.api_key_env, "")
 
     async def available(self) -> bool:

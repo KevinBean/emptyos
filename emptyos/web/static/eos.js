@@ -24,8 +24,49 @@
     window.EOS = window.EOS || {};
     EOS.base = base;
 
+    // BYOK — visitor-supplied API keys for cloud providers. Stored in
+    // localStorage by the Settings panel; injected as headers on every
+    // EOS.api / EOS.post / EOS.stream call. The server's byok_middleware
+    // (emptyos/web/server.py) extracts these headers and routes them to
+    // openai_compat.py via a per-request contextvar. One visitor's key
+    // never bleeds into another visitor's request.
+    var BYOK_HEADERS = {
+        openai: 'X-User-OpenAI-Key',
+        anthropic: 'X-User-Anthropic-Key',
+    };
+    EOS.byok = {
+        get: function(provider) {
+            try { return (localStorage.getItem('eos.byok.' + provider) || '').trim(); }
+            catch (e) { return ''; }
+        },
+        set: function(provider, key) {
+            try {
+                if (key) localStorage.setItem('eos.byok.' + provider, key);
+                else localStorage.removeItem('eos.byok.' + provider);
+            } catch (e) {}
+        },
+        list: function() {
+            var out = {};
+            Object.keys(BYOK_HEADERS).forEach(function(p){
+                var k = EOS.byok.get(p);
+                if (k) out[p] = k;
+            });
+            return out;
+        },
+    };
+    function _injectByokHeaders(opts) {
+        var keys = EOS.byok.list();
+        if (!Object.keys(keys).length) return opts;
+        opts = opts || {};
+        var headers = Object.assign({}, opts.headers || {});
+        Object.keys(keys).forEach(function(provider){
+            headers[BYOK_HEADERS[provider]] = keys[provider];
+        });
+        return Object.assign({}, opts, {headers: headers});
+    }
+
     EOS.api = async function(path, options) {
-        var resp = await fetch(base + path, options);
+        var resp = await fetch(base + path, _injectByokHeaders(options));
         if (!resp.ok) throw new Error('API error: ' + resp.status);
         return resp.json();
     };
@@ -39,7 +80,7 @@
     };
 
     EOS.stream = async function*(path, options) {
-        var resp = await fetch(base + path, options);
+        var resp = await fetch(base + path, _injectByokHeaders(options));
         var reader = resp.body.getReader();
         var decoder = new TextDecoder();
         var buffer = '';

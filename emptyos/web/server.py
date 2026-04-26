@@ -1125,6 +1125,29 @@ __ERR__
             _prefix_to_app[_p] = _aid
     _SKIP_EXTS = (".js", ".css", ".ico", ".png", ".svg", ".woff", ".woff2", ".map", ".json")
 
+    # --- BYOK middleware ---
+    # Visitors can paste their own OpenAI/Anthropic key in Settings; the
+    # frontend sends it as X-User-{Provider}-Key on every request. We stash
+    # it in a per-request contextvar so providers can prefer it over the
+    # server's env-var key. Per-request scope: one visitor's key never
+    # bleeds into another visitor's request (contextvars are bound to the
+    # asyncio task handling the request).
+    @server.middleware("http")
+    async def _byok_middleware(request: Request, call_next):
+        from emptyos.capabilities.byok import HEADER_MAP, set_byok_keys, reset_byok_keys
+        keys: dict[str, str] = {}
+        for header_name, key_name in HEADER_MAP.items():
+            val = (request.headers.get(header_name) or "").strip()
+            if val:
+                keys[key_name] = val
+        if not keys:
+            return await call_next(request)
+        token = set_byok_keys(keys)
+        try:
+            return await call_next(request)
+        finally:
+            reset_byok_keys(token)
+
     @server.middleware("http")
     async def _lazy_load_middleware(request: Request, call_next):
         """Lazy-load apps on first request to their web prefix."""
