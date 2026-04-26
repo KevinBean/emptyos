@@ -30,8 +30,20 @@ body = "EmptyOS is a mind companion — it thinks and creates with you, not for 
 [[contributes.tour.step]]
 id = "system.inspect"
 group = "core"
-priority = 900
+priority = 800
 route = "/system"
 spotlight = ".cap-card"
 title = "Your system, at a glance"
 body = "This is the Capability Inspector. Whenever a feature seems missing, come back here — it tells you which provider you need and how to wire it up."
+
+# Final step — drops the visitor onto the app grid so the natural next move
+# is to click into something and try it. Last impression is "here's what's
+# available," not "here's the system internals."
+[[contributes.tour.step]]
+id = "tour.explore"
+group = "core"
+priority = 950
+route = "/hub/"
+spotlight = ".r-app-grid"
+title = "Now go explore"
+body = "Here's every app this install has loaded — browse, click any card to try it. Each card is its own page with its own UI; the one thing they share is the capability layer (think / read / write / search / speak / listen / see / draw / animate). Have fun."
