@@ -2594,29 +2594,94 @@ EOS_UI.searchBar = function(opts) {
         apps = (list || []).filter(function(a){ return a && (a.web_prefix || a.id); });
     }).catch(function(){});
 
-    function render(matches, q) {
-        if (!matches.length) {
-            results.innerHTML = '<div class="eos-search-fallback">No app match. Press <strong>Enter</strong> to search vault for &ldquo;' + escHtml(q) + '&rdquo;.</div>';
-        } else {
-            results.innerHTML = matches.map(function(a, i){
-                return '<div class="eos-search-item' + (i===idx?' active':'') + '" data-i="' + i + '">' +
+    // currentItems is the flat list shown in render order; each item is
+    // {kind: 'app'|'note'|'fallback', payload: ...}. Keyboard arrows + clicks
+    // index into this array. Section headers don't go into it.
+    var currentItems = [];
+    var noteFetchSeq = 0;
+    var noteDebounce = null;
+    var lastNotes = [];
+    var lastNotesQuery = '';
+
+    function renderSections(qLower, qRaw, notesLoading) {
+        var html = '';
+        var flat = [];
+        var matchedApps = apps.filter(function(a){ return filter(a, qLower); }).slice(0, maxResults);
+
+        if (matchedApps.length) {
+            html += '<div class="eos-search-section">Apps</div>';
+            matchedApps.forEach(function(a){
+                flat.push({kind: 'app', payload: a});
+                var i = flat.length - 1;
+                html += '<div class="eos-search-item' + (i === idx ? ' active' : '') + '" data-i="' + i + '">' +
                     '<span class="eos-search-item-icon">' + escHtml(a.icon || '\u25A2') + '</span>' +
                     '<span class="eos-search-item-name">' + escHtml(a.name || a.id) + '</span>' +
                     '<span class="eos-search-item-desc">' + escHtml((a.description || '').slice(0, 60)) + '</span>' +
-                '</div>';
-            }).join('');
+                    '</div>';
+            });
         }
+
+        if (lastNotes.length || notesLoading) {
+            html += '<div class="eos-search-section">Notes' +
+                    (notesLoading ? ' <span class="eos-search-loading">searching...</span>' : '') +
+                    '</div>';
+            lastNotes.slice(0, maxResults).forEach(function(n){
+                flat.push({kind: 'note', payload: n});
+                var i = flat.length - 1;
+                var title = n.title || (n.path || '').split('/').pop() || 'untitled';
+                var snippet = (n.snippet || n.preview || n.excerpt || '').replace(/\s+/g, ' ').slice(0, 80);
+                html += '<div class="eos-search-item' + (i === idx ? ' active' : '') + '" data-i="' + i + '">' +
+                    '<span class="eos-search-item-icon">\u{1F4DD}</span>' +
+                    '<span class="eos-search-item-name">' + escHtml(title) + '</span>' +
+                    '<span class="eos-search-item-desc">' + escHtml(snippet) + '</span>' +
+                    '</div>';
+            });
+        }
+
+        // Always-on fallback link to the full search page
+        html += '<div class="eos-search-section">Other</div>';
+        flat.push({kind: 'fallback', payload: {q: qRaw}});
+        var fi = flat.length - 1;
+        html += '<div class="eos-search-item' + (fi === idx ? ' active' : '') + '" data-i="' + fi + '">' +
+            '<span class="eos-search-item-icon">\u{1F50D}</span>' +
+            '<span class="eos-search-item-name">Open full search</span>' +
+            '<span class="eos-search-item-desc">All vault matches for &ldquo;' + escHtml(qRaw) + '&rdquo;</span>' +
+            '</div>';
+
+        results.innerHTML = html;
         results.classList.add('open');
+        currentItems = flat;
     }
 
-    var currentMatches = [];
+    function fetchNotes(qRaw) {
+        var seq = ++noteFetchSeq;
+        if (qRaw !== lastNotesQuery) { lastNotes = []; lastNotesQuery = qRaw; }
+        renderSections(qRaw.toLowerCase(), qRaw, true);
+        fetch('/search/api/search?q=' + encodeURIComponent(qRaw) + '&top=8')
+            .then(function(r){ return r.json(); })
+            .then(function(data){
+                if (seq !== noteFetchSeq) return;
+                lastNotes = (data && data.results) || [];
+                renderSections(qRaw.toLowerCase(), qRaw, false);
+            })
+            .catch(function(){
+                if (seq !== noteFetchSeq) return;
+                renderSections(qRaw.toLowerCase(), qRaw, false);
+            });
+    }
 
     input.addEventListener('input', function(){
-        var q = this.value.trim().toLowerCase();
-        if (!q) { results.classList.remove('open'); idx = -1; currentMatches = []; return; }
-        currentMatches = apps.filter(function(a){ return filter(a, q); }).slice(0, maxResults);
-        idx = currentMatches.length ? 0 : -1;
-        render(currentMatches, this.value.trim());
+        var qRaw = this.value.trim();
+        if (!qRaw) {
+            results.classList.remove('open');
+            idx = -1; currentItems = []; lastNotes = []; lastNotesQuery = '';
+            clearTimeout(noteDebounce);
+            return;
+        }
+        idx = 0;
+        renderSections(qRaw.toLowerCase(), qRaw, false);
+        clearTimeout(noteDebounce);
+        noteDebounce = setTimeout(function(){ fetchNotes(qRaw); }, 200);
     });
 
     input.addEventListener('keydown', function(e){
@@ -2627,16 +2692,30 @@ EOS_UI.searchBar = function(opts) {
             e.preventDefault(); idx = Math.max(idx - 1, 0); paintActive(items);
         } else if (e.key === 'Enter') {
             e.preventDefault();
-            if (idx >= 0 && currentMatches[idx]) onSelect(currentMatches[idx]);
+            var picked = currentItems[idx];
+            if (picked) pickItem(picked);
             else if (this.value.trim()) onFallback(this.value.trim());
         } else if (e.key === 'Escape') {
             results.classList.remove('open'); this.blur();
         }
     });
 
+    function pickItem(item) {
+        if (item.kind === 'app') return onSelect(item.payload);
+        if (item.kind === 'note') {
+            var path = item.payload.path || '';
+            if (path) location.href = '/search/?q=' + encodeURIComponent(input.value.trim()) + '&open=' + encodeURIComponent(path);
+            else onFallback(input.value.trim());
+            return;
+        }
+        if (item.kind === 'fallback') return onFallback(item.payload.q || input.value.trim());
+    }
+
     results.addEventListener('click', function(e){
         var item = e.target.closest('.eos-search-item');
-        if (item && currentMatches[+item.dataset.i]) onSelect(currentMatches[+item.dataset.i]);
+        if (!item) return;
+        var picked = currentItems[+item.dataset.i];
+        if (picked) pickItem(picked);
     });
 
     function paintActive(items) {

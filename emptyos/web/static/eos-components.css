@@ -993,3 +993,11 @@ body.eos-think-offline { scroll-padding-top: 40px; }
 .eos-search-item-desc { font-size: 12px; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; min-width: 0; }
 .eos-search-fallback { padding: 10px 12px; font-size: 12px; color: var(--text-muted); }
 .eos-search-fallback strong { color: var(--text); font-weight: 500; }
+.eos-search-section {
+    padding: 6px 12px 4px; font-size: 10px; font-weight: 600;
+    text-transform: uppercase; letter-spacing: 0.06em;
+    color: var(--text-muted); background: var(--bg);
+    border-bottom: 1px solid var(--border); border-top: 1px solid var(--border);
+}
+.eos-search-section:first-child { border-top: none; }
+.eos-search-loading { font-weight: 400; text-transform: none; opacity: 0.7; margin-left: 6px; }
