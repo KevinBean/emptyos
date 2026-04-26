@@ -27,7 +27,7 @@ from __future__ import annotations
 import asyncio
 from typing import TYPE_CHECKING
 
-from emptyos.capabilities.types import Provider
+from emptyos.capabilities import Provider
 
 if TYPE_CHECKING:
     from emptyos.kernel import Kernel
