@@ -86,7 +86,7 @@ def create_server(kernel: Kernel) -> FastAPI:
         _LOGIN_HTML = """<!DOCTYPE html>
 <html><head><meta charset="utf-8"><title>EmptyOS — Login</title>
 <style>
-body{font-family:system-ui,sans-serif;background:#0e1117;color:#e6edf3;margin:0;display:flex;align-items:center;justify-content:center;height:100vh}
+body{font-family:system-ui,sans-serif;background:#0e1117;color:#e6edf3;margin:0;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;padding:24px;box-sizing:border-box}
 .box{background:#161b22;border:1px solid #30363d;border-radius:8px;padding:32px;width:320px}
 h1{margin:0 0 8px;font-size:18px;font-weight:600}
 p{margin:0 0 16px;color:#8b949e;font-size:13px}
@@ -94,6 +94,10 @@ input{width:100%;box-sizing:border-box;padding:8px 10px;background:#0d1117;borde
 button{width:100%;margin-top:12px;padding:8px;background:#238636;border:0;border-radius:6px;color:#fff;font-weight:600;cursor:pointer}
 button:hover{background:#2ea043}
 .err{color:#f85149;font-size:12px;margin-top:8px}
+.foot{margin-top:24px;font-size:12px;color:#6e7681;text-align:center;line-height:1.6}
+.foot a{color:#8b949e;text-decoration:none;border-bottom:1px dotted #30363d}
+.foot a:hover{color:#e6edf3;border-bottom-color:#8b949e}
+.foot .sep{margin:0 6px;color:#30363d}
 </style></head><body>
 <form class="box" method="post" action="/login">
 <h1>EmptyOS</h1><p>Enter your access token to continue.</p>
@@ -101,7 +105,18 @@ button:hover{background:#2ea043}
 <input type="hidden" name="next" value="__NEXT__">
 <button type="submit">Sign in</button>
 __ERR__
-</form></body></html>"""
+</form>
+<div class="foot">
+EmptyOS — a mind companion. Think and create with you, not for you.<br>
+<a href="https://eos.binbian.net" target="_blank" rel="noopener">About</a>
+<span class="sep">·</span>
+<a href="https://github.com/KevinBean/emptyos" target="_blank" rel="noopener">Source</a>
+<span class="sep">·</span>
+<a href="https://eos.binbian.net/getting-started.html" target="_blank" rel="noopener">Self-host</a>
+<span class="sep">·</span>
+<a href="https://binbian.net" target="_blank" rel="noopener">Blog</a>
+</div>
+</body></html>"""
 
         @server.get("/login", response_class=HTMLResponse)
         async def login_page(request: Request):
@@ -235,10 +250,11 @@ __ERR__
         return {
             "enabled": kernel.config.demo_enabled,
             "banner": (
-                "You're viewing a public demo. Install EmptyOS locally for the full experience. "
-                "GPU-powered features (image generation, voice) are disabled here."
+                "Public demo — sample vault, don't put real data here. "
+                "GPU-powered features (image generation, voice) are disabled."
             ) if kernel.config.demo_enabled else "",
             "install_url": "https://github.com/KevinBean/emptyos",
+            "about_url": "https://eos.binbian.net",
         }
 
     # --- Think-capability status (drives the "AI offline" system banner) ---

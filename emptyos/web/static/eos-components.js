@@ -1969,12 +1969,17 @@ var EOS_UI = {
                 var bar = document.createElement('div');
                 bar.id = 'eos-demo-banner';
                 bar.className = 'eos-demo-banner';
+                var links = '';
+                if (j.about_url) {
+                    links += ' <a class="eos-demo-banner-link" href="' + EOS_UI.esc(j.about_url) +
+                             '" target="_blank" rel="noopener">About &rarr;</a>';
+                }
+                if (j.install_url) {
+                    links += ' <a class="eos-demo-banner-link" href="' + EOS_UI.esc(j.install_url) +
+                             '" target="_blank" rel="noopener">Source &rarr;</a>';
+                }
                 bar.innerHTML =
-                    '<span class="eos-demo-banner-text">' + EOS_UI.esc(j.banner) + '</span>' +
-                    (j.install_url
-                        ? ' <a class="eos-demo-banner-link" href="' + EOS_UI.esc(j.install_url) +
-                          '" target="_blank" rel="noopener">Install locally &rarr;</a>'
-                        : '');
+                    '<span class="eos-demo-banner-text">' + EOS_UI.esc(j.banner) + '</span>' + links;
                 document.body.insertBefore(bar, document.body.firstChild);
                 document.body.classList.add('eos-demo-active');
             })
