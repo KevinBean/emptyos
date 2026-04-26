@@ -104,47 +104,64 @@
     };
 
     // --- Nav bar (dynamic from API) ---
-    // Default nav apps — overridable via settings API
+    // Default nav apps — generic across all deployments. Picks from the
+    // standard-tier apps that any community install will have. Users override
+    // via localStorage 'eos-nav-apps' (set from Settings or per-user JS).
+    // Whatever the source, the nav is filtered at render time against the
+    // /api/apps result so links to apps that aren't loaded just disappear.
     var DEFAULT_NAV = [
         {id:'task', prefix:'/task', name:'Tasks'},
-        {id:'expense', prefix:'/expense', name:'Expense'},
-        {id:'english', prefix:'/english', name:'English'},
         {id:'journal', prefix:'/journal', name:'Journal'},
-        {id:'healing', prefix:'/healing', name:'Healing'},
+        {id:'projects', prefix:'/projects', name:'Projects'},
+        {id:'focus', prefix:'/focus', name:'Focus'},
         {id:'search', prefix:'/search', name:'Search'},
     ];
 
-    EOS.nav = function(currentApp) {
+    function _renderNav(navApps, currentApp) {
         var nav = document.createElement('nav');
         nav.className = 'nav';
-
-        // Try to load custom nav from settings, fallback to defaults
-        var navApps = DEFAULT_NAV;
-        try {
-            var saved = localStorage.getItem('eos-nav-apps');
-            if (saved) navApps = JSON.parse(saved);
-        } catch(e) {}
-
         var isHome = !currentApp || currentApp === 'hub';
         var links = '<a href="/"' + (isHome ? ' class="current"' : '') + '>Home</a>';
         navApps.forEach(function(a) {
             var cls = a.id === currentApp ? ' class="current"' : '';
             links += '<a href="' + a.prefix + '/"' + cls + '>' + a.name + '</a>';
         });
-
-        // If current app isn't in nav and isn't hub, add it
         if (currentApp && currentApp !== 'hub' && !navApps.some(function(a) { return a.id === currentApp; })) {
             links += '<a href="#" class="current">' + currentApp + '</a>';
         }
-
-        // Theme cycler — click cycles through themes; long-list lives in /settings
         links += '<span class="nav-theme" onclick="EOS.cycleTheme()" title="Cycle theme (full list in Settings)">◐</span>';
-
-        // "All Apps" button
         links += '<span class="nav-more" onclick="EOS.toggleDrawer()" title="All Apps">⋯</span>';
-
         nav.innerHTML = links;
-        document.body.prepend(nav);
+        // Replace any existing nav (so the async filter can re-render cleanly)
+        var existing = document.querySelector('body > nav.nav');
+        if (existing) existing.replaceWith(nav);
+        else document.body.prepend(nav);
+        return nav;
+    }
+
+    EOS.nav = function(currentApp) {
+        var navApps = DEFAULT_NAV;
+        try {
+            var saved = localStorage.getItem('eos-nav-apps');
+            if (saved) navApps = JSON.parse(saved);
+        } catch(e) {}
+
+        // Render synchronously with the (default or saved) list so the page
+        // doesn't flash chrome-less. Then re-render once we know which apps
+        // are actually loaded — links to missing apps get pruned.
+        _renderNav(navApps, currentApp);
+        fetch('/api/apps').then(function(r) { return r.json(); }).then(function(data) {
+            var apps = Array.isArray(data) ? data : (data && data.apps) || [];
+            if (!apps.length) return;
+            var loaded = {};
+            apps.forEach(function(a) {
+                var id = (a && (a.id || a.name || a)) + '';
+                loaded[id] = true;
+            });
+            var filtered = navApps.filter(function(a) { return loaded[a.id]; });
+            // Only re-render if we actually pruned something (avoid flicker)
+            if (filtered.length !== navApps.length) _renderNav(filtered, currentApp);
+        }).catch(function(){ /* fall back to whatever we already rendered */ });
 
         // App drawer (created once)
         if (!document.getElementById('app-drawer-overlay')) {
