@@ -163,7 +163,7 @@ function onSearch(){
 async function openDetail(filename){
   try {
     var s = await fetch(PREFIX + '/api/song-summary/' + encodeURIComponent(filename)).then(r => r.json());
-    if (s.error) { alert(s.error); return; }
+    if (s.error) { EOS_UI.toast(s.error, false); return; }
     var d = s.detail || {};
     var coverHtml = s.cover ? '<img src="' + esc(s.cover) + '" alt="">' : '&#9835;';
     var audioHtml = '';
@@ -185,7 +185,7 @@ async function openDetail(filename){
       audioHtml +
       '<div class="ml-fields">' + rows + '</div>';
     document.getElementById('ml-detail').classList.add('open');
-  } catch (e) { alert('Detail failed: ' + e); }
+  } catch (e) { EOS_UI.toast('Detail failed: ' + e, false); }
 }
 
 function closeDetail(){ document.getElementById('ml-detail').classList.remove('open'); }
@@ -208,7 +208,7 @@ function closeLyricsPanel(){ document.getElementById('ml-lyrics-panel').classLis
 
 async function generateLyrics(){
   var description = (document.getElementById('lr-description').value || '').trim();
-  if (!description) { alert('Description is required'); return; }
+  if (!description) { EOS_UI.toast('Description is required', false); return; }
   var style = document.getElementById('lr-style').value;
   var language = document.getElementById('lr-language').value;
   var btn = document.getElementById('lr-go');
@@ -219,13 +219,13 @@ async function generateLyrics(){
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({description: description, style: style, language: language}),
     }).then(r => r.json());
-    if (res.error) { alert(res.error); return; }
+    if (res.error) { EOS_UI.toast(res.error, false); return; }
     LAST_LYRICS = res;
     var out = document.getElementById('lr-output');
     out.style.display = 'block';
     out.innerHTML = '<div class="ml-output-title">' + esc(res.title || 'Untitled') + '</div>' + esc(res.lyrics || '');
     document.getElementById('lr-save').style.display = 'inline-block';
-  } catch (e) { alert('Generation failed: ' + e); }
+  } catch (e) { EOS_UI.toast('Generation failed: ' + e, false); }
   finally { btn.disabled = false; btn.textContent = 'Generate'; }
 }
 
@@ -242,10 +242,10 @@ async function saveLyrics(){
         lyrics: LAST_LYRICS.lyrics,
       }),
     }).then(r => r.json());
-    if (res.error) { alert(res.error); return; }
-    alert('Saved to ' + (res.saved_to || 'vault'));
+    if (res.error) { EOS_UI.toast(res.error, false); return; }
+    EOS_UI.toast('Saved to ' + (res.saved_to || 'vault'), true);
     loadAll();
-  } catch (e) { alert('Save failed: ' + e); }
+  } catch (e) { EOS_UI.toast('Save failed: ' + e, false); }
 }
 
 document.addEventListener('DOMContentLoaded', loadAll);
