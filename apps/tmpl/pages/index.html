@@ -8,20 +8,20 @@
 <link rel="stylesheet" href="/static/eos-components.css">
 <style>
 .tmpl-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
-.tmpl-card { padding: 16px; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 8px; cursor: pointer; transition: border-color 0.2s; }
+.tmpl-card { padding: 16px; background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px; cursor: pointer; transition: border-color 0.2s; }
 .tmpl-card:hover { border-color: var(--accent); }
 .tmpl-card h3 { font-size: 14px; margin-bottom: 4px; }
 .tmpl-card p { font-size: 12px; color: var(--text-secondary); }
-.preview-box { margin-top: 16px; padding: 16px; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 8px; white-space: pre-wrap; font-family: monospace; font-size: 13px; max-height: 400px; overflow-y: auto; }
+.preview-box { margin-top: 16px; padding: 16px; background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px; white-space: pre-wrap; font-family: monospace; font-size: 13px; max-height: 400px; overflow-y: auto; }
 .use-form { display: flex; gap: 8px; margin-top: 12px; }
-.use-form input { flex: 1; padding: 8px; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 6px; color: var(--text); font-size: 14px; }
+.use-form input { flex: 1; padding: 8px; background: var(--bg-card); border: 1px solid var(--border); border-radius: 6px; color: var(--text); font-size: 14px; }
 </style>
 </head>
 <body>
-<div class="page-shell">
+<div class="page">
 <div class="page-header">
     <h1>Templates</h1>
-    <p class="subtitle">Create notes from templates</p>
+    <p class="desc">Create notes from templates</p>
 </div>
 
 <div id="templates" class="tmpl-grid"></div>
@@ -52,13 +52,18 @@ async function loadTemplates() {
     }
     const templates = Array.isArray(data) ? data : data.templates || [];
     document.getElementById('templates').innerHTML = templates.length
-        ? templates.map(t => `<div class="tmpl-card" onclick="preview('${esc(t.name || t.id)}')"><h3>${esc(t.name || t.id)}</h3><p>${esc(t.description || '')}</p></div>`).join('')
+        ? templates.map(t => {
+            const name = typeof t === 'string' ? t : (t.name || t.id || '');
+            const desc = typeof t === 'string' ? '' : (t.description || '');
+            const safe = name.replace(/'/g, "\\'");
+            return `<div class="tmpl-card" onclick="preview('${safe}')"><h3>${esc(name)}</h3><p>${esc(desc)}</p></div>`;
+        }).join('')
         : '<p style="color:var(--text-secondary)">No templates found</p>';
 }
 
 async function preview(name) {
     selectedTemplate = name;
-    document.getElementById('preview-section').style.display = '';
+    document.getElementById('preview-section').style.display = 'block';
     document.getElementById('preview-title').textContent = name;
     const data = await EOS.api('/tmpl/api/preview/' + encodeURIComponent(name));
     document.getElementById('preview').textContent = data.content || data.preview || JSON.stringify(data, null, 2);
