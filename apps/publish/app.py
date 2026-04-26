@@ -572,17 +572,39 @@ class PublishApp(BaseApp):
             "deploy_repo": ss.get("deploy_repo"),
         }
 
+    async def _site_from_request(self, request) -> dict | None:
+        try:
+            data = await request.json()
+        except Exception:
+            data = {}
+        site_id = (data or {}).get("site_id") or (data or {}).get("site") or ""
+        if not site_id:
+            return None
+        s = self._get_site(site_id)
+        if not s:
+            raise ValueError(f"Site '{site_id}' not found")
+        return s
+
     @web_route("POST", "/api/build")
     async def api_build(self, request):
-        """Build the static site for active profile."""
-        stats = self.build()
-        await self.emit("publish:built", {**stats, "site": self._active_site_id()})
+        """Build the static site. Body: {"site_id": "..."} optional; defaults to active."""
+        try:
+            site = await self._site_from_request(request)
+        except ValueError as e:
+            return {"error": str(e)}
+        stats = self.build(site=site)
+        site_id = (site or self._active_site())["id"]
+        await self.emit("publish:built", {**stats, "site": site_id})
         return stats
 
     @web_route("POST", "/api/deploy")
     async def api_deploy(self, request):
-        """Deploy active site to static hosting."""
-        return await self.deploy()
+        """Deploy a site to static hosting. Body: {"site_id": "..."} optional; defaults to active."""
+        try:
+            site = await self._site_from_request(request)
+        except ValueError as e:
+            return {"error": str(e)}
+        return await self.deploy(site=site)
 
     async def deploy_firebase(self, site: dict | None = None) -> dict:
         """Deploy site to Firebase Hosting."""
@@ -644,8 +666,12 @@ class PublishApp(BaseApp):
 
     @web_route("POST", "/api/deploy/firebase")
     async def api_deploy_firebase(self, request):
-        """Deploy active site to Firebase Hosting."""
-        return await self.deploy_firebase()
+        """Deploy a site to Firebase Hosting. Body: {"site_id": "..."} optional; defaults to active."""
+        try:
+            site = await self._site_from_request(request)
+        except ValueError as e:
+            return {"error": str(e)}
+        return await self.deploy_firebase(site=site)
 
     @web_route("GET", "/api/preview")
     async def api_preview(self, request):

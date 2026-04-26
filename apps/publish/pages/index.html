@@ -489,7 +489,7 @@ async function doBuild() {
   document.getElementById('toolbar-info').textContent = 'Building...';
 
   try {
-    var result = await EOS.post('/publish/api/build', {});
+    var result = await EOS.post('/publish/api/build', {site_id: activeSiteId});
     if (result.error) {
       logEl.textContent += 'ERROR: ' + result.error + '\n';
       document.getElementById('toolbar-info').textContent = 'Build failed';
@@ -528,7 +528,7 @@ async function doDeploy() {
   document.getElementById('btn-deploy').disabled = true;
 
   try {
-    var result = await EOS.post('/publish/api/deploy', {});
+    var result = await EOS.post('/publish/api/deploy', {site_id: activeSiteId});
     if (result.error) {
       logEl.textContent += 'ERROR: ' + result.error + '\n';
       document.getElementById('toolbar-info').textContent = 'Deploy failed';
@@ -565,7 +565,7 @@ async function doDeployFirebase() {
   document.getElementById('btn-deploy-firebase').disabled = true;
 
   try {
-    var result = await EOS.post('/publish/api/deploy/firebase', {});
+    var result = await EOS.post('/publish/api/deploy/firebase', {site_id: activeSiteId});
     if (result.error) {
       logEl.textContent += 'ERROR: ' + result.error + '\n';
       document.getElementById('toolbar-info').textContent = 'Firebase deploy failed';
