@@ -2,6 +2,8 @@
 
 > **A mind companion. Think and create *with* you, not *for* you.**
 
+[Live demo](https://demo.binbian.net/?token=bLN9bRP-wMfBiaqsfI4OHuu3tGHtGsaeGsLk-8v71N8) · [Project site](https://eos.binbian.net) · [Blog](https://binbian.net)
+
 An AI-powered operating system built on human capabilities. Empty by default, infinite by design.
 
 ## What Is This
@@ -35,13 +37,9 @@ That's it. Open `localhost:9000` and you have a working OS with task management,
 
 ### Try the Demo
 
-**[Live demo → demo.binbian.net](https://demo.binbian.net/)**
+**[Open the live demo →](https://demo.binbian.net/?token=bLN9bRP-wMfBiaqsfI4OHuu3tGHtGsaeGsLk-8v71N8)**
 
-Access token (paste into the sign-in field):
-
-```
-bLN9bRP-wMfBiaqsfI4OHuu3tGHtGsaeGsLk-8v71N8
-```
+The link includes a one-click sign-in token (it's a public demo — don't put real data in it). If you'd rather paste it manually, the token is `bLN9bRP-wMfBiaqsfI4OHuu3tGHtGsaeGsLk-8v71N8`.
 
 The demo runs on a small VPS with a tiny local LLM (`qwen2.5:1.5b`) — fast enough to prove the system works, not enough for impressive output. Visitors who want gpt-4-class quality paste their own OpenAI key in **Settings → Demo → BYOK** (the key stays in browser storage, never touches the server).
 
