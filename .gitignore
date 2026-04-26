@@ -94,3 +94,6 @@ scripts/ask_openai_*.py
 # Scratch — screenshots, ad-hoc JSON, manual test artifacts
 _scratch/
 scratch/
+
+# Private one-off scripts (underscore prefix)
+scripts/_*.py

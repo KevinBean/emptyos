@@ -83,13 +83,3 @@ example = "journal entry: had a great walk this morning, feeling good"
 description = "Append a one-line entry to today's journal"
 args = { text = "string", mood = "string?" }
 always = true
-
-[[contributes.tour.step]]
-id = "journal.write"
-group = "core"
-priority = 300
-route = "/journal/"
-spotlight = "#entry-text"
-title = "Write today's journal"
-body = "One paragraph, however you want it. The system will surface it in the briefing tomorrow and quietly weave it into related notes."
-requires = ["read", "write"]

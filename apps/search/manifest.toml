@@ -36,12 +36,3 @@ schema = [
 commands = [
     {slash = "/search", method = "_search", arg = "query"},
 ]
-
-[[contributes.tour.step]]
-id = "search.try"
-group = "core"
-priority = 350
-route = "/hub/"
-spotlight = ".eos-search-input"
-title = "Search across everything"
-body = "Type into the bar above. Results split into <strong>Apps</strong> (instant filter on installed apps), <strong>Notes</strong> (debounced vault search), and <strong>Other</strong> (full-search link). Try <code>arvo</code> to find the music library entry, or <code>kingfisher</code> to find a journal note."

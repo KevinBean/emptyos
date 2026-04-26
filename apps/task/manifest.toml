@@ -107,13 +107,3 @@ card = "task-list"
 [[contributes.voice-assistant.narration]]
 intent = "task.add"
 method = "narrate_after_add"
-
-[[contributes.tour.step]]
-id = "task.capture"
-group = "core"
-priority = 200
-route = "/task/"
-spotlight = "#add-text"
-title = "Capture a task"
-body = "Type a thought, hit Enter — it lands in your inbox. Tag it (e.g. <code>#dev</code>) to route to a specific project."
-requires = ["read", "write"]
