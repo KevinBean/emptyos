@@ -1,0 +1,790 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>Dictionary - EmptyOS</title>
+<link rel="stylesheet" href="/static/theme.css">
+<link rel="stylesheet" href="/static/eos-components.css">
+<style>
+* { margin:0; padding:0; box-sizing:border-box }
+body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif; background:var(--bg); color:var(--text); min-height:100dvh; padding:env(safe-area-inset-top) 16px calc(env(safe-area-inset-bottom) + 80px); -webkit-font-smoothing:antialiased; overscroll-behavior-y:contain }
+
+/* Hero */
+.dict-hero { padding:32px 0 8px; animation:fadeDown 0.4s ease }
+.dict-hero h1 { font-size:28px; font-weight:700; color:var(--text-heading); margin-bottom:4px }
+.dict-hero .desc { font-size:14px; color:var(--text-secondary) }
+
+/* Tabs override */
+.eos-tabs { margin-bottom:16px; animation:fadeDown 0.4s ease 0.05s both }
+
+/* Search area */
+.lookup-wrap { position:relative; margin-bottom:16px; animation:fadeDown 0.4s ease 0.1s both }
+.lookup-icon { position:absolute; left:16px; top:50%; transform:translateY(-50%); font-size:20px; color:var(--text-muted); pointer-events:none; transition:color 0.2s }
+.lookup-wrap:focus-within .lookup-icon { color:var(--accent) }
+.lookup-input { width:100%; font-size:18px; padding:16px 90px 16px 48px; background:var(--bg-card); border:1.5px solid var(--border); border-radius:14px; color:var(--text); outline:none; font-family:inherit; transition:border-color 0.2s,box-shadow 0.2s }
+.lookup-input:focus { border-color:color-mix(in srgb,var(--accent) 60%,transparent); box-shadow:0 0 0 4px color-mix(in srgb,var(--accent) 10%,transparent) }
+.lookup-input::placeholder { color:var(--text-muted) }
+.lookup-btn { position:absolute; right:8px; top:50%; transform:translateY(-50%); padding:8px 16px; background:var(--accent); color: var(--accent-ink); border:none; border-radius:8px; font-size:14px; font-weight:600; cursor:pointer; transition:transform 0.1s }
+.lookup-btn:active { transform:translateY(-50%) scale(0.95) }
+.lookup-btn:disabled { opacity:0.5; pointer-events:none }
+
+/* Autocomplete */
+.ac-dropdown { position:absolute; top:calc(100% + 4px); left:0; right:0; background:var(--bg-card); border:1px solid var(--border); border-radius:14px; z-index:50; overflow:hidden; display:none; box-shadow:0 8px 24px rgba(0,0,0,0.12) }
+.ac-dropdown.show { display:block }
+.ac-item { padding:12px 16px; font-size:14px; color:var(--text); cursor:pointer; transition:background 0.1s }
+.ac-item:hover, .ac-item.active { background:color-mix(in srgb,var(--accent) 10%,var(--bg-card)); color:var(--accent) }
+
+/* Result card */
+.result-card { background:var(--bg-card); border:1px solid var(--border); border-radius:14px; padding:24px; margin-bottom:16px; animation:cardIn 0.35s ease both }
+.result-word { font-size:24px; font-weight:700; color:var(--text-heading); display:flex; align-items:center; gap:12px; flex-wrap:wrap }
+.result-phonetic { font-size:14px; color:var(--text-muted); font-weight:400 }
+.result-pos { display:inline-block; background:color-mix(in srgb,var(--accent) 15%,var(--bg)); padding:4px 12px; border-radius:6px; font-size:12px; font-weight:600; color:var(--accent); margin-top:8px }
+.result-section { margin-top:16px }
+.result-label { font-size:11px; font-weight:700; color:var(--text-secondary); text-transform:uppercase; letter-spacing:0.6px; margin-bottom:4px }
+.result-text { font-size:15px; line-height:1.6; color:var(--text) }
+.result-example { font-style:italic; color:var(--text-secondary); border-left:3px solid var(--accent); padding-left:12px; margin-top:4px }
+.result-tags { display:flex; flex-wrap:wrap; gap:8px; margin-top:4px }
+.result-tag { background:var(--bg); border:1px solid var(--border); border-radius:6px; padding:4px 8px; font-size:12px; color:var(--text-secondary) }
+.result-chinese { font-size:16px; color:var(--text-heading); margin-top:2px }
+.result-actions { display:flex; gap:8px; margin-top:16px; flex-wrap:wrap }
+.save-btn { padding:12px 24px; background:var(--accent); color: var(--accent-ink); border:none; border-radius:8px; font-size:14px; font-weight:600; cursor:pointer; transition:transform 0.1s; display:flex; align-items:center; gap:8px }
+.save-btn:active { transform:scale(0.95) }
+.save-btn:disabled { opacity:0.5; pointer-events:none }
+.saved-badge { display:inline-flex; align-items:center; gap:4px; background:color-mix(in srgb,var(--success) 15%,var(--bg)); color:var(--success); padding:8px 12px; border-radius:8px; font-size:13px; font-weight:600 }
+.examples-btn { padding:12px 16px; background:var(--bg); border:1px solid var(--border); color:var(--text); border-radius:8px; font-size:14px; font-weight:500; cursor:pointer; transition:all 0.15s }
+.examples-btn:active { transform:scale(0.95); border-color:var(--accent) }
+.pronounce-btn { background:var(--bg); border:1px solid var(--border); color:var(--text); border-radius:50%; width:36px; height:36px; display:inline-flex; align-items:center; justify-content:center; font-size:18px; cursor:pointer; padding:0; transition:all 0.15s }
+.pronounce-btn:hover { border-color:var(--accent); color:var(--accent) }
+.pronounce-btn:active { transform:scale(0.9) }
+.pronounce-btn.playing { border-color:var(--accent); color:var(--accent); animation:pulse 1s ease infinite }
+.pronounce-btn.disabled { opacity:0.35; cursor:default }
+.pronounce-btn-small { width:28px; height:28px; font-size:14px }
+
+/* Etymology block */
+.etymology-block { background:var(--bg); border:1px solid var(--border); border-radius:8px; padding:12px; margin-top:8px; font-size:13px; line-height:1.5; color:var(--text-secondary) }
+
+/* Extra examples */
+.extra-examples { margin-top:12px; background:var(--bg); border:1px solid var(--border); border-radius:8px; padding:12px; animation:cardIn 0.25s ease both }
+.extra-examples li { margin:8px 0; font-size:14px; line-height:1.5; color:var(--text) }
+
+/* Loading */
+.loading-pulse { text-align:center; padding:40px; color:var(--text-muted); font-size:14px; animation:pulse 1.5s ease infinite }
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+
+/* Vocab list */
+.vocab-stats { margin-bottom:16px }
+.vocab-list { display:flex; flex-direction:column; gap:8px }
+.vocab-item { background:var(--bg-card); border:1px solid var(--border); border-radius:14px; padding:16px 16px; cursor:pointer; transition:border-color 0.15s; animation:cardIn 0.35s ease both }
+.vocab-item:hover { border-color:color-mix(in srgb,var(--accent) 40%,var(--border)) }
+.vocab-header { display:flex; align-items:center; gap:12px }
+.vocab-word { font-size:16px; font-weight:600; color:var(--text-heading); flex:1 }
+.vocab-star { background:none; border:none; font-size:18px; cursor:pointer; padding:2px; transition:transform 0.15s }
+.vocab-star:active { transform:scale(1.3) }
+.vocab-level { display:flex; gap:4px; align-items:center }
+.level-dot { width:8px; height:8px; border-radius:50%; background:var(--border); transition:background 0.2s }
+.level-dot.filled { background:var(--accent) }
+.level-dot.mastered { background:var(--success) }
+.vocab-meta { display:flex; gap:12px; margin-top:8px; font-size:12px; color:var(--text-muted) }
+.vocab-detail { padding:12px 0 0; border-top:1px solid var(--border); margin-top:12px; display:none; animation:fadeDown 0.2s ease }
+.vocab-detail.show { display:block }
+.vocab-delete { padding:8px 12px; background:none; border:1px solid color-mix(in srgb,red 40%,var(--border)); color:color-mix(in srgb,red 70%,var(--text)); border-radius:8px; font-size:12px; cursor:pointer; margin-top:8px; transition:all 0.15s }
+.vocab-delete:hover { background:color-mix(in srgb,red 10%,var(--bg)); border-color:red }
+.vocab-empty { text-align:center; padding:60px 24px; color:var(--text-muted); font-size:15px }
+
+/* SRS Review */
+.srs-progress { display:flex; align-items:center; gap:12px; margin-bottom:16px; font-size:13px; color:var(--text-secondary); animation:fadeDown 0.3s ease }
+.srs-bar { flex:1; height:6px; background:var(--border); border-radius:4px; overflow:hidden }
+.srs-bar-fill { height:100%; background:var(--accent); border-radius:4px; transition:width 0.3s ease }
+.flashcard { background:var(--bg-card); border:1px solid var(--border); border-radius:14px; padding:32px 24px; text-align:center; min-height:260px; display:flex; flex-direction:column; align-items:center; justify-content:center; animation:cardIn 0.35s ease both; position:relative }
+.flashcard-word { font-size:32px; font-weight:700; color:var(--text-heading); margin-bottom:8px }
+.flashcard-hint { font-size:13px; color:var(--text-muted); margin-top:12px }
+.flashcard-reveal { margin-top:16px; text-align:left; width:100%; animation:fadeDown 0.25s ease }
+.flashcard-def { font-size:16px; line-height:1.6; color:var(--text); margin-bottom:8px }
+.flashcard-chinese { font-size:15px; color:var(--text-secondary) }
+.flashcard-example { font-size:14px; font-style:italic; color:var(--text-muted); margin-top:8px; border-left:3px solid var(--accent); padding-left:12px }
+.reveal-btn { padding:12px 32px; background:var(--accent); color: var(--accent-ink); border:none; border-radius:8px; font-size:15px; font-weight:600; cursor:pointer; margin-top:16px; transition:transform 0.1s }
+.reveal-btn:active { transform:scale(0.95) }
+.rating-row { display:flex; gap:8px; margin-top:24px; justify-content:center; flex-wrap:wrap }
+.rate-btn { padding:12px 16px; border-radius:8px; font-size:13px; font-weight:600; cursor:pointer; transition:all 0.15s; border:1.5px solid var(--border); background:var(--bg-card); color:var(--text) }
+.rate-btn:active { transform:scale(0.93) }
+.rate-btn[data-q="1"] { border-color:color-mix(in srgb,red 40%,var(--border)); color:color-mix(in srgb,red 60%,var(--text)) }
+.rate-btn[data-q="1"]:hover { background:color-mix(in srgb,red 8%,var(--bg-card)) }
+.rate-btn[data-q="2"] { border-color:color-mix(in srgb,orange 40%,var(--border)); color:color-mix(in srgb,orange 60%,var(--text)) }
+.rate-btn[data-q="2"]:hover { background:color-mix(in srgb,orange 8%,var(--bg-card)) }
+.rate-btn[data-q="3"] { border-color:color-mix(in srgb,var(--accent) 40%,var(--border)); color:var(--accent) }
+.rate-btn[data-q="3"]:hover { background:color-mix(in srgb,var(--accent) 8%,var(--bg-card)) }
+.rate-btn[data-q="4"] { border-color:color-mix(in srgb,var(--success) 40%,var(--border)); color:var(--success) }
+.rate-btn[data-q="4"]:hover { background:color-mix(in srgb,var(--success) 8%,var(--bg-card)) }
+.rate-key { display:inline-block; background:var(--bg); border:1px solid var(--border); border-radius:4px; padding:2px 4px; font-size:11px; margin-left:4px; font-family:var(--mono) }
+.srs-done { text-align:center; padding:48px 24px; animation:cardIn 0.35s ease both }
+.srs-done h2 { font-size:22px; color:var(--text-heading); margin-bottom:8px }
+.srs-done p { font-size:15px; color:var(--text-secondary); margin-bottom:4px }
+.srs-empty { text-align:center; padding:60px 24px; color:var(--text-muted) }
+.srs-empty p { font-size:15px; margin-bottom:12px }
+
+/* Quiz */
+.quiz-progress { font-size:13px; color:var(--text-secondary); margin-bottom:12px; animation:fadeDown 0.3s }
+.quiz-question { background:var(--bg-card); border:1px solid var(--border); border-radius:14px; padding:24px 24px; margin-bottom:16px; animation:cardIn 0.35s ease both }
+.quiz-prompt { font-size:16px; line-height:1.5; color:var(--text); margin-bottom:8px }
+.quiz-chinese { font-size:14px; color:var(--text-secondary); margin-bottom:16px }
+.quiz-options { display:flex; flex-direction:column; gap:8px }
+.quiz-opt { padding:16px 16px; background:var(--bg); border:1.5px solid var(--border); border-radius:8px; font-size:15px; color:var(--text); cursor:pointer; transition:all 0.15s; text-align:left }
+.quiz-opt:hover { border-color:color-mix(in srgb,var(--accent) 50%,var(--border)) }
+.quiz-opt:active { transform:scale(0.98) }
+.quiz-opt.correct { border-color:var(--success); background:color-mix(in srgb,var(--success) 10%,var(--bg)); color:var(--success); font-weight:600 }
+.quiz-opt.wrong { border-color:red; background:color-mix(in srgb,red 8%,var(--bg)); color:color-mix(in srgb,red 70%,var(--text)) }
+.quiz-opt.disabled { pointer-events:none }
+.quiz-next { margin-top:16px; padding:12px 24px; background:var(--accent); color: var(--accent-ink); border:none; border-radius:8px; font-size:14px; font-weight:600; cursor:pointer; display:none }
+.quiz-next:active { transform:scale(0.95) }
+.quiz-score { text-align:center; padding:48px 24px; animation:cardIn 0.35s ease both }
+.quiz-score h2 { font-size:22px; color:var(--text-heading); margin-bottom:8px }
+.quiz-score .big-score { font-size:64px; font-weight:800; color:var(--accent); margin:16px 0 }
+.quiz-score p { font-size:15px; color:var(--text-secondary) }
+.quiz-start { text-align:center; padding:48px 24px }
+.quiz-start p { font-size:15px; color:var(--text-secondary); margin-bottom:16px }
+.start-btn { padding:12px 32px; background:var(--accent); color: var(--accent-ink); border:none; border-radius:8px; font-size:15px; font-weight:600; cursor:pointer }
+.start-btn:active { transform:scale(0.95) }
+
+/* Word of day banner */
+.wotd-banner { background:var(--bg-card); border:1px solid var(--border); border-radius:14px; padding:16px 16px; margin-bottom:16px; display:flex; align-items:center; gap:12px; animation:cardIn 0.35s ease 0.15s both; cursor:pointer; transition:border-color 0.15s }
+.wotd-banner:hover { border-color:color-mix(in srgb,var(--accent) 40%,var(--border)) }
+.wotd-label { font-size:11px; font-weight:700; color:var(--accent); text-transform:uppercase; letter-spacing:0.5px }
+.wotd-word { font-size:16px; font-weight:600; color:var(--text-heading) }
+.wotd-def { font-size:13px; color:var(--text-secondary); flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
+
+@keyframes fadeDown { from{opacity:0;transform:translateY(-8px)} to{opacity:1;transform:none} }
+@keyframes cardIn { from{opacity:0;transform:translateY(12px)} to{opacity:1;transform:none} }
+</style>
+</head>
+<body>
+<script src="/static/realtime.js"></script>
+<script src="/static/eos.js"></script>
+<script src="/static/eos-components.js"></script>
+<script>EOS.nav('dictionary');
+if(window.EOS&&EOS.registerActions){EOS.registerActions({},[],{description:"Word lookup, vault storage, SRS flashcards and quizzes.",quickActions:[{label:"Due reviews",msg:"How many flashcards do I have due for review right now?"},{label:"Explain word",msg:"Explain the last word I looked up in simpler terms."},{label:"Weakest words",msg:"Which words am I struggling with most based on review history?"}]});}
+</script>
+
+<div class="page">
+    <div class="dict-hero" style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px">
+        <div>
+            <h1>Dictionary</h1>
+            <div class="desc">Look up words, build vocabulary, review with SRS</div>
+        </div>
+        <button class="btn-settings" onclick="openAppSettings()" title="Settings">&#9881; Settings</button>
+    </div>
+
+    <div id="wotd"></div>
+
+    <div class="eos-tabs">
+        <div class="eos-tab active" onclick="switchTab('lookup')">Lookup</div>
+        <div class="eos-tab" onclick="switchTab('vocab')">Vocabulary</div>
+        <div class="eos-tab" onclick="switchTab('review')">Review</div>
+        <div class="eos-tab" onclick="switchTab('quiz')">Quiz</div>
+    </div>
+
+    <div class="eos-tab-content active" id="tab-lookup">
+        <div class="lookup-wrap">
+            <span class="lookup-icon">&#128269;</span>
+            <input class="lookup-input" id="lookup-input" type="text" placeholder="Type a word..." autocomplete="off">
+            <button class="lookup-btn" id="lookup-btn" onclick="doLookup()">Look up</button>
+            <div class="ac-dropdown" id="ac-dropdown"></div>
+        </div>
+        <div id="lookup-result"></div>
+    </div>
+
+    <div class="eos-tab-content" id="tab-vocab">
+        <div class="vocab-stats" id="vocab-stats"></div>
+        <div id="vocab-list"></div>
+    </div>
+
+    <div class="eos-tab-content" id="tab-review">
+        <div id="review-area"></div>
+    </div>
+
+    <div class="eos-tab-content" id="tab-quiz">
+        <div id="quiz-area"></div>
+    </div>
+</div>
+
+<script>
+var esc = EOS_UI.esc;
+var TABS = ['lookup','vocab','review','quiz'];
+var currentResult = null;
+var acTimer = null;
+var acIdx = -1;
+var _pronounceCache = {};
+var _currentAudio = null;
+
+// ── Pronunciation ──
+function pronounce(word, btn) {
+    if (!word) return;
+    if (btn && btn.classList.contains('disabled')) return;
+    // Stop any currently playing audio
+    if (_currentAudio) { try { _currentAudio.pause(); } catch(e){} _currentAudio = null; }
+    document.querySelectorAll('.pronounce-btn.playing').forEach(function(b){ b.classList.remove('playing'); });
+
+    function play(url) {
+        var audio = new Audio(url);
+        _currentAudio = audio;
+        if (btn) btn.classList.add('playing');
+        audio.onended = function() { if (btn) btn.classList.remove('playing'); _currentAudio = null; };
+        audio.onerror = function() {
+            if (btn) btn.classList.remove('playing');
+            _currentAudio = null;
+            EOS_UI.toast('Playback failed');
+        };
+        audio.play().catch(function() {
+            if (btn) btn.classList.remove('playing');
+            _currentAudio = null;
+            EOS_UI.toast('Playback blocked');
+        });
+    }
+
+    if (_pronounceCache[word]) { play(_pronounceCache[word]); return; }
+
+    if (btn) btn.classList.add('playing');
+    EOS.api('/dictionary/api/pronounce/' + encodeURIComponent(word)).then(function(d) {
+        if (btn) btn.classList.remove('playing');
+        if (!d || d.status !== 'ok' || !d.audio_url) {
+            if (btn) btn.classList.add('disabled');
+            EOS_UI.toast('Pronunciation unavailable — voice service offline');
+            return;
+        }
+        _pronounceCache[word] = d.audio_url;
+        play(d.audio_url);
+    }).catch(function() {
+        if (btn) btn.classList.remove('playing');
+        EOS_UI.toast('Pronunciation failed');
+    });
+}
+
+// ── Tabs ──
+function switchTab(name) {
+    TABS.forEach(function(t, i) {
+        document.querySelectorAll('.eos-tab')[i].classList.toggle('active', t === name);
+        document.getElementById('tab-' + t).classList.toggle('active', t === name);
+    });
+    if (name === 'vocab') loadVocab();
+    if (name === 'review') loadReview();
+    if (name === 'quiz') showQuizStart();
+}
+
+// ── Word of the Day ──
+function loadWotd() {
+    EOS.api('/dictionary/api/word-of-day').then(function(d) {
+        if (!d || !d.word) return;
+        var el = document.getElementById('wotd');
+        el.innerHTML = '<div class="wotd-banner" onclick="lookupWord(\'' + esc(d.word).replace(/'/g, "\\'") + '\')">' +
+            '<div><div class="wotd-label">Word of the Day</div><div class="wotd-word">' + esc(d.word) + '</div></div>' +
+            '<div class="wotd-def">' + esc(d.definition || '') + '</div>' +
+            '</div>';
+    });
+}
+
+// ── Autocomplete ──
+var inputEl = document.getElementById('lookup-input');
+var acEl = document.getElementById('ac-dropdown');
+
+inputEl.addEventListener('input', function() {
+    clearTimeout(acTimer);
+    var q = inputEl.value.trim();
+    if (q.length < 2) { hideAc(); return; }
+    acTimer = setTimeout(function() { fetchSuggestions(q); }, 250);
+});
+
+inputEl.addEventListener('keydown', function(e) {
+    var items = acEl.querySelectorAll('.ac-item');
+    if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        acIdx = Math.min(acIdx + 1, items.length - 1);
+        updateAcHighlight(items);
+    } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        acIdx = Math.max(acIdx - 1, 0);
+        updateAcHighlight(items);
+    } else if (e.key === 'Enter') {
+        e.preventDefault();
+        if (acIdx >= 0 && items[acIdx]) {
+            inputEl.value = items[acIdx].textContent;
+            hideAc();
+        }
+        doLookup();
+    } else if (e.key === 'Escape') {
+        hideAc();
+    }
+});
+
+function fetchSuggestions(q) {
+    EOS.api('/dictionary/api/suggest?q=' + encodeURIComponent(q)).then(function(d) {
+        if (!d || !d.suggestions || !d.suggestions.length) { hideAc(); return; }
+        acIdx = -1;
+        acEl.innerHTML = d.suggestions.slice(0, 8).map(function(s) {
+            return '<div class="ac-item" onmousedown="pickAc(\'' + esc(s).replace(/'/g, "\\'") + '\')">' + esc(s) + '</div>';
+        }).join('');
+        acEl.classList.add('show');
+    });
+}
+
+function pickAc(word) {
+    inputEl.value = word;
+    hideAc();
+    doLookup();
+}
+
+function updateAcHighlight(items) {
+    for (var i = 0; i < items.length; i++) {
+        items[i].classList.toggle('active', i === acIdx);
+    }
+}
+
+function hideAc() { acEl.classList.remove('show'); acIdx = -1; }
+
+document.addEventListener('click', function(e) {
+    if (!acEl.contains(e.target) && e.target !== inputEl) hideAc();
+});
+
+// ── Lookup ──
+function lookupWord(w) {
+    inputEl.value = w;
+    switchTab('lookup');
+    doLookup();
+}
+
+function doLookup(fresh) {
+    var word = (fresh && currentResult) ? currentResult.word : inputEl.value.trim();
+    if (!word) return;
+    hideAc();
+    var container = document.getElementById('lookup-result');
+    container.innerHTML = '<div class="loading-pulse">' + (fresh ? 'Refreshing "' : 'Looking up "') + esc(word) + '"...</div>';
+    document.getElementById('lookup-btn').disabled = true;
+
+    var url = '/dictionary/api/lookup?word=' + encodeURIComponent(word) + (fresh ? '&fresh=1' : '');
+    EOS.api(url).then(function(d) {
+        document.getElementById('lookup-btn').disabled = false;
+        if (!d || !d.word) {
+            container.innerHTML = '<div class="loading-pulse" style="animation:none">No result found. Check spelling?</div>';
+            return;
+        }
+        currentResult = d;
+        renderResult(d, container);
+    }).catch(function() {
+        document.getElementById('lookup-btn').disabled = false;
+        container.innerHTML = '<div class="loading-pulse" style="animation:none">Lookup failed. Try again.</div>';
+    });
+}
+
+function renderResult(d, container) {
+    var syns = (d.synonyms || []);
+    var ants = (d.antonyms || []);
+    var wordSafe = esc(d.word).replace(/'/g, "\\'");
+    var actionHtml = d.from_vault
+        ? '<span class="saved-badge" id="save-btn">&#10003; Saved</span>' +
+          '<button class="examples-btn" onclick="doLookup(true)" title="Force a fresh AI lookup">&#8635; Refresh with AI</button>' +
+          '<button class="examples-btn" onclick="loadExamples(\'' + wordSafe + '\')">More Examples</button>'
+        : '<button class="save-btn" id="save-btn" onclick="saveWord()">&#128190; Save to Vault</button>' +
+          '<button class="examples-btn" onclick="loadExamples(\'' + wordSafe + '\')">More Examples</button>';
+
+    var provChip = (d.provenance && d.provenance.mode && window.EOS_UI && EOS_UI.provenance)
+        ? ' <span style="vertical-align:middle;margin-left:6px">' + EOS_UI.provenance(d.provenance) + '</span>'
+        : '';
+    var html = '<div class="result-card">' +
+        '<div class="result-word">' + esc(d.word) +
+        ' <button class="pronounce-btn" onclick="pronounce(\'' + wordSafe + '\',this)" title="Play pronunciation" aria-label="Play pronunciation">&#128266;</button>' +
+        (d.phonetic ? ' <span class="result-phonetic">' + esc(d.phonetic) + '</span>' : '') +
+        provChip +
+        '</div>' +
+        (d.part_of_speech ? '<div class="result-pos">' + esc(d.part_of_speech) + '</div>' : '') +
+        (d.chinese ? '<div class="result-section"><div class="result-label">Chinese</div><div class="result-chinese">' + esc(d.chinese) + '</div></div>' : '') +
+        '<div class="result-section"><div class="result-label">Definition</div><div class="result-text">' + esc(d.definition || '') + '</div></div>' +
+        (d.example ? '<div class="result-section"><div class="result-label">Example</div><div class="result-example">' + esc(d.example) + '</div></div>' : '') +
+        (syns.length ? '<div class="result-section"><div class="result-label">Synonyms</div><div class="result-tags">' + syns.map(function(s){ return '<span class="result-tag">' + esc(s) + '</span>'; }).join('') + '</div></div>' : '') +
+        (ants.length ? '<div class="result-section"><div class="result-label">Antonyms</div><div class="result-tags">' + ants.map(function(s){ return '<span class="result-tag">' + esc(s) + '</span>'; }).join('') + '</div></div>' : '') +
+        (d.etymology ? '<div class="result-section"><div class="result-label">Etymology</div><div class="etymology-block">' + esc(d.etymology) + '</div></div>' : '') +
+        (d.usage_notes ? '<div class="result-section"><div class="result-label">Usage Notes</div><div class="result-text">' + esc(d.usage_notes) + '</div></div>' : '') +
+        '<div class="result-actions" id="result-actions">' + actionHtml + '</div>' +
+        '<div id="extra-examples"></div>' +
+        '</div>';
+    container.innerHTML = html;
+
+    // Fetch SRS level and either upgrade the existing "Saved" badge or swap the Save button for one.
+    EOS.api('/dictionary/api/vault/' + encodeURIComponent(d.word)).then(function(r) {
+        if (!r || !r.word) return;
+        var btn = document.getElementById('save-btn');
+        if (!btn) return;
+        var lvl = r.srs ? (r.srs.level || 0) : 0;
+        if (btn.classList.contains('saved-badge')) {
+            btn.innerHTML = '&#10003; Saved (Level ' + lvl + ')';
+        } else {
+            btn.outerHTML = '<span class="saved-badge" id="save-btn">&#10003; Saved (Level ' + lvl + ')</span>';
+        }
+    }).catch(function(){});
+
+    // Fetch user-configured word addons (external sites) and append as buttons.
+    EOS.api('/dictionary/api/word-addons/' + encodeURIComponent(d.word)).then(function(r) {
+        if (!r || !r.addons || !r.addons.length) return;
+        var row = document.getElementById('result-actions');
+        if (!row) return;
+        r.addons.forEach(function(a) {
+            var btn = document.createElement('button');
+            btn.className = 'examples-btn';
+            btn.title = a.label;
+            btn.textContent = (a.icon ? a.icon + ' ' : '') + a.label;
+            btn.addEventListener('click', function() { window.open(a.url, '_blank', 'noopener'); });
+            row.appendChild(btn);
+        });
+    }).catch(function(){});
+}
+
+function saveWord() {
+    if (!currentResult) return;
+    var btn = document.getElementById('save-btn');
+    btn.disabled = true;
+    btn.innerHTML = 'Saving...';
+    EOS.post('/dictionary/api/save', currentResult).then(function() {
+        btn.outerHTML = '<span class="saved-badge">&#10003; Saved</span>';
+        EOS_UI.toast('Word saved to vault');
+    }).catch(function() {
+        btn.disabled = false;
+        btn.innerHTML = '&#128190; Save to Vault';
+        EOS_UI.toast('Failed to save');
+    });
+}
+
+function loadExamples(word) {
+    var el = document.getElementById('extra-examples');
+    if (!el) return;
+    el.innerHTML = '<div class="loading-pulse">Loading examples...</div>';
+    EOS.api('/dictionary/api/examples/' + encodeURIComponent(word)).then(function(d) {
+        if (!d || !d.examples || !d.examples.length) {
+            el.innerHTML = '';
+            return;
+        }
+        el.innerHTML = '<div class="extra-examples"><ul>' +
+            d.examples.map(function(ex) { return '<li>' + esc(ex) + '</li>'; }).join('') +
+            '</ul></div>';
+    }).catch(function() { el.innerHTML = ''; });
+}
+
+// ── Vocabulary Tab ──
+function loadVocab() {
+    EOS.api('/dictionary/api/srs/stats').then(function(stats) {
+        if (stats) {
+            EOS_UI.statCards('vocab-stats', [
+                { label: 'Total Words', value: stats.total_words || 0 },
+                { label: 'Mastered', value: stats.mastered || 0 },
+                { label: 'Learning', value: stats.learning || 0 },
+                { label: 'Due Today', value: stats.due_today || 0 }
+            ]);
+        }
+    });
+
+    var listEl = document.getElementById('vocab-list');
+    listEl.innerHTML = '<div class="loading-pulse">Loading vocabulary...</div>';
+
+    EOS.api('/dictionary/api/vault').then(function(d) {
+        if (!d || !d.words || !d.words.length) {
+            listEl.innerHTML = '<div class="vocab-empty">No saved words yet. Look up a word and save it!</div>';
+            return;
+        }
+        listEl.innerHTML = '<div class="vocab-list">' + d.words.map(function(w, idx) {
+            var dots = '';
+            for (var i = 0; i < 7; i++) {
+                var cls = i < (w.level || 0) ? ((w.level || 0) >= 7 ? 'mastered' : 'filled') : '';
+                dots += '<div class="level-dot ' + cls + '"></div>';
+            }
+            var star = w.favorite ? '&#9733;' : '&#9734;';
+            var review = w.next_review ? 'Review: ' + esc(w.next_review) : '';
+            return '<div class="vocab-item" style="animation-delay:' + (idx * 0.03) + 's">' +
+                '<div class="vocab-header" onclick="toggleVocabDetail(this)">' +
+                    '<span class="vocab-word">' + esc(w.word) + '</span>' +
+                    '<div class="vocab-level" title="Level ' + (w.level || 0) + '/7">' + dots + '</div>' +
+                    '<button class="vocab-star" onclick="event.stopPropagation();toggleFav(\'' + esc(w.word).replace(/'/g, "\\'") + '\',this)" title="Favorite">' + star + '</button>' +
+                '</div>' +
+                '<div class="vocab-meta">' +
+                    '<span>Level ' + (w.level || 0) + '</span>' +
+                    (w.streak ? '<span>Streak ' + w.streak + '</span>' : '') +
+                    (review ? '<span>' + esc(review) + '</span>' : '') +
+                '</div>' +
+                '<div class="vocab-detail" id="vd-' + idx + '"><div class="loading-pulse">Loading...</div></div>' +
+                '</div>';
+        }).join('') + '</div>';
+    }).catch(function() {
+        listEl.innerHTML = '<div class="vocab-empty">Failed to load vocabulary.</div>';
+    });
+}
+
+function toggleVocabDetail(headerEl) {
+    var item = headerEl.closest('.vocab-item');
+    var detail = item.querySelector('.vocab-detail');
+    if (detail.classList.contains('show')) {
+        detail.classList.remove('show');
+        return;
+    }
+    // Close others
+    document.querySelectorAll('.vocab-detail.show').forEach(function(d) { d.classList.remove('show'); });
+    detail.classList.add('show');
+
+    var word = item.querySelector('.vocab-word').textContent;
+    var wordSafe = esc(word).replace(/'/g, "\\'");
+    EOS.api('/dictionary/api/vault/' + encodeURIComponent(word)).then(function(d) {
+        if (!d) { detail.innerHTML = '<div>No details</div>'; return; }
+        var def = d.definition || '';
+        var chi = d.chinese || '';
+        var ex = d.example || '';
+        detail.innerHTML = '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">' +
+                '<button class="pronounce-btn pronounce-btn-small" onclick="pronounce(\'' + wordSafe + '\',this)" title="Play pronunciation" aria-label="Play pronunciation">&#128266;</button>' +
+                '<span style="font-size:13px;color:var(--text-muted)">Pronounce</span>' +
+            '</div>' +
+            (def ? '<div class="result-text">' + esc(def) + '</div>' : '<div class="result-text" style="color:var(--text-muted);font-style:italic">No definition saved. Look this word up again to repopulate.</div>') +
+            (chi ? '<div class="result-chinese" style="margin-top:6px">' + esc(chi) + '</div>' : '') +
+            (ex ? '<div class="result-example" style="margin-top:6px">' + esc(ex) + '</div>' : '') +
+            '<button class="vocab-delete" onclick="deleteWord(\'' + wordSafe + '\')">Delete</button>';
+    }).catch(function() {
+        detail.innerHTML = '<div>Failed to load details</div>';
+    });
+}
+
+function toggleFav(word, btn) {
+    EOS.post('/dictionary/api/favorite', { word: word }).then(function(d) {
+        btn.innerHTML = (d && d.favorite) ? '&#9733;' : '&#9734;';
+        EOS_UI.toast((d && d.favorite) ? 'Favorited' : 'Unfavorited');
+    });
+}
+
+function deleteWord(word) {
+    EOS_UI.confirm('Delete "' + word + '" from vocabulary?', function() {
+        EOS.api('/dictionary/api/vault/' + encodeURIComponent(word), { method: 'DELETE' }).then(function() {
+            EOS_UI.toast('Deleted "' + word + '"');
+            loadVocab();
+        }).catch(function() {
+            EOS_UI.toast('Failed to delete');
+        });
+    });
+}
+
+// ── SRS Review Tab ──
+var reviewDeck = [];
+var reviewIdx = 0;
+var reviewRevealed = false;
+var reviewResults = [];
+
+function loadReview() {
+    var area = document.getElementById('review-area');
+    area.innerHTML = '<div class="loading-pulse">Loading review deck...</div>';
+
+    EOS.api('/dictionary/api/srs/deck?limit=20').then(function(d) {
+        if (!d || !d.deck || !d.deck.length) {
+            area.innerHTML = '<div class="srs-empty">' +
+                '<p>No cards due for review!</p>' +
+                '<p style="font-size:13px;color:var(--text-muted)">' + (d && d.total_words ? d.total_words + ' words in collection' : 'Save some words first') + '</p>' +
+                '</div>';
+            return;
+        }
+        reviewDeck = d.deck;
+        reviewIdx = 0;
+        reviewRevealed = false;
+        reviewResults = [];
+        renderReviewCard();
+    }).catch(function() {
+        area.innerHTML = '<div class="srs-empty"><p>Failed to load review deck.</p></div>';
+    });
+}
+
+function renderReviewCard() {
+    var area = document.getElementById('review-area');
+    if (reviewIdx >= reviewDeck.length) {
+        renderReviewDone();
+        return;
+    }
+    var card = reviewDeck[reviewIdx];
+    var html = '<div class="srs-progress">' +
+        '<span>' + (reviewIdx + 1) + ' / ' + reviewDeck.length + '</span>' +
+        '<div class="srs-bar"><div class="srs-bar-fill" style="width:' + ((reviewIdx / reviewDeck.length) * 100) + '%"></div></div>' +
+        (card.level !== undefined ? '<span>Lv ' + card.level + '</span>' : '') +
+        '</div>' +
+        '<div class="flashcard">' +
+        '<div class="flashcard-word">' + esc(card.word) +
+            ' <button class="pronounce-btn pronounce-btn-small" onclick="pronounce(\'' + esc(card.word).replace(/'/g, "\\'") + '\',this)" title="Play pronunciation" aria-label="Play pronunciation">&#128266;</button>' +
+        '</div>' +
+        (card.new_word ? '<span class="result-pos" style="margin:0 auto">NEW</span>' : '') +
+        '<div id="card-reveal" style="display:none"></div>' +
+        '<button class="reveal-btn" id="reveal-btn" onclick="revealCard()">Show Definition</button>' +
+        '<div class="flashcard-hint">Press Space to reveal</div>' +
+        '</div>';
+    area.innerHTML = html;
+    reviewRevealed = false;
+
+    // Pre-fetch definition
+    EOS.api('/dictionary/api/vault/' + encodeURIComponent(card.word)).then(function(d) {
+        if (!d) return;
+        var def = d.definition || '';
+        var chi = d.chinese || '';
+        var ex = d.example || '';
+        var revEl = document.getElementById('card-reveal');
+        if (revEl) {
+            revEl.innerHTML = '<div class="flashcard-reveal">' +
+                '<div class="flashcard-def">' + esc(def) + '</div>' +
+                (chi ? '<div class="flashcard-chinese">' + esc(chi) + '</div>' : '') +
+                (ex ? '<div class="flashcard-example">' + esc(ex) + '</div>' : '') +
+                '</div>' +
+                '<div class="rating-row">' +
+                '<button class="rate-btn" data-q="1" onclick="rateCard(1)">Forgot <span class="rate-key">1</span></button>' +
+                '<button class="rate-btn" data-q="2" onclick="rateCard(2)">Hard <span class="rate-key">2</span></button>' +
+                '<button class="rate-btn" data-q="3" onclick="rateCard(3)">Good <span class="rate-key">3</span></button>' +
+                '<button class="rate-btn" data-q="4" onclick="rateCard(4)">Easy <span class="rate-key">4</span></button>' +
+                '</div>';
+        }
+    });
+}
+
+function revealCard() {
+    reviewRevealed = true;
+    var revEl = document.getElementById('card-reveal');
+    var btn = document.getElementById('reveal-btn');
+    if (revEl) revEl.style.display = 'block';
+    if (btn) btn.style.display = 'none';
+    var hint = document.querySelector('.flashcard-hint');
+    if (hint) hint.style.display = 'none';
+}
+
+function rateCard(quality) {
+    var card = reviewDeck[reviewIdx];
+    reviewResults.push({ word: card.word, quality: quality });
+    EOS.post('/dictionary/api/srs/review', { word: card.word, quality: quality });
+    reviewIdx++;
+    renderReviewCard();
+}
+
+function renderReviewDone() {
+    var area = document.getElementById('review-area');
+    var good = 0, total = reviewResults.length;
+    reviewResults.forEach(function(r) { if (r.quality >= 3) good++; });
+    area.innerHTML = '<div class="srs-done">' +
+        '<h2>Review Complete!</h2>' +
+        '<p>' + total + ' cards reviewed</p>' +
+        '<p style="font-size:18px;font-weight:700;color:var(--success);margin-top:12px">' + good + '/' + total + ' correct</p>' +
+        '<p style="margin-top:8px">' + (total - good) + ' to review again</p>' +
+        '<button class="start-btn" style="margin-top:20px" onclick="loadReview()">Review Again</button>' +
+        '</div>';
+}
+
+// Keyboard for SRS
+document.addEventListener('keydown', function(e) {
+    if (document.getElementById('tab-review').classList.contains('active') && reviewDeck.length > 0 && reviewIdx < reviewDeck.length) {
+        if (e.key === ' ' || e.key === 'Enter') {
+            e.preventDefault();
+            if (!reviewRevealed) revealCard();
+        } else if (reviewRevealed && e.key >= '1' && e.key <= '4') {
+            e.preventDefault();
+            rateCard(parseInt(e.key));
+        }
+    }
+});
+
+// ── Quiz Tab ──
+var quizQuestions = [];
+var quizIdx = 0;
+var quizScore = 0;
+var quizAnswered = false;
+
+function showQuizStart() {
+    var area = document.getElementById('quiz-area');
+    area.innerHTML = '<div class="quiz-start">' +
+        '<p>Test your vocabulary with a multiple-choice quiz.</p>' +
+        '<button class="start-btn" onclick="startQuiz()">Start Quiz (5 questions)</button>' +
+        '</div>';
+}
+
+function startQuiz() {
+    var area = document.getElementById('quiz-area');
+    area.innerHTML = '<div class="loading-pulse">Generating quiz...</div>';
+
+    EOS.api('/dictionary/api/quiz?count=5').then(function(d) {
+        if (!d || !d.questions || !d.questions.length) {
+            area.innerHTML = '<div class="quiz-start"><p>Not enough saved words for a quiz. Save at least 4 words first!</p>' +
+                '<button class="start-btn" style="margin-top:12px" onclick="switchTab(\'lookup\')">Go to Lookup</button></div>';
+            return;
+        }
+        quizQuestions = d.questions;
+        quizIdx = 0;
+        quizScore = 0;
+        renderQuizQuestion();
+    }).catch(function() {
+        area.innerHTML = '<div class="quiz-start"><p>Failed to generate quiz.</p><button class="start-btn" onclick="startQuiz()">Try Again</button></div>';
+    });
+}
+
+function renderQuizQuestion() {
+    var area = document.getElementById('quiz-area');
+    if (quizIdx >= quizQuestions.length) {
+        renderQuizScore();
+        return;
+    }
+    var q = quizQuestions[quizIdx];
+    quizAnswered = false;
+    var html = '<div class="quiz-progress">Question ' + (quizIdx + 1) + ' of ' + quizQuestions.length + '</div>' +
+        '<div class="quiz-question">' +
+        '<div class="quiz-prompt">' + esc(q.definition) + '</div>' +
+        (q.chinese ? '<div class="quiz-chinese">' + esc(q.chinese) + '</div>' : '') +
+        '<div class="quiz-options">' +
+        q.options.map(function(opt, i) {
+            return '<button class="quiz-opt" data-answer="' + esc(opt) + '" onclick="pickAnswer(this,\'' + esc(q.answer).replace(/'/g, "\\'") + '\')">' + esc(opt) + '</button>';
+        }).join('') +
+        '</div>' +
+        '<button class="quiz-next" id="quiz-next" onclick="nextQuizQuestion()">Next</button>' +
+        '</div>';
+    area.innerHTML = html;
+}
+
+function pickAnswer(btn, correct) {
+    if (quizAnswered) return;
+    quizAnswered = true;
+    var picked = btn.getAttribute('data-answer');
+    var isCorrect = picked === correct;
+    if (isCorrect) quizScore++;
+
+    var opts = document.querySelectorAll('.quiz-opt');
+    opts.forEach(function(o) {
+        o.classList.add('disabled');
+        if (o.getAttribute('data-answer') === correct) o.classList.add('correct');
+    });
+    if (!isCorrect) btn.classList.add('wrong');
+
+    document.getElementById('quiz-next').style.display = 'inline-block';
+}
+
+function nextQuizQuestion() {
+    quizIdx++;
+    renderQuizQuestion();
+}
+
+function renderQuizScore() {
+    var area = document.getElementById('quiz-area');
+    var pct = Math.round((quizScore / quizQuestions.length) * 100);
+    area.innerHTML = '<div class="quiz-score">' +
+        '<h2>Quiz Complete!</h2>' +
+        '<div class="big-score">' + pct + '%</div>' +
+        '<p>' + quizScore + ' out of ' + quizQuestions.length + ' correct</p>' +
+        '<button class="start-btn" style="margin-top:20px" onclick="startQuiz()">Play Again</button>' +
+        '</div>';
+}
+
+// ── App Settings slide-out (shared helper) ──
+var _appSettings = EOS_UI.settingsPanel({
+    id: 'app-settings-panel',
+    title: 'Dictionary Settings',
+    fields: [
+        {key: 'dictionary.srs_new_per_day', label: 'New SRS Words/Day', type: 'number', default: 5, min: 1,
+         hint: 'Max new flashcards introduced per review day.'},
+        {key: 'dictionary.quiz_count', label: 'Quiz Questions', type: 'number', default: 5, min: 1,
+         hint: 'Questions per quiz round.'},
+    ],
+});
+function openAppSettings() { _appSettings.open(); }
+
+// ── Init ──
+loadWotd();
+</script>
+</body>
+</html>

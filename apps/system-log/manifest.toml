@@ -1,0 +1,27 @@
+[app]
+id = "system-log"
+name = "System Log"
+version = "1.0.0"
+description = "System activity feed — all events in one place"
+dimensions = ["occupational"]
+
+[app.entry]
+module = "app"
+class = "SystemLogApp"
+
+[requires]
+capabilities = ["think"]
+
+[provides.cli]
+commands = ["syslog"]
+
+[provides.web]
+prefix = "/system-log"
+
+[provides.events]
+emits = ["system-log:feed_viewed"]
+
+[provides.assistant]
+commands = [
+    {slash = "/syslog", method = "summary"},
+]

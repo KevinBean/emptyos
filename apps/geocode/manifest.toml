@@ -1,0 +1,19 @@
+[app]
+id = "geocode"
+name = "Geocode"
+version = "1.0.0"
+description = "Address ↔ lat/lon lookup via OpenStreetMap Nominatim. Free, cached, rate-limited to honour public-service usage policy."
+dimensions = ["environmental"]
+
+[app.entry]
+module = "app"
+class = "GeocodeApp"
+
+[requires]
+capabilities = []
+
+[provides.web]
+prefix = "/geocode"
+
+[provides.events]
+emits = []

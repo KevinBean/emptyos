@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Web Analytics - EmptyOS</title>
+<link rel="stylesheet" href="/static/theme.css">
+<link rel="stylesheet" href="/static/eos-components.css">
+<style>
+.wa-controls { display:flex; gap:12px; align-items:center; flex-wrap:wrap; margin-bottom:16px; }
+.wa-controls select { padding:8px 12px; background:var(--bg-card); border:1px solid var(--border); color:var(--text); border-radius:8px; font-size:13px; }
+.wa-range { display:flex; gap:4px; }
+.wa-range button { padding:4px 12px; font-size:12px; border-radius:6px; cursor:pointer; background:var(--bg-card); border:1px solid var(--border); color:var(--text-secondary); }
+.wa-range button.active { background:color-mix(in srgb,var(--accent) 15%,transparent); color:var(--accent); border-color:var(--accent); }
+
+.wa-grid-2 { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+@media (max-width: 800px) { .wa-grid-2 { grid-template-columns:1fr; } }
+
+.wa-card { background:var(--bg-card); border:1px solid var(--border); border-radius:14px; padding:16px 16px; }
+.wa-card-title { font-size:12px; color:var(--text-secondary); text-transform:uppercase; letter-spacing:0.5px; margin-bottom:12px; }
+
+.wa-top { list-style:none; padding:0; margin:0; }
+.wa-top li { display:flex; justify-content:space-between; padding:8px 0; border-bottom:1px solid var(--border); font-size:13px; }
+.wa-top li:last-child { border-bottom:none; }
+.wa-top .k { color:var(--text); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:70%; }
+.wa-top .c { color:var(--accent); font-weight:600; font-variant-numeric:tabular-nums; }
+
+.wa-live { font-family:var(--mono, monospace); font-size:12px; }
+.wa-live-row { display:grid; grid-template-columns:70px 1fr 100px 30px; gap:8px; padding:4px 0; border-bottom:1px dashed var(--border); align-items:center; }
+.wa-live-ts { color:var(--text-muted); }
+.wa-live-path { color:var(--text); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.wa-live-ref { color:var(--text-secondary); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:11px; }
+.wa-live-cc { color:var(--text-muted); text-align:right; }
+
+.wa-empty { text-align:center; color:var(--text-muted); padding:40px 24px; font-size:14px; line-height:1.7; }
+.wa-empty code { background:var(--bg-card); padding:2px 8px; border-radius:4px; font-size:11px; }
+
+#wa-spark { height:80px; display:flex; align-items:center; justify-content:center; }
+#wa-spark svg { max-width:100%; }
+</style>
+</head>
+<body>
+<script src="/static/realtime.js"></script>
+<script src="/static/eos.js"></script>
+<script src="/static/eos-components.js"></script>
+<script>EOS.nav('web-analytics');</script>
+
+<div class="page">
+    <div class="eos-header">
+        <div>
+            <h1>Web Analytics</h1>
+            <div style="font-size:13px;color:var(--text-secondary);margin-top:2px">Pageviews for your published sites. No cookies, no fingerprinting.</div>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center">
+            <button class="eos-btn-sm eos-btn-ghost" onclick="excludeMe()" title="Stop counting hits from your current IP">Exclude my IP</button>
+            <button class="btn-settings" onclick="openAppSettings()" title="Settings">&#9881; Settings</button>
+        </div>
+    </div>
+
+    <div class="wa-controls">
+        <label style="font-size:13px;color:var(--text-secondary)">Site:</label>
+        <select id="wa-site" onchange="onSiteChange()"></select>
+        <div class="wa-range" id="wa-range">
+            <button data-r="7d">7d</button>
+            <button class="active" data-r="30d">30d</button>
+            <button data-r="90d">90d</button>
+            <button data-r="365d">1y</button>
+        </div>
+        <span id="wa-whoami" style="font-size:11px;color:var(--text-muted)"></span>
+        <span id="wa-updated" style="margin-left:auto;font-size:11px;color:var(--text-muted)"></span>
+    </div>
+
+    <div id="wa-content"></div>
+</div>
+
+<script>
+var _state = { site: '', range: '30d' };
+
+function esc(s) { return EOS_UI.esc(String(s == null ? '' : s)); }
+
+document.querySelectorAll('#wa-range button').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+        document.querySelectorAll('#wa-range button').forEach(function(b) { b.classList.remove('active'); });
+        btn.classList.add('active');
+        _state.range = btn.getAttribute('data-r');
+        load();
+    });
+});
+
+async function loadSites() {
+    try {
+        var r = await fetch('/web-analytics/api/sites').then(function(x){ return x.json(); });
+        var sel = document.getElementById('wa-site');
+        var opts = ['<option value="">All sites</option>'];
+        (r.sites || []).forEach(function(s) { opts.push('<option value="' + esc(s) + '">' + esc(s) + '</option>'); });
+        sel.innerHTML = opts.join('');
+        // Restore selection from hash (e.g. /web-analytics/#blog)
+        var hashSite = (location.hash || '').replace(/^#/, '').trim();
+        if (hashSite) { sel.value = decodeURIComponent(hashSite); }
+    } catch(e) {}
+}
+
+function onSiteChange() {
+    var site = document.getElementById('wa-site').value || '';
+    // Keep URL in sync so per-site views are bookmarkable
+    var newHash = site ? ('#' + encodeURIComponent(site)) : '';
+    if (location.hash !== newHash) {
+        history.replaceState(null, '', location.pathname + location.search + newHash);
+    }
+    load();
+}
+
+window.addEventListener('hashchange', function() {
+    var hashSite = (location.hash || '').replace(/^#/, '').trim();
+    var sel = document.getElementById('wa-site');
+    var decoded = decodeURIComponent(hashSite);
+    if (sel && sel.value !== decoded) {
+        sel.value = decoded;
+        load();
+    }
+});
+
+async function refreshWhoami() {
+    try {
+        var r = await fetch('/web-analytics/api/whoami').then(function(x){ return x.json(); });
+        var el = document.getElementById('wa-whoami');
+        if (!el) return;
+        var status = r.excluded_now ? ' (excluded)' : (r.is_local ? ' (local, dropped)' : '');
+        el.textContent = 'You: ' + (r.ip || 'unknown') + status;
+    } catch(e) {}
+}
+
+async function excludeMe() {
+    try {
+        var r = await fetch('/web-analytics/api/exclude-me', { method: 'POST' }).then(function(x){ return x.json(); });
+        if (r.error) { EOS_UI.toast(r.error, false); return; }
+        if (r.status === 'already_excluded') {
+            EOS_UI.toast(r.ip + ' already excluded', true);
+        } else {
+            EOS_UI.toast('Excluded ' + r.ip, true);
+        }
+        refreshWhoami();
+    } catch(e) {
+        EOS_UI.toast('Failed to exclude', false);
+    }
+}
+
+function renderEmpty() {
+    document.getElementById('wa-content').innerHTML = '<div class="wa-empty">' +
+        'No hits yet. Enable analytics for a site in the <a href="/publish/" style="color:var(--accent)">Publish</a> app, rebuild, and visit a page — hits appear here within seconds.' +
+        '<br><br>Test manually: <code>curl -X POST http://localhost:9000/web-analytics/api/collect -d \'{"site":"test","path":"/"}\'</code>' +
+        '</div>';
+}
+
+function renderStats(s, live) {
+    if (!s.total) { renderEmpty(); return; }
+    var sparkVals = s.series.map(function(p) { return p.count; });
+    var topList = function(items, emptyMsg) {
+        if (!items || !items.length) return '<div style="color:var(--text-muted);font-size:12px">' + emptyMsg + '</div>';
+        return '<ul class="wa-top">' + items.map(function(r) {
+            return '<li><span class="k" title="' + esc(r.key) + '">' + esc(r.key || '—') + '</span><span class="c">' + r.count + '</span></li>';
+        }).join('') + '</ul>';
+    };
+    var liveRows = (live.hits || []).slice(0, 30).map(function(h) {
+        var t = (h.ts || '').slice(11, 19);
+        var label = h.site ? (h.site + ' · ' + h.path) : h.path;
+        return '<div class="wa-live-row">' +
+            '<span class="wa-live-ts">' + esc(t) + '</span>' +
+            '<span class="wa-live-path">' + esc(label) + '</span>' +
+            '<span class="wa-live-ref">' + esc(h.referrer || 'direct') + '</span>' +
+            '<span class="wa-live-cc">' + esc(h.country) + '</span>' +
+        '</div>';
+    }).join('') || EOS_UI.emptyState({message:'No recent hits'});
+
+    document.getElementById('wa-content').innerHTML =
+        '<div id="wa-stats" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px"></div>' +
+        '<div class="wa-card" style="margin-top:16px"><div class="wa-card-title">Daily views</div>' +
+        '<div id="wa-spark"></div></div>' +
+        '<div class="wa-grid-2" style="margin-top:16px">' +
+            '<div class="wa-card"><div class="wa-card-title">Top paths</div>' + topList(s.top_paths, 'No paths yet') + '</div>' +
+            '<div class="wa-card"><div class="wa-card-title">Top referrers</div>' + topList(s.top_referrers, 'No referrers — most visits are direct') + '</div>' +
+        '</div>' +
+        '<div class="wa-grid-2" style="margin-top:16px">' +
+            '<div class="wa-card"><div class="wa-card-title">Top countries</div>' + topList(s.top_countries, 'No country data yet (needs Cloudflare Worker for accurate geo)') + '</div>' +
+            '<div class="wa-card"><div class="wa-card-title">Live tail</div><div class="wa-live">' + liveRows + '</div></div>' +
+        '</div>';
+
+    setTimeout(function() {
+        EOS_UI.statCards('wa-stats', [
+            { label: 'Pageviews (' + s.range + ')', value: s.total },
+            { label: 'Unique sessions', value: s.unique_sessions },
+            { label: 'Top path', value: (s.top_paths[0] && s.top_paths[0].key) || '—' },
+            { label: 'Top referrer', value: (s.top_referrers[0] && s.top_referrers[0].key) || '—' },
+        ]);
+        EOS_UI.sparkline('wa-spark', sparkVals, { height: 80, fill: true });
+    }, 10);
+}
+
+async function load() {
+    _state.site = document.getElementById('wa-site').value || '';
+    var q = '?range=' + encodeURIComponent(_state.range);
+    if (_state.site) q += '&site=' + encodeURIComponent(_state.site);
+    try {
+        var [stats, live] = await Promise.all([
+            fetch('/web-analytics/api/stats' + q).then(function(x){ return x.json(); }),
+            fetch('/web-analytics/api/live' + (_state.site ? '?site=' + encodeURIComponent(_state.site) : '')).then(function(x){ return x.json(); }),
+        ]);
+        renderStats(stats, live);
+        document.getElementById('wa-updated').textContent = 'Updated ' + new Date().toLocaleTimeString();
+    } catch(e) {
+        document.getElementById('wa-content').innerHTML = '<div class="wa-empty">Failed to load — is the server running?</div>';
+    }
+}
+
+setInterval(load, 10000);
+
+var _appSettings = EOS_UI.settingsPanel({
+    id: 'app-settings-panel',
+    title: 'Web Analytics Settings',
+    fields: [
+        { key: 'web-analytics.enabled', label: 'Enable collector', type: 'boolean', default: true,
+          hint: 'Accept beacon hits from published sites.' },
+        { key: 'web-analytics.collector_url', label: 'Public collector URL', type: 'text',
+          default: 'http://localhost:9000/web-analytics/api/collect',
+          hint: 'Where published sites POST beacons. Override with your Cloudflare Worker or tunnel URL.' },
+        { key: 'web-analytics.retention_days', label: 'Retention (days)', type: 'number', default: 365,
+          hint: 'Delete hits older than this.' },
+        { key: 'web-analytics.drop_local', label: 'Drop localhost hits', type: 'boolean', default: true,
+          hint: 'Ignore beacons from 127.0.0.1 / 192.168.* during local preview.' },
+        { key: 'web-analytics.excluded_ips', label: 'Excluded IPs / CIDR ranges', type: 'textarea', default: '',
+          hint: "Comma- or newline-separated. e.g. '1.2.3.4, 10.0.0.0/8'. Use the 'Exclude my IP' button above to auto-append your current IP." },
+    ],
+});
+function openAppSettings() { _appSettings.open(); }
+
+loadSites().then(load).then(refreshWhoami);
+setInterval(refreshWhoami, 30000);
+</script>
+</body>
+</html>

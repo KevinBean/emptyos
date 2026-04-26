@@ -1,0 +1,19 @@
+[app]
+id = "routing"
+name = "Routing"
+version = "1.0.0"
+description = "Multi-stop route planning via OSRM. Free, cached, rate-limited. Pairs with geocode + EOS_MAP for trip planning from vault data."
+dimensions = ["environmental"]
+
+[app.entry]
+module = "app"
+class = "RoutingApp"
+
+[requires]
+capabilities = []
+
+[provides.web]
+prefix = "/routing"
+
+[provides.events]
+emits = ["routing:planned"]

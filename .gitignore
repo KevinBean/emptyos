@@ -1,0 +1,96 @@
+emptyos.toml
+!demo/emptyos.toml
+.claude/vault-connection.json
+.claude/settings.local.json
+.claude/scheduled_tasks.lock
+data/
+services/voice-api/models/
+__pycache__/
+*.pyc
+*.egg-info/
+dist/
+build/
+.venv/
+.DS_Store
+.obsidian/
+
+# Local binaries / outputs that should never enter the public source repo
+caddy.exe
+results/
+
+# Scratch / experimental apps (not for public)
+apps/test-app/
+.playwright-mcp/
+*.wav
+
+# Personal apps & engines (not shipped with core OS)
+apps/personal/
+engines/personal/
+tests/personal/
+
+# Personal skills (contain PII — names, paths, career data)
+skills/life-strategic-advisor/
+skills/life-job-evaluator/
+skills/creative-mv-generator/
+skills/dev-claude-md-optimizer/
+skills/tool-icon-creator/
+# Skill runtime artifacts
+skills/**/.env
+skills/**/cache.json
+skills/**/usage.json
+skills/**/*-memory.md
+
+# Screenshots (dev testing artifacts)
+test-*.png
+verify-*.png
+topology-*.png
+final-*.png
+
+# Machine-generated launchers + log files (contain personal paths)
+boot.vbs
+*.log
+
+
+# Loose screenshots in repo root (transient)
+/portfolio-*.png
+/rating-*.png
+/learnings-*.png
+/confirm-modal.png
+/publish-*.png
+/mode-*.png
+/model-bench-*.png
+/chip-*.png
+/debug-*.png
+/favicon-preview*.png
+/hub-v*.png
+/new-hub*.png
+/old-hub*.png
+/pinned-*.png
+/review-*.png
+/smart-bar-*.png
+/final-hub.png
+
+# Playwright snapshot dumps
+rating-snapshot.yml
+
+# Local scratch dir for dogfood runs, one-off drivers, transcripts
+/tmp/
+/.tmp/
+/.tmp-*.json
+
+# Stale root-level duplicates of emptyos/ — accidental scratch
+/__init__.py
+/__main__.py
+/capabilities/
+/cli/
+/kernel/
+/runtime/
+/sdk/
+/web/
+
+# Personal one-shot scripts (contain personal data — career, finances)
+scripts/ask_openai_*.py
+
+# Scratch — screenshots, ad-hoc JSON, manual test artifacts
+_scratch/
+scratch/

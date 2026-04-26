@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Music Library — EmptyOS</title>
+<link rel="stylesheet" href="/static/theme.css">
+<link rel="stylesheet" href="/static/eos-components.css">
+<style>
+.ml-wrap { max-width: 1100px; margin: 0 auto; padding: 24px 20px 96px; }
+.ml-header { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; margin-bottom: 18px; flex-wrap: wrap; }
+.ml-title { font-size: 24px; font-weight: 600; letter-spacing: -0.01em; }
+.ml-meta { font-size: 13px; color: var(--text-muted); }
+.ml-toolbar { display: flex; gap: 10px; align-items: center; margin-bottom: 18px; flex-wrap: wrap; }
+.ml-search { flex: 1; min-width: 220px; padding: 8px 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg-card); color: var(--text); }
+.ml-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 14px; }
+.ml-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-lg); overflow: hidden; cursor: pointer; transition: transform 0.12s, border-color 0.12s; }
+.ml-card:hover { transform: translateY(-2px); border-color: var(--accent, var(--text-muted)); }
+.ml-cover { width: 100%; aspect-ratio: 1/1; background: var(--bg-card-hover); display: flex; align-items: center; justify-content: center; font-size: 48px; color: var(--text-muted); }
+.ml-cover img { width: 100%; height: 100%; object-fit: cover; }
+.ml-card-body { padding: 10px 12px; }
+.ml-card-title { font-size: 14px; font-weight: 500; line-height: 1.3; margin-bottom: 4px; }
+.ml-card-sub { font-size: 12px; color: var(--text-muted); }
+.ml-empty { padding: 64px 24px; text-align: center; color: var(--text-muted); }
+.ml-empty h2 { color: var(--text); font-weight: 500; margin: 0 0 8px; }
+
+.ml-lyrics-panel { position: fixed; right: 0; top: 0; bottom: 0; width: 480px; max-width: 100%; background: var(--bg-card); border-left: 1px solid var(--border); padding: 24px; overflow-y: auto; transform: translateX(100%); transition: transform 0.2s; z-index: 100; }
+.ml-lyrics-panel.open { transform: translateX(0); }
+.ml-lyrics-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+.ml-lyrics-title { font-size: 18px; font-weight: 600; }
+.ml-close { background: none; border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 4px 10px; cursor: pointer; color: var(--text-muted); }
+.ml-form-row { margin-bottom: 12px; }
+.ml-form-row label { display: block; font-size: 12px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 4px; }
+.ml-form-row input, .ml-form-row select, .ml-form-row textarea { width: 100%; padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg-card); color: var(--text); font: inherit; }
+.ml-form-row textarea { min-height: 80px; resize: vertical; }
+.ml-btn { padding: 8px 16px; background: var(--accent, var(--text)); color: var(--accent-ink); border: none; border-radius: var(--radius-sm); cursor: pointer; font-size: 13px; font-weight: 500; }
+.ml-btn-secondary { background: var(--bg-card); color: var(--text); border: 1px solid var(--border); }
+.ml-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.ml-output { margin-top: 16px; padding: 14px; background: var(--bg-card-hover); border-radius: var(--radius-sm); white-space: pre-wrap; font-size: 13px; line-height: 1.5; max-height: 60vh; overflow-y: auto; }
+.ml-output-title { font-weight: 600; margin-bottom: 8px; }
+
+.ml-detail { position: fixed; right: 0; top: 0; bottom: 0; width: 520px; max-width: 100%; background: var(--bg-card); border-left: 1px solid var(--border); padding: 24px; overflow-y: auto; transform: translateX(100%); transition: transform 0.2s; z-index: 90; }
+.ml-detail.open { transform: translateX(0); }
+.ml-detail-cover { width: 200px; height: 200px; border-radius: var(--radius-lg); background: var(--bg-card-hover); margin: 0 auto 18px; display: flex; align-items: center; justify-content: center; font-size: 64px; color: var(--text-muted); }
+.ml-detail-cover img { width: 100%; height: 100%; object-fit: cover; border-radius: var(--radius-lg); }
+.ml-detail-title { font-size: 22px; font-weight: 600; text-align: center; margin-bottom: 4px; }
+.ml-detail-sub { text-align: center; color: var(--text-muted); margin-bottom: 18px; }
+.ml-audio { width: 100%; margin-bottom: 16px; }
+.ml-fields { display: grid; grid-template-columns: auto 1fr; gap: 8px 14px; font-size: 13px; }
+.ml-field-key { color: var(--text-muted); }
+</style>
+</head>
+<body>
+<div id="eos-nav"></div>
+
+<div class="ml-wrap">
+  <div class="ml-header">
+    <div>
+      <div class="ml-title">Music Library</div>
+      <div class="ml-meta" id="ml-meta">Loading…</div>
+    </div>
+    <div>
+      <button class="ml-btn" onclick="openLyricsPanel()">+ Write Lyrics</button>
+    </div>
+  </div>
+
+  <div class="ml-toolbar">
+    <input class="ml-search" id="ml-search" placeholder="Search songs, artists, albums…" oninput="onSearch()">
+  </div>
+
+  <div id="ml-grid" class="ml-grid">
+    <div class="ml-empty"><h2>Loading…</h2></div>
+  </div>
+</div>
+
+<div class="ml-detail" id="ml-detail">
+  <button class="ml-close" onclick="closeDetail()" style="float:right">&times;</button>
+  <div id="ml-detail-body"></div>
+</div>
+
+<div class="ml-lyrics-panel" id="ml-lyrics-panel">
+  <div class="ml-lyrics-header">
+    <div class="ml-lyrics-title">Write Lyrics</div>
+    <button class="ml-close" onclick="closeLyricsPanel()">&times;</button>
+  </div>
+  <div class="ml-form-row">
+    <label>Description</label>
+    <textarea id="lr-description" placeholder="A melancholy song about returning home in winter…"></textarea>
+  </div>
+  <div class="ml-form-row">
+    <label>Style</label>
+    <select id="lr-style"><option value="">Loading…</option></select>
+  </div>
+  <div class="ml-form-row">
+    <label>Language</label>
+    <select id="lr-language">
+      <option value="en">English</option>
+      <option value="zh">Chinese</option>
+      <option value="ja">Japanese</option>
+    </select>
+  </div>
+  <button class="ml-btn" id="lr-go" onclick="generateLyrics()">Generate</button>
+  <button class="ml-btn ml-btn-secondary" id="lr-save" onclick="saveLyrics()" style="display:none;margin-left:8px">Save to Vault</button>
+  <div class="ml-output" id="lr-output" style="display:none"></div>
+</div>
+
+<script src="/static/eos.js"></script>
+<script src="/static/eos-components.js"></script>
+<script>
+var PREFIX = '/music-library';
+var ALL_SONGS = [];
+var COVERS = {};
+var LAST_LYRICS = null;
+
+function esc(s){ if(s==null)return''; return String(s).replace(/[&<>"']/g, function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];}); }
+
+async function loadAll(){
+  try {
+    var [songs, covers] = await Promise.all([
+      fetch(PREFIX + '/api/list').then(r => r.json()),
+      fetch(PREFIX + '/api/covers').then(r => r.json()),
+    ]);
+    ALL_SONGS = Array.isArray(songs) ? songs : [];
+    COVERS = covers || {};
+    document.getElementById('ml-meta').textContent = ALL_SONGS.length + ' song' + (ALL_SONGS.length === 1 ? '' : 's');
+    render(ALL_SONGS);
+  } catch (e) {
+    document.getElementById('ml-grid').innerHTML = '<div class="ml-empty"><h2>Failed to load</h2><p>' + esc(String(e)) + '</p></div>';
+  }
+}
+
+function render(songs){
+  var grid = document.getElementById('ml-grid');
+  if (!songs.length) {
+    grid.innerHTML = '<div class="ml-empty"><h2>No songs found</h2><p>Add notes tagged <code>song</code> anywhere in your vault.</p></div>';
+    return;
+  }
+  grid.innerHTML = songs.map(function(s){
+    var key = s.file || s.title;
+    var cover = COVERS[key];
+    var img = cover ? '<img src="' + esc(cover) + '" alt="">' : '&#9835;';
+    return '<div class="ml-card" onclick="openDetail(\'' + esc(key) + '\')">' +
+      '<div class="ml-cover">' + img + '</div>' +
+      '<div class="ml-card-body">' +
+        '<div class="ml-card-title">' + esc(s.title || 'Untitled') + '</div>' +
+        '<div class="ml-card-sub">' + esc(s.artist || s.album || '') + '</div>' +
+      '</div>' +
+    '</div>';
+  }).join('');
+}
+
+function onSearch(){
+  var q = (document.getElementById('ml-search').value || '').toLowerCase().trim();
+  if (!q) { render(ALL_SONGS); return; }
+  var hits = ALL_SONGS.filter(function(s){
+    return [s.title, s.artist, s.album, s.genre, s.mood].some(function(f){
+      return f && String(f).toLowerCase().indexOf(q) >= 0;
+    });
+  });
+  render(hits);
+}
+
+async function openDetail(filename){
+  try {
+    var s = await fetch(PREFIX + '/api/song-summary/' + encodeURIComponent(filename)).then(r => r.json());
+    if (s.error) { alert(s.error); return; }
+    var d = s.detail || {};
+    var coverHtml = s.cover ? '<img src="' + esc(s.cover) + '" alt="">' : '&#9835;';
+    var audioHtml = '';
+    if (s.audio && Array.isArray(s.audio.files) && s.audio.files.length) {
+      var first = s.audio.files[0];
+      audioHtml = '<audio class="ml-audio" controls src="' + esc('/music-library/api/stream/' + first.path) + '"></audio>';
+    }
+    var fields = ['artist','album','genre','language','energy','mood','theme','bpm','key','duration','status'];
+    var rows = fields.filter(function(k){ return d[k]; }).map(function(k){
+      return '<div class="ml-field-key">' + esc(k) + '</div><div>' + esc(d[k]) + '</div>';
+    }).join('');
+    document.getElementById('ml-detail-body').innerHTML =
+      '<div class="ml-detail-cover">' + coverHtml + '</div>' +
+      '<div class="ml-detail-title">' + esc(d.title || filename) + '</div>' +
+      '<div class="ml-detail-sub">' + esc(d.artist || '') + '</div>' +
+      audioHtml +
+      '<div class="ml-fields">' + rows + '</div>';
+    document.getElementById('ml-detail').classList.add('open');
+  } catch (e) { alert('Detail failed: ' + e); }
+}
+
+function closeDetail(){ document.getElementById('ml-detail').classList.remove('open'); }
+
+async function openLyricsPanel(){
+  document.getElementById('ml-lyrics-panel').classList.add('open');
+  var sel = document.getElementById('lr-style');
+  if (sel.options.length <= 1) {
+    try {
+      var styles = await fetch(PREFIX + '/api/lyrics/styles').then(r => r.json());
+      sel.innerHTML = '<option value="">— style (optional) —</option>' +
+        (Array.isArray(styles) ? styles.map(function(s){
+          return '<option value="' + esc(s.id) + '">' + esc(s.label) + '</option>';
+        }).join('') : '');
+    } catch (e) {}
+  }
+}
+
+function closeLyricsPanel(){ document.getElementById('ml-lyrics-panel').classList.remove('open'); }
+
+async function generateLyrics(){
+  var description = (document.getElementById('lr-description').value || '').trim();
+  if (!description) { alert('Description is required'); return; }
+  var style = document.getElementById('lr-style').value;
+  var language = document.getElementById('lr-language').value;
+  var btn = document.getElementById('lr-go');
+  btn.disabled = true; btn.textContent = 'Writing…';
+  try {
+    var res = await fetch(PREFIX + '/api/lyrics/generate', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({description: description, style: style, language: language}),
+    }).then(r => r.json());
+    if (res.error) { alert(res.error); return; }
+    LAST_LYRICS = res;
+    var out = document.getElementById('lr-output');
+    out.style.display = 'block';
+    out.innerHTML = '<div class="ml-output-title">' + esc(res.title || 'Untitled') + '</div>' + esc(res.lyrics || '');
+    document.getElementById('lr-save').style.display = 'inline-block';
+  } catch (e) { alert('Generation failed: ' + e); }
+  finally { btn.disabled = false; btn.textContent = 'Generate'; }
+}
+
+async function saveLyrics(){
+  if (!LAST_LYRICS) return;
+  try {
+    var res = await fetch(PREFIX + '/api/lyrics/save', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        title: LAST_LYRICS.title,
+        description: (document.getElementById('lr-description').value || ''),
+        style: document.getElementById('lr-style').value,
+        lyrics: LAST_LYRICS.lyrics,
+      }),
+    }).then(r => r.json());
+    if (res.error) { alert(res.error); return; }
+    alert('Saved to ' + (res.saved_to || 'vault'));
+    loadAll();
+  } catch (e) { alert('Save failed: ' + e); }
+}
+
+document.addEventListener('DOMContentLoaded', loadAll);
+</script>
+</body>
+</html>

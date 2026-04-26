@@ -1,0 +1,7 @@
+/* Default marker for EOS_MAP. Override by supplying iconFor() per app. */
+.eos-map-dot {
+  background: var(--accent);
+  border: 1.5px solid #fff;
+  border-radius: 50%;
+  box-shadow: 0 0 2px rgba(0, 0, 0, 0.5);
+}

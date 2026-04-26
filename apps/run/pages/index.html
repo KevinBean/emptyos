@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Command Runner - EmptyOS</title>
+<link rel="stylesheet" href="/static/theme.css">
+<link rel="stylesheet" href="/static/eos-components.css">
+<style>
+.cmd-form { display: flex; gap: 8px; max-width: 700px; }
+.cmd-form input { flex: 1; padding: 12px; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 6px; color: var(--text); font-family: monospace; font-size: 14px; }
+.output-box { margin-top: 16px; padding: 16px; background: #111; border: 1px solid var(--border); border-radius: 8px; white-space: pre-wrap; font-family: monospace; font-size: 13px; max-height: 500px; overflow-y: auto; color: #0f0; }
+.history-item { padding: 8px 12px; border-bottom: 1px solid var(--border); cursor: pointer; font-family: monospace; font-size: 13px; }
+.history-item:hover { background: var(--bg-secondary); }
+.history-item .ts { color: var(--text-secondary); font-size: 11px; }
+</style>
+</head>
+<body>
+<div class="page-shell">
+<div class="page-header">
+    <h1>Command Runner</h1>
+    <p class="subtitle">Execute shell commands</p>
+</div>
+
+<div class="cmd-form">
+    <input type="text" id="cmd" placeholder="Enter command..." onkeydown="if(event.key==='Enter')run()">
+    <button class="btn btn-primary" onclick="run()">Run</button>
+    <button class="btn" onclick="suggest()">Suggest</button>
+</div>
+
+<div id="output" class="output-box" style="display:none"></div>
+
+<h2 style="margin-top:24px;font-size:14px;color:var(--text-secondary)">History</h2>
+<div id="history"></div>
+</div>
+
+<script src="/static/eos.js"></script>
+<script src="/static/eos-components.js"></script>
+<script>EOS.nav('run');</script>
+<script>
+async function run() {
+    const cmd = document.getElementById('cmd').value;
+    if (!cmd) return;
+    const box = document.getElementById('output');
+    box.style.display = 'block';
+    box.textContent = '$ ' + cmd + '\n\nRunning...';
+    try {
+        const data = await EOS.post('/run/api/execute', {command: cmd});
+        box.textContent = '$ ' + cmd + '\n\n' + (data.stdout || '') + (data.stderr ? '\nSTDERR: ' + data.stderr : '') + '\n\nExit: ' + (data.exit_code ?? '?');
+        loadHistory();
+    } catch (e) {
+        box.textContent = '$ ' + cmd + '\n\nFailed: ' + (e.message || e);
+        EOS_UI.toast('Command failed: ' + (e.message || e), false);
+    }
+}
+
+async function suggest() {
+    const task = (document.getElementById('cmd').value || '').trim();
+    if (!task) return;
+    try {
+        const data = await EOS.post('/run/api/suggest', {task});
+        if (data.command) document.getElementById('cmd').value = data.command;
+    } catch (e) {
+        EOS_UI.toast('Suggest failed: ' + (e.message || e), false);
+    }
+}
+
+async function loadHistory() {
+    try {
+        const data = await EOS.api('/run/api/history');
+        const items = Array.isArray(data) ? data : data.history || [];
+        const host = document.getElementById('history');
+        if (!items.length) { host.innerHTML = EOS_UI.emptyState({message: 'No command history yet.'}); return; }
+        host.innerHTML = items.slice(-20).reverse()
+            .map(h => `<div class="history-item" onclick="document.getElementById('cmd').value='${esc(h.command||'')}'"><span class="ts">${h.timestamp||''}</span> ${esc(h.command||'')}</div>`).join('');
+    } catch (e) {
+        document.getElementById('history').innerHTML = EOS_UI.errorState({message: 'Could not load history.', onRetry: 'loadHistory()'});
+    }
+}
+
+function esc(s) { return s.replace(/'/g, "\\'").replace(/</g, '&lt;'); }
+loadHistory();
+</script>
+</body>
+</html>

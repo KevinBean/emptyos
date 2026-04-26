@@ -1,0 +1,52 @@
+[app]
+id = "agent"
+name = "Coding Agent"
+version = "1.0.0"
+description = "Claude-Code-like coding agent — tool-use loop, permission-gated. Same brain in terminal (eos chat) and web (/agent/)."
+dimensions = ["occupational", "intellectual"]
+
+[app.entry]
+module = "app"
+class = "AgentApp"
+
+[requires]
+# Agent uses `think` via the provider chain (resolves tool-capable providers).
+# Read/search intentionally bypass capabilities — tools need arbitrary paths
+# outside the vault-scoped FilesystemReadProvider.
+capabilities = ["think"]
+
+[provides.cli]
+commands = ["chat"]
+interactive = ["chat"]  # REPL: must run in client process (stdin/stdout), not proxied to daemon
+help = "Start an interactive agent session (tool-use REPL)"
+
+[provides.web]
+prefix = "/agent"
+
+[provides.events]
+emits = [
+    "agent:turn_start",
+    "agent:iter_start",
+    "agent:text",
+    "agent:tool_call",
+    "agent:tool_result",
+    "agent:permission_requested",
+    "agent:permission_resolved",
+    "agent:done",
+    "agent:cancelled",
+    "agent:max_iters",
+    "agent:error",
+    # Phase 4+ additions — turn-level + session-level signals
+    "agent:compacted",        # session history was compacted (stale tool_results summarized)
+    "agent:plan_mode",        # plan-mode flag changed (ws-message response)
+    "agent:skill_loaded",     # /<skill-name> invocation loaded SKILL.md
+    "agent:orient",           # pre-turn orient plan produced (task_type, plan, rules, criteria)
+    "agent:plan_nudge",       # plan reminder injected mid-turn (iter 3+)
+]
+
+[provides.settings]
+schema = [
+    {key = "agent.default_provider", label = "Default Provider", type = "select", options = ["anthropic_sdk", "openai", "openai-mini", "openai-nano", "ollama", "claude-cli"], default = "anthropic_sdk", hint = "openai = gpt-5.4 (full, strongest) · openai-mini = gpt-5.4-mini (best $/quality, default) · openai-nano = gpt-5.4-nano (cheap bulk) · claude-cli = Max subscription"},
+    {key = "agent.max_iters", label = "Max Iterations per Turn", type = "number", default = 25},
+    {key = "agent.tool_policy", label = "Tool Policy", type = "select", options = ["ask", "auto", "deny"], default = "ask", hint = "Global policy overlay; per-tool defaults still apply"},
+]

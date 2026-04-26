@@ -1,0 +1,30 @@
+[app]
+id = "assistant"
+name = "Assistant"
+version = "3.0.0"
+description = "AI chat — vault integration, multi-agent compare, voice I/O, PWA"
+
+[app.entry]
+module = "app"
+class = "AssistantApp"
+
+[requires]
+capabilities = ["think", "read", "write", "search", "speak", "listen"]
+apps = ["search", "quick-action", "projects", "journal"]
+
+[provides.cli]
+commands = ["ask"]
+
+[provides.web]
+prefix = "/assistant"
+
+[provides.events]
+emits = ["assistant:message"]
+
+[provides.settings]
+schema = [
+    {key = "assistant.default_backend", label = "Default Backend", type = "select", options = ["auto", "ollama", "claude-cli", "openai"], default = "auto"},
+    {key = "assistant.vault_context", label = "Inject Vault Context", type = "toggle", default = true},
+    {key = "assistant.use_tools", label = "Use Read-Only Tools for Retrieval", type = "toggle", default = false, hint = "Model drives Read/Grep/Glob itself instead of keyword-search injection. Higher quality, ~3x slower."},
+    {key = "assistant.max_history", label = "Max Messages per Session", type = "number", default = 200},
+]

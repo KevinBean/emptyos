@@ -1,0 +1,65 @@
+[app]
+id = "boards"
+name = "Boards"
+version = "1.0.0"
+description = "Visual Work OS: Flexible boards with multiple views, automations, and offline export — backed by your Markdown Vault."
+
+[app.entry]
+module = "app"
+class = "BoardsApp"
+
+[requires]
+capabilities = ["read", "write", "think"]
+# projects — project-tracker preset sources from it (source.type = "app") and
+# link-record inverse maintenance writes through it. journal — automation
+# actions ("journal_entry") dispatch to it.
+apps = ["journal", "projects"]
+
+[provides.web]
+prefix = "/boards"
+
+[provides.cli]
+commands = ["boards"]
+
+[provides.export]
+enabled = true
+mode = "standalone"
+hook = "export"
+# Ordered strategies the shim applies at runtime, per capability.
+fallbacks = [
+    "vault:indexeddb",           # persist boards + items in browser IDB
+    "think:byok-openai",         # user pastes an OpenAI key in the offline panel
+    "events:local-bus",          # in-tab CustomEvent bus (no WebSocket)
+    "call_app:stub",             # journal/automation hooks become no-ops
+    "search:local",              # search over the bundled snapshot only
+    "viewer:none",               # "copy path" instead of open-in-external-viewer
+    "speak:web-speech",
+    "listen:web-speech",
+]
+
+[provides.events]
+emits = [
+    "board:created",
+    "board:config_updated",
+    "board:column_added",
+    "board:column_updated",
+    "board:column_deleted",
+    "board:item_created",
+    "board:item_updated",
+    "board:item_moved",
+    "board:item_archived",
+    "board:view_saved",
+    "board:view_deleted",
+]
+
+[provides.settings]
+schema = [
+    {key = "boards.items_dir", label = "Items Directory", type = "text", default = "30_Resources/EmptyOS/boards-data", hint = "Vault folder for board item notes"},
+]
+
+[[contributes.hub.panel]]
+id = "boards-pinned"
+method = "panel_pinned_boards"
+renderer = "chips"
+priority = 85
+group = "dashboard"

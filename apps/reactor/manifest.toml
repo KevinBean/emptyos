@@ -1,0 +1,85 @@
+[app]
+id = "reactor"
+name = "Reactor"
+version = "1.0.0"
+description = "Event chain reactions — the system's metabolism"
+
+[app.entry]
+module = "app"
+class = "ReactorApp"
+
+[requires]
+capabilities = ["think"]
+apps = ["journal"]
+# briefing + expense are listened-for emitters, not callees. Reactor is purely
+# event-driven — when those apps aren't installed, their events simply don't
+# fire and the matching reactors stay quiet. Don't list them here as required.
+
+[provides.cli]
+commands = ["reactor"]
+
+[provides.web]
+prefix = "/reactor"
+
+[provides.events]
+emits = []
+listens = [
+    "vault:changed", "expense:added", "task:completed", "task:added", "task:reopened", "journal:entry", "journal:created",
+    "healing:mood-logged",
+    "speaking:session_ended", "speaking:session_started", "shadowing:perfect", "shadowing:attempt",
+    "reader:highlight_added", "reader:review_completed", "nutrition:logged", "focus:completed",
+    "meditation:completed", "capture:saved", "contacts:logged",
+    "music:composed", "podcast:generated", "studio:generated",
+    "note:created", "note:updated", "items:added", "items:updated",
+    "dictionary:word_saved", "dictionary:word_reviewed",
+    "speak-sharper:analyzed", "speak-sharper:pattern_detected", "voice-review:analyzed",
+    "lesson:generated",
+    "projects:task_toggled", "projects:status_changed", "projects:created", "projects:task_added",
+    "english:level_up", "briefing:generated",
+    "review:completed", "search:query",
+    "git:saved", "git:pushed", "git:pulled",
+    "music:lyrics_created", "music:mv_generated",
+    "healing:dream-logged", "healing:grounding-logged",
+    "media:updated", "contacts:created", "contacts:edited",
+    "timeline:event_added", "system-log:feed_viewed", "link:scan_completed",
+    "cable-pulling:calculated", "quotes:shown",
+    "places:created", "places:updated", "places:deleted", "places:visited",
+    "tts:generated", "tmpl:used", "music:updated", "divination:cast",
+    "settings:changed", "quotes:generated", "nutrition:weight-logged",
+    "capture:archived", "journal:reflection", "journal:milestone",
+    "reader:session_logged", "task:snoozed",
+    "journal:three-things", "app-gen:created",
+    "comfyui:workflow_completed", "ai-queue:completed",
+    "model-bench:completed",
+    "projects:doc_created", "quickref:added", "quickref:updated",
+    "staff:shift_completed", "run:completed", "plugin-gen:created",
+    "fiction:drafted", "fiction:story_created",
+    "digest:generated",
+    "integrity:audit_completed",
+    "news-center:summarized", "news-center:fetched",
+    "sheath-voltage:calculated", "staff:shift_started",
+    "dashboard:generated", "gpts:chat", "hub:refreshed",
+    "projects:refreshed", "ai-queue:classified", "ai-queue:queued",
+    "jobs:application_added", "jobs:status_changed", "jobs:briefing_generated",
+    "jobs:session_started", "jobs:session_ended", "jobs:scrape_complete",
+    "jobs:learnings_harvested",
+    "cable:rating_calculated", "retirement:calculated", "net-worth:snapshot-saved",
+    "expense:income-added", "github:synced", "github:pr_status",
+    "billing:budget_alert", "billing:report_generated",
+    "publish:built", "publish:deployed",
+    "3d-studio:render_complete", "3d-studio:render_failed",
+    "projects:stage_changed", "projects:calc_attached", "projects:feature_toggled",
+    "projects:sprint_created", "projects:sprint_closed",
+    "projects:milestone_created", "projects:release_created",
+    "bookmarks:saved", "bookmarks:archived",
+    "habits:checked", "habits:created",
+    "hdd-estimator:calculated",
+    "recipes:created", "recipes:cooked",
+    "reflect:insight", "reflect:agent_modified", "system:reflected",
+    "release:packaged",
+    "reminders:created", "reminders:fired", "reminders:completed",
+    "sleep:logged", "weather:updated",
+    "workout:logged", "workout:body-logged",
+    "tests:run_started", "tests:run_completed",
+    "assistant:message",
+]

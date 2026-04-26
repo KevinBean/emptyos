@@ -1,0 +1,22 @@
+[app]
+id = "tests"
+name = "Tests"
+version = "1.0.0"
+description = "In-daemon test runner — discovers and runs pytest files, tracks last-run results"
+
+[app.entry]
+module = "app"
+class = "TestsApp"
+
+[requires]
+capabilities = []
+apps = []
+
+[provides.cli]
+commands = ["tests"]
+
+[provides.web]
+prefix = "/tests"
+
+[provides.events]
+emits = ["tests:run_started", "tests:run_completed"]

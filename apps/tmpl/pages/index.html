@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Templates - EmptyOS</title>
+<link rel="stylesheet" href="/static/theme.css">
+<link rel="stylesheet" href="/static/eos-components.css">
+<style>
+.tmpl-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
+.tmpl-card { padding: 16px; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 8px; cursor: pointer; transition: border-color 0.2s; }
+.tmpl-card:hover { border-color: var(--accent); }
+.tmpl-card h3 { font-size: 14px; margin-bottom: 4px; }
+.tmpl-card p { font-size: 12px; color: var(--text-secondary); }
+.preview-box { margin-top: 16px; padding: 16px; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 8px; white-space: pre-wrap; font-family: monospace; font-size: 13px; max-height: 400px; overflow-y: auto; }
+.use-form { display: flex; gap: 8px; margin-top: 12px; }
+.use-form input { flex: 1; padding: 8px; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 6px; color: var(--text); font-size: 14px; }
+</style>
+</head>
+<body>
+<div class="page-shell">
+<div class="page-header">
+    <h1>Templates</h1>
+    <p class="subtitle">Create notes from templates</p>
+</div>
+
+<div id="templates" class="tmpl-grid"></div>
+
+<div id="preview-section" style="display:none">
+    <h2 style="font-size:14px;margin-top:24px" id="preview-title"></h2>
+    <div id="preview" class="preview-box"></div>
+    <div class="use-form">
+        <input type="text" id="note-name" placeholder="Note name...">
+        <button class="btn btn-primary" onclick="useTemplate()">Create Note</button>
+    </div>
+    <div id="use-result" style="margin-top:8px;font-size:13px"></div>
+</div>
+</div>
+
+<script src="/static/eos.js"></script>
+<script>EOS.nav('tmpl');</script>
+<script>
+let selectedTemplate = '';
+
+async function loadTemplates() {
+    const resp = await fetch(EOS.api('/api/list'));
+    const data = await resp.json();
+    const templates = Array.isArray(data) ? data : data.templates || [];
+    document.getElementById('templates').innerHTML = templates.length
+        ? templates.map(t => `<div class="tmpl-card" onclick="preview('${esc(t.name || t.id)}')"><h3>${esc(t.name || t.id)}</h3><p>${esc(t.description || '')}</p></div>`).join('')
+        : '<p style="color:var(--text-secondary)">No templates found</p>';
+}
+
+async function preview(name) {
+    selectedTemplate = name;
+    document.getElementById('preview-section').style.display = '';
+    document.getElementById('preview-title').textContent = name;
+    const resp = await fetch(EOS.api('/api/preview/' + encodeURIComponent(name)));
+    const data = await resp.json();
+    document.getElementById('preview').textContent = data.content || data.preview || JSON.stringify(data, null, 2);
+}
+
+async function useTemplate() {
+    const name = document.getElementById('note-name').value;
+    if (!name || !selectedTemplate) return;
+    const resp = await fetch(EOS.api('/api/use'), {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({template: selectedTemplate, name})});
+    const data = await resp.json();
+    document.getElementById('use-result').innerHTML = data.ok
+        ? '<span style="color:#22c55e">Note created: ' + esc(data.path || name) + '</span>'
+        : '<span style="color:#ef4444">' + esc(data.error || 'Failed') + '</span>';
+}
+
+function esc(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+loadTemplates();
+</script>
+</body>
+</html>

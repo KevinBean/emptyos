@@ -1,0 +1,65 @@
+[app]
+id = "people"
+name = "People"
+version = "1.1.0"
+description = "Person directory — roster, capacity, workload, relationships, birthdays, interactions. Absorbs the former contacts app."
+dimensions = ["occupational", "social"]
+
+[app.entry]
+module = "app"
+class = "PeopleApp"
+
+[requires]
+capabilities = ["read", "write", "search", "think"]
+
+[provides.cli]
+commands = ["people"]
+
+[provides.web]
+prefix = "/people"
+
+[provides.events]
+emits = [
+    "people:created", "people:updated", "people:archived", "people:logged",
+    "contacts:created", "contacts:edited", "contacts:logged",
+    "contacts:enriched", "contacts:chat_archived",
+]
+listens = ["people:assigned", "people:unassigned"]
+
+[provides.export]
+enabled = true
+mode = "standalone"
+hook = "export"
+fallbacks = [
+    "vault:indexeddb",
+    "events:local-bus",
+    "call_app:stub",
+    "viewer:none",
+]
+
+[provides.assistant]
+commands = [
+    {slash = "/people", method = "list_people"},
+]
+
+[provides.settings]
+schema = [
+    {key = "people.folder", label = "Vault folder", type = "text", default = "30_Resources/People", hint = "Where person notes live"},
+    {key = "people.default_capacity_hours", label = "Default capacity (h/wk)", type = "number", default = 40},
+    {key = "people.overdue_alert", label = "Overdue contact alerts", type = "toggle", default = true, hint = "Surface overdue contacts in notifications"},
+    {key = "people.birthday_alert_days", label = "Birthday alert (days before)", type = "number", default = 7},
+]
+
+[[contributes.hub.panel]]
+id = "people-overloaded"
+method = "panel_overloaded"
+renderer = "chips"
+priority = 140
+group = "dashboard"
+
+[[contributes.hub.panel]]
+id = "birthdays"
+title = "🎂 Birthdays"
+method = "panel_birthdays"
+renderer = "plain-list"
+priority = 230

@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Routing — EmptyOS</title>
+<link rel="stylesheet" href="/static/theme.css">
+<link rel="stylesheet" href="/static/eos-components.css">
+<link rel="stylesheet" href="/static/eos-map.css">
+<style>
+body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif; background:var(--bg); color:var(--text); min-height:100dvh; padding:env(safe-area-inset-top) 16px 100px; max-width:960px; margin:0 auto }
+h1 { margin:18px 0 6px; font-size:22px }
+.sub { color:var(--text-muted); font-size:13px; margin-bottom:18px }
+.panel { background:var(--bg-card); border:1px solid var(--border); border-radius:14px; padding:16px; margin-bottom:14px }
+.panel h2 { margin:0 0 10px; font-size:14px; text-transform:uppercase; letter-spacing:0.4px; color:var(--text-muted) }
+textarea { width:100%; min-height:120px; padding:10px 12px; background:var(--bg); border:1px solid var(--border); border-radius:10px; color:var(--text); font-family:ui-monospace,'SF Mono',Menlo,monospace; font-size:13px; resize:vertical; box-sizing:border-box }
+textarea:focus { border-color:var(--accent); outline:none }
+.row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-top:10px }
+.row select { padding:10px 12px; border:1px solid var(--border); border-radius:10px; background:var(--bg-card); color:var(--text); font-size:14px }
+.row button { padding:10px 18px; background:var(--accent); color: var(--accent-ink); border:none; border-radius:10px; font-size:14px; font-weight:600; cursor:pointer }
+.row button:hover { opacity:0.9 }
+.row button:disabled { opacity:0.4; cursor:not-allowed }
+.hint { font-size:12px; color:var(--text-muted); margin-top:6px }
+#map-wrap { height:380px; border-radius:12px; overflow:hidden; border:1px solid var(--border); margin-top:12px }
+.err { padding:10px 12px; background:color-mix(in srgb,#ef4444 12%,transparent); border:1px solid color-mix(in srgb,#ef4444 40%,transparent); border-radius:10px; font-size:13px; color:#ef4444; margin-top:10px }
+</style>
+</head>
+<body>
+<h1>Routing</h1>
+<div class="sub">Multi-stop route planning via OSRM. Cached &amp; rate-limited. Pairs with geocode.</div>
+
+<div id="status-banner"></div>
+
+<div class="panel">
+  <h2>Stops</h2>
+  <textarea id="stops" placeholder="One per line. Either an address or 'lat,lon'.&#10;e.g.&#10;Eiffel Tower, Paris&#10;Louvre Museum, Paris&#10;48.8584,2.2945"></textarea>
+  <div class="hint">Addresses are geocoded automatically. Use 2+ stops.</div>
+  <div class="row">
+    <select id="profile">
+      <option value="driving">driving</option>
+      <option value="cycling">cycling</option>
+      <option value="walking">walking</option>
+    </select>
+    <button id="route-btn" onclick="planRoute()">Plan route</button>
+    <button onclick="clearAll()" style="background:var(--bg);color:var(--text);border:1px solid var(--border)">Clear</button>
+  </div>
+  <div id="err-box"></div>
+</div>
+
+<div class="panel" id="result-panel" style="display:none">
+  <h2>Result</h2>
+  <div id="route-summary" class="eos-stat-cards"></div>
+</div>
+
+<div class="panel">
+  <h2>Map</h2>
+  <div id="map-wrap"></div>
+</div>
+
+<script src="/static/eos.js"></script>
+<script src="/static/eos-components.js"></script>
+<script src="/static/eos-map.js"></script>
+<script>
+var STATE = { map:null, points:[], geometry:null };
+
+async function loadStatus() {
+  try {
+    var s = await fetch('/routing/api/status').then(r => r.json());
+    var banner = document.getElementById('status-banner');
+    if (!s.enabled) {
+      banner.innerHTML = EOS_UI.warningBanner({ message: 'Disabled: ' + (s.reason || 'unknown') });
+      document.getElementById('route-btn').disabled = true;
+    } else {
+      banner.innerHTML = '';
+    }
+  } catch(e) {}
+}
+
+function ensureMap() {
+  if (STATE.map) return STATE.map;
+  STATE.map = EOS_MAP.create(document.getElementById('map-wrap'), {
+    center:[-25,135], zoom:3, tiles:'osm'
+  });
+  return STATE.map;
+}
+
+function showError(msg) {
+  document.getElementById('err-box').innerHTML = '<div class="err">' + msg + '</div>';
+}
+function clearError() { document.getElementById('err-box').innerHTML = ''; }
+
+function clearAll() {
+  document.getElementById('stops').value = '';
+  document.getElementById('result-panel').style.display = 'none';
+  clearError();
+  STATE.points = []; STATE.geometry = null;
+  if (STATE.map) { STATE.map.setMarkers([]); STATE.map.setPolylines([]); }
+}
+
+function fmtDistance(m) {
+  if (window.EOS && EOS.fmtDistance) return EOS.fmtDistance(m);
+  return m >= 1000 ? (m/1000).toFixed(1) + ' km' : Math.round(m) + ' m';
+}
+function fmtDuration(s) {
+  if (window.EOS && EOS.fmtDuration) return EOS.fmtDuration(s);
+  var h = Math.floor(s/3600), mn = Math.round((s%3600)/60);
+  return h ? h + 'h ' + mn + 'm' : mn + 'm';
+}
+
+async function resolveStops(lines) {
+  var points = [];
+  for (var i = 0; i < lines.length; i++) {
+    var line = lines[i].trim();
+    if (!line) continue;
+    var m = line.match(/^(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)$/);
+    if (m) {
+      points.push({ lat: parseFloat(m[1]), lon: parseFloat(m[2]), label: line });
+      continue;
+    }
+    var res = await fetch('/geocode/api/lookup?q=' + encodeURIComponent(line) + '&limit=1').then(r => r.json());
+    var hit = Array.isArray(res) ? res[0] : (res.results && res.results[0]);
+    if (!hit) throw new Error('Could not geocode: ' + line);
+    points.push({ lat: parseFloat(hit.lat), lon: parseFloat(hit.lon), label: hit.display_name || line });
+  }
+  return points;
+}
+
+async function planRoute() {
+  clearError();
+  var lines = document.getElementById('stops').value.split(/\r?\n/);
+  var profile = document.getElementById('profile').value;
+  try {
+    var pts = await resolveStops(lines);
+    if (pts.length < 2) { showError('Need at least 2 stops'); return; }
+    STATE.points = pts;
+    var body = { points: pts.map(p => [p.lat, p.lon]), profile: profile };
+    var res = await fetch('/routing/api/route', {
+      method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)
+    }).then(r => r.json());
+    if (res.error) { showError(res.error); return; }
+
+    EOS_UI.statCards('route-summary', [
+      { label: 'Stops', value: pts.length },
+      { label: 'Distance', value: fmtDistance(res.distance_m || 0) },
+      { label: 'Duration', value: fmtDuration(res.duration_s || 0) },
+    ]);
+    document.getElementById('result-panel').style.display = '';
+
+    var m = ensureMap();
+    m.setMarkers(pts, {
+      latFor: p => p.lat, lngFor: p => p.lon, popupFor: p => p.label,
+      iconFor: (p, idx) => ({ className:'eos-route-stop', size:[24,24], html: '<div style="display:flex;align-items:center;justify-content:center;background:var(--accent);color: var(--accent-ink);font-size:11px;font-weight:700;border:2px solid #fff;border-radius:50%;width:24px;height:24px;box-shadow:0 1px 3px rgba(0,0,0,0.4)">' + (idx+1) + '</div>' })
+    });
+    if (res.geometry) {
+      m.setPolylines([res.geometry], { styleFor: () => ({ color: 'var(--accent)', weight: 4, opacity: 0.8 }) });
+    }
+    m.fitBounds();
+  } catch(e) { showError(e.message || String(e)); }
+}
+
+loadStatus();
+</script>
+</body>
+</html>

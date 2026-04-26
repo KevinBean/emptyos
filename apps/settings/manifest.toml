@@ -1,0 +1,21 @@
+[app]
+id = "settings"
+name = "Settings"
+version = "1.0.0"
+description = "System configuration — view and manage EmptyOS settings"
+
+[app.entry]
+module = "app"
+class = "SettingsApp"
+
+[requires]
+capabilities = []
+
+[provides.cli]
+commands = ["settings"]
+
+[provides.web]
+prefix = "/settings"
+
+[provides.events]
+emits = ["settings:changed"]

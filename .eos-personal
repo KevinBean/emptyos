@@ -1,0 +1,24 @@
+# .eos-personal — patterns that should never appear in committed code
+# Used by: scripts/check-personal.py, pre-commit hook, CI
+# One regex per line. Lines starting with # are comments. Empty lines ignored.
+# Add patterns here when you find personal data leaking into code.
+
+# Personal identity
+Kevin\s+Bian
+
+# Personal paths
+D:\\\\Main Vault
+D:/Main Vault
+D:\\Main Vault
+C:/Users/Kevin
+C:\\\\Users\\\\Kevin
+C:\\Users\\Kevin
+
+# Personal coordinates
+-34\.928
+138\.600
+
+# Personal dates (visa/immigration specific)
+# Note: bare dates are OK in comments/examples; these match dates with context
+date\(2029,\s*7,\s*1\)
+date\(2025,\s*11,\s*25\)

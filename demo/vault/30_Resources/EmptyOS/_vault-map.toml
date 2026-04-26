@@ -1,0 +1,14 @@
+# Vault map — app data locations within this vault.
+# Auto-generated on first boot in a real install; pre-seeded for the demo.
+
+[projects]
+path = "10_Projects"
+
+[journal]
+path = "50_Journal"
+
+[capture]
+path = "00_Inbox"
+
+[note]
+path = "30_Resources"

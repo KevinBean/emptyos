@@ -1,0 +1,449 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>Settings - EmptyOS</title>
+<link rel="stylesheet" href="/static/theme.css">
+<link rel="stylesheet" href="/static/eos-components.css">
+<style>
+body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif; background:var(--bg); color:var(--text); min-height:100dvh; padding:env(safe-area-inset-top) 16px 100px }
+
+.sys-info { display:grid; grid-template-columns:repeat(auto-fill,minmax(130px,1fr)); gap:8px; margin-bottom:24px }
+.sys-card { background:var(--bg-card); border:1px solid var(--border); border-radius:14px; padding:12px; text-align:center; animation:cardIn 0.3s ease both }
+.sys-val { font-size:20px; font-weight:700; color:var(--text-heading) }
+.sys-label { font-size:10px; color:var(--text-muted); margin-top:2px }
+
+.section { margin-bottom:24px }
+.section-hdr { display:flex; align-items:center; gap:8px; margin-bottom:12px }
+.section-icon { font-size:18px }
+.section-name { font-size:15px; font-weight:600; color:var(--text-heading) }
+
+.setting-group { background:var(--bg-card); border:1px solid var(--border); border-radius:14px; overflow:hidden }
+.setting-row { display:flex; justify-content:space-between; align-items:center; padding:13px 16px; border-bottom:1px solid var(--border) }
+.setting-row:last-child { border-bottom:none }
+.setting-label { font-size:14px; color:var(--text) }
+.setting-key { font-size:10px; color:var(--text-muted); font-family:var(--mono); margin-top:2px }
+
+/* Controls */
+.s-select { padding:8px 12px; border:1px solid var(--border); border-radius:8px; background:var(--bg); color:var(--text); font-size:13px; min-width:120px; text-align:right }
+.s-input { padding:8px 12px; border:1px solid var(--border); border-radius:8px; background:var(--bg); color:var(--text); font-size:13px; width:120px; text-align:right; font-family:var(--mono) }
+.s-input:focus,.s-select:focus { outline:none; border-color:var(--accent) }
+
+/* Toggle switch */
+.toggle { position:relative; width:44px; height:24px; cursor:pointer }
+.toggle input { display:none }
+.toggle-track { position:absolute; inset:0; background:var(--border); border-radius:14px; transition:background 0.2s }
+.toggle input:checked + .toggle-track { background:var(--accent) }
+.toggle-thumb { position:absolute; top:2px; left:2px; width:20px; height:20px; background:#fff; border-radius:50%; transition:transform 0.2s; box-shadow:0 1px 3px rgba(0,0,0,0.2) }
+.toggle input:checked ~ .toggle-thumb { transform:translateX(20px) }
+
+/* Save indicator */
+.saved { position:fixed; bottom:20px; left:50%; transform:translateX(-50%) translateY(60px); padding:8px 24px; border-radius:8px; background:rgba(16,185,129,0.9); color:#fff; font-size:14px; font-weight:500; transition:transform 0.3s; z-index:50 }
+.saved.show { transform:translateX(-50%) translateY(0) }
+
+.eos-tabs { margin-bottom:16px }
+
+/* Restart-required banner (shown after changes that need a daemon restart) */
+.restart-banner { display:none; padding:12px 16px; margin-top:12px; border-radius:8px;
+    background:rgba(245,158,11,0.12); border:1px solid rgba(245,158,11,0.4);
+    color:var(--text); font-size:13px; line-height:1.5 }
+.restart-banner.show { display:block; animation:cardIn 0.3s ease both }
+.restart-banner strong { color:#f59e0b; font-weight:600 }
+.restart-banner code { background:rgba(0,0,0,0.25); padding:2px 8px; border-radius:4px;
+    font-family:var(--mono,monospace); font-size:12px }
+.restart-banner .rb-hint { display:block; margin-top:4px; color:var(--text-muted); font-size:11px }
+
+/* Search bar */
+.settings-search { position:relative; margin-bottom:12px }
+.settings-search input { width:100%; box-sizing:border-box; padding:12px 40px 12px 16px; background:var(--bg-card); border:1px solid var(--border); border-radius:8px; color:var(--text); font-size:14px; font-family:inherit }
+.settings-search input:focus { outline:none; border-color:var(--accent) }
+.settings-search-count { position:absolute; right:14px; top:50%; transform:translateY(-50%); font-size:11px; color:var(--text-muted); pointer-events:none }
+.section.hidden-by-search { display:none }
+.setting-row.hidden-by-search { display:none }
+
+/* Shortcuts table */
+.shortcut-table { width:100%; border-collapse:collapse }
+.shortcut-table th { text-align:left; font-size:11px; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.5px; padding:8px 16px; border-bottom:1px solid var(--border) }
+.shortcut-table td { padding:8px 16px; font-size:14px; color:var(--text-secondary); border-bottom:1px solid color-mix(in srgb,var(--border) 50%,transparent) }
+.shortcut-table tr:last-child td { border-bottom:none }
+.shortcut-table td:first-child { white-space:nowrap; color:var(--text) }
+kbd { display:inline-block; padding:2px 8px; border-radius:4px; background:var(--border); border:1px solid color-mix(in srgb,var(--text-muted) 20%,var(--border)); font-family:var(--mono,monospace); font-size:11px; color:var(--text); min-width:18px; text-align:center }
+.s-tiny-btn { padding:4px 12px; border:1px solid var(--border); border-radius:6px; background:none; color:var(--text-muted); cursor:pointer; font-size:11px }
+.s-tiny-btn:hover { border-color:var(--accent); color:var(--accent) }
+</style>
+</head>
+<body>
+<script src="/static/realtime.js"></script>
+<script src="/static/eos.js"></script>
+<script src="/static/eos-components.js"></script>
+<script>EOS.nav('settings');
+if(window.EOS&&EOS.registerActions){EOS.registerActions({},[],{description:"System configuration — theme, providers, keyboard shortcuts, app defaults.",quickActions:[{label:"Find setting",msg:"Help me find a setting. Ask me what I want to change."},{label:"Explain options",msg:"Explain the setting I am hovering or the active section in plain language."},{label:"Optimize",msg:"Suggest settings I might want to change based on my usage patterns."}]});}
+</script>
+
+<div id="saved" class="saved">Saved</div>
+
+<div class="page">
+    <div class="eos-header"><h1>Settings</h1></div>
+
+    <!-- System info -->
+    <div class="sys-info" id="sys-info"></div>
+
+    <!-- Search -->
+    <div class="settings-search">
+        <input id="settings-search-input" type="search" placeholder="Search settings…" autocomplete="off">
+        <span id="settings-search-count" class="settings-search-count"></span>
+    </div>
+
+    <div class="eos-tabs">
+        <div class="eos-tab active" onclick="switchTab('preferences')">Preferences</div>
+        <div class="eos-tab" onclick="switchTab('apps')">Apps</div>
+        <div class="eos-tab" onclick="switchTab('shortcuts')">Shortcuts</div>
+        <div class="eos-tab" onclick="switchTab('system')">System</div>
+    </div>
+
+    <div class="eos-tab-content active" id="tab-preferences">
+        <div id="preferences-content"></div>
+    </div>
+
+    <div class="eos-tab-content" id="tab-apps">
+        <div id="apps-content"></div>
+    </div>
+
+    <div class="eos-tab-content" id="tab-shortcuts">
+        <div id="shortcuts-content"></div>
+    </div>
+
+    <div class="eos-tab-content" id="tab-system">
+        <div id="system-content"></div>
+    </div>
+</div>
+
+<script>
+var currentValues = {};
+
+function switchTab(name) {
+    var tabs = ['preferences','apps','shortcuts','system'];
+    tabs.forEach(function(t, i) {
+        var el = document.querySelectorAll('.eos-tab')[i];
+        if (el) el.classList.toggle('active', t === name);
+    });
+    document.querySelectorAll('.eos-tab-content').forEach(function(t) { t.classList.remove('active'); });
+    document.getElementById('tab-' + name).classList.add('active');
+    if (name === 'shortcuts' && !shortcutsRendered) loadShortcutsTab();
+    // Re-apply the current search filter so it targets the newly visible tab.
+    filterSettings();
+}
+
+function showSaved() {
+    var el = document.getElementById('saved');
+    el.classList.add('show');
+    clearTimeout(el._t);
+    el._t = setTimeout(function() { el.classList.remove('show'); }, 1500);
+}
+
+function filterSettings() {
+    var input = document.getElementById('settings-search-input');
+    if (!input) return;
+    var q = (input.value || '').trim().toLowerCase();
+    var activeTab = document.querySelector('.eos-tab-content.active');
+    if (!activeTab) return;
+
+    var rows = activeTab.querySelectorAll('.setting-row[data-row-label]');
+    var sections = activeTab.querySelectorAll('.section[data-section-title]');
+    var hits = 0;
+
+    if (!q) {
+        rows.forEach(function(r) { r.classList.remove('hidden-by-search'); });
+        sections.forEach(function(s) { s.classList.remove('hidden-by-search'); });
+        document.getElementById('settings-search-count').textContent = '';
+        return;
+    }
+
+    sections.forEach(function(sec) {
+        var title = sec.getAttribute('data-section-title') || '';
+        var sectionMatches = title.indexOf(q) !== -1;
+        var visibleInSection = 0;
+        sec.querySelectorAll('.setting-row[data-row-label]').forEach(function(row) {
+            var label = row.getAttribute('data-row-label') || '';
+            var key = row.getAttribute('data-row-key') || '';
+            var rowHit = sectionMatches || label.indexOf(q) !== -1 || key.indexOf(q) !== -1;
+            row.classList.toggle('hidden-by-search', !rowHit);
+            if (rowHit) { hits++; visibleInSection++; }
+        });
+        sec.classList.toggle('hidden-by-search', visibleInSection === 0 && !sectionMatches);
+    });
+
+    document.getElementById('settings-search-count').textContent =
+        hits ? (hits + ' match' + (hits === 1 ? '' : 'es')) : 'no matches';
+}
+
+async function loadNetwork() {
+    try {
+        var n = await EOS.api('/settings/api/network');
+        var modeOptions = ['local','private','public'].map(function(m) {
+            return '<option value="' + m + '"' + (n.mode === m ? ' selected' : '') + '>' + m + '</option>';
+        }).join('');
+        var bind = esc((n.host || '') + ':' + (n.port || ''));
+        var bindHint = 'Derived from mode';
+        var bindStyle = 'color:var(--text-secondary)';
+        if (n.host_override) {
+            bindHint = '⚠ override — mode default is ' + esc(n.mode_default_host) + '. Re-apply mode to reset.';
+            bindStyle = 'color:var(--warning, #f59e0b)';
+        }
+        var tokenPlaceholder = n.auth_token_set ? '(already set — leave blank to keep)' : 'not set';
+        var authRowStyle = n.mode === 'public' ? 'flex' : 'none';
+        document.getElementById('network-section').innerHTML =
+            '<div class="setting-row">' +
+                '<div><div class="setting-label">Mode</div><div class="setting-key">local · private · public — restart required after change</div></div>' +
+                '<select class="s-select" id="network-mode" onchange="onNetworkModeChange()">' + modeOptions + '</select>' +
+            '</div>' +
+            '<div class="setting-row">' +
+                '<div><div class="setting-label">Bind Address</div><div class="setting-key">' + bindHint + '</div></div>' +
+                '<div style="font-family:var(--mono);font-size:12px;' + bindStyle + '">' + bind + '</div>' +
+            '</div>' +
+            '<div class="setting-row" id="network-auth-row" style="display:' + authRowStyle + '">' +
+                '<div><div class="setting-label">Auth Token</div><div class="setting-key">Required for public mode</div></div>' +
+                '<input class="s-input" type="password" id="network-auth-token" placeholder="' + esc(tokenPlaceholder) + '" autocomplete="new-password" style="width:180px">' +
+            '</div>' +
+            '<div class="setting-row">' +
+                '<div><div class="setting-label">Apply</div><div class="setting-key">Writes emptyos.toml · you run <code>restart.bat</code> to take effect</div></div>' +
+                '<button class="s-tiny-btn" id="network-apply" onclick="applyNetwork()">Apply</button>' +
+            '</div>' +
+            '<div id="network-restart-banner" class="restart-banner">' +
+                '<strong>Manual restart required.</strong> Changes are written to <code>emptyos.toml</code> but the daemon is still running the old config. ' +
+                'Run <code>restart.bat</code> on your machine to pick them up — EmptyOS does not auto-restart itself.' +
+                '<span class="rb-hint">You\'ll lose your connection to this page briefly while the daemon reboots.</span>' +
+            '</div>';
+    } catch(e) {
+        document.getElementById('network-section').innerHTML =
+            '<div class="setting-row"><div class="setting-label" style="color:var(--text-muted)">Network info unavailable</div></div>';
+    }
+}
+
+function onNetworkModeChange() {
+    var m = document.getElementById('network-mode').value;
+    document.getElementById('network-auth-row').style.display = m === 'public' ? 'flex' : 'none';
+}
+
+async function applyNetwork() {
+    var mode = document.getElementById('network-mode').value;
+    var authEl = document.getElementById('network-auth-token');
+    var auth = authEl ? authEl.value : '';
+    if (mode === 'public') {
+        if (!await EOS_UI.confirm({message: 'Public mode exposes EmptyOS to the network. An auth token is required. Continue?', action: 'Enable public', danger: true})) return;
+    } else if (mode === 'private') {
+        if (!await EOS_UI.confirm({message: 'Private mode binds to 0.0.0.0. Only safe on trusted networks (Tailscale, LAN). Continue?', action: 'Enable private', danger: true})) return;
+    }
+    var body = {mode: mode};
+    if (mode === 'public' && auth) body.auth_token = auth;
+    try {
+        var r = await EOS.post('/settings/api/network', body);
+        if (r && r.error) { EOS_UI.toast(r.error, false); return; }
+        EOS_UI.toast('Saved to emptyos.toml');
+        if (authEl) authEl.value = '';
+        var banner = document.getElementById('network-restart-banner');
+        if (banner) { banner.classList.add('show'); banner.scrollIntoView({behavior:'smooth', block:'nearest'}); }
+    } catch(e) {
+        EOS_UI.toast('Error: ' + (e.message || e), false);
+    }
+}
+
+async function saveSetting(key, value) {
+    try {
+        await EOS.post('/settings/api/set', {key: key, value: value});
+        currentValues[key] = value;
+        showSaved();
+
+        // Apply side effects for settings that need immediate action
+        if (key === 'system.theme') {
+            localStorage.setItem('eos-theme', value);
+            document.documentElement.className = 'theme-' + value;
+        }
+        if (key === 'system.language') {
+            localStorage.setItem('eos-language', value);
+        }
+    } catch(e) { EOS_UI.toast('Error saving', false); }
+}
+
+function renderControl(s) {
+    var val = currentValues[s.key];
+    if (val === undefined || val === null) val = s.default;
+    var id = 'ctrl-' + s.key.replace(/\./g, '-');
+
+    if (s.type === 'select') {
+        var opts = (s.options || []).map(function(o) {
+            return '<option value="' + o + '"' + (String(val) === String(o) ? ' selected' : '') + '>' + o + '</option>';
+        }).join('');
+        return '<select class="s-select" id="' + id + '" onchange="saveSetting(\'' + s.key + '\', this.value)">' + opts + '</select>';
+    }
+    if (s.type === 'toggle') {
+        return '<label class="toggle"><input type="checkbox" id="' + id + '"' + (val ? ' checked' : '') + ' onchange="saveSetting(\'' + s.key + '\', this.checked)"><span class="toggle-track"></span><span class="toggle-thumb"></span></label>';
+    }
+    if (s.type === 'number') {
+        return '<input class="s-input" type="number" id="' + id + '" value="' + (val || '') + '" step="any" onchange="saveSetting(\'' + s.key + '\', parseFloat(this.value) || 0)">';
+    }
+    // text
+    return '<input class="s-input" type="text" id="' + id + '" value="' + esc(String(val || '')) + '" onchange="saveSetting(\'' + s.key + '\', this.value)">';
+}
+
+async function loadSettings() {
+    try {
+        var [schema, values, config] = await Promise.all([
+            EOS.api('/settings/api/schema'),
+            EOS.api('/settings/api/get'),
+            EOS.api('/settings/api/config'),
+        ]);
+
+        // Flatten values
+        function flatten(obj, prefix) {
+            var r = {};
+            Object.entries(obj).forEach(function(e) {
+                var k = prefix ? prefix + '.' + e[0] : e[0];
+                if (typeof e[1] === 'object' && e[1] !== null && !Array.isArray(e[1])) {
+                    Object.assign(r, flatten(e[1], k));
+                } else { r[k] = e[1]; }
+            });
+            return r;
+        }
+        currentValues = flatten(values, '');
+
+        // System info cards
+        var sys = config.system || {};
+        document.getElementById('sys-info').innerHTML =
+            '<div class="sys-card"><div class="sys-val">' + (sys.apps ? sys.apps.total : '?') + '</div><div class="sys-label">Apps</div></div>' +
+            '<div class="sys-card"><div class="sys-val">' + (sys.plugins ? sys.plugins.length : '?') + '</div><div class="sys-label">Plugins</div></div>' +
+            '<div class="sys-card"><div class="sys-val">' + Object.keys(sys.capabilities || {}).length + '</div><div class="sys-label">Capabilities</div></div>' +
+            '<div class="sys-card"><div class="sys-val">' + (sys.apps ? sys.apps.loaded : '?') + '</div><div class="sys-label">Loaded</div></div>';
+
+        // Split sections: core preferences vs app-contributed.
+        var sections = (schema.sections || []);
+        var iconMap = {gear:'&#9881;', brain:'&#129504;', pin:'&#128205;', bell:'&#128276;',
+                       user:'&#128100;', compass:'&#129517;', calendar:'&#128197;',
+                       keyboard:'&#9000;', app:'&#9679;'};
+        function renderSection(sec) {
+            var rows = sec.settings.map(function(s) {
+                return '<div class="setting-row" data-row-label="' + esc((s.label||'').toLowerCase()) +
+                    '" data-row-key="' + esc((s.key||'').toLowerCase()) + '">' +
+                    '<div><div class="setting-label">' + esc(s.label) + '</div><div class="setting-key">' + esc(s.key) + '</div></div>' +
+                    renderControl(s) + '</div>';
+            }).join('');
+            var icon = iconMap[sec.icon] || sec.icon || '&#9679;';
+            return '<div class="section" data-section-title="' + esc((sec.title||'').toLowerCase()) + '">' +
+                '<div class="section-hdr"><span class="section-icon">' + icon + '</span><span class="section-name">' + esc(sec.title) + '</span></div>' +
+                '<div class="setting-group">' + rows + '</div></div>';
+        }
+        var prefSections = sections.filter(function(s) { return !s.app_id; });
+        var appSections  = sections.filter(function(s) { return !!s.app_id; });
+        document.getElementById('preferences-content').innerHTML = prefSections.map(renderSection).join('');
+        document.getElementById('apps-content').innerHTML = appSections.length
+            ? appSections.map(renderSection).join('')
+            : '<div class="eos-empty">No apps have contributed settings.</div>';
+
+        // System tab — raw config
+        var caps = sys.capabilities || {};
+        var capRows = Object.entries(caps).map(function(e) {
+            return '<div class="setting-row"><div><div class="setting-label">' + e[0] + '</div></div><div style="font-size:12px;color:var(--text-secondary)">' + (e[1].providers || []).join(', ') + '</div></div>';
+        }).join('');
+        document.getElementById('system-content').innerHTML =
+            '<div class="section"><div class="section-hdr"><span class="section-icon">&#127760;</span><span class="section-name">Network</span></div><div class="setting-group" id="network-section"><div class="setting-row"><div class="setting-label" style="color:var(--text-muted)">Loading...</div></div></div></div>' +
+            '<div class="section"><div class="section-hdr"><span class="section-icon">⚡</span><span class="section-name">Capabilities</span></div><div class="setting-group">' + capRows + '</div></div>' +
+            '<div class="section"><div class="section-hdr"><span class="section-icon">🔌</span><span class="section-name">Plugins</span></div><div class="setting-group">' +
+            (sys.plugins || []).map(function(p) { return '<div class="setting-row"><div class="setting-label">' + p + '</div></div>'; }).join('') +
+            '</div></div>' +
+            '<div class="section"><div class="section-hdr"><span class="section-icon">📂</span><span class="section-name">Vault</span></div><div class="setting-group"><div class="setting-row"><div class="setting-label">' + esc(sys.vault_path || '') + '</div></div></div></div>';
+
+        loadNetwork();
+
+    } catch(e) {
+        console.error('Settings load error:', e);
+        document.getElementById('settings-content').innerHTML = '<div class="eos-empty">Error loading settings: ' + (e.message || e) + '</div>';
+    }
+}
+
+var shortcutsRendered = false;
+async function loadShortcutsTab() {
+    shortcutsRendered = true;
+    try {
+        var data = await EOS.api('/settings/api/shortcuts');
+        var el = document.getElementById('shortcuts-content');
+
+        // Global shortcuts table
+        var globalRows = (data.global || []).map(function(s) {
+            return '<tr><td>' + renderKbd(s.key) + '</td><td>' + esc(s.action) + '</td></tr>';
+        }).join('');
+
+        // Go-to shortcuts table
+        var goMap = data.go_map || {};
+        var goKeys = Object.keys(goMap).sort();
+        var goRows = goKeys.map(function(k) {
+            var label = goMap[k];
+            return '<tr><td>' + renderKbd('g') + ' ' + renderKbd(k) + '</td><td>' + esc(label) + '</td><td><button class="s-tiny-btn" onclick="editGoKey(\'' + k + '\')">Edit</button></td></tr>';
+        }).join('');
+
+        el.innerHTML =
+            '<div class="section"><div class="section-hdr"><span class="section-icon">&#9000;</span><span class="section-name">Global Shortcuts</span></div>' +
+            '<div class="setting-group"><table class="shortcut-table">' +
+            '<tr><th>Shortcut</th><th>Action</th></tr>' + globalRows +
+            '</table></div></div>' +
+
+            '<div class="section"><div class="section-hdr"><span class="section-icon">&#128640;</span><span class="section-name">Go-To Navigation</span>' +
+            '<span style="font-size:12px;color:var(--text-muted);margin-left:auto">Press <kbd>g</kbd> then a letter</span></div>' +
+            '<div class="setting-group"><table class="shortcut-table">' +
+            '<tr><th>Keys</th><th>Destination</th><th></th></tr>' + goRows +
+            '</table></div></div>' +
+
+            '<div class="section"><div class="section-hdr"><span class="section-icon">&#128161;</span><span class="section-name">Tips</span></div>' +
+            '<div class="setting-group" style="font-size:13px;color:var(--text-secondary);line-height:1.8;padding:8px 0">' +
+            'Press <kbd>Ctrl</kbd>+<kbd>K</kbd> on any page to open the command palette.<br>' +
+            'Press <kbd>?</kbd> on any page for a quick shortcut reference.<br>' +
+            'Press <kbd>/</kbd> to focus the search input on any page.<br>' +
+            'Shortcuts work when no input field is focused.' +
+            '</div></div>';
+
+    } catch(e) {
+        document.getElementById('shortcuts-content').innerHTML = '<div class="eos-empty">Error loading shortcuts</div>';
+    }
+}
+
+function renderKbd(key) {
+    var parts = key.split('+');
+    return parts.map(function(p) { return '<kbd>' + esc(p.trim()) + '</kbd>'; }).join('+');
+}
+
+function editGoKey(key) {
+    EOS_UI.formModal('Edit shortcut g ' + key, [
+        {key: 'path',  label: 'App path', placeholder: '/task/', required: true},
+        {key: 'label', label: 'Label',    placeholder: 'Tasks'},
+    ], async function(values) {
+        var pathVal = (values.path || '').trim();
+        if (!pathVal) return false;
+        var label = (values.label || '').trim() || pathVal.replace(/\//g, '').replace(/-/g, ' ');
+        try {
+            var resp = await EOS.api('/settings/api/get?key=shortcuts.go_map');
+            var customMap = (resp.value && typeof resp.value === 'object') ? resp.value : {};
+            customMap[key] = {path: pathVal, label: label};
+            await EOS.post('/settings/api/set', {key: 'shortcuts.go_map', value: customMap});
+            showSaved();
+            shortcutsRendered = false;
+            loadShortcutsTab();
+        } catch(e) { EOS_UI.toast('Error saving shortcut', false); }
+    });
+}
+
+loadSettings();
+
+// Wire the search input. Debounce not needed — filter is DOM-only.
+(function() {
+    var input = document.getElementById('settings-search-input');
+    if (input) {
+        input.addEventListener('input', filterSettings);
+        // Esc clears the filter.
+        input.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape') { input.value = ''; filterSettings(); input.blur(); }
+        });
+    }
+})();
+</script>
+</body>
+</html>

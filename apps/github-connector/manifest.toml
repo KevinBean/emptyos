@@ -1,0 +1,34 @@
+[app]
+id = "github-connector"
+name = "GitHub Connector"
+version = "1.0.0"
+description = "Sync GitHub issues and PRs into EmptyOS projects"
+dimensions = ["occupational"]
+
+[app.entry]
+module = "app"
+class = "GitHubConnectorApp"
+
+[requires]
+capabilities = ["read", "write"]
+
+[provides.cli]
+commands = ["github"]
+
+[provides.web]
+prefix = "/github-connector"
+
+[provides.project-tools]
+tools = [
+    {id = "sync-issues", label = "Sync GitHub Issues", method = "api_sync_issues", type = "development"},
+    {id = "pr-status", label = "PR Status", method = "api_pr_status", type = "development"},
+]
+
+[provides.events]
+emits = ["github:synced", "github:pr_status"]
+
+[provides.settings]
+schema = [
+    {key = "github.token", label = "GitHub Token", type = "password", default = ""},
+    {key = "github.default_repo", label = "Default Repo (owner/repo)", type = "text", default = ""},
+]

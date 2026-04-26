@@ -1,0 +1,119 @@
+[app]
+id = "task"
+name = "Task Manager"
+version = "1.0.0"
+description = "Add, complete, and query tasks across notes"
+dimensions = ["occupational"]
+
+[app.entry]
+module = "app"
+class = "TaskApp"
+
+[provides.cli]
+commands = ["task"]
+
+[provides.web]
+prefix = "/task"
+
+[provides.events]
+emits = ["task:added", "task:completed", "task:reopened", "task:snoozed", "task:updated"]
+
+[provides.export]
+enabled = true
+mode = "standalone"
+fallbacks = ["vault:indexeddb", "events:local-bus", "call_app:bundled", "viewer:none"]
+
+[requires]
+capabilities = ["read", "write", "think"]
+apps = []
+# projects + journal are optional task sources — indexer.py merges their
+# tasks if present, otherwise just shows tasks from notes in the vault.
+services = []
+events = []
+
+[provides.settings]
+schema = [
+    {key = "task.zombie_days", label = "Zombie Threshold (days)", type = "number", default = 90},
+    {key = "task.focus_top_n", label = "Focus Suggestions", type = "number", default = 3},
+]
+
+[provides.assistant]
+commands = [
+    {slash = "/tasks", method = "list_tasks"},
+    {slash = "/add", method = "add", arg = "text"},
+    {slash = "/done", method = "complete", arg = "query", inverse = "reopen"},
+    {slash = "/reopen", method = "reopen", arg = "query"},
+    {slash = "/snooze", method = "snooze", arg = "query"},
+]
+
+[[contributes.hub.needs_attention]]
+id = "overdue-tasks"
+method = "slot_needs_attention"
+limit = 5
+priority = 10
+
+[[contributes.hub.today]]
+id = "tasks-due-today"
+method = "slot_today"
+limit = 5
+priority = 10
+
+# ── Legacy-parity panels ──
+
+[[contributes.hub.panel]]
+id = "pulse-stats"
+method = "panel_pulse_stats"
+renderer = "tiles-row"
+priority = 30
+
+[[contributes.hub.panel]]
+id = "todays-tasks"
+title = "📋 Today's Tasks"
+method = "panel_todays_tasks"
+renderer = "task-list"
+priority = 100
+
+[[contributes.voice-assistant.context]]
+id = "open-tasks"
+method = "assistant_context"
+priority = 30
+
+[[contributes.voice-assistant.intent]]
+verb = "task.add"
+method = "voice_add_task"
+example = "add a task to call mom tomorrow"
+description = "Capture a quick task. Pass due as YYYY-MM-DD, 'today', or 'tomorrow' when the user states a deadline."
+args = { text = "string", due = "string?" }
+always = true
+
+[[contributes.voice-assistant.intent]]
+verb = "task.list_today"
+method = "voice_list_today"
+example = "what are my tasks today"
+description = "Show today's most urgent tasks (overdue + due-today, top 5)"
+args = {}
+always = true
+card = "task-list"
+
+[[contributes.voice-assistant.intent]]
+verb = "task.list_recent"
+method = "voice_list_recent"
+example = "show the tasks I just added"
+description = "Show tasks added in this session, newest first — use this to verify a recent add."
+args = {}
+always = true
+card = "task-list"
+
+[[contributes.voice-assistant.narration]]
+intent = "task.add"
+method = "narrate_after_add"
+
+[[contributes.tour.step]]
+id = "task.capture"
+group = "core"
+priority = 200
+route = "/task/"
+spotlight = "#add-text"
+title = "Capture a task"
+body = "Type a thought, hit Enter — it lands in your inbox. Tag it (e.g. <code>#dev</code>) to route to a specific project."
+requires = ["read", "write"]

@@ -1,0 +1,23 @@
+[app]
+id = "link"
+name = "Link Manager"
+version = "1.0.0"
+description = "Find and manage connections between notes"
+
+[app.entry]
+module = "app"
+class = "LinkApp"
+
+[provides.cli]
+commands = ["link"]
+
+[provides.web]
+prefix = "/link"
+
+[provides.events]
+emits = ["link:scan_completed"]
+
+[requires]
+capabilities = ["read", "search", "think"]
+services = []
+events = []

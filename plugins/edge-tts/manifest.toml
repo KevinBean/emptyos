@@ -1,0 +1,16 @@
+[plugin]
+id = "edge-tts"
+name = "Edge TTS"
+version = "1.0.0"
+description = "Free in-process TTS via Microsoft Edge voices (edge-tts pip package)"
+
+[plugin.entry]
+module = "plugin"
+class = "EdgeTTSPlugin"
+
+[provides]
+services = []
+tags = ["audio", "tts"]
+
+[platforms]
+supports = ["laptop", "vps-cpu", "vps-gpu", "docker"]

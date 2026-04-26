@@ -1,0 +1,28 @@
+[app]
+id = "app-analytics"
+name = "App Analytics"
+version = "3.0.0"
+description = "Personal usage tracking + vault health — which apps you use, when, and what to fix or delete"
+dimensions = ["occupational"]
+
+[app.entry]
+module = "app"
+class = "AppAnalyticsApp"
+
+[requires]
+capabilities = ["think", "search"]
+apps = []
+
+[provides.cli]
+commands = ["analytics", "vault"]
+
+[provides.web]
+prefix = "/app-analytics"
+
+[provides.events]
+emits = []
+
+[provides.settings]
+schema = [
+    {key = "app-analytics.retention_days", label = "Retention (days)", type = "number", default = 365, hint = "Delete usage data older than this"},
+]

@@ -1,0 +1,16 @@
+[plugin]
+id = "webcam"
+name = "Webcam"
+version = "1.0.0"
+description = "Local camera capture via OpenCV — provides the see capability"
+
+[plugin.entry]
+module = "plugin"
+class = "WebcamPlugin"
+
+[provides]
+services = ["webcam"]
+tags = ["image", "camera", "capture"]
+
+[platforms]
+supports = ["laptop"]

@@ -1,0 +1,148 @@
+* { margin:0; padding:0; box-sizing:border-box }
+body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif; background:var(--bg); color:var(--text); min-height:100dvh; padding:env(safe-area-inset-top) 16px calc(env(safe-area-inset-bottom) + 80px); -webkit-font-smoothing:antialiased }
+.scenario-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(260px,1fr)); gap:10px; margin-bottom:16px }
+.scenario-card { padding:12px 14px; background:var(--bg-card); border:1px solid var(--border); border-radius:12px; display:flex; flex-direction:column; gap:6px; animation:cardIn 0.3s ease both }
+.scenario-card:hover { border-color:color-mix(in srgb,var(--accent) 40%,var(--border)) }
+.scenario-card .row1 { display:flex; align-items:center; gap:6px; flex-wrap:wrap }
+.scenario-card .bucket { font-family:var(--mono); font-size:11px; color:var(--accent); font-weight:600 }
+.scenario-card .shape { font-size:10px; padding:1px 6px; border-radius:4px; background:color-mix(in srgb,var(--accent) 15%,transparent); color:var(--accent); text-transform:uppercase; letter-spacing:0.5px }
+.scenario-card .desc { font-size:13px; color:var(--text-secondary); line-height:1.4 }
+.scenario-card .preview { font-size:11px; color:var(--text-muted); font-family:var(--mono); white-space:nowrap; overflow:hidden; text-overflow:ellipsis }
+.scenario-card .actions { display:flex; gap:6px; margin-top:4px }
+.scenario-card.active { border-color:var(--accent); box-shadow:0 0 0 1px var(--accent) inset }
+.bench-result { background:var(--bg-card); border:1px solid var(--border); border-radius:14px; padding:14px; margin-bottom:12px; animation:cardIn 0.35s ease both }
+.bench-scenario { font-size:13px; color:var(--accent); font-weight:600; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:2px }
+.bench-desc { font-size:14px; color:var(--text-secondary); margin-bottom:10px }
+.bench-table { width:100%; border-collapse:collapse; font-size:13px }
+.bench-table th { text-align:left; padding:6px 8px; color:var(--text-muted); font-weight:500; border-bottom:1px solid var(--border); font-size:11px; text-transform:uppercase; letter-spacing:0.5px }
+.bench-table td { padding:8px; border-bottom:1px solid color-mix(in srgb,var(--border) 50%,transparent); vertical-align:top }
+.bench-table .provider { font-weight:600; color:var(--text-heading); white-space:nowrap }
+.bench-table .variant-meta { font-family:var(--mono); font-size:10px; padding:1px 6px; border-radius:4px; background:color-mix(in srgb,var(--accent) 10%,transparent); color:var(--text-secondary); font-weight:500; margin-left:4px }
+.bench-table .variant-meta.mode { background:color-mix(in srgb,#d29922 15%,transparent); color:#d29922 }
+.bench-table .latency { font-family:var(--mono); color:var(--accent); white-space:nowrap; text-align:right; min-width:60px }
+.bench-table .response { font-size:12px; color:var(--text-secondary); line-height:1.4; max-height:60px; overflow:hidden; word-break:break-word; cursor:pointer; position:relative }
+.bench-table .response.expanded { max-height:none; white-space:pre-wrap }
+.bench-table .response:not(.expanded).clamped::after { content:''; position:absolute; left:0; right:0; bottom:0; height:20px; background:linear-gradient(transparent,var(--bg-card)); pointer-events:none }
+.bench-table .error { color:#ef4444; font-size:12px }
+.best-tag { display:inline-block; background:color-mix(in srgb,var(--accent) 15%,transparent); color:var(--accent); font-size:10px; padding:1px 6px; border-radius:4px; margin-left:6px; font-weight:600 }
+.run-status { text-align:center; padding:24px; color:var(--text-muted) }
+.run-status.running { color:var(--accent) }
+.empty { text-align:center; padding:32px; color:var(--text-muted) }
+.result-time { font-size:11px; color:var(--text-muted); float:right; font-family:var(--mono) }
+.rank-bucket { background:var(--bg-card); border:1px solid var(--border); border-radius:14px; padding:14px; margin-bottom:12px; animation:cardIn 0.35s ease both }
+.rank-bucket .hdr { display:flex; align-items:baseline; gap:10px; margin-bottom:4px; flex-wrap:wrap }
+.rank-bucket .bucket-id { font-family:var(--mono); font-size:13px; color:var(--accent); font-weight:600 }
+.rank-bucket .bucket-desc { font-size:13px; color:var(--text-secondary) }
+.rank-bucket .n-runs { font-size:11px; color:var(--text-muted); margin-left:auto; font-family:var(--mono) }
+.rank-bucket .chain { font-family:var(--mono); font-size:12px; padding:6px 8px; background:var(--bg-secondary,#0d1117); border:1px solid var(--border); border-radius:6px; margin:6px 0 10px; display:flex; align-items:center; gap:8px }
+.rank-bucket .chain .lbl { color:var(--text-muted); font-size:11px; text-transform:uppercase; letter-spacing:0.5px }
+.rank-bucket .chain .val { color:var(--text-heading); flex:1; word-break:break-all }
+.rank-bucket .chain .empty-chain { color:var(--text-muted); font-style:italic }
+.rank-table { width:100%; border-collapse:collapse; font-size:13px }
+.rank-table th { text-align:left; padding:6px 8px; color:var(--text-muted); font-weight:500; border-bottom:1px solid var(--border); font-size:11px; text-transform:uppercase; letter-spacing:0.5px }
+.rank-table td { padding:7px 8px; border-bottom:1px solid color-mix(in srgb,var(--border) 50%,transparent); vertical-align:top }
+.rank-table .rank-n { width:24px; color:var(--text-muted); font-family:var(--mono); text-align:right }
+.rank-table .provider { font-weight:600; color:var(--text-heading); white-space:nowrap }
+.rank-table .variant-badges { margin-top:3px; display:flex; gap:4px; flex-wrap:wrap }
+.rank-table .variant-meta { font-family:var(--mono); font-size:10px; padding:1px 6px; border-radius:4px; background:color-mix(in srgb,var(--accent) 10%,transparent); color:var(--text-secondary); font-weight:500 }
+.rank-table .variant-meta.mode { background:color-mix(in srgb,#d29922 15%,transparent); color:#d29922 }
+.rank-table .stat { font-family:var(--mono); white-space:nowrap; text-align:right; min-width:48px }
+.rank-table .ok-high { color:var(--accent); font-weight:600 }
+.rank-table .ok-mid { color:#d29922 }
+.rank-table .ok-low { color:#ef4444 }
+.rank-table .eos-badge { margin-left:4px; font-size:10px; padding:1px 5px }
+.rank-table .snippet { font-size:11px; color:var(--text-secondary); line-height:1.4; max-width:320px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; cursor:pointer }
+.rank-table .snippet.expanded { max-width:none; white-space:pre-wrap; overflow:visible; text-overflow:clip }
+.rank-table .snippet-toggle { display:inline-block; margin-top:4px; font-size:10px; color:var(--accent); font-family:var(--mono); text-transform:uppercase; letter-spacing:0.5px }
+.rank-bucket.empty-bucket { opacity:0.55 }
+.rank-bucket.empty-bucket .chain { display:none }
+/* Mode selector (text-bench vs agent-bench) -------------------------- */
+.mode-selector { display:flex; gap:10px; margin-bottom:12px }
+.mode-btn { flex:1; background:var(--bg-card); border:1px solid var(--border); border-radius:12px; padding:10px 14px; text-align:left; cursor:pointer; display:flex; flex-direction:column; gap:2px; transition:background 0.15s, border-color 0.15s; font-family:inherit }
+.mode-btn:hover { border-color:color-mix(in srgb,var(--accent) 40%,var(--border)) }
+.mode-btn.active { background:color-mix(in srgb,var(--accent) 12%,transparent); border-color:var(--accent) }
+.mode-btn .mode-title { font-size:14px; font-weight:600; color:var(--text-heading) }
+.mode-btn.active .mode-title { color:var(--accent) }
+.mode-btn .mode-hint { font-size:11px; color:var(--text-muted); font-family:var(--mono) }
+.mode-text-subtabs { transition:opacity 0.15s }
+.mode-text-subtabs.hidden { display:none }
+
+/* Agent-bench tab ---------------------------------------------------- */
+.agent-toolbar { display:flex; gap:12px; align-items:flex-start; flex-wrap:wrap; padding:12px 14px; background:var(--bg-card); border:1px solid var(--border); border-radius:14px; margin-bottom:12px }
+.agent-toolbar .subjects-group { flex:1; min-width:240px; display:flex; flex-direction:column; gap:6px }
+.agent-toolbar .subjects-group .lbl { font-size:10px; text-transform:uppercase; letter-spacing:0.5px; color:var(--text-muted); font-weight:500 }
+.agent-toolbar .subjects-row { display:flex; gap:6px; flex-wrap:wrap }
+.agent-toolbar .actions-group { display:flex; flex-direction:column; gap:6px; align-items:flex-end }
+.agent-toolbar .actions-group .lbl { font-size:10px; text-transform:uppercase; letter-spacing:0.5px; color:var(--text-muted); font-weight:500 }
+.subject-chip { padding:4px 10px; border-radius:14px; background:var(--bg); border:1px solid var(--border); font-family:var(--mono); display:inline-flex; align-items:center; gap:6px; cursor:pointer; user-select:none; font-size:12px; transition:background 0.12s, border-color 0.12s }
+.subject-chip:hover { border-color:color-mix(in srgb,var(--accent) 40%,var(--border)) }
+.subject-chip.unavailable { opacity:0.45; cursor:not-allowed }
+.subject-chip .dot { width:7px; height:7px; border-radius:50%; background:var(--text-muted) }
+.subject-chip.available .dot { background:var(--accent) }
+.subject-chip.unavailable .dot { background:#ef4444 }
+.subject-chip.selected { background:color-mix(in srgb,var(--accent) 16%,transparent); border-color:var(--accent); color:var(--text-heading) }
+.subject-chip.selected .dot { background:var(--accent) }
+
+.agent-run-status { font-size:12px; color:var(--text-secondary); padding:8px 12px; background:var(--bg-card); border:1px solid var(--border); border-radius:10px; margin-bottom:12px; font-family:var(--mono) }
+.agent-run-status.running { color:var(--accent); border-color:color-mix(in srgb,var(--accent) 40%,var(--border)) }
+.agent-run-status.error { color:#ef4444; border-color:color-mix(in srgb,#ef4444 40%,var(--border)) }
+
+.agent-scenarios-wrap { display:flex; flex-direction:column; gap:10px; margin-bottom:14px }
+
+.agent-bottom { display:grid; grid-template-columns:minmax(0,1.4fr) minmax(260px,0.6fr); gap:14px; align-items:start }
+@media (max-width:900px) { .agent-bottom { grid-template-columns:1fr } }
+.agent-leaderboard-panel { background:var(--bg-card); border:1px solid var(--border); border-radius:12px; padding:12px 14px }
+.agent-leaderboard-panel .panel-title { font-size:10px; text-transform:uppercase; letter-spacing:0.5px; color:var(--text-muted); font-weight:500; margin-bottom:8px }
+.agent-card { padding:12px 14px; background:var(--bg-card); border:1px solid var(--border); border-radius:12px; display:flex; flex-direction:column; gap:8px; animation:cardIn 0.3s ease both; position:relative }
+.agent-card .card-head { display:flex; align-items:baseline; gap:10px; flex-wrap:wrap }
+.agent-card .title { font-family:var(--mono); font-size:13px; color:var(--accent); font-weight:600 }
+.agent-card .floor { font-size:10px; padding:1px 6px; border-radius:4px; background:var(--bg); border:1px solid var(--border); color:var(--text-muted); font-family:var(--mono) }
+.agent-card .desc { font-size:13px; color:var(--text-secondary); line-height:1.4 }
+.agent-card .task-preview { font-size:11px; color:var(--text-muted); font-family:var(--mono); overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
+.agent-card .tags { display:flex; gap:4px; flex-wrap:wrap }
+.agent-card .tag { font-size:10px; padding:1px 6px; border-radius:4px; background:color-mix(in srgb,var(--accent) 12%,transparent); color:var(--accent); text-transform:uppercase; letter-spacing:0.5px }
+.agent-card .inline-results { display:flex; gap:6px; flex-wrap:wrap; padding:6px 0; border-top:1px solid color-mix(in srgb,var(--border) 60%,transparent); margin-top:2px }
+.agent-card .inline-result { display:flex; flex-direction:column; align-items:center; gap:2px; min-width:72px; padding:4px 8px; border-radius:6px; font-size:11px; font-family:var(--mono); cursor:pointer; transition:background 0.12s; border:1px solid transparent }
+.agent-card .inline-result:hover { background:color-mix(in srgb,var(--accent) 8%,transparent) }
+.agent-card .inline-result.in-selection { border-color:color-mix(in srgb,var(--accent) 35%,var(--border)) }
+.agent-card .inline-result.off-selection { opacity:0.55 }
+.agent-card .inline-result.off-selection:hover { opacity:1 }
+.agent-card .inline-result .subj-lbl { font-size:10px; color:var(--text-muted) }
+.agent-card .inline-result .badge { font-weight:700 }
+.agent-card .inline-result.ok .badge { color:var(--accent) }
+.agent-card .inline-result.fail .badge { color:#ef4444 }
+.agent-card .inline-result.none .badge { color:var(--text-muted) }
+.agent-card .inline-result .meta { font-size:9px; color:var(--text-muted); letter-spacing:0.5px }
+.agent-card .actions { display:flex; gap:6px; flex-wrap:wrap; margin-top:2px }
+
+.agent-leaderboard-table { width:100%; border-collapse:collapse; font-size:12px }
+.agent-leaderboard-table th { text-align:left; padding:4px 6px; color:var(--text-muted); font-weight:500; font-size:10px; text-transform:uppercase; letter-spacing:0.5px; border-bottom:1px solid var(--border) }
+.agent-leaderboard-table td { padding:5px 6px; border-bottom:1px solid color-mix(in srgb,var(--border) 40%,transparent); font-family:var(--mono); font-size:11px }
+.agent-leaderboard-table td.subj { color:var(--text-heading); font-weight:600; font-family:var(--mono) }
+.agent-leaderboard-table tr.winner { background:color-mix(in srgb,var(--accent) 10%,transparent) }
+.agent-leaderboard-table tr.winner td.subj { color:var(--accent) }
+.agent-leaderboard-table td.num { text-align:right }
+
+.agent-matrix { background:var(--bg-card); border:1px solid var(--border); border-radius:12px; padding:0; overflow:hidden }
+.agent-matrix summary { list-style:none; cursor:pointer; padding:10px 14px; font-size:11px; text-transform:uppercase; letter-spacing:0.5px; color:var(--text-muted); font-weight:500; display:flex; align-items:center; justify-content:space-between }
+.agent-matrix summary::-webkit-details-marker { display:none }
+.agent-matrix summary::after { content:'▸'; color:var(--text-muted); transition:transform 0.15s }
+.agent-matrix[open] summary::after { transform:rotate(90deg) }
+.agent-matrix .matrix-body { padding:0 14px 14px }
+.agent-matrix table { width:100%; border-collapse:collapse; font-size:12px }
+.agent-matrix th { text-align:center; padding:6px 8px; color:var(--text-muted); font-weight:500; border-bottom:1px solid var(--border); font-size:10px; text-transform:uppercase; letter-spacing:0.5px; font-family:var(--mono) }
+.agent-matrix th.scen { text-align:left }
+.agent-matrix td { padding:6px 4px; border-bottom:1px solid color-mix(in srgb,var(--border) 40%,transparent); vertical-align:middle; text-align:center }
+.agent-matrix td.scen { text-align:left; font-family:var(--mono); font-size:11px; color:var(--text-heading); padding-left:8px }
+.agent-matrix td.cell { cursor:pointer; font-family:var(--mono); font-size:11px; border-radius:4px }
+.agent-matrix td.cell:hover { background:color-mix(in srgb,var(--accent) 10%,transparent) }
+.agent-matrix td.cell.ok { color:var(--accent); background:color-mix(in srgb,var(--accent) 6%,transparent) }
+.agent-matrix td.cell.fail { color:#ef4444; background:color-mix(in srgb,#ef4444 6%,transparent) }
+.agent-matrix td.cell.empty { color:var(--text-muted) }
+
+.transcript-evt { padding:6px 8px; border-bottom:1px solid color-mix(in srgb,var(--border) 50%,transparent); font-family:var(--mono); font-size:11px; line-height:1.5 }
+.transcript-evt .etype { font-weight:600; color:var(--accent); margin-right:6px }
+.transcript-evt .etype.err { color:#ef4444 }
+.transcript-evt .etype.text { color:var(--text-secondary) }
+.transcript-evt.text-block { background:color-mix(in srgb,var(--accent) 4%,transparent); white-space:pre-wrap; color:var(--text-secondary); font-family:-apple-system,'Segoe UI',system-ui,sans-serif; font-size:12px }
+.transcript-evt .payload { color:var(--text-muted); word-break:break-word }

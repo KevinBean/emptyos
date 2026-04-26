@@ -1,0 +1,592 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <title>People — EmptyOS</title>
+    <link rel="stylesheet" href="/static/theme.css">
+    <link rel="stylesheet" href="/static/eos-components.css">
+    <style>
+        body { padding-top: 44px; padding-bottom: env(safe-area-inset-bottom); font-family: var(--font); background: var(--bg); color: var(--text); margin: 0; }
+        .wrap { max-width: 1100px; margin: 0 auto; padding: 1.2rem; }
+        h1 { font-size: 1.6rem; margin: 0 0 0.2rem; color: var(--text-heading); }
+        .subtitle { color: var(--text-secondary); font-size: 0.9rem; margin-bottom: 1rem; }
+
+        .toolbar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem; gap: 0.6rem; flex-wrap: wrap; }
+        .btn { background: var(--bg-card); border: 1px solid var(--border); color: var(--text); padding: 0.45rem 0.9rem; border-radius: var(--radius); font-size: 0.85rem; cursor: pointer; font-family: inherit; }
+        .btn:hover { background: var(--bg-card-hover); border-color: var(--border-strong); }
+        .btn-primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+        .btn-primary:hover { background: var(--accent-dim); border-color: var(--accent-dim); }
+
+        /* Roster */
+        .roster { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 0.8rem; }
+        .card { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 1rem; display: flex; gap: 0.85rem; align-items: center; cursor: pointer; transition: background 0.1s, border-color 0.1s; position: relative; }
+        .card:hover { background: var(--bg-card-hover); border-color: var(--border-strong); }
+        .card.overloaded { border-left: 3px solid var(--danger); }
+        .card.busy { border-left: 3px solid var(--warning); }
+        .card.ok { border-left: 3px solid var(--success); }
+
+        .donut { --pct: 0; --band: var(--success); width: 52px; height: 52px; flex-shrink: 0; border-radius: 50%;
+            background: conic-gradient(var(--band) calc(var(--pct) * 1%), var(--border) 0); display: grid; place-items: center; position: relative; }
+        .donut::before { content: ""; width: 38px; height: 38px; border-radius: 50%; background: var(--bg-card); position: absolute; }
+        .donut span { position: relative; font-size: 0.72rem; color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+
+        .meta { flex: 1; min-width: 0; }
+        .name { font-weight: 600; color: var(--text-heading); margin-bottom: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .role { font-size: 0.78rem; color: var(--text-secondary); margin-bottom: 4px; }
+        .chips { display: flex; gap: 4px; flex-wrap: wrap; }
+        .chip { font-size: 0.68rem; background: var(--accent-bg); color: var(--accent); padding: 2px 8px; border-radius: 999px; }
+        .type-chip { font-size: 0.65rem; color: var(--text-muted); background: transparent; border: 1px solid var(--border); padding: 2px 8px; border-radius: 999px; }
+
+        .health-dot { position: absolute; top: 10px; right: 12px; width: 28px; height: 28px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; }
+        .health-good { background: rgba(52,199,89,0.15); color: var(--success); }
+        .health-ok { background: rgba(251,191,36,0.15); color: var(--warning); }
+        .health-low { background: rgba(248,113,113,0.15); color: var(--danger); }
+
+        /* Due list */
+        .due-item { display: flex; align-items: center; padding: 12px 0; border-bottom: 1px solid var(--border); gap: 12px; cursor: pointer; }
+        .due-item:hover { background: var(--bg-card-hover); }
+        .due-name { flex: 1; font-weight: 500; }
+        .due-days { font-size: 13px; font-weight: 600; color: var(--danger); font-family: var(--mono); }
+        .due-freq { font-size: 11px; color: var(--text-muted); }
+
+        /* Birthdays */
+        .bday-item { padding: 12px 0; border-bottom: 1px solid var(--border); cursor: pointer; display: flex; justify-content: space-between; align-items: center; }
+        .bday-item:hover { background: var(--bg-card-hover); }
+
+        .empty { text-align: center; color: var(--text-muted); padding: 2rem; background: var(--bg-card); border-radius: var(--radius-lg); border: 1px dashed var(--border); }
+
+        /* Detail slide-out */
+        .detail { position: fixed; top: 44px; right: 0; bottom: 0; width: min(92vw, 460px); background: var(--bg-card); border-left: 1px solid var(--border); transform: translateX(100%); transition: transform 0.2s; padding: 1.2rem; overflow-y: auto; box-shadow: -8px 0 24px var(--shadow); z-index: 10; }
+        .detail.open { transform: translateX(0); }
+        .detail h2 { margin: 0 0 0.3rem; color: var(--text-heading); }
+        .detail .close { position: absolute; top: 0.6rem; right: 0.8rem; background: transparent; border: 0; color: var(--text-secondary); font-size: 1.4rem; cursor: pointer; }
+        .detail-section { margin-top: 1rem; }
+        .detail-section h3 { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-secondary); margin: 0 0 0.4rem; }
+        .bars { display: flex; flex-direction: column; gap: 0.3rem; }
+        .bar-row { display: grid; grid-template-columns: 90px 1fr auto; gap: 0.5rem; align-items: center; font-size: 0.78rem; }
+        .bar-track { height: 8px; background: var(--border); border-radius: 4px; overflow: hidden; }
+        .bar-fill { height: 100%; background: var(--accent); }
+        .assignment-row { padding: 0.4rem 0; border-bottom: 1px solid var(--border); font-size: 0.82rem; display: flex; justify-content: space-between; }
+        .assignment-row .src { color: var(--text-muted); font-size: 0.72rem; }
+        .log-entry { padding: 8px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
+        .log-date { color: var(--text-muted); font-family: var(--mono); font-size: 11px; margin-right: 8px; }
+
+        .form-row { display: flex; flex-direction: column; gap: 4px; margin-bottom: 0.6rem; }
+        .form-row label { font-size: 0.72rem; color: var(--text-secondary); }
+        .form-row input, .form-row select, .form-row textarea { background: var(--bg-input); border: 1px solid var(--border); border-radius: var(--radius); padding: 0.4rem 0.6rem; color: var(--text); font-family: inherit; }
+        .form-row input:focus, .form-row select:focus, .form-row textarea:focus { outline: none; border-color: var(--accent); }
+
+        /* Suggest cards */
+        .suggest-card { background: var(--bg); border: 1px solid var(--border); border-radius: 14px; padding: 16px; margin-bottom: 12px; }
+        .suggest-top { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; }
+        .suggest-name { font-weight: 600; font-size: 15px; color: var(--text-heading); }
+        .suggest-reason { font-size: 13px; color: var(--text-secondary); line-height: 1.5; margin-bottom: 8px; }
+        .suggest-opener { font-size: 13px; background: var(--accent-bg); border-left: 3px solid var(--accent); padding: 8px 12px; border-radius: 0 8px 8px 0; margin-bottom: 12px; }
+    </style>
+</head>
+<body>
+<div class="wrap">
+    <h1>👥 People</h1>
+    <p class="subtitle">Team roster, capacity, and relationships — one place.</p>
+
+    <div class="eos-tabs" id="tabs">
+        <div class="eos-tab active" data-tab="roster" onclick="switchTab('roster')">Roster</div>
+        <div class="eos-tab" data-tab="relationships" onclick="switchTab('relationships')">Relationships</div>
+        <div class="eos-tab" data-tab="due" onclick="switchTab('due')">Overdue</div>
+        <div class="eos-tab" data-tab="birthdays" onclick="switchTab('birthdays')">Birthdays</div>
+    </div>
+
+    <!-- Roster tab -->
+    <div id="tab-roster" class="eos-tab-content active">
+        <div class="toolbar">
+            <div id="summary" style="color:var(--text-secondary);font-size:0.85rem"></div>
+            <div style="display:flex;gap:6px">
+                <button class="btn" onclick="showAISuggest()">✨ Suggest</button>
+                <button class="btn" onclick="openAppSettings()" title="Settings">&#9881;</button>
+                <button class="btn btn-primary" onclick="openCreate()">＋ Add person</button>
+            </div>
+        </div>
+        <div id="roster" class="roster"></div>
+    </div>
+
+    <!-- Relationships tab -->
+    <div id="tab-relationships" class="eos-tab-content">
+        <div class="toolbar">
+            <input type="text" id="search" placeholder="Search by name, company, email…" oninput="renderRelationships()" style="flex:1;padding:0.5rem 0.7rem;border-radius:12px;background:var(--bg-input);border:1px solid var(--border);color:var(--text)">
+        </div>
+        <div id="relationships" class="roster"></div>
+    </div>
+
+    <!-- Overdue tab -->
+    <div id="tab-due" class="eos-tab-content">
+        <div id="due-list"></div>
+    </div>
+
+    <!-- Birthdays tab -->
+    <div id="tab-birthdays" class="eos-tab-content">
+        <div id="bday-list"></div>
+    </div>
+</div>
+
+<!-- Detail slide-out -->
+<aside class="detail" id="detail">
+    <button class="close" onclick="closeDetail()">×</button>
+    <h2 id="detail-name">…</h2>
+    <div id="detail-role" class="role" style="color:var(--text-secondary)"></div>
+
+    <div class="detail-section">
+        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:0.6rem">
+            <button class="btn" onclick="openLog()">📝 Quick log</button>
+            <button class="btn" onclick="openChat()">💬 Chat about</button>
+            <button class="btn" onclick="loadPersona()">🎭 Persona</button>
+        </div>
+    </div>
+
+    <div class="detail-section">
+        <h3>Capacity</h3>
+        <div id="detail-capacity"></div>
+    </div>
+
+    <div class="detail-section">
+        <h3>Relationship</h3>
+        <div id="detail-relationship" style="font-size:0.85rem;color:var(--text-secondary)"></div>
+    </div>
+
+    <div class="detail-section">
+        <h3>Skills</h3>
+        <div id="detail-skills" class="chips"></div>
+    </div>
+
+    <div class="detail-section">
+        <h3>By source</h3>
+        <div id="detail-by-app" class="bars"></div>
+    </div>
+
+    <div class="detail-section">
+        <h3>By role</h3>
+        <div id="detail-by-role" class="bars"></div>
+    </div>
+
+    <div class="detail-section">
+        <h3>Assignments</h3>
+        <div id="detail-assignments"></div>
+    </div>
+
+    <div class="detail-section">
+        <h3>Quick Log</h3>
+        <div id="detail-log"></div>
+    </div>
+</aside>
+
+<!-- Create person modal -->
+<div class="eos-modal-bg" id="create-bg">
+    <div class="eos-modal">
+        <div class="eos-modal-handle"></div>
+        <h3>Add person</h3>
+        <div class="form-row"><label>Name</label><input id="cr-name" type="text" autofocus></div>
+        <div class="form-row"><label>Role</label><input id="cr-role" type="text" placeholder="Design lead"></div>
+        <div class="form-row"><label>Relationship</label>
+            <select id="cr-relationship">
+                <option value="">(none)</option>
+                <option value="friend">friend</option>
+                <option value="family">family</option>
+                <option value="colleague">colleague</option>
+                <option value="acquaintance">acquaintance</option>
+            </select>
+        </div>
+        <div class="form-row"><label>Type</label>
+            <select id="cr-type">
+                <option value="internal">internal</option>
+                <option value="vendor">vendor</option>
+                <option value="client">client</option>
+                <option value="subcontractor">subcontractor</option>
+            </select>
+        </div>
+        <div class="form-row"><label>Capacity (h/week)</label><input id="cr-cap" type="number" value="40"></div>
+        <div class="form-row"><label>Skills (comma-separated)</label><input id="cr-skills" type="text" placeholder="protection, HV_design"></div>
+        <div class="form-row"><label>Birthday (YYYY-MM-DD)</label><input id="cr-birthday" type="text" placeholder="1990-03-15"></div>
+        <div style="display:flex;gap:0.5rem;justify-content:flex-end;margin-top:0.8rem">
+            <button class="btn" onclick="closeCreate()">Cancel</button>
+            <button class="btn btn-primary" onclick="submitCreate()">Create</button>
+        </div>
+    </div>
+</div>
+
+<!-- Log modal -->
+<div class="eos-modal-bg" id="log-bg" onclick="if(event.target===this)closeLog()">
+    <div class="eos-modal">
+        <div class="eos-modal-handle"></div>
+        <h3>Quick Log</h3>
+        <p style="font-size:13px;color:var(--text-secondary)" id="log-for"></p>
+        <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px">
+            <button class="btn" onclick="prependEmoji('📞')">📞 Call</button>
+            <button class="btn" onclick="prependEmoji('☕')">☕ Coffee</button>
+            <button class="btn" onclick="prependEmoji('💬')">💬 Chat</button>
+            <button class="btn" onclick="prependEmoji('🍽️')">🍽️ Meal</button>
+            <button class="btn" onclick="prependEmoji('📧')">📧 Email</button>
+        </div>
+        <input type="text" id="log-text" placeholder="📞 Called about…" onkeydown="if(event.key==='Enter')submitLog()">
+        <div style="display:flex;gap:0.5rem;justify-content:flex-end;margin-top:0.8rem">
+            <button class="btn" onclick="closeLog()">Cancel</button>
+            <button class="btn btn-primary" onclick="submitLog()">Save</button>
+        </div>
+    </div>
+</div>
+
+<!-- AI suggest modal -->
+<div class="eos-modal-bg" id="ai-bg" onclick="if(event.target===this)closeAI()">
+    <div class="eos-modal" style="max-width:440px">
+        <div class="eos-modal-handle"></div>
+        <h3>✨ Who to reach out to</h3>
+        <div id="ai-content">Loading…</div>
+        <div style="display:flex;gap:0.5rem;justify-content:flex-end;margin-top:0.8rem">
+            <button class="btn" onclick="showAISuggest()">Refresh</button>
+            <button class="btn btn-primary" onclick="closeAI()">Close</button>
+        </div>
+    </div>
+</div>
+
+<!-- Chat modal -->
+<div class="eos-modal-bg" id="chat-bg" onclick="if(event.target===this)closeChat()">
+    <div class="eos-modal">
+        <div class="eos-modal-handle"></div>
+        <h3 id="chat-title">💬 Chat</h3>
+        <input type="text" id="chat-q" placeholder="Ask a question about this person…" onkeydown="if(event.key==='Enter')submitChat()">
+        <div id="chat-answer" style="margin-top:10px;font-size:13px;color:var(--text-secondary);min-height:40px"></div>
+        <div style="display:flex;gap:0.5rem;justify-content:flex-end;margin-top:0.8rem">
+            <button class="btn" onclick="closeChat()">Close</button>
+            <button class="btn btn-primary" onclick="submitChat()">Ask</button>
+        </div>
+    </div>
+</div>
+
+<script src="/static/eos.js"></script>
+<script src="/static/eos-components.js"></script>
+<script>
+if (window.EOS && EOS.nav && !window.EOS_IS_EXPORT) EOS.nav('people');
+
+var STATE = { people: [], currentId: null, tab: 'roster' };
+
+var _appSettings = EOS_UI.settingsPanel({
+    id: 'people-settings-panel',
+    title: 'People Settings',
+    fields: [
+        {key: 'people.folder', label: 'Vault folder', type: 'text', default: '30_Resources/People', hint: 'Where person notes live'},
+        {key: 'people.default_capacity_hours', label: 'Default capacity (h/wk)', type: 'number', default: 40},
+        {key: 'people.overdue_alert', label: 'Overdue contact alerts', type: 'boolean', default: true},
+        {key: 'people.birthday_alert_days', label: 'Birthday alert (days before)', type: 'number', default: 7},
+    ],
+});
+function openAppSettings() { _appSettings.open(); }
+
+function bandColor(b) {
+    return b === 'overloaded' ? 'var(--danger)'
+         : b === 'busy'       ? 'var(--warning)'
+         : 'var(--success)';
+}
+function healthClass(h) { return h >= 70 ? 'health-good' : h >= 40 ? 'health-ok' : 'health-low'; }
+function esc(s) { var d = document.createElement('div'); d.textContent = s == null ? '' : String(s); return d.innerHTML; }
+
+async function loadAll() {
+    STATE.people = await fetch('/people/api/people').then(function(r){return r.json();});
+    renderRoster();
+    if (STATE.tab !== 'roster') renderCurrentTab();
+}
+
+function renderRoster() {
+    var el = document.getElementById('roster');
+    if (!STATE.people.length) {
+        el.innerHTML = EOS_UI.emptyState({icon:'👥', message:'No people yet. Click "Add person" to start.'});
+        document.getElementById('summary').textContent = '';
+        return;
+    }
+    var overloaded = STATE.people.filter(function(p){return p.band === 'overloaded';}).length;
+    document.getElementById('summary').textContent =
+        STATE.people.length + ' people · ' + overloaded + ' overloaded';
+
+    el.innerHTML = STATE.people.map(function(p) {
+        var pct = Math.round((p.load_ratio || 0) * 100);
+        var donut = '<div class="donut" style="--pct:'+Math.min(pct,100)+'; --band:'+bandColor(p.band)+'"><span>'+pct+'%</span></div>';
+        var skills = (p.skills || []).slice(0,3).map(function(s){return '<span class="chip">'+esc(s)+'</span>';}).join('');
+        var typeChip = p.type !== 'internal' ? '<span class="type-chip">'+esc(p.type)+'</span>' : '';
+        return '<div class="card '+esc(p.band)+'" onclick="openDetail(\''+esc(p.id)+'\')">' +
+            donut +
+            '<div class="meta">' +
+                '<div class="name">'+esc(p.name)+' '+typeChip+'</div>' +
+                '<div class="role">'+esc(p.role || '&nbsp;')+'</div>' +
+                '<div class="chips">'+skills+'</div>' +
+            '</div></div>';
+    }).join('');
+}
+
+function renderRelationships() {
+    var q = (document.getElementById('search').value || '').toLowerCase().trim();
+    var el = document.getElementById('relationships');
+    var items = STATE.people.filter(function(p) {
+        if (!q) return true;
+        var hay = (p.name + ' ' + (p.company||'') + ' ' + (p.email||'') + ' ' + (p.relationship||'')).toLowerCase();
+        return hay.indexOf(q) >= 0;
+    });
+    if (!items.length) {
+        el.innerHTML = EOS_UI.emptyState({icon:'🔍', message: q ? 'No matches.' : 'No relationship data yet.'});
+        return;
+    }
+    el.innerHTML = items.map(function(p) {
+        var health = p.health_score || 50;
+        var rel = p.relationship ? '<span class="chip">'+esc(p.relationship)+'</span>' : '';
+        var last = p.last_contact ? '<div style="font-size:11px;color:var(--text-muted)">last: '+esc(p.last_contact)+'</div>' : '';
+        return '<div class="card" onclick="openDetail(\''+esc(p.id)+'\')">' +
+            '<div class="meta">' +
+                '<div class="name">'+esc(p.name)+'</div>' +
+                '<div class="role">'+esc(p.company || p.role || '&nbsp;')+'</div>' +
+                '<div class="chips">'+rel+'</div>' +
+                last +
+            '</div>' +
+            '<div class="health-dot '+healthClass(health)+'">'+health+'</div>' +
+        '</div>';
+    }).join('');
+}
+
+async function renderDue() {
+    var due = await fetch('/people/api/due').then(function(r){return r.json();});
+    var el = document.getElementById('due-list');
+    if (!due || !due.length) {
+        el.innerHTML = EOS_UI.emptyState({icon:'✅', message:'No overdue contacts. You\'re caught up.'});
+        return;
+    }
+    el.innerHTML = due.map(function(p) {
+        return '<div class="due-item" onclick="openDetail(\''+esc(p.id)+'\')">' +
+            '<div class="due-name">'+esc(p.name)+
+                '<div class="due-freq">'+esc(p.contact_frequency || '')+' · last '+esc(p.last_contact || 'never')+'</div>' +
+            '</div>' +
+            '<div class="due-days">'+p.days_overdue+'d</div>' +
+        '</div>';
+    }).join('');
+}
+
+async function renderBirthdays() {
+    var list = await fetch('/people/api/birthdays?days=60').then(function(r){return r.json();});
+    var el = document.getElementById('bday-list');
+    if (!list || !list.length) {
+        el.innerHTML = EOS_UI.emptyState({icon:'🎂', message:'No birthdays in the next 60 days.'});
+        return;
+    }
+    el.innerHTML = list.map(function(b) {
+        var label = b.days_until === 0 ? 'TODAY!' : 'in ' + b.days_until + 'd';
+        if (b.turning) label += ' · turns ' + b.turning;
+        return '<div class="bday-item" onclick="openDetail(\''+esc(b.id)+'\')">' +
+            '<div><strong>🎂 '+esc(b.name)+'</strong><div style="font-size:11px;color:var(--text-muted)">'+esc(b.birthday)+'</div></div>' +
+            '<div style="color:var(--accent);font-weight:600">'+label+'</div>' +
+        '</div>';
+    }).join('');
+}
+
+function switchTab(tab) {
+    STATE.tab = tab;
+    document.querySelectorAll('.eos-tab').forEach(function(t){t.classList.toggle('active', t.dataset.tab === tab);});
+    document.querySelectorAll('.eos-tab-content').forEach(function(c){c.classList.remove('active');});
+    var content = document.getElementById('tab-'+tab);
+    if (content) content.classList.add('active');
+    renderCurrentTab();
+}
+
+function renderCurrentTab() {
+    if (STATE.tab === 'relationships') renderRelationships();
+    else if (STATE.tab === 'due') renderDue();
+    else if (STATE.tab === 'birthdays') renderBirthdays();
+}
+
+async function openDetail(id) {
+    STATE.currentId = id;
+    if (typeof _route !== 'undefined') _route.set(id);
+    // Load workload (capacity + assignments)
+    var wl = await fetch('/people/api/people/'+encodeURIComponent(id)+'/workload').then(function(r){return r.json();});
+    if (wl.error) { EOS_UI.toast(wl.error, false); return; }
+    var p = wl.person;
+    document.getElementById('detail-name').textContent = p.name;
+    document.getElementById('detail-role').textContent = (p.role || '') + (p.type !== 'internal' ? ' · ' + p.type : '');
+    var pct = Math.round((p.load_ratio || 0) * 100);
+    document.getElementById('detail-capacity').innerHTML =
+        '<div style="font-size:0.9rem">' + p.load_hours + 'h assigned / ' + p.capacity_hours_per_week + 'h capacity — <strong style="color:'+bandColor(p.band)+'">' + pct + '%</strong></div>';
+    document.getElementById('detail-skills').innerHTML = (p.skills || []).map(function(s){return '<span class="chip">'+esc(s)+'</span>';}).join('') || '<span style="color:var(--text-muted);font-size:0.8rem">(none)</span>';
+
+    // Relationship panel
+    var relBits = [];
+    if (p.relationship) relBits.push('<strong>'+esc(p.relationship)+'</strong>');
+    if (p.company) relBits.push(esc(p.company));
+    if (p.energy) relBits.push('energy: '+esc(p.energy));
+    if (p.trust_level) relBits.push('trust: '+esc(p.trust_level));
+    if (p.last_contact) relBits.push('last: '+esc(p.last_contact));
+    if (p.birthday) relBits.push('🎂 '+esc(p.birthday));
+    var health = p.health_score || 0;
+    var healthHtml = '<span class="health-dot '+healthClass(health)+'" style="position:static;display:inline-flex;width:22px;height:22px;font-size:10px;margin-right:6px">'+health+'</span>';
+    document.getElementById('detail-relationship').innerHTML = (relBits.length ? healthHtml + relBits.join(' · ') : '<span style="color:var(--text-muted);font-size:0.8rem">(no relationship data)</span>');
+
+    var cap = p.capacity_hours_per_week || 1;
+    document.getElementById('detail-by-app').innerHTML = renderBars(wl.by_app, cap);
+    document.getElementById('detail-by-role').innerHTML = renderBars(wl.by_role, cap);
+    document.getElementById('detail-assignments').innerHTML = (wl.assignments || []).map(function(a) {
+        return '<div class="assignment-row"><span>'+esc(a.item.title || a.item.id)+'</span><span class="src">'+esc(a.item.app)+' · '+esc(a.role)+' · '+a.weight_hours+'h</span></div>';
+    }).join('') || '<div style="color:var(--text-muted);font-size:0.8rem">(no assignments)</div>';
+
+    // Quick log
+    try {
+        var prof = await fetch('/people/api/people/'+encodeURIComponent(id)+'/profile').then(function(r){return r.json();});
+        var log = (prof && prof.quick_log) || [];
+        var logEl = document.getElementById('detail-log');
+        if (!log.length) {
+            logEl.innerHTML = '<div style="color:var(--text-muted);font-size:0.8rem">(no entries)</div>';
+        } else {
+            logEl.innerHTML = log.slice(-10).reverse().map(function(e){
+                return '<div class="log-entry"><span class="log-date">'+esc(e.date)+'</span>'+esc(e.text)+'</div>';
+            }).join('');
+        }
+    } catch (e) { /* quiet */ }
+
+    document.getElementById('detail').classList.add('open');
+}
+function renderBars(obj, cap) {
+    var keys = Object.keys(obj || {});
+    if (!keys.length) return '<div style="color:var(--text-muted);font-size:0.8rem">(none)</div>';
+    return keys.map(function(k) {
+        var v = obj[k];
+        var pct = Math.min(100, Math.round(v / cap * 100));
+        return '<div class="bar-row"><span>'+esc(k)+'</span><div class="bar-track"><div class="bar-fill" style="width:'+pct+'%"></div></div><span>'+v+'h</span></div>';
+    }).join('');
+}
+function closeDetail() {
+    document.getElementById('detail').classList.remove('open');
+    STATE.currentId = null;
+    if (typeof _route !== 'undefined') _route.clear();
+}
+
+/* Create */
+function openCreate() { document.getElementById('create-bg').classList.add('show'); }
+function closeCreate() { document.getElementById('create-bg').classList.remove('show'); }
+async function submitCreate() {
+    var skills = (document.getElementById('cr-skills').value || '').split(',').map(function(s){return s.trim();}).filter(Boolean);
+    var body = {
+        name: document.getElementById('cr-name').value.trim(),
+        role: document.getElementById('cr-role').value.trim(),
+        type: document.getElementById('cr-type').value,
+        relationship: document.getElementById('cr-relationship').value,
+        birthday: document.getElementById('cr-birthday').value.trim(),
+        capacity_hours_per_week: parseFloat(document.getElementById('cr-cap').value) || 40,
+        skills: skills,
+    };
+    if (!body.name) return;
+    var r = await fetch('/people/api/people', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)}).then(function(r){return r.json();});
+    if (r.error) { EOS_UI.toast(r.error, false); return; }
+    closeCreate();
+    ['cr-name','cr-role','cr-skills','cr-birthday'].forEach(function(id){document.getElementById(id).value = '';});
+    await loadAll();
+}
+
+/* Log */
+function openLog() {
+    if (!STATE.currentId) return;
+    var p = STATE.people.find(function(x){return x.id === STATE.currentId;}) || {};
+    document.getElementById('log-for').textContent = 'For ' + (p.name || STATE.currentId);
+    document.getElementById('log-text').value = '';
+    document.getElementById('log-bg').classList.add('show');
+    setTimeout(function(){document.getElementById('log-text').focus();}, 50);
+}
+function closeLog() { document.getElementById('log-bg').classList.remove('show'); }
+function prependEmoji(e) {
+    var i = document.getElementById('log-text');
+    i.value = e + ' ' + i.value;
+    i.focus();
+}
+async function submitLog() {
+    var text = document.getElementById('log-text').value.trim();
+    if (!text || !STATE.currentId) return;
+    var r = await fetch('/people/api/people/'+encodeURIComponent(STATE.currentId)+'/log', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({text: text})
+    }).then(function(r){return r.json();});
+    if (r.error) { EOS_UI.toast(r.error, false); return; }
+    closeLog();
+    EOS_UI.toast('Logged.');
+    openDetail(STATE.currentId);
+}
+
+/* AI Suggest */
+async function showAISuggest() {
+    document.getElementById('ai-bg').classList.add('show');
+    document.getElementById('ai-content').textContent = 'Thinking…';
+    try {
+        var r = await fetch('/people/api/ai-suggest', {method:'POST', headers:{'Content-Type':'application/json'}, body:'{}'})
+            .then(function(r){return r.json();});
+        var items = (r && r.suggestions) || [];
+        if (!items.length) {
+            document.getElementById('ai-content').innerHTML = EOS_UI.emptyState({message: r.error || 'No suggestions available.'});
+            return;
+        }
+        document.getElementById('ai-content').innerHTML = items.map(function(s) {
+            return '<div class="suggest-card">' +
+                '<div class="suggest-top"><div class="suggest-name">'+esc(s.name)+'</div>' +
+                    '<div style="color:var(--text-muted);font-size:11px">'+esc(s.action || '')+'</div></div>' +
+                '<div class="suggest-reason">'+esc(s.reason || '')+'</div>' +
+                (s.opener ? '<div class="suggest-opener">'+esc(s.opener)+'</div>' : '') +
+                (s.id ? '<button class="btn" onclick="closeAI();openDetail(\''+esc(s.id)+'\')">Open →</button>' : '') +
+            '</div>';
+        }).join('');
+    } catch (e) {
+        document.getElementById('ai-content').innerHTML = EOS_UI.errorState ? EOS_UI.errorState({message: String(e)}) : '<div>Error.</div>';
+    }
+}
+function closeAI() { document.getElementById('ai-bg').classList.remove('show'); }
+
+/* Chat */
+function openChat() {
+    if (!STATE.currentId) return;
+    var p = STATE.people.find(function(x){return x.id === STATE.currentId;}) || {};
+    document.getElementById('chat-title').textContent = '💬 Chat about ' + (p.name || STATE.currentId);
+    document.getElementById('chat-q').value = '';
+    document.getElementById('chat-answer').textContent = '';
+    document.getElementById('chat-bg').classList.add('show');
+    setTimeout(function(){document.getElementById('chat-q').focus();}, 50);
+}
+function closeChat() { document.getElementById('chat-bg').classList.remove('show'); }
+async function submitChat() {
+    var q = document.getElementById('chat-q').value.trim();
+    if (!q || !STATE.currentId) return;
+    document.getElementById('chat-answer').textContent = 'Thinking…';
+    var r = await fetch('/people/api/people/'+encodeURIComponent(STATE.currentId)+'/chat', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({question: q})
+    }).then(function(r){return r.json();});
+    document.getElementById('chat-answer').textContent = r.error ? ('Error: '+r.error) : (r.answer || '(no answer)');
+}
+
+async function loadPersona() {
+    if (!STATE.currentId) return;
+    EOS_UI.toast('Loading persona…');
+    var r = await fetch('/people/api/people/'+encodeURIComponent(STATE.currentId)+'/persona').then(function(r){return r.json();});
+    if (r.error) { EOS_UI.toast(r.error, false); return; }
+    EOS_UI.modal({
+        title: '🎭 ' + (r.name || ''),
+        body: '<div style="white-space:pre-wrap;line-height:1.5">'+esc(r.persona || '(empty)')+'</div>',
+    });
+}
+
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') {
+        if (document.getElementById('create-bg').classList.contains('show')) return closeCreate();
+        if (document.getElementById('log-bg').classList.contains('show')) return closeLog();
+        if (document.getElementById('chat-bg').classList.contains('show')) return closeChat();
+        if (document.getElementById('ai-bg').classList.contains('show')) return closeAI();
+        closeDetail();
+    }
+});
+
+var _route = EOS_UI.hashRoute({
+    onShow: function(id) { openDetail(id); },
+    onHide: function() { closeDetail(); },
+});
+
+loadAll().then(function() { _route.init(); });
+</script>
+</body>
+</html>

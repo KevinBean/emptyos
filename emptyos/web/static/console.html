@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Console - EmptyOS</title>
+<link rel="stylesheet" href="/static/theme.css">
+<link rel="stylesheet" href="/static/eos-components.css">
+<style>
+body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif; background:var(--bg); color:var(--text); height:100dvh; display:flex; flex-direction:column; overflow:hidden }
+.console { flex:1; overflow-y:auto; padding:16px 20px; font-family:var(--mono,'Consolas','Monaco',monospace); font-size:13px; line-height:1.7 }
+.line { white-space:pre-wrap; word-break:break-all }
+.line.cmd { color:var(--accent) }
+.line.cmd::before { content:'$ '; color:var(--text-muted) }
+.line.out { color:var(--text-secondary) }
+.line.err { color:#ef4444 }
+.line.sys { color:var(--text-muted); font-style:italic }
+.input-bar { padding:10px 16px; background:var(--bg-card); border-top:1px solid var(--border); display:flex; gap:8px; flex-shrink:0 }
+.input-bar input { flex:1; background:var(--bg); border:1px solid var(--border); border-radius:8px; padding:10px 14px; font-family:var(--mono,'Consolas',monospace); font-size:14px; color:var(--text); outline:none }
+.input-bar input:focus { border-color:var(--accent) }
+.input-bar button { padding:10px 18px; background:var(--accent); color:#fff; border:none; border-radius:8px; font-size:14px; font-weight:600; cursor:pointer }
+.help-bar { padding:6px 16px; font-size:11px; color:var(--text-muted); background:var(--bg-card); border-top:1px solid var(--border); display:flex; gap:16px; flex-shrink:0 }
+</style>
+</head>
+<body>
+<script src="/static/eos.js"></script>
+<script>EOS.nav('settings');</script>
+
+<div class="console" id="console">
+  <div class="line sys">EmptyOS Console — type commands like: task list, expense summary, health</div>
+  <div class="line sys">Type "help" for available commands, "clear" to clear screen.</div>
+  <div class="line sys"></div>
+</div>
+
+<div class="input-bar">
+  <input id="cmd" placeholder="eos command..." autofocus onkeydown="if(event.key==='Enter'){run();event.preventDefault()}">
+  <button onclick="run()">Run</button>
+</div>
+<div class="help-bar">
+  <span>task list</span>
+  <span>expense summary</span>
+  <span>journal</span>
+  <span>search query</span>
+  <span>health</span>
+  <span>digest generate</span>
+</div>
+
+<script>
+var history = [];
+var histIdx = -1;
+
+document.getElementById('cmd').addEventListener('keydown', function(e) {
+  if (e.key === 'ArrowUp') { e.preventDefault(); if (histIdx < history.length - 1) { histIdx++; this.value = history[history.length - 1 - histIdx]; } }
+  if (e.key === 'ArrowDown') { e.preventDefault(); if (histIdx > 0) { histIdx--; this.value = history[history.length - 1 - histIdx]; } else { histIdx = -1; this.value = ''; } }
+});
+
+async function run() {
+  var input = document.getElementById('cmd');
+  var raw = input.value.trim();
+  if (!raw) return;
+  input.value = '';
+  histIdx = -1;
+  history.push(raw);
+
+  // Special commands
+  if (raw === 'clear') { document.getElementById('console').innerHTML = ''; return; }
+  if (raw === 'help') { showHelp(); return; }
+
+  addLine(raw, 'cmd');
+
+  // Parse: "app action arg1 arg2" or "eos app action arg1 arg2"
+  var parts = raw.split(/\s+/);
+  if (parts[0] === 'eos') parts.shift();
+
+  // Map common commands to app + command
+  var cmdMap = {
+    'health': {app: 'settings', command: 'settings', args: ['show']},
+    'status': {app: 'settings', command: 'settings', args: ['show']},
+  };
+
+  var mapped = cmdMap[parts[0]];
+  var payload;
+  if (mapped) {
+    payload = mapped;
+  } else {
+    // First word = app, second = command (default to first CLI command), rest = args
+    var appId = parts[0];
+    var command = parts[1] || appId;
+    var args = parts.slice(2);
+
+    // Try to match: "task list" → app=task, command=task, args=["list"]
+    // Most apps use their id as the command name
+    payload = {app: appId, command: appId, args: parts.slice(1)};
+  }
+
+  try {
+    var resp = await EOS.post('/api/cli', payload);
+    if (resp.error) {
+      addLine(resp.error, 'err');
+    } else if (resp.output) {
+      resp.output.split('\n').forEach(function(line) { addLine(line, 'out'); });
+    } else {
+      addLine(JSON.stringify(resp, null, 2), 'out');
+    }
+  } catch(e) {
+    addLine('Error: ' + e.message, 'err');
+  }
+}
+
+function addLine(text, cls) {
+  var con = document.getElementById('console');
+  var div = document.createElement('div');
+  div.className = 'line ' + (cls || 'out');
+  div.textContent = text;
+  con.appendChild(div);
+  con.scrollTop = con.scrollHeight;
+}
+
+async function showHelp() {
+  addLine('Available commands:', 'sys');
+  try {
+    var apps = await EOS.api('/api/apps');
+    var cmds = [];
+    apps.forEach(function(a) {
+      if (a.cli_commands && a.cli_commands.length) {
+        a.cli_commands.forEach(function(c) { cmds.push('  ' + c + ' — ' + (a.description || a.name || a.id)); });
+      }
+    });
+    cmds.sort();
+    cmds.forEach(function(c) { addLine(c, 'out'); });
+    addLine('', 'sys');
+    addLine('Also: clear, help, health, status', 'sys');
+  } catch(e) {
+    addLine('Error loading commands: ' + e.message, 'err');
+  }
+}
+
+if (EOS.keys) {
+  EOS.keys.register('c', 'Focus command input', function() { document.getElementById('cmd').focus(); });
+}
+</script>
+</body>
+</html>

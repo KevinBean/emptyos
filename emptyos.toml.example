@@ -1,0 +1,129 @@
+# EmptyOS Configuration Template
+# Copy to emptyos.toml and edit for your machine.
+#
+# EmptyOS is built on human capabilities: think, read, write, search.
+# Without any tools configured, it asks YOU to fulfill these.
+# Add providers to automate what you want automated.
+
+[os]
+name = "My EmptyOS"
+data_dir = "./data"
+log_level = "INFO"
+
+[notes]
+# Path to your markdown vault (Obsidian, Logseq, or any folder)
+path = "/path/to/your/vault"
+watch = true
+
+[network]
+host = "0.0.0.0"          # 0.0.0.0 = accessible from network, 127.0.0.1 = local only
+port = 9000
+
+# ═══════════════════════════════════════════════════════
+# CAPABILITIES — what the OS can do
+# ═══════════════════════════════════════════════════════
+# Each capability tries providers in order. "human" is always the final fallback.
+# Only configure what you want to automate.
+
+[capabilities.think]
+providers = ["ollama"]     # try these in order; human is always last
+timeout = 30               # seconds per provider before fallback
+
+# --- Provider: Ollama (local LLM) ---
+[capabilities.think.ollama]
+host = "http://localhost:11434"
+model = "llama3.1"
+
+# --- Provider: OpenAI (cloud LLM) ---
+# [capabilities.think.openai]
+# host = "https://api.openai.com"   # or any OpenAI-compatible endpoint
+# model = "gpt-5-mini"
+# api_key_env = "OPENAI_API_KEY"    # reads from environment variable
+
+# --- Provider: Claude CLI (requires Claude Code Max subscription) ---
+# [capabilities.think.claude]
+# max_tokens = 4096
+
+# --- Provider: LM Studio (local, OpenAI-compatible) ---
+# [capabilities.think.lmstudio]
+# host = "http://localhost:1234"
+# model = "default"
+
+# --- Domain routing (optional) ---
+# Different models for different task types:
+# [capabilities.think.domains.code]
+# providers = ["openai"]
+# model = "gpt-5"
+#
+# [capabilities.think.domains.reason]
+# providers = ["claude"]
+
+[scheduler]
+enabled = true
+timezone = "UTC"            # or "Australia/Sydney", "America/New_York", etc.
+
+# ═══════════════════════════════════════════════════════
+# PLUGINS — connections to external services
+# ═══════════════════════════════════════════════════════
+# All plugins are optional. If a service isn't reachable,
+# the plugin degrades gracefully (no crash, no error).
+# Change host/port to match YOUR service locations.
+
+[plugins]
+path = "./plugins"
+
+# --- Ollama (local LLM inference) ---
+[plugins.ollama]
+host = "http://localhost:11434"       # change port if needed
+model = "llama3.1"                    # default model for generate
+
+# --- ComfyUI (GPU image/video generation) ---
+# [plugins.comfyui]
+# host = "http://localhost:8188"      # or remote: http://gpu-server:8188
+# launcher = ""                       # path to ComfyUI launch script (auto-start)
+
+# --- Voice API (TTS + STT) ---
+# [plugins.voice-api]
+# host = "http://localhost:8601"      # F5-TTS + Whisper service
+
+# --- Applio (AI voice conversion) ---
+# [plugins.applio]
+# host = "http://localhost:6969"
+
+# --- Blender (3D rendering) ---
+# [plugins.blender]
+# host = "http://localhost:8400"      # Blender addon server
+# executable = ""                     # auto-detected per platform
+# output_dir = "./data/blender-output"
+
+# --- Telegram Bot (two-way notifications) ---
+# [plugins.telegram]
+# bot_token = "YOUR_BOT_TOKEN"       # from @BotFather
+# chat_id = "YOUR_CHAT_ID"           # your Telegram user ID
+
+# --- Health watchdog ---
+# [plugins.health]
+# watchdog_interval = 60              # seconds between health checks
+# ollama_host = ""                    # auto-reads from plugins.ollama.host
+# comfyui_host = ""                   # auto-reads from plugins.comfyui.host
+
+# ═══════════════════════════════════════════════════════
+# APPS
+# ═══════════════════════════════════════════════════════
+
+[apps]
+path = "./apps"
+autostart = []              # app IDs to start on boot (empty = start all)
+
+# Per-app AI settings (runtime, no restart needed):
+#   eos settings set think.app.shadowing "ollama"
+#   eos settings set think.app.shadowing.providers "ollama,openai"
+#   eos settings set think.app.shadowing.timeout 60
+
+# ═══════════════════════════════════════════════════════
+# GPU SERVICES (legacy format, prefer plugins.* above)
+# ═══════════════════════════════════════════════════════
+
+# [services.gpu]
+# comfyui = ""
+# tts = ""

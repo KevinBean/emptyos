@@ -1,0 +1,883 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>EmptyOS - System Topology</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: #0a0a0a; color: #e5e5e5; font-family: system-ui, -apple-system, sans-serif; overflow: hidden; }
+
+#header {
+    position: fixed; top: 0; left: 0; right: 0; z-index: 10;
+    padding: 10px 20px; background: rgba(10,10,10,0.9); backdrop-filter: blur(8px);
+    border-bottom: 1px solid #222; display: flex; align-items: center; gap: 16px;
+}
+#header h1 { font-size: 16px; font-weight: 600; }
+#header a { color: #666; text-decoration: none; font-size: 13px; }
+#header a:hover { color: #aaa; }
+#header .metrics { margin-left: auto; display: flex; gap: 16px; font-size: 12px; color: #888; }
+#header .metric-val { color: #e5e5e5; font-weight: 600; }
+#header .btn { padding: 4px 12px; border: 1px solid #444; border-radius: 4px; background: transparent; color: #ccc; cursor: pointer; font-size: 12px; }
+#header .btn:hover { border-color: #888; color: #fff; }
+#header .btn.active { border-color: #3b82f6; color: #3b82f6; }
+
+.legend {
+    position: fixed; bottom: 20px; left: 20px; z-index: 10;
+    background: rgba(26,26,26,0.95); border: 1px solid #333; border-radius: 8px;
+    padding: 10px 14px; font-size: 11px;
+}
+.legend-item { display: flex; align-items: center; gap: 6px; margin: 3px 0; }
+.legend-dot { width: 8px; height: 8px; border-radius: 50%; }
+
+#info {
+    position: fixed; top: 54px; right: 20px; z-index: 10;
+    background: rgba(26,26,26,0.95); border: 1px solid #333; border-radius: 8px;
+    padding: 14px; max-width: 300px; max-height: calc(100vh - 80px); overflow-y: auto; font-size: 12px; display: none;
+}
+#info h3 { margin-bottom: 6px; font-size: 13px; }
+#info .type-badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 10px; margin-bottom: 6px; }
+#info .connections { margin-top: 6px; max-height: 200px; overflow-y: auto; }
+#info .conn { color: #888; font-size: 11px; padding: 1px 0; }
+
+/* Analysis Panel */
+#analysis {
+    position: fixed; top: 44px; left: 0; bottom: 0; width: 340px; z-index: 9;
+    background: rgba(14,14,14,0.97); border-right: 1px solid #222;
+    overflow-y: auto; padding: 16px; font-size: 12px;
+    transform: translateX(-100%); transition: transform 0.2s ease;
+}
+#analysis.open { transform: translateX(0); }
+#analysis h2 { font-size: 13px; color: #3b82f6; margin: 16px 0 8px; font-weight: 600; letter-spacing: 0.5px; text-transform: uppercase; }
+#analysis h2:first-child { margin-top: 0; }
+#analysis .layer-row { display: flex; align-items: center; gap: 8px; padding: 4px 0; border-bottom: 1px solid #1a1a1a; }
+#analysis .layer-lv { width: 22px; font-weight: 700; color: #666; font-size: 10px; }
+#analysis .layer-name { flex: 1; color: #ccc; }
+#analysis .layer-count { color: #888; font-size: 11px; min-width: 50px; text-align: right; }
+#analysis .layer-bar { height: 4px; border-radius: 2px; background: #3b82f6; }
+#analysis .path-step { padding: 3px 0; display: flex; align-items: center; gap: 6px; }
+#analysis .path-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+#analysis .path-arrow { color: #444; font-size: 10px; }
+#analysis .coupling-row { padding: 6px 0; border-bottom: 1px solid #1a1a1a; }
+#analysis .coupling-folder { font-weight: 600; color: #22c55e; }
+#analysis .coupling-risk { font-size: 10px; padding: 1px 6px; border-radius: 3px; font-weight: 600; }
+#analysis .risk-high { background: rgba(239,68,68,0.15); color: #ef4444; }
+#analysis .risk-medium { background: rgba(251,191,36,0.15); color: #fbbf24; }
+#analysis .risk-low { background: rgba(100,100,100,0.15); color: #888; }
+#analysis .coupling-detail { color: #888; font-size: 11px; margin-top: 2px; }
+#analysis .rank-row { display: flex; align-items: center; gap: 8px; padding: 3px 0; }
+#analysis .rank-name { flex: 1; color: #ccc; }
+#analysis .rank-bar { height: 6px; border-radius: 3px; }
+#analysis .rank-val { color: #888; font-size: 11px; min-width: 24px; text-align: right; }
+#analysis .integrity { display: flex; align-items: center; gap: 12px; padding: 8px 0; }
+#analysis .integrity-score { font-size: 28px; font-weight: 700; }
+#analysis .integrity-label { font-size: 11px; color: #888; }
+#analysis .dim-row { display: flex; align-items: center; gap: 6px; padding: 2px 0; }
+#analysis .dim-name { flex: 1; color: #aaa; font-size: 11px; }
+#analysis .dim-score { font-size: 11px; font-weight: 600; }
+#analysis .dim-bar { width: 40px; height: 3px; background: #222; border-radius: 2px; overflow: hidden; }
+#analysis .dim-fill { height: 100%; border-radius: 2px; }
+
+svg { width: 100vw; height: 100vh; }
+
+.link { stroke-opacity: 0.4; fill: none; }
+.link.uses_capability { stroke: #fbbf24; }
+.link.uses_service { stroke: #f87171; }
+.link.provides_service { stroke: #a78bfa; }
+.link.has_provider { stroke: #555; stroke-dasharray: 4 2; }
+.link.emits_event { stroke: #c084fc; }
+.link.listens_event { stroke: #c084fc; stroke-dasharray: 4 2; }
+.link.calls_app { stroke: #f43f5e; stroke-width: 2; }
+.link.uses_engine { stroke: #2dd4bf; stroke-width: 1.5; }
+.link.reads_data { stroke: #4ade80; stroke-dasharray: 4 2; }
+.link.writes_data { stroke: #4ade80; stroke-width: 2; }
+
+.node-label { fill: #ccc; font-size: 11px; text-anchor: middle; pointer-events: none; user-select: none; }
+#node-search { padding: 4px 10px; width: 180px; background: #1a1a1a; border: 1px solid #333; border-radius: 4px; color: #e5e5e5; font-size: 12px; outline: none; }
+#node-search:focus { border-color: #555; }
+#search-results { position: absolute; top: 100%; left: 0; width: 240px; background: #1a1a1a; border: 1px solid #333; border-radius: 4px; max-height: 200px; overflow-y: auto; display: none; z-index: 20; }
+.search-item { padding: 6px 10px; cursor: pointer; font-size: 12px; border-bottom: 1px solid #222; }
+.search-item:hover { background: #222; }
+.search-item .type { color: #555; font-size: 10px; }
+</style>
+</head>
+<body>
+<div id="header">
+    <h1>System Topology</h1>
+    <a href="/">Home</a>
+    <button class="btn" id="btn-analysis" onclick="toggleAnalysis()">Analysis</button>
+    <div style="position:relative">
+        <input type="text" id="node-search" placeholder="Find node..." autocomplete="off"
+            oninput="onSearch(this.value)" onkeydown="if(event.key==='Enter')selectSearchResult()">
+        <div id="search-results"></div>
+    </div>
+    <div class="metrics">
+        <span id="m-nodes"></span>
+        <span id="m-edges"></span>
+        <span id="m-health"></span>
+        <span id="m-integrity"></span>
+    </div>
+</div>
+
+<div id="analysis"></div>
+
+<div class="legend">
+    <div class="legend-item"><div class="legend-dot" style="background:#60a5fa;border-radius:50%"></div> App</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#fbbf24;border-radius:0;transform:rotate(45deg);width:8px;height:8px"></div> Capability</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#a78bfa;border-radius:0;transform:rotate(45deg);width:8px;height:8px"></div> Plugin</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#f87171;border-radius:0;transform:rotate(45deg);width:8px;height:8px"></div> Service</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#737373;border-radius:0;transform:rotate(45deg);width:7px;height:7px"></div> Provider</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#2dd4bf;border-radius:2px;width:10px;height:10px"></div> Engine</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#4ade80;border-radius:2px;width:10px;height:10px"></div> Data</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#c084fc;border-radius:50%;width:6px;height:6px"></div> Event</div>
+    <div style="border-top:1px solid #333;margin:6px 0 4px;font-size:10px;color:#666">Health</div>
+    <div class="legend-item"><div class="legend-dot" style="border:2px solid #22c55e;background:transparent"></div> Healthy</div>
+    <div class="legend-item"><div class="legend-dot" style="border:2px solid #fbbf24;background:transparent"></div> Degraded</div>
+    <div class="legend-item"><div class="legend-dot" style="border:2px solid #ef4444;background:transparent;opacity:0.6"></div> Unavailable</div>
+</div>
+
+<div id="info">
+    <h3 id="info-label"></h3>
+    <div id="info-type" class="type-badge"></div>
+    <div id="info-health" style="font-size:11px;margin:4px 0;display:none"></div>
+    <div id="info-desc"></div>
+    <div id="info-connections" class="connections"></div>
+</div>
+
+<svg></svg>
+
+<script>
+const WIDTH = window.innerWidth;
+const HEIGHT = window.innerHeight;
+
+const COLORS = {
+    app: '#60a5fa',        // blue — apps (the main actors)
+    capability: '#fbbf24', // amber — capabilities (central hubs)
+    plugin: '#a78bfa',     // violet — plugins
+    service: '#f87171',    // red — services
+    provider: '#737373',   // gray — providers (bottom layer)
+    engine: '#2dd4bf',     // teal — engines
+    data: '#4ade80',       // green — vault data folders
+    event: '#c084fc',      // light purple — events (small, numerous)
+};
+const SIZES = {
+    app: 18, capability: 16, plugin: 14, service: 12, provider: 8,
+    engine: 16, data: 15, event: 6,
+};
+const RECT_SCALE = 1.6; // rect side = size * RECT_SCALE (visually matches circle radius)
+const SHAPES = {
+    app: 'circle', event: 'circle',
+    capability: 'diamond', plugin: 'diamond', service: 'diamond', provider: 'diamond',
+    engine: 'rect', data: 'rect',
+};
+
+let nodes = [], edges = [];
+
+let healthData = null;  // cached health state
+
+async function load() {
+    const [topoResp, layersResp, healthResp] = await Promise.all([
+        fetch('/api/topology'),
+        fetch('/api/topology/layers'),
+        fetch('/api/health?full=true').catch(() => null),
+    ]);
+    const data = await topoResp.json();
+    const analysis = await layersResp.json();
+    try {
+        healthData = (healthResp && healthResp.ok) ? await healthResp.json() : null;
+    } catch(e) { healthData = null; }
+
+    nodes = data.nodes.map(n => ({
+        ...n, x: WIDTH/2 + (Math.random()-0.5)*400,
+        y: HEIGHT/2 + (Math.random()-0.5)*300,
+        vx: 0, vy: 0,
+        health: 'unknown',  // will be set below
+    }));
+    edges = data.edges.map(e => ({
+        ...e,
+        sourceNode: nodes.find(n => n.id === e.source),
+        targetNode: nodes.find(n => n.id === e.target),
+    })).filter(e => e.sourceNode && e.targetNode);
+
+    // Annotate nodes with health status
+    annotateHealth();
+
+    // Header metrics
+    const s = analysis.stats;
+    const unhealthy = nodes.filter(n => n.health === 'error' || n.health === 'degraded').length;
+    document.getElementById('m-nodes').innerHTML = `<span class="metric-val">${s.total_nodes}</span> nodes`;
+    document.getElementById('m-edges').innerHTML = `<span class="metric-val">${s.total_edges}</span> edges`;
+    if (unhealthy > 0) {
+        document.getElementById('m-health').innerHTML = `<span class="metric-val" style="color:#ef4444">${unhealthy}</span> degraded`;
+    } else {
+        document.getElementById('m-health').innerHTML = `<span class="metric-val" style="color:#22c55e">All healthy</span>`;
+    }
+
+    // Load integrity for header
+    try {
+        const intResp = await fetch('/integrity/api/audit');
+        const intData = await intResp.json();
+        const dims = intData.dimensions || {};
+        const total = Object.values(dims).reduce((s, v) => s + v.score, 0);
+        const pct = Math.round(total / 90 * 100);
+        document.getElementById('m-integrity').innerHTML =
+            `<span class="metric-val">${total}/90</span> integrity (${pct}%)`;
+        renderAnalysis(analysis, intData);
+    } catch(e) {
+        document.getElementById('m-integrity').textContent = '';
+        renderAnalysis(analysis, null);
+    }
+
+    render();
+    startSimulation();
+}
+
+function renderAnalysis(analysis, integrity) {
+    const panel = document.getElementById('analysis');
+    let html = '';
+
+    // Integrity
+    if (integrity) {
+        const dims = integrity.dimensions || {};
+        const total = Object.values(dims).reduce((s, v) => s + v.score, 0);
+        const pct = Math.round(total / 90 * 100);
+        const color = pct >= 95 ? '#22c55e' : pct >= 85 ? '#3b82f6' : '#fbbf24';
+        html += `<h2>Integrity</h2>`;
+        html += `<div class="integrity"><span class="integrity-score" style="color:${color}">${total}</span><span class="integrity-label">/ 90 (${pct}%)</span></div>`;
+        for (const [name, v] of Object.entries(dims)) {
+            const pct = v.score / 10 * 100;
+            const c = v.score >= 9 ? '#22c55e' : v.score >= 7 ? '#3b82f6' : '#ef4444';
+            html += `<div class="dim-row"><span class="dim-name">${name}</span><div class="dim-bar"><div class="dim-fill" style="width:${pct}%;background:${c}"></div></div><span class="dim-score" style="color:${c}">${v.score}</span></div>`;
+        }
+    }
+
+    // Layers
+    html += `<h2>Architecture Layers</h2>`;
+    const maxWidth = Math.max(...analysis.layers.map(l => l.width));
+    for (const layer of analysis.layers) {
+        const appCount = layer.nodes.filter(n => n.type === 'app').length;
+        const barW = Math.max(4, layer.width / maxWidth * 100);
+        html += `<div class="layer-row">
+            <span class="layer-lv">L${layer.level}</span>
+            <span class="layer-name">${layer.name}</span>
+            <span class="layer-count">${appCount ? appCount + ' apps' : layer.width + ' nodes'}</span>
+        </div>`;
+    }
+
+    // Critical Path
+    const cp = analysis.critical_path;
+    html += `<h2>Critical Path (${cp.length} hops)</h2>`;
+    for (let i = 0; i < cp.path.length; i++) {
+        const n = cp.path[i];
+        const color = COLORS[n.type] || '#666';
+        if (i > 0) html += `<div class="path-arrow" style="padding-left:${i*12}px">&#8627;</div>`;
+        html += `<div class="path-step" style="padding-left:${i*12}px"><span class="path-dot" style="background:${color}"></span> ${n.label}</div>`;
+    }
+
+    // Data Coupling
+    const coupling = (analysis.data_coupling || []).filter(d => d.total_apps >= 2);
+    if (coupling.length) {
+        html += `<h2>Data Coupling</h2>`;
+        for (const dc of coupling) {
+            const riskCls = dc.coupling_risk === 'high' ? 'risk-high' : dc.coupling_risk === 'medium' ? 'risk-medium' : 'risk-low';
+            html += `<div class="coupling-row">
+                <span class="coupling-folder">${dc.folder}</span>
+                <span class="coupling-risk ${riskCls}">${dc.coupling_risk}</span>
+                <span style="color:#888"> ${dc.total_apps} apps</span>
+                <div class="coupling-detail">write: ${dc.writers.join(', ') || '--'}<br>read: ${dc.readers.join(', ') || '--'}</div>
+            </div>`;
+        }
+    }
+
+    // Load-bearing apps
+    const s = analysis.stats;
+    html += `<h2>Load-Bearing Apps</h2>`;
+    const maxFanIn = s.most_depended_on[0]?.fan_in || 1;
+    for (const item of s.most_depended_on.slice(0, 7)) {
+        const barW = item.fan_in / maxFanIn * 100;
+        html += `<div class="rank-row"><span class="rank-name">${item.label}</span><div class="rank-bar" style="width:${barW}%;background:#3b82f6"></div><span class="rank-val">${item.fan_in}</span></div>`;
+    }
+
+    // Apex apps
+    html += `<h2>Apex Apps</h2>`;
+    const maxFanOut = s.most_dependencies[0]?.fan_out || 1;
+    for (const item of s.most_dependencies.slice(0, 5)) {
+        const barW = item.fan_out / maxFanOut * 100;
+        html += `<div class="rank-row"><span class="rank-name">${item.label}</span><div class="rank-bar" style="width:${barW}%;background:#f43f5e"></div><span class="rank-val">${item.fan_out}</span></div>`;
+    }
+
+    panel.innerHTML = html;
+}
+
+function toggleAnalysis() {
+    const panel = document.getElementById('analysis');
+    const btn = document.getElementById('btn-analysis');
+    panel.classList.toggle('open');
+    btn.classList.toggle('active');
+}
+
+// ── Health annotation: overlay status onto topology nodes ──
+const HEALTH_COLORS = { ok: '#22c55e', degraded: '#fbbf24', error: '#ef4444', unknown: '#222' };
+
+function annotateHealth() {
+    if (!healthData) return;
+
+    // Provider availability from capabilities
+    const caps = healthData.capabilities || {};
+    for (const [capName, providers] of Object.entries(caps)) {
+        if (Array.isArray(providers)) {
+            providers.forEach(p => {
+                const provNode = nodes.find(n => n.id === `prov:${capName}:${p.name}`);
+                if (provNode) provNode.health = p.available ? 'ok' : 'error';
+            });
+            // Capability: ok if any provider available, degraded if some down, error if all down
+            const capNode = nodes.find(n => n.id === `cap:${capName}`);
+            if (capNode) {
+                const avail = providers.filter(p => p.available).length;
+                capNode.health = avail === providers.length ? 'ok' : avail > 0 ? 'degraded' : 'error';
+            }
+        }
+    }
+
+    // Service status
+    const services = healthData.services || [];
+    services.forEach(s => {
+        const svcNode = nodes.find(n => n.id === `service:${s.name}`);
+        if (svcNode) svcNode.health = s.status === 'healthy' ? 'ok' : s.status === 'unhealthy' ? 'error' : 'ok';
+    });
+
+    // Plugin loaded status
+    const plugins = healthData.plugins || [];
+    plugins.forEach(p => {
+        const plugNode = nodes.find(n => n.id === `plugin:${p.id}`);
+        if (plugNode) plugNode.health = p.loaded ? 'ok' : 'error';
+    });
+
+    // App state
+    const apps = healthData.apps || {};
+    if (apps.by_state) {
+        nodes.forEach(n => {
+            if (n.type === 'app') {
+                if (n.state === 'error') n.health = 'error';
+                else if (n.state === 'started' || n.state === 'loaded') n.health = 'ok';
+                else n.health = 'degraded';
+            }
+        });
+    }
+
+    // Check unmet dependencies: for each app, check if its required services/capabilities/apps are healthy
+    nodes.forEach(n => {
+        if (n.type !== 'app' || n.health === 'error') return;
+        const deps = edges.filter(e => e.source === n.id);
+        const unmet = [];
+        deps.forEach(e => {
+            const target = e.targetNode;
+            if (!target) return;
+            if (target.health === 'error') unmet.push(target.label);
+            else if (target.health === 'degraded' && (e.type === 'uses_capability' || e.type === 'uses_service')) {
+                // capability degraded is a warning, not error
+            }
+        });
+        if (unmet.length > 0) {
+            n.health = 'degraded';
+            n.unmetDeps = unmet;
+        }
+    });
+}
+
+// ── Resolution knowledge base (synced with EOS.KNOWN_SERVICES in eos.js) ──
+const KNOWN_SERVICES = {
+    'ollama':    { port: 11434, start: 'ollama serve', check: 'http://localhost:11434', desc: 'Local LLM inference' },
+    'comfyui':   { port: 8188,  start: 'run_nvidia_gpu.bat', check: 'http://localhost:8188', desc: 'GPU image/video generation' },
+    'voice_api': { port: 8601,  start: 'voice-api server', check: 'http://localhost:8601', desc: 'TTS (F5-TTS) + STT (Whisper)' },
+    'voice-api': { port: 8601,  start: 'voice-api server', check: 'http://localhost:8601', desc: 'TTS (F5-TTS) + STT (Whisper)' },
+    'applio':    { port: 6969,  start: 'Applio launcher', check: 'http://localhost:6969', desc: 'AI voice conversion' },
+    'blender':   { port: 8400,  start: 'blender --background --python server.py', check: 'http://localhost:8400', desc: '3D rendering' },
+};
+
+function diagnoseNode(node) {
+    // Trace dependency chain to root cause and generate fix steps
+    const steps = [];
+    const visited = new Set();
+
+    function trace(n, depth) {
+        if (visited.has(n.id) || depth > 4) return;
+        visited.add(n.id);
+
+        if (n.health === 'ok' || n.health === 'unknown') return;
+
+        // Find this node's unhealthy dependencies
+        const badDeps = edges.filter(e => e.source === n.id).map(e => e.targetNode).filter(t => t && (t.health === 'error' || t.health === 'degraded'));
+
+        if (badDeps.length === 0 && (n.health === 'error' || n.health === 'degraded')) {
+            // This is a root cause — no deeper unhealthy dependency
+            steps.push(rootCauseFix(n));
+        } else {
+            badDeps.forEach(dep => trace(dep, depth + 1));
+        }
+    }
+
+    trace(node, 0);
+
+    // Deduplicate and order
+    const seen = new Set();
+    return steps.filter(s => { if (seen.has(s.key)) return false; seen.add(s.key); return true; });
+}
+
+function rootCauseFix(node) {
+    const id = node.id;
+    const label = node.label;
+
+    // Provider offline
+    if (node.type === 'provider') {
+        const provName = id.split(':').pop(); // e.g. "ollama" from "prov:think:ollama"
+        const svc = KNOWN_SERVICES[provName];
+        if (svc) {
+            return {
+                key: provName,
+                icon: '🔌',
+                title: svc.desc + ' is offline',
+                steps: [
+                    'Start the service: ' + svc.start,
+                    'Verify at: ' + svc.check,
+                    'EmptyOS will auto-detect when it comes online'
+                ]
+            };
+        }
+        return { key: id, icon: '🔌', title: label + ' provider unavailable', steps: ['Check if the external service is running'] };
+    }
+
+    // Plugin not loaded
+    if (node.type === 'plugin') {
+        const svc = KNOWN_SERVICES[label.toLowerCase()] || KNOWN_SERVICES[id.split(':').pop()];
+        if (svc) {
+            return {
+                key: id,
+                icon: '🧩',
+                title: label + ' plugin failed to connect',
+                steps: [
+                    'The plugin needs: ' + svc.desc,
+                    'Start: ' + svc.start,
+                    'Check: ' + svc.check,
+                    'Restart EmptyOS to reload the plugin'
+                ]
+            };
+        }
+        return { key: id, icon: '🧩', title: label + ' plugin not loaded', steps: ['Check plugin configuration in emptyos.toml', 'Restart EmptyOS'] };
+    }
+
+    // Service unhealthy
+    if (node.type === 'service') {
+        const svc = KNOWN_SERVICES[label.toLowerCase()];
+        if (svc) {
+            return {
+                key: id,
+                icon: '⚙️',
+                title: label + ' service unhealthy',
+                steps: [
+                    'External service at port ' + svc.port + ' may be down',
+                    'Start: ' + svc.start,
+                    'Health check: ' + svc.check
+                ]
+            };
+        }
+        return { key: id, icon: '⚙️', title: label + ' service issue', steps: ['Check service health via /api/health'] };
+    }
+
+    // Capability degraded/error
+    if (node.type === 'capability') {
+        return {
+            key: id,
+            icon: '⚡',
+            title: label + ' capability has no available providers',
+            steps: [
+                'All providers for "' + label + '" are offline',
+                'Start at least one: check provider nodes below this capability',
+                'Capability will auto-recover when a provider becomes available'
+            ]
+        };
+    }
+
+    // App error
+    if (node.type === 'app') {
+        return {
+            key: id,
+            icon: '📱',
+            title: label + ' app failed to load',
+            steps: [
+                'Check server logs for import/syntax errors',
+                'Run: eos app info ' + label.toLowerCase().replace(/\s/g, '-'),
+                'Fix the error and restart EmptyOS'
+            ]
+        };
+    }
+
+    return { key: id, icon: '❓', title: label + ' — unknown issue', steps: ['Check /api/health for details'] };
+}
+
+function render() {
+    const svg = document.querySelector('svg');
+    svg.innerHTML = `
+        <defs>
+            <marker id="arrow" viewBox="0 0 10 10" refX="20" refY="5"
+                markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                <path d="M 0 0 L 10 5 L 0 10 z" fill="#555"/>
+            </marker>
+        </defs>
+        <g id="edges"></g>
+        <g id="nodes"></g>
+        <g id="labels"></g>
+    `;
+
+    const edgeGroup = svg.querySelector('#edges');
+    edges.forEach(e => {
+        const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+        line.classList.add('link', e.type);
+        line.setAttribute('marker-end', 'url(#arrow)');
+        line.dataset.idx = edges.indexOf(e);
+        edgeGroup.appendChild(line);
+    });
+
+    const nodeGroup = svg.querySelector('#nodes');
+    const labelGroup = svg.querySelector('#labels');
+    nodes.forEach((n, i) => {
+        const shape = SHAPES[n.type] || 'circle';
+        const size = SIZES[n.type] || 10;
+        const color = COLORS[n.type] || '#666';
+        let el;
+
+        if (shape === 'diamond') {
+            el = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+            const s = size;
+            el.setAttribute('points', `${n.x},${n.y-s} ${n.x+s},${n.y} ${n.x},${n.y+s} ${n.x-s},${n.y}`);
+        } else if (shape === 'rect') {
+            el = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+            const w = size * RECT_SCALE;
+            el.setAttribute('width', w);
+            el.setAttribute('height', w);
+            el.setAttribute('rx', 3);
+            el.setAttribute('x', n.x - w/2);
+            el.setAttribute('y', n.y - w/2);
+        } else {
+            el = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+            el.setAttribute('r', size);
+            el.setAttribute('cx', n.x);
+            el.setAttribute('cy', n.y);
+        }
+        // Health status overlay: stroke color indicates health
+        const healthColor = HEALTH_COLORS[n.health] || '#222';
+        const isHealthy = n.health === 'ok' || n.health === 'unknown';
+        el.setAttribute('fill', n.health === 'error' ? color + '66' : color); // dim errored nodes
+        el.setAttribute('stroke', isHealthy ? '#222' : healthColor);
+        el.setAttribute('stroke-width', isHealthy ? (shape === 'circle' ? '2' : '1.5') : '3');
+        el.style.cursor = 'pointer';
+        el.dataset.idx = i;
+        el.dataset.shape = shape;
+        el.addEventListener('mousedown', startDrag);
+        el.addEventListener('click', () => showInfo(n));
+        nodeGroup.appendChild(el);
+
+        const label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+        label.classList.add('node-label');
+        label.textContent = n.label;
+        label.dataset.idx = i;
+        labelGroup.appendChild(label);
+    });
+}
+
+function updatePositions() {
+    const svg = document.querySelector('svg');
+    const lines = svg.querySelectorAll('#edges line');
+    lines.forEach((line, i) => {
+        const e = edges[i];
+        line.setAttribute('x1', e.sourceNode.x);
+        line.setAttribute('y1', e.sourceNode.y);
+        line.setAttribute('x2', e.targetNode.x);
+        line.setAttribute('y2', e.targetNode.y);
+    });
+
+    const shapes = svg.querySelectorAll('#nodes > *');
+    shapes.forEach((el, i) => {
+        const n = nodes[i];
+        const size = SIZES[n.type] || 10;
+        const shape = el.dataset.shape;
+        if (shape === 'diamond') {
+            el.setAttribute('points', `${n.x},${n.y-size} ${n.x+size},${n.y} ${n.x},${n.y+size} ${n.x-size},${n.y}`);
+        } else if (shape === 'rect') {
+            const w = size * RECT_SCALE;
+            el.setAttribute('x', n.x - w/2);
+            el.setAttribute('y', n.y - w/2);
+        } else {
+            el.setAttribute('cx', n.x);
+            el.setAttribute('cy', n.y);
+        }
+    });
+
+    const labels = svg.querySelectorAll('#labels text');
+    labels.forEach((t, i) => {
+        t.setAttribute('x', nodes[i].x);
+        t.setAttribute('y', nodes[i].y + (SIZES[nodes[i].type] || 10) + 14);
+    });
+}
+
+function startSimulation() {
+    const alpha = { value: 1 };
+
+    function tick() {
+        alpha.value *= 0.99;
+        if (alpha.value < 0.001) { alpha.value = 0; }
+
+        nodes.forEach(n => {
+            n.vx += (WIDTH/2 - n.x) * 0.0005;
+            n.vy += (HEIGHT/2 - n.y) * 0.0005;
+        });
+
+        for (let i = 0; i < nodes.length; i++) {
+            for (let j = i+1; j < nodes.length; j++) {
+                const dx = nodes[j].x - nodes[i].x;
+                const dy = nodes[j].y - nodes[i].y;
+                const dist = Math.sqrt(dx*dx + dy*dy) || 1;
+                const force = 800 / (dist * dist);
+                const fx = dx/dist * force;
+                const fy = dy/dist * force;
+                nodes[i].vx -= fx; nodes[i].vy -= fy;
+                nodes[j].vx += fx; nodes[j].vy += fy;
+            }
+        }
+
+        edges.forEach(e => {
+            const dx = e.targetNode.x - e.sourceNode.x;
+            const dy = e.targetNode.y - e.sourceNode.y;
+            const dist = Math.sqrt(dx*dx + dy*dy) || 1;
+            const force = (dist - 120) * 0.005;
+            const fx = dx/dist * force;
+            const fy = dy/dist * force;
+            e.sourceNode.vx += fx; e.sourceNode.vy += fy;
+            e.targetNode.vx -= fx; e.targetNode.vy -= fy;
+        });
+
+        nodes.forEach(n => {
+            const layerY = { provider: HEIGHT*0.85, capability: HEIGHT*0.72,
+                            service: HEIGHT*0.58, plugin: HEIGHT*0.58,
+                            engine: HEIGHT*0.46, data: HEIGHT*0.46,
+                            event: HEIGHT*0.32, app: HEIGHT*0.18 };
+            const target = layerY[n.type] || HEIGHT*0.5;
+            n.vy += (target - n.y) * 0.002;
+        });
+
+        nodes.forEach(n => {
+            if (n.dragging) return;
+            n.vx *= 0.85; n.vy *= 0.85;
+            n.x += n.vx; n.y += n.vy;
+            n.x = Math.max(40, Math.min(WIDTH-40, n.x));
+            n.y = Math.max(60, Math.min(HEIGHT-40, n.y));
+        });
+
+        updatePositions();
+        if (alpha.value > 0) requestAnimationFrame(tick);
+    }
+    requestAnimationFrame(tick);
+
+    window.addEventListener('resize', () => { alpha.value = 0.3; requestAnimationFrame(tick); });
+    window._alpha = alpha;
+    window._tick = tick;
+}
+
+// Drag
+let dragNode = null;
+function startDrag(e) {
+    e.preventDefault();
+    dragNode = nodes[parseInt(e.target.dataset.idx)];
+    dragNode.dragging = true;
+    document.addEventListener('mousemove', onDrag);
+    document.addEventListener('mouseup', endDrag);
+}
+function onDrag(e) {
+    if (!dragNode) return;
+    dragNode.x = e.clientX; dragNode.y = e.clientY;
+    dragNode.vx = 0; dragNode.vy = 0;
+    window._alpha.value = 0.1;
+    requestAnimationFrame(window._tick);
+    updatePositions();
+}
+function endDrag() {
+    if (dragNode) dragNode.dragging = false;
+    dragNode = null;
+    document.removeEventListener('mousemove', onDrag);
+    document.removeEventListener('mouseup', endDrag);
+}
+
+// Info panel + focus mode
+let focusedNode = null;
+
+function showInfo(node) {
+    const info = document.getElementById('info');
+    info.style.display = 'block';
+    document.getElementById('info-label').textContent = node.label;
+    const badge = document.getElementById('info-type');
+    badge.textContent = node.type;
+    badge.style.background = COLORS[node.type] + '33';
+    badge.style.color = COLORS[node.type];
+    document.getElementById('info-desc').textContent = node.description || '';
+
+    // Health status + resolution guide
+    const healthEl = document.getElementById('info-health');
+    if (node.health && node.health !== 'unknown' && node.health !== 'ok') {
+        const hc = HEALTH_COLORS[node.health];
+        const statusText = node.health === 'degraded' ? 'Degraded' : 'Unavailable';
+
+        // Diagnose and generate fix steps
+        const fixes = diagnoseNode(node);
+        let fixHtml = '';
+        if (fixes.length > 0) {
+            fixHtml = '<div style="margin-top:8px;border-top:1px solid #333;padding-top:8px">' +
+                '<div style="font-size:10px;color:#888;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px">Resolution</div>' +
+                fixes.map(f =>
+                    '<div style="margin-bottom:8px">' +
+                    '<div style="font-size:11px;font-weight:600;color:#e5e5e5">' + f.icon + ' ' + f.title + '</div>' +
+                    '<ol style="margin:4px 0 0 16px;padding:0;font-size:10px;color:#aaa;line-height:1.6">' +
+                    f.steps.map(s => '<li>' + s + '</li>').join('') +
+                    '</ol></div>'
+                ).join('') +
+                '</div>';
+        }
+
+        let unmetHtml = '';
+        if (node.unmetDeps && node.unmetDeps.length) {
+            unmetHtml = '<div style="color:#fbbf24;font-size:10px;margin-top:4px">Missing: ' + node.unmetDeps.join(', ') + '</div>';
+        }
+
+        healthEl.innerHTML = `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${hc};margin-right:6px"></span>${statusText}${unmetHtml}${fixHtml}`;
+        healthEl.style.display = 'block';
+    } else if (node.health === 'ok') {
+        healthEl.innerHTML = '<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#22c55e;margin-right:6px"></span>Healthy';
+        healthEl.style.display = 'block';
+    } else {
+        healthEl.style.display = 'none';
+    }
+
+    // Find connections
+    const conns = [];
+    edges.forEach(e => {
+        if (e.source === node.id) conns.push({dir: '->', label: e.targetNode.label, type: e.type});
+        if (e.target === node.id) conns.push({dir: '<-', label: e.sourceNode.label, type: e.type});
+    });
+    document.getElementById('info-connections').innerHTML =
+        conns.length ? conns.map(c => `<div class="conn">${c.dir} ${c.label} <span style="color:#555">(${c.type})</span></div>`).join('') : '<div class="conn">No connections</div>';
+
+    // Focus mode: dim unrelated nodes
+    focusedNode = node;
+    const related = new Set([node.id]);
+    edges.forEach(e => {
+        if (e.source === node.id) related.add(e.target);
+        if (e.target === node.id) related.add(e.source);
+    });
+    // 2nd degree
+    const degree1 = new Set(related);
+    edges.forEach(e => {
+        if (degree1.has(e.source)) related.add(e.target);
+        if (degree1.has(e.target)) related.add(e.source);
+    });
+
+    const shapes = document.querySelectorAll('#nodes > *');
+    const labels = document.querySelectorAll('#labels text');
+    const lines = document.querySelectorAll('#edges line');
+
+    shapes.forEach((el, i) => {
+        const n = nodes[i];
+        if (n.id === node.id) {
+            el.setAttribute('stroke', '#fff'); el.setAttribute('stroke-width', '3');
+            el.style.opacity = 1;
+        } else if (degree1.has(n.id)) {
+            el.setAttribute('stroke', '#888'); el.setAttribute('stroke-width', '2');
+            el.style.opacity = 1;
+        } else if (related.has(n.id)) {
+            el.setAttribute('stroke', '#222'); el.setAttribute('stroke-width', '1.5');
+            el.style.opacity = 0.4;
+        } else {
+            el.setAttribute('stroke', '#222'); el.setAttribute('stroke-width', '1.5');
+            el.style.opacity = 0.08;
+        }
+    });
+    labels.forEach((t, i) => {
+        const n = nodes[i];
+        t.style.opacity = degree1.has(n.id) ? 1 : related.has(n.id) ? 0.3 : 0.05;
+    });
+    lines.forEach((line, i) => {
+        const e = edges[i];
+        const connected = (e.source === node.id || e.target === node.id);
+        const nearby = related.has(e.source) && related.has(e.target);
+        line.style.opacity = connected ? 0.8 : nearby ? 0.15 : 0.02;
+        line.setAttribute('stroke-width', connected ? '3' : '');
+    });
+}
+
+function clearFocus() {
+    focusedNode = null;
+    document.getElementById('info').style.display = 'none';
+    const shapes = document.querySelectorAll('#nodes > *');
+    const labels = document.querySelectorAll('#labels text');
+    const lines = document.querySelectorAll('#edges line');
+    shapes.forEach((el, i) => {
+        el.setAttribute('stroke', '#222'); el.setAttribute('stroke-width', '1.5');
+        el.style.opacity = 1;
+    });
+    labels.forEach(t => { t.style.opacity = 1; });
+    lines.forEach(l => { l.style.opacity = ''; l.setAttribute('stroke-width', ''); });
+}
+
+document.querySelector('svg').addEventListener('click', (e) => {
+    if (e.target.tagName === 'svg') clearFocus();
+});
+
+// Search + locate
+let searchResults = [];
+
+function onSearch(query) {
+    const box = document.getElementById('search-results');
+    if (!query || query.length < 2) { box.style.display = 'none'; searchResults = []; return; }
+    const q = query.toLowerCase();
+    searchResults = nodes.filter(n => n.label.toLowerCase().includes(q) || n.id.toLowerCase().includes(q));
+    if (!searchResults.length) { box.style.display = 'none'; return; }
+    const esc = s => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/'/g,'&#39;').replace(/"/g,'&quot;');
+    box.style.display = 'block';
+    box.innerHTML = searchResults.slice(0, 12).map(n =>
+        `<div class="search-item" style="color:${COLORS[n.type]||'#ccc'}"
+              onmousedown="locateNode('${esc(n.id)}')">${esc(n.label)} <span class="type">${n.type}</span></div>`
+    ).join('');
+}
+
+function selectSearchResult() {
+    if (searchResults.length) locateNode(searchResults[0].id);
+}
+
+function locateNode(nodeId) {
+    const idx = nodes.findIndex(n => n.id === nodeId);
+    if (idx < 0) return;
+    const node = nodes[idx];
+    document.getElementById('search-results').style.display = 'none';
+    document.getElementById('node-search').value = node.label;
+    const dx = WIDTH/2 - node.x;
+    const dy = HEIGHT/2 - node.y;
+    nodes.forEach(n => { n.x += dx; n.y += dy; });
+    updatePositions();
+    showInfo(node);
+}
+
+// Keyboard shortcut: / to focus search
+document.addEventListener('keydown', (e) => {
+    if (e.key === '/' && document.activeElement.tagName !== 'INPUT') {
+        e.preventDefault();
+        document.getElementById('node-search').focus();
+    }
+    if (e.key === 'Escape') {
+        document.getElementById('node-search').blur();
+        document.getElementById('search-results').style.display = 'none';
+        clearFocus();
+    }
+});
+
+load();
+</script>
+</body>
+</html>

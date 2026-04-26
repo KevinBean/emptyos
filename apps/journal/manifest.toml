@@ -1,0 +1,95 @@
+[app]
+id = "journal"
+name = "Journal"
+version = "1.0.0"
+description = "Daily journaling — entries, milestones, mood tracking, reflection"
+dimensions = ["emotional", "intellectual"]
+
+[app.entry]
+module = "app"
+class = "JournalApp"
+
+[requires]
+capabilities = ["read", "write", "search", "think"]
+apps = []
+services = []
+connectors = []
+
+[provides.cli]
+commands = ["journal"]
+
+[provides.web]
+prefix = "/journal"
+
+[provides.events]
+emits = ["journal:entry", "journal:created", "journal:reflection", "journal:milestone", "journal:three-things"]
+
+[provides.settings]
+schema = [
+    {key = "journal.default_mood", label = "Default Mood", type = "select", options = ["great", "good", "okay", "low", "bad"], default = "good"},
+]
+
+[provides.assistant]
+commands = [
+    {slash = "/journal", method = "_recent_days"},
+    {slash = "/journal-summary", method = "get_summary"},
+    {slash = "/journal-tasks", method = "get_tasks"},
+    {slash = "/journal-weekly", method = "get_weekly"},
+]
+
+[[contributes.hub.today]]
+id = "journal-prompt"
+method = "slot_today"
+limit = 1
+priority = 3
+
+[[contributes.hub.recent_thinking]]
+id = "recent-journal"
+method = "slot_recent_thinking"
+limit = 3
+priority = 5
+
+# ── Legacy-parity panels ──
+
+[[contributes.hub.panel]]
+id = "yesterday"
+method = "panel_yesterday"
+renderer = "text-card"
+priority = 240
+
+[[contributes.hub.panel]]
+id = "journal-month-compare"
+method = "panel_month_compare"
+renderer = "compare-tile"
+group = "month-compare"
+priority = 220
+
+[[contributes.hub.panel]]
+id = "journal-today-tile"
+method = "panel_journal_today"
+renderer = "stat-tile"
+group = "dashboard"
+priority = 150
+
+[[contributes.voice-assistant.context]]
+id = "todays-journal"
+method = "assistant_context"
+priority = 160
+
+[[contributes.voice-assistant.intent]]
+verb = "journal.add_entry"
+method = "voice_add_entry"
+example = "journal entry: had a great walk this morning, feeling good"
+description = "Append a one-line entry to today's journal"
+args = { text = "string", mood = "string?" }
+always = true
+
+[[contributes.tour.step]]
+id = "journal.write"
+group = "core"
+priority = 300
+route = "/journal/"
+spotlight = "#entry-text"
+title = "Write today's journal"
+body = "One paragraph, however you want it. The system will surface it in the briefing tomorrow and quietly weave it into related notes."
+requires = ["read", "write"]

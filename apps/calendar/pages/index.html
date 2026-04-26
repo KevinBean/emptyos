@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Calendar — EmptyOS</title>
+    <link rel="stylesheet" href="/static/theme.css">
+    <link rel="stylesheet" href="/static/eos-components.css">
+    <script src="/static/eos.js"></script>
+    <script src="/static/eos-components.js"></script>
+</head>
+<body>
+<div class="eos-app-shell">
+    <header class="app-header">
+        <h1><a href="/hub/" class="back-link">←</a> Calendar</h1>
+    </header>
+
+    <main class="app-content">
+        <div class="eos-hero">
+            <h2>Today's Agenda</h2>
+            <p class="muted">Aggregated from your tasks and project deadlines.</p>
+        </div>
+
+        <div id="agenda-list" class="entry-list">
+            <div class="muted" style="text-align:center;padding:1rem">Loading schedule…</div>
+        </div>
+    </main>
+</div>
+
+<script>
+function badgeVariant(type) {
+    if (type === 'task') return 'status-active';
+    if (type === 'deadline') return 'priority-high';
+    return 'neutral';
+}
+
+async function loadAgenda() {
+    var list = document.getElementById('agenda-list');
+    var agenda;
+    try {
+        agenda = await EOS.api('/calendar/api/today');
+    } catch (e) {
+        list.innerHTML = '<div class="muted" style="text-align:center;padding:1rem">Failed to load.</div>';
+        return;
+    }
+    if (!agenda || !agenda.length) {
+        list.innerHTML = '<div class="muted" style="text-align:center;padding:1rem">Your schedule is clear today.</div>';
+        return;
+    }
+    list.innerHTML = agenda.map(function (item) {
+        return EOS_UI.entityCard({
+            title: item.title,
+            subtitle: item.time,
+            badges: [{ label: item.type, variant: badgeVariant(item.type) }],
+            meta: item.source ? ('Source: ' + item.source) : '',
+        });
+    }).join('');
+}
+
+window.addEventListener('load', loadAgenda);
+</script>
+</body>
+</html>

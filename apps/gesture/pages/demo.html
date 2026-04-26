@@ -1,0 +1,783 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Gesture Control Demo — EmptyOS</title>
+<link rel="stylesheet" href="/static/theme.css">
+<style>
+* { margin:0; padding:0; box-sizing:border-box }
+html, body { width:100%; height:100%; overflow:hidden }
+body {
+    font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;
+    background:#0a0a0f;
+    color:#fff;
+    -webkit-font-smoothing:antialiased;
+    user-select:none;
+}
+
+/* Stage canvas — full screen */
+#stage { position:fixed; inset:0; z-index:0 }
+
+/* Picture-in-picture camera */
+.pip {
+    position:fixed;
+    bottom:24px;
+    right:24px;
+    width:220px;
+    aspect-ratio:4/3;
+    border-radius:14px;
+    overflow:hidden;
+    border:2px solid rgba(255,255,255,0.12);
+    z-index:20;
+    background:#000;
+    box-shadow:0 8px 32px rgba(0,0,0,0.6);
+    transition:width 0.3s ease;
+}
+.pip.hidden { width:0; border:none }
+.pip video, .pip canvas {
+    position:absolute; inset:0; width:100%; height:100%; object-fit:cover;
+}
+.pip video { transform:scaleX(-1) }
+.pip canvas { transform:scaleX(-1); pointer-events:none }
+
+/* Gesture display — centre bottom */
+.gesture-display {
+    position:fixed;
+    bottom:32px;
+    left:50%;
+    transform:translateX(-50%);
+    text-align:center;
+    z-index:30;
+    pointer-events:none;
+}
+.gesture-emoji {
+    font-size:64px;
+    line-height:1;
+    filter:drop-shadow(0 0 20px var(--gc, #fff));
+    transition:filter 0.2s, transform 0.15s;
+    transform:scale(0.85);
+    opacity:0.3;
+}
+.gesture-emoji.active {
+    transform:scale(1.1);
+    opacity:1;
+}
+.gesture-name {
+    font-size:22px;
+    font-weight:700;
+    letter-spacing:0.08em;
+    text-transform:uppercase;
+    color:#fff;
+    opacity:0;
+    transition:opacity 0.2s;
+    margin-top:4px;
+}
+.gesture-name.show { opacity:1 }
+.gesture-action {
+    font-size:13px;
+    color:rgba(255,255,255,0.55);
+    margin-top:2px;
+    letter-spacing:0.05em;
+    opacity:0;
+    transition:opacity 0.2s;
+}
+.gesture-action.show { opacity:1 }
+.conf-bar {
+    width:140px;
+    height:3px;
+    background:rgba(255,255,255,0.15);
+    border-radius:4px;
+    margin:8px auto 0;
+    overflow:hidden;
+    opacity:0;
+    transition:opacity 0.2s;
+}
+.conf-bar.show { opacity:1 }
+.conf-bar .fill {
+    height:100%;
+    background:var(--gc,#fff);
+    width:0;
+    transition:width 0.1s ease-out;
+}
+
+/* Score overlay — top left */
+.score-wrap {
+    position:fixed;
+    top:24px;
+    left:32px;
+    z-index:30;
+}
+.score-label { font-size:11px; color:rgba(255,255,255,0.45); text-transform:uppercase; letter-spacing:0.08em }
+.score-value {
+    font-size:52px;
+    font-weight:800;
+    color:#fff;
+    line-height:1.05;
+    font-variant-numeric:tabular-nums;
+    text-shadow:0 0 30px var(--gc, rgba(255,255,255,0.3));
+    transition:text-shadow 0.4s;
+}
+.score-delta {
+    font-size:20px;
+    font-weight:700;
+    opacity:0;
+    position:absolute;
+    left:100%;
+    top:8px;
+    margin-left:8px;
+    transition:opacity 0.15s, transform 0.4s;
+    transform:translateY(0);
+    color:#66BB6A;
+}
+.score-delta.show { opacity:1; transform:translateY(-20px) }
+.score-delta.neg { color:#EF5350 }
+
+/* Streak — top right */
+.streak-wrap {
+    position:fixed;
+    top:24px;
+    right:24px;
+    z-index:30;
+    text-align:right;
+}
+.streak-label { font-size:11px; color:rgba(255,255,255,0.45); text-transform:uppercase; letter-spacing:0.08em }
+.streak-value {
+    font-size:36px;
+    font-weight:700;
+    color:rgba(255,255,255,0.85);
+    line-height:1.1;
+}
+
+/* FPS */
+.fps-badge {
+    position:fixed;
+    bottom:24px;
+    left:24px;
+    font-size:11px;
+    font-family:monospace;
+    color:rgba(255,255,255,0.25);
+    z-index:30;
+}
+
+/* Start overlay */
+.start-overlay {
+    position:fixed;
+    inset:0;
+    z-index:50;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    justify-content:center;
+    background:rgba(10,10,15,0.92);
+    backdrop-filter:blur(16px);
+    gap:24px;
+}
+.start-overlay h1 {
+    font-size:36px;
+    font-weight:800;
+    letter-spacing:-0.02em;
+}
+.start-overlay .sub {
+    font-size:14px;
+    color:rgba(255,255,255,0.5);
+    max-width:340px;
+    text-align:center;
+    line-height:1.6;
+}
+.start-overlay .gesture-grid {
+    display:grid;
+    grid-template-columns:repeat(4,1fr);
+    gap:12px;
+    margin:4px 0;
+}
+.gesture-card {
+    background:rgba(255,255,255,0.06);
+    border:1px solid rgba(255,255,255,0.1);
+    border-radius:14px;
+    padding:16px 12px;
+    text-align:center;
+    min-width:80px;
+}
+.gesture-card .em { font-size:28px }
+.gesture-card .gn { font-size:10px; color:rgba(255,255,255,0.5); margin-top:4px }
+.gesture-card .ga { font-size:11px; color:rgba(255,255,255,0.8); font-weight:600; margin-top:2px }
+
+.btn-start {
+    padding:16px 36px;
+    background:linear-gradient(135deg,#5C6BC0,#7E57C2);
+    color:#fff;
+    border:none;
+    border-radius:14px;
+    font-size:16px;
+    font-weight:700;
+    cursor:pointer;
+    letter-spacing:0.04em;
+    box-shadow:0 0 32px rgba(126,87,194,0.4);
+    transition:transform 0.15s, box-shadow 0.15s;
+}
+.btn-start:hover { transform:scale(1.04); box-shadow:0 0 48px rgba(126,87,194,0.55) }
+.btn-start:disabled { opacity:0.5; cursor:not-allowed; transform:none }
+
+/* Nav */
+.nav-back {
+    position:fixed;
+    top:24px;
+    left:50%;
+    transform:translateX(-50%);
+    z-index:30;
+    font-size:12px;
+    color:rgba(255,255,255,0.3);
+    text-decoration:none;
+    display:flex;
+    align-items:center;
+    gap:8px;
+    transition:color 0.15s;
+}
+.nav-back:hover { color:rgba(255,255,255,0.7) }
+
+/* Camera toggle */
+.pip-toggle {
+    position:fixed;
+    bottom:28px;
+    right:260px;
+    z-index:30;
+    width:32px;
+    height:32px;
+    background:rgba(255,255,255,0.08);
+    border:1px solid rgba(255,255,255,0.12);
+    border-radius:8px;
+    cursor:pointer;
+    font-size:14px;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    transition:background 0.15s;
+}
+.pip-toggle:hover { background:rgba(255,255,255,0.15) }
+
+/* Multiplier flash */
+.multiplier-flash {
+    position:fixed;
+    top:50%;
+    left:50%;
+    transform:translate(-50%,-50%);
+    font-size:72px;
+    font-weight:900;
+    pointer-events:none;
+    z-index:40;
+    opacity:0;
+    text-shadow:0 0 40px currentColor;
+    transition:opacity 0.1s;
+}
+.multiplier-flash.show { opacity:1 }
+</style>
+</head>
+<body>
+
+<!-- Stage -->
+<canvas id="stage"></canvas>
+
+<!-- Nav -->
+<a class="nav-back" href="/gesture/">← Dashboard</a>
+
+<!-- Score -->
+<div class="score-wrap">
+    <div class="score-label">Score</div>
+    <div style="position:relative;display:inline-block">
+        <div class="score-value" id="scoreVal">0</div>
+        <div class="score-delta" id="scoreDelta">+10</div>
+    </div>
+</div>
+
+<!-- Streak -->
+<div class="streak-wrap">
+    <div class="streak-label">Streak</div>
+    <div class="streak-value" id="streakVal">0×</div>
+</div>
+
+<!-- Gesture display -->
+<div class="gesture-display">
+    <div class="gesture-emoji" id="gEmoji">🤚</div>
+    <div class="gesture-name" id="gName"></div>
+    <div class="gesture-action" id="gAction"></div>
+    <div class="conf-bar" id="confBar"><div class="fill" id="confFill"></div></div>
+</div>
+
+<!-- FPS -->
+<div class="fps-badge" id="fpsBadge">— fps</div>
+
+<!-- PiP camera -->
+<div class="pip" id="pip">
+    <video id="video" playsinline muted></video>
+    <canvas id="camOverlay"></canvas>
+</div>
+
+<!-- Camera toggle -->
+<button class="pip-toggle" id="pipToggle" onclick="togglePip()" title="Toggle camera preview">📷</button>
+
+<!-- Multiplier flash -->
+<div class="multiplier-flash" id="multFlash"></div>
+
+<!-- Start overlay -->
+<div class="start-overlay" id="startOverlay">
+    <h1>Gesture Control</h1>
+    <p class="sub">Control the stage with your hands. Seven gestures, real-time. Camera stays on-device.</p>
+    <div class="gesture-grid" id="introGrid"></div>
+    <button class="btn-start" id="startBtn" onclick="startCamera()">Start camera</button>
+    <div style="font-size:11px;color:rgba(255,255,255,0.25)">Requires webcam access</div>
+</div>
+
+<script type="module">
+import { GestureRecognizer, FilesetResolver, DrawingUtils } from
+    "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/vision_bundle.mjs";
+
+// ── Gesture config ─────────────────────────────────────────────────────────
+const GESTURES = {
+    Open_Palm:   { emoji:"✋", action:"PAUSE",    color:"#64B5F6", score:0,   effect:"freeze"    },
+    Closed_Fist: { emoji:"✊", action:"HOLD",     color:"#90A4AE", score:0,   effect:"contract"  },
+    Thumb_Up:    { emoji:"👍", action:"+10",      color:"#66BB6A", score:10,  effect:"burst_up"  },
+    Thumb_Down:  { emoji:"👎", action:"−5",       color:"#EF5350", score:-5,  effect:"burst_down"},
+    Victory:     { emoji:"✌️", action:"CAPTURE",  color:"#FFCA28", score:25,  effect:"flash"     },
+    Pointing_Up: { emoji:"☝️", action:"FOCUS ×2", color:"#AB47BC", score:5,   effect:"spotlight" },
+    ILoveYou:    { emoji:"🤟", action:"LOVE +15", color:"#EC407A", score:15,  effect:"hearts"    },
+};
+
+// ── Particle system ─────────────────────────────────────────────────────────
+const stage = document.getElementById("stage");
+const sCtx = stage.getContext("2d");
+let W = 0, H = 0;
+let particles = [];
+let bgColor = "#0a0a0f";
+let bgTarget = "#0a0a0f";
+let activeColor = "#ffffff";
+let frozenUntil = 0;
+let spotlightUntil = 0;
+let hearts = [];
+let flashAlpha = 0;
+let flashColor = "#fff";
+
+function resize() {
+    W = stage.width = window.innerWidth;
+    H = stage.height = window.innerHeight;
+}
+window.addEventListener("resize", resize);
+resize();
+
+function lerp(a, b, t) { return a + (b - a) * t; }
+function hexToRgb(hex) {
+    const r = parseInt(hex.slice(1,3),16), g = parseInt(hex.slice(3,5),16), b = parseInt(hex.slice(5,7),16);
+    return [r,g,b];
+}
+function lerpColor(a, b, t) {
+    const [ar,ag,ab]=hexToRgb(a), [br,bg,bb]=hexToRgb(b);
+    return `rgb(${Math.round(lerp(ar,br,t))},${Math.round(lerp(ag,bg,t))},${Math.round(lerp(ab,bb,t))})`;
+}
+
+function makeParticle(x, y, vx, vy, size, color, life) {
+    return { x, y, vx, vy, size, color, life, maxLife:life, spin: Math.random()*0.2-0.1 };
+}
+
+function spawnBurst(cx, cy, color, n, speedMul, upward) {
+    for (let i = 0; i < n; i++) {
+        const angle = Math.random() * Math.PI * 2;
+        const speed = (1.5 + Math.random() * 3) * speedMul;
+        const vx = Math.cos(angle) * speed;
+        const vy = upward ? -Math.abs(Math.sin(angle) * speed) - 1 : Math.sin(angle) * speed;
+        particles.push(makeParticle(cx, cy, vx, vy, 3 + Math.random() * 5, color, 60 + Math.random() * 60));
+    }
+}
+
+function spawnHeart(cx, cy) {
+    hearts.push({ x: cx + (Math.random()-0.5)*120, y: cy + (Math.random()-0.5)*60,
+                  vy: -(2 + Math.random()*2), life: 120, maxLife:120,
+                  sz: 20 + Math.random()*24, drift: (Math.random()-0.5)*0.5 });
+}
+
+// Background ambient particles (always present)
+function initAmbient() {
+    particles = [];
+    for (let i = 0; i < 80; i++) {
+        particles.push(makeParticle(
+            Math.random()*W, Math.random()*H,
+            (Math.random()-0.5)*0.4, (Math.random()-0.5)*0.4,
+            1 + Math.random()*2,
+            `rgba(255,255,255,${(0.05 + Math.random()*0.1).toFixed(2)})`,
+            Infinity
+        ));
+    }
+}
+
+let bgLerp = 0;
+function drawStage(ts) {
+    // Lerp background color
+    bgLerp = Math.min(1, bgLerp + 0.02);
+    const bg = lerpColor(bgColor, bgTarget, bgLerp);
+
+    sCtx.fillStyle = bg;
+    sCtx.fillRect(0, 0, W, H);
+
+    // Spotlight effect
+    if (spotlightUntil > ts) {
+        const progress = (spotlightUntil - ts) / 3000;
+        const rad = W * 0.35;
+        const grd = sCtx.createRadialGradient(W/2, H/2, 0, W/2, H/2, rad);
+        grd.addColorStop(0, `rgba(171,71,188,${0.15*progress})`);
+        grd.addColorStop(1, "transparent");
+        sCtx.fillStyle = grd;
+        sCtx.fillRect(0, 0, W, H);
+    }
+
+    // Flash
+    if (flashAlpha > 0) {
+        sCtx.fillStyle = `rgba(${hexToRgb(flashColor).join(",")},${flashAlpha.toFixed(2)})`;
+        sCtx.fillRect(0, 0, W, H);
+        flashAlpha = Math.max(0, flashAlpha - 0.04);
+    }
+
+    const frozen = ts < frozenUntil;
+
+    // Hearts
+    for (let i = hearts.length-1; i >= 0; i--) {
+        const h = hearts[i];
+        if (!frozen) { h.y += h.vy; h.x += h.drift; h.life--; }
+        if (h.life <= 0) { hearts.splice(i,1); continue; }
+        const alpha = (h.life / h.maxLife).toFixed(2);
+        sCtx.save();
+        sCtx.globalAlpha = parseFloat(alpha);
+        sCtx.font = `${h.sz}px serif`;
+        sCtx.textAlign = "center";
+        sCtx.fillText("❤️", h.x, h.y);
+        sCtx.restore();
+    }
+
+    // Particles
+    for (let i = particles.length-1; i >= 0; i--) {
+        const p = particles[i];
+        if (p.life !== Infinity) {
+            if (!frozen) {
+                p.x += p.vx; p.y += p.vy;
+                p.vy += 0.06; // gravity
+                p.vx *= 0.98;
+                p.life--;
+            }
+            if (p.life <= 0) { particles.splice(i,1); continue; }
+            const alpha = (p.life / p.maxLife * 0.9).toFixed(2);
+            sCtx.beginPath();
+            sCtx.arc(p.x, p.y, p.size, 0, Math.PI*2);
+            sCtx.fillStyle = p.color.startsWith("rgba") ? p.color :
+                p.color + Math.floor(parseFloat(alpha)*255).toString(16).padStart(2,"0");
+            sCtx.fill();
+        } else {
+            if (!frozen) {
+                p.x += p.vx; p.y += p.vy;
+                // Wrap
+                if (p.x < 0) p.x = W; if (p.x > W) p.x = 0;
+                if (p.y < 0) p.y = H; if (p.y > H) p.y = 0;
+                // Subtle drift
+                p.vx += (Math.random()-0.5)*0.02;
+                p.vy += (Math.random()-0.5)*0.02;
+                p.vx = Math.max(-0.6, Math.min(0.6, p.vx));
+                p.vy = Math.max(-0.6, Math.min(0.6, p.vy));
+            }
+            sCtx.beginPath();
+            sCtx.arc(p.x, p.y, p.size, 0, Math.PI*2);
+            sCtx.fillStyle = p.color;
+            sCtx.fill();
+        }
+    }
+
+    // Freeze indicator
+    if (frozen) {
+        sCtx.save();
+        sCtx.fillStyle = "rgba(100,181,246,0.04)";
+        sCtx.fillRect(0, 0, W, H);
+        sCtx.restore();
+    }
+}
+
+// ── Gesture state ──────────────────────────────────────────────────────────
+let score = 0;
+let streak = 0;
+let lastGesture = null;
+let multiplierUntil = 0;
+
+function applyEffect(name, ts) {
+    const g = GESTURES[name];
+    if (!g) return;
+    activeColor = g.color;
+    bgTarget = g.color.replace("#","");
+    // Make bg very dark tint of gesture color
+    const [r,gb,b] = hexToRgb(g.color);
+    bgTarget = `#${Math.floor(r*0.15).toString(16).padStart(2,"0")}${Math.floor(gb*0.15).toString(16).padStart(2,"0")}${Math.floor(b*0.15).toString(16).padStart(2,"0")}`;
+    bgLerp = 0;
+
+    const cx = W/2, cy = H/2;
+
+    switch (g.effect) {
+        case "burst_up":
+            spawnBurst(cx, cy, g.color, 40, 1.5, true);
+            break;
+        case "burst_down":
+            spawnBurst(cx, cy, g.color, 25, 1.2, false);
+            break;
+        case "flash":
+            flashColor = g.color;
+            flashAlpha = 0.4;
+            spawnBurst(cx, cy, g.color, 60, 2.5, false);
+            spawnBurst(cx, cy, "#ffffff", 20, 3, false);
+            break;
+        case "freeze":
+            frozenUntil = ts + 2000;
+            flashColor = "#64B5F6";
+            flashAlpha = 0.12;
+            break;
+        case "contract":
+            // Sucking effect — spawn inward particles
+            for (let i = 0; i < 30; i++) {
+                const angle = Math.random() * Math.PI * 2;
+                const dist = 200 + Math.random() * 300;
+                const px = cx + Math.cos(angle)*dist, py = cy + Math.sin(angle)*dist;
+                const speed = 3 + Math.random()*2;
+                particles.push(makeParticle(px, py, -Math.cos(angle)*speed, -Math.sin(angle)*speed, 2+Math.random()*3, g.color, 40));
+            }
+            break;
+        case "spotlight":
+            spotlightUntil = ts + 3000;
+            multiplierUntil = ts + 3000;
+            showMultiplier("×2", g.color);
+            spawnBurst(cx, H*0.3, g.color, 30, 1.2, false);
+            break;
+        case "hearts":
+            for (let i = 0; i < 12; i++) spawnHeart(cx, cy - 60);
+            spawnBurst(cx, cy, g.color, 30, 1.5, true);
+            break;
+    }
+
+    // Recolor ambient particles
+    for (const p of particles) {
+        if (p.life === Infinity) {
+            const alpha = 0.06 + Math.random()*0.12;
+            const [r,gb,b] = hexToRgb(g.color);
+            p.color = `rgba(${r},${gb},${b},${alpha.toFixed(2)})`;
+        }
+    }
+}
+
+// ── Score ───────────────────────────────────────────────────────────────────
+function addScore(name, ts) {
+    const g = GESTURES[name];
+    if (!g) return;
+    let delta = g.score;
+    if (delta === 0) return;
+    if (ts < multiplierUntil && delta > 0) delta *= 2;
+    score = Math.max(0, score + delta);
+    document.getElementById("scoreVal").textContent = score;
+    document.getElementById("scoreVal").style.setProperty("--gc", g.color);
+
+    const el = document.getElementById("scoreDelta");
+    el.textContent = (delta > 0 ? "+" : "") + delta;
+    el.className = "score-delta" + (delta < 0 ? " neg" : "") + " show";
+    clearTimeout(el._t);
+    el._t = setTimeout(() => el.classList.remove("show"), 800);
+}
+
+function updateStreak(name) {
+    if (name === lastGesture) {
+        streak++;
+    } else {
+        streak = 1;
+        lastGesture = name;
+    }
+    document.getElementById("streakVal").textContent = streak + "×";
+}
+
+function showMultiplier(text, color) {
+    const el = document.getElementById("multFlash");
+    el.textContent = text;
+    el.style.color = color;
+    el.classList.add("show");
+    clearTimeout(el._t);
+    el._t = setTimeout(() => el.classList.remove("show"), 1200);
+}
+
+// ── UI feedback ─────────────────────────────────────────────────────────────
+function showGestureUI(name, score) {
+    const g = GESTURES[name];
+    if (!g) return;
+    const gEmoji = document.getElementById("gEmoji");
+    const gName = document.getElementById("gName");
+    const gAction = document.getElementById("gAction");
+    const confBar = document.getElementById("confBar");
+    const confFill = document.getElementById("confFill");
+
+    gEmoji.textContent = g.emoji;
+    gEmoji.style.setProperty("--gc", g.color);
+    gEmoji.classList.add("active");
+    gName.textContent = name.replace(/_/g, " ");
+    gName.classList.add("show");
+    gAction.textContent = g.action;
+    gAction.classList.add("show");
+    confBar.classList.add("show");
+    confBar.querySelector(".fill").style.background = g.color;
+    confFill.style.width = (score * 100).toFixed(1) + "%";
+}
+
+function clearGestureUI() {
+    document.getElementById("gEmoji").classList.remove("active");
+    document.getElementById("gName").classList.remove("show");
+    document.getElementById("gAction").classList.remove("show");
+    document.getElementById("confBar").classList.remove("show");
+}
+
+// ── Camera + MediaPipe ──────────────────────────────────────────────────────
+const video = document.getElementById("video");
+const camOverlay = document.getElementById("camOverlay");
+const camCtx = camOverlay.getContext("2d");
+
+let recognizer = null;
+let stream = null;
+let rafId = null;
+let drawingUtils = null;
+let running = false;
+
+let lastDispatched = { gesture: null, ts: 0 };
+const MIN_CONF = 0.55;
+const HOLD_MS = 400;
+const COOLDOWN_MS = 1200;
+let candidate = { gesture: null, since: 0 };
+
+let frameCount = 0;
+let fpsT0 = performance.now();
+
+async function loadRecognizer() {
+    const vision = await FilesetResolver.forVisionTasks(
+        "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm"
+    );
+    recognizer = await GestureRecognizer.createFromOptions(vision, {
+        baseOptions: {
+            modelAssetPath: "https://storage.googleapis.com/mediapipe-models/gesture_recognizer/gesture_recognizer/float16/1/gesture_recognizer.task",
+            delegate: "GPU",
+        },
+        runningMode: "VIDEO",
+        numHands: 1,
+    });
+    drawingUtils = new DrawingUtils(camCtx);
+}
+
+window.startCamera = async function() {
+    const btn = document.getElementById("startBtn");
+    btn.disabled = true;
+    btn.textContent = "Loading model…";
+    try {
+        await loadRecognizer();
+        btn.textContent = "Starting camera…";
+        stream = await navigator.mediaDevices.getUserMedia({ video:{ width:640, height:480 }, audio:false });
+        video.srcObject = stream;
+        await video.play();
+        running = true;
+        camOverlay.width = video.videoWidth || 640;
+        camOverlay.height = video.videoHeight || 480;
+        document.getElementById("startOverlay").style.display = "none";
+        initAmbient();
+        stageLoop();
+        camLoop();
+    } catch (err) {
+        btn.disabled = false;
+        btn.textContent = "Start camera";
+        const errEl = document.getElementById("startBtn").parentElement.querySelector(".cam-error") || (() => {
+            const el = document.createElement("p");
+            el.className = "cam-error";
+            el.style.cssText = "color:#f87171;font-size:13px;margin-top:8px";
+            document.getElementById("startBtn").after(el);
+            return el;
+        })();
+        errEl.textContent = "Camera unavailable: " + (err.message || err);
+    }
+};
+
+// Stage animation loop (independent of camera)
+let stageRafId = null;
+function stageLoop() {
+    const ts = performance.now();
+    drawStage(ts);
+    stageRafId = requestAnimationFrame(stageLoop);
+}
+
+// Camera loop
+function camLoop() {
+    if (!running) return;
+    const ts = performance.now();
+    if (video.readyState >= 2) {
+        const res = recognizer.recognizeForVideo(video, ts);
+        renderCam(res);
+        detectGesture(res, ts);
+        frameCount++;
+        if (ts - fpsT0 > 1000) {
+            document.getElementById("fpsBadge").textContent = (frameCount*1000/(ts-fpsT0)).toFixed(1) + " fps";
+            frameCount = 0; fpsT0 = ts;
+        }
+    }
+    rafId = requestAnimationFrame(camLoop);
+}
+
+function renderCam(res) {
+    camOverlay.width = video.videoWidth || camOverlay.width;
+    camOverlay.height = video.videoHeight || camOverlay.height;
+    camCtx.save();
+    camCtx.clearRect(0, 0, camOverlay.width, camOverlay.height);
+    if (res.landmarks && res.landmarks.length) {
+        for (const lm of res.landmarks) {
+            drawingUtils.drawConnectors(lm, GestureRecognizer.HAND_CONNECTIONS,
+                { color: "#00E5FF", lineWidth: 2 });
+            drawingUtils.drawLandmarks(lm, { color: "#ffffff", lineWidth: 1, radius: 2 });
+        }
+    }
+    camCtx.restore();
+}
+
+function detectGesture(res, ts) {
+    const top = res.gestures?.[0]?.[0];
+    if (top && top.categoryName && top.categoryName !== "None" && top.score >= MIN_CONF) {
+        showGestureUI(top.categoryName, top.score);
+        maybeDispatch(top.categoryName, top.score, ts);
+    } else {
+        clearGestureUI();
+        candidate = { gesture: null, since: 0 };
+    }
+}
+
+function maybeDispatch(name, sc, ts) {
+    if (candidate.gesture !== name) { candidate = { gesture: name, since: ts }; return; }
+    if (ts - candidate.since < HOLD_MS) return;
+    if (lastDispatched.gesture === name && (ts - lastDispatched.ts) < COOLDOWN_MS) return;
+    lastDispatched = { gesture: name, ts };
+    applyEffect(name, ts);
+    addScore(name, ts);
+    updateStreak(name);
+    // Report to backend
+    fetch("/gesture/api/detected", {
+        method:"POST", headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({ gesture: name, confidence: sc })
+    }).catch(() => {});
+}
+
+// Camera PiP toggle
+let pipVisible = true;
+window.togglePip = function() {
+    pipVisible = !pipVisible;
+    document.getElementById("pip").classList.toggle("hidden", !pipVisible);
+    document.getElementById("pipToggle").textContent = pipVisible ? "📷" : "🙈";
+};
+
+// ── Intro grid ──────────────────────────────────────────────────────────────
+const grid = document.getElementById("introGrid");
+for (const [name, g] of Object.entries(GESTURES)) {
+    const card = document.createElement("div");
+    card.className = "gesture-card";
+    card.innerHTML = `<div class="em">${g.emoji}</div><div class="gn">${name.replace(/_/g," ")}</div><div class="ga">${g.action}</div>`;
+    grid.appendChild(card);
+}
+</script>
+</body>
+</html>

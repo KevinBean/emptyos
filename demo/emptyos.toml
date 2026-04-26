@@ -1,0 +1,80 @@
+# EmptyOS — demo instance config
+#
+# This config powers the public live demo. Designed for $0/month AI cost:
+# every visitor gets a working local model (slow but free); strangers who
+# want quality paste their own OpenAI key in Settings (BYOK, session-scoped).
+#
+# Deploy with: docker compose -f docker-compose.demo.yml up -d
+
+[os]
+name = "EmptyOS Demo"
+data_dir = "/app/data"
+log_level = "INFO"
+
+[notes]
+path = "/vault"
+watch = true
+
+# --- Deployment: public mode ---
+# auth_token is injected via env (EOS_NETWORK_AUTH_TOKEN) at deploy time so it
+# doesn't live in the repo. The token is *public* for a demo — it's how
+# visitors prove "I read your README first" and deters anonymous bot scraping,
+# not a real secret. Pre-fill it in your landing-page link:
+#   https://demo.<yourdomain>/?token=<EOS_NETWORK_AUTH_TOKEN>
+[network]
+mode = "public"
+port = 9000
+
+# --- Demo mode ---
+# Banner, GPU capabilities disabled, BYOK panel surfaced in Settings.
+[demo]
+enabled = true
+reset_on_restart = true
+seed_on_boot = true
+
+# --- Cloud consent ---
+# Pre-approved: visitors opt in by entering their own key (BYOK) at runtime.
+# The key is session-scoped (browser localStorage), never persisted server-side.
+# DO NOT copy this setting into a real personal instance — there it should
+# stay "ask" so every cloud call surfaces a consent prompt.
+[cloud]
+consent = "always"
+
+# --- Think capability ---
+# Local Ollama (phi3:mini, ~3.8B params) is the default. Costs zero, runs on
+# the demo VPS's CPU, ~2-4s per response, output quality is "OK for proving
+# the system works". Visitors who want gpt-4-class quality paste their own
+# OpenAI/Anthropic key via the demo Settings panel — that key is sent
+# directly from their browser, never touches your server.
+#
+# Intentionally only `ollama` here. We do NOT list `openai` as a server-side
+# provider because we don't ship an OpenAI key in the demo image; if you
+# want server-side cloud as a fallback, add it explicitly + cap the spend
+# via [billing.budgets.openai] below.
+[capabilities.think]
+providers = ["ollama"]
+
+[capabilities.think.ollama]
+host = "http://ollama:11434"
+model = "phi3:mini"
+
+# --- Spend cap (defense in depth) ---
+# Even with BYOK as the primary path, set a hard monthly budget on every
+# cloud provider so a misconfigured deployment can't surprise you with a
+# big bill. apps/billing/ enforces these by disabling the provider once
+# tripped. Numbers below are conservative — raise if you knowingly fund
+# the demo's AI from your own pocket.
+[billing.budgets]
+openai = 5      # USD/month
+anthropic = 5   # USD/month
+ollama = 0      # local — billed at $0 by definition
+
+[scheduler]
+enabled = true
+timezone = "UTC"
+
+[plugins]
+path = "./plugins"
+
+[apps]
+path = "./apps"

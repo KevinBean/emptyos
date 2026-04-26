@@ -1,0 +1,995 @@
+/* EmptyOS Shared UI Components
+   Extracted from expense, hub, english, briefing, task pages.
+   Include via: <link rel="stylesheet" href="/static/eos-components.css">
+*/
+
+/* === Animations === */
+@keyframes fadeDown { from{opacity:0;transform:translateY(-10px)} to{opacity:1;transform:translateY(0)} }
+@keyframes fadeUp { from{opacity:0;transform:translateY(6px)} to{opacity:1;transform:translateY(0)} }
+@keyframes cardIn { from{opacity:0;transform:translateY(12px)} to{opacity:1;transform:translateY(0)} }
+@keyframes ringFill { from{stroke-dashoffset:283} }
+@keyframes shimmer { 0%{background-position:-200% 0} 100%{background-position:200% 0} }
+.fade-down { animation:fadeDown 0.4s ease }
+.card-in { animation:cardIn 0.35s ease both }
+.card-in:nth-child(2){animation-delay:0.05s} .card-in:nth-child(3){animation-delay:0.1s} .card-in:nth-child(4){animation-delay:0.15s}
+
+/* === Mode bar + panels (shared by cable, app-gen, any multi-mode app) ===
+   Override active color per-app with --mode-active-bg / --mode-active-fg on :root.
+*/
+.eos-mode-bar { display:flex; gap:4px; background:var(--bg-card); border:1px solid var(--border); border-radius:12px; padding:3px; margin:0 0 14px }
+.eos-mode-btn { flex:1; text-align:center; padding:10px; font-size:13px; font-weight:600; border-radius:10px; border:none; background:transparent; color:var(--text-muted); cursor:pointer; transition:all 0.15s }
+.eos-mode-btn.active { background:var(--mode-active-bg,var(--accent)); color:var(--mode-active-fg,#fff) }
+.eos-panel { display:none }
+.eos-panel.active { display:block; animation:fadeUp 0.25s ease }
+
+/* === Toast === */
+.eos-toast { position:fixed; top:20px; left:50%; z-index:100; transform:translateX(-50%) translateY(-60px); padding:10px 24px; border-radius:10px; font-size:14px; font-weight:600; box-shadow:0 4px 24px rgba(0,0,0,0.5); backdrop-filter:blur(16px); transition:transform 0.3s cubic-bezier(0.34,1.56,0.64,1); white-space:nowrap; letter-spacing:0.01em }
+.eos-toast.show { transform:translateX(-50%) translateY(0) }
+.eos-toast-ok { background:rgba(52,211,153,0.92); color:#064e3b }
+.eos-toast-err { background:rgba(248,113,113,0.92); color:#7f1d1d }
+
+/* === Header === */
+.eos-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:16px; animation:fadeDown 0.4s }
+.eos-header h1 { font-size:24px; font-weight:700; color:var(--text-heading); letter-spacing:-0.02em }
+
+/* === Hero Stats === */
+.eos-hero { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:16px }
+.eos-hero-card { background:var(--bg-card); border:1px solid var(--border); border-radius:16px; padding:14px; animation:cardIn 0.35s ease both }
+.eos-hero-card:nth-child(2){animation-delay:0.06s}
+.eos-hero-card.wide { grid-column:1/-1 }
+.eos-hero-label { font-size:12px; color:var(--text-secondary); text-transform:uppercase; letter-spacing:0.5px; margin-bottom:4px }
+.eos-hero-val { font-size:28px; font-weight:700; color:var(--text-heading); letter-spacing:-0.02em }
+.eos-hero-val.sm { font-size:22px }
+.eos-hero-sub { font-size:13px; color:var(--text-secondary); margin-top:2px; letter-spacing:0.01em }
+@media(max-width:500px) { .eos-hero{grid-template-columns:1fr} .eos-hero-card.wide{grid-column:auto} }
+
+/* === Quick Input Bar === */
+.eos-input-bar { display:flex; gap:8px; margin-bottom:6px; animation:fadeDown 0.4s ease 0.05s both }
+.eos-input-wrap { position:relative; flex:1 }
+.eos-input-prefix { position:absolute; left:12px; top:50%; transform:translateY(-50%); color:var(--text-secondary); font-size:18px; font-weight:500; pointer-events:none }
+.eos-input { width:100%; background:var(--bg-card); border:1px solid var(--border); border-radius:14px; padding:14px 14px 14px 30px; font-size:17px; color:var(--text); outline:none; font-family:inherit; transition:border-color 0.2s,box-shadow 0.2s }
+.eos-input:focus { border-color:color-mix(in srgb,var(--accent) 60%,transparent); box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 10%,transparent) }
+.eos-input::placeholder { color:var(--text-secondary) }
+.eos-btn { padding:14px 20px; background:var(--accent); color: var(--accent-ink); border:none; border-radius:10px; font-size:15px; font-weight:600; cursor:pointer; transition:transform 0.1s,opacity 0.15s,box-shadow 0.15s; min-width:60px; font-family:inherit; letter-spacing:0.01em }
+.eos-btn:hover { box-shadow:0 4px 16px color-mix(in srgb,var(--accent) 25%,transparent) }
+.eos-btn:active { transform:scale(0.96) }
+.eos-btn:disabled { opacity:0.4; pointer-events:none }
+.eos-btn-sm { padding:8px 16px; font-size:13px; border-radius:8px }
+.eos-btn-danger { background:#ef4444 }
+.eos-btn-ghost { background:transparent; color:var(--text-secondary); border:1px solid var(--border) }
+.eos-btn-ghost:hover { border-color:var(--border-strong); color:var(--text); box-shadow:none }
+
+/* === Tabs === */
+.eos-tabs { display:flex; border-bottom:1px solid var(--border); margin-bottom:16px; gap:0 }
+.eos-tab { flex:1; text-align:center; padding:11px; font-size:13px; font-weight:500; color:var(--text-muted); cursor:pointer; border-bottom:2px solid transparent; transition:color 0.2s,border-color 0.2s; -webkit-tap-highlight-color:transparent; letter-spacing:0.02em }
+.eos-tab:hover { color:var(--text-secondary) }
+.eos-tab.active { color:var(--accent); border-bottom-color:var(--accent); font-weight:600 }
+.eos-tab-content { display:none }
+.eos-tab-content.active { display:block }
+
+/* === Entry List === */
+.eos-entries { max-height:500px; overflow-y:auto }
+.eos-entry { display:flex; align-items:center; padding:10px 0; border-bottom:1px solid var(--border); gap:8px; cursor:pointer; transition:background 0.1s }
+.eos-entry:active { background:color-mix(in srgb,var(--accent) 6%,transparent) }
+.eos-entry-date { font-size:11px; color:var(--text-muted); min-width:38px; font-family:var(--mono) }
+.eos-entry-text { flex:1; font-size:14px }
+.eos-entry-badge { font-size:11px; padding:2px 8px; border-radius:8px }
+.eos-entry-val { font-weight:700; font-size:15px; color:var(--text-heading); font-family:var(--mono); min-width:56px; text-align:right }
+
+/* === Modal / Bottom Sheet === */
+.eos-modal-bg { position:fixed; inset:0; background:rgba(0,0,0,0.5); z-index:50; display:none; align-items:flex-end; justify-content:center; backdrop-filter:blur(4px) }
+.eos-modal-bg.show { display:flex }
+.eos-modal { background:var(--bg-surface); border-radius:16px 16px 0 0; padding:20px; width:100%; max-width:500px; max-height:70dvh; overflow-y:auto; animation:cardIn 0.25s }
+.eos-modal-handle { width:40px; height:4px; background:var(--border); border-radius:2px; margin:0 auto 16px }
+.eos-modal h3 { margin-bottom:12px }
+.eos-modal input,.eos-modal select,.eos-modal textarea { width:100%; padding:10px; border:1px solid var(--border); border-radius:10px; background:var(--bg); color:var(--text); font-size:15px; margin-bottom:8px; font-family:inherit }
+.eos-modal-actions { display:flex; gap:8px; margin-top:12px }
+.eos-modal-actions button { flex:1; padding:12px; border:none; border-radius:10px; font-size:15px; font-weight:600; cursor:pointer }
+
+/* === SVG Ring === */
+.eos-ring { position:relative }
+.eos-ring svg { transform:rotate(-90deg) }
+.eos-ring .ring-bg { stroke:var(--border); fill:none; stroke-width:10 }
+.eos-ring .ring-fill { fill:none; stroke-width:10; stroke-linecap:round; transition:stroke-dashoffset 1s ease; animation:ringFill 1s ease }
+.eos-ring-center { position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center }
+
+/* === Donut Chart === */
+.eos-donut-section { display:flex; gap:16px; margin-bottom:16px; flex-wrap:wrap; align-items:flex-start }
+.eos-legend { flex:1; min-width:140px }
+.eos-legend-row { display:flex; align-items:center; gap:8px; padding:5px 0; font-size:14px }
+.eos-legend-dot { width:10px; height:10px; border-radius:50%; flex-shrink:0 }
+.eos-legend-name { flex:1 }
+.eos-legend-val { font-weight:600; color:var(--text-heading) }
+.eos-legend-pct { font-size:12px; color:var(--text-muted); min-width:34px; text-align:right }
+
+/* === Budget Bar === */
+.eos-bar { height:6px; border-radius:3px; background:var(--border); overflow:hidden; margin-top:8px }
+.eos-bar-fill { height:100%; border-radius:3px; transition:width 0.5s; background:var(--accent) }
+.eos-bar-ok { background:#10b981 }
+.eos-bar-warn { background:#f59e0b }
+.eos-bar-over { background:#ef4444 }
+
+/* === Sticky Job Progress (long-running async jobs) === */
+.eos-job-progress {
+    position:fixed; right:24px; bottom:calc(env(safe-area-inset-bottom) + 88px);
+    width:min(420px, calc(100vw - 48px));
+    background:color-mix(in srgb, var(--bg-card) 96%, transparent);
+    backdrop-filter:blur(12px); -webkit-backdrop-filter:blur(12px);
+    border:1px solid color-mix(in srgb, var(--accent) 30%, var(--border));
+    border-radius:14px; padding:12px 14px;
+    box-shadow:0 6px 24px var(--shadow); z-index:1500;
+}
+.eos-job-row { display:flex; align-items:center; gap:8px; font-size:13px; margin-bottom:8px }
+.eos-job-row b { color:var(--text-heading) }
+.eos-job-detail {
+    color:var(--text-muted); font-size:12px;
+    font-family:var(--font-mono, JetBrains Mono, monospace);
+    overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex:1;
+}
+
+/* === Quick Actions Grid === */
+.eos-actions { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin-bottom:16px }
+.eos-action { background:var(--bg-card); border:1px solid var(--border); border-radius:12px; padding:14px 8px; text-align:center; cursor:pointer; text-decoration:none; color:var(--text); transition:all 0.15s }
+.eos-action:active { transform:scale(0.96); border-color:var(--accent) }
+.eos-action-icon { font-size:22px; margin-bottom:4px }
+.eos-action-label { font-size:12px; color:var(--text-secondary) }
+
+/* === Widget Cards === */
+.eos-widgets { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:16px }
+.eos-widget { background:var(--bg-card); border:1px solid var(--border); border-radius:var(--radius-lg); padding:14px; animation:cardIn 0.35s ease both; transition:border-color 0.15s,box-shadow 0.15s }
+.eos-widget:hover { border-color:var(--border-strong) }
+.eos-widget.wide { grid-column:1/-1 }
+.eos-widget-label { font-size:10px; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.8px; margin-bottom:4px; font-weight:500 }
+.eos-widget-val { font-size:22px; font-weight:700; color:var(--text-heading); letter-spacing:-0.02em }
+.eos-widget-sub { font-size:12px; color:var(--text-secondary); margin-top:2px }
+
+/* === Heatmap === */
+.eos-heatmap { display:flex; flex-wrap:wrap; gap:2px }
+.eos-hm { width:12px; height:12px; border-radius:2px; background:var(--border) }
+.eos-hm-1 { background:color-mix(in srgb,var(--accent) 25%,var(--border)) }
+.eos-hm-2 { background:color-mix(in srgb,var(--accent) 50%,var(--border)) }
+.eos-hm-3 { background:color-mix(in srgb,var(--accent) 75%,var(--border)) }
+.eos-hm-4 { background:var(--accent) }
+
+/* === Obsidian Links === */
+.obs-link { color:var(--accent); text-decoration:none; cursor:pointer; transition:opacity 0.15s }
+.obs-link:hover { opacity:0.8; text-decoration:underline }
+.obs-icon { font-size:0.8em; opacity:0.5 }
+
+/* Note reference pills */
+.note-ref { background:color-mix(in srgb,var(--accent) 10%,transparent); padding:2px 8px; border-radius:6px; font-size:13px; white-space:nowrap; text-decoration:none; transition:background 0.15s }
+.note-ref:hover { background:color-mix(in srgb,var(--accent) 20%,transparent); text-decoration:none }
+
+/* Obsidian tags */
+.obs-tag { color:var(--accent); font-size:13px; opacity:0.8 }
+
+/* Obsidian checkboxes */
+.obs-done { text-decoration:line-through; opacity:0.6 }
+.obs-todo { list-style:none }
+
+/* Blockquote */
+blockquote { border-left:3px solid var(--accent); padding:4px 12px; margin:8px 0; color:var(--text-secondary); font-style:italic; background:color-mix(in srgb,var(--accent) 4%,transparent); border-radius:0 8px 8px 0 }
+
+/* Rendered markdown in note viewer */
+.eos-note-content h1,.eos-note-content h2,.eos-note-content h3,.eos-note-content h4 { color:var(--text-heading); margin:12px 0 6px; font-weight:600 }
+.eos-note-content h1 { font-size:20px } .eos-note-content h2 { font-size:18px } .eos-note-content h3 { font-size:16px }
+.eos-note-content strong { color:var(--text-heading) }
+.eos-note-content ul,.eos-note-content ol { padding-left:20px; margin:6px 0 }
+.eos-note-content li { margin:3px 0 }
+.eos-note-content code { background:var(--border); padding:1px 5px; border-radius:4px; font-size:12px }
+.eos-note-content hr { border:none; border-top:1px solid var(--border); margin:12px 0 }
+.eos-note-content p { margin:6px 0 }
+
+/* === Utility === */
+.eos-section-title { font-size:10px; font-weight:600; color:var(--text-muted); text-transform:uppercase; letter-spacing:1.5px; margin-bottom:8px; margin-top:16px; font-family:var(--mono) }
+.eos-empty { text-align:center; padding:24px; color:var(--text-muted) }
+.trend-up { color:#ef4444 }
+.trend-down { color:#10b981 }
+
+/* === Note Viewer / Editor === */
+.eos-note-overlay { position:fixed; inset:0; background:rgba(0,0,0,0.6); z-index:200; display:none; justify-content:center; align-items:center; backdrop-filter:blur(4px) }
+.eos-note-overlay.open { display:flex }
+.eos-note-panel { background:var(--bg-surface); border-radius:16px; width:90vw; max-width:800px; height:80vh; display:flex; flex-direction:column; animation:cardIn 0.25s; box-shadow:0 8px 40px rgba(0,0,0,0.4) }
+.eos-note-header { display:flex; align-items:center; justify-content:space-between; padding:16px 20px; border-bottom:1px solid var(--border); flex-shrink:0 }
+.eos-note-title { font-size:16px; font-weight:600; color:var(--text-heading); flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
+.eos-note-actions { display:flex; gap:6px; flex-shrink:0 }
+.eos-note-btn { padding:6px 14px; border-radius:8px; border:1px solid var(--border); background:var(--bg); color:var(--text-secondary); font-size:13px; cursor:pointer; transition:all 0.15s; font-family:inherit }
+.eos-note-btn:hover { border-color:var(--accent); color:var(--accent) }
+.eos-note-btn-edit { background:var(--accent); color: var(--accent-ink); border-color:var(--accent) }
+.eos-note-btn-edit:hover { opacity:0.9; color:#fff }
+.eos-note-btn-close { font-size:18px; line-height:1; padding:4px 10px; font-weight:300 }
+.eos-note-body { flex:1; overflow-y:auto; padding:0 }
+.eos-note-content { padding:20px; margin:0; font-family:var(--mono, 'Menlo', 'Consolas', monospace); font-size:13px; line-height:1.7; color:var(--text); white-space:pre-wrap; word-break:break-word; background:transparent; border:none; tab-size:4 }
+.eos-note-editor { width:100%; height:100%; padding:20px; margin:0; font-family:var(--mono, 'Menlo', 'Consolas', monospace); font-size:13px; line-height:1.7; color:var(--text); background:var(--bg); border:none; outline:none; resize:none; tab-size:4; box-sizing:border-box }
+.eos-note-footer { display:flex; gap:8px; align-items:center; padding:12px 20px; border-top:1px solid var(--border); flex-shrink:0 }
+.eos-note-status { font-size:13px; color:var(--text-secondary); margin-left:auto }
+
+/* Note link inline actions */
+.eos-note-link { display:inline-flex; align-items:center; gap:4px }
+.eos-note-edit-icon { color:var(--text-muted); font-size:14px; text-decoration:none; cursor:pointer; transition:color 0.15s; opacity:0.5 }
+.eos-note-edit-icon:hover { color:var(--accent); opacity:1 }
+
+/* Rendered markdown: frontmatter */
+.obs-frontmatter { background:color-mix(in srgb, var(--accent) 5%, var(--bg)); border:1px solid color-mix(in srgb, var(--accent) 15%, var(--border)); border-radius:10px; padding:10px 14px; margin-bottom:16px; font-size:12px }
+.obs-fm-label { font-size:10px; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.5px; margin-bottom:6px; font-weight:600 }
+.obs-fm-row { display:flex; gap:8px; padding:2px 0 }
+.obs-fm-key { color:var(--text-muted); min-width:80px; font-weight:500 }
+.obs-fm-val { color:var(--text); flex:1 }
+
+/* Rendered markdown: code blocks */
+.obs-code-block { background:var(--bg); border:1px solid var(--border); border-radius:8px; padding:12px 14px; margin:8px 0; overflow-x:auto }
+.obs-code-block code { font-family:var(--mono, 'Menlo', 'Consolas', monospace); font-size:12px; line-height:1.6; color:var(--text); white-space:pre }
+
+/* Rendered markdown: tables */
+.obs-table { width:100%; border-collapse:collapse; font-size:13px; margin:8px 0 }
+.obs-table th { text-align:left; padding:6px 10px; border-bottom:2px solid var(--border); color:var(--text-heading); font-weight:600; font-size:12px }
+.obs-table td { padding:5px 10px; border-bottom:1px solid color-mix(in srgb, var(--border) 50%, transparent) }
+.obs-table tr:hover td { background:color-mix(in srgb, var(--accent) 3%, transparent) }
+
+/* Rendered markdown: callouts */
+.obs-callout { border-left:3px solid var(--accent); padding:8px 12px; margin:8px 0; border-radius:0 6px 6px 0; background:color-mix(in srgb, var(--accent) 5%, var(--bg)) }
+.obs-callout-warning { border-left-color:#fbbf24; background:rgba(251,191,36,0.05) }
+.obs-callout-danger,.obs-callout-error { border-left-color:#ef4444; background:rgba(239,68,68,0.05) }
+.obs-callout-tip,.obs-callout-success { border-left-color:#22c55e; background:rgba(34,211,153,0.05) }
+
+/* Rendered markdown: general */
+.eos-note-content h2 { font-size:18px; font-weight:700; color:var(--text-heading); margin:20px 0 8px; border-bottom:1px solid var(--border); padding-bottom:4px }
+.eos-note-content h3 { font-size:15px; font-weight:600; color:var(--text-heading); margin:16px 0 6px }
+.eos-note-content h4 { font-size:14px; font-weight:600; color:var(--text-heading); margin:12px 0 4px }
+.eos-note-content h5 { font-size:13px; font-weight:600; color:var(--text-secondary); margin:10px 0 4px }
+.eos-note-content del { color:var(--text-muted); text-decoration:line-through }
+.eos-note-content blockquote { border-left:3px solid var(--border); padding-left:12px; color:var(--text-secondary); margin:6px 0 }
+.eos-note-content ul { padding-left:20px; margin:4px 0 }
+.eos-note-content li { margin:2px 0 }
+.eos-note-content code { background:var(--bg); padding:1px 5px; border-radius:4px; font-size:12px; font-family:var(--mono) }
+.eos-note-content hr { border:none; border-top:1px solid var(--border); margin:16px 0 }
+
+@media(max-width:600px) {
+    .eos-note-panel { width:100vw; height:100dvh; border-radius:0; max-width:none }
+    .eos-note-header { padding:12px 16px }
+    .eos-note-content,.eos-note-editor { padding:16px; font-size:12px }
+}
+
+/* === Stat Cards === */
+.eos-stat-card { background:var(--bg-card); border:1px solid var(--border); border-radius:12px; padding:14px 16px; text-align:center; animation:cardIn 0.3s ease both }
+.eos-stat-val { font-size:24px; font-weight:700; color:var(--accent) }
+.eos-stat-lbl { font-size:11px; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.4px; margin-top:2px }
+/* Semantic variants — prefer over inline `color:` in callsites. */
+.eos-stat-card--success .eos-stat-val { color:var(--success, #10b981) }
+.eos-stat-card--warning .eos-stat-val { color:var(--warning, #f59e0b) }
+.eos-stat-card--danger  .eos-stat-val { color:var(--danger,  #ef4444) }
+.eos-stat-card--accent  .eos-stat-val { color:var(--accent) }
+.eos-stat-card--muted   .eos-stat-val { color:var(--text-muted) }
+
+/* === Modal === */
+.eos-modal-overlay { position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.5); z-index:200; display:none; justify-content:center; align-items:center; padding:16px; backdrop-filter:blur(4px) }
+.eos-modal-overlay.show { display:flex }
+.eos-modal { background:var(--bg-surface); border:1px solid var(--border); border-radius:16px; padding:24px; max-width:500px; width:100%; max-height:85dvh; overflow-y:auto; animation:cardIn 0.2s ease }
+.eos-modal-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:16px }
+.eos-modal-header h2 { font-size:18px; font-weight:700; color:var(--text-heading); margin:0 }
+.eos-modal-close { background:none; border:none; color:var(--text-muted); font-size:24px; cursor:pointer; padding:0 4px }
+.eos-modal-close:hover { color:var(--text) }
+.eos-modal-body { font-size:14px; color:var(--text-secondary); line-height:1.6 }
+
+/* === Attachment picker === */
+.eos-att-list { display:flex; flex-direction:column; gap:4px; }
+.eos-att-row { padding:8px 12px; border-radius:8px; cursor:pointer; border:1px solid transparent; transition:background 0.1s, border-color 0.1s }
+.eos-att-row:hover { background:var(--bg); border-color:var(--border) }
+.eos-att-row-main { display:flex; align-items:baseline; gap:6px; font-size:14px; color:var(--text) }
+.eos-att-folder { color:var(--text-muted); font-size:12px }
+.eos-att-name { font-weight:500 }
+.eos-att-row-tags { margin-top:4px; font-size:11px; opacity:0.8 }
+.eos-att-empty { padding:24px; text-align:center; color:var(--text-muted); font-size:13px }
+.eos-att-drop { border:2px dashed var(--border); border-radius:12px; padding:32px 16px; text-align:center; color:var(--text-secondary); transition:border-color 0.15s, background 0.15s }
+.eos-att-drop.drag { border-color:var(--accent); background:var(--bg) }
+.eos-att-drop-icon { font-size:32px; margin-bottom:8px; opacity:0.7 }
+.eos-att-browse { color:var(--accent); cursor:pointer; text-decoration:underline }
+.eos-att-hint { font-size:12px; color:var(--text-muted); margin-top:8px }
+.eos-att-uprow { font-size:13px; padding:4px 0; color:var(--text-secondary) }
+
+/* === Form === */
+.eos-form-group { margin-bottom:12px }
+.eos-form-label { display:block; font-size:13px; color:var(--text-secondary); margin-bottom:4px; font-weight:500 }
+.eos-form-input { width:100%; padding:10px 12px; background:var(--bg); border:1px solid var(--border); border-radius:8px; color:var(--text); font-size:14px; font-family:inherit }
+.eos-form-input:focus { border-color:var(--accent); outline:none }
+.eos-form-actions { display:flex; gap:8px; margin-top:16px; justify-content:flex-end }
+
+/* === Buttons === */
+.eos-btn { padding:10px 20px; border-radius:10px; border:1px solid var(--border); background:none; color:var(--text-secondary); cursor:pointer; font-size:14px; font-weight:500; font-family:inherit }
+.eos-btn:hover { border-color:var(--accent); color:var(--accent) }
+.eos-btn-primary { background:var(--accent); color: var(--accent-ink); border-color:var(--accent) }
+.eos-btn-primary:hover { opacity:0.9 }
+.eos-btn-danger { border-color:#ef4444; color:#ef4444 }
+.eos-btn-danger:hover { background:#ef4444; color:#fff }
+.eos-btn-sm { padding:6px 14px; font-size:13px; border-radius:8px }
+.eos-btn-ghost { background:none; border-color:transparent; color:var(--text-muted) }
+.eos-btn-ghost:hover { color:var(--text); border-color:var(--border) }
+
+/* === Loading Spinner === */
+.eos-loading { display:flex; justify-content:center; align-items:center; padding:40px }
+.eos-spinner { width:24px; height:24px; border:3px solid var(--border); border-top-color:var(--accent); border-radius:50%; animation:spin 0.7s linear infinite }
+@keyframes spin { to { transform:rotate(360deg) } }
+
+/* === Mobile Responsive === */
+
+/* Touch targets — everything tappable should be at least 44px */
+@media(pointer:coarse) {
+    button, .eos-btn, .eos-tab, select, [onclick] { min-height:44px }
+    input, textarea, select { font-size:16px !important } /* prevent iOS zoom */
+    a { padding:4px 0 }
+}
+
+/* Tablet and below */
+@media(max-width:768px) {
+    /* Grids collapse to fewer columns */
+    .eos-hero { grid-template-columns:1fr 1fr }
+    .eos-widgets { grid-template-columns:1fr 1fr }
+
+    /* Sidebar layouts become stacked */
+    [style*="display:flex"][style*="gap"] { flex-wrap:wrap }
+
+    /* Tables scroll horizontally */
+    table { display:block; overflow-x:auto; -webkit-overflow-scrolling:touch }
+}
+
+/* === Dictionary Popup (double-click lookup) === */
+#eos-dict-popup { display:none; position:fixed; background:var(--bg-surface); border:1px solid var(--border); border-radius:12px; padding:16px; z-index:1100; width:300px; box-shadow:0 8px 32px rgba(0,0,0,0.5); max-height:340px; overflow-y:auto; animation:cardIn 0.2s ease }
+#eos-dict-popup.active { display:block }
+.eos-dict-word { font-size:18px; font-weight:700; color:var(--accent) }
+.eos-dict-play { cursor:pointer; font-size:16px; margin-left:6px; opacity:0.6; transition:opacity 0.15s }
+.eos-dict-play:hover { opacity:1 }
+.eos-dict-ipa { font-size:13px; color:var(--text-muted); margin-left:6px }
+.eos-dict-pos { font-size:11px; font-weight:600; color:var(--accent); text-transform:uppercase; margin-top:8px }
+.eos-dict-def { font-size:14px; color:var(--text); margin:3px 0 2px 10px; line-height:1.4 }
+.eos-dict-ex { font-size:13px; color:var(--text-muted); font-style:italic; margin:0 0 4px 10px }
+.eos-dict-zh { margin-top:6px; padding-top:6px; border-top:1px solid var(--border); font-size:14px; color:var(--text-secondary) }
+.eos-dict-save { margin-top:10px; width:100%; background:var(--accent); color: var(--accent-ink); border:none; border-radius:8px; padding:8px; font-size:13px; font-weight:600; cursor:pointer }
+.eos-dict-save:active { transform:scale(0.97) }
+.eos-dict-loading { color:var(--text-muted); font-style:italic; padding:16px; text-align:center; font-size:14px }
+
+/* Phone */
+@media(max-width:500px) {
+    /* Single column everything */
+    .eos-hero { grid-template-columns:1fr }
+    .eos-hero-card.wide { grid-column:auto }
+    .eos-widgets { grid-template-columns:1fr }
+    .eos-actions { grid-template-columns:repeat(2,1fr) }
+    .eos-donut-section { flex-direction:column; align-items:center }
+
+    /* Modals full-width */
+    .eos-modal { padding:16px; border-radius:12px 12px 0 0; max-width:100%; margin:0 }
+    .eos-modal-bg, .eos-modal-overlay { align-items:flex-end; padding:0 }
+
+    /* Input bars stack */
+    .eos-input-bar { flex-direction:column }
+    .eos-input-bar .eos-btn { width:100% }
+
+    /* Tabs scroll if too many */
+    .eos-tabs { overflow-x:auto; scrollbar-width:none; -webkit-overflow-scrolling:touch; flex-wrap:nowrap }
+    .eos-tabs::-webkit-scrollbar { display:none }
+    .eos-tab { flex-shrink:0; white-space:nowrap }
+
+    /* Cards smaller padding */
+    .card, .eos-hero-card, .eos-widget { padding:12px }
+
+    /* Section titles tighter */
+    .eos-section-title { margin-top:12px; margin-bottom:6px }
+
+    /* Font adjustments */
+    h1 { font-size:20px !important }
+    h2 { font-size:17px !important }
+
+    /* Heatmap smaller cells */
+    .eos-heatmap .eos-hm { width:10px; height:10px }
+
+    /* Entry list tighter */
+    .eos-entry { padding:8px 0; font-size:13px }
+    .eos-entry-val { font-size:14px; min-width:48px }
+    .eos-entry-date { font-size:10px; min-width:32px }
+
+    /* Legend wraps */
+    .eos-legend { min-width:auto }
+    .eos-legend-row { font-size:12px; padding:3px 0 }
+}
+
+/* Very small phones */
+@media(max-width:360px) {
+    .eos-actions { grid-template-columns:1fr }
+    .eos-hero { gap:6px }
+    body { padding-left:10px !important; padding-right:10px !important }
+}
+
+/* === Compare Table === */
+.eos-compare-table { width:100%; border-collapse:collapse; font-size:14px }
+.eos-compare-table th { padding:8px 10px; text-align:center; color:var(--text-muted); font-size:11px; text-transform:uppercase; border-bottom:1px solid var(--border); white-space:nowrap }
+.eos-compare-table th:first-child { text-align:left }
+.eos-compare-table td { padding:8px 10px; text-align:center; border-bottom:1px solid color-mix(in srgb,var(--border) 50%,transparent); font-family:var(--mono) }
+.eos-compare-table td:first-child { text-align:left; font-weight:600; font-family:inherit }
+.eos-compare-table .eos-cmp-best { color:#10b981; font-weight:700 }
+.eos-compare-table .eos-cmp-worst { color:var(--text-muted) }
+
+/* === EOS Theme Component Overrides === */
+
+/* Tabs: accent underline thicker, crisp */
+.theme-eos .eos-tab { color:var(--text-muted); font-weight:500 }
+.theme-eos .eos-tab:hover { color:var(--text-secondary) }
+.theme-eos .eos-tab.active { border-bottom:3px solid var(--accent); color:var(--accent); font-weight:700 }
+
+/* Buttons: gradient */
+.theme-eos .eos-btn-primary { background:linear-gradient(135deg, #7c6cf0 0%, #5a4bd4 100%); border-color:transparent; box-shadow:0 2px 8px rgba(108,92,231,0.2) }
+.theme-eos .eos-btn-primary:hover { box-shadow:0 4px 16px rgba(108,92,231,0.3); opacity:1; filter:brightness(1.06) }
+.theme-eos .eos-btn:not(.eos-btn-primary):not(.eos-btn-danger):not(.eos-btn-ghost):hover { border-color:var(--accent); color:var(--accent) }
+
+/* Toast: warm paper */
+.theme-eos .eos-toast-ok { background:#e8f5e9; color:#1b5e20; box-shadow:0 4px 20px rgba(0,0,0,0.08); border:1px solid #c8e6c9 }
+.theme-eos .eos-toast-err { background:#fbe9e7; color:#b71c1c; box-shadow:0 4px 20px rgba(0,0,0,0.08); border:1px solid #ffcdd2 }
+
+/* Modal: card background, visible */
+.theme-eos .eos-modal { background:var(--bg-card); border:1px solid var(--border); box-shadow:0 12px 48px rgba(30,28,24,0.15) }
+.theme-eos .eos-modal-overlay { background:rgba(46,46,54,0.3) }
+
+/* Note viewer: solid background */
+.theme-eos .eos-note-panel { background:var(--bg-card); border:1px solid var(--border); box-shadow:0 8px 40px rgba(30,28,24,0.15) }
+.theme-eos .eos-note-overlay { background:rgba(46,46,54,0.3) }
+
+/* Input bar: underline style */
+.theme-eos .eos-input { border:none; border-bottom:2px solid var(--border); border-radius:0; background:transparent; transition:border-color 0.2s }
+.theme-eos .eos-input:focus { border-bottom-color:var(--accent); box-shadow:none; background:rgba(108,92,231,0.02) }
+
+/* Hero/widget cards: subtle shadow + accent hover */
+.theme-eos .eos-hero-card,
+.theme-eos .eos-widget,
+.theme-eos .eos-stat-card { box-shadow:0 1px 4px rgba(30,28,24,0.05); transition:box-shadow 0.2s, border-color 0.2s }
+.theme-eos .eos-hero-card:hover,
+.theme-eos .eos-widget:hover { box-shadow:0 4px 16px rgba(30,28,24,0.08); border-color:var(--accent) }
+
+/* Entry list: accent dot on hover */
+.theme-eos .eos-entry { transition:background 0.15s }
+.theme-eos .eos-entry:hover { background:rgba(108,92,231,0.03) }
+
+/* ===== Settings slide-out (shared) ===== */
+.eos-settings-panel { display:none; position:fixed; top:0; right:0; bottom:0; width:min(420px,92vw); background:var(--bg); border-left:1px solid var(--border); z-index:200; overflow-y:auto; box-shadow:-8px 0 24px rgba(0,0,0,0.12); }
+.eos-settings-panel.open { display:block; animation:eosSettingsSlideIn 0.22s ease; }
+@keyframes eosSettingsSlideIn { from { transform:translateX(100%); } to { transform:translateX(0); } }
+.eos-settings-panel .sp-head { position:sticky; top:0; background:var(--bg); padding:16px 20px; border-bottom:1px solid var(--border); display:flex; justify-content:space-between; align-items:center; z-index:1; }
+.eos-settings-panel .sp-head h3 { margin:0; font-size:16px; }
+.eos-settings-panel .sp-body { padding:16px 20px; }
+.eos-settings-panel .sp-foot { position:sticky; bottom:0; background:var(--bg); padding:12px 20px; border-top:1px solid var(--border); display:flex; gap:8px; justify-content:flex-end; }
+.eos-settings-panel .sf-group { margin-bottom:14px; }
+.eos-settings-panel .sf-label { display:block; font-size:11px; font-weight:600; color:var(--text-secondary); margin-bottom:4px; text-transform:uppercase; letter-spacing:0.5px; }
+.eos-settings-panel .sf-input, .eos-settings-panel .sf-select, .eos-settings-panel .sf-textarea { width:100%; padding:9px 11px; background:var(--bg-input); border:1px solid var(--border); border-radius:8px; font-size:14px; color:var(--text); font-family:inherit; outline:none; box-sizing:border-box; }
+.eos-settings-panel .sf-textarea { resize:vertical; min-height:60px; }
+.eos-settings-panel .sf-input:focus, .eos-settings-panel .sf-select:focus, .eos-settings-panel .sf-textarea:focus { border-color:var(--accent); }
+.eos-settings-panel .sf-hint { font-size:11px; color:var(--text-muted); margin-top:3px; }
+.eos-settings-panel .sf-section { font-size:12px; font-weight:600; color:var(--text-heading); margin:18px 0 8px 0; padding-bottom:4px; border-bottom:1px solid var(--border); }
+.eos-settings-panel .sf-checkbox { display:flex; align-items:flex-start; gap:10px; font-size:14px; color:var(--text); cursor:pointer; line-height:1.4; }
+.eos-settings-panel .sf-checkbox input[type="checkbox"] { width:16px; height:16px; margin:2px 0 0; accent-color: var(--accent); flex-shrink:0; cursor:pointer; }
+.eos-settings-panel .sf-checkbox span { flex:1; }
+.btn-settings { background:transparent; border:1px solid var(--border); color:var(--text-secondary); padding:6px 10px; border-radius:8px; font-size:12px; cursor:pointer; display:inline-flex; align-items:center; gap:4px; }
+.btn-settings:hover { border-color:var(--accent); color:var(--accent); }
+
+/* ===== Shared badge system (status / priority / age) ===== */
+.eos-badge { display:inline-block; padding:2px 8px; border-radius:6px; font-size:11px; font-weight:500; line-height:1.5; white-space:nowrap; }
+
+/* Status variants — project states + generic lifecycle */
+.eos-badge-status-idea      { background:rgba(102,102,102,0.15); color:var(--text-muted); }
+.eos-badge-status-active    { background:rgba(52,199,89,0.15);   color:var(--success); }
+.eos-badge-status-blocked   { background:rgba(248,113,113,0.15); color:var(--danger); }
+.eos-badge-status-shelved   { background:rgba(251,191,36,0.15);  color:var(--warning); }
+.eos-badge-status-completed { background:rgba(139,92,246,0.15);  color:var(--accent); }
+.eos-badge-status-archived  { background:rgba(102,102,102,0.10); color:var(--text-muted); opacity:0.85; }
+.eos-badge-status-draft     { background:rgba(102,102,102,0.15); color:var(--text-muted); }
+.eos-badge-status-published { background:rgba(52,199,89,0.15);   color:var(--success); }
+
+/* Priority variants */
+.eos-badge-priority-high { background:rgba(248,113,113,0.15); color:var(--danger); }
+.eos-badge-priority-med  { background:rgba(251,191,36,0.15);  color:var(--warning); }
+.eos-badge-priority-low  { background:rgba(102,102,102,0.15); color:var(--text-muted); }
+
+/* Age variants — for task staleness, entry freshness */
+.eos-badge-age-fresh  { background:rgba(52,199,89,0.15);   color:var(--success); }
+.eos-badge-age-aging  { background:rgba(251,191,36,0.15);  color:var(--warning); }
+.eos-badge-age-stale  { background:rgba(248,113,113,0.15); color:var(--danger); }
+.eos-badge-age-zombie { background:rgba(102,102,102,0.20); color:var(--text-muted); opacity:0.7; }
+
+/* Neutral / generic tag */
+.eos-badge-neutral { background:rgba(102,102,102,0.12); color:var(--text-secondary); }
+
+/* Provider badges — shown next to AI-generated content to indicate whether a
+   local or cloud provider handled the request. Never hide, never make default. */
+.eos-provider-local { background:rgba(52,199,89,0.12);   color:var(--success); }
+.eos-provider-cloud { background:rgba(59,130,246,0.15);  color:#3b82f6; }
+
+/* Demo banner — injected at the top of body on demo instances. */
+.eos-demo-banner {
+    position: sticky; top: 0; z-index: 9000;
+    background: linear-gradient(90deg, #8b5cf6, #3b82f6);
+    color: #fff;
+    padding: 8px 16px;
+    font-size: 13px;
+    text-align: center;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.15);
+}
+.eos-demo-banner-text { font-weight: 500; }
+.eos-demo-banner-link { color: #fff; text-decoration: underline; margin-left: 8px; white-space: nowrap; }
+.eos-demo-banner-link:hover { opacity: 0.85; }
+body.eos-demo-active { scroll-padding-top: 48px; }
+
+/* AI-offline banner — system-level notice when no think provider is available. */
+.eos-think-banner {
+    position: sticky; top: 0; z-index: 8950;
+    background: #4d3800; color: #ffd166;
+    border-bottom: 1px solid #6b4c00;
+    padding: 8px 16px;
+    font-size: 13px;
+    display: flex; align-items: center; gap: 8px;
+    justify-content: center;
+}
+.eos-think-banner-icon { font-size: 14px; }
+.eos-think-banner-text { font-weight: 500; }
+body.eos-think-offline { scroll-padding-top: 40px; }
+.eos-demo-banner + .eos-think-banner { top: 34px; }
+
+/* PWA install banner — dismissible, shown only when the browser offers install or on iOS Safari. */
+.eos-pwa-banner {
+    position: sticky; top: 0; z-index: 9001;
+    background: var(--card, #161b22); color: var(--fg, #e6edf3);
+    border-bottom: 1px solid var(--border, #30363d);
+    padding: 10px 14px;
+    font-size: 13px;
+    display: flex; align-items: center; gap: 10px;
+}
+.eos-pwa-banner-msg { flex: 1; }
+.eos-pwa-install-btn {
+    padding: 6px 14px; border: 0; border-radius: 6px;
+    background: var(--accent, #238636); color: #fff;
+    font-size: 12px; font-weight: 600; cursor: pointer;
+}
+.eos-pwa-install-btn:hover { filter: brightness(1.1); }
+.eos-pwa-dismiss-btn {
+    background: transparent; border: 0; color: var(--muted, #8b949e);
+    font-size: 18px; line-height: 1; cursor: pointer; padding: 0 4px;
+}
+.eos-pwa-dismiss-btn:hover { color: var(--fg, #e6edf3); }
+
+/* ===== Shared entity card (list-item card with title/meta/badges/actions) ===== */
+.eos-entity-card { background:var(--bg); border:1px solid var(--border); border-radius:10px; padding:12px; margin-bottom:8px; cursor:pointer; transition:border-color 0.2s, transform 0.1s, box-shadow 0.15s; animation:cardIn 0.3s ease both; }
+.eos-entity-card:hover { border-color:var(--accent); transform:translateY(-1px); box-shadow:0 4px 12px rgba(0,0,0,0.05); }
+.eos-entity-card.no-hover { cursor:default; }
+.eos-entity-card.no-hover:hover { border-color:var(--border); transform:none; box-shadow:none; }
+.eec-head { display:flex; align-items:flex-start; justify-content:space-between; gap:8px; }
+.eec-title { font-weight:600; color:var(--text-heading); font-size:14px; flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; }
+.eec-sub { font-size:12px; color:var(--text-secondary); margin-top:2px; }
+.eec-meta { font-size:11px; color:var(--text-muted); margin-top:6px; display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+.eec-badges { display:flex; gap:4px; flex-wrap:wrap; align-items:center; }
+.eec-badges.right { margin-left:auto; }
+.eec-actions { display:flex; gap:6px; align-items:center; margin-top:8px; justify-content:flex-end; }
+.eec-actions.inline { margin-top:0; }
+.eec-body { font-size:13px; color:var(--text-secondary); margin-top:6px; line-height:1.5; }
+
+/* ===== Interactive Components (filter, cards, panels, tags) ===== */
+
+/* --- Grid Background (opt-in: add class to body or container) --- */
+.eos-grid-bg::before {
+  content:''; position:fixed; inset:0; z-index:0; pointer-events:none;
+  background-image:
+    linear-gradient(var(--grid-color, rgba(74,158,255,0.04)) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid-color, rgba(74,158,255,0.04)) 1px, transparent 1px);
+  background-size:40px 40px;
+  animation:eos-gridDrift 60s linear infinite;
+}
+@keyframes eos-gridDrift { to{transform:translateY(40px)} }
+
+/* --- Stat Row --- */
+.eos-stat-row { display:grid; grid-template-columns:repeat(auto-fit,minmax(120px,1fr)); gap:12px; }
+.eos-stat { text-align:center; padding:16px 8px; }
+.eos-stat-val { font-size:2rem; font-weight:700; color:var(--stat-color, var(--accent)); letter-spacing:-0.02em; line-height:1.1; }
+.eos-stat-label { font-size:11px; color:var(--text-muted); text-transform:uppercase; letter-spacing:1.5px; margin-top:6px; font-family:var(--mono, monospace); }
+
+/* --- Filter Bar --- */
+.eos-filter-bar { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:20px; }
+.eos-filter-pill { padding:7px 18px; border:1px solid var(--border); border-radius:20px; font-size:13px; font-weight:500; color:var(--text-secondary); cursor:pointer; transition:all 0.2s ease; background:transparent; font-family:inherit; letter-spacing:0.01em; display:inline-flex; align-items:center; gap:6px; }
+.eos-filter-pill:hover { border-color:var(--accent); color:var(--text); }
+.eos-filter-pill.active { background:var(--accent); color: var(--accent-ink); border-color:var(--accent); }
+.eos-filter-pill-count { opacity:0.7; font-weight:500; font-size:12px; }
+.eos-filter-pill.active .eos-filter-pill-count { opacity:0.9; }
+
+/* --- Card Grid --- */
+.eos-card-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(320px,1fr)); gap:16px; transition:opacity 0.15s ease; }
+.eos-card-grid.filtering { opacity:0; transform:translateY(6px); }
+
+/* --- Interactive Card --- */
+.eos-icard { background:var(--bg-card); border:1px solid var(--border); border-radius:var(--radius-lg, 14px); padding:20px; cursor:pointer; transition:transform 0.25s ease, border-color 0.25s ease, box-shadow 0.25s ease; animation:cardIn 0.35s ease both; }
+.eos-icard:hover { transform:translateY(-3px); border-color:var(--card-accent, var(--accent)); box-shadow:0 8px 24px rgba(0,0,0,0.15), 0 0 0 1px var(--card-accent, var(--accent)); }
+.eos-icard-meta { display:flex; align-items:center; justify-content:space-between; margin-bottom:10px; }
+.eos-icard-badge { font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:1px; padding:3px 10px; border-radius:4px; font-family:var(--mono, monospace); }
+.eos-icard-date { font-size:12px; color:var(--text-muted); font-family:var(--mono, monospace); }
+.eos-icard-title { font-size:16px; font-weight:600; color:var(--text-heading); line-height:1.3; margin-bottom:8px; }
+.eos-icard-summary { font-size:13px; color:var(--text-secondary); line-height:1.5; margin-bottom:12px; display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden; }
+.eos-icard-tags { display:flex; gap:6px; flex-wrap:wrap; }
+.eos-icard-tag { font-size:11px; padding:2px 8px; border-radius:4px; background:var(--bg-surface, rgba(255,255,255,0.05)); color:var(--text-muted); font-family:var(--mono, monospace); }
+
+/* --- Slide Panel (full-height detail view) --- */
+.eos-slide-panel { position:fixed; inset:0; z-index:200; transform:translateY(100%); transition:transform 0.35s cubic-bezier(0.4,0,0.2,1); pointer-events:none; }
+.eos-slide-panel.open { transform:translateY(0); pointer-events:auto; }
+.eos-slide-panel-backdrop { position:absolute; inset:0; background:rgba(0,0,0,0.5); }
+.eos-slide-panel-sheet { position:absolute; top:48px; left:0; right:0; bottom:0; background:var(--bg, #1a1d23); border-radius:20px 20px 0 0; overflow-y:auto; }
+.eos-slide-panel-close { position:absolute; top:12px; right:20px; z-index:210; background:none; border:1px solid var(--border); color:var(--text-muted); padding:6px 14px; border-radius:8px; font-family:var(--mono, monospace); font-size:12px; cursor:pointer; transition:border-color 0.2s, color 0.2s; }
+.eos-slide-panel-close:hover { border-color:var(--text-secondary); color:var(--text); }
+.eos-slide-panel-body { max-width:800px; margin:0 auto; padding:40px 24px 80px; }
+.eos-slide-panel-body h1 { font-size:28px; font-weight:700; margin-bottom:8px; color:var(--text-heading); }
+.eos-slide-panel-body h2 { font-size:20px; font-weight:600; margin:32px 0 12px; color:var(--text-heading); border-bottom:1px solid var(--border); padding-bottom:8px; }
+.eos-slide-panel-body h3 { font-size:16px; font-weight:600; margin:24px 0 8px; color:var(--text-heading); }
+.eos-slide-panel-body p { line-height:1.7; margin-bottom:12px; color:var(--text); }
+.eos-slide-panel-body ul,.eos-slide-panel-body ol { margin:8px 0 12px 20px; }
+.eos-slide-panel-body li { line-height:1.6; margin-bottom:4px; color:var(--text); }
+.eos-slide-panel-body code { font-family:var(--mono, monospace); background:var(--bg-surface, rgba(255,255,255,0.06)); padding:2px 6px; border-radius:4px; font-size:0.9em; }
+.eos-slide-panel-body pre { background:var(--bg-surface, rgba(255,255,255,0.06)); padding:16px; border-radius:8px; overflow-x:auto; margin:12px 0; border:1px solid var(--border); }
+.eos-slide-panel-body pre code { background:none; padding:0; }
+.eos-slide-panel-body table { width:100%; border-collapse:collapse; margin:12px 0; font-size:13px; }
+.eos-slide-panel-body th,.eos-slide-panel-body td { border:1px solid var(--border); padding:8px 12px; text-align:left; }
+.eos-slide-panel-body th { background:var(--bg-surface, rgba(255,255,255,0.04)); font-weight:600; color:var(--text-heading); }
+.eos-slide-panel-body strong { color:var(--text-heading); }
+
+/* --- Tag Cloud --- */
+.eos-tag-cloud { display:flex; flex-wrap:wrap; gap:8px; justify-content:center; }
+.eos-tag-cloud-item { cursor:pointer; color:var(--text-muted); transition:color 0.2s, transform 0.15s; font-family:var(--mono, monospace); }
+.eos-tag-cloud-item:hover { color:var(--accent); transform:scale(1.08); }
+.eos-tag-cloud-item.active { color:var(--accent); font-weight:600; }
+
+/* --- Scroll Nav --- */
+.eos-scroll-nav { position:fixed; top:0; left:0; right:0; z-index:100; display:flex; align-items:center; justify-content:space-between; padding:0 24px; height:52px; background:rgba(26,29,35,0.85); backdrop-filter:blur(12px); border-bottom:1px solid var(--border, rgba(255,255,255,0.06)); transition:background 0.3s; }
+.eos-scroll-nav-logo { font-weight:700; font-size:18px; color:var(--text-heading); letter-spacing:0.05em; font-family:var(--mono, monospace); }
+.eos-scroll-nav-links { display:flex; gap:24px; }
+.eos-scroll-nav-links a { font-size:13px; color:var(--text-muted); text-decoration:none; text-transform:uppercase; letter-spacing:1px; transition:color 0.2s; font-weight:500; }
+.eos-scroll-nav-links a:hover,.eos-scroll-nav-links a.active { color:var(--text-heading); }
+
+/* --- Reveal Animation (IntersectionObserver) --- */
+.eos-reveal { opacity:0; transform:translateY(20px); transition:opacity 0.6s ease, transform 0.6s ease; }
+.eos-reveal.revealed { opacity:1; transform:none; }
+
+@media(max-width:768px) {
+  .eos-card-grid { grid-template-columns:1fr; }
+  .eos-stat-row { grid-template-columns:repeat(2,1fr); }
+  .eos-scroll-nav-links { gap:12px; }
+  .eos-scroll-nav-links a { font-size:11px; letter-spacing:0.5px; }
+}
+@media(max-width:500px) {
+  .eos-scroll-nav { padding:0 12px; }
+  .eos-slide-panel-body { padding:24px 16px 60px; }
+  .eos-slide-panel-body h1 { font-size:22px; }
+}
+
+/* --- Tier picker (shared model-tier modal for chat apps) --- */
+.eos-tier-picker { display:flex; flex-direction:column; gap:8px; padding:4px 0; }
+.eos-tier-btn {
+  display:flex; flex-direction:column; align-items:flex-start; gap:3px;
+  padding:12px 14px; border:1px solid var(--border); border-radius:8px;
+  background:var(--bg); color:var(--text); cursor:pointer;
+  text-align:left; transition:background 0.12s, border-color 0.12s;
+  font: inherit;
+}
+.eos-tier-btn:hover { background:color-mix(in srgb, var(--accent) 8%, transparent); border-color:color-mix(in srgb, var(--accent) 50%, var(--border)); }
+.eos-tier-btn.eos-tier-active {
+  border-color:var(--accent); background:color-mix(in srgb, var(--accent) 12%, transparent);
+}
+.eos-tier-label { font-weight:600; font-size:14px; color:var(--text-heading); }
+.eos-tier-hint { font-size:12px; color:var(--text-secondary); opacity:0.85; }
+
+/* --- FAB pill — shared chrome for floating action chips (capture, assistant,
+   voice, hands-free). Owns shape + token-driven colors only; callers add
+   per-FAB behavior (state animations, icons, click handlers). --- */
+.eos-fab-pill {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 9px 14px 9px 12px;
+    border-radius: 999px;
+    background: var(--bg-card); color: var(--text);
+    border: 1px solid var(--border);
+    box-shadow: 0 4px 14px var(--shadow, rgba(0,0,0,0.18));
+    font-family: inherit; font-size: 13px; font-weight: 500;
+    cursor: pointer;
+    transition: transform 0.12s, border-color 0.2s, background 0.2s;
+}
+.eos-fab-pill:hover { transform: translateY(-1px); border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); }
+.eos-fab-pill:active { transform: scale(0.97); }
+.eos-fab-pill:focus-visible { outline: none; box-shadow: var(--focus-ring), 0 4px 14px var(--shadow, rgba(0,0,0,0.18)); }
+.eos-fab-pill-icon { font-size: 16px; line-height: 1; }
+.eos-fab-pill-label { font-family: var(--font-mono, var(--mono, monospace)); font-size: 12px; letter-spacing: 0.02em; white-space: nowrap; }
+
+/* --- Provenance chip — attached to AI-authored content. Required by
+   docs/FRONTEND-DESIGN-LANGUAGE.md §6. Variants: local, cloud, user. --- */
+.eos-badge-provenance {
+    display: inline-flex; align-items: center; gap: 4px;
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--text-muted) 12%, transparent);
+    color: var(--text-secondary);
+    font-family: var(--font-mono, var(--mono, monospace));
+    font-size: 10px; font-weight: 500; line-height: 1.4;
+    letter-spacing: 0.02em;
+    white-space: nowrap;
+    vertical-align: middle;
+}
+.eos-badge-provenance-local { background: color-mix(in srgb, var(--success) 12%, transparent); color: var(--success); }
+.eos-badge-provenance-cloud { background: color-mix(in srgb, var(--accent) 12%, transparent); color: var(--accent); }
+.eos-badge-provenance-user  { background: color-mix(in srgb, var(--text-muted) 12%, transparent); color: var(--text-muted); }
+.eos-badge-provenance-icon  { font-size: 11px; line-height: 1; }
+.eos-badge-provenance-cost  { opacity: 0.7; }
+
+/* --- Empty state block — shown when a list has no items. Required on every
+   list-rendering page by docs/FRONTEND-DESIGN-LANGUAGE.md §7. --- */
+.eos-empty-state {
+    text-align: center;
+    padding: 32px 16px;
+    color: var(--text-muted);
+    font-size: 14px;
+    line-height: 1.5;
+}
+.eos-empty-state-icon { font-size: 28px; opacity: 0.5; margin-bottom: 8px; display: block; }
+.eos-empty-state-message { margin: 0 0 16px; }
+.eos-empty-state-action { display: inline-flex; }
+
+/* --- Error state block — shown when a load fails. Same chrome as empty,
+   danger-toned. Required on every list-rendering page. --- */
+.eos-error-state {
+    text-align: center;
+    padding: 24px 16px;
+    color: var(--danger, #ef4444);
+    background: color-mix(in srgb, var(--danger, #ef4444) 8%, transparent);
+    border: 1px solid color-mix(in srgb, var(--danger, #ef4444) 25%, var(--border));
+    border-radius: var(--radius-lg, 14px);
+    font-size: 13px;
+    line-height: 1.5;
+}
+.eos-error-state-icon { font-size: 22px; margin-bottom: 6px; display: block; }
+.eos-error-state-message { margin: 0 0 12px; color: var(--text); }
+.eos-error-state-action { display: inline-flex; }
+
+/* --- Warning banner — inline disabled/info strip --- */
+.eos-warning-banner {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    padding: 10px 12px;
+    border-radius: var(--radius-lg);
+    font-size: 13px;
+    margin-bottom: 14px;
+}
+.eos-warning-banner-icon { flex-shrink: 0; }
+.eos-warning-banner-message { line-height: 1.4; }
+.eos-warning-banner--warning {
+    color: var(--warning, #f59e0b);
+    background: color-mix(in srgb, var(--warning, #f59e0b) 12%, transparent);
+    border: 1px solid color-mix(in srgb, var(--warning, #f59e0b) 40%, transparent);
+}
+.eos-warning-banner--info {
+    color: var(--accent);
+    background: color-mix(in srgb, var(--accent) 10%, transparent);
+    border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
+}
+
+/* --- Streaming-state pulse — soft border pulse on an AI container while
+   tokens arrive. Per docs/FRONTEND-DESIGN-LANGUAGE.md DL-7. Toggle by adding
+   `.eos-ai-streaming` when the stream opens and removing it on done/reply. --- */
+@keyframes eosAiStreamingPulse {
+    0%, 100% { box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 35%, transparent); }
+    50%      { box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 65%, transparent); }
+}
+.eos-ai-streaming {
+    position: relative;
+    border-radius: inherit;
+    animation: eosAiStreamingPulse 1.6s ease-in-out infinite;
+    transition: box-shadow 0.25s ease;
+}
+@media (prefers-reduced-motion: reduce) {
+    .eos-ai-streaming { animation: none; box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 45%, transparent); }
+}
+
+/* ===== Generic palette pills =====
+   For free-form category coloring (kanban columns, select-column values,
+   timeline bars). Distinct from .eos-badge-status-* which carry semantic
+   meaning. Use with EOS_UI.pillBadge(value, colorMap). */
+.eos-pill {
+    display: inline-flex; align-items: center;
+    padding: 0.15em 0.65em;
+    border-radius: 999px;
+    font-size: 0.76rem; font-weight: 600; letter-spacing: 0.02em;
+    white-space: nowrap;
+}
+.eos-pill-blue    { background: rgba(100,149,237,0.15); color: #6495ed; }
+.eos-pill-amber   { background: rgba(255,191,0,0.15);   color: #ffbf00; }
+.eos-pill-green   { background: rgba(80,200,120,0.15);  color: #50c878; }
+.eos-pill-emerald { background: rgba(52,211,153,0.15);  color: #34d399; }
+.eos-pill-red     { background: rgba(220,80,80,0.15);   color: #dc5050; }
+.eos-pill-purple  { background: rgba(168,85,247,0.15);  color: #a855f7; }
+.eos-pill-orange  { background: rgba(251,146,60,0.15);  color: #fb923c; }
+.eos-pill-gray    { background: rgba(160,160,180,0.12); color: #a0a0b4; }
+
+/* ===== View switcher (table / kanban / timeline / calendar / chart) ===== */
+.eos-view-tabs {
+    display: flex; gap: 0;
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+}
+.eos-view-tab {
+    background: none; border: none;
+    border-bottom: 2px solid transparent;
+    padding: 0.6rem 1rem;
+    cursor: pointer;
+    font-size: 0.82rem; font-weight: 500;
+    color: var(--text-muted, var(--text-secondary));
+    transition: color 0.15s, border-color 0.15s;
+    margin-bottom: -1px;
+    display: flex; align-items: center; gap: 0.35rem;
+    font-family: inherit;
+}
+.eos-view-tab:hover { color: var(--text); }
+.eos-view-tab.active {
+    color: var(--accent);
+    border-bottom-color: var(--accent);
+    font-weight: 600;
+}
+.eos-view-tab .eos-view-tab-icon { font-size: 0.9rem; }
+
+/* ===== Inline cell edit input (table cells, kanban card fields) ===== */
+.eos-cell-edit-input {
+    background: rgba(255,255,255,0.08);
+    border: 1px solid var(--accent);
+    border-radius: var(--radius, 6px);
+    color: var(--text);
+    padding: 0.25rem 0.5rem;
+    font-size: 0.84rem;
+    width: 100%;
+    outline: none;
+    font-family: inherit;
+}
+
+/* ===== Kanban layout =====
+   Generic columns + cards with drag-drop. Card rendering is pluggable
+   (EOS_UI.kanbanLayout takes renderCard); this file only owns the chrome. */
+.eos-kanban {
+    display: flex; gap: 1rem;
+    padding: 1.25rem 1.75rem;
+    overflow-x: auto;
+    height: 100%;
+    align-items: flex-start;
+}
+.eos-kanban-col {
+    min-width: 280px; max-width: 320px;
+    flex-shrink: 0;
+    display: flex; flex-direction: column;
+    max-height: 100%;
+}
+.eos-kanban-col-header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 0.6rem 0.75rem;
+    margin-bottom: 0.5rem;
+}
+.eos-kanban-col-title {
+    font-size: 0.78rem; font-weight: 700;
+    text-transform: uppercase; letter-spacing: 0.06em;
+    color: var(--text-muted, var(--text-secondary));
+}
+.eos-kanban-col-count {
+    background: var(--bg-card, var(--bg-card));
+    border-radius: 999px;
+    padding: 0.1em 0.55em;
+    font-size: 0.7rem; font-weight: 600;
+    color: var(--text-muted, var(--text-secondary));
+}
+.eos-kanban-items {
+    flex: 1; overflow-y: auto;
+    display: flex; flex-direction: column; gap: 0.5rem;
+    padding: 0 0.25rem 1rem;
+    min-height: 80px;
+}
+.eos-kanban-items.drag-over {
+    background: var(--accent-bg, rgba(139,92,246,0.08));
+    border-radius: var(--radius-lg, 10px);
+}
+.eos-kanban-card {
+    background: var(--bg-card, var(--bg-card));
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg, 10px);
+    padding: 0.75rem 0.85rem;
+    cursor: grab;
+    transition: transform 0.12s, box-shadow 0.12s, border-color 0.12s;
+}
+.eos-kanban-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(0,0,0,0.35);
+    border-color: rgba(255,255,255,0.12);
+}
+.eos-kanban-card:active { cursor: grabbing; opacity: 0.7; }
+.eos-kanban-card.dragging { opacity: 0.4; transform: scale(0.96); }
+.eos-kanban-card-title {
+    font-size: 0.85rem; font-weight: 500;
+    margin-bottom: 0.35rem;
+}
+.eos-kanban-card-meta {
+    font-size: 0.72rem;
+    color: var(--text-muted, var(--text-secondary));
+    display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center;
+}
+
+/* Host wrapper for caller-rendered cards (wrapCards: false). The host is
+   transparent — only carries draggable + data-id. The user's own card
+   (e.g. EOS_UI.entityCard) provides the visuals. */
+.eos-kanban-card-host { cursor: grab; }
+.eos-kanban-card-host:active { cursor: grabbing; }
+.eos-kanban-card-host.dragging { opacity: 0.4; transform: scale(0.96); }
+
+/* --- Spotlight (product tour) --- */
+.eos-spotlight { position: fixed; inset: 0; z-index: 10000; pointer-events: none; }
+.eos-spotlight-mask {
+    position: fixed; inset: 0;
+    background: rgba(0, 0, 0, 0.55);
+    pointer-events: auto;
+    transition: clip-path 0.2s ease;
+}
+.eos-spotlight-tooltip {
+    position: fixed;
+    width: 360px; max-width: calc(100vw - 24px);
+    background: var(--bg-card, #1a1a1a);
+    color: var(--text, #e5e5e5);
+    border: 1px solid var(--accent, #3b82f6);
+    border-radius: 10px;
+    padding: 16px 18px;
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
+    pointer-events: auto;
+    font-size: 14px; line-height: 1.55;
+}
+.eos-spotlight-step {
+    font-size: 11px; text-transform: uppercase; letter-spacing: 1px;
+    color: var(--text-muted, #888); margin-bottom: 6px;
+}
+.eos-spotlight-step:empty { display: none; }
+.eos-spotlight-title { font-size: 15px; font-weight: 600; margin-bottom: 8px; }
+.eos-spotlight-title:empty { display: none; }
+.eos-spotlight-body { color: var(--text-secondary, #ccc); margin-bottom: 14px; }
+.eos-spotlight-actions { display: flex; align-items: center; gap: 6px; }
+
+/* ── EOS_UI.searchBar — global app+vault search input ── */
+.eos-search { position: relative; }
+.eos-search-input {
+    width: 100%; box-sizing: border-box;
+    background: var(--bg-card); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 11px 14px 11px 36px;
+    font-size: 14px; font-family: inherit; color: var(--text);
+    outline: none; transition: border-color 0.15s, box-shadow 0.15s;
+}
+.eos-search-input:focus {
+    border-color: color-mix(in srgb, var(--accent) 60%, transparent);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 12%, transparent);
+}
+.eos-search-input::placeholder { color: var(--text-muted); }
+.eos-search-icon {
+    position: absolute; left: 12px; top: 50%; transform: translateY(-50%);
+    font-size: 14px; color: var(--text-muted); pointer-events: none;
+}
+.eos-search-kbd {
+    position: absolute; right: 10px; top: 50%; transform: translateY(-50%);
+    font-family: var(--font-mono, ui-monospace, monospace); font-size: 11px;
+    color: var(--text-muted); background: var(--bg-card-hover);
+    border: 1px solid var(--border); border-radius: 4px; padding: 2px 6px;
+    pointer-events: none;
+}
+.eos-search-results {
+    position: absolute; top: calc(100% + 4px); left: 0; right: 0;
+    background: var(--bg-surface); border: 1px solid var(--border);
+    border-radius: var(--radius); z-index: 50; display: none;
+    max-height: 320px; overflow-y: auto; box-shadow: 0 4px 14px var(--shadow);
+}
+.eos-search-results.open { display: block; }
+.eos-search-item {
+    display: flex; align-items: center; gap: 10px;
+    padding: 8px 12px; cursor: pointer;
+    border-bottom: 1px solid var(--border);
+}
+.eos-search-item:last-child { border-bottom: none; }
+.eos-search-item.active, .eos-search-item:hover { background: var(--accent-bg); }
+.eos-search-item-icon { font-size: 16px; flex-shrink: 0; }
+.eos-search-item-name { font-size: 13px; color: var(--text); flex-shrink: 0; }
+.eos-search-item-desc { font-size: 12px; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; min-width: 0; }
+.eos-search-fallback { padding: 10px 12px; font-size: 12px; color: var(--text-muted); }
+.eos-search-fallback strong { color: var(--text); font-weight: 500; }

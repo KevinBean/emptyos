@@ -1,0 +1,37 @@
+[app]
+id = "tour"
+name = "Product Tour"
+version = "1.0.0"
+description = "Walks the user through real EmptyOS surfaces. Apps contribute steps via [[contributes.tour.step]]; the tour orchestrator drives EOS.navigate + spotlight."
+dimensions = ["intellectual"]
+
+[app.entry]
+module = "app"
+class = "TourApp"
+
+[provides.web]
+prefix = "/tour"
+
+[requires]
+capabilities = []
+apps = []
+
+# Tour seeds its own first step so a fresh clone with no other apps still has
+# something to show. App-specific steps live in each app's own manifest.
+[[contributes.tour.step]]
+id = "home.welcome"
+group = "core"
+priority = 50
+route = "/hub/"
+spotlight = "#smartBar"
+title = "Welcome"
+body = "EmptyOS is a mind companion — it thinks and creates with you, not for you. This bar is your shortcut: type <code>/</code> to jump to any app, <code>+</code> to capture, or <code>?</code> to search notes. We'll take a quick walk through the basics now."
+
+[[contributes.tour.step]]
+id = "system.inspect"
+group = "core"
+priority = 900
+route = "/system"
+spotlight = ".cap-card"
+title = "Your system, at a glance"
+body = "This is the Capability Inspector. Whenever a feature seems missing, come back here — it tells you which provider you need and how to wire it up."

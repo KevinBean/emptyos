@@ -1,0 +1,30 @@
+name: Tests
+on: [push, pull_request]
+
+jobs:
+  test-collection:
+    name: Validate test collection
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install EmptyOS + test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .
+          pip install pytest pytest-asyncio pytest-playwright httpx
+
+      - name: Collect system tests
+        # Validates that all test files import and all fixtures resolve,
+        # without needing a running EmptyOS daemon. Catches syntax errors,
+        # missing imports, fixture typos, and helper regressions.
+        run: pytest tests/ --ignore=tests/personal --collect-only -q
+
+      - name: Check test marker registration
+        # All @pytest.mark.* must be registered in pyproject.toml.
+        # Fails the build if an unknown mark slipped in.
+        run: pytest tests/ --ignore=tests/personal --collect-only -W error::pytest.PytestUnknownMarkWarning -q

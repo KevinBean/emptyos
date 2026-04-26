@@ -1,0 +1,13 @@
+[plugin]
+id = "voice-api"
+name = "Voice API"
+version = "1.0.0"
+description = "Text-to-speech and speech-to-text via local Voice API"
+
+[plugin.entry]
+module = "plugin"
+class = "VoiceAPIPlugin"
+
+[provides]
+services = ["voice_api"]
+tags = ["audio", "tts", "stt"]

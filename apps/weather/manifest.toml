@@ -1,0 +1,39 @@
+[app]
+id = "weather"
+name = "Weather"
+version = "1.0.0"
+description = "Current conditions, forecast, history — OWM → Open-Meteo → wttr.in fallback chain."
+dimensions = ["environmental"]
+
+[app.entry]
+module = "app"
+class = "WeatherApp"
+
+[requires]
+capabilities = []
+apps = []
+
+[provides.cli]
+commands = ["weather"]
+
+[provides.web]
+prefix = "/weather"
+
+[provides.events]
+emits = ["weather:updated"]
+
+[provides.assistant]
+commands = [
+    {slash = "/weather", method = "get_current"},
+]
+
+[[contributes.hub.panel]]
+id = "hero-weather"
+method = "panel_hero_weather"
+renderer = "hero-weather"
+priority = 10
+
+[[contributes.voice-assistant.context]]
+id = "current-weather"
+method = "assistant_context"
+priority = 90

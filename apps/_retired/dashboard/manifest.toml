@@ -1,0 +1,27 @@
+[app]
+id = "dashboard"
+name = "Dashboard"
+version = "1.0.0"
+description = "Aggregated life view — pulls from all apps, AI narrative"
+
+[app.entry]
+module = "app"
+class = "DashboardApp"
+
+[requires]
+capabilities = ["think"]
+apps = ["task", "briefing", "expense", "contacts", "journal", "healing", "nutrition", "meditation", "focus", "english", "tracker", "dictionary"]
+services = []
+connectors = []
+
+[provides.cli]
+commands = ["dashboard"]
+
+[provides.web]
+prefix = "/dashboard"
+
+[provides.events]
+emits = ["dashboard:generated"]
+
+[provides.settings]
+schema = [{key = "dashboard.show_narrative", label = "Show AI Narrative", type = "toggle", default = true}]

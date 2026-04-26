@@ -1,0 +1,37 @@
+[app]
+id = "reports"
+name = "Reports"
+version = "0.1.0"
+description = "Professional documents — PDR, CDR, TRR, proposals, specs, reports — with structured tables, signoff, and PDF + DOCX export."
+dimensions = ["occupational", "intellectual"]
+
+[app.entry]
+module = "app"
+class = "ReportsApp"
+
+[requires]
+capabilities = ["think"]
+# apps.projects is a soft link via project_id frontmatter — no hard dependency.
+apps = []
+
+[provides.cli]
+commands = ["report"]
+
+[provides.web]
+prefix = "/reports"
+
+[provides.events]
+emits = [
+    "reports:created",
+    "reports:section-updated",
+    "reports:exported",
+]
+
+[provides.settings]
+schema = [
+    {key = "reports.default_template", label = "Default Template", type = "select", default = "report", options = ["pdr", "cdr", "trr", "proposal", "spec", "report"]},
+    {key = "reports.author_name", label = "Default Author", type = "text", default = ""},
+    {key = "reports.author_title", label = "Default Author Title", type = "text", default = ""},
+    {key = "reports.organisation", label = "Organisation", type = "text", default = ""},
+    {key = "reports.pdf_stylesheet", label = "Custom PDF Stylesheet Path", type = "text", default = "", hint = "Absolute path to a .css file that overrides the built-in report.css. Leave blank to use the default."},
+]

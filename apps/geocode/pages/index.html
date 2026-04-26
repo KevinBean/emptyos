@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Geocode — EmptyOS</title>
+<link rel="stylesheet" href="/static/theme.css">
+<link rel="stylesheet" href="/static/eos-components.css">
+<link rel="stylesheet" href="/static/eos-map.css">
+<style>
+body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif; background:var(--bg); color:var(--text); min-height:100dvh; padding:env(safe-area-inset-top) 16px 100px; max-width:960px; margin:0 auto }
+h1 { margin:18px 0 6px; font-size:22px }
+.sub { color:var(--text-muted); font-size:13px; margin-bottom:18px }
+.panel { background:var(--bg-card); border:1px solid var(--border); border-radius:14px; padding:16px; margin-bottom:14px }
+.panel h2 { margin:0 0 10px; font-size:14px; text-transform:uppercase; letter-spacing:0.4px; color:var(--text-muted) }
+.row { display:flex; gap:8px; flex-wrap:wrap; align-items:center }
+.row input { flex:1; min-width:160px; padding:10px 14px; background:var(--bg); border:1px solid var(--border); border-radius:10px; color:var(--text); font-size:14px; font-family:inherit }
+.row input:focus { border-color:var(--accent); outline:none }
+.row button { padding:10px 18px; background:var(--accent); color: var(--accent-ink); border:none; border-radius:10px; font-size:14px; font-weight:600; cursor:pointer }
+.row button:hover { opacity:0.9 }
+.row button:disabled { opacity:0.4; cursor:not-allowed }
+#map-wrap { height:340px; border-radius:12px; overflow:hidden; border:1px solid var(--border); margin-top:12px }
+.results { margin-top:12px; display:flex; flex-direction:column; gap:6px }
+.result { padding:10px 12px; background:var(--bg); border:1px solid var(--border); border-radius:10px; font-size:13px; cursor:pointer; transition:border-color .15s }
+.result:hover { border-color:var(--accent) }
+.result-name { font-weight:600; color:var(--text-heading) }
+.result-coords { color:var(--text-muted); font-size:12px; margin-top:2px; font-variant-numeric:tabular-nums }
+</style>
+</head>
+<body>
+<h1>Geocode</h1>
+<div class="sub">Address ↔ coordinate lookup via OpenStreetMap Nominatim. Cached &amp; rate-limited.</div>
+
+<div id="status-banner"></div>
+
+<div class="panel">
+  <h2>Forward — address → lat/lon</h2>
+  <div class="row">
+    <input id="fwd-q" placeholder="e.g. Eiffel Tower, Paris" autocomplete="off">
+    <button id="fwd-btn" onclick="doLookup()">Lookup</button>
+  </div>
+  <div id="fwd-results" class="results"></div>
+</div>
+
+<div class="panel">
+  <h2>Reverse — lat,lon → address</h2>
+  <div class="row">
+    <input id="rev-lat" placeholder="latitude (e.g. 48.8584)" inputmode="decimal">
+    <input id="rev-lon" placeholder="longitude (e.g. 2.2945)" inputmode="decimal">
+    <button id="rev-btn" onclick="doReverse()">Reverse</button>
+  </div>
+  <div id="rev-results" class="results"></div>
+</div>
+
+<div class="panel">
+  <h2>Map</h2>
+  <div id="map-wrap"></div>
+</div>
+
+<div class="panel">
+  <h2>Cache</h2>
+  <div id="cache-stats" class="eos-stat-cards"></div>
+</div>
+
+<script src="/static/eos.js"></script>
+<script src="/static/eos-components.js"></script>
+<script src="/static/eos-map.js"></script>
+<script>
+var STATE = { map:null, markers:[] };
+
+async function loadStatus() {
+  try {
+    var s = await fetch('/geocode/api/status').then(r => r.json());
+    var banner = document.getElementById('status-banner');
+    if (!s.enabled) {
+      banner.innerHTML = EOS_UI.warningBanner({ message: 'Disabled: ' + (s.reason || 'unknown') });
+      ['fwd-btn','rev-btn'].forEach(id => { var b=document.getElementById(id); if (b) b.disabled=true; });
+    } else {
+      banner.innerHTML = '';
+    }
+  } catch(e) {}
+}
+
+async function loadStats() {
+  try {
+    var s = await fetch('/geocode/api/cache-stats').then(r => r.json());
+    EOS_UI.statCards('cache-stats', [
+      { label: 'Forward', value: s.forward },
+      { label: 'Reverse', value: s.reverse },
+    ]);
+  } catch(e) {}
+}
+
+function ensureMap() {
+  if (STATE.map) return STATE.map;
+  STATE.map = EOS_MAP.create(document.getElementById('map-wrap'), {
+    center:[-25,135], zoom:3, tiles:'osm'
+  });
+  return STATE.map;
+}
+
+function showOnMap(items) {
+  var m = ensureMap();
+  STATE.markers = items.map(it => ({
+    lat: parseFloat(it.lat), lon: parseFloat(it.lon),
+    label: it.display_name || it.name || ''
+  }));
+  m.setMarkers(STATE.markers, {
+    latFor: it => it.lat, lngFor: it => it.lon, popupFor: it => it.label
+  });
+  m.fitBounds();
+}
+
+async function doLookup() {
+  var q = document.getElementById('fwd-q').value.trim();
+  if (!q) return;
+  var box = document.getElementById('fwd-results');
+  box.innerHTML = '<div class="result">Searching…</div>';
+  try {
+    var res = await fetch('/geocode/api/lookup?q=' + encodeURIComponent(q) + '&limit=5').then(r => r.json());
+    if (res.error) { box.innerHTML = '<div class="result">' + res.error + '</div>'; return; }
+    var items = Array.isArray(res) ? res : (res.results || []);
+    if (!items.length) { box.innerHTML = '<div class="result">No matches</div>'; return; }
+    box.innerHTML = items.map(it =>
+      '<div class="result" onclick="document.getElementById(\'rev-lat\').value=\'' + it.lat + '\';document.getElementById(\'rev-lon\').value=\'' + it.lon + '\'">'
+      + '<div class="result-name">' + (it.display_name || it.name || '') + '</div>'
+      + '<div class="result-coords">' + (+it.lat).toFixed(5) + ', ' + (+it.lon).toFixed(5) + '</div>'
+      + '</div>'
+    ).join('');
+    showOnMap(items);
+    loadStats();
+  } catch(e) { box.innerHTML = '<div class="result">Error: ' + e + '</div>'; }
+}
+
+async function doReverse() {
+  var lat = document.getElementById('rev-lat').value.trim();
+  var lon = document.getElementById('rev-lon').value.trim();
+  if (!lat || !lon) return;
+  var box = document.getElementById('rev-results');
+  box.innerHTML = '<div class="result">Looking up…</div>';
+  try {
+    var res = await fetch('/geocode/api/reverse?lat=' + encodeURIComponent(lat) + '&lon=' + encodeURIComponent(lon)).then(r => r.json());
+    if (res.error) { box.innerHTML = '<div class="result">' + res.error + '</div>'; return; }
+    var name = res.display_name || res.name || JSON.stringify(res);
+    box.innerHTML = '<div class="result"><div class="result-name">' + name + '</div>'
+      + '<div class="result-coords">' + (+lat).toFixed(5) + ', ' + (+lon).toFixed(5) + '</div></div>';
+    showOnMap([{ lat: lat, lon: lon, display_name: name }]);
+    loadStats();
+  } catch(e) { box.innerHTML = '<div class="result">Error: ' + e + '</div>'; }
+}
+
+document.getElementById('fwd-q').addEventListener('keydown', e => { if (e.key === 'Enter') doLookup(); });
+document.getElementById('rev-lat').addEventListener('keydown', e => { if (e.key === 'Enter') doReverse(); });
+document.getElementById('rev-lon').addEventListener('keydown', e => { if (e.key === 'Enter') doReverse(); });
+
+loadStatus();
+loadStats();
+</script>
+</body>
+</html>

@@ -1,0 +1,13 @@
+[plugin]
+id = "ollama"
+name = "Ollama"
+version = "1.0.0"
+description = "Local LLM inference via Ollama"
+
+[plugin.entry]
+module = "plugin"
+class = "OllamaPlugin"
+
+[provides]
+services = ["ollama"]
+tags = ["llm", "local"]

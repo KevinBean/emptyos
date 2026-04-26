@@ -1,0 +1,52 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "emptyos"
+version = "0.1.0"
+description = "A mind companion. Think and create with you, not for you. A personal AI-powered operating system — empty by default, infinite by design."
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn>=0.30",
+    "python-multipart>=0.0.9",
+    "typer>=0.12",
+    "rich>=13",
+    "watchfiles>=0.21",
+    "aiohttp>=3.9",
+    "apscheduler>=3.10",
+    "pyzmq>=26",
+    "anthropic>=0.40",
+    "markdown>=3.4",
+    "python-docx>=1.1",
+    "pyyaml>=6",
+    "prompt_toolkit>=3.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest", "pytest-asyncio", "pytest-playwright", "ruff", "httpx"]
+semantic = ["faiss-cpu", "numpy"]
+camera = ["opencv-python>=4.8"]
+
+[project.scripts]
+eos = "emptyos.cli.main:app"
+
+[tool.ruff]
+line-length = 100
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "smoke: tier 1 — page load smoke tests",
+    "api: tier 2 — API endpoint health tests",
+    "interactive: tier 3 — UI interaction & CRUD tests",
+    "crossapp: tier 4 — cross-app event chain tests",
+    "comprehensive: app-specific 10+ use case tests (system + personal)",
+    "llm: layer 3 — live LLM smoke tests (slow, requires running LLM provider)",
+    "slow: long-running tests (release checks, full test suite)",
+    "dogfood: day-in-the-life narrative — uses EmptyOS like a real user",
+]
+filterwarnings = [
+    "ignore::DeprecationWarning",
+]

@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>GitHub Connector - EmptyOS</title>
+<link rel="stylesheet" href="/static/theme.css">
+<link rel="stylesheet" href="/static/eos-components.css">
+</head>
+<body>
+<script src="/static/eos.js"></script>
+<script src="/static/eos-components.js"></script>
+<script>EOS.nav('github-connector');</script>
+
+<div class="page">
+    <div class="eos-header">
+        <div>
+            <h1>GitHub Connector</h1>
+            <div style="font-size:13px;color:var(--text-secondary)" id="status-line">Checking connection...</div>
+        </div>
+    </div>
+
+    <div class="eos-hero" id="stats"></div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:16px">
+        <div>
+            <h3 style="margin-bottom:8px">Open Issues</h3>
+            <div id="issues-list" style="font-size:13px;color:var(--text-muted)">Not loaded</div>
+            <button class="eos-btn-sm" onclick="loadIssues()" style="margin-top:8px">Sync Issues</button>
+        </div>
+        <div>
+            <h3 style="margin-bottom:8px">Open PRs</h3>
+            <div id="prs-list" style="font-size:13px;color:var(--text-muted)">Not loaded</div>
+            <button class="eos-btn-sm" onclick="loadPRs()" style="margin-top:8px">Sync PRs</button>
+        </div>
+    </div>
+</div>
+
+<script>
+async function checkStatus() {
+    try {
+        var r = await EOS.api('/github-connector/api/status');
+        if (r.connected) {
+            document.getElementById('status-line').textContent = 'Connected as ' + r.user + (r.default_repo ? ' | ' + r.default_repo : '');
+            document.getElementById('stats').innerHTML =
+                '<div class="eos-hero-card card-in"><div class="eos-hero-label">Status</div><div class="eos-hero-val" style="color:var(--success)">Connected</div></div>' +
+                '<div class="eos-hero-card card-in"><div class="eos-hero-label">User</div><div class="eos-hero-val" style="font-size:18px">' + esc(r.user) + '</div></div>' +
+                '<div class="eos-hero-card card-in"><div class="eos-hero-label">Repo</div><div class="eos-hero-val" style="font-size:14px">' + esc(r.default_repo || 'Not set') + '</div></div>';
+        } else {
+            document.getElementById('status-line').textContent = 'Not connected: ' + (r.reason || 'No token');
+            document.getElementById('stats').innerHTML =
+                '<div class="eos-hero-card card-in"><div class="eos-hero-label">Status</div><div class="eos-hero-val" style="color:var(--danger)">Disconnected</div><div class="eos-hero-sub">Set token in Settings > github.token</div></div>';
+        }
+    } catch(e) {
+        document.getElementById('status-line').textContent = 'Error checking status';
+    }
+}
+
+async function loadIssues() {
+    var el = document.getElementById('issues-list');
+    el.innerHTML = 'Loading...';
+    try {
+        var r = await EOS.post('/github-connector/api/sync-issues', {});
+        if (r.error) { el.innerHTML = '<span style="color:var(--danger)">' + esc(r.error) + '</span>'; return; }
+        if (!r.issues.length) { el.innerHTML = 'No open issues'; return; }
+        el.innerHTML = r.issues.map(function(i) {
+            return '<div style="padding:6px 0;border-bottom:1px solid var(--border)">' +
+                '<a href="' + escAttr(i.url) + '" target="_blank" style="color:var(--accent);text-decoration:none">#' + i.number + '</a> ' +
+                esc(i.title) +
+                (i.labels.length ? ' <span style="font-size:10px;color:var(--text-muted)">' + i.labels.join(', ') + '</span>' : '') +
+            '</div>';
+        }).join('');
+        EOS_UI.toast('Synced ' + r.issues.length + ' issues');
+    } catch(e) {
+        el.innerHTML = '<span style="color:var(--danger)">Failed to load</span>';
+    }
+}
+
+async function loadPRs() {
+    var el = document.getElementById('prs-list');
+    el.innerHTML = 'Loading...';
+    try {
+        var r = await EOS.post('/github-connector/api/pr-status', {});
+        if (r.error) { el.innerHTML = '<span style="color:var(--danger)">' + esc(r.error) + '</span>'; return; }
+        if (!r.prs.length) { el.innerHTML = 'No open PRs'; return; }
+        el.innerHTML = r.prs.map(function(p) {
+            return '<div style="padding:6px 0;border-bottom:1px solid var(--border)">' +
+                '<a href="' + escAttr(p.url) + '" target="_blank" style="color:var(--accent);text-decoration:none">#' + p.number + '</a> ' +
+                esc(p.title) +
+                (p.draft ? ' <span style="font-size:10px;color:var(--warning)">draft</span>' : '') +
+                ' <span style="font-size:10px;color:var(--text-muted)">' + esc(p.branch) + '</span>' +
+            '</div>';
+        }).join('');
+        EOS_UI.toast('Synced ' + r.prs.length + ' PRs');
+    } catch(e) {
+        el.innerHTML = '<span style="color:var(--danger)">Failed to load</span>';
+    }
+}
+
+checkStatus();
+</script>
+</body>
+</html>

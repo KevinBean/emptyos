@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>Model Bench - EmptyOS</title>
+<link rel="stylesheet" href="/static/theme.css">
+<link rel="stylesheet" href="/static/eos-components.css">
+<link rel="stylesheet" href="pages/model-bench.css">
+</head>
+<body>
+<script src="/static/realtime.js"></script>
+<script src="/static/eos.js"></script>
+<script src="/static/eos-components.js"></script>
+<script>EOS.nav('model-bench');
+if(window.EOS&&EOS.registerActions){EOS.registerActions({},[],{description:"Compare LLM models on canonical EmptyOS usage buckets — latency, quality, cost.",quickActions:[{label:"Best for task",msg:"Based on the last benchmark, which model is best for a specific bucket? Ask me which bucket."},{label:"Cost vs quality",msg:"Summarize the cost-vs-quality tradeoffs from recent benchmark runs."},{label:"What to reorder",msg:"Based on recent bench results, suggest which buckets should prefer local vs cloud providers."}]});}
+</script>
+
+<div class="eos-header">
+  <h1>Model Bench</h1>
+  <div style="display:flex;gap:8px;align-items:center" id="text-bench-actions">
+    <a class="eos-btn eos-btn-sm" href="/providers/" title="Manage which providers the bench targets">Configure providers &rarr;</a>
+    <button class="eos-btn eos-btn-sm" onclick="approveAllCloudAndRun()" title="Pre-approve all cloud providers for this session, then run all buckets">Approve cloud &amp; run</button>
+    <button class="eos-btn eos-btn-sm" id="run-all-btn" onclick="runAll()">Run all</button>
+  </div>
+</div>
+
+<!-- Two disjoint benchmarks live here:
+     • text-bench: one-shot think() calls, scored by latency  (Run / Ranking / History)
+     • agent-bench: multi-turn tool-use loops, scored by a verifier  (Agent tab)
+     Pick the bench kind, then the sub-view. -->
+<div class="mode-selector" role="tablist" aria-label="Benchmark kind">
+  <button class="mode-btn active" id="mode-text" onclick="switchMode('text')">
+    <span class="mode-title">Text bench</span>
+    <span class="mode-hint">one-shot <code>think()</code> calls · latency</span>
+  </button>
+  <button class="mode-btn" id="mode-agent" onclick="switchMode('agent')">
+    <span class="mode-title">Agent bench</span>
+    <span class="mode-hint">tool-use loops · pass/fail by verifier</span>
+  </button>
+</div>
+
+<div class="eos-tabs mode-text-subtabs" id="text-subtabs">
+  <div class="eos-tab active" onclick="switchTab('run')">Run</div>
+  <div class="eos-tab" onclick="switchTab('ranking')">Ranking</div>
+  <div class="eos-tab" onclick="switchTab('history')">History</div>
+</div>
+
+<div class="eos-tab-content active" id="tab-run">
+  <div class="section-label" style="margin-top:0">Canonical buckets</div>
+  <p style="font-size:12px;color:var(--text-muted);margin:-4px 0 10px">
+    Each bucket = one (domain, task-shape) pattern the system actually uses. Click <b>Run</b> on a card to bench only that bucket.
+  </p>
+  <div class="scenario-grid" id="scenarios"><div class="empty" style="padding:12px;grid-column:1/-1">Loading...</div></div>
+  <div id="run-status"></div>
+  <div id="run-results"></div>
+</div>
+
+<div class="eos-tab-content" id="tab-ranking">
+  <p style="font-size:12px;color:var(--text-muted);margin:0 0 12px">
+    Providers ranked per bucket: <b>OK %</b> (higher is better) then <b>median latency</b> (lower is better). The <b>Suggested chain</b> is a copy-ready list — use it to reorder providers at <a href="/providers/">/providers/</a> or commit to <code>emptyos.toml</code> for permanence.
+  </p>
+  <div id="ranking-list"><div class="empty">Loading...</div></div>
+</div>
+
+<div class="eos-tab-content" id="tab-history">
+  <div style="display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap" id="history-filter"></div>
+  <div id="history-list"><div class="empty">Loading...</div></div>
+</div>
+
+<div class="eos-tab-content" id="tab-agent">
+  <p style="font-size:12px;color:var(--text-muted);margin:0 0 10px">
+    Tool-use benchmark. Pick subjects, then run a scenario. Each run is scored by a deterministic verifier, not a vibes check. Scratch dirs preserved under <code>data/apps/model-bench/agent_scratch/</code>.
+  </p>
+
+  <div class="agent-toolbar">
+    <div class="subjects-group">
+      <div class="lbl">Subjects (click to toggle — affects "Run with selected")</div>
+      <div class="subjects-row" id="agent-subjects"><span class="empty" style="padding:0">Loading...</span></div>
+    </div>
+    <div class="actions-group">
+      <div class="lbl">Variant (optional tag for A/B)</div>
+      <input id="agent-variant" type="text" placeholder="e.g. strict-prompt" oninput="_agentVariantId = this.value.trim()"
+             style="background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:4px 8px;font-family:var(--mono);font-size:11px;width:180px;color:var(--text)">
+      <div style="display:flex;gap:6px;align-items:center;margin-top:4px">
+        <label style="font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px">Reps</label>
+        <input id="agent-reps" type="number" min="1" max="20" value="1" oninput="_agentReps = Math.max(1, Math.min(20, parseInt(this.value)||1))"
+               style="background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:4px 8px;font-family:var(--mono);font-size:11px;width:60px;color:var(--text)"
+               title="How many times to run each (scenario, subject) pair. >=2 exposes variance.">
+        <label style="font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;margin-left:6px">
+          <input id="agent-overlay" type="checkbox" checked oninput="_agentApplyOverlay = this.checked"
+                 style="vertical-align:middle;margin-right:4px"
+                 title="Inject provider-tier system-prompt scaffolding (strict rules for small local models). Off for baseline A/B.">
+          Overlay
+        </label>
+      </div>
+      <button class="eos-btn eos-btn-sm" onclick="runAllAgentScenarios()" id="agent-run-all-btn" style="margin-top:4px">Run every scenario</button>
+    </div>
+  </div>
+
+  <div id="agent-run-status" class="agent-run-status">Idle — pick a scenario to run.</div>
+
+  <div class="agent-scenarios-wrap" id="agent-scenarios-wrap">
+    <div class="empty" style="padding:14px">Loading scenarios...</div>
+  </div>
+
+  <div class="agent-bottom">
+    <details class="agent-matrix" id="agent-matrix" open>
+      <summary>Results matrix (latest per scenario × subject)</summary>
+      <div class="matrix-body" id="agent-results-grid"><div class="eos-empty-state">No runs yet.</div></div>
+    </details>
+    <div class="agent-leaderboard-panel">
+      <div class="panel-title">Leaderboard (all-time)</div>
+      <div id="agent-leaderboard"><div class="eos-empty-state">No runs yet.</div></div>
+    </div>
+  </div>
+</div>
+
+<script src="pages/model-bench.js"></script>
+</body>
+</html>

@@ -1,0 +1,832 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>Focus - EmptyOS</title>
+<link rel="stylesheet" href="/static/theme.css">
+<link rel="stylesheet" href="/static/eos-components.css">
+<style>
+body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif; background:var(--bg); color:var(--text); min-height:100dvh; padding:env(safe-area-inset-top) 16px 100px; -webkit-font-smoothing:antialiased }
+
+.timer-section { display:flex; flex-direction:column; align-items:center; margin:24px 0 24px }
+.timer-ring { position:relative; width:200px; height:200px }
+.timer-ring svg { transform:rotate(-90deg) }
+.timer-ring .ring-bg { stroke:var(--border); fill:none; stroke-width:8 }
+.timer-ring .ring-fill { fill:none; stroke-width:8; stroke-linecap:round; transition:stroke-dashoffset 1s linear }
+.timer-center { position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center }
+.timer-display { font-size:48px; font-weight:800; color:var(--text-heading); font-family:var(--mono) }
+.timer-label { font-size:13px; color:var(--text-muted) }
+
+/* Long break indicator */
+.break-indicator { font-size:12px; color:var(--text-muted); margin-top:4px; min-height:16px }
+.break-indicator.long-break { color:var(--warning); font-weight:600 }
+
+.timer-controls { display:flex; gap:12px; margin-top:16px; align-items:center }
+.timer-btn { width:56px; height:56px; border-radius:50%; border:none; font-size:22px; cursor:pointer; transition:transform 0.1s }
+.timer-btn:active { transform:scale(0.9) }
+.btn-start { background:var(--accent); color: var(--accent-ink) }
+.btn-pause { background:var(--warning); color:#fff }
+.btn-reset { background:var(--bg-card); color:var(--text-secondary); border:1px solid var(--border) !important }
+
+/* Ambient noise toggle */
+.noise-btn { width:40px; height:40px; border-radius:50%; border:1px solid var(--border); background:var(--bg-card); color:var(--text-muted); font-size:16px; cursor:pointer; transition:all 0.15s; display:flex; align-items:center; justify-content:center }
+.noise-btn.active { border-color:var(--accent); color:var(--accent); background:color-mix(in srgb,var(--accent) 8%,var(--bg-card)) }
+
+.task-input { width:100%; max-width:360px; padding:12px 16px; border:1px solid var(--border); border-radius:14px; background:var(--bg-card); color:var(--text); font-size:14px; text-align:center; margin-top:12px }
+.task-input:focus { outline:none; border-color:var(--accent) }
+
+.suggest-btn { margin-top:8px; padding:8px 16px; border-radius:8px; background:var(--bg-card); border:1px solid var(--border); color:var(--text-secondary); font-size:13px; cursor:pointer }
+.suggest-btn:hover { border-color:var(--accent) }
+
+.stats-row { display:flex; gap:12px; margin-bottom:16px }
+.stat-pill { flex:1; background:var(--bg-card); border:1px solid var(--border); border-radius:14px; padding:12px; text-align:center }
+.stat-pill-val { font-size:22px; font-weight:700; color:var(--text-heading) }
+.stat-pill-label { font-size:11px; color:var(--text-muted) }
+
+.duration-chips { display:flex; gap:8px; justify-content:center; margin-bottom:12px; flex-wrap:wrap; align-items:center }
+.dur-chip { padding:8px 16px; border-radius:14px; font-size:13px; border:1px solid var(--border); background:var(--bg-card); color:var(--text-secondary); cursor:pointer }
+.dur-chip.active { border-color:var(--accent); color:var(--accent); font-weight:600 }
+.dur-custom { width:52px; padding:8px 8px; border-radius:14px; font-size:13px; border:1px solid var(--border); background:var(--bg-card); color:var(--text); text-align:center; font-family:var(--mono); outline:none }
+.dur-custom:focus { border-color:var(--accent) }
+.dur-custom.active { border-color:var(--accent); color:var(--accent); font-weight:600 }
+
+.session-item { display:flex; align-items:center; padding:8px 0; border-bottom:1px solid var(--border); font-size:14px; gap:8px }
+.session-time { font-size:11px; color:var(--text-muted); min-width:40px; font-family:var(--mono) }
+.session-task { flex:1 }
+.session-dur { font-weight:600; color:var(--accent) }
+
+/* ── Achievements ── */
+.achievements-section { margin-bottom:16px }
+.achievements-grid { display:flex; gap:8px; flex-wrap:wrap }
+.achievement { background:var(--bg-card); border:1px solid var(--border); border-radius:14px; padding:12px 12px; text-align:center; min-width:80px; flex:1; max-width:120px; transition:all 0.2s }
+.achievement.earned { border-color:color-mix(in srgb,var(--accent) 40%,var(--border)); background:color-mix(in srgb,var(--accent) 5%,var(--bg-card)) }
+.achievement.locked { opacity:0.4; filter:grayscale(1) }
+.achievement-icon { font-size:24px; margin-bottom:4px }
+.achievement-name { font-size:11px; font-weight:600; color:var(--text-heading) }
+.achievement-desc { font-size:10px; color:var(--text-muted); margin-top:2px }
+
+/* ── Confetti ── */
+@keyframes confetti-fall { 0%{opacity:1;transform:translateY(0) rotate(0deg)} 100%{opacity:0;transform:translateY(120px) rotate(720deg)} }
+.confetti-container { position:fixed; top:0; left:0; width:100%; height:100%; pointer-events:none; z-index:200; overflow:hidden }
+.confetti-piece { position:absolute; width:8px; height:8px; border-radius:4px; animation:confetti-fall 1.5s ease-out forwards }
+
+/* ── Session heatmap (contribution grid) ── */
+.contrib-grid { margin-bottom:16px }
+.contrib-grid h3 { font-size:13px; color:var(--text-secondary); text-transform:uppercase; letter-spacing:0.5px; margin-bottom:8px }
+</style>
+</head>
+<body>
+<script src="/static/realtime.js"></script>
+<script src="/static/eos.js"></script>
+<script src="/static/eos-components.js"></script>
+<script>EOS.nav('focus');</script>
+<script>
+if(window.EOS&&EOS.registerActions){EOS.registerActions({start_timer:function(){toggleTimer()},get_suggestion:function(){getSuggestion()},set_duration:function(m){setDuration(parseInt(m))}},[{name:"start_timer",description:"Start/pause focus timer",params:[]},{name:"get_suggestion",description:"AI focus suggestion",params:[]},{name:"set_duration",description:"Set minutes",params:["minutes"]}],{description:"Pomodoro timer — task suggestions, achievements, ambient noise.",quickActions:[{label:"What to focus on?",msg:"Suggest a task to focus on."},{label:"Start timer",msg:"Start a 25-min focus session."}]});}
+</script>
+
+<div class="page">
+    <div class="eos-header">
+      <div style="flex:1">
+        <h1>Focus</h1>
+        <div id="goal-label" style="font-size:13px;color:var(--text-secondary)"></div>
+      </div>
+      <button class="btn-settings" onclick="openAppSettings()" title="Settings">&#9881; Settings</button>
+    </div>
+
+    <div class="stats-row" id="stats"></div>
+
+    <!-- Duration selector -->
+    <div class="duration-chips" id="durations"></div>
+
+    <!-- Timer -->
+    <div class="timer-section">
+        <div class="timer-ring">
+            <svg width="200" height="200" viewBox="0 0 200 200">
+                <circle class="ring-bg" cx="100" cy="100" r="90"/>
+                <circle class="ring-fill" id="ring" cx="100" cy="100" r="90" stroke="var(--accent)" stroke-dasharray="565" stroke-dashoffset="0"/>
+            </svg>
+            <div class="timer-center">
+                <div class="timer-display" id="display">25:00</div>
+                <div class="timer-label" id="state-label">Ready</div>
+            </div>
+        </div>
+        <div class="break-indicator" id="break-indicator"></div>
+        <div class="timer-controls">
+            <button class="timer-btn btn-reset" onclick="resetTimer()">&#8634;</button>
+            <button class="timer-btn btn-start" id="start-btn" onclick="toggleTimer()">&#9654;</button>
+            <button class="noise-btn" id="break-btn" onclick="takeBreakManual()" title="Take a break (click again to toggle short/long)">&#9749;</button>
+            <button class="noise-btn" id="noise-btn" onclick="toggleNoise()" title="Brown noise">&#9835;</button>
+            <button class="noise-btn" id="pop-btn" onclick="popOutTimer()" title="Pop out floating widget">&#10530;</button>
+        </div>
+        <input class="task-input" id="task-input" placeholder="What are you focusing on?">
+        <button class="suggest-btn" onclick="getSuggestion()">&#10024; Suggest task</button>
+    </div>
+
+    <!-- Achievements -->
+    <div class="achievements-section" id="achievements-section">
+        <div style="font-size:13px;font-weight:600;color:var(--text-secondary);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px">Achievements</div>
+        <div class="achievements-grid" id="achievements-grid"></div>
+    </div>
+
+    <div class="eos-tabs">
+        <div class="eos-tab active" onclick="EOS_UI.switchTab(['today','history'],'today')">Today</div>
+        <div class="eos-tab" onclick="EOS_UI.switchTab(['today','history'],'history');loadHistory()">History</div>
+    </div>
+
+    <div class="eos-tab-content active" id="tab-today">
+        <div id="today-sessions"></div>
+    </div>
+    <div class="eos-tab-content" id="tab-history">
+        <div class="contrib-grid">
+            <h3>Session Heatmap (90 days)</h3>
+            <div class="eos-heatmap" id="heatmap"></div>
+        </div>
+        <div class="eos-section-title" style="margin-top:16px">Recent</div>
+        <div id="history-list"></div>
+    </div>
+</div>
+
+<!-- Confetti container -->
+<div class="confetti-container" id="confetti-container"></div>
+
+<script>
+var DURATIONS = [15, 25, 45, 60];
+var selectedDur = 25;
+var remaining = 25 * 60;
+var totalSec = 25 * 60;
+var timerInterval = null;
+var running = false;
+var sessionsToday = 0;
+var dailyGoal = 4;
+var goalCelebrated = false;
+
+// ── Wall-clock timer state ───────────────────────────────────
+var startedAt = null;      // Date.now() when timer started/resumed
+var pausedElapsed = 0;     // seconds accumulated before last pause
+
+// ── Pomodoro long break tracking ─────────────────────────────
+var pomodoroCount = 0;
+var mode = 'work';           // 'work' | 'break'
+var breakType = 'short';     // 'short' | 'long'
+var config = {break_min: 5, long_break_min: 15, long_break_every: 4};
+
+async function loadConfig() {
+    try {
+        var c = await EOS.api('/focus/api/config');
+        config.break_min = c.break_min || 5;
+        config.long_break_min = c.long_break_min || 15;
+        config.long_break_every = c.long_break_every || 4;
+        updateBreakIndicator();
+    } catch(e) {}
+}
+
+function updateBreakIndicator() {
+    var el = document.getElementById('break-indicator');
+    if (mode === 'break') {
+        var min = breakType === 'long' ? config.long_break_min : config.break_min;
+        el.textContent = (breakType === 'long' ? 'Long break' : 'Short break') + ' — ' + min + ' min';
+        el.className = breakType === 'long' ? 'break-indicator long-break' : 'break-indicator';
+        return;
+    }
+    var sessionsLeft = config.long_break_every - (pomodoroCount % config.long_break_every);
+    if (sessionsLeft === 1) {
+        el.textContent = 'Next: long break!';
+        el.className = 'break-indicator long-break';
+    } else {
+        el.textContent = sessionsLeft + ' sessions until long break';
+        el.className = 'break-indicator';
+    }
+}
+
+function updateBreakUI() {
+    var ring = document.getElementById('ring');
+    var label = document.getElementById('state-label');
+    var chips = document.getElementById('durations');
+    var taskInput = document.getElementById('task-input');
+    var breakBtn = document.getElementById('break-btn');
+    if (mode === 'break') {
+        ring.style.stroke = breakType === 'long' ? 'var(--warning)' : 'var(--success)';
+        label.textContent = breakType === 'long' ? 'Long break — press start' : 'Short break — press start';
+        chips.style.opacity = '0.4';
+        chips.style.pointerEvents = 'none';
+        taskInput.disabled = true;
+        if (breakBtn) breakBtn.classList.add('active');
+    } else {
+        ring.style.stroke = 'var(--accent)';
+        label.textContent = 'Ready';
+        chips.style.opacity = '';
+        chips.style.pointerEvents = '';
+        taskInput.disabled = false;
+        if (breakBtn) breakBtn.classList.remove('active');
+    }
+}
+
+function enterBreakMode(type) {
+    mode = 'break';
+    breakType = type;
+    var mins = breakType === 'long' ? config.long_break_min : config.break_min;
+    totalSec = mins * 60;
+    remaining = totalSec;
+    pausedElapsed = 0;
+    startedAt = null;
+    updateDisplay();
+    updateBreakUI();
+    updateBreakIndicator();
+}
+
+function enterWorkMode() {
+    mode = 'work';
+    totalSec = selectedDur * 60;
+    remaining = totalSec;
+    pausedElapsed = 0;
+    startedAt = null;
+    updateDisplay();
+    updateBreakUI();
+    updateBreakIndicator();
+}
+
+function takeBreakManual() {
+    if (running) {
+        EOS_UI.toast('Pause the timer first');
+        return;
+    }
+    var next = (mode === 'break' && breakType === 'short') ? 'long' : 'short';
+    enterBreakMode(next);
+}
+
+// ── Brown noise via Web Audio API ────────────────────────────
+var noiseCtx = null;
+var noiseNode = null;
+var noiseGain = null;
+var noiseActive = false;
+
+function toggleNoise() {
+    if (noiseActive) {
+        stopNoise();
+    } else {
+        startNoise();
+    }
+}
+
+function startNoise() {
+    if (!noiseCtx) {
+        noiseCtx = new (window.AudioContext || window.webkitAudioContext)();
+    }
+    if (noiseCtx.state === 'suspended') noiseCtx.resume();
+
+    var bufferSize = 4096;
+    noiseNode = noiseCtx.createScriptProcessor(bufferSize, 1, 1);
+    noiseGain = noiseCtx.createGain();
+    noiseGain.gain.value = 0.3;
+
+    var lastOut = 0;
+    noiseNode.onaudioprocess = function(e) {
+        var output = e.outputBuffer.getChannelData(0);
+        for (var i = 0; i < bufferSize; i++) {
+            var white = Math.random() * 2 - 1;
+            output[i] = (lastOut + (0.02 * white)) / 1.02;
+            lastOut = output[i];
+            output[i] *= 3.5; // boost volume
+        }
+    };
+    noiseNode.connect(noiseGain);
+    noiseGain.connect(noiseCtx.destination);
+    noiseActive = true;
+    document.getElementById('noise-btn').classList.add('active');
+}
+
+function stopNoise() {
+    if (noiseNode) { noiseNode.disconnect(); noiseNode = null; }
+    if (noiseGain) { noiseGain.disconnect(); noiseGain = null; }
+    noiseActive = false;
+    document.getElementById('noise-btn').classList.remove('active');
+}
+
+// ── Confetti celebration ─────────────────────────────────────
+function fireConfetti() {
+    var container = document.getElementById('confetti-container');
+    var colors = ['#8b5cf6','#3b82f6','#10b981','#f59e0b','#ef4444','#ec4899','#06b6d4'];
+    for (var i = 0; i < 40; i++) {
+        var piece = document.createElement('div');
+        piece.className = 'confetti-piece';
+        piece.style.left = (10 + Math.random() * 80) + '%';
+        piece.style.top = '-10px';
+        piece.style.background = colors[Math.floor(Math.random() * colors.length)];
+        piece.style.animationDelay = (Math.random() * 0.5) + 's';
+        piece.style.animationDuration = (1 + Math.random() * 1) + 's';
+        piece.style.width = (6 + Math.random() * 6) + 'px';
+        piece.style.height = (6 + Math.random() * 6) + 'px';
+        container.appendChild(piece);
+    }
+    setTimeout(function() { container.innerHTML = ''; }, 3000);
+}
+
+// Duration chips + custom input
+document.getElementById('durations').innerHTML = DURATIONS.map(function(d) {
+    return '<div class="dur-chip'+(d===25?' active':'')+'" onclick="setDuration('+d+')">'+d+'m</div>';
+}).join('') + '<input class="dur-custom" id="dur-custom" type="number" min="1" max="180" placeholder="__m" title="Custom minutes">';
+
+document.getElementById('dur-custom').addEventListener('change', function() {
+    var v = parseInt(this.value);
+    if (v > 0 && v <= 180 && !running) setDuration(v);
+});
+document.getElementById('dur-custom').addEventListener('focus', function() {
+    if (!running) {
+        document.querySelectorAll('.dur-chip').forEach(function(c) { c.classList.remove('active'); });
+        this.classList.add('active');
+    }
+});
+
+function setDuration(m) {
+    if (running || mode === 'break') return;
+    selectedDur = m;
+    totalSec = m * 60; remaining = totalSec;
+    updateDisplay();
+    var isPreset = DURATIONS.indexOf(m) >= 0;
+    document.querySelectorAll('.dur-chip').forEach(function(c) { c.classList.toggle('active', parseInt(c.textContent)===m); });
+    var customInput = document.getElementById('dur-custom');
+    if (isPreset) {
+        customInput.value = '';
+        customInput.classList.remove('active');
+    } else {
+        customInput.value = m;
+        customInput.classList.add('active');
+    }
+}
+
+function updateDisplay() {
+    var m = Math.floor(remaining / 60);
+    var s = remaining % 60;
+    document.getElementById('display').textContent = (m<10?'0':'')+m+':'+(s<10?'0':'')+s;
+    var circumference = 565;
+    var progress = (totalSec - remaining) / totalSec;
+    document.getElementById('ring').style.strokeDashoffset = -(circumference * progress);
+}
+
+function toggleTimer() {
+    if (running) { pauseTimer(); } else { startTimer(); }
+}
+
+function startTimer() {
+    stopAlarm();
+    running = true;
+    startedAt = Date.now();
+    document.getElementById('start-btn').innerHTML = '&#10074;&#10074;';
+    document.getElementById('start-btn').className = 'timer-btn btn-pause';
+    if (mode === 'break') {
+        document.getElementById('state-label').textContent = breakType === 'long' ? 'Long break...' : 'Short break...';
+    } else {
+        document.getElementById('state-label').textContent = 'Focusing...';
+    }
+    // Request notification permission on first start
+    if ('Notification' in window && Notification.permission === 'default') {
+        Notification.requestPermission();
+    }
+    // Notify server of session start (work only)
+    if (mode === 'work') {
+        EOS.api('/focus/api/start', {method:'POST', headers:{'Content-Type':'application/json'},
+            body:JSON.stringify({minutes:selectedDur, task:document.getElementById('task-input').value.trim()})
+        }).catch(function(){});
+    }
+    timerInterval = setInterval(tick, 250); // 4x/sec for fast recovery after background
+    acquireWakeLock();
+    tick();
+}
+
+var _lastSave = 0;
+function tick() {
+    if (!running || !startedAt) return;
+    var elapsed = pausedElapsed + (Date.now() - startedAt) / 1000;
+    remaining = Math.max(0, totalSec - Math.floor(elapsed));
+    updateDisplay();
+    var now = Date.now();
+    if (now - _lastSave > 900) { saveTimerState(); _lastSave = now; }
+    if (remaining <= 0) {
+        clearInterval(timerInterval);
+        running = false;
+        startedAt = null;
+        pausedElapsed = 0;
+        clearTimerState();
+        releaseWakeLock();
+        document.getElementById('state-label').textContent = 'Done!';
+        document.getElementById('start-btn').innerHTML = '&#9654;';
+        document.getElementById('start-btn').className = 'timer-btn btn-start';
+        playCompletionSound();
+        completeSession();
+    }
+}
+
+// ── Visibility change: instant recovery when tab becomes active ──
+document.addEventListener('visibilitychange', function() {
+    if (!document.hidden && running) { tick(); acquireWakeLock(); }
+});
+
+// ── Screen Wake Lock: keep the screen on during a session (mobile) ──
+var wakeLock = null;
+
+async function acquireWakeLock() {
+    if (!('wakeLock' in navigator) || !running || wakeLock) return;
+    try {
+        wakeLock = await navigator.wakeLock.request('screen');
+        wakeLock.addEventListener('release', function() { wakeLock = null; });
+    } catch (e) { /* user denied or unsupported context */ }
+}
+
+function releaseWakeLock() {
+    if (wakeLock) { try { wakeLock.release(); } catch (e) {} wakeLock = null; }
+}
+
+function pauseTimer() {
+    if (startedAt) pausedElapsed += (Date.now() - startedAt) / 1000;
+    startedAt = null;
+    clearInterval(timerInterval);
+    running = false;
+    releaseWakeLock();
+    saveTimerState();
+    document.getElementById('start-btn').innerHTML = '&#9654;';
+    document.getElementById('start-btn').className = 'timer-btn btn-start';
+    document.getElementById('state-label').textContent = mode === 'break' ? 'Break paused' : 'Paused';
+}
+
+function resetTimer() {
+    stopAlarm();
+    clearInterval(timerInterval);
+    running = false;
+    startedAt = null;
+    pausedElapsed = 0;
+    clearTimerState();
+    releaseWakeLock();
+    // In break mode, reset = skip break → back to work
+    if (mode === 'break') {
+        EOS_UI.toast('Break skipped');
+        enterWorkMode();
+    } else {
+        remaining = totalSec;
+        updateDisplay();
+    }
+    document.getElementById('start-btn').innerHTML = '&#9654;';
+    document.getElementById('start-btn').className = 'timer-btn btn-start';
+}
+
+// ── Completion sound — repeating alarm pattern ──
+var alarmTimeout = null;
+var alarmRepeats = 0;
+var MAX_ALARM_REPEATS = 6; // stop after 30s (6 x 5s)
+
+function scheduleTone(ctx, freq, startTime, duration) {
+    var osc = ctx.createOscillator();
+    var gain = ctx.createGain();
+    osc.type = 'square';
+    osc.frequency.value = freq;
+    gain.gain.setValueAtTime(0.5, startTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, startTime + duration);
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start(startTime);
+    osc.stop(startTime + duration);
+}
+
+function playCompletionSound() {
+    try {
+        var ctx = noiseCtx || new (window.AudioContext || window.webkitAudioContext)();
+        if (ctx.state === 'suspended') ctx.resume();
+        var now = ctx.currentTime;
+        for (var rep = 0; rep < 3; rep++) {
+            var t = now + rep * 1.2;
+            scheduleTone(ctx, 1200, t, 0.15);
+            scheduleTone(ctx, 900, t + 0.2, 0.15);
+            scheduleTone(ctx, 1200, t + 0.4, 0.15);
+        }
+        alarmRepeats++;
+        if (alarmRepeats < MAX_ALARM_REPEATS) {
+            alarmTimeout = setTimeout(function() {
+                if (!running) playCompletionSound();
+            }, 5000);
+        }
+    } catch(e) {}
+}
+
+function stopAlarm() {
+    if (alarmTimeout) { clearTimeout(alarmTimeout); alarmTimeout = null; }
+    alarmRepeats = 0;
+}
+
+// ── Document Picture-in-Picture: floating always-on-top widget ──
+var pipWindow = null;
+var pipRenderInterval = null;
+
+async function popOutTimer() {
+    if (!('documentPictureInPicture' in window)) {
+        EOS_UI.toast('Pop-out needs Chrome or Edge', false);
+        return;
+    }
+    if (pipWindow) { pipWindow.close(); return; }
+
+    try {
+        pipWindow = await documentPictureInPicture.requestWindow({ width: 260, height: 280 });
+    } catch (e) { return; }
+
+    var doc = pipWindow.document;
+    doc.title = 'Focus';
+    var style = doc.createElement('style');
+    style.textContent =
+        'html,body{margin:0;padding:0;height:100%;background:#0f1115;color:#e6e6e6;'+
+        'font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;'+
+        '-webkit-font-smoothing:antialiased;overflow:hidden}'+
+        '.w{display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;gap:8px;padding:12px;box-sizing:border-box}'+
+        '.ring-wrap{position:relative;width:160px;height:160px}'+
+        '.ring-wrap svg{transform:rotate(-90deg)}'+
+        '.ring-bg{stroke:#2a2d33;fill:none;stroke-width:8}'+
+        '.ring-fill{fill:none;stroke:#8b5cf6;stroke-width:8;stroke-linecap:round;transition:stroke-dashoffset .4s linear}'+
+        '.ring-fill.run{stroke:#8b5cf6}'+
+        '.ring-fill.pause{stroke:#f59e0b}'+
+        '.ring-fill.idle{stroke:#3a3d44}'+
+        '.center{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center}'+
+        '.disp{font-size:36px;font-weight:800;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:1px}'+
+        '.lbl{font-size:11px;color:#9aa0a6;margin-top:2px;text-transform:uppercase;letter-spacing:.5px}'+
+        '.task{font-size:12px;color:#cfd2d6;text-align:center;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:0 8px}'+
+        '.btn{width:44px;height:44px;border-radius:50%;border:none;font-size:18px;cursor:pointer;color:#fff;display:flex;align-items:center;justify-content:center}'+
+        '.btn.run{background:#f59e0b}'+
+        '.btn.idle{background:#8b5cf6}';
+    doc.head.appendChild(style);
+
+    doc.body.innerHTML =
+        '<div class="w">'+
+        '<div class="ring-wrap">'+
+            '<svg width="160" height="160" viewBox="0 0 160 160">'+
+                '<circle class="ring-bg" cx="80" cy="80" r="72"/>'+
+                '<circle id="pip-ring" class="ring-fill idle" cx="80" cy="80" r="72" stroke-dasharray="452" stroke-dashoffset="0"/>'+
+            '</svg>'+
+            '<div class="center">'+
+                '<div class="disp" id="pip-disp">25:00</div>'+
+                '<div class="lbl" id="pip-lbl">Ready</div>'+
+            '</div>'+
+        '</div>'+
+        '<div class="task" id="pip-task"></div>'+
+        '<button class="btn idle" id="pip-btn">&#9654;</button>'+
+        '</div>';
+
+    var btn = doc.getElementById('pip-btn');
+    btn.addEventListener('click', function() { toggleTimer(); });
+
+    var dispEl = doc.getElementById('pip-disp');
+    var lblEl = doc.getElementById('pip-lbl');
+    var ringEl = doc.getElementById('pip-ring');
+    var taskEl = doc.getElementById('pip-task');
+    var CIRC = 452;
+
+    function render() {
+        var m = Math.floor(remaining / 60);
+        var s = remaining % 60;
+        dispEl.textContent = (m<10?'0':'')+m+':'+(s<10?'0':'')+s;
+        var state = running ? 'run' : (remaining < totalSec ? 'pause' : 'idle');
+        lblEl.textContent = running ? 'Focusing' : (state === 'pause' ? 'Paused' : 'Ready');
+        btn.className = 'btn ' + (running ? 'run' : 'idle');
+        btn.innerHTML = running ? '&#10074;&#10074;' : '&#9654;';
+        ringEl.className = 'ring-fill ' + state;
+        var progress = totalSec > 0 ? (totalSec - remaining) / totalSec : 0;
+        ringEl.style.strokeDashoffset = -(CIRC * progress);
+        var task = (document.getElementById('task-input').value || '').trim();
+        taskEl.textContent = task;
+    }
+    render();
+    pipRenderInterval = setInterval(render, 250);
+
+    pipWindow.addEventListener('pagehide', function() {
+        if (pipRenderInterval) { clearInterval(pipRenderInterval); pipRenderInterval = null; }
+        pipWindow = null;
+    });
+}
+
+// ── Desktop notification (works when tab is backgrounded) ──
+function notifyCompletion(task) {
+    if ('Notification' in window && Notification.permission === 'granted') {
+        new Notification('Focus Complete', {
+            body: (task || 'Focus session') + ' — ' + selectedDur + 'min done!',
+            tag: 'focus-complete',
+            requireInteraction: true
+        });
+    }
+}
+
+// ── Session persistence (localStorage) ──
+function saveTimerState() {
+    try {
+        localStorage.setItem('focus_timer', JSON.stringify({
+            startedAt: startedAt, pausedElapsed: pausedElapsed,
+            totalSec: totalSec, selectedDur: selectedDur,
+            task: document.getElementById('task-input').value,
+            mode: mode, breakType: breakType
+        }));
+    } catch(e) {}
+}
+
+function clearTimerState() {
+    try { localStorage.removeItem('focus_timer'); } catch(e) {}
+}
+
+function restoreTimer() {
+    try {
+        var saved = localStorage.getItem('focus_timer');
+        if (!saved) return;
+        var s = JSON.parse(saved);
+        if (!s.startedAt && !s.pausedElapsed) { clearTimerState(); return; }
+
+        var elapsed = (s.pausedElapsed || 0) + (s.startedAt ? (Date.now() - s.startedAt) / 1000 : 0);
+        if (elapsed >= s.totalSec) {
+            clearTimerState();
+            if (elapsed < s.totalSec * 3) {
+                // Completed recently — auto-log it
+                totalSec = s.totalSec; selectedDur = s.selectedDur;
+                mode = s.mode || 'work';
+                breakType = s.breakType || 'short';
+                document.getElementById('task-input').value = s.task || '';
+                remaining = 0; updateDisplay();
+                playCompletionSound();
+                completeSession();
+            }
+            // Too stale (>3x duration) — silently discard
+            return;
+        }
+
+        // Session still active — resume
+        totalSec = s.totalSec; selectedDur = s.selectedDur;
+        pausedElapsed = s.pausedElapsed || 0;
+        mode = s.mode || 'work';
+        breakType = s.breakType || 'short';
+        document.getElementById('task-input').value = s.task || '';
+        document.querySelectorAll('.dur-chip').forEach(function(c) { c.classList.toggle('active', parseInt(c.textContent) === selectedDur); });
+        updateBreakUI();
+        updateBreakIndicator();
+
+        if (s.startedAt) {
+            startedAt = s.startedAt;
+            running = true;
+            document.getElementById('start-btn').innerHTML = '&#10074;&#10074;';
+            document.getElementById('start-btn').className = 'timer-btn btn-pause';
+            document.getElementById('state-label').textContent = 'Focusing...';
+            timerInterval = setInterval(tick, 250);
+            acquireWakeLock();
+            tick();
+        } else {
+            // Was paused
+            remaining = Math.max(0, totalSec - Math.floor(pausedElapsed));
+            updateDisplay();
+            document.getElementById('state-label').textContent = 'Paused';
+        }
+    } catch(e) { clearTimerState(); }
+}
+
+window.addEventListener('beforeunload', function() { if (running) saveTimerState(); });
+
+async function completeSession() {
+    try {
+        if (mode === 'work') {
+            var task = document.getElementById('task-input').value.trim() || 'Focus session';
+            notifyCompletion(task);
+            await EOS.api('/focus/api/complete', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({minutes:selectedDur, task:task})});
+            sessionsToday++;
+            pomodoroCount++;
+
+            if (sessionsToday >= dailyGoal && !goalCelebrated) {
+                goalCelebrated = true;
+                EOS_UI.toast('Daily goal reached! ' + sessionsToday + '/' + dailyGoal);
+                fireConfetti();
+            } else {
+                EOS_UI.toast(selectedDur + 'min done — take a break');
+            }
+
+            var nextType = (pomodoroCount > 0 && pomodoroCount % config.long_break_every === 0) ? 'long' : 'short';
+            enterBreakMode(nextType);
+            loadStats(); loadToday(); loadAchievements();
+        } else {
+            // Break completed — log and return to work
+            var mins = Math.round(totalSec / 60);
+            await EOS.api('/focus/api/break', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({minutes:mins, type:breakType})});
+            EOS_UI.toast('Break done — ready to focus');
+            document.getElementById('task-input').value = '';
+            enterWorkMode();
+        }
+    } catch(e) { EOS_UI.toast('Error', false); }
+}
+
+async function getSuggestion() {
+    document.getElementById('task-input').placeholder = 'Thinking...';
+    try {
+        var data = await EOS.api('/focus/api/suggest');
+        document.getElementById('task-input').value = data.suggestion || '';
+    } catch(e) {}
+    document.getElementById('task-input').placeholder = 'What are you focusing on?';
+}
+
+async function loadStats() {
+    try {
+        var [stats, goal] = await Promise.all([EOS.api('/focus/api/stats'), EOS.api('/focus/api/goal')]);
+        dailyGoal = goal.daily_goal || 4;
+        sessionsToday = stats.sessions || 0;
+        goalCelebrated = sessionsToday >= dailyGoal; // don't re-fire if already past goal on load
+        document.getElementById('stats').innerHTML =
+            '<div class="stat-pill"><div class="stat-pill-val">'+stats.sessions+'</div><div class="stat-pill-label">Sessions</div></div>'+
+            '<div class="stat-pill"><div class="stat-pill-val">'+stats.total_minutes+'</div><div class="stat-pill-label">Minutes</div></div>'+
+            '<div class="stat-pill"><div class="stat-pill-val">'+stats.sessions+'/'+dailyGoal+'</div><div class="stat-pill-label">Goal</div></div>';
+        document.getElementById('goal-label').textContent = stats.sessions >= dailyGoal ? 'Goal reached!' : (dailyGoal - stats.sessions) + ' sessions to go';
+        pomodoroCount = stats.sessions || 0;
+        updateBreakIndicator();
+    } catch(e) {}
+}
+
+async function loadToday() {
+    try {
+        var data = await EOS.api('/focus/api/history?limit=20');
+        var today = new Date().toISOString().slice(0,10);
+        var todaySessions = data.filter(function(s) { return s.date === today; });
+        document.getElementById('today-sessions').innerHTML = todaySessions.length ?
+            todaySessions.reverse().map(function(s) {
+                return '<div class="session-item"><span class="session-time">'+s.time+'</span><span class="session-task">'+(s.task||'Focus')+'</span><span class="session-dur">'+s.minutes+'m</span></div>';
+            }).join('') : '<div class="eos-empty">No sessions today. Start one!</div>';
+    } catch(e) {}
+}
+
+async function loadHistory() {
+    try {
+        var [heatmap, sessions] = await Promise.all([EOS.api('/focus/api/heatmap'), EOS.api('/focus/api/history?limit=30')]);
+        EOS_UI.heatmap('heatmap', heatmap, 90);
+        document.getElementById('history-list').innerHTML = sessions.reverse().map(function(s) {
+            return '<div class="session-item"><span class="session-time">'+s.date.slice(5)+'</span><span class="session-task">'+(s.task||'Focus')+'</span><span class="session-dur">'+s.minutes+'m</span></div>';
+        }).join('') || '<div class="eos-empty">No sessions yet</div>';
+    } catch(e) {}
+}
+
+// ── Achievements ─────────────────────────────────────────────
+var defaultBadges = [
+    {id:'first',    icon:'&#127942;', name:'First Focus',    desc:'Complete 1 session'},
+    {id:'streak3',  icon:'&#128293;', name:'On Fire',        desc:'3 sessions in a day'},
+    {id:'streak5',  icon:'&#9889;',   name:'Unstoppable',    desc:'5 sessions in a day'},
+    {id:'hour',     icon:'&#9200;',   name:'Hour Power',     desc:'60min in one session'},
+    {id:'week',     icon:'&#128197;', name:'Week Warrior',   desc:'7-day streak'},
+    {id:'centurion',icon:'&#127941;', name:'Centurion',      desc:'100 total sessions'},
+    {id:'marathon', icon:'&#127939;', name:'Marathon',       desc:'1000 total minutes'}
+];
+
+async function loadAchievements() {
+    try {
+        var data = await EOS.api('/focus/api/achievements');
+        var earned = data.earned || data || [];
+        var earnedIds = Array.isArray(earned) ? earned.map(function(a) { return typeof a === 'string' ? a : a.id; }) : [];
+        var badges = data.badges || defaultBadges;
+
+        document.getElementById('achievements-grid').innerHTML = badges.map(function(b) {
+            var isEarned = earnedIds.indexOf(b.id) >= 0;
+            return '<div class="achievement '+(isEarned?'earned':'locked')+'">' +
+                '<div class="achievement-icon">'+(b.icon||'&#127942;')+'</div>' +
+                '<div class="achievement-name">'+(b.name||b.id)+'</div>' +
+                '<div class="achievement-desc">'+(b.desc||'')+'</div>' +
+                '</div>';
+        }).join('');
+    } catch(e) {
+        // Fallback: show default badges all locked
+        document.getElementById('achievements-grid').innerHTML = defaultBadges.map(function(b) {
+            return '<div class="achievement locked">' +
+                '<div class="achievement-icon">'+b.icon+'</div>' +
+                '<div class="achievement-name">'+b.name+'</div>' +
+                '<div class="achievement-desc">'+b.desc+'</div>' +
+                '</div>';
+        }).join('');
+    }
+}
+
+updateDisplay();
+loadConfig();
+loadStats();
+loadToday();
+loadAchievements();
+updateBreakIndicator();
+restoreTimer(); // resume session if page was reloaded
+
+EOS.on('focus:completed', function() { loadStats(); loadToday(); loadAchievements(); });
+if (EOS.keys) { EOS.keys.register('s', 'Start/stop timer', function() { toggleTimer(); }); EOS.keys.register('r', 'Refresh', function() { loadStats(); loadToday(); }); EOS.keys.register('b', 'Take a break', function() { takeBreakManual(); }); }
+
+// ---- Hands-Free gesture overrides ----
+// Pointing_Up toggles the timer (start/stop) so you can drive a focus block
+// by hand without touching the keyboard. Victory takes a break.
+if (EOS.handsFree) {
+    EOS.handsFree.registerGesture('Pointing_Up', function() { toggleTimer(); }, 'Start / stop timer');
+    EOS.handsFree.registerGesture('Victory', function() { takeBreakManual(); }, 'Take a break');
+}
+
+// --- App Settings slide-out (shared helper) ---
+var _appSettings = EOS_UI.settingsPanel({
+    id: 'app-settings-panel',
+    title: 'Focus Settings',
+    fields: [
+        {key: 'focus.daily_goal', label: 'Sessions per Day', type: 'number', default: 4, min: 1},
+        {key: 'focus.work_min', label: 'Work Duration (min)', type: 'number', default: 25, min: 1},
+        {key: 'focus.break_min', label: 'Break Duration (min)', type: 'number', default: 5, min: 1},
+        {key: 'focus.long_break_min', label: 'Long Break (min)', type: 'number', default: 15, min: 1},
+    ],
+});
+function openAppSettings() { _appSettings.open(); }
+</script>
+</body>
+</html>

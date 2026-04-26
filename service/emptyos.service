@@ -1,0 +1,39 @@
+# EmptyOS systemd service — Linux / Raspberry Pi
+# Install:
+#   sudo cp service/emptyos.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable emptyos    # auto-start on boot
+#   sudo systemctl start emptyos     # start now
+#
+# Manual control:
+#   sudo systemctl start emptyos
+#   sudo systemctl stop emptyos
+#   sudo systemctl restart emptyos
+#   sudo systemctl status emptyos
+#   journalctl -u emptyos -f         # follow logs
+
+[Unit]
+Description=EmptyOS — AI-powered personal operating system
+After=network.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=%i
+# --- Edit these paths to match your install ---
+WorkingDirectory=/home/%i/emptyos
+ExecStart=/usr/bin/python3 -m emptyos start
+ExecStop=/bin/kill -SIGTERM $MAINPID
+Restart=on-failure
+RestartSec=5
+
+# Environment
+Environment=PYTHONUNBUFFERED=1
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=emptyos
+
+[Install]
+WantedBy=multi-user.target

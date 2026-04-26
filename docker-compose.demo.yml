@@ -1,0 +1,57 @@
+# docker-compose.demo.yml — public demo deployment for EmptyOS
+#
+# Differences from docker-compose.yml:
+#   - Mounts demo/vault (curated sample content, no personal data)
+#   - Uses demo/emptyos.toml (mode=public, demo.enabled=true, cloud.consent=always)
+#   - Runs an Ollama sidecar with a small CPU-friendly model (phi3:mini)
+#   - Auth token is required — set EOS_NETWORK_AUTH_TOKEN in .env.demo
+#
+# First-time setup:
+#   python scripts/demo-setup.py --output ./demo/vault --force
+#   echo "EOS_NETWORK_AUTH_TOKEN=$(python -c 'import secrets;print(secrets.token_urlsafe(32))')" > .env.demo
+#   docker compose -f docker-compose.demo.yml --env-file .env.demo up -d
+#   # Pull the model into the Ollama volume (one-time):
+#   docker exec emptyos-demo-ollama ollama pull phi3:mini
+
+services:
+  emptyos-demo:
+    build: .
+    image: emptyos:latest
+    container_name: emptyos-demo
+    restart: unless-stopped
+    ports:
+      - "9000:9000"
+    volumes:
+      - ./demo/vault:/vault
+      - ./demo/emptyos.toml:/app/emptyos.toml:ro
+      - emptyos-demo-data:/app/data
+    environment:
+      - EOS_NETWORK_AUTH_TOKEN=${EOS_NETWORK_AUTH_TOKEN:?set EOS_NETWORK_AUTH_TOKEN in .env.demo}
+      - EOS_DEMO_ENABLED=true
+    depends_on:
+      ollama:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:9000/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+
+  ollama:
+    image: ollama/ollama:latest
+    container_name: emptyos-demo-ollama
+    restart: unless-stopped
+    volumes:
+      - ollama-models:/root/.ollama
+    # No port exposure — only emptyos-demo talks to ollama over the compose network
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+volumes:
+  emptyos-demo-data:
+  ollama-models:

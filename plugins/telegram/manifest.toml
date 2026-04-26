@@ -1,0 +1,13 @@
+[plugin]
+id = "telegram"
+name = "Telegram"
+version = "1.0.0"
+description = "Push notifications + two-way bot via Telegram"
+
+[plugin.entry]
+module = "plugin"
+class = "TelegramPlugin"
+
+[provides]
+services = ["telegram"]
+tags = ["messaging", "mobile", "notifications"]

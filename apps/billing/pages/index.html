@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>Billing - EmptyOS</title>
+<link rel="stylesheet" href="/static/theme.css">
+<link rel="stylesheet" href="/static/eos-components.css">
+<style>
+* { margin:0; padding:0; box-sizing:border-box }
+body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif; background:var(--bg); color:var(--text); min-height:100dvh; padding:env(safe-area-inset-top) 16px calc(env(safe-area-inset-bottom)+80px) }
+.budget-bar { height:8px; border-radius:4px; background:var(--border); margin-top:8px; overflow:hidden }
+.budget-fill { height:100%; border-radius:4px; transition:width 0.5s }
+.cost-table { width:100%; border-collapse:collapse; font-size:13px; margin-top:8px }
+.cost-table th { text-align:left; color:var(--text-muted); font-size:11px; text-transform:uppercase; padding:8px 8px; border-bottom:1px solid var(--border) }
+.cost-table td { padding:8px 8px; border-bottom:1px solid var(--border) }
+.cost-table .num { text-align:right; font-family:var(--mono); font-weight:600 }
+.daily-chart { display:flex; gap:2px; align-items:flex-end; height:60px; margin-top:8px }
+.daily-bar { flex:1; background:var(--accent); border-radius:4px 4px 0 0; min-width:4px; transition:height 0.3s; cursor:pointer; position:relative }
+.daily-bar:hover { opacity:0.8 }
+.daily-bar:hover::after { content:attr(data-tip); position:absolute; bottom:100%; left:50%; transform:translateX(-50%); background:var(--bg-card); border:1px solid var(--border); padding:2px 8px; border-radius:4px; font-size:10px; white-space:nowrap; z-index:1 }
+.over { color:#ef4444; font-weight:600 }
+</style>
+</head>
+<body>
+<script src="/static/realtime.js"></script>
+<script src="/static/eos.js"></script>
+<script src="/static/eos-components.js"></script>
+<script>EOS.nav('billing');
+if(window.EOS&&EOS.registerActions){EOS.registerActions({},[],{description:"LLM + image generation cost tracking — daily tokens, spend, budget status.",quickActions:[{label:"Today cost",msg:"How much did I spend on AI today? Break it down by provider."},{label:"This week",msg:"Summarize this week's AI spending and trends."},{label:"Over budget?",msg:"Am I on track with my budget or likely to exceed it?"}]});}
+</script>
+
+<div class="page">
+  <div class="eos-header">
+    <h1>Billing</h1>
+    <button class="btn-settings" onclick="openAppSettings()" title="Settings">&#9881; Settings</button>
+  </div>
+  <div class="eos-hero" id="hero"></div>
+  <div id="budget-section" style="display:none">
+    <div class="eos-section-title">Daily Budget</div>
+    <div id="budget-bar"></div>
+  </div>
+  <div class="eos-section-title" style="margin-top:16px">30-Day Cost Trend</div>
+  <div class="daily-chart" id="daily-chart"></div>
+  <div class="eos-section-title" style="margin-top:16px">By Provider</div>
+  <table class="cost-table" id="provider-table"><tbody></tbody></table>
+  <div class="eos-section-title" style="margin-top:16px">By App</div>
+  <table class="cost-table" id="app-table"><tbody></tbody></table>
+  <div class="eos-section-title" style="margin-top:16px">Monthly Summary</div>
+  <table class="cost-table" id="monthly-table"><tbody></tbody></table>
+</div>
+
+<script>
+async function init() {
+  var today={},usage={},monthly={};
+  try{today=await EOS.api('/billing/api/today')}catch(e){}
+  try{usage=await EOS.api('/billing/api/usage?days=30')}catch(e){}
+  try{monthly=await EOS.api('/billing/api/monthly')}catch(e){}
+
+  var t=usage.total||{};
+  document.getElementById('hero').innerHTML=
+    '<div class="eos-hero-card"><div class="eos-hero-label">Today</div><div class="eos-hero-val">$'+(today.total_cost||0).toFixed(4)+'</div><div class="eos-hero-sub">'+(today.calls||0)+' calls, '+(today.images||0)+' images</div></div>'+
+    '<div class="eos-hero-card"><div class="eos-hero-label">30 Days</div><div class="eos-hero-val">$'+(t.total_cost||0).toFixed(4)+'</div><div class="eos-hero-sub">'+(t.calls||0)+' calls, '+(t.tokens||0).toLocaleString()+' tokens</div></div>';
+
+  if(today.budget>0){
+    var bs=document.getElementById('budget-section');bs.style.display='block';
+    var pct=Math.min(100,Math.round((today.total_cost/today.budget)*100));
+    var color=pct>=100?'#ef4444':pct>=80?'#f59e0b':'#10b981';
+    document.getElementById('budget-bar').innerHTML=
+      '<div style="display:flex;justify-content:space-between;font-size:13px"><span>$'+(today.total_cost||0).toFixed(4)+' / $'+today.budget.toFixed(2)+'</span><span '+(pct>=100?'class="over"':'')+'>'+pct+'%</span></div>'+
+      '<div class="budget-bar"><div class="budget-fill" style="width:'+pct+'%;background:'+color+'"></div></div>';
+  }
+
+  var daily=usage.daily||[];
+  var maxCost=Math.max(0.0001,...daily.map(function(d){return d.cost}));
+  document.getElementById('daily-chart').innerHTML=daily.map(function(d){
+    var h=Math.max(2,Math.round(d.cost/maxCost*56));
+    return'<div class="daily-bar" style="height:'+h+'px" data-tip="'+d.date.slice(5)+': $'+d.cost.toFixed(4)+'"></div>';
+  }).join('');
+
+  var bp=usage.by_provider||{};
+  document.querySelector('#provider-table tbody').innerHTML=
+    '<tr><th>Provider</th><th>Calls</th><th>Tokens</th><th>Cost</th></tr>'+
+    Object.entries(bp).map(function(e){return'<tr><td>'+esc(e[0])+'</td><td class="num">'+e[1].calls+'</td><td class="num">'+(e[1].tokens||0).toLocaleString()+'</td><td class="num">$'+(e[1].cost||0).toFixed(4)+'</td></tr>'}).join('');
+
+  var ba=usage.by_app||{};
+  document.querySelector('#app-table tbody').innerHTML=
+    '<tr><th>App</th><th>Calls</th><th>Tokens</th><th>Cost</th></tr>'+
+    Object.entries(ba).slice(0,15).map(function(e){return'<tr><td>'+esc(e[0])+'</td><td class="num">'+e[1].calls+'</td><td class="num">'+(e[1].tokens||0).toLocaleString()+'</td><td class="num">$'+(e[1].cost||0).toFixed(4)+'</td></tr>'}).join('');
+
+  document.querySelector('#monthly-table tbody').innerHTML=
+    '<tr><th>Month</th><th>Calls</th><th>Tokens</th><th>Images</th><th>Cost</th></tr>'+
+    Object.entries(monthly).reverse().slice(0,6).map(function(e){return'<tr><td>'+e[0]+'</td><td class="num">'+e[1].calls+'</td><td class="num">'+(e[1].tokens||0).toLocaleString()+'</td><td class="num">'+(e[1].images||0)+'</td><td class="num">$'+(e[1].cost||0).toFixed(4)+'</td></tr>'}).join('');
+}
+// --- App Settings slide-out (shared helper) ---
+var _appSettings = EOS_UI.settingsPanel({
+    id: 'app-settings-panel',
+    title: 'Billing Settings',
+    fields: [
+        {key: 'billing.daily_budget', label: 'Daily Budget ($)', type: 'number', default: 0, min: 0,
+         hint: '0 disables the budget bar.'},
+        {key: 'billing.alert_threshold', label: 'Alert at % of Budget', type: 'number', default: 80, min: 0, max: 100,
+         hint: 'Emits billing:budget_alert above this % of daily budget.'},
+    ],
+});
+function openAppSettings() { _appSettings.open(); }
+
+init();
+</script>
+</body>
+</html>
