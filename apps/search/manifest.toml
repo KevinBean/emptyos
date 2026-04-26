@@ -36,3 +36,12 @@ schema = [
 commands = [
     {slash = "/search", method = "_search", arg = "query"},
 ]
+
+[[contributes.tour.step]]
+id = "search.try"
+group = "core"
+priority = 350
+route = "/hub/"
+spotlight = ".eos-search-input"
+title = "Everything is connected"
+body = "Type into the bar above. Results split into <strong>Apps</strong> + <strong>Notes</strong> + <strong>Other</strong>. The apps and the vault aren't separate worlds — they share one search, one capability layer, one event bus. Try <code>arvo</code> or <code>kingfisher</code>."

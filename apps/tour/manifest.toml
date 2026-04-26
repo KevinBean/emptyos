@@ -34,3 +34,12 @@ route = "/hub/"
 spotlight = ".r-app-grid"
 title = "Now go explore"
 body = "Here's every app this install has loaded — browse, click any card to try it. Each card is its own page with its own UI; the one thing they share is the capability layer (think / read / write / search / speak / listen / see / draw / animate). Have fun."
+
+[[contributes.tour.step]]
+id = "system.inspect"
+group = "core"
+priority = 800
+route = "/system"
+spotlight = ".cap-card"
+title = "Nine capabilities, swappable providers"
+body = "Every app calls capabilities — <code>think / read / write / search / speak / listen / see / draw / animate</code> — never a specific provider. The chain falls through automatically: cloud LLM unavailable → local model → typed input. <strong>Human is the final fallback.</strong> Apps don't break when a provider goes away; they degrade."

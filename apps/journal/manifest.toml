@@ -83,3 +83,12 @@ example = "journal entry: had a great walk this morning, feeling good"
 description = "Append a one-line entry to today's journal"
 args = { text = "string", mood = "string?" }
 always = true
+
+[[contributes.tour.step]]
+id = "vault.markdown"
+group = "core"
+priority = 300
+route = "/journal/"
+spotlight = "#entry-text"
+title = "Your data, in your filesystem"
+body = "Anything you write here lands in a plain markdown file in your vault — <code>50_Journal/2026/...md</code>. <strong>The vault is the hard drive; EmptyOS is mounted on top, not under.</strong> Swap to any markdown editor or a different OS — your notes don't move."
