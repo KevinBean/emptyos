@@ -162,6 +162,25 @@
         }
     }
 
+    // Auto-load the tour orchestrator so the spotlight + Next button appear
+    // on every page the tour navigates to. Without this, the orchestrator
+    // is only present on pages that <script src> it explicitly, and the
+    // tour appears to "die" the moment it reaches a page that doesn't.
+    // Tiny script (~5KB), no harm if loaded twice (it's IIFE-scoped).
+    function _loadTourOrchestrator() {
+        if (window.EOS && window.EOS.tour) return;  // already loaded
+        if (document.querySelector('script[src*="/static/eos-tour.js"]')) return;
+        var s = document.createElement('script');
+        s.src = base + '/static/eos-tour.js';
+        s.async = true;
+        document.head.appendChild(s);
+    }
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', _loadTourOrchestrator);
+    } else {
+        _loadTourOrchestrator();
+    }
+
     // --- Nav bar (dynamic from API) ---
     // Default nav apps — generic across all deployments. Picks from the
     // standard-tier apps that any community install will have. Users override
