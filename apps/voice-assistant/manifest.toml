@@ -27,10 +27,10 @@ priority = 80
 id = "voice-assistant.aura"
 group = "core"
 priority = 500
-route = "/voice-assistant/"
-spotlight = "#rec-btn"
+route = "/hub/"
+spotlight = ".r-app-grid a[href=\"/voice-assistant/\"]"
 title = "Talk to Aura"
-body = "This is the conversational interface — Aura. Press <strong>REC</strong> and speak, or hit <strong>⌨</strong> to type. Aura runs through a local model (qwen2.5:1.5b) by default; <strong>tool-use is wired up</strong>, so try <em>list my tasks</em> or <em>add a task to call mom tomorrow</em> — Aura invokes the right app and reports back. For instant gpt-4o-mini quality, paste an OpenAI key in Settings → Demo (next step)."
+body = "This card opens <strong>Aura</strong> — the conversational AI. Click to leave the tour and talk: press REC + speak (Web Speech API in your browser), or hit ⌨ to type. Try <em>list my tasks</em> — Aura invokes the right app and reports back. <strong>Tool-use is wired up.</strong>"
 # Only `think` is the real prerequisite — listen/speak inflate the requires
 # unnecessarily and trigger a false rewrite to /system on otherwise-fine demos.
 requires = ["think"]
