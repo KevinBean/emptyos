@@ -340,6 +340,13 @@ var RENDERERS = {
   },
 
   'compare-tile': function(items){
+    // Filter out items without usable data so the panel doesn't render
+    // a husk (e.g. just "vs" with no numbers) when no source has data yet.
+    items = items.filter(function(p){
+      var d = p.data || {};
+      return d.label && (d.now != null || d.prev != null);
+    });
+    if (!items.length) return '';
     var tiles = items.map(function(p){
       var d = p.data;
       var deltaCls = (d.delta_pct || 0) >= 0 ? 'up' : 'down';

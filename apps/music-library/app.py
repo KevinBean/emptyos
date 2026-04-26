@@ -9,9 +9,20 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from urllib.parse import quote
+
 from fastapi.responses import FileResponse
 
 from emptyos.sdk import BaseApp, cli_command, web_route
+
+
+def _quote_url_path(p: str) -> str:
+    """URL-encode a vault-relative path while preserving slashes.
+
+    Vault paths contain spaces, parens, middle dots (·), and CJK chars
+    that browsers won't fetch unless percent-encoded.
+    """
+    return quote(p, safe="/")
 
 from . import library, lyrics
 from .lyrics import STYLES
@@ -132,7 +143,7 @@ class MusicLibraryApp(BaseApp):
         return {
             "detail": detail,
             "audio": audio,
-            "cover": f"/music-library/api/image/{cover_path}" if cover_path else None,
+            "cover": f"/music-library/api/image/{_quote_url_path(cover_path)}" if cover_path else None,
             "cover_path": cover_path or "",
             "copyright": copyright_files,
             "song_key": song_key,
@@ -143,13 +154,13 @@ class MusicLibraryApp(BaseApp):
         path = await self._library.cover_art(request.path_params["filename"])
         if not path:
             return {"url": None}
-        return {"url": f"/music-library/api/image/{path}"}
+        return {"url": f"/music-library/api/image/{_quote_url_path(path)}"}
 
     @web_route("GET", "/api/covers")
     async def api_covers_batch(self, request):
         covers = await self._library.all_covers()
         return {
-            k: f"/music-library/api/image/{v}" if v else None
+            k: f"/music-library/api/image/{_quote_url_path(v)}" if v else None
             for k, v in covers.items()
         }
 

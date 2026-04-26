@@ -169,7 +169,8 @@ async function openDetail(filename){
     var audioHtml = '';
     if (s.audio && Array.isArray(s.audio.files) && s.audio.files.length) {
       var first = s.audio.files[0];
-      audioHtml = '<audio class="ml-audio" controls src="' + esc('/music-library/api/stream/' + first.path) + '"></audio>';
+      var encoded = first.path.split('/').map(encodeURIComponent).join('/');
+      audioHtml = '<audio class="ml-audio" controls src="/music-library/api/stream/' + encoded + '"></audio>';
     }
     var fields = ['artist','album','genre','language','energy','mood','theme','bpm','key','duration','status'];
     var rows = fields.filter(function(k){ return d[k]; }).map(function(k){
