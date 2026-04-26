@@ -28,7 +28,7 @@ id = "voice-assistant.aura"
 group = "core"
 priority = 500
 route = "/voice-assistant/"
-spotlight = "#rec-button"
+spotlight = "#rec-btn"
 title = "Talk to Aura"
 body = "Press <strong>REC</strong> and speak — Aura uses your browser's mic (Web Speech API), then routes the transcript through the local model (qwen2.5:1.5b) and reads the reply back via edge-tts. Or hit <strong>⌨</strong> to type. Try <em>list my tasks</em>."
 # Only `think` is the real prerequisite — listen/speak inflate the requires
