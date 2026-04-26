@@ -5,22 +5,25 @@ tags: [tasks, this-week]
 
 # This week
 
+## Overdue
+
+- [ ] Reply to lease renewal letter 📅 2026-04-23
+- [ ] Email landlord about the leaky kitchen tap 📅 2026-04-25
+
 ## Today
 
-- [ ] Reply to lease renewal letter (overdue — was due last Friday)
-- [ ] Email landlord about the leaky kitchen tap
-- [ ] Buy lentils + cumin + onions
+- [ ] Buy lentils + cumin + onions 📅 2026-04-27
+- [ ] Send Maya the seed catalogue she asked about 📅 2026-04-27
 
 ## This week
 
-- [ ] Order pollinator-friendly perennials for the new bed
-- [ ] Book dentist appointment
-- [ ] Schedule chimney inspection (cabin)
-- [ ] Practice the C minor prelude — 20 minutes daily
-- [ ] Send Maya the seed catalogue she asked about
-- [ ] Follow up with Ren about the data-engineering team
+- [ ] Order pollinator-friendly perennials for the new bed 📅 2026-04-29
+- [ ] Book dentist appointment 📅 2026-04-30
+- [ ] Schedule chimney inspection (cabin) 📅 2026-05-02
+- [ ] Practice the C minor prelude — 20 minutes daily 📅 2026-05-03
+- [ ] Follow up with Ren about the data-engineering team 📅 2026-05-04
 
-## Backlog
+## Backlog (no due date)
 
 - [ ] Order new chimney brush before October
 - [ ] Service the wood stove (book early — local guy is 6 weeks out)
@@ -28,10 +31,10 @@ tags: [tasks, this-week]
 - [ ] Test the generator + change the oil
 - [ ] Stock 1 cord of seasoned firewood for winter
 
-## Done this week
+## Done today
 
-- [x] Submit the grant application
-- [x] File Q1 receipts
-- [x] Reorganize the bookshelf
-- [x] Long walk along the river (Sunday)
-- [x] Make Maya's lentil soup recipe
+- [x] Submit the grant application ✅ 2026-04-27
+- [x] File Q1 receipts ✅ 2026-04-27
+- [x] Reorganize the bookshelf ✅ 2026-04-27
+- [x] Long walk along the river ✅ 2026-04-27
+- [x] Make Maya's lentil soup recipe ✅ 2026-04-27
