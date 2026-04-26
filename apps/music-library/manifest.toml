@@ -41,5 +41,8 @@ priority = 400
 route = "/music-library/"
 spotlight = ".ml-grid"
 title = "Music Library"
-body = "Browse vault songs as cards. The demo seeds 5 — Nick Drake, Caroline Shaw, Fela Kuti, Arvo Pärt, Chopin. Click any card for details. Click <strong>+ Write Lyrics</strong> in the corner to draft AI lyrics."
-requires = ["think"]
+body = "Browse vault songs as cards. Click any card for details — tracks with audio show a player. The demo seeds the Zero Bias album (8 tracks, multilingual) plus a handful of curated singles. The <strong>+ Write Lyrics</strong> button drafts AI lyrics if you have a think provider configured."
+# No `requires` — browsing works without any AI provider; only the optional
+# lyric-write feature needs `think`. Listing it as required would rewrite
+# the whole step to /system?capability=think when ollama isn't available,
+# breaking the walkthrough on otherwise-fine demos.
