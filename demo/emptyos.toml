@@ -36,9 +36,27 @@ seed_on_boot = true
 # no GPU, no separate voice-api service). The kernel filters these out at load
 # time — they're invisible to nav and routing. Strangers see only what works.
 hide_apps = [
+    # --- Capability gaps in CPU-only demo ---
     "hands-free",        # continuous-speech voice workflow — Web Speech API one-shot
                          # mode isn't a great fit; revisit when streaming STT lands
     "music-studio",      # personal-tier ComfyUI gen — not in repo at all
+
+    # --- Safety: surfaces a public visitor must never see ---
+    "run",               # arbitrary shell on the VPS — could exfiltrate the
+                         # auth token, wipe the vault, fork-bomb the box
+    "system-log",        # exposes prior visitors' captures + internal state +
+                         # error stacks (could leak BYOK keys if logs ever
+                         # included headers — defense in depth)
+    "git",               # vault git ops — could push to a remote we don't
+                         # want shared, or expose commit history beyond the
+                         # current snapshot
+
+    # --- Safety: dev/personal apps (not loaded anyway, but explicit) ---
+    "staff",             # spawns long-running Claude CLI agents
+    "model-bench",       # benchmark runner; long jobs, expensive
+    "release",           # release packaging; could expose internal toml
+    "tests",             # test runner; could affect daemon state
+    "app-gen",           # generates new apps; could generate malicious ones
 ]
 # Note from v0.2.12 onward, voice-assistant + gesture are both available:
 #   - listen   uses browser-speech (Web Speech API in the visitor's browser)
