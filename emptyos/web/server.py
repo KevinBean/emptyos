@@ -55,6 +55,25 @@ def create_server(kernel: Kernel) -> FastAPI:
                 if _check_token(cookie_tok):
                     return await call_next(request)
 
+                # Check ?token= query param (deep-link sign-in for landing pages).
+                # On match, set the cookie and 302 to the same path with token
+                # stripped from the URL — so it never lingers in the address bar
+                # or browser history beyond the first hop.
+                qtok = request.query_params.get("token", "")
+                if qtok and _check_token(qtok):
+                    clean_qs = "&".join(
+                        f"{k}={v}"
+                        for k, v in request.query_params.multi_items()
+                        if k != "token"
+                    )
+                    clean_url = path + (("?" + clean_qs) if clean_qs else "")
+                    resp = RedirectResponse(url=clean_url, status_code=302)
+                    resp.set_cookie(
+                        _AUTH_COOKIE, _auth_token,
+                        httponly=True, samesite="lax", max_age=60 * 60 * 24 * 30,
+                    )
+                    return resp
+
                 # API returns 401 JSON, browser redirects to login
                 accept = request.headers.get("accept", "")
                 if path.startswith("/api/") or "application/json" in accept:
