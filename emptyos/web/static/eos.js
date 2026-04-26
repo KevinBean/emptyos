@@ -91,17 +91,35 @@
 
     // --- Realtime ---
     EOS.realtime = null;
-    EOS.on = function(eventType, callback) {
-        if (typeof EmptyOSRealtime === 'undefined') {
-            // realtime.js not loaded on this page — no-op subscription
-            return function() {};
-        }
+
+    // Eagerly connect realtime when the script loads. This is necessary for
+    // server-initiated capture requests (browser-speech listen provider) to
+    // reach this tab — they're dispatched the moment a daemon-side capability
+    // call needs the browser's mic, which can be before any page code calls
+    // EOS.on(). The connection is cheap (one WS, auto-reconnects).
+    function _ensureRealtime() {
+        if (typeof EmptyOSRealtime === 'undefined') return null;
         if (!EOS.realtime) {
             EOS.realtime = new EmptyOSRealtime();
             EOS.realtime.connect();
         }
-        return EOS.realtime.on(eventType, callback);
+        return EOS.realtime;
+    }
+
+    EOS.on = function(eventType, callback) {
+        var rt = _ensureRealtime();
+        if (!rt) return function() {};  // realtime.js not loaded on this page
+        return rt.on(eventType, callback);
     };
+
+    // Auto-connect on page load so capture requests can find this tab.
+    if (typeof EmptyOSRealtime !== 'undefined') {
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', function() { _ensureRealtime(); });
+        } else {
+            _ensureRealtime();
+        }
+    }
 
     // --- Nav bar (dynamic from API) ---
     // Default nav apps — generic across all deployments. Picks from the

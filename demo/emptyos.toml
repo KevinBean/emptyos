@@ -36,11 +36,14 @@ seed_on_boot = true
 # no GPU, no separate voice-api service). The kernel filters these out at load
 # time — they're invisible to nav and routing. Strangers see only what works.
 hide_apps = [
-    "voice-assistant",   # needs whisper STT (no mic on a VPS anyway)
-    "hands-free",        # voice-driven workflow
-    "gesture",           # webcam-based
-    "music-studio",      # personal-tier ComfyUI gen (won't be loaded anyway, but explicit)
+    "hands-free",        # continuous-speech voice workflow — Web Speech API one-shot
+                         # mode isn't a great fit; revisit when streaming STT lands
+    "gesture",           # webcam-based; browser-see provider lands in v0.3.0
+    "music-studio",      # personal-tier ComfyUI gen — not in repo at all
 ]
+# Note: voice-assistant IS available in the demo from v0.2.7 onward — it uses
+# the browser-speech listen provider (Web Speech API in the visitor's browser)
+# + edge-tts for speaking back. No GPU, no whisper, no voice-api service needed.
 
 # --- Cloud consent ---
 # Pre-approved: visitors opt in by entering their own key (BYOK) at runtime.
@@ -63,6 +66,22 @@ consent = "always"
 # via [billing.budgets.openai] below.
 [capabilities.think]
 providers = ["ollama"]
+
+# --- Listen capability — browser-side STT via Web Speech API ---
+# No API key, no whisper service. The visitor's browser captures speech
+# (Chrome/Edge/Safari support it) and POSTs the transcript over the
+# realtime WebSocket. The mic is on the visitor's device, not the server.
+[capabilities.listen]
+providers = ["browser-speech"]
+
+[capabilities.listen.browser-speech]
+language = "en-US"
+timeout = 30
+
+# --- Speak capability — edge-tts (free Microsoft voices) ---
+# Pure-Python in-process TTS. No API key, no GPU.
+[capabilities.speak]
+providers = ["edge-tts"]
 
 [capabilities.think.ollama]
 host = "http://ollama:11434"

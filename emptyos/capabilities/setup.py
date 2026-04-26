@@ -113,6 +113,7 @@ def build_capabilities(config: Config, settings=None) -> CapabilityRegistry:
     # --- Listen (STT) — baseline cloud providers from config, plugins append local engines ---
     listen = ListenCapability()
     _register_openai_listen(listen, config)
+    _register_browser_listen(listen, kernel, config)
     registry.register("listen", listen)
 
     # --- Draw (image generation) — providers added by plugins ---
@@ -171,6 +172,24 @@ def _register_openai_listen(listen, config: Config):
         model=section.get("model", "whisper-1"),
         api_key_env=api_key_env,
         timeout=int(section.get("timeout", 60)),
+    ))
+
+
+def _register_browser_listen(listen, kernel, config: Config):
+    """Register the browser-side Web Speech API STT provider.
+
+    Free, no API key, no GPU. Captures via the visitor's browser. Available
+    only when at least one browser tab is connected to /ws — falls through
+    cleanly when not (e.g. CLI invocations, headless tests).
+    """
+    section = config.get_section("capabilities.listen.browser-speech") or {}
+    if section.get("enabled", True) is False:
+        return
+    from emptyos.capabilities.providers.browser import BrowserListenProvider
+    listen.add_provider(BrowserListenProvider(
+        kernel,
+        default_lang=section.get("language", "en-US"),
+        default_timeout=float(section.get("timeout", 30)),
     ))
 
 

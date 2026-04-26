@@ -23,6 +23,11 @@ class RealtimeManager:
         self.kernel = kernel
         self._clients: dict[WebSocket, set[str]] = {}  # ws -> subscribed event types
         self._unsub = None
+        # Browser-side capture: request_capture() sends a {capture_request} message
+        # over the WS, the browser captures via Web Speech API or getUserMedia and
+        # POSTs back a {capture_response, id, ...}. The Future for each in-flight
+        # request is keyed by id here so the response handler can resolve it.
+        self._pending_captures: dict[str, asyncio.Future] = {}
 
     async def start(self):
         """Subscribe to all kernel events for broadcasting."""
@@ -56,6 +61,12 @@ class RealtimeManager:
                     # Client can send: {"unsubscribe": true} to get all events
                     elif "unsubscribe" in msg:
                         self._clients[ws] = set()
+                    # Client responds to a capture_request with the captured data
+                    elif msg.get("type") == "capture_response":
+                        rid = msg.get("id")
+                        fut = self._pending_captures.get(rid)
+                        if fut and not fut.done():
+                            fut.set_result(msg)
                 except json.JSONDecodeError:
                     pass
         except WebSocketDisconnect:
@@ -103,3 +114,55 @@ class RealtimeManager:
     @property
     def client_count(self) -> int:
         return len(self._clients)
+
+    async def request_capture(
+        self, capability: str, mode: str = "speech",
+        timeout: float = 30.0, **kwargs,
+    ) -> dict:
+        """Ask a connected browser to capture something via its native APIs.
+
+        Sends {type: "capture_request", id, capability, mode, ...kwargs} over
+        the WebSocket and awaits the matching {capture_response} message.
+
+        Returns the response dict (typically {text: "..."} for listen,
+        {image: "data:image/png;base64,..."} for see). Raises RuntimeError
+        if no browser is connected, asyncio.TimeoutError if no response
+        within timeout seconds.
+        """
+        import uuid
+        if not self._clients:
+            raise RuntimeError(
+                "no browser connected — open the EmptyOS web UI in a browser tab"
+            )
+
+        request_id = uuid.uuid4().hex[:12]
+        loop = asyncio.get_running_loop()
+        future = loop.create_future()
+        self._pending_captures[request_id] = future
+
+        payload = json.dumps({
+            "type": "capture_request",
+            "id": request_id,
+            "capability": capability,
+            "mode": mode,
+            **kwargs,
+        })
+
+        # Send to all clients; first to respond wins. This handles the case
+        # where the user has multiple tabs open without forcing us to track
+        # which tab is "active". Browsers ignore captures targeting other
+        # capabilities so this is safe.
+        dead = []
+        for ws in list(self._clients.keys()):
+            try:
+                await ws.send_text(payload)
+            except Exception:
+                dead.append(ws)
+        for ws in dead:
+            self._clients.pop(ws, None)
+
+        try:
+            result = await asyncio.wait_for(future, timeout=timeout)
+            return result
+        finally:
+            self._pending_captures.pop(request_id, None)
