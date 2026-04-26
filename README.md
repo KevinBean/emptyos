@@ -35,9 +35,24 @@ That's it. Open `localhost:9000` and you have a working OS with task management,
 
 ### Try the Demo
 
-Want to see EmptyOS before installing? **[Live demo →](https://demo.emptyos.dev)** *(placeholder — see [Deployment](#deployment) below)*
+**[Live demo → demo.binbian.net](https://demo.binbian.net/)**
 
-The demo runs a curated sample vault with a small local LLM. Bring your own OpenAI key in the settings panel for full AI quality.
+Access token (paste into the sign-in field):
+
+```
+bLN9bRP-wMfBiaqsfI4OHuu3tGHtGsaeGsLk-8v71N8
+```
+
+The demo runs on a small VPS with a tiny local LLM (`qwen2.5:1.5b`) — fast enough to prove the system works, not enough for impressive output. Visitors who want gpt-4-class quality paste their own OpenAI key in **Settings → Demo → BYOK** (the key stays in browser storage, never touches the server).
+
+The demo vault is curated sample content (no personal data) and resets daily. Try:
+
+- **Capture / Tasks / Journal** — basic vault writing flows
+- **Aura voice-assistant** — talk to it via your browser's mic (Web Speech API → daemon → local LLM → reply via edge-tts)
+- **Search** — vault search with optional AI summarization
+- **Settings → Demo** — paste an OpenAI key for the full experience
+
+Voice/camera works because the visitor's browser does the capture — the server has no mic or camera attached. See [docs/DEPLOYMENT.md § Public demo](docs/DEPLOYMENT.md) for the full deployment recipe (Hetzner CX22 + Caddy + Cloudflare, ~€4.50/month).
 
 ### Add AI
 
