@@ -33,3 +33,13 @@ schema = [
 commands = [
     {slash = "/music", method = "list_songs"},
 ]
+
+[[contributes.tour.step]]
+id = "music-library.browse"
+group = "core"
+priority = 400
+route = "/music-library/"
+spotlight = ".ml-grid"
+title = "Music Library"
+body = "Browse vault songs as cards. The demo seeds 5 — Nick Drake, Caroline Shaw, Fela Kuti, Arvo Pärt, Chopin. Click any card for details. Click <strong>+ Write Lyrics</strong> in the corner to draft AI lyrics."
+requires = ["think"]

@@ -22,3 +22,13 @@ id = "voice-assistant-panel"
 method = "panel_assistant"
 renderer = "accent-card"
 priority = 80
+
+[[contributes.tour.step]]
+id = "voice-assistant.aura"
+group = "core"
+priority = 500
+route = "/voice-assistant/"
+spotlight = "#rec-button"
+title = "Talk to Aura"
+body = "Press <strong>REC</strong> and speak — Aura uses your browser's mic (Web Speech API), then routes the transcript through the local model (qwen2.5:1.5b) and reads the reply back via edge-tts. Or hit <strong>⌨</strong> to type. Try <em>list my tasks</em>."
+requires = ["think", "listen", "speak"]

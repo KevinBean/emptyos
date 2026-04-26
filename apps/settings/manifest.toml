@@ -19,3 +19,12 @@ prefix = "/settings"
 
 [provides.events]
 emits = ["settings:changed"]
+
+[[contributes.tour.step]]
+id = "settings.byok"
+group = "core"
+priority = 600
+route = "/settings/?tab=demo"
+spotlight = "#byok-openai"
+title = "Bring Your Own Key"
+body = "The local model is fast enough to prove things work, not enough for impressive output. Paste your own OpenAI key here — stored in your browser only, sent as a per-request header, never persisted server-side. Aura instantly switches to gpt-4o-mini-class quality."
