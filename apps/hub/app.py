@@ -166,22 +166,27 @@ class HubApp(BaseApp):
         }
 
     async def panel_launcher(self) -> list[dict] | None:
-        """Compact launcher chips — every loaded app, in alphabetical order.
+        """Grid launcher — every loaded app with name + description + link.
 
-        Hub itself and any app with no web prefix are skipped.
+        Hub itself and any app with no web prefix are skipped. Sorted
+        alphabetically by display name so the grid is stable across loads.
         """
-        chips: list[dict] = []
-        for app_id, app in sorted(self.kernel.apps.apps.items()):
+        cards: list[dict] = []
+        for app_id, app in self.kernel.apps.apps.items():
             if app_id == "hub":
                 continue
             prefix = getattr(app.manifest, "web_prefix", None)
             if not prefix:
                 continue
-            chips.append({
+            href = prefix + "/" if not prefix.endswith("/") else prefix
+            cards.append({
+                "id": app_id,
                 "title": app.manifest.name or app_id,
-                "href": prefix + "/" if not prefix.endswith("/") else prefix,
+                "href": href,
+                "description": (app.manifest.description or "").strip(),
             })
-        return chips or None
+        cards.sort(key=lambda c: (c["title"] or c["id"]).lower())
+        return cards or None
 
     # ── CLI ──
 

@@ -65,6 +65,20 @@
 .r-chip { padding: 6px 10px; background: var(--bg-card-hover); border: 1px solid var(--border); border-radius: 999px; font-size: 12px; text-decoration: none; color: var(--text); transition: background 0.12s; }
 .r-chip:hover { background: var(--accent-bg); }
 
+/* app-grid (used by hub-launcher) */
+.r-app-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 8px; }
+.r-app-card {
+    display: flex; flex-direction: column; gap: 4px;
+    padding: 12px 14px;
+    background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-md, 12px);
+    text-decoration: none; color: var(--text);
+    transition: border-color 0.12s, transform 0.12s;
+    min-height: 64px;
+}
+.r-app-card:hover { border-color: var(--accent); transform: translateY(-1px); }
+.r-app-card-name { font-size: 13px; font-weight: 600; line-height: 1.2; }
+.r-app-card-desc { font-size: 11px; color: var(--text-muted); line-height: 1.35; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+
 /* countdown-tile (grouped) */
 .r-countdowns { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px; margin-bottom: var(--hub-gap); }
 .r-countdown { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 12px; text-decoration: none; color: var(--text); }
@@ -250,6 +264,20 @@ var RENDERERS = {
     }).join('');
     var hdr = block.title ? '<div class="panel-title">' + esc(block.title) + '</div>' : '';
     return '<div class="panel">' + hdr + '<div class="r-list">' + rows + '</div></div>';
+  },
+
+  'app-grid': function(items, block){
+    var d = items[0].data;
+    if (!Array.isArray(d) || !d.length) return '';
+    var cards = d.map(function(c){
+      var desc = c.description ? '<div class="r-app-card-desc">' + esc((c.description || '').slice(0, 90)) + '</div>' : '';
+      return '<a class="r-app-card"' + hrefAttr(c.href) + '>' +
+        '<div class="r-app-card-name">' + esc(c.title || c.id) + '</div>' +
+        desc +
+      '</a>';
+    }).join('');
+    var hdr = block.title ? '<div class="panel-title">' + esc(block.title) + '</div>' : '';
+    return '<div class="panel">' + hdr + '<div class="r-app-grid">' + cards + '</div></div>';
   },
 
   'chips': function(items, block){

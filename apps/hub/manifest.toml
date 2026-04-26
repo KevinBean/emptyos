@@ -40,5 +40,5 @@ priority = 25
 id = "hub-launcher"
 title = "Apps"
 method = "panel_launcher"
-renderer = "chips"
-priority = 900
+renderer = "app-grid"
+priority = 35

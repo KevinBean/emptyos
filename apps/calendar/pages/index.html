@@ -1,28 +1,33 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <title>Calendar — EmptyOS</title>
-    <link rel="stylesheet" href="/static/theme.css">
-    <link rel="stylesheet" href="/static/eos-components.css">
-    <script src="/static/eos.js"></script>
-    <script src="/static/eos-components.js"></script>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Calendar — EmptyOS</title>
+<link rel="stylesheet" href="/static/theme.css">
+<link rel="stylesheet" href="/static/eos-components.css">
+<style>
+.cal-hero { padding:32px 0 16px; animation:fadeDown 0.4s ease }
+.cal-hero h1 { font-size:28px; font-weight:700; color:var(--text-heading); margin-bottom:4px }
+.cal-hero .desc { font-size:14px; color:var(--text-secondary) }
+.cal-list { margin-top:16px; display:flex; flex-direction:column; gap:8px; animation:cardIn 0.35s ease 0.1s both }
+.cal-empty { text-align:center; padding:40px 24px; color:var(--text-muted); font-size:14px }
+</style>
 </head>
 <body>
-<div class="eos-app-shell">
-    <header class="app-header">
-        <h1><a href="/hub/" class="back-link">←</a> Calendar</h1>
-    </header>
+<script src="/static/eos.js"></script>
+<script src="/static/eos-components.js"></script>
+<script>EOS.nav('calendar');</script>
 
-    <main class="app-content">
-        <div class="eos-hero">
-            <h2>Today's Agenda</h2>
-            <p class="muted">Aggregated from your tasks and project deadlines.</p>
-        </div>
+<div class="page">
+  <div class="cal-hero">
+    <h1>Calendar</h1>
+    <div class="desc">Today's agenda — aggregated from your tasks and project deadlines.</div>
+  </div>
 
-        <div id="agenda-list" class="entry-list">
-            <div class="muted" style="text-align:center;padding:1rem">Loading schedule…</div>
-        </div>
-    </main>
+  <div id="agenda-list" class="cal-list">
+    <div class="cal-empty">Loading schedule…</div>
+  </div>
 </div>
 
 <script>
@@ -38,11 +43,11 @@ async function loadAgenda() {
     try {
         agenda = await EOS.api('/calendar/api/today');
     } catch (e) {
-        list.innerHTML = '<div class="muted" style="text-align:center;padding:1rem">Failed to load.</div>';
+        list.innerHTML = '<div class="cal-empty">Failed to load.</div>';
         return;
     }
     if (!agenda || !agenda.length) {
-        list.innerHTML = '<div class="muted" style="text-align:center;padding:1rem">Your schedule is clear today.</div>';
+        list.innerHTML = '<div class="cal-empty">Your schedule is clear today.</div>';
         return;
     }
     list.innerHTML = agenda.map(function (item) {
