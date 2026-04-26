@@ -167,8 +167,10 @@ async function openDetail(filename){
     var d = s.detail || {};
     var coverHtml = s.cover ? '<img src="' + esc(s.cover) + '" alt="">' : '&#9835;';
     var audioHtml = '';
-    if (s.audio && Array.isArray(s.audio.files) && s.audio.files.length) {
-      var first = s.audio.files[0];
+    // server returns audio as flat list, not {files: [...]}
+    var audioList = Array.isArray(s.audio) ? s.audio : (s.audio && s.audio.files) || [];
+    if (audioList.length) {
+      var first = audioList[0];
       var encoded = first.path.split('/').map(encodeURIComponent).join('/');
       audioHtml = '<audio class="ml-audio" controls src="/music-library/api/stream/' + encoded + '"></audio>';
     }

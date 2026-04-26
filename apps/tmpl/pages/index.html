@@ -74,8 +74,8 @@ async function useTemplate() {
     if (!name || !selectedTemplate) return;
     const data = await EOS.post('/tmpl/api/use', {template: selectedTemplate, name});
     document.getElementById('use-result').innerHTML = data.ok
-        ? '<span style="color:#22c55e">Note created: ' + esc(data.path || name) + '</span>'
-        : '<span style="color:#ef4444">' + esc(data.error || 'Failed') + '</span>';
+        ? '<span style="color:var(--success)">Note created: ' + esc(data.path || name) + '</span>'
+        : '<span style="color:var(--danger)">' + esc(data.error || 'Failed') + '</span>';
 }
 
 function esc(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
