@@ -119,6 +119,36 @@ async def api_chatbot_qa_promote(self, request):
         return {"error": f"failed to write faqs.toml: {e}"}
     return {"ok": True, "id": qa_id, "written_to": written_to, "q": q}
 
+@web_route("POST", "/api/chatbot/sync-site/{site_id}")
+async def api_chatbot_sync_site(self, request):
+    """Push synced fields (model, persona, daily_cap_usd, starter_questions)
+    to the chatbot service's /admin/sites/{id}. Service rewrites sites.toml
+    and hot-reloads.
+
+    Called by the publish UI's saveSettings after a site profile save when
+    chatbot.enabled. Silent no-op if the site doesn't have chatbot enabled
+    or if admin_token isn't configured.
+    """
+    site_id = request.path_params["site_id"]
+    site = self._get_site(site_id)
+    if not site:
+        return {"error": f"site '{site_id}' not found"}
+    cb = site.get("chatbot") or {}
+    if not cb.get("enabled"):
+        return {"ok": True, "skipped": "chatbot disabled"}
+    payload = {
+        "model": cb.get("model") or None,
+        "persona": cb.get("persona") or "",
+        "daily_cap_usd": cb.get("daily_cap_usd"),
+        "starter_questions": cb.get("starter_questions") or [],
+    }
+    # Drop None so the service can keep current values for unset fields.
+    payload = {k: v for k, v in payload.items() if v is not None}
+    return await self._chatbot_admin_request(
+        "POST", f"/admin/sites/{site_id}", site=site, json_body=payload,
+    )
+
+
 @web_route("GET", "/api/chatbot/faqs/{site_id}")
 async def api_chatbot_faqs_list(self, request):
     """Read the site's faqs.toml from vault — used by the UI to show canon."""

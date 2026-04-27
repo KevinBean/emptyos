@@ -241,32 +241,33 @@ if(window.EOS&&EOS.registerActions){EOS.registerActions({},[],{description:"Publ
         <div class="sf-hint">Public URL of the standalone chatbot service. Same URL across all sites that share one service.</div>
       </div>
       <div class="sf-group">
-        <label class="sf-label">Model</label>
+        <label class="sf-label">Model <span style="color:var(--success);font-weight:400;font-size:11px">● synced</span></label>
         <select class="sf-input" id="sf-chatbot-model">
           <option value="gpt-5-nano">gpt-5-nano (cheapest, default)</option>
           <option value="gpt-5-mini">gpt-5-mini (better quality, ~5× cost)</option>
           <option value="gpt-5">gpt-5 (highest quality, ~25× cost)</option>
           <option value="gpt-4.1-mini">gpt-4.1-mini (legacy fallback)</option>
         </select>
-        <div class="sf-hint">Picks the LLM tier the chatbot service uses for this site. Service-side <code>sites.toml</code> overrides this if set there.</div>
+        <div class="sf-hint">Picks the LLM tier the chatbot service uses for this site.</div>
       </div>
       <div class="sf-group">
-        <label class="sf-label">Daily $ cap</label>
+        <label class="sf-label">Daily $ cap <span style="color:var(--success);font-weight:400;font-size:11px">● synced</span></label>
         <input class="sf-input" id="sf-chatbot-cap" type="number" step="0.10" min="0" placeholder="2.0">
         <div class="sf-hint">Hard ceiling per UTC day. When hit, the service returns 429 until midnight. With nano + low traffic, $0.30–1.00 is plenty.</div>
       </div>
       <div class="sf-group">
-        <label class="sf-label">Persona (optional)</label>
+        <label class="sf-label">Persona <span style="color:var(--success);font-weight:400;font-size:11px">● synced</span></label>
         <textarea class="sf-input" id="sf-chatbot-persona" rows="3" style="font-family:inherit" placeholder="You are a helpful guide to {site}. Keep answers concise..."></textarea>
         <div class="sf-hint">Extra system-prompt context appended at service side. Tone, scope, what to emphasize.</div>
       </div>
       <div class="sf-group">
-        <label class="sf-label">Starter questions (optional)</label>
+        <label class="sf-label">Starter questions <span style="color:var(--success);font-weight:400;font-size:11px">● synced</span></label>
         <input class="sf-input" id="sf-chatbot-starters" placeholder="What is this site? · How do I install? · Show me recent posts">
         <div class="sf-hint"><code>·</code>-separated. 3–4 short prompts shown as chips on first widget open.</div>
       </div>
-      <div class="sf-hint" style="padding:10px 12px;background:var(--bg-card);border:1px solid var(--border);border-radius:8px">
-        <strong>Heads up — service-side config still required.</strong> The chatbot service also needs a <code>[sites.<span id="sf-chatbot-id-echo">&lt;id&gt;</span>]</code> block in its <code>sites.toml</code> (allowed origins + corpus URL). Edit on the VPS the first time you enable a site; routine model/persona changes here don't need a service restart.
+      <div class="sf-hint" style="padding:10px 12px;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;line-height:1.5">
+        <strong style="color:var(--success)">● synced</strong> fields are pushed to the chatbot service when you Save (rewrites <code>sites.toml</code> on the VPS, hot-reloads).<br><br>
+        <strong>One-time SSH still needed</strong> to add the <code>[sites.<span id="sf-chatbot-id-echo">&lt;id&gt;</span>]</code> block to <code>sites.toml</code> with <code>allowed_origins</code> + <code>corpus_url</code>. Those two fields are file-only by design (security boundary).
       </div>
     </div>
 
@@ -973,9 +974,32 @@ async function saveSettings() {
       return;
     }
     closeSettings();
-    if (typeof EOS_UI !== 'undefined' && EOS_UI.toast) {
+
+    // If chatbot is enabled, push synced fields (model/persona/cap/starters)
+    // to the chatbot service. Silent best-effort — errors toast but don't
+    // block the save.
+    if (data.chatbot && data.chatbot.enabled) {
+      try {
+        var syncResp = await fetch('/publish/api/chatbot/sync-site/' + encodeURIComponent(activeSiteId), {
+          method: 'POST', headers: {'Content-Type':'application/json'}, body: '{}'
+        });
+        var syncResult = await syncResp.json();
+        if (syncResult && syncResult.error) {
+          if (EOS_UI && EOS_UI.toast) {
+            EOS_UI.toast('Saved locally. Service sync failed: ' + syncResult.error, false);
+          }
+        } else if (EOS_UI && EOS_UI.toast) {
+          EOS_UI.toast('Site settings saved + synced to chatbot service', true);
+        }
+      } catch (e) {
+        if (EOS_UI && EOS_UI.toast) {
+          EOS_UI.toast('Saved locally. Service sync failed: ' + e.message, false);
+        }
+      }
+    } else if (typeof EOS_UI !== 'undefined' && EOS_UI.toast) {
       EOS_UI.toast('Site settings saved', true);
     }
+
     init();
   } catch(e) {
     EOS_UI.toast('Failed to save: ' + e.message, false);

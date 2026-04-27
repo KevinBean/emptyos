@@ -1,4 +1,10 @@
-"""Load sites.toml — per-site config + defaults."""
+"""Load sites.toml — per-site config + defaults.
+
+Editable fields (mutable via /admin/sites/{id}):
+  - model, persona, daily_cap_usd, starter_questions
+File-only fields (require SSH + manual edit):
+  - name, allowed_origins, corpus_url
+"""
 
 from __future__ import annotations
 
@@ -10,6 +16,12 @@ try:
     import tomllib  # py3.11+
 except ImportError:
     import tomli as tomllib  # type: ignore
+
+
+# Fields that the publish app may overwrite via /admin/sites/{id}.
+# Keeping this small + explicit prevents the API from mutating security-
+# sensitive fields like allowed_origins or the corpus URL.
+SYNCED_FIELDS = {"model", "persona", "daily_cap_usd", "starter_questions"}
 
 
 @dataclass
@@ -79,3 +91,103 @@ def load_config(path: str | None = None) -> Config:
         )
 
     return Config(defaults=defaults, sites=sites)
+
+
+# ── Atomic sites.toml rewrite (used by /admin/sites/{id}) ────────────
+
+def _toml_escape_basic(s: str) -> str:
+    """Escape a string for inclusion in a TOML basic-string ("..."). Escapes
+    backslashes, double-quotes, and control chars."""
+    out = []
+    for ch in s:
+        if ch == "\\":
+            out.append("\\\\")
+        elif ch == '"':
+            out.append('\\"')
+        elif ch == "\n":
+            out.append("\\n")
+        elif ch == "\r":
+            out.append("\\r")
+        elif ch == "\t":
+            out.append("\\t")
+        elif ord(ch) < 0x20:
+            out.append(f"\\u{ord(ch):04x}")
+        else:
+            out.append(ch)
+    return '"' + "".join(out) + '"'
+
+
+def _toml_multiline(s: str) -> str:
+    """Render a multi-line string as a TOML triple-quoted basic string.
+    Escape backslashes + triple-quote sequences only."""
+    body = s.replace("\\", "\\\\").replace('"""', '\\"\\"\\"')
+    return f'"""\n{body}\n"""'
+
+
+def _render_string(s: str) -> str:
+    if "\n" in s or len(s) > 80:
+        return _toml_multiline(s)
+    return _toml_escape_basic(s)
+
+
+def _render_list(items: list) -> str:
+    if not items:
+        return "[]"
+    parts = [_toml_escape_basic(str(x)) for x in items]
+    return "[\n  " + ",\n  ".join(parts) + ",\n]"
+
+
+def render_config_toml(cfg: Config) -> str:
+    """Render Config back to TOML. Auto-managed format; loses comments.
+
+    Use only via /admin/sites/{id} — for hand-edited fields
+    (allowed_origins, corpus_url) the operator's last-saved file is the
+    source of truth and gets re-rendered here verbatim from the in-memory
+    Config (which was loaded from that file moments earlier).
+    """
+    d = cfg.defaults
+    lines = [
+        "# sites.toml — managed by the chatbot service.",
+        "# Editable via the publish app: model, persona, daily_cap_usd, starter_questions.",
+        "# File-only (must edit here on the VPS): allowed_origins, corpus_url, name.",
+        "",
+        "[defaults]",
+        f"daily_cap_usd = {d.daily_cap_usd}",
+        f"global_cap_usd = {d.global_cap_usd}",
+        f"model = {_toml_escape_basic(d.model)}",
+        f"max_output_tokens = {d.max_output_tokens}",
+        f"max_input_chars = {d.max_input_chars}",
+        f"rate_limit_per_hour = {d.rate_limit_per_hour}",
+        f"rate_limit_per_day = {d.rate_limit_per_day}",
+        f"corpus_ttl_seconds = {d.corpus_ttl_seconds}",
+        f"provider = {_toml_escape_basic(d.provider)}",
+        "",
+    ]
+    for site_id in sorted(cfg.sites):
+        s = cfg.sites[site_id]
+        lines.append(f"[sites.{site_id}]")
+        lines.append(f"name = {_toml_escape_basic(s.name)}")
+        lines.append(f"allowed_origins = {_render_list(s.allowed_origins)}")
+        lines.append(f"corpus_url = {_toml_escape_basic(s.corpus_url)}")
+        lines.append(f"daily_cap_usd = {s.daily_cap_usd}")
+        lines.append(f"model = {_toml_escape_basic(s.model)}")
+        if s.persona:
+            lines.append(f"persona = {_render_string(s.persona)}")
+        if s.starter_questions:
+            lines.append(f"starter_questions = {_render_list(s.starter_questions)}")
+        lines.append("")
+    return "\n".join(lines)
+
+
+def write_config_atomic(cfg: Config, path: str | None = None) -> Path:
+    """Write the Config to sites.toml atomically (tmp + rename).
+
+    Returns the path written. Caller is responsible for reloading the in-memory
+    Config (the writer doesn't replace the global CONFIG).
+    """
+    cfg_path = Path(path or os.environ.get("CHATBOT_SITES_PATH", "./sites.toml"))
+    body = render_config_toml(cfg)
+    tmp = cfg_path.with_suffix(cfg_path.suffix + ".tmp")
+    tmp.write_text(body, encoding="utf-8")
+    tmp.replace(cfg_path)   # atomic on POSIX, near-atomic on NTFS
+    return cfg_path

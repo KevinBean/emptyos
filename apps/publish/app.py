@@ -956,6 +956,7 @@ class PublishApp(BaseApp):
     api_chatbot_qa_update = _chatbot.api_chatbot_qa_update
     api_chatbot_qa_promote = _chatbot.api_chatbot_qa_promote
     api_chatbot_faqs_list = _chatbot.api_chatbot_faqs_list
+    api_chatbot_sync_site = _chatbot.api_chatbot_sync_site
     _faqs_path = _chatbot._faqs_path
     _read_faqs = _chatbot._read_faqs
     _append_faq = _chatbot._append_faq

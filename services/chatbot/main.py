@@ -27,7 +27,7 @@ from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
-from config import Config, load_config
+from config import Config, SYNCED_FIELDS, load_config, write_config_atomic
 from corpus import CorpusCache, match_curated, match_faq, stuff_corpus
 from ledger import Ledger, hash_ip
 from providers import get_provider
@@ -240,6 +240,78 @@ async def admin_refresh(site_id: str, x_admin_token: str = Header(default="")) -
         raise HTTPException(404, "unknown site")
     CORPUS.invalidate(site_id)
     return {"ok": True, "site": site_id}
+
+
+# ── /admin/sites/{id} — sync mutable fields from publish app ────────
+
+class SiteSyncBody(BaseModel):
+    """Mutable per-site fields. All optional — only fields present in the
+    request body are applied; missing fields keep their current value."""
+    model: str | None = None
+    persona: str | None = None
+    daily_cap_usd: float | None = None
+    starter_questions: list[str] | None = None
+
+
+@app.post("/admin/sites/{site_id}")
+async def admin_site_sync(
+    site_id: str,
+    body: SiteSyncBody,
+    x_admin_token: str = Header(default=""),
+) -> dict:
+    """Update mutable fields on an existing site, persist to sites.toml,
+    hot-reload in-memory CONFIG. File-only fields (allowed_origins,
+    corpus_url, name) are NOT touched — those require manual SSH edit.
+    The site must already exist (this is sync, not create)."""
+    _require_admin(x_admin_token)
+    if not CONFIG:
+        raise HTTPException(503, "config not loaded yet")
+    site = CONFIG.sites.get(site_id)
+    if not site:
+        raise HTTPException(
+            404,
+            f"unknown site '{site_id}' — add a [sites.{site_id}] block to "
+            "sites.toml on the VPS first (with allowed_origins + corpus_url)",
+        )
+
+    payload = body.model_dump(exclude_none=True)
+    invalid = set(payload) - SYNCED_FIELDS
+    if invalid:
+        raise HTTPException(400, f"non-syncable fields rejected: {sorted(invalid)}")
+
+    # Validate and apply
+    if "model" in payload:
+        m = str(payload["model"]).strip()
+        if not m:
+            raise HTTPException(400, "model must be non-empty")
+        site.model = m
+    if "persona" in payload:
+        site.persona = str(payload["persona"])
+    if "daily_cap_usd" in payload:
+        cap = float(payload["daily_cap_usd"])
+        if cap < 0 or cap > 1000:
+            raise HTTPException(400, "daily_cap_usd must be 0..1000")
+        site.daily_cap_usd = cap
+    if "starter_questions" in payload:
+        sq = payload["starter_questions"]
+        if not isinstance(sq, list) or not all(isinstance(x, str) for x in sq):
+            raise HTTPException(400, "starter_questions must be list[str]")
+        site.starter_questions = [s.strip() for s in sq if s.strip()]
+
+    # Persist + invalidate corpus cache so any persona-driven prompt change
+    # takes effect on the next request without restart.
+    try:
+        path = await asyncio.to_thread(write_config_atomic, CONFIG)
+    except Exception as e:
+        log.exception("failed to write sites.toml")
+        raise HTTPException(500, f"failed to persist: {e}")
+    log.info("synced site=%s fields=%s wrote=%s", site_id, sorted(payload), path)
+    return {
+        "ok": True,
+        "site": site_id,
+        "applied": sorted(payload),
+        "wrote": str(path),
+    }
 
 
 # ── Q&A admin endpoints (curate / reject / edit / promote) ─────────
