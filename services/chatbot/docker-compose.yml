@@ -8,7 +8,11 @@ services:
     env_file: .env
     volumes:
       - chatbot-data:/data
-      - ./sites.toml:/app/sites.toml:ro
+      # Bind-mount writable so the publish app can sync per-site config via
+      # /admin/sites/{id} (rewrites this file). Atomic-rename fails on a
+      # single-file bind mount; the writer falls back to direct overwrite —
+      # see services/chatbot/config.py:write_config_atomic.
+      - ./sites.toml:/app/sites.toml
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health').read()"]
       interval: 30s

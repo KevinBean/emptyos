@@ -180,14 +180,37 @@ def render_config_toml(cfg: Config) -> str:
 
 
 def write_config_atomic(cfg: Config, path: str | None = None) -> Path:
-    """Write the Config to sites.toml atomically (tmp + rename).
+    """Write the Config to sites.toml atomically (tmp + rename) when possible,
+    fall back to direct overwrite when not (Docker single-file bind mount).
+
+    The deployment uses ``./sites.toml:/app/sites.toml`` in compose, which means
+    ``/app/sites.toml`` is itself a mount point inside the container — Linux
+    rejects rename-onto-mount-point with ``EBUSY``. In that case we just write
+    the contents in-place. Loses atomicity (a crash mid-write could leave a
+    truncated file), but the alternative is the API doesn't work at all.
 
     Returns the path written. Caller is responsible for reloading the in-memory
     Config (the writer doesn't replace the global CONFIG).
     """
     cfg_path = Path(path or os.environ.get("CHATBOT_SITES_PATH", "./sites.toml"))
     body = render_config_toml(cfg)
+
+    # Try atomic rename first — works on a normal filesystem, fails on Docker
+    # single-file bind mount with EBUSY.
     tmp = cfg_path.with_suffix(cfg_path.suffix + ".tmp")
-    tmp.write_text(body, encoding="utf-8")
-    tmp.replace(cfg_path)   # atomic on POSIX, near-atomic on NTFS
+    try:
+        tmp.write_text(body, encoding="utf-8")
+        tmp.replace(cfg_path)
+    except OSError as e:
+        # Clean up tmp regardless of which step failed
+        try:
+            tmp.unlink()
+        except FileNotFoundError:
+            pass
+        # Bind-mounted single file: EBUSY (rename) or EROFS (read-only mount).
+        # Fall back to direct overwrite.
+        if e.errno in (16, 30):  # EBUSY, EROFS
+            cfg_path.write_text(body, encoding="utf-8")
+        else:
+            raise
     return cfg_path
