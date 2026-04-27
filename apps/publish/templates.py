@@ -319,6 +319,27 @@ audio {{ width: 100%; margin: 12px 0; border-radius: var(--radius); }}
 .landing-hero h1 {{ font-size: 2.6rem; font-weight: 700; color: var(--text-heading); margin-bottom: 14px; letter-spacing: -0.03em; line-height: 1.15; }}
 .landing-hero .tagline {{ font-size: 1.1rem; color: var(--text-secondary); margin-bottom: 32px; max-width: 560px; margin-left: auto; margin-right: auto; line-height: 1.7; }}
 .landing-cta {{ display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }}
+.hero-note {{ max-width: 560px; margin: 28px auto 0; }}
+.hero-note blockquote {{
+  margin: 0; padding: 14px 18px; border-left: 3px solid var(--accent);
+  background: var(--bg-elev); border-radius: var(--radius);
+  color: var(--text-secondary); font-size: 0.95rem; line-height: 1.6; text-align: left;
+}}
+.hero-note blockquote p {{ margin: 0; }}
+.hero-note blockquote p + p {{ margin-top: 8px; }}
+.gallery-section {{ margin: 64px auto 0; max-width: 1100px; }}
+.gallery-section .section-heading {{ text-align: center; font-size: 1.4rem; font-weight: 600; color: var(--text-heading); margin-bottom: 24px; }}
+.gallery-grid {{ display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); }}
+.gallery-tile {{ margin: 0; border-radius: var(--radius); overflow: hidden; background: var(--bg-elev); border: 1px solid var(--border); transition: transform 0.18s, box-shadow 0.2s; }}
+.gallery-tile:hover {{ transform: translateY(-2px); box-shadow: 0 6px 24px color-mix(in srgb, var(--text) 12%, transparent); }}
+.gallery-tile a {{ display: block; line-height: 0; }}
+.gallery-tile img {{ width: 100%; height: auto; display: block; }}
+.gallery-tile figcaption {{ padding: 10px 14px; font-size: 0.88rem; color: var(--text-secondary); text-align: center; line-height: 1.4; }}
+.metric-strip {{ display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); max-width: 880px; margin: 40px auto 0; }}
+.metric-tile {{ padding: 18px 16px; border-radius: var(--radius); background: var(--bg-elev); border: 1px solid var(--border); text-align: center; }}
+.metric-value {{ font-size: 1.8rem; font-weight: 700; color: var(--text-heading); line-height: 1.1; letter-spacing: -0.02em; }}
+.metric-label {{ font-size: 0.82rem; color: var(--text-secondary); margin-top: 6px; text-transform: uppercase; letter-spacing: 0.06em; }}
+.feature-card .feature-icon {{ font-size: 1.8rem; line-height: 1; margin-bottom: 12px; }}
 .landing-cta a {{
   display: inline-block; padding: 12px 28px; border-radius: var(--radius);
   font-weight: 600; font-size: 0.95rem; text-decoration: none;
@@ -502,7 +523,12 @@ LANDING_CONTENT = """<div class="landing-hero">
   <h1>{title}</h1>
   <div class="tagline">{tagline}</div>
   <div class="landing-cta">{cta_html}</div>
+  {hero_note_html}
 </div>
+
+{metrics_html}
+
+{gallery_html}
 
 <div class="feature-grid">
 {feature_cards}
@@ -512,6 +538,7 @@ LANDING_CONTENT = """<div class="landing-hero">
 
 
 FEATURE_CARD = """<div class="feature-card">
+  {icon_html}
   <h3>{heading}</h3>
   <div class="fc-body">%%BODY%%</div>
 </div>"""

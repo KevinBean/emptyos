@@ -121,6 +121,7 @@ if(window.EOS&&EOS.registerActions){EOS.registerActions({},[],{description:"Publ
     <a class="btn btn-deploy" id="btn-visit" href="#" target="_blank" style="display:none;background:var(--accent);text-decoration:none;color: var(--accent-ink)">Visit Site &#8599;</a>
     <button class="btn-settings" onclick="openSettings()">&#9881; Site</button>
     <button class="btn-settings" onclick="openAppSettings()">&#9881; App</button>
+    <button class="btn-settings" id="btn-chatbot-qa" onclick="openChatbotQA()" style="display:none">&#128172; Chatbot Q&amp;A</button>
     <a href="/publish/pages/guide.html" style="font-size:12px;color:var(--text-muted);align-self:center">Format Guide</a>
     <span class="info" id="toolbar-info"></span>
   </div>
@@ -301,6 +302,11 @@ async function init() {
 
     // Show visit button if site has been deployed
     updateVisitButton();
+
+    // Show Chatbot Q&A button only when chatbot is enabled for this site.
+    var activeSite = allSites.find(function(s) { return s.id === activeSiteId; });
+    var cbEnabled = !!(activeSite && activeSite.chatbot && activeSite.chatbot.enabled);
+    document.getElementById('btn-chatbot-qa').style.display = cbEnabled ? '' : 'none';
 
     renderPosts();
   } catch(e) {
@@ -924,6 +930,175 @@ document.addEventListener('keydown', function(e) {
 // enough to ship it." The binding only applies while on /publish/.
 if (EOS.handsFree) {
     EOS.handsFree.registerGesture('ILoveYou', function() { doBuild(); }, 'Build site');
+}
+
+// ── Chatbot Q&A modal ──────────────────────────────────────────────
+//
+// Shown when site.chatbot.enabled. Three sections (pending / curated / FAQ)
+// proxied through publish app handlers — see apps/publish/app.py
+// `api_chatbot_qa_*`. Service-side admin auth handled there; this UI just
+// fetches + renders + dispatches actions.
+
+var _qaModal = null;
+var _qaState = { pending: [], curated: [], faqs: [], loading: false };
+
+async function openChatbotQA() {
+  if (_qaModal) { _qaModal.close(); _qaModal = null; }
+  _qaModal = EOS_UI.modal({
+    title: 'Chatbot Q&A — ' + esc(activeSiteId),
+    body: '<div id="qa-modal-body"><div class="eos-empty-state">Loading…</div></div>',
+    width: '720px',
+  });
+  await reloadChatbotQA();
+}
+
+async function reloadChatbotQA() {
+  _qaState.loading = true;
+  renderQAModal();
+  try {
+    var res = await Promise.all([
+      EOS.get('/publish/api/chatbot/qa-log/' + encodeURIComponent(activeSiteId) + '?status=pending'),
+      EOS.get('/publish/api/chatbot/qa-log/' + encodeURIComponent(activeSiteId) + '?status=curated'),
+      EOS.get('/publish/api/chatbot/faqs/' + encodeURIComponent(activeSiteId)),
+    ]);
+    _qaState.pending = (res[0] && res[0].rows) || [];
+    _qaState.curated = (res[1] && res[1].rows) || [];
+    _qaState.faqs = (res[2] && res[2].faqs) || [];
+    _qaState.faqsPath = (res[2] && res[2].path) || '';
+    _qaState.error = (res[0] && res[0].error) || (res[1] && res[1].error) || (res[2] && res[2].error) || '';
+  } catch (e) {
+    _qaState.error = 'Network error: ' + (e && e.message);
+  }
+  _qaState.loading = false;
+  renderQAModal();
+}
+
+function renderQAModal() {
+  var el = document.getElementById('qa-modal-body');
+  if (!el) return;
+  if (_qaState.loading) {
+    el.innerHTML = '<div class="eos-empty-state">Loading…</div>';
+    return;
+  }
+  if (_qaState.error) {
+    el.innerHTML = '<div class="eos-error-state"><strong>Error:</strong> ' + esc(_qaState.error) + '</div>';
+    return;
+  }
+  var html = '';
+  html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">';
+  html += '<div style="font-size:12px;color:var(--text-muted)">Manage what the site chatbot serves before going to the LLM.</div>';
+  html += '<button class="pi-btn" onclick="reloadChatbotQA()" title="Refresh">&#8635; Refresh</button>';
+  html += '</div>';
+
+  html += renderQASection('pending', 'Pending', _qaState.pending,
+    'Visitor questions answered by the LLM. Approve good ones to cache them, reject bad ones.');
+  html += renderQASection('curated', 'Curated (serving)', _qaState.curated,
+    'These reply free + instant when visitors ask similar questions.');
+  html += renderFAQSection(_qaState.faqs, _qaState.faqsPath);
+
+  el.innerHTML = html;
+}
+
+function renderQASection(key, label, rows, hint) {
+  var html = '<details ' + (rows.length ? 'open' : '') + ' style="margin-bottom:14px;border:1px solid var(--border);border-radius:8px">';
+  html += '<summary style="padding:10px 12px;cursor:pointer;font-weight:600;font-size:13px">'
+       + esc(label) + ' <span style="color:var(--text-muted);font-weight:400">('
+       + rows.length + ')</span></summary>';
+  html += '<div style="padding:8px 12px 12px"><div style="font-size:11px;color:var(--text-muted);margin-bottom:8px">'
+       + esc(hint) + '</div>';
+  if (!rows.length) {
+    html += '<div class="eos-empty-state" style="padding:14px"><p class="eos-empty-state-message">Nothing here yet</p></div>';
+  } else {
+    rows.forEach(function(r) {
+      html += renderQARow(r, key);
+    });
+  }
+  html += '</div></details>';
+  return html;
+}
+
+function renderQARow(r, section) {
+  var ts = r.ts ? timeAgo(r.ts) : '';
+  var srcChips = '';
+  (r.sources || []).forEach(function(s) {
+    var lbl = (s.title || s.id) + (s.section ? ' → ' + s.section : '');
+    srcChips += '<span class="eos-badge" style="margin-right:4px;font-size:10px">📄 ' + esc(lbl) + '</span>';
+  });
+  var actions = '';
+  if (section === 'pending') {
+    actions += '<button class="pi-btn" onclick="qaAction(' + r.id + ',\'curate\')">Approve</button>';
+    actions += '<button class="pi-btn" onclick="qaEdit(' + r.id + ')">Edit</button>';
+    actions += '<button class="pi-btn" onclick="qaAction(' + r.id + ',\'reject\')">Reject</button>';
+    actions += '<button class="pi-btn" onclick="qaPromote(' + r.id + ')" title="Append to faqs.toml">Promote → FAQ</button>';
+  } else if (section === 'curated') {
+    actions += '<button class="pi-btn" onclick="qaAction(' + r.id + ',\'uncurate\')">Un-cache</button>';
+    actions += '<button class="pi-btn" onclick="qaEdit(' + r.id + ')">Edit</button>';
+    actions += '<button class="pi-btn" onclick="qaPromote(' + r.id + ')">Promote → FAQ</button>';
+  }
+  return '<div style="border-top:1px solid var(--border);padding:10px 0">'
+    + '<div style="font-size:13px;font-weight:500;margin-bottom:4px">' + esc(r.query) + '</div>'
+    + '<div style="font-size:12px;color:var(--text-secondary);margin-bottom:6px;white-space:pre-wrap">' + esc(r.reply) + '</div>'
+    + '<div style="margin-bottom:8px">' + srcChips + '</div>'
+    + '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px">'
+      + '<span style="font-size:10px;color:var(--text-muted)">' + esc(ts) + '</span>'
+      + '<div style="display:flex;gap:4px;flex-wrap:wrap">' + actions + '</div>'
+    + '</div>'
+  + '</div>';
+}
+
+function renderFAQSection(faqs, path) {
+  var html = '<details style="margin-bottom:14px;border:1px solid var(--border);border-radius:8px">';
+  html += '<summary style="padding:10px 12px;cursor:pointer;font-weight:600;font-size:13px">'
+       + 'FAQs (canon) <span style="color:var(--text-muted);font-weight:400">(' + faqs.length + ')</span></summary>';
+  html += '<div style="padding:8px 12px 12px">';
+  html += '<div style="font-size:11px;color:var(--text-muted);margin-bottom:8px">Hand-written canon committed in vault. Edit the file directly: <code>' + esc(path || 'faqs.toml') + '</code></div>';
+  if (!faqs.length) {
+    html += '<div class="eos-empty-state" style="padding:14px"><p class="eos-empty-state-message">No FAQs yet — promote a curated reply to seed this.</p></div>';
+  } else {
+    faqs.forEach(function(f) {
+      html += '<div style="border-top:1px solid var(--border);padding:8px 0">'
+           + '<div style="font-size:12px;font-weight:500">' + esc(f.q) + '</div>'
+           + '<div style="font-size:12px;color:var(--text-secondary);white-space:pre-wrap">' + esc(f.a) + '</div>'
+           + '</div>';
+    });
+  }
+  html += '</div></details>';
+  return html;
+}
+
+async function qaAction(qaId, action) {
+  var url = '/publish/api/chatbot/qa-log/' + encodeURIComponent(activeSiteId) + '/' + qaId;
+  var res = await EOS.post(url, { action: action });
+  if (res && res.error) { EOS.toast(res.error, 'error'); return; }
+  EOS.toast(action + 'd', 'success');
+  reloadChatbotQA();
+}
+
+async function qaEdit(qaId) {
+  var row = (_qaState.pending.concat(_qaState.curated)).find(function(r) { return r.id === qaId; });
+  if (!row) return;
+  var current = row.reply || '';
+  EOS_UI.formModal({
+    title: 'Edit reply',
+    fields: [{ name: 'reply', label: 'Reply', type: 'textarea', value: current, required: true }],
+    onSubmit: async function(values) {
+      var url = '/publish/api/chatbot/qa-log/' + encodeURIComponent(activeSiteId) + '/' + qaId;
+      var res = await EOS.post(url, { action: 'edit', reply: values.reply });
+      if (res && res.error) { EOS.toast(res.error, 'error'); return false; }
+      EOS.toast('Saved', 'success');
+      reloadChatbotQA();
+    },
+  });
+}
+
+async function qaPromote(qaId) {
+  var ok = await EOS_UI.confirm('Promote to FAQ', 'Append this Q&A to faqs.toml in the vault?');
+  if (!ok) return;
+  var url = '/publish/api/chatbot/qa-log/' + encodeURIComponent(activeSiteId) + '/' + qaId + '/promote';
+  var res = await EOS.post(url, {});
+  if (res && res.error) { EOS.toast(res.error, 'error'); return; }
+  EOS.toast('Added to FAQs — rebuild to ship', 'success');
+  reloadChatbotQA();
 }
 
 init();

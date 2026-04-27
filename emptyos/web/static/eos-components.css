@@ -448,7 +448,7 @@ blockquote { border-left:3px solid var(--accent); padding:4px 12px; margin:8px 0
 .theme-eos .eos-entry:hover { background:rgba(108,92,231,0.03) }
 
 /* ===== Settings slide-out (shared) ===== */
-.eos-settings-panel { display:none; position:fixed; top:0; right:0; bottom:0; width:min(420px,92vw); background:var(--bg); border-left:1px solid var(--border); z-index:200; overflow-y:auto; box-shadow:-8px 0 24px rgba(0,0,0,0.12); }
+.eos-settings-panel { display:none; position:fixed; top:0; right:0; bottom:0; width:min(420px,92vw); background:var(--bg); border-left:1px solid var(--border); z-index:200; overflow-y:auto; box-shadow:-8px 0 24px rgba(0,0,0,0.12); padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px); }
 .eos-settings-panel.open { display:block; animation:eosSettingsSlideIn 0.22s ease; }
 @keyframes eosSettingsSlideIn { from { transform:translateX(100%); } to { transform:translateX(0); } }
 .eos-settings-panel .sp-head { position:sticky; top:0; background:var(--bg); padding:16px 20px; border-bottom:1px solid var(--border); display:flex; justify-content:space-between; align-items:center; z-index:1; }
@@ -638,7 +638,7 @@ body.eos-think-offline { scroll-padding-top: 40px; }
 .eos-tag-cloud-item.active { color:var(--accent); font-weight:600; }
 
 /* --- Scroll Nav --- */
-.eos-scroll-nav { position:fixed; top:0; left:0; right:0; z-index:100; display:flex; align-items:center; justify-content:space-between; padding:0 24px; height:52px; background:rgba(26,29,35,0.85); backdrop-filter:blur(12px); border-bottom:1px solid var(--border, rgba(255,255,255,0.06)); transition:background 0.3s; }
+.eos-scroll-nav { position:fixed; top:0; left:0; right:0; z-index:100; display:flex; align-items:center; justify-content:space-between; padding:env(safe-area-inset-top,0px) calc(24px + env(safe-area-inset-right,0px)) 0 calc(24px + env(safe-area-inset-left,0px)); height:calc(52px + env(safe-area-inset-top,0px)); background:rgba(26,29,35,0.85); backdrop-filter:blur(12px); -webkit-backdrop-filter:blur(12px); border-bottom:1px solid var(--border, rgba(255,255,255,0.06)); transition:background 0.3s; }
 .eos-scroll-nav-logo { font-weight:700; font-size:18px; color:var(--text-heading); letter-spacing:0.05em; font-family:var(--mono, monospace); }
 .eos-scroll-nav-links { display:flex; gap:24px; }
 .eos-scroll-nav-links a { font-size:13px; color:var(--text-muted); text-decoration:none; text-transform:uppercase; letter-spacing:1px; transition:color 0.2s; font-weight:500; }

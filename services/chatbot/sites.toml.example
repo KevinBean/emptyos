@@ -1,0 +1,53 @@
+# Per-site config for the EmptyOS chatbot service.
+# Copy to sites.toml and edit for your deployment.
+#
+# Each [sites.<id>] block declares one site the service answers for. The site_id
+# in the chat request must match a key here, and the request's Origin header
+# must be in allowed_origins, or the request is rejected.
+
+[defaults]
+# Daily $ cap applied per site unless overridden below.
+daily_cap_usd = 2.0
+# Global daily $ cap across all sites (last-line defense).
+global_cap_usd = 10.0
+# Default model when a site doesn't override.
+model = "gpt-4.1-mini"
+# Hard cap on output tokens per turn — keeps replies short and bounded.
+max_output_tokens = 300
+# Hard cap on input message length (chars). Reject anything larger.
+max_input_chars = 4000
+# Per-IP rate limit windows.
+rate_limit_per_hour = 20
+rate_limit_per_day = 60
+# Corpus cache TTL in seconds.
+corpus_ttl_seconds = 3600
+
+# ─── EmptyOS product site ───
+[sites.eos]
+name = "EmptyOS"
+allowed_origins = ["https://eos.binbian.net"]
+corpus_url = "https://eos.binbian.net/corpus.json"
+daily_cap_usd = 2.0
+model = "gpt-4.1-mini"
+persona = """
+You are a knowledgeable guide to EmptyOS, a mind companion that helps people
+think and create. You answer based on the site's published content. You're
+warm, concise, and direct — not salesy. Use plain language."""
+
+# Optional: starter questions shown as chips on first widget open.
+# (The widget reads these from the site's chatbot config in publish app, but
+# the service can also expose them via /sites/<id>/meta.)
+starter_questions = [
+    "What is EmptyOS?",
+    "How does it differ from a normal note app?",
+    "Can I run it locally?",
+]
+
+# ─── Example: portfolio site ───
+# [sites.portfolio]
+# name = "Kevin's Portfolio"
+# allowed_origins = ["https://kevin.binbian.net"]
+# corpus_url = "https://kevin.binbian.net/corpus.json"
+# daily_cap_usd = 1.0
+# model = "gpt-4.1-mini"
+# persona = "You are a recruiter-facing guide to Kevin's portfolio..."

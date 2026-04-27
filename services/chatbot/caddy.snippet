@@ -1,0 +1,32 @@
+# Caddy vhost block for the chatbot service.
+# Drop into /etc/caddy/sites/chatbot.caddy (or import from main Caddyfile)
+# and reload Caddy: `sudo systemctl reload caddy`.
+#
+# CORS is intentionally permissive at the proxy layer (`*` in upstream → service
+# enforces actual Origin allowlist via sites.toml allowed_origins). The service's
+# Origin lock is the security boundary; Caddy just makes the headers visible.
+
+chat.binbian.net {
+    reverse_proxy 127.0.0.1:9100
+    encode gzip
+
+    # Streaming: keep SSE responses unbuffered.
+    @sse path /chat/stream
+    handle @sse {
+        reverse_proxy 127.0.0.1:9100 {
+            flush_interval -1
+        }
+    }
+
+    # CORS preflight handler — service does the real Origin check.
+    @options method OPTIONS
+    handle @options {
+        header Access-Control-Allow-Origin "*"
+        header Access-Control-Allow-Methods "POST, GET, OPTIONS"
+        header Access-Control-Allow-Headers "Content-Type, X-Admin-Token"
+        header Access-Control-Max-Age "86400"
+        respond "" 204
+    }
+    header Access-Control-Allow-Origin "*"
+    header Access-Control-Allow-Headers "Content-Type, X-Admin-Token"
+}

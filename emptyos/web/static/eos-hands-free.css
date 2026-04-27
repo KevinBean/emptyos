@@ -2,7 +2,7 @@
 
 /* Chrome (padding, radius, shadow, hover) inherited from .eos-fab-pill.
    Only positioning + state-machine styles live here. */
-.eos-hf-chip { position: fixed; right: 18px; bottom: 18px; z-index: 9980; }
+.eos-hf-chip { position: fixed; right: calc(18px + env(safe-area-inset-right,0px)); bottom: calc(18px + env(safe-area-inset-bottom,0px)); z-index: 9980; }
 .eos-hf-chip-icon { font-size: 16px; line-height: 1; }
 .eos-hf-chip-label { white-space: nowrap; font-family: var(--font-mono, var(--mono, monospace)); font-size: 12px; letter-spacing: 0.02em; }
 
@@ -28,8 +28,8 @@
 /* mini preview */
 .eos-hf-preview {
     position: fixed;
-    right: 18px;
-    bottom: 70px;
+    right: calc(18px + env(safe-area-inset-right,0px));
+    bottom: calc(70px + env(safe-area-inset-bottom,0px));
     z-index: 9979;
     width: 240px;
     height: 135px;
@@ -55,8 +55,8 @@
 /* confirm card */
 .eos-hf-confirm {
     position: fixed;
-    right: 18px;
-    bottom: 218px;
+    right: calc(18px + env(safe-area-inset-right,0px));
+    bottom: calc(218px + env(safe-area-inset-bottom,0px));
     z-index: 9981;
     width: 360px;
     background: var(--bg-card);
@@ -117,8 +117,8 @@
 /* cheat panel — visible whenever hands-free mode is on */
 .eos-hf-cheat {
     position: fixed;
-    right: 18px;
-    bottom: 218px;
+    right: calc(18px + env(safe-area-inset-right,0px));
+    bottom: calc(218px + env(safe-area-inset-bottom,0px));
     z-index: 9978;
     width: 260px;
     background: var(--bg-card);
@@ -186,12 +186,12 @@
 
 /* Shift cheat panel up when confirm card is showing so they don't overlap. */
 .eos-hf-confirm:not([style*="display: none"]) ~ .eos-hf-cheat {
-    bottom: 470px;
+    bottom: calc(470px + env(safe-area-inset-bottom,0px));
 }
 
 @media (max-width: 600px) {
-    .eos-hf-preview { width: 160px; height: 90px; bottom: 66px; right: 12px; }
-    .eos-hf-confirm { width: calc(100vw - 24px); right: 12px; bottom: 164px; }
-    .eos-hf-chip { right: 12px; bottom: 12px; }
-    .eos-hf-cheat { width: calc(100vw - 24px); right: 12px; bottom: 168px; }
+    .eos-hf-preview { width: 160px; height: 90px; bottom: calc(66px + env(safe-area-inset-bottom,0px)); right: calc(12px + env(safe-area-inset-right,0px)); }
+    .eos-hf-confirm { width: calc(100vw - 24px - env(safe-area-inset-left,0px) - env(safe-area-inset-right,0px)); right: calc(12px + env(safe-area-inset-right,0px)); bottom: calc(164px + env(safe-area-inset-bottom,0px)); }
+    .eos-hf-chip { right: calc(12px + env(safe-area-inset-right,0px)); bottom: calc(12px + env(safe-area-inset-bottom,0px)); }
+    .eos-hf-cheat { width: calc(100vw - 24px - env(safe-area-inset-left,0px) - env(safe-area-inset-right,0px)); right: calc(12px + env(safe-area-inset-right,0px)); bottom: calc(168px + env(safe-area-inset-bottom,0px)); }
 }

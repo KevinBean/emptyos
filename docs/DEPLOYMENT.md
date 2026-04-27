@@ -1,18 +1,121 @@
 # Deployment Guide
 
-Three deployment shapes, same codebase. Pick the one that matches your need.
+EmptyOS deployments fall into **5 lanes**. Pick the one that matches your runtime + audience; compose multiple lanes for complex products.
 
-| Shape | Who reaches it | Reference |
+## Decision rules
+
+Two one-line discriminators that resolve 90% of "which lane is this?" questions:
+
+- **Service vs Daemon:** A *service* has no vault. A *daemon* has a vault. The chatbot service fetches `corpus.json` from a published static site — it's a service. The demo at `demo.binbian.net` mounts a vault — it's a daemon.
+- **Bundled vs SaaS:** A *bundled product* has one tenant per deploy with configuration baked into the image. A *SaaS deployment* serves many tenants per deploy with runtime-dynamic per-tenant config.
+
+## The 5 lanes
+
+| # | Lane | Runtime | Audience | Mechanism | Status |
+|---|---|---|---|---|---|
+| 1 | **Service** | HTTP container behind Caddy, no vault | Power users, infra | `services/<name>/` + `deploy-service.sh` | ✓ Built |
+| 2 | **Daemon** (single-tenant) | Full EmptyOS instance, vault mounted | One owner | `docker-compose.{yml,demo.yml}` + `redeploy-demo.sh` | ✓ Built |
+| 3 | **Static site** | Pre-rendered, no runtime | Public readers | `eos publish deploy` (git push or Firebase) | ✓ Built |
+| 4 | **Bundled product** | Daemon preconfigured + branded | Single downstream customer | `profiles/<name>/` + `deploy-profile.sh` | 📐 Designed, not built |
+| 5 | **Multi-tenant SaaS** | Daemon serving many isolated tenants | Many users on one deploy | TBD — design seam preserved | 📐 Future |
+
+## Variants (compose with lanes, don't multiply them)
+
+| Variant | Applies to | Effect |
 |---|---|---|
-| **Local** | Just you, on your laptop | [GETTING-STARTED.md](GETTING-STARTED.md) |
-| **Self-hosted (private)** | You + trusted devices on a VPN | [§ Self-hosted on a VPS](#self-hosted-on-a-vps) |
-| **Public demo** | Anyone with the URL | [§ Public demo](#public-demo) |
+| `worker` | Lane 1 | `vhost = ""` in `service.toml`; no Caddy block, no public port. For cron / file watchers / queue workers. |
+| `edge` | Lanes 1, 2, 4 | ARM/low-resource image; documented constraints (smaller models, reduced concurrency). |
+| `air-gapped` | Lanes 1, 2, 4, 5 | No internet egress. Local providers only. BYOK paths disabled. |
+| `hybrid` | composition | One product = N lanes. E.g. eos.binbian.net = Lane 3 (static) + Lane 1 (chatbot). Document each lane separately, link them. |
 
-This guide covers the second and third — the first one is just `eos start`.
+## Out of scope
+
+- **Serverless functions** (Lambda, CF Workers). EmptyOS's vault-state model doesn't decompose into stateless functions cleanly; intentionally not supported.
+- **Native distribution** (PyPI release, desktop installer, mobile app, browser extension). These are *distribution channels*, not deployments. Separate doc when needed.
+- **Federation / CRDT sync** between EmptyOS instances. An orthogonal protocol, not a deployment lane.
+- **Helm / Kubernetes operators**. Premature for current scale (one VPS, two domains). Revisit when fleet > ~10 deploys.
+
+## Quick start by situation
+
+| What you want | Lane | Where to start |
+|---|---|---|
+| Run EmptyOS on my laptop | — | [GETTING-STARTED.md](GETTING-STARTED.md), `eos start` |
+| Personal EmptyOS on a VPS | 2 | [§ Lane 2 — Self-hosted daemon](#lane-2--self-hosted-daemon-on-a-vps) |
+| Public demo of EmptyOS | 2 | [§ Public demo](#public-demo) |
+| Add a chatbot to a published site | 3 + 1 | [services/chatbot/README.md](../services/chatbot/README.md) |
+| Add a generic backend service | 1 | [§ Lane 1 — Service](#lane-1--service) |
+| Ship "EmptyOS for X" branded product | 4 | [§ Lane 4 — Bundled product (future)](#lane-4--bundled-product-future) |
+| Multi-user SaaS | 5 | [§ Lane 5 — SaaS (future)](#lane-5--multi-tenant-saas-future) |
 
 ---
 
-## Self-hosted on a VPS
+## Lane 1 — Service
+
+A *service* is a containerized HTTP backend with no vault, deployed alongside or independent of an EmptyOS daemon. Examples shipped or planned: chatbot, webhook handler, analytics collector.
+
+### Standard layout
+
+```
+services/<name>/
+├── Dockerfile
+├── docker-compose.yml          ← Compose file (no `<name>` infix)
+├── .env.example                ← Documented secrets + defaults
+├── caddy.snippet               ← Drop-in vhost block
+├── service.toml                ← Manifest (read by deploy-service.sh)
+└── README.md
+```
+
+### `service.toml`
+
+```toml
+[service]
+name = "chatbot"
+description = "Site chatbot for publish-app sites"
+vhost = "chat.binbian.net"      # empty string for worker variant
+port = 9100                     # bound to 127.0.0.1:<port> on host
+healthcheck = "/health"         # path the deploy script polls after up
+healthcheck_timeout = 30        # seconds
+
+[deploy]
+build = true                    # docker compose --build
+restart = "unless-stopped"
+```
+
+### Deploy
+
+```bash
+# First-time on a VPS
+git clone <repo> /opt/emptyos
+cd /opt/emptyos/services/chatbot
+cp .env.example .env && nano .env
+sudo cp caddy.snippet /etc/caddy/sites/<name>.caddy   # or import from main Caddyfile
+sudo systemctl reload caddy
+
+# Then (and on every redeploy)
+bash /opt/emptyos/scripts/deploy-service.sh chatbot
+```
+
+`deploy-service.sh` reads `service.toml`, runs `docker compose --env-file .env up -d --build`, then polls the healthcheck endpoint until 200 (or fails, with rollback hint).
+
+### Variant: worker (no port, no vhost)
+
+For background workers — cron jobs, file watchers, queue processors:
+
+```toml
+[service]
+name = "render-queue"
+vhost = ""                      # opts out of Caddy snippet generation
+port = 0                        # no host port binding
+healthcheck = ""                # skip post-deploy health poll
+```
+
+Same `deploy-service.sh` script — it just skips the Caddy + healthcheck steps.
+
+---
+
+## Lane 2 — Self-hosted daemon on a VPS
+
+A *daemon* is a full EmptyOS instance with a mounted vault. One owner runs it; one vault.
 
 ### What you'll end up with
 
@@ -104,9 +207,11 @@ Save the token value somewhere safe (password manager) — you'll need it on eve
 `docker-compose.yml` ships with the right shape — a vault volume, the config bind-mounted read-only, the data volume persisted, and the auth token threaded in from `.env`.
 
 ```bash
-docker compose --env-file .env up -d
-docker compose logs -f emptyos     # watch it boot
+docker compose --env-file .env up -d --build     # --build is required on first boot
+docker compose logs -f emptyos                    # watch it boot
 ```
+
+The `--build` flag is load-bearing on first run. Without it, Docker tries to pull `emptyos:latest` from a registry — there is no such image — and stalls with `pull access denied`. After the first build, plain `up -d` reuses the local image.
 
 Health check:
 
@@ -202,10 +307,22 @@ The token is **public** — it's how visitors access the demo, not a real secret
 
 ### Step 3 — Boot
 
+On a 4 GB VPS, add 4 GB swap before booting — Ollama + the daemon will otherwise OOM-kill under load. Skip if your VPS has ≥8 GB RAM.
+
 ```bash
-docker compose -f docker-compose.demo.yml --env-file .env.demo up -d
+sudo fallocate -l 4G /swapfile && sudo chmod 600 /swapfile
+sudo mkswap /swapfile && sudo swapon /swapfile
+echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
+```
+
+Then boot the stack:
+
+```bash
+docker compose -f docker-compose.demo.yml --env-file .env.demo up -d --build
 docker exec emptyos-demo-ollama ollama pull phi3:mini
 ```
+
+`--build` is required on first boot — without it, Docker tries to pull `emptyos:latest` from a registry that doesn't exist and hangs.
 
 ### Step 4 — Caddy
 
@@ -301,7 +418,7 @@ Two reasons:
 - **Versioned**: the seed lives in git; updates ship via normal release flow; rollback is `git checkout` to a tag
 - The trade-off: visitor edits persist on the host until `git checkout` discards them. The daily cron handles this automatically.
 
-
+### Step 6 — Cloudflare (rate limiting + DDoS)
 
 Caddy's built-in rate limiter requires a custom build. Cloudflare's free tier gives you the same protection plus DDoS shielding without touching Caddy.
 
@@ -375,12 +492,128 @@ The $5 monthly budget is your safety net — once tripped, OpenAI drops out and 
 
 ---
 
+## Lane 3 — Static site
+
+A *static site* is the rendered output of the publish app — markdown notes in vault → HTML/CSS/JS, deployed to GitHub Pages or Firebase Hosting. No runtime, no vault on the host. Public readers consume it.
+
+### Mechanism
+
+The publish app owns this lane end-to-end. It is **not** a separate deploy script — `eos publish deploy` (per site profile) runs:
+1. Scan vault → emit `corpus.json` + per-page HTML
+2. Copy widget assets if site has chatbot enabled
+3. `git push` to a `gh-pages` branch (or `firebase deploy --only hosting`)
+
+Hosts that *also* expect the chatbot widget meta tags assume Lane 1 (chatbot service) is deployed somewhere reachable. The widget JS is shipped with the static site; the runtime endpoint is independent.
+
+### Per-site config
+
+Site profiles live in `data/apps/publish/sites.json`. Each site declares its source folder, theme, deploy target, and (optionally) chatbot integration. See `apps/publish/app.py` `_DEFAULT_SITE`.
+
+### When to use Lane 3 alone
+
+- Read-only blog, marketing, docs
+- Exported portfolio SPA (interactive but data-baked, no backend) — `apps/publish/portfolio_template.html` pattern
+
+### When to compose Lane 3 + Lane 1
+
+Add a chatbot, contact form, or any backend interaction. The static site stays reachable when the service is down — graceful degradation is the design.
+
+---
+
+## Lane 4 — Bundled product (future)
+
+A *bundled product* is EmptyOS preconfigured for one purpose, branded, and deployed as a customer-facing instance. Examples (hypothetical): "CableOS" for cable engineers, "JobHunter" for job seekers, "MusicStudio" for songwriters.
+
+**Status:** designed, not built. Build when first real bundling case arrives.
+
+### Standard layout (proposed)
+
+```
+profiles/<name>/
+├── profile.toml                ← Manifest: bundle, home, branding, deploy
+├── branding/
+│   ├── logo.svg
+│   └── favicon.png
+└── README.md
+```
+
+### `profile.toml` schema
+
+```toml
+[profile]
+name = "cableos"
+display_name = "CableOS"
+tagline = "A mind companion for cable engineers"
+version = "0.1.0"
+
+[bundle]
+tier = "minimal"                                # base from release.toml
+apps_extra = ["cable-rating", "projects"]
+apps_excluded = ["finance", "music-studio"]
+plugins = ["health", "telegram"]
+
+[home]
+mode = "redirect"                                # redirect | landing | app
+target = "/projects/cable-reticulation/"
+
+[branding]
+hide_emptyos_chrome = true
+theme = "void-dark"
+
+[deploy]
+image = "cableos-emptyos:{version}"
+vhost = "cable.client.com"
+```
+
+### Mechanism (when built)
+
+`scripts/deploy-profile.sh <name>` will:
+1. Run `scripts/build-bundle.sh <name>` — strip excluded apps/plugins into `./build/<name>/`, apply branding, set home route in baked-in `emptyos.toml`
+2. `docker build -t <image>:<version> ./build/<name>/`
+3. `docker compose -f profiles/<name>/docker-compose.yml up -d`
+4. Reload Caddy with profile's vhost
+
+**What already exists that this builds on:** `release.toml` tier definitions, `scripts/release-public.py` (file-stripping logic), the `[provides.export]` app contract for standalone builds.
+
+---
+
+## Lane 5 — Multi-tenant SaaS (future)
+
+A *SaaS deployment* is a single EmptyOS instance serving many isolated users (each with their own vault, auth, billing).
+
+**Status:** future. The biggest open architectural question.
+
+### What's hard about it
+
+EmptyOS today is built around `notes.path` — a single vault per process. Multi-tenancy requires:
+
+1. **Vault routing per request** — `/<tenant_id>/...` or subdomain → tenant-specific vault path
+2. **Auth at tenant granularity** — each user belongs to a tenant, requests carry tenant claim
+3. **Capability isolation** — tenant A's BYOK keys must never leak to tenant B; daily $ caps per tenant
+4. **Rate limits** — per-tenant + per-user
+5. **Billing attribution** — usage tracking by tenant
+6. **Vault backup** — per-tenant snapshot/restore
+7. **App execution context** — `self.read()` must resolve relative to current tenant's vault
+
+### Design seams to preserve now
+
+These don't need to be implemented today, but the current code should leave room:
+
+- `Config.notes_path` should be one of *N* possibilities, not hardcoded singleton
+- Auth middleware should accept `tenant_id` claim alongside `user`
+- `Capability.execute()` consent gate should accept tenant context
+- Cloud provider keys should be lookup-by-tenant, not env-var
+
+When the first real multi-tenant case arrives, this lane gets a proper build-out and likely its own `tenants/` directory with per-tenant configuration.
+
+---
+
 ## Sizing
 
 | Workload | Min RAM | Notes |
 |---|---|---|
 | EmptyOS daemon alone | 512 MB | API + apps + vault watcher |
-| + small Ollama model (`phi3:mini`, `qwen2.5:1.5b`) | 4 GB | CPU inference, slow but works |
+| + small Ollama model (`phi3:mini`, `qwen2.5:1.5b`) | 4 GB + 4 GB swap | CPU inference, slow but works; swap is required on 4 GB to avoid OOM |
 | + medium Ollama model (`llama3.1:8b`, `qwen2.5:7b`) | 8 GB | Tolerable on CPU; usable on a small GPU |
 | + ComfyUI image generation | 16 GB + GPU | Don't try this on a CPU VPS |
 

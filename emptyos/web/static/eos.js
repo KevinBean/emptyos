@@ -775,7 +775,7 @@
         if (!banner) {
             banner = document.createElement('div');
             banner.id = 'eos-job-banner';
-            banner.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:9999;font-family:inherit';
+            banner.style.cssText = 'position:fixed;top:0;left:0;right:0;padding-top:env(safe-area-inset-top,0px);z-index:9999;font-family:inherit';
             document.body.appendChild(banner);
         }
 
@@ -890,6 +890,21 @@
         window.dispatchEvent(new Event('eos:navigate'));
     });
 
+    // --- Haptics ---
+    // Light tap feedback on primary actions. No-op on devices that ignore
+    // navigator.vibrate (most desktops, iOS Safari currently — but harmless).
+    EOS.haptic = function(ms) {
+        try { if (navigator.vibrate) navigator.vibrate(ms || 10); } catch (e) {}
+    };
+    // Delegated: any tap on a known action surface fires a 10ms pulse.
+    document.addEventListener('pointerdown', function(e) {
+        if (e.pointerType !== 'touch') return; // only on touch input
+        var t = e.target.closest && e.target.closest(
+            '.eos-fab-pill, .eos-fab-master, .eos-chat-send, .msg-action-btn, .hfc-btn, .eos-tab, .rec-btn'
+        );
+        if (t) EOS.haptic(10);
+    }, {passive: true});
+
     // --- PWA ---
     // Inject meta tags (once, idempotent)
     if (!document.querySelector('link[rel="manifest"]')) {
@@ -918,6 +933,37 @@
         icon.rel = 'apple-touch-icon';
         icon.href = '/static/icon-192.png';
         document.head.appendChild(icon);
+    }
+    // iOS PWA splash screens — Apple ignores any image whose dimensions don't
+    // match the device exactly, so we ship a per-device table. PNGs generated
+    // by scripts/generate_splash_screens.py — its SIZES list must stay in sync
+    // with this table (file-w, file-h columns).
+    var isApple = /iPhone|iPad|iPod/.test(navigator.userAgent);
+    if (isApple && !document.querySelector('link[rel="apple-touch-startup-image"]')) {
+        var splash = [
+            // [pt-width, pt-height, dpr, file-w, file-h]
+            [375, 667, 2, 750, 1334],     // iPhone SE / 8
+            [414, 896, 2, 828, 1792],     // iPhone XR / 11
+            [375, 812, 3, 1125, 2436],    // iPhone X / XS / 11 Pro
+            [390, 844, 3, 1170, 2532],    // iPhone 12 / 13 / 14
+            [393, 852, 3, 1179, 2556],    // iPhone 14 Pro / 15 / 16
+            [414, 896, 3, 1242, 2688],    // iPhone XS Max / 11 Pro Max
+            [428, 926, 3, 1284, 2778],    // iPhone 12/13 Pro Max / 14 Plus
+            [430, 932, 3, 1290, 2796],    // iPhone 14/15/16 Pro Max
+            [768, 1024, 2, 1536, 2048],   // iPad mini / Air
+            [810, 1080, 2, 1620, 2160],   // iPad 10.2
+            [834, 1112, 2, 1668, 2224],   // iPad Air 10.5
+            [834, 1194, 2, 1668, 2388],   // iPad Pro 11
+            [1024, 1366, 2, 2048, 2732]   // iPad Pro 12.9
+        ];
+        splash.forEach(function(s) {
+            var l = document.createElement('link');
+            l.rel = 'apple-touch-startup-image';
+            l.href = '/static/splash/splash-' + s[3] + 'x' + s[4] + '.png';
+            l.media = '(device-width: ' + s[0] + 'px) and (device-height: ' + s[1] + 'px) ' +
+                      'and (-webkit-device-pixel-ratio: ' + s[2] + ') and (orientation: portrait)';
+            document.head.appendChild(l);
+        });
     }
 
     // Register service worker
@@ -957,7 +1003,7 @@
 
         var dock = document.createElement('div');
         dock.id = 'eos-fab-dock';
-        dock.style.cssText = 'position:fixed;bottom:max(20px, calc(env(safe-area-inset-bottom) + 16px));right:16px;display:flex;flex-direction:column-reverse;gap:10px;z-index:9999;align-items:flex-end;';
+        dock.style.cssText = 'position:fixed;bottom:max(20px, calc(env(safe-area-inset-bottom) + 16px));right:max(16px, calc(env(safe-area-inset-right) + 12px));display:flex;flex-direction:column-reverse;gap:10px;z-index:9999;align-items:flex-end;';
 
         // Master menu button — only toggles the speed dial. Voice Assistant
         // is a separate entry inside the dial, not wired to this button.

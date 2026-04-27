@@ -2,7 +2,7 @@
  * EmptyOS Service Worker — cache static assets, network-first for API, offline fallback for HTML.
  */
 
-var CACHE_NAME = 'eos-v4';
+var CACHE_NAME = 'eos-v7';
 var OFFLINE_URL = '/offline.html';
 var STATIC_ASSETS = [
   '/static/theme.css',
@@ -17,6 +17,21 @@ var STATIC_ASSETS = [
   '/static/icon-512.png',
   '/manifest.webmanifest',
   OFFLINE_URL,
+  // iOS PWA splash screens — precache so first cold-launch after install
+  // doesn't flash white. ~500KB total, downloaded during SW install.
+  '/static/splash/splash-750x1334.png',
+  '/static/splash/splash-828x1792.png',
+  '/static/splash/splash-1125x2436.png',
+  '/static/splash/splash-1170x2532.png',
+  '/static/splash/splash-1179x2556.png',
+  '/static/splash/splash-1242x2688.png',
+  '/static/splash/splash-1284x2778.png',
+  '/static/splash/splash-1290x2796.png',
+  '/static/splash/splash-1536x2048.png',
+  '/static/splash/splash-1620x2160.png',
+  '/static/splash/splash-1668x2224.png',
+  '/static/splash/splash-1668x2388.png',
+  '/static/splash/splash-2048x2732.png',
 ];
 
 self.addEventListener('install', function(e) {

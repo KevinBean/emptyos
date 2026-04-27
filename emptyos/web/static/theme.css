@@ -181,6 +181,11 @@ body {
   line-height: 1.55; transition: background-color 0.3s ease, color 0.3s ease;
   -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
+  -webkit-tap-highlight-color: transparent; /* iOS: kill grey tap flash */
+  overscroll-behavior-y: none; /* iOS: no rubber-band bounce on PWA */
+}
+button, a, [role="button"], [onclick], summary {
+  -webkit-touch-callout: none; /* iOS: no long-press preview menu on UI chrome */
 }
 
 a { color: var(--accent); text-decoration: none; transition: color 0.15s, opacity 0.15s; }

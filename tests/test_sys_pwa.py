@@ -127,6 +127,35 @@ class TestPWAIntegration:
         assert has_tags, "Apple PWA meta tags should be injected"
         assert_no_js_errors(page_errors)
 
+    def test_apple_splash_screens_injected(self, page, base_url, page_errors):
+        """iOS PWA splash screens (apple-touch-startup-image) injected for Apple UAs only."""
+        # eos.js gates injection on /iPhone|iPad|iPod/ UA, so spoof before nav.
+        page.add_init_script(
+            "Object.defineProperty(navigator, 'userAgent', "
+            "{get: () => 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) "
+            "AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1'})"
+        )
+        page.goto(base_url + "/", wait_until="domcontentloaded", timeout=15000)
+        wait_briefly(page, 1000)
+        count = page.evaluate(
+            "() => document.querySelectorAll('link[rel=\"apple-touch-startup-image\"]').length"
+        )
+        assert count >= 8, f"Expected at least 8 splash links, got {count}"
+        # Every link must have a media query AND an href that resolves
+        bad = page.evaluate("""
+            () => {
+                var links = document.querySelectorAll('link[rel="apple-touch-startup-image"]');
+                var bad = [];
+                links.forEach(function(l) {
+                    if (!l.media || !l.media.includes('device-width')) bad.push('no-media:' + l.href);
+                    if (!l.href.includes('/static/splash/')) bad.push('bad-href:' + l.href);
+                });
+                return bad;
+            }
+        """)
+        assert not bad, f"Malformed splash links: {bad}"
+        assert_no_js_errors(page_errors)
+
     def test_install_prompt_stash(self, page, base_url, page_errors):
         """Synthesize a beforeinstallprompt and verify it's stashed for UI use."""
         page.goto(base_url + "/", wait_until="domcontentloaded", timeout=15000)

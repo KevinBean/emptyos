@@ -120,6 +120,19 @@ autostart = []              # app IDs to start on boot (empty = start all)
 #   eos settings set think.app.shadowing.providers "ollama,openai"
 #   eos settings set think.app.shadowing.timeout 60
 
+# ── Publish app: site chatbot integration ──
+# The publish app proxies admin calls to the standalone chatbot service
+# (services/chatbot/). Set these only if you run that service.
+#
+# [apps.publish.chatbot]
+# endpoint    = "https://chat.binbian.net"   # default endpoint when a site
+#                                            # doesn't override it in its
+#                                            # site profile (sites.json)
+# admin_token = ""                           # MUST match CHATBOT_ADMIN_TOKEN
+#                                            # set on the chat service host;
+#                                            # without it, Q&A admin endpoints
+#                                            # are disabled in the UI
+
 # ═══════════════════════════════════════════════════════
 # GPU SERVICES (legacy format, prefer plugins.* above)
 # ═══════════════════════════════════════════════════════

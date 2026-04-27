@@ -322,6 +322,22 @@ Two access patterns coexist: **VaultIndex** (target — `vault_query`, `vault_up
 
 For vault operations and connection state, see `.claude/rules/vault-operator.md`.
 
+## Deployment
+
+EmptyOS deployments fall into **5 lanes**, documented in `docs/DEPLOYMENT.md`:
+
+| # | Lane | Discriminator | Mechanism |
+|---|---|---|---|
+| 1 | Service | HTTP container, **no vault** | `services/<name>/` + `scripts/deploy-service.sh` |
+| 2 | Daemon (single-tenant) | Full EmptyOS, **vault mounted** | `docker-compose.yml` + `scripts/redeploy-demo.sh` |
+| 3 | Static site | Pre-rendered, no runtime | `eos publish deploy` |
+| 4 | Bundled product | Daemon preconfigured + branded (future) | `profiles/<name>/profile.toml` |
+| 5 | Multi-tenant SaaS | Daemon serving many tenants (future) | TBD |
+
+Decision rule: **service has no vault, daemon has a vault**. Don't add vault access to a Lane 1 service — bridge through a daemon instead.
+
+Variants compose with lanes (don't multiply them): `worker` (no vhost on Lane 1), `edge` (constrained), `air-gapped`, `hybrid` (multiple lanes per product). Out of scope: serverless, native distribution (PyPI/desktop/mobile), federation/CRDT.
+
 ## Tech Stack
 
 Python 3.11+, FastAPI, Typer, Rich, aiohttp, SQLite, APScheduler, watchfiles.

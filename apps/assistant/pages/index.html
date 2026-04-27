@@ -56,7 +56,9 @@ body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-se
 
 /* Msg actions (TTS) */
 .msg-actions { display:flex; gap:4px; margin-top:4px; opacity:0; transition:opacity 0.15s }
-.eos-chat-turn:hover .msg-actions, .compare-card:hover .msg-actions { opacity:1 }
+.eos-chat-turn:hover .msg-actions, .compare-card:hover .msg-actions,
+.eos-chat-turn:focus-within .msg-actions, .compare-card:focus-within .msg-actions { opacity:1 }
+@media (hover: none) { .msg-actions { opacity:1 } } /* touch: always visible */
 .msg-action-btn { background:none; border:1px solid var(--border); color:var(--text-muted); padding:2px 8px; border-radius:4px; font-size:12px; cursor:pointer }
 .msg-action-btn:hover { border-color:var(--accent); color:var(--accent) }
 .msg-action-btn.speaking { border-color:#10b981; color:#10b981 }

@@ -3,12 +3,141 @@
 from __future__ import annotations
 
 import json
+import re
 import shutil
-from datetime import date
+from datetime import date, datetime
 from html import escape as html_escape
 from pathlib import Path
 
 from emptyos.sdk.utils import parse_frontmatter, strip_frontmatter, slugify, fm_str, fm_list
+
+
+# Corpus chunking — emits corpus.json alongside the built site for downstream
+# consumers (chatbot service, future search, embeddings). One chunk per H2
+# section, capped at ~1500 chars on a paragraph boundary so retrieval can
+# return small, self-contained passages.
+_CHUNK_MAX_CHARS = 1500
+_CODE_BLOCK_RE = re.compile(r"```.*?```", re.DOTALL)
+_INLINE_CODE_RE = re.compile(r"`[^`]+`")
+_IMG_MD_RE = re.compile(r"!\[[^\]]*\]\([^)]+\)")
+_IMG_WIKI_RE = re.compile(r"!\[\[[^\]]+\]\]")
+_HTML_COMMENT_RE = re.compile(r"<!--.*?-->", re.DOTALL)
+_HTML_TAG_RE = re.compile(r"<[^>]+>")
+_LINK_RE = re.compile(r"\[([^\]]+)\]\([^)]+\)")
+_WIKILINK_RE = re.compile(r"\[\[([^\]|]+)(?:\|([^\]]+))?\]\]")
+_HEADING_PREFIX_RE = re.compile(r"^#{1,6}\s+", re.MULTILINE)
+
+
+def _strip_for_corpus(text: str) -> str:
+    """Reduce markdown to plain prose suitable for retrieval/embedding."""
+    text = _CODE_BLOCK_RE.sub("", text)
+    text = _HTML_COMMENT_RE.sub("", text)
+    text = _IMG_MD_RE.sub("", text)
+    text = _IMG_WIKI_RE.sub("", text)
+    text = _WIKILINK_RE.sub(lambda m: m.group(2) or m.group(1), text)
+    text = _LINK_RE.sub(r"\1", text)
+    text = _INLINE_CODE_RE.sub(lambda m: m.group(0).strip("`"), text)
+    text = _HTML_TAG_RE.sub("", text)
+    text = _HEADING_PREFIX_RE.sub("", text)
+    # Collapse whitespace runs but keep paragraph breaks.
+    text = re.sub(r"[ \t]+", " ", text)
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    return text.strip()
+
+
+def _split_on_paragraph(text: str, max_chars: int) -> list[str]:
+    """Split text into pieces ≤ max_chars on paragraph boundaries when possible."""
+    if len(text) <= max_chars:
+        return [text]
+    parts: list[str] = []
+    buf: list[str] = []
+    buf_len = 0
+    for para in text.split("\n\n"):
+        para = para.strip()
+        if not para:
+            continue
+        plen = len(para) + (2 if buf else 0)
+        if buf and buf_len + plen > max_chars:
+            parts.append("\n\n".join(buf))
+            buf = [para]
+            buf_len = len(para)
+        elif len(para) > max_chars:
+            # Single paragraph too long — hard-cut on sentence/space boundary.
+            if buf:
+                parts.append("\n\n".join(buf))
+                buf = []
+                buf_len = 0
+            for i in range(0, len(para), max_chars):
+                parts.append(para[i:i + max_chars])
+        else:
+            buf.append(para)
+            buf_len += plen
+    if buf:
+        parts.append("\n\n".join(buf))
+    return parts
+
+
+def _chunk_body(body_md: str) -> list[dict]:
+    """Split markdown body into corpus chunks keyed by H2 section.
+
+    Returns a list of {section, section_slug, text} dicts. An empty section
+    name means the prologue before the first H2 (or the whole body if no H2s).
+    """
+    sections: list[dict] = []
+    current_heading = ""
+    current_lines: list[str] = []
+
+    def flush():
+        if not current_lines:
+            return
+        raw = "\n".join(current_lines)
+        clean = _strip_for_corpus(raw)
+        if not clean:
+            return
+        pieces = _split_on_paragraph(clean, _CHUNK_MAX_CHARS)
+        for i, piece in enumerate(pieces):
+            sections.append({
+                "section": current_heading,
+                "section_slug": slugify(current_heading) if current_heading else "",
+                "part": i,                  # 0-based; >0 when section split
+                "part_count": len(pieces),
+                "text": piece,
+            })
+
+    for line in body_md.split("\n"):
+        if line.startswith("## ") and not line.startswith("### "):
+            flush()
+            current_heading = line[3:].strip()
+            current_lines = []
+        else:
+            current_lines.append(line)
+    flush()
+    return sections
+
+
+def _load_faqs(source_dir: Path) -> list[dict]:
+    """Read optional {source}/faqs.toml → [{q, a}, ...]. Empty list if missing."""
+    fpath = source_dir / "faqs.toml"
+    if not fpath.exists():
+        return []
+    try:
+        import tomllib
+        with open(fpath, "rb") as f:
+            data = tomllib.load(f)
+    except Exception:
+        return []
+    raw = data.get("faq") if isinstance(data, dict) else None
+    if not isinstance(raw, list):
+        return []
+    out: list[dict] = []
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        q = str(item.get("q") or "").strip()
+        a = str(item.get("a") or "").strip()
+        if q and a:
+            out.append({"q": q, "a": a})
+    return out
 
 def _parse_metrics_yaml(content: str) -> list:
     """Parse nested `metrics: [{val, lbl}, ...]` frontmatter using yaml.
@@ -153,19 +282,78 @@ def _parse_landing_sections(body_md: str) -> dict:
 
     # Extract CTA links from hero: [Text](url)
     cta_links = re.findall(r"\[([^\]]+)\]\(([^)]+)\)", hero_text)
-    # Clean tagline: remove link lines entirely for a clean paragraph
-    tagline = re.sub(r"^\s*\[.*?\]\(.*?\)\s*$", "", hero_text, flags=re.MULTILINE).strip()
+    # Drop link-only lines, then split into tagline (first paragraph) and the
+    # rest (rendered as markdown — supports blockquote callouts, lists, etc.).
+    cleaned = re.sub(r"^\s*\[.*?\]\(.*?\)\s*$", "", hero_text, flags=re.MULTILINE).strip()
+    paragraphs = re.split(r"\n\s*\n", cleaned)
+    tagline = paragraphs[0].strip() if paragraphs else ""
+    hero_note_md = "\n\n".join(p.strip() for p in paragraphs[1:] if p.strip())
 
-    # Detect blog preview section
+    # Detect reserved sections: blog preview + gallery
     _BLOG_NAMES = {"blog", "updates", "latest", "recent posts"}
+    _GALLERY_NAMES = {"gallery", "screenshots", "images", "tour"}
     has_blog = any(s["heading"].lower() in _BLOG_NAMES for s in sections)
-    features = [s for s in sections if s["heading"].lower() not in _BLOG_NAMES]
+
+    gallery_section = next(
+        (s for s in sections if s["heading"].lower() in _GALLERY_NAMES), None
+    )
+    gallery_items: list[dict] = []
+    if gallery_section:
+        for m in re.finditer(
+            r"!\[\[([^\]]+\.(?:png|jpe?g|gif|svg|webp))\]\]"
+            r"|!\[([^\]]*)\]\(([^)]+\.(?:png|jpe?g|gif|svg|webp))\)",
+            gallery_section["body_md"], flags=re.IGNORECASE,
+        ):
+            if m.group(1):
+                gallery_items.append({"src": m.group(1), "alt": ""})
+            else:
+                gallery_items.append({"src": m.group(3), "alt": (m.group(2) or "").strip()})
+
+    features = [
+        s for s in sections
+        if s["heading"].lower() not in _BLOG_NAMES
+        and s["heading"].lower() not in _GALLERY_NAMES
+    ]
+
+    # Split a leading emoji off each feature heading → icon + heading.
+    # Covers: pictographs (1F300–1FAFF), misc symbols + dingbats (2600–27BF).
+    _ICON_RE = re.compile(
+        r"^([\U0001F300-\U0001FAFF\U00002600-\U000027BF])\s+(.+)$"
+    )
+    for f in features:
+        m = _ICON_RE.match(f["heading"])
+        if m:
+            f["icon"] = m.group(1)
+            f["heading"] = m.group(2).strip()
+        else:
+            f["icon"] = ""
+
+    # Metric strip: <!-- metrics: 44 Apps · 91% Integrity · 9 Capabilities -->
+    metrics: list[dict] = []
+    full_md = body_md  # search across whole body, hero or section
+    mm = re.search(r"<!--\s*metrics:\s*(.+?)\s*-->", full_md)
+    if mm:
+        for chunk in re.split(r"\s*[·|]\s*", mm.group(1)):
+            chunk = chunk.strip()
+            if not chunk:
+                continue
+            # Pattern: "<value> <label>" — split on first space if value is a
+            # number/percent, otherwise treat the whole thing as label.
+            mv = re.match(r"^([\d.]+%?)\s+(.+)$", chunk)
+            if mv:
+                metrics.append({"value": mv.group(1), "label": mv.group(2).strip()})
+            else:
+                metrics.append({"value": "", "label": chunk})
 
     return {
         "tagline": tagline,
+        "hero_note_md": hero_note_md,
         "cta_links": cta_links,
         "features": features,
         "has_blog_preview": has_blog,
+        "gallery_items": gallery_items,
+        "gallery_heading": gallery_section["heading"] if gallery_section else "",
+        "metrics": metrics,
     }
 
 
@@ -180,6 +368,28 @@ class SiteBuilder:
         script = (config.get("analytics_script") or "").strip()
         self.analytics_head = f"<script>{script}</script>" if script else ""
         self.cross_site_html = self._render_cross_site_links(config.get("cross_site_links") or [])
+        # Chatbot meta tags + widget script — empty string when disabled.
+        # Uses {root} placeholder, resolved per-page like favicon.
+        self.chatbot_head = self._render_chatbot_head(config.get("chatbot") or {})
+        self.chatbot_enabled = bool((config.get("chatbot") or {}).get("enabled"))
+
+    @staticmethod
+    def _render_chatbot_head(cb: dict) -> str:
+        if not cb.get("enabled"):
+            return ""
+        endpoint = (cb.get("endpoint") or "").strip()
+        site_id = (cb.get("site_id") or "").strip()
+        if not endpoint or not site_id:
+            # Misconfigured: enabled but missing endpoint/site_id. Skip.
+            return ""
+        starters = cb.get("starter_questions") or []
+        starters_attr = json.dumps(starters, ensure_ascii=False).replace('"', "&quot;")
+        return (
+            f'<meta name="chatbot-endpoint" content="{html_escape(endpoint, quote=True)}">\n'
+            f'  <meta name="chatbot-site-id" content="{html_escape(site_id, quote=True)}">\n'
+            f'  <meta name="chatbot-starters" content="{starters_attr}">\n'
+            f'  <script src="{{root}}chatbot-widget.js" defer></script>'
+        )
 
     @staticmethod
     def _render_cross_site_links(links: list) -> str:
@@ -310,6 +520,10 @@ class SiteBuilder:
         # Write site.css
         (site / "site.css").write_text(get_site_css(theme), encoding="utf-8")
 
+        # Copy chatbot widget asset if enabled.
+        if self.chatbot_enabled:
+            self._copy_widget_asset(site)
+
         # Detect project site mode (has a landing page)
         landing_page = next(
             (p for p in pages if p.get("layout") == "landing"), None
@@ -392,6 +606,8 @@ class SiteBuilder:
                 head_parts.append(f'<meta property="og:image" content="{og_safe}">')
             if self.analytics_head:
                 head_parts.append(self.analytics_head)
+            if self.chatbot_head:
+                head_parts.append(self.chatbot_head.replace("{root}", root))
             extra_head = "\n  ".join(head_parts)
             page_html = BASE_TEMPLATE.format(
                 title=title,
@@ -504,8 +720,28 @@ class SiteBuilder:
                     feat["body_md"], published_slugs,
                     assets_prefix="assets/", link_prefix="",
                 )
-                card = FEATURE_CARD.format(heading=feat["heading"])
+                icon = feat.get("icon") or ""
+                icon_html = f'<div class="feature-icon">{icon}</div>' if icon else ""
+                card = FEATURE_CARD.format(heading=feat["heading"], icon_html=icon_html)
                 feature_cards += card.replace("%%BODY%%", feat_html)
+
+            # Metric strip
+            metrics_html = ""
+            if parsed.get("metrics"):
+                from html import escape as _esc
+                tiles = []
+                for m in parsed["metrics"]:
+                    val = _esc(m.get("value") or "")
+                    lbl = _esc(m.get("label") or "")
+                    tiles.append(
+                        f'<div class="metric-tile">'
+                        f'<div class="metric-value">{val}</div>'
+                        f'<div class="metric-label">{lbl}</div>'
+                        f'</div>'
+                    )
+                metrics_html = (
+                    f'<div class="metric-strip">{"".join(tiles)}</div>'
+                )
 
             # Blog preview (latest 3 posts)
             blog_preview_html = ""
@@ -514,11 +750,46 @@ class SiteBuilder:
                     post_cards=_render_post_cards(posts[:3])
                 )
 
+            hero_note_html = ""
+            if parsed.get("hero_note_md"):
+                note_html, _ = render_markdown(
+                    parsed["hero_note_md"], published_slugs,
+                    assets_prefix="assets/", link_prefix="",
+                )
+                hero_note_html = f'<div class="hero-note">{note_html}</div>'
+
+            # Gallery — reserved ## Screenshots / ## Gallery section
+            gallery_html = ""
+            if parsed.get("gallery_items"):
+                from html import escape as _esc
+                tiles = []
+                for it in parsed["gallery_items"]:
+                    src = "assets/" + Path(it["src"]).name
+                    alt = _esc(it["alt"] or "")
+                    cap = (
+                        f'<figcaption>{alt}</figcaption>' if it["alt"] else ""
+                    )
+                    tiles.append(
+                        f'<figure class="gallery-tile">'
+                        f'<a href="{src}" target="_blank" rel="noopener">'
+                        f'<img src="{src}" alt="{alt}" loading="lazy">'
+                        f'</a>{cap}</figure>'
+                    )
+                gallery_html = (
+                    f'<div class="gallery-section">'
+                    f'<div class="section-heading">{_esc(parsed["gallery_heading"])}</div>'
+                    f'<div class="gallery-grid">{"".join(tiles)}</div>'
+                    f'</div>'
+                )
+
             index_html = LANDING_CONTENT.format(
                 title=landing_page["title"],
                 tagline=parsed["tagline"],
+                hero_note_html=hero_note_html,
                 cta_html=cta_html,
+                metrics_html=metrics_html,
                 feature_cards=feature_cards,
+                gallery_html=gallery_html,
                 blog_preview_html=blog_preview_html,
             )
             _make_page(landing_page["title"], landing_page.get("summary", site_desc),
@@ -640,10 +911,134 @@ class SiteBuilder:
             )
             (site / "atom.xml").write_text(rss, encoding="utf-8")
 
+        # --- Corpus for downstream consumers (chatbot, search, embeddings) ---
+        self._emit_corpus(
+            site_dir=site,
+            posts=posts,
+            pages=[pg for pg in pages if pg is not landing_page],
+            landing=landing_page,
+        )
+
         return {
             "pages": len(pages), "posts": len(posts), "tags": len(tag_map),
             "images": images_copied, "output": str(site),
         }
+
+    # ── Corpus emission ───────────────────────────────────────────────
+
+    def _site_meta(self) -> dict:
+        return {
+            "site_name": self.config.get("site_name", ""),
+            "site_description": self.config.get("site_description", ""),
+            "author": self.config.get("author", ""),
+            "domain": self.config.get("domain", ""),
+        }
+
+    def _post_url(self, slug: str, section_slug: str = "") -> str:
+        anchor = f"#{section_slug}" if section_slug else ""
+        return f"/posts/{slug}.html{anchor}"
+
+    def _page_url(self, slug: str, section_slug: str = "", is_landing: bool = False) -> str:
+        anchor = f"#{section_slug}" if section_slug else ""
+        if is_landing:
+            return f"/index.html{anchor}"
+        return f"/{slug}.html{anchor}"
+
+    @staticmethod
+    def _chunk_id(base: str, sec: dict) -> str:
+        """Derive a unique chunk id from a base + section dict.
+
+        Adds a #section anchor when the H2 has a slug, and a :NN suffix when
+        paragraph-splitting produced multiple chunks within the same section.
+        """
+        cid = base
+        if sec.get("section_slug"):
+            cid += f"#{sec['section_slug']}"
+        if sec.get("part_count", 1) > 1:
+            cid += f":{sec['part']}"
+        return cid
+
+    def _emit_corpus(
+        self,
+        site_dir: Path,
+        posts: list[dict] | None = None,
+        pages: list[dict] | None = None,
+        landing: dict | None = None,
+    ) -> None:
+        """Write site/corpus.json with chunked content + optional faqs.
+
+        One chunk per H2 section, each capped at _CHUNK_MAX_CHARS. Downstream
+        consumers (chatbot service in services/chatbot/) fetch this file from
+        the deployed site and use it as retrieval/system-prompt context.
+        """
+        chunks: list[dict] = []
+
+        for post in posts or []:
+            try:
+                content = Path(post["path"]).read_text(encoding="utf-8")
+            except Exception:
+                continue
+            body_md = strip_frontmatter(content).strip()
+            sections = _chunk_body(body_md)
+            for sec in sections:
+                chunks.append({
+                    "id": self._chunk_id(f"post:{post['slug']}", sec),
+                    "type": "post",
+                    "slug": post["slug"],
+                    "title": post["title"],
+                    "section": sec["section"],
+                    "tags": post.get("tags", []),
+                    "url": self._post_url(post["slug"], sec["section_slug"]),
+                    "text": sec["text"],
+                })
+
+        for pg in pages or []:
+            try:
+                content = Path(pg["path"]).read_text(encoding="utf-8")
+            except Exception:
+                continue
+            body_md = strip_frontmatter(content).strip()
+            sections = _chunk_body(body_md)
+            for sec in sections:
+                chunks.append({
+                    "id": self._chunk_id(f"page:{pg['slug']}", sec),
+                    "type": "page",
+                    "slug": pg["slug"],
+                    "title": pg["title"],
+                    "section": sec["section"],
+                    "tags": pg.get("tags", []),
+                    "url": self._page_url(pg["slug"], sec["section_slug"]),
+                    "text": sec["text"],
+                })
+
+        if landing:
+            try:
+                content = Path(landing["path"]).read_text(encoding="utf-8")
+                body_md = strip_frontmatter(content).strip()
+                for sec in _chunk_body(body_md):
+                    chunks.append({
+                        "id": self._chunk_id("landing", sec),
+                        "type": "landing",
+                        "slug": landing["slug"],
+                        "title": landing["title"],
+                        "section": sec["section"],
+                        "tags": landing.get("tags", []),
+                        "url": self._page_url(landing["slug"], sec["section_slug"], is_landing=True),
+                        "text": sec["text"],
+                    })
+            except Exception:
+                pass
+
+        corpus = {
+            **self._site_meta(),
+            "generated_at": datetime.utcnow().isoformat() + "Z",
+            "chunks": chunks,
+            "faqs": _load_faqs(self.source_dir),
+        }
+        (site_dir / "corpus.json").write_text(
+            json.dumps(corpus, ensure_ascii=False, separators=(",", ":")),
+            encoding="utf-8",
+        )
 
     def build_translations(self, translate_fn) -> dict:
         """Build translated versions of all posts.
@@ -782,6 +1177,14 @@ class SiteBuilder:
 
         return {"translated": translated_count, "languages": languages, "cached": len(posts) * len(languages) - translated_count}
 
+    def _copy_widget_asset(self, site_dir: Path) -> None:
+        """Copy chatbot-widget.js from apps/publish/static/ into site root."""
+        src = Path(__file__).parent / "static" / "chatbot-widget.js"
+        if not src.exists():
+            return
+        dest = site_dir / "chatbot-widget.js"
+        shutil.copy2(str(src), str(dest))
+
     def _copy_image(self, img_name: str, source_md: str, assets_dir: Path) -> None:
         source_path = Path(source_md).parent / img_name
         if not source_path.exists():
@@ -919,6 +1322,13 @@ class SiteBuilder:
         # window.DEMO_DATA[<stem>] so interactive case-study demos can replay
         # real precomputed model output without baking data into app code.
         html = self._inject_demo_data(html)
+
+        # Chatbot widget — meta tags + script. Portfolio runs as a SPA at "/",
+        # so root="/" for asset paths.
+        if self.chatbot_enabled and self.chatbot_head:
+            chatbot_html = self.chatbot_head.replace("{root}", "/")
+            html = html.replace("</head>", chatbot_html + "\n</head>")
+            self._copy_widget_asset(site)
 
         # Fill hero placeholders from config
         name = pcfg.get("name", self.config.get("author", ""))
@@ -1069,6 +1479,46 @@ class SiteBuilder:
         if domain:
             (site / "CNAME").write_text(domain, encoding="utf-8")
         (site / ".nojekyll").write_text("", encoding="utf-8")
+
+        # Corpus for downstream consumers — portfolio sites emit one chunk per
+        # project body (already in memory) plus the About section. Each chunk
+        # links back to the SPA's hash route so the chatbot can deep-link.
+        portfolio_chunks: list[dict] = []
+        for proj in projects:
+            for sec in _chunk_body(proj.get("body", "") or ""):
+                portfolio_chunks.append({
+                    "id": self._chunk_id(f"project:{proj['slug']}", sec),
+                    "type": "project",
+                    "slug": proj["slug"],
+                    "title": proj["title"],
+                    "section": sec["section"],
+                    "tags": proj.get("tags", []),
+                    "url": f"/#project-{proj['slug']}",
+                    "text": sec["text"],
+                })
+        if about_body:
+            for sec in _chunk_body(about_body):
+                portfolio_chunks.append({
+                    "id": self._chunk_id("about", sec),
+                    "type": "about",
+                    "slug": "about",
+                    "title": "About",
+                    "section": sec["section"],
+                    "tags": [],
+                    "url": "/#about",
+                    "text": sec["text"],
+                })
+
+        corpus = {
+            **self._site_meta(),
+            "generated_at": datetime.utcnow().isoformat() + "Z",
+            "chunks": portfolio_chunks,
+            "faqs": _load_faqs(self.source_dir),
+        }
+        (site / "corpus.json").write_text(
+            json.dumps(corpus, ensure_ascii=False, separators=(",", ":")),
+            encoding="utf-8",
+        )
 
         return {
             "pages": 1,

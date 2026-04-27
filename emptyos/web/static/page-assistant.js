@@ -56,7 +56,7 @@
   function init() {
     var style = document.createElement('style');
     style.textContent = [
-      '.pa-drawer{position:fixed;top:0;right:0;bottom:0;width:min(380px,90vw);background:var(--bg);border-left:1px solid var(--border);box-shadow:-8px 0 24px rgba(0,0,0,0.15);z-index:9992;transform:translateX(100%);transition:transform 0.25s ease;display:flex;flex-direction:column}',
+      '.pa-drawer{position:fixed;top:0;right:0;bottom:0;width:min(380px,90vw);background:var(--bg);border-left:1px solid var(--border);box-shadow:-8px 0 24px rgba(0,0,0,0.15);z-index:9992;transform:translateX(100%);transition:transform 0.25s ease;display:flex;flex-direction:column;padding-bottom:env(safe-area-inset-bottom,0px)}',
       '.pa-drawer.open{transform:translateX(0)}',
       '.pa-header{padding:14px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px;flex-shrink:0;padding-top:calc(14px + env(safe-area-inset-top,0px))}',
       '.pa-title{font-size:15px;font-weight:600;color:var(--text-heading);flex:1}',
@@ -84,10 +84,10 @@
       /* Chrome (padding, radius, shadow, hover) comes from .eos-fab-pill;
          only positioning + open-state modifiers live here. Position rules are
          inert when the FAB is docked inside #eos-fab-others (see eos.js). */
-      '.pa-fab { position:fixed; bottom:calc(env(safe-area-inset-bottom,0px) + 90px); right:16px; z-index:9990; -webkit-tap-highlight-color:transparent; }',
+      '.pa-fab { position:fixed; bottom:calc(env(safe-area-inset-bottom,0px) + 90px); right:calc(env(safe-area-inset-right,0px) + 16px); z-index:9990; -webkit-tap-highlight-color:transparent; }',
       '.pa-fab.open { opacity:0; pointer-events:none; }',
-      '.cap-fab { position:fixed; bottom:calc(env(safe-area-inset-bottom,0px) + 144px); right:16px; z-index:9990; }',
-      '.cap-modal{position:fixed;bottom:calc(env(safe-area-inset-bottom,0px) + 190px);right:16px;width:min(320px,calc(100vw - 32px));background:var(--bg);border:1px solid var(--border);border-radius:14px;box-shadow:0 8px 32px rgba(0,0,0,0.2);z-index:9993;padding:14px;display:none}',
+      '.cap-fab { position:fixed; bottom:calc(env(safe-area-inset-bottom,0px) + 144px); right:calc(env(safe-area-inset-right,0px) + 16px); z-index:9990; }',
+      '.cap-modal{position:fixed;bottom:calc(env(safe-area-inset-bottom,0px) + 190px);right:calc(env(safe-area-inset-right,0px) + 16px);width:min(320px,calc(100vw - 32px - env(safe-area-inset-left,0px) - env(safe-area-inset-right,0px)));background:var(--bg);border:1px solid var(--border);border-radius:14px;box-shadow:0 8px 32px rgba(0,0,0,0.2);z-index:9993;padding:14px;display:none}',
       '.cap-modal.show{display:block;animation:cardIn 0.2s ease}',
       '.cap-input{width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:10px;background:var(--bg-card);color:var(--text);font-size:14px;outline:none;font-family:inherit;resize:none;min-height:60px}',
       '.cap-input:focus{border-color:var(--accent)}',

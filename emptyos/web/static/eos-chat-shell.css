@@ -238,7 +238,7 @@
   .eos-chat-shell.sidebar-open .eos-chat-scrim { display: block; }
   .eos-chat-transcript { padding: 14px 14px 20px; font-size: 14.5px; }
   .eos-chat-turn { max-width: 100%; }
-  .eos-chat-input-area { padding: 10px 10px env(safe-area-inset-bottom, 10px); gap: 6px; }
+  .eos-chat-input-area { padding: 10px calc(10px + env(safe-area-inset-right,0px)) calc(10px + env(safe-area-inset-bottom,0px)) calc(10px + env(safe-area-inset-left,0px)); gap: 6px; }
   .eos-chat-input { font-size: 16px; padding: 9px 10px; } /* iOS: no zoom on focus */
   .eos-chat-send, .eos-chat-cancel { padding: 10px 14px; font-size: 13px; }
 }
