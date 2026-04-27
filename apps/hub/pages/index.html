@@ -208,6 +208,30 @@ function hrefAttr(url) {
   return url ? ' href="' + esc(url) + '"' : '';
 }
 
+// Pick the first non-null/non-empty field from an object. Tolerates field-name
+// drift between panel contributors and renderer contracts (label vs name,
+// title vs name, days vs days_remaining, etc.).
+function pick(obj /*, ...names */) {
+  for (var i = 1; i < arguments.length; i++) {
+    var v = obj[arguments[i]];
+    if (v != null && v !== '') return v;
+  }
+  return null;
+}
+
+// Flatten panel.data which may be a single object or a list of items, across
+// all panels in a group. Used by group renderers (chips, countdown-tile).
+function flatItems(items) {
+  var all = [];
+  items.forEach(function(p) {
+    var d = p.data;
+    if (d == null) return;
+    if (!Array.isArray(d)) d = [d];
+    all = all.concat(d);
+  });
+  return all;
+}
+
 var RENDERERS = {
 
   'accent-card': function(items){
@@ -286,13 +310,13 @@ var RENDERERS = {
     var d = items[0].data;
     if (!Array.isArray(d) || !d.length) return '';
     var rows = d.map(function(r){
-      var title = r.title || r.name || '';
+      var title = pick(r, 'title', 'name');
       if (!title) return '';
-      var days = r.days_remaining != null ? r.days_remaining : r.days;
+      var days = pick(r, 'days_remaining', 'days');
       var badge = days != null
         ? '<span class="r-list-badge">' + esc(days) + 'd</span>'
         : '';
-      var subtxt = r.subtitle || r.date || '';
+      var subtxt = pick(r, 'subtitle', 'date');
       var sub = subtxt ? '<div class="r-list-sub">' + esc(subtxt) + '</div>' : '';
       return '<a class="r-list-row"' + hrefAttr(r.href) + '>' +
         '<div class="r-list-body"><div class="r-list-title">' + esc(title) + '</div>' + sub + '</div>' + badge +
@@ -317,30 +341,19 @@ var RENDERERS = {
   },
 
   'chips': function(items, block){
-    var all = [];
-    items.forEach(function(p){
-      var d = p.data;
-      if (!Array.isArray(d)) d = [d];
-      all = all.concat(d);
-    });
+    var all = flatItems(items);
     if (!all.length) return '';
     var chips = all.map(function(c){
-      return '<a class="r-chip"' + hrefAttr(c.href) + '>' + esc(c.title || c.label) + '</a>';
+      return '<a class="r-chip"' + hrefAttr(c.href) + '>' + esc(pick(c, 'title', 'label')) + '</a>';
     }).join('');
     var hdr = block.title ? '<div class="panel-title">' + esc(block.title) + '</div>' : '';
     return '<div class="panel">' + hdr + '<div class="r-chips">' + chips + '</div></div>';
   },
 
   'countdown-tile': function(items){
-    var all = [];
-    items.forEach(function(p){
-      var d = p.data;
-      if (!Array.isArray(d)) d = [d];
-      all = all.concat(d);
-    });
-    var tiles = all.map(function(d){
+    var tiles = flatItems(items).map(function(d){
       if (d == null || d.days == null) return '';
-      var label = d.label || d.name || '';
+      var label = pick(d, 'label', 'name') || '';
       return '<a class="r-countdown"' + hrefAttr(d.href) + '>' +
         '<div class="r-countdown-days">' + esc(d.days) + 'd</div>' +
         '<div class="r-countdown-label">' + esc(label) + '</div>' +

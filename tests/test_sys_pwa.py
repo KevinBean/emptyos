@@ -4,9 +4,14 @@ Covers the installable-web-app layer. Cross-browser coverage comes from running
 pytest-playwright with --browser chromium/firefox/webkit (see .claude/rules/testing.md).
 """
 
+import re
+from pathlib import Path
+
 import pytest
 
 from page_helpers import assert_no_js_errors, wait_briefly
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
 
 
 @pytest.mark.api
@@ -43,6 +48,63 @@ class TestPWAManifest:
         """Backwards compat: /static/manifest.json still works for old bookmarks."""
         resp = http_client.get("/static/manifest.json")
         assert resp.status_code == 200
+
+    def test_splash_device_table_in_sync(self):
+        """eos.js inlines the splash device table (sync injection is required for
+        iOS cold-launch splash discovery — async fetch would lose the race against
+        iOS reading <head>). The Pillow generator script keeps its own SIZES list.
+        Both must stay in sync — this test fails CI if they drift.
+        """
+        eos_js = (REPO_ROOT / "emptyos" / "web" / "static" / "eos.js").read_text(encoding="utf-8")
+        block = re.search(r"var splash = \[(.*?)\];", eos_js, re.S)
+        assert block, "Could not find 'var splash = [...]' table in eos.js"
+        eos_sizes = {
+            (int(m.group(1)), int(m.group(2)))
+            for m in re.finditer(
+                r"\[\s*\d+,\s*\d+,\s*\d+,\s*(\d+),\s*(\d+)\s*\]", block.group(1)
+            )
+        }
+        assert eos_sizes, "Failed to parse splash rows from eos.js"
+
+        gen_py = (REPO_ROOT / "scripts" / "generate_splash_screens.py").read_text(
+            encoding="utf-8"
+        )
+        gen_block = re.search(r"SIZES\s*=\s*\[(.*?)\]", gen_py, re.S)
+        assert gen_block, "Could not find SIZES list in generate_splash_screens.py"
+        gen_sizes = {
+            (int(m.group(1)), int(m.group(2)))
+            for m in re.finditer(r"\(\s*(\d+)\s*,\s*(\d+)\s*\)", gen_block.group(1))
+        }
+        assert gen_sizes, "Failed to parse SIZES from generate_splash_screens.py"
+
+        only_in_eos = eos_sizes - gen_sizes
+        only_in_gen = gen_sizes - eos_sizes
+        assert not only_in_eos and not only_in_gen, (
+            f"Splash device table drift detected.\n"
+            f"  Only in eos.js: {sorted(only_in_eos)}\n"
+            f"  Only in generate_splash_screens.py: {sorted(only_in_gen)}"
+        )
+
+    def test_splash_pngs_match_table(self):
+        """Every splash PNG referenced by the eos.js table must exist on disk
+        (the SW precaches them; missing files break the install)."""
+        eos_js = (REPO_ROOT / "emptyos" / "web" / "static" / "eos.js").read_text(encoding="utf-8")
+        block = re.search(r"var splash = \[(.*?)\];", eos_js, re.S)
+        sizes = {
+            (int(m.group(1)), int(m.group(2)))
+            for m in re.finditer(
+                r"\[\s*\d+,\s*\d+,\s*\d+,\s*(\d+),\s*(\d+)\s*\]", block.group(1)
+            )
+        }
+        splash_dir = REPO_ROOT / "emptyos" / "web" / "static" / "splash"
+        missing = [
+            f"splash-{w}x{h}.png"
+            for w, h in sorted(sizes)
+            if not (splash_dir / f"splash-{w}x{h}.png").exists()
+        ]
+        assert not missing, (
+            f"Missing splash PNGs (re-run scripts/generate_splash_screens.py): {missing}"
+        )
 
 
 @pytest.mark.api

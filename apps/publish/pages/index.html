@@ -266,9 +266,17 @@ if(window.EOS&&EOS.registerActions){EOS.registerActions({},[],{description:"Publ
         <div class="sf-hint"><code>·</code>-separated. 3–4 short prompts shown as chips on first widget open.</div>
       </div>
       <div class="sf-hint" style="padding:10px 12px;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;line-height:1.5">
-        <strong style="color:var(--success)">● synced</strong> fields are pushed to the chatbot service when you Save (rewrites <code>sites.toml</code> on the VPS, hot-reloads).<br><br>
-        <strong>One-time SSH still needed</strong> to add the <code>[sites.<span id="sf-chatbot-id-echo">&lt;id&gt;</span>]</code> block to <code>sites.toml</code> with <code>allowed_origins</code> + <code>corpus_url</code>. Those two fields are file-only by design (security boundary).
+        <strong style="color:var(--success)">● synced</strong> fields are pushed to the chatbot service when you Save (rewrites <code>sites.toml</code> on the VPS, hot-reloads).
       </div>
+      <details style="margin-top:10px;padding:10px 12px;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;font-size:12px;line-height:1.5">
+        <summary style="cursor:pointer;font-weight:600">First-time service-side setup for this site</summary>
+        <p style="margin:8px 0 6px;color:var(--text-secondary)">Before sync works, the chatbot service needs an entry for this site. SSH to your VPS once and add this block to <code>sites.toml</code>:</p>
+        <pre id="sf-chatbot-toml-snippet" style="background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:10px;overflow-x:auto;font-family:var(--mono,monospace);font-size:11px;margin:0">[sites.<span id="sf-chatbot-id-echo">&lt;id&gt;</span>]</pre>
+        <div style="margin-top:8px;display:flex;gap:6px;align-items:center">
+          <button class="pi-btn" onclick="copyChatbotToml()" style="font-size:11px">Copy</button>
+          <span style="color:var(--text-muted);font-size:11px">Then on VPS: <code>bash scripts/deploy-service.sh chatbot</code></span>
+        </div>
+      </details>
     </div>
 
     <div id="sf-mode-hint" style="padding:12px;background:var(--bg-card);border:1px solid var(--border);border-radius:10px;font-size:12px;color:var(--text-secondary);line-height:1.5;margin-top:4px"></div>
@@ -882,7 +890,8 @@ async function openSettings() {
 
   // Load current values from active site profile
   var site = allSites.find(function(s) { return s.id === activeSiteId; }) || {};
-  document.getElementById('sf-site-label').textContent = site.name || site.id || 'Site';
+  document.getElementById('sf-site-label').textContent =
+    (site.name || site.id || 'Site') + (site.id ? '  ·  id: ' + site.id : '');
   document.getElementById('sf-name').value = site.name || '';
   document.getElementById('sf-site-name').value = site.site_name || '';
   document.getElementById('sf-site-desc').value = site.site_description || '';
@@ -911,6 +920,20 @@ async function openSettings() {
   document.getElementById('sf-chatbot-starters').value =
     Array.isArray(cb.starter_questions) ? cb.starter_questions.join(' · ') : '';
   document.getElementById('sf-chatbot-id-echo').textContent = site.id || '<id>';
+  // Build the exact sites.toml block this site needs
+  var domain = (site.domain || '').trim();
+  var hosts = domain ? [`https://${domain}`] : ['https://your-domain.com'];
+  // Add www variant if domain is a bare apex (no subdomain)
+  if (domain && domain.split('.').length === 2) {
+    hosts.push(`https://www.${domain}`);
+  }
+  var corpusUrl = domain ? `https://${domain}/corpus.json` : 'https://your-domain.com/corpus.json';
+  var snippet =
+    `[sites.${site.id || 'YOUR_SITE_ID'}]\n` +
+    `name = ${JSON.stringify(site.name || site.id || 'Site')}\n` +
+    `allowed_origins = ${JSON.stringify(hosts).replace(/,/g, ', ')}\n` +
+    `corpus_url = ${JSON.stringify(corpusUrl)}`;
+  document.getElementById('sf-chatbot-toml-snippet').textContent = snippet;
   document.getElementById('sf-chatbot-fields').style.display =
     document.getElementById('sf-chatbot-enabled').checked ? '' : 'none';
   // Toggle visibility on change
@@ -1184,6 +1207,22 @@ async function qaEdit(qaId) {
       EOS.toast('Saved', 'success');
       reloadChatbotQA();
     },
+  });
+}
+
+function copyChatbotToml() {
+  var pre = document.getElementById('sf-chatbot-toml-snippet');
+  if (!pre) return;
+  var text = pre.textContent || '';
+  navigator.clipboard.writeText(text).then(function() {
+    if (EOS_UI && EOS_UI.toast) EOS_UI.toast('Copied — paste into sites.toml on the VPS', true);
+  }).catch(function() {
+    // Fallback: select for manual copy
+    var range = document.createRange();
+    range.selectNode(pre);
+    window.getSelection().removeAllRanges();
+    window.getSelection().addRange(range);
+    if (EOS_UI && EOS_UI.toast) EOS_UI.toast('Selected — Ctrl+C to copy', true);
   });
 }
 
