@@ -18,11 +18,16 @@
 chat.binbian.net {
     encode gzip
 
-    # /admin/* — server-to-server only. No CORS, no preflight handling.
+    # /admin/* — server-to-server only. No CORS, no preflight handling,
+    # and stripped of any CORS headers Caddy might otherwise attach.
     # Browsers physically can't reach these even with a leaked admin token.
     @admin path /admin/*
     handle @admin {
-        reverse_proxy 127.0.0.1:9100
+        reverse_proxy 127.0.0.1:9100 {
+            header_down -Access-Control-Allow-Origin
+            header_down -Access-Control-Allow-Headers
+            header_down -Access-Control-Allow-Methods
+        }
     }
 
     # CORS preflight for public endpoints — must come before path matchers
@@ -48,8 +53,12 @@ chat.binbian.net {
         }
     }
 
-    # Everything else — buffered reverse proxy + public-CORS headers.
+    # Everything else — buffered reverse proxy.
     reverse_proxy 127.0.0.1:9100
-    header Access-Control-Allow-Origin "*"
-    header Access-Control-Allow-Headers "Content-Type"
+
+    # Public-CORS headers, scoped to non-admin paths only. The @admin handle
+    # already returned by the time these run, so this matcher is double-safety.
+    @public not path /admin/*
+    header @public Access-Control-Allow-Origin "*"
+    header @public Access-Control-Allow-Headers "Content-Type"
 }

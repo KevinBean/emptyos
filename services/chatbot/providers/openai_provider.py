@@ -36,16 +36,45 @@ def _cost(tokens_in: int, tokens_out: int, model: str) -> float:
     return (tokens_in * rate["in"] + tokens_out * rate["out"]) / 1_000_000
 
 
-def _max_tokens_kwarg(model: str, n: int) -> dict:
-    """Pick the right param name for the model's API version.
+def _is_reasoning_model(model: str) -> bool:
+    return model.startswith(("gpt-5", "o1", "o3", "o4"))
 
-    GPT-5 family + the o1/o3 reasoning families use `max_completion_tokens`;
-    GPT-4 and older use the legacy `max_tokens`. OpenAI rejects requests that
-    use the wrong one with a 400 invalid_request_error.
+
+# Reasoning models eat from max_completion_tokens for internal thinking before
+# they produce any visible output. Site-Q&A doesn't need reasoning, so we ask
+# for the smallest allowed effort and budget enough headroom that a typical
+# 2-3 sentence reply isn't truncated by accumulated reasoning tokens.
+#
+# Per OpenAI: GPT-5 with `reasoning_effort="minimal"` still consumes some
+# reasoning tokens; multiply the visible budget by ~3 to be safe.
+_REASONING_MULTIPLIER = 3
+
+
+def _build_kwargs(
+    model: str, messages: list[dict], max_tokens: int, *, stream: bool = False
+) -> dict:
+    """Assemble the per-model kwargs for chat.completions.create.
+
+    GPT-5 / o-series quirks:
+      - param name is `max_completion_tokens`, not `max_tokens`
+      - custom `temperature` rejected (only default 1.0 accepted)
+      - support `reasoning_effort` in {minimal, low, medium, high}; we use
+        minimal because site-chat doesn't benefit from chain-of-thought
+      - reasoning tokens count against the completion budget, so multiply
+        the requested visible-token budget so replies don't come back blank
     """
-    if model.startswith(("gpt-5", "o1", "o3", "o4")):
-        return {"max_completion_tokens": n}
-    return {"max_tokens": n}
+    kwargs: dict = {"model": model, "messages": messages}
+    if stream:
+        kwargs["stream"] = True
+    if _is_reasoning_model(model):
+        kwargs["max_completion_tokens"] = max_tokens * _REASONING_MULTIPLIER
+        # OpenAI accepts "minimal" on GPT-5; older o1/o3 use "low" as floor.
+        # Sending "minimal" is fine for both — the SDK just passes it through.
+        kwargs["reasoning_effort"] = "minimal"
+    else:
+        kwargs["max_tokens"] = max_tokens
+        kwargs["temperature"] = 0.4
+    return kwargs
 
 
 class OpenAIProvider(Provider):
@@ -66,15 +95,7 @@ class OpenAIProvider(Provider):
         max_tokens: int,
     ) -> CompletionResult:
         full_messages = [{"role": "system", "content": system}] + messages
-        kwargs = {
-            "model": model,
-            "messages": full_messages,
-            **_max_tokens_kwarg(model, max_tokens),
-        }
-        # GPT-5 / o-series models reject custom `temperature` (only support
-        # the default of 1.0). Older chat models accept it.
-        if not model.startswith(("gpt-5", "o1", "o3", "o4")):
-            kwargs["temperature"] = 0.4
+        kwargs = _build_kwargs(model, full_messages, max_tokens)
         resp = await self.client.chat.completions.create(**kwargs)
         text = resp.choices[0].message.content or ""
         usage = resp.usage
@@ -97,14 +118,7 @@ class OpenAIProvider(Provider):
         max_tokens: int,
     ) -> AsyncIterator[str]:
         full_messages = [{"role": "system", "content": system}] + messages
-        kwargs = {
-            "model": model,
-            "messages": full_messages,
-            "stream": True,
-            **_max_tokens_kwarg(model, max_tokens),
-        }
-        if not model.startswith(("gpt-5", "o1", "o3", "o4")):
-            kwargs["temperature"] = 0.4
+        kwargs = _build_kwargs(model, full_messages, max_tokens, stream=True)
         stream = await self.client.chat.completions.create(**kwargs)
         async for chunk in stream:
             if not chunk.choices:
