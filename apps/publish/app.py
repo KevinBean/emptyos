@@ -285,10 +285,29 @@ class PublishApp(BaseApp):
         await self.emit("publish:deployed", {
             "repo": repo, "time": timestamp, "site": s["id"],
         })
+        # Auto-refresh chatbot corpus cache so the new content is live without
+        # waiting for the service's TTL (default 1h). Best-effort — failure
+        # here doesn't fail the deploy, since the cache will refresh on TTL.
+        await self._chatbot_refresh_after_deploy(s)
 
         domain = config.get("domain", "")
         url = f"https://{domain}" if domain else f"https://{repo.split('/')[0]}.github.io/{repo.split('/')[-1]}"
         return {"status": "deployed", "url": url}
+
+    async def _chatbot_refresh_after_deploy(self, site: dict) -> None:
+        """Fire-and-forget POST /admin/refresh/{site_id} on the chatbot service.
+        Silent no-op if site has chatbot disabled or chatbot endpoint not set."""
+        cb = site.get("chatbot") or {}
+        if not cb.get("enabled"):
+            return
+        try:
+            await self._chatbot_admin_request(
+                "POST", f"/admin/refresh/{site['id']}", site=site,
+            )
+        except Exception:
+            # The proxy already swallows errors — this is belt-and-braces
+            # so a failed refresh never prevents the user seeing "Deployed".
+            pass
 
     async def _run_git(self, cwd: Path, *args: str) -> tuple[str, str, int]:
         proc = await asyncio.create_subprocess_exec(
@@ -575,6 +594,7 @@ class PublishApp(BaseApp):
             "time": datetime.now().strftime("%Y-%m-%d %H:%M"),
             "site": s["id"],
         })
+        await self._chatbot_refresh_after_deploy(s)
 
         return {"status": "deployed", "url": url, "target": "firebase"}
 

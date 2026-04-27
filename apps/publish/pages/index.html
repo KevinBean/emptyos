@@ -1203,8 +1203,11 @@ function renderFAQSection(faqs, path) {
 async function qaAction(qaId, action) {
   var url = '/publish/api/chatbot/qa-log/' + encodeURIComponent(activeSiteId) + '/' + qaId;
   var res = await EOS.post(url, { action: action });
-  if (res && res.error) { EOS.toast(res.error, 'error'); return; }
-  EOS.toast(action + 'd', 'success');
+  if (res && res.error) {
+    if (EOS_UI && EOS_UI.toast) EOS_UI.toast(res.error, false);
+    return;
+  }
+  if (EOS_UI && EOS_UI.toast) EOS_UI.toast(action + 'd', true);
   reloadChatbotQA();
 }
 
@@ -1212,17 +1215,21 @@ async function qaEdit(qaId) {
   var row = (_qaState.pending.concat(_qaState.curated)).find(function(r) { return r.id === qaId; });
   if (!row) return;
   var current = row.reply || '';
-  EOS_UI.formModal({
-    title: 'Edit reply',
-    fields: [{ name: 'reply', label: 'Reply', type: 'textarea', value: current, required: true }],
-    onSubmit: async function(values) {
+  // EOS_UI.formModal takes positional args: (title, fields, onSubmit)
+  EOS_UI.formModal(
+    'Edit reply',
+    [{ name: 'reply', label: 'Reply', type: 'textarea', value: current, required: true }],
+    async function(values) {
       var url = '/publish/api/chatbot/qa-log/' + encodeURIComponent(activeSiteId) + '/' + qaId;
       var res = await EOS.post(url, { action: 'edit', reply: values.reply });
-      if (res && res.error) { EOS.toast(res.error, 'error'); return false; }
-      EOS.toast('Saved', 'success');
+      if (res && res.error) {
+        if (EOS_UI && EOS_UI.toast) EOS_UI.toast(res.error, false);
+        return;
+      }
+      if (EOS_UI && EOS_UI.toast) EOS_UI.toast('Saved', true);
       reloadChatbotQA();
-    },
-  });
+    }
+  );
 }
 
 function copyChatbotToml() {
@@ -1242,12 +1249,19 @@ function copyChatbotToml() {
 }
 
 async function qaPromote(qaId) {
-  var ok = await EOS_UI.confirm('Promote to FAQ', 'Append this Q&A to faqs.toml in the vault?');
+  var ok = await EOS_UI.confirm({
+    message: 'Promote this Q&A to FAQ? Appends to faqs.toml in the vault.',
+    action: 'Promote',
+    danger: false,
+  });
   if (!ok) return;
   var url = '/publish/api/chatbot/qa-log/' + encodeURIComponent(activeSiteId) + '/' + qaId + '/promote';
   var res = await EOS.post(url, {});
-  if (res && res.error) { EOS.toast(res.error, 'error'); return; }
-  EOS.toast('Added to FAQs — rebuild to ship', 'success');
+  if (res && res.error) {
+    if (EOS_UI && EOS_UI.toast) EOS_UI.toast(res.error, false);
+    return;
+  }
+  if (EOS_UI && EOS_UI.toast) EOS_UI.toast('Added to FAQs — rebuild to ship', true);
   reloadChatbotQA();
 }
 
