@@ -18,6 +18,10 @@
     if (window.EOS_HANDSFREE_LOADED) return;
     window.EOS_HANDSFREE_LOADED = true;
 
+    // Skip on chat surfaces — the chip overlaps the chat input bar at
+    // bottom-right, and users on a chat page already have a keyboard.
+    if (/^\/(assistant|agent|voice-assistant)(\/|$)/.test(location.pathname)) return;
+
     var EOS = window.EOS = window.EOS || {};
     EOS.base = EOS.base || '';
 

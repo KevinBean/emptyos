@@ -10,8 +10,12 @@
 * { margin:0; padding:0; box-sizing:border-box }
 body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif; background:var(--bg); color:var(--text); min-height:100dvh; padding:env(safe-area-inset-top) 16px calc(env(safe-area-inset-bottom) + 80px); -webkit-font-smoothing:antialiased; overscroll-behavior-y:contain }
 
-/* Streak badge */
+/* Streak badge — absolute on wide screens, inline (above header) on mobile so
+   it doesn't overlap the Settings button. */
 .streak { position:absolute; top:12px; right:16px; background:var(--bg-card); border:1px solid var(--border); border-radius:14px; padding:8px 16px; font-size:13px; font-weight:600; color:var(--text-heading); display:flex; align-items:center; gap:4px; animation:fadeDown 0.4s }
+@media (max-width: 600px) {
+    .streak { position:static; margin:0 0 8px; align-self:flex-start; }
+}
 
 /* Date nav */
 .date-nav { display:flex; align-items:center; justify-content:center; gap:12px; margin-bottom:16px; animation:fadeDown 0.4s ease 0.05s both }

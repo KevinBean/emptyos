@@ -11,7 +11,7 @@ daily_cap_usd = 2.0
 # Global daily $ cap across all sites (last-line defense).
 global_cap_usd = 10.0
 # Default model when a site doesn't override.
-model = "gpt-4.1-mini"
+model = "gpt-5-nano"
 # Hard cap on output tokens per turn — keeps replies short and bounded.
 max_output_tokens = 300
 # Hard cap on input message length (chars). Reject anything larger.
@@ -28,7 +28,7 @@ name = "EmptyOS"
 allowed_origins = ["https://eos.binbian.net"]
 corpus_url = "https://eos.binbian.net/corpus.json"
 daily_cap_usd = 2.0
-model = "gpt-4.1-mini"
+model = "gpt-5-nano"
 persona = """
 You are a knowledgeable guide to EmptyOS, a mind companion that helps people
 think and create. You answer based on the site's published content. You're

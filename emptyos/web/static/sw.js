@@ -2,7 +2,7 @@
  * EmptyOS Service Worker — cache static assets, network-first for API, offline fallback for HTML.
  */
 
-var CACHE_NAME = 'eos-v7';
+var CACHE_NAME = 'eos-v8';
 var OFFLINE_URL = '/offline.html';
 var STATIC_ASSETS = [
   '/static/theme.css',

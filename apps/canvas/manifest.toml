@@ -29,4 +29,5 @@ id = "canvas-recent"
 method = "panel_recent_boards"
 renderer = "chips"
 priority = 80
-group = "dashboard"
+group = "shortcuts"
+title = "Recent boards"

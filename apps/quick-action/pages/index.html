@@ -15,7 +15,11 @@ body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-se
 .capture-box:focus { border-color:color-mix(in srgb,var(--accent) 60%,transparent); box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 10%,transparent) }
 .capture-box::placeholder { color:var(--text-muted); font-size:16px }
 
-.capture-footer { display:flex; align-items:center; gap:8px; margin-top:12px }
+.capture-footer { display:flex; align-items:center; gap:8px; margin-top:12px; flex-wrap:wrap }
+@media (max-width: 600px) {
+    .capture-footer .tag-chips { flex:1 1 100%; }
+    .capture-footer .plan-btn, .capture-footer .submit-btn { flex:1; }
+}
 .tag-chips { display:flex; gap:8px; flex:1; flex-wrap:wrap }
 .tag-chip { padding:4px 12px; border-radius:14px; font-size:12px; font-weight:500; border:1px solid var(--border); background:var(--bg-card); color:var(--text-secondary); cursor:pointer; transition:all 0.15s; user-select:none }
 .tag-chip:active { transform:scale(0.95) }

@@ -20,9 +20,9 @@ async def panel_upcoming_deadlines(self):
         return None
     return [
         {
-            "days": d["days_left"],
-            "name": d["name"],
-            "date": d["deadline"],
+            "title": d["name"],
+            "days_remaining": d["days_left"],
+            "subtitle": d["deadline"],
             "href": f"/projects/#{d['id']}",
         }
         for d in deadlines[:6]
@@ -50,7 +50,7 @@ async def panel_project_countdowns(self):
     if not far:
         return None
     return [
-        {"name": d["name"], "days": d["days_left"], "direction": "down"}
+        {"label": d["name"], "days": d["days_left"], "href": f"/projects/#{d.get('id', '')}"}
         for d in far[:6]
     ]
 

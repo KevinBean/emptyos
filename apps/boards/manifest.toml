@@ -62,4 +62,5 @@ id = "boards-pinned"
 method = "panel_pinned_boards"
 renderer = "chips"
 priority = 85
-group = "dashboard"
+group = "shortcuts"
+title = "Pinned boards"

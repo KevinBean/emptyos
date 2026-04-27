@@ -28,7 +28,7 @@ class SiteConfig:
 class Defaults:
     daily_cap_usd: float = 2.0
     global_cap_usd: float = 10.0
-    model: str = "gpt-4.1-mini"
+    model: str = "gpt-5-nano"
     max_output_tokens: int = 300
     max_input_chars: int = 4000
     rate_limit_per_hour: int = 20
@@ -54,7 +54,7 @@ def load_config(path: str | None = None) -> Config:
     defaults = Defaults(
         daily_cap_usd=float(d.get("daily_cap_usd", 2.0)),
         global_cap_usd=float(d.get("global_cap_usd", 10.0)),
-        model=str(d.get("model", "gpt-4.1-mini")),
+        model=str(d.get("model", "gpt-5-nano")),
         max_output_tokens=int(d.get("max_output_tokens", 300)),
         max_input_chars=int(d.get("max_input_chars", 4000)),
         rate_limit_per_hour=int(d.get("rate_limit_per_hour", 20)),

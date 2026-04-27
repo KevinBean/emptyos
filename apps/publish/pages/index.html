@@ -227,6 +227,49 @@ if(window.EOS&&EOS.registerActions){EOS.registerActions({},[],{description:"Publ
       <div class="sf-hint">For real visitors, point this at a public Cloudflare Worker. For local preview testing, leave empty.</div>
       <a id="sf-analytics-link" href="#" target="_blank" rel="noopener" style="display:inline-block;margin-top:8px;font-size:13px;color:var(--accent);text-decoration:none">View analytics for this site &rarr;</a>
     </div>
+    <div class="sf-group" style="border-top:1px solid var(--border);padding-top:14px;margin-top:6px">
+      <label class="sf-label" style="display:flex;align-items:center;gap:8px;cursor:pointer">
+        <input type="checkbox" id="sf-chatbot-enabled" style="width:auto;margin:0">
+        <span>Enable site chatbot</span>
+      </label>
+      <div class="sf-hint">When on: ships <code>chatbot-widget.js</code> + meta tags into every built page; emits <code>corpus.json</code> with site content. Visitors see a floating bubble bottom-right. Requires a deployed chatbot service (see <code>services/chatbot/</code>).</div>
+    </div>
+    <div id="sf-chatbot-fields" style="display:none">
+      <div class="sf-group">
+        <label class="sf-label">Chatbot service endpoint</label>
+        <input class="sf-input" id="sf-chatbot-endpoint" placeholder="https://chat.binbian.net">
+        <div class="sf-hint">Public URL of the standalone chatbot service. Same URL across all sites that share one service.</div>
+      </div>
+      <div class="sf-group">
+        <label class="sf-label">Model</label>
+        <select class="sf-input" id="sf-chatbot-model">
+          <option value="gpt-5-nano">gpt-5-nano (cheapest, default)</option>
+          <option value="gpt-5-mini">gpt-5-mini (better quality, ~5× cost)</option>
+          <option value="gpt-5">gpt-5 (highest quality, ~25× cost)</option>
+          <option value="gpt-4.1-mini">gpt-4.1-mini (legacy fallback)</option>
+        </select>
+        <div class="sf-hint">Picks the LLM tier the chatbot service uses for this site. Service-side <code>sites.toml</code> overrides this if set there.</div>
+      </div>
+      <div class="sf-group">
+        <label class="sf-label">Daily $ cap</label>
+        <input class="sf-input" id="sf-chatbot-cap" type="number" step="0.10" min="0" placeholder="2.0">
+        <div class="sf-hint">Hard ceiling per UTC day. When hit, the service returns 429 until midnight. With nano + low traffic, $0.30–1.00 is plenty.</div>
+      </div>
+      <div class="sf-group">
+        <label class="sf-label">Persona (optional)</label>
+        <textarea class="sf-input" id="sf-chatbot-persona" rows="3" style="font-family:inherit" placeholder="You are a helpful guide to {site}. Keep answers concise..."></textarea>
+        <div class="sf-hint">Extra system-prompt context appended at service side. Tone, scope, what to emphasize.</div>
+      </div>
+      <div class="sf-group">
+        <label class="sf-label">Starter questions (optional)</label>
+        <input class="sf-input" id="sf-chatbot-starters" placeholder="What is this site? · How do I install? · Show me recent posts">
+        <div class="sf-hint"><code>·</code>-separated. 3–4 short prompts shown as chips on first widget open.</div>
+      </div>
+      <div class="sf-hint" style="padding:10px 12px;background:var(--bg-card);border:1px solid var(--border);border-radius:8px">
+        <strong>Heads up — service-side config still required.</strong> The chatbot service also needs a <code>[sites.<span id="sf-chatbot-id-echo">&lt;id&gt;</span>]</code> block in its <code>sites.toml</code> (allowed origins + corpus URL). Edit on the VPS the first time you enable a site; routine model/persona changes here don't need a service restart.
+      </div>
+    </div>
+
     <div id="sf-mode-hint" style="padding:12px;background:var(--bg-card);border:1px solid var(--border);border-radius:10px;font-size:12px;color:var(--text-secondary);line-height:1.5;margin-top:4px"></div>
     <div class="sf-actions">
       <button class="sf-save" onclick="saveSettings()">Save</button>
@@ -856,6 +899,24 @@ async function openSettings() {
   document.getElementById('sf-analytics-url').value = analytics.collector_url || '';
   document.getElementById('sf-analytics-link').href = '/web-analytics/#' + encodeURIComponent(site.id || '');
 
+  // Chatbot fields
+  var cb = site.chatbot || {};
+  document.getElementById('sf-chatbot-enabled').checked = !!cb.enabled;
+  document.getElementById('sf-chatbot-endpoint').value = cb.endpoint || '';
+  document.getElementById('sf-chatbot-model').value = cb.model || 'gpt-5-nano';
+  document.getElementById('sf-chatbot-cap').value =
+    (cb.daily_cap_usd != null ? cb.daily_cap_usd : 2.0);
+  document.getElementById('sf-chatbot-persona').value = cb.persona || '';
+  document.getElementById('sf-chatbot-starters').value =
+    Array.isArray(cb.starter_questions) ? cb.starter_questions.join(' · ') : '';
+  document.getElementById('sf-chatbot-id-echo').textContent = site.id || '<id>';
+  document.getElementById('sf-chatbot-fields').style.display =
+    document.getElementById('sf-chatbot-enabled').checked ? '' : 'none';
+  // Toggle visibility on change
+  document.getElementById('sf-chatbot-enabled').onchange = function(e) {
+    document.getElementById('sf-chatbot-fields').style.display = e.target.checked ? '' : 'none';
+  };
+
   // Show mode hint
   var mode = config.site_mode || 'blog';
   var hint = document.getElementById('sf-mode-hint');
@@ -888,6 +949,17 @@ async function saveSettings() {
     analytics: {
       enabled: document.getElementById('sf-analytics-enabled').checked,
       collector_url: document.getElementById('sf-analytics-url').value.trim(),
+    },
+    chatbot: {
+      enabled: document.getElementById('sf-chatbot-enabled').checked,
+      endpoint: document.getElementById('sf-chatbot-endpoint').value.trim(),
+      model: document.getElementById('sf-chatbot-model').value,
+      daily_cap_usd: parseFloat(document.getElementById('sf-chatbot-cap').value) || 2.0,
+      persona: document.getElementById('sf-chatbot-persona').value.trim(),
+      starter_questions: document.getElementById('sf-chatbot-starters').value
+        .split('·')
+        .map(function(s) { return s.trim(); })
+        .filter(function(s) { return s.length > 0; }),
     },
   };
 

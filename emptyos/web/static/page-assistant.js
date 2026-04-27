@@ -31,6 +31,11 @@
     }
   };
 
+  // Skip on pages whose primary purpose IS chat/assistant — the page already
+  // has its own chat UI, so the floating capture+assistant FABs collide with
+  // the input bar and add nothing.
+  if (/^\/(assistant|agent|voice-assistant)(\/|$)/.test(location.pathname)) return;
+
   // Wait for EOS.nav to set the current app
   function waitForApp() {
     if (window.EOS && EOS._currentApp !== undefined) {

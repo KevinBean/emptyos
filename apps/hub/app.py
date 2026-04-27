@@ -104,6 +104,17 @@ class HubApp(BaseApp):
         for p in panels:
             g = p["group"]
             if g and g in seen_groups:
+                # Defense-in-depth: a panel can only join a group if its
+                # renderer matches. Mixed-renderer groups silently render the
+                # wrong shape (e.g. stat-tile data flattened into chip text).
+                if p["renderer"] != seen_groups[g]["renderer"]:
+                    self.log(
+                        f"hub: panel '{p['id']}' renderer '{p['renderer']}' "
+                        f"does not match group '{g}' renderer "
+                        f"'{seen_groups[g]['renderer']}' — dropping",
+                        level="warn",
+                    )
+                    continue
                 seen_groups[g]["items"].append(p)
                 continue
             block = {

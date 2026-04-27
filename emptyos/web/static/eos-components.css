@@ -563,7 +563,7 @@ body.eos-think-offline { scroll-padding-top: 40px; }
 .eec-meta { font-size:11px; color:var(--text-muted); margin-top:6px; display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
 .eec-badges { display:flex; gap:4px; flex-wrap:wrap; align-items:center; }
 .eec-badges.right { margin-left:auto; }
-.eec-actions { display:flex; gap:6px; align-items:center; margin-top:8px; justify-content:flex-end; }
+.eec-actions { display:flex; gap:6px; align-items:center; margin-top:8px; justify-content:flex-end; flex-wrap:wrap; }
 .eec-actions.inline { margin-top:0; }
 .eec-body { font-size:13px; color:var(--text-secondary); margin-top:6px; line-height:1.5; }
 

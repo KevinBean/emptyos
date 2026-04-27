@@ -269,8 +269,9 @@ body { padding-top: calc(46px + env(safe-area-inset-top)) !important; }
   [style*="display:flex"][style*="gap"] { flex-wrap:wrap !important }
 
   /* Common page-specific grids */
-  .hero, .hero-stats, .stats-row, .stat-grid, .compare, .streak-section, .fin-hero { grid-template-columns:1fr !important }
-  .cat-grid, .breakdown, .quick-actions, .qa, .qa-row, .frogs, .apps-grid { grid-template-columns:repeat(2,1fr) !important }
+  .hero, .compare, .streak-section, .fin-hero { grid-template-columns:1fr !important }
+  /* Short numeric stat tiles wrap fine into 2 columns even at 390px. */
+  .hero-stats, .stats-row, .stat-grid, .cat-grid, .breakdown, .quick-actions, .qa, .qa-row, .frogs, .apps-grid { grid-template-columns:repeat(2,1fr) !important }
   .widget, .widgets, .wg { grid-template-columns:1fr !important }
   .cd-row, .cds { flex-wrap:nowrap } /* countdowns stay horizontal scrollable */
 

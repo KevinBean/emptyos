@@ -44,7 +44,7 @@ _DEFAULT_SITE = {
         "persona": "",                 # extra system-prompt text appended at service side
         "daily_cap_usd": 2.0,          # per-site daily $ ceiling enforced by the chat service
         "starter_questions": [],       # 3-4 chips shown on first widget open
-        "model": "gpt-4.1-mini",
+        "model": "gpt-5-nano",
     },
 }
 

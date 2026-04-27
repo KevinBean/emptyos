@@ -286,14 +286,18 @@ var RENDERERS = {
     var d = items[0].data;
     if (!Array.isArray(d) || !d.length) return '';
     var rows = d.map(function(r){
-      var badge = r.days_remaining != null
-        ? '<span class="r-list-badge">' + esc(r.days_remaining) + 'd</span>'
+      var title = r.title || r.name || '';
+      if (!title) return '';
+      var days = r.days_remaining != null ? r.days_remaining : r.days;
+      var badge = days != null
+        ? '<span class="r-list-badge">' + esc(days) + 'd</span>'
         : '';
-      var sub = r.subtitle ? '<div class="r-list-sub">' + esc(r.subtitle) + '</div>' : '';
+      var subtxt = r.subtitle || r.date || '';
+      var sub = subtxt ? '<div class="r-list-sub">' + esc(subtxt) + '</div>' : '';
       return '<a class="r-list-row"' + hrefAttr(r.href) + '>' +
-        '<div class="r-list-body"><div class="r-list-title">' + esc(r.title) + '</div>' + sub + '</div>' + badge +
+        '<div class="r-list-body"><div class="r-list-title">' + esc(title) + '</div>' + sub + '</div>' + badge +
       '</a>';
-    }).join('');
+    }).filter(function(s){ return s; }).join('');
     var hdr = block.title ? '<div class="panel-title">' + esc(block.title) + '</div>' : '';
     return '<div class="panel">' + hdr + '<div class="r-list">' + rows + '</div></div>';
   },
@@ -328,14 +332,22 @@ var RENDERERS = {
   },
 
   'countdown-tile': function(items){
-    var tiles = items.map(function(p){
+    var all = [];
+    items.forEach(function(p){
       var d = p.data;
+      if (!Array.isArray(d)) d = [d];
+      all = all.concat(d);
+    });
+    var tiles = all.map(function(d){
+      if (d == null || d.days == null) return '';
+      var label = d.label || d.name || '';
       return '<a class="r-countdown"' + hrefAttr(d.href) + '>' +
         '<div class="r-countdown-days">' + esc(d.days) + 'd</div>' +
-        '<div class="r-countdown-label">' + esc(d.label) + '</div>' +
+        '<div class="r-countdown-label">' + esc(label) + '</div>' +
         (d.date ? '<div class="r-countdown-date">' + esc(d.date) + '</div>' : '') +
       '</a>';
     }).join('');
+    if (!tiles) return '';
     return '<div class="r-countdowns">' + tiles + '</div>';
   },
 
