@@ -1,32 +1,55 @@
 # Caddy vhost block for the chatbot service.
-# Drop into /etc/caddy/sites/chatbot.caddy (or import from main Caddyfile)
+# Drop into /etc/caddy/sites/chatbot.caddy (or paste into the main Caddyfile)
 # and reload Caddy: `sudo systemctl reload caddy`.
 #
-# CORS is intentionally permissive at the proxy layer (`*` in upstream → service
-# enforces actual Origin allowlist via sites.toml allowed_origins). The service's
-# Origin lock is the security boundary; Caddy just makes the headers visible.
+# Order matters: matchers are evaluated top-to-bottom, first match wins.
+#
+# Trust model:
+#   - Public endpoints (/chat, /chat/stream, /health, /sites/{id}/meta) get
+#     wildcard CORS so any browser can call them. Service-side Origin lock
+#     (sites.toml allowed_origins) is the real boundary against browser-based
+#     cross-origin abuse; rate limits + per-site $ cap defend against scripted
+#     abuse where Origin can be spoofed.
+#   - /admin/* gets NO CORS headers at all. These are server-to-server only
+#     (publish-app proxy → service via aiohttp, signed with X-Admin-Token).
+#     Browsers cannot preflight, so they cannot attempt admin calls. Reduces
+#     attack surface without changing the legitimate flow.
 
 chat.binbian.net {
-    reverse_proxy 127.0.0.1:9100
     encode gzip
 
-    # Streaming: keep SSE responses unbuffered.
-    @sse path /chat/stream
+    # /admin/* — server-to-server only. No CORS, no preflight handling.
+    # Browsers physically can't reach these even with a leaked admin token.
+    @admin path /admin/*
+    handle @admin {
+        reverse_proxy 127.0.0.1:9100
+    }
+
+    # CORS preflight for public endpoints — must come before path matchers
+    # that don't filter by method, so OPTIONS doesn't proxy upstream and 405.
+    @options method OPTIONS
+    handle @options {
+        header Access-Control-Allow-Origin "*"
+        header Access-Control-Allow-Methods "POST, GET, OPTIONS"
+        header Access-Control-Allow-Headers "Content-Type"
+        header Access-Control-Max-Age "86400"
+        respond "" 204
+    }
+
+    # SSE streaming for /chat/stream — disable buffering so tokens arrive
+    # progressively. Restricted to POST so a stray OPTIONS can't slip through.
+    @sse {
+        path /chat/stream
+        method POST
+    }
     handle @sse {
         reverse_proxy 127.0.0.1:9100 {
             flush_interval -1
         }
     }
 
-    # CORS preflight handler — service does the real Origin check.
-    @options method OPTIONS
-    handle @options {
-        header Access-Control-Allow-Origin "*"
-        header Access-Control-Allow-Methods "POST, GET, OPTIONS"
-        header Access-Control-Allow-Headers "Content-Type, X-Admin-Token"
-        header Access-Control-Max-Age "86400"
-        respond "" 204
-    }
+    # Everything else — buffered reverse proxy + public-CORS headers.
+    reverse_proxy 127.0.0.1:9100
     header Access-Control-Allow-Origin "*"
-    header Access-Control-Allow-Headers "Content-Type, X-Admin-Token"
+    header Access-Control-Allow-Headers "Content-Type"
 }

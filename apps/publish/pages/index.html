@@ -236,9 +236,9 @@ if(window.EOS&&EOS.registerActions){EOS.registerActions({},[],{description:"Publ
     </div>
     <div id="sf-chatbot-fields" style="display:none">
       <div class="sf-group">
-        <label class="sf-label">Chatbot service endpoint</label>
+        <label class="sf-label">Chatbot service endpoint <span style="color:var(--danger);font-weight:400;font-size:11px">required</span></label>
         <input class="sf-input" id="sf-chatbot-endpoint" placeholder="https://chat.binbian.net">
-        <div class="sf-hint">Public URL of the standalone chatbot service. Same URL across all sites that share one service.</div>
+        <div class="sf-hint">Public URL of the standalone chatbot service. Same URL across all sites that share one service. Without this, the build silently skips widget injection.</div>
       </div>
       <div class="sf-group">
         <label class="sf-label">Model <span style="color:var(--success);font-weight:400;font-size:11px">● synced</span></label>
@@ -987,6 +987,16 @@ async function saveSettings() {
     },
   };
 
+  // Refuse to save chatbot enabled with no endpoint — would silently skip
+  // widget injection at build time, which is confusing.
+  if (data.chatbot.enabled && !data.chatbot.endpoint) {
+    if (EOS_UI && EOS_UI.toast) {
+      EOS_UI.toast('Chatbot endpoint URL is required when chatbot is enabled', false);
+    }
+    document.getElementById('sf-chatbot-endpoint').focus();
+    return;
+  }
+
   try {
     var resp = await fetch('/publish/api/sites/' + encodeURIComponent(activeSiteId), {
       method: 'PUT', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(data)
@@ -1074,11 +1084,16 @@ async function openChatbotQA() {
 async function reloadChatbotQA() {
   _qaState.loading = true;
   renderQAModal();
+  function jget(p) {
+    return fetch(p).then(function(r) { return r.json(); }).catch(function(e) {
+      return { error: 'Network: ' + (e && e.message) };
+    });
+  }
   try {
     var res = await Promise.all([
-      EOS.get('/publish/api/chatbot/qa-log/' + encodeURIComponent(activeSiteId) + '?status=pending'),
-      EOS.get('/publish/api/chatbot/qa-log/' + encodeURIComponent(activeSiteId) + '?status=curated'),
-      EOS.get('/publish/api/chatbot/faqs/' + encodeURIComponent(activeSiteId)),
+      jget('/publish/api/chatbot/qa-log/' + encodeURIComponent(activeSiteId) + '?status=pending'),
+      jget('/publish/api/chatbot/qa-log/' + encodeURIComponent(activeSiteId) + '?status=curated'),
+      jget('/publish/api/chatbot/faqs/' + encodeURIComponent(activeSiteId)),
     ]);
     _qaState.pending = (res[0] && res[0].rows) || [];
     _qaState.curated = (res[1] && res[1].rows) || [];
