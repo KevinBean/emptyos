@@ -36,6 +36,18 @@ def _cost(tokens_in: int, tokens_out: int, model: str) -> float:
     return (tokens_in * rate["in"] + tokens_out * rate["out"]) / 1_000_000
 
 
+def _max_tokens_kwarg(model: str, n: int) -> dict:
+    """Pick the right param name for the model's API version.
+
+    GPT-5 family + the o1/o3 reasoning families use `max_completion_tokens`;
+    GPT-4 and older use the legacy `max_tokens`. OpenAI rejects requests that
+    use the wrong one with a 400 invalid_request_error.
+    """
+    if model.startswith(("gpt-5", "o1", "o3", "o4")):
+        return {"max_completion_tokens": n}
+    return {"max_tokens": n}
+
+
 class OpenAIProvider(Provider):
     name = "openai"
 
@@ -54,12 +66,16 @@ class OpenAIProvider(Provider):
         max_tokens: int,
     ) -> CompletionResult:
         full_messages = [{"role": "system", "content": system}] + messages
-        resp = await self.client.chat.completions.create(
-            model=model,
-            messages=full_messages,
-            max_tokens=max_tokens,
-            temperature=0.4,
-        )
+        kwargs = {
+            "model": model,
+            "messages": full_messages,
+            **_max_tokens_kwarg(model, max_tokens),
+        }
+        # GPT-5 / o-series models reject custom `temperature` (only support
+        # the default of 1.0). Older chat models accept it.
+        if not model.startswith(("gpt-5", "o1", "o3", "o4")):
+            kwargs["temperature"] = 0.4
+        resp = await self.client.chat.completions.create(**kwargs)
         text = resp.choices[0].message.content or ""
         usage = resp.usage
         tokens_in = usage.prompt_tokens if usage else 0
@@ -81,13 +97,15 @@ class OpenAIProvider(Provider):
         max_tokens: int,
     ) -> AsyncIterator[str]:
         full_messages = [{"role": "system", "content": system}] + messages
-        stream = await self.client.chat.completions.create(
-            model=model,
-            messages=full_messages,
-            max_tokens=max_tokens,
-            temperature=0.4,
-            stream=True,
-        )
+        kwargs = {
+            "model": model,
+            "messages": full_messages,
+            "stream": True,
+            **_max_tokens_kwarg(model, max_tokens),
+        }
+        if not model.startswith(("gpt-5", "o1", "o3", "o4")):
+            kwargs["temperature"] = 0.4
+        stream = await self.client.chat.completions.create(**kwargs)
         async for chunk in stream:
             if not chunk.choices:
                 continue
