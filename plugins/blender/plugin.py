@@ -14,7 +14,6 @@ for 3D-rendered images.
 from __future__ import annotations
 
 import asyncio
-import json
 import shutil
 import uuid
 from pathlib import Path
@@ -33,10 +32,42 @@ class BlenderPlugin(BasePlugin):
         self._draw_registered = False
 
     def _host(self) -> str:
-        return self.config("host", "http://localhost:8400")
+        return self.config("host", "http://127.0.0.1:8400")
+
+    def _token_path(self) -> Path:
+        return Path.home() / ".eos" / "blender-bridge.token"
+
+    def _token(self) -> str:
+        """Read (or generate) the shared bridge token. The Blender-side addon
+        reads from the same path on register(), so they agree without env
+        plumbing — important because users start Blender themselves."""
+        p = self._token_path()
+        try:
+            if p.exists():
+                return p.read_text(encoding="utf-8").strip()
+            import secrets
+
+            tok = secrets.token_urlsafe(32)
+            p.parent.mkdir(parents=True, exist_ok=True)
+            p.write_text(tok, encoding="utf-8")
+            try:
+                # Restrict to owner-readable on POSIX. No-op on Windows.
+                import os
+                import stat
+
+                os.chmod(p, stat.S_IRUSR | stat.S_IWUSR)
+            except Exception:
+                pass
+            return tok
+        except Exception:
+            return ""
+
+    def _auth_headers(self) -> dict:
+        return self.bearer_headers(self._token())
 
     def _blender_exe(self) -> str:
         import sys
+
         if sys.platform == "darwin":
             fallback = "/Applications/Blender.app/Contents/MacOS/Blender"
         elif sys.platform == "win32":
@@ -53,11 +84,16 @@ class BlenderPlugin(BasePlugin):
     async def connect(self):
         self._session = aiohttp.ClientSession()
         self._output_dir().mkdir(parents=True, exist_ok=True)
+        # Ensure the shared bridge token exists on disk before we ping —
+        # the Blender-side addon will pick it up lazily on its next request.
+        self._token()
         if await self.available():
             self._register_draw()
             print(f"[Blender] Connected to addon server at {self._host()}")
         else:
-            print(f"[Blender] Addon server not reachable at {self._host()} (headless mode available)")
+            print(
+                f"[Blender] Addon server not reachable at {self._host()} (headless mode available)"
+            )
 
     async def disconnect(self):
         if self._session:
@@ -125,6 +161,7 @@ class BlenderPlugin(BasePlugin):
         async with self._session.post(
             self._host(),
             json=payload,
+            headers=self._auth_headers(),
             timeout=aiohttp.ClientTimeout(total=timeout),
         ) as resp:
             data = await resp.json()
@@ -166,7 +203,10 @@ class BlenderPlugin(BasePlugin):
             if proc.returncode != 0:
                 raise RuntimeError(f"Blender exited with code {proc.returncode}: {stderr_str}")
             # Check for Python errors even on exit code 0 (Blender doesn't always set non-zero)
-            if "Traceback (most recent call last):" in stderr_str or "Traceback (most recent call last):" in stdout_str:
+            if (
+                "Traceback (most recent call last):" in stderr_str
+                or "Traceback (most recent call last):" in stdout_str
+            ):
                 error_text = stderr_str if "Traceback" in stderr_str else stdout_str
                 raise RuntimeError(f"Blender script error: {error_text[-500:]}")
             return stdout_str
@@ -223,9 +263,15 @@ if '{engine}' == 'CYCLES':
 bpy.ops.render.render(write_still=True)
 print(f"RENDER_OUTPUT:{{scene.render.filepath}}")
 """
-        self.kernel.syslog.info("blender", f"Rendering {blend_file}", data={
-            "engine": engine, "resolution": resolution, "samples": samples,
-        })
+        self.kernel.syslog.info(
+            "blender",
+            f"Rendering {blend_file}",
+            data={
+                "engine": engine,
+                "resolution": resolution,
+                "samples": samples,
+            },
+        )
         await self.run_script(script, blend_file=blend_file)
         return output
 
@@ -275,25 +321,33 @@ if '{engine}' == 'CYCLES':
 bpy.ops.render.render(animation=True)
 print(f"ANIM_OUTPUT:{output_path}")
 """
-        self.kernel.syslog.info("blender", f"Rendering animation {blend_file}", data={
-            "frames": f"{frame_start}-{frame_end}", "engine": engine,
-        })
+        self.kernel.syslog.info(
+            "blender",
+            f"Rendering animation {blend_file}",
+            data={
+                "frames": f"{frame_start}-{frame_end}",
+                "engine": engine,
+            },
+        )
         await self.run_script(script, blend_file=blend_file)
         return output_dir
 
     async def render_from_prompt(self, prompt: str, **kwargs) -> str:
-        """Generate a 3D render from a text prompt.
+        """Render-from-prompt entrypoint for the `draw` capability.
 
-        Uses the addon server to create geometry from a prompt,
-        then renders it. Falls back to headless procedural generation.
+        Two paths: when the addon is available, render the *current* scene
+        (the addon ignores `prompt` — the user is expected to have set up the
+        scene already). Otherwise, fall back to a headless procedural scene
+        that does loosely interpret the prompt.
         """
         if await self.available():
-            # Addon server: let Blender's AI/procedural tools handle it
-            result = await self._rpc("render_from_prompt", {
-                "prompt": prompt,
-                "width": kwargs.get("width", 1024),
-                "height": kwargs.get("height", 1024),
-            })
+            result = await self._rpc(
+                "render_scene",
+                {
+                    "width": kwargs.get("width", 1024),
+                    "height": kwargs.get("height", 1024),
+                },
+            )
             return result.get("image_path", "")
 
         # Headless fallback: basic procedural scene
@@ -321,8 +375,8 @@ bpy.context.scene.camera = cam
 # Render
 scene = bpy.context.scene
 scene.render.engine = 'CYCLES'
-scene.render.resolution_x = {kwargs.get('width', 1024)}
-scene.render.resolution_y = {kwargs.get('height', 1024)}
+scene.render.resolution_x = {kwargs.get("width", 1024)}
+scene.render.resolution_y = {kwargs.get("height", 1024)}
 scene.cycles.samples = 64
 scene.cycles.device = 'GPU'
 scene.render.filepath = r'{output}'
@@ -335,9 +389,10 @@ bpy.ops.render.render(write_still=True)
         """Get info about the current scene in the running Blender instance."""
         return await self._rpc("scene_info")
 
-    async def execute_python(self, code: str) -> dict:
-        """Execute arbitrary Python code in the running Blender instance."""
-        return await self._rpc("execute", {"code": code})
+    # NOTE: execute_python (arbitrary `exec` over RPC) was removed for
+    # security. Use `run_script(code)` instead — that spins up a headless
+    # subprocess, isolating the running Blender instance from arbitrary code
+    # paths reaching it via the local RPC port.
 
     async def import_model(self, file_path: str, format: str = "auto") -> dict:
         """Import a 3D model into the current scene."""
@@ -355,3 +410,20 @@ bpy.ops.render.render(write_still=True)
     async def set_material(self, object_name: str, material: dict) -> dict:
         """Set material properties on a named object."""
         return await self._rpc("set_material", {"object": object_name, "material": material})
+
+    async def viewport_screenshot(
+        self, path: str = "", width: int = 0, height: int = 0
+    ) -> dict:
+        """Capture the active viewport (or camera POV in headless) to a PNG.
+
+        Fast OpenGL render — useful for "what does it look like?" feedback loops
+        without paying full Cycles/EEVEE render cost.
+        """
+        params: dict = {}
+        if path:
+            params["path"] = path
+        if width:
+            params["width"] = width
+        if height:
+            params["height"] = height
+        return await self._rpc("viewport_screenshot", params)

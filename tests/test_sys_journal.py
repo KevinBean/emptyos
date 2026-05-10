@@ -43,6 +43,28 @@ class TestJournalAPI:
         data = assert_ok(http_client.get("/journal/api/templates"))
         assert isinstance(data, (list, dict))
 
+    def test_related_endpoint_short_query_no_results(self, http_client):
+        """Related-entries endpoint returns empty when query is too short
+        to embed meaningfully — protects against junk hits on one-liners."""
+        data = assert_ok(http_client.get("/journal/api/related?text=hi&top_k=3"))
+        assert isinstance(data, dict)
+        assert data.get("results") == []
+
+    def test_related_endpoint_returns_shape(self, http_client):
+        """Substantive query returns the documented response shape, even if
+        results is empty (vault may not have semantically-similar entries).
+
+        Long timeout: on a fresh boot the embedding index hasn't warmed yet
+        (3-year corpus walk + per-chunk embed call ≈ 30–60s on OpenAI)."""
+        q = "had a productive coding session today and finished the feature I had been working on"
+        data = assert_ok(http_client.get(f"/journal/api/related?text={q}&top_k=3", timeout=90))
+        assert isinstance(data, dict)
+        assert "text" in data and "results" in data
+        assert isinstance(data["results"], list)
+        for r in data["results"]:
+            assert {"date", "score"} <= set(r.keys())
+            assert isinstance(r["score"], (int, float))
+
 
 @pytest.mark.interactive
 class TestJournalUI:

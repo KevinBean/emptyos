@@ -35,7 +35,7 @@ def _skill_dirs(repo_root: Path) -> list[tuple[str, Path]]:
     return [
         ("bundled", repo_root / "skills"),
         ("project", repo_root / ".claude" / "skills"),
-        ("user",    Path.home() / ".claude" / "skills"),
+        ("user", Path.home() / ".claude" / "skills"),
     ]
 
 
@@ -54,7 +54,7 @@ def _parse_frontmatter(text: str) -> tuple[dict, str]:
             continue
         k, _, v = line.partition(":")
         fm[k.strip()] = v.strip().strip('"').strip("'")
-    body = text[end + 4:].lstrip("\n")
+    body = text[end + 4 :].lstrip("\n")
     return fm, body
 
 
@@ -75,6 +75,7 @@ def parse_skill_args(arg: str) -> dict[str, str]:
     result: dict[str, str] = {"arg": arg}
     # Try named key=value parsing (with optional quoting)
     import re
+
     named_pattern = re.compile(r'(\w+)=(?:"([^"]*)"|(\'[^\']*\')|(\S+))')
     named_matches = list(named_pattern.finditer(arg))
 
@@ -95,9 +96,11 @@ def parse_skill_args(arg: str) -> dict[str, str]:
 def substitute_skill_params(body: str, params: dict[str, str]) -> str:
     """Replace {{key}} placeholders in skill body with values from params dict."""
     import re
+
     def replace(m):
         key = m.group(1).strip()
         return params.get(key, m.group(0))  # leave unreplaced if key not found
+
     return re.sub(r"\{\{(\w+)\}\}", replace, body)
 
 
@@ -136,6 +139,12 @@ def discover_skills(repo_root: Path) -> dict[str, Skill]:
             desc = fm.get("description") or _first_meaningful_line(body)
             # params: comma-separated param names, e.g. "topic, format=bullets"
             raw_params = fm.get("params", "")
-            params = [p.split("=")[0].strip() for p in raw_params.split(",") if p.strip()] if raw_params else []
-            catalog[name] = Skill(name=name, description=desc, path=skill_md, source=source, params=params)
+            params = (
+                [p.split("=")[0].strip() for p in raw_params.split(",") if p.strip()]
+                if raw_params
+                else []
+            )
+            catalog[name] = Skill(
+                name=name, description=desc, path=skill_md, source=source, params=params
+            )
     return catalog

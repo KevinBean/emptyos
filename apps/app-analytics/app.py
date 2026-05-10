@@ -16,9 +16,17 @@ from __future__ import annotations
 
 import time
 from collections import Counter
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
-from emptyos.sdk import BaseApp, TimeSeriesCounter, cli_command, days_ago_utc, scheduled, today_utc, web_route
+from emptyos.sdk import (
+    BaseApp,
+    TimeSeriesCounter,
+    cli_command,
+    days_ago_utc,
+    scheduled,
+    today_utc,
+    web_route,
+)
 
 from .vault_mixin import VaultAnalyticsMixin
 
@@ -47,12 +55,12 @@ def _iso_week(date_str: str) -> str:
 
 
 class AppAnalyticsApp(BaseApp):
-
     async def setup(self):
         await super().setup()
         self.vault_analytics = VaultAnalyticsMixin(self)
         self.usage = TimeSeriesCounter(
-            self.db, "usage",
+            self.db,
+            "usage",
             dims=["app", "kind", "hour"],
             granularity="day",
         )
@@ -88,7 +96,6 @@ class AppAnalyticsApp(BaseApp):
         except Exception:
             pass
 
-
     def _all_app_ids(self) -> list[str]:
         return sorted(self.kernel.apps.manifests.keys())
 
@@ -123,7 +130,14 @@ class AppAnalyticsApp(BaseApp):
             "views_7d": views_7d,
             "views_30d": views_30d,
             "active_apps_7d": len(active_apps),
-            "unused_apps_30d": len(all_apps - {r["key"] for r in self.usage.top("app", start=start, end=end, limit=200) if r["key"] in all_apps}),
+            "unused_apps_30d": len(
+                all_apps
+                - {
+                    r["key"]
+                    for r in self.usage.top("app", start=start, end=end, limit=200)
+                    if r["key"] in all_apps
+                }
+            ),
             "total_apps": len(all_apps),
         }
 
@@ -143,7 +157,9 @@ class AppAnalyticsApp(BaseApp):
             days_ago = None
             if last_date:
                 try:
-                    diff = datetime.now(timezone.utc) - datetime.strptime(last_date, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+                    diff = datetime.now(UTC) - datetime.strptime(last_date, "%Y-%m-%d").replace(
+                        tzinfo=UTC
+                    )
                     days_ago = diff.days
                 except Exception:
                     pass
@@ -151,9 +167,13 @@ class AppAnalyticsApp(BaseApp):
             m = self.kernel.apps.manifests.get(app_id)
             if m:
                 name = m.name or app_id
-            result.append({"app_id": app_id, "name": name, "last_seen": last_date, "days_ago": days_ago})
+            result.append(
+                {"app_id": app_id, "name": name, "last_seen": last_date, "days_ago": days_ago}
+            )
 
-        result.sort(key=lambda r: r["days_ago"] if r["days_ago"] is not None else 9999, reverse=True)
+        result.sort(
+            key=lambda r: r["days_ago"] if r["days_ago"] is not None else 9999, reverse=True
+        )
         return result
 
     @web_route("GET", "/api/heatmap")
@@ -183,11 +203,16 @@ class AppAnalyticsApp(BaseApp):
             error_rate = errs / max(1, activity)
             priority = error_rate * activity
             if errs > 0 or activity > 0:
-                result.append({
-                    "app": app_id, "views": views, "events": events,
-                    "errors": errs, "error_rate": round(error_rate, 4),
-                    "priority": round(priority, 2),
-                })
+                result.append(
+                    {
+                        "app": app_id,
+                        "views": views,
+                        "events": events,
+                        "errors": errs,
+                        "error_rate": round(error_rate, 4),
+                        "priority": round(priority, 2),
+                    }
+                )
         result.sort(key=lambda r: r["priority"], reverse=True)
         return result
 
@@ -216,22 +241,28 @@ class AppAnalyticsApp(BaseApp):
             for i in range(1, len(weeks)):
                 prev_y, prev_w = int(weeks[i - 1][:4]), int(weeks[i - 1][6:])
                 cur_y, cur_w = int(weeks[i][:4]), int(weeks[i][6:])
-                if (cur_y == prev_y and cur_w == prev_w + 1) or (cur_y == prev_y + 1 and prev_w >= 52 and cur_w == 1):
+                if (cur_y == prev_y and cur_w == prev_w + 1) or (
+                    cur_y == prev_y + 1 and prev_w >= 52 and cur_w == 1
+                ):
                     streak += 1
                 else:
                     longest = max(longest, streak)
                     streak = 1
             longest = max(longest, streak)
-            if weeks[-1] == now_week or (len(weeks) >= 2 and weeks[-1] >= _iso_week(days_ago_utc(13))):
+            if weeks[-1] == now_week or (
+                len(weeks) >= 2 and weeks[-1] >= _iso_week(days_ago_utc(13))
+            ):
                 current = streak
             else:
                 current = 0
-            result.append({
-                "app": app_id,
-                "current_weeks": current,
-                "longest_weeks": longest,
-                "last_week": weeks[-1] if weeks else None,
-            })
+            result.append(
+                {
+                    "app": app_id,
+                    "current_weeks": current,
+                    "longest_weeks": longest,
+                    "last_week": weeks[-1] if weeks else None,
+                }
+            )
         result.sort(key=lambda r: r["current_weeks"], reverse=True)
         return [r for r in result if r["longest_weeks"] > 0]
 
@@ -263,7 +294,9 @@ class AppAnalyticsApp(BaseApp):
         events = await self.kernel.events.history(limit=limit)
         app_events = [e for e in events if e.get("source") == app_id]
         by_type = Counter(e["type"] for e in app_events)
-        by_hour = Counter(e["timestamp"][11:13] for e in app_events if len(e.get("timestamp", "")) > 13)
+        by_hour = Counter(
+            e["timestamp"][11:13] for e in app_events if len(e.get("timestamp", "")) > 13
+        )
         return {
             "app": app_id,
             "total_events": len(app_events),
@@ -300,9 +333,14 @@ class AppAnalyticsApp(BaseApp):
         insight = await self.think(
             INSIGHT_USER.format(context=context),
             system=INSIGHT_SYSTEM,
-            domain="text", temperature=0.4,
+            domain="text",
+            temperature=0.4,
         )
-        return {"insight": insight, "total_events": a["total_events"], "provenance": self.last_provenance()}
+        return {
+            "insight": insight,
+            "total_events": a["total_events"],
+            "provenance": self.last_provenance(),
+        }
 
     async def get_summary(self):
         return await self.analytics(200)
@@ -357,8 +395,10 @@ class AppAnalyticsApp(BaseApp):
             return
 
         a = await self.analytics()
-        print(f"\n  {a['total_events']} events, {a['unique_types']} types, {a['unique_sources']} sources")
-        print(f"\n  Top sources:")
+        print(
+            f"\n  {a['total_events']} events, {a['unique_types']} types, {a['unique_sources']} sources"
+        )
+        print("\n  Top sources:")
         for src, count in list(a["top_sources"].items())[:10]:
             bar = "#" * min(count, 30)
             print(f"    {src:<20} {count:>4}  {bar}")
@@ -384,7 +424,7 @@ class AppAnalyticsApp(BaseApp):
     @scheduled("23 3 * * *", id="app-analytics-trim")
     async def nightly_trim(self):
         days = int(self.setting("app-analytics.retention_days", 365) or 365)
-        before = (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%d")
+        before = (datetime.now(UTC) - timedelta(days=days)).strftime("%Y-%m-%d")
         removed = self.usage.trim(before)
         if removed:
             self.log(f"trimmed {removed} analytics rows older than {before}")

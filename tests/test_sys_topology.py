@@ -67,6 +67,78 @@ class TestTopologyAPI:
             pytest.skip("node subgraph endpoint not present")
         assert resp.status_code == 200
 
+    def test_timeline_shape(self, http_client):
+        """Timeline endpoint returns {min_date, max_date, nodes, time_resolution}."""
+        resp = http_client.get("/api/topology/timeline")
+        if resp.status_code == 404:
+            pytest.skip("timeline endpoint not present")
+        data = assert_dict_response(resp)
+        for key in ("min_date", "max_date", "nodes", "time_resolution"):
+            assert key in data, f"timeline payload missing {key}: {list(data.keys())}"
+        assert data["time_resolution"] in ("day", "minute")
+        assert isinstance(data["nodes"], dict)
+
+    def test_timeline_node_entries(self, http_client):
+        """Each node entry is {date, message} (cache schema v3)."""
+        data = http_client.get("/api/topology/timeline").json()
+        nodes = data.get("nodes", {})
+        if not nodes:
+            pytest.skip("no timeline nodes")
+        sample_id, sample = next(iter(nodes.items()))
+        assert isinstance(sample, dict), f"node entry not a dict: {sample!r}"
+        assert "date" in sample, f"node entry missing 'date': {sample}"
+        # Date is full ISO with timezone
+        assert "T" in sample["date"], f"date not ISO: {sample['date']}"
+
+    def test_timeline_public_strips_hours(self, http_client):
+        """When time_resolution=day, every timestamp must be midnight UTC."""
+        data = http_client.get("/api/topology/timeline").json()
+        if data.get("time_resolution") != "day":
+            pytest.skip("local mode — minute resolution is fine")
+        # Public mode: all timestamps end in T00:00:00+00:00
+        for nid, entry in data.get("nodes", {}).items():
+            d = entry.get("date") if isinstance(entry, dict) else entry
+            assert d.endswith("T00:00:00+00:00"), (
+                f"public-mode timestamp leaks hour-of-day: {nid} -> {d}"
+            )
+
+    def test_tree_shape(self, http_client):
+        """Tree endpoint returns {roots, groundcover}; roots are 9 capabilities."""
+        resp = http_client.get("/api/topology/tree")
+        if resp.status_code == 404:
+            pytest.skip("tree endpoint not present")
+        data = assert_dict_response(resp)
+        assert "roots" in data and isinstance(data["roots"], list)
+        assert "groundcover" in data and isinstance(data["groundcover"], list)
+        assert len(data["roots"]) >= 5, f"expected ≥5 capability roots, got {len(data['roots'])}"
+        for root in data["roots"]:
+            for key in ("id", "label", "providers", "engines", "consumers"):
+                assert key in root, f"capability root missing {key}: {list(root.keys())}"
+
+    def test_tree_groundcover_kinds(self, http_client):
+        """Groundcover entries declare kind = sapling|flower."""
+        data = http_client.get("/api/topology/tree").json()
+        ground = data.get("groundcover", [])
+        if not ground:
+            pytest.skip("no groundcover apps")
+        for app in ground:
+            assert app.get("kind") in ("sapling", "flower"), (
+                f"unexpected groundcover kind: {app.get('kind')} for {app.get('id')}"
+            )
+
+    def test_releases_shape(self, http_client):
+        """Releases endpoint returns {releases: [{tag, date, message}, ...]}."""
+        resp = http_client.get("/api/topology/releases")
+        if resp.status_code == 404:
+            pytest.skip("releases endpoint not present")
+        data = assert_dict_response(resp)
+        assert "releases" in data and isinstance(data["releases"], list)
+        if not data["releases"]:
+            pytest.skip("repo has no git tags")
+        for r in data["releases"]:
+            for key in ("tag", "date", "message"):
+                assert key in r, f"release entry missing {key}: {list(r.keys())}"
+
 
 @pytest.mark.interactive
 class TestTopologyUI:
@@ -92,3 +164,38 @@ class TestTopologyUI:
         nodes = page.locator("svg circle, svg g.node, .node")
         # Don't fail if zero — graph may render with different structure
         assert_no_js_errors(page_errors)
+
+    def test_ui_view_switcher(self, page, base_url, page_errors):
+        """All four view buttons present and switchable."""
+        page.goto(base_url + "/topology", wait_until="domcontentloaded", timeout=15000)
+        wait_briefly(page, 1500)
+        for view in ("graph", "tree", "pyramid", "dictionary"):
+            btn = page.locator(f"#btn-view-{view}")
+            assert btn.count() == 1, f"missing view button: {view}"
+        # Switching to tree should hide the graph SVG
+        page.locator("#btn-view-tree").click()
+        wait_briefly(page, 800)
+        assert page.locator("#tree-view").count() == 1
+        assert_no_js_errors(page_errors, allow_patterns=["fetch"])
+
+    def test_ui_timeline_bar(self, page, base_url, page_errors):
+        """Timeline bar with toggle + slider + log button + release marks renders."""
+        page.goto(base_url + "/topology", wait_until="domcontentloaded", timeout=15000)
+        wait_briefly(page, 1500)
+        for el in ("#tl-toggle", "#tl-play", "#tl-log", "#timeline-slider", "#release-marks"):
+            assert page.locator(el).count() == 1, f"missing timeline element: {el}"
+        assert_no_js_errors(page_errors, allow_patterns=["fetch"])
+
+    def test_ui_timeline_no_hours_visible(self, page, base_url, page_errors):
+        """Privacy: cutoff label must never display HH:MM, only YYYY-MM-DD."""
+        import re
+        page.goto(base_url + "/topology", wait_until="domcontentloaded", timeout=15000)
+        wait_briefly(page, 1500)
+        page.locator("#tl-toggle").click()  # turn timeline on
+        wait_briefly(page, 600)
+        label = page.locator("#timeline-date").text_content() or ""
+        # Match HH:MM patterns like "14:32" anywhere — must not appear
+        assert not re.search(r"\b\d{2}:\d{2}\b", label), (
+            f"cutoff label leaks hour-of-day: {label!r}"
+        )
+        assert_no_js_errors(page_errors, allow_patterns=["fetch"])

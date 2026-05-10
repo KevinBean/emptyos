@@ -296,31 +296,34 @@ apps = [
 
 ## Current Merge Candidates (from topology analysis)
 
-Confirmed by live graph data, April 2026:
+Confirmed by live graph data, April 2026 (last refreshed 2026-04-28).
 
-### Tier: Personal (apps/personal/)
+**No active merge candidates.** The April baseline list — sleep/workout/habits → healing, comfyui-app → studio, vault-analytics → app-analytics, plugin-gen → app-gen, sheath-voltage → cable, digest/review → briefing — has been fully executed. Each retired app sits in its tier's `_retired/` and the host apps gained the corresponding tabs/mixins.
 
-| Host (centrality) | Absorb | Type | Result |
+The `finance(personal) + expense(core)` pair from the original baseline is **invalid by rule**, not pending: cross-tier merges are blocked by release safety (a personal app cannot absorb a core app and vice versa).
+
+### Remaining orphans (centrality 0) — not merge targets
+
+| Orphan | Tier | Why it's an orphan | Action |
 |---|---|---|---|
-| `healing` (25) | sleep(0), workout(0), habits(0) | mixin | Wellness hub, 4 tabs |
-| `finance` (10) | expense(26) | mixin | Finance gains expense tab |
-| `briefing` (69) | digest(16), review(15) | UI consolidation | Daily/weekly modes |
-| `cable` (0) | sheath-voltage(0) | module | Engineering suite |
-| `studio` (16) | comfyui-app(6) | UI consolidation | Unified image studio |
+| `agent` | core | Hosts `NativelyAgenticProvider` — runs claude-cli's own loop, intentionally bypasses BaseApp tools. ~3000 lines, 1 emit / 1 call by design. | Leave alone. |
+| `test-app` | core | Test fixture, not a real app. | Leave alone. |
+| `cable` / `fault-distribution` / `web-analytics` | personal/core mix | Group together as "Web Analytics" cluster with weight = 0 — pure name-based clustering artifact. The three apps share no domain and no edges; they're co-located in the cluster only because the heuristic groups apps with similar names. | Leave alone. Document as clustering noise, do not re-flag. |
 
-### Tier: Core (apps/)
+### Recently wired (2026-04-28)
 
-| Host (centrality) | Absorb | Type | Result |
-|---|---|---|---|
-| `app-analytics` (29) | vault-analytics(25) | mixin | Unified analytics |
-| `app-gen` (4) | plugin-gen(0) | module | Unified generator |
+These two were orphans on the previous run; one `call_app` edge each pulled them into existing clusters. Wires do not merge — the apps stay separate, the graph just becomes honest.
 
-### Priority Order
+| Orphan | Wire | Centrality |
+|---|---|---|
+| `music-library` | `music-studio.send_to_library` → `call_app("music-library", "add_song")` | 0 → 5 |
+| `providers` | `model-bench /api/live-chain` → `call_app("providers", "live_chain")` | 0 → 5 |
 
-1. Wire orphans first (sleep, workout, habits, weather, recipes, bookmarks, reminders, quickref)
-2. Personal merges (healing cluster, then finance+expense, then briefing cluster)
-3. Core merges (analytics, generators)
-4. Verify topology improvement after each merge
+### Priority Order (when new candidates appear)
+
+1. Wire orphans first — one `call_app` or event edge often pulls an app into the right cluster without merging.
+2. Personal-tier merges before core-tier merges (lower release-blast radius).
+3. After each merge, re-pull `/api/apps/clusters` and verify centrality improved before moving on.
 
 ---
 

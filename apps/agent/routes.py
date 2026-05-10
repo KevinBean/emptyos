@@ -15,8 +15,8 @@ from datetime import datetime as _dt
 from emptyos.sdk import web_route
 from emptyos.sdk.agent_loop import DEFAULT_MAX_ITERS
 
-
 # ── Session listing / CRUD ─────────────────────────────────────────────
+
 
 @web_route("GET", "/api/sessions")
 async def api_list_sessions(self, request):
@@ -83,6 +83,7 @@ async def api_archive_session(self, request):
 
 # ── Session-scoped tasks / fork / revert / edit-stack ──────────────────
 
+
 @web_route("GET", "/api/sessions/{sid}/tasks")
 async def api_session_tasks(self, request):
     """GET /api/sessions/{sid}/tasks — last persisted TaskList for this session.
@@ -143,12 +144,17 @@ async def api_edit_stack(self, request):
     stack = self._edit_stacks.get(sid) or []
     # Return a light preview — strip `previous_content` (can be large).
     return [
-        {"path": e.get("path"), "action": e.get("action"), "bytes": len(e.get("previous_content") or "")}
+        {
+            "path": e.get("path"),
+            "action": e.get("action"),
+            "bytes": len(e.get("previous_content") or ""),
+        }
         for e in stack
     ]
 
 
 # ── MCP bridge / tool audit / tools listing ────────────────────────────
+
 
 @web_route("POST", "/api/mcp/tools/call")
 async def api_mcp_tool_call(self, request):
@@ -169,7 +175,10 @@ async def api_mcp_tool_call(self, request):
     tool = self._tools.get(name)
     if not tool:
         available = ", ".join(sorted(self._tools.keys()))
-        return {"ok": False, "content": f"error: tool {name!r} not registered. Available: {available}"}
+        return {
+            "ok": False,
+            "content": f"error: tool {name!r} not registered. Available: {available}",
+        }
     try:
         result = await tool.run(self, **arguments)
         return {"ok": result.ok, "content": result.content, "display": result.display}
@@ -236,6 +245,7 @@ async def api_list_tools(self, request):
 
 # ── Skills / slash-commands catalog ────────────────────────────────────
 
+
 @web_route("GET", "/api/skills")
 async def api_skills(self, request):
     """Catalog of Claude-Code-compatible skills the agent can invoke via
@@ -253,10 +263,12 @@ async def api_skills(self, request):
 async def api_slash_commands(self, request):
     """Shared slash-command list — same set for CLI and web."""
     from apps.agent.repl import SLASH_COMMANDS
+
     return SLASH_COMMANDS
 
 
 # ── Permissions ────────────────────────────────────────────────────────
+
 
 @web_route("POST", "/api/permission/{req_id}/approve")
 async def api_approve_permission(self, request):
@@ -296,6 +308,7 @@ async def api_list_permissions(self, request):
 
 # ── Agent-wide status summary ─────────────────────────────────────────
 
+
 @web_route("GET", "/api/status")
 async def api_status(self, request):
     """Summarize the agent's runtime state.
@@ -305,24 +318,26 @@ async def api_status(self, request):
     """
     sid = request.query_params.get("session_id", "")
     session_record = self._get_session(sid) if sid else None
-    provider_name = (
-        (session_record or {}).get("provider")
-        or self._default_provider_name()
-    )
+    provider_name = (session_record or {}).get("provider") or self._default_provider_name()
     provider = self._resolve_provider(provider_name)
 
     provider_info: dict = {"requested": provider_name, "available": False}
     if provider is not None:
-        provider_info.update({
-            "available": True,
-            "name": provider.name,
-            "kind": "native" if self._is_native_provider(provider) else getattr(provider, "kind", ""),
-            "model": getattr(provider, "model", "") or "",
-            "native_tool_summary": (
-                getattr(provider, "native_tool_summary", "")
-                if self._is_native_provider(provider) else ""
-            ),
-        })
+        provider_info.update(
+            {
+                "available": True,
+                "name": provider.name,
+                "kind": "native"
+                if self._is_native_provider(provider)
+                else getattr(provider, "kind", ""),
+                "model": getattr(provider, "model", "") or "",
+                "native_tool_summary": (
+                    getattr(provider, "native_tool_summary", "")
+                    if self._is_native_provider(provider)
+                    else ""
+                ),
+            }
+        )
 
     tool_consent = self.service("tool_consent")
     settings = self.service("settings")
@@ -341,8 +356,12 @@ async def api_status(self, request):
         "session_id": sid or None,
         "session": {
             "name": (session_record or {}).get("name") if session_record else None,
-            "message_count": len((session_record or {}).get("messages", []) or []) if session_record else 0,
-        } if session_record else None,
+            "message_count": len((session_record or {}).get("messages", []) or [])
+            if session_record
+            else 0,
+        }
+        if session_record
+        else None,
         "provider": provider_info,
         "tools": {
             "count": len(self._tools),
@@ -351,13 +370,13 @@ async def api_status(self, request):
         "policy": policy,
         "max_iters": max_iters,
         "pending_permissions": (
-            len(tool_consent.pending_list(session_id=sid or None))
-            if tool_consent else 0
+            len(tool_consent.pending_list(session_id=sid or None)) if tool_consent else 0
         ),
     }
 
 
 # ── Tool-hook helpers (registered in AgentApp.setup) ───────────────────
+
 
 def task_persist_hook(self, session_id: str, tool_name: str, input: dict, result) -> None:
     """After-hook: persist TaskList state to disk so it survives daemon restarts."""

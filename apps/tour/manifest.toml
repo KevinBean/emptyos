@@ -14,7 +14,15 @@ prefix = "/tour"
 
 [requires]
 capabilities = []
-apps = []
+# Tour spotlights /hub/ surfaces (#smartBar, .r-app-grid) and /system. Without
+# hub the welcome step lands nowhere — declare the dependency so the topology
+# graph reflects reality.
+apps = ["hub"]
+
+[provides.events]
+emits = ["tour:completed", "tour:step_advanced"]
+# Walkthrough state — the tour orchestrator UI is the only consumer.
+internal = ["tour:completed", "tour:step_advanced"]
 
 # Tour seeds its own first step so a fresh clone with no other apps still has
 # something to show. App-specific steps live in each app's own manifest.

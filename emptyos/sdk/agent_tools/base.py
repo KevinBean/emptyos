@@ -20,7 +20,7 @@ from __future__ import annotations
 import difflib
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Literal, TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 if TYPE_CHECKING:
     from emptyos.sdk import BaseApp
@@ -29,7 +29,7 @@ if TYPE_CHECKING:
 Permission = Literal["auto", "ask", "deny"]
 
 
-def repo_root(app: "BaseApp") -> Path:
+def repo_root(app: BaseApp) -> Path:
     """Resolve the EmptyOS repo root — the directory containing `emptyos.toml`.
 
     Relative paths in tool calls resolve against this, not the process CWD.
@@ -44,7 +44,7 @@ def repo_root(app: "BaseApp") -> Path:
         return Path.cwd()
 
 
-def resolve_path(app: "BaseApp", path: str) -> Path:
+def resolve_path(app: BaseApp, path: str) -> Path:
     """Resolve a tool-provided path. Absolute paths are returned as-is; relative
     paths are joined to the repo root so the model's mental model ("apps/foo")
     matches where files actually land."""
@@ -116,7 +116,7 @@ class Tool:
     def to_json_rubric(self) -> str:
         """Line for a JSON-rubric system prompt (fallback provider)."""
         props = self.input_schema.get("properties", {})
-        param_list = ", ".join(f"{k}: {v.get('type','?')}" for k, v in props.items())
+        param_list = ", ".join(f"{k}: {v.get('type', '?')}" for k, v in props.items())
         return f"- {self.name}({param_list}) — {self.description}"
 
     def to_wire(self, kind: str) -> dict | str:
@@ -132,6 +132,6 @@ class Tool:
         """One-line human-readable summary for the permission prompt."""
         return f"{self.name}({', '.join(f'{k}={v!r}' for k, v in input.items())})"
 
-    async def run(self, app: "BaseApp", **kwargs) -> ToolResult:
+    async def run(self, app: BaseApp, **kwargs) -> ToolResult:
         """Execute the tool. Subclasses implement."""
         raise NotImplementedError

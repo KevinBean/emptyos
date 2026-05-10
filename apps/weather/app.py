@@ -26,7 +26,7 @@ import asyncio
 import json
 import time
 import urllib.request
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 
 import aiohttp
 
@@ -34,13 +34,26 @@ from emptyos.sdk import BaseApp, cli_command, web_route
 
 
 class WeatherApp(BaseApp):
-
     _OPEN_METEO_CODES = {
-        0: "Clear", 1: "Mostly clear", 2: "Partly cloudy", 3: "Overcast",
-        45: "Fog", 48: "Rime fog", 51: "Light drizzle", 53: "Drizzle",
-        55: "Heavy drizzle", 61: "Light rain", 63: "Rain", 65: "Heavy rain",
-        71: "Light snow", 73: "Snow", 75: "Heavy snow", 80: "Light showers",
-        81: "Showers", 82: "Heavy showers", 95: "Thunderstorm",
+        0: "Clear",
+        1: "Mostly clear",
+        2: "Partly cloudy",
+        3: "Overcast",
+        45: "Fog",
+        48: "Rime fog",
+        51: "Light drizzle",
+        53: "Drizzle",
+        55: "Heavy drizzle",
+        61: "Light rain",
+        63: "Rain",
+        65: "Heavy rain",
+        71: "Light snow",
+        73: "Snow",
+        75: "Heavy snow",
+        80: "Light showers",
+        81: "Showers",
+        82: "Heavy showers",
+        95: "Thunderstorm",
     }
 
     async def setup(self):
@@ -112,11 +125,16 @@ class WeatherApp(BaseApp):
         return str(lat), str(lng), str(tz)
 
     def _code_to_emoji(self, code: int) -> str:
-        if code == 0: return "☀️"
-        if code < 3: return "🌤️"
-        if code < 50: return "☁️"
-        if code < 70: return "🌧️"
-        if code < 80: return "❄️"
+        if code == 0:
+            return "☀️"
+        if code < 3:
+            return "🌤️"
+        if code < 50:
+            return "☁️"
+        if code < 70:
+            return "🌧️"
+        if code < 80:
+            return "❄️"
         return "⛈️"
 
     # ── OWM fetch ──────────────────────────────────────────────
@@ -165,7 +183,7 @@ class WeatherApp(BaseApp):
 
         result = {
             "source": "openweathermap",
-            "fetched_at": datetime.now(timezone.utc).isoformat(),
+            "fetched_at": datetime.now(UTC).isoformat(),
             "city": current.get("name", cfg.get("city", "")),
             "country": current.get("sys", {}).get("country", ""),
             "condition": current.get("weather", [{}])[0].get("main", ""),
@@ -198,10 +216,15 @@ class WeatherApp(BaseApp):
 
         self._save_cache(result)
         self._append_history(result)
-        await self.emit("weather:updated", {
-            "city": result["city"], "temp": result["temp"], "condition": result["condition"],
-            "source": "openweathermap",
-        })
+        await self.emit(
+            "weather:updated",
+            {
+                "city": result["city"],
+                "temp": result["temp"],
+                "condition": result["condition"],
+                "source": "openweathermap",
+            },
+        )
         return result
 
     def _append_history(self, result: dict):
@@ -210,14 +233,16 @@ class WeatherApp(BaseApp):
         history = self._load_history()
         today_key = date.today().isoformat()
         history = [h for h in history if h.get("date") != today_key]
-        history.append({
-            "date": today_key,
-            "temp": result.get("temp"),
-            "temp_min": result.get("temp_min"),
-            "temp_max": result.get("temp_max"),
-            "condition": result.get("condition"),
-            "humidity": result.get("humidity"),
-        })
+        history.append(
+            {
+                "date": today_key,
+                "temp": result.get("temp"),
+                "temp_min": result.get("temp_min"),
+                "temp_max": result.get("temp_max"),
+                "condition": result.get("condition"),
+                "humidity": result.get("humidity"),
+            }
+        )
         self._save_history(history[-90:])
 
     # ── Open-Meteo (keyless, needs location) ───────────────────
@@ -256,7 +281,7 @@ class WeatherApp(BaseApp):
             "temp": round(temp),
             "unit": "C",
             "description": self._OPEN_METEO_CODES.get(code, ""),
-            "fetched_at": datetime.now(timezone.utc).isoformat(),
+            "fetched_at": datetime.now(UTC).isoformat(),
         }
         self._open_meteo_cache = data
         self._open_meteo_cache_at = now
@@ -297,7 +322,7 @@ class WeatherApp(BaseApp):
         if fetched:
             try:
                 fetched_dt = datetime.fromisoformat(fetched)
-                age_min = (datetime.now(timezone.utc) - fetched_dt).total_seconds() / 60
+                age_min = (datetime.now(UTC) - fetched_dt).total_seconds() / 60
                 if age_min < 30:
                     return cache
             except (ValueError, TypeError):
@@ -333,7 +358,7 @@ class WeatherApp(BaseApp):
         if not data:
             return {
                 "error": "No weather data. Set location.latitude/longitude in settings, "
-                         "or add an OpenWeatherMap API key in [apps.weather]."
+                "or add an OpenWeatherMap API key in [apps.weather]."
             }
         return data
 
@@ -408,7 +433,9 @@ class WeatherApp(BaseApp):
                 emoji = self._owm_icon_to_emoji(icon_code)
             return {
                 "emoji": emoji,
-                "temperature": round(data["temp"]) if isinstance(data["temp"], (int, float)) else data["temp"],
+                "temperature": round(data["temp"])
+                if isinstance(data["temp"], (int, float))
+                else data["temp"],
                 "unit": data.get("unit", "C"),
                 "description": desc,
             }
@@ -422,16 +449,29 @@ class WeatherApp(BaseApp):
         if not hero:
             return None
         temp = hero.get("temperature")
-        val = f"{temp}°{hero.get('unit','')}" if temp not in ("", None) else hero.get("description", "")
-        return self.stat_tile(hero.get("emoji") or "☁️", val, hero.get("description") or "weather", "/weather/")
+        val = (
+            f"{temp}°{hero.get('unit', '')}"
+            if temp not in ("", None)
+            else hero.get("description", "")
+        )
+        return self.stat_tile(
+            hero.get("emoji") or "☁️", val, hero.get("description") or "weather", "/weather/"
+        )
 
     @staticmethod
     def _owm_icon_to_emoji(code: str) -> str:
         # Tiny mapping; good-enough icon glyphs for the hub hero.
         first = (code or "")[:2]
         return {
-            "01": "☀️", "02": "🌤️", "03": "☁️", "04": "☁️",
-            "09": "🌧️", "10": "🌦️", "11": "⛈️", "13": "❄️", "50": "🌫️",
+            "01": "☀️",
+            "02": "🌤️",
+            "03": "☁️",
+            "04": "☁️",
+            "09": "🌧️",
+            "10": "🌦️",
+            "11": "⛈️",
+            "13": "❄️",
+            "50": "🌫️",
         }.get(first, "☁️")
 
     # ── CLI ─────────────────────────────────────────────────────
@@ -448,12 +488,14 @@ class WeatherApp(BaseApp):
             desc = data.get("description") or data.get("condition") or ""
             print(f"\n  {city}: {round(data['temp'])}°{unit} ({desc})")
             if data.get("feels_like") is not None:
-                print(f"  Feels like {round(data['feels_like'])}°{unit}, "
-                      f"Humidity {data.get('humidity','?')}%")
+                print(
+                    f"  Feels like {round(data['feels_like'])}°{unit}, "
+                    f"Humidity {data.get('humidity', '?')}%"
+                )
             if data.get("wind_speed") is not None:
-                print(f"  Wind: {data.get('wind_speed')} {data.get('speed_unit','')}")
+                print(f"  Wind: {data.get('wind_speed')} {data.get('speed_unit', '')}")
             print()
         elif data.get("summary"):
             print(f"\n  {data['summary']}\n")
         else:
-            print(f"\n  {data.get('description','(no data)')}\n")
+            print(f"\n  {data.get('description', '(no data)')}\n")

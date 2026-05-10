@@ -53,14 +53,17 @@ def main():
     # deliverables boards for rollup purposes.
     def _is_epc_deliverables(cfg: dict) -> bool:
         types_by_id = {c.get("id"): c.get("type") for c in cfg.get("columns", [])}
-        return (types_by_id.get("designer") == "designer"
-                and types_by_id.get("checker") == "checker"
-                and types_by_id.get("approver") == "approver")
+        return (
+            types_by_id.get("designer") == "designer"
+            and types_by_id.get("checker") == "checker"
+            and types_by_id.get("approver") == "approver"
+        )
 
     # Decide the canonical deliverables board id. Prefer one the user already
     # has saved; fall back to the preset blueprint.
-    epc_boards = [bid for bid, cfg in saved.items()
-                  if bid != "project-tracker" and _is_epc_deliverables(cfg)]
+    epc_boards = [
+        bid for bid, cfg in saved.items() if bid != "project-tracker" and _is_epc_deliverables(cfg)
+    ]
     deliverables_board = epc_boards[0] if epc_boards else "engineering-deliverables"
     if epc_boards:
         print(f"Detected EPC deliverables board(s): {epc_boards}")
@@ -83,7 +86,9 @@ def main():
 
         if preset:
             existing_ids = {c.get("id") for c in cfg.get("columns", []) if c.get("id")}
-            new_cols = [dict(c) for c in preset.get("columns", []) if c.get("id") not in existing_ids]
+            new_cols = [
+                dict(c) for c in preset.get("columns", []) if c.get("id") not in existing_ids
+            ]
             # Retarget project-tracker.deliverables onto the user's real board.
             if bid == "project-tracker":
                 for c in cfg.get("columns", []) + new_cols:
@@ -104,8 +109,11 @@ def main():
             existing_ids = {c.get("id") for c in cfg.get("columns", []) if c.get("id")}
             # Only add the fields that enable rollups / linking upstream.
             wanted = {"est_hours", "progress", "parent_project", "overdue"}
-            new_cols = [dict(c) for c in epc.get("columns", [])
-                        if c.get("id") in wanted and c.get("id") not in existing_ids]
+            new_cols = [
+                dict(c)
+                for c in epc.get("columns", [])
+                if c.get("id") in wanted and c.get("id") not in existing_ids
+            ]
             # Repoint the parent_project link at project-tracker (preset default).
             for c in new_cols:
                 if c.get("id") == "parent_project":
@@ -129,8 +137,10 @@ def main():
 
     print(f"\n{touched} board(s) migrated, {skipped} unchanged.")
     if touched:
-        print("Restart the daemon (or POST /boards/api/links/rebuild) "
-              "to pick up new link-record columns in the in-memory index.")
+        print(
+            "Restart the daemon (or POST /boards/api/links/rebuild) "
+            "to pick up new link-record columns in the in-memory index."
+        )
 
 
 if __name__ == "__main__":

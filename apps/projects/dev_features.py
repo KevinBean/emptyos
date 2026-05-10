@@ -29,22 +29,16 @@ from __future__ import annotations
 
 import re
 from datetime import date
-from pathlib import Path
 
 from emptyos.sdk import web_route
-
 
 # --- Parsers ---
 
 _SPRINT_HEADING = re.compile(
     r"###\s+Sprint\s+(\d+):\s*(.+?)\s*\((\d{4}-\d{2}-\d{2})\s*[—–-]\s*(\d{4}-\d{2}-\d{2})\)"
 )
-_MILESTONE_HEADING = re.compile(
-    r"###\s+(v?\S+)\s*[—–-]\s*(.+)"
-)
-_RELEASE_HEADING = re.compile(
-    r"###\s+(v?\S+)\s*\((\d{4}-\d{2}-\d{2})\)"
-)
+_MILESTONE_HEADING = re.compile(r"###\s+(v?\S+)\s*[—–-]\s*(.+)")
+_RELEASE_HEADING = re.compile(r"###\s+(v?\S+)\s*\((\d{4}-\d{2}-\d{2})\)")
 _KV_LINE = re.compile(r"\s*-\s+(\w+):\s*(.+)")
 _NEXT_H2 = re.compile(r"^##\s+", re.MULTILINE)
 
@@ -66,7 +60,7 @@ def _append_to_section(content: str, section_name: str, block: str) -> str:
     header = f"## {section_name}"
     if header in content:
         section_start = content.index(header)
-        after = content[section_start + len(header):]
+        after = content[section_start + len(header) :]
         next_h2 = _NEXT_H2.search(after)
         if next_h2:
             insert_pos = section_start + len(header) + next_h2.start()
@@ -217,6 +211,7 @@ def _link_tasks_to_milestones(task_list: list[dict], milestones: list[dict]) -> 
 
 # --- API Endpoints ---
 
+
 @web_route("GET", "/api/projects/{id}/sprints")
 async def api_sprints(self, request):
     """List sprints with linked tasks and velocity stats."""
@@ -243,7 +238,9 @@ async def api_sprints(self, request):
         "sprints": sprints,
         "active": active,
         "velocity": velocity,
-        "avg_velocity": round(sum(v["done"] for v in velocity) / len(velocity), 1) if velocity else 0,
+        "avg_velocity": round(sum(v["done"] for v in velocity) / len(velocity), 1)
+        if velocity
+        else 0,
     }
 
 
@@ -272,14 +269,18 @@ async def api_create_sprint(self, request):
     existing = _parse_sprints(content)
     next_num = max((s["num"] for s in existing), default=0) + 1
 
-    sprint_block = f"\n### Sprint {next_num}: {name} ({start_date} — {end_date})\n- status: active\n"
+    sprint_block = (
+        f"\n### Sprint {next_num}: {name} ({start_date} — {end_date})\n- status: active\n"
+    )
     if goal:
         sprint_block += f"- goal: {goal}\n"
 
     content = _append_to_section(content, "Sprints", sprint_block)
 
     target.write_text(content, encoding="utf-8")
-    await self.emit("projects:sprint_created", {"project": project_id, "sprint": next_num, "name": name})
+    await self.emit(
+        "projects:sprint_created", {"project": project_id, "sprint": next_num, "name": name}
+    )
     return {"ok": True, "num": next_num, "name": name, "start": start_date, "end": end_date}
 
 
@@ -370,7 +371,9 @@ async def api_create_milestone(self, request):
     content = _append_to_section(content, "Milestones", ms_block)
 
     target.write_text(content, encoding="utf-8")
-    await self.emit("projects:milestone_created", {"project": project_id, "milestone": ms_id, "name": name})
+    await self.emit(
+        "projects:milestone_created", {"project": project_id, "milestone": ms_id, "name": name}
+    )
     return {"ok": True, "id": ms_id, "name": name, "target": target_date}
 
 

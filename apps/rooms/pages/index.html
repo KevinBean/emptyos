@@ -1,0 +1,3690 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Rooms - EmptyOS</title>
+<link rel="stylesheet" href="/static/theme.css">
+<link rel="stylesheet" href="/static/eos-components.css">
+<style>
+/* Layout: sidebar + chat */
+.chat-layout { display:flex; height:calc(100dvh - 64px); margin:-20px; margin-top:0 }
+
+/* Sidebar */
+.sidebar { width:260px; border-right:1px solid var(--border); display:flex; flex-direction:column; flex-shrink:0; background:var(--bg) }
+.sidebar-header { padding:14px 16px; border-bottom:1px solid var(--border); display:flex; align-items:center; justify-content:space-between }
+.sidebar-header h2 { font-size:16px; font-weight:700; color:var(--text-heading) }
+.sidebar-search { padding:8px 12px }
+.sidebar-search input { width:100%; padding:8px 12px; border-radius:10px; background:var(--bg-card); border:1px solid var(--border); color:var(--text); font-size:13px; outline:none }
+.sidebar-search input:focus { border-color:var(--accent) }
+.agent-list { flex:1; overflow-y:auto; padding:4px 8px }
+.agent-item { display:flex; align-items:center; gap:10px; padding:10px 12px; border-radius:10px; cursor:pointer; transition:background 0.15s; margin-bottom:2px }
+.agent-item:hover { background:var(--bg-card) }
+.agent-item.active { background:var(--accent-bg); border:1px solid color-mix(in srgb,var(--accent) 30%,transparent) }
+.agent-avatar { width:36px; height:36px; border-radius:10px; display:flex; align-items:center; justify-content:center; font-size:16px; font-weight:700; color:#fff; flex-shrink:0 }
+.agent-preview { flex:1; min-width:0 }
+.agent-preview-name { font-size:14px; font-weight:600; color:var(--text-heading); white-space:nowrap; overflow:hidden; text-overflow:ellipsis }
+.agent-preview-msg { font-size:12px; color:var(--text-muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; margin-top:1px }
+.tier-badge { font-size:10px; padding:1px 6px; border-radius:4px; font-weight:600; text-transform:uppercase; letter-spacing:0.3px; vertical-align:middle; margin-left:4px }
+.tier-badge.system { background:color-mix(in srgb, var(--accent) 15%, transparent); color:var(--accent) }
+.tier-badge.user { background:color-mix(in srgb, #10b981 15%, transparent); color:#10b981 }
+.tier-filter { display:flex; gap:4px; padding:4px 12px }
+.tier-filter button { flex:1; padding:5px; border-radius:8px; border:1px solid var(--border); background:var(--bg); color:var(--text-secondary); font-size:11px; cursor:pointer; transition:all 0.15s }
+.tier-filter button.active { background:var(--accent-bg); color:var(--accent); border-color:color-mix(in srgb, var(--accent) 30%, transparent) }
+.form-section { font-size:11px; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.5px; margin-top:12px; margin-bottom:4px }
+.sidebar-footer { padding:10px 12px; border-top:1px solid var(--border) }
+.sidebar-footer button { width:100% }
+
+/* Chat panel */
+.chat-panel { flex:1; display:flex; flex-direction:column; min-width:0 }
+.chat-header { display:flex; align-items:center; gap:12px; padding:12px 20px; border-bottom:1px solid var(--border); flex-shrink:0 }
+
+/* Phase 15 — pinned messages panel */
+.pinned-panel { border:1px solid var(--border); border-radius:8px; background:color-mix(in srgb,var(--accent) 4%,var(--bg-card)); padding:10px 12px; margin:0 0 12px 0 }
+.pinned-panel-head { font-size:11px; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.5px; margin-bottom:8px; display:flex; align-items:center; gap:6px }
+.pinned-row { display:flex; align-items:flex-start; gap:8px; padding:6px 8px; border-radius:6px; cursor:pointer; transition:background 0.1s; font-size:12px }
+.pinned-row:hover { background:var(--bg-hover) }
+.pinned-row .pinned-text { flex:1; min-width:0; overflow:hidden; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; line-height:1.4 }
+.pinned-row .pinned-speaker { font-weight:600; font-size:11px; color:var(--text-muted); margin-bottom:2px }
+.pinned-row .pinned-unpin { background:transparent; border:0; color:var(--text-muted); cursor:pointer; padding:2px 4px; font-size:14px; line-height:1; flex-shrink:0; opacity:0; transition:opacity 0.1s }
+.pinned-row:hover .pinned-unpin { opacity:1 }
+
+/* Per-message hover buttons — pin + speak + reply. Stacked top-right. */
+.msg { position:relative }
+.msg .msg-pin, .msg .msg-speak, .msg .msg-reply { position:absolute; top:6px; opacity:0; background:var(--bg); border:1px solid var(--border); border-radius:4px; padding:2px 5px; font-size:11px; cursor:pointer; transition:opacity 0.1s; line-height:1 }
+.msg .msg-pin { right:6px }
+.msg .msg-speak { right:36px }
+.msg .msg-reply { right:66px }
+.msg:hover .msg-pin, .msg:hover .msg-speak, .msg:hover .msg-reply { opacity:0.7 }
+.msg .msg-pin:hover, .msg .msg-speak:hover, .msg .msg-reply:hover { opacity:1 }
+.msg.is-pinned .msg-pin { opacity:1; color:var(--accent) }
+
+/* Phase 25 — reply quote rendered above each reply message */
+.msg-reply-quote { display:flex; gap:8px; padding:6px 10px; margin-bottom:6px; border-left:3px solid color-mix(in srgb,var(--accent) 50%,var(--border)); background:color-mix(in srgb,var(--accent) 4%,var(--bg-elevated)); border-radius:0 6px 6px 0; cursor:pointer; font-size:12px }
+.msg-reply-quote:hover { background:color-mix(in srgb,var(--accent) 7%,var(--bg-elevated)) }
+.msg-reply-quote .rq-speaker { font-weight:600; color:var(--text-muted); font-size:11px; flex-shrink:0 }
+.msg-reply-quote .rq-text { color:var(--text-muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
+
+/* Reply-context chip in the input area when composing a reply */
+.reply-context { display:none; align-items:center; gap:8px; padding:6px 10px; margin:0 20px 6px 20px; border-left:3px solid var(--accent); background:color-mix(in srgb,var(--accent) 6%,var(--bg-card)); border-radius:0 6px 6px 0; font-size:12px }
+.reply-context.open { display:flex }
+.reply-context .rc-text { flex:1; color:var(--text-muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
+.reply-context button { background:transparent; border:0; color:var(--text-muted); cursor:pointer; font-size:14px; padding:0 4px; line-height:1 }
+
+/* Phase 9 — unread indicator on sidebar items */
+.unread-dot { display:inline-flex; align-items:center; justify-content:center; min-width:18px; height:18px; padding:0 6px; margin-left:6px; border-radius:10px; background:var(--accent); color:var(--accent-ink); font-size:10px; font-weight:700; line-height:1 }
+.agent-item.has-unread .agent-preview-name { font-weight:600 }
+
+/* Phase 24 — bulk select on sidebar */
+body.bulk-select-on .agent-item { padding-left:10px }
+body.bulk-select-on .agent-item::before { content:''; width:18px; height:18px; border:1.5px solid var(--border); border-radius:4px; flex-shrink:0; background:var(--bg); margin-right:6px; transition:background 0.1s,border-color 0.1s }
+body.bulk-select-on .agent-item.bulk-selected::before { background:var(--accent); border-color:var(--accent); content:'✓'; color:var(--accent-ink); font-size:12px; font-weight:700; display:flex; align-items:center; justify-content:center }
+.bulk-action-bar { position:fixed; bottom:20px; left:20px; z-index:10001; display:none; gap:8px; padding:10px 12px; background:var(--bg-card); border:1px solid var(--border); border-radius:10px; box-shadow:0 6px 20px rgba(0,0,0,0.18); align-items:center; font-size:13px }
+.bulk-action-bar.open { display:flex }
+.bulk-action-bar .count { font-weight:600; padding:0 6px; color:var(--text) }
+
+/* Catch-me-up banner — sits at the top of the thread when there are new
+   messages since last visit. Auto-removes itself on Summarize or Dismiss. */
+.catch-up-banner { display:flex; align-items:center; gap:10px; padding:10px 14px; margin:0 0 10px 0; border:1px solid color-mix(in srgb,var(--accent) 40%,var(--border)); background:color-mix(in srgb,var(--accent) 5%,var(--bg-card)); border-radius:8px; font-size:13px }
+.catch-up-banner .cu-text { flex:1 }
+.catch-up-banner .cu-summary { display:none; padding:8px 12px; background:var(--bg-elevated); border-radius:6px; font-size:13px; line-height:1.5; margin-top:8px }
+.catch-up-banner.expanded { flex-direction:column; align-items:stretch }
+.catch-up-banner.expanded .cu-summary { display:block }
+.catch-up-banner.expanded .cu-actions { display:none }
+
+/* Group member strip — shows who's in the room, click to insert @mention */
+.chat-members { display:flex; gap:6px; flex-wrap:wrap; padding:8px 20px; border-bottom:1px solid var(--border); background:var(--bg); flex-shrink:0; align-items:center }
+.chat-members-label { font-size:11px; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.5px; margin-right:4px }
+.member-chip { display:inline-flex; align-items:center; gap:6px; padding:3px 9px 3px 3px; border:1px solid var(--border); border-radius:14px; font-size:12px; background:var(--bg-card); transition:background 0.1s }
+.member-chip.clickable { cursor:pointer }
+.member-chip.clickable:hover { background:var(--bg-hover); border-color:color-mix(in srgb,var(--accent) 40%,var(--border)) }
+.member-chip.is-self { color:var(--text-muted); cursor:default }
+.member-avatar { width:20px; height:20px; border-radius:50%; display:inline-flex; align-items:center; justify-content:center; font-size:10px; font-weight:600; color:#fff; flex-shrink:0 }
+.member-id { color:var(--text-muted); font-size:10px }
+
+/* Group: avatar next to assistant bubble's speaker label */
+.msg-speaker-row { display:flex; align-items:center; gap:6px; margin-bottom:4px }
+.msg-speaker-row .member-avatar { width:18px; height:18px; font-size:9px }
+
+/* Group create modal — roster picker */
+.roster-section { margin-bottom:14px }
+.roster-label { font-size:11px; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.5px; margin-bottom:8px; display:flex; align-items:center; gap:6px }
+.roster-label .count-pill { background:var(--bg-elevated); border-radius:10px; padding:1px 8px; font-size:10px; letter-spacing:0; text-transform:none; color:var(--text-muted) }
+.roster-list { display:grid; grid-template-columns:1fr; gap:6px }
+@media (min-width: 540px) { .roster-list.dense { grid-template-columns:1fr 1fr } }
+.roster-pick { position:relative; display:flex; align-items:center; gap:10px; padding:10px 12px; border:1.5px solid var(--border); border-radius:8px; cursor:pointer; transition:border-color 0.1s, background 0.1s; background:var(--bg-card) }
+.roster-pick:hover { border-color:color-mix(in srgb,var(--accent) 35%,var(--border)); background:var(--bg-hover) }
+.roster-pick.checked { border-color:var(--accent); background:color-mix(in srgb,var(--accent) 6%,var(--bg-card)) }
+.roster-pick input[type=checkbox] { position:absolute; top:8px; right:8px; cursor:pointer; accent-color:var(--accent) }
+.roster-pick .roster-avatar { width:32px; height:32px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-weight:600; font-size:13px; color:#fff; flex-shrink:0 }
+.roster-pick .roster-meta { flex:1; min-width:0; padding-right:24px }
+.roster-pick .roster-name { font-size:13px; font-weight:500; color:var(--text); overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
+.roster-pick .roster-sub { font-size:11px; color:var(--text-muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
+.roster-cli-config { display:flex; gap:6px; margin-top:10px; padding-left:42px }
+.roster-cli-config select { flex:1; padding:6px 8px; border-radius:6px; background:var(--bg); border:1px solid var(--border); color:var(--text); font-size:12px }
+
+/* Overflow menu (chat header ⋯ button) */
+.chat-overflow-menu { position:absolute; top:calc(100% + 4px); right:0; background:var(--bg-card); border:1px solid var(--border); border-radius:8px; box-shadow:0 8px 20px rgba(0,0,0,0.18); padding:4px; min-width:160px; display:none; z-index:60 }
+.chat-overflow-menu.open { display:flex; flex-direction:column; gap:2px }
+.chat-overflow-menu button { background:transparent; border:0; color:var(--text); padding:8px 12px; font-size:13px; text-align:left; border-radius:5px; cursor:pointer }
+.chat-overflow-menu button:hover { background:var(--bg-hover) }
+
+/* Activity drawer — slide-in panel from the right */
+.activity-drawer { position:fixed; top:0; right:0; width:min(420px, 100vw); height:100vh; background:var(--bg-card); border-left:1px solid var(--border); box-shadow:-8px 0 24px rgba(0,0,0,0.18); z-index:10000; transform:translateX(100%); transition:transform 0.18s ease; display:flex; flex-direction:column }
+.activity-drawer.open { transform:translateX(0) }
+.activity-drawer-head { display:flex; align-items:center; gap:8px; padding:14px 16px; border-bottom:1px solid var(--border); flex-shrink:0 }
+.activity-drawer-head h3 { font-size:15px; font-weight:600; flex:1 }
+.activity-drawer-tabs { display:flex; gap:2px; padding:8px 16px 0; border-bottom:1px solid var(--border); flex-shrink:0 }
+.activity-drawer-tabs button { background:transparent; border:0; color:var(--text-muted); padding:8px 14px; font-size:13px; font-weight:500; cursor:pointer; border-bottom:2px solid transparent; margin-bottom:-1px }
+.activity-drawer-tabs button.active { color:var(--text); border-bottom-color:var(--accent) }
+.activity-drawer-body { flex:1; overflow-y:auto; padding:14px 16px }
+.activity-drawer-backdrop { position:fixed; inset:0; background:rgba(0,0,0,0.2); z-index:9999; display:none }
+.activity-drawer-backdrop.open { display:block }
+
+/* Pending-action cards (Phase 5 review gate) */
+.pending-card { border:1px solid color-mix(in srgb,var(--accent) 50%,var(--border)); border-radius:8px; padding:10px 12px; margin-top:8px; background:color-mix(in srgb,var(--accent) 6%,var(--bg-card)); font-size:13px; display:flex; flex-direction:column; gap:8px }
+.pending-card.applied { border-color:#10b981; background:color-mix(in srgb,#10b981 8%,var(--bg-card)) }
+.pending-card.rejected, .pending-card.failed { border-color:#ef4444; background:color-mix(in srgb,#ef4444 6%,var(--bg-card)); opacity:0.75 }
+.pending-card .pending-head { display:flex; align-items:center; gap:8px; font-weight:600 }
+.pending-card .pending-verb { color:var(--accent); font-family:var(--font-mono,monospace); font-size:12px }
+.pending-card .pending-args { font-family:var(--font-mono,monospace); font-size:11px; color:var(--text-muted); white-space:pre-wrap; max-height:120px; overflow-y:auto; padding:6px 8px; border-radius:4px; background:var(--bg) }
+.pending-card .pending-actions { display:flex; gap:6px; justify-content:flex-end }
+.pending-card .pending-status { font-size:11px; color:var(--text-muted); margin-left:auto }
+.chat-back { display:none; background:none; border:none; font-size:20px; cursor:pointer; color:var(--text-secondary); padding:4px }
+.chat-agent-info { flex:1; min-width:0 }
+.chat-agent-name { font-size:16px; font-weight:700; color:var(--text-heading) }
+.chat-agent-model { display:inline-block; font-size:11px; padding:2px 8px; border-radius:6px; background:var(--accent-bg); color:var(--accent); font-family:var(--mono); margin-left:8px; vertical-align:middle }
+.chat-actions { display:flex; gap:6px }
+
+/* Messages */
+.chat-messages { flex:1; overflow-y:auto; padding:16px 20px; display:flex; flex-direction:column; gap:10px }
+.msg { max-width:80%; padding:10px 14px; border-radius:16px; font-size:14px; line-height:1.55; word-break:break-word; animation:cardIn 0.25s ease; white-space:pre-wrap }
+.msg-user { align-self:flex-end; background:var(--accent); color: var(--accent-ink); border-bottom-right-radius:4px }
+.msg-assistant { align-self:flex-start; background:var(--bg-card); border:1px solid var(--border); color:var(--text); border-bottom-left-radius:4px }
+.msg-time { font-size:10px; opacity:0.5; margin-top:4px }
+
+/* Typing indicator */
+.typing-indicator { align-self:flex-start; padding:12px 16px; background:var(--bg-card); border:1px solid var(--border); border-radius:16px; border-bottom-left-radius:4px }
+.typing-dot { display:inline-block; width:7px; height:7px; border-radius:50%; background:var(--text-muted); animation:typing 1.2s infinite; margin:0 2px }
+.typing-dot:nth-child(2) { animation-delay:0.2s }
+.typing-dot:nth-child(3) { animation-delay:0.4s }
+@keyframes typing { 0%,60%,100%{opacity:0.3} 30%{opacity:1} }
+
+/* Input bar */
+.chat-input-bar { display:flex; gap:8px; padding:12px 20px; border-top:1px solid var(--border); flex-shrink:0; align-items:flex-end; position:relative }
+.chat-input { flex:1; background:var(--bg-card); border:1px solid var(--border); border-radius:14px; padding:12px 14px; font-size:15px; color:var(--text); outline:none; font-family:inherit; resize:none; min-height:44px; max-height:120px; line-height:1.4 }
+.chat-input:focus { border-color:color-mix(in srgb,var(--accent) 60%,transparent); box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 10%,transparent) }
+
+/* @mention autocomplete popup */
+.mention-popup { position:absolute; bottom:calc(100% + 4px); left:20px; right:20px; max-width:320px; background:var(--bg-card); border:1px solid var(--border); border-radius:8px; box-shadow:0 4px 12px rgba(0,0,0,0.15); padding:4px; max-height:240px; overflow-y:auto; z-index:50; display:none }
+.mention-popup.open { display:block }
+.mention-item { display:flex; align-items:center; gap:10px; padding:6px 8px; border-radius:6px; cursor:pointer; font-size:13px }
+.mention-item:hover, .mention-item.active { background:var(--bg-hover) }
+.mention-avatar { width:22px; height:22px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:11px; font-weight:600; flex-shrink:0 }
+.mention-id { color:var(--text-muted); font-size:11px; margin-left:auto }
+.send-btn { width:44px; height:44px; border-radius:12px; background:var(--accent); color: var(--accent-ink); border:none; font-size:18px; cursor:pointer; transition:transform 0.1s,opacity 0.15s; flex-shrink:0; display:flex; align-items:center; justify-content:center }
+.send-btn:active { transform:scale(0.92) }
+.send-btn:disabled { opacity:0.4 }
+
+/* Empty / Welcome */
+.chat-welcome { flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; color:var(--text-muted); padding:40px }
+.chat-welcome .icon { font-size:56px; margin-bottom:16px }
+.chat-welcome p { font-size:14px; text-align:center; max-width:280px; line-height:1.5 }
+
+/* Phase 14 — mobile responsive pass.
+   Existing isMobile (≤700px) JS toggles sidebar/chat panel visibility. These
+   rules tune the rendering inside that, plus drawer + modals + FAB. */
+@media (max-width: 700px) {
+    /* Sidebar fills the viewport when it's the active panel. */
+    .sidebar { width:100% }
+    /* Tier filter — let it scroll horizontally if it doesn't fit. */
+    .tier-filter { overflow-x:auto; flex-wrap:nowrap; -webkit-overflow-scrolling:touch }
+    .tier-filter button { white-space:nowrap; flex-shrink:0 }
+    /* Activity drawer — full viewport on phones. */
+    .activity-drawer { width:100vw; max-width:100vw }
+    /* The hero icon in the welcome panel is too big on phone — scale it back. */
+    .chat-welcome .icon { font-size:40px; margin-bottom:10px }
+    /* Member chip row scrolls horizontally instead of wrapping into 4 lines. */
+    .chat-members { overflow-x:auto; flex-wrap:nowrap; -webkit-overflow-scrolling:touch }
+    .chat-members .member-chip { flex-shrink:0 }
+    /* Inbound dashboard — tighter padding. */
+    .inbound-dashboard { padding:20px 16px }
+    .inbound-greeting { font-size:20px }
+    /* Hide global EOS FAB chrome while our drawers / modals are open so
+       the right edge isn't covered. Body class is set by a MutationObserver
+       below — `:has()` selectors don't catch the async overlay swap reliably.
+       #eos-fab-dock is the cluster mounted by emptyos.web (sparkle button);
+       .pa-fab / .cap-fab are page-assistant + capture FABs. */
+    body.rooms-overlay-open #eos-fab-dock,
+    body.rooms-overlay-open .pa-fab,
+    body.rooms-overlay-open .cap-fab { display:none !important }
+    /* Mention/slash/wikilink popup — pin to viewport edges instead of input. */
+    .mention-popup { left:8px; right:8px; max-width:none }
+    /* Catch-up banner — narrower padding. */
+    .catch-up-banner { padding:8px 10px }
+    /* Group modal roster — single column with denser rows on phones. */
+    .roster-list.dense { grid-template-columns:1fr }
+    .roster-pick .roster-meta .roster-sub { display:none }
+}
+
+/* Phase 12 — inbound dashboard (replaces the placeholder welcome screen) */
+.inbound-dashboard { flex:1; overflow-y:auto; padding:32px 24px; max-width:780px; margin:0 auto; width:100%; align-self:stretch }
+.inbound-greeting { font-size:24px; font-weight:600; color:var(--text); margin-bottom:6px }
+.inbound-sub { font-size:13px; color:var(--text-muted); margin-bottom:28px }
+.inbound-stats { display:grid; grid-template-columns:repeat(auto-fit,minmax(120px,1fr)); gap:10px; margin-bottom:28px }
+.inbound-stat { padding:14px; border:1px solid var(--border); border-radius:8px; background:var(--bg-card) }
+.inbound-stat .v { font-size:24px; font-weight:600; color:var(--text); line-height:1 }
+.inbound-stat .l { font-size:11px; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.5px; margin-top:4px }
+.inbound-stat.has-attn { border-color:color-mix(in srgb,var(--accent) 50%,var(--border)); background:color-mix(in srgb,var(--accent) 5%,var(--bg-card)) }
+.inbound-stat.has-attn .v { color:var(--accent) }
+.inbound-section { margin-bottom:24px }
+.inbound-section h3 { font-size:11px; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.5px; margin-bottom:10px; font-weight:600 }
+.inbound-row { display:flex; align-items:center; gap:10px; padding:10px 12px; border:1px solid var(--border); border-radius:8px; margin-bottom:6px; cursor:pointer; transition:background 0.1s,border-color 0.1s; background:var(--bg-card) }
+.inbound-row:hover { background:var(--bg-hover); border-color:color-mix(in srgb,var(--accent) 35%,var(--border)) }
+.inbound-row .row-avatar { width:28px; height:28px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:12px; font-weight:600; color:#fff; flex-shrink:0 }
+.inbound-row .row-meta { flex:1; min-width:0 }
+.inbound-row .row-title { font-size:14px; font-weight:500; color:var(--text); overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
+.inbound-row .row-sub { font-size:12px; color:var(--text-muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
+.inbound-row .row-tag { font-size:11px; color:var(--accent); background:color-mix(in srgb,var(--accent) 12%,transparent); padding:2px 8px; border-radius:10px; flex-shrink:0 }
+.inbound-empty { text-align:center; padding:40px 20px; color:var(--text-muted); font-size:13px }
+
+.empty-state { text-align:center; padding:40px 20px; color:var(--text-muted) }
+.empty-state .icon { font-size:48px; margin-bottom:12px }
+.empty-state p { font-size:14px; margin-bottom:16px }
+
+/* Mobile: sidebar collapses */
+@media(max-width:700px) {
+    .sidebar { position:absolute; inset:0; width:100%; z-index:10; background:var(--bg) }
+    .sidebar.hidden { display:none }
+    .chat-panel.hidden { display:none }
+    .chat-back { display:block }
+    .chat-layout { position:relative }
+}
+</style>
+</head>
+<body>
+<script src="/static/realtime.js"></script>
+<script src="/static/eos.js"></script>
+<script src="/static/eos-components.js"></script>
+<script>EOS.nav('rooms');</script>
+
+<div class="page" style="padding-bottom:0">
+    <div class="chat-layout">
+        <!-- Sidebar -->
+        <div class="sidebar" id="sidebar">
+            <div class="sidebar-header">
+                <h2>Rooms</h2>
+                <div style="display:flex;gap:6px;align-items:center">
+                    <span id="agent-count" style="font-size:12px;color:var(--text-muted)"></span>
+                    <button class="eos-btn-sm eos-btn-ghost" onclick="openGlobalPending()" title="Pending [DO:] actions across all rooms" id="global-pending-btn" style="display:none">⏳ <span id="global-pending-count">0</span></button>
+                    <button class="eos-btn-sm eos-btn-ghost" onclick="toggleBulkSelect()" title="Select multiple rooms" id="bulk-toggle-btn">☐</button>
+                    <button class="eos-btn-sm eos-btn-ghost" onclick="openAppSettings()" title="Settings">&#9881;</button>
+                </div>
+            </div>
+            <div class="sidebar-search">
+                <input type="text" id="search" placeholder="Search agents..." oninput="filterAgents()">
+            </div>
+            <div class="tier-filter">
+                <button class="active" onclick="setTierFilter('all')">All</button>
+                <button onclick="setTierFilter('user')">User</button>
+                <button onclick="setTierFilter('system')">System</button>
+                <button onclick="setTierFilter('archived')">Archived</button>
+            </div>
+            <div class="agent-list" id="agent-list"></div>
+            <div id="msg-hits" style="border-top:1px solid var(--border);display:none;max-height:35vh;overflow-y:auto"></div>
+            <div class="sidebar-footer" style="display:flex;gap:6px">
+                <button class="eos-btn eos-btn-sm" onclick="openModal()" style="flex:1">+ Agent</button>
+                <button class="eos-btn eos-btn-sm" onclick="openGroupModal()" style="flex:1">+ Group</button>
+            </div>
+        </div>
+
+        <!-- Chat panel -->
+        <div class="chat-panel" id="chat-panel">
+            <div id="chat-header" class="chat-header" style="display:none">
+                <button class="chat-back" onclick="showSidebar()">&larr;</button>
+                <div class="chat-agent-info">
+                    <span id="chat-name" class="chat-agent-name"></span>
+                    <span id="chat-model" class="chat-agent-model" style="display:none"></span>
+                </div>
+                <div class="chat-actions">
+                    <button class="eos-btn-sm eos-btn-ghost" onclick="openActivityDrawer()" title="Tasks + pending actions for this room">
+                        Activity<span id="chat-activity-count" style="margin-left:4px;color:var(--text-muted);font-size:11px"></span>
+                    </button>
+                    <span id="chat-tasks-count" hidden></span>
+                    <span id="chat-pending-count" hidden></span>
+                    <div class="chat-overflow" style="position:relative">
+                        <button class="eos-btn-sm eos-btn-ghost" onclick="toggleChatOverflow(event)" title="More" aria-haspopup="menu" aria-expanded="false" id="chat-overflow-btn">⋯</button>
+                        <div class="chat-overflow-menu" id="chat-overflow-menu" role="menu">
+                            <button role="menuitem" onclick="closeChatOverflow();editCurrentAgent()">Edit</button>
+                            <button role="menuitem" onclick="closeChatOverflow();exportChatToVault()">Export to vault</button>
+                            <button role="menuitem" onclick="closeChatOverflow();distillRoom()">Distill into KB note</button>
+                            <button role="menuitem" onclick="closeChatOverflow();openScheduleModal()">Schedule check-in…</button>
+                            <button role="menuitem" id="chat-autospeak-btn" onclick="closeChatOverflow();toggleAutoSpeak()">Auto-speak: off</button>
+                            <button role="menuitem" id="chat-archive-btn" onclick="closeChatOverflow();toggleRoomArchive()">Archive</button>
+                            <button role="menuitem" onclick="closeChatOverflow();clearHistory()">Clear history</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div id="chat-members" class="chat-members" style="display:none"></div>
+            <div id="chat-welcome" class="chat-welcome">
+                <div class="icon">&#129302;</div>
+                <p>Loading dashboard…</p>
+            </div>
+            <div class="chat-messages" id="chat-messages" style="display:none"></div>
+            <div class="reply-context" id="reply-context">
+                <span style="color:var(--accent);font-size:14px">↩</span>
+                <span class="rc-text" id="reply-context-text"></span>
+                <button onclick="cancelReply()" title="Cancel reply">×</button>
+            </div>
+            <div class="chat-input-bar" id="chat-input-bar" style="display:none">
+                <div class="mention-popup" id="mention-popup"></div>
+                <textarea class="chat-input" id="chat-input" placeholder="Message... · @ mention · / command · [[ link" rows="1"
+                    onkeydown="chatInputKeydown(event)" oninput="chatInputChanged()"></textarea>
+                <button class="send-btn" id="send-btn" onclick="sendMessage()" title="Send">&#8593;</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Create/Edit Agent Modal -->
+<div class="eos-modal-bg" id="agent-modal" onclick="if(event.target===this)EOS_UI.closeModal('agent-modal')">
+    <div class="eos-modal">
+        <div class="eos-modal-handle"></div>
+        <h3 id="modal-title">New Agent</h3>
+        <input type="text" id="f-name" placeholder="Agent name">
+        <div style="display:flex;gap:8px">
+            <select id="f-tier" style="flex:1;padding:8px;border-radius:8px;background:var(--bg-card);border:1px solid var(--border);color:var(--text);font-size:13px">
+                <option value="user">User</option>
+                <option value="system">System</option>
+            </select>
+            <input type="text" id="f-model" placeholder="Model (optional)" style="flex:1">
+        </div>
+        <textarea id="f-prompt" rows="5" placeholder="System prompt — describe the persona..."></textarea>
+        <div class="form-section">Knowledge</div>
+        <input type="text" id="f-files" placeholder="Knowledge files (comma-separated vault paths)">
+        <input type="text" id="f-kdir" placeholder="Knowledge directory (e.g. apps/rooms/knowledge/blender)">
+        <div class="form-section">Advanced</div>
+        <div style="display:flex;gap:8px">
+            <input type="text" id="f-tools" placeholder="Tools (comma-separated)" style="flex:2">
+            <input type="number" id="f-temp" placeholder="Temp" step="0.1" min="0" max="1.5" style="flex:1">
+        </div>
+        <div style="display:flex;gap:8px;margin-top:8px">
+            <select id="f-effort" title="Reasoning effort (claude-cli only — ignored by other providers)" style="flex:1;padding:8px;border-radius:8px;background:var(--bg-card);border:1px solid var(--border);color:var(--text);font-size:13px">
+                <option value="">Effort: default</option>
+                <option value="low">Effort: low (fastest)</option>
+                <option value="medium">Effort: medium</option>
+                <option value="high">Effort: high</option>
+                <option value="max">Effort: max (slowest)</option>
+            </select>
+        </div>
+        <input type="hidden" id="f-id">
+        <input type="hidden" id="f-builtin">
+        <div class="eos-modal-actions">
+            <button onclick="EOS_UI.closeModal('agent-modal')" style="background:var(--bg);color:var(--text-secondary);border:1px solid var(--border)">Cancel</button>
+            <button id="modal-delete" onclick="deleteAgent()" style="background:#ef4444;color:#fff;display:none">Delete</button>
+            <button onclick="saveAgent()" style="background:var(--accent);color: var(--accent-ink)">Save</button>
+        </div>
+    </div>
+</div>
+
+<!-- Phase 24 — bulk select action bar -->
+<div class="bulk-action-bar" id="bulk-action-bar">
+    <span class="count"><span id="bulk-selected-count">0</span> selected</span>
+    <button class="eos-btn-sm eos-btn-ghost" onclick="bulkArchive()">Archive</button>
+    <button class="eos-btn-sm eos-btn-ghost" onclick="bulkDelete()" style="color:#ef4444">Delete</button>
+    <button class="eos-btn-sm eos-btn-ghost" onclick="setBulkSelect(false)">Cancel</button>
+</div>
+
+<!-- Activity drawer: tabbed view of Tasks + Pending for the current room -->
+<div class="activity-drawer-backdrop" id="activity-backdrop" onclick="closeActivityDrawer()"></div>
+<aside class="activity-drawer" id="activity-drawer" aria-hidden="true">
+    <div class="activity-drawer-head">
+        <h3 id="activity-drawer-title">Activity</h3>
+        <button class="eos-btn-sm eos-btn-ghost" onclick="closeActivityDrawer()" aria-label="Close">×</button>
+    </div>
+    <div class="activity-drawer-tabs">
+        <button id="activity-tab-pending" class="active" onclick="switchActivityTab('pending')">Pending <span id="activity-tab-pending-count"></span></button>
+        <button id="activity-tab-tasks" onclick="switchActivityTab('tasks')">Tasks <span id="activity-tab-tasks-count"></span></button>
+        <button id="activity-tab-knowledge" onclick="switchActivityTab('knowledge')">Knowledge <span id="activity-tab-knowledge-count"></span></button>
+        <button id="activity-tab-memory" onclick="switchActivityTab('memory')">Memory <span id="activity-tab-memory-count"></span></button>
+    </div>
+    <div class="activity-drawer-body" id="activity-drawer-body"></div>
+</aside>
+
+<script>
+var agents = [];
+var currentAgent = null;
+var sending = false;
+var isMobile = window.innerWidth <= 700;
+var tierFilter = 'all';
+
+var COLORS = ['#8b5cf6','#3b82f6','#10b981','#f59e0b','#ef4444','#ec4899','#06b6d4','#84cc16','#f97316','#6366f1'];
+
+// Phase 9 — unread state per room id, refreshed after loadAgents.
+var _unreadMap = {};
+
+function agentColor(name) {
+    var h = 0;
+    for (var i = 0; i < name.length; i++) h = ((h << 5) - h) + name.charCodeAt(i) | 0;
+    return COLORS[Math.abs(h) % COLORS.length];
+}
+
+function initial(name) { return (name || '?')[0].toUpperCase(); }
+function truncate(s, n) { return s && s.length > n ? s.slice(0, n) + '...' : (s || ''); }
+
+// --- Sidebar rendering ---
+
+function renderSidebar() {
+    var el = document.getElementById('agent-list');
+    var query = (document.getElementById('search').value || '').toLowerCase();
+    // Archived rooms only show when the Archived tab is selected; they're
+    // hidden from All / User / System views so the default sidebar stays
+    // focused on live conversations.
+    var filtered = agents.filter(function(a) {
+        if (query && a.name.toLowerCase().indexOf(query) < 0) return false;
+        var isArchived = a.status === 'archived';
+        if (tierFilter === 'archived') return isArchived;
+        if (isArchived) return false;
+        if (tierFilter !== 'all' && (a.tier || 'user') !== tierFilter) return false;
+        return true;
+    });
+    document.getElementById('agent-count').textContent = agents.length + ' agent' + (agents.length !== 1 ? 's' : '');
+
+    if (!filtered.length) {
+        el.innerHTML = '<div style="text-align:center;padding:30px 10px;color:var(--text-muted);font-size:13px">' +
+            (agents.length ? 'No matches' : 'No agents yet') + '</div>';
+        return;
+    }
+    // Sort: most-recently-active first, then anything that has never seen
+    // a message falls to the bottom in alphabetical order. System tier
+    // gets a small boost so the user's core agents (general-assistant etc.)
+    // stay above totally-stale persona records that would otherwise outrank
+    // them by name. Unread rooms always float to the very top.
+    filtered.sort(function(a, b) {
+        var au = !!_unreadMap[a.id], bu = !!_unreadMap[b.id];
+        if (au !== bu) return au ? -1 : 1;
+        var at = a.last_msg_ts || '';
+        var bt = b.last_msg_ts || '';
+        if (at && bt && at !== bt) return at < bt ? 1 : -1;
+        if (at && !bt) return -1;
+        if (bt && !at) return 1;
+        // Both lack activity — system tier sinks above everyone, then name.
+        var asys = a.tier === 'system' ? 0 : 1;
+        var bsys = b.tier === 'system' ? 0 : 1;
+        if (asys !== bsys) return asys - bsys;
+        return (a.name || '').localeCompare(b.name || '');
+    });
+    el.innerHTML = filtered.map(function(a) {
+        var active = currentAgent && currentAgent.id === a.id;
+        var tier = a.tier || 'user';
+        var isGroup = tier === 'group';
+        var color = agentColor(a.name);
+        var badge = '<span class="tier-badge ' + tier + '">' + tier + '</span>';
+        var lock = a.builtin ? ' 🔒' : '';
+        var preview, avatar;
+        if (isGroup) {
+            var parts = a.participants || [];
+            var responders = parts.filter(function(p){
+                return p.type === 'agent' || p.type === 'cli';
+            });
+            var responderCount = responders.length;
+            var hasCli = parts.some(function(p){ return p.type === 'cli'; });
+            // Stacked mini-avatars (max 3) + overflow count. Reuses participantVisual.
+            var miniMax = 3;
+            var minis = responders.slice(0, miniMax).map(function(p, idx) {
+                var v = participantVisual(p);
+                var z = miniMax - idx;
+                return '<span class="member-avatar" style="background:' + v.color + ';width:18px;height:18px;font-size:9px;border:2px solid var(--bg);margin-left:' + (idx === 0 ? '0' : '-7px') + ';z-index:' + z + ';position:relative">' + esc(v.icon) + '</span>';
+            }).join('');
+            var overflow = responderCount > miniMax
+                ? '<span style="font-size:11px;color:var(--text-muted);margin-left:6px">+' + (responderCount - miniMax) + '</span>'
+                : '';
+            preview = '<span style="display:inline-flex;align-items:center">' + minis + overflow +
+                      '<span style="margin-left:8px;color:var(--text-muted);font-size:11px">' +
+                          responderCount + (hasCli ? ' incl. CLI' : '') +
+                      '</span></span>';
+            avatar = '<div class="agent-avatar" style="background:' + color + '">👥</div>';
+        } else {
+            preview = truncate(a.system_prompt, 40) || 'No prompt set';
+            avatar = '<div class="agent-avatar" style="background:' + color + '">' + initial(a.name) + '</div>';
+        }
+        // Group rooms compose preview as HTML (mini-avatar stack); 1:1 rooms
+        // pass plain text. The flag distinguishes which path to take.
+        var previewHtml = isGroup ? preview : esc(preview);
+        // Unread indicator — small dot with count, positioned right of the name.
+        var unread = _unreadMap[a.id];
+        var unreadDot = '';
+        if (unread && unread.count > 0) {
+            var n = unread.count > 9 ? '9+' : String(unread.count);
+            unreadDot = '<span class="unread-dot" title="' + unread.count + ' new since last visit">' + n + '</span>';
+        }
+        return '<div class="agent-item' + (active ? ' active' : '') + (unread ? ' has-unread' : '') + '" onclick="openChat(\'' + escAttr(a.id) + '\')">' +
+            avatar +
+            '<div class="agent-preview">' +
+                '<div class="agent-preview-name">' + esc(a.name) + badge + lock + unreadDot + '</div>' +
+                '<div class="agent-preview-msg">' + previewHtml + '</div>' +
+            '</div></div>';
+    }).join('');
+}
+
+function setTierFilter(tier) {
+    tierFilter = tier;
+    document.querySelectorAll('.tier-filter button').forEach(function(b) {
+        b.classList.toggle('active', b.textContent.toLowerCase() === tier);
+    });
+    renderSidebar();
+}
+
+// --- Cross-room message search (Phase 7b) ---
+//
+// When the sidebar query is ≥2 chars, also query /rooms/api/search and
+// append hits below the agent list. Debounced 200ms so typing fast doesn't
+// hammer the daemon. Hits link directly into the room.
+
+var _searchTimer = null;
+var _lastSearchQuery = '';
+
+function filterAgents() {
+    renderSidebar();
+    var q = (document.getElementById('search').value || '').trim();
+    if (_searchTimer) clearTimeout(_searchTimer);
+    if (q.length < 2) {
+        _renderMessageHits([]);
+        return;
+    }
+    _searchTimer = setTimeout(async function() {
+        if (q === _lastSearchQuery) return;
+        _lastSearchQuery = q;
+        try {
+            var hits = await EOS.api('/rooms/api/search?q=' + encodeURIComponent(q)) || [];
+            _renderMessageHits(hits);
+        } catch(e) {
+            _renderMessageHits([]);
+        }
+    }, 200);
+}
+
+function _renderMessageHits(hits) {
+    var container = document.getElementById('msg-hits');
+    if (!container) return;
+    if (!hits.length) {
+        container.innerHTML = '';
+        container.style.display = 'none';
+        return;
+    }
+    container.style.display = '';
+    container.innerHTML =
+        '<div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;padding:8px 14px 4px">In messages</div>' +
+        hits.map(function(h) {
+            var when = h.ts ? new Date(h.ts).toLocaleDateString([], {month:'short', day:'numeric'}) : '';
+            return '<div class="agent-item" style="padding:8px 14px;cursor:pointer" onclick="openChat(\'' + escAttr(h.room_id) + '\')">' +
+                '<div style="flex:1;min-width:0">' +
+                    '<div style="font-size:12px;color:var(--text-muted);margin-bottom:2px">' +
+                        (h.kind === 'group' ? '👥 ' : '') + esc(h.room_name) +
+                        ' · ' + esc(h.speaker) +
+                        (when ? ' · ' + esc(when) : '') +
+                    '</div>' +
+                    '<div style="font-size:13px;color:var(--text);overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical">' +
+                        esc(h.snippet) +
+                    '</div>' +
+                '</div></div>';
+        }).join('');
+}
+
+// --- Chat ---
+
+async function openChat(agentId) {
+    currentAgent = agents.find(function(a) { return a.id === agentId; });
+    if (!currentAgent) return;
+
+    renderSidebar();
+
+    // Show chat panel, hide welcome
+    document.getElementById('chat-welcome').style.display = 'none';
+    document.getElementById('chat-header').style.display = '';
+    document.getElementById('chat-messages').style.display = '';
+    document.getElementById('chat-input-bar').style.display = '';
+
+    var tier = currentAgent.tier || 'user';
+    var isGroup = tier === 'group';
+    var memberCount = '';
+    if (isGroup) {
+        var rs = (currentAgent.participants || []).filter(function(p){
+            return p.type === 'agent' || p.type === 'cli';
+        }).length;
+        memberCount = ' <span style="color:var(--text-muted);font-size:13px;font-weight:400;margin-left:6px">' +
+                      rs + ' member' + (rs !== 1 ? 's' : '') + '</span>';
+    }
+    var titleIcon = isGroup ? '👥 ' : '';
+    document.getElementById('chat-name').innerHTML = titleIcon + esc(currentAgent.name) +
+        ' <span class="tier-badge ' + tier + '">' + tier + '</span>' + memberCount;
+    var modelEl = document.getElementById('chat-model');
+    if (currentAgent.model) { modelEl.textContent = currentAgent.model; modelEl.style.display = ''; }
+    else { modelEl.style.display = 'none'; }
+
+    renderMembers();
+    loadRoomTaskCount(currentAgent.id);
+    // Seed the Knowledge tab count from the room record (already in cache).
+    var kbBadge = document.getElementById('activity-tab-knowledge-count');
+    var kbN = ((currentAgent.knowledge_files || []).length);
+    if (kbBadge) kbBadge.textContent = kbN ? '(' + kbN + ')' : '';
+
+    // Mobile: hide sidebar, show chat
+    if (isMobile) {
+        document.getElementById('sidebar').classList.add('hidden');
+        document.getElementById('chat-panel').classList.remove('hidden');
+    }
+
+    // Load history. Fetch pending FIRST so renderMessages has the cache
+    // populated when it walks each message's `pending: [ids]` list.
+    var msgEl = document.getElementById('chat-messages');
+    msgEl.innerHTML = '<div style="text-align:center;padding:20px"><span class="typing-dot"></span><span class="typing-dot"></span><span class="typing-dot"></span></div>';
+
+    try {
+        await loadPendingForRoom(currentAgent.id);
+        var data = await EOS.api('/rooms/api/history/' + agentId);
+        // Capture last_visited BEFORE we ping the visit endpoint so the
+        // catch-me-up banner can compute "messages since last visit".
+        var lastVisited = (await EOS.api('/rooms/api/visits') || {})[agentId] || '';
+        renderMessages(data.messages || []);
+        maybeRenderCatchUpBanner(data.messages || [], lastVisited);
+        // Mark visited (idempotent server-side) and clear local unread state
+        // so the dot disappears immediately without a full reload.
+        EOS.post('/rooms/api/rooms/' + encodeURIComponent(agentId) + '/visit', {});
+        if (_unreadMap[agentId]) {
+            delete _unreadMap[agentId];
+            renderSidebar();
+        }
+    } catch(e) { renderMessages([]); }
+    // Restore the draft (if any) — sits untouched in the input for the user
+    // to keep typing, edit, or hit send. Show a small toast so it's clear
+    // the typing didn't vanish.
+    var draft = loadDraft(agentId);
+    var input = document.getElementById('chat-input');
+    if (input && draft && draft.text) {
+        input.value = draft.text;
+        // Trigger auto-resize.
+        input.style.height = 'auto';
+        input.style.height = Math.min(input.scrollHeight, 120) + 'px';
+        EOS_UI.toast('Draft restored');
+    } else if (input) {
+        input.value = '';
+        input.style.height = 'auto';
+    }
+    setTimeout(function() {
+        var inp = document.getElementById('chat-input');
+        if (inp) {
+            inp.focus();
+            // Move cursor to end so the user can keep typing.
+            var end = inp.value.length;
+            inp.selectionStart = inp.selectionEnd = end;
+        }
+    }, 150);
+}
+
+function showSidebar() {
+    document.getElementById('sidebar').classList.remove('hidden');
+    if (isMobile) document.getElementById('chat-panel').classList.add('hidden');
+}
+
+function renderMessages(messages) {
+    var el = document.getElementById('chat-messages');
+    if (!messages.length) {
+        var name = currentAgent ? currentAgent.name : 'this agent';
+        var isGroup = currentAgent && currentAgent.tier === 'group';
+        var headline, sub, suggestionsHtml = '';
+        if (isGroup) {
+            var responders = (currentAgent.participants || []).filter(function(p){
+                return p.type === 'agent' || p.type === 'cli';
+            });
+            var first = responders[0];
+            var firstId = first ? first.id : null;
+            headline = esc(name);
+            sub = responders.length + ' participant' + (responders.length !== 1 ? 's' : '') + ' · use <code style="background:var(--bg-elevated);padding:1px 5px;border-radius:3px;font-size:12px">@name</code> to direct your message';
+            // Suggestion chips — quick-fire @-mentions for each responder.
+            suggestionsHtml = '<div style="display:flex;gap:6px;justify-content:center;flex-wrap:wrap;margin-top:18px">' +
+                responders.slice(0, 4).map(function(p) {
+                    var v = participantVisual(p);
+                    return '<button class="eos-btn-sm eos-btn-ghost" style="display:inline-flex;align-items:center;gap:6px" onclick="insertMention(\'' + escAttr(v.id) + '\')">' +
+                           '<span class="member-avatar" style="background:' + v.color + ';width:18px;height:18px;font-size:9px">' + esc(v.icon) + '</span>' +
+                           '<span>@' + esc(v.id) + '</span>' +
+                           '</button>';
+                }).join('') +
+                '</div>';
+        } else {
+            headline = esc(name);
+            var sp = (currentAgent && currentAgent.system_prompt) || '';
+            var spPreview = sp.replace(/\s+/g,' ').slice(0, 140);
+            sub = spPreview ? esc(spPreview) + (sp.length > 140 ? '…' : '') : 'Ready when you are.';
+        }
+        el.innerHTML =
+            '<div class="chat-welcome" style="padding:60px 20px;text-align:center">' +
+                '<div class="icon" style="font-size:48px;margin-bottom:18px">' +
+                    (isGroup ? '👥' : '💬') +
+                '</div>' +
+                '<h2 style="font-size:20px;font-weight:600;margin-bottom:8px">' + headline + '</h2>' +
+                '<p style="color:var(--text-muted);font-size:13px;max-width:380px;margin:0 auto;line-height:1.5">' + sub + '</p>' +
+                suggestionsHtml +
+            '</div>';
+        return;
+    }
+    var isGroup = currentAgent && (currentAgent.tier === 'group');
+    var pinnedSet = new Set((currentAgent && currentAgent.pinned_ts) || []);
+    // Phase 25 — index messages by ts so reply quotes can resolve their parent.
+    _msgIndexByTs = {};
+    messages.forEach(function(m) { if (m.ts) _msgIndexByTs[m.ts] = m; });
+    // Pinned panel above the thread — pulls live messages from the same array.
+    var pinnedHtml = '';
+    if (pinnedSet.size) {
+        var pinnedRows = messages.filter(function(m){ return m.ts && pinnedSet.has(m.ts); }).map(function(m) {
+            var actor = m.actor || {};
+            var speakerId = actor.id || (m.role === 'user' ? 'me' : 'assistant');
+            var preview = _stripTaskMarkers(m.text || '').replace(/\s+/g, ' ');
+            return '<div class="pinned-row" onclick="scrollToMessage(\'' + escAttr(m.ts) + '\')">' +
+                '<span style="color:var(--accent);flex-shrink:0">📌</span>' +
+                '<div style="flex:1;min-width:0">' +
+                    '<div class="pinned-speaker">' + esc(speakerId) + '</div>' +
+                    '<div class="pinned-text">' + esc(preview) + '</div>' +
+                '</div>' +
+                '<button class="pinned-unpin" onclick="event.stopPropagation();unpinMessage(\'' + escAttr(m.ts) + '\')" title="Unpin">×</button>' +
+                '</div>';
+        }).join('');
+        if (pinnedRows) {
+            pinnedHtml = '<div class="pinned-panel">' +
+                '<div class="pinned-panel-head">📌 Pinned · ' + pinnedSet.size + '</div>' +
+                pinnedRows +
+                '</div>';
+        }
+    }
+    var messagesHtml = messages.map(function(m) {
+        var cls = m.role === 'user' ? 'msg-user' : 'msg-assistant';
+        var actor = m.actor || {};
+        var isCli = actor.type === 'cli';
+        if (isCli) cls += ' msg-cli';
+        var isPinned = m.ts && pinnedSet.has(m.ts);
+        if (isPinned) cls += ' is-pinned';
+        var time = m.ts ? new Date(m.ts).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}) : '';
+        var who = '';
+        if (isGroup && m.role !== 'user') {
+            var pseudoPart = {type: actor.type || 'agent', id: actor.id || ''};
+            var v = participantVisual(pseudoPart);
+            who = '<div class="msg-speaker-row">' +
+                  '<span class="member-avatar" style="background:' + v.color + '">' + esc(v.icon) + '</span>' +
+                  '<span style="font-size:11px;color:var(--text-muted);font-weight:600">' + esc(v.label) + '</span>' +
+                  '</div>';
+        }
+        var bodyStyle = isCli ? ' style="font-family:var(--font-mono,monospace);font-size:13px;white-space:pre-wrap"' : '';
+        var pendingHtml = '';
+        if (Array.isArray(m.pending) && m.pending.length) {
+            pendingHtml = m.pending.map(function(actionId) {
+                var action = _pendingMap[actionId];
+                return action ? renderPendingCard(action) : '';
+            }).join('');
+        }
+        // Pin toggle — only render on messages with a stable ts.
+        var pinBtn = m.ts ? '<button class="msg-pin" onclick="togglePin(\'' + escAttr(m.ts) + '\')" title="' + (isPinned ? 'Unpin' : 'Pin') + '">' + (isPinned ? '📌' : '📍') + '</button>' : '';
+        // Voice playback — only on non-user turns.
+        var speakBtn = (m.role !== 'user' && m.text) ?
+            '<button class="msg-speak" data-ts="' + escAttr(m.ts || '') + '" onclick="event.stopPropagation();toggleSpeakMessage(\'' + escAttr(m.ts || '') + '\', this.dataset.text)" data-text="' + escAttr(m.text) + '" title="Speak">🔊</button>' : '';
+        // Phase 25 — reply button + quoted parent.
+        var replyBtn = m.ts ? '<button class="msg-reply" onclick="startReply(\'' + escAttr(m.ts) + '\')" title="Reply">↩</button>' : '';
+        var quoteHtml = '';
+        if (m.reply_to) {
+            var parent = _msgIndexByTs[m.reply_to];
+            if (parent) {
+                var pActor = parent.actor || {};
+                var pSpeaker = pActor.id || (parent.role === 'user' ? 'me' : 'assistant');
+                var pPreview = (parent.text || '').replace(/\s+/g, ' ').slice(0, 90);
+                quoteHtml = '<div class="msg-reply-quote" onclick="scrollToMessage(\'' + escAttr(m.reply_to) + '\')">' +
+                    '<span class="rq-speaker">' + esc(pSpeaker) + '</span>' +
+                    '<span class="rq-text">' + esc(pPreview) + '</span>' +
+                    '</div>';
+            } else {
+                quoteHtml = '<div class="msg-reply-quote" style="cursor:default">' +
+                    '<span class="rq-text">↩ replied to a message no longer in scrollback</span>' +
+                    '</div>';
+            }
+        }
+        return '<div class="msg ' + cls + '" data-ts="' + escAttr(m.ts || '') + '">' +
+            pinBtn + speakBtn + replyBtn + quoteHtml + who + '<div' + bodyStyle + '>' + esc(m.text) + '</div>' +
+            pendingHtml +
+            (time ? '<div class="msg-time">' + time + '</div>' : '') + '</div>';
+    }).join('');
+    el.innerHTML = pinnedHtml + messagesHtml;
+    el.scrollTop = el.scrollHeight;
+}
+
+function appendMessage(role, text) {
+    var el = document.getElementById('chat-messages');
+    var welcome = el.querySelector('.chat-welcome');
+    if (welcome) welcome.remove();
+    var cls = role === 'user' ? 'msg-user' : 'msg-assistant';
+    var time = new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
+    el.insertAdjacentHTML('beforeend', '<div class="msg ' + cls + '">' + esc(text) +
+        '<div class="msg-time">' + time + '</div></div>');
+    el.scrollTop = el.scrollHeight;
+}
+
+function showTyping() {
+    var el = document.getElementById('chat-messages');
+    el.insertAdjacentHTML('beforeend', '<div class="typing-indicator" id="typing-ind">' +
+        '<span class="typing-dot"></span><span class="typing-dot"></span><span class="typing-dot"></span></div>');
+    el.scrollTop = el.scrollHeight;
+}
+
+function removeTyping() { var t = document.getElementById('typing-ind'); if (t) t.remove(); }
+
+async function sendMessage() {
+    if (sending || !currentAgent) return;
+    var input = document.getElementById('chat-input');
+    var text = input.value.trim();
+    if (!text) return;
+
+    input.value = '';
+    input.style.height = 'auto';
+    // Sent — drop the draft so a future openChat doesn't re-restore it.
+    clearDraft(currentAgent.id);
+    sending = true;
+    document.getElementById('send-btn').disabled = true;
+
+    appendMessage('user', text);
+
+    // Create streaming message bubble
+    var isGroup = currentAgent && (currentAgent.tier === 'group');
+    var msgEl = document.createElement('div');
+    msgEl.className = 'msg msg-assistant';
+    msgEl.innerHTML =
+        (isGroup ? '<div class="msg-speaker-row" id="stream-speaker-row">' +
+                   '<span class="member-avatar" id="stream-avatar" style="background:var(--text-muted)">…</span>' +
+                   '<span id="stream-speaker" style="font-size:11px;color:var(--text-muted);font-weight:600">…</span>' +
+                   '</div>' : '') +
+        '<div class="msg-text" id="stream-target"><span class="typing-dot">●●●</span></div>' +
+        '<div id="stream-tools" style="display:flex;flex-direction:column;gap:4px;margin-top:6px"></div>' +
+        '<div id="stream-pending" style="display:flex;flex-direction:column;gap:4px"></div>';
+    document.getElementById('chat-messages').appendChild(msgEl);
+    var _cm=document.getElementById('chat-messages');if(_cm)_cm.scrollTop=_cm.scrollHeight;
+
+    var targetEl = document.getElementById('stream-target');
+    var speakerEl = document.getElementById('stream-speaker');
+    var avatarEl = document.getElementById('stream-avatar');
+    var toolsEl = document.getElementById('stream-tools');
+    var fullText = '';
+    var sawCliMarkers = false;
+    var toolCardsById = {};
+
+    var streamPayload = { agent_id: currentAgent.id, text: text };
+    if (_replyTo && _replyTo.ts) streamPayload.reply_to = _replyTo.ts;
+    var sentReplyTo = _replyTo;
+    cancelReply();  // clear chip; the ts is captured in payload above
+    try {
+        for await (var chunk of EOS.streamPost('/rooms/api/chat/stream', streamPayload)) {
+            // CLI tool-use card — small inline card, expands the input on click.
+            if (chunk.tool_use) {
+                sawCliMarkers = true;
+                var tu = chunk.tool_use;
+                var tid = tu.id || ('tool-' + Math.random().toString(36).slice(2));
+                var inputStr = '';
+                try { inputStr = JSON.stringify(tu.input || {}, null, 2); } catch(e) { inputStr = String(tu.input); }
+                var card = document.createElement('div');
+                card.id = 'tool-card-' + tid;
+                card.style.cssText = 'border:1px solid var(--border);border-radius:6px;padding:6px 8px;font-family:var(--font-mono,monospace);font-size:12px;background:var(--bg-elevated)';
+                card.innerHTML = '<div style="font-weight:600;color:var(--accent)">→ ' + esc(tu.name || 'tool') + '</div>' +
+                                 '<details style="margin-top:2px"><summary style="cursor:pointer;color:var(--text-muted)">input</summary>' +
+                                 '<pre style="margin:4px 0 0 0;white-space:pre-wrap;font-size:11px">' + esc(inputStr) + '</pre></details>';
+                toolsEl.appendChild(card);
+                toolCardsById[tid] = card;
+                var _cm=document.getElementById('chat-messages');if(_cm)_cm.scrollTop=_cm.scrollHeight;
+                continue;
+            }
+            if (chunk.tool_result) {
+                sawCliMarkers = true;
+                var tr = chunk.tool_result;
+                var card = toolCardsById[tr.tool_use_id];
+                if (card) {
+                    card.insertAdjacentHTML('beforeend',
+                        '<details style="margin-top:2px"><summary style="cursor:pointer;color:var(--text-muted)">result</summary>' +
+                        '<pre style="margin:4px 0 0 0;white-space:pre-wrap;font-size:11px">' + esc(tr.content || '') + '</pre></details>');
+                }
+                continue;
+            }
+            // Phase 5 review-gate card — CLI emitted [DO:app.method({...})]
+            // and the backend saved it as a pending action. Render Apply/Reject
+            // inline so the user can resolve it without leaving the message.
+            if (chunk.pending_action) {
+                var action = chunk.pending_action;
+                _pendingMap[action.id] = action;
+                var pendingEl = document.getElementById('stream-pending');
+                if (pendingEl) {
+                    pendingEl.insertAdjacentHTML('beforeend', renderPendingCard(action));
+                }
+                updatePendingBadge();
+                continue;
+            }
+            var t = chunk.text || '';
+            if (t) {
+                fullText += t;
+                targetEl.innerHTML = typeof EOS_UI !== 'undefined' && EOS_UI.renderMarkdown ? EOS_UI.renderMarkdown(fullText) : esc(fullText);
+                var _cm=document.getElementById('chat-messages');if(_cm)_cm.scrollTop=_cm.scrollHeight;
+            }
+            // Final chunk carries responder_id (and actor_type for CLI).
+            if (speakerEl && chunk.responder_id) {
+                var v = participantVisual({type: chunk.actor_type || 'agent', id: chunk.responder_id});
+                speakerEl.textContent = v.label;
+                if (avatarEl) {
+                    avatarEl.textContent = v.icon;
+                    avatarEl.style.background = v.color;
+                }
+            }
+            if (chunk.actor_type === 'cli' || sawCliMarkers) {
+                msgEl.classList.add('msg-cli');
+                targetEl.style.fontFamily = 'var(--font-mono,monospace)';
+                targetEl.style.fontSize = '13px';
+                targetEl.style.whiteSpace = 'pre-wrap';
+            }
+            if (chunk.done) break;
+        }
+        if (!fullText) targetEl.textContent = 'No response';
+        targetEl.removeAttribute('id');
+    } catch(e) {
+        // Fallback to non-streaming
+        try {
+            var r = await EOS.post('/rooms/api/chat', { agent_id: currentAgent.id, text: text });
+            targetEl.innerHTML = typeof EOS_UI !== 'undefined' && EOS_UI.renderMarkdown ? EOS_UI.renderMarkdown(r.response || 'No response') : esc(r.response || 'No response');
+        } catch(e2) {
+            targetEl.textContent = 'Error: could not get response';
+        }
+        targetEl.removeAttribute('id');
+    }
+    sending = false;
+    document.getElementById('send-btn').disabled = false;
+    input.focus();
+    // Auto-speak the just-arrived reply if the room has it enabled. Uses
+    // fullText so we read the assistant's plain answer (not the user's
+    // outgoing prompt). speakText cancels any prior queued utterance.
+    if (currentAgent && fullText && isAutoSpeakOn(currentAgent.id)) {
+        speakText(fullText);
+    }
+    renderSidebar();
+}
+
+async function clearHistory() {
+    if (!currentAgent) return;
+    if (!await EOS_UI.confirm('Clear all messages with ' + currentAgent.name + '?')) return;
+    try {
+        await EOS.api('/rooms/api/history/' + currentAgent.id, { method:'DELETE' });
+        renderMessages([]);
+        EOS_UI.toast('History cleared');
+    } catch(e) { EOS_UI.toast('Failed to clear', false); }
+}
+
+function exportChat() {
+    if (!currentAgent) return;
+    var msgs = document.querySelectorAll('#chat-messages .msg');
+    var lines = [];
+    msgs.forEach(function(m) {
+        var role = m.classList.contains('msg-user') ? 'You' : currentAgent.name;
+        var text = m.childNodes[0].textContent;
+        lines.push(role + ': ' + text);
+    });
+    if (!lines.length) { EOS_UI.toast('No messages to export', false); return; }
+    var blob = new Blob([lines.join('\n\n')], {type:'text/plain'});
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = currentAgent.name.replace(/\s+/g,'-') + '-chat.txt';
+    a.click();
+    EOS_UI.toast('Chat exported');
+}
+
+// --- Agent CRUD ---
+
+function openModal(editAgent) {
+    var isEdit = !!editAgent;
+    document.getElementById('modal-title').textContent = isEdit ? 'Edit Agent' : 'New Agent';
+    document.getElementById('f-name').value = isEdit ? editAgent.name : '';
+    document.getElementById('f-tier').value = isEdit ? (editAgent.tier || 'user') : 'user';
+    document.getElementById('f-prompt').value = isEdit ? editAgent.system_prompt : '';
+    document.getElementById('f-files').value = isEdit ? (editAgent.knowledge_files || []).join(', ') : '';
+    document.getElementById('f-kdir').value = isEdit ? (editAgent.knowledge_dir || '') : '';
+    document.getElementById('f-model').value = isEdit ? (editAgent.model || '') : '';
+    document.getElementById('f-tools').value = isEdit ? (editAgent.tools || []).join(', ') : '';
+    document.getElementById('f-temp').value = isEdit && editAgent.temperature != null ? editAgent.temperature : '';
+    document.getElementById('f-effort').value = isEdit ? (editAgent.effort || '') : '';
+    document.getElementById('f-id').value = isEdit ? editAgent.id : '';
+    document.getElementById('f-builtin').value = isEdit ? (editAgent.builtin ? '1' : '') : '';
+    // Show delete button only for non-builtin agents
+    var showDelete = isEdit && !editAgent.builtin;
+    document.getElementById('modal-delete').style.display = showDelete ? '' : 'none';
+    EOS_UI.openModal('agent-modal');
+    setTimeout(function() { document.getElementById('f-name').focus(); }, 200);
+}
+
+function editCurrentAgent() {
+    if (currentAgent) openModal(currentAgent);
+}
+
+// --- Group rooms (Phase 2) ---
+
+// Pick ≥2 existing agents + give the room a title. Posts to /rooms/api/rooms,
+// then reloads the sidebar. Skips already-group rooms in the picker so we
+// can't nest a group inside a group.
+//
+// Layout: CLI tools section first (sticky / above the fold), then agents in
+// a 2-column dense grid. Avatar-first row, checkbox in top-right corner.
+// Clicking anywhere on a row toggles the checkbox.
+function openGroupModal() {
+    var pickable = (agents || []).filter(function(a) {
+        return (a.tier || 'user') !== 'group';
+    });
+    if (pickable.length < 2) {
+        EOS_UI.toast('Need at least 2 participants to make a group', false);
+        return;
+    }
+    var agentRows = pickable.map(function(a) {
+        var color = agentColor(a.name);
+        var preview = (a.system_prompt || '').replace(/\s+/g,' ').slice(0, 60);
+        return '<label class="roster-pick" data-pick="agent" data-id="' + escAttr(a.id) + '">' +
+            '<input type="checkbox" data-kind="agent" value="' + escAttr(a.id) + '" onchange="this.closest(\'.roster-pick\').classList.toggle(\'checked\', this.checked)">' +
+            '<div class="roster-avatar" style="background:' + color + '">' + initial(a.name) + '</div>' +
+            '<div class="roster-meta">' +
+                '<div class="roster-name">' + esc(a.name) + '</div>' +
+                '<div class="roster-sub">' + esc(preview || 'No prompt set') + '</div>' +
+            '</div></label>';
+    }).join('');
+    // CLI tools section — distinct from agents. Claude has streaming + tool
+    // events + model/effort knobs; codex/gemini run in buffered text mode
+    // and are configured via emptyos.toml [plugins.agent-runtime.clis.<id>].
+    var simpleCliRow = function(id, label, sub, icon) {
+        return '<div class="roster-pick" data-pick="cli" data-id="' + escAttr(id) + '" id="roster-cli-' + escAttr(id) + '">' +
+            '<label style="display:flex;align-items:center;gap:10px;cursor:pointer;width:100%">' +
+                '<input type="checkbox" data-kind="cli" value="' + escAttr(id) + '" onchange="document.getElementById(\'roster-cli-' + escAttr(id) + '\').classList.toggle(\'checked\', this.checked)">' +
+                '<div class="roster-avatar" style="background:var(--text-muted)">' + esc(icon) + '</div>' +
+                '<div class="roster-meta">' +
+                    '<div class="roster-name">' + esc(label) + '</div>' +
+                    '<div class="roster-sub">' + esc(sub) + '</div>' +
+                '</div>' +
+            '</label>' +
+        '</div>';
+    };
+    var cliRow =
+        '<div class="roster-pick" data-pick="cli" data-id="claude-cli" id="roster-cli-claude-cli" style="flex-direction:column;align-items:stretch;gap:0">' +
+            '<label style="display:flex;align-items:center;gap:10px;cursor:pointer;width:100%">' +
+                '<input type="checkbox" data-kind="cli" value="claude-cli" onchange="document.getElementById(\'roster-cli-claude-cli\').classList.toggle(\'checked\', this.checked)">' +
+                '<div class="roster-avatar" style="background:var(--accent)">⚡</div>' +
+                '<div class="roster-meta">' +
+                    '<div class="roster-name">Claude Code CLI</div>' +
+                    '<div class="roster-sub">Streaming · tool events · review gate</div>' +
+                '</div>' +
+            '</label>' +
+            '<div class="roster-cli-config">' +
+                '<select id="cli-claude-model">' +
+                    '<option value="">Model: default</option>' +
+                    '<option value="haiku">haiku (fastest)</option>' +
+                    '<option value="sonnet">sonnet</option>' +
+                    '<option value="opus">opus (slowest)</option>' +
+                '</select>' +
+                '<select id="cli-claude-effort">' +
+                    '<option value="">Effort: default</option>' +
+                    '<option value="low">low (fastest)</option>' +
+                    '<option value="medium">medium</option>' +
+                    '<option value="high">high</option>' +
+                    '<option value="max">max (slowest)</option>' +
+                '</select>' +
+            '</div>' +
+        '</div>' +
+        simpleCliRow('codex', 'Codex (OpenAI)', 'Buffered text · configure binary in emptyos.toml', '○') +
+        simpleCliRow('gemini', 'Gemini (Google)', 'Buffered text · configure binary in emptyos.toml', '◇');
+    var body =
+        '<div class="eos-form-group">' +
+            '<label class="eos-form-label">Room title</label>' +
+            '<input id="group-title" class="eos-form-input" type="text" placeholder="e.g. Brainstorm with Curator + Reviewer" autofocus oninput="onGroupTitleInput(this.value)">' +
+            '<div id="group-suggestions" style="display:none;margin-top:8px;font-size:12px"></div>' +
+        '</div>' +
+        '<div class="roster-section">' +
+            '<div class="roster-label">CLI tools <span class="count-pill">3</span></div>' +
+            '<div class="roster-list">' + cliRow + '</div>' +
+        '</div>' +
+        '<div class="roster-section">' +
+            '<div class="roster-label">Agents <span class="count-pill">' + pickable.length + '</span></div>' +
+            '<div class="roster-list dense" id="group-pick-list">' + agentRows + '</div>' +
+        '</div>' +
+        '<div class="eos-form-actions">' +
+            '<button class="eos-btn eos-btn-primary" onclick="submitGroupRoom()">Create room</button>' +
+        '</div>';
+    // The group-pick-list id is reused by submitGroupRoom — we still want the
+    // CLI row's checkbox in the same query, so put both lists under that id.
+    body = body.replace(
+        'id="group-pick-list">',
+        'id="group-pick-list" data-section="agents">',
+    );
+    EOS_UI.modal({title: 'New Group', body: body, width: '600px'});
+}
+
+// Phase 27 — suggest agents based on the room title the user is typing.
+var _suggestTimer = null;
+function onGroupTitleInput(v) {
+    if (_suggestTimer) clearTimeout(_suggestTimer);
+    var q = (v || '').trim();
+    var box = document.getElementById('group-suggestions');
+    if (!box) return;
+    if (q.length < 3) { box.style.display = 'none'; box.innerHTML = ''; return; }
+    _suggestTimer = setTimeout(async function() {
+        var hits = [];
+        try {
+            hits = await EOS.api('/rooms/api/suggest-agents?q=' +
+                encodeURIComponent(q) + '&limit=3') || [];
+        } catch (e) { hits = []; }
+        if (!hits.length) { box.style.display = 'none'; box.innerHTML = ''; return; }
+        box.innerHTML =
+            '<div style="color:var(--text-muted);font-size:11px;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px">Suggested for this title</div>' +
+            '<div style="display:flex;flex-wrap:wrap;gap:6px">' +
+            hits.map(function(h) {
+                var color = agentColor(h.name);
+                return '<button class="eos-btn-sm" style="display:inline-flex;align-items:center;gap:6px;background:var(--bg-elevated);border:1px solid var(--border);border-radius:14px;padding:4px 10px;font-size:12px;cursor:pointer" onclick="acceptSuggestion(\'' + escAttr(h.id) + '\')">' +
+                    '<span class="member-avatar" style="background:' + color + ';width:18px;height:18px;font-size:9px">' + esc(initial(h.name)) + '</span>' +
+                    '<span>' + esc(h.name) + '</span>' +
+                    '<span style="color:var(--accent);font-weight:600">+</span>' +
+                    '</button>';
+            }).join('') +
+            '</div>';
+        box.style.display = 'block';
+    }, 250);
+}
+
+function acceptSuggestion(agentId) {
+    // Find the agent's checkbox in the roster and tick it.
+    var cb = document.querySelector('.roster-pick[data-pick="agent"][data-id="' + agentId + '"] input[type=checkbox]');
+    if (cb) {
+        cb.checked = true;
+        cb.dispatchEvent(new Event('change', {bubbles: true}));
+        // Scroll into view so user sees confirmation.
+        cb.closest('.roster-pick').scrollIntoView({behavior: 'smooth', block: 'center'});
+    } else {
+        EOS_UI.toast('Agent not in picker', false);
+    }
+}
+
+async function submitGroupRoom() {
+    var title = (document.getElementById('group-title').value || '').trim();
+    if (!title) { EOS_UI.toast('Title is required', false); return; }
+    // Both the CLI tools section and the agents grid carry data-kind on
+    // their checkboxes. Query all checked checkboxes inside the modal.
+    var modal = document.querySelector('.eos-modal-content, .eos-modal') || document;
+    var picked = Array.prototype.slice.call(
+        modal.querySelectorAll('input[type=checkbox][data-kind]:checked')
+    ).map(function(el) {
+        var kind = el.getAttribute('data-kind') || 'agent';
+        var entry = {type: kind, id: el.value};
+        if (kind === 'cli' && el.value === 'claude-cli') {
+            var m = document.getElementById('cli-claude-model');
+            var e = document.getElementById('cli-claude-effort');
+            if (m && m.value) entry.model = m.value;
+            if (e && e.value) entry.effort = e.value;
+        }
+        return entry;
+    });
+    if (picked.length < 2) { EOS_UI.toast('Pick at least 2 participants', false); return; }
+    try {
+        var room = await EOS.post('/rooms/api/rooms', {title: title, participants: picked});
+        if (room && room.error) { EOS_UI.toast(room.error, false); return; }
+        EOS_UI.closeModal();
+        EOS_UI.toast('Group created');
+        await loadAgents();
+        if (room && room.id) openChat(room.id);
+    } catch(e) {
+        EOS_UI.toast('Failed to create group', false);
+    }
+}
+
+// Look up display name for a participant id (agent or cli). Falls back to id.
+function agentNameById(id) {
+    if (id === 'claude-cli') return 'Claude Code CLI';
+    if (id === 'codex') return 'Codex';
+    if (id === 'gemini') return 'Gemini';
+    var a = (agents || []).find(function(x) { return x.id === id; });
+    return a ? a.name : id;
+}
+
+// Visual descriptor for a participant — used in member chips and assistant
+// bubbles. Returns {label, icon, color, type}.
+function participantVisual(p) {
+    var type = p.type || 'agent';
+    var id = p.id || '';
+    if (type === 'user') {
+        return {label: id || 'me', icon: '👤', color: 'var(--text-muted)', type: type, id: id || 'me'};
+    }
+    if (type === 'cli') {
+        return {label: agentNameById(id), icon: '⚡', color: 'var(--accent)', type: type, id: id};
+    }
+    var name = agentNameById(id);
+    return {label: name, icon: initial(name), color: agentColor(name), type: type, id: id};
+}
+
+// Render the per-room member chip strip. Agents/CLI chips are clickable (insert
+// @mention). The user chip is shown but non-clickable.
+function renderMembers() {
+    var bar = document.getElementById('chat-members');
+    if (!bar) return;
+    if (!currentAgent) { bar.style.display = 'none'; bar.innerHTML = ''; return; }
+    var parts = currentAgent.participants;
+    if (!parts) {
+        // 1:1 (legacy) — synthesise so the UI still shows you + the agent.
+        parts = [{type:'user', id:'me'}, {type:'agent', id: currentAgent.id}];
+    }
+    // Show only when there are 3+ entries (user + ≥2 responders) — i.e. group.
+    var responderCount = parts.filter(function(p){
+        return p.type === 'agent' || p.type === 'cli';
+    }).length;
+    if (responderCount < 2) { bar.style.display = 'none'; return; }
+    bar.innerHTML = '<span class="chat-members-label">in this room</span>' +
+        parts.map(function(p) {
+            var v = participantVisual(p);
+            var isSelf = v.type === 'user';
+            var cls = isSelf ? 'member-chip is-self' : 'member-chip clickable';
+            var click = isSelf ? '' : ' onclick="insertMention(\'' + escAttr(v.id) + '\')"';
+            return '<span class="' + cls + '"' + click + ' title="' + (isSelf ? 'You' : 'Click to @mention') + '">' +
+                '<span class="member-avatar" style="background:' + v.color + '">' + esc(v.icon) + '</span>' +
+                '<span>' + esc(v.label) + '</span>' +
+                (isSelf ? '' : '<span class="member-id">@' + esc(v.id) + '</span>') +
+                '</span>';
+        }).join('');
+    bar.style.display = '';
+}
+
+// --- Global pending dashboard (Phase 6.6) ---
+//
+// Aggregates pending actions across every room into one review surface.
+// Reuses renderPendingCard + applyAction / rejectAction so the cards look
+// and behave the same as inline ones. Grouped by room id with the room
+// name as a header.
+
+async function refreshGlobalPendingBadge() {
+    var btn = document.getElementById('global-pending-btn');
+    var countEl = document.getElementById('global-pending-count');
+    if (!btn || !countEl) return;
+    try {
+        var list = await EOS.api('/rooms/api/pending') || [];
+        var n = list.length;
+        countEl.textContent = String(n);
+        btn.style.display = n > 0 ? '' : 'none';
+    } catch(e) {
+        btn.style.display = 'none';
+    }
+}
+
+async function openGlobalPending() {
+    var list = [];
+    try {
+        list = await EOS.api('/rooms/api/pending?status=all') || [];
+    } catch(e) {
+        EOS_UI.toast('Failed to load pending actions', false);
+        return;
+    }
+    // Hydrate _pendingMap so apply/reject DOM updates pick the latest record.
+    list.forEach(function(a) { _pendingMap[a.id] = a; });
+    // Group by room id; preserve room names from `agents`.
+    var byRoom = {};
+    list.forEach(function(a) {
+        var rid = a.room_id || '(unknown)';
+        (byRoom[rid] = byRoom[rid] || []).push(a);
+    });
+    var pendingTotal = list.filter(function(a){ return a.status === 'pending'; }).length;
+    var roomIds = Object.keys(byRoom).sort(function(x, y) {
+        // Pending-first room ordering: rooms with any pending sort to top.
+        var hx = byRoom[x].some(function(a){ return a.status === 'pending'; });
+        var hy = byRoom[y].some(function(a){ return a.status === 'pending'; });
+        if (hx !== hy) return hx ? -1 : 1;
+        return (agentNameById(x) || x).localeCompare(agentNameById(y) || y);
+    });
+    var sections;
+    if (!roomIds.length) {
+        sections = '<div style="color:var(--text-muted);font-size:13px;padding:30px;text-align:center">No pending or resolved actions yet. CLI participants emit [DO:] tags that show up here once the user reviews them.</div>';
+    } else {
+        sections = roomIds.map(function(rid) {
+            var entries = byRoom[rid].slice().sort(function(a, b) {
+                if (a.status !== b.status) return a.status === 'pending' ? -1 : 1;
+                return (a.ts || '').localeCompare(b.ts || '');
+            });
+            var pendingForRoom = entries.filter(function(a){ return a.status === 'pending'; }).length;
+            var roomName = agentNameById(rid);
+            var openLink = '<button class="eos-btn-sm eos-btn-ghost" style="margin-left:auto;font-size:11px" onclick="EOS_UI.closeModal();openChat(\'' + escAttr(rid) + '\')">Open room →</button>';
+            return '<div style="margin-bottom:18px">' +
+                '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid var(--border)">' +
+                    '<span style="font-weight:600;font-size:13px">' + esc(roomName) + '</span>' +
+                    (pendingForRoom > 0
+                        ? '<span style="font-size:11px;color:var(--accent);background:color-mix(in srgb,var(--accent) 12%,transparent);padding:1px 8px;border-radius:10px">' + pendingForRoom + ' pending</span>'
+                        : '<span style="font-size:11px;color:var(--text-muted)">all reviewed</span>') +
+                    openLink +
+                '</div>' +
+                entries.map(renderPendingCard).join('') +
+                '</div>';
+        }).join('');
+    }
+    var headerNote = '<div style="font-size:11px;color:var(--text-muted);margin-bottom:12px">' +
+        pendingTotal + ' pending across ' + roomIds.length + ' room' + (roomIds.length !== 1 ? 's' : '') +
+        ' · click a card\'s Apply or Reject to resolve' +
+        '</div>';
+    EOS_UI.modal({
+        title: '⏳ Pending across all rooms',
+        body: headerNote + sections,
+        width: '600px',
+    });
+}
+
+// --- Review gate: pending [DO:] actions (Phase 5) ---
+
+// Per-room cache of pending-action records (any status). Keyed by action id.
+// Populated on openChat + replenished after each apply/reject.
+var _pendingMap = {};
+
+async function loadPendingForRoom(roomId) {
+    _pendingMap = {};
+    try {
+        var list = await EOS.api('/rooms/api/rooms/' + encodeURIComponent(roomId) + '/pending?status=all') || [];
+        list.forEach(function(a) { _pendingMap[a.id] = a; });
+    } catch(e) { /* projects/rooms missing — treat as empty */ }
+    updatePendingBadge();
+}
+
+function updatePendingBadge() {
+    var pending = Object.values(_pendingMap).filter(function(a){ return a.status === 'pending'; });
+    // Hidden compatibility node — kept so other code paths reading
+    // chat-pending-count don't break, but the visible counter is the
+    // unified Activity badge.
+    var legacy = document.getElementById('chat-pending-count');
+    if (legacy) legacy.textContent = pending.length ? '(' + pending.length + ')' : '';
+    updateActivityBadge();
+    // Refresh the drawer tab count if the drawer is open.
+    var tab = document.getElementById('activity-tab-pending-count');
+    if (tab) tab.textContent = pending.length ? '(' + pending.length + ')' : '';
+}
+
+// Combined Tasks + Pending counter that drives the chat header pill.
+// Tasks count comes from the data attribute set by loadRoomTaskCount; the
+// pending count is computed from _pendingMap.
+function updateActivityBadge() {
+    var pill = document.getElementById('chat-activity-count');
+    if (!pill) return;
+    var pending = Object.values(_pendingMap).filter(function(a){ return a.status === 'pending'; }).length;
+    var tasksOpen = parseInt(pill.dataset.tasksOpen || '0', 10) || 0;
+    var total = pending + tasksOpen;
+    pill.textContent = total ? '(' + total + ')' : '';
+}
+
+// --- Inbound dashboard (Phase 12) ---
+//
+// Replaces the static welcome panel with a live "since you were last here"
+// surface. Composes existing data: _unreadMap (loaded by loadAgents),
+// /rooms/api/pending (global pending), and history mtime ordering.
+// Re-runs whenever the welcome panel is shown.
+
+async function renderInboundDashboard() {
+    var w = document.getElementById('chat-welcome');
+    if (!w) return;
+    if (currentAgent) return;  // chat panel showing instead
+
+    // Compose stats from already-loaded state.
+    var unreadEntries = Object.entries(_unreadMap || {});
+    var unreadRooms = unreadEntries.length;
+    var unreadMessages = unreadEntries.reduce(function(s, kv){
+        return s + (kv[1].count || 0);
+    }, 0);
+    // Pending — fetch fresh in case the user resolved some elsewhere.
+    var pending = [];
+    try {
+        pending = await EOS.api('/rooms/api/pending') || [];
+    } catch(e) { pending = []; }
+    // Reminders — fired (overdue) + upcoming. Both surfaced separately;
+    // fired ones are the most-urgent attention call.
+    var reminders = [];
+    try {
+        reminders = await EOS.api('/rooms/api/reminders?include_fired=1') || [];
+    } catch(e) { reminders = []; }
+    var firedReminders = reminders.filter(function(r){ return r.fired; });
+    var upcomingReminders = reminders.filter(function(r){ return !r.fired; });
+    var pendingByRoom = {};
+    pending.forEach(function(p) {
+        (pendingByRoom[p.room_id] = pendingByRoom[p.room_id] || []).push(p);
+    });
+    var totalRooms = (agents || []).filter(function(a){
+        return a.status !== 'archived';
+    }).length;
+
+    // Greeting — adapts to the time of day.
+    var hour = new Date().getHours();
+    var greeting = hour < 5 ? 'Up late' :
+                   hour < 12 ? 'Good morning' :
+                   hour < 17 ? 'Good afternoon' :
+                   hour < 22 ? 'Good evening' : 'Good night';
+    var sub = (unreadRooms || pending.length || firedReminders.length)
+        ? 'Some things waiting for you.'
+        : 'All caught up.';
+
+    // Section: Fired reminders (most urgent — surface first).
+    var firedHtml = '';
+    if (firedReminders.length) {
+        firedHtml = '<div class="inbound-section"><h3>⏰ Reminders fired (' + firedReminders.length + ')</h3>' +
+            firedReminders.slice(0, 6).map(function(r) {
+                var room = (agents || []).find(function(a){ return a.id === r.room_id; });
+                var name = room ? room.name : r.room_id;
+                var when = new Date(r.due_ts).toLocaleString([], {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit'});
+                var noteHtml = r.note ? '<div class="row-sub">' + esc(r.note) + '</div>' : '';
+                var color = room ? agentColor(name) : 'var(--accent)';
+                var icon = room && room.tier === 'group' ? '👥' : (room ? initial(name) : '⏰');
+                return '<div class="inbound-row" onclick="dismissAndOpenReminder(\'' + escAttr(r.id) + '\',\'' + escAttr(r.room_id) + '\')">' +
+                    '<div class="row-avatar" style="background:' + color + '">' + esc(icon) + '</div>' +
+                    '<div class="row-meta">' +
+                        '<div class="row-title">' + esc(name) + '</div>' +
+                        (noteHtml || '<div class="row-sub">' + esc(when) + '</div>') +
+                    '</div>' +
+                    '<span class="row-tag">due ' + esc(when) + '</span>' +
+                    '</div>';
+            }).join('') +
+            '</div>';
+    }
+
+    // Section: Unread.
+    var unreadHtml = '';
+    if (unreadEntries.length) {
+        var unreadRows = unreadEntries.slice().sort(function(a,b){
+            return (b[1].last_ts || '').localeCompare(a[1].last_ts || '');
+        }).slice(0, 6).map(function(kv) {
+            var rid = kv[0];
+            var info = kv[1];
+            var room = (agents || []).find(function(a){ return a.id === rid; });
+            if (!room) return '';
+            var color = agentColor(room.name);
+            var icon = (room.tier === 'group') ? '👥' : initial(room.name);
+            var when = info.last_ts ? new Date(info.last_ts).toLocaleString([], {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit'}) : '';
+            return '<div class="inbound-row" onclick="openChat(\'' + escAttr(rid) + '\')">' +
+                '<div class="row-avatar" style="background:' + color + '">' + esc(icon) + '</div>' +
+                '<div class="row-meta">' +
+                    '<div class="row-title">' + esc(room.name) + '</div>' +
+                    '<div class="row-sub">' + esc(when) + '</div>' +
+                '</div>' +
+                '<span class="row-tag">' + info.count + ' new</span>' +
+                '</div>';
+        }).filter(Boolean).join('');
+        unreadHtml = '<div class="inbound-section">' +
+            '<h3>What\'s new (' + unreadRooms + ')</h3>' +
+            unreadRows +
+            '</div>';
+    }
+
+    // Section: Pending review.
+    var pendingHtml = '';
+    var pendingRoomIds = Object.keys(pendingByRoom);
+    if (pendingRoomIds.length) {
+        var pendingRows = pendingRoomIds.slice(0, 6).map(function(rid) {
+            var entries = pendingByRoom[rid];
+            var room = (agents || []).find(function(a){ return a.id === rid; });
+            var roomName = room ? room.name : rid;
+            var color = room ? agentColor(roomName) : 'var(--accent)';
+            var icon = room && room.tier === 'group' ? '👥' : (room ? initial(roomName) : '⏳');
+            var verbs = entries.slice(0, 3).map(function(p){
+                return p.app + '.' + p.method;
+            }).join(', ');
+            return '<div class="inbound-row" onclick="openChat(\'' + escAttr(rid) + '\')">' +
+                '<div class="row-avatar" style="background:' + color + '">' + esc(icon) + '</div>' +
+                '<div class="row-meta">' +
+                    '<div class="row-title">' + esc(roomName) + '</div>' +
+                    '<div class="row-sub">' + esc(verbs) + (entries.length > 3 ? ' +' + (entries.length - 3) + ' more' : '') + '</div>' +
+                '</div>' +
+                '<span class="row-tag">' + entries.length + ' to review</span>' +
+                '</div>';
+        }).join('');
+        pendingHtml = '<div class="inbound-section">' +
+            '<h3>Pending review (' + pending.length + ')</h3>' +
+            pendingRows +
+            '<div style="text-align:right;margin-top:6px"><button class="eos-btn-sm eos-btn-ghost" onclick="openGlobalPending()">Review all →</button></div>' +
+            '</div>';
+    }
+
+    // Section: Recent (rooms not in unread, sorted by some recency proxy).
+    var unreadIds = new Set(unreadEntries.map(function(kv){ return kv[0]; }));
+    var recentCandidates = (agents || []).filter(function(a){
+        return a.status !== 'archived' && !unreadIds.has(a.id);
+    });
+    // Best-effort recency: created or builtin? we don't have last_ts on agents
+    // here, so just sort alphabetically and cap at 5 — non-time-sensitive.
+    recentCandidates.sort(function(a, b) {
+        return (a.name || '').localeCompare(b.name || '');
+    });
+    var recentRows = recentCandidates.slice(0, 5).map(function(a) {
+        var color = agentColor(a.name);
+        var icon = (a.tier === 'group') ? '👥' : initial(a.name);
+        var preview = (a.system_prompt || '').replace(/\s+/g,' ').slice(0, 90);
+        if (a.tier === 'group') {
+            var rs = (a.participants || []).filter(function(p){
+                return p.type === 'agent' || p.type === 'cli';
+            }).length;
+            preview = rs + ' participants';
+        }
+        return '<div class="inbound-row" onclick="openChat(\'' + escAttr(a.id) + '\')">' +
+            '<div class="row-avatar" style="background:' + color + '">' + esc(icon) + '</div>' +
+            '<div class="row-meta">' +
+                '<div class="row-title">' + esc(a.name) + '</div>' +
+                '<div class="row-sub">' + esc(preview || 'No prompt set') + '</div>' +
+            '</div></div>';
+    }).join('');
+    var recentHtml = recentRows ? '<div class="inbound-section">' +
+        '<h3>Other rooms</h3>' + recentRows + '</div>' : '';
+
+    // Stat strip.
+    var statHtml =
+        '<div class="inbound-stats">' +
+            '<div class="inbound-stat' + (unreadMessages ? ' has-attn' : '') + '">' +
+                '<div class="v">' + unreadMessages + '</div>' +
+                '<div class="l">Unread</div>' +
+            '</div>' +
+            '<div class="inbound-stat' + (pending.length ? ' has-attn' : '') + '">' +
+                '<div class="v">' + pending.length + '</div>' +
+                '<div class="l">Pending</div>' +
+            '</div>' +
+            '<div class="inbound-stat' + (firedReminders.length ? ' has-attn' : '') + '">' +
+                '<div class="v">' + firedReminders.length + '</div>' +
+                '<div class="l">Reminders</div>' +
+            '</div>' +
+            '<div class="inbound-stat">' +
+                '<div class="v">' + totalRooms + '</div>' +
+                '<div class="l">Rooms</div>' +
+            '</div>' +
+        '</div>';
+
+    // Empty case — no unread, no pending, no fired reminders.
+    var allCaughtUp = !unreadEntries.length && !pending.length && !firedReminders.length;
+    var dashboard =
+        '<div class="inbound-dashboard">' +
+            '<div class="inbound-greeting">' + esc(greeting) + '</div>' +
+            '<div class="inbound-sub">' + esc(sub) + '</div>' +
+            statHtml +
+            firedHtml +
+            unreadHtml +
+            pendingHtml +
+            (allCaughtUp ? '<div class="inbound-empty">No unread messages, no pending actions, no due reminders. Pick a room from the sidebar — or hit + Agent / + Group to start a new one.</div>' : '') +
+            recentHtml +
+        '</div>';
+    w.innerHTML = dashboard;
+    w.style.display = 'flex';
+    w.style.padding = '0';
+    w.style.alignItems = 'stretch';
+}
+
+// --- Context inspector (Phase 19) ---
+//
+// Pure visualization — fetches /api/rooms/<id>/inspect and renders sections
+// with char counts so the user can see what's being sent (and how much).
+// No LLM call is made; this just rebuilds the prompt structure.
+
+async function inspectRoomContext() {
+    if (!currentAgent) return;
+    var data;
+    try {
+        data = await EOS.api('/rooms/api/rooms/' +
+            encodeURIComponent(currentAgent.id) + '/inspect');
+    } catch (e) {
+        EOS_UI.toast('Failed to load context', false);
+        return;
+    }
+    if (!data || data.error) {
+        EOS_UI.toast(data && data.error ? data.error : 'No context', false);
+        return;
+    }
+    function section(label, body, chars, extras) {
+        var k = chars != null ? '<span style="margin-left:auto;font-size:11px;color:var(--text-muted)">' + chars + ' chars</span>' : '';
+        return '<details open style="margin-bottom:12px">' +
+            '<summary style="cursor:pointer;display:flex;align-items:center;gap:6px;font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;color:var(--text-muted);margin-bottom:6px">' +
+                esc(label) + (extras ? '<span style="color:var(--text);font-weight:500;text-transform:none;font-size:12px">' + extras + '</span>' : '') + k +
+            '</summary>' +
+            '<pre style="margin:0;padding:10px 12px;background:var(--bg-elevated);border-radius:6px;font-size:12px;line-height:1.5;white-space:pre-wrap;font-family:var(--font-mono,monospace);max-height:240px;overflow-y:auto">' + esc(body || '(empty)') + '</pre>' +
+            '</details>';
+    }
+    var meta = '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px;margin-bottom:14px;padding:10px;border:1px solid var(--border);border-radius:6px;background:var(--bg-elevated);font-size:11px">' +
+        '<div><div style="color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px">Responder</div><div style="font-weight:500">' + esc(data.responder_name) + '</div></div>' +
+        '<div><div style="color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px">Model</div><div style="font-weight:500">' + esc(data.model) + '</div></div>' +
+        '<div><div style="color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px">Effort</div><div style="font-weight:500">' + esc(data.effort) + '</div></div>' +
+        '<div><div style="color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px">History</div><div style="font-weight:500">' + data.history_count + ' msgs</div></div>' +
+        '<div><div style="color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px">Total</div><div style="font-weight:500;color:var(--accent)">' + data.total_chars + ' chars</div></div>' +
+        '</div>';
+    var kbExtras = data.knowledge_files && data.knowledge_files.length
+        ? ' from ' + data.knowledge_files.length + ' file' + (data.knowledge_files.length !== 1 ? 's' : '')
+        : '';
+    var body =
+        '<div style="font-size:12px;color:var(--text-muted);margin-bottom:10px">What the LLM sees on the next turn (excluding the user\'s incoming message).</div>' +
+        meta +
+        section('System prompt', data.system_prompt, data.system_prompt_chars) +
+        section('Knowledge', data.knowledge, data.knowledge_chars, kbExtras) +
+        section('Recent transcript', data.transcript, data.transcript_chars,
+            ' (last ' + Math.min(20, data.history_count) + ' of ' + data.history_count + ')');
+    EOS_UI.modal({title: '🔍 Context · ' + (currentAgent.name || currentAgent.id),
+                  body: body, width: '720px'});
+}
+
+// --- Reminders (Phase 17) ---
+//
+// Lightweight duration parser for slash command input. Accepts:
+//   <num><unit>  m/h/d/w  (e.g. 30m, 2h, 1d, 1w)
+//   tomorrow                (default 09:00 next day, local time)
+//   "next week" / nextweek  (7 days from now)
+//   <h>:<m>                 (today at HH:MM, or tomorrow if past)
+// Returns ISO timestamp (UTC) or null when unparseable.
+
+function parseReminderWhen(s) {
+    var raw = (s || '').trim();
+    if (!raw) return null;
+    var lower = raw.toLowerCase();
+
+    // Numeric duration: 30m / 2h / 1d / 1w (optional spaces, full words ok).
+    var dur = lower.match(/^(\d+)\s*(m|min|mins|minute|minutes|h|hr|hrs|hour|hours|d|day|days|w|wk|week|weeks)$/);
+    if (dur) {
+        var n = parseInt(dur[1], 10);
+        var u = dur[2];
+        var ms = 0;
+        if (u[0] === 'm') ms = n * 60 * 1000;
+        else if (u[0] === 'h') ms = n * 60 * 60 * 1000;
+        else if (u[0] === 'd') ms = n * 24 * 60 * 60 * 1000;
+        else if (u[0] === 'w') ms = n * 7 * 24 * 60 * 60 * 1000;
+        return new Date(Date.now() + ms).toISOString();
+    }
+    if (lower === 'tomorrow' || lower === 'tmr') {
+        var t = new Date();
+        t.setDate(t.getDate() + 1);
+        t.setHours(9, 0, 0, 0);
+        return t.toISOString();
+    }
+    if (lower === 'next week' || lower === 'nextweek') {
+        return new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+    }
+    // HH:MM today (or tomorrow if past).
+    var hm = lower.match(/^(\d{1,2}):(\d{2})$/);
+    if (hm) {
+        var t2 = new Date();
+        t2.setHours(parseInt(hm[1], 10), parseInt(hm[2], 10), 0, 0);
+        if (t2.getTime() <= Date.now()) t2.setDate(t2.getDate() + 1);
+        return t2.toISOString();
+    }
+    return null;
+}
+
+// Dismiss a fired reminder and jump into its room. Removes the reminder
+// (it's done its job) so the dashboard stays clean on next refresh.
+async function dismissAndOpenReminder(reminderId, roomId) {
+    try {
+        await EOS.api('/rooms/api/reminders/' + encodeURIComponent(reminderId), {method:'DELETE'});
+    } catch(e) { /* ignore — opening the room is the main goal */ }
+    if (roomId) openChat(roomId);
+}
+
+async function scheduleReminder(rest) {
+    if (!currentAgent) return;
+    var input = (rest || '').trim();
+    // Split on the first whitespace AFTER a recognized when-token.
+    // Simplest: try the whole input as a duration; if that fails, split on
+    // first space and use the head as the duration, the tail as the note.
+    var when = parseReminderWhen(input);
+    var note = '';
+    if (!when) {
+        var idx = input.search(/\s/);
+        if (idx > 0) {
+            when = parseReminderWhen(input.slice(0, idx));
+            note = input.slice(idx + 1).trim();
+        }
+    }
+    if (!when) {
+        EOS_UI.toast('Usage: /remind <30m|2h|1d|tomorrow|14:30> [note]', false);
+        return;
+    }
+    try {
+        var res = await EOS.post('/rooms/api/rooms/' +
+            encodeURIComponent(currentAgent.id) + '/remind',
+            {due_ts: when, note: note});
+        if (res && res.error) { EOS_UI.toast(res.error, false); return; }
+        var local = new Date(when).toLocaleString([], {
+            month:'short', day:'numeric', hour:'2-digit', minute:'2-digit',
+        });
+        EOS_UI.toast('Reminder set: ' + local);
+    } catch(e) {
+        EOS_UI.toast('Failed to set reminder', false);
+    }
+}
+
+// --- Scheduled rooms (Phase 22) ---
+//
+// Per-room cron + prompt. On fire, the agent self-monologues into history.
+// Modal lets the user pick a preset cadence or type a raw cron.
+
+var SCHEDULE_PRESETS = [
+    {label: 'Every weekday morning (9am)', cron: '0 9 * * 1-5'},
+    {label: 'Daily at 9am',                cron: '0 9 * * *'},
+    {label: 'Daily at 9pm',                cron: '0 21 * * *'},
+    {label: 'Weekly Monday 9am',           cron: '0 9 * * 1'},
+    {label: 'Weekly Sunday 8pm',           cron: '0 20 * * 0'},
+    {label: 'Hourly during work hours',    cron: '0 9-17 * * 1-5'},
+];
+
+function openScheduleModal() {
+    if (!currentAgent) return;
+    var sched = currentAgent.schedule || {};
+    var presetOpts = SCHEDULE_PRESETS.map(function(p) {
+        var sel = (p.cron === sched.cron) ? ' selected' : '';
+        return '<option value="' + escAttr(p.cron) + '"' + sel + '>' + esc(p.label) + ' — ' + esc(p.cron) + '</option>';
+    }).join('');
+    var lastFired = sched.last_fired
+        ? '<div style="font-size:11px;color:var(--text-muted);margin-top:6px">Last fired: ' + new Date(sched.last_fired).toLocaleString() + '</div>'
+        : '';
+    var enabled = sched.enabled !== false;
+    var body =
+        '<div style="font-size:12px;color:var(--text-muted);margin-bottom:14px">A scheduled check-in fires the agent on a cron — they post a self-initiated message into the room. The unread badge shows when one\'s waiting.</div>' +
+        '<div class="eos-form-group">' +
+            '<label class="eos-form-label">Preset</label>' +
+            '<select id="sched-preset" class="eos-form-input" onchange="document.getElementById(\'sched-cron\').value = this.value">' +
+                '<option value="">— choose preset —</option>' + presetOpts +
+            '</select>' +
+        '</div>' +
+        '<div class="eos-form-group">' +
+            '<label class="eos-form-label">Cron expression</label>' +
+            '<input id="sched-cron" class="eos-form-input" type="text" placeholder="0 9 * * 1-5" value="' + escAttr(sched.cron || '') + '">' +
+            '<div style="font-size:11px;color:var(--text-muted);margin-top:4px">Format: minute hour day month weekday. <a href="https://crontab.guru" target="_blank" style="color:var(--accent)">crontab.guru</a> if unsure.</div>' +
+        '</div>' +
+        '<div class="eos-form-group">' +
+            '<label class="eos-form-label">Prompt sent on each fire</label>' +
+            '<textarea id="sched-prompt" class="eos-form-input" rows="3" placeholder="What should the agent open with? e.g. \'What\'s on my plate today? Reflect on yesterday\'s commits.\'">' + esc(sched.prompt || '') + '</textarea>' +
+        '</div>' +
+        '<div class="eos-form-group">' +
+            '<label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer">' +
+                '<input type="checkbox" id="sched-enabled"' + (enabled ? ' checked' : '') + '>' +
+                'Enabled' +
+            '</label>' +
+            lastFired +
+        '</div>' +
+        '<div class="eos-form-actions">' +
+            (sched.cron ? '<button class="eos-btn eos-btn-ghost" onclick="clearRoomSchedule()">Remove</button>' : '') +
+            (sched.cron ? '<button class="eos-btn eos-btn-ghost" onclick="fireScheduleNow()">Fire now</button>' : '') +
+            '<button class="eos-btn eos-btn-primary" onclick="saveRoomSchedule()">Save</button>' +
+        '</div>';
+    EOS_UI.modal({title: '⏲️  Schedule · ' + (currentAgent.name || ''), body: body, width: '560px'});
+}
+
+async function saveRoomSchedule() {
+    if (!currentAgent) return;
+    var cron = (document.getElementById('sched-cron').value || '').trim();
+    var prompt = (document.getElementById('sched-prompt').value || '').trim();
+    var enabled = document.getElementById('sched-enabled').checked;
+    if (!cron || !prompt) { EOS_UI.toast('Cron and prompt required', false); return; }
+    try {
+        var res = await EOS.post('/rooms/api/rooms/' +
+            encodeURIComponent(currentAgent.id) + '/schedule',
+            {cron: cron, prompt: prompt, enabled: enabled});
+        if (res && res.error) { EOS_UI.toast(res.error, false); return; }
+        currentAgent.schedule = res.schedule;
+        var cached = (agents || []).find(function(a){ return a.id === currentAgent.id; });
+        if (cached) cached.schedule = res.schedule;
+        EOS_UI.closeModal();
+        EOS_UI.toast(enabled ? 'Schedule saved' : 'Schedule saved (disabled)');
+    } catch(e) { EOS_UI.toast('Failed to save', false); }
+}
+
+async function clearRoomSchedule() {
+    if (!currentAgent) return;
+    if (!await EOS_UI.confirm('Remove the schedule for this room?')) return;
+    try {
+        await EOS.api('/rooms/api/rooms/' + encodeURIComponent(currentAgent.id) +
+            '/schedule', {method:'DELETE'});
+        delete currentAgent.schedule;
+        var cached = (agents || []).find(function(a){ return a.id === currentAgent.id; });
+        if (cached) delete cached.schedule;
+        EOS_UI.closeModal();
+        EOS_UI.toast('Schedule cleared');
+    } catch(e) { EOS_UI.toast('Failed to clear', false); }
+}
+
+async function fireScheduleNow() {
+    if (!currentAgent) return;
+    EOS_UI.toast('Firing scheduled prompt…');
+    try {
+        await EOS.post('/rooms/api/rooms/' + encodeURIComponent(currentAgent.id) +
+            '/fire-schedule', {});
+        EOS_UI.closeModal();
+        EOS_UI.toast('Fired — open the room to see the message');
+    } catch(e) { EOS_UI.toast('Fire failed', false); }
+}
+
+// --- Reply threading (Phase 25) ---
+//
+// Composing a reply: clicking the ↩ on a message stamps `_replyTo` and
+// shows a context chip above the input. sendMessage attaches reply_to to
+// the user message before persisting. Render walks the message list in
+// renderMessages and prepends a quote box to any message with reply_to.
+
+var _replyTo = null;  // {ts, speaker, preview}
+var _msgIndexByTs = {};  // built in renderMessages, used by reply quote lookups
+
+function startReply(ts) {
+    if (!ts) return;
+    var m = _msgIndexByTs[ts];
+    if (!m) return;
+    var actor = m.actor || {};
+    var speaker = actor.id || (m.role === 'user' ? 'me' : 'assistant');
+    var preview = (m.text || '').replace(/\s+/g, ' ').slice(0, 80);
+    _replyTo = {ts: ts, speaker: speaker, preview: preview};
+    var ctx = document.getElementById('reply-context');
+    var txt = document.getElementById('reply-context-text');
+    if (ctx && txt) {
+        txt.innerHTML = '<strong>' + esc(speaker) + ':</strong> ' + esc(preview);
+        ctx.classList.add('open');
+    }
+    var input = document.getElementById('chat-input');
+    if (input) input.focus();
+}
+
+function cancelReply() {
+    _replyTo = null;
+    var ctx = document.getElementById('reply-context');
+    if (ctx) ctx.classList.remove('open');
+}
+
+// --- Bulk operations (Phase 24) ---
+//
+// Body class `bulk-select-on` triggers the per-item checkbox styling.
+// Clicks on .agent-item are intercepted in bulk mode (delegation in
+// chatPanelDelegate) and toggle a `bulk-selected` class instead of opening
+// the chat. The action bar at the bottom-left fires Archive / Delete on
+// every selected room sequentially.
+
+var _bulkSelected = new Set();
+
+function setBulkSelect(on) {
+    document.body.classList.toggle('bulk-select-on', !!on);
+    var btn = document.getElementById('bulk-toggle-btn');
+    if (btn) btn.textContent = on ? '☑' : '☐';
+    if (!on) {
+        _bulkSelected.clear();
+        document.querySelectorAll('.agent-item.bulk-selected').forEach(function(el){
+            el.classList.remove('bulk-selected');
+        });
+        var bar = document.getElementById('bulk-action-bar');
+        if (bar) bar.classList.remove('open');
+    } else {
+        // Show the bar with 0 selected — visual hint.
+        var bar2 = document.getElementById('bulk-action-bar');
+        if (bar2) bar2.classList.add('open');
+        updateBulkSelectedCount();
+    }
+}
+
+function toggleBulkSelect() {
+    setBulkSelect(!document.body.classList.contains('bulk-select-on'));
+}
+
+function updateBulkSelectedCount() {
+    var n = _bulkSelected.size;
+    var el = document.getElementById('bulk-selected-count');
+    if (el) el.textContent = String(n);
+}
+
+// Click on an agent-item in bulk mode toggles selection instead of opening.
+// Wired via event delegation on the sidebar.
+document.addEventListener('click', function(ev) {
+    if (!document.body.classList.contains('bulk-select-on')) return;
+    var item = ev.target.closest('.agent-item');
+    if (!item) return;
+    // Need to extract the room id — the existing inline onclick is
+    // openChat('<id>') so we read it from there to avoid restructuring
+    // every render path.
+    var oc = item.getAttribute('onclick') || '';
+    var m = oc.match(/openChat\('([^']+)'\)/);
+    if (!m) return;
+    ev.preventDefault();
+    ev.stopPropagation();
+    var rid = m[1];
+    if (_bulkSelected.has(rid)) {
+        _bulkSelected.delete(rid);
+        item.classList.remove('bulk-selected');
+    } else {
+        _bulkSelected.add(rid);
+        item.classList.add('bulk-selected');
+    }
+    updateBulkSelectedCount();
+}, true);  // capture phase so we beat the inline onclick
+
+async function bulkArchive() {
+    var ids = Array.from(_bulkSelected);
+    if (!ids.length) { EOS_UI.toast('Nothing selected', false); return; }
+    if (!await EOS_UI.confirm('Archive ' + ids.length + ' room' + (ids.length !== 1 ? 's' : '') + '?')) return;
+    var ok = 0, fail = 0;
+    for (var i = 0; i < ids.length; i++) {
+        try {
+            var res = await EOS.post('/rooms/api/rooms/' + encodeURIComponent(ids[i]) + '/archive', {});
+            if (res && res.error) fail++; else ok++;
+        } catch(e) { fail++; }
+    }
+    EOS_UI.toast('Archived ' + ok + (fail ? ' · ' + fail + ' failed' : ''));
+    setBulkSelect(false);
+    await loadAgents();
+}
+
+async function bulkDelete() {
+    var ids = Array.from(_bulkSelected);
+    if (!ids.length) { EOS_UI.toast('Nothing selected', false); return; }
+    if (!await EOS_UI.confirm('Delete ' + ids.length + ' room' + (ids.length !== 1 ? 's' : '') + ' and all their history? Cannot be undone.')) return;
+    var ok = 0, fail = 0, builtin = 0;
+    for (var i = 0; i < ids.length; i++) {
+        try {
+            var res = await EOS.api('/rooms/api/agents/' + encodeURIComponent(ids[i]), {method:'DELETE'});
+            if (res && res.error) {
+                // Builtin rooms refuse delete — count separately.
+                if (/builtin/i.test(res.error)) builtin++;
+                else fail++;
+            } else ok++;
+        } catch(e) { fail++; }
+    }
+    var parts = ['Deleted ' + ok];
+    if (builtin) parts.push(builtin + ' builtin (skipped)');
+    if (fail) parts.push(fail + ' failed');
+    EOS_UI.toast(parts.join(' · '));
+    setBulkSelect(false);
+    // If the open room got deleted, drop back to the welcome panel.
+    if (currentAgent && ids.indexOf(currentAgent.id) >= 0) {
+        currentAgent = null;
+        document.getElementById('chat-welcome').style.display = '';
+        document.getElementById('chat-header').style.display = 'none';
+        document.getElementById('chat-messages').style.display = 'none';
+        document.getElementById('chat-input-bar').style.display = 'none';
+        var mb = document.getElementById('chat-members'); if (mb) { mb.style.display = 'none'; mb.innerHTML = ''; }
+    }
+    await loadAgents();
+}
+
+// --- Snippet library (Phase 21) ---
+//
+// Save reusable prompt fragments by name; recall via /snip <name>. Useful
+// for repeated workflows like "review this code for security issues".
+// Storage is server-side so snippets survive across browsers.
+
+async function saveSnippetFromInput(rest) {
+    var name = (rest || '').trim().toLowerCase();
+    if (!name) {
+        EOS_UI.toast('Usage: /save <name>', false);
+        return;
+    }
+    var input = document.getElementById('chat-input');
+    var body = input ? (input.value || '').replace(/^\/save\s+\S+\s*/i, '').trim() : '';
+    // When the user typed only `/save <name>` without a body, open a modal
+    // to capture it. Avoids window.prompt (forbidden under DL-6: native
+    // dialogs break the design language and are unstyleable).
+    if (!body || body === '/save ' + name || body.startsWith('/save')) {
+        EOS_UI.formModal('Save snippet "' + name + '"', [
+            {key: 'body', label: 'Snippet body', type: 'textarea', placeholder: 'The prompt fragment to save…'},
+        ], async function(values) {
+            var b = (values && values.body || '').trim();
+            if (!b) { EOS_UI.toast('Snippet body is empty', false); return; }
+            await _persistSnippet(name, b);
+        });
+        return;
+    }
+    await _persistSnippet(name, body);
+}
+
+async function _persistSnippet(name, body) {
+    try {
+        var res = await EOS.post('/rooms/api/snippets', {name: name, body: body});
+        if (res && res.error) { EOS_UI.toast(res.error, false); return; }
+        EOS_UI.toast(res.updated ? 'Snippet updated' : 'Snippet saved');
+        var input = document.getElementById('chat-input');
+        if (input) { input.value = ''; input.style.height = 'auto'; }
+    } catch(e) {
+        EOS_UI.toast('Failed to save', false);
+    }
+}
+
+async function expandSnippetToInput(rest) {
+    var name = (rest || '').trim().toLowerCase().split(/\s+/)[0];
+    if (!name) { EOS_UI.toast('Usage: /snip <name>', false); return; }
+    try {
+        var res = await EOS.api('/rooms/api/snippets/' + encodeURIComponent(name));
+        if (!res || res.error) { EOS_UI.toast(res && res.error || 'Not found', false); return; }
+        var input = document.getElementById('chat-input');
+        if (!input) return;
+        input.value = res.body || '';
+        input.style.height = 'auto';
+        input.style.height = Math.min(input.scrollHeight, 120) + 'px';
+        input.focus();
+        var pos = input.value.length;
+        input.selectionStart = input.selectionEnd = pos;
+    } catch(e) {
+        EOS_UI.toast('Failed to load snippet', false);
+    }
+}
+
+async function openSnippetsLibrary() {
+    var snippets = [];
+    try { snippets = await EOS.api('/rooms/api/snippets') || []; }
+    catch(e) { EOS_UI.toast('Failed to load library', false); return; }
+    var rows;
+    if (!snippets.length) {
+        rows = '<div style="color:var(--text-muted);font-size:13px;padding:30px;text-align:center">No snippets yet. Type a prompt in any room\'s input, then run <code style="background:var(--bg-elevated);padding:1px 5px;border-radius:3px">/save name</code>.</div>';
+    } else {
+        rows = snippets.map(function(s) {
+            var preview = (s.body || '').replace(/\s+/g, ' ').slice(0, 100);
+            var meta = (s.used_count > 0 ? 'used ' + s.used_count + '× · ' : '') +
+                       (s.updated ? new Date(s.updated).toLocaleDateString([], {month:'short', day:'numeric'}) : '');
+            return '<div style="display:flex;align-items:flex-start;gap:8px;padding:10px;border:1px solid var(--border);border-radius:6px;margin-bottom:6px">' +
+                '<div style="flex:1;min-width:0">' +
+                    '<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">' +
+                        '<code style="background:var(--bg-elevated);padding:2px 6px;border-radius:4px;font-size:12px;font-weight:600">/' + esc(s.name) + '</code>' +
+                        '<span style="font-size:11px;color:var(--text-muted)">' + esc(meta) + '</span>' +
+                    '</div>' +
+                    '<div style="font-size:12px;color:var(--text);line-height:1.4;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical">' + esc(preview) + '</div>' +
+                '</div>' +
+                '<div style="display:flex;gap:4px;flex-shrink:0">' +
+                    '<button class="eos-btn-sm" onclick="useSnippetFromLibrary(\'' + escAttr(s.name) + '\')" style="background:var(--accent);color:var(--accent-ink);border:0;font-size:11px">Use</button>' +
+                    '<button class="eos-btn-sm eos-btn-ghost" onclick="deleteSnippetFromLibrary(\'' + escAttr(s.name) + '\')" style="font-size:11px">×</button>' +
+                '</div>' +
+                '</div>';
+        }).join('');
+    }
+    EOS_UI.modal({
+        title: '📋 Snippets',
+        body: '<div style="font-size:12px;color:var(--text-muted);margin-bottom:12px">Saved prompt fragments — type <code style="background:var(--bg-elevated);padding:1px 5px;border-radius:3px">/snip name</code> in any chat input to drop one in.</div>' + rows,
+        width: '600px',
+    });
+}
+
+async function useSnippetFromLibrary(name) {
+    EOS_UI.closeModal();
+    if (!currentAgent) {
+        EOS_UI.toast('Open a room first', false);
+        return;
+    }
+    expandSnippetToInput(name);
+}
+
+async function deleteSnippetFromLibrary(name) {
+    if (!await EOS_UI.confirm('Delete snippet /' + name + '?')) return;
+    try {
+        await EOS.api('/rooms/api/snippets/' + encodeURIComponent(name), {method:'DELETE'});
+        EOS_UI.toast('Deleted');
+        openSnippetsLibrary();  // refresh
+    } catch(e) { EOS_UI.toast('Delete failed', false); }
+}
+
+// --- Voice playback (Phase 20) ---
+//
+// Browser-native speechSynthesis. Per-message 🔊 button speaks the bubble
+// content. Per-room auto-speak toggle (localStorage) auto-fires after the
+// streaming reply completes. New utterance always cancels any queued one.
+
+var _autoSpeakKey = function(rid) { return 'rooms.autospeak.v1.' + rid; };
+
+function isAutoSpeakOn(roomId) {
+    try { return localStorage.getItem(_autoSpeakKey(roomId)) === '1'; }
+    catch (e) { return false; }
+}
+
+function setAutoSpeak(roomId, on) {
+    try {
+        if (on) localStorage.setItem(_autoSpeakKey(roomId), '1');
+        else localStorage.removeItem(_autoSpeakKey(roomId));
+    } catch (e) {}
+}
+
+function speakStop() {
+    try { window.speechSynthesis && window.speechSynthesis.cancel(); }
+    catch (e) {}
+}
+
+function speakText(text) {
+    if (!text || !window.speechSynthesis) return;
+    speakStop();
+    // Strip task markers + wikilinks + code blocks for cleaner TTS.
+    var clean = String(text)
+        .replace(/```[\s\S]*?```/g, ' code block ')
+        .replace(/\[\[([^\]]+)\]\]/g, '$1')
+        .replace(/🗨️\s*\S+/g, '')
+        .replace(/📅\s*\d{4}-\d{2}-\d{2}/g, '')
+        .replace(/✅\s*\d{4}-\d{2}-\d{2}/g, '')
+        .trim();
+    if (!clean) return;
+    try {
+        var u = new SpeechSynthesisUtterance(clean);
+        u.rate = 1.05;
+        u.pitch = 1.0;
+        window.speechSynthesis.speak(u);
+    } catch (e) {}
+}
+
+function toggleSpeakMessage(ts, text) {
+    if (!window.speechSynthesis) {
+        EOS_UI.toast('Browser TTS not available', false);
+        return;
+    }
+    if (window.speechSynthesis.speaking) {
+        speakStop();
+        return;
+    }
+    speakText(text);
+}
+
+function toggleAutoSpeak() {
+    if (!currentAgent) return;
+    var wasOn = isAutoSpeakOn(currentAgent.id);
+    setAutoSpeak(currentAgent.id, !wasOn);
+    EOS_UI.toast('Auto-speak ' + (wasOn ? 'off' : 'on'));
+    speakStop();
+}
+
+// --- Drafts (Phase 16) ---
+//
+// localStorage-backed per-room drafts so accidental tab close, browser quit,
+// or daemon restart don't lose typing. Saved on every input event (debounced
+// 400ms), restored on openChat, cleared on successful send.
+//
+// Format: localStorage["rooms.draft.v1.<room_id>"] = JSON({text, ts}).
+// Cap: prune entries older than 30 days on load to keep storage tidy.
+
+var _draftSaveTimer = null;
+var DRAFT_PREFIX = 'rooms.draft.v1.';
+var DRAFT_MAX_AGE_DAYS = 30;
+
+function _draftKey(roomId) { return DRAFT_PREFIX + roomId; }
+
+function saveDraft(roomId, text) {
+    if (!roomId) return;
+    if (!text || !text.trim()) {
+        try { localStorage.removeItem(_draftKey(roomId)); } catch(e) {}
+        return;
+    }
+    try {
+        localStorage.setItem(_draftKey(roomId), JSON.stringify({
+            text: text, ts: new Date().toISOString(),
+        }));
+    } catch(e) { /* quota exceeded — silent */ }
+}
+
+function loadDraft(roomId) {
+    if (!roomId) return null;
+    try {
+        var raw = localStorage.getItem(_draftKey(roomId));
+        if (!raw) return null;
+        var d = JSON.parse(raw);
+        return d && typeof d.text === 'string' ? d : null;
+    } catch(e) { return null; }
+}
+
+function clearDraft(roomId) {
+    if (!roomId) return;
+    try { localStorage.removeItem(_draftKey(roomId)); } catch(e) {}
+}
+
+function pruneOldDrafts() {
+    var cutoff = Date.now() - DRAFT_MAX_AGE_DAYS * 86400 * 1000;
+    try {
+        var stale = [];
+        for (var i = 0; i < localStorage.length; i++) {
+            var k = localStorage.key(i);
+            if (!k || !k.startsWith(DRAFT_PREFIX)) continue;
+            try {
+                var d = JSON.parse(localStorage.getItem(k));
+                if (d && d.ts && new Date(d.ts).getTime() < cutoff) stale.push(k);
+            } catch(e) { stale.push(k); }
+        }
+        stale.forEach(function(k){ localStorage.removeItem(k); });
+    } catch(e) { /* private mode / quota — silent */ }
+}
+
+function scheduleDraftSave() {
+    if (!currentAgent) return;
+    if (_draftSaveTimer) clearTimeout(_draftSaveTimer);
+    _draftSaveTimer = setTimeout(function() {
+        var input = document.getElementById('chat-input');
+        if (!input || !currentAgent) return;
+        saveDraft(currentAgent.id, input.value || '');
+    }, 400);
+}
+
+// Run once on page load — keep localStorage tidy.
+pruneOldDrafts();
+
+// --- Pin messages (Phase 15) ---
+
+async function togglePin(ts) {
+    if (!currentAgent || !ts) return;
+    var pinned = (currentAgent.pinned_ts || []);
+    var alreadyPinned = pinned.indexOf(ts) >= 0;
+    var path = alreadyPinned ? '/unpin' : '/pin';
+    try {
+        var res = await EOS.post('/rooms/api/rooms/' +
+            encodeURIComponent(currentAgent.id) + path, {ts: ts});
+        if (res && res.error) { EOS_UI.toast(res.error, false); return; }
+        currentAgent.pinned_ts = res.pinned_ts || [];
+        // Re-render history to refresh both the pinned panel and per-message dots.
+        var data = await EOS.api('/rooms/api/history/' + encodeURIComponent(currentAgent.id));
+        renderMessages(data.messages || []);
+    } catch(e) {
+        EOS_UI.toast('Pin failed', false);
+    }
+}
+
+async function unpinMessage(ts) { await togglePin(ts); }
+
+function scrollToMessage(ts) {
+    if (!ts) return;
+    var node = document.querySelector('.msg[data-ts="' + ts + '"]');
+    if (!node) return;
+    node.scrollIntoView({behavior: 'smooth', block: 'center'});
+    // Brief highlight so the eye lands.
+    var prev = node.style.boxShadow;
+    node.style.transition = 'box-shadow 0.6s ease';
+    node.style.boxShadow = '0 0 0 3px color-mix(in srgb,var(--accent) 50%,transparent)';
+    setTimeout(function() { node.style.boxShadow = prev; }, 1200);
+}
+
+// --- Catch me up (Phase 9c) ---
+//
+// When openChat lands a room with N>0 messages received since last visit,
+// inject a banner above the thread offering to summarise. Doesn't trigger
+// when N is huge (likely first visit) or when the user sent the last turn.
+
+function maybeRenderCatchUpBanner(messages, lastVisited) {
+    if (!currentAgent) return;
+    var el = document.getElementById('chat-messages');
+    if (!el || !messages || !messages.length) return;
+    if (!lastVisited) return;  // first visit: empty-state already covers
+    var newCount = 0;
+    for (var i = 0; i < messages.length; i++) {
+        var m = messages[i];
+        var ts = m.ts || '';
+        if (!ts || ts <= lastVisited) continue;
+        if (m.role === 'user') continue;
+        newCount++;
+    }
+    if (newCount < 1 || newCount > 50) return;
+    var banner = document.createElement('div');
+    banner.className = 'catch-up-banner';
+    banner.id = 'catch-up-banner';
+    banner.innerHTML =
+        '<div class="cu-text"><strong>' + newCount + '</strong> new message' +
+            (newCount !== 1 ? 's' : '') + ' since you were last here.</div>' +
+        '<div class="cu-actions" style="display:flex;gap:6px">' +
+            '<button class="eos-btn-sm eos-btn-ghost" onclick="dismissCatchUp()">Dismiss</button>' +
+            '<button class="eos-btn-sm" style="background:var(--accent);color:var(--accent-ink);border:0" onclick="runCatchUp(\'' + escAttr(lastVisited) + '\')">Catch me up</button>' +
+        '</div>' +
+        '<div class="cu-summary" id="cu-summary"></div>';
+    el.insertBefore(banner, el.firstChild);
+}
+
+function dismissCatchUp() {
+    var b = document.getElementById('catch-up-banner');
+    if (b) b.remove();
+}
+
+async function runCatchUp(sinceTs) {
+    if (!currentAgent) return;
+    var banner = document.getElementById('catch-up-banner');
+    var summaryEl = document.getElementById('cu-summary');
+    if (!banner || !summaryEl) return;
+    summaryEl.textContent = 'Summarising…';
+    banner.classList.add('expanded');
+    try {
+        var res = await EOS.post('/rooms/api/rooms/' +
+            encodeURIComponent(currentAgent.id) + '/catch-up',
+            {since: sinceTs});
+        if (res && res.error) { summaryEl.textContent = 'Error: ' + res.error; return; }
+        summaryEl.innerHTML = (typeof EOS_UI !== 'undefined' && EOS_UI.renderMarkdown)
+            ? EOS_UI.renderMarkdown(res.summary || '(no summary)')
+            : esc(res.summary || '(no summary)');
+        // Add a small "dismiss" inside the expanded panel
+        var dismiss = document.createElement('button');
+        dismiss.className = 'eos-btn-sm eos-btn-ghost';
+        dismiss.style.cssText = 'align-self:flex-end;margin-top:6px';
+        dismiss.textContent = 'Got it';
+        dismiss.onclick = dismissCatchUp;
+        banner.appendChild(dismiss);
+    } catch(e) {
+        summaryEl.textContent = 'Failed to summarise.';
+    }
+}
+
+// --- Room lifecycle: archive / export / distill (Phase 8) ---
+
+async function toggleRoomArchive() {
+    if (!currentAgent) return;
+    var isArchived = currentAgent.status === 'archived';
+    var verb = isArchived ? 'unarchive' : 'archive';
+    if (!isArchived && !await EOS_UI.confirm('Archive ' + currentAgent.name +
+        '? It will move to the Archived tab. Reversible.')) return;
+    try {
+        var res = await EOS.post('/rooms/api/rooms/' +
+            encodeURIComponent(currentAgent.id) + '/' + verb, {});
+        if (res && res.error) { EOS_UI.toast(res.error, false); return; }
+        EOS_UI.toast(isArchived ? 'Restored' : 'Archived');
+        await loadAgents();
+        // Drop the chat panel back to welcome — archived rooms shouldn't
+        // stay open as the active conversation.
+        if (!isArchived) {
+            currentAgent = null;
+            document.getElementById('chat-welcome').style.display = '';
+            document.getElementById('chat-header').style.display = 'none';
+            document.getElementById('chat-messages').style.display = 'none';
+            document.getElementById('chat-input-bar').style.display = 'none';
+            var mb = document.getElementById('chat-members'); if (mb) { mb.style.display = 'none'; mb.innerHTML = ''; }
+        } else {
+            // Reload the current room with fresh status.
+            currentAgent = (agents || []).find(function(a){ return a.id === currentAgent.id; });
+        }
+    } catch(e) {
+        EOS_UI.toast(verb + ' failed', false);
+    }
+}
+
+async function exportChatToVault() {
+    if (!currentAgent) return;
+    try {
+        var res = await EOS.post('/rooms/api/rooms/' +
+            encodeURIComponent(currentAgent.id) + '/export', {});
+        if (res && res.error) { EOS_UI.toast(res.error, false); return; }
+        EOS_UI.toast('Exported: ' + (res.path || 'vault note created'));
+    } catch(e) {
+        EOS_UI.toast('Export failed', false);
+    }
+}
+
+async function distillRoom() {
+    if (!currentAgent) return;
+    if (!await EOS_UI.confirm('Distill this room into a KB note? Uses the room\'s default model — may take ~10s.')) return;
+    EOS_UI.toast('Distilling…');
+    try {
+        var res = await EOS.post('/rooms/api/rooms/' +
+            encodeURIComponent(currentAgent.id) + '/distill', {});
+        if (res && res.error) { EOS_UI.toast(res.error, false); return; }
+        EOS_UI.toast('Distilled: ' + (res.path || 'KB note created'));
+    } catch(e) {
+        EOS_UI.toast('Distill failed', false);
+    }
+}
+
+// --- Chat header overflow menu ---
+
+function toggleChatOverflow(ev) {
+    if (ev) ev.stopPropagation();
+    var m = document.getElementById('chat-overflow-menu');
+    var btn = document.getElementById('chat-overflow-btn');
+    if (!m) return;
+    var willOpen = !m.classList.contains('open');
+    m.classList.toggle('open', willOpen);
+    if (btn) btn.setAttribute('aria-expanded', willOpen ? 'true' : 'false');
+    if (willOpen) {
+        // Re-label Archive ↔ Unarchive based on current room status.
+        var ab = document.getElementById('chat-archive-btn');
+        if (ab && currentAgent) {
+            ab.textContent = currentAgent.status === 'archived' ? 'Unarchive' : 'Archive';
+        }
+        // Re-label Auto-speak based on the room's saved preference.
+        var asb = document.getElementById('chat-autospeak-btn');
+        if (asb && currentAgent) {
+            asb.textContent = 'Auto-speak: ' + (isAutoSpeakOn(currentAgent.id) ? 'on' : 'off');
+        }
+        document.addEventListener('click', _outsideOverflow, {capture:true, once:true});
+    }
+}
+function _outsideOverflow(ev) {
+    var m = document.getElementById('chat-overflow-menu');
+    if (m && !m.contains(ev.target) && ev.target.id !== 'chat-overflow-btn') {
+        m.classList.remove('open');
+        var btn = document.getElementById('chat-overflow-btn');
+        if (btn) btn.setAttribute('aria-expanded', 'false');
+    }
+}
+function closeChatOverflow() {
+    var m = document.getElementById('chat-overflow-menu');
+    if (m) m.classList.remove('open');
+    var btn = document.getElementById('chat-overflow-btn');
+    if (btn) btn.setAttribute('aria-expanded', 'false');
+}
+
+// --- Activity drawer (Pending + Tasks tabs) ---
+
+var _activityTab = 'pending';
+
+function openActivityDrawer() {
+    if (!currentAgent) return;
+    document.getElementById('activity-drawer-title').textContent =
+        'Activity · ' + (currentAgent.name || currentAgent.id);
+    document.getElementById('activity-drawer').classList.add('open');
+    document.getElementById('activity-backdrop').classList.add('open');
+    document.getElementById('activity-drawer').setAttribute('aria-hidden', 'false');
+    switchActivityTab(_activityTab);
+}
+
+function closeActivityDrawer() {
+    document.getElementById('activity-drawer').classList.remove('open');
+    document.getElementById('activity-backdrop').classList.remove('open');
+    document.getElementById('activity-drawer').setAttribute('aria-hidden', 'true');
+}
+
+function switchActivityTab(tab) {
+    _activityTab = tab;
+    document.getElementById('activity-tab-pending').classList.toggle('active', tab === 'pending');
+    document.getElementById('activity-tab-tasks').classList.toggle('active', tab === 'tasks');
+    document.getElementById('activity-tab-knowledge').classList.toggle('active', tab === 'knowledge');
+    document.getElementById('activity-tab-memory').classList.toggle('active', tab === 'memory');
+    if (tab === 'pending') {
+        renderActivityPendingTab();
+    } else if (tab === 'tasks') {
+        renderActivityTasksTab();
+    } else if (tab === 'knowledge') {
+        renderActivityKnowledgeTab();
+    } else if (tab === 'memory') {
+        renderActivityMemoryTab();
+    }
+}
+
+function renderActivityPendingTab() {
+    var body = document.getElementById('activity-drawer-body');
+    if (!body) return;
+    var all = Object.values(_pendingMap).sort(function(a,b){
+        return (a.ts || '').localeCompare(b.ts || '');
+    });
+    var pending = all.filter(function(a){ return a.status === 'pending'; });
+    var resolved = all.filter(function(a){ return a.status !== 'pending'; });
+    var html = '';
+    if (!pending.length && !resolved.length) {
+        html = '<div style="color:var(--text-muted);font-size:13px;padding:20px;text-align:center">No pending actions yet. CLI participants emit [DO:] tags that show up here for review.</div>';
+    } else {
+        if (pending.length) {
+            html += '<div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px">Awaiting review (' + pending.length + ')</div>';
+            html += pending.map(renderPendingCard).join('');
+        }
+        if (resolved.length) {
+            html += '<div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;margin:18px 0 8px">History (' + resolved.length + ')</div>';
+            html += resolved.map(renderPendingCard).join('');
+        }
+    }
+    body.innerHTML = html;
+}
+
+// Tasks tab has two sub-views: tasks attached to THIS room vs the universal
+// vault-wide pool. Sub-tab + filter state persist for the drawer's lifetime
+// so flipping back and forth doesn't lose context.
+var _taskSubTab = 'attached';   // 'attached' | 'all'
+var _allTasksFilter = 'open';   // 'open' | 'today' | 'overdue' | 'done'
+var _allTasksQuery = '';
+
+async function renderActivityTasksTab() {
+    var body = document.getElementById('activity-drawer-body');
+    if (!body || !currentAgent) return;
+    var subToggle =
+        '<div style="display:flex;gap:4px;background:var(--bg-elevated);padding:3px;border-radius:8px;margin-bottom:14px">' +
+            '<button class="eos-btn-sm" style="flex:1;background:' + (_taskSubTab === 'attached' ? 'var(--bg-card)' : 'transparent') + ';border:0;font-weight:' + (_taskSubTab === 'attached' ? '600' : '400') + '" onclick="setTaskSubTab(\'attached\')">In this room</button>' +
+            '<button class="eos-btn-sm" style="flex:1;background:' + (_taskSubTab === 'all' ? 'var(--bg-card)' : 'transparent') + ';border:0;font-weight:' + (_taskSubTab === 'all' ? '600' : '400') + '" onclick="setTaskSubTab(\'all\')">All vault</button>' +
+        '</div>';
+    body.innerHTML = subToggle + '<div id="task-subview" style="color:var(--text-muted);font-size:12px;padding:20px;text-align:center">Loading…</div>';
+    if (_taskSubTab === 'attached') {
+        await _renderAttachedTasksSubview();
+    } else {
+        await _renderAllTasksSubview();
+    }
+}
+
+function setTaskSubTab(name) {
+    _taskSubTab = name;
+    renderActivityTasksTab();
+}
+
+async function _renderAttachedTasksSubview() {
+    var sub = document.getElementById('task-subview');
+    if (!sub || !currentAgent) return;
+    var tasks = [];
+    try {
+        tasks = await EOS.api('/rooms/api/rooms/' + encodeURIComponent(currentAgent.id) + '/tasks') || [];
+    } catch(e) {
+        sub.innerHTML = '<div style="color:var(--text-muted);font-size:13px;padding:20px;text-align:center">Tasks unavailable (projects app missing).</div>';
+        return;
+    }
+    var openCount = tasks.filter(function(t){ return !t.done; }).length;
+    document.getElementById('activity-tab-tasks-count').textContent = tasks.length ? '(' + openCount + ')' : '';
+    var listHtml;
+    if (!tasks.length) {
+        listHtml = '<div style="color:var(--text-muted);font-size:13px;padding:14px;text-align:center">No tasks attached yet. Use "All vault" to attach existing ones, or add a fresh task below.</div>';
+    } else {
+        listHtml = tasks.map(function(t) {
+            var stateIcon = t.done ? '✅' : '⬜';
+            var due = t.due ? '<span style="color:var(--text-muted);font-size:11px;margin-left:6px">📅 ' + esc(t.due) + '</span>' : '';
+            var proj = t.project ? '<span style="color:var(--text-muted);font-size:11px;margin-left:6px">[' + esc(t.project) + ']</span>' : '';
+            var displayText = _stripTaskMarkers(t.text || '');
+            var detachBtn = '<button class="eos-btn-sm eos-btn-ghost" title="Detach from this room" style="font-size:11px;flex-shrink:0" onclick="detachTaskFromRoom(\'' + escAttr(t.file || '') + '\',' + (t.line || 0) + ')">×</button>';
+            return '<div style="display:flex;align-items:flex-start;gap:8px;padding:8px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px;margin-bottom:6px">' +
+                '<span style="flex-shrink:0;cursor:pointer" onclick="toggleTaskFromDrawer(\'' + escAttr(t.file || '') + '\',' + (t.line || 0) + ')">' + stateIcon + '</span>' +
+                '<div style="flex:1;min-width:0">' +
+                    '<div' + (t.done ? ' style="text-decoration:line-through;color:var(--text-muted)"' : '') + '>' + esc(displayText) + due + proj + '</div>' +
+                '</div>' + detachBtn + '</div>';
+        }).join('');
+    }
+    sub.innerHTML =
+        '<div>' + listHtml + '</div>' +
+        '<div style="margin-top:14px;border-top:1px solid var(--border);padding-top:14px">' +
+            '<div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px">Add task</div>' +
+            '<input id="task-text" class="eos-form-input" type="text" placeholder="What needs doing?" style="width:100%">' +
+            '<div style="display:flex;gap:6px;margin-top:6px">' +
+                '<input id="task-project" class="eos-form-input" type="text" placeholder="Project (default: inbox)" style="flex:2">' +
+                '<input id="task-due" class="eos-form-input" type="date" style="flex:1">' +
+            '</div>' +
+            '<button class="eos-btn eos-btn-primary" style="margin-top:10px;width:100%" onclick="submitAttachTaskFromDrawer()">Add</button>' +
+        '</div>';
+}
+
+async function _renderAllTasksSubview() {
+    var sub = document.getElementById('task-subview');
+    if (!sub || !currentAgent) return;
+    var roomId = currentAgent.id;
+    var statusParam = _allTasksFilter;  // backend handles open/today/overdue/done
+    var url = '/task/api/list';
+    var tasks = [];
+    try {
+        tasks = await EOS.api(url) || [];
+    } catch(e) {
+        sub.innerHTML = '<div style="color:var(--text-muted);font-size:13px;padding:20px;text-align:center">Task aggregator unavailable. The /task/ app may not be loaded.</div>';
+        return;
+    }
+    var today = new Date().toISOString().slice(0, 10);
+    function matchesFilter(t) {
+        if (_allTasksFilter === 'done') return !!t.done;
+        if (t.done) return false;
+        if (_allTasksFilter === 'today') return t.due === today || (t.overdue_days || 0) > 0;
+        if (_allTasksFilter === 'overdue') return (t.overdue_days || 0) > 0;
+        return true; // open
+    }
+    var q = (_allTasksQuery || '').toLowerCase().trim();
+    var filtered = tasks.filter(function(t) {
+        if (!matchesFilter(t)) return false;
+        if (!q) return true;
+        return (t.text || '').toLowerCase().indexOf(q) >= 0 ||
+               (t.project || '').toLowerCase().indexOf(q) >= 0 ||
+               (t.file || '').toLowerCase().indexOf(q) >= 0;
+    });
+    // Cap to 200 so the drawer stays responsive on large vaults.
+    var capped = filtered.slice(0, 200);
+    var counts = {
+        open: tasks.filter(function(t){ return !t.done; }).length,
+        today: tasks.filter(function(t){ return !t.done && (t.due === today || (t.overdue_days || 0) > 0); }).length,
+        overdue: tasks.filter(function(t){ return !t.done && (t.overdue_days || 0) > 0; }).length,
+        done: tasks.filter(function(t){ return t.done; }).length,
+    };
+    function chip(name, label) {
+        var active = _allTasksFilter === name;
+        return '<button class="eos-btn-sm" style="background:' + (active ? 'var(--accent)' : 'var(--bg-elevated)') + ';color:' + (active ? 'var(--accent-ink)' : 'var(--text)') + ';border:0;font-size:12px" onclick="setAllTasksFilter(\'' + name + '\')">' + label + ' <span style="opacity:0.7">' + counts[name] + '</span></button>';
+    }
+    var listHtml;
+    if (!capped.length) {
+        listHtml = '<div style="color:var(--text-muted);font-size:13px;padding:20px;text-align:center">No tasks match.</div>';
+    } else {
+        listHtml = capped.map(function(t) {
+            var stateIcon = t.done ? '✅' : '⬜';
+            var due = t.due ? '<span style="color:var(--text-muted);font-size:11px;margin-left:6px">📅 ' + esc(t.due) + '</span>' : '';
+            var proj = t.project ? '<span style="color:var(--text-muted);font-size:11px;margin-left:6px">[' + esc(t.project) + ']</span>' : '';
+            var displayText = _stripTaskMarkers(t.text || '');
+            var attachedHere = (t.room_id === roomId);
+            var roomTag = '';
+            if (t.room_id && !attachedHere) {
+                roomTag = '<span style="color:var(--text-muted);font-size:11px;margin-left:6px">🗨️ ' + esc(agentNameById(t.room_id)) + '</span>';
+            }
+            var attachBtn = attachedHere
+                ? '<span style="color:var(--accent);font-size:11px;flex-shrink:0;align-self:center">✓ here</span>'
+                : '<button class="eos-btn-sm eos-btn-ghost" title="Attach this task to this room" style="font-size:11px;flex-shrink:0" onclick="attachTaskToRoom(\'' + escAttr(t.file || '') + '\',' + (t.line || 0) + ')">+ Attach</button>';
+            return '<div style="display:flex;align-items:flex-start;gap:8px;padding:8px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px;margin-bottom:6px">' +
+                '<span style="flex-shrink:0;cursor:pointer" onclick="toggleTaskFromDrawer(\'' + escAttr(t.file || '') + '\',' + (t.line || 0) + ')">' + stateIcon + '</span>' +
+                '<div style="flex:1;min-width:0">' +
+                    '<div' + (t.done ? ' style="text-decoration:line-through;color:var(--text-muted)"' : '') + '>' + esc(displayText) + due + proj + roomTag + '</div>' +
+                '</div>' + attachBtn + '</div>';
+        }).join('');
+        if (filtered.length > capped.length) {
+            listHtml += '<div style="color:var(--text-muted);font-size:11px;text-align:center;padding:6px">Showing first 200 of ' + filtered.length + '. Refine the search to narrow.</div>';
+        }
+    }
+    sub.innerHTML =
+        '<input id="task-search" class="eos-form-input" type="text" placeholder="Search vault tasks…" value="' + escAttr(_allTasksQuery) + '" oninput="onAllTasksSearch(this.value)" style="width:100%;margin-bottom:10px">' +
+        '<div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:12px">' +
+            chip('open', 'Open') + chip('today', 'Today') + chip('overdue', 'Overdue') + chip('done', 'Done') +
+        '</div>' +
+        '<div>' + listHtml + '</div>';
+}
+
+function setAllTasksFilter(f) {
+    _allTasksFilter = f;
+    _renderAllTasksSubview();
+}
+
+var _allTasksSearchTimer = null;
+function onAllTasksSearch(v) {
+    _allTasksQuery = v || '';
+    if (_allTasksSearchTimer) clearTimeout(_allTasksSearchTimer);
+    _allTasksSearchTimer = setTimeout(function() { _renderAllTasksSubview(); }, 180);
+}
+
+function _stripTaskMarkers(text) {
+    return (text || '')
+        .replace(/\s*🗨️\s*\S+/g, '')
+        .replace(/\s*📅\s*\d{4}-\d{2}-\d{2}/g, '')
+        .replace(/\s*✅\s*\d{4}-\d{2}-\d{2}/g, '')
+        .trim();
+}
+
+async function toggleTaskFromDrawer(file, line) {
+    if (!file || !line) return;
+    try {
+        await EOS.post('/task/api/toggle', {file: file, line: line});
+        // Re-render whichever sub-view is open.
+        renderActivityTasksTab();
+        loadRoomTaskCount(currentAgent.id);
+    } catch(e) {
+        EOS_UI.toast('Toggle failed', false);
+    }
+}
+
+async function attachTaskToRoom(file, line) {
+    if (!file || !line || !currentAgent) return;
+    try {
+        var res = await EOS.post('/task/api/attach-room',
+            {file: file, line: line, room_id: currentAgent.id});
+        if (res && res.error) { EOS_UI.toast(res.error, false); return; }
+        EOS_UI.toast('Attached to ' + (currentAgent.name || currentAgent.id));
+        renderActivityTasksTab();
+        loadRoomTaskCount(currentAgent.id);
+    } catch(e) {
+        EOS_UI.toast('Attach failed', false);
+    }
+}
+
+async function detachTaskFromRoom(file, line) {
+    if (!file || !line) return;
+    try {
+        await EOS.post('/task/api/attach-room',
+            {file: file, line: line, room_id: ''});
+        EOS_UI.toast('Detached');
+        renderActivityTasksTab();
+        loadRoomTaskCount(currentAgent.id);
+    } catch(e) {
+        EOS_UI.toast('Detach failed', false);
+    }
+}
+
+// --- Memory tab (Phase 26) ---
+//
+// Per-room facts the agent should remember across turns. Surfaced in the
+// LLM prompt as a "Memory" block so the agent has stable context beyond
+// the rolling history window.
+
+async function renderActivityMemoryTab() {
+    var body = document.getElementById('activity-drawer-body');
+    if (!body || !currentAgent) return;
+    body.innerHTML = '<div style="color:var(--text-muted);font-size:12px;padding:20px;text-align:center">Loading…</div>';
+    var memory = [];
+    try {
+        memory = await EOS.api('/rooms/api/rooms/' +
+            encodeURIComponent(currentAgent.id) + '/memory') || [];
+    } catch (e) { memory = []; }
+    var countEl = document.getElementById('activity-tab-memory-count');
+    if (countEl) countEl.textContent = memory.length ? '(' + memory.length + ')' : '';
+    var listHtml;
+    if (!memory.length) {
+        listHtml = '<div style="color:var(--text-muted);font-size:13px;padding:14px;text-align:center">No memories yet. Use <code style="background:var(--bg-elevated);padding:1px 5px;border-radius:3px">/remember &lt;fact&gt;</code> to add one.</div>';
+    } else {
+        listHtml = memory.map(function(m) {
+            var when = m.ts ? new Date(m.ts).toLocaleDateString([], {month:'short', day:'numeric'}) : '';
+            return '<div style="display:flex;align-items:flex-start;gap:8px;padding:8px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px;margin-bottom:6px">' +
+                '<span style="flex-shrink:0;color:var(--accent)">🧠</span>' +
+                '<div style="flex:1;min-width:0">' +
+                    '<div style="line-height:1.4">' + esc(m.fact) + '</div>' +
+                    '<div style="font-size:11px;color:var(--text-muted);margin-top:2px">' + esc(when) + '</div>' +
+                '</div>' +
+                '<button class="eos-btn-sm eos-btn-ghost" title="Forget" style="font-size:14px;padding:2px 6px;flex-shrink:0" onclick="forgetMemory(\'' + escAttr(m.id) + '\')">×</button>' +
+                '</div>';
+        }).join('');
+    }
+    body.innerHTML =
+        '<div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px">Persistent memory</div>' +
+        '<div>' + listHtml + '</div>' +
+        '<div style="margin-top:14px;border-top:1px solid var(--border);padding-top:14px">' +
+            '<div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px">Add a memory</div>' +
+            '<input id="mem-fact" class="eos-form-input" type="text" placeholder="e.g. Kevin prefers tabs over spaces" style="width:100%">' +
+            '<button class="eos-btn eos-btn-primary" style="margin-top:10px;width:100%" onclick="submitMemoryFromDrawer()">Remember</button>' +
+        '</div>' +
+        '<div style="margin-top:14px;font-size:11px;color:var(--text-muted);line-height:1.5">' +
+            'Memories are prepended to the LLM context as a "Memory" block on every turn. Capped at 30 per room — oldest drop first.' +
+        '</div>';
+}
+
+async function submitMemoryFromDrawer() {
+    if (!currentAgent) return;
+    var fact = (document.getElementById('mem-fact').value || '').trim();
+    if (!fact) { EOS_UI.toast('Memory text required', false); return; }
+    await rememberFact(fact);
+    renderActivityMemoryTab();
+}
+
+async function rememberFact(fact) {
+    if (!currentAgent || !fact) return;
+    try {
+        var res = await EOS.post('/rooms/api/rooms/' +
+            encodeURIComponent(currentAgent.id) + '/memory', {fact: fact});
+        if (res && res.error) { EOS_UI.toast(res.error, false); return; }
+        EOS_UI.toast('Remembered');
+    } catch (e) { EOS_UI.toast('Failed to remember', false); }
+}
+
+async function forgetMemory(memoryId) {
+    if (!currentAgent || !memoryId) return;
+    if (!await EOS_UI.confirm('Forget this memory?')) return;
+    try {
+        await EOS.api('/rooms/api/rooms/' + encodeURIComponent(currentAgent.id) +
+            '/memory/' + encodeURIComponent(memoryId), {method:'DELETE'});
+        renderActivityMemoryTab();
+    } catch (e) { EOS_UI.toast('Failed to forget', false); }
+}
+
+// --- Knowledge tab (Phase 18) ---
+//
+// Lists the room's knowledge_files with × to remove + an inline picker to
+// add. Picker fires the same /rooms/api/vault-search endpoint used by the
+// [[ wikilink mechanism. Saves every add/remove to the room record so it
+// persists into knowledge_files for future LLM turns.
+
+var _knowledgeSearchTimer = null;
+var _knowledgePickerSeq = 0;
+
+async function renderActivityKnowledgeTab() {
+    var body = document.getElementById('activity-drawer-body');
+    if (!body || !currentAgent) return;
+    var files = (currentAgent.knowledge_files || []).slice();
+    var countEl = document.getElementById('activity-tab-knowledge-count');
+    if (countEl) countEl.textContent = files.length ? '(' + files.length + ')' : '';
+    var listHtml;
+    if (!files.length) {
+        listHtml = '<div style="color:var(--text-muted);font-size:13px;padding:14px;text-align:center">No persistent knowledge attached. Add a vault note below — it\'s included as context in every turn.</div>';
+    } else {
+        listHtml = files.map(function(p) {
+            var name = p.split('/').pop().replace(/\.md$/i, '');
+            return '<div style="display:flex;align-items:center;gap:8px;padding:8px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px;margin-bottom:6px">' +
+                '<span style="font-size:14px;flex-shrink:0">📎</span>' +
+                '<div style="flex:1;min-width:0">' +
+                    '<div style="font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(name) + '</div>' +
+                    '<div style="font-size:11px;color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(p) + '</div>' +
+                '</div>' +
+                '<button class="eos-btn-sm eos-btn-ghost" title="Remove" style="font-size:14px;padding:2px 6px;flex-shrink:0" onclick="removeKnowledgeFromDrawer(\'' + escAttr(p) + '\')">×</button>' +
+                '</div>';
+        }).join('');
+    }
+    body.innerHTML =
+        '<div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px">Attached knowledge</div>' +
+        '<div>' + listHtml + '</div>' +
+        '<div style="margin-top:14px;border-top:1px solid var(--border);padding-top:14px">' +
+            '<div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px">Add from vault</div>' +
+            '<input id="kb-search" class="eos-form-input" type="text" placeholder="Search vault notes…" oninput="onKnowledgePickerSearch(this.value)" style="width:100%">' +
+            '<div id="kb-picker-results" style="max-height:240px;overflow-y:auto;margin-top:8px"></div>' +
+        '</div>' +
+        '<div style="margin-top:14px;font-size:11px;color:var(--text-muted);line-height:1.5">' +
+            'Tip: every attached note is included in this room\'s LLM context on every turn. For one-off references, type <code style="background:var(--bg-elevated);padding:1px 5px;border-radius:3px">[[</code> in the chat input instead.' +
+        '</div>';
+    // Trigger an empty search to populate the picker with recent notes.
+    onKnowledgePickerSearch('');
+}
+
+function onKnowledgePickerSearch(v) {
+    if (_knowledgeSearchTimer) clearTimeout(_knowledgeSearchTimer);
+    _knowledgeSearchTimer = setTimeout(async function() {
+        var seq = ++_knowledgePickerSeq;
+        var res;
+        try {
+            res = await EOS.api('/rooms/api/vault-search?q=' + encodeURIComponent(v || '') + '&limit=20');
+        } catch(e) { res = null; }
+        if (seq !== _knowledgePickerSeq) return;
+        var results = document.getElementById('kb-picker-results');
+        if (!results) return;
+        var files = (res && res.files) || [];
+        var attached = new Set((currentAgent && currentAgent.knowledge_files) || []);
+        if (!files.length) {
+            results.innerHTML = '<div style="color:var(--text-muted);font-size:12px;padding:8px;text-align:center">No matches.</div>';
+            return;
+        }
+        results.innerHTML = files.map(function(f) {
+            var path = f.path || '';
+            var isAttached = attached.has(path) || attached.has(path.replace(/\.md$/i, ''));
+            return '<div style="display:flex;align-items:center;gap:8px;padding:6px 10px;border-radius:6px;font-size:12px;margin-bottom:3px;background:var(--bg-elevated);' + (isAttached ? 'opacity:0.5' : 'cursor:pointer') + '"' +
+                (isAttached ? '' : ' onclick="addKnowledgeFromDrawer(\'' + escAttr(path) + '\')"') + '>' +
+                '<span style="flex-shrink:0">📄</span>' +
+                '<div style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' +
+                    esc(f.name || '') + '<span style="color:var(--text-muted);margin-left:6px">' + esc(f.folder || '') + '</span>' +
+                '</div>' +
+                (isAttached ? '<span style="font-size:10px;color:var(--accent);flex-shrink:0">attached</span>' : '<span style="font-size:14px;flex-shrink:0">+</span>') +
+                '</div>';
+        }).join('');
+    }, 180);
+}
+
+async function addKnowledgeFromDrawer(path) {
+    if (!currentAgent || !path) return;
+    try {
+        var res = await EOS.post('/rooms/api/rooms/' +
+            encodeURIComponent(currentAgent.id) + '/knowledge', {path: path});
+        if (res && res.error) { EOS_UI.toast(res.error, false); return; }
+        currentAgent.knowledge_files = res.knowledge_files || [];
+        // Sync the agents cache so a re-open doesn't lose the change.
+        var cached = (agents || []).find(function(a){ return a.id === currentAgent.id; });
+        if (cached) cached.knowledge_files = currentAgent.knowledge_files;
+        EOS_UI.toast('Attached');
+        renderActivityKnowledgeTab();
+    } catch(e) {
+        EOS_UI.toast('Attach failed', false);
+    }
+}
+
+async function removeKnowledgeFromDrawer(path) {
+    if (!currentAgent || !path) return;
+    try {
+        var res = await EOS.post('/rooms/api/rooms/' +
+            encodeURIComponent(currentAgent.id) + '/knowledge/remove', {path: path});
+        if (res && res.error) { EOS_UI.toast(res.error, false); return; }
+        currentAgent.knowledge_files = res.knowledge_files || [];
+        var cached = (agents || []).find(function(a){ return a.id === currentAgent.id; });
+        if (cached) cached.knowledge_files = currentAgent.knowledge_files;
+        EOS_UI.toast('Removed');
+        renderActivityKnowledgeTab();
+    } catch(e) {
+        EOS_UI.toast('Remove failed', false);
+    }
+}
+
+async function submitAttachTaskFromDrawer() {
+    if (!currentAgent) return;
+    var text = (document.getElementById('task-text').value || '').trim();
+    if (!text) { EOS_UI.toast('Task text required', false); return; }
+    var project = (document.getElementById('task-project').value || 'inbox').trim() || 'inbox';
+    var due = (document.getElementById('task-due').value || '').trim();
+    try {
+        var res = await EOS.post('/rooms/api/rooms/' + encodeURIComponent(currentAgent.id) + '/tasks',
+            {text: text, project_id: project, due: due});
+        if (res && res.error) { EOS_UI.toast(res.error, false); return; }
+        EOS_UI.toast('Task added');
+        loadRoomTaskCount(currentAgent.id);
+        renderActivityTasksTab();
+    } catch(e) {
+        EOS_UI.toast('Failed to add task', false);
+    }
+}
+
+// Build the inner HTML for a pending card. `cardId` lets us scope updates.
+function renderPendingCard(action) {
+    var st = action.status || 'pending';
+    var cls = 'pending-card' + (st !== 'pending' ? ' ' + st : '');
+    var argsStr = '';
+    try { argsStr = JSON.stringify(action.args || {}, null, 2); } catch(e) { argsStr = String(action.args); }
+    var icons = {pending:'⏳', applied:'✓', rejected:'✗', failed:'✗'};
+    var icon = icons[st] || '⏳';
+    var actor = action.source_actor || {};
+    var actorName = actor.id === 'claude-cli' ? 'Claude Code CLI' : (actor.id || 'agent');
+    var actorIcon = actor.type === 'cli' ? '⚡' : '◆';
+    var buttons;
+    if (st === 'pending') {
+        buttons =
+            '<button class="eos-btn-sm eos-btn-ghost" onclick="rejectAction(\'' + escAttr(action.id) + '\')">Reject</button>' +
+            '<button class="eos-btn-sm" style="background:var(--accent);color:var(--accent-ink)" onclick="applyAction(\'' + escAttr(action.id) + '\')">Apply</button>';
+    } else if (st === 'applied') {
+        var resultPreview = action.result ? '<div style="font-size:11px;color:var(--text-muted);max-height:60px;overflow:hidden">' + esc(String(action.result).slice(0, 200)) + '</div>' : '';
+        buttons = '<span class="pending-status">applied ' + (action.resolved_ts ? new Date(action.resolved_ts).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}) : '') + '</span>';
+    } else if (st === 'rejected') {
+        buttons = '<span class="pending-status">rejected</span>';
+    } else {
+        buttons = '<span class="pending-status">failed: ' + esc(action.error || 'error') + '</span>';
+    }
+    return '<div class="pending-card ' + esc(st) + '" id="pending-card-' + escAttr(action.id) + '">' +
+        '<div class="pending-head">' +
+            '<span>' + icon + '</span>' +
+            '<span style="font-size:11px;color:var(--text-muted)">' + actorIcon + ' ' + esc(actorName) + ' proposes</span>' +
+            '<span class="pending-verb">' + esc(action.app + '.' + action.method) + '</span>' +
+        '</div>' +
+        '<div class="pending-args">' + esc(argsStr) + '</div>' +
+        '<div class="pending-actions">' + buttons + '</div>' +
+        (st === 'applied' && action.result ? '<div style="font-size:11px;color:var(--text-muted);font-family:var(--font-mono,monospace);max-height:80px;overflow-y:auto">' + esc(String(action.result).slice(0, 300)) + '</div>' : '') +
+        '</div>';
+}
+
+async function applyAction(actionId) {
+    var cards = document.querySelectorAll('#pending-card-' + actionId.replace(/[^A-Za-z0-9_-]/g, ''));
+    cards.forEach(function(c){ c.style.opacity = '0.5'; });
+    try {
+        var res = await EOS.post('/rooms/api/pending/' + encodeURIComponent(actionId) + '/apply', {});
+        if (res && res.id) _pendingMap[res.id] = res;
+        // Replace all instances of this card on the page (inline thread + drawer + dashboard).
+        document.querySelectorAll('[id="pending-card-' + actionId + '"]').forEach(function(c) {
+            c.outerHTML = renderPendingCard(res);
+        });
+        if (res.status === 'applied') {
+            EOS_UI.toast('Applied');
+        } else if (res.status === 'failed') {
+            EOS_UI.toast('Apply failed: ' + (res.error || 'see card'), false);
+        } else if (res.error) {
+            EOS_UI.toast(res.error, false);
+        }
+    } catch(e) {
+        EOS_UI.toast('Apply failed', false);
+    }
+    updatePendingBadge();
+    refreshGlobalPendingBadge();
+}
+
+async function rejectAction(actionId) {
+    document.querySelectorAll('[id="pending-card-' + actionId + '"]').forEach(function(c){
+        c.style.opacity = '0.5';
+    });
+    try {
+        var res = await EOS.post('/rooms/api/pending/' + encodeURIComponent(actionId) + '/reject', {});
+        if (res && res.id) _pendingMap[res.id] = res;
+        document.querySelectorAll('[id="pending-card-' + actionId + '"]').forEach(function(c) {
+            c.outerHTML = renderPendingCard(res);
+        });
+    } catch(e) {
+        EOS_UI.toast('Reject failed', false);
+    }
+    updatePendingBadge();
+    refreshGlobalPendingBadge();
+}
+
+// --- Room ↔ task pointer (Phase 4) ---
+
+// Lazy refresh of the open-task count for the unified Activity badge. No-op
+// on error (projects app may be missing in lean tiers).
+async function loadRoomTaskCount(roomId) {
+    var pill = document.getElementById('chat-activity-count');
+    if (pill) pill.dataset.tasksOpen = '0';
+    try {
+        var tasks = await EOS.api('/rooms/api/rooms/' + encodeURIComponent(roomId) + '/tasks');
+        if (Array.isArray(tasks)) {
+            var openCount = tasks.filter(function(t){ return !t.done; }).length;
+            if (pill) pill.dataset.tasksOpen = String(openCount);
+            // Also keep the drawer-tab counter fresh.
+            var tab = document.getElementById('activity-tab-tasks-count');
+            if (tab) tab.textContent = tasks.length ? '(' + openCount + ')' : '';
+        }
+    } catch(e) { /* projects unavailable — silent */ }
+    updateActivityBadge();
+}
+
+// Legacy entrypoint kept for any external callers — opens the Activity
+// drawer's Tasks tab instead of the standalone modal it used to render.
+function openRoomTasks() {
+    _activityTab = 'tasks';
+    openActivityDrawer();
+}
+
+// Insert `@<id> ` at the chat-input cursor (or replace any partial @mention
+// being typed). Triggered from member-chip clicks.
+function insertMention(participantId) {
+    var input = document.getElementById('chat-input');
+    if (!input) return;
+    var text = input.value || '';
+    var cursor = input.selectionStart || text.length;
+    // If user is mid-@-token, replace it; otherwise insert at cursor.
+    var anchor = cursor;
+    for (var i = cursor - 1; i >= 0; i--) {
+        var c = text[i];
+        if (c === '@') {
+            var prev = i === 0 ? ' ' : text[i - 1];
+            if (/\s/.test(prev) || prev === '') { anchor = i; }
+            break;
+        }
+        if (/\s/.test(c)) break;
+    }
+    var insert = '@' + participantId + ' ';
+    input.value = text.slice(0, anchor) + insert + text.slice(cursor);
+    var pos = (text.slice(0, anchor) + insert).length;
+    input.selectionStart = input.selectionEnd = pos;
+    input.focus();
+    _hideMention();
+}
+
+// --- Vault file references — [[ trigger (Phase 11) ---
+//
+// Type `[[` in the input to open a vault note picker. Selecting one inserts
+// `[[<path>]]` (Obsidian-native wikilink). Backend resolves these at chat
+// time, prepending each file's content as a Knowledge context block.
+
+var _fileSearchTimer = null;
+var _fileSearchSeq = 0;
+
+// Walk back from cursor looking for an unclosed `[[`. Returns
+// {openIdx, query} or null. Bails on `]` (would close a previous link).
+function _scanWikilinkAtCursor(input) {
+    var pos = input.selectionStart || 0;
+    var text = input.value || '';
+    if (pos < 2) return null;
+    for (var i = pos - 1; i >= 1; i--) {
+        var c = text[i];
+        if (c === ']') return null;
+        if (c === '\n') return null;
+        if (c === '[' && text[i - 1] === '[') {
+            return {openIdx: i - 1, query: text.slice(i + 1, pos)};
+        }
+    }
+    return null;
+}
+
+function _renderFilePopup(files) {
+    var el = document.getElementById('mention-popup');
+    if (!el) return;
+    if (!files.length) {
+        el.classList.remove('open'); _mention.open = false; return;
+    }
+    el.innerHTML = files.map(function(f, i) {
+        var active = i === _mention.active ? ' active' : '';
+        return '<div class="mention-item' + active + '" data-idx="' + i +
+               '" onmousedown="event.preventDefault();_acceptFile(' + i + ')">' +
+               '<div class="mention-avatar" style="background:var(--text-muted)">📄</div>' +
+               '<div style="flex:1;min-width:0">' +
+                   '<div style="font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(f.name) + '</div>' +
+                   '<div style="font-size:10px;color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(f.folder || f.path) + '</div>' +
+               '</div></div>';
+    }).join('');
+    el.classList.add('open');
+    _mention.open = true;
+}
+
+function _acceptFile(idx) {
+    if (idx < 0 || idx >= _mention.items.length) return;
+    var input = document.getElementById('chat-input');
+    if (!input) return;
+    var f = _mention.items[idx];
+    var text = input.value || '';
+    var open = _mention.anchorIdx;
+    if (open < 0 || text.slice(open, open + 2) !== '[[') return;
+    var cursor = input.selectionStart || text.length;
+    // The path stored in the wikilink — strip .md so it round-trips cleanly.
+    var ref = (f.path || f.name || '').replace(/\.md$/i, '');
+    var before = text.slice(0, open);
+    var after = text.slice(cursor);
+    var insert = '[[' + ref + ']] ';
+    input.value = before + insert + after;
+    var pos = (before + insert).length;
+    input.selectionStart = input.selectionEnd = pos;
+    _hideMention();
+    input.focus();
+}
+
+async function _fetchVaultFiles(query) {
+    var seq = ++_fileSearchSeq;
+    try {
+        var res = await EOS.api('/rooms/api/vault-search?q=' + encodeURIComponent(query) + '&limit=15');
+        if (seq !== _fileSearchSeq) return null;  // stale response
+        return (res && res.files) || [];
+    } catch (e) {
+        return [];
+    }
+}
+
+// --- Slash commands (Phase 10) ---
+//
+// Typing `/` at the start of the input opens a command palette. Same UX
+// shell as the @-mention popup — re-uses #mention-popup. Each command knows
+// whether it takes free-text args (slot is filled by the user before Enter)
+// or fires immediately on Enter.
+//
+// Commands are pure frontend wrappers around existing API endpoints, so
+// adding a new one is one entry in SLASH_COMMANDS plus its action. No
+// backend changes needed.
+
+var SLASH_COMMANDS = [
+    {
+        name: 'distill', desc: 'Summarise this room into a KB note',
+        args: '', needsRoom: true,
+        run: function() { distillRoom(); },
+    },
+    {
+        name: 'export', desc: 'Export the thread as a vault markdown note',
+        args: '', needsRoom: true,
+        run: function() { exportChatToVault(); },
+    },
+    {
+        name: 'archive', desc: 'Archive this room (move to Archived tab)',
+        args: '', needsRoom: true,
+        run: function() {
+            // Toggle handles unarchive too — the menu label adjusts based on status.
+            toggleRoomArchive();
+        },
+    },
+    {
+        name: 'task', desc: 'Attach a task to this room and the inbox project',
+        args: '<text>', needsRoom: true,
+        run: function(rest) {
+            var text = (rest || '').trim();
+            if (!text) { EOS_UI.toast('Usage: /task <description>', false); return; }
+            EOS.post('/rooms/api/rooms/' + encodeURIComponent(currentAgent.id) + '/tasks',
+                {text: text, project_id: 'inbox'})
+                .then(function(res) {
+                    if (res && res.error) { EOS_UI.toast(res.error, false); return; }
+                    EOS_UI.toast('Task added');
+                    loadRoomTaskCount(currentAgent.id);
+                })
+                .catch(function() { EOS_UI.toast('Failed to add task', false); });
+        },
+    },
+    {
+        name: 'find', desc: 'Search across all rooms (in-message)',
+        args: '<query>',
+        run: function(rest) {
+            var q = (rest || '').trim();
+            if (!q) { EOS_UI.toast('Usage: /find <query>', false); return; }
+            var s = document.getElementById('search');
+            if (s) { s.value = q; s.focus(); filterAgents(); }
+        },
+    },
+    {
+        name: 'add', desc: 'Add a participant by id (e.g. /add curator or /add @claude-cli)',
+        args: '<id>', needsRoom: true,
+        run: function(rest) {
+            var id = (rest || '').trim().replace(/^@/, '');
+            if (!id) { EOS_UI.toast('Usage: /add <id>', false); return; }
+            var type = id === 'claude-cli' ? 'cli' : 'agent';
+            EOS.post('/rooms/api/rooms/' + encodeURIComponent(currentAgent.id) + '/participants',
+                {type: type, id: id})
+                .then(function(res) {
+                    if (res && res.error) { EOS_UI.toast(res.error, false); return; }
+                    EOS_UI.toast('Added ' + id);
+                    loadAgents().then(function() {
+                        currentAgent = (agents || []).find(function(a){ return a.id === currentAgent.id; }) || currentAgent;
+                        renderMembers();
+                    });
+                })
+                .catch(function() { EOS_UI.toast('Failed to add', false); });
+        },
+    },
+    {
+        name: 'remove', desc: 'Remove a participant by id',
+        args: '<id>', needsRoom: true,
+        run: function(rest) {
+            var id = (rest || '').trim().replace(/^@/, '');
+            if (!id) { EOS_UI.toast('Usage: /remove <id>', false); return; }
+            EOS.api('/rooms/api/rooms/' + encodeURIComponent(currentAgent.id) +
+                '/participants/' + encodeURIComponent(id), {method:'DELETE'})
+                .then(function(res) {
+                    if (res && res.error) { EOS_UI.toast(res.error, false); return; }
+                    EOS_UI.toast('Removed ' + id);
+                    loadAgents().then(function() {
+                        currentAgent = (agents || []).find(function(a){ return a.id === currentAgent.id; }) || currentAgent;
+                        renderMembers();
+                    });
+                })
+                .catch(function() { EOS_UI.toast('Failed to remove', false); });
+        },
+    },
+    {
+        name: 'remind', desc: 'Schedule a reminder for this room (e.g. /remind 2h finish review)',
+        args: '<when> [note]', needsRoom: true,
+        run: function(rest) { scheduleReminder(rest); },
+    },
+    {
+        name: 'context', desc: 'Inspect what the LLM sees on the next turn',
+        args: '', needsRoom: true,
+        run: function() { inspectRoomContext(); },
+    },
+    {
+        name: 'remember', desc: 'Add a persistent memory the agent always sees (e.g. /remember I prefer tabs)',
+        args: '<fact>', needsRoom: true,
+        run: async function(rest) {
+            var fact = (rest || '').trim();
+            if (!fact) { EOS_UI.toast('Usage: /remember <fact>', false); return; }
+            await rememberFact(fact);
+        },
+    },
+    {
+        name: 'schedule', desc: 'Set / view the cron-driven check-in for this room',
+        args: '', needsRoom: true,
+        run: function() { openScheduleModal(); },
+    },
+    {
+        name: 'snip', desc: 'Insert a saved snippet into the input by name',
+        args: '<name>',
+        run: function(rest) { expandSnippetToInput(rest); },
+    },
+    {
+        name: 'save', desc: 'Save the current input as a snippet (name required)',
+        args: '<name>',
+        run: function(rest) { saveSnippetFromInput(rest); },
+    },
+    {
+        name: 'snippets', desc: 'Open the snippet library',
+        args: '',
+        run: function() { openSnippetsLibrary(); },
+    },
+    {
+        name: 'speak', desc: 'Toggle auto-speak (read agent replies aloud)',
+        args: '', needsRoom: true,
+        run: function() { toggleAutoSpeak(); },
+    },
+    {
+        name: 'mute', desc: 'Stop any current speech and disable auto-speak',
+        args: '', needsRoom: true,
+        run: function() {
+            speakStop();
+            if (currentAgent && isAutoSpeakOn(currentAgent.id)) {
+                setAutoSpeak(currentAgent.id, false);
+            }
+            EOS_UI.toast('Muted');
+        },
+    },
+    {
+        name: 'discard', desc: 'Discard the current draft (clears the input)',
+        args: '', needsRoom: true,
+        run: function() {
+            if (!currentAgent) return;
+            clearDraft(currentAgent.id);
+            var input = document.getElementById('chat-input');
+            if (input) {
+                input.value = '';
+                input.style.height = 'auto';
+                input.focus();
+            }
+            EOS_UI.toast('Draft discarded');
+        },
+    },
+    {
+        name: 'pin', desc: 'Pin the most recent assistant message',
+        args: '', needsRoom: true,
+        run: async function() {
+            try {
+                var data = await EOS.api('/rooms/api/history/' + encodeURIComponent(currentAgent.id));
+                var msgs = (data && data.messages) || [];
+                // Walk from the end, skip user turns — we usually want to pin
+                // an answer / decision, not the user's own prompt.
+                for (var i = msgs.length - 1; i >= 0; i--) {
+                    if (msgs[i].role !== 'user' && msgs[i].ts) {
+                        togglePin(msgs[i].ts);
+                        return;
+                    }
+                }
+                EOS_UI.toast('Nothing to pin yet', false);
+            } catch(e) { EOS_UI.toast('Pin failed', false); }
+        },
+    },
+    {
+        name: 'clear', desc: 'Clear chat history for this room',
+        args: '', needsRoom: true,
+        run: function() { clearHistory(); },
+    },
+    {
+        name: 'help', desc: 'List slash commands',
+        args: '',
+        run: function() {
+            var lines = SLASH_COMMANDS.map(function(c) {
+                return '/' + c.name + (c.args ? ' ' + c.args : '') + ' — ' + c.desc;
+            }).join('\n');
+            EOS_UI.modal({title: 'Slash commands', body: '<pre style="white-space:pre-wrap;font-family:var(--font-mono,monospace);font-size:12px;line-height:1.6">' + esc(lines) + '</pre>', width: '480px'});
+        },
+    },
+];
+
+// State machine state added to existing _mention object: mode='slash' enters
+// command-palette, mode='mention' is the existing @-popup.
+function _scanSlashAtCursor(input) {
+    var v = input.value || '';
+    if (!v.startsWith('/')) return null;
+    // Only match while the user is still typing the command name (no space yet).
+    var sp = v.indexOf(' ');
+    var partial = sp >= 0 ? v.slice(1, sp) : v.slice(1);
+    if (sp >= 0) return null;  // past command name — let Enter fire
+    return {query: partial.toLowerCase()};
+}
+
+function _scanSlashPrefilled(input) {
+    // Returns {cmd, rest} when input is `/<name> <rest>` and <name> is a known command.
+    var v = (input.value || '').trim();
+    if (!v.startsWith('/')) return null;
+    var sp = v.indexOf(' ');
+    var name = (sp >= 0 ? v.slice(1, sp) : v.slice(1)).toLowerCase();
+    var cmd = SLASH_COMMANDS.find(function(c){ return c.name === name; });
+    if (!cmd) return null;
+    var rest = sp >= 0 ? v.slice(sp + 1) : '';
+    return {cmd: cmd, rest: rest};
+}
+
+function _renderSlashPopup() {
+    var el = document.getElementById('mention-popup');
+    if (!el) return;
+    if (!_mention.items.length) {
+        el.classList.remove('open'); _mention.open = false; return;
+    }
+    el.innerHTML = _mention.items.map(function(c, i) {
+        var active = i === _mention.active ? ' active' : '';
+        return '<div class="mention-item' + active + '" data-idx="' + i +
+               '" onmousedown="event.preventDefault();_acceptSlash(' + i + ')">' +
+               '<div class="mention-avatar" style="background:var(--accent)">/</div>' +
+               '<span style="font-family:var(--font-mono,monospace);font-size:13px">/' + esc(c.name) + (c.args ? ' ' + esc(c.args) : '') + '</span>' +
+               '<span class="mention-id" style="font-family:inherit">' + esc(c.desc) + '</span>' +
+               '</div>';
+    }).join('');
+    el.classList.add('open');
+    _mention.open = true;
+}
+
+function _acceptSlash(idx) {
+    if (idx < 0 || idx >= _mention.items.length) return;
+    var input = document.getElementById('chat-input');
+    if (!input) return;
+    var c = _mention.items[idx];
+    if (c.args) {
+        // Prefill the input so the user can type the arg, then hit Enter.
+        input.value = '/' + c.name + ' ';
+        var pos = input.value.length;
+        input.selectionStart = input.selectionEnd = pos;
+        _hideMention();
+        input.focus();
+    } else {
+        // No args — fire immediately + clear the input.
+        _hideMention();
+        if (c.needsRoom && !currentAgent) {
+            EOS_UI.toast('Open a room first', false);
+            return;
+        }
+        input.value = '';
+        c.run();
+    }
+}
+
+// Try to fire a fully-typed slash command. Returns true if handled.
+function tryRunSlashCommand() {
+    var input = document.getElementById('chat-input');
+    if (!input) return false;
+    var match = _scanSlashPrefilled(input);
+    if (!match) return false;
+    if (match.cmd.needsRoom && !currentAgent) {
+        EOS_UI.toast('Open a room first', false);
+        return true;
+    }
+    input.value = '';
+    input.style.height = 'auto';
+    match.cmd.run(match.rest);
+    return true;
+}
+
+// --- @mention autocomplete ---
+//
+// State machine: detect a `@<query>` token at cursor on every input event,
+// render matches into the popover, navigate with ↑/↓, accept with Enter/Tab/click,
+// dismiss on Esc or whitespace. Pure DOM — no framework, plays nicely with
+// the existing send-on-Enter handler.
+
+var _mention = { open: false, anchorIdx: -1, items: [], active: 0, mode: 'mention' };
+
+function _mentionPool() {
+    // Returns [{id, name, type}] for everyone in the current room except `user`.
+    if (!currentAgent) return [];
+    var parts = currentAgent.participants;
+    if (!parts) {
+        // Legacy 1:1 record loaded via /api/agents may not carry participants.
+        // Synthesise the same shape the backend would on read.
+        parts = [{type:'user'}, {type:'agent', id: currentAgent.id}];
+    }
+    return parts
+        .filter(function(p) { return p.type === 'agent' || p.type === 'cli'; })
+        .map(function(p) {
+            return {id: p.id, name: agentNameById(p.id), type: p.type};
+        });
+}
+
+function _renderMentionPopup() {
+    var el = document.getElementById('mention-popup');
+    if (!el) return;
+    if (!_mention.items.length) {
+        el.classList.remove('open');
+        _mention.open = false;
+        return;
+    }
+    el.innerHTML = _mention.items.map(function(it, i) {
+        var icon, color;
+        if (it.type === 'cli') {
+            icon = '⚡'; color = 'var(--accent)';
+        } else {
+            icon = initial(it.name); color = agentColor(it.name);
+        }
+        var active = i === _mention.active ? ' active' : '';
+        return '<div class="mention-item' + active + '" data-idx="' + i +
+               '" onmousedown="event.preventDefault();_acceptMention(' + i + ')">' +
+               '<div class="mention-avatar" style="background:' + color + '">' + esc(icon) + '</div>' +
+               '<span>' + esc(it.name) + '</span>' +
+               '<span class="mention-id">@' + esc(it.id) + '</span>' +
+               '</div>';
+    }).join('');
+    el.classList.add('open');
+    _mention.open = true;
+}
+
+function _hideMention() {
+    var el = document.getElementById('mention-popup');
+    if (el) el.classList.remove('open');
+    _mention.open = false;
+    _mention.anchorIdx = -1;
+    _mention.items = [];
+    _mention.active = 0;
+}
+
+// Find the @-token boundary at cursor. Returns {atIdx, query} or null.
+// Trigger rules: `@` is the first char, preceded by whitespace, or at line start.
+// Stops at whitespace — so "user@host" never triggers.
+function _scanMentionAtCursor(input) {
+    var pos = input.selectionStart || 0;
+    var text = input.value || '';
+    if (pos === 0) return null;
+    // Walk back from cursor, looking for an `@` we'd accept.
+    for (var i = pos - 1; i >= 0; i--) {
+        var c = text[i];
+        if (c === '@') {
+            var prev = i === 0 ? ' ' : text[i - 1];
+            if (/\s/.test(prev) || prev === '') {
+                return {atIdx: i, query: text.slice(i + 1, pos).toLowerCase()};
+            }
+            return null;
+        }
+        if (/\s/.test(c)) return null;
+    }
+    return null;
+}
+
+function chatInputChanged() {
+    var input = document.getElementById('chat-input');
+    if (!input) return;
+    // Phase 16 — auto-save draft as the user types (debounced).
+    scheduleDraftSave();
+    // Wikilink mode — `[[` opens a vault file picker. Highest precedence
+    // because the brackets are unambiguous.
+    var wl = _scanWikilinkAtCursor(input);
+    if (wl !== null) {
+        if (_fileSearchTimer) clearTimeout(_fileSearchTimer);
+        _mention.mode = 'wikilink';
+        _mention.anchorIdx = wl.openIdx;
+        _mention.active = 0;
+        _fileSearchTimer = setTimeout(async function() {
+            var files = await _fetchVaultFiles(wl.query);
+            if (files === null) return;  // stale
+            _mention.items = files;
+            _mention.active = 0;
+            _renderFilePopup(files);
+        }, 150);
+        return;
+    }
+    // Slash command mode takes precedence — a `/` at start trumps any @ later.
+    var slash = _scanSlashAtCursor(input);
+    if (slash !== null) {
+        var q = slash.query;
+        var matched = SLASH_COMMANDS.filter(function(c) {
+            return !q || c.name.indexOf(q) >= 0;
+        });
+        _mention.mode = 'slash';
+        _mention.items = matched;
+        _mention.active = 0;
+        _renderSlashPopup();
+        return;
+    }
+    // Mention mode (existing logic).
+    var match = _scanMentionAtCursor(input);
+    if (!match) { _hideMention(); return; }
+    var pool = _mentionPool();
+    if (!pool.length) { _hideMention(); return; }
+    var qq = match.query;
+    var filtered = pool.filter(function(it) {
+        return !qq || it.id.toLowerCase().indexOf(qq) >= 0 ||
+               it.name.toLowerCase().indexOf(qq) >= 0 ||
+               it.name.toLowerCase().replace(/\s+/g,'-').indexOf(qq) >= 0;
+    });
+    _mention.mode = 'mention';
+    _mention.anchorIdx = match.atIdx;
+    _mention.items = filtered;
+    _mention.active = 0;
+    _renderMentionPopup();
+}
+
+function _acceptMention(idx) {
+    if (idx < 0 || idx >= _mention.items.length) return;
+    var input = document.getElementById('chat-input');
+    if (!input) return;
+    var it = _mention.items[idx];
+    var text = input.value || '';
+    var anchor = _mention.anchorIdx;
+    if (anchor < 0) return;
+    var cursor = input.selectionStart || text.length;
+    var before = text.slice(0, anchor);
+    var after = text.slice(cursor);
+    var insert = '@' + it.id + ' ';
+    input.value = before + insert + after;
+    var newPos = (before + insert).length;
+    input.selectionStart = input.selectionEnd = newPos;
+    _hideMention();
+    input.focus();
+}
+
+function chatInputKeydown(event) {
+    if (_mention.open) {
+        var renderer = _renderMentionPopup;
+        var accept = _acceptMention;
+        if (_mention.mode === 'slash') {
+            renderer = _renderSlashPopup; accept = _acceptSlash;
+        } else if (_mention.mode === 'wikilink') {
+            renderer = function() { _renderFilePopup(_mention.items); };
+            accept = _acceptFile;
+        }
+        if (event.key === 'ArrowDown') {
+            event.preventDefault();
+            _mention.active = (_mention.active + 1) % _mention.items.length;
+            renderer();
+            return;
+        }
+        if (event.key === 'ArrowUp') {
+            event.preventDefault();
+            _mention.active = (_mention.active - 1 + _mention.items.length) % _mention.items.length;
+            renderer();
+            return;
+        }
+        if (event.key === 'Enter' || event.key === 'Tab') {
+            event.preventDefault();
+            accept(_mention.active);
+            return;
+        }
+        if (event.key === 'Escape') {
+            event.preventDefault();
+            _hideMention();
+            return;
+        }
+    }
+    if (event.key === 'Enter' && !event.shiftKey) {
+        event.preventDefault();
+        // Fully-typed slash command (e.g. "/task buy milk") fires here.
+        if (tryRunSlashCommand()) return;
+        sendMessage();
+    }
+}
+
+async function saveAgent() {
+    var name = document.getElementById('f-name').value.trim();
+    var prompt = document.getElementById('f-prompt').value.trim();
+    var filesRaw = document.getElementById('f-files').value.trim();
+    var kdir = document.getElementById('f-kdir').value.trim();
+    var model = document.getElementById('f-model').value.trim();
+    var toolsRaw = document.getElementById('f-tools').value.trim();
+    var tempVal = document.getElementById('f-temp').value;
+    var effortVal = document.getElementById('f-effort').value;
+    var tier = document.getElementById('f-tier').value;
+    var editId = document.getElementById('f-id').value;
+    if (!name) { EOS_UI.toast('Name is required', false); return; }
+
+    var files = filesRaw ? filesRaw.split(',').map(function(f) { return f.trim(); }).filter(Boolean) : [];
+    var tools = toolsRaw ? toolsRaw.split(',').map(function(t) { return t.trim(); }).filter(Boolean) : [];
+    var body = {
+        name: name,
+        tier: tier,
+        system_prompt: prompt || 'You are a helpful assistant.',
+        knowledge_files: files,
+        knowledge_dir: kdir,
+        tools: tools,
+        temperature: tempVal !== '' ? parseFloat(tempVal) : null,
+        effort: effortVal,
+    };
+    if (model) body.model = model;
+
+    try {
+        if (editId) {
+            await EOS.api('/rooms/api/agents/' + editId, { method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body) });
+        } else {
+            await EOS.post('/rooms/api/agents', body);
+        }
+        EOS_UI.closeModal('agent-modal');
+        EOS_UI.toast(editId ? 'Agent updated' : 'Agent created');
+        await loadAgents();
+        if (editId && currentAgent && currentAgent.id === editId) {
+            currentAgent = agents.find(function(a) { return a.id === editId; });
+            document.getElementById('chat-name').textContent = currentAgent.name;
+        }
+    } catch(e) { EOS_UI.toast('Failed to save', false); }
+}
+
+async function deleteAgent() {
+    var editId = document.getElementById('f-id').value;
+    if (!editId) return;
+    var agent = agents.find(function(a) { return a.id === editId; });
+    if (!await EOS_UI.confirm('Delete "' + (agent ? agent.name : editId) + '" and all chat history?')) return;
+    try {
+        await EOS.api('/rooms/api/agents/' + editId, { method:'DELETE' });
+        EOS_UI.closeModal('agent-modal');
+        EOS_UI.toast('Agent deleted');
+        if (currentAgent && currentAgent.id === editId) {
+            currentAgent = null;
+            document.getElementById('chat-welcome').style.display = '';
+            document.getElementById('chat-header').style.display = 'none';
+            document.getElementById('chat-messages').style.display = 'none';
+            document.getElementById('chat-input-bar').style.display = 'none';
+            var mb = document.getElementById('chat-members'); if (mb) { mb.style.display = 'none'; mb.innerHTML = ''; }
+        }
+        await loadAgents();
+    } catch(e) { EOS_UI.toast('Failed to delete', false); }
+}
+
+// --- Load ---
+
+async function loadAgents() {
+    try {
+        // ?status=all so archived rooms are present in the cache; sidebar
+        // filters them out of default views, the Archived tab opts in.
+        agents = await EOS.api('/rooms/api/agents?status=all');
+        // Pull unread state in parallel so the dot lands with the first paint.
+        try { _unreadMap = await EOS.api('/rooms/api/unread') || {}; }
+        catch(e) { _unreadMap = {}; }
+        renderSidebar();
+    } catch(e) {
+        document.getElementById('agent-list').innerHTML = '<div style="text-align:center;padding:20px;color:var(--text-muted)">Failed to load</div>';
+    }
+    // Refresh the global pending badge whenever the agent list reloads —
+    // covers room creation/deletion + post-action mutations.
+    refreshGlobalPendingBadge();
+    // Refresh the inbound dashboard if it's showing.
+    if (!currentAgent) renderInboundDashboard();
+}
+
+// Auto-resize textarea
+document.getElementById('chat-input').addEventListener('input', function() {
+    this.style.height = 'auto';
+    this.style.height = Math.min(this.scrollHeight, 120) + 'px';
+});
+
+// Watch for modal-overlay / activity-drawer visibility and toggle a body
+// class. The CSS rule above hides global page-assistant FABs while either
+// is open — needed because their z-index sits above modal/drawer chrome.
+(function watchOverlays() {
+    function recompute() {
+        var modalOpen = !!document.querySelector('#eos-modal-overlay.show');
+        var drawer = document.getElementById('activity-drawer');
+        var drawerOpen = drawer && drawer.classList.contains('open');
+        document.body.classList.toggle('rooms-overlay-open', modalOpen || drawerOpen);
+    }
+    var obs = new MutationObserver(recompute);
+    obs.observe(document.body, {childList:true, subtree:true, attributes:true,
+        attributeFilter:['class']});
+    recompute();
+})();
+
+window.addEventListener('resize', function() { isMobile = window.innerWidth <= 700; });
+
+EOS.on('rooms:chat', function() { loadAgents(); });
+
+var _appSettings = EOS_UI.settingsPanel({
+    id: 'rooms-settings-panel',
+    title: 'Rooms Settings',
+    fields: [
+        {key: 'rooms.default_model', label: 'Default LLM Model', type: 'select',
+         default: 'ollama',
+         options: ['ollama', 'openai', 'claude-cli']},
+        {key: 'rooms.history_limit', label: 'Chat History Limit', type: 'number', default: 20,
+         hint: 'Number of past messages to include in each chat call.'},
+    ],
+});
+function openAppSettings() { _appSettings && _appSettings.open(); }
+
+loadAgents();
+</script>
+</body>
+</html>

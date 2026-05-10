@@ -7,7 +7,6 @@ Run: python scripts/seed_reports_figure.py
 
 from __future__ import annotations
 
-import io
 import json
 import os
 import sys
@@ -22,7 +21,9 @@ def _resolve_base() -> str:
     if env:
         return env.rstrip("/")
     try:
-        cfg = tomllib.loads((Path(__file__).resolve().parent.parent / "emptyos.toml").read_text(encoding="utf-8"))
+        cfg = tomllib.loads(
+            (Path(__file__).resolve().parent.parent / "emptyos.toml").read_text(encoding="utf-8")
+        )
         net = cfg.get("network", {})
         host = net.get("host", "127.0.0.1")
         if host in ("0.0.0.0", ""):
@@ -101,8 +102,9 @@ SVG = """<?xml version="1.0" encoding="UTF-8"?>
 
 def req_json(method: str, path: str, body=None):
     data = json.dumps(body).encode() if body is not None else None
-    r = ur.Request(BASE + path, data=data, method=method,
-                   headers={"Content-Type": "application/json"})
+    r = ur.Request(
+        BASE + path, data=data, method=method, headers={"Content-Type": "application/json"}
+    )
     with ur.urlopen(r, timeout=60) as resp:
         return json.loads(resp.read().decode())
 

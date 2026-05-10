@@ -27,13 +27,14 @@ import contextvars
 
 # Maps provider name → user-supplied API key. Empty by default; populated
 # by the request middleware when the relevant header is present.
-_byok: contextvars.ContextVar[dict[str, str]] = contextvars.ContextVar("byok", default={})
+_byok: contextvars.ContextVar[dict[str, str] | None] = contextvars.ContextVar("byok", default=None)
 
 
 def get_byok_key(provider: str) -> str:
     """Return the user-supplied key for `provider` in the current request,
     or empty string if none was supplied."""
-    return _byok.get().get(provider, "")
+    keys = _byok.get()
+    return keys.get(provider, "") if keys else ""
 
 
 def set_byok_keys(keys: dict[str, str]):

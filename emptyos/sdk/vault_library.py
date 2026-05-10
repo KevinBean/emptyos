@@ -40,17 +40,17 @@ class VaultLibrary:
     """Base class for vault-backed note collections."""
 
     # --- Subclass must set these ---
-    tag: str = ""                       # Primary tag to query (e.g. "song", "book")
-    extra_tags: list[str] = []          # Additional tags to include (e.g. ["tv-series"])
-    fields: dict[str, type] = {}        # Field name → type (str, int, float, list)
+    tag: str = ""  # Primary tag to query (e.g. "song", "book")
+    extra_tags: list[str] = []  # Additional tags to include (e.g. ["tv-series"])
+    fields: dict[str, type] = {}  # Field name → type (str, int, float, list)
     aliases: dict[str, list[str]] = {}  # Field name → alternative frontmatter keys
 
     # --- Optional overrides ---
-    sort_key: str = "title"             # Default sort field
-    sort_reverse: bool = False          # Descending sort
-    search_fields: list[str] = []       # Fields to search (empty = all str fields)
-    fallback_folder: str = ""           # For directory scan fallback
-    fallback_glob: str = "*.md"         # Glob pattern for fallback
+    sort_key: str = "title"  # Default sort field
+    sort_reverse: bool = False  # Descending sort
+    search_fields: list[str] = []  # Fields to search (empty = all str fields)
+    fallback_folder: str = ""  # For directory scan fallback
+    fallback_glob: str = "*.md"  # Glob pattern for fallback
 
     def __init__(self, app: BaseApp, extra_fields: list[str] | None = None):
         self.app = app
@@ -111,7 +111,8 @@ class VaultLibrary:
         search_in = self.search_fields or [k for k, t in self.fields.items() if t is str]
 
         return [
-            item for item in items
+            item
+            for item in items
             if any(q_lower in str(item.get(f, "")).lower() for f in search_in)
         ]
 
@@ -120,7 +121,7 @@ class VaultLibrary:
         items = self.list()
         result: dict[str, Any] = {"total": len(items)}
 
-        for field in (group_by or ["status"]):
+        for field in group_by or ["status"]:
             counts: dict[str, int] = {}
             for item in items:
                 val = str(item.get(field, "") or "unknown").strip()

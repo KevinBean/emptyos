@@ -8,10 +8,10 @@ in one file.
 
 from __future__ import annotations
 
-
 # ------------------------------------------------------------------
 # Hub panel contributions — manifest: [[contributes.hub.panel]]
 # ------------------------------------------------------------------
+
 
 async def panel_upcoming_deadlines(self):
     """Deadlines in the next ~14 days (+ up to 7 days overdue) for the hub list."""
@@ -32,10 +32,7 @@ async def panel_upcoming_deadlines(self):
 async def panel_projects_pipeline(self):
     """Dashboard tile: count of active projects with work pending."""
     projects = await self.list_projects()
-    active = [
-        p for p in projects
-        if p.get("status") == "active" and p.get("open_tasks", 0) > 0
-    ]
+    active = [p for p in projects if p.get("status") == "active" and p.get("open_tasks", 0) > 0]
     if not active:
         return None
     return self.stat_tile("📋", len(active), "in pipeline", "/projects/")
@@ -59,6 +56,7 @@ async def panel_project_countdowns(self):
 # Hub slot contributions — manifest: [[contributes.hub.<slot>]]
 # ------------------------------------------------------------------
 
+
 async def slot_needs_attention(self):
     """Overdue project deadlines."""
     projects = await self.list_projects()
@@ -67,13 +65,15 @@ async def slot_needs_attention(self):
         if not p.get("overdue"):
             continue
         days = abs(p.get("days_until_deadline") or 0)
-        out.append({
-            "title": p["name"],
-            "subtitle": f"deadline overdue {days}d",
-            "href": f"/projects/#{p['id']}",
-            "badge": "overdue",
-            "priority": min(100, 15 + days),
-        })
+        out.append(
+            {
+                "title": p["name"],
+                "subtitle": f"deadline overdue {days}d",
+                "href": f"/projects/#{p['id']}",
+                "badge": "overdue",
+                "priority": min(100, 15 + days),
+            }
+        )
     return out
 
 
@@ -83,33 +83,34 @@ async def slot_today(self):
     out = []
     for p in projects:
         if p.get("days_until_deadline") == 0:
-            out.append({
-                "title": p["name"],
-                "subtitle": "deadline today",
-                "href": f"/projects/#{p['id']}",
-                "badge": "due-today",
-                "priority": 8,
-            })
+            out.append(
+                {
+                    "title": p["name"],
+                    "subtitle": "deadline today",
+                    "href": f"/projects/#{p['id']}",
+                    "badge": "due-today",
+                    "priority": 8,
+                }
+            )
     return out
 
 
 async def slot_resume(self):
     """Active projects with open tasks, ordered by freshness (mtime)."""
     projects = await self.list_projects()
-    active = [
-        p for p in projects
-        if p.get("status") == "active" and p.get("open_tasks", 0) > 0
-    ]
+    active = [p for p in projects if p.get("status") == "active" and p.get("open_tasks", 0) > 0]
     active.sort(key=lambda p: p.get("stale_days", 999))
     out = []
     for p in active[:3]:
         days = p.get("stale_days", 0)
         when = "today" if days == 0 else f"{days}d ago"
-        out.append({
-            "title": p["name"],
-            "subtitle": f"{p['open_tasks']} open · touched {when}",
-            "href": f"/projects/#{p['id']}",
-            "badge": None,
-            "priority": max(0, 10 - days),
-        })
+        out.append(
+            {
+                "title": p["name"],
+                "subtitle": f"{p['open_tasks']} open · touched {when}",
+                "href": f"/projects/#{p['id']}",
+                "badge": None,
+                "priority": max(0, 10 - days),
+            }
+        )
     return out

@@ -10,8 +10,28 @@ from emptyos.sdk import BaseApp, cli_command, web_route
 WIKILINK = re.compile(r"\[\[([^\]|]+)(?:\|[^\]]+)?\]\]")
 
 
-class LinkApp(BaseApp):
+ORPHAN_INSIGHT_SYSTEM = """You are a vault librarian helping a knowledge worker connect orphaned notes.
 
+Group related orphans into 2-3 buckets, each one line in the form:
+`<bucket label>: <note-a>, <note-b>, <note-c>`
+
+A bucket label is 2-4 words (e.g. "Project planning", "Travel logistics"). Only group notes whose titles share a clear semantic thread; if a note doesn't fit, leave it out rather than force-fit it.
+
+Do NOT:
+- Output more than 3 buckets or more than the orphan list contains.
+- Invent note titles that weren't in the input.
+- Suggest where a note "should" live in the folder hierarchy — only grouping is asked.
+- Add preamble, summary, or "let me know if you want…" hedges.
+- Use markdown bullets, headers, or bold — plain `label: a, b, c` lines only.
+"""
+
+ORPHAN_INSIGHT_USER_TMPL = (
+    "Orphan notes ({count}):\n{names}\n\n"
+    "Group the related ones into 2-3 buckets."
+)
+
+
+class LinkApp(BaseApp):
     def _notes_dir(self) -> Path:
         p = self.kernel.config.get("notes.path", "")
         return Path(p) if p else self.kernel.config.data_dir / "notes"
@@ -120,9 +140,14 @@ class LinkApp(BaseApp):
             return {"insights": "No orphan notes found.", "count": 0}
         names = [Path(o).stem.replace("-", " ") for o in orphan_list[:20]]
         insight = await self.think(
-            f"These {len(names)} vault notes have no incoming links (orphans). "
-            f"Suggest which ones might be related to each other and could be linked. "
-            f"Be brief — 2-3 grouping suggestions.\n\nOrphans: {', '.join(names)}",
-            domain="text", temperature=0.5,
+            ORPHAN_INSIGHT_USER_TMPL.format(count=len(names), names="\n".join(names)),
+            system=ORPHAN_INSIGHT_SYSTEM,
+            domain="text",
+            temperature=0.4,
         )
-        return {"insights": insight, "count": len(orphan_list), "sample": names, "provenance": self.last_provenance()}
+        return {
+            "insights": insight,
+            "count": len(orphan_list),
+            "sample": names,
+            "provenance": self.last_provenance(),
+        }

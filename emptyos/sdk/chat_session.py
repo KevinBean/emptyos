@@ -25,7 +25,7 @@ from __future__ import annotations
 
 import json
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 
@@ -105,9 +105,11 @@ class ChatSessionStore:
 
     # ── Sessions CRUD ────────────────────────────────────────
 
-    def create_session(self, *, name: str = "", extras: dict | None = None, id_len: int = 10) -> dict:
+    def create_session(
+        self, *, name: str = "", extras: dict | None = None, id_len: int = 10
+    ) -> dict:
         sid = uuid.uuid4().hex[:id_len]
-        created = datetime.now(timezone.utc).isoformat()
+        created = datetime.now(UTC).isoformat()
         extras = extras or {}
 
         cols = ["id", "name", "system_prompt", "created", "status"]
@@ -123,15 +125,22 @@ class ChatSessionStore:
         )
         self.db.commit()
 
-        out = {"id": sid, "name": name or "New session", "system_prompt": "",
-               "created": created, "status": "active", "messages": []}
+        out = {
+            "id": sid,
+            "name": name or "New session",
+            "system_prompt": "",
+            "created": created,
+            "status": "active",
+            "messages": [],
+        }
         for col in self.session_extras:
             out[col] = extras.get(col, "")
         return out
 
     def get_session(self, sid: str) -> dict | None:
         row = self.db.execute(
-            f"SELECT * FROM {self.sessions_table} WHERE id = ?", (sid,),
+            f"SELECT * FROM {self.sessions_table} WHERE id = ?",
+            (sid,),
         ).fetchone()
         if not row:
             return None
@@ -164,7 +173,7 @@ class ChatSessionStore:
             return None
         msgs = source.get("messages", [])
         if at_message is not None:
-            msgs = msgs[:at_message + 1]
+            msgs = msgs[: at_message + 1]
 
         fork_name = name or f"Fork of {source.get('name', sid)}"
         extras = {col: source.get(col, "") for col in self.session_extras}
@@ -201,7 +210,7 @@ class ChatSessionStore:
 
     def append_message(self, sid: str, role: str, content: Any, extras: dict | None = None) -> None:
         """Persist a message. `content` can be a str or any JSON-serializable block array."""
-        ts = datetime.now(timezone.utc).isoformat()
+        ts = datetime.now(UTC).isoformat()
         content_json = json.dumps(content)
         extras = extras or {}
 
@@ -253,9 +262,7 @@ class ChatSessionStore:
             # Anthropic content is always a list, never a plain dict — so any
             # dict with these keys is definitely the new full-message format.
             if isinstance(content, dict) and (
-                "content" in content
-                or "tool_calls" in content
-                or "tool_call_id" in content
+                "content" in content or "tool_calls" in content or "tool_call_id" in content
             ):
                 out.append({"role": m["role"], **content})
             else:

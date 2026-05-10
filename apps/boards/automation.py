@@ -23,8 +23,9 @@ class GuardBlocked(Exception):
         self.message = message
 
 
-async def evaluate_guards(app: BaseApp, board_config: dict,
-                          old_item: dict | None, updates: dict) -> dict | None:
+async def evaluate_guards(
+    app: BaseApp, board_config: dict, old_item: dict | None, updates: dict
+) -> dict | None:
     """Evaluate `kind=guard` rules BEFORE committing a field change.
 
     Returns None if all guards pass. Returns {error, guard, message} if any
@@ -43,7 +44,6 @@ async def evaluate_guards(app: BaseApp, board_config: dict,
     for rule in rules:
         if rule.get("kind") != "guard":
             continue
-        trigger = rule.get("trigger", "field_change")
         field = rule.get("field", "")
         from_val = rule.get("from")
         to_val = rule.get("to")
@@ -112,27 +112,39 @@ def _eval_guard(expr: str, item: dict) -> bool:
             return str(lv).lower() != _coerce_bool_str(rhs).lower()
         if op in (">", ">=", "<", "<="):
             try:
-                lnum = float(lv); rnum = float(rhs)
+                lnum = float(lv)
+                rnum = float(rhs)
             except (TypeError, ValueError):
                 return False
-            return (lnum > rnum if op == ">" else
-                    lnum >= rnum if op == ">=" else
-                    lnum < rnum if op == "<" else
-                    lnum <= rnum)
+            return (
+                lnum > rnum
+                if op == ">"
+                else lnum >= rnum
+                if op == ">="
+                else lnum < rnum
+                if op == "<"
+                else lnum <= rnum
+            )
     return False
 
 
 def _coerce_bool_str(s: str) -> str:
     """Normalize 'true'/'false'/'yes'/'no' to canonical form for comparisons."""
     low = s.lower()
-    if low in ("true", "yes", "1"): return "true"
-    if low in ("false", "no", "0"): return "false"
+    if low in ("true", "yes", "1"):
+        return "true"
+    if low in ("false", "no", "0"):
+        return "false"
     return s
 
 
-async def evaluate_rules(app: BaseApp, board_config: dict,
-                         old_item: dict | None, new_item: dict,
-                         event_type: str = "field_changed"):
+async def evaluate_rules(
+    app: BaseApp,
+    board_config: dict,
+    old_item: dict | None,
+    new_item: dict,
+    event_type: str = "field_changed",
+):
     """Evaluate all automation rules for a board event.
 
     Args:
@@ -169,8 +181,7 @@ async def evaluate_rules(app: BaseApp, board_config: dict,
             await _execute_action(app, board_id, action, new_item)
 
 
-def _trigger_matches(trigger: dict, event_type: str,
-                     old_item: dict | None, new_item: dict) -> bool:
+def _trigger_matches(trigger: dict, event_type: str, old_item: dict | None, new_item: dict) -> bool:
     """Check if a trigger definition matches the current event."""
     trigger_event = trigger.get("event", "")
 
@@ -248,19 +259,21 @@ def _condition_met(condition: dict, item: dict) -> bool:
     return True  # Unknown operator → pass
 
 
-async def _execute_action(app: BaseApp, board_id: str,
-                          action: dict, item: dict):
+async def _execute_action(app: BaseApp, board_id: str, action: dict, item: dict):
     """Execute a single automation action."""
     action_type = action.get("type", "")
 
     if action_type == "notify":
         channel = action.get("channel", "")
         message = _interpolate(action.get("message", ""), item)
-        await app.emit("notify:send", {
-            "text": message,
-            "source": f"Board: {board_id}",
-            "channel": channel,
-        })
+        await app.emit(
+            "notify:send",
+            {
+                "text": message,
+                "source": f"Board: {board_id}",
+                "channel": channel,
+            },
+        )
 
     elif action_type == "set_field":
         field = action.get("field", "")
@@ -270,6 +283,7 @@ async def _execute_action(app: BaseApp, board_id: str,
             value = date.today().isoformat()
         elif value == "{now}":
             from datetime import datetime
+
             value = datetime.now().isoformat()
         # Update the item in-memory (caller should persist)
         item[field] = value
@@ -295,8 +309,9 @@ async def _execute_action(app: BaseApp, board_id: str,
         text = _interpolate(action.get("text", ""), item)
         emoji = action.get("emoji", "📋")
         try:
-            await app.call_app("journal", "_add_entry",
-                               d=date.today(), text=f"{emoji} {text}", mood="okay")
+            await app.call_app(
+                "journal", "_add_entry", d=date.today(), text=f"{emoji} {text}", mood="okay"
+            )
         except Exception:
             pass
 
@@ -318,13 +333,24 @@ async def _execute_action(app: BaseApp, board_id: str,
         for target_id in downstream:
             try:
                 # Load the downstream item, compute its new date, write back.
-                r = await app.call_app("boards", "shift_item_date",
-                                       board_id=board_id, item_id=target_id,
-                                       field=field, delta_days=delta)
-                await app.emit("board:item_auto_slipped", {
-                    "board": board_id, "from_item": item.get("id") or item.get("file"),
-                    "to_item": target_id, "delta_days": delta, "result": r,
-                })
+                r = await app.call_app(
+                    "boards",
+                    "shift_item_date",
+                    board_id=board_id,
+                    item_id=target_id,
+                    field=field,
+                    delta_days=delta,
+                )
+                await app.emit(
+                    "board:item_auto_slipped",
+                    {
+                        "board": board_id,
+                        "from_item": item.get("id") or item.get("file"),
+                        "to_item": target_id,
+                        "delta_days": delta,
+                        "result": r,
+                    },
+                )
             except Exception:
                 pass
 
@@ -340,9 +366,11 @@ async def _execute_action(app: BaseApp, board_id: str,
 
 def _interpolate(template: str, item: dict) -> str:
     """Replace {field_name} placeholders with item values."""
+
     def _replacer(m):
         field = m.group(1)
         return str(item.get(field, ""))
+
     return re.sub(r"\{(\w+)\}", _replacer, template)
 
 

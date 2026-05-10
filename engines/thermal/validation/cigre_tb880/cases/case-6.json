@@ -1,0 +1,43 @@
+{
+  "id": "case-6",
+  "title": "Unfilled trough, flat touching (cover-protected)",
+  "source": "CIGRE TB 880 (2022) \u00c2\u00a74.6.8, Table 4-2 row 'Case 0-5'",
+  "input": {
+    "cable": {
+      "id": "tb880-132kv-630cu-xlpe",
+      "rated_voltage_kv": 132.0,
+      "n_conductors": 1,
+      "conductor_material": "Cu",
+      "conductor_csa_mm2": 630.0,
+      "conductor_dc_resistance_20c_ohm_per_km": 0.0283,
+      "insulation_material": "XLPE",
+      "insulation_max_temp_c": 90.0,
+      "sheath_material": "Al",
+      "geometry": {
+        "conductor_diameter": 0.0303,
+        "insulation_thickness": 0.0155,
+        "inner_semicon_thickness": 0.0015,
+        "outer_semicon_thickness": 0.0013,
+        "sheath_thickness": 0.0008,
+        "sheath_inner_diameter": 0.0669,
+        "overall_diameter": 0.0755
+      }
+    },
+    "installation": "in_air",
+    "bonding": "solidly_bonded",
+    "burial_depth_m": 1.0,
+    "spacing_mode": "flat",
+    "spacing_m": 0.0755,
+    "grouped_cables": 3,
+    "in_air_mounting_zeg": [0.97, 0.80, 0.23],
+    "soil_thermal_resistivity_kmw": 1.0,
+    "ambient_temperature_c": 48.35,
+    "conductor_max_temp_c": 90.0,
+    "frequency_hz": 50.0
+  },
+  "expected": {
+    "ampacity_a": 754.8608,
+    "tolerance_a": 0.5
+  },
+  "notes": "Unfilled trough, flat-touching formation, cover-protected (no solar). Engine treats per IEC 60287-2-1 \u00a72.2.6.2 as in_air with effective ambient = theta_a + Delta-theta_tr = 20 + 28.35 = 48.35 C, plus restricted-convection mounting constants Z=0.97, E=0.80, g=0.23 reflecting cables on trough floor with cover overhead. Trough-air heating Delta-theta_tr depends on cable losses iteratively; here we use the TB 880 reference value (a self-consistent Delta-theta_tr iteration is a future refinement)."
+}

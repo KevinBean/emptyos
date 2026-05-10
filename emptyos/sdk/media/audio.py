@@ -19,6 +19,7 @@ async def stitch_audio(
 
     def _do():
         from pydub import AudioSegment
+
         combined = AudioSegment.empty()
         gap = AudioSegment.silent(duration=gap_ms)
         for p in seg_paths:

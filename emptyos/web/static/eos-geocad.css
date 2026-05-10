@@ -1,0 +1,121 @@
+/* EOS_GEOCAD — supplementary styles to integrate Leaflet-Geoman with the
+ * EmptyOS theme. Geoman ships its own controls; we tone them down so they
+ * sit on dark backgrounds without screaming, and harmonize with eos-map.css.
+ */
+
+.eos-geocad-host {
+    position: relative;
+    width: 100%;
+    min-height: 480px;
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+/* Toolbar tucks against the top-right corner like Leaflet's zoom control. */
+.leaflet-pm-toolbar .leaflet-pm-icon-marker,
+.leaflet-pm-toolbar .leaflet-pm-icon-polyline,
+.leaflet-pm-toolbar .leaflet-pm-icon-polygon,
+.leaflet-pm-toolbar .leaflet-pm-icon-rectangle,
+.leaflet-pm-toolbar .leaflet-pm-icon-cut,
+.leaflet-pm-toolbar .leaflet-pm-icon-edit,
+.leaflet-pm-toolbar .leaflet-pm-icon-drag,
+.leaflet-pm-toolbar .leaflet-pm-icon-delete {
+    background-color: #1a1f25 !important;
+    border: 1px solid #2a3138 !important;
+    filter: invert(0.85) hue-rotate(180deg);
+}
+
+.leaflet-pm-toolbar a:hover {
+    background-color: #232a31 !important;
+}
+
+.leaflet-pm-toolbar a.active {
+    background-color: #4cc7f5 !important;
+    filter: none;
+}
+
+/* Snapping hint circles tone down. */
+.leaflet-pm-marker-snap-hint {
+    background-color: #f0c040;
+    opacity: 0.6;
+}
+
+/* Active draw cursor — softer than the default crosshair black. */
+.leaflet-pm-draw-active {
+    cursor: crosshair;
+}
+
+/* Attribute editor sidebar (rendered by index.html). */
+.eos-geocad-attribute-panel {
+    position: absolute;
+    right: 12px;
+    top: 12px;
+    width: 280px;
+    max-height: calc(100% - 24px);
+    overflow-y: auto;
+    background: rgba(14, 17, 22, 0.92);
+    border: 1px solid #2a3138;
+    border-radius: 8px;
+    padding: 12px;
+    z-index: 800;
+    font-family: inherit;
+    color: #c9d1d9;
+}
+
+.eos-geocad-attribute-panel h4 {
+    margin: 0 0 8px 0;
+    font-size: 0.85rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: #8b949e;
+}
+
+.eos-geocad-attribute-panel .eos-geocad-field {
+    display: block;
+    margin-bottom: 8px;
+}
+
+.eos-geocad-attribute-panel .eos-geocad-field label {
+    display: block;
+    font-size: 0.75rem;
+    color: #8b949e;
+    margin-bottom: 2px;
+}
+
+.eos-geocad-attribute-panel input,
+.eos-geocad-attribute-panel select,
+.eos-geocad-attribute-panel textarea {
+    width: 100%;
+    background: #0e1116;
+    color: #c9d1d9;
+    border: 1px solid #2a3138;
+    border-radius: 4px;
+    padding: 4px 6px;
+    font-family: inherit;
+    font-size: 0.85rem;
+}
+
+.eos-geocad-toolbar-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+    margin-bottom: 8px;
+}
+
+.eos-geocad-status {
+    font-size: 0.8rem;
+    color: #8b949e;
+}
+
+.eos-geocad-status.eos-geocad-saved {
+    color: #22c55e;
+}
+
+.eos-geocad-status.eos-geocad-dirty {
+    color: #f0c040;
+}
+
+.eos-geocad-status.eos-geocad-error {
+    color: #ef4444;
+}

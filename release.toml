@@ -4,7 +4,7 @@
 # Usage: python scripts/package-release.py <tier> [--check] [--platform=<name>]
 
 [release]
-version = "0.2.53"
+version = "0.3.0"
 
 # ── Platforms ─────────────────────────────────────────────────
 # Named deployment profiles. Plugins declare compatibility in
@@ -33,15 +33,17 @@ caps = []
 [tiers.core]
 description = "Minimum OS — vault basics, task management, search, generic home"
 apps = [
-    "quick-action",
-    "note",
-    "task",
+    "hub",
     "link",
+    "note",
+    "providers",
+    "quick-action",
+    "run",
     "search",
     "settings",
     "system-log",
-    "run",
-    "hub",
+    "task",
+    "weather",
 ]
 plugins = [
     "health",
@@ -58,10 +60,19 @@ apps = [
     "boards",
     "focus",
     "journal",
+    "kb",
+    "music-library",
+    "people",
+    "ppt",
     "projects",
     "publish",
     "quotes",
+    "radio",
     "reactor",
+    "rooms",
+    "tour",
+    "voice-assistant",
+    "weather",
 ]
 plugins = [
     "ollama",
@@ -79,8 +90,8 @@ apps = [
     "boards",
     "calendar",
     "canvas",
-    "dictionary",
     "expense",
+    "explore",
     "focus",
     "gesture",
     "geocode",
@@ -88,30 +99,37 @@ apps = [
     "github-connector",
     "hands-free",
     "journal",
+    "kb",
     "music-library",
     "people",
+    "ppt",
     "projects",
     "providers",
     "publish",
     "quotes",
     "reactor",
+    "reader",
     "reports",
+    "rooms",
     "routing",
+    "scroll",
     "tour",
     "voice-assistant",
     "weather",
 ]
 plugins = [
-    "ollama",
-    "comfyui",
-    "voice-api",
-    "edge-tts",
     "applio",
     "blender",
-    "telegram",
-    "obsidian",
+    "comfyui",
+    "dogfood-demo",
+    "edge-tts",
     "global-hotkey",
+    "obsidian",
+    "ollama",
+    "openai-image",
     "system-tray",
+    "telegram",
+    "voice-api",
     "webcam",
 ]
 skills = [
@@ -131,22 +149,52 @@ skills = [
     "tool-word-document",
     "tool-google-maps",
     "tool-comfyui-image",
-    "tool-blender-cable-routing",
-    "tool-atp-emtp",
 ]
+
+[tiers.engineering]
+description = "Power-systems engineering bundle — HV cables, earthing, lightning, AC interference, soil, EMTP sim. Extends standard. Private (not shipped to public repo)."
+extends = "standard"
+apps = [
+    "cables",
+    "earthing",
+    "geo-cad",
+    "interference",
+    "lightning",
+    "sim",
+    "soil",
+]
+plugins = []
+skills = [
+    "tool-atp-emtp",
+    "tool-blender-cable-routing",
+]
+
+[tiers.english-learning]
+description = "Language-learning bundle — vocab lookup + SRS. Extends standard. Private (not shipped to public repo)."
+extends = "standard"
+apps = [
+    "dictionary",
+    "improv",
+    "radio",
+]
+plugins = []
+skills = []
 
 [tiers.dev]
 description = "Meta / developer tooling — extends standard with app-gen, benchmarks, release tooling"
 extends = "standard"
 apps = [
     "app-gen",
+    "dogfood-agent",
+    "fix-agent",
     "model-bench",
     "release",
     "tests",
+    "tiers",
     "tmpl",
     "web-analytics",
 ]
-plugins = []
+plugins = ["agent-runtime"]
 skills = []
 
 # ── Always included (platform layer) ─────────────────────────

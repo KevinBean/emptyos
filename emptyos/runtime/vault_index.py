@@ -14,10 +14,9 @@ Usage:
 from __future__ import annotations
 
 import logging
-import re
 import time
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from emptyos.kernel import Kernel
@@ -55,11 +54,11 @@ def _parse_fm(content: str) -> dict:
                 # note silently disappears from tag-based lookups.
                 if val.startswith("[") and val.endswith("]"):
                     inner = val[1:-1].strip()
-                    fm[key] = [
-                        t.strip().strip('"').strip("'")
-                        for t in inner.split(",")
-                        if t.strip()
-                    ] if inner else []
+                    fm[key] = (
+                        [t.strip().strip('"').strip("'") for t in inner.split(",") if t.strip()]
+                        if inner
+                        else []
+                    )
                 else:
                     fm[key] = val
             else:
@@ -119,6 +118,7 @@ class VaultIndex:
 
         # Periodic rescan to catch missed filesystem events (Windows quirk)
         import asyncio
+
         self._rescan_task = asyncio.ensure_future(self._periodic_rescan())
 
     def stop(self):
@@ -160,7 +160,7 @@ class VaultIndex:
         # Extract section names from body (## headers)
         sections = []
         body_start = content.find("---", 3)
-        body = content[body_start + 3:] if body_start > 0 else content
+        body = content[body_start + 3 :] if body_start > 0 else content
         for line in body.split("\n"):
             if line.startswith("## ") and not line.startswith("### "):
                 sections.append(line[3:].strip())
@@ -215,6 +215,7 @@ class VaultIndex:
     async def _periodic_rescan(self):
         """Rescan vault every 30s to catch missed filesystem events."""
         import asyncio
+
         while True:
             await asyncio.sleep(30)
             try:
@@ -247,7 +248,9 @@ class VaultIndex:
         prefix = query + "/"
         return any(t == query or t.startswith(prefix) for t in entry_tags)
 
-    def find(self, tags: list[str] | None = None, folder: str | None = None, **properties) -> list[dict]:
+    def find(
+        self, tags: list[str] | None = None, folder: str | None = None, **properties
+    ) -> list[dict]:
         """Find files matching tags and/or frontmatter properties.
 
         Tag matching is hierarchical: querying "place" also matches notes tagged
@@ -306,7 +309,7 @@ class VaultIndex:
 
         if content.startswith("---"):
             end = content.find("---", 3)
-            body = content[end + 3:] if end > 0 else "\n" + content
+            body = content[end + 3 :] if end > 0 else "\n" + content
         else:
             body = "\n" + content
 
@@ -363,8 +366,12 @@ class VaultIndex:
 
     # ── Data Contracts ──
 
-    def reconcile(self, folder: str, expected_tags: list[str] | None = None,
-                  expected_fields: list[str] | None = None) -> dict:
+    def reconcile(
+        self,
+        folder: str,
+        expected_tags: list[str] | None = None,
+        expected_fields: list[str] | None = None,
+    ) -> dict:
         """Check notes in a folder against expected frontmatter structure.
 
         Returns a report of what's missing — does NOT modify any files.
@@ -378,8 +385,11 @@ class VaultIndex:
         Returns:
             {total, compliant, gaps: [{path, missing_tags, missing_fields}]}
         """
-        files = [e for e in self._files.values()
-                 if e["folder"] == folder or e["folder"].startswith(folder + "/")]
+        files = [
+            e
+            for e in self._files.values()
+            if e["folder"] == folder or e["folder"].startswith(folder + "/")
+        ]
         if not files:
             return {"total": 0, "compliant": 0, "gaps": [], "folder": folder}
 
@@ -397,12 +407,14 @@ class VaultIndex:
                     if field not in props:
                         missing_fields.append(field)
             if missing_tags or missing_fields:
-                gaps.append({
-                    "path": entry["path"],
-                    "name": entry["name"],
-                    "missing_tags": missing_tags,
-                    "missing_fields": missing_fields,
-                })
+                gaps.append(
+                    {
+                        "path": entry["path"],
+                        "name": entry["name"],
+                        "missing_tags": missing_tags,
+                        "missing_fields": missing_fields,
+                    }
+                )
 
         return {
             "total": len(files),
@@ -412,8 +424,9 @@ class VaultIndex:
             "folder": folder,
         }
 
-    def enrich(self, rel_path: str, add_tags: list[str] | None = None,
-               defaults: dict | None = None) -> bool:
+    def enrich(
+        self, rel_path: str, add_tags: list[str] | None = None, defaults: dict | None = None
+    ) -> bool:
         """Add missing tags and default field values to a vault note.
 
         Only adds — never overwrites existing values. Safe to run repeatedly.
@@ -461,7 +474,7 @@ class VaultIndex:
         # Rewrite frontmatter, preserve body
         if content.startswith("---"):
             end = content.find("---", 3)
-            body = content[end + 3:] if end > 0 else "\n" + content
+            body = content[end + 3 :] if end > 0 else "\n" + content
         else:
             body = "\n" + content
 

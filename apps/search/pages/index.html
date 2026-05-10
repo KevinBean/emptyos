@@ -33,45 +33,15 @@
 }
 .search-hero.compact .tagline { opacity:0; height:0; overflow:hidden; margin:0; }
 
-/* === Search Bar === */
+/* === Search Bar — visual shell lives in eos-components.css (.eos-search*).
+   Only search-app-specific layout (margin, hero compact transition) lives here. === */
 .search-bar-wrap {
-  position:relative; margin:16px 0 0;
+  margin:16px 0 0;
   animation:fadeDown 0.4s ease 0.05s both;
   transition:margin 0.3s;
 }
 .search-hero.compact + .search-bar-wrap,
 .search-bar-wrap.compact { margin:8px 0 0; }
-.search-bar {
-  width:100%; font-size:18px;
-  padding:16px 100px 16px 50px;
-  background:var(--bg-card); border:1.5px solid var(--border);
-  border-radius:14px; color:var(--text); outline:none;
-  font-family:inherit; transition:border-color 0.2s, box-shadow 0.2s;
-}
-.search-bar:focus {
-  border-color:color-mix(in srgb,var(--accent) 60%,transparent);
-  box-shadow:0 0 0 4px color-mix(in srgb,var(--accent) 10%,transparent);
-}
-.search-bar::placeholder { color:var(--text-muted); }
-.sb-icon {
-  position:absolute; left:16px; top:50%; transform:translateY(-50%);
-  font-size:20px; color:var(--text-muted); pointer-events:none; transition:color 0.2s;
-}
-.search-bar-wrap:focus-within .sb-icon { color:var(--accent); }
-.sb-clear {
-  position:absolute; right:70px; top:50%; transform:translateY(-50%);
-  background:none; border:none; color:var(--text-muted); font-size:18px;
-  cursor:pointer; padding:4px 8px; display:none; line-height:1;
-}
-.sb-clear.show { display:block; }
-.sb-clear:hover { color:var(--text); }
-.sb-shortcut {
-  position:absolute; right:16px; top:50%; transform:translateY(-50%);
-  font-size:11px; color:var(--text-muted); background:var(--border);
-  padding:4px 8px; border-radius:6px; pointer-events:none; font-family:var(--mono);
-  transition:opacity 0.2s;
-}
-.search-bar:focus ~ .sb-shortcut { opacity:0; }
 
 /* History dropdown */
 .search-history {
@@ -349,7 +319,6 @@
 /* === Responsive === */
 @media(max-width:600px) {
   .search-hero h1 { font-size:26px; }
-  .search-bar { font-size:16px; padding:16px 90px 16px 44px; }
   .stats-row { grid-template-columns:repeat(2,1fr); }
   .recent-grid { grid-template-columns:1fr; }
   .folder-grid { grid-template-columns:repeat(2,1fr); }
@@ -381,12 +350,12 @@ if(window.EOS&&EOS.registerActions){EOS.registerActions({vault_search:function(q
   </div>
 
   <!-- Search Bar -->
-  <div class="search-bar-wrap" id="search-wrap">
-    <span class="sb-icon">&#128269;</span>
-    <input class="search-bar" type="text" id="query"
+  <div class="search-bar-wrap eos-search" id="search-wrap">
+    <span class="eos-search-icon large" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.5-3.5"></path></svg></span>
+    <input class="eos-search-input large" type="text" id="query"
            placeholder="Search notes, tags, topics..." autocomplete="off">
-    <button class="sb-clear" id="clear-btn" onclick="clearSearch()">&times;</button>
-    <span class="sb-shortcut">Ctrl+K</span>
+    <button class="eos-search-clear" id="clear-btn" onclick="clearSearch()">&times;</button>
+    <span class="eos-search-kbd">Ctrl+K</span>
     <div class="search-history" id="history-dropdown"></div>
   </div>
 

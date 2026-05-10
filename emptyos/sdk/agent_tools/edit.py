@@ -27,10 +27,8 @@ line(s) so the model can correct its `old_string` without an extra Read.
 from __future__ import annotations
 
 import difflib
-from pathlib import Path
 
 from emptyos.sdk.agent_tools.base import Tool, ToolResult, resolve_path, unified_diff
-
 
 MAX_BYTES = 5_000_000
 
@@ -62,7 +60,7 @@ def _split_lf_keepends(s: str) -> list[str]:
     start = 0
     for i, c in enumerate(s):
         if c == "\n":
-            out.append(s[start:i + 1])
+            out.append(s[start : i + 1])
             start = i + 1
     if start < len(s):
         out.append(s[start:])
@@ -124,13 +122,13 @@ def _line_fuzzy_spans(file_text: str, old_string: str) -> list[tuple[int, int]]:
         offsets.append(offsets[-1] + len(line))
 
     for i in range(len(file_lines) - n + 1):
-        if file_norm[i:i + n] == old_lines:
+        if file_norm[i : i + n] == old_lines:
             spans.append((offsets[i], offsets[i + n]))
 
     return spans
 
 
-SIMILARITY_THRESHOLD = 0.85   # per-line ratio for stage-3 fuzzy match
+SIMILARITY_THRESHOLD = 0.85  # per-line ratio for stage-3 fuzzy match
 
 
 def _line_similar_spans(
@@ -286,11 +284,7 @@ class EditTool(Tool):
         snippet_old = (old[:40] + "…") if len(old) > 40 else old
         snippet_new = (new[:40] + "…") if len(new) > 40 else new
         mode = " (replace_all)" if replace_all else ""
-        return (
-            f"Edit: {path}{mode}\n"
-            f"    - {snippet_old!r}\n"
-            f"    + {snippet_new!r}"
-        )
+        return f"Edit: {path}{mode}\n    - {snippet_old!r}\n    + {snippet_new!r}"
 
     async def run(self, app, **kwargs) -> ToolResult:
         path = kwargs.get("path", "")

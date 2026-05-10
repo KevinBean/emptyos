@@ -37,6 +37,6 @@ NEXT_STEPS_SYSTEM = (
 
 NODE_PROMPTS: dict[str, tuple[str, int, str]] = {
     "brainstorm": (BRAINSTORM_SYSTEM, 3, "default"),
-    "critique":   (CRITIQUE_SYSTEM,   2, "red"),
+    "critique": (CRITIQUE_SYSTEM, 2, "red"),
     "next_steps": (NEXT_STEPS_SYSTEM, 3, "green"),
 }

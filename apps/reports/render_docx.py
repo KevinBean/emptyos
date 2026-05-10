@@ -29,18 +29,15 @@ class PythonDocxMissing(RuntimeError):
     """Raised when python-docx isn't installed. Message includes the install command."""
 
 
-INSTALL_HINT = (
-    "DOCX export needs python-docx. Install with:\n"
-    "    pip install python-docx"
-)
+INSTALL_HINT = "DOCX export needs python-docx. Install with:\n    pip install python-docx"
 
 
 def to_docx(report_dir: Path, out_path: Path) -> None:
     """Build a .docx from the report source in `report_dir` and save to `out_path`."""
     try:
         from docx import Document
-        from docx.shared import Pt, Cm, Inches
         from docx.enum.text import WD_ALIGN_PARAGRAPH
+        from docx.shared import Inches, Pt
     except ImportError as e:
         raise PythonDocxMissing(INSTALL_HINT) from e
 
@@ -102,12 +99,16 @@ def to_docx(report_dir: Path, out_path: Path) -> None:
             if fig_path.exists():
                 try:
                     doc.add_picture(str(fig_path), width=Inches(5.5))
-                    cap = doc.add_paragraph(style="Caption" if "Caption" in [s.name for s in doc.styles] else None)
+                    cap = doc.add_paragraph(
+                        style="Caption" if "Caption" in [s.name for s in doc.styles] else None
+                    )
                     cap.add_run(f"Figure {fig['n']}: {fig['caption']}").italic = True
                 except Exception:
                     # Skip bad images, continue.
                     p = doc.add_paragraph()
-                    p.add_run(f"[Figure {fig['n']}: {fig['caption']} — could not embed {fig['name']}]").italic = True
+                    p.add_run(
+                        f"[Figure {fig['n']}: {fig['caption']} — could not embed {fig['name']}]"
+                    ).italic = True
 
         if render_directive.startswith("table:"):
             table_name = render_directive.split(":", 1)[1]
@@ -176,7 +177,9 @@ def _add_title_page(doc, meta: dict, WD_ALIGN_PARAGRAPH, Pt) -> None:
     doc.add_paragraph()
 
     table = doc.add_table(rows=0, cols=2)
-    table.style = "Light Grid Accent 1" if _style_exists(doc, "Light Grid Accent 1") else "Table Grid"
+    table.style = (
+        "Light Grid Accent 1" if _style_exists(doc, "Light Grid Accent 1") else "Table Grid"
+    )
     meta_rows = [
         ("Document Type", doc_type),
         ("Version", str(version)),
@@ -259,7 +262,11 @@ def _render_markdown_into_doc(doc, md_text: str) -> None:
         if re.match(r"^[-*+]\s+", stripped):
             flush_para()
             text = re.sub(r"^[-*+]\s+", "", stripped)
-            p = doc.add_paragraph(style="List Bullet") if _style_exists(doc, "List Bullet") else doc.add_paragraph()
+            p = (
+                doc.add_paragraph(style="List Bullet")
+                if _style_exists(doc, "List Bullet")
+                else doc.add_paragraph()
+            )
             _apply_inline_runs(p, text)
             continue
 
@@ -267,7 +274,11 @@ def _render_markdown_into_doc(doc, md_text: str) -> None:
         if re.match(r"^\d+\.\s+", stripped):
             flush_para()
             text = re.sub(r"^\d+\.\s+", "", stripped)
-            p = doc.add_paragraph(style="List Number") if _style_exists(doc, "List Number") else doc.add_paragraph()
+            p = (
+                doc.add_paragraph(style="List Number")
+                if _style_exists(doc, "List Number")
+                else doc.add_paragraph()
+            )
             _apply_inline_runs(p, text)
             continue
 
@@ -304,7 +315,7 @@ def _apply_inline_runs(p, text: str) -> None:
             r = p.add_run(part[1:-1])
             r.font.name = "Consolas"
         elif part.startswith("[") and "](" in part:
-            label = part[1:part.index("](")]
+            label = part[1 : part.index("](")]
             # python-docx lacks a first-class hyperlink API on paragraph level;
             # keep it simple and just add the label as italic (URL dropped in v1).
             r = p.add_run(label)
@@ -329,16 +340,19 @@ def _collect_figures(body: str, counter: dict) -> list[dict]:
     out: list[dict] = []
     for m in FIGURE_RE.finditer(body):
         counter["n"] += 1
-        out.append({
-            "n": counter["n"],
-            "name": m.group(1).strip(),
-            "caption": (m.group(3) or "").strip(),
-        })
+        out.append(
+            {
+                "n": counter["n"],
+                "name": m.group(1).strip(),
+                "caption": (m.group(3) or "").strip(),
+            }
+        )
     return out
 
 
 def _add_structured_table(doc, table_name: str, rows: list[dict]) -> None:
     from .templates import table_schema
+
     schema = table_schema(table_name)
     if schema is None:
         if not rows:
@@ -356,7 +370,9 @@ def _add_structured_table(doc, table_name: str, rows: list[dict]) -> None:
         return
 
     table = doc.add_table(rows=1, cols=len(columns))
-    table.style = "Light Grid Accent 1" if _style_exists(doc, "Light Grid Accent 1") else "Table Grid"
+    table.style = (
+        "Light Grid Accent 1" if _style_exists(doc, "Light Grid Accent 1") else "Table Grid"
+    )
     hdr = table.rows[0].cells
     for i, c in enumerate(columns):
         hdr[i].text = c["label"]
@@ -378,7 +394,9 @@ def _add_signoff_table(doc, meta: dict) -> None:
         p.add_run("No approvers configured.").italic = True
         return
     table = doc.add_table(rows=1, cols=4)
-    table.style = "Light Grid Accent 1" if _style_exists(doc, "Light Grid Accent 1") else "Table Grid"
+    table.style = (
+        "Light Grid Accent 1" if _style_exists(doc, "Light Grid Accent 1") else "Table Grid"
+    )
     h = table.rows[0].cells
     h[0].text, h[1].text, h[2].text, h[3].text = "Role", "Name", "Date", "Signature"
     for a in approvers:

@@ -1,0 +1,58 @@
+# Dogfood daemon — template for a parallel "throwaway" EmptyOS instance.
+#
+# Copy this file to dogfood/emptyos.toml (which is gitignored) to enable a
+# second daemon on port 9001 with its own vault, data dir, and config. The
+# main daemon on port 9000 keeps using the top-level emptyos.toml — the two
+# run side-by-side from the same code checkout.
+#
+# Setup:
+#   1. cp dogfood/emptyos.toml.example dogfood/emptyos.toml
+#   2. mkdir dogfood/vault dogfood/data        (or let the daemon create them)
+#   3. restart.bat                             (Windows)  — auto-boots dogfood
+#      or: EOS_CONFIG=dogfood/emptyos.toml python -m emptyos start  (any OS)
+#
+# What dogfood is for:
+#   - A clean test bed for new apps / migrations / reset behavior, without
+#     touching your real vault.
+#   - A target for the dogfood-agent persona that pokes the daemon as a
+#     synthetic user.
+#   - A safe surface to share screen with — see SettingsService key
+#     `presentation.enabled` for the in-UI privacy toggle on either daemon.
+#
+# What dogfood is NOT:
+#   - The public Docker demo. That lives in demo/emptyos.toml + docker-compose.demo.yml
+#     and runs at demo.binbian.net. Different role; don't conflate the two.
+#   - A backup of your vault. dogfood/vault/ can be wiped at any time.
+
+[os]
+# Separate data_dir so SQLite WAL doesn't fight the main daemon's data/.
+# This path is resolved relative to the CWD where `python -m emptyos start`
+# runs. restart.bat cd's to the repo root first, so `./dogfood/data` works.
+# If you launch dogfood from somewhere else, switch to an absolute path.
+data_dir = "./dogfood/data"
+
+# Loader paths — these resolve relative to the CONFIG FILE'S directory.
+# This config lives in dogfood/, so `../apps` points back into the real repo.
+[apps]
+path = "../apps"
+
+[plugins]
+path = "../plugins"
+
+[engines]
+path = "../engines"
+
+# notes.path resolves relative to CWD (same rule as data_dir, above).
+[notes]
+path = "./dogfood/vault"
+
+[network]
+mode = "local"          # loopback only — no auth needed
+port = 9001
+host = "127.0.0.1"
+
+# Keep the throwaway daemon lean — no cloud, no GPU cost. The dogfood-agent
+# persona drives a separate claude-cli subprocess from the main daemon; this
+# instance is just the HTTP target it pokes as a user would.
+[capabilities.think]
+providers = ["human"]

@@ -83,8 +83,12 @@ class PluginLoader:
             try:
                 module_file = manifest.path / f"{manifest.entry_module}.py"
                 instance = load_module(
-                    module_file, f"eos_plugins.{plugin_id}",
-                    manifest.path, manifest.entry_class, self.kernel, manifest,
+                    module_file,
+                    f"eos_plugins.{plugin_id}",
+                    manifest.path,
+                    manifest.entry_class,
+                    self.kernel,
+                    manifest,
                 )
 
                 instance._config = self.kernel.config.get_section(f"plugins.{plugin_id}")
@@ -95,10 +99,15 @@ class PluginLoader:
                     self.kernel.services.register(service_name, instance, tags=tags)
 
                 self.instances[plugin_id] = instance
-                self.kernel.syslog.info("plugin_loader", f"Loaded plugin '{plugin_id}' -> services: {manifest.provides.get('services', [])}")
+                self.kernel.syslog.info(
+                    "plugin_loader",
+                    f"Loaded plugin '{plugin_id}' -> services: {manifest.provides.get('services', [])}",
+                )
 
             except Exception as e:
-                self.kernel.syslog.error("plugin_loader", f"Failed to load plugin '{plugin_id}': {e}")
+                self.kernel.syslog.error(
+                    "plugin_loader", f"Failed to load plugin '{plugin_id}': {e}"
+                )
 
     async def stop_all(self):
         """Disconnect all plugins."""
@@ -107,5 +116,7 @@ class PluginLoader:
                 try:
                     await instance.disconnect()
                 except Exception as e:
-                    self.kernel.syslog.error("plugin_loader", f"Error disconnecting '{plugin_id}': {e}")
+                    self.kernel.syslog.error(
+                        "plugin_loader", f"Error disconnecting '{plugin_id}': {e}"
+                    )
         self.instances.clear()

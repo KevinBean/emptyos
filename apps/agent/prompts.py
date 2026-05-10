@@ -5,7 +5,6 @@ Kept separate so app.py stays focused on the tool-use loop + API surface.
 
 from __future__ import annotations
 
-
 SESSION_ARCHIVE_SYSTEM = """\
 You are a senior software engineer writing a session-memory note.
 Summarize the conversation into a concise, skimmable reference.

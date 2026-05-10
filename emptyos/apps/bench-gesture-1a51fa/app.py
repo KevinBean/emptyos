@@ -14,14 +14,13 @@ from __future__ import annotations
 
 import json
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from emptyos.sdk import BaseApp, web_route
 
 
 class BenchGestureApp(BaseApp):
-
     def _data_dir(self) -> Path:
         d = self.kernel.data_dir / "bench-gesture-1a51fa"
         d.mkdir(parents=True, exist_ok=True)
@@ -74,7 +73,9 @@ class BenchGestureApp(BaseApp):
             cfg["max_events"] = int(data.get("max_events") or 5000)
         if "echo_back" in data:
             cfg["echo_back"] = bool(data.get("echo_back"))
-        self._config_path().write_text(json.dumps(cfg, ensure_ascii=False, indent=2), encoding="utf-8")
+        self._config_path().write_text(
+            json.dumps(cfg, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
         return {"ok": True, "config": cfg}
 
     @web_route("POST", "/api/gesture")
@@ -86,7 +87,7 @@ class BenchGestureApp(BaseApp):
             return {"ok": False, "error": "missing gesture"}
 
         ev = {
-            "ts": datetime.now(timezone.utc).isoformat(timespec="milliseconds"),
+            "ts": datetime.now(UTC).isoformat(timespec="milliseconds"),
             "unix_ms": int(time.time() * 1000),
             "gesture": gesture,
             "confidence": confidence,
@@ -97,7 +98,11 @@ class BenchGestureApp(BaseApp):
         }
         self._append_event(ev)
         cfg = self._read_config()
-        return {"ok": True, "echo": cfg.get("echo_back", True), "event": ev if cfg.get("echo_back", True) else None}
+        return {
+            "ok": True,
+            "echo": cfg.get("echo_back", True),
+            "event": ev if cfg.get("echo_back", True) else None,
+        }
 
     @web_route("GET", "/api/gesture/events")
     async def api_events(self, request):

@@ -67,7 +67,9 @@ class WebSearchTool(Tool):
         try:
             import aiohttp
         except ImportError:
-            return ToolResult(ok=False, content="error: aiohttp is not installed (pip install aiohttp)")
+            return ToolResult(
+                ok=False, content="error: aiohttp is not installed (pip install aiohttp)"
+            )
 
         url = "https://html.duckduckgo.com/html/"
         headers = {
@@ -85,7 +87,9 @@ class WebSearchTool(Tool):
                     timeout=aiohttp.ClientTimeout(total=TIMEOUT),
                 ) as resp:
                     if resp.status != 200:
-                        return ToolResult(ok=False, content=f"error: DuckDuckGo returned HTTP {resp.status}")
+                        return ToolResult(
+                            ok=False, content=f"error: DuckDuckGo returned HTTP {resp.status}"
+                        )
                     body = await resp.text()
         except Exception as e:
             return ToolResult(ok=False, content=f"error: search request failed: {e}")
@@ -95,13 +99,9 @@ class WebSearchTool(Tool):
         # DuckDuckGo HTML Lite: results are in <div class="result ..."> blocks
         # Title in <a class="result__a">, snippet in <a class="result__snippet">
         title_urls = re.findall(
-            r'<a[^>]+class="result__a"[^>]*href="([^"]*)"[^>]*>(.*?)</a>',
-            body, re.DOTALL
+            r'<a[^>]+class="result__a"[^>]*href="([^"]*)"[^>]*>(.*?)</a>', body, re.DOTALL
         )
-        snippets = re.findall(
-            r'<a[^>]+class="result__snippet"[^>]*>(.*?)</a>',
-            body, re.DOTALL
-        )
+        snippets = re.findall(r'<a[^>]+class="result__snippet"[^>]*>(.*?)</a>', body, re.DOTALL)
 
         for i, (href, title_html) in enumerate(title_urls[:n]):
             title = _strip_tags(title_html)
@@ -112,6 +112,7 @@ class WebSearchTool(Tool):
             uddg = re.search(r"uddg=([^&]+)", href)
             if uddg:
                 from urllib.parse import unquote
+
                 real_url = unquote(uddg.group(1))
             results.append({"title": title, "url": real_url, "snippet": snippet})
 

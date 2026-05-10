@@ -147,17 +147,19 @@ class TaskIndexer:
                         except (ValueError, TypeError):
                             pass
 
-                    tasks.append({
-                        "text": text,
-                        "done": is_done,
-                        "file": rel_path,
-                        "line": i,
-                        "due": due_str,
-                        "done_date": done_date,
-                        "overdue_days": overdue_days,
-                        "tier": tier,
-                        "focus_score": fscore,
-                    })
+                    tasks.append(
+                        {
+                            "text": text,
+                            "done": is_done,
+                            "file": rel_path,
+                            "line": i,
+                            "due": due_str,
+                            "done_date": done_date,
+                            "overdue_days": overdue_days,
+                            "tier": tier,
+                            "focus_score": fscore,
+                        }
+                    )
         return tasks
 
     async def _fetch_delegated(self) -> list[dict]:
@@ -184,9 +186,11 @@ class TaskIndexer:
             if not isinstance(source, list):
                 continue
             for t in source:
-                t["focus_score"] = focus_score(
-                    t.get("text", ""), t.get("due", ""), today
-                ) if t.get("due") and not t.get("done") else 0
+                t["focus_score"] = (
+                    focus_score(t.get("text", ""), t.get("due", ""), today)
+                    if t.get("due") and not t.get("done")
+                    else 0
+                )
             tasks.extend(source)
         return tasks
 

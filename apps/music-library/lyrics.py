@@ -49,7 +49,6 @@ LYRICS_PROMPT = (
 
 
 class LyricsMixin:
-
     def __init__(self, app: MusicLibraryApp):
         self.app = app
 

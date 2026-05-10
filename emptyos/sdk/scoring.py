@@ -57,7 +57,7 @@ def word_accuracy(target: str, spoken: str) -> dict:
     s_words = re.sub(r"[^\w\s]", "", spoken.lower()).split()
     if not t_words:
         return {"accuracy": 0, "grade": "D", "matches": 0, "total": 0}
-    matches = sum(1 for t, s in zip(t_words, s_words) if t == s)
+    matches = sum(1 for t, s in zip(t_words, s_words, strict=False) if t == s)
     accuracy = round(matches / len(t_words) * 100, 1)
     grade = "A" if accuracy >= 90 else "B" if accuracy >= 75 else "C" if accuracy >= 50 else "D"
     return {"accuracy": accuracy, "grade": grade, "matches": matches, "total": len(t_words)}

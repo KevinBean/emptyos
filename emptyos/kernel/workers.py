@@ -9,9 +9,10 @@ from __future__ import annotations
 import asyncio
 import time
 import uuid
+from collections.abc import Callable, Coroutine
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import TYPE_CHECKING, Any, Callable, Coroutine
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from emptyos.kernel import Kernel
@@ -159,7 +160,11 @@ class WorkerPool:
                     job.completed_at = time.time()
                     await self.kernel.events.emit(
                         "job:completed",
-                        {"id": job_id, "name": job.name, "duration": round(job.completed_at - job.started_at, 2)},
+                        {
+                            "id": job_id,
+                            "name": job.name,
+                            "duration": round(job.completed_at - job.started_at, 2),
+                        },
                         source="workers",
                     )
                 except Exception as e:
@@ -175,7 +180,7 @@ class WorkerPool:
                 # Cleanup old jobs (keep last 200)
                 if len(self._jobs) > 200:
                     old = sorted(self._jobs.values(), key=lambda j: j.submitted_at)
-                    for j in old[:len(self._jobs) - 200]:
+                    for j in old[: len(self._jobs) - 200]:
                         if j.state in (JobState.COMPLETED, JobState.FAILED, JobState.CANCELLED):
                             self._jobs.pop(j.id, None)
 

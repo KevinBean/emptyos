@@ -1,0 +1,16 @@
+[engine]
+id = "thermal"
+name = "Thermal Engine"
+version = "0.1.0"
+description = "Native cable thermal-rating engine. IEC 60287 steady-state ampacity (Phase A: direct buried, in duct, in air). Algorithm reference + validation source: KevinBean/Cable-reticulation-tool. CIGRE TB 880 regression target."
+
+[engine.entry]
+module = "engine"
+class = "ThermalEngine"
+
+[requires]
+packages = []  # pure-Python; numpy optional, used only for matrix ops in later phases
+
+[provides]
+services = ["thermal"]
+tags = ["cables", "ampacity", "iec60287", "thermal"]

@@ -7,19 +7,47 @@ Sections: Journal (timestamped entries), Milestone, Three successful things
 from __future__ import annotations
 
 import asyncio
-from datetime import date, datetime, timedelta, timezone
+import json
+from datetime import UTC, date, datetime, timedelta
 from functools import cached_property
 from pathlib import Path
 
-from emptyos.sdk import TASK_RE, BaseApp, cli_command, compute_task_decay, dimensions, parse_captures, parse_llm_json, scheduled, web_route
 from emptyos.runtime import wheel as _wheel
+from emptyos.sdk import (
+    TASK_RE,
+    BaseApp,
+    cli_command,
+    compute_task_decay,
+    dimensions,
+    parse_captures,
+    parse_llm_json,
+    scheduled,
+    web_route,
+)
 
+from . import panels as _panels
 from .parser import MOOD_EMOJI, MOOD_SCORE, extract_section, parse_entries, replace_section
 from .prompts import PROMPT_GEN_SYSTEM, REFLECT_SYSTEM, WHEEL_REVIEW_SYSTEM
-from . import panels as _panels
 
 
 class JournalApp(BaseApp):
+    async def setup(self):
+        await super().setup()
+        # Pre-warm the related-entries embedding index in the background so
+        # the first user click on a fresh boot doesn't pay the cold-cache
+        # cost (3-year corpus walk + per-chunk embed call ≈ 30–60s on
+        # OpenAI). Quiet failure — the related panel handles unavailable
+        # embeddings gracefully.
+        if getattr(self, "embeddings_available", False):
+            asyncio.create_task(self._warm_related_index())
+
+    async def _warm_related_index(self):
+        try:
+            items = await self._collect_journal_entries()
+            if items:
+                await self.embedding_index(items, text_fn=lambda it: it["text"])
+        except Exception:
+            pass
 
     async def get_summary(self) -> dict:
         """Summary for staff observers — today's entries, streak, mood."""
@@ -118,7 +146,9 @@ class JournalApp(BaseApp):
             for r in recent:
                 self.print_rich(f"  {r['date']}  {r['entries']} entries  {r.get('mood', '')}")
         else:
-            self.print_rich("[dim]Usage: eos journal [today|add|recent] [text] [--mood great|good|okay|low|bad][/dim]")
+            self.print_rich(
+                "[dim]Usage: eos journal [today|add|recent] [text] [--mood great|good|okay|low|bad][/dim]"
+            )
 
     # --- Web API ---
 
@@ -164,19 +194,23 @@ class JournalApp(BaseApp):
         iso = target.isoformat()
 
         if milestone.strip():
-            items.append({
-                "id": f"journal-{iso}-milestone",
-                "text": f"Milestone: {milestone.strip()}",
-                "source": "journal",
-            })
+            items.append(
+                {
+                    "id": f"journal-{iso}-milestone",
+                    "text": f"Milestone: {milestone.strip()}",
+                    "source": "journal",
+                }
+            )
 
         tt_lines = [ln.strip(" -\t") for ln in three_things.split("\n") if ln.strip(" -\t")]
         for i, ln in enumerate(tt_lines[:3]):
-            items.append({
-                "id": f"journal-{iso}-three-{i}",
-                "text": f"Three things, item {i+1}: {ln}",
-                "source": "journal",
-            })
+            items.append(
+                {
+                    "id": f"journal-{iso}-three-{i}",
+                    "text": f"Three things, item {i + 1}: {ln}",
+                    "source": "journal",
+                }
+            )
 
         for i, e in enumerate(entries or []):
             text = (e.get("text") or e.get("content") or "").strip()
@@ -184,18 +218,22 @@ class JournalApp(BaseApp):
                 continue
             mood = e.get("mood") or ""
             mood_prefix = f"{mood}, " if mood else ""
-            items.append({
-                "id": f"journal-{iso}-entry-{i}",
-                "text": f"Entry {i+1}, {mood_prefix}{text}",
-                "source": "journal",
-            })
+            items.append(
+                {
+                    "id": f"journal-{iso}-entry-{i}",
+                    "text": f"Entry {i + 1}, {mood_prefix}{text}",
+                    "source": "journal",
+                }
+            )
 
         if not items:
-            items.append({
-                "id": f"journal-{iso}-empty",
-                "text": f"No journal entries for {iso} yet.",
-                "source": "journal",
-            })
+            items.append(
+                {
+                    "id": f"journal-{iso}-empty",
+                    "text": f"No journal entries for {iso} yet.",
+                    "source": "journal",
+                }
+            )
 
         return {"items": items, "source": "journal", "date": iso, "count": len(items)}
 
@@ -217,18 +255,26 @@ class JournalApp(BaseApp):
 
     async def _today_dimension_signals(self, d: date) -> dict[str, dict]:
         """Aggregate today's dimension signals across captures + habits + journal text."""
-        signals = {dim: {"captures": 0, "habits_done": 0, "habits_total": 0, "journal": 0} for dim in dimensions.DIMENSIONS}
+        signals = {
+            dim: {"captures": 0, "habits_done": 0, "habits_total": 0, "journal": 0}
+            for dim in dimensions.DIMENSIONS
+        }
         today_iso = d.isoformat()
 
         try:
-            cap_rel = self.kernel.vault_map.get("quick-action", "inbox", "00_Inbox/_captures.md")  # owning app is quick-action (formerly capture)
+            cap_rel = self.kernel.vault_map.get(
+                "quick-action", "inbox", "00_Inbox/_captures.md"
+            )  # owning app is quick-action (formerly capture)
             cap_path = (self.vault_root / cap_rel) if cap_rel else None
             if cap_path and cap_path.exists():
                 content = await self.read(str(cap_path))
                 for c in parse_captures(content, limit=500):
                     if not c["timestamp"].startswith(today_iso):
                         continue
-                    dim = dimensions.resolve(c["tag"]) or (dimensions.extract(c["text"])[:1] or [""])[0]
+                    dim = (
+                        dimensions.resolve(c["tag"])
+                        or (dimensions.extract(c["text"])[:1] or [""])[0]
+                    )
                     if dim in signals:
                         signals[dim]["captures"] += 1
         except Exception:
@@ -260,9 +306,13 @@ class JournalApp(BaseApp):
             s["total"] = s["captures"] + s["habits_done"] + s["journal"]
         return signals
 
+    @web_route("POST", "/api/add")
+    async def api_add(self, request):
+        return await self.api_entry(request)
+
     @web_route("POST", "/api/entry")
     async def api_entry(self, request):
-        data = await request.json()
+        data = await self.read_json(request)
         text = data.get("text", "")
         mood = data.get("mood", "okay")
         d = date.today()
@@ -284,6 +334,139 @@ class JournalApp(BaseApp):
         days = int(request.query_params.get("days", "14"))
         return await self._recent_days(days)
 
+    # ── Related-entry surface ──────────────────────────────────────────
+    # "You wrote about this before" — embedding-cosine match of an entry
+    # text against every prior journal entry. Used by the journal page to
+    # surface past reflections after a new entry is saved.
+
+    _RELATED_MIN_SCORE = 0.40       # entries below this aren't surfaced
+    _RELATED_MIN_CHARS = 30          # skip one-liners — they embed poorly
+    _RELATED_LOOKBACK_DAYS = 365 * 3  # cap the corpus walk so cold cache stays bounded
+
+    @web_route("GET", "/api/related")
+    async def api_related(self, request):
+        """GET /journal/api/related?text=...&top_k=5
+
+        Or pass `date=YYYY-MM-DD` (and optional `index=N`) to use one of that
+        day's existing entries as the query — the post-write nudge.
+        """
+        text = (request.query_params.get("text") or "").strip()
+        date_str = (request.query_params.get("date") or "").strip()
+        index = int(request.query_params.get("index", "0"))
+        top_k = int(request.query_params.get("top_k", "5"))
+
+        if not text and date_str:
+            try:
+                d = date.fromisoformat(date_str)
+                content = await self.read(str(self._daily_path(d)))
+                entries = parse_entries(content)
+                if 0 <= index < len(entries):
+                    text = entries[index]["text"]
+            except Exception:
+                pass
+
+        if not text or len(text) < self._RELATED_MIN_CHARS:
+            return {"text": text, "results": [], "reason": "query too short"}
+
+        if not self.embeddings_available:
+            return {"text": text, "results": [], "reason": "embeddings unavailable"}
+
+        items = await self._collect_journal_entries(query_text=text)
+        if not items:
+            return {"text": text, "results": []}
+
+        index_obj = await self.embedding_index(items, text_fn=lambda it: it["text"])
+        hits = await index_obj.search(text, top_k=top_k + 1, min_score=self._RELATED_MIN_SCORE)
+        # Drop the entry that exactly matches the query (same date+index path)
+        out = []
+        for it, score in hits:
+            if it["text"].strip() == text.strip():
+                continue
+            out.append({
+                "date": it["date"],
+                "mood": it.get("mood", ""),
+                "emoji": it.get("emoji", ""),
+                "text": it["text"],
+                "score": round(score, 3),
+            })
+            if len(out) >= top_k:
+                break
+        return {"text": text, "results": out}
+
+    async def _collect_journal_entries(self, query_text: str = "") -> list[dict]:
+        """Walk the journal vault folder and return every entry as a dict.
+
+        `query_text` is unused today but reserved — a future optimization
+        could pre-filter by year/keyword to avoid embedding the whole
+        history when only a slice is plausibly relevant.
+        """
+        from datetime import timedelta as _td
+
+        items: list[dict] = []
+        today = date.today()
+        cutoff = today - _td(days=self._RELATED_LOOKBACK_DAYS)
+
+        # Walk by year folder — `_daily_path` formats as 50_Journal/{year}/{date}.md
+        # so we just iterate the year range.
+        years_seen: set[int] = set()
+        d = cutoff
+        while d <= today:
+            years_seen.add(d.year)
+            d += _td(days=365)
+
+        for year in sorted(years_seen):
+            year_dir = self._daily_path(date(year, 1, 1)).parent
+            if not year_dir.exists():
+                continue
+            for md_path in sorted(year_dir.glob("*.md")):
+                stem = md_path.stem  # YYYY-MM-DD
+                try:
+                    d_parsed = date.fromisoformat(stem)
+                except ValueError:
+                    continue
+                if d_parsed < cutoff or d_parsed > today:
+                    continue
+                try:
+                    content = md_path.read_text(encoding="utf-8", errors="ignore")
+                except Exception:
+                    continue
+                for i, e in enumerate(parse_entries(content)):
+                    text = (e.get("text") or "").strip()
+                    if len(text) < self._RELATED_MIN_CHARS:
+                        continue
+                    # Skip Playwright test fixtures — they leak into the journal
+                    # via the system test suite.
+                    if "PLAYWRIGHT-TEST" in text:
+                        continue
+                    items.append({
+                        "id": f"{stem}:{i}",
+                        "date": stem,
+                        "mood": e.get("mood", ""),
+                        "emoji": e.get("emoji", ""),
+                        "text": text,
+                    })
+                # Also pull substantive prose from Milestone + Three Things —
+                # the Journal section is mostly auto-populated breadcrumbs;
+                # the user's reflective writing lives in these sections.
+                for header, kind in (
+                    ("### Milestone", "milestone"),
+                    ("#### Three successful things", "three-things"),
+                ):
+                    body = extract_section(content, header).strip()
+                    if not body or "PLAYWRIGHT-TEST" in body:
+                        continue
+                    if len(body) < self._RELATED_MIN_CHARS:
+                        continue
+                    items.append({
+                        "id": f"{stem}:{kind}",
+                        "date": stem,
+                        "mood": "",
+                        "emoji": "",
+                        "kind": kind,
+                        "text": body,
+                    })
+        return items
+
     @web_route("GET", "/api/heatmap")
     async def api_heatmap(self, request):
         months = int(request.query_params.get("months", "3"))
@@ -302,7 +485,11 @@ class JournalApp(BaseApp):
     @web_route("POST", "/api/ai-reflect")
     async def api_ai_reflect(self, request):
         """LLM generates a reflection from recent journal entries."""
-        data = await request.json() if request.headers.get("content-type", "").startswith("application/json") else {}
+        data = (
+            await self.read_json(request)
+            if request.headers.get("content-type", "").startswith("application/json")
+            else {}
+        )
         days = int(data.get("days", 7))
 
         today = date.today()
@@ -314,21 +501,32 @@ class JournalApp(BaseApp):
                 content = await self.read(str(path))
                 entries = parse_entries(content)
                 if entries:
-                    lines = [f"{d.isoformat()} {e['time']} {e['emoji']} {e['text']}" for e in entries]
+                    lines = [
+                        f"{d.isoformat()} {e['time']} {e['emoji']} {e['text']}" for e in entries
+                    ]
                     all_text.extend(lines)
             except Exception:
                 continue
 
         if not all_text:
-            return {"reflection": "No journal entries found in the last {} days. Start writing to get reflections!".format(days)}
+            return {
+                "reflection": f"No journal entries found in the last {days} days. Start writing to get reflections!"
+            }
 
         reflection = await self.think_safe(
             f"Journal entries from the last {days} days:\n\n" + "\n".join(all_text),
-            system=REFLECT_SYSTEM, domain="text", temperature=0.6,
+            system=REFLECT_SYSTEM,
+            domain="text",
+            temperature=0.6,
             fallback="AI is offline — your entries are below unchanged. Reflection will return when AI is available.",
         )
         await self.emit("journal:reflection", {"days": days, "entry_count": len(all_text)})
-        return {"reflection": reflection, "days": days, "entries_analyzed": len(all_text), "provenance": self.last_provenance()}
+        return {
+            "reflection": reflection,
+            "days": days,
+            "entries_analyzed": len(all_text),
+            "provenance": self.last_provenance(),
+        }
 
     @web_route("GET", "/api/search")
     async def api_search(self, request):
@@ -350,7 +548,11 @@ class JournalApp(BaseApp):
             matching = [e for e in entries if q in e.get("text", "").lower()]
             if matching:
                 results.append({"date": d.isoformat(), "entries": matching})
-        return {"results": results, "total_matches": sum(len(r["entries"]) for r in results), "query": q}
+        return {
+            "results": results,
+            "total_matches": sum(len(r["entries"]) for r in results),
+            "query": q,
+        }
 
     @web_route("GET", "/api/templates")
     async def api_templates(self, request):
@@ -394,9 +596,13 @@ class JournalApp(BaseApp):
     @web_route("POST", "/api/pin")
     async def api_pin(self, request):
         """Pin/unpin a journal entry as highlight."""
-        data = await request.json()
+        data = await self.read_json(request)
         pins = self._load_pins()
-        entry = {"date": data.get("date", ""), "time": data.get("time", ""), "text": data.get("text", "")}
+        entry = {
+            "date": data.get("date", ""),
+            "time": data.get("time", ""),
+            "text": data.get("text", ""),
+        }
         key = f"{entry['date']}_{entry['time']}"
         if key in pins:
             del pins[key]
@@ -466,12 +672,17 @@ class JournalApp(BaseApp):
                 total += wc
             except Exception:
                 continue
-        return {"total_words": total, "days_written": len(daily), "avg_words": round(total / len(daily)) if daily else 0, "daily": daily}
+        return {
+            "total_words": total,
+            "days_written": len(daily),
+            "avg_words": round(total / len(daily)) if daily else 0,
+            "daily": daily,
+        }
 
     @web_route("POST", "/api/milestone")
     async def api_milestone(self, request):
         """Add a milestone entry to today's journal under ### Milestones."""
-        data = await request.json()
+        data = await self.read_json(request)
         text = data.get("text", "").strip()
         if not text:
             return {"error": "text required"}
@@ -490,33 +701,52 @@ class JournalApp(BaseApp):
 
     @web_route("POST", "/api/three-things")
     async def api_three_things(self, request):
-        """Save three-things reflection: grateful, accomplished, learned."""
-        data = await request.json()
-        grateful = data.get("grateful", "").strip()
-        accomplished = data.get("accomplished", "").strip()
-        learned = data.get("learned", "").strip()
-        if not any([grateful, accomplished, learned]):
-            return {"error": "at least one field required"}
+        """Save the day's three good things.
 
-        today = date.today()
-        async with self._daily_lock(today):
-            content = await self._ensure_daily(today)
+        Accepts: {"things": ["a", "b", "c"], "date"?: "YYYY-MM-DD"}
+        Up to three positional items; missing slots stay blank.
+        """
+        data = await self.read_json(request)
+        # Schema returned on every error so callers don't have to guess
+        # alternate key shapes (thing1/first/good/etc.) on retry.
+        schema = {
+            "expected": '{"things": ["a", "b", "c"]}',
+            "also_accepted": [
+                '{"thing1": "a", "thing2": "b", "thing3": "c"}',
+                '{"first": "a", "second": "b", "third": "c"}',
+            ],
+            "optional": '"date": "YYYY-MM-DD"',
+        }
+        things = data.get("things")
+        if things is None:
+            things = [
+                data.get("thing1") or data.get("first") or "",
+                data.get("thing2") or data.get("second") or "",
+                data.get("thing3") or data.get("third") or "",
+            ]
+        if not isinstance(things, list):
+            return {"error": "things must be a list of strings", "schema": schema}
+        things = [(t or "").strip() for t in things[:3]]
+        while len(things) < 3:
+            things.append("")
+        if not any(things):
+            return {
+                "error": "at least one of things[0..2] must be non-empty",
+                "schema": schema,
+            }
 
-            lines = []
-            if grateful:
-                lines.append(f"- 🙏 **Grateful**: {grateful}")
-            if accomplished:
-                lines.append(f"- ✅ **Accomplished**: {accomplished}")
-            if learned:
-                lines.append(f"- 💡 **Learned**: {learned}")
+        try:
+            target = date.fromisoformat(data["date"]) if data.get("date") else date.today()
+        except ValueError:
+            return {"error": "date must be YYYY-MM-DD"}
 
-            entry = "\n".join(lines)
-            section = extract_section(content, "### Three Things")
-            new_section = (section + "\n" + entry).strip() if section else entry
-            new_content = replace_section(content, "### Three Things", new_section)
-            await self.write(str(self._daily_path(today)), new_content)
-        await self.emit("journal:three-things", {"date": today.isoformat()})
-        return {"ok": True, "date": today.isoformat()}
+        async with self._daily_lock(target):
+            content = await self._ensure_daily(target)
+            new_section = "\n".join(f"{i+1}. {t}" for i, t in enumerate(things)).rstrip() + "\n"
+            new_content = replace_section(content, "#### Three successful things", new_section)
+            await self.write(str(self._daily_path(target)), new_content)
+        await self.emit("journal:three-things", {"date": target.isoformat()})
+        return {"ok": True, "date": target.isoformat()}
 
     async def get_tasks(self, days: int = 90) -> list[dict]:
         """All tasks (- [ ] / - [x]) from journal notes."""
@@ -539,17 +769,21 @@ class JournalApp(BaseApp):
                 text = m.group(2).strip()
                 due_str = m.group(3) or ""
                 done_date = m.group(4) or ""
-                overdue_days, tier = compute_task_decay(due_str, today) if due_str and not is_done else (0, "fresh")
-                all_tasks.append({
-                    "text": text,
-                    "done": is_done,
-                    "file": rel_path,
-                    "line": line_num,
-                    "due": due_str,
-                    "done_date": done_date,
-                    "overdue_days": overdue_days,
-                    "tier": tier,
-                })
+                overdue_days, tier = (
+                    compute_task_decay(due_str, today) if due_str and not is_done else (0, "fresh")
+                )
+                all_tasks.append(
+                    {
+                        "text": text,
+                        "done": is_done,
+                        "file": rel_path,
+                        "line": line_num,
+                        "due": due_str,
+                        "done_date": done_date,
+                        "overdue_days": overdue_days,
+                        "tier": tier,
+                    }
+                )
         return all_tasks
 
     @web_route("GET", "/api/tasks")
@@ -566,7 +800,9 @@ class JournalApp(BaseApp):
             target = date.today()
         raw = self.vault_config("weekly", "50_Journal/{year}/{year}-W{week}.md")
         iso_cal = target.isocalendar()
-        path = self.vault_root / raw.replace("{year}", str(iso_cal[0])).replace("{week}", f"{iso_cal[1]:02d}")
+        path = self.vault_root / raw.replace("{year}", str(iso_cal[0])).replace(
+            "{week}", f"{iso_cal[1]:02d}"
+        )
         try:
             content = await self.read(str(path))
             return {"date": d or target.isoformat(), "path": str(path), "content": content}
@@ -613,11 +849,13 @@ class JournalApp(BaseApp):
                     content = await self.read(str(week_file))
                 except Exception:
                     continue
-                results.append({
-                    "date": week_file.stem,
-                    "path": str(week_file),
-                    "content": content,
-                })
+                results.append(
+                    {
+                        "date": week_file.stem,
+                        "path": str(week_file),
+                        "content": content,
+                    }
+                )
         return results
 
     @web_route("GET", "/api/weekly")
@@ -647,8 +885,7 @@ class JournalApp(BaseApp):
 
         mean = reading["mean"]
         data_block = "\n".join(
-            f"{dimensions.LABELS[d]}: {signals[d]} (mean={mean:.1f})"
-            for d in dimensions.DIMENSIONS
+            f"{dimensions.LABELS[d]}: {signals[d]} (mean={mean:.1f})" for d in dimensions.DIMENSIONS
         )
         label = "This Week" if period == "week" else "This Month"
         user_msg = (
@@ -659,9 +896,15 @@ class JournalApp(BaseApp):
         )
         try:
             narrative = await self.think(
-                user_msg, system=WHEEL_REVIEW_SYSTEM,
-                domain="text", temperature=0.4,
+                user_msg,
+                system=WHEEL_REVIEW_SYSTEM,
+                domain="text",
+                temperature=0.4,
             )
+        except RuntimeError as e:
+            if "No available provider for capability" in str(e):
+                raise
+            narrative = f"Could not generate review: {e}"
         except Exception as e:
             narrative = f"Could not generate review: {e}"
         return {
@@ -677,14 +920,18 @@ class JournalApp(BaseApp):
         """Sunday 9pm — write a wheel review into the weekly note."""
         result = await self._wheel_review(days=7, period="week")
         narrative = result.get("narrative", "")
-        if (not narrative
-                or narrative.startswith("No behavioral signal")
-                or narrative.startswith("Could not generate")):
+        if (
+            not narrative
+            or narrative.startswith("No behavioral signal")
+            or narrative.startswith("Could not generate")
+        ):
             return
         today = date.today()
         raw = self.vault_config("weekly", "50_Journal/{year}/{year}-W{week}.md")
         iso_cal = today.isocalendar()
-        wp = self.vault_root / raw.replace("{year}", str(iso_cal[0])).replace("{week}", f"{iso_cal[1]:02d}")
+        wp = self.vault_root / raw.replace("{year}", str(iso_cal[0])).replace(
+            "{week}", f"{iso_cal[1]:02d}"
+        )
         header = f"\n\n## Wheel Review — Week {iso_cal[1]}\n\n"
         try:
             existing = await self.read(str(wp))
@@ -725,11 +972,13 @@ class JournalApp(BaseApp):
 
     def _load_pins(self) -> dict:
         import json
+
         p = self.data_dir / "pins.json"
         return json.loads(p.read_text()) if p.exists() else {}
 
     def _save_pins(self, pins: dict):
         import json
+
         (self.data_dir / "pins.json").write_text(json.dumps(pins, indent=2, default=str))
 
     # --- Core Logic ---
@@ -748,12 +997,29 @@ class JournalApp(BaseApp):
             raise ValueError("entry text must be a single plain line (no markdown entry prefix)")
         async with self._daily_lock(d):
             content = await self._ensure_daily(d)
-            now = datetime.now(timezone.utc).strftime("%H:%M")
+            now = datetime.now(UTC).strftime("%H:%M")
             emoji = MOOD_EMOJI.get(mood, "😐")
             entry_line = f"- **{now}** {emoji} {text}"
 
+            # Reject an identical entry from the last 2 hours so a stuck
+            # autosave or muscle-memory re-submit can't fatten today's note.
+            cmp_text = text.strip().lower()
+            now_h, now_m = (int(x) for x in now.split(":"))
+            now_min = now_h * 60 + now_m
+            for e in parse_entries(content):
+                if (e.get("text") or "").strip().lower() != cmp_text:
+                    continue
+                hh, _, mm = (e.get("time") or "").partition(":")
+                if hh.isdigit() and mm.isdigit() and abs(now_min - (int(hh) * 60 + int(mm))) <= 120:
+                    raise ValueError(
+                        "duplicate of an entry from the last 2 hours — "
+                        "edit the existing line instead of re-adding"
+                    )
+
             journal_section = extract_section(content, "### Journal")
-            new_section = (journal_section + "\n" + entry_line).strip() if journal_section else entry_line
+            new_section = (
+                (journal_section + "\n" + entry_line).strip() if journal_section else entry_line
+            )
             new_content = replace_section(content, "### Journal", new_section)
             await self.write(str(self._daily_path(d)), new_content)
         # Emit outside the lock — handlers that recurse back into journal
@@ -793,26 +1059,36 @@ class JournalApp(BaseApp):
     panel_month_compare = _panels.panel_month_compare
 
     async def _recent_days(self, n: int) -> list[dict]:
-        results = []
+        # Walk back past empty / missing days so callers asking for "last
+        # 3 days" get 3 days WITH entries, not 3 calendar days mostly empty.
+        # Cap the walk so a fresh vault doesn't scan the dawn of time.
+        results: list[dict] = []
         today = date.today()
-        for i in range(n):
+        max_walk = max(n * 30, 60)
+        for i in range(max_walk):
+            if len(results) >= n:
+                break
             d = today - timedelta(days=i)
             path = self._daily_path(d)
             try:
                 content = await self.read(str(path))
-                entries = parse_entries(content)
-                dominant = max(
-                    set(e["mood"] for e in entries),
-                    key=lambda m: sum(1 for e in entries if e["mood"] == m),
-                ) if entries else ""
-                results.append({
+            except Exception:
+                continue
+            entries = parse_entries(content)
+            if not entries:
+                continue
+            dominant = max(
+                set(e["mood"] for e in entries),
+                key=lambda m: sum(1 for e in entries if e["mood"] == m),
+            )
+            results.append(
+                {
                     "date": d.isoformat(),
                     "entries": len(entries),
                     "mood": dominant,
                     "emoji": MOOD_EMOJI.get(dominant, ""),
-                })
-            except Exception:
-                continue
+                }
+            )
         return results
 
     async def _heatmap(self, months: int) -> list[dict]:
@@ -851,16 +1127,22 @@ class JournalApp(BaseApp):
         recent = await self._recent_days(days)
         if not recent:
             return ["Start journaling today — write your first entry."]
-        summary = ", ".join(f"{r['date']}: {r['entries']} entries ({r['mood']})" for r in recent[:7])
+        summary = ", ".join(
+            f"{r['date']}: {r['entries']} entries ({r['mood']})" for r in recent[:7]
+        )
         response = await self.think(
             f"Recent journal activity:\n{summary}",
-            system=PROMPT_GEN_SYSTEM, temperature=0.8,
+            system=PROMPT_GEN_SYSTEM,
+            temperature=0.8,
         )
-        return parse_llm_json(response, fallback=[
-            "What made today different from yesterday?",
-            "What's one thing you'd do differently this week?",
-            "What are you most grateful for right now?",
-        ])
+        return parse_llm_json(
+            response,
+            fallback=[
+                "What made today different from yesterday?",
+                "What's one thing you'd do differently this week?",
+                "What are you most grateful for right now?",
+            ],
+        )
 
     # ------------------------------------------------------------------
     # Voice Assistant contribution
@@ -872,11 +1154,12 @@ class JournalApp(BaseApp):
             today = date.today()
             content = await self._ensure_daily(today)
             from .parser import parse_entries
+
             entries = parse_entries(content)
-            
+
             if not entries:
                 return None
-                
+
             out = "Today's Journal Entries (what the user has noted so far today):\n"
             for e in entries:
                 out += f"- {e.get('time', '')}: {e.get('text', '')}\n"

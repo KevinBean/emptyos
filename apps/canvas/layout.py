@@ -16,7 +16,9 @@ def below_cluster(nodes: list[dict], gap: int = 40) -> tuple[int, int]:
     return min_x, max_y + gap
 
 
-def column_right_of(src: dict, count: int, gap_x: int = 100, gap_y: int = 20) -> list[tuple[int, int]]:
+def column_right_of(
+    src: dict, count: int, gap_x: int = 100, gap_y: int = 20
+) -> list[tuple[int, int]]:
     """Return ``count`` (x, y) tuples stacked in a column to the right of ``src``."""
     sx = int(src.get("x", 0)) + int(src.get("width", 250)) + gap_x
     sy = int(src.get("y", 0))

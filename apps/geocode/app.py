@@ -50,12 +50,17 @@ class GeocodeApp(ExternalServiceBase):
         await self._throttle()
         try:
             import aiohttp
+
             params = {
-                "q": address, "format": "json",
-                "addressdetails": "1", "limit": str(limit),
+                "q": address,
+                "format": "json",
+                "addressdetails": "1",
+                "limit": str(limit),
             }
             async with aiohttp.ClientSession(headers={"User-Agent": self._user_agent()}) as session:
-                async with session.get(f"{self._base_url()}/search", params=params, timeout=15) as r:
+                async with session.get(
+                    f"{self._base_url()}/search", params=params, timeout=15
+                ) as r:
                     if r.status != 200:
                         return []
                     raw = await r.json()
@@ -71,7 +76,8 @@ class GeocodeApp(ExternalServiceBase):
         if not self._status()["enabled"]:
             return {}
         try:
-            lat = float(lat); lon = float(lon)
+            lat = float(lat)
+            lon = float(lon)
         except (TypeError, ValueError):
             return {}
         key = (round(lat, 6), round(lon, 6))
@@ -81,10 +87,12 @@ class GeocodeApp(ExternalServiceBase):
         await self._throttle()
         try:
             import aiohttp
-            params = {"lat": str(lat), "lon": str(lon),
-                      "format": "json", "addressdetails": "1"}
+
+            params = {"lat": str(lat), "lon": str(lon), "format": "json", "addressdetails": "1"}
             async with aiohttp.ClientSession(headers={"User-Agent": self._user_agent()}) as session:
-                async with session.get(f"{self._base_url()}/reverse", params=params, timeout=15) as r:
+                async with session.get(
+                    f"{self._base_url()}/reverse", params=params, timeout=15
+                ) as r:
                     if r.status != 200:
                         return {}
                     raw = await r.json()

@@ -56,16 +56,6 @@ body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-se
 .session-task { flex:1 }
 .session-dur { font-weight:600; color:var(--accent) }
 
-/* ── Achievements ── */
-.achievements-section { margin-bottom:16px }
-.achievements-grid { display:flex; gap:8px; flex-wrap:wrap }
-.achievement { background:var(--bg-card); border:1px solid var(--border); border-radius:14px; padding:12px 12px; text-align:center; min-width:80px; flex:1; max-width:120px; transition:all 0.2s }
-.achievement.earned { border-color:color-mix(in srgb,var(--accent) 40%,var(--border)); background:color-mix(in srgb,var(--accent) 5%,var(--bg-card)) }
-.achievement.locked { opacity:0.4; filter:grayscale(1) }
-.achievement-icon { font-size:24px; margin-bottom:4px }
-.achievement-name { font-size:11px; font-weight:600; color:var(--text-heading) }
-.achievement-desc { font-size:10px; color:var(--text-muted); margin-top:2px }
-
 /* ── Confetti ── */
 @keyframes confetti-fall { 0%{opacity:1;transform:translateY(0) rotate(0deg)} 100%{opacity:0;transform:translateY(120px) rotate(720deg)} }
 .confetti-container { position:fixed; top:0; left:0; width:100%; height:100%; pointer-events:none; z-index:200; overflow:hidden }
@@ -82,7 +72,7 @@ body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-se
 <script src="/static/eos-components.js"></script>
 <script>EOS.nav('focus');</script>
 <script>
-if(window.EOS&&EOS.registerActions){EOS.registerActions({start_timer:function(){toggleTimer()},get_suggestion:function(){getSuggestion()},set_duration:function(m){setDuration(parseInt(m))}},[{name:"start_timer",description:"Start/pause focus timer",params:[]},{name:"get_suggestion",description:"AI focus suggestion",params:[]},{name:"set_duration",description:"Set minutes",params:["minutes"]}],{description:"Pomodoro timer — task suggestions, achievements, ambient noise.",quickActions:[{label:"What to focus on?",msg:"Suggest a task to focus on."},{label:"Start timer",msg:"Start a 25-min focus session."}]});}
+if(window.EOS&&EOS.registerActions){EOS.registerActions({start_timer:function(){toggleTimer()},get_suggestion:function(){getSuggestion()},set_duration:function(m){setDuration(parseInt(m))}},[{name:"start_timer",description:"Start/pause focus timer",params:[]},{name:"get_suggestion",description:"AI focus suggestion",params:[]},{name:"set_duration",description:"Set minutes",params:["minutes"]}],{description:"Pomodoro timer — task suggestions, ambient noise.",quickActions:[{label:"What to focus on?",msg:"Suggest a task to focus on."},{label:"Start timer",msg:"Start a 25-min focus session."}]});}
 </script>
 
 <div class="page">
@@ -121,12 +111,6 @@ if(window.EOS&&EOS.registerActions){EOS.registerActions({start_timer:function(){
         </div>
         <input class="task-input" id="task-input" placeholder="What are you focusing on?">
         <button class="suggest-btn" onclick="getSuggestion()">&#10024; Suggest task</button>
-    </div>
-
-    <!-- Achievements -->
-    <div class="achievements-section" id="achievements-section">
-        <div style="font-size:13px;font-weight:600;color:var(--text-secondary);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px">Achievements</div>
-        <div class="achievements-grid" id="achievements-grid"></div>
     </div>
 
     <div class="eos-tabs">
@@ -699,7 +683,7 @@ async function completeSession() {
 
             var nextType = (pomodoroCount > 0 && pomodoroCount % config.long_break_every === 0) ? 'long' : 'short';
             enterBreakMode(nextType);
-            loadStats(); loadToday(); loadAchievements();
+            loadStats(); loadToday();
         } else {
             // Break completed — log and return to work
             var mins = Math.round(totalSec / 60);
@@ -758,53 +742,14 @@ async function loadHistory() {
     } catch(e) {}
 }
 
-// ── Achievements ─────────────────────────────────────────────
-var defaultBadges = [
-    {id:'first',    icon:'&#127942;', name:'First Focus',    desc:'Complete 1 session'},
-    {id:'streak3',  icon:'&#128293;', name:'On Fire',        desc:'3 sessions in a day'},
-    {id:'streak5',  icon:'&#9889;',   name:'Unstoppable',    desc:'5 sessions in a day'},
-    {id:'hour',     icon:'&#9200;',   name:'Hour Power',     desc:'60min in one session'},
-    {id:'week',     icon:'&#128197;', name:'Week Warrior',   desc:'7-day streak'},
-    {id:'centurion',icon:'&#127941;', name:'Centurion',      desc:'100 total sessions'},
-    {id:'marathon', icon:'&#127939;', name:'Marathon',       desc:'1000 total minutes'}
-];
-
-async function loadAchievements() {
-    try {
-        var data = await EOS.api('/focus/api/achievements');
-        var earned = data.earned || data || [];
-        var earnedIds = Array.isArray(earned) ? earned.map(function(a) { return typeof a === 'string' ? a : a.id; }) : [];
-        var badges = data.badges || defaultBadges;
-
-        document.getElementById('achievements-grid').innerHTML = badges.map(function(b) {
-            var isEarned = earnedIds.indexOf(b.id) >= 0;
-            return '<div class="achievement '+(isEarned?'earned':'locked')+'">' +
-                '<div class="achievement-icon">'+(b.icon||'&#127942;')+'</div>' +
-                '<div class="achievement-name">'+(b.name||b.id)+'</div>' +
-                '<div class="achievement-desc">'+(b.desc||'')+'</div>' +
-                '</div>';
-        }).join('');
-    } catch(e) {
-        // Fallback: show default badges all locked
-        document.getElementById('achievements-grid').innerHTML = defaultBadges.map(function(b) {
-            return '<div class="achievement locked">' +
-                '<div class="achievement-icon">'+b.icon+'</div>' +
-                '<div class="achievement-name">'+b.name+'</div>' +
-                '<div class="achievement-desc">'+b.desc+'</div>' +
-                '</div>';
-        }).join('');
-    }
-}
-
 updateDisplay();
 loadConfig();
 loadStats();
 loadToday();
-loadAchievements();
 updateBreakIndicator();
 restoreTimer(); // resume session if page was reloaded
 
-EOS.on('focus:completed', function() { loadStats(); loadToday(); loadAchievements(); });
+EOS.on('focus:completed', function() { loadStats(); loadToday(); });
 if (EOS.keys) { EOS.keys.register('s', 'Start/stop timer', function() { toggleTimer(); }); EOS.keys.register('r', 'Refresh', function() { loadStats(); loadToday(); }); EOS.keys.register('b', 'Take a break', function() { takeBreakManual(); }); }
 
 // ---- Hands-Free gesture overrides ----

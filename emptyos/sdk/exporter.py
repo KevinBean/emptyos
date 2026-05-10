@@ -37,25 +37,143 @@ from typing import Any, Literal
 
 from emptyos.sdk.base_app import BaseApp
 
+# Shared static files grouped by feature. ``base`` is always shipped; the other
+# bundles are opt-in via ``[provides.export].assets = [...]``. When ``assets``
+# is not declared, every bundle is shipped (today's default — keeps existing
+# exports working without touching their manifests).
+ASSET_BUNDLES: dict[str, tuple[str, ...]] = {
+    "base": (
+        "theme.css",
+        "eos-components.css",
+        "eos-components.js",
+        "eos.js",
+        "eos-export-shim.js",
+    ),
+    "keys": ("eos-keys.js", "eos-keys.css"),
+    "maps": ("eos-map.js", "eos-map.css"),
+    "hands-free": ("eos-hands-free.js", "eos-hands-free.css"),
+    "realtime": ("realtime.js",),
+    "assistant": ("page-assistant.js",),
+}
 
-# Shared static files that every export needs (loaded before the app's own JS).
-# eos-export-shim.js is the polyfill that makes EOS.* safe in the absence of a
-# daemon; everything else matches /static/ on the live server.
-SHARED_ASSETS: tuple[str, ...] = (
-    "theme.css",
-    "eos-components.css",
-    "eos-components.js",
-    "eos.js",
-    "eos-keys.js",
-    "eos-keys.css",
-    "eos-map.js",
-    "eos-map.css",
-    "eos-hands-free.js",
-    "eos-hands-free.css",
-    "realtime.js",
-    "page-assistant.js",
-    "eos-export-shim.js",
+# Back-compat — anything that used SHARED_ASSETS before continues to work.
+SHARED_ASSETS: tuple[str, ...] = tuple(
+    name for files in ASSET_BUNDLES.values() for name in files
 )
+
+
+_CAPABILITY_FALLBACK_KEYS: tuple[str, ...] = (
+    "think",
+    "speak",
+    "listen",
+    "draw",
+    "animate",
+    "see",
+    "read",
+    "write",
+)
+
+
+def _build_capabilities_matrix(
+    fallbacks: list[str],
+    *,
+    has_overrides: bool,
+    bundled_apps: list[str] | None = None,
+) -> dict[str, Any]:
+    """Render an honest "what works here" matrix from the declared fallbacks.
+
+    Status values:
+      - ``"available"`` — works offline (e.g. ``vault.write`` via IndexedDB,
+        ``speak`` via Web Speech API).
+      - ``"byok"`` — works only if the user supplies an API key in the pill.
+      - ``"disabled"`` — explicitly degraded (e.g. ``viewer:none``).
+      - ``"unavailable"`` — no fallback declared. UI should hide / dim.
+
+    Consumed by the export shim's pill panel (read from ``_meta/capabilities.json``)
+    so users get a single honest view of what their bundle can do.
+    """
+    fb = list(fallbacks or [])
+
+    def _has(prefix: str) -> str | None:
+        for f in fb:
+            if f == prefix:
+                return ""
+            if f.startswith(prefix + ":"):
+                return f.split(":", 1)[1]
+        return None
+
+    vault_strategy = _has("vault")
+    matrix: dict[str, Any] = {}
+    for cap in _CAPABILITY_FALLBACK_KEYS:
+        # read/write are vault-backed by default — defer to vault: when set.
+        if cap in ("read", "write") and vault_strategy is not None:
+            matrix[cap] = {"status": "available", "strategy": vault_strategy}
+            continue
+        strategy = _has(cap)
+        if strategy is None:
+            matrix[cap] = {"status": "unavailable", "reason": "no fallback declared"}
+        elif strategy == "byok-openai":
+            matrix[cap] = {"status": "byok", "strategy": strategy, "needs": "openai_key"}
+        elif strategy == "none":
+            matrix[cap] = {"status": "disabled", "strategy": strategy}
+        elif strategy in ("web-speech-api", "web-speech-recognition"):
+            matrix[cap] = {"status": "available", "strategy": strategy, "note": "browser-only"}
+        elif strategy == "indexeddb":
+            matrix[cap] = {"status": "available", "strategy": "indexeddb"}
+        else:
+            matrix[cap] = {"status": "available", "strategy": strategy or "declared"}
+
+    # Vault is the meta-capability that backs read/write.
+    matrix["vault"] = (
+        {"status": "available", "strategy": vault_strategy or "indexeddb"}
+        if vault_strategy is not None or _has("read") is not None or _has("write") is not None
+        else {"status": "unavailable", "reason": "no vault fallback declared"}
+    )
+
+    # Viewer (Obsidian etc.) — explicit none means we degrade to copy-path.
+    viewer_strategy = _has("viewer")
+    matrix["viewer"] = (
+        {"status": "disabled", "strategy": "copy-path"}
+        if viewer_strategy == "none" or viewer_strategy is None
+        else {"status": "available", "strategy": viewer_strategy}
+    )
+
+    # Events: in-page bus is always wired by the shim. The "events:local-bus"
+    # fallback is just an explicit declaration users can read in the panel.
+    matrix["events"] = {"status": "available", "strategy": "local-bus"}
+
+    # Cross-app calls.
+    if bundled_apps is None:
+        matrix["call_app"] = {"status": "single-app", "note": "no other apps bundled"}
+    else:
+        matrix["call_app"] = {
+            "status": "available",
+            "strategy": "bundled",
+            "apps": list(bundled_apps),
+        }
+
+    matrix["overrides"] = {"status": "available" if has_overrides else "auto-rpc-only"}
+    return matrix
+
+
+def _resolve_assets(declared: list[str] | None) -> tuple[str, ...]:
+    """Resolve ``[provides.export].assets`` into a flat list of file names.
+
+    - ``declared is None`` (no opt-in) → ship every bundle. Backwards-compatible.
+    - ``declared == ["minimal"]`` → just the base bundle. Smallest viable shim.
+    - Otherwise → ``base`` + each named bundle. Unknown names are ignored.
+    """
+    if declared is None:
+        return SHARED_ASSETS
+    out: list[str] = list(ASSET_BUNDLES["base"])
+    for name in declared:
+        n = (name or "").strip().lower()
+        if n in ("base", "minimal", ""):
+            continue
+        out.extend(ASSET_BUNDLES.get(n, ()))
+    # de-dupe while preserving order
+    seen: set[str] = set()
+    return tuple(x for x in out if not (x in seen or seen.add(x)))
 
 
 class ExportConfigError(Exception):
@@ -93,6 +211,8 @@ class AppExporter:
         fallbacks = list(export_cfg.get("fallbacks", []))
         mode = export_cfg.get("mode", "standalone")
         hook_module_name = export_cfg.get("hook", "export")
+        # ``assets`` opt-in: list of bundle names. Absent → ship everything.
+        assets = _resolve_assets(export_cfg.get("assets"))
 
         # Prepare output directory
         if self.out_dir is None:
@@ -106,9 +226,7 @@ class AppExporter:
         # 1. Copy pages/ (the app's UI) into out_dir root.
         pages_dir = manifest.path / "pages"
         if not pages_dir.exists():
-            raise ExportConfigError(
-                f"App '{manifest.id}' has no pages/ directory — cannot export"
-            )
+            raise ExportConfigError(f"App '{manifest.id}' has no pages/ directory — cannot export")
         for entry in pages_dir.iterdir():
             dst = self.out_dir / entry.name
             if entry.is_dir():
@@ -119,7 +237,7 @@ class AppExporter:
         # 2. Copy shared static assets into _assets/.
         assets_dir = self.out_dir / "_assets"
         assets_dir.mkdir()
-        for asset in SHARED_ASSETS:
+        for asset in assets:
             src = self.web_static_dir / asset
             if src.exists():
                 shutil.copy(src, assets_dir / asset)
@@ -164,6 +282,12 @@ class AppExporter:
         }
         (meta_dir / "export.json").write_text(
             json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+        capabilities = _build_capabilities_matrix(
+            fallbacks, has_overrides=bool(client_overrides), bundled_apps=None
+        )
+        (meta_dir / "capabilities.json").write_text(
+            json.dumps(capabilities, ensure_ascii=False, indent=2), encoding="utf-8"
         )
 
         # 6. Rewrite index.html — rewire asset URLs, inject bootstrap + shim.
@@ -235,10 +359,7 @@ class AppExporter:
             f"{bootstrap}\n"
             f"<script>\n{shim_js}\n</script>\n"
         )
-        body_injection = (
-            f"<script>\n{components_js}\n</script>\n"
-            f"<script>\n{eos_js}\n</script>\n"
-        )
+        body_injection = f"<script>\n{components_js}\n</script>\n<script>\n{eos_js}\n</script>\n"
 
         # Strip references to absolute /static/ files — everything is inlined.
         html_content = self._strip_static_links(html_content)
@@ -308,13 +429,17 @@ class AppExporter:
         )
         # 2. Rewrite the app's own /{prefix}/pages/... → sibling relative
         if app_prefix:
-            html = html.replace(
-                f'href="{app_prefix}/pages/', 'href="'
-            ).replace(f'src="{app_prefix}/pages/', 'src="')
+            html = html.replace(f'href="{app_prefix}/pages/', 'href="').replace(
+                f'src="{app_prefix}/pages/', 'src="'
+            )
 
         # Inline snapshot + routes so fetch() doesn't need to hit the filesystem.
         state_json = json.dumps(state or {}, ensure_ascii=False, default=str)
         routes_json = json.dumps(stub_routes or {}, ensure_ascii=False, default=str)
+        capabilities_json = json.dumps(
+            _build_capabilities_matrix(fallbacks, has_overrides=has_overrides, bundled_apps=None),
+            ensure_ascii=False,
+        )
         bootstrap = (
             "<script>\n"
             "window.EOS_IS_EXPORT = true;\n"
@@ -323,13 +448,12 @@ class AppExporter:
             f"window.EOS_EXPORT_FALLBACKS = {json.dumps(fallbacks)};\n"
             f"window.EOS_EXPORT_DATA = {state_json};\n"
             f"window.EOS_EXPORT_ROUTES = {routes_json};\n"
+            f"window.EOS_EXPORT_CAPABILITIES = {capabilities_json};\n"
             "</script>"
         )
 
         shim_tag = '<script src="_assets/eos-export-shim.js"></script>'
-        overrides_tag = (
-            '<script src="_data/overrides.js"></script>' if has_overrides else ""
-        )
+        overrides_tag = '<script src="_data/overrides.js"></script>' if has_overrides else ""
 
         head_inject = f"{bootstrap}\n{shim_tag}\n{overrides_tag}\n"
 
@@ -387,12 +511,8 @@ class AppExporter:
                 return ""
             return f"<script>\n{_safe_js(path.read_text(encoding='utf-8'))}\n</script>"
 
-        html = re.sub(
-            r'<link[^>]+href="_assets/([^"]+)"[^>]*>', _inline_link, html
-        )
-        html = re.sub(
-            r'<script[^>]+src="_assets/([^"]+)"[^>]*></script>', _inline_script, html
-        )
+        html = re.sub(r'<link[^>]+href="_assets/([^"]+)"[^>]*>', _inline_link, html)
+        html = re.sub(r'<script[^>]+src="_assets/([^"]+)"[^>]*></script>', _inline_script, html)
 
         # Inline _data/state.json + routes.json into window globals.
         state_file = self.out_dir / "_data" / "state.json"
@@ -429,6 +549,7 @@ class AppExporter:
 # Group export — multi-app bundles (Phase 3)
 # ─────────────────────────────────────────────────────────────────────────
 
+
 class GroupExporter:
     """Bundles several apps into one shell so they can call each other in the
     browser.
@@ -448,8 +569,14 @@ class GroupExporter:
     builds up at boot from each app's exported methods.
     """
 
-    def __init__(self, kernel, group: dict, *, out_dir: Path | str | None = None,
-                 fmt: Literal["dir", "zip", "single-html"] = "dir"):
+    def __init__(
+        self,
+        kernel,
+        group: dict,
+        *,
+        out_dir: Path | str | None = None,
+        fmt: Literal["dir", "zip", "single-html"] = "dir",
+    ):
         self.kernel = kernel
         self.group = group
         self.fmt = fmt
@@ -478,15 +605,15 @@ class GroupExporter:
                 continue
             exp = manifest.provides.get("export", {}) or {}
             if not exp.get("enabled"):
-                warnings.append(f"member '{app_id}' has [provides.export].enabled = false — skipped")
+                warnings.append(
+                    f"member '{app_id}' has [provides.export].enabled = false — skipped"
+                )
                 continue
             inst = self.kernel.apps.instances.get(app_id) or await self.kernel.apps.load(app_id)
             loaded[app_id] = (manifest, inst)
 
         if not loaded:
-            raise ExportConfigError(
-                f"Group '{self.group.get('id')}' has no export-enabled members"
-            )
+            raise ExportConfigError(f"Group '{self.group.get('id')}' has no export-enabled members")
 
         # Warn on unmet cross-app deps (declared but not in group).
         member_ids = set(loaded.keys())
@@ -507,10 +634,30 @@ class GroupExporter:
                 shutil.rmtree(self.out_dir)
             self.out_dir.mkdir(parents=True)
 
-        # 1. Copy shared static assets once.
+        # 1. Copy shared static assets once. Take the union of members' declared
+        # ``[provides.export].assets``; if ANY member doesn't declare it, fall
+        # back to shipping everything (safe default — never strip an asset a
+        # silent member might depend on). Group config can also override via
+        # ``assets`` at the group level.
+        group_assets_decl = self.group.get("assets")
+        if group_assets_decl is not None:
+            assets = _resolve_assets(list(group_assets_decl))
+        else:
+            declared_per_member = []
+            any_undeclared = False
+            for _aid, (m, _i) in loaded.items():
+                d = (m.provides.get("export", {}) or {}).get("assets")
+                if d is None:
+                    any_undeclared = True
+                    break
+                declared_per_member.extend(d)
+            if any_undeclared:
+                assets = SHARED_ASSETS
+            else:
+                assets = _resolve_assets(declared_per_member)
         assets_dir = self.out_dir / "_assets"
         assets_dir.mkdir()
-        for asset in SHARED_ASSETS:
+        for asset in assets:
             src = self.web_static_dir / asset
             if src.exists():
                 shutil.copy(src, assets_dir / asset)
@@ -520,7 +667,11 @@ class GroupExporter:
         merged_routes: dict[str, Any] = {}
         all_overrides: list[str] = []
         member_summaries = []
-        rpc_methods: dict[str, list[str]] = {}   # app_id → [public method names]
+        # app_id → method_name → {method, path, prefix}
+        # Used to auto-register `EOS.callApp(app, name, kwargs)` handlers that
+        # round-trip through the shim's fetch interceptor (and per-app
+        # registerRoute handlers from client_overrides).
+        rpc_methods_map: dict[str, dict[str, dict]] = {}
 
         for app_id, (manifest, inst) in loaded.items():
             app_sub = self.out_dir / app_id
@@ -550,34 +701,58 @@ class GroupExporter:
             if overrides:
                 all_overrides.append(f"/* overrides for {app_id} */\n{overrides}")
 
-            # Collect public @web_route GET/POST/... methods for RPC auto-registration.
+            # Collect @web_route methods, keyed by python method name. The
+            # registered name is what other apps pass to EOS.callApp(app, name, kwargs).
+            # When a method name has both GET and POST/PATCH/DELETE bindings,
+            # prefer the write verb so kwargs land in the body.
+            prefix = manifest.provides.get("web", {}).get("prefix", "")
+            methods: dict[str, dict] = {}
             try:
-                web_methods = inst.get_web_methods() or []
-                rpc_methods[app_id] = [meta.get("path", "") for meta, _ in web_methods]
+                for meta, fn in inst.get_web_methods() or []:
+                    name = getattr(fn, "__name__", "") or ""
+                    if not name or name.startswith("_"):
+                        continue
+                    verb = (meta.get("method") or "GET").upper()
+                    path = meta.get("path") or ""
+                    cur = methods.get(name)
+                    if cur is None or (cur["method"] == "GET" and verb != "GET"):
+                        methods[name] = {"method": verb, "path": path, "prefix": prefix}
             except Exception:
-                rpc_methods[app_id] = []
+                pass
+            rpc_methods_map[app_id] = methods
 
-            # Rewrite the sub-app's index.html with the bootstrap + shim + RPC setup.
+        # Now that rpc_methods_map covers every member, rewrite each sub-app's
+        # HTML with the bootstrap + shim + auto-RPC registration script.
+        for app_id, (manifest, inst) in loaded.items():
+            member_summaries.append(
+                {
+                    "id": app_id,
+                    "name": manifest.name,
+                    "version": manifest.version,
+                    "description": manifest.description,
+                    "prefix": manifest.provides.get("web", {}).get("prefix", ""),
+                }
+            )
+            app_sub = self.out_dir / app_id
             index_file = app_sub / "index.html"
-            if index_file.exists():
-                html = index_file.read_text(encoding="utf-8")
-                html = self._rewrite_sub_app_html(
-                    html,
-                    app_id=app_id,
-                    app_prefix=manifest.provides.get("web", {}).get("prefix", ""),
-                    fallbacks=self.group.get("fallbacks", []),
-                    member_ids=sorted(member_ids),
-                    state=state,
-                    stub_routes=stub_routes or {},
-                    has_overrides=bool(overrides),
-                )
-                index_file.write_text(html, encoding="utf-8")
-
-            member_summaries.append({
-                "id": app_id, "name": manifest.name, "version": manifest.version,
-                "description": manifest.description,
-                "prefix": manifest.provides.get("web", {}).get("prefix", ""),
-            })
+            if not index_file.exists():
+                continue
+            # Re-load the hook to pull per-app stub_routes / overrides for the rewriter.
+            hook_name = (manifest.provides.get("export", {}) or {}).get("hook", "export")
+            _, sr, ov = AppExporter._load_hook(manifest, hook_name)
+            html = index_file.read_text(encoding="utf-8")
+            html = self._rewrite_sub_app_html(
+                html,
+                app_id=app_id,
+                app_prefix=manifest.provides.get("web", {}).get("prefix", ""),
+                fallbacks=self.group.get("fallbacks", []),
+                member_ids=sorted(member_ids),
+                state=merged_state.get(app_id, {}),
+                stub_routes=sr or {},
+                has_overrides=bool(ov),
+                rpc_methods_map=rpc_methods_map,
+            )
+            index_file.write_text(html, encoding="utf-8")
 
         # 3. Merged _data files.
         data_dir = self.out_dir / "_data"
@@ -601,15 +776,30 @@ class GroupExporter:
         # 5. Metadata.
         meta_dir = self.out_dir / "_meta"
         meta_dir.mkdir()
-        (meta_dir / "export.json").write_text(json.dumps({
-            "group_id": self.group.get("id"),
-            "group_name": self.group.get("name"),
-            "entry": self.group.get("entry"),
-            "members": [m["id"] for m in member_summaries],
-            "fallbacks": self.group.get("fallbacks", []),
-            "warnings": warnings,
-            "built_at": datetime.now().isoformat(),
-        }, ensure_ascii=False, indent=2), encoding="utf-8")
+        (meta_dir / "export.json").write_text(
+            json.dumps(
+                {
+                    "group_id": self.group.get("id"),
+                    "group_name": self.group.get("name"),
+                    "entry": self.group.get("entry"),
+                    "members": [m["id"] for m in member_summaries],
+                    "fallbacks": self.group.get("fallbacks", []),
+                    "warnings": warnings,
+                    "built_at": datetime.now().isoformat(),
+                },
+                ensure_ascii=False,
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
+        capabilities = _build_capabilities_matrix(
+            self.group.get("fallbacks", []),
+            has_overrides=bool(all_overrides),
+            bundled_apps=[m["id"] for m in member_summaries],
+        )
+        (meta_dir / "capabilities.json").write_text(
+            json.dumps(capabilities, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
 
         # 6. Zip if asked.
         if self.fmt == "zip":
@@ -628,13 +818,14 @@ class GroupExporter:
         cards = "\n".join(
             f'<a class="card" href="{m["id"]}/index.html">'
             f'<div class="card-name">{m["name"]}</div>'
-            f'<div class="card-desc">{m.get("description","")}</div>'
-            f'</a>'
+            f'<div class="card-desc">{m.get("description", "")}</div>'
+            f"</a>"
             for m in members
         )
         entry_redirect = (
             f'<script>if (location.hash === "#auto") location.replace("{entry}/index.html");</script>'
-            if entry else ""
+            if entry
+            else ""
         )
         return f"""<!doctype html>
 <html><head><meta charset="utf-8"><title>{group_name}</title>
@@ -667,8 +858,19 @@ Bundled apps can call each other via the in-page RPC registry. Fallbacks: <code>
 </body></html>
 """
 
-    def _rewrite_sub_app_html(self, html, *, app_id, app_prefix, fallbacks,
-                              member_ids, state, stub_routes, has_overrides):
+    def _rewrite_sub_app_html(
+        self,
+        html,
+        *,
+        app_id,
+        app_prefix,
+        fallbacks,
+        member_ids,
+        state,
+        stub_routes,
+        has_overrides,
+        rpc_methods_map=None,
+    ):
         """Rewrite a member app's index.html to load shared assets from ../_assets/
         and bootstrap the multi-app shim."""
         # Assets live one level up.
@@ -683,6 +885,12 @@ Bundled apps can call each other via the in-page RPC registry. Fallbacks: <code>
         state_json = json.dumps(state or {}, ensure_ascii=False, default=str)
         routes_json = json.dumps(stub_routes or {}, ensure_ascii=False, default=str)
         members_json = json.dumps(member_ids)
+        capabilities_json = json.dumps(
+            _build_capabilities_matrix(
+                fallbacks, has_overrides=has_overrides, bundled_apps=member_ids
+            ),
+            ensure_ascii=False,
+        )
 
         bootstrap = (
             "<script>\n"
@@ -694,11 +902,50 @@ Bundled apps can call each other via the in-page RPC registry. Fallbacks: <code>
             f"window.EOS_BUNDLED_APPS = {members_json};\n"
             f"window.EOS_EXPORT_DATA = {state_json};\n"
             f"window.EOS_EXPORT_ROUTES = {routes_json};\n"
+            f"window.EOS_EXPORT_CAPABILITIES = {capabilities_json};\n"
             "</script>"
         )
         shim_tag = '<script src="../_assets/eos-export-shim.js"></script>'
+        # Auto-RPC: walk every bundled app's @web_route methods and register
+        # an EOS.callApp(app, method, kwargs) handler that round-trips through
+        # the shim's fetch interceptor. Per-app client_overrides load AFTER and
+        # may registerAppMethod again to replace specific bindings with native
+        # IndexedDB write paths.
+        rpc_map_json = json.dumps(rpc_methods_map or {})
+        auto_rpc_tag = (
+            "<script>\n"
+            "(function(){\n"
+            "  function _wire(){\n"
+            "    if (!window.EOS_EXPORT) return setTimeout(_wire, 20);\n"
+            f"    var MAP = {rpc_map_json};\n"
+            "    Object.keys(MAP).forEach(function(appId){\n"
+            "      var ms = MAP[appId] || {};\n"
+            "      Object.keys(ms).forEach(function(name){\n"
+            "        var info = ms[name];\n"
+            "        window.EOS_EXPORT.registerAppMethod(appId, name, async function(kwargs){\n"
+            "          var url = (info.prefix || '') + (info.path || '');\n"
+            "          var init = { method: info.method, headers: {'Content-Type':'application/json'} };\n"
+            "          if (info.method === 'GET' || info.method === 'HEAD') {\n"
+            "            if (kwargs && Object.keys(kwargs).length){\n"
+            "              var qs = new URLSearchParams();\n"
+            "              Object.keys(kwargs).forEach(function(k){ if (kwargs[k]!=null) qs.set(k, kwargs[k]); });\n"
+            "              var q = qs.toString(); if (q) url += '?' + q;\n"
+            "            }\n"
+            "          } else {\n"
+            "            init.body = JSON.stringify(kwargs || {});\n"
+            "          }\n"
+            "          var res = await fetch(url, init);\n"
+            "          try { return await res.json(); } catch(_) { return { ok: res.ok }; }\n"
+            "        });\n"
+            "      });\n"
+            "    });\n"
+            "  }\n"
+            "  _wire();\n"
+            "})();\n"
+            "</script>"
+        )
         overrides_tag = '<script src="../_data/overrides.js"></script>' if has_overrides else ""
-        head_inject = f"{bootstrap}\n{shim_tag}\n{overrides_tag}\n"
+        head_inject = f"{bootstrap}\n{shim_tag}\n{auto_rpc_tag}\n{overrides_tag}\n"
         if "<head>" in html:
             html = html.replace("<head>", f"<head>\n{head_inject}", 1)
         else:
@@ -709,6 +956,7 @@ Bundled apps can call each other via the in-page RPC registry. Fallbacks: <code>
 def load_groups(path: Path | str = "export-groups.toml") -> list[dict]:
     """Parse the top-level export-groups.toml and return each group as a dict."""
     import tomllib
+
     p = Path(path)
     if not p.exists():
         return []
@@ -717,4 +965,3 @@ def load_groups(path: Path | str = "export-groups.toml") -> list[dict]:
     if isinstance(groups, dict):
         groups = [groups]
     return groups
-

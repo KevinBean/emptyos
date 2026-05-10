@@ -1,0 +1,16 @@
+[engine]
+id = "soil"
+name = "Soil Resistivity Inversion Engine"
+version = "1.0.0"
+description = "Multi-layer horizontal soil resistivity inversion from Wenner / Schlumberger / dipole-dipole sounding measurements. Stefanesco recursion + Guptasarma–Singh Hankel filter for the forward kernel; bounded log-parameter Levenberg–Marquardt for inversion; Jacobian SVD condition diagnostic for equivalence-problem detection. Validated against the SES CDEGS RESAP RS_TUT1 reference case."
+
+[engine.entry]
+module = "engine"
+class = "SoilEngine"
+
+[requires]
+packages = ["numpy", "scipy"]
+
+[provides]
+services = ["soil"]
+tags = ["soil", "resistivity", "wenner", "schlumberger", "ieee81", "earthing", "grounding"]

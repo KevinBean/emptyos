@@ -9,7 +9,6 @@ from emptyos.sdk import on_event
 
 
 class LifeReactionsMixin:
-
     # Wellbeing-wheel cache invalidation. The wheel is a silent design lens;
     # keeping it fresh on real activity makes the briefing nudge reflect
     # today, not a three-minute-old signal.
@@ -29,8 +28,9 @@ class LifeReactionsMixin:
     async def on_expense(self, event):
         """Budget awareness — alert when monthly spending gets high."""
         try:
-            summary = await self.call_app("expense", "list_expenses",
-                                          month=date.today().strftime("%Y-%m"))
+            summary = await self.call_app(
+                "expense", "list_expenses", month=date.today().strftime("%Y-%m")
+            )
             total = sum(e.get("amount", 0) for e in summary)
             if total > 5000:
                 msg = f"💰 Monthly expenses: ${total:.0f} — over $5,000 threshold"

@@ -32,7 +32,7 @@ class RealtimeManager:
     async def start(self):
         """Subscribe to all kernel events for broadcasting."""
         self._unsub = self.kernel.events.on_any(self._broadcast)
-        print(f"[Realtime] WebSocket bridge active")
+        print("[Realtime] WebSocket bridge active")
 
     async def stop(self):
         """Unsubscribe and disconnect all clients."""
@@ -81,12 +81,14 @@ class RealtimeManager:
         if not self._clients:
             return
 
-        payload = json.dumps({
-            "type": event.type,
-            "data": event.data,
-            "source": event.source,
-            "timestamp": event.timestamp,
-        })
+        payload = json.dumps(
+            {
+                "type": event.type,
+                "data": event.data,
+                "source": event.source,
+                "timestamp": event.timestamp,
+            }
+        )
 
         dead = []
         for ws, subscriptions in self._clients.items():
@@ -116,8 +118,11 @@ class RealtimeManager:
         return len(self._clients)
 
     async def request_capture(
-        self, capability: str, mode: str = "speech",
-        timeout: float = 30.0, **kwargs,
+        self,
+        capability: str,
+        mode: str = "speech",
+        timeout: float = 30.0,
+        **kwargs,
     ) -> dict:
         """Ask a connected browser to capture something via its native APIs.
 
@@ -130,23 +135,24 @@ class RealtimeManager:
         within timeout seconds.
         """
         import uuid
+
         if not self._clients:
-            raise RuntimeError(
-                "no browser connected — open the EmptyOS web UI in a browser tab"
-            )
+            raise RuntimeError("no browser connected — open the EmptyOS web UI in a browser tab")
 
         request_id = uuid.uuid4().hex[:12]
         loop = asyncio.get_running_loop()
         future = loop.create_future()
         self._pending_captures[request_id] = future
 
-        payload = json.dumps({
-            "type": "capture_request",
-            "id": request_id,
-            "capability": capability,
-            "mode": mode,
-            **kwargs,
-        })
+        payload = json.dumps(
+            {
+                "type": "capture_request",
+                "id": request_id,
+                "capability": capability,
+                "mode": mode,
+                **kwargs,
+            }
+        )
 
         # Send to all clients; first to respond wins. This handles the case
         # where the user has multiple tabs open without forcing us to track

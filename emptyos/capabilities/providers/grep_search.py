@@ -9,7 +9,6 @@ from pathlib import Path
 
 from emptyos.capabilities import Provider
 
-
 # path:lineno:text for match, path-lineno-text for context. On Windows the
 # path itself contains a drive colon (`D:\...`), so we anchor on the
 # `:<digits>:` or `-<digits>-` separator between path and line number.
@@ -134,11 +133,13 @@ def _parse_content_lines(text: str, limit: int) -> list[dict]:
         m = _RG_LINE_RE.match(raw)
         if not m:
             continue
-        out.append({
-            "path": m.group("path"),
-            "line_number": int(m.group("lineno")),
-            "text": m.group("text"),
-        })
+        out.append(
+            {
+                "path": m.group("path"),
+                "line_number": int(m.group("lineno")),
+                "text": m.group("text"),
+            }
+        )
         if len(out) >= limit:
             break
     return out

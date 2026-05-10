@@ -6,9 +6,6 @@ project Tools tabs via manifest-driven discovery.
 
 from __future__ import annotations
 
-import json
-from pathlib import Path
-
 from emptyos.sdk import BaseApp, cli_command, web_route
 
 try:
@@ -18,7 +15,6 @@ except ImportError:
 
 
 class GitHubConnectorApp(BaseApp):
-
     def _token(self) -> str:
         return self.app_config("github.token", "")
 
@@ -38,7 +34,9 @@ class GitHubConnectorApp(BaseApp):
             return {"error": "aiohttp not installed"}
         url = f"https://api.github.com{path}"
         async with aiohttp.ClientSession() as session:
-            async with session.get(url, headers=self._headers(), timeout=aiohttp.ClientTimeout(total=15)) as resp:
+            async with session.get(
+                url, headers=self._headers(), timeout=aiohttp.ClientTimeout(total=15)
+            ) as resp:
                 resp.raise_for_status()
                 return await resp.json()
 
@@ -73,15 +71,17 @@ class GitHubConnectorApp(BaseApp):
             for issue in issues:
                 if issue.get("pull_request"):
                     continue  # Skip PRs in issues list
-                result.append({
-                    "number": issue["number"],
-                    "title": issue["title"],
-                    "state": issue["state"],
-                    "labels": [l["name"] for l in issue.get("labels", [])],
-                    "assignee": (issue.get("assignee") or {}).get("login", ""),
-                    "created": issue["created_at"][:10],
-                    "url": issue["html_url"],
-                })
+                result.append(
+                    {
+                        "number": issue["number"],
+                        "title": issue["title"],
+                        "state": issue["state"],
+                        "labels": [l["name"] for l in issue.get("labels", [])],
+                        "assignee": (issue.get("assignee") or {}).get("login", ""),
+                        "created": issue["created_at"][:10],
+                        "url": issue["html_url"],
+                    }
+                )
             await self.emit("github:synced", {"repo": repo, "count": len(result)})
             return {"issues": result, "repo": repo}
         except Exception as e:
@@ -99,16 +99,18 @@ class GitHubConnectorApp(BaseApp):
             prs = await self._gh_get(f"/repos/{repo}/pulls?state=open&per_page=30")
             result = []
             for pr in prs:
-                result.append({
-                    "number": pr["number"],
-                    "title": pr["title"],
-                    "state": pr["state"],
-                    "author": pr["user"]["login"],
-                    "branch": pr["head"]["ref"],
-                    "created": pr["created_at"][:10],
-                    "url": pr["html_url"],
-                    "draft": pr.get("draft", False),
-                })
+                result.append(
+                    {
+                        "number": pr["number"],
+                        "title": pr["title"],
+                        "state": pr["state"],
+                        "author": pr["user"]["login"],
+                        "branch": pr["head"]["ref"],
+                        "created": pr["created_at"][:10],
+                        "url": pr["html_url"],
+                        "draft": pr.get("draft", False),
+                    }
+                )
             await self.emit("github:pr_status", {"repo": repo, "count": len(result)})
             return {"prs": result, "repo": repo}
         except Exception as e:

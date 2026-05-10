@@ -14,30 +14,27 @@ from __future__ import annotations
 import asyncio
 import json
 import uuid
-from datetime import date, datetime, timezone
+from datetime import date, datetime
 from pathlib import Path
 
-from emptyos.sdk import BaseApp, cli_command, parse_llm_json, web_route, ws_route
 from emptyos.runtime import wheel as _wheel
+from emptyos.sdk import BaseApp, cli_command, web_route, ws_route
 
-from .sessions import SessionsMixin
 from .prompts import (
     BUILTIN_OVERRIDES,
     FALLBACK_THINK_TIMEOUT,
-    INTERNAL_COMMANDS,
     MAX_CHAT_TURNS,
     MAX_CONTEXT_CHARS,
     MAX_CONTEXT_FILES,
-    MAX_HISTORY,
     SYSTEM_PROMPT,
     TOOLS_MAX_ITERS,
     TOOLS_READONLY,
     TOOLS_SYSTEM_PROMPT,
 )
+from .sessions import SessionsMixin
 
 
 class AssistantApp(SessionsMixin, BaseApp):
-
     _sessions_lock: asyncio.Lock
     _cancel_flags: dict[str, bool]
 
@@ -159,8 +156,9 @@ class AssistantApp(SessionsMixin, BaseApp):
 
     # ── Chat Messages Builder ──────────────────────────────────
 
-    def _build_chat_messages(self, session: dict, vault_context: str = "",
-                             max_turns: int = MAX_CHAT_TURNS) -> list[dict]:
+    def _build_chat_messages(
+        self, session: dict, vault_context: str = "", max_turns: int = MAX_CHAT_TURNS
+    ) -> list[dict]:
         """Build an OpenAI-style messages list from session history.
 
         - Keeps the last `max_turns` entries from DB.
@@ -283,32 +281,99 @@ class AssistantApp(SessionsMixin, BaseApp):
             return True
         tokens = [t for t in q.replace("?", " ").replace("!", " ").split() if t]
         stop = {
-            "hi", "hello", "hey", "yo", "sup", "hola", "thanks", "thank", "you",
-            "ok", "okay", "cool", "nice", "great", "good", "morning", "evening",
-            "afternoon", "night", "bye", "gm", "gn", "lol", "haha", "?", "test",
-            "ping", "yes", "no", "sure", "wassup", "how", "are", "doing",
+            "hi",
+            "hello",
+            "hey",
+            "yo",
+            "sup",
+            "hola",
+            "thanks",
+            "thank",
+            "you",
+            "ok",
+            "okay",
+            "cool",
+            "nice",
+            "great",
+            "good",
+            "morning",
+            "evening",
+            "afternoon",
+            "night",
+            "bye",
+            "gm",
+            "gn",
+            "lol",
+            "haha",
+            "?",
+            "test",
+            "ping",
+            "yes",
+            "no",
+            "sure",
+            "wassup",
+            "how",
+            "are",
+            "doing",
         }
         if tokens and all(t in stop for t in tokens):
             return True
         return False
 
-    async def _build_context(self, question: str) -> str:
+    async def _build_context(self, question: str, session: dict | None = None) -> str:
         if self._should_skip_retrieval(question):
             return ""
+        # Multi-turn retrieval query: include recent prior turns so a
+        # follow-up like "how does that work?" doesn't lose topic. Session
+        # messages use {role, text}; map to {role, content} for the helper.
+        retrieval_query = question
+        if session and session.get("messages"):
+            from emptyos.sdk.embeddings import build_retrieval_query
+
+            history = [
+                {"role": m.get("role", ""), "content": m.get("text", "")}
+                for m in session["messages"]
+                if m.get("text")
+            ]
+            # Drop the trailing turn if it equals the current question (we
+            # add it via the `current` arg instead).
+            if history and history[-1].get("content") == question:
+                history = history[:-1]
+            retrieval_query = build_retrieval_query(history, question)
+
+        # Prefer embedding-based search when available — much higher recall
+        # on paraphrase queries. Falls back to grep on any failure or when
+        # embeddings unavailable. Routed through apps/search so a single
+        # retrieval pipeline serves both /search and the assistant.
+        results: list = []
         try:
-            results = await self.search(question, path=str(self.kernel.config.notes_path))
-            context_parts = []
-            for r in results[:MAX_CONTEXT_FILES]:
-                path = r if isinstance(r, str) else r.get("path", "")
-                try:
-                    content = await self.read(path)
-                    name = path.replace("\\", "/").split("/")[-1]
-                    context_parts.append(f"[{name}]\n{content[:MAX_CONTEXT_CHARS]}")
-                except Exception:
-                    continue
-            return "\n\n".join(context_parts) if context_parts else ""
+            if self.embeddings_available:
+                resp = await self.call_app(
+                    "search", "_embed_search",
+                    query=retrieval_query, top=MAX_CONTEXT_FILES,
+                )
+                if isinstance(resp, tuple) and len(resp) >= 1:
+                    paths = resp[0] or []
+                    results = [{"path": p} for p in paths]
         except Exception:
-            return ""
+            results = []
+        if not results:
+            try:
+                # Grep fallback uses the bare question (it can't usefully grep
+                # for "x | y | z" multi-turn concatenations).
+                results = await self.search(question, path=str(self.kernel.config.notes_path))
+            except Exception:
+                return ""
+        context_parts = []
+        for r in results[:MAX_CONTEXT_FILES]:
+            path = r if isinstance(r, str) else r.get("path", "")
+            try:
+                content = await self.read(path)
+                name = path.replace("\\", "/").split("/")[-1]
+                context_parts.append(f"[{name}]\n{content[:MAX_CONTEXT_CHARS]}")
+            except Exception:
+                continue
+        return "\n\n".join(context_parts) if context_parts else ""
 
     # ── Read-Only Tool Loop (opt-in retrieval upgrade) ─────────
 
@@ -366,11 +431,15 @@ class AssistantApp(SessionsMixin, BaseApp):
         if provider is None:
             # No tool-capable provider registered — fall through to a regular
             # think() with keyword-grep context. Caller handles persistence.
-            context = await self._build_context(message)
+            context = await self._build_context(message, session=session)
             system = await self._build_system(session)
             user_content = f"[Vault context]\n{context}\n\n{message}" if context else message
-            text = await self.think(messages=[{"role": "user", "content": user_content}],
-                                    system=system, domain="text")
+            text = await self.think(
+                messages=[{"role": "user", "content": user_content}],
+                system=system,
+                domain="text",
+                temperature=0.4,
+            )
             return text, "no-tool-provider:fallback", []
 
         from emptyos.sdk.agent_loop import AgentSession, run_turn
@@ -400,7 +469,8 @@ class AssistantApp(SessionsMixin, BaseApp):
 
         vault_root = str(self.kernel.config.notes_path)
         system = TOOLS_SYSTEM_PROMPT.format(
-            date=date.today().isoformat(), vault=vault_root,
+            date=date.today().isoformat(),
+            vault=vault_root,
         )
         # Append user-state dossier so tool-use retrieval has the same awareness
         # the classic chat path gets.
@@ -462,15 +532,13 @@ class AssistantApp(SessionsMixin, BaseApp):
                         if isinstance(blk, dict) and blk.get("type") == "text":
                             final_text += blk.get("text", "")
                         elif isinstance(blk, dict) and blk.get("type") == "tool_use":
-                            tool_log.append({"name": blk.get("name"),
-                                             "input": blk.get("input")})
+                            tool_log.append({"name": blk.get("name"), "input": blk.get("input")})
                 elif isinstance(content, str):
                     final_text += content
                 # OpenAI-native tool calls live on the message dict
                 for tc in m.get("tool_calls") or []:
                     fn = tc.get("function") or {}
-                    tool_log.append({"name": fn.get("name"),
-                                     "input": fn.get("arguments")})
+                    tool_log.append({"name": fn.get("name"), "input": fn.get("arguments")})
 
         return final_text.strip(), provider.name, tool_log
 
@@ -509,7 +577,9 @@ class AssistantApp(SessionsMixin, BaseApp):
                             else:
                                 result = f"Export failed: {export.get('error', 'unknown')}"
                         if result is not None:
-                            await websocket.send_json({"type": "agent-reply", "agent": "system", "text": result})
+                            await websocket.send_json(
+                                {"type": "agent-reply", "agent": "system", "text": result}
+                            )
                             async with self._sessions_lock:
                                 self._add_message(session_id, "assistant", result, agent="system")
                             continue
@@ -530,16 +600,22 @@ class AssistantApp(SessionsMixin, BaseApp):
                             try:
                                 if ev_type == "agent:text":
                                     _stream_text += ev_data.get("delta", "")
-                                    await websocket.send_json({
-                                        "type": "agent-stream", "agent": "tools",
-                                        "text": _stream_text,
-                                    })
+                                    await websocket.send_json(
+                                        {
+                                            "type": "agent-stream",
+                                            "agent": "tools",
+                                            "text": _stream_text,
+                                        }
+                                    )
                                 elif ev_type == "agent:tool_call":
-                                    await websocket.send_json({
-                                        "type": "agent-status", "agent": "tools",
-                                        "status": f"using {ev_data.get('name', 'tool')}",
-                                        "tool": ev_data.get("name", ""),
-                                    })
+                                    await websocket.send_json(
+                                        {
+                                            "type": "agent-status",
+                                            "agent": "tools",
+                                            "status": f"using {ev_data.get('name', 'tool')}",
+                                            "tool": ev_data.get("name", ""),
+                                        }
+                                    )
                             except Exception:
                                 pass
 
@@ -550,14 +626,20 @@ class AssistantApp(SessionsMixin, BaseApp):
                         except Exception as e:
                             tool_text, tool_prov, tool_log = f"Tool-use error: {e}", "error", []
                         label = f"tools:{tool_prov}"
-                        await websocket.send_json({
-                            "type": "agent-reply", "agent": label, "text": tool_text,
-                            "tool_calls": tool_log,
-                        })
+                        await websocket.send_json(
+                            {
+                                "type": "agent-reply",
+                                "agent": label,
+                                "text": tool_text,
+                                "tool_calls": tool_log,
+                            }
+                        )
                         await websocket.send_json({"type": "agent-done"})
                         async with self._sessions_lock:
                             self._add_message(session_id, "assistant", tool_text, agent=label)
-                        await self.emit("assistant:message", {"session": session_id, "provider": label})
+                        await self.emit(
+                            "assistant:message", {"session": session_id, "provider": label}
+                        )
                         if session.get("name", "").startswith("New chat"):
                             asyncio.create_task(self._auto_name(session_id, text, websocket))
                         continue
@@ -567,7 +649,7 @@ class AssistantApp(SessionsMixin, BaseApp):
                     # Build prompt with context
                     await websocket.send_json({"type": "agent-thinking", "agent": provider})
 
-                    context = await self._build_context(text)
+                    context = await self._build_context(text, session=session)
 
                     system = await self._build_system(session)
 
@@ -578,7 +660,9 @@ class AssistantApp(SessionsMixin, BaseApp):
                     original_provider = provider
                     self._cancel_flags[session_id] = False
                     try:
-                        async for chunk in self.think_stream(messages=chat_messages, system=system, domain="text"):
+                        async for chunk in self.think_stream(
+                            messages=chat_messages, system=system, domain="text"
+                        ):
                             # Check cancel flag
                             if self._cancel_flags.get(session_id):
                                 self._cancel_flags.pop(session_id, None)
@@ -590,36 +674,50 @@ class AssistantApp(SessionsMixin, BaseApp):
                             if "provider_used" in chunk:
                                 used = chunk["provider_used"]
                                 if used and used != provider:
-                                    await websocket.send_json({
-                                        "type": "provider-resolved",
-                                        "from": original_provider,
-                                        "to": used,
-                                        "was_switch": explicit_backend,
-                                    })
+                                    await websocket.send_json(
+                                        {
+                                            "type": "provider-resolved",
+                                            "from": original_provider,
+                                            "to": used,
+                                            "was_switch": explicit_backend,
+                                        }
+                                    )
                                     provider = used
                                 continue
 
                             # Tool status events (from claude-cli stream-json)
                             if "tool_status" in chunk:
-                                await websocket.send_json({
-                                    "type": "agent-status", "agent": provider,
-                                    "status": chunk["tool_status"], "tool": chunk.get("tool", ""),
-                                })
+                                await websocket.send_json(
+                                    {
+                                        "type": "agent-status",
+                                        "agent": provider,
+                                        "status": chunk["tool_status"],
+                                        "tool": chunk.get("tool", ""),
+                                    }
+                                )
                                 continue
 
                             # Token usage events (from openai)
                             if "usage" in chunk:
-                                await websocket.send_json({
-                                    "type": "agent-usage", "agent": provider, **chunk["usage"],
-                                })
+                                await websocket.send_json(
+                                    {
+                                        "type": "agent-usage",
+                                        "agent": provider,
+                                        **chunk["usage"],
+                                    }
+                                )
                                 continue
 
                             delta = chunk.get("text", "")
                             if delta:
                                 full_text += delta
-                                await websocket.send_json({
-                                    "type": "agent-stream", "agent": provider, "text": full_text,
-                                })
+                                await websocket.send_json(
+                                    {
+                                        "type": "agent-stream",
+                                        "agent": provider,
+                                        "text": full_text,
+                                    }
+                                )
                     except Exception as stream_err:
                         # Streaming chain exhausted — fall back to the blocking
                         # think() which walks the default chain. Skip retrying
@@ -627,23 +725,30 @@ class AssistantApp(SessionsMixin, BaseApp):
                         self.log_warn(f"stream failed: {type(stream_err).__name__}: {stream_err}")
                         if not full_text:
                             try:
-                                await websocket.send_json({
-                                    "type": "agent-status", "agent": provider,
-                                    "status": "Streaming failed — retrying without streaming…",
-                                })
+                                await websocket.send_json(
+                                    {
+                                        "type": "agent-status",
+                                        "agent": provider,
+                                        "status": "Streaming failed — retrying without streaming…",
+                                    }
+                                )
                             except Exception:
                                 pass
                             try:
                                 full_text = await asyncio.wait_for(
-                                    self.think(messages=chat_messages, system=system, domain="text"),
+                                    self.think(
+                                        messages=chat_messages, system=system, domain="text"
+                                    ),
                                     timeout=FALLBACK_THINK_TIMEOUT,
                                 )
-                            except asyncio.TimeoutError:
+                            except TimeoutError:
                                 full_text = (
                                     f"Error: provider did not respond within {FALLBACK_THINK_TIMEOUT:.0f}s. "
                                     "Try again or switch backend in settings."
                                 )
-                                self.log_error(f"think fallback timed out after {FALLBACK_THINK_TIMEOUT:.0f}s")
+                                self.log_error(
+                                    f"think fallback timed out after {FALLBACK_THINK_TIMEOUT:.0f}s"
+                                )
                             except Exception as e:
                                 full_text = f"Error: {e}"
                                 self.log_error(f"think fallback failed: {type(e).__name__}: {e}")
@@ -656,17 +761,23 @@ class AssistantApp(SessionsMixin, BaseApp):
                         if full_text:
                             try:
                                 async with self._sessions_lock:
-                                    self._add_message(session_id, "assistant", full_text, agent=provider)
+                                    self._add_message(
+                                        session_id, "assistant", full_text, agent=provider
+                                    )
                             except Exception as _persist_err:
                                 self.log_warn(f"persist on stream-end failed: {_persist_err}")
 
                     try:
-                        await websocket.send_json({"type": "agent-reply", "agent": provider, "text": full_text})
+                        await websocket.send_json(
+                            {"type": "agent-reply", "agent": provider, "text": full_text}
+                        )
                         await websocket.send_json({"type": "agent-done"})
                     except Exception:
                         pass  # WS already gone — message is already persisted above
 
-                    await self.emit("assistant:message", {"session": session_id, "provider": provider})
+                    await self.emit(
+                        "assistant:message", {"session": session_id, "provider": provider}
+                    )
 
                     # Auto-name session after first exchange
                     if session.get("name", "").startswith("New chat"):
@@ -676,14 +787,18 @@ class AssistantApp(SessionsMixin, BaseApp):
                     self._cancel_flags[session_id] = True
 
                 elif msg_type == "set-backend":
-                    self.db.execute("UPDATE sessions SET backend = ? WHERE id = ?",
-                                   (data.get("backend", "auto"), session_id))
+                    self.db.execute(
+                        "UPDATE sessions SET backend = ? WHERE id = ?",
+                        (data.get("backend", "auto"), session_id),
+                    )
                     self.db.commit()
                     session = self._get_session(session_id) or session
 
                 elif msg_type == "set-system-prompt":
-                    self.db.execute("UPDATE sessions SET system_prompt = ? WHERE id = ?",
-                                   (data.get("system_prompt", ""), session_id))
+                    self.db.execute(
+                        "UPDATE sessions SET system_prompt = ? WHERE id = ?",
+                        (data.get("system_prompt", ""), session_id),
+                    )
                     self.db.commit()
                     session = self._get_session(session_id) or session
 
@@ -721,7 +836,8 @@ class AssistantApp(SessionsMixin, BaseApp):
         entries = vi.find(tags=[tag] if tag else None)
         if q:
             entries = [
-                e for e in entries
+                e
+                for e in entries
                 if q in e.get("name", "").lower() or q in e.get("path", "").lower()
             ]
         # Sort newest-first by modified mtime
@@ -745,6 +861,7 @@ class AssistantApp(SessionsMixin, BaseApp):
         Pattern mirrors apps/reports/app.py api_upload_figure: starlette form parsing.
         """
         import re
+
         form = await request.form()
         upload = form.get("file")
         if upload is None or not hasattr(upload, "read"):
@@ -755,7 +872,7 @@ class AssistantApp(SessionsMixin, BaseApp):
         if not data:
             return {"error": "empty file"}
         if len(data) > max_mb * 1024 * 1024:
-            return {"error": f"file too large ({len(data) // (1024*1024)}MB > {max_mb}MB cap)"}
+            return {"error": f"file too large ({len(data) // (1024 * 1024)}MB > {max_mb}MB cap)"}
 
         vault_root = self.kernel.config.notes_path
         if not vault_root:
@@ -763,7 +880,7 @@ class AssistantApp(SessionsMixin, BaseApp):
 
         rel_dir = self.vault_config("attachments", "00_Inbox/_attachments")
         ts = datetime.now().strftime("%Y%m%d-%H%M%S")
-        raw_name = (upload.filename or "upload.bin")
+        raw_name = upload.filename or "upload.bin"
         safe_name = re.sub(r"[^A-Za-z0-9._-]+", "-", raw_name).strip("-") or "upload.bin"
         rel_path = f"{rel_dir}/{ts}-{safe_name}"
 
@@ -802,9 +919,14 @@ class AssistantApp(SessionsMixin, BaseApp):
             GROUP BY s.id ORDER BY COALESCE(MAX(m.ts), s.created) DESC
         """).fetchall()
         return [
-            {"id": r["id"], "name": r["name"], "backend": r["backend"],
-             "message_count": r["message_count"], "created": r["created"],
-             "last_message": r["last_message"] or ""}
+            {
+                "id": r["id"],
+                "name": r["name"],
+                "backend": r["backend"],
+                "message_count": r["message_count"],
+                "created": r["created"],
+                "last_message": r["last_message"] or "",
+            }
             for r in rows
         ]
 
@@ -834,7 +956,9 @@ class AssistantApp(SessionsMixin, BaseApp):
             _ALLOWED_COLS = {"name", "backend", "system_prompt"}
             for key in _ALLOWED_COLS:
                 if key in data:
-                    self.db.execute("UPDATE sessions SET " + key + " = ? WHERE id = ?", (data[key], sid))
+                    self.db.execute(
+                        "UPDATE sessions SET " + key + " = ? WHERE id = ?", (data[key], sid)
+                    )
             self.db.commit()
         return self._get_session(sid)
 
@@ -893,35 +1017,49 @@ class AssistantApp(SessionsMixin, BaseApp):
             if session_id and text:
                 async with self._sessions_lock:
                     self._add_message(session_id, "assistant", text, agent=f"tools:{prov_name}")
-            return {"response": text, "message": message,
-                    "provider": f"tools:{prov_name}", "tool_calls": tool_log}
+            return {
+                "response": text,
+                "message": message,
+                "provider": f"tools:{prov_name}",
+                "tool_calls": tool_log,
+            }
 
         # Classic path — keyword-grep context + single LLM call.
         context = ""
         if data.get("context", True):
-            context = await self._build_context(message)
+            context = await self._build_context(message, session=session)
 
         system = await self._build_system()
 
         if session:
             chat_messages = self._build_chat_messages(session, vault_context=context)
         else:
-            user_content = (
-                f"[Vault context]\n{context}\n\n{message}" if context else message
-            )
+            user_content = f"[Vault context]\n{context}\n\n{message}" if context else message
             chat_messages = [{"role": "user", "content": user_content}]
 
         provider = self._get_provider(message, session) if session else "openai"
         try:
             result = await self._think_with_provider(
-                provider, "", "text",
+                provider,
+                "",
+                "text",
                 {"system": system, "messages": chat_messages},
             )
             if not result:
                 result = await self.think(
-                    messages=chat_messages, system=system, domain="text",
+                    messages=chat_messages,
+                    system=system,
+                    domain="text",
+                    temperature=0.4,
                 )
                 provider = "default"
+        except RuntimeError as e:
+            # AI-offline → let the server.py middleware turn it into a 503; a 200 OK
+            # with "Error: ..." in the body looks like a real reply to the UI.
+            if "No available provider for capability" in str(e):
+                raise
+            result = f"Error: {e}"
+            provider = "error"
         except Exception as e:
             result = f"Error: {e}"
             provider = "error"
@@ -951,7 +1089,10 @@ class AssistantApp(SessionsMixin, BaseApp):
     @web_route("GET", "/api/slash-commands")
     async def api_slash_commands(self, request):
         """List available slash commands."""
-        cmds = [{"command": c, "app": a, "method": m} for c, (a, m, _) in sorted(self._slash_commands.items())]
+        cmds = [
+            {"command": c, "app": a, "method": m}
+            for c, (a, m, _) in sorted(self._slash_commands.items())
+        ]
         cmds.append({"command": "/help", "app": "assistant", "method": "help"})
         cmds.append({"command": "/new", "app": "assistant", "method": "new session"})
         return cmds
@@ -976,7 +1117,8 @@ class AssistantApp(SessionsMixin, BaseApp):
             async with self._sessions_lock:
                 self._add_message(session_id, "user", message)
 
-        context = await self._build_context(message)
+        session = self._get_session(session_id) if session_id else None
+        context = await self._build_context(message, session=session)
         system = await self._build_system()
         prompt = f"Vault context:\n{context}\n\nQuestion: {message}" if context else message
 
@@ -987,12 +1129,14 @@ class AssistantApp(SessionsMixin, BaseApp):
             resp = r.get("response", "")
             if hasattr(resp, "value"):
                 resp = resp.value
-            normalized.append({
-                "provider": r.get("provider", "unknown"),
-                "text": str(resp)[:4000],
-                "latency_ms": r.get("latency_ms", 0),
-                "error": r.get("error"),
-            })
+            normalized.append(
+                {
+                    "provider": r.get("provider", "unknown"),
+                    "text": str(resp)[:4000],
+                    "latency_ms": r.get("latency_ms", 0),
+                    "error": r.get("error"),
+                }
+            )
 
         if session_id and normalized:
             # Combine into one assistant turn so the next chat turn sees one
@@ -1022,7 +1166,10 @@ class AssistantApp(SessionsMixin, BaseApp):
             result = await self.speak(text)
             # Result is a file path or audio bytes
             if isinstance(result, (str, Path)):
-                return {"audio_url": f"/assistant/api/audio/{Path(result).name}", "path": str(result)}
+                return {
+                    "audio_url": f"/assistant/api/audio/{Path(result).name}",
+                    "path": str(result),
+                }
             return {"error": "unexpected TTS result type"}
         except Exception as e:
             return {"error": f"TTS failed: {e}"}
@@ -1045,19 +1192,22 @@ class AssistantApp(SessionsMixin, BaseApp):
     @web_route("GET", "/manifest.json")
     async def api_manifest(self, request):
         from starlette.responses import JSONResponse
-        return JSONResponse({
-            "name": "EmptyOS Assistant",
-            "short_name": "Assistant",
-            "description": "AI chat with vault integration",
-            "start_url": "/assistant/",
-            "display": "standalone",
-            "background_color": "#1a1a2e",
-            "theme_color": "#1a1a2e",
-            "icons": [
-                {"src": "/static/icon-192.png", "sizes": "192x192", "type": "image/png"},
-                {"src": "/static/icon-512.png", "sizes": "512x512", "type": "image/png"},
-            ],
-        })
+
+        return JSONResponse(
+            {
+                "name": "EmptyOS Assistant",
+                "short_name": "Assistant",
+                "description": "AI chat with vault integration",
+                "start_url": "/assistant/",
+                "display": "standalone",
+                "background_color": "#1a1a2e",
+                "theme_color": "#1a1a2e",
+                "icons": [
+                    {"src": "/static/icon-192.png", "sizes": "192x192", "type": "image/png"},
+                    {"src": "/static/icon-512.png", "sizes": "512x512", "type": "image/png"},
+                ],
+            }
+        )
 
     # ── CLI ────────────────────────────────────────────────────
 
@@ -1069,5 +1219,5 @@ class AssistantApp(SessionsMixin, BaseApp):
         context = await self._build_context(question)
         system = await self._build_system()
         prompt = f"Vault context:\n{context}\n\n{question}" if context else question
-        response = await self.think(prompt, system=system, domain="text")
+        response = await self.think(prompt, system=system, domain="text", temperature=0.4)
         print(f"\n  {response}\n")

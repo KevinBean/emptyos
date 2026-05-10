@@ -7,10 +7,11 @@ import json
 import sqlite3
 import traceback
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 
 @dataclass
@@ -19,9 +20,7 @@ class Event:
     data: dict[str, Any]
     source: str = ""
     id: str = field(default_factory=lambda: uuid.uuid4().hex[:12])
-    timestamp: str = field(
-        default_factory=lambda: datetime.now(timezone.utc).isoformat()
-    )
+    timestamp: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
 
 
 class EventBus:
@@ -107,9 +106,7 @@ class EventBus:
                 else:
                     print(f"[EventBus] Handler error for {event_type}: {e}\n{tb}")
 
-    async def history(
-        self, event_type: str | None = None, limit: int = 50
-    ) -> list[dict]:
+    async def history(self, event_type: str | None = None, limit: int = 50) -> list[dict]:
         """Query persisted event history."""
         if not self._db:
             return []
@@ -124,6 +121,12 @@ class EventBus:
                 (limit,),
             ).fetchall()
         return [
-            {"id": r[0], "type": r[1], "data": json.loads(r[2] or "{}"), "source": r[3], "timestamp": r[4]}
+            {
+                "id": r[0],
+                "type": r[1],
+                "data": json.loads(r[2] or "{}"),
+                "source": r[3],
+                "timestamp": r[4],
+            }
             for r in rows
         ]

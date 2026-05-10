@@ -14,6 +14,7 @@ Usage:
     python scripts/verify_real_scene_parallax.py [scene_png_path]
     (defaults to the most recent mv-*/scene-01.png in the configured songs dir)
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -37,8 +38,10 @@ WORKFLOW = ROOT / "plugins" / "comfyui" / "workflows" / "depth_parallax.json"
 
 def load_assembler():
     import importlib.util
+
     spec = importlib.util.spec_from_file_location(
-        "ms_assembler", ROOT / "apps" / "music-studio" / "assembler.py",
+        "ms_assembler",
+        ROOT / "apps" / "music-studio" / "assembler.py",
     )
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
@@ -48,6 +51,7 @@ def load_assembler():
 def find_default_scene() -> Path | None:
     """Find the newest mv-* folder under the songs dir and return its scene-01.png."""
     import tomllib
+
     with open(ROOT / "emptyos.toml", "rb") as f:
         cfg = tomllib.load(f)
     notes = Path(cfg.get("notes", {}).get("path", ""))
@@ -75,8 +79,7 @@ def find_default_scene() -> Path | None:
 
 async def upload_to_comfyui(session: aiohttp.ClientSession, src: Path, name: str) -> str:
     data = aiohttp.FormData()
-    data.add_field("image", src.open("rb"), filename=name,
-                   content_type="application/octet-stream")
+    data.add_field("image", src.open("rb"), filename=name, content_type="application/octet-stream")
     data.add_field("overwrite", "true")
     async with session.post(f"{COMFYUI}/upload/image", data=data) as resp:
         if resp.status != 200:
@@ -90,6 +93,7 @@ async def run_depth(session: aiohttp.ClientSession, server_image: str) -> str:
     depth filename (in ComfyUI's output/)."""
     wf = json.loads(WORKFLOW.read_text(encoding="utf-8"))
     wf = {k: v for k, v in wf.items() if not k.startswith("_")}
+
     # Substitute {image}.
     def _sub(node):
         if isinstance(node, dict):
@@ -99,6 +103,7 @@ async def run_depth(session: aiohttp.ClientSession, server_image: str) -> str:
         if isinstance(node, str):
             return node.replace("{image}", server_image)
         return node
+
     wf = _sub(wf)
 
     async with session.post(f"{COMFYUI}/prompt", json={"prompt": wf}) as resp:
@@ -135,18 +140,40 @@ async def download(session: aiohttp.ClientSession, filename: str, dest: Path) ->
 
 def extract_frame(video: Path, idx: int, out: Path):
     subprocess.run(
-        ["ffmpeg", "-y", "-loglevel", "error", "-i", str(video),
-         "-vf", f"select=eq(n\\,{idx})", "-vframes", "1", str(out)],
+        [
+            "ffmpeg",
+            "-y",
+            "-loglevel",
+            "error",
+            "-i",
+            str(video),
+            "-vf",
+            f"select=eq(n\\,{idx})",
+            "-vframes",
+            "1",
+            str(out),
+        ],
         check=True,
     )
 
 
 def count_frames(video: Path) -> int:
     r = subprocess.run(
-        ["ffprobe", "-v", "error", "-count_frames", "-select_streams", "v:0",
-         "-show_entries", "stream=nb_read_frames", "-of",
-         "default=nokey=1:noprint_wrappers=1", str(video)],
-        capture_output=True, text=True,
+        [
+            "ffprobe",
+            "-v",
+            "error",
+            "-count_frames",
+            "-select_streams",
+            "v:0",
+            "-show_entries",
+            "stream=nb_read_frames",
+            "-of",
+            "default=nokey=1:noprint_wrappers=1",
+            str(video),
+        ],
+        capture_output=True,
+        text=True,
     )
     return int((r.stdout or "0").strip() or "0")
 
@@ -219,9 +246,12 @@ async def main(scene_path: Path) -> int:
 
     # Resize depth to match output dims, build masks from same band thresholds
     # the assembler uses.
-    dep = np.asarray(
-        Image.open(depth_path).convert("L").resize((W, H), Image.LANCZOS)
-    ).astype(np.float32) / 255.0
+    dep = (
+        np.asarray(Image.open(depth_path).convert("L").resize((W, H), Image.LANCZOS)).astype(
+            np.float32
+        )
+        / 255.0
+    )
     bg_mask = dep < 0.28
     mg_mask = (dep >= 0.30) & (dep <= 0.50)
     fg_mask = dep > 0.78
@@ -235,7 +265,7 @@ async def main(scene_path: Path) -> int:
     mg_m, mg_n = stats(mg_mask)
     fg_m, fg_n = stats(fg_mask)
 
-    print(f"\n[measure] mean |frame_last - frame_0| inside depth masks:")
+    print("\n[measure] mean |frame_last - frame_0| inside depth masks:")
     print(f"  BG (depth < 0.28):   mean={bg_m:6.2f}  pixels={bg_n}")
     print(f"  MG (0.30–0.50):      mean={mg_m:6.2f}  pixels={mg_n}")
     print(f"  FG (depth > 0.78):   mean={fg_m:6.2f}  pixels={fg_n}")
@@ -246,12 +276,16 @@ async def main(scene_path: Path) -> int:
         # Some bands may be empty for unusual scenes; only require non-empty FG vs BG.
         if not np.isnan(fg_m) and not np.isnan(bg_m):
             if fg_m / max(0.1, bg_m) < 1.5:
-                fails.append(f"FG/BG motion ratio {fg_m / max(0.1, bg_m):.2f} too small (need >= 1.5)")
+                fails.append(
+                    f"FG/BG motion ratio {fg_m / max(0.1, bg_m):.2f} too small (need >= 1.5)"
+                )
         else:
             fails.append("FG or BG mask is empty — scene depth distribution doesn't have both")
     else:
         if fg_m < bg_m:
-            fails.append(f"FG motion {fg_m:.2f} < BG motion {bg_m:.2f} — depth-aware effect inverted or absent")
+            fails.append(
+                f"FG motion {fg_m:.2f} < BG motion {bg_m:.2f} — depth-aware effect inverted or absent"
+            )
         if fg_m / max(0.1, bg_m) < 1.5:
             fails.append(f"FG/BG ratio {fg_m / max(0.1, bg_m):.2f} too small (need >= 1.5)")
 
@@ -262,7 +296,7 @@ async def main(scene_path: Path) -> int:
         print(f"\nDepth + clip kept for inspection at: {work}")
         return 1
 
-    print(f"\n[PASS] real-scene parallax verified:")
+    print("\n[PASS] real-scene parallax verified:")
     print(f"  FG/BG motion ratio = {fg_m / max(0.1, bg_m):.2f}x")
     print(f"  Output kept at: {out_mp4}")
     return 0

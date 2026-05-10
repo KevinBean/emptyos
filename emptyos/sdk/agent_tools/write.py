@@ -12,7 +12,6 @@ from pathlib import Path
 
 from emptyos.sdk.agent_tools.base import Tool, ToolResult, resolve_path, unified_diff
 
-
 MAX_BYTES = 5_000_000  # 5 MB — well above any reasonable text file
 PREVIEW_HEAD_LINES = 40
 

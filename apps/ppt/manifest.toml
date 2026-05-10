@@ -1,0 +1,60 @@
+[app]
+id = "ppt"
+name = "Presentations"
+version = "0.1.0"
+description = "Markdown-driven decks. One vault note per deck — present in fullscreen, export to standalone HTML."
+dimensions = ["intellectual", "occupational"]
+
+[app.entry]
+module = "app"
+class = "PptApp"
+
+[provides.cli]
+commands = ["ppt"]
+
+[provides.web]
+prefix = "/ppt"
+
+[provides.events]
+emits = ["ppt:created", "ppt:updated", "ppt:deleted", "ppt:exported"]
+
+[requires]
+capabilities = ["read", "write", "think", "draw", "speak"]
+apps = ["publish", "canvas"]
+# podcast is an optional bridge target — present on machines where the
+# personal podcast app is installed; gracefully no-ops otherwise.
+services = []
+events = []
+
+[provides.settings]
+schema = [
+    {key = "ppt.default_theme", label = "Default theme", type = "select", default = "dark", options = ["dark", "light", "mono"]},
+    {key = "ppt.default_aspect", label = "Default aspect", type = "select", default = "16:9", options = ["16:9", "4:3"]},
+    {key = "ppt.embed_base", label = "Embed host (live)", type = "text", default = "", hint = "Prepend to ![embed: /journal/] etc. Empty = current host. Set to http://localhost:9001 to point at a dogfood daemon, or https://demo.binbian.net for the public demo. Override per-deck via 'embed_base:' in frontmatter."},
+    {key = "ppt.export_embed_base", label = "Embed host (exported HTML)", type = "text", default = "https://demo.binbian.net", hint = "Used by Export HTML so standalone bundles don't point at localhost. Falls back to ppt.embed_base if blank."},
+]
+
+[[contributes.hub.panel]]
+id = "ppt-recent"
+method = "panel_recent_decks"
+renderer = "plain-list"
+title = "Recent decks"
+priority = 360
+limit = 3
+
+[[contributes.voice-assistant.intent]]
+verb = "ppt.present"
+method = "voice_present"
+example = "open the deck about cable rating"
+args = { query = "string" }
+description = "Open a deck in present mode."
+
+[[contributes.tour.step]]
+id = "ppt.create"
+group = "core"
+priority = 540
+route = "/ppt/"
+spotlight = "button[onclick='newDeck()']"
+title = "Make a deck"
+body = "Decks live in the vault as markdown. Hit + New deck, give it an outline, and the AI drafts a starter. Then Present, or send it to the podcast app for an audio version."
+requires = ["read", "write"]

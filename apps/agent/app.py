@@ -25,14 +25,20 @@ from __future__ import annotations
 
 import asyncio
 
-from emptyos.sdk import BaseApp, ChatSessionStore, web_route, ws_route
+from emptyos.sdk import BaseApp, ChatSessionStore, ws_route
 from emptyos.sdk.agent_loop import (
-    AgentSession, run_turn, run_native_turn,
-    DEFAULT_SYSTEM_PROMPT, DEFAULT_MAX_ITERS, EDIT_PATH_LIMIT,
+    DEFAULT_MAX_ITERS,
+    DEFAULT_SYSTEM_PROMPT,
+    EDIT_PATH_LIMIT,
+    AgentSession,
+    run_native_turn,
+    run_turn,
 )
 from emptyos.sdk.agent_tools import build_registry
 
-DEFAULT_TURN_TIMEOUT = 180.0  # seconds — cap on a single turn's tool-loop; override via agent.turn_timeout
+DEFAULT_TURN_TIMEOUT = (
+    180.0  # seconds — cap on a single turn's tool-loop; override via agent.turn_timeout
+)
 
 
 from apps.agent import context
@@ -43,7 +49,6 @@ from apps.agent.sessions import SessionMixin
 
 
 class AgentApp(SessionMixin, BaseApp):
-
     # Per-session cancel events, keyed by session_id
     _sessions_lock: asyncio.Lock
     _live_sessions: dict[str, AgentSession]
@@ -122,7 +127,8 @@ class AgentApp(SessionMixin, BaseApp):
         to a different model.
         """
         from emptyos.capabilities.providers._tool_capable import (
-            NativelyAgenticProvider, ToolCapableProvider,
+            NativelyAgenticProvider,
+            ToolCapableProvider,
         )
 
         think = self.kernel.capability("think")
@@ -152,6 +158,7 @@ class AgentApp(SessionMixin, BaseApp):
 
     def _is_native_provider(self, provider) -> bool:
         from emptyos.capabilities.providers._tool_capable import NativelyAgenticProvider
+
         return isinstance(provider, NativelyAgenticProvider)
 
     def _runtime_info_block(self, provider, is_native: bool) -> str:
@@ -280,10 +287,12 @@ class AgentApp(SessionMixin, BaseApp):
                     if not text:
                         continue
                     if turn_task and not turn_task.done():
-                        await websocket.send_json({
-                            "type": "error",
-                            "message": "previous turn still in progress",
-                        })
+                        await websocket.send_json(
+                            {
+                                "type": "error",
+                                "message": "previous turn still in progress",
+                            }
+                        )
                         continue
                     # /context — server-side slash handled before LLM dispatch
                     if text.strip() == "/context":
@@ -298,38 +307,42 @@ class AgentApp(SessionMixin, BaseApp):
                             f"**edit limit** {self._edit_limits.get(session_id, EDIT_PATH_LIMIT)}",
                             f"**iter limit** {self._iter_limits.get(session_id, DEFAULT_MAX_ITERS)}",
                         ]
-                        await websocket.send_json({
-                            "type": "agent:slash_result",
-                            "session_id": session_id,
-                            "cmd": "/context",
-                            "text": "\n".join(ctx_lines),
-                        })
+                        await websocket.send_json(
+                            {
+                                "type": "agent:slash_result",
+                                "session_id": session_id,
+                                "cmd": "/context",
+                                "text": "\n".join(ctx_lines),
+                            }
+                        )
                         continue
 
                     # /archive — summarise session and write to vault
                     if text.strip() == "/archive":
-                        await websocket.send_json({
-                            "type": "agent:status",
-                            "session_id": session_id,
-                            "text": "Summarising session…",
-                        })
+                        await websocket.send_json(
+                            {
+                                "type": "agent:status",
+                                "session_id": session_id,
+                                "text": "Summarising session…",
+                            }
+                        )
                         result = await self._archive_session(session_id)
                         if result.get("ok"):
-                            vault_link = (
-                                f" · [open]({result['url']})" if result.get("url") else ""
-                            )
+                            vault_link = f" · [open]({result['url']})" if result.get("url") else ""
                             out = (
                                 f"Session archived to vault.\n\n"
                                 f"**path** `{result.get('note_path', '')}`{vault_link}"
                             )
                         else:
                             out = f"Archive failed: {result.get('error', 'unknown error')}"
-                        await websocket.send_json({
-                            "type": "agent:slash_result",
-                            "session_id": session_id,
-                            "cmd": "/archive",
-                            "text": out,
-                        })
+                        await websocket.send_json(
+                            {
+                                "type": "agent:slash_result",
+                                "session_id": session_id,
+                                "cmd": "/archive",
+                                "text": out,
+                            }
+                        )
                         continue
 
                     # Parity with cmd_chat: a user message starting with
@@ -337,11 +350,13 @@ class AgentApp(SessionMixin, BaseApp):
                     # full playbook-prefixed prompt. No skill match → pass through.
                     expanded = self._expand_skill_slash(text)
                     if expanded:
-                        await websocket.send_json({
-                            "type": "agent:skill_loaded",
-                            "session_id": session_id,
-                            "name": text.split()[0][1:],
-                        })
+                        await websocket.send_json(
+                            {
+                                "type": "agent:skill_loaded",
+                                "session_id": session_id,
+                                "name": text.split()[0][1:],
+                            }
+                        )
                         text = expanded
                     turn_task = asyncio.create_task(
                         self._run_ws_turn(session_id, text, bridge, websocket)
@@ -375,11 +390,13 @@ class AgentApp(SessionMixin, BaseApp):
                         self._plan_modes[session_id] = True
                     else:
                         self._plan_modes.pop(session_id, None)
-                    await websocket.send_json({
-                        "type": "agent:plan_mode",
-                        "session_id": session_id,
-                        "on": self._plan_modes.get(session_id, False),
-                    })
+                    await websocket.send_json(
+                        {
+                            "type": "agent:plan_mode",
+                            "session_id": session_id,
+                            "on": self._plan_modes.get(session_id, False),
+                        }
+                    )
 
         except Exception:
             pass  # client disconnected
@@ -387,8 +404,10 @@ class AgentApp(SessionMixin, BaseApp):
             if turn_task and not turn_task.done():
                 turn_task.cancel()
             for u in unsubs:
-                try: u()
-                except Exception: pass
+                try:
+                    u()
+                except Exception:
+                    pass
             self._live_sessions.pop(session_id, None)
 
     async def _run_ws_turn(self, session_id: str, user_text: str, bridge, websocket):
@@ -400,11 +419,13 @@ class AgentApp(SessionMixin, BaseApp):
         provider_name = record.get("provider") or self._default_provider_name()
         provider = self._resolve_provider(provider_name)
         if provider is None:
-            await websocket.send_json({
-                "type": "error",
-                "message": f"no tool-capable provider available (tried {provider_name!r}). "
-                           "Install anthropic SDK or configure a function-calling provider.",
-            })
+            await websocket.send_json(
+                {
+                    "type": "error",
+                    "message": f"no tool-capable provider available (tried {provider_name!r}). "
+                    "Install anthropic SDK or configure a function-calling provider.",
+                }
+            )
             return
 
         is_native = self._is_native_provider(provider)
@@ -446,38 +467,47 @@ class AgentApp(SessionMixin, BaseApp):
         # Native providers get it in the system prompt; tool-capable gets it
         # prepended to the user message so it's in the conversation history.
         orient_text = user_text
-        await websocket.send_json({
-            "type": "agent:status", "session_id": session_id,
-            "status": "Orienting…",
-        })
+        await websocket.send_json(
+            {
+                "type": "agent:status",
+                "session_id": session_id,
+                "status": "Orienting…",
+            }
+        )
         try:
-            orient_plan = await asyncio.wait_for(
-                self._orient(user_text, session_id), timeout=12.0
-            )
-        except asyncio.TimeoutError:
+            orient_plan = await asyncio.wait_for(self._orient(user_text, session_id), timeout=12.0)
+        except TimeoutError:
             orient_plan = None
-            await websocket.send_json({
-                "type": "agent:status", "session_id": session_id,
-                "status": "Orient skipped (timeout)",
-            })
+            await websocket.send_json(
+                {
+                    "type": "agent:status",
+                    "session_id": session_id,
+                    "status": "Orient skipped (timeout)",
+                }
+            )
         except Exception as e:
             orient_plan = None
             self.log_warn(f"orient failed: {e}")
-            await websocket.send_json({
-                "type": "agent:status", "session_id": session_id,
-                "status": f"Orient skipped ({type(e).__name__})",
-            })
+            await websocket.send_json(
+                {
+                    "type": "agent:status",
+                    "session_id": session_id,
+                    "status": f"Orient skipped ({type(e).__name__})",
+                }
+            )
         if orient_plan:
             orient_block_text = self._orient_block(orient_plan)
             if is_native:
                 system = system + "\n\n" + orient_block_text
             else:
                 orient_text = orient_block_text + "\n\n" + user_text
-            await websocket.send_json({
-                "type": "agent:orient",
-                "session_id": session_id,
-                "plan": orient_plan,
-            })
+            await websocket.send_json(
+                {
+                    "type": "agent:orient",
+                    "session_id": session_id,
+                    "plan": orient_plan,
+                }
+            )
 
         turn_timeout = DEFAULT_TURN_TIMEOUT
         if settings:
@@ -517,21 +547,28 @@ class AgentApp(SessionMixin, BaseApp):
                 await websocket.send_json({"type": "agent:cancelled", "session_id": session_id})
             except Exception:
                 pass
-        except asyncio.TimeoutError:
+        except TimeoutError:
             self.log_warn(f"turn timed out after {turn_timeout}s (session {session_id})")
             try:
-                await websocket.send_json({
-                    "type": "agent:error", "session_id": session_id,
-                    "error": f"Turn timed out after {turn_timeout:.0f}s — the provider or a tool stopped responding. Try /cancel and resend, or switch backend.",
-                })
+                await websocket.send_json(
+                    {
+                        "type": "agent:error",
+                        "session_id": session_id,
+                        "error": f"Turn timed out after {turn_timeout:.0f}s — the provider or a tool stopped responding. Try /cancel and resend, or switch backend.",
+                    }
+                )
             except Exception:
                 pass
         except Exception as e:
             self.log_error(f"turn failed: {type(e).__name__}: {e}")
             try:
-                await websocket.send_json({
-                    "type": "agent:error", "session_id": session_id, "error": str(e),
-                })
+                await websocket.send_json(
+                    {
+                        "type": "agent:error",
+                        "session_id": session_id,
+                        "error": str(e),
+                    }
+                )
             except Exception:
                 pass
 
@@ -542,26 +579,26 @@ class AgentApp(SessionMixin, BaseApp):
         self._live_sessions.pop(session_id, None)
 
     # ── HTTP routes (extracted to routes.py) ──────────────────
-    api_list_sessions    = _routes.api_list_sessions
-    api_get_session      = _routes.api_get_session
-    api_create_session   = _routes.api_create_session
-    api_delete_session   = _routes.api_delete_session
-    api_update_session   = _routes.api_update_session
-    api_archive_session  = _routes.api_archive_session
-    api_session_tasks    = _routes.api_session_tasks
-    api_fork_session     = _routes.api_fork_session
-    api_revert           = _routes.api_revert
-    api_edit_stack       = _routes.api_edit_stack
-    api_mcp_tool_call    = _routes.api_mcp_tool_call
-    api_tool_audit       = _routes.api_tool_audit
-    api_mcp_tools        = _routes.api_mcp_tools
-    api_list_tools       = _routes.api_list_tools
-    api_skills           = _routes.api_skills
-    api_slash_commands   = _routes.api_slash_commands
+    api_list_sessions = _routes.api_list_sessions
+    api_get_session = _routes.api_get_session
+    api_create_session = _routes.api_create_session
+    api_delete_session = _routes.api_delete_session
+    api_update_session = _routes.api_update_session
+    api_archive_session = _routes.api_archive_session
+    api_session_tasks = _routes.api_session_tasks
+    api_fork_session = _routes.api_fork_session
+    api_revert = _routes.api_revert
+    api_edit_stack = _routes.api_edit_stack
+    api_mcp_tool_call = _routes.api_mcp_tool_call
+    api_tool_audit = _routes.api_tool_audit
+    api_mcp_tools = _routes.api_mcp_tools
+    api_list_tools = _routes.api_list_tools
+    api_skills = _routes.api_skills
+    api_slash_commands = _routes.api_slash_commands
     api_approve_permission = _routes.api_approve_permission
-    api_deny_permission    = _routes.api_deny_permission
-    api_list_permissions   = _routes.api_list_permissions
-    api_status             = _routes.api_status
+    api_deny_permission = _routes.api_deny_permission
+    api_list_permissions = _routes.api_list_permissions
+    api_status = _routes.api_status
 
     # ── CLI (extracted to repl.py) ────────────────────────────
     cmd_chat = _repl.cmd_chat

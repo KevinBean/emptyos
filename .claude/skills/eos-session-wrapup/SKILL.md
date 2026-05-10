@@ -264,13 +264,31 @@ If no changes detected → report "Site: up to date, no changes."
 
 ### Step 5: Next Session Brief — Write a primer for the next conversation
 
-While the session's context is still fresh, write a concise primer the **next** Claude can read to skip the warmup. Stored at a stable path so the resume skill always knows where to look.
+While the session's context is still fresh, write a concise primer the **next** Claude can read to skip the warmup. Briefs are stored **per work track** so parallel tracks (engines, career, publish, infra) can't clobber each other when their wrapups land back-to-back.
 
 ```
-{vault}/10_Projects/emptyos/log/_next.md
+{vault}/10_Projects/emptyos/log/_next/
+  _index.md             ← list of active tracks + last_touched dates
+  <track>.md            ← the on-deck card for that track
+  <other-track>.md
+  ...
 ```
 
-This is overwritten on every wrapup — there is no history layer here. The most recent session's brief is always "what's next." Long-form history lives in dated `YYYY-MM-DD.md` files; this is just the on-deck card.
+The skill writes/updates **one track's brief** per wrapup, plus the index. Other tracks are never touched. Long-form history lives in dated `YYYY-MM-DD.md` files; per-track briefs are just on-deck cards.
+
+#### Pick the track
+
+Identify which track this session advanced — by tags on the dated log, by the apps/files touched, or by asking the user if ambiguous. Common tracks at time of writing:
+
+- `em-engines` — `engines/` work + cable/lightning/interference/earthing apps
+- `career` — jobs app, outreach, applications, interview prep
+- `publish-site` — `apps/publish/`, `eos.binbian.net` content
+- `core-infra` — kernel, SDK, capabilities, runtime, web framework
+- `apps-other` — UI work on apps that don't fit the above
+
+If the session straddles two tracks, write to **one** brief (whichever was the primary focus) and mention the secondary in that brief's "Open threads".
+
+If a brand-new track is needed, create the file with `track: <slug>` in frontmatter and add a row to `_index.md`. Slugs are kebab-case.
 
 #### What goes in the brief
 
@@ -279,6 +297,7 @@ Lead with concrete state, end with one specific next move. Pad nothing.
 ```markdown
 ---
 type: next-session-brief
+track: <track-slug>
 written: <YYYY-MM-DD HH:MM>
 last_session: <YYYY-MM-DD>
 last_session_title: <Session Title>
@@ -305,6 +324,12 @@ last_session_title: <Session Title>
 <Anything that needs a daemon restart, a test rerun, or a manual check before the next session declares something done. Skip if none.>
 ```
 
+After writing the track brief, update `_index.md`:
+
+- Refresh that track's row with new `last_touched` date and `last_session` title.
+- Add a row if it's a brand-new track.
+- Don't touch other tracks' rows.
+
 #### Sourcing rules
 
 - **Where things stand**: distill from the just-written devlog's "Result" section + any `Flagged (needs your call)` items from a prior `/eos-simplify` pass.
@@ -316,13 +341,16 @@ last_session_title: <Session Title>
 
 If the session was trivial (typo fix, single-line change, doc-only) write only the frontmatter + a one-line "Where things stand". Don't bulk it up.
 
-If a previous `_next.md` exists and the session **didn't actually advance** any of its open threads (e.g. user pivoted to unrelated work), preserve the old recommended starting move alongside the new one — mark it `## Carried over from <date>`. Don't silently drop it.
+If a previous brief exists for **the same track** and the session **didn't actually advance** any of its open threads (e.g. user pivoted to unrelated work *within the same track*), preserve the old recommended starting move alongside the new one — mark it `## Carried over from <date>`. Don't silently drop it.
+
+This carry-over rule applies **only within a track**. If the session worked on a different track entirely, that other track's brief stays untouched at its existing path; nothing to carry over because nothing collided.
 
 #### Report
 
 ```
-Next Session Brief: {vault}/10_Projects/emptyos/log/_next.md
+Next Session Brief: {vault}/10_Projects/emptyos/log/_next/<track>.md (track: <slug>)
   Open threads: 3 | TODO markers: 1 | Carried over: 0
+  Other tracks (untouched): em-engines (2026-05-02), publish-site (2026-04-28)
 ```
 
 If skipped (trivial session): `Next Session Brief: skipped — trivial session`.
@@ -339,10 +367,11 @@ Session Wrapup Complete:
   Safety: CLEAN (personal + branding)
   Site: regenerated (74 apps, 9 plugins) — rebuild triggered
   Log:  10_Projects/emptyos/log/2026-04-12.md written
-  Next: 10_Projects/emptyos/log/_next.md written (3 open threads)
+  Next: 10_Projects/emptyos/log/_next/<track>.md written (3 open threads)
+        Other tracks untouched: <track1> (last touched <date>), <track2> (last touched <date>)
 ```
 
-Suggest as a follow-up at next session start: `/eos-session-resume`.
+Suggest as a follow-up at next session start: `/eos-session-resume` (or `/eos-session-resume <track>` to jump straight to a specific track).
 
 ## Vault Connection
 

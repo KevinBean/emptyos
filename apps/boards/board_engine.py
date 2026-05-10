@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 # Re-exports — back-compat for existing callers.
 from emptyos.sdk.board_engine import (  # noqa: F401
@@ -57,24 +57,28 @@ class BoardConfigStore:
                 continue
             try:
                 import json
+
                 config = json.loads(f.read_text(encoding="utf-8"))
                 if not isinstance(config, dict):
                     continue
-                boards.append({
-                    "id": config.get("id", f.stem),
-                    "name": config.get("name", f.stem),
-                    "description": config.get("description", ""),
-                    "source_tag": config.get("source_tag", ""),
-                    "type": config.get("type", "board"),
-                    "column_count": len(config.get("columns", [])),
-                    "view_count": len(config.get("views", [])),
-                })
+                boards.append(
+                    {
+                        "id": config.get("id", f.stem),
+                        "name": config.get("name", f.stem),
+                        "description": config.get("description", ""),
+                        "source_tag": config.get("source_tag", ""),
+                        "type": config.get("type", "board"),
+                        "column_count": len(config.get("columns", [])),
+                        "view_count": len(config.get("views", [])),
+                    }
+                )
             except Exception:
                 continue
         return boards
 
     def get_board(self, board_id: str) -> dict | None:
         import json
+
         d = self._boards_dir()
         target = d / f"{board_id}.json"
         if target.exists():
@@ -95,6 +99,7 @@ class BoardConfigStore:
 
     def save_board(self, board_id: str, config: dict) -> Path:
         import json
+
         d = self._boards_dir()
         d.mkdir(parents=True, exist_ok=True)
 
@@ -117,7 +122,7 @@ class BoardConfigStore:
         return False
 
 
-async def evaluate_formulas(app: "BaseApp", config: dict, items: list[dict]) -> list[dict]:
+async def evaluate_formulas(app: BaseApp, config: dict, items: list[dict]) -> list[dict]:
     """Link-aware multi-pass formula eval. For every formula column on the
     board, evaluate against each item with link-record columns pre-resolved
     to lists of target item dicts. Mutates ``items`` in place and returns
@@ -142,6 +147,7 @@ async def evaluate_formulas(app: "BaseApp", config: dict, items: list[dict]) -> 
             tb_cfg = store.get_board(tb)
         if tb_cfg is None:
             from .presets import get_preset
+
             tb_cfg = get_preset(tb)
         if not tb_cfg:
             board_caches[tb] = {}
@@ -151,7 +157,11 @@ async def evaluate_formulas(app: "BaseApp", config: dict, items: list[dict]) -> 
             tb_items = await tb_lib.get_items()
         except Exception:
             tb_items = []
-        board_caches[tb] = {(it.get("file") or it.get("id") or ""): it for it in tb_items if (it.get("file") or it.get("id"))}
+        board_caches[tb] = {
+            (it.get("file") or it.get("id") or ""): it
+            for it in tb_items
+            if (it.get("file") or it.get("id"))
+        }
 
     for item in items:
         ctx = dict(item)

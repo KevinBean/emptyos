@@ -10,13 +10,6 @@
 * { margin:0; padding:0; box-sizing:border-box }
 body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif; background:var(--bg); color:var(--text); min-height:100dvh; padding:env(safe-area-inset-top) 16px calc(env(safe-area-inset-bottom) + 80px); -webkit-font-smoothing:antialiased; overscroll-behavior-y:contain }
 
-/* Streak badge — absolute on wide screens, inline (above header) on mobile so
-   it doesn't overlap the Settings button. */
-.streak { position:absolute; top:12px; right:16px; background:var(--bg-card); border:1px solid var(--border); border-radius:14px; padding:8px 16px; font-size:13px; font-weight:600; color:var(--text-heading); display:flex; align-items:center; gap:4px; animation:fadeDown 0.4s }
-@media (max-width: 600px) {
-    .streak { position:static; margin:0 0 8px; align-self:flex-start; }
-}
-
 /* Date nav */
 .date-nav { display:flex; align-items:center; justify-content:center; gap:12px; margin-bottom:16px; animation:fadeDown 0.4s ease 0.05s both }
 .date-nav button { background:var(--bg-card); border:1px solid var(--border); color:var(--text-secondary); width:34px; height:34px; border-radius:8px; font-size:18px; cursor:pointer; transition:all 0.15s; display:flex; align-items:center; justify-content:center }
@@ -99,7 +92,8 @@ body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-se
 .search-wrap { position:relative; flex:1; min-width:160px }
 .search-input { width:100%; background:var(--bg-card); border:1px solid var(--border); border-radius:8px; padding:12px 12px 12px 34px; font-size:13px; color:var(--text); outline:none; font-family:inherit; transition:border-color 0.2s }
 .search-input:focus { border-color:color-mix(in srgb,var(--accent) 60%,transparent) }
-.search-icon { position:absolute; left:11px; top:50%; transform:translateY(-50%); font-size:14px; color:var(--text-muted); pointer-events:none }
+.search-icon { position:absolute; left:11px; top:50%; transform:translateY(-50%); width:14px; height:14px; color:var(--text-muted); pointer-events:none; display:flex; align-items:center; justify-content:center }
+.search-icon svg { width:14px; height:14px; display:block }
 .search-results { background:var(--bg-card); border:1px solid var(--border); border-radius:14px; margin-top:8px; max-height:240px; overflow-y:auto; display:none }
 .search-results.show { display:block }
 .sr-item { padding:12px 16px; border-bottom:1px solid var(--border); cursor:pointer; transition:background 0.1s }
@@ -119,6 +113,16 @@ body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-se
 .te-time { font-family:var(--mono); font-size:12px; color:var(--text-muted); min-width:44px }
 .te-mood { font-size:14px; min-width:22px; text-align:center }
 .te-text { flex:1; color:var(--text-secondary); line-height:1.5; word-break:break-word }
+
+/* Related past entries (post-write nudge) */
+.related-entries { margin:0 0 16px; padding:12px; border:1px solid var(--border); border-radius:var(--radius); background:var(--bg-elev) }
+.related-header { font-size:12px; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.04em; margin-bottom:8px }
+.related-row { display:flex; align-items:baseline; gap:8px; padding:6px 0; font-size:13px; border-top:1px solid var(--border) }
+.related-row:first-of-type { border-top:none }
+.related-date { font-family:var(--mono); font-size:12px; color:var(--text-muted); min-width:80px }
+.related-emoji { font-size:13px; min-width:18px }
+.related-text { flex:1; color:var(--text-secondary); line-height:1.4; overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
+.related-score { font-family:var(--mono); font-size:11px; color:var(--text-muted) }
 
 /* Recent entries */
 .recent-list { animation:cardIn 0.35s ease 0.35s both }
@@ -168,9 +172,6 @@ if(window.EOS&&EOS.registerActions){EOS.registerActions({go_today:function(){goT
 </script>
 
 <div class="page" style="position:relative">
-    <!-- Streak badge -->
-    <div class="streak" id="streak"><span>🔥</span> <span id="streak-count">0</span> days</div>
-
     <!-- Header -->
     <div class="eos-header">
         <h1>Journal</h1>
@@ -222,6 +223,9 @@ if(window.EOS&&EOS.registerActions){EOS.registerActions({go_today:function(){goT
     <!-- Today's entries (read-only) -->
     <div class="today-entries" id="today-entries"></div>
 
+    <!-- Related past entries — populated after submit when an entry is rich enough to embed -->
+    <div class="related-entries" id="related-entries" hidden></div>
+
     <!-- Milestone + Three things -->
     <div class="extras">
         <div class="extra-card">
@@ -242,13 +246,13 @@ if(window.EOS&&EOS.registerActions){EOS.registerActions({go_today:function(){goT
     <div class="action-row">
         <button class="action-btn" id="reflect-btn" onclick="aiReflect()"><span>🤖</span> AI Reflect</button>
         <div class="search-wrap">
-            <span class="search-icon">🔍</span>
+            <span class="search-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.5-3.5"></path></svg></span>
             <input class="search-input" id="search-input" placeholder="Search journal..." oninput="doSearch()" />
         </div>
     </div>
 
     <!-- AI Reflection output -->
-    <div class="reflect-box" id="reflect-box"></div>
+    <div class="reflect-box eos-personal" id="reflect-box"></div>
 
     <!-- Search results -->
     <div class="search-results" id="search-results"></div>
@@ -341,13 +345,39 @@ async function submitEntry() {
         loadToday();
         loadRecent();
         loadHeatmap();
-        loadStreak();
+        // Fire-and-forget: surface past entries semantically similar to what
+        // was just written. Quiet failure — the panel is a nudge, not core flow.
+        showRelatedEntries(text).catch(()=>{});
     } catch(e) {
         document.getElementById('autosave').textContent = '✗ failed';
     } finally {
         submitting = false;
         document.getElementById('submit-btn').disabled = false;
     }
+}
+
+// --- Related past entries (post-write nudge) ---
+async function showRelatedEntries(text) {
+    var panel = document.getElementById('related-entries');
+    panel.hidden = true;
+    panel.innerHTML = '';
+    if (!text || text.length < 30) return;  // matches backend _RELATED_MIN_CHARS
+    var url = '/journal/api/related?top_k=4&text=' + encodeURIComponent(text);
+    var data;
+    try { data = await EOS.api(url); } catch (e) { return; }
+    var hits = (data && data.results) || [];
+    if (!hits.length) return;
+    var rows = hits.map(function(h){
+        var preview = (h.text || '').replace(/\s+/g, ' ').slice(0, 120);
+        return '<div class="related-row">'
+          + '<span class="related-date">' + h.date + '</span>'
+          + ' <span class="related-emoji">' + (h.emoji || '') + '</span>'
+          + ' <span class="related-text eos-personal">' + esc(preview) + '</span>'
+          + ' <span class="related-score">cos ' + (h.score||0).toFixed(2) + '</span>'
+          + '</div>';
+    }).join('');
+    panel.innerHTML = '<div class="related-header">You wrote about this before</div>' + rows;
+    panel.hidden = false;
 }
 
 // --- Milestone ---
@@ -460,24 +490,6 @@ async function loadWeather() {
     } catch(e) {}
 }
 
-// --- Streak ---
-async function loadStreak() {
-    try {
-        const data = await EOS.api('/journal/api/recent?days=90');
-        let streak = 0;
-        const today = new Date();
-        for (let i = 0; i < 90; i++) {
-            const d = new Date(today);
-            d.setDate(d.getDate() - i);
-            const ds = fmtDate(d);
-            if (data.find(r => r.date === ds && r.entry_count > 0)) { streak++; }
-            else if (i > 0) break; // allow today to be empty
-            else break;
-        }
-        document.getElementById('streak-count').textContent = streak;
-    } catch(e) {}
-}
-
 // --- Heatmap ---
 async function loadHeatmap() {
     try {
@@ -561,7 +573,7 @@ function renderTodayEntries(entries) {
         <div class="today-entry">
             <span class="te-time">${esc(e.time || '')}</span>
             <span class="te-mood">${esc(e.emoji || '')}</span>
-            <span class="te-text">${esc(e.text || '')}</span>
+            <span class="te-text eos-personal">${esc(e.text || '')}</span>
         </div>
     `).join('');
 }
@@ -579,7 +591,7 @@ async function loadRecent() {
             <div class="recent-day" onclick="jumpToDate('${escAttr(d.date)}')">
                 <span class="rd-date">${esc((d.date||'').slice(5))}</span>
                 <span class="rd-mood">${MOODS[d.mood] || ''}</span>
-                <span class="rd-preview">${esc(d.preview || '')}</span>
+                <span class="rd-preview eos-personal">${esc(d.preview || '')}</span>
                 <span class="rd-count">${d.entry_count || d.entries || 0}</span>
             </div>
         `).join('');
@@ -593,7 +605,6 @@ function loadAll() {
     loadToday();
     loadRecent();
     loadHeatmap();
-    loadStreak();
 }
 
 // --- Init ---
@@ -612,7 +623,7 @@ document.getElementById('entry-text').addEventListener('keydown', e => {
 // Keyboard shortcuts
 if (EOS.keys) {
     EOS.keys.register('n', 'New entry', function() { document.getElementById('entry-text').focus(); });
-    EOS.keys.register('r', 'Refresh', function() { loadToday(); loadRecent(); loadHeatmap(); loadStreak(); });
+    EOS.keys.register('r', 'Refresh', function() { loadToday(); loadRecent(); loadHeatmap(); });
 }
 
 // Hands-Free gesture overrides
@@ -633,7 +644,7 @@ if (EOS.handsFree) {
 }
 
 // Live updates
-EOS.on('journal:entry', () => { loadToday(); loadRecent(); loadHeatmap(); loadStreak(); });
+EOS.on('journal:entry', () => { loadToday(); loadRecent(); loadHeatmap(); });
 
 // --- App Settings slide-out (shared helper) ---
 var _appSettings = EOS_UI.settingsPanel({

@@ -7,7 +7,6 @@ Debounces rapid changes (1s) to prevent event spam.
 from __future__ import annotations
 
 import asyncio
-import time
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -56,7 +55,7 @@ class VaultWatcher:
     async def _watch_loop(self, vault_path: Path):
         """Main watch loop using watchfiles."""
         try:
-            from watchfiles import awatch, Change
+            from watchfiles import Change, awatch
         except ImportError:
             print("[VaultWatcher] watchfiles not installed, falling back to polling")
             await self._poll_loop(vault_path)

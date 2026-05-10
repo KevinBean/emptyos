@@ -7,7 +7,6 @@ Apps access via self.require("settings").get("app.key", default).
 from __future__ import annotations
 
 import json
-from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:

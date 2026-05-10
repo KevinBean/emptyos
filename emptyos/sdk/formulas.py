@@ -36,11 +36,11 @@ import re
 from datetime import date
 from typing import Any
 
-
 # Accept SQL-style keywords (AND, OR, NOT) by rewriting to Python-style
 # before parsing. Case-insensitive whole-word match. Strings are left alone
 # so `IF(x, "AND", "OR")` survives the rewrite.
 _KEYWORD_RE = re.compile(r'("[^"]*"|\'[^\']*\'|\b(?:AND|OR|NOT)\b)', re.IGNORECASE)
+
 
 def _normalize_keywords(expr: str) -> str:
     def sub(m):
@@ -48,6 +48,7 @@ def _normalize_keywords(expr: str) -> str:
         if tok.startswith(("'", '"')):
             return tok
         return tok.lower()
+
     return _KEYWORD_RE.sub(sub, expr)
 
 
@@ -56,6 +57,7 @@ class FormulaError(Exception):
 
 
 # ── Built-in functions ────────────────────────────────────────────────
+
 
 def _as_iterable(x: Any):
     if x is None:
@@ -79,28 +81,56 @@ def _to_number(x: Any) -> float:
         return 0.0
 
 
-def _fn_sum(x):   return sum(_to_number(v) for v in _as_iterable(x))
+def _fn_sum(x):
+    return sum(_to_number(v) for v in _as_iterable(x))
+
+
 def _fn_avg(x):
     items = [_to_number(v) for v in _as_iterable(x)]
     return sum(items) / len(items) if items else 0.0
-def _fn_count(x): return len([v for v in _as_iterable(x) if v not in (None, "")])
+
+
+def _fn_count(x):
+    return len([v for v in _as_iterable(x) if v not in (None, "")])
+
+
 def _fn_min(x):
     items = [_to_number(v) for v in _as_iterable(x)]
     return min(items) if items else 0.0
+
+
 def _fn_max(x):
     items = [_to_number(v) for v in _as_iterable(x)]
     return max(items) if items else 0.0
-def _fn_if(cond, a, b): return a if bool(cond) else b
+
+
+def _fn_if(cond, a, b):
+    return a if bool(cond) else b
+
+
 def _fn_is_empty(x):
     if x is None or x == "":
         return True
     if isinstance(x, (list, tuple, dict)) and len(x) == 0:
         return True
     return False
-def _fn_today():  return date.today().isoformat()
-def _fn_concat(*args): return "".join(str(a) for a in args if a is not None)
-def _fn_len(x):   return len(_as_iterable(x))
-def _fn_round(x, n=0): return round(_to_number(x), int(_to_number(n)))
+
+
+def _fn_today():
+    return date.today().isoformat()
+
+
+def _fn_concat(*args):
+    return "".join(str(a) for a in args if a is not None)
+
+
+def _fn_len(x):
+    return len(_as_iterable(x))
+
+
+def _fn_round(x, n=0):
+    return round(_to_number(x), int(_to_number(n)))
+
 
 def _fn_lookup(link_col_value, field):
     """LOOKUP(col, 'field') — col is the resolved link list; return first.field."""
@@ -114,11 +144,17 @@ def _fn_lookup(link_col_value, field):
 
 
 _FUNCTIONS: dict[str, callable] = {
-    "SUM": _fn_sum, "AVG": _fn_avg, "COUNT": _fn_count,
-    "MIN": _fn_min, "MAX": _fn_max,
-    "IF": _fn_if, "IS_EMPTY": _fn_is_empty,
-    "TODAY": _fn_today, "CONCAT": _fn_concat,
-    "LEN": _fn_len, "ROUND": _fn_round,
+    "SUM": _fn_sum,
+    "AVG": _fn_avg,
+    "COUNT": _fn_count,
+    "MIN": _fn_min,
+    "MAX": _fn_max,
+    "IF": _fn_if,
+    "IS_EMPTY": _fn_is_empty,
+    "TODAY": _fn_today,
+    "CONCAT": _fn_concat,
+    "LEN": _fn_len,
+    "ROUND": _fn_round,
     "LOOKUP": _fn_lookup,
 }
 
@@ -128,13 +164,31 @@ _FUNCTIONS: dict[str, callable] = {
 _ALLOWED_NODES = (
     ast.Expression,
     ast.Constant,
-    ast.Name, ast.Attribute,
+    ast.Name,
+    ast.Attribute,
     ast.Call,
-    ast.BinOp, ast.UnaryOp, ast.BoolOp, ast.Compare,
-    ast.Add, ast.Sub, ast.Mult, ast.Div, ast.Mod, ast.Pow, ast.FloorDiv,
-    ast.USub, ast.UAdd, ast.Not,
-    ast.And, ast.Or,
-    ast.Eq, ast.NotEq, ast.Lt, ast.LtE, ast.Gt, ast.GtE,
+    ast.BinOp,
+    ast.UnaryOp,
+    ast.BoolOp,
+    ast.Compare,
+    ast.Add,
+    ast.Sub,
+    ast.Mult,
+    ast.Div,
+    ast.Mod,
+    ast.Pow,
+    ast.FloorDiv,
+    ast.USub,
+    ast.UAdd,
+    ast.Not,
+    ast.And,
+    ast.Or,
+    ast.Eq,
+    ast.NotEq,
+    ast.Lt,
+    ast.LtE,
+    ast.Gt,
+    ast.GtE,
     ast.Load,
 )
 
@@ -151,10 +205,13 @@ def _eval(node: Any, ctx: dict) -> Any:
             return ctx[node.id]
         # Allow TRUE/FALSE/NULL aliases.
         upper = node.id.upper()
-        if upper == "TRUE":  return True
-        if upper == "FALSE": return False
-        if upper == "NULL" or upper == "NONE": return None
-        return ""   # missing field → empty string (non-crashy default)
+        if upper == "TRUE":
+            return True
+        if upper == "FALSE":
+            return False
+        if upper == "NULL" or upper == "NONE":
+            return None
+        return ""  # missing field → empty string (non-crashy default)
 
     if isinstance(node, ast.Attribute):
         owner = _eval(node.value, ctx)
@@ -182,20 +239,30 @@ def _eval(node: Any, ctx: dict) -> Any:
         right = _eval(node.right, ctx)
         op = node.op
         ln, rn = _to_number(left), _to_number(right)
-        if isinstance(op, ast.Add):     return ln + rn
-        if isinstance(op, ast.Sub):     return ln - rn
-        if isinstance(op, ast.Mult):    return ln * rn
-        if isinstance(op, ast.Div):     return ln / rn if rn else 0
-        if isinstance(op, ast.Mod):     return ln % rn if rn else 0
-        if isinstance(op, ast.Pow):     return ln ** rn
-        if isinstance(op, ast.FloorDiv):return ln // rn if rn else 0
+        if isinstance(op, ast.Add):
+            return ln + rn
+        if isinstance(op, ast.Sub):
+            return ln - rn
+        if isinstance(op, ast.Mult):
+            return ln * rn
+        if isinstance(op, ast.Div):
+            return ln / rn if rn else 0
+        if isinstance(op, ast.Mod):
+            return ln % rn if rn else 0
+        if isinstance(op, ast.Pow):
+            return ln**rn
+        if isinstance(op, ast.FloorDiv):
+            return ln // rn if rn else 0
         raise FormulaError(f"unsupported binary op: {type(op).__name__}")
 
     if isinstance(node, ast.UnaryOp):
         operand = _eval(node.operand, ctx)
-        if isinstance(node.op, ast.USub): return -_to_number(operand)
-        if isinstance(node.op, ast.UAdd): return +_to_number(operand)
-        if isinstance(node.op, ast.Not):  return not bool(operand)
+        if isinstance(node.op, ast.USub):
+            return -_to_number(operand)
+        if isinstance(node.op, ast.UAdd):
+            return +_to_number(operand)
+        if isinstance(node.op, ast.Not):
+            return not bool(operand)
         raise FormulaError(f"unsupported unary op: {type(node.op).__name__}")
 
     if isinstance(node, ast.BoolOp):
@@ -204,20 +271,24 @@ def _eval(node: Any, ctx: dict) -> Any:
             result = True
             for v in values:
                 result = result and v
-                if not result: return result
+                if not result:
+                    return result
             return result
         if isinstance(node.op, ast.Or):
             for v in values:
-                if v: return v
+                if v:
+                    return v
             return values[-1] if values else False
         raise FormulaError(f"unsupported bool op: {type(node.op).__name__}")
 
     if isinstance(node, ast.Compare):
         left = _eval(node.left, ctx)
-        for op, comparator in zip(node.ops, node.comparators):
+        for op, comparator in zip(node.ops, node.comparators, strict=False):
             right = _eval(comparator, ctx)
-            if isinstance(op, ast.Eq):    ok = left == right
-            elif isinstance(op, ast.NotEq): ok = left != right
+            if isinstance(op, ast.Eq):
+                ok = left == right
+            elif isinstance(op, ast.NotEq):
+                ok = left != right
             else:
                 # Prefer string comparison when both sides are strings (so
                 # ISO dates like "2020-01-01" order correctly). Fall back
@@ -226,12 +297,18 @@ def _eval(node: Any, ctx: dict) -> Any:
                     a, b = left, right
                 else:
                     a, b = _to_number(left), _to_number(right)
-                if   isinstance(op, ast.Lt):  ok = a <  b
-                elif isinstance(op, ast.LtE): ok = a <= b
-                elif isinstance(op, ast.Gt):  ok = a >  b
-                elif isinstance(op, ast.GtE): ok = a >= b
-                else: raise FormulaError(f"unsupported comparison op: {type(op).__name__}")
-            if not ok: return False
+                if isinstance(op, ast.Lt):
+                    ok = a < b
+                elif isinstance(op, ast.LtE):
+                    ok = a <= b
+                elif isinstance(op, ast.Gt):
+                    ok = a > b
+                elif isinstance(op, ast.GtE):
+                    ok = a >= b
+                else:
+                    raise FormulaError(f"unsupported comparison op: {type(op).__name__}")
+            if not ok:
+                return False
             left = right
         return True
 

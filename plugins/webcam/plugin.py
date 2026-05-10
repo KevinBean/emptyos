@@ -21,8 +21,8 @@ import uuid
 from functools import partial
 from pathlib import Path
 
-from emptyos.sdk import BasePlugin
 from emptyos.capabilities import Provider
+from emptyos.sdk import BasePlugin
 
 CAPTURE_DIR = Path(tempfile.gettempdir()) / "emptyos-camera"
 CAPTURE_DIR.mkdir(exist_ok=True)
@@ -31,6 +31,7 @@ CAPTURE_DIR.mkdir(exist_ok=True)
 def _cv_backend_const(name: str) -> int:
     """Map a friendly backend name to cv2's backend constant. Unknown → CAP_ANY."""
     import cv2
+
     return {
         "any": cv2.CAP_ANY,
         "dshow": cv2.CAP_DSHOW,
@@ -51,6 +52,7 @@ class WebcamPlugin(BasePlugin):
     async def available(self) -> bool:
         try:
             import cv2  # noqa: F401
+
             return True
         except ImportError:
             return False

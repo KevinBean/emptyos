@@ -166,9 +166,22 @@ Rules the skeleton must satisfy — verify before writing:
 
 ---
 
-### Step 5: Create `apps/<id>/pages/index.html`
+### Step 5: Decide whether you need a custom `pages/index.html`
 
-Custom UI is mandatory (CLAUDE.md §App Development Pattern — "UI is not optional"). Use the shared helpers; do not reinvent modals, cards, or detail routing.
+**Default: skip this step.** New CRUD apps render via the auto-UI (`emptyos/web/auto_ui.py`) using the shared component bundle — list with hover-revealed trash buttons, "+ Add" modal with inferred fields, stats tiles where applicable. No HTML to write, full CRUD on first boot.
+
+**Write a custom `pages/index.html` only when**:
+- The app's primary surface isn't a list (deep-canvas like `canvas`/`improv`/`board`, single-shot generators like `voice-assistant`, dashboards with bespoke layouts).
+- The app needs interactions auto-UI doesn't synthesize (drag-to-reorder, inline cell edit, custom widgets like cover pickers / audio recorders / map views).
+- The app is a "reading surface" (journal, blog post viewer) where the layout *is* the product.
+
+If none of those apply, ship without `pages/`. **Migration path** when an author wants to upgrade: open `http://localhost:9000/<id>/`, view source, save as `apps/<id>/pages/index.html`, edit. The platform serves `pages/index.html` in preference to auto-UI when both exist.
+
+---
+
+### Step 5b (only if Step 5 said "yes"): Create `apps/<id>/pages/index.html`
+
+Use the shared helpers; do not reinvent modals, cards, or detail routing.
 
 Template outline:
 
@@ -344,8 +357,17 @@ Next:
   1. Implement the TODO methods in apps/<id>/app.py
   2. Flesh out the UI — list render + add form
   3. When a second app needs a pattern you just wrote, extract to sdk/
-  4. Before commit: run /eos-simplify
-  5. End of session: run /eos-session-wrapup
+  4. Once the UI has real content, run /eos-design-review apps/<id>/pages/index.html
+     — catches theme-bootstrap missing, phantom tokens, doubled signals,
+     and archetype-mismatched chrome before they harden
+  5. iOS check (any page with fixed/sticky elements or div-onclick handlers):
+       python scripts/check-ios-safe-area.py apps/<id>/pages/index.html
+     Catches the 5 iOS Safari bug families (notch overlap, home-indicator
+     overlap, hardcoded notch padding, 100vh viewport collapse, div-onclick
+     silent drop). The scanner runs in CI on every push, so failing
+     here means the PR won't merge — cheaper to catch now.
+  6. Before commit: run /eos-simplify
+  7. End of session: run /eos-session-wrapup
 ```
 
 ## Safety
@@ -358,6 +380,7 @@ Next:
 
 ## Relationship
 
+- **Once the UI is fleshed out (not before — needs real content to evaluate)** → `/eos-design-review apps/<id>/pages/index.html`. Catches theme-bootstrap regressions, phantom tokens, doubled signals, and archetype-mismatched chrome (e.g. an instrument with too many controls, a list with a competing hero) at the cheapest possible point — when the patterns aren't yet calcified.
 - Pre-commit after building out the scaffold → `/eos-simplify`
 - End of session → `/eos-session-wrapup` (updates CLAUDE.md counts, safety scan, devlog)
 - System health / what to build next → `/eos-system-check-and-fix`

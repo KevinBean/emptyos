@@ -1,0 +1,29 @@
+{
+  "source": "IEC 60287-3-1 Table 1 + common engineering practice (CIGRE TB 880, IEEE Std 442)",
+  "description": "Typical thermal resistivity (K·m/W) of soils and backfill materials. Values are nominal — site-specific measurements (thermal needle test per IEEE 442) are strongly preferred for any project where ampacity is load-bearing on this number. The IEC 60287 default of 1.0 K·m/W is appropriate for moist soils in temperate climates.",
+  "rho_t_units": "K·m/W",
+  "iec_60287_default": 1.0,
+  "soil_types": {
+    "very_wet_clay":      {"typical": 0.7,  "range": [0.6, 0.8],  "description": "Saturated, water table near surface"},
+    "wet_clay":           {"typical": 0.9,  "range": [0.8, 1.0],  "description": "Below water table, moist"},
+    "moist_clay":         {"typical": 1.2,  "range": [1.0, 1.5],  "description": "Above water table, partially saturated"},
+    "dry_clay":           {"typical": 2.0,  "range": [1.5, 3.0],  "description": "Drought / urban subgrade — dry-out risk"},
+    "wet_sand":           {"typical": 1.0,  "range": [0.8, 1.3],  "description": "Coarse sand, water-bearing"},
+    "moist_sand":         {"typical": 1.5,  "range": [1.3, 2.0],  "description": "Sand at field capacity"},
+    "dry_sand":           {"typical": 2.5,  "range": [2.0, 3.5],  "description": "Aeolian / desert — high dry-out risk"},
+    "wet_silt":           {"typical": 1.0,  "range": [0.8, 1.2],  "description": "Fine silt, water-saturated"},
+    "moist_silt":         {"typical": 1.3,  "range": [1.0, 1.5],  "description": "Silt, partially saturated"},
+    "dry_silt":           {"typical": 2.0,  "range": [1.5, 3.0],  "description": "Silt, drought conditions"},
+    "bedrock_granite":    {"typical": 1.5,  "range": [1.0, 2.5],  "description": "Crystalline bedrock, varies with fracturing"},
+    "bedrock_sandstone":  {"typical": 1.8,  "range": [1.4, 2.2],  "description": "Sedimentary bedrock"},
+    "concrete":           {"typical": 1.0,  "range": [0.8, 1.2],  "description": "Cured concrete, moist environment"},
+    "asphalt":            {"typical": 0.8,  "range": [0.6, 1.0],  "description": "Asphaltic concrete pavement"}
+  },
+  "backfill_materials": {
+    "cbs_thermal":        {"typical": 0.8,  "range": [0.6, 1.0],  "description": "Controlled Backfill / Stabilized Sand-Cement (CBS) — engineered low-resistivity backfill"},
+    "thermal_sand":       {"typical": 1.0,  "range": [0.8, 1.5],  "description": "Selected mineral-rich sand backfill"},
+    "concrete_envelope":  {"typical": 1.0,  "range": [0.8, 1.2],  "description": "Lean-mix concrete envelope around duct bank"},
+    "fluidized_thermal":  {"typical": 0.6,  "range": [0.5, 0.8],  "description": "Fluidized thermal backfill (FTB) with high thermal conductivity"},
+    "native_soil":        {"typical": null, "range": null,        "description": "Use the soil_types entry for the site condition"}
+  }
+}

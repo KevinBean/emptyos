@@ -39,7 +39,9 @@ class SystemLog:
         self._conn.commit()
         self._pending = 0
 
-    def log(self, level: str, source: str, message: str, data: dict | None = None, job_id: str = ""):
+    def log(
+        self, level: str, source: str, message: str, data: dict | None = None, job_id: str = ""
+    ):
         """Write a log entry. WAL mode means commits are cheap but we still batch."""
         self._conn.execute(
             "INSERT INTO syslog (ts, level, source, message, data, job_id) VALUES (?, ?, ?, ?, ?, ?)",
@@ -73,8 +75,14 @@ class SystemLog:
     def debug(self, source: str, message: str, **kwargs):
         self.log("debug", source, message, **kwargs)
 
-    def query(self, limit: int = 100, level: str = "", source: str = "",
-              since: float = 0, job_id: str = "") -> list[dict]:
+    def query(
+        self,
+        limit: int = 100,
+        level: str = "",
+        source: str = "",
+        since: float = 0,
+        job_id: str = "",
+    ) -> list[dict]:
         """Query log entries."""
         sql = "SELECT id, ts, level, source, message, data, job_id FROM syslog WHERE 1=1"
         params: list = []
@@ -96,8 +104,12 @@ class SystemLog:
         rows = self._conn.execute(sql, params).fetchall()
         return [
             {
-                "id": r[0], "ts": r[1], "level": r[2], "source": r[3],
-                "message": r[4], "data": json.loads(r[5]) if r[5] else {},
+                "id": r[0],
+                "ts": r[1],
+                "level": r[2],
+                "source": r[3],
+                "message": r[4],
+                "data": json.loads(r[5]) if r[5] else {},
                 "job_id": r[6],
             }
             for r in rows

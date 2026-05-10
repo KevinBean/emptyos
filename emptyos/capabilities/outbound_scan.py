@@ -12,18 +12,17 @@ import re
 from pathlib import Path
 from typing import NamedTuple
 
-
 # High-confidence secret patterns. Conservative on purpose — fixed prefixes
 # / well-defined formats so false positives are rare.
 _SECRET_PATTERNS: list[tuple[str, re.Pattern]] = [
-    ("OpenAI API key",        re.compile(r"sk-(?!ant-)(?:proj-)?[A-Za-z0-9_-]{20,}")),
-    ("Anthropic API key",     re.compile(r"sk-ant-[A-Za-z0-9_-]{20,}")),
-    ("AWS access key",        re.compile(r"AKIA[0-9A-Z]{16}")),
-    ("GitHub token",          re.compile(r"gh[pousr]_[A-Za-z0-9]{30,}")),
-    ("Google API key",        re.compile(r"AIza[0-9A-Za-z_-]{30,}")),
-    ("Slack token",           re.compile(r"xox[abpr]-[A-Za-z0-9-]{10,}")),
-    ("Private key block",     re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----")),
-    ("JWT",                   re.compile(r"eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}")),
+    ("OpenAI API key", re.compile(r"sk-(?!ant-)(?:proj-)?[A-Za-z0-9_-]{20,}")),
+    ("Anthropic API key", re.compile(r"sk-ant-[A-Za-z0-9_-]{20,}")),
+    ("AWS access key", re.compile(r"AKIA[0-9A-Z]{16}")),
+    ("GitHub token", re.compile(r"gh[pousr]_[A-Za-z0-9]{30,}")),
+    ("Google API key", re.compile(r"AIza[0-9A-Za-z_-]{30,}")),
+    ("Slack token", re.compile(r"xox[abpr]-[A-Za-z0-9-]{10,}")),
+    ("Private key block", re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----")),
+    ("JWT", re.compile(r"eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}")),
     ("Bearer token (header)", re.compile(r"(?i)authorization:\s*bearer\s+[A-Za-z0-9._-]{20,}")),
 ]
 
@@ -135,10 +134,7 @@ def _pick_local_provider(kernel, preferred_variant: str = ""):
         think = kernel.capabilities.get("think")
     except Exception:
         return None
-    local = [
-        p for p in think.providers
-        if not getattr(p, "is_cloud", False) and p.name != "human"
-    ]
+    local = [p for p in think.providers if not getattr(p, "is_cloud", False) and p.name != "human"]
     if not local:
         return None
     if preferred_variant:
@@ -163,9 +159,9 @@ def _parse_classify(raw: str) -> tuple[bool, str]:
     return flagged, reasons
 
 
-async def llm_classify(text: str, kernel, *, max_chars: int = 4000,
-                        preferred_variant: str = "",
-                        timeout: float = 5.0) -> dict:
+async def llm_classify(
+    text: str, kernel, *, max_chars: int = 4000, preferred_variant: str = "", timeout: float = 5.0
+) -> dict:
     """Run the local classifier. Never raises — returns a neutral dict on failure.
 
     `timeout` caps how long the scan may take. Exceeding it returns
@@ -179,23 +175,43 @@ async def llm_classify(text: str, kernel, *, max_chars: int = 4000,
         return {"ran": False, "flagged": False, "reasons": "no local provider", "provider": ""}
     try:
         if not await provider.available():
-            return {"ran": False, "flagged": False, "reasons": "local provider offline", "provider": provider.variant_id}
+            return {
+                "ran": False,
+                "flagged": False,
+                "reasons": "local provider offline",
+                "provider": provider.variant_id,
+            }
         sample = text[:max_chars]
         raw = await asyncio.wait_for(
             provider.execute(prompt=sample, system=_CLASSIFY_SYSTEM, temperature=0.1),
             timeout=timeout,
         )
         flagged, reasons = _parse_classify(str(raw))
-        return {"ran": True, "flagged": flagged, "reasons": reasons, "provider": provider.variant_id}
-    except asyncio.TimeoutError:
-        return {"ran": False, "flagged": False, "reasons": f"timeout after {timeout:g}s", "provider": provider.variant_id}
+        return {
+            "ran": True,
+            "flagged": flagged,
+            "reasons": reasons,
+            "provider": provider.variant_id,
+        }
+    except TimeoutError:
+        return {
+            "ran": False,
+            "flagged": False,
+            "reasons": f"timeout after {timeout:g}s",
+            "provider": provider.variant_id,
+        }
     except Exception as e:
-        return {"ran": False, "flagged": False, "reasons": f"error: {e}", "provider": provider.variant_id}
+        return {
+            "ran": False,
+            "flagged": False,
+            "reasons": f"error: {e}",
+            "provider": provider.variant_id,
+        }
 
 
-async def llm_redact(text: str, kernel, *, max_chars: int = 4000,
-                      preferred_variant: str = "",
-                      timeout: float = 5.0) -> dict:
+async def llm_redact(
+    text: str, kernel, *, max_chars: int = 4000, preferred_variant: str = "", timeout: float = 5.0
+) -> dict:
     """Run the local redactor. Returns {'ran', 'redacted', 'provider'}.
 
     `redacted` is the rewritten text, or the original text if redaction
@@ -225,7 +241,7 @@ async def llm_redact(text: str, kernel, *, max_chars: int = 4000,
         if not rewritten:
             return {"ran": False, "redacted": text, "provider": provider.variant_id}
         return {"ran": True, "redacted": rewritten + tail, "provider": provider.variant_id}
-    except asyncio.TimeoutError:
+    except TimeoutError:
         # Returning the original text means the cloud provider still sees
         # unredacted content. That matches the "warn" principle — fail open
         # on latency. Users who need strict privacy should pair redact with

@@ -60,8 +60,7 @@ class SubAgentTool(Tool):
                 "type": "array",
                 "items": {"type": "string"},
                 "description": (
-                    "Restrict the subagent to these tool names. "
-                    "Omit to give the full tool set."
+                    "Restrict the subagent to these tool names. Omit to give the full tool set."
                 ),
             },
         },
@@ -87,8 +86,10 @@ class SubAgentTool(Tool):
 
         # Lazy imports — agent_loop is heavy; avoid loading at tool-registry build time.
         from emptyos.sdk.agent_loop import (
-            run_turn, AgentSession,
-            DEFAULT_SYSTEM_PROMPT, DEFAULT_TEMPERATURE,
+            DEFAULT_SYSTEM_PROMPT,
+            DEFAULT_TEMPERATURE,
+            AgentSession,
+            run_turn,
         )
         from emptyos.sdk.agent_tools import build_registry
 
@@ -138,16 +139,16 @@ class SubAgentTool(Tool):
                 ),
                 timeout=180.0,
             )
-        except asyncio.TimeoutError:
+        except TimeoutError:
             return ToolResult(ok=False, content="error: subagent timed out after 180s")
         except Exception as e:
             return ToolResult(ok=False, content=f"error: subagent failed — {e}")
 
         # Extract final text from the turn
         from emptyos.capabilities.providers._tool_capable import TextBlock
+
         text_parts = [
-            b.text for b in (final_turn.assistant_blocks or [])
-            if isinstance(b, TextBlock)
+            b.text for b in (final_turn.assistant_blocks or []) if isinstance(b, TextBlock)
         ]
         result_text = "".join(text_parts).strip()
 

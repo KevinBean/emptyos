@@ -32,11 +32,6 @@ class TestFocusAPI:
         data = assert_dict_response(http_client.get("/focus/api/streak"))
         assert "streak" in data or "current" in data
 
-    def test_achievements(self, http_client):
-        data = assert_ok(http_client.get("/focus/api/achievements"))
-        assert isinstance(data, dict)
-        assert "achievements" in data or "earned" in data or isinstance(data, list)
-
     def test_config_get_set(self, http_client):
         original = http_client.get("/focus/api/config").json()
         try:

@@ -13,6 +13,7 @@ Usage:
 
 Outputs to: results/conv-test-goose-{provider}-{timestamp}/
 """
+
 from __future__ import annotations
 
 import argparse
@@ -24,7 +25,6 @@ import sys
 import tomllib
 from datetime import datetime
 from pathlib import Path
-
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 CASES_FILE = REPO_ROOT / "scripts" / "conv-test-cases.toml"
@@ -42,7 +42,8 @@ def git_pollution_check(ignore_prefixes: tuple[str, ...] = ("results/",)) -> lis
     try:
         result = subprocess.run(
             ["git", "-C", str(REPO_ROOT), "status", "--porcelain"],
-            capture_output=True, timeout=10,
+            capture_output=True,
+            timeout=10,
         )
         if result.returncode != 0:
             return [f"(git status failed: exit {result.returncode})"]
@@ -100,25 +101,32 @@ def extract_tool_calls(goose_json: dict) -> list[dict]:
                 tr = block.get("toolRequest", {})
                 call = tr.get("tool_call", {})
                 val = call.get("value", {}) if isinstance(call, dict) else {}
-                trace.append({
-                    "id": tr.get("id"),
-                    "tool": val.get("name"),
-                    "args_preview": str(val.get("arguments", ""))[:200],
-                })
+                trace.append(
+                    {
+                        "id": tr.get("id"),
+                        "tool": val.get("name"),
+                        "args_preview": str(val.get("arguments", ""))[:200],
+                    }
+                )
             elif block.get("type") == "toolResponse":
                 tr = block.get("toolResponse", {})
                 result = tr.get("toolResult", {})
-                content = result.get("value", {}).get("content", []) if isinstance(result, dict) else []
+                content = (
+                    result.get("value", {}).get("content", []) if isinstance(result, dict) else []
+                )
                 text = content[0].get("text", "") if content else ""
-                trace.append({
-                    "id": tr.get("id"),
-                    "result_preview": text[:200],
-                })
+                trace.append(
+                    {
+                        "id": tr.get("id"),
+                        "result_preview": text[:200],
+                    }
+                )
     return trace
 
 
-def run_one_test(provider: str, model: str, case: dict, results_dir: Path,
-                 snapshot_baseline: set[str]) -> dict:
+def run_one_test(
+    provider: str, model: str, case: dict, results_dir: Path, snapshot_baseline: set[str]
+) -> dict:
     case_id = case["id"]
     print(f"\n=== Test {case_id}: {case['title']} ===")
 
@@ -148,15 +156,22 @@ def run_one_test(provider: str, model: str, case: dict, results_dir: Path,
         return {"case_id": case_id, "error": msg}
 
     cmd = [
-        goose_bin, "run",
+        goose_bin,
+        "run",
         "--no-session",
-        "-t", prompt,
-        "--provider", provider,
-        "--model", model,
-        "--output-format", "json",
+        "-t",
+        prompt,
+        "--provider",
+        provider,
+        "--model",
+        model,
+        "--output-format",
+        "json",
         "--quiet",
-        "--max-turns", "25",
-        "--max-tool-repetitions", "5",
+        "--max-turns",
+        "25",
+        "--max-tool-repetitions",
+        "5",
     ]
 
     env = os.environ.copy()
@@ -168,7 +183,8 @@ def run_one_test(provider: str, model: str, case: dict, results_dir: Path,
     try:
         result = subprocess.run(
             cmd,
-            capture_output=True, timeout=900,
+            capture_output=True,
+            timeout=900,
             cwd=str(REPO_ROOT),
             env=env,
         )
@@ -200,7 +216,8 @@ def run_one_test(provider: str, model: str, case: dict, results_dir: Path,
     current_snapshot = _git_snapshot()
     new_changes = current_snapshot - snapshot_baseline
     outside_results = [
-        c for c in new_changes
+        c
+        for c in new_changes
         if "results/" not in c  # any path under results/ is fine (including our sandbox)
     ]
     if outside_results:
@@ -222,9 +239,7 @@ def run_one_test(provider: str, model: str, case: dict, results_dir: Path,
         "pollution_outside_results": outside_results,
         "rubric": case.get("rubric", []),
     }
-    (case_dir / "goose_summary.json").write_text(
-        json.dumps(summary, indent=2), encoding="utf-8"
-    )
+    (case_dir / "goose_summary.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
 
     print(f"  return_code: {return_code}, elapsed: {elapsed:.1f}s")
     print(f"  tool calls: {summary['tool_call_count']}, files written: {sandbox_files}")
@@ -237,7 +252,8 @@ def _git_snapshot() -> set[str]:
     try:
         result = subprocess.run(
             ["git", "-C", str(REPO_ROOT), "status", "--porcelain"],
-            capture_output=True, timeout=10,
+            capture_output=True,
+            timeout=10,
         )
         if result.returncode == 0:
             return set(result.stdout.decode("utf-8", errors="replace").splitlines())
@@ -266,18 +282,30 @@ def smoke_test(provider: str, model: str) -> None:
     print(f"Sandbox: {sandbox}")
 
     cmd = [
-        goose_bin, "run", "--no-session",
-        "-t", prompt,
-        "--provider", provider, "--model", model,
-        "--output-format", "json", "--quiet",
-        "--max-turns", "10",
+        goose_bin,
+        "run",
+        "--no-session",
+        "-t",
+        prompt,
+        "--provider",
+        provider,
+        "--model",
+        model,
+        "--output-format",
+        "json",
+        "--quiet",
+        "--max-turns",
+        "10",
     ]
     env = os.environ.copy()
     env["GOOSE_MODE"] = "auto"
     try:
         result = subprocess.run(
-            cmd, capture_output=True, timeout=300,
-            cwd=str(REPO_ROOT), env=env,
+            cmd,
+            capture_output=True,
+            timeout=300,
+            cwd=str(REPO_ROOT),
+            env=env,
         )
     except subprocess.TimeoutExpired:
         print("FAIL: timeout")
@@ -300,7 +328,9 @@ def smoke_test(provider: str, model: str) -> None:
     # Pollution check
     after = _git_snapshot()
     new_changes = after - baseline
-    outside = [c for c in new_changes if not c.startswith("results/") and not c.startswith("?? results/")]
+    outside = [
+        c for c in new_changes if not c.startswith("results/") and not c.startswith("?? results/")
+    ]
     if outside:
         print(f"FAIL: pollution outside results/: {outside}")
     else:
@@ -309,10 +339,14 @@ def smoke_test(provider: str, model: str) -> None:
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--provider", default="openai",
-                    choices=["openai", "anthropic", "ollama", "gemini-cli", "claude-code", "databricks"])
-    ap.add_argument("--model", default=None,
-                    help="Model name. Defaults: openai=gpt-4o, ollama=qwen3.5:latest")
+    ap.add_argument(
+        "--provider",
+        default="openai",
+        choices=["openai", "anthropic", "ollama", "gemini-cli", "claude-code", "databricks"],
+    )
+    ap.add_argument(
+        "--model", default=None, help="Model name. Defaults: openai=gpt-4o, ollama=qwen3.5:latest"
+    )
     ap.add_argument("--test", help="Run a single test by id")
     ap.add_argument("--smoke", action="store_true", help="Run smoke test only")
     args = ap.parse_args()
@@ -348,7 +382,9 @@ def main():
     summaries = []
     for case in cases:
         try:
-            summaries.append(run_one_test(args.provider, model, case, results_dir, baseline_snapshot))
+            summaries.append(
+                run_one_test(args.provider, model, case, results_dir, baseline_snapshot)
+            )
         except Exception as e:
             print(f"  ERROR: {e}")
             summaries.append({"case_id": case["id"], "error": str(e)})
@@ -360,7 +396,9 @@ def main():
     # Final pollution check
     final_snapshot = _git_snapshot()
     total_new = final_snapshot - baseline_snapshot
-    outside = [c for c in total_new if not c.startswith("results/") and not c.startswith("?? results/")]
+    outside = [
+        c for c in total_new if not c.startswith("results/") and not c.startswith("?? results/")
+    ]
     if outside:
         print(f"\n! OVERALL POLLUTION: {len(outside)} paths outside results/")
         for p in outside[:20]:

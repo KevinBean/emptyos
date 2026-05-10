@@ -19,7 +19,6 @@ from emptyos.sdk import BaseApp, cli_command, web_route
 
 
 class HubApp(BaseApp):
-
     # ── Panel aggregator ──
 
     async def resolve_panels(self, *, include_lazy: bool = False) -> list[dict]:
@@ -58,7 +57,8 @@ class HubApp(BaseApp):
                 data = await self.call_app(app_id, method)
             except Exception as e:
                 self.kernel.syslog.warn(
-                    "hub", f"panel '{contrib.get('id')}' ({app_id}.{method}) failed: {e}",
+                    "hub",
+                    f"panel '{contrib.get('id')}' ({app_id}.{method}) failed: {e}",
                 )
                 return None
             if data is None:
@@ -86,7 +86,9 @@ class HubApp(BaseApp):
             else:
                 eager_contribs.append(c)
 
-        results = await asyncio.gather(*[_call_one(c) for c in eager_contribs], return_exceptions=False)
+        results = await asyncio.gather(
+            *[_call_one(c) for c in eager_contribs], return_exceptions=False
+        )
         eager = [r for r in results if r is not None]
 
         panels = eager + lazy_placeholders
@@ -150,6 +152,7 @@ class HubApp(BaseApp):
     @web_route("GET", "/debug/panels")
     async def debug_panels(self, request):
         from fastapi.responses import HTMLResponse
+
         debug_file = Path(self.manifest.path) / "pages" / "debug.html"
         if not debug_file.exists():
             return HTMLResponse(
@@ -190,12 +193,14 @@ class HubApp(BaseApp):
             if not prefix:
                 continue
             href = prefix + "/" if not prefix.endswith("/") else prefix
-            cards.append({
-                "id": app_id,
-                "title": app.manifest.name or app_id,
-                "href": href,
-                "description": (app.manifest.description or "").strip(),
-            })
+            cards.append(
+                {
+                    "id": app_id,
+                    "title": app.manifest.name or app_id,
+                    "href": href,
+                    "description": (app.manifest.description or "").strip(),
+                }
+            )
         cards.sort(key=lambda c: (c["title"] or c["id"]).lower())
         return cards or None
 
@@ -205,6 +210,7 @@ class HubApp(BaseApp):
     def cmd_hub(self):
         """Print panel summary."""
         import asyncio
+
         panels = asyncio.run(self.resolve_panels())
         if not panels:
             print("No panels contributed yet. Install more apps to populate the dashboard.")

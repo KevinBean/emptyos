@@ -5,23 +5,29 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from emptyos.capabilities import CapabilityRegistry
-from emptyos.capabilities.types import (
-    ThinkCapability, ReadCapability, WriteCapability, SearchCapability,
-    SpeakCapability, ListenCapability, DrawCapability, AnimateCapability,
-    SeeCapability,
-)
-from emptyos.capabilities.providers.human import (
-    HumanThinkProvider,
-    HumanReadProvider,
-    HumanWriteProvider,
-    HumanSearchProvider,
-    HumanSeeProvider,
-)
 from emptyos.capabilities.providers.filesystem import (
     FilesystemReadProvider,
     FilesystemWriteProvider,
 )
 from emptyos.capabilities.providers.grep_search import GrepSearchProvider
+from emptyos.capabilities.providers.human import (
+    HumanReadProvider,
+    HumanSearchProvider,
+    HumanSeeProvider,
+    HumanThinkProvider,
+    HumanWriteProvider,
+)
+from emptyos.capabilities.types import (
+    AnimateCapability,
+    DrawCapability,
+    ListenCapability,
+    ReadCapability,
+    SearchCapability,
+    SeeCapability,
+    SpeakCapability,
+    ThinkCapability,
+    WriteCapability,
+)
 
 if TYPE_CHECKING:
     from emptyos.kernel.config import Config
@@ -35,7 +41,11 @@ def build_capabilities(config: Config, settings=None, kernel=None) -> Capability
     change their default model via the Settings app without editing config files.
     """
     registry = CapabilityRegistry()
-    notes_path = config.get("notes.path", "")
+    # Use the resolved absolute path from Config.notes_path so providers and
+    # callers (apps that build paths from `vault_config_path`) agree — relative
+    # paths in emptyos.toml otherwise lead to double-prefix bugs when an
+    # already-vault-rooted path is fed back through the read/write providers.
+    notes_path = str(config.notes_path) if config.notes_path else ""
 
     # --- Think (with domain routing) ---
     think = ThinkCapability()
@@ -53,7 +63,9 @@ def build_capabilities(config: Config, settings=None, kernel=None) -> Capability
     global_timeout = int(think_config.get("timeout", 0))
 
     for name in provider_names:
-        provider = _build_think_provider(name, config, global_timeout=global_timeout, settings=settings)
+        provider = _build_think_provider(
+            name, config, global_timeout=global_timeout, settings=settings
+        )
         if provider:
             think.add_provider(provider)
 
@@ -64,7 +76,9 @@ def build_capabilities(config: Config, settings=None, kernel=None) -> Capability
             continue
         domain_providers = []
         for pname in domain_cfg.get("providers", []):
-            p = _build_think_provider(pname, config, model_override=domain_cfg.get("model"), settings=settings)
+            p = _build_think_provider(
+                pname, config, model_override=domain_cfg.get("model"), settings=settings
+            )
             if p:
                 domain_providers.append(p)
         if domain_providers:
@@ -78,7 +92,9 @@ def build_capabilities(config: Config, settings=None, kernel=None) -> Capability
             continue
         bucket_providers = []
         for pname in bucket_cfg.get("providers", []):
-            p = _build_think_provider(pname, config, model_override=bucket_cfg.get("model"), settings=settings)
+            p = _build_think_provider(
+                pname, config, model_override=bucket_cfg.get("model"), settings=settings
+            )
             if p:
                 bucket_providers.append(p)
         if bucket_providers:
@@ -140,42 +156,58 @@ def build_capabilities(config: Config, settings=None, kernel=None) -> Capability
 
 def _register_openai_speak(speak, config: Config):
     """Register the OpenAI TTS provider when configured or OPENAI_API_KEY is set."""
-    section = config.get_section("capabilities.speak.openai-tts") or config.get_section("capabilities.speak.openai") or {}
+    section = (
+        config.get_section("capabilities.speak.openai-tts")
+        or config.get_section("capabilities.speak.openai")
+        or {}
+    )
     enabled = section.get("enabled", True)
     if not enabled:
         return
     import os
+
     api_key_env = section.get("api_key_env", "OPENAI_API_KEY")
     # Register only when it could plausibly work — avoids a dead provider in the chain.
     if not (section or os.environ.get(api_key_env)):
         return
     from emptyos.capabilities.providers.openai_tts import OpenAITTSProvider
-    speak.add_provider(OpenAITTSProvider(
-        host=section.get("host", "https://api.openai.com"),
-        model=section.get("model", "tts-1"),
-        voice=section.get("voice", "alloy"),
-        api_key_env=api_key_env,
-        timeout=int(section.get("timeout", 30)),
-    ))
+
+    speak.add_provider(
+        OpenAITTSProvider(
+            host=section.get("host", "https://api.openai.com"),
+            model=section.get("model", "tts-1"),
+            voice=section.get("voice", "alloy"),
+            api_key_env=api_key_env,
+            timeout=int(section.get("timeout", 30)),
+        )
+    )
 
 
 def _register_openai_listen(listen, config: Config):
     """Register the OpenAI Whisper STT provider when configured or OPENAI_API_KEY is set."""
-    section = config.get_section("capabilities.listen.openai-whisper") or config.get_section("capabilities.listen.openai") or {}
+    section = (
+        config.get_section("capabilities.listen.openai-whisper")
+        or config.get_section("capabilities.listen.openai")
+        or {}
+    )
     enabled = section.get("enabled", True)
     if not enabled:
         return
     import os
+
     api_key_env = section.get("api_key_env", "OPENAI_API_KEY")
     if not (section or os.environ.get(api_key_env)):
         return
     from emptyos.capabilities.providers.openai_tts import OpenAIWhisperSTTProvider
-    listen.add_provider(OpenAIWhisperSTTProvider(
-        host=section.get("host", "https://api.openai.com"),
-        model=section.get("model", "whisper-1"),
-        api_key_env=api_key_env,
-        timeout=int(section.get("timeout", 60)),
-    ))
+
+    listen.add_provider(
+        OpenAIWhisperSTTProvider(
+            host=section.get("host", "https://api.openai.com"),
+            model=section.get("model", "whisper-1"),
+            api_key_env=api_key_env,
+            timeout=int(section.get("timeout", 60)),
+        )
+    )
 
 
 def _register_browser_listen(listen, kernel, config: Config):
@@ -189,11 +221,14 @@ def _register_browser_listen(listen, kernel, config: Config):
     if section.get("enabled", True) is False:
         return
     from emptyos.capabilities.providers.browser import BrowserListenProvider
-    listen.add_provider(BrowserListenProvider(
-        kernel,
-        default_lang=section.get("language", "en-US"),
-        default_timeout=float(section.get("timeout", 30)),
-    ))
+
+    listen.add_provider(
+        BrowserListenProvider(
+            kernel,
+            default_lang=section.get("language", "en-US"),
+            default_timeout=float(section.get("timeout", 30)),
+        )
+    )
 
 
 def _register_browser_see(see, kernel, config: Config):
@@ -206,13 +241,22 @@ def _register_browser_see(see, kernel, config: Config):
     if section.get("enabled", True) is False:
         return
     from emptyos.capabilities.providers.browser import BrowserSeeProvider
-    see.add_provider(BrowserSeeProvider(
-        kernel,
-        default_timeout=float(section.get("timeout", 30)),
-    ))
+
+    see.add_provider(
+        BrowserSeeProvider(
+            kernel,
+            default_timeout=float(section.get("timeout", 30)),
+        )
+    )
 
 
-def _build_think_provider(name: str, config: Config, model_override: str | None = None, global_timeout: int = 0, settings=None):
+def _build_think_provider(
+    name: str,
+    config: Config,
+    model_override: str | None = None,
+    global_timeout: int = 0,
+    settings=None,
+):
     """Build a think provider from config by name.
 
     Model resolution order (highest → lowest):
@@ -278,6 +322,7 @@ def _build_think_provider(name: str, config: Config, model_override: str | None 
     # Claude via CLI (free with Max subscription)
     if name == "claude" and method != "api":
         from emptyos.capabilities.providers.claude_cli import ClaudeCLIThinkProvider
+
         vault_path = config.get("notes.path", "")
         network_port = int(config.get("network.port", 9000))
         return ClaudeCLIThinkProvider(
@@ -302,6 +347,7 @@ def _build_think_provider(name: str, config: Config, model_override: str | None 
     # Anthropic SDK — native tool_use blocks, streaming, prompt caching
     if name == "anthropic" or name == "anthropic_sdk":
         from emptyos.capabilities.providers.anthropic_sdk import AnthropicSDKProvider
+
         return AnthropicSDKProvider(
             model=model or "claude-sonnet-4-5-20250929",
             api_key_env=section.get("api_key_env", "ANTHROPIC_API_KEY"),

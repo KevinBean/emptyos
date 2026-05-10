@@ -15,7 +15,11 @@ console = Console()
 # Windows Startup folder
 _STARTUP_DIR = Path(
     os.environ.get("APPDATA", ""),
-    "Microsoft", "Windows", "Start Menu", "Programs", "Startup",
+    "Microsoft",
+    "Windows",
+    "Start Menu",
+    "Programs",
+    "Startup",
 )
 _STARTUP_VBS = _STARTUP_DIR / "start-emptyos.vbs"
 
@@ -34,25 +38,29 @@ def _collect_services(data: dict) -> list[dict]:
             continue
         if not pcfg.get("autostart"):
             continue
-        services.append({
-            "name": pid,
-            "source": "plugin",
-            "launcher": pcfg.get("launcher", ""),
-            "executable": pcfg.get("executable", ""),
-            "host": pcfg.get("host", ""),
-        })
+        services.append(
+            {
+                "name": pid,
+                "source": "plugin",
+                "launcher": pcfg.get("launcher", ""),
+                "executable": pcfg.get("executable", ""),
+                "host": pcfg.get("host", ""),
+            }
+        )
 
     # Startup programs (non-plugin)
     startup = data.get("startup", {})
     for name, exe_path in startup.items():
         if isinstance(exe_path, str) and exe_path:
-            services.append({
-                "name": name,
-                "source": "startup",
-                "launcher": "",
-                "executable": exe_path,
-                "host": "",
-            })
+            services.append(
+                {
+                    "name": name,
+                    "source": "startup",
+                    "launcher": "",
+                    "executable": exe_path,
+                    "host": "",
+                }
+            )
 
     return services
 
@@ -86,9 +94,7 @@ def generate_boot_vbs(data: dict, eos_dir: str) -> str:
             lines.append(f"' --- {name} ---")
             lines.append(f'If fso.FolderExists("{launcher_dir}") Then')
             lines.append(f'    WshShell.CurrentDirectory = "{launcher_dir}"')
-            lines.append(
-                f'    WshShell.Run "cmd /c ""{launcher}"" > nul 2>&1", 0, False'
-            )
+            lines.append(f'    WshShell.Run "cmd /c ""{launcher}"" > nul 2>&1", 0, False')
             lines.append("End If")
             lines.append("")
             svc_count += 1
@@ -108,9 +114,7 @@ def generate_boot_vbs(data: dict, eos_dir: str) -> str:
     eos_dir_win = eos_dir.replace("/", "\\")
     lines.append("' --- EmptyOS ---")
     lines.append(f'WshShell.CurrentDirectory = "{eos_dir_win}"')
-    lines.append(
-        'WshShell.Run "cmd /c python -m emptyos start >> emptyos.log 2>&1", 0, False'
-    )
+    lines.append('WshShell.Run "cmd /c python -m emptyos start >> emptyos.log 2>&1", 0, False')
     lines.append("")
 
     return "\n".join(lines)
@@ -143,11 +147,12 @@ def boot_command(
 
     # All other operations need config
     from emptyos.kernel.config import Config
+
     try:
         config = Config()
     except FileNotFoundError as e:
         console.print(f"[red]{e}[/red]")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from None
     data, eos_dir = config._data, str(config.path.parent)
 
     if show or not (generate or install):
@@ -189,6 +194,7 @@ def _show_boot(data: dict, eos_dir: str):
     # EmptyOS itself is always last — read actual bind from config
     try:
         from emptyos.kernel.config import Config
+
         _cfg = Config()
         _emptyos_addr = f"{_cfg.host}:{_cfg.port}"
     except Exception:
@@ -197,7 +203,7 @@ def _show_boot(data: dict, eos_dir: str):
         str(len(services) + 1),
         "[bold green]emptyos[/bold green]",
         "core",
-        f"python -m emptyos start",
+        "python -m emptyos start",
         _emptyos_addr,
     )
 
@@ -207,13 +213,17 @@ def _show_boot(data: dict, eos_dir: str):
     if _STARTUP_VBS.exists():
         console.print(f"\n[green]Installed[/green] in Startup folder: {_STARTUP_VBS}")
     else:
-        console.print(f"\n[yellow]Not installed[/yellow] — run [bold]eos boot --install[/bold] to start on login")
+        console.print(
+            "\n[yellow]Not installed[/yellow] — run [bold]eos boot --install[/bold] to start on login"
+        )
 
     boot_path = Path(eos_dir) / "boot.vbs"
     if boot_path.exists():
         console.print(f"Boot script: {boot_path}")
     else:
-        console.print("[yellow]boot.vbs not generated yet[/yellow] — run [bold]eos boot --generate[/bold]")
+        console.print(
+            "[yellow]boot.vbs not generated yet[/yellow] — run [bold]eos boot --generate[/bold]"
+        )
 
 
 def install_boot(eos_dir: str):

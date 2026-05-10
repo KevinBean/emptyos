@@ -18,13 +18,13 @@ from typing import Any, Literal
 
 from emptyos.capabilities import Provider
 
-
 StopReason = Literal["tool_use", "end_turn", "max_tokens", "stop_sequence", "cancelled", "error"]
 
 
 @dataclass
 class ToolUse:
     """A model-emitted tool invocation."""
+
     id: str
     name: str
     input: dict
@@ -33,6 +33,7 @@ class ToolUse:
 @dataclass
 class TextBlock:
     """A model-emitted text block."""
+
     text: str
 
     @property
@@ -43,6 +44,7 @@ class TextBlock:
 @dataclass
 class ToolUseBlock:
     """A model-emitted tool_use block (assistant message content)."""
+
     id: str
     name: str
     input: dict
@@ -65,6 +67,7 @@ class AgentTurn:
     `stop_reason == "tool_use"` means the loop should dispatch tools and
     continue. Any other value terminates the turn.
     """
+
     assistant_blocks: list[TextBlock | ToolUseBlock] = field(default_factory=list)
     tool_uses: list[ToolUse] = field(default_factory=list)
     stop_reason: StopReason = "end_turn"

@@ -70,7 +70,7 @@
 .r-app-card {
     display: flex; flex-direction: column; gap: 4px;
     padding: 12px 14px;
-    background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-md, 12px);
+    background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius);
     text-decoration: none; color: var(--text);
     transition: border-color 0.12s, transform 0.12s;
     min-height: 64px;
@@ -165,12 +165,23 @@
   Take the tour
 </button>
 <script>
-// Hide the button if the tour app isn't loaded (no EOS.tour after eos-tour.js)
+// Hide the tour button when the tour app isn't loaded, OR when the user
+// has already completed / dismissed the tour. Returning users shouldn't
+// see a loud accent-fill pill on every visit. The tour can still be
+// re-launched from the home banner or `EOS.tour.start()`.
 setTimeout(function(){
-  if (!window.EOS || !window.EOS.tour) {
-    var b = document.getElementById('hub-tour-btn');
-    if (b) b.style.display = 'none';
-  }
+  var btn = document.getElementById('hub-tour-btn');
+  if (!btn) return;
+  if (!window.EOS || !window.EOS.tour) { btn.style.display = 'none'; return; }
+  try {
+    var raw = localStorage.getItem('eos.tour.v1');
+    if (raw) {
+      var st = JSON.parse(raw);
+      if (st && (st.dismissed || st.completed || st.last_step)) {
+        btn.style.display = 'none';
+      }
+    }
+  } catch (e) { /* leave visible on parse failure */ }
 }, 200);
 </script>
 
@@ -182,7 +193,7 @@ setTimeout(function(){
     </div>
     <div style="display:flex;align-items:center;gap:10px">
       <div class="hub-hero-weather" id="hub-hero-weather"></div>
-      <button class="btn-settings" onclick="openHubSettings()" title="Hub settings" aria-label="Hub settings" style="background:none;border:1px solid var(--border);border-radius:6px;padding:4px 8px;cursor:pointer;color:var(--text-muted);font-size:14px">&#9881;</button>
+      <button class="eos-btn eos-btn-sm eos-btn-ghost" onclick="openHubSettings()" title="Hub settings" aria-label="Hub settings">&#9881;</button>
     </div>
   </div>
 

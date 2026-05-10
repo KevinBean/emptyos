@@ -22,6 +22,7 @@ from emptyos.sdk import web_route
 # If a request to the service fails, the route returns the error verbatim
 # so the UI can render it. Network errors return 502.
 
+
 def _chatbot_admin_creds(self, site: dict | None = None) -> tuple[str, str]:
     """Return (endpoint, admin_token) for the active site's chat service.
 
@@ -36,8 +37,12 @@ def _chatbot_admin_creds(self, site: dict | None = None) -> tuple[str, str]:
     token = self.app_config("chatbot.admin_token", "") or ""
     return endpoint.rstrip("/"), token
 
+
 async def _chatbot_admin_request(
-    self, method: str, path: str, *,
+    self,
+    method: str,
+    path: str,
+    *,
     site: dict | None = None,
     json_body: dict | None = None,
     params: dict | None = None,
@@ -48,21 +53,29 @@ async def _chatbot_admin_request(
     if not token:
         return {"error": "chatbot.admin_token not set"}
     import aiohttp
+
     url = endpoint + path
     headers = {"X-Admin-Token": token}
     try:
         async with aiohttp.ClientSession() as sess:
             async with sess.request(
-                method, url, json=json_body, params=params, headers=headers,
+                method,
+                url,
+                json=json_body,
+                params=params,
+                headers=headers,
                 timeout=aiohttp.ClientTimeout(total=10),
             ) as r:
                 body = await r.json(content_type=None)
                 if r.status >= 400:
-                    return {"error": body.get("error") if isinstance(body, dict) else str(body),
-                            "status": r.status}
+                    return {
+                        "error": body.get("error") if isinstance(body, dict) else str(body),
+                        "status": r.status,
+                    }
                 return body if isinstance(body, dict) else {"data": body}
     except Exception as e:
         return {"error": f"chat service unreachable: {e}"}
+
 
 @web_route("GET", "/api/chatbot/qa-log/{site_id}")
 async def api_chatbot_qa_list(self, request):
@@ -80,6 +93,7 @@ async def api_chatbot_qa_list(self, request):
         "GET", f"/admin/qa-log/{site_id}", site=site, params=params
     )
 
+
 @web_route("POST", "/api/chatbot/qa-log/{site_id}/{qa_id}")
 async def api_chatbot_qa_update(self, request):
     site_id = request.path_params["site_id"]
@@ -92,8 +106,12 @@ async def api_chatbot_qa_update(self, request):
     except Exception:
         body = {}
     return await self._chatbot_admin_request(
-        "POST", f"/admin/qa-log/{qa_id}", site=site, json_body=body,
+        "POST",
+        f"/admin/qa-log/{qa_id}",
+        site=site,
+        json_body=body,
     )
+
 
 @web_route("POST", "/api/chatbot/qa-log/{site_id}/{qa_id}/promote")
 async def api_chatbot_qa_promote(self, request):
@@ -105,7 +123,9 @@ async def api_chatbot_qa_promote(self, request):
         return {"error": f"site '{site_id}' not found"}
     # Ask service for the q/a payload (this also marks the row curated).
     result = await self._chatbot_admin_request(
-        "POST", f"/admin/qa-log/{qa_id}/promote", site=site,
+        "POST",
+        f"/admin/qa-log/{qa_id}/promote",
+        site=site,
     )
     if "error" in result:
         return result
@@ -118,6 +138,7 @@ async def api_chatbot_qa_promote(self, request):
     except Exception as e:
         return {"error": f"failed to write faqs.toml: {e}"}
     return {"ok": True, "id": qa_id, "written_to": written_to, "q": q}
+
 
 @web_route("POST", "/api/chatbot/sync-site/{site_id}")
 async def api_chatbot_sync_site(self, request):
@@ -145,7 +166,10 @@ async def api_chatbot_sync_site(self, request):
     # Drop None so the service can keep current values for unset fields.
     payload = {k: v for k, v in payload.items() if v is not None}
     return await self._chatbot_admin_request(
-        "POST", f"/admin/sites/{site_id}", site=site, json_body=payload,
+        "POST",
+        f"/admin/sites/{site_id}",
+        site=site,
+        json_body=payload,
     )
 
 
@@ -159,14 +183,17 @@ async def api_chatbot_faqs_list(self, request):
     faqs = self._read_faqs(site)
     return {"faqs": faqs, "path": str(self._faqs_path(site))}
 
+
 def _faqs_path(self, site: dict) -> Path:
     """Where faqs.toml lives for a site — alongside the published-source folder."""
     vault = self._vault_dir()
     source = self._source_folder(site)
     return Path(vault) / source / "faqs.toml"
 
+
 def _read_faqs(self, site: dict) -> list[dict]:
     import tomllib
+
     p = self._faqs_path(site)
     if not p.exists():
         return []
@@ -180,8 +207,10 @@ def _read_faqs(self, site: dict) -> list[dict]:
         return []
     return [
         {"q": str(it.get("q") or "").strip(), "a": str(it.get("a") or "").strip()}
-        for it in raw if isinstance(it, dict) and it.get("q") and it.get("a")
+        for it in raw
+        if isinstance(it, dict) and it.get("q") and it.get("a")
     ]
+
 
 def _append_faq(self, site: dict, q: str, a: str) -> str:
     """Append {q, a} to {source}/faqs.toml. Creates the file if missing.

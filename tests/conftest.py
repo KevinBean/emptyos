@@ -1,9 +1,86 @@
 """Shared fixtures for EmptyOS E2E tests."""
 
-import pytest
-import httpx
+import json
+import os
+import re
+import time
+import tomllib
+import uuid
+from datetime import datetime, timezone
+from pathlib import Path
 
-from helpers import TEST_PREFIX, BASE_URL
+import httpx
+import pytest
+
+from helpers import BASE_URL, TEST_PREFIX
+
+# ── Run-artifact capture ─────────────────────────────────────────────────────
+# Every pytest session writes per-test artifacts under
+#   data/apps/tests/runs/<run-id>/<safe-nodeid>/
+# When the parent process (apps/tests/app.py) launches pytest, it sets
+# EOS_TESTRUN_ID so the run dir aligns with the row recorded in history.
+# Standalone pytest invocations generate their own run id.
+_RUN_ID = os.environ.get("EOS_TESTRUN_ID") or (
+    time.strftime("%Y-%m-%dT%H-%M-%S") + "_" + uuid.uuid4().hex[:6]
+)
+_REPO_ROOT = Path(__file__).resolve().parent.parent
+_RUNS_ROOT = _REPO_ROOT / "data" / "apps" / "tests" / "runs"
+
+
+def _safe_nodeid(nodeid: str) -> str:
+    safe = re.sub(r"[^A-Za-z0-9_.-]", "_", nodeid)
+    return safe[:200] or "_"
+
+
+def _run_dir() -> Path:
+    p = _RUNS_ROOT / _RUN_ID
+    p.mkdir(parents=True, exist_ok=True)
+    return p
+
+
+def _test_dir(nodeid: str) -> Path:
+    p = _run_dir() / _safe_nodeid(nodeid)
+    p.mkdir(parents=True, exist_ok=True)
+    return p
+
+
+def _read_summary() -> dict:
+    sp = _run_dir() / "summary.json"
+    if sp.exists():
+        try:
+            return json.loads(sp.read_text(encoding="utf-8"))
+        except Exception:
+            pass
+    return {"run_id": _RUN_ID, "tests": []}
+
+
+def _write_summary(s: dict) -> None:
+    (_run_dir() / "summary.json").write_text(
+        json.dumps(s, indent=2), encoding="utf-8"
+    )
+
+
+def _read_auth_token() -> str:
+    """Read network.auth_token from emptyos.toml, env override wins.
+
+    Returns empty string when auth is not configured (local-mode daemon).
+    """
+    env = os.environ.get("EOS_AUTH_TOKEN", "").strip()
+    if env:
+        return env
+    cfg = Path(__file__).resolve().parent.parent / "emptyos.toml"
+    if not cfg.exists():
+        return ""
+    try:
+        with open(cfg, "rb") as f:
+            data = tomllib.load(f)
+        return str((data.get("network") or {}).get("auth_token") or "")
+    except Exception:
+        return ""
+
+
+_AUTH_TOKEN = _read_auth_token()
+_AUTH_HEADERS = {"Authorization": f"Bearer {_AUTH_TOKEN}"} if _AUTH_TOKEN else {}
 
 
 def _uses_playwright(item) -> bool:
@@ -44,10 +121,77 @@ def base_url():
 
 
 @pytest.fixture(scope="session", autouse=True)
+def _testrun_session():
+    """Initialize per-run summary at session start, finalize at end."""
+    s = {
+        "run_id": _RUN_ID,
+        "started": datetime.now(timezone.utc).isoformat(),
+        "finished": None,
+        "tests": [],
+        "totals": {"passed": 0, "failed": 0, "skipped": 0, "error": 0},
+    }
+    _write_summary(s)
+    yield
+    s = _read_summary()
+    s["finished"] = datetime.now(timezone.utc).isoformat()
+    counts = {"passed": 0, "failed": 0, "skipped": 0, "error": 0}
+    for t in s.get("tests", []):
+        st = t.get("status", "")
+        if st in counts:
+            counts[st] += 1
+    s["totals"] = counts
+    _write_summary(s)
+
+
+@pytest.hookimpl(hookwrapper=True)
+def pytest_runtest_makereport(item, call):
+    """Capture per-test outcome into <run-id>/<test>/result.json.
+
+    Only the 'call' phase is recorded (skip setup/teardown noise unless they
+    fail, in which case rep.failed will be true and we still record).
+    """
+    out = yield
+    rep = out.get_result()
+    # Record on call always; on setup/teardown only if it failed (otherwise
+    # we'd append a "passed" row for every test's setup phase too).
+    if rep.when != "call" and not rep.failed:
+        return
+    td = _test_dir(item.nodeid)
+    if rep.passed:
+        status = "passed"
+    elif rep.skipped:
+        status = "skipped"
+    else:
+        status = "failed"
+    result = {
+        "nodeid": item.nodeid,
+        "phase": rep.when,
+        "status": status,
+        "duration_ms": int(getattr(rep, "duration", 0) * 1000),
+        "error": str(rep.longrepr) if rep.failed else None,
+    }
+    try:
+        (td / "result.json").write_text(
+            json.dumps(result, indent=2), encoding="utf-8"
+        )
+    except Exception:
+        pass
+    s = _read_summary()
+    # De-dupe by nodeid + phase so re-reported teardown rows replace prior.
+    tests = [
+        t for t in s.get("tests", [])
+        if not (t.get("nodeid") == item.nodeid and t.get("phase") == rep.when)
+    ]
+    tests.append(result)
+    s["tests"] = tests
+    _write_summary(s)
+
+
+@pytest.fixture(scope="session", autouse=True)
 def server_health():
     """Skip entire suite if EmptyOS is not running."""
     try:
-        resp = httpx.get(f"{BASE_URL}/api/health", timeout=5)
+        resp = httpx.get(f"{BASE_URL}/api/health", timeout=5, headers=_AUTH_HEADERS)
         assert resp.status_code == 200
     except (httpx.ConnectError, httpx.TimeoutException, AssertionError):
         pytest.skip("EmptyOS not running on localhost:9000")
@@ -56,7 +200,7 @@ def server_health():
 @pytest.fixture(scope="session")
 def app_list():
     """Fetch all apps from the running server."""
-    resp = httpx.get(f"{BASE_URL}/api/apps", timeout=10)
+    resp = httpx.get(f"{BASE_URL}/api/apps", timeout=10, headers=_AUTH_HEADERS)
     return resp.json()
 
 
@@ -64,7 +208,7 @@ def app_list():
 def llm_available():
     """Check if think capability has an online provider."""
     try:
-        resp = httpx.get(f"{BASE_URL}/api/capabilities", timeout=5)
+        resp = httpx.get(f"{BASE_URL}/api/capabilities", timeout=5, headers=_AUTH_HEADERS)
         caps = resp.json()
         if isinstance(caps, dict):
             for cap in caps.values() if isinstance(caps, dict) else []:
@@ -84,6 +228,79 @@ def require_llm(llm_available):
         pytest.skip("LLM (think capability) not available")
 
 
+@pytest.fixture(scope="session")
+def browser_context_args(browser_context_args):
+    """Inject Authorization header into every Playwright request when auth_token is set.
+
+    pytest-playwright passes this dict to browser.new_context(). Adding
+    extra_http_headers means every page.goto() / fetch carries the bearer token,
+    matching the daemon's private-mode auth gate.
+    """
+    if _AUTH_TOKEN:
+        headers = dict(browser_context_args.get("extra_http_headers") or {})
+        headers["Authorization"] = f"Bearer {_AUTH_TOKEN}"
+        return {**browser_context_args, "extra_http_headers": headers}
+    return browser_context_args
+
+
+@pytest.fixture
+def page(page, request):
+    """Wrap pytest-playwright's `page` to capture trace/console/screenshot.
+
+    Each test gets <run-id>/<safe-nodeid>/ populated with:
+      - trace.zip          (Playwright trace — DOM snapshots + actions + sources)
+      - console.log        (browser console messages, JS errors)
+      - screenshot-final.png  (visible viewport at teardown)
+
+    Failures still raise normally; capture is best-effort.
+    """
+    td = _test_dir(request.node.nodeid)
+    # Tracing — wrapped in try/except so a stale context (someone closed it
+    # mid-test) doesn't poison the teardown.
+    tracing_started = False
+    try:
+        page.context.tracing.start(snapshots=True, sources=True, screenshots=True)
+        tracing_started = True
+    except Exception:
+        pass
+
+    console_path = td / "console.log"
+    cf = open(console_path, "w", encoding="utf-8")
+
+    def _on_console(msg):
+        try:
+            cf.write(f"[{msg.type}] {msg.text}\n")
+        except Exception:
+            pass
+
+    def _on_pageerror(err):
+        try:
+            cf.write(f"[pageerror] {err}\n")
+        except Exception:
+            pass
+
+    page.on("console", _on_console)
+    page.on("pageerror", _on_pageerror)
+
+    try:
+        yield page
+    finally:
+        try:
+            cf.flush()
+            cf.close()
+        except Exception:
+            pass
+        if tracing_started:
+            try:
+                page.context.tracing.stop(path=str(td / "trace.zip"))
+            except Exception:
+                pass
+        try:
+            page.screenshot(path=str(td / "screenshot-final.png"), full_page=False)
+        except Exception:
+            pass
+
+
 @pytest.fixture
 def page_errors(page):
     """Collect JS errors during a test. Assert empty after test."""
@@ -95,7 +312,7 @@ def page_errors(page):
 @pytest.fixture(scope="session")
 def http_client():
     """Shared httpx client for API tests."""
-    client = httpx.Client(base_url=BASE_URL, timeout=15)
+    client = httpx.Client(base_url=BASE_URL, timeout=15, headers=_AUTH_HEADERS)
     yield client
     client.close()
 
@@ -134,7 +351,7 @@ def cleanup_after_all():
     and deletes them via the appropriate endpoint.
     """
     yield
-    client = httpx.Client(base_url=BASE_URL, timeout=10)
+    client = httpx.Client(base_url=BASE_URL, timeout=10, headers=_AUTH_HEADERS)
 
     # --- Boards ---
     try:
@@ -369,6 +586,78 @@ def cleanup_after_all():
     except Exception:
         pass
 
+    # --- Earthing (vault-backed substation projects) ---
+    try:
+        resp = client.get("/earthing/api/projects")
+        if resp.status_code == 200:
+            data = resp.json()
+            projects = data.get("projects", []) if isinstance(data, dict) else []
+            for p in projects:
+                name = str(p.get("name", ""))
+                pid = p.get("id")
+                if pid and TEST_PREFIX in name:
+                    _safe_request(client, "DELETE",
+                                  f"/earthing/api/projects/{pid}")
+    except Exception:
+        pass
+
+    # --- Cables (vault-backed reticulation projects) ---
+    try:
+        resp = client.get("/cables/api/projects")
+        if resp.status_code == 200:
+            data = resp.json()
+            projects = data.get("projects", []) if isinstance(data, dict) else []
+            for p in projects:
+                name = str(p.get("name", ""))
+                pid = p.get("id")
+                if pid and TEST_PREFIX in name:
+                    _safe_request(client, "DELETE",
+                                  f"/cables/api/projects/{pid}")
+    except Exception:
+        pass
+
+    # --- Interference (vault-backed EMF studies) ---
+    try:
+        resp = client.get("/interference/api/studies")
+        if resp.status_code == 200:
+            studies = (resp.json() or {}).get("studies", [])
+            for s in studies:
+                if TEST_PREFIX in str(s.get("name", "")):
+                    sid = s.get("id")
+                    if sid:
+                        _safe_request(client, "DELETE",
+                                      f"/interference/api/studies/{sid}")
+    except Exception:
+        pass
+
+    # --- Lightning (vault-backed rolling-sphere studies) ---
+    try:
+        resp = client.get("/lightning/api/studies")
+        if resp.status_code == 200:
+            studies = (resp.json() or {}).get("studies", [])
+            for s in studies:
+                if TEST_PREFIX in str(s.get("name", "")):
+                    sid = s.get("id")
+                    if sid:
+                        _safe_request(client, "DELETE",
+                                      f"/lightning/api/studies/{sid}")
+    except Exception:
+        pass
+
+    # --- Geo-CAD (vault-backed georeferenced layers) ---
+    try:
+        resp = client.get("/geo-cad/api/layers")
+        if resp.status_code == 200:
+            layers = (resp.json() or {}).get("layers", [])
+            for layer in layers:
+                if TEST_PREFIX in str(layer.get("title", "")):
+                    lid = layer.get("id")
+                    if lid:
+                        _safe_request(client, "DELETE",
+                                      f"/geo-cad/api/layers/{lid}")
+    except Exception:
+        pass
+
     # --- Jobs (vault-backed applications) ---
     try:
         resp = client.get("/jobs/api/applications")
@@ -382,6 +671,20 @@ def cleanup_after_all():
                         _safe_request(client, "DELETE",
                                       "/jobs/api/applications/delete",
                                       json={"id": aid})
+    except Exception:
+        pass
+
+    # --- Jobs outreach (LinkedIn/email contact log) ---
+    try:
+        resp = client.get("/jobs/api/outreach")
+        if resp.status_code == 200:
+            items = (resp.json() or {}).get("items", [])
+            for o in items:
+                blob = str(o.get("person", "")) + " " + str(o.get("company", ""))
+                if TEST_PREFIX in blob:
+                    oid = o.get("id")
+                    if oid:
+                        _safe_request(client, "DELETE", f"/jobs/api/outreach/{oid}")
     except Exception:
         pass
 
@@ -442,6 +745,37 @@ def cleanup_after_all():
                                 f.unlink()
                         except Exception:
                             continue
+    except Exception:
+        pass
+
+    # --- Improv (vault session notes + local session JSON) ---
+    try:
+        from pathlib import Path
+        import tomllib
+        # Local data sweep: any sessions whose persona carries TEST_PREFIX.
+        repo_data = Path("data/apps/improv/sessions")
+        if repo_data.exists():
+            for f in repo_data.glob("*.json"):
+                try:
+                    import json as _json
+                    s = _json.loads(f.read_text(encoding="utf-8"))
+                    if TEST_PREFIX in str(s.get("persona", "")):
+                        f.unlink()
+                except Exception:
+                    continue
+        # Vault sweep: any saved improv-session note that mentions the test
+        # persona prefix anywhere in body / frontmatter.
+        with open("emptyos.toml", "rb") as f:
+            cfg = tomllib.load(f)
+        vault = Path(cfg.get("notes", {}).get("path", ""))
+        sess_dir = vault / "30_Resources/EmptyOS/improv/sessions"
+        if sess_dir.exists():
+            for f in sess_dir.glob("*.md"):
+                try:
+                    if TEST_PREFIX in f.read_text(encoding="utf-8", errors="ignore"):
+                        f.unlink()
+                except Exception:
+                    continue
     except Exception:
         pass
 

@@ -21,7 +21,6 @@ from pathlib import Path
 
 from emptyos.sdk.agent_tools.base import Tool, ToolResult, repo_root
 
-
 MAX_RESULTS = 500
 
 
@@ -51,7 +50,10 @@ class GlobTool(Tool):
         "type": "object",
         "properties": {
             "pattern": {"type": "string", "description": "Glob pattern. Absolute or relative."},
-            "path": {"type": "string", "description": "Root to search from when pattern is relative. Ignored when pattern is absolute. Defaults to current working directory."},
+            "path": {
+                "type": "string",
+                "description": "Root to search from when pattern is relative. Ignored when pattern is absolute. Defaults to current working directory.",
+            },
         },
         "required": ["pattern"],
     }
@@ -74,7 +76,11 @@ class GlobTool(Tool):
                 # not the process CWD, so `apps/**/*.py` works from anywhere.
                 if root_str:
                     candidate = Path(root_str)
-                    root = candidate.resolve() if candidate.is_absolute() else (repo_root(app) / candidate).resolve()
+                    root = (
+                        candidate.resolve()
+                        if candidate.is_absolute()
+                        else (repo_root(app) / candidate).resolve()
+                    )
                 else:
                     root = repo_root(app)
                 if not root.exists() or not root.is_dir():

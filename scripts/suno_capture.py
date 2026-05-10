@@ -13,7 +13,9 @@ Usage:
     python scripts/suno_capture.py --profile kevinbean --output scratch/suno-songs
     python scripts/suno_capture.py --profile kevinbean --output scratch/suno-songs --start 19 --delay 5
 """
+
 from __future__ import annotations
+
 import argparse
 import asyncio
 import json
@@ -39,6 +41,7 @@ def make_log(log_path: Path):
             sys.stdout.flush()
         with log_path.open("a", encoding="utf-8") as f:
             f.write(msg + "\n")
+
     return _log
 
 
@@ -111,18 +114,26 @@ async def extract_song(page) -> dict:
 def parse_stats(digits: list[str]) -> dict:
     plays = likes = comments = None
     if len(digits) >= 1:
-        try: plays = int(digits[0].replace(",", ""))
-        except: pass
+        try:
+            plays = int(digits[0].replace(",", ""))
+        except:
+            pass
     if len(digits) >= 2:
-        try: likes = int(digits[1].replace(",", ""))
-        except: pass
+        try:
+            likes = int(digits[1].replace(",", ""))
+        except:
+            pass
     if len(digits) >= 3:
-        try: comments = int(digits[2].replace(",", ""))
-        except: pass
+        try:
+            comments = int(digits[2].replace(",", ""))
+        except:
+            pass
     return {"plays": plays, "likes": likes, "comments": comments}
 
 
-async def capture_one(page, song: dict, profile: str, meta_dir: Path, shot_dir: Path, delay: float, log) -> bool:
+async def capture_one(
+    page, song: dict, profile: str, meta_dir: Path, shot_dir: Path, delay: float, log
+) -> bool:
     sid = song["id"]
     meta_path = meta_dir / f"{sid}.json"
     shot_path = shot_dir / f"{sid}.png"
@@ -201,18 +212,26 @@ async def run(args) -> int:
         if songs_file.exists() and not args.refresh_list:
             data = json.loads(songs_file.read_text(encoding="utf-8"))
             songs = data["songs"]
-            log(f"[list] reusing {len(songs)} from {songs_file.name} (pass --refresh-list to rescrape)")
+            log(
+                f"[list] reusing {len(songs)} from {songs_file.name} (pass --refresh-list to rescrape)"
+            )
         else:
             log("[list] scraping profile…")
             songs = await collect_song_list(page, args.profile)
             songs_file.write_text(
-                json.dumps({"profile": args.profile, "count": len(songs), "songs": songs}, ensure_ascii=False, indent=2),
+                json.dumps(
+                    {"profile": args.profile, "count": len(songs), "songs": songs},
+                    ensure_ascii=False,
+                    indent=2,
+                ),
                 encoding="utf-8",
             )
             log(f"[list] saved {len(songs)} songs")
 
-        todo = songs[args.start - 1:]
-        log(f"[capture] total={len(songs)} starting_at={args.start} todo={len(todo)} delay={args.delay}s")
+        todo = songs[args.start - 1 :]
+        log(
+            f"[capture] total={len(songs)} starting_at={args.start} todo={len(todo)} delay={args.delay}s"
+        )
         ok = fail = 0
         for i, song in enumerate(todo, start=args.start):
             log(f"[{i}/{len(songs)}] {song['title']}  ({song['id']})")
@@ -233,12 +252,18 @@ async def run(args) -> int:
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description="Capture a Suno profile's songs to JSON + screenshots.")
+    ap = argparse.ArgumentParser(
+        description="Capture a Suno profile's songs to JSON + screenshots."
+    )
     ap.add_argument("--profile", required=True, help="Suno @handle (no @)")
     ap.add_argument("--output", required=True, help="Output dir (will be created)")
     ap.add_argument("--start", type=int, default=1, help="1-based song index to resume from")
-    ap.add_argument("--delay", type=float, default=5.0, help="Seconds between songs (be kind to Suno)")
-    ap.add_argument("--refresh-list", action="store_true", help="Re-scrape songs.json from the profile")
+    ap.add_argument(
+        "--delay", type=float, default=5.0, help="Seconds between songs (be kind to Suno)"
+    )
+    ap.add_argument(
+        "--refresh-list", action="store_true", help="Re-scrape songs.json from the profile"
+    )
     ap.add_argument("--headed", action="store_true", help="Show the browser window")
     args = ap.parse_args()
     return asyncio.run(run(args))

@@ -295,7 +295,7 @@ See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for the full Hetzner + Caddy walkth
 
 ## Tech Stack
 
-Python 3.11+, FastAPI, Typer, Rich, aiohttp, SQLite, APScheduler, watchfiles
+Python 3.12+, FastAPI, Typer, Rich, aiohttp, SQLite, APScheduler, watchfiles
 
 ## License
 

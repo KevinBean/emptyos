@@ -17,6 +17,24 @@
     var theme = localStorage.getItem('eos-theme') || 'eos';
     document.documentElement.className = 'theme-' + theme;
 
+    // --- Redact mode ---
+    // Three triggers, all toggle html.eos-redact:
+    //   1. ?demo=1 / ?redact=1 URL param   — per-iframe (ppt embed slides)
+    //   2. localStorage 'eos.presentation' — fast cross-tab sync, no flicker
+    //   3. Server settings 'presentation.enabled' (fetched below) — source of
+    //      truth, drives the backend regex middleware too. localStorage is a
+    //      pre-paint hint so a fresh tab doesn't flash personal data before
+    //      the fetch completes.
+    try {
+        var qp = new URLSearchParams(location.search);
+        if (qp.has('demo') || qp.has('redact')) {
+            document.documentElement.classList.add('eos-redact');
+        }
+        if (localStorage.getItem('eos.presentation') === '1') {
+            document.documentElement.classList.add('eos-redact');
+        }
+    } catch (e) {}
+
     // --- API base ---
     var base = location.protocol + '//' + location.host;
 
@@ -64,6 +82,72 @@
         });
         return Object.assign({}, opts, {headers: headers});
     }
+
+    // --- Presentation mode (runtime privacy toggle) ---
+    // Backed by SettingsService on the server (presentation.enabled). The
+    // backend regex middleware reads the same setting and scrubs JSON
+    // responses; this client side handles the visual layer + UI affordance.
+    EOS.presentation = {
+        on: function() {
+            document.documentElement.classList.add('eos-redact');
+            try { localStorage.setItem('eos.presentation', '1'); } catch (e) {}
+            _refreshPresentingPill(true);
+        },
+        off: function() {
+            document.documentElement.classList.remove('eos-redact');
+            try { localStorage.setItem('eos.presentation', '0'); } catch (e) {}
+            _refreshPresentingPill(false);
+        },
+        toggle: async function() {
+            try {
+                var resp = await fetch(base + '/api/presentation/toggle', {method: 'POST'});
+                var data = await resp.json();
+                if (data.enabled) EOS.presentation.on();
+                else EOS.presentation.off();
+                return data.enabled;
+            } catch (e) {
+                // Offline / auth fail — flip locally anyway so the visual
+                // hide still works; user can refresh once back online.
+                var cur = document.documentElement.classList.contains('eos-redact');
+                if (cur) EOS.presentation.off();
+                else EOS.presentation.on();
+                return !cur;
+            }
+        },
+        isOn: function() {
+            return document.documentElement.classList.contains('eos-redact');
+        },
+    };
+
+    function _refreshPresentingPill(active) {
+        var pill = document.querySelector('.nav-presenting');
+        if (!pill) return;
+        pill.classList.toggle('on', !!active);
+        pill.title = active
+            ? 'Presentation mode: ON — personal data hidden (Ctrl+Shift+P)'
+            : 'Presentation mode: OFF (Ctrl+Shift+P)';
+    }
+
+    // Cross-tab sync — when another tab toggles, mirror the class here.
+    window.addEventListener('storage', function(ev) {
+        if (ev.key !== 'eos.presentation') return;
+        if (ev.newValue === '1') EOS.presentation.on();
+        else EOS.presentation.off();
+    });
+
+    // Reconcile with server on every page load — URL param trigger and a
+    // stale localStorage hint should both be overridden by the persisted
+    // setting if it exists.
+    fetch(base + '/api/presentation/state').then(function(r){return r.json();}).then(function(d){
+        if (d && typeof d.enabled === 'boolean') {
+            if (d.enabled) EOS.presentation.on();
+            else {
+                // Only turn off if URL doesn't force it on (?demo=1 / ?redact=1).
+                var qp = new URLSearchParams(location.search);
+                if (!qp.has('demo') && !qp.has('redact')) EOS.presentation.off();
+            }
+        }
+    }).catch(function(){});
 
     EOS.api = async function(path, options) {
         var resp = await fetch(base + path, _injectByokHeaders(options));
@@ -207,6 +291,12 @@
         if (currentApp && currentApp !== 'hub' && !navApps.some(function(a) { return a.id === currentApp; })) {
             links += '<a href="#" class="current">' + (currentLabel || currentApp) + '</a>';
         }
+        var presentingOn = document.documentElement.classList.contains('eos-redact');
+        links += '<span class="nav-presenting' + (presentingOn ? ' on' : '') + '"' +
+                 ' onclick="EOS.presentation.toggle()"' +
+                 ' title="Presentation mode (Ctrl+Shift+P)">' +
+                 '<span class="nav-presenting-icon">👁</span>' +
+                 '</span>';
         links += '<span class="nav-theme" onclick="EOS.cycleTheme()" title="Cycle theme (full list in Settings)">◐</span>';
         links += '<span class="nav-more" onclick="EOS.toggleDrawer()" title="All Apps">⋯</span>';
         nav.innerHTML = links;

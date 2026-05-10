@@ -1,6 +1,6 @@
 ---
 name: eos-ui-audit-and-consolidate
-description: Audit EmptyOS app UIs against the frontend design language (docs/FRONTEND-DESIGN-LANGUAGE.md) and migrate drift toward shared EOS_UI helpers and design tokens. Covers design-language violations (hardcoded hex colors, off-scale spacing, forbidden patterns, AI-surface markers), component drift (hand-rolled dialogs/badges/entity-cards), and mandatory-rule gaps (settings panel, hash-route). Use when user says "audit UI", "consolidate UI", "check design language", "clean up shared components", or after adding a new EOS_UI helper or design-language rule.
+description: Audit EmptyOS app UIs against the frontend design language (docs/FRONTEND-DESIGN-LANGUAGE.md) and migrate drift toward shared EOS_UI helpers and design tokens. Covers design-language violations (hardcoded hex colors, off-scale spacing, forbidden patterns, AI-surface markers), component drift (hand-rolled dialogs/badges/entity-cards), structural sibling-ness (per-app reinvention of header/modal/toast/stats vocabulary even when shared helpers exist), shared-library adoption ratio, inline-CSS budget, and mandatory-rule gaps (settings panel, hash-route). Use when user says "audit UI", "consolidate UI", "check design language", "clean up shared components", "do these apps feel like siblings", or after adding a new EOS_UI helper or design-language rule.
 ---
 
 # EmptyOS UI Audit & Consolidate
@@ -53,10 +53,35 @@ Scan `apps/**/pages/*.html` for violations of `docs/FRONTEND-DESIGN-LANGUAGE.md`
 
 **DL-1. Hardcoded colors (§1, §4)**
 ```
-#[0-9a-fA-F]{3,8}\b              — any hex color in an app page
+[: ,(]#[0-9a-fA-F]{6}\b           — any 6-char hex color in CSS context (excludes &#NNNN; HTML entities)
 rgba?\([^)]+\)                    — raw rgb/rgba calls
 ```
 Every hardcoded color must be replaced with a `--token` from `theme.css`. Exception: SVG `fill="#..."` in an icon is OK if the icon must not re-theme.
+
+> **Audit-tooling note.** The naive regex `#[0-9a-fA-F]{3,8}\b` over-counts by ~3× because it matches HTML entities like `&#NNNN;`. The leading `[: ,(]` anchor restricts to `#` preceded by a CSS-property/value separator, and limiting to 6 characters drops 3-char near-matches that almost never appear in EmptyOS app pages.
+>
+> **Brand-island exemption (mechanical detection).** A file is a *brand island* — a deliberate visual island with its own token namespace, exempt from DL-1 hex→theme-token migration — when ANY of the following hold against its `<style>`/CSS content:
+>
+> 1. A `:root { ... }` block declares ≥3 tokens with a shared prefix matching `--[a-z]{1,4}-` (e.g. `--p-bg`, `--p-text`, `--p-blue`).
+> 2. The same file then maps those private tokens onto theme tokens (`--bg: var(--p-bg)`, `--accent: var(--p-blue)`, etc.) — proves intentional override, not drift.
+> 3. The file uses a non-default font-family stack (`Times New Roman`, `Iowan Old Style`, `JetBrains Mono` as primary, etc.) AND has its own color palette.
+>
+> Inline hex inside an island is **part of the island's design**, not drift. The right fix for un-tokenized hex *within* an island is "extract to a local `--<prefix>-*` var at `:root`", filed under a separate track — not DL-1.
+>
+> **Current known brand islands** (regenerate by grepping for files matching the rule above; this list is the cache):
+>
+> | File | Namespace | Aesthetic |
+> |---|---|---|
+> | `apps/explore/pages/explore.css` | `--paper` `--ink` `--accent` `--rule` `--traffic-*` | Paper / serif / macOS chrome |
+> | `apps/publish/portfolio_template.html` | `--p-*` | Recruiter portfolio dark/light |
+> | `apps/reports/static/report.css` | `--doc-*` | A4 print / PDF |
+> | `apps/voice-assistant/pages/aura.css` | (Aura's own dark palette) | Voice-assistant brand island |
+> | `apps/reader/pages/index.html` | `--eos-*` (with `#5aa9ff`) | Reader brand blue (open question — see system-integrity track) |
+> | `apps/personal/jobs/pages/jobs.css` | `--j-amber` `--j-mono` `--j-serif` `--j-cyan` `--j-red` `--j-green` `--j-blue` `--j-surface` (14 tokens) | Career Command — Bloomberg-terminal amber/mono/italic-serif |
+>
+> When a Phase 1a sweep flags a file with a high hex count, **first apply the island rule above**. If it qualifies, exclude it from the DL-1 count and add it to this table with a one-line aesthetic rationale. Don't re-flag files in the table on subsequent runs.
+>
+> **Other legitimate per-site skips that should NOT be flagged:** categorical chart palettes (`var COLORS = [...]`), Picture-in-Picture self-contained styles (separate document, no `:root` inheritance), `var(--token, #fallback)` patterns (token already wired, fallback acceptable), `#fff` for inverse text on tinted button backgrounds.
 
 **DL-2. Off-scale spacing (§2)**
 Grep for `padding:`, `margin:`, `gap:` with values not in `{0, 2, 4, 8, 12, 16, 24, 32, 48}px`. `5px`, `7px`, `10px`, `15px`, `20px` are the common offenders.
@@ -113,8 +138,10 @@ Grep across `apps/**/pages/*.html` (include `apps/personal/` unless gitignored):
 
 **A. Native dialogs** — candidates for `EOS_UI.confirm` / `EOS_UI.formModal` / `EOS_UI.toast`:
 ```
-(?<!EOS_UI\.)(?<!await )(?<!await EOS_UI\.)\b(confirm|alert|prompt)\s*\(
+\b(alert|confirm|prompt)\s*\(            then pipe through:  grep -vE "EOS_UI\.|await EOS_UI"
 ```
+
+> **Audit-tooling note.** The fixed-look-behind variant `(?<!EOS_UI\.)(?<!await )(?<!await EOS_UI\.)\b(confirm|alert|prompt)\s*\(` *undercounts* because each look-behind is independent — a line with `await EOS_UI.confirm(...)` matches the bare-word but NOT every alternative, so behavior depends on regex-engine quirks. The two-step `grep` then `grep -vE` pattern is more reliable across `ripgrep`, `grep`, and Python `re`.
 
 **B. Hand-rolled status/priority/age badges** — candidates for `.eos-badge-*` classes:
 ```
@@ -141,6 +168,59 @@ Pair with the render function using them to see the title + meta + badge + actio
 - Apps with a `showDetail(` pattern but no `EOS_UI.hashRoute` call
 
 Count occurrences per pattern per app. Flag any pattern with ≥5 app occurrences as a high-value consolidation target.
+
+### Phase 1c — Structural & adoption audit (read-only)
+
+**The reason this phase exists.** Phases 1a and 1b are *signature* audits — they only see drift that someone has already named (`.status-X`, `confirm()`, `#hex`). They scan each page in isolation. A system can pass both phases entirely while every app reinvents its own header/modal/toast/card vocabulary using novel class names (`.jh`, `.cd-box`, `.modal-bg`, `.hero-card`). When the user asks "do these apps feel like siblings?", phases 1a/1b cannot answer. Phase 1c does.
+
+Three signal-based checks. Each one would have caught the jobs/expense divergence on its own.
+
+**S-1. Shared-library adoption ratio**
+
+For every page that loads `eos-components.css`, compute:
+
+```
+adoption_ratio = count(class="...eos-...") / count(class="...")
+```
+
+Use a tolerant regex — count any token starting with `eos-` inside any `class="..."` attribute, not whole-class-equals-`eos-X`. Same for the denominator (any `class="..."` attribute, summed token count).
+
+Flag pages with `adoption_ratio < 0.30`. These pages declared their intent to use the shared library (loaded the CSS) but then ignored it. That's reimplementation drift — almost guaranteed to overlap an existing helper.
+
+Pages without `eos-components.css` link don't get a ratio (they're probably brand islands or auto-UI-only, judge separately).
+
+**S-2. Inline-CSS budget**
+
+Count lines inside the **first** `<style>...</style>` block on each page (ignore additional blocks — they're rare and usually scoped to print/media). Threshold: **60 lines**.
+
+Pages over budget: each one is asserting "the shared library doesn't have what I need" without saying which helper is missing. Triage:
+- If the inline CSS defines `.modal`, `.modal-bg`, `.toast`, `.header`, `.hero`, `.btn-X`, `.tabs`, `.entry-list` — it's reimplementing an existing helper (tag with which one).
+- If it defines a layout primitive that doesn't exist in the library (e.g. a kanban board, a calendar grid) and ≥3 apps need it — it's a missing helper (candidate for extraction).
+- If it's truly app-specific (sparkline, donut math, app-unique chrome) — accept and move on.
+
+The point isn't to reach 0 lines — it's to make every line of inline CSS a deliberate choice rather than a default.
+
+**S-3. Structural fingerprint matrix**
+
+For each page, fill a 6-column row. Each cell is one of `EOS_UI` / `hand-rolled` / `none` / `mixed`:
+
+| App | Page header | Modal | Toast | Stat cards | Buttons | Custom fonts |
+
+Detection rules:
+- **Page header**: search inline `<style>` for `.header`, `.app-header`, `.jh`, `.app-title` — if found and not a child of `.eos-*`, mark `hand-rolled`. If `EOS_UI.pageHeader(` (or its class equivalent `.eos-page-header` once it exists) is present, mark `EOS_UI`. If neither, mark `none`. (Until `EOS_UI.pageHeader` exists, **every page will read `hand-rolled`** — that *is* the finding for the first run; surface it as a missing-helper signal not as per-app drift.)
+- **Modal**: `EOS_UI.modal(` / `EOS_UI.formModal(` / `EOS_UI.confirm(` in JS → `EOS_UI`. Inline `.modal-bg` / `.modal-handle` / hand-built backdrop CSS → `hand-rolled`. Both → `mixed`. Neither → `none`.
+- **Toast**: `EOS_UI.toast(` → `EOS_UI`. Inline `.toast` / `.toast-ok` / `.toast-err` CSS → `hand-rolled`.
+- **Stat cards**: `EOS_UI.statCards(` or `.eos-hero-card` → `EOS_UI`. Inline `.hero-card` / `.stat-card` / `.kpi-card` / `.hero-val` → `hand-rolled`.
+- **Buttons**: ratio of `class="...eos-btn..."` vs `class="...btn-..."` (where `btn-` is not `eos-btn`). >70% eos-btn → `EOS_UI`; <30% → `hand-rolled`; in between → `mixed`.
+- **Custom fonts**: `<link href="https://fonts.googleapis.com">` present → list which families. Empty → blank cell.
+
+Compute a **sibling score** per app: count of `EOS_UI` cells out of 5 component cells (custom fonts is informational, not a deficit). Flag any app with score < 2 as a structural outlier.
+
+**Pairwise diff:** pick the app with the highest sibling score (the de facto exemplar — usually `task` or `projects`) and any app with sibling score < 2. They are not visual siblings. Surface the gap in the report.
+
+**Why these checks aren't expensive.** All three are mechanical greps over ~60–150 files. The whole phase runs in one Explore-agent dispatch. Don't skip it because phases 1a/1b looked clean — the whole reason this phase exists is that 1a/1b can be clean while 1c is on fire.
+
+**Limits.** Brand islands (per the table in DL-1) are exempt from S-1 and S-3 — count them separately, never average them in. The fingerprint detection is regex-based and will misclassify creative cases (e.g. an app using `EOS_UI.modal` *and* defining one extra `.modal-something` selector for a unique sub-element). Read the page when in doubt — don't blindly trust the cell.
 
 ### Phase 2 — Report + user confirmation
 
@@ -179,8 +259,24 @@ Mandatory-rule gaps:
   - apps/foo: declares [provides.settings] but no EOS_UI.settingsPanel — add it
   - apps/bar: has showDetail() but no EOS_UI.hashRoute — add it
 
-Recommended scope: DL-1 hardcoded colors (mechanical) + DL-6 forbidden patterns (blocking) + dialogs (quick) + badges (high-value) + 2 reference-app entity-card migrations.
-Deferred: DL-4 off-scale type (needs per-app judgment), button variants (needs its own session).
+Structural & adoption (Phase 1c):
+  S-1 adoption ratio < 0.30:        N pages (loaded eos-components.css but barely use it)
+    - apps/foo (3% — 2 of 67 classes are eos-*)
+    - apps/bar (12% — using only .eos-tab)
+    ...
+  S-2 inline-CSS over budget (>60 lines): N pages
+    - apps/foo (181 lines — reimplements .modal/.toast/.hero — see existing helpers)
+    - apps/bar (142 lines — reimplements .toast)
+    ...
+  S-3 structural fingerprint (sibling score = EOS_UI cells / 5):
+    Exemplar (highest score): apps/task (5/5)
+    Outliers (score < 2):
+      - apps/foo  (0/5: header=hand, modal=hand, toast=hand, stats=hand, btns=hand) — fonts: Newsreader, Space Mono
+      - apps/bar  (1/5: header=hand, modal=EOS_UI, toast=hand, stats=hand, btns=hand)
+    Library gap surfaced: 12/12 pages mark header=hand-rolled — no `EOS_UI.pageHeader` helper exists. Recommend extraction before per-app migration.
+
+Recommended scope: DL-1 hardcoded colors (mechanical) + DL-6 forbidden patterns (blocking) + dialogs (quick) + badges (high-value) + 2 reference-app entity-card migrations + extract EOS_UI.pageHeader (gap surfaced by S-3) + migrate 2 worst structural outliers as references.
+Deferred: DL-4 off-scale type (needs per-app judgment), button variants (needs its own session), full-system structural migration (do opportunistically when each app is touched).
 ```
 
 **Ask the user to confirm scope before editing anything.**
@@ -220,6 +316,8 @@ Order of operations — each independent, easy to revert. Design-language fixes 
 4. **Mandatory-rule gaps** — add `EOS_UI.settingsPanel` or `EOS_UI.hashRoute` per CLAUDE.md §Development Rules 17/18. These are non-negotiable.
 
 5. **New `EOS_UI.*` helper extraction** — only if Phase 2 found ≥5 apps with a clearly identical pattern AND the user approved it. Write the helper in `emptyos/web/static/eos-components.js`, the CSS in `eos-components.css`, and migrate at least 2 apps in the same session to prove the API.
+
+6. **Structural-drift reference migrations (Phase 1c findings)** — only after the gap helpers from step 5 exist. Pick the **two worst structural outliers** from S-3 (sibling score 0–1) and migrate them in full to use the shared vocabulary. This produces two reference apps that future opportunistic migrations can copy from. Don't mass-migrate the rest — leave them for the next time each app is touched. The migration usually drops the page's inline `<style>` block to <60 lines (S-2 budget) and pushes adoption ratio over 0.30 (S-1 floor) automatically. Re-run Phase 1c after to confirm.
 
 ### Phase 4 — Verify
 

@@ -13,10 +13,10 @@ instance (`self._sessions`, `self._edit_stacks`, `self._edit_limits`,
 from __future__ import annotations
 
 import json
-
-from emptyos.sdk.agent_loop import DEFAULT_MAX_ITERS, EDIT_PATH_LIMIT
+from datetime import UTC
 
 from apps.agent.prompts import SESSION_ARCHIVE_PROMPT, SESSION_ARCHIVE_SYSTEM
+from emptyos.sdk.agent_loop import DEFAULT_MAX_ITERS, EDIT_PATH_LIMIT
 
 
 class SessionMixin:
@@ -32,7 +32,8 @@ class SessionMixin:
     def _create_session(self, name: str = "", provider: str = "") -> dict:
         default_provider = provider or self._default_provider_name()
         return self._sessions.create_session(
-            name=name, extras={"provider": default_provider},
+            name=name,
+            extras={"provider": default_provider},
         )
 
     def _get_session(self, sid: str) -> dict | None:
@@ -40,7 +41,10 @@ class SessionMixin:
 
     def _append_message(self, sid: str, role: str, content, provider_kind: str):
         self._sessions.append_message(
-            sid, role, content, extras={"provider_kind": provider_kind},
+            sid,
+            role,
+            content,
+            extras={"provider_kind": provider_kind},
         )
 
     def _persist_message(self, sid: str, message: dict, provider_kind: str):
@@ -52,7 +56,10 @@ class SessionMixin:
         role = message.get("role", "")
         rest = {k: v for k, v in message.items() if k != "role"}
         self._sessions.append_message(
-            sid, role, rest, extras={"provider_kind": provider_kind},
+            sid,
+            role,
+            rest,
+            extras={"provider_kind": provider_kind},
         )
 
     def _load_provider_messages(self, sid: str) -> list[dict]:
@@ -103,6 +110,7 @@ class SessionMixin:
         to remind the user the daemon still has stale bytecode.
         """
         from pathlib import Path as _P
+
         stack = self._edit_stacks.get(sid) or []
         if not stack:
             return {"reverted": [], "remaining": 0, "python_edits": False, "empty": True}
@@ -153,7 +161,7 @@ class SessionMixin:
         The vault note lands at:
             {vault}/30_Resources/EmptyOS/agent/sessions/{YYYY-MM-DD}-{sid[:8]}.md
         """
-        from datetime import datetime, timezone
+        from datetime import datetime
 
         session = self._get_session(sid)
         if not session:
@@ -178,7 +186,7 @@ class SessionMixin:
                             inp = block.get("input", {})
                             parts.append(f"[tool:{block.get('name')} {json.dumps(inp)[:120]}]")
                         elif t == "tool_result":
-                            parts.append(f"[tool_result:{str(block.get('content',''))[:120]}]")
+                            parts.append(f"[tool_result:{str(block.get('content', ''))[:120]}]")
                 content = " ".join(p for p in parts if p)
             text_line = f"{role.upper()}: {str(content)[:600]}"
             lines.append(text_line)
@@ -195,15 +203,15 @@ class SessionMixin:
         except Exception as e:
             return {"ok": False, "error": f"think failed: {e}"}
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         date_str = now.strftime("%Y-%m-%d")
         session_name = session.get("name") or sid
         provider = session.get("provider") or ""
         fm_lines = [
             "---",
-            f"type: agent-session",
+            "type: agent-session",
             f"session_id: {sid}",
-            f"session_name: \"{session_name}\"",
+            f'session_name: "{session_name}"',
             f"provider: {provider}",
             f"date: {date_str}",
             f"archived_at: {now.isoformat()}",
@@ -229,13 +237,14 @@ class SessionMixin:
             viewer = self.service("viewer")
             if viewer and hasattr(viewer, "uri_templates"):
                 import urllib.parse
+
                 tmpl = viewer.uri_templates().get("open", "")
                 if tmpl:
                     rel = note_path.relative_to(self.vault_root)
                     rel_str = str(rel).replace("\\", "/")
-                    url = (tmpl
-                        .replace("{vault}", urllib.parse.quote(self.vault_root.name, safe=""))
-                        .replace("{path}", urllib.parse.quote(rel_str, safe="")))
+                    url = tmpl.replace(
+                        "{vault}", urllib.parse.quote(self.vault_root.name, safe="")
+                    ).replace("{path}", urllib.parse.quote(rel_str, safe=""))
         except Exception:
             url = ""
 

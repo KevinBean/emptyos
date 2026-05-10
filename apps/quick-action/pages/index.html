@@ -49,15 +49,15 @@ body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-se
 .plan-step-verb { font-size:13px; font-weight:600; color:var(--accent); font-family:var(--mono); overflow-wrap:anywhere }
 .plan-step-args { font-size:12px; color:var(--text-muted); font-family:var(--mono); margin-top:2px; overflow-wrap:anywhere; white-space:pre-wrap }
 .plan-step-desc { font-size:12px; color:var(--text-secondary); margin-top:4px }
-.plan-step-err { font-size:12px; color:#ef4444; margin-top:4px }
+.plan-step-err { font-size:12px; color:var(--red); margin-top:4px }
 .plan-actions { display:flex; gap:8px; justify-content:flex-end; margin-top:12px }
 .plan-cancel { padding:8px 14px; background:transparent; border:1px solid var(--border); color:var(--text); border-radius:10px; font-size:13px; cursor:pointer }
 .plan-run { padding:8px 14px; background:var(--accent); color: var(--accent-ink); border:none; border-radius:10px; font-size:13px; font-weight:600; cursor:pointer }
 .plan-run:disabled { opacity:0.5 }
 .plan-results { margin-top:12px }
 .plan-result { padding:8px 12px; border-radius:8px; font-size:13px; margin-bottom:6px; font-family:var(--mono); word-break:break-word }
-.plan-result-ok { background:rgba(16,185,129,0.12); color:#10b981 }
-.plan-result-error { background:rgba(239,68,68,0.12); color:#ef4444 }
+.plan-result-ok { background:color-mix(in srgb, var(--green) 12%, transparent); color:var(--green) }
+.plan-result-error { background:color-mix(in srgb, var(--red) 12%, transparent); color:var(--red) }
 .plan-result-skipped { background:rgba(142,142,147,0.12); color:var(--text-muted) }
 
 .classify-result { margin-top:12px; padding:8px 16px; background:color-mix(in srgb,var(--accent) 8%,var(--bg-card)); border:1px solid color-mix(in srgb,var(--accent) 20%,var(--border)); border-radius:8px; font-size:13px; color:var(--accent); display:none; animation:fadeDown 0.3s }
@@ -74,13 +74,13 @@ body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-se
 .triage-text { white-space:pre-wrap; word-break:break-word; font-size:14px; line-height:1.5; color:var(--text) }
 .triage-btn { padding:8px 16px; border-radius:8px; font-size:12px; font-weight:600; border:none; cursor:pointer; transition:transform 0.1s }
 .triage-btn:active { transform:scale(0.95) }
-.triage-btn.task { background:rgba(59,130,246,0.15); color:#3b82f6 }
-.triage-btn.done { background:rgba(16,185,129,0.15); color:#10b981 }
+.triage-btn.task { background:color-mix(in srgb, var(--blue) 15%, transparent); color:var(--blue) }
+.triage-btn.done { background:color-mix(in srgb, var(--green) 15%, transparent); color:var(--green) }
 .triage-btn.dismiss { background:rgba(142,142,147,0.15); color:var(--text-muted) }
-.triage-btn.keep { background:rgba(16,185,129,0.15); color:#10b981 }
-.triage-btn.journal { background:rgba(139,92,246,0.15); color:#8b5cf6 }
+.triage-btn.keep { background:color-mix(in srgb, var(--green) 15%, transparent); color:var(--green) }
+.triage-btn.journal { background:color-mix(in srgb, var(--purple) 15%, transparent); color:var(--purple) }
 .triage-btn.plan { background:transparent; color:var(--accent); border:1px solid var(--accent) }
-.pending-badge { display:inline-flex; align-items:center; justify-content:center; min-width:20px; height:20px; border-radius:8px; background:#ef4444; color:#fff; font-size:11px; font-weight:700; padding:0 8px }
+.pending-badge { display:inline-flex; align-items:center; justify-content:center; min-width:20px; height:20px; border-radius:8px; background:var(--red); color:#fff; font-size:11px; font-weight:700; padding:0 8px }
 </style>
 </head>
 <body>

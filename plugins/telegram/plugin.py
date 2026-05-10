@@ -26,14 +26,8 @@ class TelegramPlugin(BasePlugin):
         return f"https://api.telegram.org/bot{self._token}/{method}"
 
     async def connect(self):
-        self._token = (
-            self.config("bot_token", "")
-            or os.environ.get("TELEGRAM_BOT_TOKEN", "")
-        )
-        self._chat_id = (
-            self.config("chat_id", "")
-            or os.environ.get("TELEGRAM_CHAT_ID", "")
-        )
+        self._token = self.config("bot_token", "") or os.environ.get("TELEGRAM_BOT_TOKEN", "")
+        self._chat_id = self.config("chat_id", "") or os.environ.get("TELEGRAM_CHAT_ID", "")
         self._session = aiohttp.ClientSession()
 
         if not self._token:
@@ -88,7 +82,8 @@ class TelegramPlugin(BasePlugin):
             return {"error": "no chat_id or token"}
         data = aiohttp.FormData()
         data.add_field("chat_id", cid)
-        data.add_field("photo", open(photo_path, "rb"), filename="photo.jpg")
+        # Brief blocking open — aiohttp streams the file from here.
+        data.add_field("photo", open(photo_path, "rb"), filename="photo.jpg")  # noqa: ASYNC230
         if caption:
             data.add_field("caption", caption)
         async with self._session.post(

@@ -14,16 +14,45 @@ bl_info = {
     "category": "System",
 }
 
-import bpy
 import json
+import os
 import threading
-from http.server import HTTPServer, BaseHTTPRequestHandler
-from io import BytesIO
+from http.server import BaseHTTPRequestHandler, HTTPServer
+
+import bpy
 
 # --- Config ---
 EOS_PORT = 8400
+# Bind localhost-only — this is a same-host RPC for the EmptyOS daemon.
+# Anything beyond loopback would expose Blender's main-thread Python to the LAN.
+EOS_HOST = "127.0.0.1"
+
+
+# Optional bearer token. If set, every non-`ping` RPC requires
+# `Authorization: Bearer <token>`. Token is sourced from (in order):
+#   1. EOS_BRIDGE_TOKEN env var (when Blender is launched by the daemon)
+#   2. ~/.eos/blender-bridge.token (a shared file the EmptyOS plugin writes)
+def _load_token() -> str:
+    tok = os.environ.get("EOS_BRIDGE_TOKEN", "").strip()
+    if tok:
+        return tok
+    try:
+        from pathlib import Path
+
+        p = Path.home() / ".eos" / "blender-bridge.token"
+        if p.exists():
+            return p.read_text(encoding="utf-8").strip()
+    except Exception:
+        pass
+    return ""
+
+
+EOS_TOKEN = _load_token()
+# Methods that bypass the auth check (purely for liveness probing).
+_PUBLIC_METHODS = {"ping"}
 
 # --- RPC Handlers ---
+
 
 def handle_ping(params):
     return "pong"
@@ -46,34 +75,23 @@ def handle_scene_info(params):
 def handle_list_objects(params):
     objects = []
     for obj in bpy.context.scene.objects:
-        objects.append({
-            "name": obj.name,
-            "type": obj.type,
-            "location": list(obj.location),
-            "rotation": list(obj.rotation_euler),
-            "scale": list(obj.scale),
-            "visible": obj.visible_get(),
-        })
+        objects.append(
+            {
+                "name": obj.name,
+                "type": obj.type,
+                "location": list(obj.location),
+                "rotation": list(obj.rotation_euler),
+                "scale": list(obj.scale),
+                "visible": obj.visible_get(),
+            }
+        )
     return {"objects": objects}
 
 
-def handle_execute(params):
-    """Execute arbitrary Python code in Blender context."""
-    code = params.get("code", "")
-    if not code:
-        raise ValueError("No code provided")
-
-    # Capture output
-    import io, sys
-    old_stdout = sys.stdout
-    sys.stdout = io.StringIO()
-    try:
-        exec(code, {"bpy": bpy, "__builtins__": __builtins__})
-        output = sys.stdout.getvalue()
-    finally:
-        sys.stdout = old_stdout
-
-    return {"output": output}
+# NOTE: handle_execute (arbitrary `exec(code)`) was removed for security —
+# binding 0.0.0.0 with CORS:* and no auth made it a remote-code-execution
+# pivot from any webpage. If a future use case truly needs scripted Blender
+# work, add a *typed* method (e.g. handle_run_named_op) with an allowlist.
 
 
 def handle_import_model(params):
@@ -155,9 +173,40 @@ def handle_set_material(params):
     return {"material": mat_name, "object": obj_name}
 
 
-def handle_render_from_prompt(params):
-    """Render current scene to image. Prompt metadata is logged but scene must be set up."""
-    import tempfile, os
+def handle_viewport_screenshot(params):
+    """Render the active viewport to a PNG via OpenGL (fast, works headless).
+
+    Falls back to camera POV when no UI viewport is available — `bpy.ops.render.opengl`
+    handles both contexts. The official Anthropic Blender connector ships an
+    equivalent; this gives MCP clients a quick "what does it look like?" loop
+    without paying for a full Cycles/EEVEE render.
+    """
+    import os
+    import tempfile
+
+    output = params.get("path") or os.path.join(
+        tempfile.gettempdir(), f"eos_viewport_{os.getpid()}.png"
+    )
+    width = params.get("width")
+    height = params.get("height")
+
+    scene = bpy.context.scene
+    if width:
+        scene.render.resolution_x = int(width)
+    if height:
+        scene.render.resolution_y = int(height)
+    scene.render.resolution_percentage = 100
+    scene.render.filepath = output
+    scene.render.image_settings.file_format = "PNG"
+
+    bpy.ops.render.opengl(write_still=True)
+    return {"image_path": output}
+
+
+def handle_render_scene(params):
+    """Render the active scene to a PNG via the configured engine (Cycles/EEVEE)."""
+    import os
+    import tempfile
 
     width = params.get("width", 1024)
     height = params.get("height", 1024)
@@ -181,17 +230,34 @@ RPC_METHODS = {
     "ping": handle_ping,
     "scene_info": handle_scene_info,
     "list_objects": handle_list_objects,
-    "execute": handle_execute,
     "import_model": handle_import_model,
     "export_model": handle_export_model,
     "set_material": handle_set_material,
-    "render_from_prompt": handle_render_from_prompt,
+    "render_scene": handle_render_scene,
+    "viewport_screenshot": handle_viewport_screenshot,
 }
 
 
 class RPCHandler(BaseHTTPRequestHandler):
     def log_message(self, format, *args):
         pass  # Suppress HTTP logs
+
+    def _check_auth(self, method: str) -> bool:
+        global EOS_TOKEN
+        # If no token at startup, lazily try to pick one up — covers the
+        # bootstrap window where EmptyOS writes the token after Blender booted.
+        if not EOS_TOKEN:
+            EOS_TOKEN = _load_token()
+        if not EOS_TOKEN:
+            return True  # No token configured — accept (loopback-only bind).
+        if method in _PUBLIC_METHODS:
+            return True
+        header = self.headers.get("Authorization", "")
+        if not header.lower().startswith("bearer "):
+            return False
+        import hmac as _hmac
+
+        return _hmac.compare_digest(header[7:].strip(), EOS_TOKEN)
 
     def do_POST(self):
         content_length = int(self.headers.get("Content-Length", 0))
@@ -207,18 +273,33 @@ class RPCHandler(BaseHTTPRequestHandler):
         params = request.get("params", {})
         req_id = request.get("id")
 
+        if not self._check_auth(method):
+            self._respond(
+                401,
+                {
+                    "jsonrpc": "2.0",
+                    "error": {"code": -32001, "message": "Unauthorized"},
+                    "id": req_id,
+                },
+            )
+            return
+
         handler = RPC_METHODS.get(method)
         if not handler:
-            self._respond(200, {
-                "jsonrpc": "2.0",
-                "error": {"code": -32601, "message": f"Method not found: {method}"},
-                "id": req_id,
-            })
+            self._respond(
+                200,
+                {
+                    "jsonrpc": "2.0",
+                    "error": {"code": -32601, "message": f"Method not found: {method}"},
+                    "id": req_id,
+                },
+            )
             return
 
         try:
             # Execute in main thread via timer for Blender thread safety
             import queue
+
             result_queue = queue.Queue()
 
             def run_in_main():
@@ -233,29 +314,39 @@ class RPCHandler(BaseHTTPRequestHandler):
             result_type, result_value = result_queue.get(timeout=120)
 
             if result_type == "error":
-                self._respond(200, {
-                    "jsonrpc": "2.0",
-                    "error": {"code": -32000, "message": result_value},
-                    "id": req_id,
-                })
+                self._respond(
+                    200,
+                    {
+                        "jsonrpc": "2.0",
+                        "error": {"code": -32000, "message": result_value},
+                        "id": req_id,
+                    },
+                )
             else:
-                self._respond(200, {
-                    "jsonrpc": "2.0",
-                    "result": result_value,
-                    "id": req_id,
-                })
+                self._respond(
+                    200,
+                    {
+                        "jsonrpc": "2.0",
+                        "result": result_value,
+                        "id": req_id,
+                    },
+                )
 
         except Exception as e:
-            self._respond(200, {
-                "jsonrpc": "2.0",
-                "error": {"code": -32000, "message": str(e)},
-                "id": req_id,
-            })
+            self._respond(
+                200,
+                {
+                    "jsonrpc": "2.0",
+                    "error": {"code": -32000, "message": str(e)},
+                    "id": req_id,
+                },
+            )
 
     def _respond(self, status, data):
         self.send_response(status)
         self.send_header("Content-Type", "application/json")
-        self.send_header("Access-Control-Allow-Origin", "*")
+        # No CORS header — this is a localhost-only RPC. Browsers must not be
+        # able to drive Blender RPCs cross-origin.
         self.end_headers()
         self.wfile.write(json.dumps(data).encode())
 
@@ -271,10 +362,11 @@ def start_server():
     if _server:
         return
 
-    _server = HTTPServer(("0.0.0.0", EOS_PORT), RPCHandler)
+    _server = HTTPServer((EOS_HOST, EOS_PORT), RPCHandler)
     _thread = threading.Thread(target=_server.serve_forever, daemon=True)
     _thread.start()
-    print(f"[EmptyOS Bridge] Listening on port {EOS_PORT}")
+    auth_state = "auth=on" if EOS_TOKEN else "auth=off (loopback-only)"
+    print(f"[EmptyOS Bridge] Listening on {EOS_HOST}:{EOS_PORT} ({auth_state})")
 
 
 def stop_server():

@@ -20,7 +20,6 @@ import sys
 import tempfile
 import time
 
-from emptyos.capabilities import Provider
 from emptyos.capabilities.providers._tool_capable import NativelyAgenticProvider
 
 # Semaphore — Claude CLI can only handle one concurrent call
@@ -75,7 +74,9 @@ def _messages_to_prompt(messages: list[dict], prompt: str = "") -> str:
             content = m.get("content", "")
             if not content:
                 continue
-            label = {"user": "User", "assistant": "Assistant", "system": "System"}.get(role, role.title())
+            label = {"user": "User", "assistant": "Assistant", "system": "System"}.get(
+                role, role.title()
+            )
             lines.append(f"{label}: {content}")
         lines.append("")
         lines.append("[Current message]")
@@ -149,6 +150,7 @@ class ClaudeCLIThinkProvider(NativelyAgenticProvider):
 
     name = "claude-cli"
     capacity = 1  # only one concurrent call
+
     @property
     def native_tool_summary(self) -> str:
         base = "Claude's built-in Read/Grep/Glob/WebSearch/WebFetch"
@@ -169,9 +171,16 @@ class ClaudeCLIThinkProvider(NativelyAgenticProvider):
     def is_cloud(self) -> bool:
         return True
 
-    def __init__(self, model: str = "", max_tokens: int = 4096, timeout: int = 0,
-                 cwd: str = "", effort: str = "low", mcp_enabled: bool = False,
-                 mcp_port: int = 9000):
+    def __init__(
+        self,
+        model: str = "",
+        max_tokens: int = 4096,
+        timeout: int = 0,
+        cwd: str = "",
+        effort: str = "low",
+        mcp_enabled: bool = False,
+        mcp_port: int = 9000,
+    ):
         self.model = model
         self.max_tokens = max_tokens
         self.timeout = timeout or 300  # per-line idle timeout (5 min)
@@ -179,7 +188,7 @@ class ClaudeCLIThinkProvider(NativelyAgenticProvider):
         self.cwd = cwd or ""  # working directory (vault path)
         self.effort = effort  # low, medium, high, max
         self.mcp_enabled = mcp_enabled  # bridge EmptyOS tools via MCP
-        self.mcp_port = mcp_port        # EmptyOS daemon port for MCP proxy
+        self.mcp_port = mcp_port  # EmptyOS daemon port for MCP proxy
         self._claude_path: str | None = None
         self._mcp_config_path: str | None = None  # path to temp mcp-config.json
 
@@ -195,8 +204,12 @@ class ClaudeCLIThinkProvider(NativelyAgenticProvider):
             return {
                 "available": False,
                 "reason": "`claude` CLI not on PATH",
-                "recovery": {"kind": "service", "id": "claude-cli", "url": "",
-                             "hint": "Install Claude Code CLI (https://claude.com/claude-code) and ensure `claude` is on PATH"},
+                "recovery": {
+                    "kind": "service",
+                    "id": "claude-cli",
+                    "url": "",
+                    "hint": "Install Claude Code CLI (https://claude.com/claude-code) and ensure `claude` is on PATH",
+                },
             }
         return {"available": True, "reason": None, "recovery": None}
 
@@ -224,7 +237,7 @@ class ClaudeCLIThinkProvider(NativelyAgenticProvider):
                 with os.fdopen(fd, "w") as f:
                     json.dump(config, f)
                 self._mcp_config_path = path
-            except Exception as e:
+            except Exception:
                 return []  # silently skip MCP on config write failure
 
         mcp_tool_names = ",".join(
@@ -233,7 +246,9 @@ class ClaudeCLIThinkProvider(NativelyAgenticProvider):
         allowed = f"{self.ALLOWED_TOOLS},{mcp_tool_names}"
         return ["--mcp-config", self._mcp_config_path, "--allowedTools", allowed]
 
-    async def execute(self, *, prompt: str = "", system: str = "", messages: list[dict] | None = None, **kwargs) -> str:
+    async def execute(
+        self, *, prompt: str = "", system: str = "", messages: list[dict] | None = None, **kwargs
+    ) -> str:
         if not await self.available():
             raise RuntimeError("claude CLI not found in PATH")
 
@@ -242,14 +257,22 @@ class ClaudeCLIThinkProvider(NativelyAgenticProvider):
         await _claude_sem.acquire()
         try:
             mcp_extra = self._mcp_args()
-            allowed = mcp_extra[mcp_extra.index("--allowedTools") + 1] if "--allowedTools" in mcp_extra else self.ALLOWED_TOOLS
+            allowed = (
+                mcp_extra[mcp_extra.index("--allowedTools") + 1]
+                if "--allowedTools" in mcp_extra
+                else self.ALLOWED_TOOLS
+            )
             base_cmd = [
-                self._claude_path, "-p",
-                "--output-format", "text",
+                self._claude_path,
+                "-p",
+                "--output-format",
+                "text",
                 "--no-session-persistence",
                 "--dangerously-skip-permissions",
-                "--allowedTools", allowed,
-                "--effort", kwargs.get("effort", self.effort),
+                "--allowedTools",
+                allowed,
+                "--effort",
+                kwargs.get("effort", self.effort),
             ]
             if mcp_extra and "--mcp-config" in mcp_extra:
                 base_cmd.extend(["--mcp-config", mcp_extra[mcp_extra.index("--mcp-config") + 1]])
@@ -285,7 +308,9 @@ class ClaudeCLIThinkProvider(NativelyAgenticProvider):
             err = stderr.decode("utf-8", errors="replace").strip()
 
             if proc.returncode != 0:
-                raise RuntimeError(f"claude CLI failed (exit {proc.returncode}): {(err or out)[:200]}")
+                raise RuntimeError(
+                    f"claude CLI failed (exit {proc.returncode}): {(err or out)[:200]}"
+                )
 
             # Usage-limit response on exit 0 — treat as failure so the capability
             # chain falls through to the next provider (openai, ollama, …).
@@ -296,7 +321,9 @@ class ClaudeCLIThinkProvider(NativelyAgenticProvider):
         finally:
             _claude_sem.release()
 
-    async def execute_stream(self, *, prompt: str = "", system: str = "", messages: list[dict] | None = None, **kwargs):
+    async def execute_stream(
+        self, *, prompt: str = "", system: str = "", messages: list[dict] | None = None, **kwargs
+    ):
         """Stream from Claude CLI — text mode for reliability, with tool events.
 
         Yields:
@@ -316,14 +343,22 @@ class ClaudeCLIThinkProvider(NativelyAgenticProvider):
             fmt = "stream-json" if use_stream_json else "text"
 
             mcp_extra = self._mcp_args()
-            allowed = mcp_extra[mcp_extra.index("--allowedTools") + 1] if "--allowedTools" in mcp_extra else self.ALLOWED_TOOLS
+            allowed = (
+                mcp_extra[mcp_extra.index("--allowedTools") + 1]
+                if "--allowedTools" in mcp_extra
+                else self.ALLOWED_TOOLS
+            )
             base_cmd = [
-                self._claude_path, "-p",
-                "--output-format", fmt,
+                self._claude_path,
+                "-p",
+                "--output-format",
+                fmt,
                 "--no-session-persistence",
                 "--dangerously-skip-permissions",
-                "--allowedTools", allowed,
-                "--effort", kwargs.get("effort", self.effort),
+                "--allowedTools",
+                allowed,
+                "--effort",
+                kwargs.get("effort", self.effort),
             ]
             if mcp_extra and "--mcp-config" in mcp_extra:
                 base_cmd.extend(["--mcp-config", mcp_extra[mcp_extra.index("--mcp-config") + 1]])
@@ -372,8 +407,10 @@ class ClaudeCLIThinkProvider(NativelyAgenticProvider):
                 text_yielded = False
                 while True:
                     try:
-                        raw_line = await asyncio.wait_for(proc.stdout.readline(), timeout=self.timeout)
-                    except asyncio.TimeoutError:
+                        raw_line = await asyncio.wait_for(
+                            proc.stdout.readline(), timeout=self.timeout
+                        )
+                    except TimeoutError:
                         proc.kill()
                         yield {"text": f"\n[Timeout] Claude idle {self.timeout}s", "done": True}
                         return
@@ -394,7 +431,13 @@ class ClaudeCLIThinkProvider(NativelyAgenticProvider):
                         if etype == "assistant":
                             for block in event.get("message", {}).get("content", []):
                                 if block.get("type") == "tool_use":
-                                    yield {"tool_status": _format_tool_status(block.get("name", ""), block.get("input", {})), "tool": block.get("name", ""), "done": False}
+                                    yield {
+                                        "tool_status": _format_tool_status(
+                                            block.get("name", ""), block.get("input", {})
+                                        ),
+                                        "tool": block.get("name", ""),
+                                        "done": False,
+                                    }
                                 elif block.get("type") == "text" and block.get("text"):
                                     yield {"text": block["text"], "done": False}
                                     text_yielded = True
@@ -424,7 +467,9 @@ class ClaudeCLIThinkProvider(NativelyAgenticProvider):
                 if proc.returncode != 0 and not text_yielded:
                     stderr_data = await proc.stderr.read() if proc.stderr else b""
                     err = stderr_data.decode("utf-8", errors="replace").strip()
-                    raise RuntimeError(f"claude CLI failed (exit {proc.returncode}): {(err or final_result)[:200]}")
+                    raise RuntimeError(
+                        f"claude CLI failed (exit {proc.returncode}): {(err or final_result)[:200]}"
+                    )
                 if _looks_like_limit_error(final_result) and not text_yielded:
                     raise RuntimeError(f"claude CLI usage limit: {final_result[:200]}")
                 if final_result and not text_yielded:
@@ -440,8 +485,10 @@ class ClaudeCLIThinkProvider(NativelyAgenticProvider):
 
                 while True:
                     try:
-                        chunk = await asyncio.wait_for(proc.stdout.read(4096), timeout=GUARD_TIMEOUT)
-                    except asyncio.TimeoutError:
+                        chunk = await asyncio.wait_for(
+                            proc.stdout.read(4096), timeout=GUARD_TIMEOUT
+                        )
+                    except TimeoutError:
                         # Real inference — drop guard, emit buffer, stream rest
                         break
                     if not chunk:
@@ -459,7 +506,7 @@ class ClaudeCLIThinkProvider(NativelyAgenticProvider):
                     # Might have just exited — let it settle
                     try:
                         await asyncio.wait_for(proc.wait(), timeout=0.5)
-                    except asyncio.TimeoutError:
+                    except TimeoutError:
                         pass
 
                 if _looks_like_limit_error(buffer):

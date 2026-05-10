@@ -39,16 +39,54 @@ logger = logging.getLogger("voice-api")
 
 app = FastAPI(title="EmptyOS Voice API")
 
+# --- Auth middleware ---------------------------------------------------------
+# Default-bind is loopback (127.0.0.1). If you opt into a network bind via
+# VOICE_API_HOST, you should also set VOICE_API_TOKEN — otherwise every device
+# on the network can call TTS/STT/upload at no cost to themselves.
+#
+# Token is re-read from os.environ on every request so a rotation takes effect
+# without restarting the service.
+_AUTH_EXEMPT_PATHS = {"/health", "/"}
+
+
+def _voice_api_token() -> str:
+    return os.environ.get("VOICE_API_TOKEN", "").strip()
+
+
+@app.middleware("http")
+async def _auth_mw(request: Request, call_next):
+    token = _voice_api_token()
+    if not token:
+        return await call_next(request)
+    if request.url.path in _AUTH_EXEMPT_PATHS:
+        return await call_next(request)
+    auth = request.headers.get("authorization", "")
+    if auth.lower().startswith("bearer "):
+        import hmac as _hmac
+
+        if _hmac.compare_digest(auth[7:].strip(), token):
+            return await call_next(request)
+    return JSONResponse({"error": "unauthorized"}, status_code=401)
+
+
 AUDIO_DIR = Path(tempfile.gettempdir()) / "emptyos-voice"
 AUDIO_DIR.mkdir(exist_ok=True)
 
-VOICES_DIR = Path(os.environ["VOICES_DIR"]) if os.environ.get("VOICES_DIR") else Path(__file__).parent / "voices"
+VOICES_DIR = (
+    Path(os.environ["VOICES_DIR"])
+    if os.environ.get("VOICES_DIR")
+    else Path(__file__).parent / "voices"
+)
 VOICES_DIR.mkdir(exist_ok=True)
 
 WHISPER_MODEL = os.environ.get("WHISPER_MODEL", "base")
 
 # Kokoro model files (default engine)
-KOKORO_MODEL_DIR = Path(os.environ["KOKORO_MODEL_DIR"]) if os.environ.get("KOKORO_MODEL_DIR") else Path(__file__).parent / "models" / "kokoro"
+KOKORO_MODEL_DIR = (
+    Path(os.environ["KOKORO_MODEL_DIR"])
+    if os.environ.get("KOKORO_MODEL_DIR")
+    else Path(__file__).parent / "models" / "kokoro"
+)
 KOKORO_ONNX = KOKORO_MODEL_DIR / "kokoro-v1.0.onnx"
 KOKORO_VOICES = KOKORO_MODEL_DIR / "voices-v1.0.bin"
 
@@ -62,23 +100,23 @@ EDGE_VOICES = {
 
 # Curated Kokoro voices surfaced via /voices (the full 54-voice set is still callable by id)
 KOKORO_VOICE_CATALOG = {
-    "af_heart":    {"name": "Heart (US Female, warm)",        "language": "en-us"},
-    "af_bella":    {"name": "Bella (US Female)",              "language": "en-us"},
-    "af_nicole":   {"name": "Nicole (US Female)",             "language": "en-us"},
-    "af_sarah":    {"name": "Sarah (US Female)",              "language": "en-us"},
-    "am_michael":  {"name": "Michael (US Male)",              "language": "en-us"},
-    "am_adam":     {"name": "Adam (US Male)",                 "language": "en-us"},
-    "am_eric":     {"name": "Eric (US Male)",                 "language": "en-us"},
-    "bf_emma":     {"name": "Emma (UK Female)",               "language": "en-gb"},
-    "bf_isabella": {"name": "Isabella (UK Female)",           "language": "en-gb"},
-    "bm_george":   {"name": "George (UK Male)",               "language": "en-gb"},
-    "bm_lewis":    {"name": "Lewis (UK Male)",                "language": "en-gb"},
-    "zf_xiaoxiao": {"name": "Xiaoxiao (Mandarin Female)",     "language": "cmn"},
-    "zf_xiaoyi":   {"name": "Xiaoyi (Mandarin Female)",       "language": "cmn"},
-    "zm_yunxi":    {"name": "Yunxi (Mandarin Male)",          "language": "cmn"},
-    "zm_yunjian":  {"name": "Yunjian (Mandarin Male)",        "language": "cmn"},
-    "jf_alpha":    {"name": "Alpha (Japanese Female)",        "language": "ja"},
-    "jm_kumo":     {"name": "Kumo (Japanese Male)",           "language": "ja"},
+    "af_heart": {"name": "Heart (US Female, warm)", "language": "en-us"},
+    "af_bella": {"name": "Bella (US Female)", "language": "en-us"},
+    "af_nicole": {"name": "Nicole (US Female)", "language": "en-us"},
+    "af_sarah": {"name": "Sarah (US Female)", "language": "en-us"},
+    "am_michael": {"name": "Michael (US Male)", "language": "en-us"},
+    "am_adam": {"name": "Adam (US Male)", "language": "en-us"},
+    "am_eric": {"name": "Eric (US Male)", "language": "en-us"},
+    "bf_emma": {"name": "Emma (UK Female)", "language": "en-gb"},
+    "bf_isabella": {"name": "Isabella (UK Female)", "language": "en-gb"},
+    "bm_george": {"name": "George (UK Male)", "language": "en-gb"},
+    "bm_lewis": {"name": "Lewis (UK Male)", "language": "en-gb"},
+    "zf_xiaoxiao": {"name": "Xiaoxiao (Mandarin Female)", "language": "cmn"},
+    "zf_xiaoyi": {"name": "Xiaoyi (Mandarin Female)", "language": "cmn"},
+    "zm_yunxi": {"name": "Yunxi (Mandarin Male)", "language": "cmn"},
+    "zm_yunjian": {"name": "Yunjian (Mandarin Male)", "language": "cmn"},
+    "jf_alpha": {"name": "Alpha (Japanese Female)", "language": "ja"},
+    "jm_kumo": {"name": "Kumo (Japanese Male)", "language": "ja"},
 }
 
 KOKORO_DEFAULT_VOICES = {
@@ -99,6 +137,7 @@ def get_whisper():
     if _whisper_model is None:
         print(f"[Voice API] Loading faster-whisper: {WHISPER_MODEL}")
         from faster_whisper import WhisperModel
+
         _whisper_model = WhisperModel(WHISPER_MODEL, compute_type="int8")
         print("[Voice API] Whisper ready")
     return _whisper_model
@@ -109,21 +148,30 @@ def get_xtts():
     if _xtts_model is None:
         print("[Voice API] Loading XTTS v2 (first use, may take a moment)...")
         from TTS.api import TTS
+
         _xtts_model = TTS("tts_models/multilingual/multi-dataset/xtts_v2").to("cuda")
         print("[Voice API] XTTS ready")
     return _xtts_model
 
 
 KOKORO_LANG_BY_PREFIX = {
-    "af": "en-us", "am": "en-us",
-    "bf": "en-gb", "bm": "en-gb",
-    "zf": "cmn",   "zm": "cmn",
-    "jf": "ja",    "jm": "ja",
-    "ef": "es",    "em": "es",
+    "af": "en-us",
+    "am": "en-us",
+    "bf": "en-gb",
+    "bm": "en-gb",
+    "zf": "cmn",
+    "zm": "cmn",
+    "jf": "ja",
+    "jm": "ja",
+    "ef": "es",
+    "em": "es",
     "ff": "fr-fr",
-    "hf": "hi",    "hm": "hi",
-    "if": "it",    "im": "it",
-    "pf": "pt-br", "pm": "pt-br",
+    "hf": "hi",
+    "hm": "hi",
+    "if": "it",
+    "im": "it",
+    "pf": "pt-br",
+    "pm": "pt-br",
 }
 
 
@@ -142,9 +190,8 @@ async def get_kokoro():
         if _kokoro_model is None:
             print(f"[Voice API] Loading Kokoro ONNX from {KOKORO_MODEL_DIR}...")
             from kokoro_onnx import Kokoro
-            _kokoro_model = await asyncio.to_thread(
-                Kokoro, str(KOKORO_ONNX), str(KOKORO_VOICES)
-            )
+
+            _kokoro_model = await asyncio.to_thread(Kokoro, str(KOKORO_ONNX), str(KOKORO_VOICES))
             print(f"[Voice API] Kokoro ready ({len(list(_kokoro_model.get_voices()))} voices)")
     return _kokoro_model
 
@@ -187,6 +234,7 @@ def _save_custom_voices(data: dict):
 
 
 # --- Endpoints ---
+
 
 @app.get("/health")
 async def health():
@@ -324,7 +372,12 @@ async def _tts_edge(text: str, voice: str, speed: float):
         rate = f"{int((speed - 1) * 100):+d}%" if speed != 1.0 else "+0%"
         communicate = edge_tts.Communicate(text, voice_name, rate=rate)
         await communicate.save(str(out_path))
-        return {"path": str(out_path), "audio_path": str(out_path), "engine": "edge", "voice": voice_name}
+        return {
+            "path": str(out_path),
+            "audio_path": str(out_path),
+            "engine": "edge",
+            "voice": voice_name,
+        }
     except Exception as e:
         return JSONResponse({"error": f"edge-tts failed: {e}"}, status_code=500)
 
@@ -335,7 +388,9 @@ async def _tts_xtts(text: str, voice_info: dict, speed: float):
 
     ref_path = voice_info.get("reference")
     if not ref_path or not Path(ref_path).exists():
-        return JSONResponse({"error": f"Voice reference file not found: {ref_path}"}, status_code=500)
+        return JSONResponse(
+            {"error": f"Voice reference file not found: {ref_path}"}, status_code=500
+        )
 
     language = voice_info.get("language", "en")
     out_path = AUDIO_DIR / f"tts_{uuid.uuid4().hex[:8]}.wav"
@@ -364,24 +419,28 @@ async def voices():
     kokoro_ok = _kokoro_files_present()
     if kokoro_ok:
         for vid, info in KOKORO_VOICE_CATALOG.items():
-            result.append({
-                "id": vid,
-                "name": info["name"],
-                "type": "kokoro",
-                "language": info["language"],
-                "default": vid in KOKORO_DEFAULT_VOICES.values(),
-            })
+            result.append(
+                {
+                    "id": vid,
+                    "name": info["name"],
+                    "type": "kokoro",
+                    "language": info["language"],
+                    "default": vid in KOKORO_DEFAULT_VOICES.values(),
+                }
+            )
 
     for vid, info in EDGE_VOICES.items():
         result.append({"id": vid, "name": info["name"], "type": "edge"})
 
     for vid, info in _load_custom_voices().items():
-        result.append({
-            "id": vid,
-            "name": info.get("name", vid),
-            "type": "xtts",
-            "language": info.get("language", "en"),
-        })
+        result.append(
+            {
+                "id": vid,
+                "name": info.get("name", vid),
+                "type": "xtts",
+                "language": info.get("language", "en"),
+            }
+        )
 
     return {"voices": result}
 
@@ -408,11 +467,15 @@ async def register_voice(
     # Verify it's valid audio
     try:
         from pydub import AudioSegment
+
         audio = AudioSegment.from_file(str(ref_path))
         duration = len(audio) / 1000
         if duration < 3:
             ref_path.unlink()
-            return JSONResponse({"error": f"Audio too short ({duration:.1f}s). Need at least 5 seconds."}, status_code=400)
+            return JSONResponse(
+                {"error": f"Audio too short ({duration:.1f}s). Need at least 5 seconds."},
+                status_code=400,
+            )
         if duration > 60:
             # Trim to first 30s
             audio = audio[:30000]
@@ -452,13 +515,24 @@ async def delete_voice(voice_id: str):
 
 if __name__ == "__main__":
     port = int(os.environ.get("VOICE_API_PORT", "8602"))
+    # Default-bind loopback. Override with VOICE_API_HOST=0.0.0.0 if you
+    # deliberately want LAN access — pair that with VOICE_API_TOKEN.
+    host = os.environ.get("VOICE_API_HOST", "127.0.0.1")
     logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(name)s] %(message)s")
-    print(f"[Voice API] Port {port} | Whisper={WHISPER_MODEL}")
+    _initial_token = _voice_api_token()
+    auth_state = "auth=on" if _initial_token else "auth=off"
+    print(f"[Voice API] {host}:{port} ({auth_state}) | Whisper={WHISPER_MODEL}")
+    if host != "127.0.0.1" and not _initial_token:
+        print(
+            "[Voice API] WARNING: bound non-loopback without VOICE_API_TOKEN — anyone on the network can call this service."
+        )
     if _kokoro_files_present():
-        print(f"[Voice API] Kokoro: {len(KOKORO_VOICE_CATALOG)} curated voices (default engine) | {KOKORO_MODEL_DIR}")
+        print(
+            f"[Voice API] Kokoro: {len(KOKORO_VOICE_CATALOG)} curated voices (default engine) | {KOKORO_MODEL_DIR}"
+        )
     else:
-        print(f"[Voice API] Kokoro: model files missing — falling back to edge-tts as default")
+        print("[Voice API] Kokoro: model files missing — falling back to edge-tts as default")
         print(f"[Voice API]         expected at: {KOKORO_MODEL_DIR}")
     print(f"[Voice API] Edge: {len(EDGE_VOICES)} voices (fallback) | Custom dir: {VOICES_DIR}")
     print(f"[Voice API] Audio: {AUDIO_DIR}")
-    uvicorn.run(app, host="0.0.0.0", port=port, log_level="warning")
+    uvicorn.run(app, host=host, port=port, log_level="warning")

@@ -8,6 +8,7 @@ Usage:
     python scripts/gen-design-md.py            # rewrite DESIGN.md in place
     python scripts/gen-design-md.py --check    # exit 1 if out of date (CI)
 """
+
 from __future__ import annotations
 
 import re

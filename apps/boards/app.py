@@ -7,14 +7,13 @@ built-in presets, and a completely offline SSG export via AppExporter.
 
 from __future__ import annotations
 
-import json
 from datetime import date
 from pathlib import Path
 
 from emptyos.sdk import BaseApp, web_route
 from emptyos.sdk.exporter import AppExporter
 
-from .automation import evaluate_rules, evaluate_guards
+from .automation import evaluate_guards, evaluate_rules
 from .board_engine import BoardConfigStore, DynamicBoardLibrary, evaluate_formulas
 from .link_index import LinkIndex, _as_id_list
 from .presets import PRESETS, get_preset, list_presets
@@ -64,7 +63,6 @@ def _validate_columns(columns: list) -> tuple[list[dict] | None, str | None]:
 
 
 class BoardsApp(BaseApp):
-
     async def setup(self):
         await super().setup()
         self._store = BoardConfigStore(self)
@@ -93,6 +91,7 @@ class BoardsApp(BaseApp):
         # Defer initial rebuild to the next tick — other apps may still be
         # loading, and the rebuild hits their list_all() methods via source=app.
         import asyncio
+
         asyncio.create_task(self._rebuild_links())
 
     # ------------------------------------------------------------------
@@ -131,15 +130,25 @@ class BoardsApp(BaseApp):
                 "description": data.get("description", ""),
                 "source_tag": data.get("source_tag", board_id),
                 "tags": ["board-config"],
-                "columns": data.get("columns", [
-                    {"id": "name", "label": "Name", "type": "text"},
-                    {"id": "status", "label": "Status", "type": "select",
-                     "options": ["To Do", "In Progress", "Done"]},
-                ]),
-                "views": data.get("views", [
-                    {"type": "table", "default": True},
-                    {"type": "kanban", "group_by": "status"},
-                ]),
+                "columns": data.get(
+                    "columns",
+                    [
+                        {"id": "name", "label": "Name", "type": "text"},
+                        {
+                            "id": "status",
+                            "label": "Status",
+                            "type": "select",
+                            "options": ["To Do", "In Progress", "Done"],
+                        },
+                    ],
+                ),
+                "views": data.get(
+                    "views",
+                    [
+                        {"type": "table", "default": True},
+                        {"type": "kanban", "group_by": "status"},
+                    ],
+                ),
                 "kanban_group_by": "status",
             }
 
@@ -164,14 +173,17 @@ class BoardsApp(BaseApp):
         target_id = data.get("id") or preset_id
         existing = self._store.get_board(target_id)
         if existing:
-            return {"ok": True, "id": target_id, "name": existing.get("name", target_id),
-                    "created": False}
+            return {
+                "ok": True,
+                "id": target_id,
+                "name": existing.get("name", target_id),
+                "created": False,
+            }
         config = dict(config)
         config["id"] = target_id
         self._store.save_board(target_id, config)
         await self.emit("board:created", {"id": target_id, "name": config.get("name", target_id)})
-        return {"ok": True, "id": target_id, "name": config.get("name", target_id),
-                "created": True}
+        return {"ok": True, "id": target_id, "name": config.get("name", target_id), "created": True}
 
     @web_route("GET", "/api/boards/{id}")
     async def api_get_board(self, request):
@@ -325,9 +337,12 @@ class BoardsApp(BaseApp):
         lib = DynamicBoardLibrary(self, config)
         await lib.get_items()  # populates lib._source_error if missing
         if lib._source_error:
-            return {"ok": False, "type": "app",
-                    "app": src.get("app", ""),
-                    "error": lib._source_error}
+            return {
+                "ok": False,
+                "type": "app",
+                "app": src.get("app", ""),
+                "error": lib._source_error,
+            }
         return {"ok": True, "type": "app", "app": src.get("app", "")}
 
     @web_route("GET", "/api/boards/{id}/stats")
@@ -374,7 +389,9 @@ class BoardsApp(BaseApp):
         slug = "".join(c for c in slug if c.isalnum() or c == "-")
 
         # Create vault note
-        vault_dir = self.vault_config("boards_items_dir", f"30_Resources/EmptyOS/boards-data/{source_tag}")
+        vault_dir = self.vault_config(
+            "boards_items_dir", f"30_Resources/EmptyOS/boards-data/{source_tag}"
+        )
         rel_path = f"{vault_dir}/{slug}.md"
         body = data.get("body", "")
         self.vault_create_note(rel_path, fm, body)
@@ -388,9 +405,13 @@ class BoardsApp(BaseApp):
         # Emit assignment deltas for any person-family column that was populated
         # at creation time. Old item is empty (new item) so everything is added.
         initial_updates = {k: new_item.get(k) for k in (data or {})}
-        await self._emit_assignment_deltas(board_id, config, f"{slug}.md", {}, new_item, initial_updates)
+        await self._emit_assignment_deltas(
+            board_id, config, f"{slug}.md", {}, new_item, initial_updates
+        )
         # Populate link-record edges (and any declared inverses) for this new item.
-        await self._maintain_link_inverses(board_id, config, f"{slug}.md", {}, new_item, initial_updates)
+        await self._maintain_link_inverses(
+            board_id, config, f"{slug}.md", {}, new_item, initial_updates
+        )
 
         return {"ok": True, "file": f"{slug}.md", "path": rel_path}
 
@@ -429,8 +450,10 @@ class BoardsApp(BaseApp):
         # make sure the new graph stays acyclic.
         cycle = self._detect_cycle_on_update(config, filename, old_item, safe_updates)
         if cycle:
-            return {"error": "dependency_cycle",
-                    "message": f"would create a cycle: {' → '.join(cycle)}"}
+            return {
+                "error": "dependency_cycle",
+                "message": f"would create a cycle: {' → '.join(cycle)}",
+            }
 
         # Route each update through the source-aware setter. Multi-field
         # PATCHes become multiple single-field writes; both vault_tag and app
@@ -444,21 +467,29 @@ class BoardsApp(BaseApp):
 
         if result.get("ok"):
             new_item = await lib.get_detail(filename) or {**old_item, **safe_updates}
-            await self.emit("board:item_updated", {
-                "board": board_id,
-                "file": filename,
-                "old": old_item,
-                "new": new_item,
-                "updates": safe_updates,
-            })
+            await self.emit(
+                "board:item_updated",
+                {
+                    "board": board_id,
+                    "file": filename,
+                    "old": old_item,
+                    "new": new_item,
+                    "updates": safe_updates,
+                },
+            )
             # Emit assignment deltas for any person-family column that changed.
-            await self._emit_assignment_deltas(board_id, config, filename, old_item, new_item, safe_updates)
+            await self._emit_assignment_deltas(
+                board_id, config, filename, old_item, new_item, safe_updates
+            )
             # Maintain link-record edges + inverse fields on target items.
-            await self._maintain_link_inverses(board_id, config, filename, old_item, new_item, safe_updates)
+            await self._maintain_link_inverses(
+                board_id, config, filename, old_item, new_item, safe_updates
+            )
             # Compute slip delta for any date-field that moved forward so
             # propagate_slip can use it (it runs as part of evaluate_rules).
             slip_days = 0
             from datetime import date as _d
+
             for f, v in safe_updates.items():
                 col = next((c for c in config.get("columns", []) if c["id"] == f), None)
                 if not col or col.get("type") != "date":
@@ -506,7 +537,9 @@ class BoardsApp(BaseApp):
         projected_blocked_by = updates.get("blocked_by")
         if projected_blocked_by is not None:
             if isinstance(projected_blocked_by, str):
-                projected_blocked_by = [s.strip() for s in projected_blocked_by.split(",") if s.strip()]
+                projected_blocked_by = [
+                    s.strip() for s in projected_blocked_by.split(",") if s.strip()
+                ]
             # Wipe old inbound edges that targeted item_id (from old_item's blocked_by),
             # then add the projected ones.
             old_inbound = set((old_item or {}).get("blocked_by") or [])
@@ -547,12 +580,14 @@ class BoardsApp(BaseApp):
             return []
         return lib.list()
 
-    async def shift_item_date(self, board_id: str, item_id: str,
-                              field: str, delta_days: int) -> dict:
+    async def shift_item_date(
+        self, board_id: str, item_id: str, field: str, delta_days: int
+    ) -> dict:
         """Propagate-slip helper: move one item's date field forward by
         `delta_days`. Called by the auto-slip automation action. Idempotent
         at the frontmatter level — worst case a double-fire nudges twice."""
         from datetime import date, timedelta
+
         config = self._store.get_board(board_id) or get_preset(board_id)
         if not config:
             return {"error": "board not found"}
@@ -567,11 +602,13 @@ class BoardsApp(BaseApp):
             return {"error": f"field '{field}' is not a date: {cur!r}"}
         return await lib.set_field(item_id, field, new_dt.isoformat())
 
-    async def _emit_assignment_deltas(self, board_id, config, filename, old_item, new_item, updates):
+    async def _emit_assignment_deltas(
+        self, board_id, config, filename, old_item, new_item, updates
+    ):
         """For every person-family column that changed in this update, emit the
         assignment / unassignment deltas so the people app's workload index
         stays in sync."""
-        from .board_engine import PERSON_SINGLE_TYPES, PERSON_MULTI_TYPES, ROLE_FOR_TYPE
+        from .board_engine import PERSON_MULTI_TYPES, PERSON_SINGLE_TYPES, ROLE_FOR_TYPE
 
         # Build item descriptor once.
         name_col = (config.get("columns") or [{}])[0].get("id", "name")
@@ -594,8 +631,16 @@ class BoardsApp(BaseApp):
                 old_ids = {old_val} if old_val else set()
                 new_ids = {new_val} if new_val else set()
             elif ctype in PERSON_MULTI_TYPES:
-                old_ids = set(old_val or []) if isinstance(old_val, list) else ({old_val} if old_val else set())
-                new_ids = set(new_val or []) if isinstance(new_val, list) else ({new_val} if new_val else set())
+                old_ids = (
+                    set(old_val or [])
+                    if isinstance(old_val, list)
+                    else ({old_val} if old_val else set())
+                )
+                new_ids = (
+                    set(new_val or [])
+                    if isinstance(new_val, list)
+                    else ({new_val} if new_val else set())
+                )
             else:
                 continue
 
@@ -603,9 +648,13 @@ class BoardsApp(BaseApp):
             removed = old_ids - new_ids
             weight = float(col.get("weight_hours", 5.0))
             for pid in added:
-                await self.emit_assignment(pid, item_desc, weight_hours=weight, role=role, assigned=True)
+                await self.emit_assignment(
+                    pid, item_desc, weight_hours=weight, role=role, assigned=True
+                )
             for pid in removed:
-                await self.emit_assignment(pid, item_desc, weight_hours=weight, role=role, assigned=False)
+                await self.emit_assignment(
+                    pid, item_desc, weight_hours=weight, role=role, assigned=False
+                )
 
     # ── Link index — build + maintain on edits ────────────────────────
 
@@ -646,12 +695,17 @@ class BoardsApp(BaseApp):
                     continue
                 targets = _as_id_list(item.get(col["id"]))
                 for tgt in targets:
-                    self._links.register_edge(board_id, item_id, col["id"],
-                                              target_board, tgt)
+                    self._links.register_edge(board_id, item_id, col["id"], target_board, tgt)
 
-    async def _maintain_link_inverses(self, board_id: str, config: dict,
-                                      filename: str, old_item: dict,
-                                      new_item: dict, updates: dict) -> None:
+    async def _maintain_link_inverses(
+        self,
+        board_id: str,
+        config: dict,
+        filename: str,
+        old_item: dict,
+        new_item: dict,
+        updates: dict,
+    ) -> None:
         """For every link-record column that changed, update the index AND
         write the inverse field on targets (when the column declares one)."""
         link_cols = _link_record_columns(config)
@@ -659,10 +713,7 @@ class BoardsApp(BaseApp):
             return
 
         # Refresh this item's outgoing entry from the post-write state.
-        new_col_targets = {
-            col["id"]: _as_id_list(new_item.get(col["id"]))
-            for col in link_cols
-        }
+        new_col_targets = {col["id"]: _as_id_list(new_item.get(col["id"])) for col in link_cols}
         # Rewrite edges via register_edge with full board info.
         self._links._outgoing.get(board_id, {}).pop(filename, None)
         for tgt_board_items in self._links._incoming.values():
@@ -677,8 +728,7 @@ class BoardsApp(BaseApp):
             if not target_board:
                 continue
             for tgt in new_col_targets.get(col["id"], []):
-                self._links.register_edge(board_id, filename, col["id"],
-                                          target_board, tgt)
+                self._links.register_edge(board_id, filename, col["id"], target_board, tgt)
 
         # Inverse-field maintenance: for columns with `inverse` declared, make
         # the target's inverse field point back at us. Only runs on the subset
@@ -701,8 +751,9 @@ class BoardsApp(BaseApp):
             tgt_config = self._store.get_board(target_board) or get_preset(target_board)
             if not tgt_config:
                 continue
-            tgt_col = next((c for c in _link_record_columns(tgt_config)
-                            if c["id"] == inverse), None)
+            tgt_col = next(
+                (c for c in _link_record_columns(tgt_config) if c["id"] == inverse), None
+            )
             if not tgt_col:
                 self.log_warn(f"inverse column '{inverse}' not found on '{target_board}'")
                 continue
@@ -753,13 +804,15 @@ class BoardsApp(BaseApp):
                 it = by_id.get(from_item)
                 if not it:
                     continue
-                out.append({
-                    "board": from_board,
-                    "board_name": config.get("name", from_board),
-                    "file": from_item,
-                    "col": from_col,
-                    "title": it.get(name_col_id) or from_item,
-                })
+                out.append(
+                    {
+                        "board": from_board,
+                        "board_name": config.get("name", from_board),
+                        "file": from_item,
+                        "col": from_col,
+                        "title": it.get(name_col_id) or from_item,
+                    }
+                )
         return {"backlinks": out}
 
     @web_route("POST", "/api/links/rebuild")
@@ -835,12 +888,14 @@ class BoardsApp(BaseApp):
                 continue
             if data.get("file") not in (filename, None):
                 continue
-            out.append({
-                "type": etype,
-                "timestamp": e.get("timestamp"),
-                "updates": data.get("updates") or {},
-                "data": data,
-            })
+            out.append(
+                {
+                    "type": etype,
+                    "timestamp": e.get("timestamp"),
+                    "updates": data.get("updates") or {},
+                    "data": data,
+                }
+            )
             if len(out) >= limit:
                 break
         return {"events": out}
@@ -860,9 +915,13 @@ class BoardsApp(BaseApp):
         if result.get("ok"):
             await self.emit("board:item_archived", {"board": board_id, "file": filename})
             if old_item:
-                await evaluate_rules(self, config, old_item,
-                                     {**old_item, "status": "Archived"},
-                                     event_type="item_archived")
+                await evaluate_rules(
+                    self,
+                    config,
+                    old_item,
+                    {**old_item, "status": "Archived"},
+                    event_type="item_archived",
+                )
 
         return result
 
@@ -894,6 +953,7 @@ class BoardsApp(BaseApp):
             return {"error": str(e)}
 
         from starlette.responses import HTMLResponse
+
         return HTMLResponse(
             content=bundled_html,
             headers={"Content-Disposition": f'attachment; filename="{board_id}_export.html"'},
@@ -908,16 +968,19 @@ class BoardsApp(BaseApp):
         """Expose the SDK registry metadata so the frontend can dispatch
         renderers / group-by eligibility without hardcoding the list."""
         from emptyos.sdk.column_types import ColumnTypeRegistry
+
         out = []
         for tid, t in ColumnTypeRegistry.all().items():
-            out.append({
-                "id": tid,
-                "widget": t.widget,
-                "person_like": t.person_like,
-                "list_like": t.list_like,
-                "groupable": t.groupable,
-                "role": t.role,
-            })
+            out.append(
+                {
+                    "id": tid,
+                    "widget": t.widget,
+                    "person_like": t.person_like,
+                    "list_like": t.list_like,
+                    "groupable": t.groupable,
+                    "role": t.role,
+                }
+            )
         return {"types": out}
 
     @web_route("GET", "/api/presets")
@@ -935,6 +998,5 @@ class BoardsApp(BaseApp):
         if not boards:
             return None
         return [
-            {"label": b["name"], "href": f"/boards/#{b['id']}", "icon": "📊"}
-            for b in boards[:6]
+            {"label": b["name"], "href": f"/boards/#{b['id']}", "icon": "📊"} for b in boards[:6]
         ]

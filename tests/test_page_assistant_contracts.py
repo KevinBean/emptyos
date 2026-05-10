@@ -1,11 +1,11 @@
-"""Contract tests for the per-app assistant drawer (page-assistant.js + gpts).
+"""Contract tests for the per-app assistant drawer (page-assistant.js + rooms).
 
 Two layers:
 - Static (Layer 1): no LLM, reads manifests + app.py + page HTML. Catches
   manifest drift (broken refs, missing inverses, web routes exposed via [DO:])
   and inconsistent EOS.registerActions blocks.
 - Prompt contract (Layer 2): hits the running daemon's
-  /gpts/api/debug/system-prompt/<agent> endpoint and asserts the built prompt
+  /rooms/api/debug/system-prompt/<agent> endpoint and asserts the built prompt
   is well-formed — every allowlisted method appears, signatures are real
   (not empty parens that invite the LLM to hallucinate args), prompt fits in
   the token budget.
@@ -210,14 +210,14 @@ def test_registered_pages_have_description():
 @pytest.fixture(scope="module")
 def general_assistant_prompt():
     """Fetch the built system prompt for the default drawer agent."""
-    url = f"{BASE_URL}/gpts/api/debug/system-prompt/general-assistant"
+    url = f"{BASE_URL}/rooms/api/debug/system-prompt/general-assistant"
     try:
         resp = httpx.get(url, timeout=10)
     except httpx.HTTPError as e:
         pytest.skip(f"debug endpoint unreachable: {e}")
     if resp.status_code != 200 or not resp.content:
         pytest.skip(
-            "gpts debug endpoint not available "
+            "rooms debug endpoint not available "
             f"(status {resp.status_code}) — daemon may need restart"
         )
     try:

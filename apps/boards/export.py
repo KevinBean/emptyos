@@ -23,9 +23,9 @@ if TYPE_CHECKING:
     from .app import BoardsApp
 
 
-async def export_state(app: "BoardsApp") -> dict:
+async def export_state(app: BoardsApp) -> dict:
     from .board_engine import DynamicBoardLibrary
-    from .presets import list_presets, get_preset, PRESETS
+    from .presets import get_preset, list_presets
 
     boards = app._store.list_boards()
     items: dict[str, list] = {}

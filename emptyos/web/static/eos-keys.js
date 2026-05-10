@@ -93,6 +93,7 @@
                 allActions.push({type:'action', id:'vault-search', name:'Search Vault', desc:'Search all notes (type then Enter)', path:'', icon:''});
                 allActions.push({type:'action', id:'console', name:'Console', desc:'Run CLI commands in browser', path:'/console', icon:''});
                 allActions.push({type:'action', id:'topology', name:'Topology', desc:'App dependency graph', path:'/topology', icon:''});
+                allActions.push({type:'action', id:'restart-daemon', name:'Restart Daemon', desc:'Run restart.bat (Windows) — kills python.exe and relaunches', path:'', icon:''});
                 actionsLoaded = true;
             })
             .catch(function() { actionsLoaded = true; });
@@ -249,10 +250,59 @@
                 location.reload();
             } else if (action.id === 'vault-search') {
                 location.href = '/search/';
+            } else if (action.id === 'restart-daemon') {
+                triggerRestartDaemon();
             }
         } else if (action.path) {
             location.href = action.path;
         }
+    }
+
+    // --- Restart daemon (Ctrl+K → "restart") ---
+    // Confirm-gated. Spawns a detached cmd that survives `taskkill /F /IM python.exe`.
+    // After the POST the current daemon dies in ~2s; we poll until it's back, then reload.
+    function triggerRestartDaemon() {
+        hidePalette();
+        if (!confirm('Restart EmptyOS daemon?\n\nrestart.bat will kill ALL python.exe processes (including this one), then relaunch. The page will lose its connection — wait ~15-20s while it recovers.')) return;
+        var toastFn = (window.EOS_UI && EOS_UI.toast) ? EOS_UI.toast : function(m){ console.log(m); };
+        toastFn('Restarting daemon…', 'info');
+        fetch('/settings/api/restart-daemon', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ confirm: true })
+        }).then(function(r) { return r.json(); })
+          .catch(function(e) { return { error: 'request lost (daemon already dying?): ' + e.message }; })
+          .then(function(r) {
+            if (r && r.error) {
+                alert('Restart failed: ' + r.error);
+                return;
+            }
+            // Show a sticky banner because the page can't update much else now.
+            var banner = document.createElement('div');
+            banner.style.cssText = 'position:fixed;top:12px;left:50%;transform:translateX(-50%);z-index:9999;padding:12px 18px;background:#eab308;color:#000;border-radius:10px;font-size:13px;font-weight:600;box-shadow:0 4px 12px rgba(0,0,0,.3);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;';
+            banner.textContent = 'Daemon restarting… polling for recovery';
+            document.body.appendChild(banner);
+
+            var tries = 0;
+            var probe = setInterval(function() {
+                tries++;
+                fetch('/api/health', { cache: 'no-store' })
+                    .then(function(resp) {
+                        if (resp.ok) {
+                            clearInterval(probe);
+                            banner.style.background = '#22c55e';
+                            banner.textContent = 'Daemon back up — reloading';
+                            setTimeout(function() { location.reload(); }, 600);
+                        }
+                    }).catch(function() { /* still down */ });
+                if (tries > 60) {
+                    clearInterval(probe);
+                    banner.style.background = '#ef4444';
+                    banner.style.color = '#fff';
+                    banner.textContent = 'Daemon did not come back within 2 minutes. Check terminal output.';
+                }
+            }, 2000);
+        });
     }
 
     // --- Help overlay ---
@@ -327,6 +377,16 @@
         if ((e.ctrlKey || e.metaKey) && e.key === '/') {
             e.preventDefault();
             showHelp();
+            return;
+        }
+
+        // Ctrl+Shift+P / Cmd+Shift+P — presentation mode toggle
+        // (Hide personal data without restarting the daemon — for screenshare.)
+        if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === 'P' || e.key === 'p')) {
+            e.preventDefault();
+            if (window.EOS && EOS.presentation && EOS.presentation.toggle) {
+                EOS.presentation.toggle();
+            }
             return;
         }
 

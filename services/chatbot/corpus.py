@@ -23,6 +23,7 @@ from dataclasses import dataclass, field
 
 import httpx
 
+from embed import cosine
 
 # Hard cap on how many chars of corpus we'll stuff into the system prompt.
 # At ~4 chars/token, 32k chars ≈ 8k tokens — safe for prompt caching and
@@ -63,7 +64,11 @@ class CorpusCache:
             return resp.json()
 
 
-def stuff_corpus(payload: dict, max_chars: int = _MAX_CORPUS_CHARS) -> str:
+def stuff_corpus(
+    payload: dict,
+    max_chars: int = _MAX_CORPUS_CHARS,
+    selected_chunks: list[dict] | None = None,
+) -> str:
     """Concatenate chunks into a system-prompt-shaped block, capped.
 
     Format:
@@ -76,9 +81,11 @@ def stuff_corpus(payload: dict, max_chars: int = _MAX_CORPUS_CHARS) -> str:
     it verbatim in the SOURCES block. Without this the model can only see
     title/section and would have to guess the canonical id format.
 
-    Truncation is first-N (preserves recency since builder emits posts newest-first).
+    If `selected_chunks` is provided (the retrieval path), stuffs only those
+    in the given order. Otherwise falls back to "first-N from payload" — the
+    legacy behavior, used when retrieval is disabled or unavailable.
     """
-    chunks = payload.get("chunks", []) or []
+    chunks = selected_chunks if selected_chunks is not None else (payload.get("chunks", []) or [])
     blocks: list[str] = []
     total = 0
     for c in chunks:
@@ -89,12 +96,7 @@ def stuff_corpus(payload: dict, max_chars: int = _MAX_CORPUS_CHARS) -> str:
         text = c.get("text", "")
         header_bits = [b for b in (title, section) if b]
         header = " — ".join(header_bits)
-        block = (
-            f"id: {cid}\n"
-            f"title: {header}\n"
-            f"url: {url}\n"
-            f"{text}"
-        )
+        block = f"id: {cid}\ntitle: {header}\nurl: {url}\n{text}"
         if total + len(block) > max_chars and blocks:
             break
         blocks.append(block)
@@ -138,6 +140,76 @@ def match_faq(query: str, faqs: list[dict], threshold: float = 0.6) -> dict | No
     if best and best_score >= threshold:
         return best
     return None
+
+
+# ── Embedding-based retrieval (preferred when OPENAI_API_KEY is set) ──
+#
+# These are drop-in upgrades over the Jaccard matchers above. They take the
+# same inputs but use cosine similarity over precomputed embeddings. When
+# embeddings are unavailable (no API key, embedding call failed, or chunks
+# haven't been embedded yet), the higher-level caller falls back to the
+# Jaccard versions — so this is purely additive.
+
+
+def select_chunks_by_embedding(
+    query_emb: list[float],
+    chunks: list[dict],
+    chunk_embs: list[list[float]],
+    top_k: int = 8,
+    min_score: float = 0.30,
+) -> tuple[list[dict], float]:
+    """Pick top-k chunks by cosine similarity. Returns (selected, max_score).
+
+    `chunks` and `chunk_embs` must be index-aligned. `min_score` filters
+    weakly-related results so the model isn't given junk context — but the
+    decision to short-circuit on low max_score is the caller's, not ours.
+    """
+    if not chunks or not chunk_embs or len(chunks) != len(chunk_embs):
+        return [], 0.0
+    scored = [(i, cosine(query_emb, chunk_embs[i])) for i in range(len(chunks))]
+    scored.sort(key=lambda x: -x[1])
+    max_score = scored[0][1] if scored else 0.0
+    selected = [chunks[i] for i, s in scored[:top_k] if s >= min_score]
+    return selected, max_score
+
+
+def match_faq_by_embedding(
+    query_emb: list[float],
+    faqs: list[dict],
+    faq_embs: list[list[float]],
+    threshold: float = 0.78,
+) -> dict | None:
+    """Embedding-cosine FAQ match. Threshold tuned for text-embedding-3-small:
+    0.78 catches confident paraphrases without false positives on weak overlap.
+    """
+    if not faqs or not faq_embs or len(faqs) != len(faq_embs):
+        return None
+    best, best_score = None, 0.0
+    for i, f in enumerate(faqs):
+        s = cosine(query_emb, faq_embs[i])
+        if s > best_score:
+            best, best_score = f, s
+    return best if best and best_score >= threshold else None
+
+
+def match_curated_by_embedding(
+    query_emb: list[float],
+    entries: list[dict],
+    entry_embs: list[list[float]],
+    threshold: float = 0.85,
+) -> dict | None:
+    """Embedding-cosine curated-cache match. Stricter threshold than FAQs
+    because curated entries are organic phrasings — we only want very
+    confident hits to bypass the LLM.
+    """
+    if not entries or not entry_embs or len(entries) != len(entry_embs):
+        return None
+    best, best_score = None, 0.0
+    for i, e in enumerate(entries):
+        s = cosine(query_emb, entry_embs[i])
+        if s > best_score:
+            best, best_score = e, s
+    return best if best and best_score >= threshold else None
 
 
 def match_curated(query: str, entries: list[dict], threshold: float = 0.7) -> dict | None:

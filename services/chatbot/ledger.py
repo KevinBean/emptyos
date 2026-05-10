@@ -16,7 +16,7 @@ import sqlite3
 import time
 from contextlib import contextmanager
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 
@@ -27,7 +27,7 @@ def _data_dir() -> Path:
 
 
 def _utc_day_key(ts: float | None = None) -> str:
-    dt = datetime.fromtimestamp(ts or time.time(), tz=timezone.utc)
+    dt = datetime.fromtimestamp(ts or time.time(), tz=UTC)
     return dt.strftime("%Y-%m-%d")
 
 
@@ -39,7 +39,7 @@ def hash_ip(ip: str) -> str:
 @dataclass
 class RateLimitState:
     allowed: bool
-    reason: str = ""           # "ip_hour", "ip_day", "site_cap", "global_cap"
+    reason: str = ""  # "ip_hour", "ip_day", "site_cap", "global_cap"
     retry_after_seconds: int = 0
 
 
@@ -154,10 +154,14 @@ class Ledger:
         # Per-site daily $
         site_cost = self.site_today_cost(site_id)
         if site_cost >= site_daily_cap:
-            return RateLimitState(False, "site_cap", retry_after_seconds=_seconds_until_utc_midnight())
+            return RateLimitState(
+                False, "site_cap", retry_after_seconds=_seconds_until_utc_midnight()
+            )
         # Global daily $
         if self.global_today_cost() >= global_daily_cap:
-            return RateLimitState(False, "global_cap", retry_after_seconds=_seconds_until_utc_midnight())
+            return RateLimitState(
+                False, "global_cap", retry_after_seconds=_seconds_until_utc_midnight()
+            )
         return RateLimitState(True)
 
     # ── Writes ───────────────────────────────────────────────────────
@@ -188,14 +192,12 @@ class Ledger:
                 (day, site_id, cost_usd),
             )
 
-
     # ── Q&A log ──────────────────────────────────────────────────────
 
-    def log_qa_pending(
-        self, *, site_id: str, query: str, reply: str, sources: list[dict]
-    ) -> int:
+    def log_qa_pending(self, *, site_id: str, query: str, reply: str, sources: list[dict]) -> int:
         """Insert a pending Q&A row, return its id."""
         import json as _json
+
         now = time.time()
         with self._conn() as c:
             cur = c.execute(
@@ -209,6 +211,7 @@ class Ledger:
         self, *, site_id: str, status: str | None = None, limit: int = 50, offset: int = 0
     ) -> list[dict]:
         import json as _json
+
         sql = "SELECT id, site_id, query, reply, sources_json, status, ts, curated_at FROM qa_log WHERE site_id = ?"
         params: list = [site_id]
         if status:
@@ -224,11 +227,18 @@ class Ledger:
                 sources = _json.loads(r[4]) if r[4] else []
             except Exception:
                 sources = []
-            out.append({
-                "id": r[0], "site_id": r[1], "query": r[2], "reply": r[3],
-                "sources": sources, "status": r[5], "ts": r[6],
-                "curated_at": r[7],
-            })
+            out.append(
+                {
+                    "id": r[0],
+                    "site_id": r[1],
+                    "query": r[2],
+                    "reply": r[3],
+                    "sources": sources,
+                    "status": r[5],
+                    "ts": r[6],
+                    "curated_at": r[7],
+                }
+            )
         return out
 
     def get_qa(self, qa_id: int) -> dict | None:
@@ -237,6 +247,7 @@ class Ledger:
 
     def _raw_get_qa(self, qa_id: int) -> dict | None:
         import json as _json
+
         with self._conn() as c:
             r = c.execute(
                 "SELECT id, site_id, query, reply, sources_json, status, ts, curated_at "
@@ -250,12 +261,20 @@ class Ledger:
         except Exception:
             sources = []
         return {
-            "id": r[0], "site_id": r[1], "query": r[2], "reply": r[3],
-            "sources": sources, "status": r[5], "ts": r[6], "curated_at": r[7],
+            "id": r[0],
+            "site_id": r[1],
+            "query": r[2],
+            "reply": r[3],
+            "sources": sources,
+            "status": r[5],
+            "ts": r[6],
+            "curated_at": r[7],
         }
 
     def update_qa(
-        self, qa_id: int, *,
+        self,
+        qa_id: int,
+        *,
         status: str | None = None,
         reply: str | None = None,
     ) -> bool:
@@ -294,9 +313,10 @@ class Ledger:
 
 
 def _seconds_until_utc_midnight() -> int:
-    now = datetime.now(tz=timezone.utc)
+    now = datetime.now(tz=UTC)
     midnight = now.replace(hour=0, minute=0, second=0, microsecond=0)
     midnight = midnight.replace(day=now.day) if now.hour == 0 and now.minute == 0 else midnight
     # Next midnight = today 00:00 + 1 day
     from datetime import timedelta
+
     return int((midnight + timedelta(days=1) - now).total_seconds())

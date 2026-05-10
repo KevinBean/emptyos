@@ -1,0 +1,999 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Presentations</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="/static/theme.css">
+<link rel="stylesheet" href="/static/eos-components.css">
+<link rel="stylesheet" href="/static/eos-keys.css">
+<style>
+  .ppt-shell { display: grid; grid-template-rows: auto 1fr; height: 100vh; }
+  .ppt-header { display: flex; align-items: center; gap: 12px; padding: 14px 22px; border-bottom: 1px solid var(--border); }
+  .ppt-header h1 { font-size: 18px; margin: 0; flex: 1; }
+  .ppt-body { display: grid; grid-template-columns: 320px 1fr; min-height: 0; }
+  .ppt-sidebar { border-right: 1px solid var(--border); padding: 12px; overflow: auto; }
+  .ppt-list { display: flex; flex-direction: column; gap: 6px; }
+  .ppt-deck-row { position: relative; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; cursor: pointer; }
+  .ppt-deck-row:hover, .ppt-deck-row.active { border-color: var(--accent); background: var(--bg-card-hover); }
+  .ppt-deck-row .title { font-weight: 600; padding-right: 24px; }
+  .ppt-deck-row .meta { font-size: 11px; color: var(--text-muted); margin-top: 4px; }
+  .ppt-main { display: grid; grid-template-rows: auto 1fr; min-height: 0; }
+  .ppt-toolbar { display: flex; align-items: center; gap: 8px; padding: 10px 16px; border-bottom: 1px solid var(--border); }
+  .ppt-toolbar .spacer { flex: 1; }
+  .ppt-edit-area { display: grid; grid-template-columns: 1fr 1fr; min-height: 0; }
+  .ppt-edit-area textarea { resize: none; border: none; outline: none; padding: 18px 22px;
+    font-family: 'SF Mono', Consolas, Menlo, monospace; font-size: 13px; line-height: 1.55;
+    background: var(--bg); color: var(--text); border-right: 1px solid var(--border); }
+  .ppt-preview { overflow: auto; padding: 16px; background: var(--bg-surface); }
+  .ppt-preview #deck-preview { display: block; width: 100%; max-width: 900px; margin: 0 auto; }
+  .ppt-preview .eos-deck-host { display: block; width: 100%; }
+  .ppt-empty { display: flex; align-items: center; justify-content: center; color: var(--text-muted); padding: 48px; }
+  .ppt-pill {
+    padding: 6px 12px; border-radius: 999px;
+    border: 1px solid var(--border);
+    background: var(--bg-card);
+    color: var(--text);
+    font-size: 13px; cursor: pointer;
+    transition: background .12s, border-color .12s;
+  }
+  .ppt-pill:hover { background: var(--bg-card-hover); }
+  .ppt-pill-active {
+    background: var(--accent-bg);
+    border-color: var(--accent);
+    color: var(--accent);
+    font-weight: 600;
+  }
+  .ppt-image-placeholder {
+    display: inline-block; padding: 10px 14px; border: 1px dashed var(--border-strong);
+    border-radius: 8px; color: var(--text-muted); font-size: 13px; line-height: 1.4;
+    background: var(--bg-card); margin: 6px 0; max-width: 100%;
+  }
+</style>
+</head>
+<body>
+<div class="ppt-shell">
+  <header class="ppt-header">
+    <h1>Presentations</h1>
+    <button class="eos-btn" onclick="newDeck()">+ New deck</button>
+    <button class="eos-btn" onclick="newFromCanvas()" title="Build a deck from a canvas board">From canvas&hellip;</button>
+    <button class="eos-btn" onclick="openAppSettings()" title="Settings">&#9881;</button>
+  </header>
+  <div class="ppt-body">
+    <aside class="ppt-sidebar">
+      <div id="deck-list" class="ppt-list"></div>
+    </aside>
+    <main class="ppt-main">
+      <div class="ppt-toolbar" id="toolbar" style="display:none">
+        <strong id="cur-title"></strong>
+        <span class="spacer"></span>
+        <button class="eos-btn" onclick="presentCurrent()">&#9654; Present</button>
+        <button class="eos-btn" onclick="regenerateDeck()" title="Rewrite this deck guided by a direction prompt">&#10227; Regenerate</button>
+        <button class="eos-btn" onclick="resolveImages()" title="Materialize every ![image:|vault:|screenshot: ...] placeholder">&#127912; Resolve images</button>
+        <label class="eos-toggle" title="Auto-play narration in present mode (audio files are kept either way)" style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;">
+          <input type="checkbox" id="narration-toggle" onchange="toggleNarration(this.checked)">
+          <span>&#128266; Auto-play</span>
+        </label>
+        <button class="eos-btn" onclick="speakifyCurrent()" title="Rewrite presenter Notes into audience-facing Say: lines via AI. Run this before Narrate so TTS reads what the speaker would say, not director's coaching.">&#128172; Speakify&hellip;</button>
+        <button class="eos-btn" onclick="narrateCurrent()" title="Generate TTS narration from Say: (audience-facing) or Notes: as fallback. Click for whole deck, or pick a specific slide.">&#128266; Narrate&hellip;</button>
+        <button class="eos-btn" onclick="toPodcast()" title="Generate a two-host podcast episode from this deck">&#127908; Podcast</button>
+        <button class="eos-btn" onclick="toPost()" title="Convert to a draft blog post in the publish app">&#128221; Blog post</button>
+        <button class="eos-btn" onclick="exportCurrent()">Export HTML</button>
+        <button class="eos-btn" onclick="saveCurrent()">Save</button>
+      </div>
+      <div id="edit-pane" class="ppt-edit-area" style="display:none">
+        <textarea id="md-editor" placeholder="# Slide 1&#10;..."></textarea>
+        <div id="preview" class="ppt-preview"></div>
+      </div>
+      <div id="empty" class="ppt-empty">Select a deck or create a new one to start.</div>
+    </main>
+  </div>
+</div>
+
+<script src="/static/eos.js"></script>
+<script src="/static/eos-components.js"></script>
+<script src="/static/eos-keys.js"></script>
+<script src="/static/eos-deck.js"></script>
+<script>
+var STATE = { decks: [], currentId: null, dirty: false, _previewInst: null, elements: null };
+
+var _pptJob = null;
+function setBusy(message) {
+    if (!message) {
+        if (_pptJob) { try { _pptJob.hide(); } catch (e) {} _pptJob = null; }
+        return;
+    }
+    if (!_pptJob) _pptJob = EOS_UI.jobProgress({id: 'ppt'});
+    _pptJob.update({stage: message});
+}
+
+async function loadElements() {
+    if (STATE.elements) return STATE.elements;
+    try { STATE.elements = await fetch('/ppt/api/elements').then(r => r.json()); } catch(e) { STATE.elements = null; }
+    return STATE.elements;
+}
+function elementsCheckboxesHtml(checkedSet) {
+    if (!STATE.elements) return '';
+    var labels = STATE.elements.labels || {};
+    return '<div class="eos-form-group"><label class="eos-form-label">AI may use these slide surfaces</label>' +
+        '<div id="ppt-elements-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:6px 14px;margin-top:6px">' +
+        STATE.elements.all.map(function(k){
+            var checked = checkedSet.has(k) ? 'checked' : '';
+            var disabled = (k === 'bullets') ? 'disabled' : '';
+            return '<label style="display:flex;gap:6px;align-items:center;font-size:13px;color:var(--text)">' +
+                '<input type="checkbox" name="elem" value="'+k+'" '+checked+' '+disabled+'> ' +
+                EOS_UI.esc(labels[k] || k) +
+                '</label>';
+        }).join('') +
+        '</div>' +
+        '<div style="font-size:11px;color:var(--text-muted);margin-top:4px">Bullets are always on. Disable surfaces you don\'t want the AI to introduce.</div>' +
+        '</div>';
+}
+function readElementChoice() {
+    var nodes = document.querySelectorAll('#ppt-elements-grid input[name=elem]');
+    var picked = [];
+    nodes.forEach(function(n){ if (n.checked) picked.push(n.value); });
+    if (picked.indexOf('bullets') < 0) picked.unshift('bullets');
+    return picked;
+}
+
+var _appSettings = EOS_UI.settingsPanel({
+    id: 'ppt-settings-panel',
+    title: 'Presentations',
+    fields: [
+        {key: 'ppt.default_theme', label: 'Default theme', type: 'select', default: 'dark',
+         options: [{value:'dark',label:'Dark'},{value:'light',label:'Light'},{value:'mono',label:'Mono'}]},
+        {key: 'ppt.default_aspect', label: 'Default aspect', type: 'select', default: '16:9',
+         options: [{value:'16:9',label:'16:9'},{value:'4:3',label:'4:3'}]},
+    ],
+});
+function openAppSettings() { _appSettings.open(); }
+
+var _route = EOS_UI.hashRoute({
+    onShow: function(id) { showDeck(id); },
+    onHide: function() { showEmpty(); },
+});
+
+async function load() {
+    var resp = await fetch('/ppt/api/decks');
+    STATE.decks = await resp.json();
+    renderList();
+}
+function renderList() {
+    var el = document.getElementById('deck-list');
+    if (!STATE.decks.length) {
+        el.innerHTML = '<div class="ppt-empty" style="padding:24px;font-size:12px">No decks yet.</div>';
+        return;
+    }
+    el.innerHTML = STATE.decks.map(function(d){
+        var cls = 'ppt-deck-row' + (d.id === STATE.currentId ? ' active' : '') + (d.system ? ' is-system' : '');
+        var pin = d.system ? '<span title="Tutorial / readme — cannot be deleted" style="opacity:0.7;margin-right:4px">📖</span>' : '';
+        var del = d.system ? '' : '<button class="eos-row-del" data-del="'+EOS_UI.esc(d.id)+'" aria-label="Delete deck"></button>';
+        return '<div class="'+cls+'" data-id="'+EOS_UI.esc(d.id)+'">' +
+                 '<div class="title">'+pin+EOS_UI.esc(d.title)+'</div>' +
+                 '<div class="meta">'+d.slide_count+' slides &middot; '+EOS_UI.esc(d.theme)+'</div>' +
+                 del +
+               '</div>';
+    }).join('');
+    el.querySelectorAll('.ppt-deck-row').forEach(function(r){
+        r.addEventListener('click', function(e){
+            if (e.target && e.target.classList.contains('eos-row-del')) return;
+            _route.set(r.dataset.id);
+        });
+    });
+    el.querySelectorAll('.eos-row-del').forEach(function(b){
+        b.addEventListener('click', function(e){
+            e.stopPropagation();
+            deleteDeck(b.dataset.del);
+        });
+    });
+}
+
+async function deleteDeck(id) {
+    var deck = STATE.decks.find(function(d){ return d.id === id; });
+    var label = deck ? deck.title : id;
+    var ok = await EOS_UI.confirmDelete({label: label});
+    if (!ok) return;
+    var r = await fetch('/ppt/api/decks/' + encodeURIComponent(id), {method: 'DELETE'});
+    var data = await r.json();
+    if (data.error) { EOS_UI.toast(data.error, 'error'); return; }
+    EOS_UI.toast('Deleted: ' + label);
+    if (STATE.currentId === id) { STATE.currentId = null; _route.clear(); }
+    await load();
+}
+
+async function showDeck(id) {
+    STATE.currentId = id;
+    renderList();
+    var r = await fetch('/ppt/api/decks/' + encodeURIComponent(id));
+    var deck = await r.json();
+    if (deck.error) { EOS_UI.toast(deck.error, 'error'); return; }
+    document.getElementById('empty').style.display = 'none';
+    document.getElementById('toolbar').style.display = 'flex';
+    document.getElementById('edit-pane').style.display = 'grid';
+    document.getElementById('cur-title').textContent = deck.frontmatter.title || id;
+    var nOn = deck.frontmatter.narration;
+    var nEnabled = !!nOn && String(nOn).toLowerCase() !== 'false' && String(nOn).toLowerCase() !== '0' && String(nOn).toLowerCase() !== 'no';
+    var tog = document.getElementById('narration-toggle');
+    if (tog) tog.checked = nEnabled;
+    STATE.slideCount = (deck.slides || []).length;
+    if (deck.narration_stale) {
+        EOS_UI.toast('Narration audio is stale — re-run 🔊 Narrate to re-pair audio with the current slides', 'warning');
+    }
+    var ed = document.getElementById('md-editor');
+    ed.value = deck.raw;
+    STATE.dirty = false;
+    renderPreview(deck);
+    ed.oninput = function() {
+        STATE.dirty = true;
+        clearTimeout(window._ppt_t);
+        window._ppt_t = setTimeout(function() { rePreviewFromEditor(); }, 350);
+    };
+}
+function showEmpty() {
+    STATE.currentId = null;
+    renderList();
+    document.getElementById('empty').style.display = 'flex';
+    document.getElementById('toolbar').style.display = 'none';
+    document.getElementById('edit-pane').style.display = 'none';
+}
+
+function renderPreview(deck) {
+    var pv = document.getElementById('preview');
+    pv.innerHTML = '<div id="deck-preview"></div>';
+    if (STATE._previewInst && STATE._previewInst.destroy) {
+        try { STATE._previewInst.destroy(); } catch(e) {}
+    }
+    STATE._previewInst = EOS_DECK.create(document.getElementById('deck-preview'), {
+        mode: 'manual',
+        slides: deck.slides.map(function(s){ return {html:s.html, notes:s.notes, audio_url:s.audio_url}; }),
+        theme: deck.theme,
+        aspect: deck.aspect,
+    });
+}
+async function rePreviewFromEditor() {
+    if (!STATE.currentId) return;
+    var raw = document.getElementById('md-editor').value;
+    // Round-trip through the parser so preview matches what'll be saved.
+    var r = await fetch('/ppt/api/decks/' + encodeURIComponent(STATE.currentId) + '/preview', {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({raw: raw}),
+    });
+    if (r.ok) {
+        var deck = await r.json();
+        renderPreview(deck);
+    }
+}
+
+async function saveCurrent() {
+    if (!STATE.currentId) return;
+    var raw = document.getElementById('md-editor').value;
+    var r = await fetch('/ppt/api/decks/' + encodeURIComponent(STATE.currentId), {
+        method: 'PUT', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({raw: raw}),
+    });
+    var data = await r.json();
+    if (data.error) { EOS_UI.toast(data.error, 'error'); return; }
+    EOS_UI.toast('Saved');
+    STATE.dirty = false;
+    await load();
+}
+async function exportCurrent() {
+    if (!STATE.currentId) return;
+    var r = await fetch('/ppt/api/decks/' + encodeURIComponent(STATE.currentId) + '/export', {method:'POST'});
+    var data = await r.json();
+    if (data.error) { EOS_UI.toast(data.error, 'error'); return; }
+    EOS_UI.toast('Exported → ' + data.rel);
+}
+function presentCurrent() {
+    if (!STATE.currentId) return;
+    window.open('/ppt/pages/present.html?id=' + encodeURIComponent(STATE.currentId), '_blank');
+}
+async function toPodcast() {
+    if (!STATE.currentId) return;
+    var ok = await EOS_UI.confirm({
+        message: 'Generate a two-host podcast episode from this deck? Uses Emma + Michael voices and the en_mf preset. Takes ~1 min per minute of audio.',
+        action: 'Generate',
+        danger: false,
+    });
+    if (!ok) return;
+    EOS_UI.toast('Generating podcast (this takes a while)…');
+    var r = await fetch('/ppt/api/decks/' + encodeURIComponent(STATE.currentId) + '/to-podcast', {method: 'POST'});
+    var data = await r.json();
+    if (data.error) { EOS_UI.toast(data.error, 'error'); return; }
+    EOS_UI.toast('Episode ready → /podcast/');
+}
+
+async function toPost() {
+    if (!STATE.currentId) return;
+    var ok = await EOS_UI.confirm({
+        message: 'Convert this deck into a draft blog post under 30_Resources/Published/? It will appear in the publish app as an unpublished draft.',
+        action: 'Convert',
+        danger: false,
+    });
+    if (!ok) return;
+    var r = await fetch('/ppt/api/decks/' + encodeURIComponent(STATE.currentId) + '/to-post', {method: 'POST'});
+    var data = await r.json();
+    if (data.error) { EOS_UI.toast(data.error, 'error'); return; }
+    EOS_UI.toast('Draft post created → /publish/');
+}
+
+function newFromCanvas() {
+    var fields = [
+        {key: 'board_id', label: 'Canvas board id', type: 'text', placeholder: 'inbox'},
+        {key: 'title', label: 'Deck title (optional — defaults to "Deck from <board>")', type: 'text'},
+    ];
+    EOS_UI.formModal('From canvas', fields, async function(vals) {
+        var board = (vals.board_id || '').trim() || 'inbox';
+        var r = await fetch('/ppt/api/from-canvas', {
+            method: 'POST', headers: {'Content-Type':'application/json'},
+            body: JSON.stringify({board_id: board, title: vals.title || ''}),
+        });
+        var data = await r.json();
+        if (data.error) { EOS_UI.toast(data.error, 'error'); return; }
+        EOS_UI.toast('Drafted ' + (data.slides || 0) + ' slides');
+        await load();
+        _route.set(data.id);
+    });
+}
+
+async function regenerateDeck() {
+    if (!STATE.currentId) return;
+    await loadElements();
+    var deck = await fetch('/ppt/api/decks/' + encodeURIComponent(STATE.currentId)).then(r => r.json());
+    var stored = (deck && deck.frontmatter && deck.frontmatter.allowed_elements) || (STATE.elements && STATE.elements.defaults) || [];
+    var slideCount = (deck && deck.slides) ? deck.slides.length : 0;
+
+    // Capture the editor's current text selection BEFORE the modal steals focus.
+    var ed = document.getElementById('md-editor');
+    var selStart = ed ? ed.selectionStart : 0;
+    var selEnd   = ed ? ed.selectionEnd   : 0;
+    var selectedText = (ed && selEnd > selStart) ? ed.value.substring(selStart, selEnd) : '';
+
+    var slideOptions = '';
+    for (var i = 0; i < slideCount; i++) {
+        slideOptions += '<option value="'+i+'">Slide ' + (i+1) + (deck.slides[i].md ? ' — ' + EOS_UI.esc(deck.slides[i].md.split('\n')[0].slice(0,60)) : '') + '</option>';
+    }
+    var selScopeOpt = selectedText ? '<option value="selection">Selected text in editor (' + selectedText.length + ' chars)</option>' : '';
+
+    var body =
+        '<div class="eos-form-group"><label class="eos-form-label">What to regenerate</label>' +
+            '<select id="ppt-regen-scope" class="eos-form-input">' +
+                '<option value="whole">Whole deck</option>' +
+                (slideCount ? '<option value="slide">One slide…</option>' : '') +
+                selScopeOpt +
+            '</select></div>' +
+        '<div class="eos-form-group" id="ppt-regen-slide-row" style="display:none">' +
+            '<label class="eos-form-label">Which slide</label>' +
+            '<select id="ppt-regen-slide" class="eos-form-input">' + slideOptions + '</select>' +
+        '</div>' +
+        '<div class="eos-form-group"><label class="eos-form-label">Direction (what should change?)</label>' +
+            '<textarea id="ppt-regen-direction" class="eos-form-input" rows="3" placeholder="e.g. shorten · simplify for non-technical audience · add a code slide · more vivid metaphor · sharper opening line"></textarea></div>' +
+        elementsCheckboxesHtml(new Set(stored.length ? stored : (STATE.elements && STATE.elements.defaults) || [])) +
+        '<div class="eos-form-actions">' +
+            '<button class="eos-btn" onclick="EOS_UI.closeModal()">Cancel</button>' +
+            '<button class="eos-btn eos-btn-primary" id="ppt-regen-go">Regenerate</button>' +
+        '</div>';
+    EOS_UI.modal({title: 'Regenerate', body: body});
+
+    setTimeout(function(){
+        var scopeSel = document.getElementById('ppt-regen-scope');
+        var slideRow = document.getElementById('ppt-regen-slide-row');
+        function syncScope() {
+            slideRow.style.display = (scopeSel.value === 'slide') ? '' : 'none';
+        }
+        scopeSel.onchange = syncScope; syncScope();
+
+        var dirEl = document.getElementById('ppt-regen-direction');
+        if (dirEl) dirEl.focus();
+
+        document.getElementById('ppt-regen-go').onclick = async function() {
+            var direction = (document.getElementById('ppt-regen-direction').value || '').trim();
+            if (!direction) { EOS_UI.toast('Direction is required', 'error'); return; }
+            var scope = scopeSel.value;
+            var elements = readElementChoice();
+            var payload = {direction: direction, allowed_elements: elements, scope: scope};
+            if (scope === 'slide') {
+                payload.slide_index = parseInt(document.getElementById('ppt-regen-slide').value, 10);
+            } else if (scope === 'selection') {
+                payload.selection = selectedText;
+                payload.selection_start = selStart;
+                payload.selection_end = selEnd;
+            }
+            EOS_UI.closeModal();
+            setBusy('Regenerating ' + (scope === 'whole' ? 'deck' : scope) + '…');
+            try {
+                var r = await fetch('/ppt/api/decks/' + encodeURIComponent(STATE.currentId) + '/regenerate', {
+                    method: 'POST', headers: {'Content-Type':'application/json'},
+                    body: JSON.stringify(payload),
+                });
+                var data = await r.json();
+                if (data.error) { EOS_UI.toast(data.error, 'error'); return; }
+                await showDeck(STATE.currentId);
+                load();
+                EOS_UI.toast('Regenerated · ' + (data.slides || '?') + ' slides');
+            } catch (e) {
+                EOS_UI.toast('Regenerate failed: ' + (e.message || e), 'error');
+            } finally {
+                setBusy(null);
+            }
+        };
+    }, 30);
+}
+
+async function resolveImages() {
+    if (!STATE.currentId) return;
+    var ok = await EOS_UI.confirm({
+        message: 'Resolve every image placeholder in this deck? Generates missing images via AI (image:), pulls existing ones from the vault (vault:), or screenshots a URL (screenshot:). AI generation can take ~30s per image.',
+        action: 'Resolve',
+        danger: false,
+    });
+    if (!ok) return;
+    setBusy('Resolving images… (~30s per image)');
+    try {
+        var r = await fetch('/ppt/api/decks/' + encodeURIComponent(STATE.currentId) + '/resolve-images', {method: 'POST'});
+        var data = await r.json();
+        if (data.error) { EOS_UI.toast(data.error, 'error'); return; }
+        var msg = (data.resolved || 0) + ' resolved';
+        if ((data.errors || []).length) msg += ', ' + data.errors.length + ' failed';
+        EOS_UI.toast(msg);
+        await showDeck(STATE.currentId);
+    } catch (e) {
+        EOS_UI.toast('Resolve failed: ' + (e.message || e), 'error');
+    } finally {
+        setBusy(null);
+    }
+}
+
+function _ensurePickerStyle() {
+    if (document.getElementById('ppt-picker-style')) return;
+    if (!document.getElementById('ppt-picker-fonts')) {
+        var l1 = document.createElement('link'); l1.rel = 'preconnect'; l1.href = 'https://fonts.googleapis.com';
+        var l2 = document.createElement('link'); l2.rel = 'preconnect'; l2.href = 'https://fonts.gstatic.com'; l2.crossOrigin = '';
+        var l3 = document.createElement('link'); l3.rel = 'stylesheet'; l3.id = 'ppt-picker-fonts';
+        l3.href = 'https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,200;0,9..144,400;0,9..144,600;1,9..144,400&family=JetBrains+Mono:wght@400;500;600&display=swap';
+        document.head.appendChild(l1); document.head.appendChild(l2); document.head.appendChild(l3);
+    }
+    var s = document.createElement('style'); s.id = 'ppt-picker-style';
+    s.textContent = [
+        '.ppt-pick { font-family: "Fraunces", "Times New Roman", serif; padding: 4px 6px 8px; color: var(--text); }',
+        '.ppt-pick__eyebrow { font: 600 10px/1 "JetBrains Mono", monospace; letter-spacing: .28em; text-transform: uppercase; color: var(--text-muted); }',
+        '.ppt-pick__title { font: 400 38px/1.05 "Fraunces", serif; font-variation-settings: "opsz" 144, "SOFT" 30; letter-spacing: -.02em; margin: 8px 0 4px; }',
+        '.ppt-pick__title em { font-style: italic; font-variation-settings: "opsz" 144, "SOFT" 100; }',
+        '.ppt-pick__lede { font: 400 14.5px/1.45 "Fraunces", serif; color: var(--text-muted); max-width: 42ch; margin: 0 0 22px; }',
+        '.ppt-pick__rule { height: 1px; background: var(--border); margin: 16px 0; transform-origin: left; animation: pp-rule .6s ease-out both; }',
+        '@keyframes pp-rule { from { transform: scaleX(0); } to { transform: scaleX(1); } }',
+        '.ppt-pick__layout { display: grid; grid-template-columns: 196px 1fr; gap: 28px; align-items: start; }',
+        '.ppt-pick__every { border: 1px solid var(--border); padding: 18px 16px 16px; cursor: pointer; transition: background .18s, border-color .18s; position: relative; }',
+        '.ppt-pick__every:hover { border-color: var(--text); }',
+        '.ppt-pick__every[data-on=true] { border-color: var(--text); background: color-mix(in srgb, var(--text) 4%, transparent); }',
+        '.ppt-pick__every-tag { font: 600 9px/1 "JetBrains Mono", monospace; letter-spacing: .28em; text-transform: uppercase; color: var(--text-muted); }',
+        '.ppt-pick__every-num { font: 200 64px/1 "Fraunces", serif; font-variation-settings: "opsz" 144; margin: 8px 0 2px; letter-spacing: -.04em; }',
+        '.ppt-pick__every-foot { font: italic 400 13px/1 "Fraunces", serif; color: var(--text-muted); }',
+        '.ppt-pick__or { font: italic 400 12px/1 "Fraunces", serif; color: var(--text-muted); margin: 0 0 8px; padding-left: 2px; }',
+        '.ppt-pick__or::before { content: "—"; margin-right: 8px; color: var(--border); }',
+        '.ppt-pick__ladder { display: grid; grid-template-columns: repeat(auto-fill, minmax(40px, 1fr)); gap: 4px; }',
+        '.ppt-pick__num { font: 500 12.5px/1 "JetBrains Mono", monospace; padding: 11px 0 10px; text-align: center; border: 1px solid var(--border); cursor: pointer; transition: background .12s, color .12s, border-color .12s; user-select: none; opacity: 0; animation: pp-num .35s cubic-bezier(.2,.6,.2,1) forwards; }',
+        '@keyframes pp-num { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }',
+        '.ppt-pick__num:hover { border-color: var(--text); }',
+        '.ppt-pick__num[data-on=true] { background: var(--text); color: var(--bg); border-color: var(--text); }',
+        '.ppt-pick__overwrite { display: flex; gap: 10px; align-items: flex-start; margin: 20px 0 0; padding: 12px 14px; border-left: 2px solid var(--border); cursor: pointer; }',
+        '.ppt-pick__overwrite:hover { border-left-color: var(--text); }',
+        '.ppt-pick__overwrite input { margin-top: 3px; accent-color: var(--text); }',
+        '.ppt-pick__overwrite-text { font: 400 13px/1.4 "Fraunces", serif; }',
+        '.ppt-pick__overwrite-text em { font: italic 400 13px/1.4 "Fraunces", serif; color: var(--text-muted); display: block; margin-top: 2px; }',
+        '.ppt-pick__actions { display: flex; gap: 0; justify-content: flex-end; margin-top: 28px; padding-top: 18px; border-top: 1px solid var(--border); }',
+        '.ppt-pick__btn { font: 500 10.5px/1 "JetBrains Mono", monospace; letter-spacing: .22em; text-transform: uppercase; padding: 13px 22px; border: 1px solid transparent; background: transparent; color: var(--text-muted); cursor: pointer; transition: color .15s, background .15s, border-color .15s; }',
+        '.ppt-pick__btn:hover { color: var(--text); }',
+        '.ppt-pick__btn--primary { color: var(--bg); background: var(--text); border-color: var(--text); margin-left: 4px; }',
+        '.ppt-pick__btn--primary:hover { color: var(--bg); background: color-mix(in srgb, var(--text) 88%, var(--accent)); border-color: var(--accent); }',
+    ].join('\n');
+    document.head.appendChild(s);
+}
+
+function pickSlideRange(opts) {
+    // Modal-based slide picker. Resolves to {slide_index?, overwrite?} or null on cancel.
+    _ensurePickerStyle();
+    return new Promise(function(resolve) {
+        var total = STATE.slideCount || 0;
+        var showOverwrite = !!opts.allowOverwrite;
+        var titleHtml = (opts.title || 'Pick scope').replace(/^([\w’']+)\s+(.*)$/, '$1&nbsp;<em>$2</em>');
+
+        // Numbered ladder — staggered fade-in.
+        var nums = '';
+        for (var i = 1; i <= total; i++) {
+            var delay = (Math.min(i, 30) * 14) + 'ms';
+            nums += '<div class="ppt-pick__num" data-n="' + i + '" style="animation-delay:' + delay + '">' +
+                String(i).padStart(2, '0') + '</div>';
+        }
+
+        var html =
+            '<div class="ppt-pick">' +
+                '<div class="ppt-pick__eyebrow">' + EOS_UI.esc(opts.eyebrow || 'Action › Scope') + '</div>' +
+                '<h2 class="ppt-pick__title">' + titleHtml + '</h2>' +
+                '<p class="ppt-pick__lede">' + EOS_UI.esc(opts.description || '') + '</p>' +
+                '<div class="ppt-pick__rule"></div>' +
+                '<div class="ppt-pick__layout">' +
+                    '<div class="ppt-pick__every" data-on="true" id="pp-every">' +
+                        '<div class="ppt-pick__every-tag">Whole deck</div>' +
+                        '<div class="ppt-pick__every-num">' + total + '</div>' +
+                        '<div class="ppt-pick__every-foot">slides, in order</div>' +
+                    '</div>' +
+                    '<div>' +
+                        '<p class="ppt-pick__or">or pick a single slide</p>' +
+                        '<div class="ppt-pick__ladder" id="pp-ladder">' + nums + '</div>' +
+                    '</div>' +
+                '</div>' +
+                (showOverwrite ?
+                    '<label class="ppt-pick__overwrite">' +
+                        '<input id="pp-overwrite" type="checkbox">' +
+                        '<span class="ppt-pick__overwrite-text">Overwrite existing Say: lines' +
+                            '<em>otherwise slides already speakified are skipped</em>' +
+                        '</span>' +
+                    '</label>'
+                : '') +
+                '<div class="ppt-pick__actions">' +
+                    '<button class="ppt-pick__btn" id="pp-cancel">Cancel</button>' +
+                    '<button class="ppt-pick__btn ppt-pick__btn--primary" id="pp-ok">' + EOS_UI.esc(opts.action || 'Run') + '</button>' +
+                '</div>' +
+            '</div>';
+
+        var modal = EOS_UI.modal({title: '', body: html, width: '620px'});
+        // Hide the default modal header — the body owns the title.
+        var hdr = modal.querySelector('.eos-modal-header');
+        if (hdr) hdr.style.display = 'none';
+
+        var picked = null;  // null = "all"; else slide number
+        var ladder = modal.querySelector('#pp-ladder');
+        var every = modal.querySelector('#pp-every');
+
+        function setPick(n) {
+            picked = n;
+            every.setAttribute('data-on', n === null ? 'true' : 'false');
+            ladder.querySelectorAll('.ppt-pick__num').forEach(function(el) {
+                el.setAttribute('data-on', String(parseInt(el.dataset.n, 10) === n));
+            });
+        }
+
+        every.onclick = function() { setPick(null); };
+        ladder.onclick = function(e) {
+            var t = e.target.closest('.ppt-pick__num');
+            if (!t) return;
+            setPick(parseInt(t.dataset.n, 10));
+        };
+
+        var resolved = false;
+        function done(val) { if (!resolved) { resolved = true; EOS_UI.closeModal(); resolve(val); } }
+        EOS_UI._modalOnClose = function() { if (!resolved) { resolved = true; resolve(null); } };
+
+        modal.querySelector('#pp-cancel').onclick = function() { done(null); };
+        modal.querySelector('#pp-ok').onclick = function() {
+            var out = {};
+            if (picked !== null) out.slide_index = picked;
+            if (showOverwrite && modal.querySelector('#pp-overwrite').checked) out.overwrite = true;
+            done(out);
+        };
+
+        // Enter submits, number keys jump to that slide (single-digit quick-pick).
+        modal.tabIndex = -1; modal.focus();
+        modal.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter') { e.preventDefault(); modal.querySelector('#pp-ok').click(); }
+        });
+    });
+}
+
+async function narrateCurrent() {
+    if (!STATE.currentId) return;
+    var pick = await pickSlideRange({
+        eyebrow: 'Narrate › Scope',
+        title: 'Speak the deck aloud',
+        description: 'Generate TTS audio per slide. Reads each Say: line (audience-facing) or falls back to Notes when Say is absent.',
+        action: 'Generate',
+    });
+    if (!pick) return;
+    var body = {};
+    if (pick.slide_index) body.slide_index = pick.slide_index;
+    var label = pick.slide_index ? ('slide ' + pick.slide_index) : 'whole deck';
+    setBusy('Generating narration for ' + label + '…');
+    try {
+        var r = await fetch('/ppt/api/decks/' + encodeURIComponent(STATE.currentId) + '/narrate', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(body),
+        });
+        var data = await r.json();
+        if (data.error) { EOS_UI.toast(data.error, 'error'); return; }
+        var msg = (data.generated || 0) + ' track' + (data.generated === 1 ? '' : 's') + ' generated';
+        if (data.skipped) msg += ', ' + data.skipped + ' skipped (no notes)';
+        if ((data.errors || []).length) msg += ', ' + data.errors.length + ' failed';
+        EOS_UI.toast(msg);
+        await showDeck(STATE.currentId);
+    } catch (e) {
+        EOS_UI.toast('Narrate failed: ' + (e.message || e), 'error');
+    } finally {
+        setBusy(null);
+    }
+}
+
+async function speakifyCurrent() {
+    if (!STATE.currentId) return;
+    var pick = await pickSlideRange({
+        eyebrow: 'Speakify › Scope',
+        title: 'Rewrite for the audience',
+        description: 'Convert presenter Notes into audience-facing Say: lines via AI, so narration reads what the speaker would actually say — not director\'s coaching.',
+        action: 'Speakify',
+        allowOverwrite: true,
+    });
+    if (!pick) return;
+    var body = {overwrite: !!pick.overwrite};
+    if (pick.slide_index) body.slide_index = pick.slide_index;
+    var label = pick.slide_index ? ('slide ' + pick.slide_index) : 'whole deck';
+    setBusy('Speakifying ' + label + ' (think call per slide)…');
+    try {
+        var r = await fetch('/ppt/api/decks/' + encodeURIComponent(STATE.currentId) + '/speakify', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(body),
+        });
+        var data = await r.json();
+        if (data.error) { EOS_UI.toast(data.error, 'error'); return; }
+        var msg = (data.rewritten || 0) + ' Say: line' + (data.rewritten === 1 ? '' : 's') + ' written';
+        if (data.skipped) msg += ', ' + data.skipped + ' skipped';
+        if ((data.errors || []).length) msg += ', ' + data.errors.length + ' failed';
+        EOS_UI.toast(msg);
+        await showDeck(STATE.currentId);
+    } catch (e) {
+        EOS_UI.toast('Speakify failed: ' + (e.message || e), 'error');
+    } finally {
+        setBusy(null);
+    }
+}
+
+async function toggleNarration(enabled) {
+    if (!STATE.currentId) return;
+    try {
+        var r = await fetch('/ppt/api/decks/' + encodeURIComponent(STATE.currentId) + '/narration-toggle', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({enabled: enabled}),
+        });
+        var data = await r.json();
+        if (data.error) { EOS_UI.toast(data.error, 'error'); return; }
+        EOS_UI.toast('Auto-play ' + (enabled ? 'on' : 'off'));
+    } catch (e) {
+        EOS_UI.toast('Toggle failed: ' + (e.message || e), 'error');
+    }
+}
+
+var STYLE_PRESETS = {
+    'text':       {label: '📝 Text only',        desc: 'Bullets, quotes, code, tables — no images',         elements: ['bullets','quote','table','code','divider']},
+    'images':     {label: '🎨 With images',      desc: 'Adds AI-generated images for visual concepts',     elements: ['bullets','quote','table','code','image','divider']},
+    'demo':       {label: '📺 Demo deck',        desc: 'Live embeds of EmptyOS pages or any URL',          elements: ['bullets','code','embed','divider']},
+    'everything': {label: '🌈 Use everything',   desc: 'All surfaces incl. vault images & screenshots',    elements: ['bullets','quote','table','code','image','vault','screenshot','embed','divider']},
+};
+
+async function newDeck() {
+    await loadElements();
+    var presetKeys = Object.keys(STYLE_PRESETS);
+    var stylePillsHtml = '<div class="eos-form-group"><label class="eos-form-label">Style</label>' +
+        '<div id="ppt-style-pills" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px">' +
+        presetKeys.map(function(k){
+            var p = STYLE_PRESETS[k];
+            var active = (k === 'images') ? ' ppt-pill-active' : '';
+            return '<button type="button" class="ppt-pill'+active+'" data-preset="'+k+'" title="'+EOS_UI.esc(p.desc)+'">'+p.label+'</button>';
+        }).join('') +
+        '<button type="button" class="ppt-pill" data-preset="custom" title="Pick surfaces yourself below">⚙ Custom</button>' +
+        '</div>' +
+        '<div id="ppt-style-desc" style="font-size:11px;color:var(--text-muted);margin-top:6px">'+EOS_UI.esc(STYLE_PRESETS.images.desc)+'</div>' +
+        '</div>';
+    var audienceHtml = '<div class="eos-form-group" style="display:grid;grid-template-columns:1fr 120px;gap:10px">' +
+            '<div><label class="eos-form-label">Audience (optional)</label>' +
+                '<input id="ppt-new-audience" class="eos-form-input" type="text" placeholder="e.g. mid-senior backend engineers"></div>' +
+            '<div><label class="eos-form-label">Duration (min)</label>' +
+                '<input id="ppt-new-duration" class="eos-form-input" type="number" value="5" min="2" max="60"></div>' +
+        '</div>';
+    var followUpHtml = '<div class="eos-form-group"><label class="eos-form-label">After creating</label>' +
+        '<div style="display:flex;flex-direction:column;gap:8px;margin-top:6px;font-size:13px">' +
+            '<label style="display:flex;gap:8px;align-items:flex-start;cursor:pointer">' +
+                '<input type="checkbox" id="ppt-plan-first" checked style="margin-top:3px;flex-shrink:0">' +
+                '<span><strong>Plan first</strong> — review intent + per-slide surface before drafting <span style="color:var(--text-muted)">(recommended)</span></span>' +
+            '</label>' +
+            '<label style="display:flex;gap:8px;align-items:flex-start;cursor:pointer">' +
+                '<input type="checkbox" id="ppt-after-resolve" style="margin-top:3px;flex-shrink:0">' +
+                '<span>Resolve all image placeholders now <span style="color:var(--text-muted)">(slow — ~30s per image)</span></span>' +
+            '</label>' +
+            '<label style="display:flex;gap:8px;align-items:flex-start;cursor:pointer">' +
+                '<input type="checkbox" id="ppt-after-podcast" style="margin-top:3px;flex-shrink:0">' +
+                '<span>Also generate a podcast episode <span style="color:var(--text-muted)">(takes a minute)</span></span>' +
+            '</label>' +
+        '</div></div>';
+    var body =
+        '<div class="eos-form-group"><label class="eos-form-label">Title</label>' +
+            '<input id="ppt-new-title" class="eos-form-input" type="text" placeholder="Cable rating fundamentals" autofocus></div>' +
+        '<div class="eos-form-group"><label class="eos-form-label">Outline / topic hints (optional)</label>' +
+            '<textarea id="ppt-new-outline" class="eos-form-input" rows="3" placeholder="Leave blank for a starter template, or describe the talk for an AI draft."></textarea></div>' +
+        stylePillsHtml +
+        '<details style="margin:0 0 12px"><summary style="cursor:pointer;color:var(--text-muted);font-size:12px">Fine-tune slide surfaces</summary>' +
+            elementsCheckboxesHtml(new Set(STYLE_PRESETS.images.elements)) +
+        '</details>' +
+        audienceHtml +
+        followUpHtml +
+        '<div class="eos-form-actions">' +
+            '<button class="eos-btn" onclick="EOS_UI.closeModal()">Cancel</button>' +
+            '<button class="eos-btn eos-btn-primary" id="ppt-new-go">Create deck</button>' +
+        '</div>';
+    EOS_UI.modal({title: 'New deck', body: body});
+    setTimeout(function(){
+        var titleEl = document.getElementById('ppt-new-title');
+        if (titleEl) titleEl.focus();
+
+        // Style-pill click → update checkboxes + description.
+        var pills = document.querySelectorAll('#ppt-style-pills .ppt-pill');
+        var descEl = document.getElementById('ppt-style-desc');
+        pills.forEach(function(p) {
+            p.onclick = function() {
+                pills.forEach(function(x){ x.classList.remove('ppt-pill-active'); });
+                p.classList.add('ppt-pill-active');
+                var key = p.dataset.preset;
+                if (key === 'custom') {
+                    descEl.textContent = 'Pick surfaces yourself below.';
+                    return;
+                }
+                var preset = STYLE_PRESETS[key];
+                descEl.textContent = preset.desc;
+                var picked = new Set(preset.elements);
+                document.querySelectorAll('#ppt-elements-grid input[name=elem]').forEach(function(c){
+                    if (!c.disabled) c.checked = picked.has(c.value);
+                });
+            };
+        });
+
+        var goBtn = document.getElementById('ppt-new-go');
+        if (!goBtn) return;
+        goBtn.onclick = async function() {
+            var title = (document.getElementById('ppt-new-title').value || '').trim();
+            if (!title) { EOS_UI.toast('Title is required', 'error'); return; }
+            var outline = document.getElementById('ppt-new-outline').value || '';
+            var audience = (document.getElementById('ppt-new-audience').value || '').trim();
+            var duration = parseInt(document.getElementById('ppt-new-duration').value, 10) || 5;
+            var elements = readElementChoice();
+            var planFirst = document.getElementById('ppt-plan-first').checked;
+            var doResolve = document.getElementById('ppt-after-resolve').checked;
+            var doPodcast = document.getElementById('ppt-after-podcast').checked;
+            EOS_UI.closeModal();
+
+            if (planFirst) {
+                setBusy('Drafting plan…');
+                try {
+                    var pr = await fetch('/ppt/api/plan', {
+                        method: 'POST', headers: {'Content-Type':'application/json'},
+                        body: JSON.stringify({
+                            title: title, outline: outline, audience: audience,
+                            duration_min: duration, allowed_elements: elements,
+                        }),
+                    });
+                    var plan = await pr.json();
+                    if (plan.error) { EOS_UI.toast(plan.error, 'error'); return; }
+                    setBusy(null);
+                    showPlanReview(plan, {doResolve: doResolve, doPodcast: doPodcast});
+                } catch (e) {
+                    EOS_UI.toast('Plan failed: ' + (e.message || e), 'error');
+                } finally {
+                    setBusy(null);
+                }
+                return;
+            }
+
+            var totalSteps = 1 + (doResolve ? 1 : 0) + (doPodcast ? 1 : 0);
+            var stepIdx = 0;
+            var job = EOS_UI.jobProgress({id: 'ppt-new'});
+            var stepStr = function() { return (stepIdx + 1) + '/' + totalSteps; };
+            var pctFor = function() { return Math.round((stepIdx / totalSteps) * 100); };
+            job.update({stage: 'Drafting deck', detail: title, step: stepStr(), pct: pctFor()});
+            var r = await fetch('/ppt/api/decks', {
+                method: 'POST', headers: {'Content-Type':'application/json'},
+                body: JSON.stringify({title: title, outline: outline, allowed_elements: elements}),
+            });
+            var data = await r.json();
+            if (data.error) { job.hide(); EOS_UI.toast(data.error, 'error'); return; }
+            stepIdx = 1;
+            await load();
+            _route.set(data.id);
+            if (doResolve) {
+                job.update({stage: 'Resolving images', detail: data.id, step: stepStr(), pct: pctFor()});
+                var rr = await fetch('/ppt/api/decks/' + encodeURIComponent(data.id) + '/resolve-images', {method:'POST'});
+                var rdata = await rr.json();
+                if (rdata.error) { job.hide(); EOS_UI.toast(rdata.error, 'error'); return; }
+                stepIdx++;
+                EOS_UI.toast((rdata.resolved||0) + ' images resolved');
+            }
+            if (doPodcast) {
+                job.update({stage: 'Generating podcast', detail: 'this takes a while…', step: stepStr(), pct: pctFor()});
+                var pr = await fetch('/ppt/api/decks/' + encodeURIComponent(data.id) + '/to-podcast', {method:'POST'});
+                var pdata = await pr.json();
+                if (pdata.error) { job.hide(); EOS_UI.toast(pdata.error, 'error'); return; }
+                stepIdx++;
+                EOS_UI.toast('Episode ready → /podcast/');
+            }
+            job.done({stage: 'Deck ready', detail: data.id, step: null});
+            showDeck(data.id);
+        };
+    }, 30);
+}
+
+async function loadIntents() {
+    if (STATE.intents) return STATE.intents;
+    try { STATE.intents = (await fetch('/ppt/api/intents').then(r => r.json())).intents || []; }
+    catch(e) { STATE.intents = []; }
+    return STATE.intents;
+}
+
+async function showPlanReview(plan, followups) {
+    await loadIntents();
+    await loadElements();
+    followups = followups || {};
+    var allowed = plan.allowed_elements || (STATE.elements && STATE.elements.defaults) || ['bullets'];
+    PLAN_STATE.plan = plan;
+    PLAN_STATE.allowed = allowed;
+    PLAN_STATE.followups = followups;
+
+    var intentOpts = (STATE.intents || []).map(function(it){
+        var sel = (it.id === plan.intent) ? ' selected' : '';
+        return '<option value="'+EOS_UI.esc(it.id)+'"'+sel+'>'+EOS_UI.esc(it.label)+'</option>';
+    }).join('');
+    var intentDesc = '';
+    var found = (STATE.intents || []).find(function(i){ return i.id === plan.intent; });
+    if (found) intentDesc = found.guidance;
+
+    var body =
+        '<div style="display:grid;grid-template-columns:1fr 1fr 100px;gap:10px">' +
+            '<div class="eos-form-group"><label class="eos-form-label">Title</label>' +
+                '<input id="plan-title" class="eos-form-input" type="text" value="'+EOS_UI.esc(plan.title||'')+'"></div>' +
+            '<div class="eos-form-group"><label class="eos-form-label">Audience</label>' +
+                '<input id="plan-audience" class="eos-form-input" type="text" value="'+EOS_UI.esc(plan.audience||'')+'"></div>' +
+            '<div class="eos-form-group"><label class="eos-form-label">Min</label>' +
+                '<input id="plan-duration" class="eos-form-input" type="number" value="'+(plan.duration_min||5)+'" min="2" max="60"></div>' +
+        '</div>' +
+        '<div class="eos-form-group"><label class="eos-form-label">Intent</label>' +
+            '<select id="plan-intent" class="eos-form-input">'+intentOpts+'</select>' +
+            '<div id="plan-intent-desc" style="font-size:11px;color:var(--text-muted);margin-top:4px;line-height:1.4">'+EOS_UI.esc(intentDesc)+'</div>' +
+        '</div>' +
+        '<div class="eos-form-group"><label class="eos-form-label">Subtitle (optional)</label>' +
+            '<input id="plan-subtitle" class="eos-form-input" type="text" value="'+EOS_UI.esc(plan.subtitle||'')+'"></div>' +
+        '<div class="eos-form-group"><label class="eos-form-label" style="display:flex;justify-content:space-between;align-items:center">' +
+            '<span>Slides — '+plan.slides.length+'</span>' +
+            '<button type="button" class="eos-btn" id="plan-add-slide" style="font-size:12px;padding:4px 10px">+ Add slide</button>' +
+        '</label>' +
+            '<div id="plan-slides" style="display:flex;flex-direction:column;gap:6px;max-height:380px;overflow:auto;border:1px solid var(--border);border-radius:8px;padding:8px;background:var(--bg-surface)"></div>' +
+        '</div>' +
+        '<div class="eos-form-actions">' +
+            '<button class="eos-btn" onclick="EOS_UI.closeModal()">Cancel</button>' +
+            '<button class="eos-btn" id="plan-replan">Re-plan from outline</button>' +
+            '<button class="eos-btn eos-btn-primary" id="plan-generate">Generate deck</button>' +
+        '</div>';
+    EOS_UI.modal({title: 'Review the plan', body: body, width: '780px'});
+
+    setTimeout(function(){
+        renderPlanSlides();
+        var intSel = document.getElementById('plan-intent');
+        if (intSel) intSel.onchange = function() {
+            var pick = (STATE.intents || []).find(function(i){ return i.id === intSel.value; });
+            document.getElementById('plan-intent-desc').textContent = pick ? pick.guidance : '';
+        };
+        document.getElementById('plan-add-slide').onclick = function() {
+            PLAN_STATE.plan.slides.push({surface: 'bullets', headline: 'New slide', beat: ''});
+            renderPlanSlides();
+        };
+        document.getElementById('plan-replan').onclick = async function() {
+            EOS_UI.closeModal();
+            newDeck();  // reopen the setup modal
+        };
+        document.getElementById('plan-generate').onclick = generateFromPlan;
+    }, 30);
+}
+
+var PLAN_STATE = { plan: null, allowed: [], followups: {} };
+
+function renderPlanSlides() {
+    var host = document.getElementById('plan-slides');
+    if (!host) return;
+    var slides = PLAN_STATE.plan.slides || [];
+    host.innerHTML = slides.map(function(s, i){
+        var surfOpts = PLAN_STATE.allowed.map(function(a){
+            return '<option value="'+a+'"'+(a===s.surface?' selected':'')+'>'+a+'</option>';
+        }).join('');
+        return ''+
+        '<div class="plan-slide-row" data-i="'+i+'" style="display:grid;grid-template-columns:24px 110px 1fr auto;gap:6px;align-items:start;background:var(--bg-card);padding:6px;border-radius:6px;border:1px solid var(--border)">' +
+            '<div style="text-align:center;color:var(--text-muted);font-size:12px;padding-top:8px">'+(i+1)+'</div>' +
+            '<select data-field="surface" class="eos-form-input" style="font-size:12px;padding:4px 6px">'+surfOpts+'</select>' +
+            '<div style="display:flex;flex-direction:column;gap:4px">' +
+                '<input data-field="headline" class="eos-form-input" type="text" placeholder="Slide heading" value="'+EOS_UI.esc(s.headline||'')+'" style="font-size:13px;padding:4px 8px">' +
+                '<input data-field="beat" class="eos-form-input" type="text" placeholder="What this slide accomplishes (beat)" value="'+EOS_UI.esc(s.beat||'')+'" style="font-size:11px;padding:4px 8px;color:var(--text-muted)">' +
+            '</div>' +
+            '<div style="display:flex;flex-direction:column;gap:2px">' +
+                '<button type="button" data-act="up" title="Move up" style="background:transparent;border:0;color:var(--text-muted);cursor:pointer;font-size:14px;padding:2px 6px">▲</button>' +
+                '<button type="button" data-act="down" title="Move down" style="background:transparent;border:0;color:var(--text-muted);cursor:pointer;font-size:14px;padding:2px 6px">▼</button>' +
+                '<button type="button" data-act="del" title="Delete" style="background:transparent;border:0;color:var(--accent-error,#e06c6c);cursor:pointer;font-size:14px;padding:2px 6px">✕</button>' +
+            '</div>' +
+        '</div>';
+    }).join('');
+    host.querySelectorAll('.plan-slide-row').forEach(function(row){
+        var i = parseInt(row.dataset.i, 10);
+        row.querySelectorAll('[data-field]').forEach(function(inp){
+            inp.onchange = function() {
+                PLAN_STATE.plan.slides[i][inp.dataset.field] = inp.value;
+            };
+            inp.oninput = inp.onchange;
+        });
+        row.querySelectorAll('[data-act]').forEach(function(btn){
+            btn.onclick = function() {
+                var act = btn.dataset.act;
+                var arr = PLAN_STATE.plan.slides;
+                if (act === 'up' && i > 0) { var t = arr[i-1]; arr[i-1] = arr[i]; arr[i] = t; }
+                else if (act === 'down' && i < arr.length-1) { var t2 = arr[i+1]; arr[i+1] = arr[i]; arr[i] = t2; }
+                else if (act === 'del') { arr.splice(i, 1); }
+                renderPlanSlides();
+            };
+        });
+    });
+}
+
+async function generateFromPlan() {
+    // Pull current values back into PLAN_STATE.plan
+    var plan = PLAN_STATE.plan;
+    plan.title = document.getElementById('plan-title').value.trim();
+    plan.audience = document.getElementById('plan-audience').value.trim();
+    plan.duration_min = parseInt(document.getElementById('plan-duration').value, 10) || 5;
+    plan.intent = document.getElementById('plan-intent').value;
+    plan.subtitle = document.getElementById('plan-subtitle').value.trim();
+    plan.allowed_elements = PLAN_STATE.allowed;
+    if (!plan.title) { EOS_UI.toast('Title is required', 'error'); return; }
+    if (!plan.slides || !plan.slides.length) { EOS_UI.toast('Plan needs at least one slide', 'error'); return; }
+    EOS_UI.closeModal();
+
+    var followups = PLAN_STATE.followups || {};
+    var totalSteps = 1 + (followups.doResolve ? 1 : 0) + (followups.doPodcast ? 1 : 0);
+    var stepIdx = 0;
+    var job = EOS_UI.jobProgress({id: 'ppt-new-from-plan'});
+    var stepStr = function() { return (stepIdx + 1) + '/' + totalSteps; };
+    var pctFor = function() { return Math.round((stepIdx / totalSteps) * 100); };
+
+    try {
+        job.update({stage: 'Generating deck from plan', detail: plan.title, step: stepStr(), pct: pctFor()});
+        var r = await fetch('/ppt/api/generate-from-plan', {
+            method: 'POST', headers: {'Content-Type':'application/json'},
+            body: JSON.stringify({plan: plan}),
+        });
+        var data = await r.json();
+        if (data.error) { job.hide(); EOS_UI.toast(data.error, 'error'); return; }
+        stepIdx = 1;
+        await load();
+        _route.set(data.id);
+        if (followups.doResolve) {
+            job.update({stage: 'Resolving images', detail: data.id, step: stepStr(), pct: pctFor()});
+            var rr = await fetch('/ppt/api/decks/' + encodeURIComponent(data.id) + '/resolve-images', {method:'POST'});
+            var rdata = await rr.json();
+            if (!rdata.error) { stepIdx++; EOS_UI.toast((rdata.resolved||0) + ' images resolved'); }
+        }
+        if (followups.doPodcast) {
+            job.update({stage: 'Generating podcast', detail: 'this takes a while…', step: stepStr(), pct: pctFor()});
+            var pr = await fetch('/ppt/api/decks/' + encodeURIComponent(data.id) + '/to-podcast', {method:'POST'});
+            var pdata = await pr.json();
+            if (!pdata.error) { stepIdx++; EOS_UI.toast('Episode ready → /podcast/'); }
+        }
+        job.done({stage: 'Deck ready', detail: data.id, step: null});
+        showDeck(data.id);
+    } catch (e) {
+        job.hide();
+        EOS_UI.toast('Generate failed: ' + (e.message || e), 'error');
+    }
+}
+
+window.addEventListener('beforeunload', function(e) {
+    if (STATE.dirty) { e.preventDefault(); e.returnValue = ''; }
+});
+
+load().then(function(){ _route.init(); });
+</script>
+</body>
+</html>

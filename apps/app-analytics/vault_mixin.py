@@ -9,7 +9,6 @@ from __future__ import annotations
 import time
 from pathlib import Path
 
-
 # vault_config defaults — resolved at runtime via app.vault_config(key, default)
 PARA_DEFAULTS = {
     "inbox_dir": ("00_Inbox", "Inbox"),
@@ -135,11 +134,13 @@ class VaultAnalyticsMixin:
                 continue
             try:
                 stat = f.stat()
-                files.append({
-                    "path": str(f.relative_to(vault)),
-                    "size": stat.st_size,
-                    "modified": stat.st_mtime,
-                })
+                files.append(
+                    {
+                        "path": str(f.relative_to(vault)),
+                        "size": stat.st_size,
+                        "modified": stat.st_mtime,
+                    }
+                )
             except Exception:
                 continue
         files.sort(key=lambda x: x["modified"], reverse=True)

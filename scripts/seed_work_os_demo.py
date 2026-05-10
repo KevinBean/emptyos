@@ -24,59 +24,119 @@ from pathlib import Path
 
 import httpx
 
-
 # ────────────────────────────────────────────────────────────
 # Scenario data
 # ────────────────────────────────────────────────────────────
 
 PEOPLE = [
-    {"id": "alice", "name": "Alice Chen", "role": "Senior Design Engineer",
-     "type": "internal", "capacity_hours_per_week": 40,
-     "skills": ["HV_design", "protection", "cable_sizing", "earthing"]},
-    {"id": "bob", "name": "Bob Rivera", "role": "Design Engineer",
-     "type": "internal", "capacity_hours_per_week": 40,
-     "skills": ["LV_design", "protection", "earthing", "MCC_design"]},
-    {"id": "carol", "name": "Carol Singh", "role": "Checking Engineer",
-     "type": "internal", "capacity_hours_per_week": 30,
-     "skills": ["protection", "cable_sizing", "arc_flash", "HV_design"]},
-    {"id": "david", "name": "David Park", "role": "Junior Engineer",
-     "type": "internal", "capacity_hours_per_week": 40,
-     "skills": ["LV_design", "cable_sizing", "drafting"]},
-    {"id": "eva", "name": "Eva Mueller", "role": "Team Lead (Approver)",
-     "type": "internal", "capacity_hours_per_week": 20,
-     "skills": ["HV_design", "project_management", "arc_flash"]},
+    {
+        "id": "alice",
+        "name": "Alice Chen",
+        "role": "Senior Design Engineer",
+        "type": "internal",
+        "capacity_hours_per_week": 40,
+        "skills": ["HV_design", "protection", "cable_sizing", "earthing"],
+    },
+    {
+        "id": "bob",
+        "name": "Bob Rivera",
+        "role": "Design Engineer",
+        "type": "internal",
+        "capacity_hours_per_week": 40,
+        "skills": ["LV_design", "protection", "earthing", "MCC_design"],
+    },
+    {
+        "id": "carol",
+        "name": "Carol Singh",
+        "role": "Checking Engineer",
+        "type": "internal",
+        "capacity_hours_per_week": 30,
+        "skills": ["protection", "cable_sizing", "arc_flash", "HV_design"],
+    },
+    {
+        "id": "david",
+        "name": "David Park",
+        "role": "Junior Engineer",
+        "type": "internal",
+        "capacity_hours_per_week": 40,
+        "skills": ["LV_design", "cable_sizing", "drafting"],
+    },
+    {
+        "id": "eva",
+        "name": "Eva Mueller",
+        "role": "Team Lead (Approver)",
+        "type": "internal",
+        "capacity_hours_per_week": 20,
+        "skills": ["HV_design", "project_management", "arc_flash"],
+    },
 ]
 
 PROJECTS = [
-    {"id": "kingsford-33kv", "name": "Kingsford Substation 33/11kV",
-     "status": "active", "type": "engineering",
-     "description": "Greenfield substation for the Kingsford depot — 33/11kV, 2×10 MVA transformers.",
-     "deadline_weeks": 10, "assignees": ["alice", "bob", "eva"]},
-    {"id": "riverside-solar", "name": "Riverside Solar Farm 50MW Connection",
-     "status": "active", "type": "engineering",
-     "description": "Grid-connection package for a 50MW solar farm — inverter yard + 33kV collection.",
-     "deadline_weeks": 14, "assignees": ["alice", "david", "eva"]},
-    {"id": "harbour-mcc-upgrade", "name": "Harbour Terminal MCC Upgrade",
-     "status": "active", "type": "engineering",
-     "description": "Replace legacy MCC with modern IEC-61439 assembly; minimal shutdown window.",
-     "deadline_weeks": 5, "assignees": ["bob", "carol", "eva"]},
-    {"id": "westfield-dc", "name": "Westfield Distribution Centre Switchgear",
-     "status": "active", "type": "engineering",
-     "description": "LV main switchboard + MCC for a 40,000 m² distribution centre.",
-     "deadline_weeks": 7, "assignees": ["bob", "david", "eva"]},
-    {"id": "northgate-genset", "name": "Northgate Campus Backup Genset",
-     "status": "blocked", "type": "engineering",
-     "description": "2×1MW diesel backup with automatic transfer — waiting on vendor data.",
-     "deadline_weeks": 9, "assignees": ["david", "carol"]},
-    {"id": "coastal-wind-230kv", "name": "Coastal Wind Farm 230kV Connection",
-     "status": "active", "type": "engineering",
-     "description": "Grid connection for a 200MW offshore wind farm. Client-facing, high scrutiny.",
-     "deadline_weeks": 18, "assignees": ["alice", "carol", "eva"]},
-    {"id": "central-hospital", "name": "Central Hospital Emergency System",
-     "status": "active", "type": "engineering",
-     "description": "Essential-supply switchgear for critical-care wing. Compliance-heavy.",
-     "deadline_weeks": 4, "assignees": ["bob", "carol", "eva"]},
+    {
+        "id": "kingsford-33kv",
+        "name": "Kingsford Substation 33/11kV",
+        "status": "active",
+        "type": "engineering",
+        "description": "Greenfield substation for the Kingsford depot — 33/11kV, 2×10 MVA transformers.",
+        "deadline_weeks": 10,
+        "assignees": ["alice", "bob", "eva"],
+    },
+    {
+        "id": "riverside-solar",
+        "name": "Riverside Solar Farm 50MW Connection",
+        "status": "active",
+        "type": "engineering",
+        "description": "Grid-connection package for a 50MW solar farm — inverter yard + 33kV collection.",
+        "deadline_weeks": 14,
+        "assignees": ["alice", "david", "eva"],
+    },
+    {
+        "id": "harbour-mcc-upgrade",
+        "name": "Harbour Terminal MCC Upgrade",
+        "status": "active",
+        "type": "engineering",
+        "description": "Replace legacy MCC with modern IEC-61439 assembly; minimal shutdown window.",
+        "deadline_weeks": 5,
+        "assignees": ["bob", "carol", "eva"],
+    },
+    {
+        "id": "westfield-dc",
+        "name": "Westfield Distribution Centre Switchgear",
+        "status": "active",
+        "type": "engineering",
+        "description": "LV main switchboard + MCC for a 40,000 m² distribution centre.",
+        "deadline_weeks": 7,
+        "assignees": ["bob", "david", "eva"],
+    },
+    {
+        "id": "northgate-genset",
+        "name": "Northgate Campus Backup Genset",
+        "status": "blocked",
+        "type": "engineering",
+        "description": "2×1MW diesel backup with automatic transfer — waiting on vendor data.",
+        "deadline_weeks": 9,
+        "assignees": ["david", "carol"],
+    },
+    {
+        "id": "coastal-wind-230kv",
+        "name": "Coastal Wind Farm 230kV Connection",
+        "status": "active",
+        "type": "engineering",
+        "description": "Grid connection for a 200MW offshore wind farm. Client-facing, high scrutiny.",
+        "deadline_weeks": 18,
+        "assignees": ["alice", "carol", "eva"],
+    },
+    {
+        "id": "central-hospital",
+        "name": "Central Hospital Emergency System",
+        "status": "active",
+        "type": "engineering",
+        "description": "Essential-supply switchgear for critical-care wing. Compliance-heavy.",
+        "deadline_weeks": 4,
+        "assignees": ["bob", "carol", "eva"],
+    },
 ]
+
 
 # Deliverables board. Each row is a drawing/document/calculation with a real
 # engineering task flow. Dependencies within a project: SLD → Cable Schedule →
@@ -93,9 +153,15 @@ def _slug(name: str) -> str:
 # Helper: build deliverables for one project — 3 canonical drawings per project,
 # with the standard SLD → Cable Schedule → Protection flow, plus one extra
 # document per project so we get interesting arrow patterns.
-def _deliverables_for_project(project_id: str, project_name: str,
-                              designer: str, checker: str, approver: str,
-                              start_weeks: int, duration_weeks: int) -> list[dict]:
+def _deliverables_for_project(
+    project_id: str,
+    project_name: str,
+    designer: str,
+    checker: str,
+    approver: str,
+    start_weeks: int,
+    duration_weeks: int,
+) -> list[dict]:
     """Three deliverables per project with real start→end spans and dependencies.
 
     Each deliverable is scheduled as a work block:
@@ -108,13 +174,13 @@ def _deliverables_for_project(project_id: str, project_name: str,
     short = project_name.split()[0]
     today = date.today()
     w = 7
-    kickoff_day   = start_weeks * w
-    sld_start     = today + timedelta(days=kickoff_day)
-    sld_end       = today + timedelta(days=kickoff_day + int(duration_weeks * 0.3 * w))
-    cable_start   = sld_end
-    cable_end     = today + timedelta(days=kickoff_day + int(duration_weeks * 0.6 * w))
-    prot_start    = cable_end
-    prot_end      = today + timedelta(days=kickoff_day + int(duration_weeks * 0.9 * w))
+    kickoff_day = start_weeks * w
+    sld_start = today + timedelta(days=kickoff_day)
+    sld_end = today + timedelta(days=kickoff_day + int(duration_weeks * 0.3 * w))
+    cable_start = sld_end
+    cable_end = today + timedelta(days=kickoff_day + int(duration_weeks * 0.6 * w))
+    prot_start = cable_end
+    prot_end = today + timedelta(days=kickoff_day + int(duration_weeks * 0.9 * w))
 
     sld_name = f"{short} SLD"
     cable_name = f"{short} Cable Schedule"
@@ -124,20 +190,34 @@ def _deliverables_for_project(project_id: str, project_name: str,
     prot_slug = _slug(prot_name)
     return [
         {
-            "name": sld_name, "project": project_id, "drawing_no": f"{short[:3].upper()}-E-001",
-            "rev": "A", "status": "IFR",
-            "designer": designer, "checker": checker, "approver": approver,
-            "checker_signoff": False, "approver_signoff": False,
-            "skills_required": ["HV_design"] if "kv" in project_id or "wind" in project_id else ["LV_design"],
+            "name": sld_name,
+            "project": project_id,
+            "drawing_no": f"{short[:3].upper()}-E-001",
+            "rev": "A",
+            "status": "IFR",
+            "designer": designer,
+            "checker": checker,
+            "approver": approver,
+            "checker_signoff": False,
+            "approver_signoff": False,
+            "skills_required": ["HV_design"]
+            if "kv" in project_id or "wind" in project_id
+            else ["LV_design"],
             "start_date": sld_start.isoformat(),
             "due": sld_end.isoformat(),
             "blocks": [cable_slug, prot_slug],
         },
         {
-            "name": cable_name, "project": project_id, "drawing_no": f"{short[:3].upper()}-E-002",
-            "rev": "A", "status": "draft",
-            "designer": designer, "checker": checker, "approver": approver,
-            "checker_signoff": False, "approver_signoff": False,
+            "name": cable_name,
+            "project": project_id,
+            "drawing_no": f"{short[:3].upper()}-E-002",
+            "rev": "A",
+            "status": "draft",
+            "designer": designer,
+            "checker": checker,
+            "approver": approver,
+            "checker_signoff": False,
+            "approver_signoff": False,
             "skills_required": ["cable_sizing"],
             "start_date": cable_start.isoformat(),
             "due": cable_end.isoformat(),
@@ -145,10 +225,16 @@ def _deliverables_for_project(project_id: str, project_name: str,
             "blocked_by": [sld_slug],
         },
         {
-            "name": prot_name, "project": project_id, "drawing_no": f"{short[:3].upper()}-E-003",
-            "rev": "A", "status": "draft",
-            "designer": designer, "checker": checker, "approver": approver,
-            "checker_signoff": False, "approver_signoff": False,
+            "name": prot_name,
+            "project": project_id,
+            "drawing_no": f"{short[:3].upper()}-E-003",
+            "rev": "A",
+            "status": "draft",
+            "designer": designer,
+            "checker": checker,
+            "approver": approver,
+            "checker_signoff": False,
+            "approver_signoff": False,
             "skills_required": ["protection"],
             "start_date": prot_start.isoformat(),
             "due": prot_end.isoformat(),
@@ -166,9 +252,14 @@ def _build_board_config() -> dict:
     plus the status workflow with guards on IFR→IFA and IFA→IFC.
     """
     project_options = [p["id"] for p in PROJECTS]
-    project_colors = {p["id"]: c for p, c in zip(PROJECTS, [
-        "blue", "green", "amber", "purple", "red", "emerald", "orange"
-    ])}
+    project_colors = {
+        p["id"]: c
+        for p, c in zip(
+            PROJECTS,
+            ["blue", "green", "amber", "purple", "red", "emerald", "orange"],
+            strict=False,
+        )
+    }
     return {
         "id": "team-deliverables",
         "name": "Team Deliverables",
@@ -177,14 +268,28 @@ def _build_board_config() -> dict:
         "tags": ["board-config"],
         "columns": [
             {"id": "name", "label": "Title", "type": "text"},
-            {"id": "project", "label": "Project", "type": "select",
-             "options": project_options, "color_map": project_colors},
+            {
+                "id": "project",
+                "label": "Project",
+                "type": "select",
+                "options": project_options,
+                "color_map": project_colors,
+            },
             {"id": "drawing_no", "label": "Drawing #", "type": "text"},
             {"id": "rev", "label": "Rev", "type": "text"},
-            {"id": "status", "label": "Status", "type": "select",
-             "options": ["draft", "IFR", "IFA", "IFC", "superseded"],
-             "color_map": {"draft": "gray", "IFR": "amber", "IFA": "blue",
-                           "IFC": "green", "superseded": "red"}},
+            {
+                "id": "status",
+                "label": "Status",
+                "type": "select",
+                "options": ["draft", "IFR", "IFA", "IFC", "superseded"],
+                "color_map": {
+                    "draft": "gray",
+                    "IFR": "amber",
+                    "IFA": "blue",
+                    "IFC": "green",
+                    "superseded": "red",
+                },
+            },
             {"id": "designer", "label": "Designer", "type": "designer", "weight_hours": 20},
             {"id": "checker", "label": "Checker", "type": "checker", "weight_hours": 4},
             {"id": "approver", "label": "Approver", "type": "approver", "weight_hours": 1},
@@ -202,18 +307,34 @@ def _build_board_config() -> dict:
         ],
         "kanban_group_by": "status",
         "rules": [
-            {"kind": "guard", "trigger": "field_change", "field": "status",
-             "from": "IFR", "to": "IFA",
-             "guard": "checker_signoff == true",
-             "on_block": {"toast": "Cannot issue for approval — checker sign-off required.",
-                          "emit": "deliverable:blocked"}},
-            {"kind": "guard", "trigger": "field_change", "field": "status",
-             "from": "IFA", "to": "IFC",
-             "guard": "approver_signoff == true",
-             "on_block": {"toast": "Cannot issue for construction — approver sign-off required.",
-                          "emit": "deliverable:blocked"}},
-            {"trigger": {"event": "field_changed", "field": "due"},
-             "actions": [{"type": "propagate_slip", "field": "due", "auto_slip_limit_days": 14}]},
+            {
+                "kind": "guard",
+                "trigger": "field_change",
+                "field": "status",
+                "from": "IFR",
+                "to": "IFA",
+                "guard": "checker_signoff == true",
+                "on_block": {
+                    "toast": "Cannot issue for approval — checker sign-off required.",
+                    "emit": "deliverable:blocked",
+                },
+            },
+            {
+                "kind": "guard",
+                "trigger": "field_change",
+                "field": "status",
+                "from": "IFA",
+                "to": "IFC",
+                "guard": "approver_signoff == true",
+                "on_block": {
+                    "toast": "Cannot issue for construction — approver sign-off required.",
+                    "emit": "deliverable:blocked",
+                },
+            },
+            {
+                "trigger": {"event": "field_changed", "field": "due"},
+                "actions": [{"type": "propagate_slip", "field": "due", "auto_slip_limit_days": 14}],
+            },
         ],
     }
 
@@ -221,6 +342,7 @@ def _build_board_config() -> dict:
 # ────────────────────────────────────────────────────────────
 # Seed execution
 # ────────────────────────────────────────────────────────────
+
 
 def vault_path() -> Path:
     """Resolve the vault root from emptyos.toml so we can write project .md files."""
@@ -246,11 +368,17 @@ def seed_people(client: httpx.Client, base: str):
             print(f"  ✓ {p['name']:<22} ({p['role']})")
         elif "already exists" in (res.get("error") or ""):
             # Update instead.
-            client.patch(f"{base}/people/api/people/{p['id']}", json={
-                "name": p["name"], "role": p["role"], "type": p["type"],
-                "capacity_hours_per_week": p["capacity_hours_per_week"],
-                "skills": p["skills"], "active": True,
-            })
+            client.patch(
+                f"{base}/people/api/people/{p['id']}",
+                json={
+                    "name": p["name"],
+                    "role": p["role"],
+                    "type": p["type"],
+                    "capacity_hours_per_week": p["capacity_hours_per_week"],
+                    "skills": p["skills"],
+                    "active": True,
+                },
+            )
             print(f"  ↻ {p['name']:<22} (updated existing)")
         else:
             print(f"  ✗ {p['name']}: {res}")
@@ -272,7 +400,7 @@ def seed_projects(vault: Path):
             f"type: {p['type']}",
             f"deadline: {dl}",
             f"created: {today.isoformat()}",
-            f"progress: 0",
+            "progress: 0",
             "tags: [project]",
             "assignees: [" + ", ".join(p["assignees"]) + "]",
             "---",
@@ -314,24 +442,24 @@ def seed_deliverables(client: httpx.Client, base: str, board_id: str):
 
     # Project-to-team map: designer, checker, approver.
     assign = {
-        "kingsford-33kv":      ("alice", "carol", "eva"),
-        "riverside-solar":     ("alice", "carol", "eva"),
+        "kingsford-33kv": ("alice", "carol", "eva"),
+        "riverside-solar": ("alice", "carol", "eva"),
         "harbour-mcc-upgrade": ("bob", "carol", "eva"),
-        "westfield-dc":        ("bob", "carol", "eva"),
-        "northgate-genset":    ("david", "carol", "eva"),
-        "coastal-wind-230kv":  ("alice", "carol", "eva"),
-        "central-hospital":    ("bob", "carol", "eva"),
+        "westfield-dc": ("bob", "carol", "eva"),
+        "northgate-genset": ("david", "carol", "eva"),
+        "coastal-wind-230kv": ("alice", "carol", "eva"),
+        "central-hospital": ("bob", "carol", "eva"),
     }
 
     # Stagger project starts so the Gantt looks varied.
     schedule = {
-        "kingsford-33kv":      (0, 10),
-        "riverside-solar":     (2, 12),
+        "kingsford-33kv": (0, 10),
+        "riverside-solar": (2, 12),
         "harbour-mcc-upgrade": (0, 5),
-        "westfield-dc":        (1, 6),
-        "northgate-genset":    (3, 6),
-        "coastal-wind-230kv":  (4, 14),
-        "central-hospital":    (0, 4),
+        "westfield-dc": (1, 6),
+        "northgate-genset": (3, 6),
+        "coastal-wind-230kv": (4, 14),
+        "central-hospital": (0, 4),
     }
 
     created = 0
@@ -358,8 +486,9 @@ def seed_deliverables(client: httpx.Client, base: str, board_id: str):
         ("central-sld.md", {"checker_signoff": True, "approver_signoff": True}),
     ]
     for fname, updates in samples:
-        r = client.patch(f"{base}/boards/api/boards/{board_id}/items/{fname}",
-                         json={"updates": updates})
+        r = client.patch(
+            f"{base}/boards/api/boards/{board_id}/items/{fname}", json={"updates": updates}
+        )
         if r.is_success:
             advanced += 1
     # Now transition them.
@@ -369,8 +498,10 @@ def seed_deliverables(client: httpx.Client, base: str, board_id: str):
         ("central-sld.md", "IFC"),
     ]
     for fname, new_status in transitions:
-        r = client.patch(f"{base}/boards/api/boards/{board_id}/items/{fname}",
-                         json={"updates": {"status": new_status}})
+        r = client.patch(
+            f"{base}/boards/api/boards/{board_id}/items/{fname}",
+            json={"updates": {"status": new_status}},
+        )
         if r.is_success and not r.json().get("error"):
             advanced += 1
     print(f"  ✓ {advanced} workflow steps applied")
@@ -386,6 +517,7 @@ def clear_demo(client: httpx.Client, base: str, vault: Path):
         pdir = vault / "10_Projects" / p["id"]
         if pdir.exists():
             import shutil
+
             shutil.rmtree(pdir)
     # Board config (items remain in vault; boards.source_tag filter just stops showing them).
     client.delete(f"{base}/boards/api/boards/team-deliverables")
@@ -394,10 +526,8 @@ def clear_demo(client: httpx.Client, base: str, vault: Path):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--base", default="http://127.0.0.1:9000",
-                        help="Daemon base URL")
-    parser.add_argument("--clear", action="store_true",
-                        help="Wipe demo data before seeding")
+    parser.add_argument("--base", default="http://127.0.0.1:9000", help="Daemon base URL")
+    parser.add_argument("--clear", action="store_true", help="Wipe demo data before seeding")
     args = parser.parse_args()
 
     vault = vault_path()
@@ -425,15 +555,21 @@ def main():
         # assignment declared by projects.list_assignments() + board items.
         r = client.post(f"{args.base}/people/api/rebuild")
         if r.is_success:
-            print(f"\n▸ People workload index rebuilt ({r.json().get('assignments')} assignments indexed)")
+            print(
+                f"\n▸ People workload index rebuilt ({r.json().get('assignments')} assignments indexed)"
+            )
 
     print("\n" + "═" * 60)
     print("✓ Demo seeded. Entry points:")
     print("  • http://localhost:9000/people/                      — roster + capacity")
     print("  • http://localhost:9000/boards/#team-deliverables    — Gantt timeline (default view)")
-    print("  • http://localhost:9000/boards/#team-deliverables    — switch to Kanban/Table via tabs")
+    print(
+        "  • http://localhost:9000/boards/#team-deliverables    — switch to Kanban/Table via tabs"
+    )
     print("  • http://localhost:9000/projects/                    — project list with assignees")
-    print("  • http://localhost:9000/                             — hub (overload panel fires if anyone > 100%)")
+    print(
+        "  • http://localhost:9000/                             — hub (overload panel fires if anyone > 100%)"
+    )
     print()
     print("Try it:")
     print("  1. Open the timeline view → dependency arrows appear between drawings.")

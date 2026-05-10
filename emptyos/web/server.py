@@ -21,16 +21,125 @@ def create_server(kernel: Kernel) -> FastAPI:
 
     server = FastAPI(title="EmptyOS", version="0.1.0")
 
+    # --- Presentation-mode response scrubber ---
+    # When settings.presentation.enabled is true, rewrite JSON responses by
+    # replacing matches of `.eos-personal` regex patterns with "***". Frontend
+    # pairs this with a `html.eos-redact` CSS class on annotated elements.
+    # Both layers compose: CSS misses unannotated apps; regex misses
+    # non-string-shaped leaks like a vault path embedded in a status field.
+    import json as _json
+
+    from starlette.middleware.base import BaseHTTPMiddleware as _BHM
+    from starlette.responses import Response as _R
+
+    from emptyos.sdk.personal_patterns import load as _load_personal_patterns
+
+    _PRESENT_PATTERNS_FILE = Path(kernel.config.path).parent / ".eos-personal"
+    _PRESENT_PATH_EXEMPT = ("/static/", "/api/presentation/", "/login")
+    _PRESENT_REGEX_CACHE = {"patterns": None}
+
+    def _present_patterns():
+        if _PRESENT_REGEX_CACHE["patterns"] is None:
+            _PRESENT_REGEX_CACHE["patterns"] = _load_personal_patterns(
+                _PRESENT_PATTERNS_FILE
+            )
+        return _PRESENT_REGEX_CACHE["patterns"]
+
+    def _scrub_value(v, patterns):
+        if isinstance(v, str):
+            out = v
+            for pat in patterns:
+                out = pat.sub("***", out)
+            return out
+        if isinstance(v, list):
+            return [_scrub_value(x, patterns) for x in v]
+        if isinstance(v, dict):
+            return {k: _scrub_value(x, patterns) for k, x in v.items()}
+        return v
+
+    class PresentationMiddleware(_BHM):
+        async def dispatch(self, request, call_next):
+            response = await call_next(request)
+            try:
+                active = bool(kernel.settings.get("presentation.enabled", False))
+            except Exception:
+                active = False
+            if not active:
+                return response
+            path = request.url.path
+            if any(path.startswith(p) for p in _PRESENT_PATH_EXEMPT):
+                return response
+            ctype = (response.headers.get("content-type") or "").lower()
+            if "application/json" not in ctype:
+                return response
+            patterns = _present_patterns()
+            if not patterns:
+                return response
+            # Once body_iterator is consumed we MUST return a new Response,
+            # never the original — Starlette can't replay the stream.
+            body = b""
+            try:
+                async for chunk in response.body_iterator:
+                    body += chunk
+            except Exception:
+                return _R(
+                    content=b'{"error":"presentation scrub failed"}',
+                    status_code=500,
+                    media_type="application/json",
+                )
+            new_body = body
+            try:
+                if body:
+                    data = _json.loads(body.decode("utf-8"))
+                    scrubbed = _scrub_value(data, patterns)
+                    new_body = _json.dumps(scrubbed, default=str).encode("utf-8")
+            except Exception:
+                # Non-JSON body (or parse error) — pass through unchanged.
+                new_body = body
+            headers = dict(response.headers)
+            headers.pop("content-length", None)
+            return _R(
+                content=new_body,
+                status_code=response.status_code,
+                headers=headers,
+                media_type="application/json",
+            )
+
+    server.add_middleware(PresentationMiddleware)
+
     # --- Auth middleware (activates only when network.auth_token is set) ---
     _auth_token: str = kernel.config.auth_token
     if _auth_token:
         import hmac
+
         from starlette.middleware.base import BaseHTTPMiddleware
 
         _AUTH_COOKIE = "eos_session"
         # Paths that bypass auth — login page, static assets, favicon, service worker, PWA manifest, offline page
-        _AUTH_EXEMPT_PREFIXES = ("/static/", "/login")
-        _AUTH_EXEMPT_PATHS = {"/favicon.ico", "/sw.js", "/manifest.webmanifest", "/offline.html", "/api/health"}
+        _AUTH_EXEMPT_PREFIXES = ["/static/", "/login"]
+        _AUTH_EXEMPT_PATHS = {
+            "/favicon.ico",
+            "/sw.js",
+            "/manifest.webmanifest",
+            "/offline.html",
+            "/api/health",
+        }
+
+        # Apps may publish a "public face" via [provides.web].public_routes.
+        # Each entry is appended to the app's prefix and added to the bypass
+        # set. Lets a single app (e.g. /radio/live) be reachable without a
+        # token while the rest of the daemon stays gated. The auth boundary
+        # is the network gate; per-app code is still responsible for filtering
+        # what content a public caller can read.
+        for _m in kernel.apps.manifests.values():
+            _web = (_m.provides or {}).get("web", {}) or {}
+            _prefix = _web.get("prefix", "")
+            for _r in _web.get("public_routes", []) or []:
+                if not isinstance(_r, str) or not _r:
+                    continue
+                _full = _prefix + _r if _r.startswith("/") else _prefix + "/" + _r
+                _AUTH_EXEMPT_PREFIXES.append(_full)
+        _AUTH_EXEMPT_PREFIXES = tuple(_AUTH_EXEMPT_PREFIXES)
 
         def _check_token(provided: str) -> bool:
             return bool(provided) and hmac.compare_digest(provided, _auth_token)
@@ -62,15 +171,16 @@ def create_server(kernel: Kernel) -> FastAPI:
                 qtok = request.query_params.get("token", "")
                 if qtok and _check_token(qtok):
                     clean_qs = "&".join(
-                        f"{k}={v}"
-                        for k, v in request.query_params.multi_items()
-                        if k != "token"
+                        f"{k}={v}" for k, v in request.query_params.multi_items() if k != "token"
                     )
                     clean_url = path + (("?" + clean_qs) if clean_qs else "")
                     resp = RedirectResponse(url=clean_url, status_code=302)
                     resp.set_cookie(
-                        _AUTH_COOKIE, _auth_token,
-                        httponly=True, samesite="lax", max_age=60 * 60 * 24 * 30,
+                        _AUTH_COOKIE,
+                        _auth_token,
+                        httponly=True,
+                        samesite="lax",
+                        max_age=60 * 60 * 24 * 30,
                     )
                     return resp
 
@@ -120,11 +230,18 @@ EmptyOS — a mind companion. Think and create with you, not for you.<br>
 
         @server.get("/login", response_class=HTMLResponse)
         async def login_page(request: Request):
-            next_url = request.query_params.get("next", "/")
-            err = request.query_params.get("err")
+            import html as _html
+
+            raw_next = request.query_params.get("next", "/") or "/"
+            # Clamp next to local paths only — prevents the form from POSTing
+            # the credential to an external host. Mirrors login_submit's check.
+            if not raw_next.startswith("/") or raw_next.startswith("//"):
+                raw_next = "/"
+            next_url = _html.escape(raw_next, quote=True)
+            err = _html.escape(request.query_params.get("err", "") or "", quote=True)
             err_html = f'<div class="err">{err}</div>' if err else ""
-            html = _LOGIN_HTML.replace("__NEXT__", next_url).replace("__ERR__", err_html)
-            return HTMLResponse(html)
+            page = _LOGIN_HTML.replace("__NEXT__", next_url).replace("__ERR__", err_html)
+            return HTMLResponse(page)
 
         @server.post("/login")
         async def login_submit(request: Request):
@@ -141,8 +258,11 @@ EmptyOS — a mind companion. Think and create with you, not for you.<br>
                 )
             resp = RedirectResponse(url=next_url, status_code=302)
             resp.set_cookie(
-                _AUTH_COOKIE, _auth_token,
-                httponly=True, samesite="lax", max_age=60 * 60 * 24 * 30,
+                _AUTH_COOKIE,
+                _auth_token,
+                httponly=True,
+                samesite="lax",
+                max_age=60 * 60 * 24 * 30,
             )
             return resp
 
@@ -156,11 +276,18 @@ EmptyOS — a mind companion. Think and create with you, not for you.<br>
     async def health(full: bool = False):
         vault = kernel.config.notes_path
         vault_name = vault.name if vault else ""
+        # `apps` count lets readiness probes wait until manifests are
+        # populated before firing traffic — daemon-listening != apps-mounted.
+        try:
+            n_apps = len(kernel.apps.manifests)
+        except Exception:
+            n_apps = 0
         result = {
-            "status": "ok",
+            "status": "ok" if n_apps > 0 else "starting",
             "name": kernel.config.get("os.name", "EmptyOS"),
             "vault_name": vault_name,
             "vault_path": str(vault).replace("\\", "/") if vault else "",
+            "apps": n_apps,
         }
         # Viewer config (URI templates for note links) from whichever
         # plugin registered as service "viewer". Frontend falls back to
@@ -199,8 +326,7 @@ EmptyOS — a mind companion. Think and create with you, not for you.<br>
 
         # Services
         result["services"] = [
-            {"name": e.name, "status": e.status.value}
-            for e in kernel.services.list()
+            {"name": e.name, "status": e.status.value} for e in kernel.services.list()
         ]
 
         # Plugins
@@ -244,6 +370,46 @@ EmptyOS — a mind companion. Think and create with you, not for you.<br>
             return await hp.gpu_status()
         return {"error": "health plugin not available"}
 
+    # --- Presentation mode (runtime privacy toggle) ---
+    # Different from demo.enabled: this is a flick-of-a-switch view-layer redact
+    # for "I'm showing the running daemon to a friend, hide my data". No restart,
+    # no data wipe. Two layers of hiding (frontend blur + backend regex scrub)
+    # that compose with the existing eos-redact CSS conventions used by ppt
+    # embed slides.
+
+    @server.get("/api/presentation/state")
+    async def presentation_state():
+        return {"enabled": bool(kernel.settings.get("presentation.enabled", False))}
+
+    @server.post("/api/presentation/toggle")
+    async def presentation_toggle():
+        cur = bool(kernel.settings.get("presentation.enabled", False))
+        new = not cur
+        kernel.settings.set("presentation.enabled", new)
+        try:
+            await kernel.events.emit(
+                "presentation:changed", {"enabled": new}, source="web"
+            )
+        except Exception:
+            pass
+        return {"enabled": new}
+
+    @server.post("/api/presentation/set")
+    async def presentation_set(request: Request):
+        try:
+            body = await request.json()
+        except Exception:
+            body = {}
+        new = bool(body.get("enabled", False))
+        kernel.settings.set("presentation.enabled", new)
+        try:
+            await kernel.events.emit(
+                "presentation:changed", {"enabled": new}, source="web"
+            )
+        except Exception:
+            pass
+        return {"enabled": new}
+
     # --- Demo mode status ---
     @server.get("/api/demo/status")
     async def demo_status():
@@ -252,7 +418,9 @@ EmptyOS — a mind companion. Think and create with you, not for you.<br>
             "banner": (
                 "Public demo — sample vault, don't put real data here. "
                 "GPU-powered features (image generation, voice) are disabled."
-            ) if kernel.config.demo_enabled else "",
+            )
+            if kernel.config.demo_enabled
+            else "",
             "install_url": "https://github.com/KevinBean/emptyos",
             "about_url": "https://eos.binbian.net",
         }
@@ -269,7 +437,11 @@ EmptyOS — a mind companion. Think and create with you, not for you.<br>
         # lets the AI-off walkthrough be reproducible.
         try:
             if cap._simulate_offline():
-                return {"available": False, "reason": "simulated offline (capability.simulate_offline)", "simulated": True}
+                return {
+                    "available": False,
+                    "reason": "simulated offline (capability.simulate_offline)",
+                    "simulated": True,
+                }
         except Exception:
             pass
 
@@ -390,11 +562,13 @@ EmptyOS — a mind companion. Think and create with you, not for you.<br>
             for p in think.providers:
                 if getattr(p, "is_cloud", False) or p.name == "human":
                     continue
-                locals_list.append({
-                    "variant_id": p.variant_id,
-                    "name": p.name,
-                    "model": getattr(p, "model", "") or "",
-                })
+                locals_list.append(
+                    {
+                        "variant_id": p.variant_id,
+                        "name": p.name,
+                        "model": getattr(p, "model", "") or "",
+                    }
+                )
         except Exception:
             pass
         return {"config": cfg, "local_providers": locals_list}
@@ -412,7 +586,9 @@ EmptyOS — a mind companion. Think and create with you, not for you.<br>
         if "mode" in body:
             mode = str(body["mode"]).lower().strip()
             if mode not in ("off", "classify", "redact"):
-                return JSONResponse({"error": "mode must be off | classify | redact"}, status_code=400)
+                return JSONResponse(
+                    {"error": "mode must be off | classify | redact"}, status_code=400
+                )
             settings.set("cloud.llm_scan.mode", mode)
         if "on_flag" in body:
             on_flag = str(body["on_flag"]).lower().strip()
@@ -433,7 +609,9 @@ EmptyOS — a mind companion. Think and create with you, not for you.<br>
             try:
                 to = float(body["timeout"])
                 if to < 0.5 or to > 120:
-                    return JSONResponse({"error": "timeout must be 0.5..120 seconds"}, status_code=400)
+                    return JSONResponse(
+                        {"error": "timeout must be 0.5..120 seconds"}, status_code=400
+                    )
                 settings.set("cloud.llm_scan.timeout", to)
             except (TypeError, ValueError):
                 return JSONResponse({"error": "timeout must be a number"}, status_code=400)
@@ -461,10 +639,34 @@ EmptyOS — a mind companion. Think and create with you, not for you.<br>
             for m in kernel.apps.manifests.values()
         ]
 
+    @server.get("/api/apps/load-timings")
+    async def app_load_timings():
+        """Per-app boot-time timings (import_ms / setup_ms / total_ms).
+
+        Populated by ``app_loader.load`` as each app boots. Useful for
+        diagnosing slow boots: sort by ``total_ms`` to see which apps
+        blocked the loader.
+        """
+        timings = kernel.apps.get_load_timings()
+        rows = sorted(
+            (
+                {"app_id": aid, **t}
+                for aid, t in timings.items()
+            ),
+            key=lambda r: r["total_ms"],
+            reverse=True,
+        )
+        return {
+            "apps": rows,
+            "total_ms": sum(t["total_ms"] for t in timings.values()),
+            "slowest_app_id": rows[0]["app_id"] if rows else None,
+        }
+
     @server.get("/api/apps/clusters")
     async def app_clusters():
         """Auto-clustered apps by dependency graph. Fully dynamic."""
         from emptyos.web.clustering import get_clusters
+
         return get_clusters(kernel.apps.manifests)
 
     @server.get("/api/apps/{app_id}")
@@ -532,9 +734,11 @@ EmptyOS — a mind companion. Think and create with you, not for you.<br>
         if format not in ("dir", "zip", "single-html"):
             return JSONResponse({"error": f"unknown format: {format}"}, status_code=400)
 
-        from emptyos.sdk.exporter import AppExporter
         import tempfile
+
         from starlette.responses import FileResponse
+
+        from emptyos.sdk.exporter import AppExporter
 
         instance = kernel.apps.instances.get(app_id) or await kernel.apps.load(app_id)
         tmp_root = Path(tempfile.mkdtemp(prefix=f"eos-export-{app_id}-"))
@@ -590,18 +794,23 @@ EmptyOS — a mind companion. Think and create with you, not for you.<br>
     async def list_export_groups():
         """Return declared groups + per-member export-enabled status."""
         from emptyos.sdk.exporter import load_groups
+
         groups = load_groups(Path(kernel.config.path).parent / "export-groups.toml")
         out = []
         for g in groups:
             members = []
             for app_id in g.get("apps", []):
                 m = kernel.apps.manifests.get(app_id)
-                members.append({
-                    "id": app_id,
-                    "name": m.name if m else app_id,
-                    "found": m is not None,
-                    "export_enabled": bool((m.provides.get("export", {}) if m else {}).get("enabled")),
-                })
+                members.append(
+                    {
+                        "id": app_id,
+                        "name": m.name if m else app_id,
+                        "found": m is not None,
+                        "export_enabled": bool(
+                            (m.provides.get("export", {}) if m else {}).get("enabled")
+                        ),
+                    }
+                )
             out.append({**g, "members_detail": members})
         return out
 
@@ -610,9 +819,11 @@ EmptyOS — a mind companion. Think and create with you, not for you.<br>
         """Build a group bundle — ZIP by default."""
         if format not in ("dir", "zip"):
             return JSONResponse({"error": f"unsupported format: {format}"}, status_code=400)
-        from emptyos.sdk.exporter import GroupExporter, load_groups
-        from starlette.responses import FileResponse
         import tempfile
+
+        from starlette.responses import FileResponse
+
+        from emptyos.sdk.exporter import GroupExporter, load_groups
 
         groups = load_groups(Path(kernel.config.path).parent / "export-groups.toml")
         match = next((g for g in groups if g.get("id") == group_id), None)
@@ -669,7 +880,11 @@ EmptyOS — a mind companion. Think and create with you, not for you.<br>
             active = next((r["name"] for r in rows if r.get("available")), None)
             out[cap_name] = {"active": active, "providers": rows}
         cm = getattr(kernel, "cloud_consent", None)
-        consent = cm.status() if cm else {"policy": "ask", "approved": [], "pending": [], "last_decisions": {}}
+        consent = (
+            cm.status()
+            if cm
+            else {"policy": "ask", "approved": [], "pending": [], "last_decisions": {}}
+        )
         try:
             net_mode = kernel.config.network.mode
         except Exception:
@@ -693,6 +908,7 @@ EmptyOS — a mind companion. Think and create with you, not for you.<br>
         Both live ≤5 min after finish so the banner can show "done".
         """
         import time
+
         now = time.time()
         out = []
         # Source 1: kernel.jobs registry (existing path).
@@ -708,22 +924,29 @@ EmptyOS — a mind companion. Think and create with you, not for you.<br>
                     if not w.get("completed_at") or (now - w["completed_at"]) > 300:
                         continue
                 started = w.get("started_at") or w.get("submitted_at") or now
-                finished = w.get("completed_at") if state in ("completed", "failed", "cancelled") else 0
-                out.append({
-                    "id": w["id"],
-                    "app": w.get("source") or "workers",
-                    "label": w.get("name") or w["id"][:8],
-                    "phase": "done" if state == "completed" else (state if state != "running" else "running"),
-                    "started": started,
-                    "finished": finished,
-                    "error": w.get("error") or "",
-                    "elapsed_s": round(now - started),
-                })
+                finished = (
+                    w.get("completed_at") if state in ("completed", "failed", "cancelled") else 0
+                )
+                out.append(
+                    {
+                        "id": w["id"],
+                        "app": w.get("source") or "workers",
+                        "label": w.get("name") or w["id"][:8],
+                        "phase": "done"
+                        if state == "completed"
+                        else (state if state != "running" else "running"),
+                        "started": started,
+                        "finished": finished,
+                        "error": w.get("error") or "",
+                        "elapsed_s": round(now - started),
+                    }
+                )
         return out
 
     @server.get("/api/jobs/{job_id}")
     async def get_job(job_id: str):
         import time
+
         job = kernel.jobs.get(job_id)
         if not job:
             return {"error": "not found", "phase": "unknown"}
@@ -732,12 +955,20 @@ EmptyOS — a mind companion. Think and create with you, not for you.<br>
     @server.post("/api/jobs/test")
     async def test_job():
         """Fire a demo job to test the banner. Runs 5 seconds."""
-        import asyncio, time
+        import asyncio
+        import time
+
         job_id = f"test-{int(time.time())}"
         job = {
-            "id": job_id, "app": "system", "label": "Test job",
-            "phase": "starting", "detail": "", "pct": 0,
-            "started": time.time(), "finished": None, "error": None,
+            "id": job_id,
+            "app": "system",
+            "label": "Test job",
+            "phase": "starting",
+            "detail": "",
+            "pct": 0,
+            "started": time.time(),
+            "finished": None,
+            "error": None,
         }
         kernel.jobs[job_id] = job
         await kernel.events.emit("job:started", job, source="system")
@@ -755,6 +986,7 @@ EmptyOS — a mind companion. Think and create with you, not for you.<br>
             job["detail"] = "completed"
             job["finished"] = time.time()
             await kernel.events.emit("job:completed", {**job}, source="system")
+
         asyncio.create_task(_run())
         return {"job_id": job_id, "status": "started"}
 
@@ -782,6 +1014,25 @@ EmptyOS — a mind companion. Think and create with you, not for you.<br>
     async def topology_layers():
         """Layered architecture analysis — dependency depth, cycles, critical path."""
         return _analyze_layers(kernel)
+
+    @server.get("/api/topology/timeline")
+    async def topology_timeline():
+        """Per-node creation date for the timeline scrubber.
+
+        Order: manifest `created` override → git first-add date → mtime.
+        Cached at data/apps/topology/dates.json keyed by HEAD.
+        """
+        return _topology_timeline(kernel)
+
+    @server.get("/api/topology/tree")
+    async def topology_tree():
+        """Capability-rooted tree view: 9 capabilities → providers + consuming apps."""
+        return _build_topology_tree(kernel)
+
+    @server.get("/api/topology/releases")
+    async def topology_releases():
+        """Git-tag release markers for the timeline slider."""
+        return _topology_releases(kernel)
 
     @server.get("/api/topology/node/{node_id:path}")
     async def topology_node(node_id: str):
@@ -818,8 +1069,9 @@ EmptyOS — a mind companion. Think and create with you, not for you.<br>
 
         # Filter nodes and edges
         focused_nodes = [n for n in topo["nodes"] if n["id"] in degree2]
-        focused_edges = [e for e in topo["edges"]
-                         if e["source"] in degree2 and e["target"] in degree2]
+        focused_edges = [
+            e for e in topo["edges"] if e["source"] in degree2 and e["target"] in degree2
+        ]
 
         # Annotate distance from focus
         for n in focused_nodes:
@@ -893,8 +1145,13 @@ EmptyOS — a mind companion. Think and create with you, not for you.<br>
             d = e["data"]
             key = f"{d.get('app', '?')}:{d.get('provider', '?')}"
             if key not in usage:
-                usage[key] = {"app": d.get("app"), "provider": d.get("provider"),
-                              "domain": d.get("domain"), "count": 0, "total_ms": 0}
+                usage[key] = {
+                    "app": d.get("app"),
+                    "provider": d.get("provider"),
+                    "domain": d.get("domain"),
+                    "count": 0,
+                    "total_ms": 0,
+                }
             usage[key]["count"] += 1
             usage[key]["total_ms"] += d.get("latency_ms", 0)
         result = sorted(usage.values(), key=lambda x: -x["count"])
@@ -949,7 +1206,11 @@ EmptyOS — a mind companion. Think and create with you, not for you.<br>
             return JSONResponse({"error": f"File not found: {path}"}, status_code=404)
         try:
             content = full.read_text(encoding="utf-8")
-            rel = str(full.relative_to(vault)).replace("\\", "/") if str(full).startswith(str(vault)) else path.replace("\\", "/")
+            rel = (
+                str(full.relative_to(vault)).replace("\\", "/")
+                if str(full).startswith(str(vault))
+                else path.replace("\\", "/")
+            )
             return {"path": str(full).replace("\\", "/"), "relative": rel, "content": content}
         except Exception as e:
             return JSONResponse({"error": str(e)}, status_code=500)
@@ -1013,6 +1274,7 @@ EmptyOS — a mind companion. Think and create with you, not for you.<br>
     DEFAULT_GLOBAL_SHORTCUTS = [
         {"key": "Ctrl+K", "action": "palette", "label": "Command Palette"},
         {"key": "Ctrl+/", "action": "help", "label": "Show Shortcuts"},
+        {"key": "Ctrl+Shift+P", "action": "presentation", "label": "Toggle Presentation Mode"},
         {"key": "?", "action": "help", "label": "Show Shortcuts"},
         {"key": "/", "action": "focus-search", "label": "Focus Search"},
         {"key": "Esc", "action": "close", "label": "Close Overlay"},
@@ -1101,7 +1363,10 @@ EmptyOS — a mind companion. Think and create with you, not for you.<br>
             return {"error": f"Command '{cmd_name}' not found in '{app_id}'"}
 
         # Capture print output
-        import io, contextlib, inspect as _inspect
+        import contextlib
+        import inspect as _inspect
+        import io
+
         buf = io.StringIO()
         try:
             with contextlib.redirect_stdout(buf):
@@ -1133,6 +1398,7 @@ EmptyOS — a mind companion. Think and create with you, not for you.<br>
         # Auth check: when auth_token is set, require it via ?token= query or cookie
         if _auth_token:
             import hmac
+
             tok = ws.query_params.get("token") or ws.cookies.get("eos_session", "")
             if not (tok and hmac.compare_digest(tok, _auth_token)):
                 await ws.close(code=1008, reason="Unauthorized")
@@ -1160,22 +1426,61 @@ EmptyOS — a mind companion. Think and create with you, not for you.<br>
             _prefix_to_app[_p] = _aid
     _SKIP_EXTS = (".js", ".css", ".ico", ".png", ".svg", ".woff", ".woff2", ".map", ".json")
 
+    # Alias prefix → canonical prefix. Manifest `aliases` already exist for
+    # call_app() lookup (e.g. quick-action exposes alias "capture"). Mirror
+    # them on the web so a stray `/capture/api/save` 307s to `/quick-action/api/save`
+    # instead of returning a bare 404 — same friction the dogfood persona hit.
+    _alias_to_prefix: dict[str, str] = {}
+    for _aid, _m in kernel.apps.manifests.items():
+        _p = _m.provides.get("web", {}).get("prefix", "")
+        if not _p:
+            continue
+        for _alias in getattr(_m, "aliases", []) or []:
+            _alias_path = "/" + _alias.strip("/")
+            if _alias_path == _p or _alias_path in _prefix_to_app:
+                continue  # don't shadow a real app prefix
+            _alias_to_prefix[_alias_path] = _p
+
+    if _alias_to_prefix:
+        from fastapi.responses import RedirectResponse as _RedirectResponse
+
+        @server.middleware("http")
+        async def _alias_redirect_middleware(request: Request, call_next):
+            path = request.url.path
+            for _alias_path, _canonical in _alias_to_prefix.items():
+                if path == _alias_path or path.startswith(_alias_path + "/"):
+                    new_path = _canonical + path[len(_alias_path) :]
+                    target = new_path
+                    if request.url.query:
+                        target = target + "?" + request.url.query
+                    # 307 preserves method + body (POST stays POST).
+                    return _RedirectResponse(url=target, status_code=307)
+            return await call_next(request)
+
     # --- Per-IP rate limit ---
     # Defense-in-depth alongside Cloudflare/Caddy. Sliding 10-second window.
     # Threshold is configurable via EOS_RATE_LIMIT_PER_10S env var; 0 disables.
     # On hits, returns HTTP 429 with a small JSON body. Excludes /static/ and
     # /ws so streaming + asset loads don't trip it.
-    import os as _os, time as _time, collections as _collections
+    import collections as _collections
+    import os as _os
+    import time as _time
+
     _RATE_LIMIT = int(_os.environ.get("EOS_RATE_LIMIT_PER_10S", "0") or 0)
-    _rate_buckets: dict[str, "_collections.deque[float]"] = {}
+    _rate_buckets: dict[str, _collections.deque[float]] = {}
 
     def _client_ip(request: Request) -> str:
         # Caddy/Cloudflare set X-Forwarded-For; fall back to direct client.
         xff = (request.headers.get("x-forwarded-for") or "").split(",")
-        ip = xff[0].strip() if xff and xff[0].strip() else (request.client.host if request.client else "unknown")
+        ip = (
+            xff[0].strip()
+            if xff and xff[0].strip()
+            else (request.client.host if request.client else "unknown")
+        )
         return ip
 
     if _RATE_LIMIT > 0:
+
         @server.middleware("http")
         async def _rate_limit_middleware(request: Request, call_next):
             path = request.url.path
@@ -1191,6 +1496,7 @@ EmptyOS — a mind companion. Think and create with you, not for you.<br>
                 bucket.popleft()
             if len(bucket) >= _RATE_LIMIT:
                 from fastapi.responses import JSONResponse
+
                 return JSONResponse(
                     {"error": "rate limited", "retry_after_s": 10},
                     status_code=429,
@@ -1208,7 +1514,8 @@ EmptyOS — a mind companion. Think and create with you, not for you.<br>
     # asyncio task handling the request).
     @server.middleware("http")
     async def _byok_middleware(request: Request, call_next):
-        from emptyos.capabilities.byok import HEADER_MAP, set_byok_keys, reset_byok_keys
+        from emptyos.capabilities.byok import HEADER_MAP, reset_byok_keys, set_byok_keys
+
         keys: dict[str, str] = {}
         for header_name, key_name in HEADER_MAP.items():
             val = (request.headers.get(header_name) or "").strip()
@@ -1242,9 +1549,7 @@ EmptyOS — a mind companion. Think and create with you, not for you.<br>
                 break
 
         # Emit ui:viewed for page loads (not API calls, not assets)
-        if (request.method == "GET"
-                and "/api/" not in path
-                and not path.endswith(_SKIP_EXTS)):
+        if request.method == "GET" and "/api/" not in path and not path.endswith(_SKIP_EXTS):
             hit_app = None
             for prefix, aid in _prefix_to_app.items():
                 if path == prefix or path.startswith(prefix + "/"):
@@ -1253,7 +1558,9 @@ EmptyOS — a mind companion. Think and create with you, not for you.<br>
             if hit_app:
                 try:
                     await kernel.events.emit(
-                        "ui:viewed", {"path": path}, source=hit_app[1],
+                        "ui:viewed",
+                        {"path": path},
+                        source=hit_app[1],
                     )
                 except Exception:
                     pass
@@ -1271,10 +1578,7 @@ EmptyOS — a mind companion. Think and create with you, not for you.<br>
             return await call_next(request)
         except RuntimeError as e:
             msg = str(e)
-            if (
-                "No available provider for capability" in msg
-                or "simulate offline" in msg
-            ):
+            if "No available provider for capability" in msg or "simulate offline" in msg:
                 cap = "think"
                 if "capability '" in msg:
                     try:
@@ -1311,27 +1615,30 @@ EmptyOS — a mind companion. Think and create with you, not for you.<br>
 
     static_dir = Path(__file__).parent / "static"
     if static_dir.exists():
-
         topology_path = static_dir / "topology.html"
         if topology_path.exists():
+
             @server.get("/topology", response_class=HTMLResponse)
             async def topology_page():
                 return topology_path.read_text(encoding="utf-8")
 
         system_path = static_dir / "system.html"
         if system_path.exists():
+
             @server.get("/system", response_class=HTMLResponse)
             async def system_page():
                 return system_path.read_text(encoding="utf-8")
 
         console_path = static_dir / "console.html"
         if console_path.exists():
+
             @server.get("/console", response_class=HTMLResponse)
             async def console_page():
                 return console_path.read_text(encoding="utf-8")
 
         favicon_path = static_dir / "favicon.svg"
         if favicon_path.exists():
+
             @server.get("/favicon.ico")
             async def favicon():
                 return FileResponse(str(favicon_path), media_type="image/svg+xml")
@@ -1339,22 +1646,31 @@ EmptyOS — a mind companion. Think and create with you, not for you.<br>
         # Service worker must be served at root scope
         sw_path = static_dir / "sw.js"
         if sw_path.exists():
+
             @server.get("/sw.js")
             async def service_worker():
-                return FileResponse(str(sw_path), media_type="application/javascript",
-                                    headers={"Cache-Control": "no-cache", "Service-Worker-Allowed": "/"})
+                return FileResponse(
+                    str(sw_path),
+                    media_type="application/javascript",
+                    headers={"Cache-Control": "no-cache", "Service-Worker-Allowed": "/"},
+                )
 
         # PWA manifest at root with proper Content-Type — iOS Safari prefers this over /static/manifest.json
         manifest_path = static_dir / "manifest.json"
         if manifest_path.exists():
+
             @server.get("/manifest.webmanifest")
             async def pwa_manifest():
-                return FileResponse(str(manifest_path), media_type="application/manifest+json",
-                                    headers={"Cache-Control": "no-cache"})
+                return FileResponse(
+                    str(manifest_path),
+                    media_type="application/manifest+json",
+                    headers={"Cache-Control": "no-cache"},
+                )
 
         # Offline fallback page — shown by service worker when both network and cache miss
         offline_path = static_dir / "offline.html"
         if offline_path.exists():
+
             @server.get("/offline.html", response_class=HTMLResponse)
             async def offline_page():
                 return HTMLResponse(offline_path.read_text(encoding="utf-8"))
@@ -1367,7 +1683,9 @@ EmptyOS — a mind companion. Think and create with you, not for you.<br>
         class NoCacheStaticMiddleware(BaseHTTPMiddleware):
             async def dispatch(self, request, call_next):
                 response = await call_next(request)
-                if request.url.path.startswith("/static/") and request.url.path.endswith((".js", ".css")):
+                if request.url.path.startswith("/static/") and request.url.path.endswith(
+                    (".js", ".css")
+                ):
                     response.headers["Cache-Control"] = "no-cache, must-revalidate"
                 return response
 
@@ -1421,8 +1739,8 @@ def _mount_single_app_routes(server: FastAPI, kernel, app_id: str):
 
     # Mount app pages: custom pages/ directory, or auto-generated UI
     # Track page source for deep-path catch-all registration
-    _catchall_path = None   # Path object → read from disk (hot-reload)
-    _catchall_html = None   # str → cached HTML (template/auto-gen)
+    _catchall_path = None  # Path object → read from disk (hot-reload)
+    _catchall_html = None  # str → cached HTML (template/auto-gen)
 
     pages_dir = manifest.path / "pages"
     if pages_dir.exists():
@@ -1434,6 +1752,7 @@ def _mount_single_app_routes(server: FastAPI, kernel, app_id: str):
 
             async def _custom_page(p=_page_path):
                 return HTMLResponse(p.read_text(encoding="utf-8"))
+
             _custom_page.__name__ = f"{app_id}_custom_page"
             server.get(f"{prefix}/")(_custom_page)
 
@@ -1452,19 +1771,27 @@ def _mount_single_app_routes(server: FastAPI, kernel, app_id: str):
         if template_name:
             # Serve template with injected config
             from emptyos.web.templates_engine import serve_template
+
             _catchall_html = serve_template(
-                server, prefix, app_id, manifest, template_name, template_config,
+                server,
+                prefix,
+                app_id,
+                manifest,
+                template_name,
+                template_config,
                 return_html=True,
             )
         else:
             # Auto-generate UI from manifest + routes
             from emptyos.web.auto_ui import generate_app_page
+
             routes = [meta for meta, _ in instance.get_web_methods()]
             auto_html = generate_app_page(manifest, routes)
             _catchall_html = auto_html
 
             async def _auto_page(html=auto_html):
                 return HTMLResponse(html)
+
             _auto_page.__name__ = f"{app_id}_auto_page"
             server.get(f"{prefix}/")(_auto_page)
 
@@ -1472,8 +1799,17 @@ def _mount_single_app_routes(server: FastAPI, kernel, app_id: str):
     # Registered LAST so API routes, WebSocket routes, and StaticFiles all take priority.
     # Enables client-side routing (pushState) without 404 on browser refresh.
     if _catchall_path or _catchall_html:
-        async def _catchall(path: str, p=_catchall_path, html=_catchall_html):
+
+        async def _catchall(path: str, p=_catchall_path, html=_catchall_html, _aid=app_id):
+            # Unknown /api/* must 404, not return the SPA shell — otherwise
+            # wrong-verb hits look like silent success to non-browser callers.
+            if path == "api" or path.startswith("api/"):
+                return JSONResponse(
+                    {"error": "no such endpoint", "app": _aid, "path": "/" + path},
+                    status_code=404,
+                )
             return HTMLResponse(p.read_text(encoding="utf-8") if p else html)
+
         _catchall.__name__ = f"{app_id}_catchall"
         server.get(f"{prefix}/{{path:path}}")(_catchall)
 
@@ -1556,56 +1892,82 @@ def _build_topology(kernel) -> dict:
         for provider in cap.providers:
             pid = f"prov:{cap_name}:{provider.name}"
             add_node(pid, "provider", provider.name)
-            edges.append({
-                "source": f"cap:{cap_name}", "target": pid,
-                "type": "has_provider",
-            })
+            edges.append(
+                {
+                    "source": f"cap:{cap_name}",
+                    "target": pid,
+                    "type": "has_provider",
+                }
+            )
 
     # --- Plugins ---
     for plugin_id, manifest in kernel.plugins.manifests.items():
         loaded = plugin_id in kernel.plugins.instances
-        add_node(f"plugin:{plugin_id}", "plugin", manifest.name,
-                 loaded=loaded, description=manifest.description)
+        add_node(
+            f"plugin:{plugin_id}",
+            "plugin",
+            manifest.name,
+            loaded=loaded,
+            description=manifest.description,
+        )
         for svc in manifest.provides.get("services", []):
             add_node(f"service:{svc}", "service", svc)
-            edges.append({
-                "source": f"plugin:{plugin_id}", "target": f"service:{svc}",
-                "type": "provides_service",
-            })
+            edges.append(
+                {
+                    "source": f"plugin:{plugin_id}",
+                    "target": f"service:{svc}",
+                    "type": "provides_service",
+                }
+            )
 
     # --- Engines ---
     for engine_id, manifest in kernel.engines.manifests.items():
         loaded = engine_id in kernel.engines.instances
-        add_node(f"engine:{engine_id}", "engine", manifest.name,
-                 loaded=loaded, description=manifest.description)
+        add_node(
+            f"engine:{engine_id}",
+            "engine",
+            manifest.name,
+            loaded=loaded,
+            description=manifest.description,
+        )
         # Engines may depend on capabilities
         for cap in manifest.requires.get("capabilities", []):
-            edges.append({
-                "source": f"engine:{engine_id}", "target": f"cap:{cap}",
-                "type": "uses_capability",
-            })
+            edges.append(
+                {
+                    "source": f"engine:{engine_id}",
+                    "target": f"cap:{cap}",
+                    "type": "uses_capability",
+                }
+            )
 
     # --- Apps ---
     for app_id, manifest in kernel.apps.manifests.items():
         state = kernel.apps.states.get(app_id, AppState.DISCOVERED).value
-        add_node(f"app:{app_id}", "app", manifest.name,
-                 state=state, description=manifest.description)
+        add_node(
+            f"app:{app_id}", "app", manifest.name, state=state, description=manifest.description
+        )
 
         requires = manifest.requires
 
         # Capability edges
         for cap in requires.get("capabilities", []):
-            edges.append({
-                "source": f"app:{app_id}", "target": f"cap:{cap}",
-                "type": "uses_capability",
-            })
+            edges.append(
+                {
+                    "source": f"app:{app_id}",
+                    "target": f"cap:{cap}",
+                    "type": "uses_capability",
+                }
+            )
 
         # Service edges
         for svc in requires.get("services", []):
-            edges.append({
-                "source": f"app:{app_id}", "target": f"service:{svc}",
-                "type": "uses_service",
-            })
+            edges.append(
+                {
+                    "source": f"app:{app_id}",
+                    "target": f"service:{svc}",
+                    "type": "uses_service",
+                }
+            )
 
         # Event listen edges — manifest-declared listens plus live @on_event
         # decorators on the running instance. Mixin-heavy apps (reactor)
@@ -1622,35 +1984,47 @@ def _build_topology(kernel) -> dict:
                 pass
         for evt in listen_events:
             add_node(f"event:{evt}", "event", evt)
-            edges.append({
-                "source": f"event:{evt}", "target": f"app:{app_id}",
-                "type": "listens_event",
-            })
+            edges.append(
+                {
+                    "source": f"event:{evt}",
+                    "target": f"app:{app_id}",
+                    "type": "listens_event",
+                }
+            )
 
         # Event emit edges
         for evt in manifest.provides.get("events", {}).get("emits", []):
             add_node(f"event:{evt}", "event", evt)
-            edges.append({
-                "source": f"app:{app_id}", "target": f"event:{evt}",
-                "type": "emits_event",
-            })
+            edges.append(
+                {
+                    "source": f"app:{app_id}",
+                    "target": f"event:{evt}",
+                    "type": "emits_event",
+                }
+            )
 
         # Engine edges
         for eng in requires.get("engines", []):
             eng_nid = f"engine:{eng}"
             if eng_nid not in node_ids:
                 add_node(eng_nid, "engine", eng)
-            edges.append({
-                "source": f"app:{app_id}", "target": eng_nid,
-                "type": "uses_engine",
-            })
+            edges.append(
+                {
+                    "source": f"app:{app_id}",
+                    "target": eng_nid,
+                    "type": "uses_engine",
+                }
+            )
 
         # App-to-app dependency edges
         for dep_app in requires.get("apps", []):
-            edges.append({
-                "source": f"app:{app_id}", "target": f"app:{dep_app}",
-                "type": "calls_app",
-            })
+            edges.append(
+                {
+                    "source": f"app:{app_id}",
+                    "target": f"app:{dep_app}",
+                    "type": "calls_app",
+                }
+            )
 
     # --- Vault Data Nodes (from DEFAULT_PATHS) ---
     from emptyos.runtime.vault_map import DEFAULT_PATHS
@@ -1667,9 +2041,21 @@ def _build_topology(kernel) -> dict:
         return parts[0]
 
     # Determine write vs read: apps with vault_write, vault_config for known write dirs
-    write_apps = {"journal", "quick-action", "healing", "expense", "nutrition",
-                  "jobmonitor", "gpts", "reactor", "compose", "lyrics",
-                  "mv-creator", "interview-studio", "contacts"}
+    write_apps = {
+        "journal",
+        "quick-action",
+        "healing",
+        "expense",
+        "nutrition",
+        "jobmonitor",
+        "rooms",
+        "reactor",
+        "compose",
+        "lyrics",
+        "mv-creator",
+        "interview-studio",
+        "contacts",
+    }
 
     for app_id, keys in DEFAULT_PATHS.items():
         for key, fallbacks in keys.items():
@@ -1682,12 +2068,382 @@ def _build_topology(kernel) -> dict:
                 data_nid = f"data:{folder}"
                 add_node(data_nid, "data", folder)
                 edge_type = "writes_data" if app_id in write_apps else "reads_data"
-                edges.append({
-                    "source": f"app:{app_id}", "target": data_nid,
-                    "type": edge_type,
-                })
+                edges.append(
+                    {
+                        "source": f"app:{app_id}",
+                        "target": data_nid,
+                        "type": edge_type,
+                    }
+                )
 
     return {"nodes": nodes, "edges": edges}
+
+
+def _topology_timeline(kernel) -> dict:
+    """Compute per-node creation date with cache.
+
+    Resolution order per node:
+      1. Manifest `created` field in [app] / [plugin] / [engine] table
+      2. `git log --diff-filter=A --follow --format=%aI -- <manifest.toml>` (oldest)
+      3. Filesystem mtime of manifest.toml
+
+    Derived nodes (capabilities, providers, services, events, data) inherit the
+    earliest date among manifests that introduce them.
+    """
+    import datetime
+    import json
+    import subprocess
+
+    repo_root = kernel.config.path.resolve().parent
+    cache_path = kernel.config.data_dir / "apps" / "topology" / "dates.json"
+    cache_path.parent.mkdir(parents=True, exist_ok=True)
+
+    head = ""
+    try:
+        head = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=repo_root,
+            capture_output=True,
+            text=True,
+            timeout=5,
+        ).stdout.strip()
+    except Exception:
+        pass
+
+    # Cache schema version — bump when shape changes.
+    # v2: full ISO timestamps. v3: nodes are {date, message} dicts (was bare strings).
+    CACHE_VERSION = 3
+
+    if cache_path.exists():
+        try:
+            cached = json.loads(cache_path.read_text(encoding="utf-8"))
+            if cached.get("head") == head and head and cached.get("version") == CACHE_VERSION:
+                return _topology_timeline_serve(
+                    kernel,
+                    cached.get("min_date"),
+                    cached.get("max_date"),
+                    cached.get("nodes", {}),
+                )
+        except Exception:
+            pass
+
+    def _git_first_seen(path) -> tuple[str, str] | None:
+        """Returns (UTC ISO timestamp, commit subject) of the commit that first
+        added `path`. Subject (`%s`) gives the birth log a real changelog feel."""
+        try:
+            r = subprocess.run(
+                [
+                    "git",
+                    "log",
+                    "--follow",
+                    "--diff-filter=A",
+                    "--format=%aI%x09%s",
+                    "--",
+                    str(path),
+                ],
+                cwd=repo_root,
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            lines = [line for line in r.stdout.strip().splitlines() if line]
+            if not lines:
+                return None
+            parts = lines[-1].split("\t", 1)
+            iso = parts[0]
+            subj = parts[1] if len(parts) > 1 else ""
+            try:
+                dt = datetime.datetime.fromisoformat(iso)
+                return (dt.astimezone(datetime.timezone.utc).isoformat(), subj)
+            except Exception:
+                return (iso, subj)
+        except Exception:
+            return None
+
+    def _normalize(value) -> str:
+        """Coerce a manifest `created` value (date-only or full ISO) to UTC ISO."""
+        s = str(value)
+        try:
+            if "T" not in s:
+                s = s + "T00:00:00+00:00"
+            dt = datetime.datetime.fromisoformat(s)
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=datetime.timezone.utc)
+            return dt.astimezone(datetime.timezone.utc).isoformat()
+        except Exception:
+            return s
+
+    def _date_for(manifest) -> dict:
+        """Returns {date: ISO, message: str}."""
+        raw = getattr(manifest, "raw", {}) or {}
+        for table in ("app", "plugin", "engine"):
+            section = raw.get(table)
+            if isinstance(section, dict) and section.get("created"):
+                return {"date": _normalize(section["created"]), "message": ""}
+        manifest_dir = getattr(manifest, "path", None)
+        if manifest_dir is not None:
+            mfile = Path(manifest_dir) / "manifest.toml"
+            if mfile.exists():
+                hit = _git_first_seen(mfile)
+                if hit:
+                    return {"date": hit[0], "message": hit[1]}
+                try:
+                    return {
+                        "date": datetime.datetime.fromtimestamp(
+                            mfile.stat().st_mtime, tz=datetime.timezone.utc
+                        ).isoformat(),
+                        "message": "(uncommitted)",
+                    }
+                except Exception:
+                    pass
+        return {
+            "date": datetime.datetime.now(tz=datetime.timezone.utc).isoformat(),
+            "message": "",
+        }
+
+    nodes: dict[str, dict] = {}
+
+    today_iso = datetime.datetime.now(tz=datetime.timezone.utc).isoformat()
+    today_entry = {"date": today_iso, "message": ""}
+
+    def _earlier(a: dict, b: dict) -> dict:
+        return a if a["date"] <= b["date"] else b
+
+    # Apps
+    for app_id, manifest in kernel.apps.manifests.items():
+        nodes[f"app:{app_id}"] = _date_for(manifest)
+
+    # Plugins
+    for plugin_id, manifest in kernel.plugins.manifests.items():
+        d = _date_for(manifest)
+        nodes[f"plugin:{plugin_id}"] = d
+        for svc in manifest.provides.get("services", []):
+            sid = f"service:{svc}"
+            nodes[sid] = _earlier(d, nodes.get(sid, d))
+
+    # Engines
+    for engine_id, manifest in kernel.engines.manifests.items():
+        nodes[f"engine:{engine_id}"] = _date_for(manifest)
+
+    # Capabilities + providers — earliest plugin date that provides into them
+    for cap_name, cap in kernel.capabilities.list().items():
+        cap_id = f"cap:{cap_name}"
+        earliest = today_entry
+        for plugin_id, manifest in kernel.plugins.manifests.items():
+            provided = manifest.raw.get("provides", {}).get("capabilities", {}) or {}
+            if cap_name in provided or cap_name in (manifest.raw.get("enhances") or []):
+                pdate = nodes.get(f"plugin:{plugin_id}", today_entry)
+                earliest = _earlier(pdate, earliest)
+        nodes[cap_id] = earliest
+        for provider in cap.providers:
+            pid = f"prov:{cap_name}:{provider.name}"
+            nodes[pid] = earliest
+
+    # Events — earliest date of any emitter/listener
+    event_dates: dict[str, dict] = {}
+    for app_id, manifest in kernel.apps.manifests.items():
+        ad = nodes.get(f"app:{app_id}", today_entry)
+        for evt in manifest.provides.get("events", {}).get("emits", []) or []:
+            event_dates[evt] = _earlier(event_dates.get(evt, today_entry), ad)
+        for evt in manifest.requires.get("events", []) or []:
+            event_dates[evt] = _earlier(event_dates.get(evt, today_entry), ad)
+        for evt in manifest.provides.get("events", {}).get("listens", []) or []:
+            event_dates[evt] = _earlier(event_dates.get(evt, today_entry), ad)
+    for evt, d in event_dates.items():
+        nodes[f"event:{evt}"] = d
+
+    if nodes:
+        all_iso = [v["date"] for v in nodes.values()]
+        min_date = min(all_iso)
+        max_date = max(all_iso)
+    else:
+        min_date = max_date = today_iso
+
+    payload = {
+        "version": CACHE_VERSION,
+        "head": head,
+        "min_date": min_date,
+        "max_date": max_date,
+        "nodes": nodes,
+    }
+    try:
+        cache_path.write_text(json.dumps(payload), encoding="utf-8")
+    except Exception:
+        pass
+
+    return _topology_timeline_serve(kernel, min_date, max_date, nodes)
+
+
+def _topology_timeline_serve(kernel, min_date: str, max_date: str, nodes: dict) -> dict:
+    """Apply public-mode privacy filter on the way out.
+
+    On `network.mode = "public"` or `demo.enabled`, strip time-of-day from every
+    timestamp so commit hours never leak. Cache stays full-fidelity so a private
+    machine that later opens to public has no cache invalidation needed.
+    """
+    public_mode = (
+        kernel.config.get("network.mode") == "public"
+        or bool(kernel.config.get("demo.enabled"))
+    )
+    if public_mode:
+        def _to_day(iso: str) -> str:
+            return (iso[:10] + "T00:00:00+00:00") if iso else iso
+        nodes = {k: {"date": _to_day(v["date"]), "message": v.get("message", "")}
+                 for k, v in nodes.items()}
+        min_date = _to_day(min_date)
+        max_date = _to_day(max_date)
+    return {
+        "min_date": min_date,
+        "max_date": max_date,
+        "nodes": nodes,
+        "time_resolution": "day" if public_mode else "minute",
+    }
+
+
+def _topology_releases(kernel) -> dict:
+    """Return git tags as release markers: [{tag, date, message}, ...] in UTC ISO."""
+    import datetime
+    import subprocess
+
+    repo_root = kernel.config.path.resolve().parent
+    try:
+        r = subprocess.run(
+            [
+                "git",
+                "tag",
+                "--sort=creatordate",
+                "--format=%(refname:short)|%(creatordate:iso-strict)|%(subject)",
+            ],
+            cwd=repo_root,
+            capture_output=True,
+            text=True,
+            timeout=8,
+        )
+    except Exception:
+        return {"releases": []}
+
+    public_mode = (
+        kernel.config.get("network.mode") == "public"
+        or bool(kernel.config.get("demo.enabled"))
+    )
+    releases = []
+    for line in r.stdout.strip().splitlines():
+        parts = line.split("|", 2)
+        if len(parts) < 2:
+            continue
+        tag, iso = parts[0].strip(), parts[1].strip()
+        msg = parts[2].strip() if len(parts) > 2 else ""
+        try:
+            dt = datetime.datetime.fromisoformat(iso)
+            iso_utc = dt.astimezone(datetime.timezone.utc).isoformat()
+        except Exception:
+            iso_utc = iso
+        if public_mode and iso_utc:
+            iso_utc = iso_utc[:10] + "T00:00:00+00:00"
+        releases.append({"tag": tag, "date": iso_utc, "message": msg})
+    return {"releases": releases, "time_resolution": "day" if public_mode else "minute"}
+
+
+def _build_topology_tree(kernel) -> dict:
+    """Capability-rooted tree: 9 capabilities → providers + consuming apps.
+
+    Apps that declare no capabilities show up in `groundcover` rather than on
+    a branch — rendered as wildflowers / grass at the base of the tree.
+    """
+    raw = _topology_timeline(kernel).get("nodes", {})
+    timeline = {k: (v.get("date") if isinstance(v, dict) else v) for k, v in raw.items()}
+    roots = []
+    # Build app-by-capability index
+    cap_consumers: dict[str, list[dict]] = {}
+    rooted_apps: set[str] = set()
+    for app_id, manifest in kernel.apps.manifests.items():
+        caps = manifest.requires.get("capabilities", []) or []
+        for cap in caps:
+            cap_consumers.setdefault(cap, []).append(
+                {
+                    "id": f"app:{app_id}",
+                    "label": manifest.name,
+                    "type": "app",
+                    "created": timeline.get(f"app:{app_id}"),
+                    "description": manifest.description,
+                }
+            )
+            rooted_apps.add(app_id)
+    # Engines that depend on a capability appear under it as enhancers
+    cap_engines: dict[str, list[dict]] = {}
+    for engine_id, manifest in kernel.engines.manifests.items():
+        for cap in manifest.requires.get("capabilities", []) or []:
+            cap_engines.setdefault(cap, []).append(
+                {
+                    "id": f"engine:{engine_id}",
+                    "label": manifest.name,
+                    "type": "engine",
+                    "created": timeline.get(f"engine:{engine_id}"),
+                }
+            )
+
+    for cap_name, cap in kernel.capabilities.list().items():
+        cap_id = f"cap:{cap_name}"
+        providers = []
+        for provider in cap.providers:
+            pid = f"prov:{cap_name}:{provider.name}"
+            providers.append(
+                {
+                    "id": pid,
+                    "label": provider.name,
+                    "type": "provider",
+                    "created": timeline.get(pid),
+                    "is_cloud": getattr(provider, "is_cloud", False),
+                }
+            )
+        consumers = sorted(
+            cap_consumers.get(cap_name, []),
+            key=lambda n: (n.get("created") or "9999", n["label"]),
+        )
+        engines = sorted(
+            cap_engines.get(cap_name, []),
+            key=lambda n: (n.get("created") or "9999", n["label"]),
+        )
+        roots.append(
+            {
+                "id": cap_id,
+                "label": cap_name,
+                "type": "capability",
+                "created": timeline.get(cap_id),
+                "providers": providers,
+                "engines": engines,
+                "consumers": consumers,
+            }
+        )
+    # Order roots by total node count desc (richest capability first), then alpha
+    roots.sort(
+        key=lambda r: (-(len(r["providers"]) + len(r["consumers"]) + len(r["engines"])), r["label"])
+    )
+
+    # Groundcover: apps that declare no capabilities. They live in the soil at
+    # the base of the tree as flowers / grass, with their own roots — they're
+    # not parasitic on any branch.  An app counts as "kind" = "engine-bound" if
+    # it requires at least one engine, otherwise "rootless".  The frontend uses
+    # this to draw saplings (engine-bound) vs wildflowers (rootless).
+    groundcover = []
+    for app_id, manifest in kernel.apps.manifests.items():
+        if app_id in rooted_apps:
+            continue
+        engines_req = manifest.requires.get("engines", []) or []
+        kind = "sapling" if engines_req else "flower"
+        groundcover.append(
+            {
+                "id": f"app:{app_id}",
+                "label": manifest.name,
+                "type": "app",
+                "kind": kind,
+                "created": timeline.get(f"app:{app_id}"),
+                "description": manifest.description,
+            }
+        )
+    groundcover.sort(key=lambda n: (n.get("created") or "9999", n["label"]))
+
+    return {"roots": roots, "groundcover": groundcover}
 
 
 def _analyze_layers(kernel) -> dict:
@@ -1706,9 +2462,14 @@ def _analyze_layers(kernel) -> dict:
 
     # --- Build adjacency in a single pass ---
     structural_edges = {
-        "uses_capability", "uses_service", "uses_engine",
-        "calls_app", "has_provider", "provides_service",
-        "reads_data", "writes_data",
+        "uses_capability",
+        "uses_service",
+        "uses_engine",
+        "calls_app",
+        "has_provider",
+        "provides_service",
+        "reads_data",
+        "writes_data",
     }
     deps: dict[str, list[str]] = {nid: [] for nid in nodes}
     reverse_deps: dict[str, list[str]] = {nid: [] for nid in nodes}
@@ -1756,10 +2517,12 @@ def _analyze_layers(kernel) -> dict:
         # Group by app-to-app cycles
         cycle_apps = [nid for nid in cycle_nodes if nodes[nid]["type"] == "app"]
         if cycle_apps:
-            cycles.append({
-                "nodes": cycle_apps,
-                "description": f"{len(cycle_apps)} apps in dependency cycle",
-            })
+            cycles.append(
+                {
+                    "nodes": cycle_apps,
+                    "description": f"{len(cycle_apps)} apps in dependency cycle",
+                }
+            )
 
     # --- Compute layers via BFS from leaves ---
     # Infrastructure (providers, capabilities, plugins, engines) gets fixed layers.
@@ -1772,8 +2535,7 @@ def _analyze_layers(kernel) -> dict:
         elif nodes[nid]["type"] in ("app", "event"):
             # Only count app-to-app deps for app layer depth
             app_dep_layers = [
-                layer[d] for d in deps[nid]
-                if d in layer and nodes.get(d, {}).get("type") == "app"
+                layer[d] for d in deps[nid] if d in layer and nodes.get(d, {}).get("type") == "app"
             ]
             if app_dep_layers:
                 layer[nid] = max(app_dep_layers) + 1
@@ -1837,12 +2599,15 @@ def _analyze_layers(kernel) -> dict:
         if len(path) > len(longest_path):
             longest_path = path
 
-    critical_path = [{
-        "id": nid,
-        "label": nodes[nid]["label"],
-        "type": nodes[nid]["type"],
-        "layer": layer.get(nid, -1),
-    } for nid in longest_path]
+    critical_path = [
+        {
+            "id": nid,
+            "label": nodes[nid]["label"],
+            "type": nodes[nid]["type"],
+            "layer": layer.get(nid, -1),
+        }
+        for nid in longest_path
+    ]
 
     # --- Fan-in/fan-out rankings (top 10) ---
     fan_in_ranking = sorted(
@@ -1868,24 +2633,37 @@ def _analyze_layers(kernel) -> dict:
         consumers = reverse_deps.get(nid, [])
         if not consumers:
             continue
-        readers = [c for c in consumers if any(
-            e["source"] == c and e["target"] == nid and e["type"] == "reads_data"
-            for e in edges
-        )]
-        writers = [c for c in consumers if any(
-            e["source"] == c and e["target"] == nid and e["type"] == "writes_data"
-            for e in edges
-        )]
+        readers = [
+            c
+            for c in consumers
+            if any(
+                e["source"] == c and e["target"] == nid and e["type"] == "reads_data" for e in edges
+            )
+        ]
+        writers = [
+            c
+            for c in consumers
+            if any(
+                e["source"] == c and e["target"] == nid and e["type"] == "writes_data"
+                for e in edges
+            )
+        ]
         reader_names = sorted(set(nodes[c]["label"] for c in readers if c in nodes))
         writer_names = sorted(set(nodes[c]["label"] for c in writers if c in nodes))
         unique_apps = len(set(readers) | set(writers))
-        data_coupling.append({
-            "folder": node["label"],
-            "total_apps": unique_apps,
-            "readers": reader_names,
-            "writers": writer_names,
-            "coupling_risk": "high" if unique_apps >= 5 else "medium" if unique_apps >= 3 else "low",
-        })
+        data_coupling.append(
+            {
+                "folder": node["label"],
+                "total_apps": unique_apps,
+                "readers": reader_names,
+                "writers": writer_names,
+                "coupling_risk": "high"
+                if unique_apps >= 5
+                else "medium"
+                if unique_apps >= 3
+                else "low",
+            }
+        )
     data_coupling.sort(key=lambda x: -x["total_apps"])
 
     return {
@@ -1923,7 +2701,6 @@ async def _compute_improvements(kernel) -> dict:
     - action (what to do)
     - files (which files to change)
     """
-    from emptyos.kernel.app_loader import AppState
 
     improvements = []
     _audit = None  # cache for reuse by verb health section
@@ -1939,27 +2716,33 @@ async def _compute_improvements(kernel) -> dict:
                     gap = 10 - dim["score"]
                     priority = "high" if gap >= 3 else "medium" if gap >= 2 else "low"
                     for violation in dim.get("violations", []):
-                        improvements.append({
-                            "category": "integrity",
-                            "dimension": dim_name,
-                            "priority": priority,
-                            "score": f"{dim['score']}/10",
-                            "description": violation,
-                            "action": dim.get("growth_signal", ""),
-                        })
+                        improvements.append(
+                            {
+                                "category": "integrity",
+                                "dimension": dim_name,
+                                "priority": priority,
+                                "score": f"{dim['score']}/10",
+                                "description": violation,
+                                "action": dim.get("growth_signal", ""),
+                            }
+                        )
     except Exception:
         pass
 
     # --- Topology: cycles ---
     layers = _analyze_layers(kernel)
     for cycle in layers.get("cycles", []):
-        improvements.append({
-            "category": "topology",
-            "priority": "critical",
-            "description": cycle["description"],
-            "action": f"Break dependency cycle between: {', '.join(cycle['nodes'][:5])}",
-            "files": [f"apps/{nid.replace('app:', '')}/manifest.toml" for nid in cycle["nodes"][:5]],
-        })
+        improvements.append(
+            {
+                "category": "topology",
+                "priority": "critical",
+                "description": cycle["description"],
+                "action": f"Break dependency cycle between: {', '.join(cycle['nodes'][:5])}",
+                "files": [
+                    f"apps/{nid.replace('app:', '')}/manifest.toml" for nid in cycle["nodes"][:5]
+                ],
+            }
+        )
 
     # --- Topology: monolith apps ---
     apps_dir = kernel.config.path.parent / "apps"
@@ -1969,25 +2752,31 @@ async def _compute_improvements(kernel) -> dict:
             try:
                 lines = len(app_py.read_text(encoding="utf-8", errors="ignore").split("\n"))
                 if lines > 1200:
-                    improvements.append({
-                        "category": "topology",
-                        "priority": "medium",
-                        "description": f"{app_id} is {lines} lines — monolith risk",
-                        "action": f"Decompose into app.py + extended.py (like briefing, projects pattern)",
-                        "files": [f"apps/{app_id}/app.py"],
-                    })
+                    improvements.append(
+                        {
+                            "category": "topology",
+                            "priority": "medium",
+                            "description": f"{app_id} is {lines} lines — monolith risk",
+                            "action": "Decompose into app.py + extended.py (like briefing, projects pattern)",
+                            "files": [f"apps/{app_id}/app.py"],
+                        }
+                    )
             except Exception:
                 pass
 
     # --- Data coupling: high-risk shared folders ---
     # Determine owner app per folder (the writer, or first declared in DEFAULT_PATHS)
     from emptyos.runtime.vault_map import DEFAULT_PATHS
+
     folder_owners = {}
     for app_id, keys in DEFAULT_PATHS.items():
         for key, fallbacks in keys.items():
             for seg in fallbacks[0].split(","):
-                parts = [p for p in seg.strip().replace("\\", "/").split("/")
-                         if not p.startswith("{") and "*" not in p and "." not in p]
+                parts = [
+                    p
+                    for p in seg.strip().replace("\\", "/").split("/")
+                    if not p.startswith("{") and "*" not in p and "." not in p
+                ]
                 folder = "/".join(parts[:2]) if len(parts) >= 2 else (parts[0] if parts else "")
                 if folder and folder not in folder_owners:
                     folder_owners[folder] = app_id
@@ -1996,13 +2785,15 @@ async def _compute_improvements(kernel) -> dict:
         if dc["coupling_risk"] == "high" and dc["total_apps"] >= 5:
             owner = dc["writers"][0] if dc["writers"] else folder_owners.get(dc["folder"], "?")
             readers_list = ", ".join(dc["readers"])
-            improvements.append({
-                "category": "data",
-                "priority": "medium",
-                "description": f"{dc['folder']} shared by {dc['total_apps']} apps — {readers_list} read directly instead of calling {owner} app",
-                "action": f"Readers should use call_app(\"{owner.lower().replace(' ', '-')}\", ...) instead of scanning vault files. Add missing read methods to {owner} app if needed.",
-                "files": [f"apps/{r.lower().replace(' ', '-')}/app.py" for r in dc["readers"]],
-            })
+            improvements.append(
+                {
+                    "category": "data",
+                    "priority": "medium",
+                    "description": f"{dc['folder']} shared by {dc['total_apps']} apps — {readers_list} read directly instead of calling {owner} app",
+                    "action": f'Readers should use call_app("{owner.lower().replace(" ", "-")}", ...) instead of scanning vault files. Add missing read methods to {owner} app if needed.',
+                    "files": [f"apps/{r.lower().replace(' ', '-')}/app.py" for r in dc["readers"]],
+                }
+            )
 
     # --- Events: unheard events from important apps ---
     topo = _build_topology(kernel)
@@ -2022,13 +2813,15 @@ async def _compute_improvements(kernel) -> dict:
         for src, evts in sorted(by_app.items(), key=lambda x: -len(x[1])):
             if len(evts) >= 3:
                 app_id = src.replace("app:", "")
-                improvements.append({
-                    "category": "event",
-                    "priority": "low",
-                    "description": f"{app_id} emits {len(evts)} unheard events: {', '.join(evts[:5])}",
-                    "action": "Wire events into reactor for logging/journal ripple, or remove unused emits",
-                    "files": [f"apps/{app_id}/manifest.toml", "apps/reactor/app.py"],
-                })
+                improvements.append(
+                    {
+                        "category": "event",
+                        "priority": "low",
+                        "description": f"{app_id} emits {len(evts)} unheard events: {', '.join(evts[:5])}",
+                        "action": "Wire events into reactor for logging/journal ripple, or remove unused emits",
+                        "files": [f"apps/{app_id}/manifest.toml", "apps/reactor/app.py"],
+                    }
+                )
 
     # --- Apps with no custom UI ---
     for app_id, manifest in kernel.apps.manifests.items():
@@ -2037,13 +2830,15 @@ async def _compute_improvements(kernel) -> dict:
         if manifest_dir.name.startswith("_"):
             continue
         if not pages_dir.exists():
-            improvements.append({
-                "category": "integrity",
-                "priority": "low",
-                "description": f"{app_id} has no custom UI (pages/ directory)",
-                "action": "Add pages/index.html for custom UI, or accept auto-generated",
-                "files": [f"apps/{manifest_dir.name}/pages/index.html"],
-            })
+            improvements.append(
+                {
+                    "category": "integrity",
+                    "priority": "low",
+                    "description": f"{app_id} has no custom UI (pages/ directory)",
+                    "action": "Add pages/index.html for custom UI, or accept auto-generated",
+                    "files": [f"apps/{manifest_dir.name}/pages/index.html"],
+                }
+            )
 
     # --- Six Verbs health (唯识 metabolic cycle) ---
     # Reuse the audit already computed above — no re-scan needed
@@ -2056,14 +2851,16 @@ async def _compute_improvements(kernel) -> dict:
             for verb_id, vdata in verb_health.items():
                 if vdata["points"] < 4:
                     missing = [k for k, v in vdata["layers"].items() if not v]
-                    improvements.append({
-                        "category": "verb",
-                        "priority": "high" if vdata["points"] <= 2 else "medium",
-                        "description": f"Weak lifecycle verb: {vdata['label']} ({vdata['points']}/6)",
-                        "action": f"Add missing layers: {', '.join(missing)}",
-                        "verb": verb_id,
-                        "layers": vdata["layers"],
-                    })
+                    improvements.append(
+                        {
+                            "category": "verb",
+                            "priority": "high" if vdata["points"] <= 2 else "medium",
+                            "description": f"Weak lifecycle verb: {vdata['label']} ({vdata['points']}/6)",
+                            "action": f"Add missing layers: {', '.join(missing)}",
+                            "verb": verb_id,
+                            "layers": vdata["layers"],
+                        }
+                    )
     except Exception:
         pass
 

@@ -34,9 +34,7 @@ _TYPE_MAP = {tid: t.storage for tid, t in _CTR.all().items()}
 PERSON_SINGLE_TYPES = tuple(
     tid for tid, t in _CTR.all().items() if t.person_like and not t.list_like
 )
-PERSON_MULTI_TYPES = tuple(
-    tid for tid, t in _CTR.all().items() if t.person_like and t.list_like
-)
+PERSON_MULTI_TYPES = tuple(tid for tid, t in _CTR.all().items() if t.person_like and t.list_like)
 ROLE_FOR_TYPE = {tid: t.role for tid, t in _CTR.all().items() if t.role}
 
 
@@ -56,8 +54,10 @@ class DynamicBoardLibrary(VaultLibrary):
             src = {"type": "vault_tag", "tag": board_config.get("source_tag", "")}
         self._source = src
 
-        self.tag = src.get("tag", "") if src.get("type") == "vault_tag" else (
-            board_config.get("source_tag", "")
+        self.tag = (
+            src.get("tag", "")
+            if src.get("type") == "vault_tag"
+            else (board_config.get("source_tag", ""))
         )
 
         columns = board_config.get("columns", [])
@@ -116,10 +116,14 @@ class DynamicBoardLibrary(VaultLibrary):
 
         return []
 
-    def list_filtered(self, filters: dict | None = None,
-                      sort_by: str = "", sort_desc: bool = False,
-                      group_by: str = "",
-                      items: list[dict] | None = None) -> list[dict]:
+    def list_filtered(
+        self,
+        filters: dict | None = None,
+        sort_by: str = "",
+        sort_desc: bool = False,
+        group_by: str = "",
+        items: list[dict] | None = None,
+    ) -> list[dict]:
         """Apply filter/sort/single-item formula eval over an item list.
 
         When ``items`` is provided, uses that list directly. Otherwise falls
@@ -139,7 +143,9 @@ class DynamicBoardLibrary(VaultLibrary):
                 else:
                     items = [i for i in items if str(i.get(key, "")).lower() == str(val).lower()]
 
-        formula_cols = [c for c in self._board_config.get("columns", []) if c.get("type") == "formula"]
+        formula_cols = [
+            c for c in self._board_config.get("columns", []) if c.get("type") == "formula"
+        ]
         if formula_cols:
             for item in items:
                 for col in formula_cols:
@@ -148,8 +154,11 @@ class DynamicBoardLibrary(VaultLibrary):
 
         if sort_by:
             items.sort(
-                key=lambda i: (i.get(sort_by) or "") if isinstance(i.get(sort_by), str)
-                else (i.get(sort_by) or 0),
+                key=lambda i: (
+                    (i.get(sort_by) or "")
+                    if isinstance(i.get(sort_by), str)
+                    else (i.get(sort_by) or 0)
+                ),
                 reverse=sort_desc,
             )
 
@@ -184,15 +193,24 @@ class DynamicBoardLibrary(VaultLibrary):
                 return {"error": "source.app not set"}
             try:
                 return await self._app_ref.call_app(
-                    target, "set_field", id=filename, field=field, value=value,
+                    target,
+                    "set_field",
+                    id=filename,
+                    field=field,
+                    value=value,
                 )
             except Exception as e:
                 self._source_error = f"Source app '{target}' not available: {e}"
                 return {"error": f"source app '{target}' not available"}
         return self.update(filename, {field: value})
 
-    def aggregate(self, group_by: str = "", agg_field: str = "",
-                  agg_fn: str = "count", items: list[dict] | None = None) -> dict:
+    def aggregate(
+        self,
+        group_by: str = "",
+        agg_field: str = "",
+        agg_fn: str = "count",
+        items: list[dict] | None = None,
+    ) -> dict:
         """Aggregate items for chart / dashboard views."""
         if items is None:
             items = self.list()
@@ -224,6 +242,7 @@ def _eval_formula(expression: str, item: dict) -> str:
     if not expression:
         return ""
     from emptyos.sdk.formulas import evaluate, format_result
+
     normalized = re.sub(r"\{(\w+)\}", r"\1", expression)
     return format_result(evaluate(normalized, item, default="#ERR"))
 

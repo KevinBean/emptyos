@@ -6,7 +6,6 @@ from emptyos.sdk import on_event
 
 
 class LearningReactionsMixin:
-
     @on_event("speaking:session_started")
     async def on_speaking_started(self, event):
         self._log_action("speaking:session_started", event.data.get("scenario", "")[:30])
@@ -44,7 +43,9 @@ class LearningReactionsMixin:
     @on_event("speak-sharper:analyzed")
     async def on_sharper(self, event):
         scores = event.data.get("scores", {})
-        self._log_action("speak-sharper:analyzed", f"precision: {scores.get('word_precision', '?')}/10")
+        self._log_action(
+            "speak-sharper:analyzed", f"precision: {scores.get('word_precision', '?')}/10"
+        )
 
     @on_event("speak-sharper:pattern_detected")
     async def on_sharper_pattern(self, event):
@@ -67,16 +68,43 @@ class LearningReactionsMixin:
     async def on_word_reviewed(self, event):
         self._log_action("dictionary:word_reviewed", event.data.get("word", "")[:30])
 
-    @on_event("reader:highlight_added")
-    async def on_highlight(self, event):
-        self._log_action("reader:highlight_added", f"id: {event.data.get('id', '')}")
+    @on_event("reader:opened")
+    async def on_reader_opened(self, event):
+        slug = event.data.get("slug", "")
+        self._log_action("reader:opened", slug[:30])
+        # Quiet log only — opening a book happens often, no journal ripple
+        # (avoids noisy "📖 opened X" entries every paragraph navigation cycle).
 
-    @on_event("reader:review_completed")
-    async def on_reader_review(self, event):
-        self._log_action("reader:review_completed", f"quality: {event.data.get('quality', '?')}")
+    @on_event("reader:highlighted")
+    async def on_reader_highlighted(self, event):
+        title = event.data.get("title") or event.data.get("slug", "")
+        text = (event.data.get("text") or "").strip().replace("\n", " ")
+        note = (event.data.get("note") or "").strip()
+        snippet = text[:140] + ("…" if len(text) > 140 else "")
+        self._log_action("reader:highlighted", f"{title}: {snippet[:40]}")
+        if snippet:
+            line = f"Highlight from *{title}*: “{snippet}”"
+            if note:
+                line += f" — {note}"
+            await self._journal_ripple("🌟", line, dim="intellectual")
 
-    @on_event("reader:session_logged")
-    async def on_reader_session(self, event):
-        mins = event.data.get("minutes", 0)
-        self._log_action("reader:session_logged", f"{mins}min reading")
-        await self._journal_ripple("📚", f"Read for {mins} minutes")
+    @on_event("reader:note_created")
+    async def on_reader_note(self, event):
+        title = event.data.get("title") or event.data.get("slug", "")
+        path = event.data.get("path", "")
+        para = event.data.get("paragraph", "?")
+        self._log_action("reader:note_created", f"{title} p{para}")
+        await self._journal_ripple(
+            "📝", f"Saved a reading note from *{title}* (¶{para}) → [[{path}]]", dim="intellectual"
+        )
+
+    @on_event("reader:scene_generated")
+    async def on_reader_scene(self, event):
+        # Quiet log only — no journal ripple. The scene is a UI artifact, not a milestone.
+        slug = event.data.get("slug", "")
+        para = event.data.get("paragraph", "?")
+        self._log_action("reader:scene_generated", f"{slug} p{para}")
+
+    @on_event("kb:viewed")
+    async def on_kb_viewed(self, event):
+        self._log_action("kb:viewed", str(event.data.get("slug",""))[:50])

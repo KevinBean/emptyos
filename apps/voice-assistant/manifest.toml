@@ -13,6 +13,8 @@ capabilities = ["think", "listen", "speak"]
 
 [provides.events]
 emits = ["voice-assistant:chat"]
+# Live conversation channel — the assistant UI is the only consumer.
+internal = ["voice-assistant:chat"]
 
 [provides.web]
 prefix = "/voice-assistant"

@@ -7,10 +7,7 @@ on boilerplate.
 
 from __future__ import annotations
 
-from pathlib import Path
-
 from emptyos.sdk.agent_tools.base import Tool, ToolResult, resolve_path
-
 
 MAX_LINES = 2000
 MAX_BYTES = 500_000
@@ -29,8 +26,14 @@ class ReadTool(Tool):
         "type": "object",
         "properties": {
             "path": {"type": "string", "description": "Absolute file path"},
-            "offset": {"type": "integer", "description": "Line to start reading from (1-indexed). Default 1."},
-            "limit": {"type": "integer", "description": f"Max lines to return. Default {MAX_LINES}."},
+            "offset": {
+                "type": "integer",
+                "description": "Line to start reading from (1-indexed). Default 1.",
+            },
+            "limit": {
+                "type": "integer",
+                "description": f"Max lines to return. Default {MAX_LINES}.",
+            },
         },
         "required": ["path"],
     }
@@ -66,7 +69,7 @@ class ReadTool(Tool):
         if len(raw) > MAX_BYTES:
             return ToolResult(
                 ok=False,
-                content=f"error: file too large ({len(raw)} bytes, max {MAX_BYTES}). Use Grep or read specific line ranges."
+                content=f"error: file too large ({len(raw)} bytes, max {MAX_BYTES}). Use Grep or read specific line ranges.",
             )
 
         try:

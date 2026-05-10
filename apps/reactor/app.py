@@ -36,7 +36,6 @@ class ReactorApp(
     SystemReactionsMixin,
     BaseApp,
 ):
-
     def _log_action(self, event_type: str, action: str):
         """Track reactor actions for observability."""
         state = self.load_state({"actions": []})
@@ -76,8 +75,7 @@ class ReactorApp(
         if dim:
             line = f"{line} #{dim}"
         try:
-            await self.call_app("journal", "_add_entry",
-                                d=date.today(), text=line, mood="okay")
+            await self.call_app("journal", "_add_entry", d=date.today(), text=line, mood="okay")
         except Exception:
             pass  # journal app may not be loaded
 

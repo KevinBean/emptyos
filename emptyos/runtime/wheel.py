@@ -19,9 +19,7 @@ from pathlib import Path
 
 from emptyos.sdk import CAPTURE_LINE_RE, dimensions
 
-_JOURNAL_SECTION_RE = re.compile(
-    r"(?:^|\n)###\s*Journal\s*\n(.*?)(?=\n###\s|\n##\s|\Z)", re.DOTALL
-)
+_JOURNAL_SECTION_RE = re.compile(r"(?:^|\n)###\s*Journal\s*\n(.*?)(?=\n###\s|\n##\s|\Z)", re.DOTALL)
 
 
 def _habits_log_path(kernel) -> Path:
@@ -176,14 +174,14 @@ def invalidate_cache():
 # Action templates — dimension-appropriate real-world suggestions.
 # Never mention the dimension name to the user; these translate the wheel into acts.
 _THIN_ACTIONS = {
-    "physical":      {"action": "Step outside for a 10-minute walk",         "url": "/healing/"},
-    "social":        {"action": "Message someone you haven't talked to this week", "url": "/contacts/"},
-    "emotional":     {"action": "Write three lines about how you're feeling", "url": "/journal/"},
-    "spiritual":     {"action": "Sit quietly for five minutes",              "url": "/meditation/"},
-    "environmental": {"action": "Tidy one surface in your space",            "url": "/hub/"},
-    "financial":     {"action": "Check this week's spending",                "url": "/finance/"},
-    "intellectual":  {"action": "Read one page of something substantive",    "url": "/hub/"},
-    "occupational":  {"action": "Finish one small task",                     "url": "/task/"},
+    "physical": {"action": "Step outside for a 10-minute walk", "url": "/healing/"},
+    "social": {"action": "Message someone you haven't talked to this week", "url": "/contacts/"},
+    "emotional": {"action": "Write three lines about how you're feeling", "url": "/journal/"},
+    "spiritual": {"action": "Sit quietly for five minutes", "url": "/meditation/"},
+    "environmental": {"action": "Tidy one surface in your space", "url": "/hub/"},
+    "financial": {"action": "Check this week's spending", "url": "/finance/"},
+    "intellectual": {"action": "Read one page of something substantive", "url": "/hub/"},
+    "occupational": {"action": "Finish one small task", "url": "/task/"},
 }
 
 

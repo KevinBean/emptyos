@@ -1,0 +1,26 @@
+[app]
+id = "explore"
+name = "Explore"
+version = "0.1.0"
+description = "Visual exploration browser — click anywhere to dive deeper. Flipbook-style, but DOM-native."
+dimensions = ["intellectual"]
+
+[app.entry]
+module = "app"
+class = "ExploreApp"
+
+[requires]
+capabilities = ["think", "draw", "read", "write"]
+connectors = []
+services = []
+
+[provides.cli]
+commands = ["explore"]
+
+[provides.web]
+prefix = "/explore"
+
+[provides.events]
+emits = ["explore:visited"]
+# Page-view analytics signal — emit-only by design.
+internal = ["explore:visited"]

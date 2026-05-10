@@ -1,4 +1,4 @@
-from .base import Provider, CompletionResult
+from .base import CompletionResult, Provider
 from .openai_provider import OpenAIProvider
 
 __all__ = ["Provider", "CompletionResult", "OpenAIProvider"]

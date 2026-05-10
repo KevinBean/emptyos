@@ -14,7 +14,6 @@ Storage: `{vault}/30_Resources/EmptyOS/reports/{doc-id}/` with:
 
 from __future__ import annotations
 
-import json
 import re
 from datetime import datetime
 from pathlib import Path
@@ -24,8 +23,7 @@ from emptyos.sdk.utils import parse_frontmatter, slugify, strip_frontmatter
 
 from . import tables as tables_mod
 from .render_html import assemble_html
-from .templates import TEMPLATES, TABLE_SCHEMAS, get_template, list_templates, table_schema
-
+from .templates import TABLE_SCHEMAS, get_template, list_templates, table_schema
 
 # --- LLM prompts (named constants per CLAUDE.md rule 12) ---
 
@@ -143,7 +141,9 @@ class ReportsApp(BaseApp):
         if action == "list":
             reports = self._scan_reports()
             if not reports:
-                self.print_rich("[dim]No reports yet. Use the web UI at /reports/ to create one.[/dim]")
+                self.print_rich(
+                    "[dim]No reports yet. Use the web UI at /reports/ to create one.[/dim]"
+                )
                 return
             self.print_rich(f"[bold]Reports ({len(reports)}):[/bold]")
             for r in reports:
@@ -180,15 +180,17 @@ class ReportsApp(BaseApp):
                 meta = parse_frontmatter(meta_path.read_text(encoding="utf-8")) or {}
             except Exception:
                 continue
-            out.append({
-                "id": child.name,
-                "title": meta.get("title") or child.name,
-                "type": meta.get("type") or "report",
-                "version": str(meta.get("version") or "0.1"),
-                "status": meta.get("status") or "draft",
-                "project_id": meta.get("project_id") or "",
-                "updated": _mtime(child),
-            })
+            out.append(
+                {
+                    "id": child.name,
+                    "title": meta.get("title") or child.name,
+                    "type": meta.get("type") or "report",
+                    "version": str(meta.get("version") or "0.1"),
+                    "status": meta.get("status") or "draft",
+                    "project_id": meta.get("project_id") or "",
+                    "updated": _mtime(child),
+                }
+            )
         return out
 
     def _load_outline(self, doc_id: str) -> list[dict]:
@@ -206,13 +208,15 @@ class ReportsApp(BaseApp):
             raw = yaml.safe_load(body)
         except Exception:
             return []
-        return [r for r in raw if isinstance(r, dict) and "slug" in r] if isinstance(raw, list) else []
+        return (
+            [r for r in raw if isinstance(r, dict) and "slug" in r] if isinstance(raw, list) else []
+        )
 
     def _save_outline(self, doc_id: str, outline: list[dict]) -> None:
         try:
             import yaml
         except ImportError:
-            raise RuntimeError("pyyaml required. pip install pyyaml")
+            raise RuntimeError("pyyaml required. pip install pyyaml") from None
         outline_path = self._report_dir(doc_id) / "_outline.md"
         outline_path.parent.mkdir(parents=True, exist_ok=True)
         body = "# Outline\n\n" + yaml.safe_dump(outline, sort_keys=False, allow_unicode=True)
@@ -254,7 +258,9 @@ class ReportsApp(BaseApp):
     @web_route("POST", "/api/reports")
     async def api_create_report(self, request):
         data = await request.json()
-        template_id = (data.get("template") or self.setting("reports.default_template", "report") or "report").strip()
+        template_id = (
+            data.get("template") or self.setting("reports.default_template", "report") or "report"
+        ).strip()
         title = (data.get("title") or "").strip() or "Untitled Report"
         project_id = (data.get("project_id") or "").strip()
 
@@ -278,16 +284,20 @@ class ReportsApp(BaseApp):
 
         today = datetime.now().strftime("%Y-%m-%d")
         meta = dict(_META_DEFAULTS)
-        meta.update({
-            "title": title,
-            "type": template_id,
-            "date": today,
-            "authors": [self.setting("reports.author_name") or ""] if self.setting("reports.author_name") else [],
-            "organisation": self.setting("reports.organisation") or "",
-            "project_id": project_id,
-            "approvers": list(tpl.get("approvers") or []),
-            "tags": ["report", f"report-{template_id}"],
-        })
+        meta.update(
+            {
+                "title": title,
+                "type": template_id,
+                "date": today,
+                "authors": [self.setting("reports.author_name") or ""]
+                if self.setting("reports.author_name")
+                else [],
+                "organisation": self.setting("reports.organisation") or "",
+                "project_id": project_id,
+                "approvers": list(tpl.get("approvers") or []),
+                "tags": ["report", f"report-{template_id}"],
+            }
+        )
         self._save_meta(doc_id, meta)
 
         # Outline
@@ -317,8 +327,12 @@ class ReportsApp(BaseApp):
                 body += f"{{{{table:{table_name}}}}}\n"
             self.vault_create_note(
                 self._rel(doc_id, "sections", f"{slug}.md"),
-                {"status": "draft", "title": s["title"], "parent_report": doc_id,
-                 "tags": ["report-section", f"report-{template_id}-section"]},
+                {
+                    "status": "draft",
+                    "title": s["title"],
+                    "parent_report": doc_id,
+                    "tags": ["report-section", f"report-{template_id}-section"],
+                },
                 body,
             )
 
@@ -360,7 +374,9 @@ class ReportsApp(BaseApp):
             "meta": meta,
             "outline": outline,
             "tables_present": tables_present,
-            "table_schemas": {name: TABLE_SCHEMAS[name] for name in tables_present if name in TABLE_SCHEMAS},
+            "table_schemas": {
+                name: TABLE_SCHEMAS[name] for name in tables_present if name in TABLE_SCHEMAS
+            },
             "figures": figures,
             "exports": exports,
         }
@@ -454,7 +470,12 @@ class ReportsApp(BaseApp):
             return _not_found(doc_id)
         rows = tables_mod.load_table(rpt / "tables" / f"{name}.yaml")
         schema = table_schema(name) or {"columns": [], "id_prefix": ""}
-        return {"name": name, "rows": rows, "schema": schema, "next_id": tables_mod.next_id(rows, schema.get("id_prefix", ""))}
+        return {
+            "name": name,
+            "rows": rows,
+            "schema": schema,
+            "next_id": tables_mod.next_id(rows, schema.get("id_prefix", "")),
+        }
 
     @web_route("PUT", "/api/reports/{doc_id}/tables/{name}")
     async def api_save_table(self, request):
@@ -467,7 +488,9 @@ class ReportsApp(BaseApp):
         rows = data.get("rows") or []
         if not isinstance(rows, list):
             return {"error": "rows must be a list"}
-        tables_mod.save_table(rpt / "tables" / f"{name}.yaml", [r for r in rows if isinstance(r, dict)])
+        tables_mod.save_table(
+            rpt / "tables" / f"{name}.yaml", [r for r in rows if isinstance(r, dict)]
+        )
         await self.emit("reports:section-updated", {"id": doc_id, "table": name})
         return {"ok": True, "count": len(rows)}
 
@@ -558,6 +581,7 @@ class ReportsApp(BaseApp):
     @web_route("GET", "/api/reports/{doc_id}/preview")
     async def api_preview(self, request):
         from starlette.responses import HTMLResponse
+
         doc_id = request.path_params["doc_id"]
         rpt = self._report_dir(doc_id)
         if not rpt.exists():
@@ -575,6 +599,7 @@ class ReportsApp(BaseApp):
     async def api_get_figure(self, request):
         """Serve an uploaded figure file (PNG/JPG/SVG/GIF/WebP) from the report's figures/ dir."""
         from starlette.responses import FileResponse, Response
+
         doc_id = request.path_params["doc_id"]
         name = request.path_params["name"]
         if "/" in name or "\\" in name or ".." in name:
@@ -600,6 +625,7 @@ class ReportsApp(BaseApp):
         if not rpt.exists():
             return _not_found(doc_id)
         from .render_pdf import PlaywrightMissing, to_pdf
+
         css = self._load_stylesheet()
         html = assemble_html(rpt, stylesheet_inline=css, assets_as_file_urls=True)
         meta = self._load_meta(doc_id)
@@ -623,6 +649,7 @@ class ReportsApp(BaseApp):
         if not rpt.exists():
             return _not_found(doc_id)
         from .render_docx import PythonDocxMissing, to_docx
+
         meta = self._load_meta(doc_id)
         stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
         fname = f"{doc_id}-v{meta.get('version', '0.1')}-{stamp}.docx"
@@ -640,6 +667,7 @@ class ReportsApp(BaseApp):
     @web_route("GET", "/api/reports/{doc_id}/export/file/{name}")
     async def api_download_export(self, request):
         from starlette.responses import FileResponse, Response
+
         doc_id = request.path_params["doc_id"]
         name = request.path_params["name"]
         # Path traversal guard

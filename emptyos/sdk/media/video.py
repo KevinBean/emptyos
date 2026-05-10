@@ -25,7 +25,7 @@ async def assemble_video(
     output_path: where to write the MP4
     """
     w, h = resolution
-    valid = [(s, p) for s, p in zip(scenes, image_paths) if p and p.exists()]
+    valid = [(s, p) for s, p in zip(scenes, image_paths, strict=False) if p and p.exists()]
     if not valid:
         return
 
@@ -33,9 +33,16 @@ async def assemble_video(
     audio_dur = 0
     try:
         probe = await asyncio.create_subprocess_exec(
-            "ffprobe", "-v", "quiet", "-show_entries", "format=duration",
-            "-of", "default=noprint_wrappers=1:nokey=1", audio_path,
-            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+            "ffprobe",
+            "-v",
+            "quiet",
+            "-show_entries",
+            "format=duration",
+            "-of",
+            "default=noprint_wrappers=1:nokey=1",
+            audio_path,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
         )
         stdout, _ = await probe.communicate()
         audio_dur = float(stdout.decode().strip()) if stdout else 0
@@ -65,23 +72,42 @@ async def assemble_video(
     srt_esc = srt_path.replace("\\", "/").replace(":", "\\:")
 
     cmd = [
-        "ffmpeg", "-y",
-        "-f", "concat", "-safe", "0", "-i", str(concat_file),
-        "-i", audio_path,
-        "-vf", (
+        "ffmpeg",
+        "-y",
+        "-f",
+        "concat",
+        "-safe",
+        "0",
+        "-i",
+        str(concat_file),
+        "-i",
+        audio_path,
+        "-vf",
+        (
             f"scale={w}:{h}:force_original_aspect_ratio=decrease,"
             f"pad={w}:{h}:(ow-iw)/2:(oh-ih)/2,"
             f"subtitles='{srt_esc}':force_style="
             f"'FontSize=13,PrimaryColour=&Hffffff&,OutlineColour=&H000000&,Outline=2,MarginV=25'"
         ),
-        "-c:v", "libx264", "-preset", "fast", "-crf", "23",
-        "-c:a", "aac", "-b:a", "192k",
-        "-movflags", "+faststart",
+        "-c:v",
+        "libx264",
+        "-preset",
+        "fast",
+        "-crf",
+        "23",
+        "-c:a",
+        "aac",
+        "-b:a",
+        "192k",
+        "-movflags",
+        "+faststart",
         output_path,
     ]
 
     proc = await asyncio.create_subprocess_exec(
-        *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+        *cmd,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
     )
     _, stderr = await proc.communicate()
     concat_file.unlink(missing_ok=True)

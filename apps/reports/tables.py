@@ -10,10 +10,10 @@ assembled report, and fenced-markdown tables for DOCX fallback.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
 
 try:
     import yaml
+
     HAS_YAML = True
 except ImportError:
     HAS_YAML = False
@@ -58,7 +58,7 @@ def next_id(rows: list[dict], prefix: str) -> str:
         rid = str(r.get("id") or "")
         if rid.startswith(f"{prefix}-"):
             try:
-                n = int(rid[len(prefix) + 1:])
+                n = int(rid[len(prefix) + 1 :])
                 if n > max_n:
                     max_n = n
             except ValueError:
@@ -81,7 +81,9 @@ def scaffold_rows(table_name: str, count: int = 1) -> list[dict]:
     return rows
 
 
-def render_table_html(table_name: str, rows: list[dict], *, table_class: str = "report-table") -> str:
+def render_table_html(
+    table_name: str, rows: list[dict], *, table_class: str = "report-table"
+) -> str:
     """Render a table as HTML. Columns come from the schema; unknown fields are ignored."""
     schema = table_schema(table_name)
     if schema is None:
@@ -113,10 +115,7 @@ def render_table_html(table_name: str, rows: list[dict], *, table_class: str = "
         body_rows.append(f"<tr>{''.join(cells)}</tr>")
     body = "\n".join(body_rows)
     return (
-        f'<table class="{table_class}">'
-        f"<thead><tr>{head}</tr></thead>"
-        f"<tbody>{body}</tbody>"
-        f"</table>"
+        f'<table class="{table_class}"><thead><tr>{head}</tr></thead><tbody>{body}</tbody></table>'
     )
 
 

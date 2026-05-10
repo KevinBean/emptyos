@@ -11,12 +11,20 @@ import csv
 import io
 import json
 import re
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, timedelta
 from pathlib import Path
 
 from emptyos.sdk import BaseApp, cli_command, web_route
 
-TABLE_ROW = re.compile(r"^\|\s*(\d{4}-\d{2}-\d{2})\s*\|\s*\$?([\d,.]+)\s*\|\s*(.*?)\s*\|\s*(.*?)\s*\|\s*(.*?)\s*\|")
+from .categories import (
+    CATEGORY_KEYWORDS,
+    detect_category as _detect_category,
+    parse_aa_split as _parse_aa_split,
+)
+
+TABLE_ROW = re.compile(
+    r"^\|\s*(\d{4}-\d{2}-\d{2})\s*\|\s*\$?([\d,.]+)\s*\|\s*(.*?)\s*\|\s*(.*?)\s*\|\s*(.*?)\s*\|"
+)
 
 EXPENSE_INSIGHT_SYSTEM = """You are a sharp personal finance analyst. Given a month's expense data, provide actionable insights.
 
@@ -35,47 +43,8 @@ Return exactly:
 - Pad with filler. Every sentence must contain a specific number or category name."""
 
 
-CATEGORY_KEYWORDS = {
-    "Dining": ["lunch", "dinner", "breakfast", "cafe", "coffee", "restaurant", "food", "eat", "meal",
-               "takeaway", "mcdonald", "kfc", "subway", "pizza", "sushi", "thai", "chinese", "indian",
-               "noodle", "burger", "pad", "curry", "salad", "bakery", "snack", "brunch",
-               "starbucks", "hungry jack", "domino", "bubble tea", "boba", "ramen"],
-    "Groceries": ["coles", "woolworths", "aldi", "costco", "iga", "grocery", "fruit", "vegetables",
-                  "meat", "milk", "bread", "eggs", "supermarket"],
-    "Transport": ["uber", "taxi", "bus", "train", "tram", "fuel", "petrol", "parking", "toll", "rego",
-                  "car wash", "mechanic", "didi", "lyft"],
-    "Shopping": ["amazon", "ebay", "kmart", "target", "jb", "officeworks", "bunnings", "ikea",
-                 "uniqlo", "online", "clothing", "shoes"],
-    "Bills": ["electricity", "gas", "water", "internet", "phone", "rent", "insurance", "netflix",
-              "spotify", "subscription", "youtube", "premium"],
-    "Health": ["pharmacy", "chemist", "doctor", "dentist", "gym", "supplement", "vitamin", "protein",
-               "physio", "massage", "medical"],
-    "Entertainment": ["movie", "cinema", "concert", "ticket", "game", "bar", "pub", "drinks",
-                      "beer", "wine", "alcohol", "club"],
-}
-
-
-def _detect_category(text: str) -> str:
-    """Auto-detect expense category from description keywords."""
-    t = text.lower()
-    for cat, keywords in CATEGORY_KEYWORDS.items():
-        if any(kw in t for kw in keywords):
-            return cat
-    return "Other"
-
-
-def _parse_aa_split(text: str) -> tuple[float, str] | None:
-    """Parse AA split: '50 lunch AA 2' → (25.0, 'lunch (AA÷2)')."""
-    m = re.match(r"^(\d+\.?\d*)\s+(.+?)\s+AA\s*(\d+)\s*$", text, re.IGNORECASE)
-    if m:
-        amount = float(m.group(1)) / int(m.group(3))
-        desc = f"{m.group(2)} (AA÷{m.group(3)})"
-        return amount, desc
-    return None
-
 
 class ExpenseApp(BaseApp):
-
     def _log_dir(self) -> Path:
         return self.vault_config_path("log_dir", "20_Areas/Finances") or Path(".")
 
@@ -96,13 +65,15 @@ class ExpenseApp(BaseApp):
                     amount = float(amount_str)
                 except ValueError:
                     continue
-                expenses.append({
-                    "date": m.group(1),
-                    "amount": amount,
-                    "description": m.group(3).strip(),
-                    "category": m.group(4).strip(),
-                    "source": m.group(5).strip(),
-                })
+                expenses.append(
+                    {
+                        "date": m.group(1),
+                        "amount": amount,
+                        "description": m.group(3).strip(),
+                        "category": m.group(4).strip(),
+                        "source": m.group(5).strip(),
+                    }
+                )
         return expenses
 
     async def list_expenses(self, month: str = "", year: int = 0) -> list[dict]:
@@ -130,7 +101,9 @@ class ExpenseApp(BaseApp):
             "month": month,
             "total": round(total, 2),
             "count": len(expenses),
-            "by_category": {k: round(v, 2) for k, v in sorted(by_category.items(), key=lambda x: -x[1])},
+            "by_category": {
+                k: round(v, 2) for k, v in sorted(by_category.items(), key=lambda x: -x[1])
+            },
         }
 
     async def summary(self, month: str = "") -> dict:
@@ -162,14 +135,16 @@ class ExpenseApp(BaseApp):
         prev_total = prev.get("total", 0) or 0
         if not (curr_total or prev_total):
             return None
-        return [{
-            "name": "Expenses",
-            "curr": f"${curr_total:,.0f}",
-            "prev": f"${prev_total:,.0f}",
-            "delta": curr_total - prev_total,
-            "unit": "",
-            "inverse": True,  # lower is better for spending
-        }]
+        return [
+            {
+                "name": "Expenses",
+                "curr": f"${curr_total:,.0f}",
+                "prev": f"${prev_total:,.0f}",
+                "delta": curr_total - prev_total,
+                "unit": "",
+                "inverse": True,  # lower is better for spending
+            }
+        ]
 
     async def add(self, amount: float, description: str, category: str = "Other") -> dict:
         """Add an expense to the vault log + local backup."""
@@ -182,12 +157,20 @@ class ExpenseApp(BaseApp):
             "source": "EmptyOS",
         }
 
-        # Append to vault expense log
+        # Append to vault expense log. Read first; on FileNotFoundError we
+        # start a fresh log instead of silently swallowing the write — that
+        # used to drop the very first expense in a brand-new vault.
         path = self._log_path()
         try:
             content = await self.read(str(path))
-            row = f"| {entry['date']} | ${amount:.2f} | {description} | {category} | EmptyOS |"
-            content = content.rstrip() + "\n" + row + "\n"
+        except FileNotFoundError:
+            content = ""
+        except Exception as e:
+            print(f"[Expense] Failed to read vault log: {e}")
+            content = ""
+        row = f"| {entry['date']} | ${amount:.2f} | {description} | {category} | EmptyOS |"
+        content = content.rstrip() + ("\n" if content.strip() else "") + row + "\n"
+        try:
             await self.write(str(path), content)
         except Exception as e:
             print(f"[Expense] Failed to write vault: {e}")
@@ -205,7 +188,7 @@ class ExpenseApp(BaseApp):
 
     @staticmethod
     def _expense_id(e: dict) -> str:
-        return f"{e.get('date','')}|{float(e.get('amount',0)):.2f}|{e.get('description','')}"
+        return f"{e.get('date', '')}|{float(e.get('amount', 0)):.2f}|{e.get('description', '')}"
 
     async def list_all(self) -> list[dict]:
         """Flat list shape consumed by boards when source.type == 'app'.
@@ -214,14 +197,16 @@ class ExpenseApp(BaseApp):
         rows.sort(key=lambda e: e.get("date", ""), reverse=True)
         out = []
         for e in rows:
-            out.append({
-                "id": self._expense_id(e),
-                "date": e.get("date", ""),
-                "amount": e.get("amount", 0),
-                "description": e.get("description", ""),
-                "category": e.get("category", "Other"),
-                "source": e.get("source", ""),
-            })
+            out.append(
+                {
+                    "id": self._expense_id(e),
+                    "date": e.get("date", ""),
+                    "amount": e.get("amount", 0),
+                    "description": e.get("description", ""),
+                    "category": e.get("category", "Other"),
+                    "source": e.get("source", ""),
+                }
+            )
         return out
 
     async def set_field(self, id: str, field: str, value) -> dict:
@@ -263,7 +248,9 @@ class ExpenseApp(BaseApp):
         return {"ok": True}
 
     @cli_command("expense", help="Track expenses")
-    async def cmd_expense(self, action: str = "summary", amount: str = "", category: str = "", note: str = ""):
+    async def cmd_expense(
+        self, action: str = "summary", amount: str = "", category: str = "", note: str = ""
+    ):
         if action == "add" and amount:
             entry = await self.add(float(amount), note or "expense", category or "Other")
             self.print_rich(f"[green]Added:[/green] ${entry['amount']:.2f} [{entry['category']}]")
@@ -279,7 +266,9 @@ class ExpenseApp(BaseApp):
             month = date.today().strftime("%Y-%m")
             expenses = await self.list_expenses(month=month)
             for e in expenses[-15:]:
-                print(f"  {e['date']}  ${e['amount']:>8.2f}  {e['category']:<16}  {e.get('description', '')[:30]}")
+                print(
+                    f"  {e['date']}  ${e['amount']:>8.2f}  {e['category']:<16}  {e.get('description', '')[:30]}"
+                )
         else:
             print("Usage: eos expense [add|summary|list] [amount] [category] [note]")
 
@@ -355,7 +344,11 @@ class ExpenseApp(BaseApp):
             new_lines = []
             removed = False
             for line in lines:
-                if not removed and f"| {target['date']}" in line and f"${float(target['amount']):.2f}" in line:
+                if (
+                    not removed
+                    and f"| {target['date']}" in line
+                    and f"${float(target['amount']):.2f}" in line
+                ):
                     removed = True
                     continue
                 new_lines.append(line)
@@ -414,7 +407,14 @@ class ExpenseApp(BaseApp):
         expenses = await self.list_expenses(month=month)
         total = sum(e["amount"] for e in expenses)
         days_elapsed = max(1, date.today().day)
-        days_in_month = (date(date.today().year, date.today().month % 12 + 1, 1) - date(date.today().year, date.today().month, 1)).days if date.today().month < 12 else 31
+        days_in_month = (
+            (
+                date(date.today().year, date.today().month % 12 + 1, 1)
+                - date(date.today().year, date.today().month, 1)
+            ).days
+            if date.today().month < 12
+            else 31
+        )
         daily_avg = total / days_elapsed
         forecast = daily_avg * days_in_month
         state = self.load_state({"budget": 3000, "presets": []})
@@ -432,6 +432,7 @@ class ExpenseApp(BaseApp):
     async def api_heatmap(self, request):
         """Daily spending heatmap for last N months."""
         from datetime import timedelta
+
         months = int(request.query_params.get("months", "6"))
         start = date.today().replace(day=1)
         for _ in range(months - 1):
@@ -451,6 +452,7 @@ class ExpenseApp(BaseApp):
     async def api_week_compare(self, request):
         """Compare this week vs last week spending."""
         from datetime import timedelta
+
         today = date.today()
         week_start = today - timedelta(days=today.weekday())
         last_week_start = week_start - timedelta(days=7)
@@ -462,7 +464,11 @@ class ExpenseApp(BaseApp):
             expenses += await self.list_expenses(month=last_week_start.strftime("%Y-%m"))
 
         this_week = sum(e["amount"] for e in expenses if e["date"] >= week_start.isoformat())
-        last_week = sum(e["amount"] for e in expenses if last_week_start.isoformat() <= e["date"] < week_start.isoformat())
+        last_week = sum(
+            e["amount"]
+            for e in expenses
+            if last_week_start.isoformat() <= e["date"] < week_start.isoformat()
+        )
         diff = this_week - last_week
         return {
             "this_week": round(this_week, 2),
@@ -482,8 +488,10 @@ class ExpenseApp(BaseApp):
             f"Total: ${s['total']:.2f}, {s['count']} entries\n"
             f"Categories: {json.dumps(s['by_category'])}"
         )
-        result = await self.think(user_msg, system=EXPENSE_INSIGHT_SYSTEM, domain="text", temperature=0.4)
-        return {"insight": result, "month": s["month"], "total": s["total"]}
+        result = await self.think(
+            user_msg, system=EXPENSE_INSIGHT_SYSTEM, domain="text", temperature=0.4
+        )
+        return {"insight": result, "month": s["month"], "total": s["total"], "provenance": self.last_provenance()}
 
     # --- Recurring expenses ---
 
@@ -578,7 +586,15 @@ class ExpenseApp(BaseApp):
         writer = csv.writer(buf)
         writer.writerow(["date", "amount", "description", "category", "source"])
         for e in expenses:
-            writer.writerow([e["date"], e["amount"], e.get("description", ""), e["category"], e.get("source", "")])
+            writer.writerow(
+                [
+                    e["date"],
+                    e["amount"],
+                    e.get("description", ""),
+                    e["category"],
+                    e.get("source", ""),
+                ]
+            )
         return {"month": month, "count": len(expenses), "csv": buf.getvalue()}
 
     @web_route("POST", "/api/import")
@@ -634,12 +650,14 @@ class ExpenseApp(BaseApp):
         for cat in all_cats:
             t = round(this_cats.get(cat, 0), 2)
             l = round(last_cats.get(cat, 0), 2)
-            trends.append({
-                "category": cat,
-                "this_month": t,
-                "last_month": l,
-                "diff": round(t - l, 2),
-            })
+            trends.append(
+                {
+                    "category": cat,
+                    "this_month": t,
+                    "last_month": l,
+                    "diff": round(t - l, 2),
+                }
+            )
         trends.sort(key=lambda x: -abs(x["diff"]))
         return {"this_month": this_month, "last_month": last_month, "trends": trends}
 
@@ -669,7 +687,9 @@ class ExpenseApp(BaseApp):
             "count": count,
             "monthly_avg": round(total / months_with_data, 2) if months_with_data else 0,
             "by_month": by_month,
-            "by_category": {k: round(v, 2) for k, v in sorted(by_category.items(), key=lambda x: -x[1])},
+            "by_category": {
+                k: round(v, 2) for k, v in sorted(by_category.items(), key=lambda x: -x[1])
+            },
         }
 
     @web_route("GET", "/api/savings-goal")
@@ -745,10 +765,15 @@ class ExpenseApp(BaseApp):
         state = self.load_state(self._default_state())
         state.setdefault("income", []).append(entry)
         self.save_state(state)
-        await self.emit("expense:income-added", {
-            "date": entry["date"], "gross": entry["gross"],
-            "net": entry["net"], "type": entry["type"],
-        })
+        await self.emit(
+            "expense:income-added",
+            {
+                "date": entry["date"],
+                "gross": entry["gross"],
+                "net": entry["net"],
+                "type": entry["type"],
+            },
+        )
         return {"ok": True, "entry": entry}
 
     @web_route("DELETE", "/api/income")
@@ -760,7 +785,8 @@ class ExpenseApp(BaseApp):
         state = self.load_state(self._default_state())
         before = len(state.get("income", []))
         state["income"] = [
-            e for e in state.get("income", [])
+            e
+            for e in state.get("income", [])
             if not (e["date"] == target_date and abs(e.get("gross", 0) - target_gross) < 0.01)
         ]
         self.save_state(state)

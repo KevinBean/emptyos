@@ -8,8 +8,19 @@ from pathlib import Path
 from emptyos.sdk import BaseApp, cli_command, web_route
 
 
-class GitApp(BaseApp):
+GIT_SUMMARY_SYSTEM = (
+    "You are a release-notes assistant. Given a list of recent git commit "
+    "subjects, write 2-3 plain-prose sentences naming the main themes of "
+    "work.\n\n"
+    "Do NOT:\n"
+    "- Use bullet points, headings, or markdown.\n"
+    "- List individual commits — group them into themes.\n"
+    "- Speculate about why a change was made when it isn't in the subject.\n"
+    "- Begin with 'These commits' or 'Recently'."
+)
 
+
+class GitApp(BaseApp):
     def _project_dir(self) -> str:
         return str(self.kernel.config.path.parent)
 
@@ -33,13 +44,18 @@ class GitApp(BaseApp):
 
     async def _git_at(self, repo_path: str, *args: str) -> tuple[str, str, int]:
         proc = await asyncio.create_subprocess_exec(
-            "git", *args,
+            "git",
+            *args,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
             cwd=repo_path,
         )
         stdout, stderr = await proc.communicate()
-        return stdout.decode(errors="replace"), stderr.decode(errors="replace"), proc.returncode or 0
+        return (
+            stdout.decode(errors="replace"),
+            stderr.decode(errors="replace"),
+            proc.returncode or 0,
+        )
 
     def _parse_branches(self, output: str) -> list[dict]:
         branches = []
@@ -177,11 +193,12 @@ class GitApp(BaseApp):
         out, _, _ = await self._git_at(path, "log", "--oneline", f"-{count}")
         if not out.strip():
             return {"summary": "No commits found."}
-        prompt = (
-            "Summarize these recent git commits in 2-3 sentences. "
-            "Highlight the main themes of work.\n\n" + out
+        result = await self.think(
+            out,
+            system=GIT_SUMMARY_SYSTEM,
+            domain="text",
+            temperature=0.4,
         )
-        result = await self.think(prompt, domain="text")
         return {"summary": result, "commit_count": count}
 
     @web_route("GET", "/api/log-detail")
@@ -195,8 +212,13 @@ class GitApp(BaseApp):
                 continue
             parts = line.split("|", 4)
             if len(parts) >= 5:
-                commits.append({
-                    "hash": parts[0], "short": parts[1],
-                    "author": parts[2], "ago": parts[3], "message": parts[4],
-                })
+                commits.append(
+                    {
+                        "hash": parts[0],
+                        "short": parts[1],
+                        "author": parts[2],
+                        "ago": parts[3],
+                        "message": parts[4],
+                    }
+                )
         return commits

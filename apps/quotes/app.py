@@ -22,7 +22,6 @@ DEFAULT_QUOTES = [
 
 
 class QuotesApp(BaseApp):
-
     async def setup(self):
         await super().setup()
         quotes_file = self.data_dir / "quotes.json"
@@ -118,7 +117,8 @@ class QuotesApp(BaseApp):
         result = await self.think_safe(
             f"Generate one original, inspiring quote about '{topic}'. "
             f"Return ONLY the quote text with attribution '- AI'. No explanation.",
-            domain="text", temperature=0.9,
+            domain="text",
+            temperature=0.9,
             fallback="",
         )
         if not result:

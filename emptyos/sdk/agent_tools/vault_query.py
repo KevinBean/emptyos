@@ -110,7 +110,10 @@ class VaultQueryTool(Tool):
         elif op == "props":
             return await self._op_props(app, kwargs)
         else:
-            return ToolResult(ok=False, content=f"error: unknown op {op!r}. Use find, sections, section, or props.")
+            return ToolResult(
+                ok=False,
+                content=f"error: unknown op {op!r}. Use find, sections, section, or props.",
+            )
 
     async def _op_find(self, app, kwargs: dict) -> ToolResult:
         tags = kwargs.get("tags") or None
@@ -161,7 +164,9 @@ class VaultQueryTool(Tool):
             return ToolResult(ok=False, content="error: path is required for op=sections")
         sections = app.vault_sections(path)
         if not sections:
-            return ToolResult(ok=True, content=f"No sections found in: {path}", display={"sections": []})
+            return ToolResult(
+                ok=True, content=f"No sections found in: {path}", display={"sections": []}
+            )
         lines = [f"Sections in {path}:"]
         for s in sections:
             lines.append(f"  ## {s}")
@@ -179,7 +184,7 @@ class VaultQueryTool(Tool):
             return ToolResult(
                 ok=True,
                 content=f"Section '## {section}' not found in {path}. "
-                        f"Use op=sections to list available sections.",
+                f"Use op=sections to list available sections.",
             )
         return ToolResult(
             ok=True,

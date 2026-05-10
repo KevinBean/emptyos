@@ -16,8 +16,8 @@ from __future__ import annotations
 
 import aiohttp
 
-from emptyos.sdk import BasePlugin
 from emptyos.capabilities import Provider
+from emptyos.sdk import BasePlugin
 
 
 class VoiceAPIPlugin(BasePlugin):
@@ -32,7 +32,22 @@ class VoiceAPIPlugin(BasePlugin):
 
     def _host(self) -> str:
         # 8602 is the EmptyOS voice service default. 8601 is legacy home-portal TalkBuddy.
-        return self.config("host", "http://localhost:8602")
+        return self.config("host", "http://127.0.0.1:8602")
+
+    def _token(self) -> str:
+        """Optional bearer token for the voice-api server.
+
+        Read from plugin config first, then VOICE_API_TOKEN env var. The
+        service-side middleware accepts requests without a token only when
+        no token is configured server-side, so this stays opt-in."""
+        import os as _os
+
+        return (
+            self.config("auth_token", "") or _os.environ.get("VOICE_API_TOKEN", "") or ""
+        ).strip()
+
+    def _auth_headers(self) -> dict:
+        return self.bearer_headers(self._token())
 
     async def connect(self):
         self._session = aiohttp.ClientSession()
@@ -73,7 +88,8 @@ class VoiceAPIPlugin(BasePlugin):
             env["VOICE_API_PORT"] = str(parsed.port)
 
         self._embedded_proc = await asyncio.create_subprocess_exec(
-            sys.executable, str(server_path),
+            sys.executable,
+            str(server_path),
             stdout=asyncio.subprocess.DEVNULL,
             stderr=asyncio.subprocess.DEVNULL,
             env=env,
@@ -110,6 +126,7 @@ class VoiceAPIPlugin(BasePlugin):
         """Cached /health response. TTL 5s — enough to de-bounce a burst of
         `available()` checks from the capability layer without stale state."""
         import time
+
         now = time.monotonic()
         if self._health_cache and (now - self._health_ts) < 5.0:
             return self._health_cache
@@ -129,13 +146,14 @@ class VoiceAPIPlugin(BasePlugin):
 
     @staticmethod
     def _detect_language(text: str) -> str:
-        cjk = sum(1 for c in text if '\u4e00' <= c <= '\u9fff')
+        cjk = sum(1 for c in text if "\u4e00" <= c <= "\u9fff")
         return "zh" if cjk > len(text) * 0.1 else "en"
 
     async def _tts_post(self, payload: dict) -> str:
         async with self._session.post(
             f"{self._host()}/tts",
             json=payload,
+            headers=self._auth_headers(),
             timeout=aiohttp.ClientTimeout(total=60),
         ) as resp:
             if resp.status != 200:
@@ -150,6 +168,7 @@ class VoiceAPIPlugin(BasePlugin):
         try:
             async with self._session.get(
                 f"{self._host()}/voices",
+                headers=self._auth_headers(),
                 timeout=aiohttp.ClientTimeout(total=3),
             ) as resp:
                 if resp.status != 200:
@@ -163,7 +182,8 @@ class VoiceAPIPlugin(BasePlugin):
         """Speech to text. Accepts file path or bytes."""
         data = aiohttp.FormData()
         if isinstance(audio, str):
-            data.add_field("file", open(audio, "rb"), filename="audio.wav")
+            # Brief blocking open — aiohttp streams the file from here.
+            data.add_field("file", open(audio, "rb"), filename="audio.wav")  # noqa: ASYNC230
         else:
             data.add_field("file", audio, filename="audio.wav")
         if language:
@@ -171,6 +191,7 @@ class VoiceAPIPlugin(BasePlugin):
         async with self._session.post(
             f"{self._host()}/stt",
             data=data,
+            headers=self._auth_headers(),
             timeout=aiohttp.ClientTimeout(total=60),
         ) as resp:
             result = await resp.json()
@@ -196,20 +217,28 @@ class KokoroTTSProvider(Provider):
             return {
                 "available": False,
                 "reason": f"voice-api service unreachable at {self.host}",
-                "recovery": {"kind": "plugin", "id": "voice-api",
-                             "launcher": "Start the voice-api plugin or service at " + self.host},
+                "recovery": {
+                    "kind": "plugin",
+                    "id": "voice-api",
+                    "launcher": "Start the voice-api plugin or service at " + self.host,
+                },
             }
         if not h.get("kokoro_available"):
             return {
                 "available": False,
                 "reason": "voice-api is up but Kokoro TTS engine is not loaded",
-                "recovery": {"kind": "service", "id": "voice-api", "url": self.host,
-                             "hint": "Install Kokoro ONNX files in the voice-api service directory"},
+                "recovery": {
+                    "kind": "service",
+                    "id": "voice-api",
+                    "url": self.host,
+                    "hint": "Install Kokoro ONNX files in the voice-api service directory",
+                },
             }
         return {"available": True, "reason": None, "recovery": None}
 
-    async def execute(self, *, text: str, voice: str = "", speed: float = 1.0,
-                      language: str = "", **_) -> str:
+    async def execute(
+        self, *, text: str, voice: str = "", speed: float = 1.0, language: str = "", **_
+    ) -> str:
         if not language:
             language = VoiceAPIPlugin._detect_language(text)
         # If caller passed a non-Kokoro voice (e.g. edge alias), fall back to
@@ -269,15 +298,22 @@ class WhisperSTTProvider(Provider):
             return {
                 "available": False,
                 "reason": f"voice-api service unreachable at {self.host}",
-                "recovery": {"kind": "plugin", "id": "voice-api",
-                             "launcher": "Start the voice-api plugin or service at " + self.host},
+                "recovery": {
+                    "kind": "plugin",
+                    "id": "voice-api",
+                    "launcher": "Start the voice-api plugin or service at " + self.host,
+                },
             }
         if not h.get("whisper"):
             return {
                 "available": False,
                 "reason": "voice-api is up but Whisper STT engine is not loaded",
-                "recovery": {"kind": "service", "id": "voice-api", "url": self.host,
-                             "hint": "Install faster-whisper in the voice-api service environment"},
+                "recovery": {
+                    "kind": "service",
+                    "id": "voice-api",
+                    "url": self.host,
+                    "hint": "Install faster-whisper in the voice-api service environment",
+                },
             }
         return {"available": True, "reason": None, "recovery": None}
 

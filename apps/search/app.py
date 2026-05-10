@@ -41,6 +41,12 @@ VAULT_RAG_SYSTEM = """You are a knowledge assistant answering questions from a p
 
 
 class SearchApp(BaseApp):
+    # Embedding-based vault search tuning. Used by _embed_search; lifted to
+    # class-top so reviewers see them next to the docstring rather than
+    # mid-class between methods.
+    _MAX_EMBED_NOTES = 5000          # cap candidate set; vault index already filters
+    _EMBED_TEXT_LIMIT = 1500         # chars per note fed to embedding (title + head)
+    _EMBED_MIN_SCORE = 0.30          # filter visibly-unrelated hits
 
     def _vault_path(self) -> str:
         return self.kernel.config.get("notes.path", "") or "."
@@ -69,15 +75,47 @@ class SearchApp(BaseApp):
         query = request.query_params.get("q", "")
         top = int(request.query_params.get("top", "15"))
         semantic = request.query_params.get("semantic", "").lower() in ("1", "true", "yes")
+        mode = (request.query_params.get("mode", "") or "").lower()
         if not query:
             return {"results": [], "query": ""}
+
+        # Embedding-based path: highest-quality semantic recall, no LLM round-trip.
+        # Triggered explicitly via mode=embed (or implicitly when semantic=1 and
+        # embeddings are available — see _semantic_search fallback chain).
+        if mode == "embed":
+            try:
+                paths, scores, used_method = await self._embed_search(query, top)
+                # used_method == "grep" when embeddings are unavailable and we
+                # fell through. Surface that honestly so analytics doesn't
+                # think every mode=embed request actually hit embeddings.
+                self.log_activity(
+                    {"action": "search", "query": query, "results": len(paths), "mode": used_method}
+                )
+                await self.emit("search:query", {"query": query, "results": len(paths), "mode": used_method})
+                return {
+                    "results": [{"path": p, "score": round(s, 3)} for p, s in zip(paths, scores)],
+                    "query": query,
+                    "mode": used_method,
+                }
+            except Exception:
+                # Fall through to semantic/grep on any failure
+                pass
 
         # Semantic search with fallback to basic grep on any failure
         if semantic:
             try:
                 results, terms = await self._semantic_search(query, top)
-                self.log_activity({"action": "search", "query": query, "results": len(results), "mode": "semantic"})
-                await self.emit("search:query", {"query": query, "results": len(results), "mode": "semantic"})
+                self.log_activity(
+                    {
+                        "action": "search",
+                        "query": query,
+                        "results": len(results),
+                        "mode": "semantic",
+                    }
+                )
+                await self.emit(
+                    "search:query", {"query": query, "results": len(results), "mode": "semantic"}
+                )
                 return {"results": results, "query": query, "expanded_terms": terms}
             except Exception:
                 # Semantic failed — fall through to basic search
@@ -89,7 +127,9 @@ class SearchApp(BaseApp):
         except Exception:
             results = []
         try:
-            self.log_activity({"action": "search", "query": query, "results": len(results), "mode": "search"})
+            self.log_activity(
+                {"action": "search", "query": query, "results": len(results), "mode": "search"}
+            )
         except Exception:
             pass
         try:
@@ -120,7 +160,14 @@ class SearchApp(BaseApp):
                 for b in bookmarks:
                     text = f"{b.get('title', '')} {b.get('url', '')} {' '.join(b.get('tags', []))} {b.get('summary', '')}".lower()
                     if q in text:
-                        sources.append({"type": "bookmark", "title": b.get("title", ""), "url": b.get("url", ""), "id": b.get("id", "")})
+                        sources.append(
+                            {
+                                "type": "bookmark",
+                                "title": b.get("title", ""),
+                                "url": b.get("url", ""),
+                                "id": b.get("id", ""),
+                            }
+                        )
         except Exception:
             pass
 
@@ -128,7 +175,9 @@ class SearchApp(BaseApp):
             cards = await self.call_app("quickref", "search_cards", query=query)
             if isinstance(cards, list):
                 for c in cards:
-                    sources.append({"type": "quickref", "title": c.get("title", ""), "id": c.get("id", "")})
+                    sources.append(
+                        {"type": "quickref", "title": c.get("title", ""), "id": c.get("id", "")}
+                    )
         except Exception:
             pass
 
@@ -172,8 +221,10 @@ class SearchApp(BaseApp):
                 pass
 
         return {
-            "answer": answer, "query": query,
-            "provider": used_provider, "latency_ms": latency,
+            "answer": answer,
+            "query": query,
+            "provider": used_provider,
+            "latency_ms": latency,
             "available_providers": available,
             "provenance": self.last_provenance(),
         }
@@ -252,6 +303,63 @@ class SearchApp(BaseApp):
                 paths.append(str(r).replace("\\", "/"))
         return paths[:top]
 
+    # Embedding-based vault search ──────────────────────────────────
+    # Uses BaseApp.embedding_index() which is backed by emptyos.sdk.embeddings.
+    # Note bodies are embedded once (~$0.03 for a 3000-note vault), cached
+    # by content hash, queryable in a few ms thereafter.
+    # Tuning constants live at class top.
+
+    async def _embed_search(
+        self, query: str, top: int = 15
+    ) -> tuple[list, list[float], str]:
+        """Embedding-cosine vault search. Returns (paths, scores, method)
+        where method ∈ {"embed", "grep"}.
+
+        Falls back to grep when embeddings aren't available (no API key).
+        Caller should surface `method` so observability reflects the actual
+        path taken, not the requested one.
+        """
+        if not self.embeddings_available:
+            paths = await self._search(query, top)
+            return paths, [0.0] * len(paths), "grep"
+
+        vault = Path(self._vault_path())
+        if not vault.exists():
+            return [], [], "embed"
+
+        # Candidate set: every .md under the vault, capped. The vault watcher
+        # already dedupes; we just need the file list. Skip noisy locations.
+        skip = {".obsidian", ".trash", "node_modules", "_attachments"}
+        candidates: list[dict] = []
+        for p in vault.rglob("*.md"):
+            rel = p.relative_to(vault)
+            if any(part in skip or part.startswith(".") for part in rel.parts):
+                continue
+            # Skip Playwright test fixtures (vault-resident but throwaway)
+            if rel.name.startswith("PLAYWRIGHT-TEST-"):
+                continue
+            try:
+                text = p.read_text(encoding="utf-8", errors="ignore")
+            except Exception:
+                continue
+            if not text.strip():
+                continue
+            candidates.append({
+                "path": str(p).replace("\\", "/"),
+                "text": text[:self._EMBED_TEXT_LIMIT],
+            })
+            if len(candidates) >= self._MAX_EMBED_NOTES:
+                break
+
+        if not candidates:
+            return [], [], "embed"
+
+        index = await self.embedding_index(candidates, text_fn=lambda it: it["text"])
+        hits = await index.search(query, top_k=top, min_score=self._EMBED_MIN_SCORE)
+        paths = [it["path"] for it, _ in hits]
+        scores = [s for _, s in hits]
+        return paths, scores, "embed"
+
     async def _semantic_search(self, query: str, top: int = 15) -> tuple[list, list]:
         """Semantic search: LLM expands query → multi-term grep → dedup + rank."""
         import asyncio
@@ -262,7 +370,9 @@ class SearchApp(BaseApp):
             raw = await asyncio.wait_for(
                 self.think(
                     f"Query: {query}",
-                    system=QUERY_EXPAND_SYSTEM, domain="text", temperature=0.2,
+                    system=QUERY_EXPAND_SYSTEM,
+                    domain="text",
+                    temperature=0.2,
                 ),
                 timeout=10,
             )
@@ -329,6 +439,7 @@ class SearchApp(BaseApp):
 
         # Call LLM with timeout + fallback chain (configurable via settings)
         import asyncio
+
         settings = self.kernel.services.get_optional("settings")
         TIMEOUT = 30
         default_order = "ollama,claude-cli,openai"
@@ -357,7 +468,7 @@ class SearchApp(BaseApp):
                     result = raw
                     used = prov
                     break
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 continue
             except Exception:
                 continue
@@ -403,15 +514,24 @@ class SearchApp(BaseApp):
         for entry in by_mtime[:12]:
             age = now - entry.get("modified", 0)
             if age < 3600:
-                ago = f"{int(age/60)}m ago"
+                ago = f"{int(age / 60)}m ago"
             elif age < 86400:
-                ago = f"{int(age/3600)}h ago"
+                ago = f"{int(age / 3600)}h ago"
             else:
-                ago = f"{int(age/86400)}d ago"
-            recent.append({"path": entry["path"], "name": entry["name"], "folder": entry["folder"], "ago": ago})
+                ago = f"{int(age / 86400)}d ago"
+            recent.append(
+                {
+                    "path": entry["path"],
+                    "name": entry["name"],
+                    "folder": entry["folder"],
+                    "ago": ago,
+                }
+            )
 
         # Sort folders by PARA order
-        _PARA = self.vault_config("para_folders", "Inbox,Projects,Areas,Resources,Archive,Journal,Attachments")
+        _PARA = self.vault_config(
+            "para_folders", "Inbox,Projects,Areas,Resources,Archive,Journal,Attachments"
+        )
         _para_names = [f.strip() for f in _PARA.split(",")]
         para_order = {}
         for i, name in enumerate(_para_names):
@@ -419,8 +539,11 @@ class SearchApp(BaseApp):
                 if name.lower() in k.lower():
                     para_order[k] = i
                     break
-        folder_list = [{"name": k, "count": v, "order": para_order.get(k, 99)}
-                       for k, v in folders.items() if k != "_root"]
+        folder_list = [
+            {"name": k, "count": v, "order": para_order.get(k, 99)}
+            for k, v in folders.items()
+            if k != "_root"
+        ]
         folder_list.sort(key=lambda x: x["order"])
 
         # Tags from index — sorted by count descending

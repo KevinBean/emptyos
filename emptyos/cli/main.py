@@ -8,7 +8,6 @@ import json
 import os
 import sys
 from pathlib import Path
-from typing import Optional
 
 # Force UTF-8 stdio on Windows so Rich output (middle dots, box drawing, emojis)
 # renders correctly instead of showing replacement characters (�) under cp1252.
@@ -45,8 +44,9 @@ app.add_typer(event_cmd, name="event")
 app.add_typer(config_cmd, name="config")
 app.add_typer(group_cmd, name="export-group")
 
-from emptyos.cli.commands.init import init_command
 from emptyos.cli.commands.boot import boot_command
+from emptyos.cli.commands.init import init_command
+
 app.command("init")(init_command)
 app.command("boot")(boot_command)
 
@@ -84,12 +84,14 @@ def _daemon_url() -> str | None:
     except (typer.Exit, SystemExit):
         return None
     from emptyos.kernel.config import Config
+
     config = Config(config_path)
     # Always probe via loopback; config.host may be 0.0.0.0 (bind-all) which is not a valid client address.
     client_host = "127.0.0.1" if config.host in ("0.0.0.0", "::") else config.host
     url = f"http://{client_host}:{config.port}"
     try:
         import urllib.request
+
         resp = urllib.request.urlopen(f"{url}/api/health", timeout=1)
         return url if resp.status == 200 else None
     except Exception:
@@ -98,6 +100,7 @@ def _daemon_url() -> str | None:
 
 def _get_kernel():
     from emptyos.kernel import Kernel
+
     k = Kernel(_find_config())
     k.apps.discover()
     return k
@@ -111,6 +114,7 @@ def _wire_app_cli_commands():
         return  # No config — skip app CLI wiring
 
     from emptyos.kernel import Kernel
+
     kernel = Kernel(config_path)
     kernel.apps.discover()
 
@@ -155,15 +159,17 @@ def _register_app_command(cmd_name: str, manifest, config_path: str):
 
 def _run_via_daemon(daemon_url: str, app_id: str, cmd_name: str, args: list[str] | None):
     """Execute an app command via the running daemon's API."""
-    import urllib.request
     import urllib.error
+    import urllib.request
 
     # Map CLI args to a generic command endpoint
-    payload = json.dumps({
-        "app": app_id,
-        "command": cmd_name,
-        "args": list(args) if args else [],
-    }).encode()
+    payload = json.dumps(
+        {
+            "app": app_id,
+            "command": cmd_name,
+            "args": list(args) if args else [],
+        }
+    ).encode()
 
     try:
         req = urllib.request.Request(
@@ -249,7 +255,7 @@ def root(ctx: typer.Context):
     # Capabilities
     caps = kernel.capabilities.list()
     if caps:
-        console.print(f"[bold]Capabilities[/bold]")
+        console.print("[bold]Capabilities[/bold]")
         for name, cap in caps.items():
             providers = [p.name for p in cap.providers]
             console.print(f"  {name:<12} providers: {', '.join(providers)}")
@@ -298,8 +304,9 @@ def start(
         console.print(f"[green]Kernel started. {len(kernel.apps.instances)} apps loaded.[/green]")
 
         if not no_web:
-            from emptyos.web.server import create_server
             import uvicorn
+
+            from emptyos.web.server import create_server
 
             # --- Deployment mode safety check ---
             _mode = kernel.config.network_mode
@@ -316,14 +323,19 @@ def start(
                 )
                 return
             if kernel.config.is_remote_bind and _mode == "private" and not _token:
+                # Reachable only when user explicitly set
+                # `network.auth_required = false` — they've opted out of the
+                # default-on auth gate that landed 2026-04-27.
                 console.print(
-                    f"[yellow]Note:[/yellow] binding {_host} in 'private' mode without auth. "
-                    f"Your network layer (Tailscale/LAN/VPN/firewall) is the gate."
+                    f"[bold yellow]Warning:[/bold yellow] binding {_host} in "
+                    f"'private' mode with auth disabled. Anyone on the same "
+                    f"network can reach EmptyOS without a token. Your only "
+                    f"gate is the network layer (Tailscale/VPN/firewall)."
                 )
             if kernel.config.demo_enabled:
                 console.print(
-                    f"[cyan]Demo mode enabled.[/cyan] GPU capabilities disabled; "
-                    f"BYOK (bring your own key) available in settings."
+                    "[cyan]Demo mode enabled.[/cyan] GPU capabilities disabled; "
+                    "BYOK (bring your own key) available in settings."
                 )
 
             server = create_server(kernel)
@@ -336,6 +348,7 @@ def start(
             # ("data transfer failed" + WinError 121) before raising the
             # WebSocketDisconnect we already handle. Filter those out.
             import logging as _logging
+
             class _WSDisconnectFilter(_logging.Filter):
                 def filter(self, record):
                     msg = record.getMessage()
@@ -347,6 +360,7 @@ def start(
                         if "WinError 121" in s or "WinError 10054" in s:
                             return False
                     return True
+
             for _ln in ("websockets.protocol", "websockets.legacy.protocol", "websockets.server"):
                 _logging.getLogger(_ln).addFilter(_WSDisconnectFilter())
 
@@ -394,7 +408,9 @@ def health():
 
     # Vault
     v = status["vault"]
-    v_status = "[green]OK[/green]" if v.get("status") == "ok" else f"[red]{v.get('status', '?')}[/red]"
+    v_status = (
+        "[green]OK[/green]" if v.get("status") == "ok" else f"[red]{v.get('status', '?')}[/red]"
+    )
     v_info = f" ({v.get('files', '?')} files)" if v.get("files") else ""
     console.print(f"  Vault  {v_status}{v_info}")
 
@@ -411,7 +427,9 @@ def health():
         console.print()
         console.print("  [bold]Connectors[/bold]")
         for name, info in status["connectors"].items():
-            c_status = "[green]OK[/green]" if info["status"] == "ok" else f"[red]{info['status']}[/red]"
+            c_status = (
+                "[green]OK[/green]" if info["status"] == "ok" else f"[red]{info['status']}[/red]"
+            )
             console.print(f"    {name:<16} {c_status}")
 
     # Apps
@@ -422,12 +440,15 @@ def health():
     # Integrity audit (filesystem-only, no app loading needed)
     try:
         from apps.integrity.app import IntegrityApp
+
         # Create a lightweight instance just for the audit
         ia = IntegrityApp.__new__(IntegrityApp)
         ia.kernel = kernel
         audit = ia._run_audit()
         console.print()
-        console.print(f"  [bold]Integrity[/bold]  {audit['total_score']}/{audit['max_score']} ({audit['pct']}%)")
+        console.print(
+            f"  [bold]Integrity[/bold]  {audit['total_score']}/{audit['max_score']} ({audit['pct']}%)"
+        )
         for name, dim in audit["dimensions"].items():
             if dim["score"] >= 8:
                 icon, style = "+", "green"
@@ -451,6 +472,7 @@ def health():
 def check_release():
     """Scan committed code for personal data leaks."""
     import subprocess
+
     script = Path(__file__).parent.parent.parent / "scripts" / "check-personal.py"
     if not script.exists():
         console.print(f"[red]Scanner not found: {script}[/red]")
@@ -471,6 +493,7 @@ def release(
         standard — package full community tier
     """
     import subprocess
+
     root = Path(__file__).parent.parent.parent
     script = root / "scripts" / "package-release.py"
     if not script.exists():
@@ -584,7 +607,7 @@ def app_info(app_id: str):
         instance = await kernel.apps.load(app_id)
         routes = instance.get_web_methods()
         if routes:
-            console.print(f"  API:")
+            console.print("  API:")
             for meta, _ in routes:
                 console.print(f"                {meta['method'].upper()} {prefix}{meta['path']}")
 
@@ -626,9 +649,9 @@ def app_info(app_id: str):
         console.print(f"  Export:       yes ({export_cfg.get('mode', 'standalone')})")
         console.print(f"  Fallbacks:    {fb}")
     elif export_cfg:
-        console.print(f"  Export:       declared but disabled")
+        console.print("  Export:       declared but disabled")
     else:
-        console.print(f"  Export:       no")
+        console.print("  Export:       no")
 
     console.print()
 
@@ -636,11 +659,11 @@ def app_info(app_id: str):
 @app_cmd.command("export")
 def app_export(
     app_id: str = typer.Argument(..., help="App id to export"),
-    out: Optional[str] = typer.Option(None, "--out", "-o", help="Output path (dir, zip, or .html)"),
-    fmt: str = typer.Option("dir", "--format", "-f",
-                            help="Bundle format: dir | zip | single-html"),
-    verify: bool = typer.Option(False, "--verify",
-                                help="After build, open bundle headless and assert no console errors"),
+    out: str | None = typer.Option(None, "--out", "-o", help="Output path (dir, zip, or .html)"),
+    fmt: str = typer.Option("dir", "--format", "-f", help="Bundle format: dir | zip | single-html"),
+    verify: bool = typer.Option(
+        False, "--verify", help="After build, open bundle headless and assert no console errors"
+    ),
 ):
     """Export an app to a standalone HTML+JS bundle.
 
@@ -719,8 +742,11 @@ async def _verify_bundle(path: Path, fmt: str) -> list[str]:
             page.on("pageerror", lambda e: errors.append(f"pageerror: {e}"))
             page.on(
                 "console",
-                lambda msg: errors.append(f"console {msg.type}: {msg.text}")
-                if msg.type in ("error",) else None,
+                lambda msg: (
+                    errors.append(f"console {msg.type}: {msg.text}")
+                    if msg.type in ("error",)
+                    else None
+                ),
             )
             await page.goto("file:///" + str(index.resolve()).replace("\\", "/"))
             await page.wait_for_load_state("networkidle", timeout=5000)
@@ -759,10 +785,11 @@ def group_list():
 @group_cmd.command("build")
 def group_build(
     group_id: str = typer.Argument(..., help="Group id from export-groups.toml"),
-    out: Optional[str] = typer.Option(None, "--out", "-o", help="Output path"),
+    out: str | None = typer.Option(None, "--out", "-o", help="Output path"),
     fmt: str = typer.Option("dir", "--format", "-f", help="Bundle format: dir | zip"),
-    verify: bool = typer.Option(False, "--verify",
-                                help="After build, open chooser headless and assert no console errors"),
+    verify: bool = typer.Option(
+        False, "--verify", help="After build, open chooser headless and assert no console errors"
+    ),
 ):
     """Build an export group into a multi-app bundle."""
     if fmt not in ("dir", "zip"):
@@ -777,7 +804,9 @@ def group_build(
         groups = load_groups(Path(kernel.config.path).parent / "export-groups.toml")
         match = next((g for g in groups if g.get("id") == group_id), None)
         if not match:
-            console.print(f"[red]Group '{group_id}' not found. Available: {[g.get('id') for g in groups]}[/red]")
+            console.print(
+                f"[red]Group '{group_id}' not found. Available: {[g.get('id') for g in groups]}[/red]"
+            )
             raise typer.Exit(1)
 
         out_path = Path(out) if out else Path.cwd() / f"{group_id}-export"
@@ -825,7 +854,7 @@ def config_show():
 
 @event_cmd.command("log")
 def event_log(
-    event_type: Optional[str] = typer.Argument(None, help="Filter by event type"),
+    event_type: str | None = typer.Argument(None, help="Filter by event type"),
     limit: int = typer.Option(20, "--limit", "-n"),
 ):
     """Show recent events."""
@@ -852,6 +881,7 @@ def event_log(
 
 # ── Skills Management ────────────────────────────────────
 
+
 @app.command()
 def skills(
     action: str = typer.Argument("list", help="list | install | sync | check"),
@@ -868,8 +898,12 @@ def skills(
         console.print("[red]No bundled skills found at emptyos/skills/[/red]")
         raise typer.Exit(1)
 
-    bundled = sorted([d.name for d in bundled_dir.iterdir() if d.is_dir() and not d.name.startswith(".")])
-    installed = set(d.name for d in user_dir.iterdir() if d.is_dir()) if user_dir.exists() else set()
+    bundled = sorted(
+        [d.name for d in bundled_dir.iterdir() if d.is_dir() and not d.name.startswith(".")]
+    )
+    installed = (
+        set(d.name for d in user_dir.iterdir() if d.is_dir()) if user_dir.exists() else set()
+    )
 
     if category and category != "all":
         bundled = [b for b in bundled if b.startswith(category + "-")]
@@ -884,7 +918,9 @@ def skills(
             status = "[green]installed[/green]" if name in installed else "[dim]available[/dim]"
             table.add_row(name, status, cat)
         console.print(table)
-        console.print(f"\n  {len(bundled)} bundled, {sum(1 for b in bundled if b in installed)} installed")
+        console.print(
+            f"\n  {len(bundled)} bundled, {sum(1 for b in bundled if b in installed)} installed"
+        )
 
     elif action == "install":
         user_dir.mkdir(parents=True, exist_ok=True)
@@ -909,7 +945,9 @@ def skills(
             dest = user_dir / name / "SKILL.md"
             if not src.exists():
                 continue
-            if not dest.exists() or src.read_text(encoding="utf-8") != dest.read_text(encoding="utf-8"):
+            if not dest.exists() or src.read_text(encoding="utf-8") != dest.read_text(
+                encoding="utf-8"
+            ):
                 dest.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(str(src), str(dest))
                 console.print(f"  [yellow]~[/yellow] {name}")

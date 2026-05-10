@@ -28,7 +28,7 @@ def sm2_schedule(item: dict, quality: int) -> None:
         days = 1
     else:
         ease = ease + 0.1 * (quality - 3)
-        days = max(1, int(ease ** count))
+        days = max(1, int(ease**count))
     item["ease"] = round(ease, 2)
     item["review_count"] = count + 1
     item["next_review"] = (date.today() + timedelta(days=days)).isoformat()
@@ -44,5 +44,7 @@ def review_stats(items: list[dict]) -> dict:
     """Aggregate review statistics."""
     today = date.today().isoformat()
     due = sum(1 for i in items if i.get("next_review", "") <= today)
-    reviewed = sum(1 for i in items if i.get("review_count", 0) > 0 and i.get("next_review", "") > today)
+    reviewed = sum(
+        1 for i in items if i.get("review_count", 0) > 0 and i.get("next_review", "") > today
+    )
     return {"total": len(items), "due_today": due, "reviewed_today": reviewed}

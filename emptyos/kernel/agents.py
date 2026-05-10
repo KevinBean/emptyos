@@ -1,8 +1,8 @@
-"""Agent resolver — loads System and User GPT agents for think() routing.
+"""Agent resolver — loads named room agents for think() routing.
 
 Apps call self.think(prompt, agent="blender-expert") and this module
-resolves the agent definition, loads its knowledge files, and returns
-the enriched context for the LLM call.
+resolves the agent definition (from data/apps/rooms/agents/<id>.json),
+loads its knowledge files, and returns the enriched context for the LLM call.
 """
 
 from __future__ import annotations
@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 import time
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from emptyos.kernel import Kernel
@@ -29,7 +29,7 @@ class AgentResolver:
         self._knowledge_cache: dict[str, tuple[float, str]] = {}  # agent_id -> (timestamp, text)
 
     def _agents_dir(self) -> Path:
-        return self.kernel.config.data_dir / "apps" / "gpts" / "agents"
+        return self.kernel.config.data_dir / "apps" / "rooms" / "agents"
 
     def invalidate(self, agent_id: str | None = None):
         """Clear cache. Called after agent CRUD operations."""
@@ -122,6 +122,102 @@ class AgentResolver:
                         parts.append(f"### {md_file.stem}\n{content}")
 
         return "\n\n".join(parts)
+
+    def load_knowledge_chunks(self, agent: dict) -> list[dict]:
+        """Same sources as load_knowledge, but returned as chunked items
+        suitable for embedding-based retrieval.
+
+        Each chunk: {id, source, text}. We chunk by H2 section when possible,
+        else by char-length blocks of ~1500 chars. The chunk `id` is stable
+        within an agent (file basename + chunk index) so embeddings are
+        cache-friendly across reloads.
+
+        Knowledge content is read in full (we ignore knowledge_char_limit
+        here — the caller's retrieval pass picks top-K, so per-file truncation
+        would just hide content from search rather than save tokens).
+        """
+        notes_path = self.kernel.config.notes_path or Path(".")
+        items: list[dict] = []
+
+        def _add_file(path: Path, source: str) -> None:
+            try:
+                content = path.read_text(encoding="utf-8")
+            except Exception:
+                return
+            for i, chunk_text in enumerate(self._chunk_for_retrieval(content)):
+                items.append({
+                    "id": f"{source}#{i}",
+                    "source": source,
+                    "text": chunk_text,
+                })
+
+        for rel in agent.get("knowledge_files", []):
+            p = notes_path / rel
+            if p.exists():
+                _add_file(p, Path(rel).name)
+
+        knowledge_dir = agent.get("knowledge_dir", "")
+        if knowledge_dir:
+            kdir = Path(knowledge_dir)
+            if not kdir.is_absolute():
+                kdir = self.kernel.config.data_dir / knowledge_dir
+            if kdir.exists():
+                for md_file in sorted(kdir.glob("*.md")):
+                    _add_file(md_file, md_file.name)
+
+        return items
+
+    @staticmethod
+    def _chunk_for_retrieval(content: str, target_chars: int = 1500) -> list[str]:
+        """Split content into retrieval-sized chunks. Prefer H2 boundaries;
+        merge tiny adjacent sections; split oversized ones by paragraph."""
+        # First: split on H2 (^## ).
+        sections: list[str] = []
+        current: list[str] = []
+        for line in content.split("\n"):
+            if line.startswith("## ") and current:
+                sections.append("\n".join(current).strip())
+                current = [line]
+            else:
+                current.append(line)
+        if current:
+            sections.append("\n".join(current).strip())
+        sections = [s for s in sections if s]
+
+        # Merge runs that are both small enough to fit together.
+        merged: list[str] = []
+        buf = ""
+        for s in sections:
+            if not buf:
+                buf = s
+                continue
+            if len(buf) + len(s) + 2 <= target_chars:
+                buf = buf + "\n\n" + s
+            else:
+                merged.append(buf)
+                buf = s
+        if buf:
+            merged.append(buf)
+
+        # Split oversized chunks by paragraph.
+        out: list[str] = []
+        for s in merged:
+            if len(s) <= target_chars * 1.5:
+                out.append(s)
+                continue
+            paras = s.split("\n\n")
+            buf2 = ""
+            for p in paras:
+                if not buf2:
+                    buf2 = p
+                elif len(buf2) + len(p) + 2 <= target_chars:
+                    buf2 = buf2 + "\n\n" + p
+                else:
+                    out.append(buf2)
+                    buf2 = p
+            if buf2:
+                out.append(buf2)
+        return out
 
     @staticmethod
     def _load_json(path: Path) -> dict | None:

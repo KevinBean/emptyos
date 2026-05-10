@@ -19,10 +19,13 @@ from pathlib import Path
 
 from emptyos.sdk import cli_command
 from emptyos.sdk.agent_loop import (
-    AgentSession, run_turn, run_native_turn,
-    DEFAULT_SYSTEM_PROMPT, DEFAULT_MAX_ITERS, EDIT_PATH_LIMIT,
+    DEFAULT_MAX_ITERS,
+    DEFAULT_SYSTEM_PROMPT,
+    EDIT_PATH_LIMIT,
+    AgentSession,
+    run_native_turn,
+    run_turn,
 )
-
 
 # ─────────────────────────────────────────────────────────────────────
 # Slash commands — single source of truth for both terminal and web UI.
@@ -32,29 +35,73 @@ from emptyos.sdk.agent_loop import (
 # what the command takes so autocomplete UIs can hint.
 # ─────────────────────────────────────────────────────────────────────
 SLASH_COMMANDS = [
-    {"name": "/help",     "args": "",          "help": "List available commands."},
-    {"name": "/status",   "args": "",          "help": "Show session, provider, and tool info."},
-    {"name": "/model",    "args": "[provider]", "help": "Show or set the provider for this session."},
-    {"name": "/tools",    "args": "",          "help": "List the agent's tools and their permission level."},
-    {"name": "/stats",    "args": "",          "help": "Show session totals — turns, tokens, cost."},
-    {"name": "/skills",   "args": "",          "help": "List Claude-Code-compatible skills available to the agent."},
-    {"name": "/tasks",    "args": "",          "help": "Show the current TaskList (if the agent has set one this session)."},
-    {"name": "/clear",    "args": "",          "help": "Clear the transcript view (keeps session history)."},
-    {"name": "/new",      "args": "",          "help": "Start a new session."},
-    {"name": "/sessions", "args": "",          "help": "List recent sessions."},
-    {"name": "/resume",   "args": "<id|name>", "help": "Switch to a previous session (id prefix or name)."},
-    {"name": "/rename",   "args": "<name>",    "help": "Rename the current session."},
-    {"name": "/delete",   "args": "<id>",      "help": "Delete a session (not the current one)."},
-    {"name": "/revert",   "args": "[n]",       "help": "Undo the last Write/Edit this session. `/revert 3` undoes the last 3."},
-    {"name": "/grant-edits", "args": "[n]",    "help": "Raise the per-turn edit-loop-guard cap (default 5) for this session. Use when a big refactor needs many edits to one file."},
-    {"name": "/grant-iters", "args": "[n]",    "help": "Raise the per-turn max_iters (default 25) for this session. Use after 'Stopped at max_iters' when the task legitimately needs more steps."},
-    {"name": "/plan",     "args": "",          "help": "Enter plan mode — read-only investigation only; Write/Edit/Bash-write/RestartDaemon blocked until /execute."},
-    {"name": "/execute",  "args": "",          "help": "Leave plan mode. The plan you drafted is now greenlit — proceed and make the changes."},
-    {"name": "/scrap",    "args": "",          "help": "Leave plan mode without executing. Discard the draft plan; back to normal chat."},
-    {"name": "/context",  "args": "",          "help": "Show active session context — message count, provider, plan mode, limits."},
-    {"name": "/settings", "args": "",          "help": "Open or print agent settings."},
-    {"name": "/archive",  "args": "",          "help": "Summarise the session and save it to the vault as a memory note."},
-    {"name": "/quit",     "args": "",          "help": "End the session (CLI only)."},
+    {"name": "/help", "args": "", "help": "List available commands."},
+    {"name": "/status", "args": "", "help": "Show session, provider, and tool info."},
+    {"name": "/model", "args": "[provider]", "help": "Show or set the provider for this session."},
+    {"name": "/tools", "args": "", "help": "List the agent's tools and their permission level."},
+    {"name": "/stats", "args": "", "help": "Show session totals — turns, tokens, cost."},
+    {
+        "name": "/skills",
+        "args": "",
+        "help": "List Claude-Code-compatible skills available to the agent.",
+    },
+    {
+        "name": "/tasks",
+        "args": "",
+        "help": "Show the current TaskList (if the agent has set one this session).",
+    },
+    {"name": "/clear", "args": "", "help": "Clear the transcript view (keeps session history)."},
+    {"name": "/new", "args": "", "help": "Start a new session."},
+    {"name": "/sessions", "args": "", "help": "List recent sessions."},
+    {
+        "name": "/resume",
+        "args": "<id|name>",
+        "help": "Switch to a previous session (id prefix or name).",
+    },
+    {"name": "/rename", "args": "<name>", "help": "Rename the current session."},
+    {"name": "/delete", "args": "<id>", "help": "Delete a session (not the current one)."},
+    {
+        "name": "/revert",
+        "args": "[n]",
+        "help": "Undo the last Write/Edit this session. `/revert 3` undoes the last 3.",
+    },
+    {
+        "name": "/grant-edits",
+        "args": "[n]",
+        "help": "Raise the per-turn edit-loop-guard cap (default 5) for this session. Use when a big refactor needs many edits to one file.",
+    },
+    {
+        "name": "/grant-iters",
+        "args": "[n]",
+        "help": "Raise the per-turn max_iters (default 25) for this session. Use after 'Stopped at max_iters' when the task legitimately needs more steps.",
+    },
+    {
+        "name": "/plan",
+        "args": "",
+        "help": "Enter plan mode — read-only investigation only; Write/Edit/Bash-write/RestartDaemon blocked until /execute.",
+    },
+    {
+        "name": "/execute",
+        "args": "",
+        "help": "Leave plan mode. The plan you drafted is now greenlit — proceed and make the changes.",
+    },
+    {
+        "name": "/scrap",
+        "args": "",
+        "help": "Leave plan mode without executing. Discard the draft plan; back to normal chat.",
+    },
+    {
+        "name": "/context",
+        "args": "",
+        "help": "Show active session context — message count, provider, plan mode, limits.",
+    },
+    {"name": "/settings", "args": "", "help": "Open or print agent settings."},
+    {
+        "name": "/archive",
+        "args": "",
+        "help": "Summarise the session and save it to the vault as a memory note.",
+    },
+    {"name": "/quit", "args": "", "help": "End the session (CLI only)."},
 ]
 
 
@@ -79,6 +126,7 @@ def _chat_fmt_cost(c: float) -> str:
 async def cmd_chat(self, session_id: str = ""):
     """Interactive terminal session."""
     from rich.console import Console
+
     console = Console()
 
     if not session_id:
@@ -92,12 +140,15 @@ async def cmd_chat(self, session_id: str = ""):
     provider = self._resolve_provider(provider_name)
     if provider is None:
         console.print(f"[red]No tool-capable provider available (tried {provider_name!r}).[/red]")
-        console.print("  Install `anthropic>=0.40` and set ANTHROPIC_API_KEY, or wire OpenAI/Ollama.")
+        console.print(
+            "  Install `anthropic>=0.40` and set ANTHROPIC_API_KEY, or wire OpenAI/Ollama."
+        )
         return
 
     # Attach terminal permission UI to the consent manager
     tool_consent = self.service("tool_consent")
     from rich.prompt import Prompt
+
     # Drop Rich's default "colon-space" suffix; our prompt is already self-terminating.
     Prompt.prompt_suffix = " "
 
@@ -106,6 +157,7 @@ async def cmd_chat(self, session_id: str = ""):
     # (invokes the skill when the user types `/<skill-name>`).
     try:
         from apps.agent.skills import discover_skills
+
         skill_catalog = discover_skills(self.repo_root)
     except Exception:
         skill_catalog = {}
@@ -116,7 +168,6 @@ async def cmd_chat(self, session_id: str = ""):
     try:
         from prompt_toolkit import PromptSession
         from prompt_toolkit.completion import Completer, Completion
-        from prompt_toolkit.formatted_text import HTML
         from prompt_toolkit.history import FileHistory
         from prompt_toolkit.key_binding import KeyBindings
         from prompt_toolkit.shortcuts import CompleteStyle
@@ -128,6 +179,7 @@ async def cmd_chat(self, session_id: str = ""):
             """Show slash commands + skills the moment the user types `/`.
             Only activates for text starting with `/` so ordinary prose doesn't
             trigger a menu."""
+
             def get_completions(self_inner, document, complete_event):
                 text = document.text_before_cursor
                 if not text.startswith("/"):
@@ -184,7 +236,11 @@ async def cmd_chat(self, session_id: str = ""):
                 self._plan_modes[session_id] = False
                 if tc:
                     tc.set_policy("auto")
-            label = {"ask": "ask  (default)", "auto": "auto  ✓ approve-all", "plan": "plan  ⚑ read-only"}[nxt]
+            label = {
+                "ask": "ask  (default)",
+                "auto": "auto  ✓ approve-all",
+                "plan": "plan  ⚑ read-only",
+            }[nxt]
             console.print(f"\n[bold cyan]mode →[/bold cyan] [dim]{label}[/dim]")
             event.app.current_buffer.reset()
 
@@ -197,10 +253,8 @@ async def cmd_chat(self, session_id: str = ""):
             complete_style=CompleteStyle.READLINE_LIKE,  # inline dropdown on `/`
             key_bindings=_kb,
         )
-        pt_prompt = HTML("<b>▸</b> ")
     except Exception:
         pt_session = None
-        pt_prompt = None
 
     async def terminal_ui(req):
         console.print(f"\n[yellow]⚠  Permission requested[/yellow]  {req.summary}")
@@ -228,7 +282,11 @@ async def cmd_chat(self, session_id: str = ""):
     tool_count = 0 if is_native else len(self._tools)
     model_str = getattr(provider, "model", "") or ""
     model_display = f"{provider.name}" + (f" {model_str}" if model_str else "")
-    tools_label = native_tools if (is_native and native_tools) else f"{tool_count} tool{'s' if tool_count != 1 else ''}"
+    tools_label = (
+        native_tools
+        if (is_native and native_tools)
+        else f"{tool_count} tool{'s' if tool_count != 1 else ''}"
+    )
     console.print(
         f"\n[bold cyan]Coding Agent[/bold cyan]  "
         f"[dim]· {model_display} · {tools_label} · session {session_id}[/dim]"
@@ -246,7 +304,9 @@ async def cmd_chat(self, session_id: str = ""):
             "[bold yellow]⚠  tool_policy = auto — ALL tool calls are auto-approved without asking.[/bold yellow]\n"
             "[dim yellow]   Use Shift+Tab to switch to ask mode, or go to /settings → Agent → Tool Policy.[/dim yellow]"
         )
-    console.print("[dim]/help for commands · Shift+Tab = cycle mode · Ctrl+C to stop a turn · /quit to exit[/dim]\n")
+    console.print(
+        "[dim]/help for commands · Shift+Tab = cycle mode · Ctrl+C to stop a turn · /quit to exit[/dim]\n"
+    )
 
     # Per-turn + session accumulators rendered in the agent:done footer.
     turn_state = {"start": 0.0, "tools": 0, "first_text": True}
@@ -286,8 +346,7 @@ async def cmd_chat(self, session_id: str = ""):
                         console.print(f"  [{color}]{mark}[/{color}] [dim]{tid}.[/dim] {content}")
                 else:
                     console.print(
-                        f"\n[cyan]▶ {tname}[/cyan] "
-                        f"[dim]{json.dumps(data.get('input') or {})}[/dim]"
+                        f"\n[cyan]▶ {tname}[/cyan] [dim]{json.dumps(data.get('input') or {})}[/dim]"
                     )
             elif etype == "agent:tool_result":
                 display = data.get("display") or {}
@@ -303,14 +362,14 @@ async def cmd_chat(self, session_id: str = ""):
                     counts = display.get("counts") or {}
                     if counts:
                         console.print(
-                            f"  [dim]→ {counts.get('completed',0)}/{counts.get('total',0)} done · "
-                            f"{counts.get('in_progress',0)} in progress[/dim]"
+                            f"  [dim]→ {counts.get('completed', 0)}/{counts.get('total', 0)} done · "
+                            f"{counts.get('in_progress', 0)} in progress[/dim]"
                         )
                     return
                 if data.get("is_error"):
                     # Show the actual error message so the user can diagnose,
                     # not just `{'name': 'Bash'}`. Tool content carries the detail.
-                    err = (data.get("error_snippet") or data.get("content") or "")
+                    err = data.get("error_snippet") or data.get("content") or ""
                     err = err.splitlines()[0][:200] if err else ""
                     extra = f"  [dim red]{err}[/dim red]" if err else ""
                     console.print(f"  {mark} {name}{extra}")
@@ -324,11 +383,14 @@ async def cmd_chat(self, session_id: str = ""):
                 # math (openai_compat._calc_cost_with_cache +
                 # anthropic_sdk._calc_cost). Missing → show $0, never fabricate.
                 provider_cost = usage.get("cost")
-                turn_cost = float(provider_cost) if isinstance(provider_cost, (int, float)) and provider_cost > 0 else 0.0
+                turn_cost = (
+                    float(provider_cost)
+                    if isinstance(provider_cost, (int, float)) and provider_cost > 0
+                    else 0.0
+                )
                 # Detect cache hits across both provider shapes
-                cached = (
-                    int(usage.get("cached_tokens") or 0)
-                    or int(usage.get("cache_read_input_tokens") or 0)
+                cached = int(usage.get("cached_tokens") or 0) or int(
+                    usage.get("cache_read_input_tokens") or 0
                 )
                 elapsed = time.perf_counter() - turn_state["start"] if turn_state["start"] else 0.0
                 session_state["in"] += pt
@@ -345,7 +407,9 @@ async def cmd_chat(self, session_id: str = ""):
                     pct = int(100 * cached / pt)
                     parts.append(f"{pct}% cache")
                 if turn_state["tools"]:
-                    parts.append(f"{turn_state['tools']} tool{'s' if turn_state['tools'] != 1 else ''}")
+                    parts.append(
+                        f"{turn_state['tools']} tool{'s' if turn_state['tools'] != 1 else ''}"
+                    )
                 if turn_cost > 0:
                     parts.append(_chat_fmt_cost(turn_cost))
                 if self._plan_modes.get(session_id, False):
@@ -400,6 +464,7 @@ async def cmd_chat(self, session_id: str = ""):
             in_plan = self._plan_modes.get(session_id, False)
             if pt_session is not None:
                 from prompt_toolkit.formatted_text import HTML as _HTML
+
                 _cur_mode = _mode_state.get("current", "ask")
                 if in_plan or _cur_mode == "plan":
                     _p = _HTML("<b>⚑</b> <b>▸</b> ")
@@ -413,9 +478,7 @@ async def cmd_chat(self, session_id: str = ""):
                     raise
             else:
                 _p = "[bold yellow]⚑[/bold yellow] [bold]▸[/bold]" if in_plan else "[bold]▸[/bold]"
-                user_text = await asyncio.to_thread(
-                    Prompt.ask, _p, default="", show_default=False
-                )
+                user_text = await asyncio.to_thread(Prompt.ask, _p, default="", show_default=False)
             user_text = user_text.strip()
             if not user_text:
                 continue
@@ -443,7 +506,9 @@ async def cmd_chat(self, session_id: str = ""):
                     continue
                 if cmd == "/tools":
                     if is_native:
-                        console.print(f"[dim]Native agent — tools handled by {provider.name}.[/dim]")
+                        console.print(
+                            f"[dim]Native agent — tools handled by {provider.name}.[/dim]"
+                        )
                         if native_tools:
                             console.print(f"[dim]{native_tools}[/dim]")
                     else:
@@ -474,12 +539,14 @@ async def cmd_chat(self, session_id: str = ""):
                         continue
                     for s in sessions[:20]:
                         marker = "[cyan]●[/cyan]" if s["id"] == session_id else " "
-                        last = (s.get("last_message") or s.get("created") or "")[:16].replace("T", " ")
+                        last = (s.get("last_message") or s.get("created") or "")[:16].replace(
+                            "T", " "
+                        )
                         # message_count includes both user+assistant+tool rows; halve for turn-ish estimate
                         mc = s.get("message_count") or 0
                         console.print(
                             f"  {marker} [cyan]{s['id']}[/cyan]  "
-                            f"[dim]{s.get('name','')[:28]:<28}  {mc:>4} msgs  {last}[/dim]"
+                            f"[dim]{s.get('name', '')[:28]:<28}  {mc:>4} msgs  {last}[/dim]"
                         )
                     console.print(f"[dim]  {len(sessions)} total · ● = current[/dim]")
                     continue
@@ -497,9 +564,13 @@ async def cmd_chat(self, session_id: str = ""):
                         console.print(f"[red]  no session matches {arg!r}. Try /sessions.[/red]")
                         continue
                     if len(candidates) > 1 and not exact:
-                        console.print(f"[yellow]  ambiguous — {len(candidates)} matches. Use a more specific id/name.[/yellow]")
+                        console.print(
+                            f"[yellow]  ambiguous — {len(candidates)} matches. Use a more specific id/name.[/yellow]"
+                        )
                         for s in candidates[:5]:
-                            console.print(f"    [cyan]{s['id']}[/cyan]  [dim]{s.get('name','')}[/dim]")
+                            console.print(
+                                f"    [cyan]{s['id']}[/cyan]  [dim]{s.get('name', '')}[/dim]"
+                            )
                         continue
                     target = candidates[0]
                     session_id = target["id"]
@@ -518,12 +589,16 @@ async def cmd_chat(self, session_id: str = ""):
                             is_native = self._is_native_provider(provider)
                             mode_banner = "native agent" if is_native else "EmptyOS loop"
                             tool_count = 0 if is_native else len(self._tools)
-                            native_tools = getattr(provider, "native_tool_summary", "") if is_native else ""
+                            native_tools = (
+                                getattr(provider, "native_tool_summary", "") if is_native else ""
+                            )
                             _model = getattr(provider, "model", "") or ""
-                            switched_msg = f" · model: {provider.name}" + (f" {_model}" if _model else "")
+                            switched_msg = f" · model: {provider.name}" + (
+                                f" {_model}" if _model else ""
+                            )
                     console.print(
                         f"[green]  resumed[/green] [cyan]{session_id}[/cyan]  "
-                        f"[dim]{target.get('name','')} · {target.get('message_count', 0)} msgs{switched_msg}[/dim]"
+                        f"[dim]{target.get('name', '')} · {target.get('message_count', 0)} msgs{switched_msg}[/dim]"
                     )
                     continue
                 if cmd == "/rename":
@@ -531,7 +606,9 @@ async def cmd_chat(self, session_id: str = ""):
                         console.print("[yellow]  usage: /rename <new name>[/yellow]")
                         continue
                     self._sessions.update_session(session_id, name=arg.strip())
-                    console.print(f"[green]  renamed[/green] [cyan]{session_id}[/cyan] → [dim]{arg.strip()}[/dim]")
+                    console.print(
+                        f"[green]  renamed[/green] [cyan]{session_id}[/cyan] → [dim]{arg.strip()}[/dim]"
+                    )
                     continue
                 if cmd == "/delete":
                     if not arg:
@@ -546,14 +623,20 @@ async def cmd_chat(self, session_id: str = ""):
                     if len(exact) > 1:
                         console.print("[yellow]  ambiguous — use a longer prefix:[/yellow]")
                         for s in exact[:5]:
-                            console.print(f"    [cyan]{s['id']}[/cyan]  [dim]{s.get('name','')}[/dim]")
+                            console.print(
+                                f"    [cyan]{s['id']}[/cyan]  [dim]{s.get('name', '')}[/dim]"
+                            )
                         continue
                     target = exact[0]
                     if target["id"] == session_id:
-                        console.print("[red]  cannot delete the current session. /resume elsewhere first.[/red]")
+                        console.print(
+                            "[red]  cannot delete the current session. /resume elsewhere first.[/red]"
+                        )
                         continue
                     self._sessions.delete_session(target["id"])
-                    console.print(f"[green]  deleted[/green] [cyan]{target['id']}[/cyan] [dim]{target.get('name','')}[/dim]")
+                    console.print(
+                        f"[green]  deleted[/green] [cyan]{target['id']}[/cyan] [dim]{target.get('name', '')}[/dim]"
+                    )
                     continue
                 if cmd == "/revert":
                     try:
@@ -569,15 +652,25 @@ async def cmd_chat(self, session_id: str = ""):
                     for r in result.get("reverted", []):
                         if r.get("ok"):
                             mode = r.get("mode", "restored")
-                            verb = "deleted (was created)" if mode == "deleted" else f"restored [dim]({r.get('action','edit')})[/dim]"
+                            verb = (
+                                "deleted (was created)"
+                                if mode == "deleted"
+                                else f"restored [dim]({r.get('action', 'edit')})[/dim]"
+                            )
                             console.print(f"  [green]↶[/green] {verb} [cyan]{r['path']}[/cyan]")
                             reverted_ok += 1
                         else:
-                            console.print(f"  [red]✗[/red] could not revert {r.get('path')}: {r.get('error','?')}")
+                            console.print(
+                                f"  [red]✗[/red] could not revert {r.get('path')}: {r.get('error', '?')}"
+                            )
                     if reverted_ok > 0:
-                        hint = " · daemon still holds old bytecode if you edited .py — restart to pick up" if result.get("python_edits") else ""
+                        hint = (
+                            " · daemon still holds old bytecode if you edited .py — restart to pick up"
+                            if result.get("python_edits")
+                            else ""
+                        )
                         console.print(
-                            f"[dim]  reverted {reverted_ok} · {result.get('remaining',0)} remain on the undo stack{hint}.[/dim]"
+                            f"[dim]  reverted {reverted_ok} · {result.get('remaining', 0)} remain on the undo stack{hint}.[/dim]"
                         )
                     continue
                 if cmd == "/grant-edits":
@@ -587,7 +680,9 @@ async def cmd_chat(self, session_id: str = ""):
                         try:
                             new_cap = int(arg)
                         except ValueError:
-                            console.print(f"[yellow]  usage: /grant-edits [n]  — got {arg!r}[/yellow]")
+                            console.print(
+                                f"[yellow]  usage: /grant-edits [n]  — got {arg!r}[/yellow]"
+                            )
                             continue
                         if new_cap < 1:
                             console.print("[yellow]  /grant-edits N must be >= 1[/yellow]")
@@ -606,7 +701,9 @@ async def cmd_chat(self, session_id: str = ""):
                         try:
                             new_cap = int(arg)
                         except ValueError:
-                            console.print(f"[yellow]  usage: /grant-iters [n]  — got {arg!r}[/yellow]")
+                            console.print(
+                                f"[yellow]  usage: /grant-iters [n]  — got {arg!r}[/yellow]"
+                            )
                             continue
                         if new_cap < 1:
                             console.print("[yellow]  /grant-iters N must be >= 1[/yellow]")
@@ -620,7 +717,9 @@ async def cmd_chat(self, session_id: str = ""):
                     continue
                 if cmd == "/plan":
                     if self._plan_modes.get(session_id, False):
-                        console.print("[dim]  already in plan mode — use /execute to proceed or /scrap to discard.[/dim]")
+                        console.print(
+                            "[dim]  already in plan mode — use /execute to proceed or /scrap to discard.[/dim]"
+                        )
                     else:
                         self._plan_modes[session_id] = True
                         console.print(
@@ -631,7 +730,9 @@ async def cmd_chat(self, session_id: str = ""):
                     continue
                 if cmd == "/execute":
                     if not self._plan_modes.get(session_id, False):
-                        console.print("[dim]  not in plan mode — nothing to execute. Use /plan to enter it first.[/dim]")
+                        console.print(
+                            "[dim]  not in plan mode — nothing to execute. Use /plan to enter it first.[/dim]"
+                        )
                     else:
                         self._plan_modes[session_id] = False
                         console.print(
@@ -666,7 +767,9 @@ async def cmd_chat(self, session_id: str = ""):
                             is_native = self._is_native_provider(provider)
                             mode_banner = "native agent" if is_native else "EmptyOS loop"
                             tool_count = 0 if is_native else len(self._tools)
-                            native_tools = getattr(provider, "native_tool_summary", "") if is_native else ""
+                            native_tools = (
+                                getattr(provider, "native_tool_summary", "") if is_native else ""
+                            )
                             # Per-session provider (so /resume restores it) + persistent
                             # default (so future `eos chat` sessions pick the same one).
                             self._sessions.update_session(session_id, provider=provider.name)
@@ -689,6 +792,7 @@ async def cmd_chat(self, session_id: str = ""):
                 if cmd == "/skills":
                     try:
                         from apps.agent.skills import discover_skills
+
                         catalog = discover_skills(self.repo_root)
                     except Exception as e:
                         console.print(f"[red]error discovering skills: {e}[/red]")
@@ -700,12 +804,16 @@ async def cmd_chat(self, session_id: str = ""):
                         console.print(
                             f"  [cyan]{s.name:<34}[/cyan] [dim]\\[{s.source}][/dim]  {s.description}"
                         )
-                    console.print(f"[dim]  {len(catalog)} skill(s) — ask me to use one by name[/dim]")
+                    console.print(
+                        f"[dim]  {len(catalog)} skill(s) — ask me to use one by name[/dim]"
+                    )
                     continue
                 if cmd == "/tasks":
                     tasks = task_state["tasks"]
                     if not tasks:
-                        console.print("[dim]  no task list set this session. Ask the agent to plan something.[/dim]")
+                        console.print(
+                            "[dim]  no task list set this session. Ask the agent to plan something.[/dim]"
+                        )
                         continue
                     for t in tasks:
                         status = (t.get("status") or "pending").lower()
@@ -716,7 +824,9 @@ async def cmd_chat(self, session_id: str = ""):
                         else:
                             mark, color = "[ ]", "dim"
                         tid = t.get("id") or "?"
-                        console.print(f"  [{color}]{mark}[/{color}] [dim]{tid}.[/dim] {t.get('content','')}")
+                        console.print(
+                            f"  [{color}]{mark}[/{color}] [dim]{tid}.[/dim] {t.get('content', '')}"
+                        )
                     done = sum(1 for t in tasks if (t.get("status") or "").lower() == "completed")
                     console.print(f"[dim]  {done}/{len(tasks)} done[/dim]")
                     continue
@@ -737,23 +847,29 @@ async def cmd_chat(self, session_id: str = ""):
                     # AgentSession, which doesn't exist until the first turn.
                     sess_record = self._get_session(session_id) or {}
                     msgs = sess_record.get("messages", []) or []
-                    char_count = sum(
-                        len(str(m.get("content", ""))) for m in msgs
-                    )
+                    char_count = sum(len(str(m.get("content", ""))) for m in msgs)
                     plan_active = self._plan_modes.get(session_id, False)
-                    console.print(
-                        f"[dim]  session     : {session_id}[/dim]"
-                    )
+                    console.print(f"[dim]  session     : {session_id}[/dim]")
                     console.print(
                         f"[dim]  provider    : {provider.name}"
-                        + (f" · {getattr(provider, 'model', '')}" if getattr(provider, "model", "") else "")
+                        + (
+                            f" · {getattr(provider, 'model', '')}"
+                            if getattr(provider, "model", "")
+                            else ""
+                        )
                         + "[/dim]"
                     )
                     console.print(f"[dim]  messages    : {len(msgs)} ({char_count:,} chars)[/dim]")
                     console.print(f"[dim]  plan mode   : {'ON' if plan_active else 'off'}[/dim]")
-                    console.print(f"[dim]  edit limit  : {self._edit_limits.get(session_id, EDIT_PATH_LIMIT)}[/dim]")
-                    console.print(f"[dim]  iter limit  : {self._iter_limits.get(session_id, DEFAULT_MAX_ITERS)}[/dim]")
-                    console.print(f"[dim]  tool hooks  : {len(self._before_tool_hooks)} before, {len(self._after_tool_hooks)} after[/dim]")
+                    console.print(
+                        f"[dim]  edit limit  : {self._edit_limits.get(session_id, EDIT_PATH_LIMIT)}[/dim]"
+                    )
+                    console.print(
+                        f"[dim]  iter limit  : {self._iter_limits.get(session_id, DEFAULT_MAX_ITERS)}[/dim]"
+                    )
+                    console.print(
+                        f"[dim]  tool hooks  : {len(self._before_tool_hooks)} before, {len(self._after_tool_hooks)} after[/dim]"
+                    )
                     continue
                 if cmd == "/archive":
                     console.print("[dim]  Summarising session…[/dim]")
@@ -765,14 +881,24 @@ async def cmd_chat(self, session_id: str = ""):
                         if result.get("url"):
                             console.print(f"[dim]  {result['url']}[/dim]")
                     else:
-                        console.print(f"[red]  archive failed:[/red] {result.get('error', 'unknown error')}")
+                        console.print(
+                            f"[red]  archive failed:[/red] {result.get('error', 'unknown error')}"
+                        )
                     continue
                 if cmd == "/settings":
                     if settings := self.service("settings"):
-                        console.print(f"  default_provider = [cyan]{settings.get('agent.default_provider') or '(default)'}[/cyan]")
-                        console.print(f"  max_iters        = [cyan]{settings.get('agent.max_iters') or DEFAULT_MAX_ITERS}[/cyan]")
-                        console.print(f"  tool_policy      = [cyan]{settings.get('agent.tool_policy') or 'ask'}[/cyan]")
-                        console.print("  [dim](change via `eos settings` or the web settings panel)[/dim]")
+                        console.print(
+                            f"  default_provider = [cyan]{settings.get('agent.default_provider') or '(default)'}[/cyan]"
+                        )
+                        console.print(
+                            f"  max_iters        = [cyan]{settings.get('agent.max_iters') or DEFAULT_MAX_ITERS}[/cyan]"
+                        )
+                        console.print(
+                            f"  tool_policy      = [cyan]{settings.get('agent.tool_policy') or 'ask'}[/cyan]"
+                        )
+                        console.print(
+                            "  [dim](change via `eos settings` or the web settings panel)[/dim]"
+                        )
                     else:
                         console.print("[red]Settings service unavailable.[/red]")
                     continue
@@ -811,7 +937,9 @@ async def cmd_chat(self, session_id: str = ""):
             turn_state["first_text"] = True
 
             pre_len = len(sess.messages)
-            cli_system = DEFAULT_SYSTEM_PROMPT + "\n\n" + self._runtime_info_block(provider, is_native)
+            cli_system = (
+                DEFAULT_SYSTEM_PROMPT + "\n\n" + self._runtime_info_block(provider, is_native)
+            )
             scaffold = self._app_scaffold_block(user_text, is_native)
             if scaffold:
                 cli_system = cli_system + "\n\n" + scaffold
@@ -832,7 +960,7 @@ async def cmd_chat(self, session_id: str = ""):
                 orient_plan = await asyncio.wait_for(
                     self._orient(user_text, session_id), timeout=12.0
                 )
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 orient_plan = None
             if orient_plan:
                 orient_block = self._orient_block(orient_plan)
@@ -877,7 +1005,9 @@ async def cmd_chat(self, session_id: str = ""):
                 finally:
                     _turn_ref["task"] = None
             except asyncio.CancelledError:
-                console.print("\n[yellow]Cancelled. Press Ctrl+C again or type /quit to exit.[/yellow]")
+                console.print(
+                    "\n[yellow]Cancelled. Press Ctrl+C again or type /quit to exit.[/yellow]"
+                )
             except Exception as e:
                 # Some exceptions (asyncio.TimeoutError, ConnectionResetError)
                 # have empty str() — fall back to the class name so the user
@@ -899,7 +1029,9 @@ async def cmd_chat(self, session_id: str = ""):
                 pass
         if tool_consent:
             tool_consent.set_ui(None)
-            tool_consent.set_policy("ask")  # always reset on exit — Shift+Tab auto-mode must not leak
+            tool_consent.set_policy(
+                "ask"
+            )  # always reset on exit — Shift+Tab auto-mode must not leak
         self._live_sessions.pop(session_id, None)
         _t = session_state["turns"]
         if _t:

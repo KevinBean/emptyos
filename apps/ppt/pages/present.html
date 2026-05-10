@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Present</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="/static/theme.css">
+<style>
+  html, body { margin: 0; height: 100%; background: var(--bg); overflow: hidden; }
+  body { display: flex; align-items: center; justify-content: center; }
+  #deck { width: min(98vw, 1600px); }
+  .err { color: var(--danger); font: 14px system-ui; padding: 24px; }
+</style>
+</head>
+<body class="theme-void-dark">
+<div id="deck"></div>
+<div id="err" class="err" style="display:none"></div>
+<script src="/static/eos-deck.js"></script>
+<script>
+(async function() {
+    var params = new URLSearchParams(location.search);
+    var id = params.get('id');
+    var startIdx = parseInt(params.get('start') || '0', 10) || 0;
+    if (!id) {
+        document.getElementById('err').style.display = 'block';
+        document.getElementById('err').textContent = 'No deck id (?id=...)';
+        return;
+    }
+    var r = await fetch('/ppt/api/decks/' + encodeURIComponent(id));
+    var deck = await r.json();
+    if (deck.error) {
+        document.getElementById('err').style.display = 'block';
+        document.getElementById('err').textContent = deck.error;
+        return;
+    }
+    var inst = EOS_DECK.create(document.getElementById('deck'), {
+        mode: 'manual',
+        slides: deck.slides.map(function(s){ return {html:s.html, notes:s.notes, audio_url:s.audio_url}; }),
+        theme: deck.theme,
+        aspect: deck.aspect,
+        startIndex: startIdx,
+    });
+    window._eosDeck = inst;  // exposed for the screenshot skill / debugging
+    // Auto-fullscreen on first interaction (browsers block automatic fs).
+    setTimeout(function() {
+        var hint = document.createElement('div');
+        hint.style.cssText = 'position:fixed;top:14px;right:14px;color:rgba(255,255,255,0.6);font:12px system-ui;background:rgba(0,0,0,0.5);padding:6px 10px;border-radius:6px;z-index:10';
+        hint.textContent = 'Press F to fullscreen · ←/→ to navigate · S for notes';
+        document.body.appendChild(hint);
+        setTimeout(function(){ hint.style.transition='opacity 0.6s'; hint.style.opacity='0'; }, 4000);
+    }, 50);
+})();
+</script>
+</body>
+</html>

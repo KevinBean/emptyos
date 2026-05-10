@@ -1,7 +1,7 @@
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
 from dataclasses import dataclass
-from typing import AsyncIterator
 
 
 @dataclass
@@ -35,5 +35,7 @@ class Provider:
         max_tokens: int,
     ) -> AsyncIterator[str]:
         # Default fallback: yield whole reply at once.
-        result = await self.complete(messages=messages, system=system, model=model, max_tokens=max_tokens)
+        result = await self.complete(
+            messages=messages, system=system, model=model, max_tokens=max_tokens
+        )
         yield result.text

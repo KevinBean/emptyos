@@ -39,7 +39,8 @@ def hash_key(app_id: str, key: Any) -> str:
     """
     payload = json.dumps(
         {"app": app_id, "key": key},
-        sort_keys=True, default=str,
+        sort_keys=True,
+        default=str,
     )
     return hashlib.sha1(payload.encode("utf-8")).hexdigest()[:16]
 
@@ -72,8 +73,16 @@ def cache_get(app, cache_id: str) -> str | None:
         return None
 
 
-def cache_put(app, cache_id: str, prompt: str, system: str | None,
-              response: str, *, key: Any = None, meta: dict | None = None) -> bool:
+def cache_put(
+    app,
+    cache_id: str,
+    prompt: str,
+    system: str | None,
+    response: str,
+    *,
+    key: Any = None,
+    meta: dict | None = None,
+) -> bool:
     """Persist an LLM response to the vault cache. Returns True on success."""
     root = _vault_root_of(app)
     if root is None:
@@ -130,8 +139,10 @@ def cache_stats(app) -> dict:
     app_dir = root / CACHE_DIR_REL / app.manifest.id
     if not app_dir.exists():
         return {"entries": 0, "bytes": 0, "oldest": None, "newest": None}
-    entries = 0; total = 0
-    oldest = None; newest = None
+    entries = 0
+    total = 0
+    oldest = None
+    newest = None
     for child in app_dir.glob("*.json"):
         try:
             st = child.stat()
@@ -143,7 +154,8 @@ def cache_stats(app) -> dict:
             oldest = st.st_mtime
         if newest is None or st.st_mtime > newest:
             newest = st.st_mtime
+
     def _iso(t):
         return datetime.fromtimestamp(t).isoformat(timespec="seconds") if t else None
-    return {"entries": entries, "bytes": total,
-            "oldest": _iso(oldest), "newest": _iso(newest)}
+
+    return {"entries": entries, "bytes": total, "oldest": _iso(oldest), "newest": _iso(newest)}

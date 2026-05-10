@@ -8,12 +8,9 @@ inside `apps/publish/`; extracted when `apps/reports/` became the second consume
 from __future__ import annotations
 
 import re
-from pathlib import Path
 
 try:
     import markdown
-    from markdown.extensions import Extension
-    from markdown.preprocessors import Preprocessor
 
     HAS_MARKDOWN = True
 except ImportError:
@@ -145,8 +142,8 @@ def render_markdown(
             content,
         )
         content = re.sub(
-            r'(!\[[^\]]*\])\((media/[^)]+)\)',
-            lambda m: f'{m.group(1)}(../{m.group(2)})',
+            r"(!\[[^\]]*\])\((media/[^)]+)\)",
+            lambda m: f"{m.group(1)}(../{m.group(2)})",
             content,
         )
 
@@ -204,6 +201,8 @@ def extract_images(content: str) -> list[str]:
     for m in re.finditer(r"!\[\[([^\]]+\.(png|jpg|jpeg|gif|svg|webp))\]\]", content, re.IGNORECASE):
         images.append(m.group(1))
     # Standard markdown images
-    for m in re.finditer(r"!\[[^\]]*\]\(([^)]+\.(png|jpg|jpeg|gif|svg|webp))\)", content, re.IGNORECASE):
+    for m in re.finditer(
+        r"!\[[^\]]*\]\(([^)]+\.(png|jpg|jpeg|gif|svg|webp))\)", content, re.IGNORECASE
+    ):
         images.append(m.group(1))
     return images

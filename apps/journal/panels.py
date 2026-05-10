@@ -21,13 +21,15 @@ async def slot_today(self) -> list[dict]:
         entries = []
     if entries:
         return []
-    return [{
-        "title": "Write today's journal",
-        "subtitle": "no entry yet",
-        "href": "/journal/",
-        "badge": "ritual",
-        "priority": 5,
-    }]
+    return [
+        {
+            "title": "Write today's journal",
+            "subtitle": "no entry yet",
+            "href": "/journal/",
+            "badge": "ritual",
+            "priority": 5,
+        }
+    ]
 
 
 async def slot_recent_thinking(self) -> list[dict]:
@@ -44,13 +46,16 @@ async def slot_recent_thinking(self) -> list[dict]:
         # show "141 entries · good" on a broken day.
         count_label = "many" if n > 30 else str(n)
         emoji = day.get("emoji") or ""
-        out.append({
-            "title": f"{emoji} {day['date']}".strip(),
-            "subtitle": f"{count_label} entries" + (f" · {day['mood']}" if day.get("mood") else ""),
-            "href": "/journal/",
-            "badge": None,
-            "priority": 0,
-        })
+        out.append(
+            {
+                "title": f"{emoji} {day['date']}".strip(),
+                "subtitle": f"{count_label} entries"
+                + (f" · {day['mood']}" if day.get("mood") else ""),
+                "href": "/journal/",
+                "badge": None,
+                "priority": 0,
+            }
+        )
     return out
 
 
@@ -78,7 +83,7 @@ async def panel_yesterday(self) -> dict | None:
         # TODO(journal-bug): cap entry count when daily note is corrupted
         # (~7× appends). See memory project_journal_corruption_bug.md.
         n = len(entries)
-        parts.append(("many entries" if n > 30 else f"{n} entries"))
+        parts.append("many entries" if n > 30 else f"{n} entries")
     body = ", ".join(parts) + (f" · {emoji} {dominant}" if dominant else "")
     return {
         "title": "📝 Yesterday",

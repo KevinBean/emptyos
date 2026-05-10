@@ -2,12 +2,17 @@
 
 from __future__ import annotations
 
+import asyncio
 import inspect
 import json
 import time
+from collections.abc import Callable
+from datetime import UTC
 from functools import cached_property
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable
+from typing import TYPE_CHECKING, Any
+
+from emptyos.sdk.utils import now_iso
 
 if TYPE_CHECKING:
     from emptyos.kernel import Kernel
@@ -57,7 +62,314 @@ class BaseApp:
         """Get an engine by ID. Returns None if not available."""
         return self.kernel.services.get_optional(f"engine:{engine_id}")
 
-    async def _emit_think_executed(self, event_data: dict, provider_name: str | None = None) -> None:
+    # --- Per-entity locking ---------------------------------------------------
+    # Many apps need to serialize read-modify-write on a single entity (a
+    # journal day, a sim run, a cables project, a lightning study). The
+    # canonical pattern (per CLAUDE.md § Development Gotchas → vault races):
+    # one asyncio.Lock keyed by the unit of isolation. `entity_lock(scope)`
+    # is the shared implementation — pass any string as the scope (date,
+    # entity id, vault path) and get back a stable Lock for that scope.
+    def entity_lock(self, scope: str) -> "asyncio.Lock":
+        """Return a stable asyncio.Lock for `scope`, lazily created."""
+        locks = self.__dict__.setdefault("_eos_entity_locks", {})
+        lock = locks.get(scope)
+        if lock is None:
+            lock = asyncio.Lock()
+            locks[scope] = lock
+        return lock
+
+    # --- Nested-payload vault frontmatter helpers -----------------------------
+    # Vault frontmatter is flat-only (see memory: feedback_vault_frontmatter_flat).
+    # A list-of-dicts written into a frontmatter value gets shredded by the
+    # parser's inline-array detection. These helpers wrap the safe encoding —
+    # `{"items": [...]}` so the value doesn't begin with `[` — and decode
+    # tolerantly on read (accepts list, JSON-string, or wrapper-dict).
+    @staticmethod
+    def encode_nested_payload(items: list) -> str:
+        """JSON-encode a list as `{"items": [...]}` for frontmatter storage."""
+        import json
+        return json.dumps({"items": list(items or [])})
+
+    @staticmethod
+    def decode_nested_payload(raw: Any) -> list:
+        """Decode whatever shape comes back from the vault into a list."""
+        import json
+        if not raw:
+            return []
+        if isinstance(raw, list):
+            return raw
+        if isinstance(raw, str):
+            try:
+                v = json.loads(raw)
+            except (ValueError, TypeError):
+                return []
+            if isinstance(v, dict) and "items" in v:
+                return v["items"] if isinstance(v["items"], list) else []
+            return v if isinstance(v, list) else []
+        return []
+
+    @staticmethod
+    def decode_nested_dict(raw: Any) -> dict:
+        """Tolerant decode of a top-level nested dict round-tripped through
+        flat-only vault frontmatter. Accepts dict | JSON string | Python repr
+        string | None and always returns a dict.
+
+        Sibling to `decode_nested_payload` (list shape). Use at the read
+        boundary on any frontmatter field whose value is itself an object —
+        e.g. `cable.overrides`, `record.metadata`. Pair with `json.dumps(v)`
+        on the write side; the decoder also accepts the legacy Python-repr
+        form (single-quoted) so notes created before the write-side fix
+        still round-trip cleanly.
+        """
+        if not raw:
+            return {}
+        if isinstance(raw, dict):
+            return raw
+        if isinstance(raw, str):
+            import json
+            try:
+                v = json.loads(raw)
+                return v if isinstance(v, dict) else {}
+            except (ValueError, TypeError):
+                pass
+            import ast
+            try:
+                v = ast.literal_eval(raw)
+                return v if isinstance(v, dict) else {}
+            except (ValueError, SyntaxError):
+                return {}
+        return {}
+
+    # --- Calculator framework: method registry, typed I/O, comparison ---
+    # See `emptyos/sdk/method_registry.py` and `emptyos/sdk/schema.py`. Apps
+    # opt in by declaring `[[provides.methods.<endpoint>]]` blocks in their
+    # manifest. The registry is built lazily from manifest.provides on first
+    # access. Apps with no method blocks pay zero overhead.
+
+    @cached_property
+    def method_registry(self) -> Any:
+        from emptyos.sdk.method_registry import MethodRegistry
+        return MethodRegistry.from_manifest(self.manifest.provides)
+
+    def list_methods(self, endpoint: str) -> list[dict]:
+        """Return JSON-friendly listing of methods for an endpoint.
+
+        Each entry: {id, label, default, version, description, references,
+        requires_engines, input_schema, output_schema, available,
+        disabled_reason}. Use as the body of a `GET /api/methods` route.
+        """
+        return self.method_registry.to_listing(self, endpoint)
+
+    def resolve_method(self, endpoint: str, method_id: str | None) -> Any:
+        """Resolve a method by id (or fall back to the endpoint default).
+
+        Raises ValueError if neither id nor a default exists. The returned
+        `MethodSpec` exposes `await spec.run(self, payload)` which records
+        compute provenance automatically.
+        """
+        spec = self.method_registry.resolve(endpoint, method_id)
+        if spec is None:
+            raise ValueError(
+                f"no method registered for endpoint '{endpoint}'"
+                + (f" (asked for '{method_id}')" if method_id else "")
+            )
+        return spec
+
+    async def compare_methods(
+        self,
+        endpoint: str,
+        payload: Any,
+        methods: list[str] | None = None,
+        reference: dict | None = None,
+        scalar_field_picker: Callable[[Any], dict] | None = None,
+    ) -> dict:
+        """Run multiple methods against the same inputs, return aligned diffs.
+
+        ``methods`` defaults to all available methods at this endpoint.
+        ``reference`` is an optional injected column (e.g. a CDEGS / PSCAD /
+        textbook ground truth) — its scalar fields participate in the diff
+        table so apps can reuse this for validation pages.
+        ``scalar_field_picker`` is an app-supplied callable that pulls
+        comparable scalars out of a result. Defaults to grabbing every
+        numeric top-level key from a dict result.
+        """
+        from emptyos.sdk.schema import inputs_hash
+
+        registry = self.method_registry
+        targets: list[Any] = []
+        if methods:
+            for mid in methods:
+                spec = registry.get(endpoint, mid)
+                if spec is None:
+                    raise ValueError(f"unknown method '{mid}' for endpoint '{endpoint}'")
+                targets.append(spec)
+        else:
+            targets = registry.list(endpoint)
+        if not targets:
+            raise ValueError(f"no methods registered for endpoint '{endpoint}'")
+
+        results: dict[str, dict] = {}
+        for spec in targets:
+            ok, reason = spec.is_available(self)
+            if not ok:
+                results[spec.id] = {"error": reason}
+                continue
+            try:
+                value = await spec.run(self, payload)
+            except Exception as e:  # noqa: BLE001
+                results[spec.id] = {"error": str(e)}
+                continue
+            prov = self.last_compute_provenance(endpoint)
+            results[spec.id] = {"result": value, "provenance": prov}
+
+        # Pick scalars per result
+        pick = scalar_field_picker or _default_scalar_picker
+        scalars_per_method: dict[str, dict[str, float]] = {}
+        for mid, entry in results.items():
+            if "result" in entry:
+                scalars_per_method[mid] = pick(entry["result"]) or {}
+        if reference:
+            scalars_per_method["reference"] = pick(reference) or {}
+
+        # Build diff: for each scalar key common to ≥2 sources, compute
+        # values dict + max relative spread vs. reference (or first method).
+        all_keys: set[str] = set()
+        for d in scalars_per_method.values():
+            all_keys.update(d.keys())
+        diffs: list[dict] = []
+        for key in sorted(all_keys):
+            values = {m: d[key] for m, d in scalars_per_method.items() if key in d}
+            if len(values) < 2:
+                continue
+            anchor = values.get("reference") or next(iter(values.values()))
+            if not isinstance(anchor, (int, float)) or anchor == 0:
+                # rel_pct undefined; skip the percent column
+                diffs.append({"field": key, "values": values, "max_rel_pct": None})
+                continue
+            spreads = []
+            for v in values.values():
+                if isinstance(v, (int, float)):
+                    spreads.append(abs(v - anchor) / abs(anchor))
+            diffs.append({
+                "field": key,
+                "values": values,
+                "max_rel_pct": round(max(spreads) * 100, 4) if spreads else None,
+            })
+
+        return {
+            "inputs_hash": inputs_hash(payload),
+            "results": results,
+            "comparison": {
+                "matched_fields": [d["field"] for d in diffs],
+                "diffs": diffs,
+            },
+        }
+
+    # --- Compute cache (per-process LRU for slow deterministic methods) ---
+    # See `emptyos/sdk/compute_cache.py`. Wrap only the pure-compute portion
+    # of a method — side effects (vault writes, event emits) should run on
+    # every call, not just cache misses.
+
+    async def cache_compute(
+        self,
+        namespace: str,
+        key: str,
+        fn: Callable[[], Any],
+        version: str = "1",
+    ) -> Any:
+        """Cache-or-compute helper. Returns the value; ignores hit/miss.
+
+        ``fn`` is an async zero-arg callable invoked on cache miss. ``key``
+        should be a deterministic fingerprint of the inputs (typically
+        `inputs_hash(payload)`). ``version`` lets callers invalidate by
+        bumping (e.g. when the underlying algorithm changes).
+        """
+        from emptyos.sdk.compute_cache import cache_or_compute
+        value, _hit = await cache_or_compute(
+            self.manifest.id, namespace, key, fn, version=version,
+        )
+        return value
+
+    async def cache_compute_with_status(
+        self,
+        namespace: str,
+        key: str,
+        fn: Callable[[], Any],
+        version: str = "1",
+    ) -> tuple[Any, bool]:
+        """Same as cache_compute but returns (value, hit). For provenance /
+        UI affordances that want to surface ``cache_hit`` to the caller."""
+        from emptyos.sdk.compute_cache import cache_or_compute
+        return await cache_or_compute(
+            self.manifest.id, namespace, key, fn, version=version,
+        )
+
+    def cache_clear(self, namespace: str | None = None) -> int:
+        """Drop cache entries for this app. Returns number dropped."""
+        from emptyos.sdk.compute_cache import clear
+        return clear(self.manifest.id, namespace=namespace)
+
+    # --- Conformance suite (manifest-declared regression cases) ---
+
+    @cached_property
+    def conformance_registry(self) -> Any:
+        from emptyos.sdk.conformance import ConformanceRegistry
+        return ConformanceRegistry.from_manifest(self.manifest.provides)
+
+    def list_conformance(self, endpoint: str) -> list[dict]:
+        """Return JSON-friendly listing of conformance cases at an endpoint."""
+        cases = self.conformance_registry.list(endpoint)
+        return [
+            {
+                "case_id": c.case_id,
+                "label": c.label,
+                "methods": list(c.methods),
+                "tolerances": dict(c.tolerances),
+                "references": list(c.references),
+            }
+            for c in cases
+        ]
+
+    async def run_conformance(
+        self,
+        endpoint: str,
+        case_id: str | None = None,
+        method_id: str | None = None,
+    ) -> list[dict] | dict:
+        """Run one or all conformance cases at an endpoint.
+
+        ``case_id`` None → run every case at this endpoint, returns list.
+        ``case_id`` set  → run that one case, returns single dict.
+        ``method_id`` restricts to one method (default: all methods listed
+        on the case).
+        """
+        from emptyos.sdk.conformance import run_case
+        registry = self.conformance_registry
+        if case_id:
+            case = registry.get(endpoint, case_id)
+            if case is None:
+                raise ValueError(f"unknown conformance case '{case_id}' at endpoint '{endpoint}'")
+            return await run_case(self, case, method_id=method_id)
+        results = []
+        for case in registry.list(endpoint):
+            results.append(await run_case(self, case, method_id=method_id))
+        return results
+
+    def last_compute_provenance(self, endpoint: str | None = None) -> dict:
+        """Return the most recent compute provenance for one or all endpoints.
+
+        Shape per endpoint: {endpoint, method, method_version, inputs_hash,
+        runtime_s, runtime_ms, warnings, extras}. With endpoint=None returns
+        a dict keyed by endpoint. Empty dict if no method has run yet.
+        """
+        store = getattr(self, "_compute_provenance_by_endpoint", None) or {}
+        if endpoint is None:
+            return dict(store)
+        return dict(store.get(endpoint) or {})
+
+    async def _emit_think_executed(
+        self, event_data: dict, provider_name: str | None = None
+    ) -> None:
         """Emit ``think:executed`` with real token usage when the provider has it.
 
         ``event_data`` is mutated — ``last_usage`` (prompt_tokens, completion_tokens,
@@ -78,7 +390,19 @@ class BaseApp:
 
     # --- Capability shortcuts (the core verbs of EmptyOS) ---
 
-    async def think(self, prompt: str = "", domain: str | None = None, agent: str | None = None, *, task_shape: str | None = None, bucket: str | None = None, messages: list[dict] | None = None, cache: bool = False, cache_ttl_hours: int | None = None, **kwargs) -> str:
+    async def think(
+        self,
+        prompt: str = "",
+        domain: str | None = None,
+        agent: str | None = None,
+        *,
+        task_shape: str | None = None,
+        bucket: str | None = None,
+        messages: list[dict] | None = None,
+        cache: bool = False,
+        cache_ttl_hours: int | None = None,
+        **kwargs,
+    ) -> str:
         """Ask the OS to think. Routes to best provider for the domain.
 
         Accepts either `prompt` (single-turn) or `messages=[{role, content}, ...]`
@@ -110,6 +434,13 @@ class BaseApp:
         if not prompt and not messages:
             raise ValueError("think() requires either prompt= or messages=")
 
+        # Snapshot any citations the caller registered via self.cite() before
+        # this think() call, then reset for the next one. Citations describe
+        # the sources the app fed into the model — kept on _last_think_citations
+        # so last_provenance() can surface them to the UI.
+        self._last_think_citations = list(getattr(self, "_pending_citations", []))
+        self._pending_citations = []
+
         # --- Auto-hash cache check (Layer B — our local SQLite cache) ---
         # Runs before agent resolution so we short-circuit as early as possible.
         # Key encodes all inputs that affect the response, including agent/domain.
@@ -118,6 +449,7 @@ class BaseApp:
         _tc = None
         if cache:
             from emptyos.sdk import think_cache as _tc
+
             _cache_db = _tc.db_path(self)
             _cache_id = _tc.make_key(
                 prompt,
@@ -181,22 +513,27 @@ class BaseApp:
                         )
                         if val is not None:
                             return val
-                    except (asyncio.TimeoutError, Exception):
+                    except (TimeoutError, Exception):
                         continue
 
             # Domain-level override
             if domain:
                 domain_provider = settings.get(f"think.domain.{domain}")
                 if domain_provider:
-                    result = await self._think_with_provider(domain_provider, prompt, domain, kwargs)
+                    result = await self._think_with_provider(
+                        domain_provider, prompt, domain, kwargs
+                    )
                     if result:
                         return result
 
         # Default: use capability chain
         t0 = time.monotonic()
         result = await self.kernel.capability("think").execute(
-            prompt=prompt, domain=effective_domain,
-            task_shape=task_shape, bucket=bucket, **kwargs,
+            prompt=prompt,
+            domain=effective_domain,
+            task_shape=task_shape,
+            bucket=bucket,
+            **kwargs,
         )
         latency = round((time.monotonic() - t0) * 1000)
 
@@ -207,19 +544,25 @@ class BaseApp:
             "latency_ms": latency,
         }
 
-        prompt_len = len(prompt) if prompt else sum(len(m.get("content", "")) for m in (messages or []))
-        await self._emit_think_executed({
-            "provider": result.provider,
-            "is_cloud": getattr(result, "is_cloud", False),
-            "domain": domain or "default",
-            "app": app_id,
-            "latency_ms": latency,
-            "prompt_len": prompt_len,
-        }, provider_name=result.provider)
+        prompt_len = (
+            len(prompt) if prompt else sum(len(m.get("content", "")) for m in (messages or []))
+        )
+        await self._emit_think_executed(
+            {
+                "provider": result.provider,
+                "is_cloud": getattr(result, "is_cloud", False),
+                "domain": domain or "default",
+                "app": app_id,
+                "latency_ms": latency,
+                "prompt_len": prompt_len,
+            },
+            provider_name=result.provider,
+        )
 
         if _tc is not None and _cache_id is not None:
             _tc.put(
-                _cache_db, _cache_id,
+                _cache_db,
+                _cache_id,
                 prompt=prompt,
                 system=kwargs.get("system"),
                 model=kwargs.get("model"),
@@ -230,15 +573,34 @@ class BaseApp:
 
         return result.value
 
+    def cite(self, kind: str, ref: str, **extra) -> None:
+        """Register a source the next think() call is grounded in.
+
+        ``kind`` is one of: ``vault_note`` (ref = vault-relative path),
+        ``eos_doc`` (ref = repo-relative path), ``web_page`` (ref = url),
+        ``app_record`` (ref = "<app>/<id>"). Extra fields (e.g. lines, title)
+        are passed through verbatim.
+
+        Citations are consumed by the next ``think()`` call and surface in
+        ``last_provenance()['citations']`` so UIs can show users what the
+        AI was grounded on. Calling cite() without a subsequent think() is a
+        no-op (cleared on the next think()).
+        """
+        if not hasattr(self, "_pending_citations"):
+            self._pending_citations = []
+        self._pending_citations.append({"kind": kind, "ref": ref, **extra})
+
     def last_provenance(self) -> dict:
         """Return provenance metadata for the most recent think() call.
 
         Shape: {mode: 'local'|'cloud', provider: str, model: str|None,
-                latency_ms: int}. Empty dict if no think() has run yet.
+                latency_ms: int, citations: [{kind, ref, ...}]}.
+        Empty dict if no think() has run yet.
 
         Intended for API responses that render AI-authored content — pair with
         the frontend EOS_UI.provenance() helper to render the required chip
-        per docs/FRONTEND-DESIGN-LANGUAGE.md §6.
+        per docs/FRONTEND-DESIGN-LANGUAGE.md §6. Citations enumerate sources
+        the app fed in via self.cite() before the think() call.
         """
         meta = getattr(self, "_last_think_provider", None)
         if not meta:
@@ -248,6 +610,7 @@ class BaseApp:
             "provider": meta.get("provider") or "",
             "model": meta.get("model"),
             "latency_ms": meta.get("latency_ms"),
+            "citations": list(getattr(self, "_last_think_citations", [])),
         }
 
     async def think_safe(
@@ -281,7 +644,9 @@ class BaseApp:
                     return "AI unavailable right now."
             return fallback
 
-    async def _think_with_provider(self, provider_name: str, prompt: str, domain, kwargs) -> str | None:
+    async def _think_with_provider(
+        self, provider_name: str, prompt: str, domain, kwargs
+    ) -> str | None:
         """Try to call a specific provider by name. Returns None if unavailable.
 
         `kwargs` may include `messages=[{role, content}]` for multi-turn chat;
@@ -302,15 +667,18 @@ class BaseApp:
                         "model": kwargs.get("model"),
                         "latency_ms": latency,
                     }
-                    await self._emit_think_executed({
-                        "provider": provider_name,
-                        "is_cloud": getattr(p, "is_cloud", False),
-                        "domain": domain or "default",
-                        "app": self.manifest.id,
-                        "latency_ms": latency,
-                        "prompt_len": prompt_len,
-                        "routed_by": "settings",
-                    }, provider_name=provider_name)
+                    await self._emit_think_executed(
+                        {
+                            "provider": provider_name,
+                            "is_cloud": getattr(p, "is_cloud", False),
+                            "domain": domain or "default",
+                            "app": self.manifest.id,
+                            "latency_ms": latency,
+                            "prompt_len": prompt_len,
+                            "routed_by": "settings",
+                        },
+                        provider_name=provider_name,
+                    )
                     return value
                 except Exception:
                     return None
@@ -328,19 +696,34 @@ class BaseApp:
                             "model": kwargs.get("model"),
                             "latency_ms": latency,
                         }
-                        await self._emit_think_executed({
-                            "provider": provider_name,
-                            "is_cloud": getattr(p, "is_cloud", False),
-                            "domain": domain or "default",
-                            "app": self.manifest.id, "latency_ms": latency,
-                            "prompt_len": prompt_len, "routed_by": "settings",
-                        }, provider_name=provider_name)
+                        await self._emit_think_executed(
+                            {
+                                "provider": provider_name,
+                                "is_cloud": getattr(p, "is_cloud", False),
+                                "domain": domain or "default",
+                                "app": self.manifest.id,
+                                "latency_ms": latency,
+                                "prompt_len": prompt_len,
+                                "routed_by": "settings",
+                            },
+                            provider_name=provider_name,
+                        )
                         return value
                     except Exception:
                         return None
         return None
 
-    async def think_stream(self, prompt: str = "", domain: str | None = None, *, provider: str | None = None, task_shape: str | None = None, bucket: str | None = None, messages: list[dict] | None = None, **kwargs):
+    async def think_stream(
+        self,
+        prompt: str = "",
+        domain: str | None = None,
+        *,
+        provider: str | None = None,
+        task_shape: str | None = None,
+        bucket: str | None = None,
+        messages: list[dict] | None = None,
+        **kwargs,
+    ):
         """Stream thinking results. Yields {"text": str, "done": bool} chunks.
 
         Accepts either `prompt` (single-turn) or `messages=[{role, content}, ...]`
@@ -387,7 +770,9 @@ class BaseApp:
                 if domain_provider:
                     target_provider = domain_provider
 
-        prompt_len = len(prompt) if prompt else sum(len(m.get("content", "")) for m in (messages or []))
+        prompt_len = (
+            len(prompt) if prompt else sum(len(m.get("content", "")) for m in (messages or []))
+        )
         t0 = time.monotonic()
         used_provider: str | None = None
         is_cloud = False
@@ -431,8 +816,11 @@ class BaseApp:
 
             # Default: use capability chain
             async for chunk in cap.execute_stream(
-                prompt=prompt, domain=domain,
-                task_shape=task_shape, bucket=bucket, **kwargs,
+                prompt=prompt,
+                domain=domain,
+                task_shape=task_shape,
+                bucket=bucket,
+                **kwargs,
             ):
                 if isinstance(chunk, dict):
                     if "provider_used" in chunk:
@@ -451,9 +839,17 @@ class BaseApp:
         """Send same prompt to ALL think providers in parallel. For benchmarking."""
         return await self.kernel.capability("think").execute_compare(prompt=prompt, **kwargs)
 
-    async def think_cached(self, prompt: str, *, key, system: str | None = None,
-                           domain: str | None = None, force_live: bool = False,
-                           meta: dict | None = None, **kwargs) -> tuple[str, bool]:
+    async def think_cached(
+        self,
+        prompt: str,
+        *,
+        key,
+        system: str | None = None,
+        domain: str | None = None,
+        force_live: bool = False,
+        meta: dict | None = None,
+        **kwargs,
+    ) -> tuple[str, bool]:
         """Like ``think()`` but reads / writes a vault-backed response cache.
 
         Returns ``(response, from_cache)``. ``from_cache`` is True when the
@@ -480,8 +876,7 @@ class BaseApp:
             if cached is not None:
                 return cached, True
         response = await self.think(prompt, domain=domain, system=system, **kwargs)
-        _llm_cache.cache_put(self, cache_id, prompt, system, response,
-                             key=key, meta=meta or {})
+        _llm_cache.cache_put(self, cache_id, prompt, system, response, key=key, meta=meta or {})
         return response, False
 
     # --- Per-call provider pinning ---
@@ -514,15 +909,18 @@ class BaseApp:
                 prompt = kwargs.get("prompt", "") or ""
                 msgs = kwargs.get("messages") or []
                 prompt_len = len(prompt) if prompt else sum(len(m.get("content", "")) for m in msgs)
-                await self._emit_think_executed({
-                    "provider": p.name,
-                    "is_cloud": getattr(p, "is_cloud", False),
-                    "domain": kwargs.get("domain") or "default",
-                    "app": self.manifest.id,
-                    "latency_ms": round((time.monotonic() - t0) * 1000),
-                    "prompt_len": prompt_len,
-                    "routed_by": "pinned",
-                }, provider_name=p.name)
+                await self._emit_think_executed(
+                    {
+                        "provider": p.name,
+                        "is_cloud": getattr(p, "is_cloud", False),
+                        "domain": kwargs.get("domain") or "default",
+                        "app": self.manifest.id,
+                        "latency_ms": round((time.monotonic() - t0) * 1000),
+                        "prompt_len": prompt_len,
+                        "routed_by": "pinned",
+                    },
+                    provider_name=p.name,
+                )
             return value
 
         if provider_name:
@@ -553,13 +951,61 @@ class BaseApp:
         result = await self.kernel.capability("draw").execute(prompt=prompt, **kwargs)
         return result.value
 
+    async def download_drawn_image(self, filename, target: Path) -> bool:
+        """Materialize a `draw()` result to a known path.
+
+        `draw()` returns whatever the active provider gave back — an existing
+        absolute path (some providers) or a bare ComfyUI filename (most). This
+        helper handles both: copies the file if it's already on disk, otherwise
+        pulls it from ComfyUI's `/view` endpoint. Returns True on success.
+        """
+        from pathlib import Path as _P
+        p = filename if isinstance(filename, _P) else _P(str(filename))
+        if p.is_absolute() and p.exists():
+            try:
+                import shutil as _sh
+                target.parent.mkdir(parents=True, exist_ok=True)
+                _sh.copy2(str(p), str(target))
+                return True
+            except Exception:
+                return False
+        comfy = self.kernel.services.get_optional("comfyui")
+        host = ""
+        if comfy and hasattr(comfy, "_host"):
+            try:
+                host = comfy._host()
+            except Exception:
+                host = ""
+        if not host:
+            host = "http://127.0.0.1:8188"
+        from urllib.parse import quote
+        url = f"{host}/view?filename={quote(str(filename), safe='')}"
+        try:
+            session = getattr(comfy, "_session", None) if comfy else None
+            if session:
+                async with session.get(url) as resp:
+                    if resp.status != 200:
+                        return False
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    target.write_bytes(await resp.read())
+                    return True
+            import aiohttp
+            async with aiohttp.ClientSession() as sess:
+                async with sess.get(url, timeout=aiohttp.ClientTimeout(total=60)) as resp:
+                    if resp.status != 200:
+                        return False
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    target.write_bytes(await resp.read())
+                    return True
+        except Exception:
+            return False
+
     async def see(self, *, mode: str = "snapshot", **kwargs) -> str:
         """Capture an image from a camera. Returns file path."""
         result = await self.kernel.capability("see").execute(mode=mode, **kwargs)
         return result.value
 
-    async def animate(self, prompt: str, *, image: str = "",
-                      num_frames: int = 24, **kwargs) -> str:
+    async def animate(self, prompt: str, *, image: str = "", num_frames: int = 24, **kwargs) -> str:
         """Generate a video clip. Returns local file path to the rendered MP4/WEBP.
 
         `image` is an optional reference still (provider-specific format —
@@ -583,6 +1029,7 @@ class BaseApp:
         is randomized with the original suffix preserved (default .webm).
         """
         import uuid
+
         audio_dir = self.data_dir / subdir
         audio_dir.mkdir(parents=True, exist_ok=True)
         ext = ".webm"
@@ -601,12 +1048,17 @@ class BaseApp:
         inferred from the file extension.
         """
         from starlette.responses import FileResponse, JSONResponse
+
         filepath = self.data_dir / subdir / filename
         if not filepath.exists() or not filepath.is_file():
             return JSONResponse({"error": "not found"}, status_code=404)
         content_types = {
-            ".wav": "audio/wav", ".webm": "audio/webm", ".mp3": "audio/mpeg",
-            ".mp4": "audio/mp4", ".ogg": "audio/ogg", ".m4a": "audio/mp4",
+            ".wav": "audio/wav",
+            ".webm": "audio/webm",
+            ".mp3": "audio/mpeg",
+            ".mp4": "audio/mp4",
+            ".ogg": "audio/ogg",
+            ".m4a": "audio/mp4",
         }
         ct = content_types.get(filepath.suffix.lower(), "audio/webm")
         return FileResponse(str(filepath), media_type=ct)
@@ -643,7 +1095,10 @@ class BaseApp:
         return result
 
     async def call_contributions(
-        self, target: str, slot: str, **kwargs,
+        self,
+        target: str,
+        slot: str,
+        **kwargs,
     ) -> list[tuple[dict, Any]]:
         """Enumerate `[[contributes.<target>.<slot>]]`, dispatch each to its
         contributor's `method`, return `(entry, result)` pairs in manifest order.
@@ -694,16 +1149,72 @@ class BaseApp:
         result = await self.kernel.capability("write").execute(path=path, content=content, **kwargs)
         return result.value
 
+    @staticmethod
+    async def read_json(request) -> dict:
+        # Tolerant request-body decode. Windows curl sends literal "—" as
+        # cp1252 byte 0x97; Starlette's request.json() can't decode it and
+        # surfaces a 500. Try utf-8, fall back to cp1252, last-resort
+        # utf-8-with-replace so em-dashes / smart quotes from real keyboards
+        # never crash a write path.
+        body = await request.body()
+        if not body:
+            return {}
+        for enc in ("utf-8", "cp1252"):
+            try:
+                return json.loads(body.decode(enc))
+            except UnicodeDecodeError:
+                continue
+        return json.loads(body.decode("utf-8", errors="replace"))
+
     async def search(self, query: str, **kwargs) -> list:
         """Ask the OS to search. Human remembers, or grep/search-engine finds."""
         result = await self.kernel.capability("search").execute(query=query, **kwargs)
         return result.value
 
+    # --- Embedding helpers (semantic search, related-item discovery) ---
+    #
+    # Backed by emptyos.sdk.embeddings.Embedder. Cache lives at
+    # data/embeddings/<app>.json so every app that uses embeddings shares
+    # the OpenAI cost-per-content-hash regardless of which app embedded
+    # it first (the underlying vec is keyed on text hash, not app id).
+
+    def _embedder(self):
+        from emptyos.sdk.embeddings import Embedder
+
+        if not hasattr(self, "_embedder_instance"):
+            cache_path = self.kernel.config.data_dir / "embeddings" / "shared.json"
+            self._embedder_instance = Embedder(cache_path=cache_path)
+        return self._embedder_instance
+
+    async def embed_text(self, text: str) -> list[float]:
+        """Single-shot embed. Returns 1536-dim vector (or zero-vec if no API key)."""
+        return await self._embedder().embed_one(text)
+
+    async def embed_texts(self, texts: list[str]) -> list[list[float]]:
+        """Batch embed. Cached by content hash — repeat calls on same texts are free."""
+        return await self._embedder().embed_many(texts)
+
+    @property
+    def embeddings_available(self) -> bool:
+        """True iff OPENAI_API_KEY is set. Apps should fall back to lexical
+        retrieval when False so they don't break on a fresh self-host."""
+        return self._embedder().available
+
+    async def embedding_index(self, items: list, text_fn):
+        """Build a queryable embedding index for `items`. `text_fn(item) -> str`
+        produces the text to embed for each one.
+
+        Returns an EmbeddingIndex with `.search(query, top_k)` method. The
+        index is rebuilt each call but embeddings are content-hash cached,
+        so unchanged items pay nothing on subsequent rebuilds.
+        """
+        from emptyos.sdk.embeddings import build_index
+
+        return await build_index(self._embedder(), items, text_fn)
+
     async def emit(self, event_type: str, data: dict | None = None):
         """Emit an event from this app."""
-        await self.kernel.events.emit(
-            event_type, data or {}, source=self.manifest.id
-        )
+        await self.kernel.events.emit(event_type, data or {}, source=self.manifest.id)
 
     # --- Assignment protocol (People ↔ other apps) ---
 
@@ -730,12 +1241,15 @@ class BaseApp:
         on boot.
         """
         event = "people:assigned" if assigned else "people:unassigned"
-        await self.emit(event, {
-            "person": person_id,
-            "item": item,
-            "weight_hours": weight_hours,
-            "role": role,
-        })
+        await self.emit(
+            event,
+            {
+                "person": person_id,
+                "item": item,
+                "weight_hours": weight_hours,
+                "role": role,
+            },
+        )
 
     async def list_assignments(self) -> list[dict]:
         """Return every current assignment this app owns.
@@ -764,6 +1278,7 @@ class BaseApp:
     def db(self):
         """Per-app SQLite database at data/apps/{id}/app.db. WAL mode for concurrent reads."""
         import sqlite3
+
         path = self.data_dir / "app.db"
         conn = sqlite3.connect(str(path))
         conn.row_factory = sqlite3.Row
@@ -797,6 +1312,17 @@ class BaseApp:
         """Path to this app's persistent state file."""
         return self.kernel.config.data_dir / "state" / f"{self.manifest.id}.json"
 
+    def runs(self, kind: str = "runs", *, state_filename: str = "run.json"):
+        """Per-run scratchpad + state at ``data_dir / kind``.
+
+        Returns a :class:`RunRegistry`. Use when an app has the harness shape:
+        each run gets a stable id, a directory of intermediate artifacts, and
+        a small JSON state file. ``kind`` lets one app keep multiple registries
+        side-by-side (e.g. ``runs("verify-runs")``)."""
+        from emptyos.sdk.run_registry import RunRegistry
+
+        return RunRegistry(self.data_dir / kind, state_filename=state_filename)
+
     def load_state(self, default: Any = None) -> Any:
         """Load persistent state from disk."""
         if self.state_path.exists():
@@ -826,8 +1352,11 @@ class BaseApp:
                     entry = json.loads(line)
                     self.db.execute(
                         "INSERT INTO activity (ts, app, data) VALUES (?,?,?)",
-                        (entry.get("ts", ""), entry.get("app", self.manifest.id),
-                         json.dumps(entry, ensure_ascii=False, default=str)),
+                        (
+                            entry.get("ts", ""),
+                            entry.get("app", self.manifest.id),
+                            json.dumps(entry, ensure_ascii=False, default=str),
+                        ),
                     )
                 self.db.commit()
                 jsonl_path.rename(jsonl_path.with_suffix(".jsonl.bak"))
@@ -841,8 +1370,9 @@ class BaseApp:
         if not self._activity_table_ready:
             self._ensure_activity_table()
             self._activity_table_ready = True
-        from datetime import datetime, timezone
-        entry.setdefault("ts", datetime.now(timezone.utc).isoformat())
+        from datetime import datetime
+
+        entry.setdefault("ts", datetime.now(UTC).isoformat())
         entry.setdefault("app", self.manifest.id)
         self.db.execute(
             "INSERT INTO activity (ts, app, data) VALUES (?,?,?)",
@@ -857,7 +1387,9 @@ class BaseApp:
             )
         self.db.commit()
 
-    def read_activity(self, limit: int = 50, filter_key: str = "", filter_val: str = "") -> list[dict]:
+    def read_activity(
+        self, limit: int = 50, filter_key: str = "", filter_val: str = ""
+    ) -> list[dict]:
         """Read recent activity entries, optionally filtered."""
         if not self._activity_table_ready:
             self._ensure_activity_table()
@@ -995,9 +1527,29 @@ class BaseApp:
             return []
         return sorted(self.vault_dir.glob(pattern))
 
+    def vault_read_at(self, rel_path: str, default: str = "") -> str:
+        """Read a file at a vault-root-relative path.
+
+        Use when the file lives outside the app's own vault_dir (e.g. a
+        path resolved from ``vault_config()`` that already includes the
+        full ``30_Resources/EmptyOS/<app>/...`` prefix).
+        """
+        p = self.vault_root / rel_path
+        if p.exists():
+            return p.read_text(encoding="utf-8", errors="ignore")
+        return default
+
+    def vault_write_at(self, rel_path: str, content: str) -> None:
+        """Write a file at a vault-root-relative path. Creates parents."""
+        p = self.vault_root / rel_path
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(content, encoding="utf-8")
+
     # --- Vault Index (query + mutate vault notes via platform index) ---
 
-    def vault_query(self, tags: list[str] | None = None, folder: str | None = None, **properties) -> list[dict]:
+    def vault_query(
+        self, tags: list[str] | None = None, folder: str | None = None, **properties
+    ) -> list[dict]:
         """Query vault notes by tags and/or frontmatter properties.
 
         Returns list of {path, name, folder, ext, size, properties, tags}.
@@ -1034,6 +1586,7 @@ class BaseApp:
             vault = self.kernel.config.notes_path
             if vault:
                 from emptyos.runtime.vault_index import _serialize_fm
+
                 abs_path = vault / rel_path
                 abs_path.parent.mkdir(parents=True, exist_ok=True)
                 abs_path.write_text(_serialize_fm(frontmatter) + "\n\n" + body, encoding="utf-8")
@@ -1106,32 +1659,151 @@ class BaseApp:
         if content.startswith("---"):
             end = content.find("---", 3)
             if end > 0:
-                return content[end + 3:].strip()
+                return content[end + 3 :].strip()
         return content.strip()
 
     # --- Vault Data Contracts ---
 
-    def vault_reconcile(self, folder: str, expected_tags: list[str] | None = None,
-                        expected_fields: list[str] | None = None) -> dict:
+    def vault_reconcile(
+        self,
+        folder: str,
+        expected_tags: list[str] | None = None,
+        expected_fields: list[str] | None = None,
+    ) -> dict:
         """Check vault notes against expected structure. Read-only — reports gaps."""
         vi = self.kernel.services.get("vault_index")
         if not vi:
             return {"total": 0, "compliant": 0, "gaps": [], "folder": folder}
         return vi.reconcile(folder, expected_tags, expected_fields)
 
-    def vault_enrich(self, rel_path: str, add_tags: list[str] | None = None,
-                     defaults: dict | None = None) -> bool:
+    def vault_enrich(
+        self, rel_path: str, add_tags: list[str] | None = None, defaults: dict | None = None
+    ) -> bool:
         """Add missing tags/defaults to a vault note. Safe — never overwrites."""
         vi = self.kernel.services.get("vault_index")
         if not vi:
             return False
         return vi.enrich(rel_path, add_tags, defaults)
 
+    # --- Vault-backed projects (generic CRUD over tag-marked notes) ---
+    # Pattern: an app's "projects" are vault notes with a known tag, a
+    # frontmatter shape the app owns, and a settable-fields whitelist.
+    # These helpers handle the plumbing; the app supplies tag, path,
+    # extra creation fields, and event names.
+
+    def vault_project_list(
+        self,
+        *,
+        tag: str,
+        list_fields: list[str] | None = None,
+        defaults: dict | None = None,
+    ) -> list[dict]:
+        """List non-archived vault notes carrying ``tag``.
+
+        Each row carries id/name/created/updated/_path plus any extra
+        frontmatter keys named in ``list_fields``. ``defaults`` fills in
+        missing keys (use for fields the app guarantees a default for —
+        e.g. ``frequency_hz=50.0``). Sorted by ``updated`` desc.
+        """
+        notes = self.vault_query(tags=[tag])
+        defaults = defaults or {}
+        out: list[dict] = []
+        for n in notes:
+            fm = n.get("properties") or {}
+            if fm.get("archived"):
+                continue
+            row: dict = {
+                "id": fm.get("id") or Path(n["path"]).stem,
+                "name": fm.get("name") or fm.get("id") or Path(n["path"]).stem,
+                "created": fm.get("created"),
+                "updated": fm.get("updated"),
+                "_path": n["path"],
+            }
+            for f in (list_fields or []):
+                if f in fm:
+                    row[f] = fm[f]
+                elif f in defaults:
+                    row[f] = defaults[f]
+            out.append(row)
+        return sorted(out, key=lambda p: p.get("updated") or "", reverse=True)
+
+    async def vault_project_create(
+        self,
+        *,
+        project_id: str,
+        name: str,
+        tag: str,
+        path: str,
+        extra_fm: dict | None = None,
+        body: str | None = None,
+        event_name: str | None = None,
+    ) -> dict:
+        """Create a vault-backed project note. Returns ``{"ok", "id", "path"}``
+        or ``{"error": ...}`` if a note already exists at ``path``."""
+        if self.vault_get_properties(path):
+            return {"error": f"project {project_id} already exists"}
+        fm: dict = {
+            "id": project_id,
+            "name": name,
+            "tags": [tag],
+            "created": now_iso(),
+            "updated": now_iso(),
+        }
+        if extra_fm:
+            fm.update(extra_fm)
+        body_md = body if body is not None else f"# {name}\n\n## Notes\n\n## Tasks\n\n"
+        self.vault_create_note(path, fm, body_md)
+        if event_name:
+            await self.emit(event_name, {"id": project_id, "name": name})
+        return {"ok": True, "id": project_id, "path": path}
+
+    async def vault_project_update(
+        self,
+        *,
+        project_id: str,
+        path: str,
+        fields: dict,
+        settable: set,
+        event_name: str | None = None,
+    ) -> dict:
+        """Update whitelisted frontmatter on a project note. Returns
+        ``{"ok": True}`` or ``{"error": ...}``."""
+        if not self.vault_get_properties(path):
+            return {"error": "project not found"}
+        bad = [k for k in fields if k not in settable]
+        if bad:
+            return {"error": f"fields not settable: {bad}"}
+        update = dict(fields)
+        update["updated"] = now_iso()
+        self.vault_update(path, update)
+        if event_name:
+            await self.emit(event_name, {
+                "id": project_id, "fields": list(fields.keys()),
+            })
+        return {"ok": True}
+
+    async def vault_project_delete(
+        self,
+        *,
+        project_id: str,
+        path: str,
+        event_name: str | None = None,
+    ) -> dict:
+        """Soft-delete a project note (sets ``archived: true`` in frontmatter).
+        Real deletion is a vault-tool concern, not the app's."""
+        if not self.vault_get_properties(path):
+            return {"ok": False, "error": "project not found"}
+        self.vault_update(path, {"archived": True, "updated": now_iso()})
+        if event_name:
+            await self.emit(event_name, {"id": project_id})
+        return {"ok": True}
+
     # --- Job Tracking (platform-level progress for long-running operations) ---
 
     def _emit_job_event(self, event_type: str, job: dict):
         """Fire-and-forget emit a job event to the EventBus/WebSocket."""
         import asyncio
+
         data = {k: v for k, v in job.items() if v is not None}
         try:
             loop = asyncio.get_running_loop()
@@ -1197,6 +1869,7 @@ class BaseApp:
         """Print rich-formatted output. Falls back to plain print on encoding errors."""
         try:
             from rich import print as rprint
+
             rprint(text)
         except (UnicodeEncodeError, OSError):
             # Windows cp1252 can't handle some emoji/unicode
@@ -1207,12 +1880,27 @@ class BaseApp:
         print(json.dumps(data, indent=2, default=str))
 
     def _get_decorated(self, attr: str) -> list[tuple[dict, Any]]:
-        """Find methods with a specific decorator attribute."""
-        return [
-            (getattr(m, attr), m)
-            for _, m in inspect.getmembers(self, predicate=inspect.ismethod)
-            if hasattr(m, attr)
-        ]
+        """Find methods with a specific decorator attribute.
+
+        Walk the class MRO instead of `inspect.getmembers(self, …)` — the latter
+        does `getattr(self, name)` for every attribute, which TRIGGERS every
+        `@property` and `@cached_property` on the class. On BaseApp that means
+        opening a SQLite connection (`self.db`) per app at setup, costing ~1.3s
+        × ~80 apps on cold boot. Walking the class only sees the descriptor
+        objects, never their computed values.
+        """
+        result: list[tuple[dict, Any]] = []
+        seen: set[str] = set()
+        for cls in type(self).__mro__:
+            for name, raw in cls.__dict__.items():
+                if name in seen or not callable(raw) or not hasattr(raw, attr):
+                    continue
+                seen.add(name)
+                # Bind via the instance so `self` is passed to the call.
+                # `getattr(self, name)` on a regular method is a cheap
+                # descriptor lookup; it doesn't trigger any properties.
+                result.append((getattr(raw, attr), getattr(self, name)))
+        return result
 
     def get_cli_methods(self) -> list[tuple[dict, Any]]:
         return self._get_decorated("_eos_cli")
@@ -1222,3 +1910,19 @@ class BaseApp:
 
     def get_ws_methods(self) -> list[tuple[dict, Any]]:
         return self._get_decorated("_eos_ws")
+
+
+def _default_scalar_picker(result: Any) -> dict[str, float]:
+    """Default scalar extraction for compare_methods.
+
+    Pulls every top-level int/float (skipping bool) out of a dict result.
+    Apps with custom result shapes can pass their own picker."""
+    if not isinstance(result, dict):
+        return {}
+    out: dict[str, float] = {}
+    for k, v in result.items():
+        if isinstance(v, bool):
+            continue
+        if isinstance(v, (int, float)):
+            out[k] = float(v)
+    return out

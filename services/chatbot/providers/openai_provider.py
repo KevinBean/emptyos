@@ -1,12 +1,11 @@
 from __future__ import annotations
 
 import os
-from typing import AsyncIterator
+from collections.abc import AsyncIterator
 
 from openai import AsyncOpenAI
 
-from .base import Provider, CompletionResult
-
+from .base import CompletionResult, Provider
 
 # USD per 1M tokens. Update as OpenAI pricing changes.
 # Cached input prices apply when prompt caching kicks in (provider-side, automatic
@@ -18,16 +17,16 @@ from .base import Provider, CompletionResult
 # early or late but the OpenAI org-level monthly budget is the real backstop.
 PRICING = {
     # GPT-5 family (current default for chatbot)
-    "gpt-5-nano":     {"in": 0.05, "out": 0.40},
-    "gpt-5-mini":     {"in": 0.25, "out": 2.00},
-    "gpt-5":          {"in": 1.25, "out": 10.00},
+    "gpt-5-nano": {"in": 0.05, "out": 0.40},
+    "gpt-5-mini": {"in": 0.25, "out": 2.00},
+    "gpt-5": {"in": 1.25, "out": 10.00},
     # GPT-4.1 family (kept for fallback / legacy)
-    "gpt-4.1-nano":   {"in": 0.10, "out": 0.40},
-    "gpt-4.1-mini":   {"in": 0.40, "out": 1.60},
-    "gpt-4.1":        {"in": 2.00, "out": 8.00},
+    "gpt-4.1-nano": {"in": 0.10, "out": 0.40},
+    "gpt-4.1-mini": {"in": 0.40, "out": 1.60},
+    "gpt-4.1": {"in": 2.00, "out": 8.00},
     # GPT-4o family
-    "gpt-4o-mini":    {"in": 0.15, "out": 0.60},
-    "gpt-4o":         {"in": 2.50, "out": 10.00},
+    "gpt-4o-mini": {"in": 0.15, "out": 0.60},
+    "gpt-4o": {"in": 2.50, "out": 10.00},
 }
 
 

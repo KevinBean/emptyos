@@ -22,13 +22,11 @@ from __future__ import annotations
 import re
 from datetime import date, datetime
 from pathlib import Path
-from typing import Any
 
 from emptyos.sdk import BaseApp, cli_command, parse_frontmatter, parse_llm_json, web_route
 from emptyos.sdk.utils import slugify
 
 from . import simulate as _sim
-
 
 _PERSON_TAG = "person"
 _DEFAULT_ROLE = "assignee"
@@ -47,7 +45,7 @@ AI_SUGGEST_SYSTEM = (
 )
 
 AI_SUGGEST_FORMAT = (
-    'Return a JSON array of exactly 3 objects:\n'
+    "Return a JSON array of exactly 3 objects:\n"
     '[{"name": "exact name from list", "action": "call/message/coffee/meal", '
     '"reason": "1 sentence why now", "opener": "suggested opening message"}]\n'
     "Return ONLY valid JSON."
@@ -85,7 +83,6 @@ def _band(ratio: float) -> str:
 
 
 class PeopleApp(BaseApp):
-
     async def setup(self):
         await super().setup()
         self._assignments: dict[tuple, dict] = {}
@@ -93,6 +90,7 @@ class PeopleApp(BaseApp):
         self.kernel.events.on("people:assigned", self._on_assigned)
         self.kernel.events.on("people:unassigned", self._on_unassigned)
         import asyncio
+
         asyncio.create_task(self._rebuild_index())
 
     async def _rebuild_index(self):
@@ -136,7 +134,9 @@ class PeopleApp(BaseApp):
     # ── Folder / settings helpers ──────────────────────────────────────
 
     def _folder(self) -> str:
-        return self.setting("people.folder", "30_Resources/People")  # default fallback; overridden via settings or vault_config
+        return self.setting(
+            "people.folder", "30_Resources/People"
+        )  # default fallback; overridden via settings or vault_config
 
     def _people_dir(self) -> Path:
         """Absolute path to the people folder; Path(".") if vault unmounted."""
@@ -202,7 +202,9 @@ class PeopleApp(BaseApp):
 
         capacity = props.get("capacity_hours_per_week")
         if capacity is None:
-            capacity = self._default_capacity() if props.get("type", "internal") == "internal" else 0
+            capacity = (
+                self._default_capacity() if props.get("type", "internal") == "internal" else 0
+            )
 
         record = {
             # Core
@@ -235,9 +237,11 @@ class PeopleApp(BaseApp):
         target = (ident or "").strip().lower().replace("-", " ").replace("_", " ")
         for n in self._people_notes():
             props = n.get("properties") or {}
-            pid = (props.get("id") or n.get("name", "").replace(_FILENAME_PREFIX, "")).lower()
+            pid = (props.get("id") or (n.get("name") or "").replace(_FILENAME_PREFIX, "")).lower()
             name = (props.get("name") or "").lower()
-            fname = (n.get("name", "") or "").replace(_FILENAME_PREFIX, "").replace("-", " ").lower()
+            fname = (
+                (n.get("name", "") or "").replace(_FILENAME_PREFIX, "").replace("-", " ").lower()
+            )
             if target == pid or target == name.replace("-", " ") or target == fname:
                 return n
         return None
@@ -336,11 +340,13 @@ class PeopleApp(BaseApp):
                 continue
             threshold = freq_days * 1.5
             if days > threshold:
-                overdue.append({
-                    **p,
-                    "days_overdue": int(days - freq_days),
-                    "overdue_ratio": round(days / freq_days, 1),
-                })
+                overdue.append(
+                    {
+                        **p,
+                        "days_overdue": int(days - freq_days),
+                        "overdue_ratio": round(days / freq_days, 1),
+                    }
+                )
         overdue.sort(key=lambda x: -x["overdue_ratio"])
         return overdue
 
@@ -371,8 +377,10 @@ class PeopleApp(BaseApp):
             return await self.list_people()
         results = []
         for p in await self.list_people():
-            hay = " ".join(str(p.get(f, "") or "") for f in
-                           ("name", "role", "relationship", "company", "email")).lower()
+            hay = " ".join(
+                str(p.get(f, "") or "")
+                for f in ("name", "role", "relationship", "company", "email")
+            ).lower()
             if q in hay:
                 results.append(p)
         return results
@@ -390,20 +398,33 @@ class PeopleApp(BaseApp):
             score = overlap - penalty
             if overlap == 0 and want:
                 continue
-            ranked.append({
-                **p,
-                "overlap": overlap,
-                "overlap_pct": round(overlap / len(want) * 100, 1) if want else 0,
-                "score": round(score, 3),
-            })
+            ranked.append(
+                {
+                    **p,
+                    "overlap": overlap,
+                    "overlap_pct": round(overlap / len(want) * 100, 1) if want else 0,
+                    "score": round(score, 3),
+                }
+            )
         ranked.sort(key=lambda r: (-r["score"], -r["overlap"], r["load_ratio"], r["name"]))
         return ranked
 
     # ── Boards view-layer integration ──
     SETTABLE_FIELDS = {
-        "name", "role", "type", "capacity_hours_per_week",
-        "active", "relationship", "company", "trust_level", "energy",
-        "contact_frequency", "last_contact", "phone", "email", "birthday",
+        "name",
+        "role",
+        "type",
+        "capacity_hours_per_week",
+        "active",
+        "relationship",
+        "company",
+        "trust_level",
+        "energy",
+        "contact_frequency",
+        "last_contact",
+        "phone",
+        "email",
+        "birthday",
     }
 
     async def list_all(self) -> list[dict]:
@@ -412,25 +433,27 @@ class PeopleApp(BaseApp):
         rows = []
         for n in self._people_notes():
             p = self._enrich(self._person_with_load(self._shape_person(n)))
-            rows.append({
-                "id": p["id"],
-                "name": p.get("name", ""),
-                "role": p.get("role", ""),
-                "type": p.get("type", ""),
-                "company": p.get("company", ""),
-                "relationship": p.get("relationship", ""),
-                "energy": p.get("energy", ""),
-                "trust_level": p.get("trust_level", ""),
-                "contact_frequency": p.get("contact_frequency", ""),
-                "last_contact": p.get("last_contact", ""),
-                "capacity_hours_per_week": p.get("capacity_hours_per_week", 0),
-                "load_ratio": p.get("load_ratio", 0),
-                "band": p.get("band", "ok"),
-                "active": p.get("active", True),
-                "phone": p.get("phone", ""),
-                "email": p.get("email", ""),
-                "birthday": p.get("birthday", ""),
-            })
+            rows.append(
+                {
+                    "id": p["id"],
+                    "name": p.get("name", ""),
+                    "role": p.get("role", ""),
+                    "type": p.get("type", ""),
+                    "company": p.get("company", ""),
+                    "relationship": p.get("relationship", ""),
+                    "energy": p.get("energy", ""),
+                    "trust_level": p.get("trust_level", ""),
+                    "contact_frequency": p.get("contact_frequency", ""),
+                    "last_contact": p.get("last_contact", ""),
+                    "capacity_hours_per_week": p.get("capacity_hours_per_week", 0),
+                    "load_ratio": p.get("load_ratio", 0),
+                    "band": p.get("band", "ok"),
+                    "active": p.get("active", True),
+                    "phone": p.get("phone", ""),
+                    "email": p.get("email", ""),
+                    "birthday": p.get("birthday", ""),
+                }
+            )
         return rows
 
     async def set_field(self, id: str, field: str, value) -> dict:
@@ -478,8 +501,12 @@ class PeopleApp(BaseApp):
         by_app: dict[str, float] = {}
         by_role: dict[str, float] = {}
         for r in rows:
-            by_app[r["item"].get("app", "?")] = by_app.get(r["item"].get("app", "?"), 0) + r["weight_hours"]
-            by_role[r.get("role", _DEFAULT_ROLE)] = by_role.get(r.get("role", _DEFAULT_ROLE), 0) + r["weight_hours"]
+            by_app[r["item"].get("app", "?")] = (
+                by_app.get(r["item"].get("app", "?"), 0) + r["weight_hours"]
+            )
+            by_role[r.get("role", _DEFAULT_ROLE)] = (
+                by_role.get(r.get("role", _DEFAULT_ROLE), 0) + r["weight_hours"]
+            )
         return {
             "person": person,
             "assignments": rows,
@@ -525,13 +552,23 @@ class PeopleApp(BaseApp):
             "name": name,
             "role": data.get("role", ""),
             "type": data.get("type", "internal"),
-            "capacity_hours_per_week": float(data.get("capacity_hours_per_week", self._default_capacity())),
+            "capacity_hours_per_week": float(
+                data.get("capacity_hours_per_week", self._default_capacity())
+            ),
             "skills": data.get("skills", []) or [],
             "focus_areas": data.get("focus_areas", []) or [],
             "active": bool(data.get("active", True)),
         }
-        for field in ("relationship", "company", "trust_level", "energy",
-                      "contact_frequency", "phone", "email", "birthday"):
+        for field in (
+            "relationship",
+            "company",
+            "trust_level",
+            "energy",
+            "contact_frequency",
+            "phone",
+            "email",
+            "birthday",
+        ):
             if data.get(field):
                 fm[field] = data[field]
         self.vault_create_note(rel_path, fm, body=data.get("body", ""))
@@ -548,18 +585,32 @@ class PeopleApp(BaseApp):
         if not n:
             return {"error": "Person not found"}
         allowed = {
-            "name", "role", "type", "capacity_hours_per_week",
-            "skills", "focus_areas", "active",
-            "relationship", "company", "trust_level", "energy",
-            "contact_frequency", "last_contact", "phone", "email", "birthday",
+            "name",
+            "role",
+            "type",
+            "capacity_hours_per_week",
+            "skills",
+            "focus_areas",
+            "active",
+            "relationship",
+            "company",
+            "trust_level",
+            "energy",
+            "contact_frequency",
+            "last_contact",
+            "phone",
+            "email",
+            "birthday",
         }
         updates = {k: v for k, v in data.items() if k in allowed}
         if not updates:
             return {"error": "No valid fields"}
         self.vault_update(n["path"], updates)
         await self.emit("people:updated", {"id": pid, "updates": updates})
-        await self.emit("contacts:edited", {"name": n.get("properties", {}).get("name", pid),
-                                             "fields": list(updates.keys())})
+        await self.emit(
+            "contacts:edited",
+            {"name": n.get("properties", {}).get("name", pid), "fields": list(updates.keys())},
+        )
         return {"ok": True}
 
     @web_route("DELETE", "/api/people/{id}")
@@ -574,23 +625,24 @@ class PeopleApp(BaseApp):
 
     # ── Web routes — interactions (quick log) ──────────────────────────
 
-    @web_route("POST", "/api/people/{id}/log")
-    async def api_log_interaction(self, request):
-        ident = request.path_params.get("id", "")
-        data = await request.json()
-        text = (data.get("text") or "").strip()
+    async def log_interaction(self, person_id: str, text: str, source: str = "") -> dict:
+        """Append a Quick Log entry on a person's note + bump last_contact.
+        Cross-app callable via ``call_app("people", "log_interaction", ...)``.
+        """
+        text = (text or "").strip()
         if not text:
             return {"error": "text required"}
-        target = self._find_file(ident)
+        target = self._find_file(person_id)
         if not target or not target.exists():
             return {"error": "Person not found"}
         today = date.today().isoformat()
-        entry = f"- {today}: {text}"
+        prefix = f"[{source}] " if source else ""
+        entry = f"- {today}: {prefix}{text}"
         content = await self.read(str(target))
         if "## Quick Log" in content:
             idx = content.index("## Quick Log")
             end_of_line = content.index("\n", idx)
-            content = content[:end_of_line + 1] + entry + "\n" + content[end_of_line + 1:]
+            content = content[: end_of_line + 1] + entry + "\n" + content[end_of_line + 1 :]
         else:
             content = content.rstrip() + "\n\n## Quick Log\n" + entry + "\n"
         # Update last_contact in frontmatter
@@ -605,9 +657,15 @@ class PeopleApp(BaseApp):
                 content = "---" + fm_block + content[fm_end:]
         await self.write(str(target), content)
         display_name = target.stem.lstrip(_FILENAME_PREFIX).replace("-", " ")
-        await self.emit("people:logged", {"id": ident, "name": display_name, "text": text})
+        await self.emit("people:logged", {"id": person_id, "name": display_name, "text": text})
         await self.emit("contacts:logged", {"name": display_name, "text": text})
         return {"ok": True, "entry": entry}
+
+    @web_route("POST", "/api/people/{id}/log")
+    async def api_log_interaction(self, request):
+        ident = request.path_params.get("id", "")
+        data = await request.json()
+        return await self.log_interaction(ident, data.get("text", ""), data.get("source", ""))
 
     @web_route("GET", "/api/people/{id}/profile")
     async def api_profile(self, request):
@@ -619,8 +677,13 @@ class PeopleApp(BaseApp):
         fm = self._parse_frontmatter(content)
         quick_log = self._parse_quick_log(content)
         note = self._find_note(ident) or {}
-        shaped = self._enrich(self._person_with_load(self._shape_person(
-            note if note else {"name": target.stem, "properties": fm, "path": str(target)})))
+        shaped = self._enrich(
+            self._person_with_load(
+                self._shape_person(
+                    note if note else {"name": target.stem, "properties": fm, "path": str(target)}
+                )
+            )
+        )
         # Backlinks
         backlinks: list[str] = []
         vault = self.kernel.config.notes_path or Path(".")
@@ -640,7 +703,7 @@ class PeopleApp(BaseApp):
         if body.startswith("---"):
             end = body.find("---", 3)
             if end > 0:
-                body = body[end + 3:].strip()
+                body = body[end + 3 :].strip()
         sections: dict[str, list[str]] = {}
         current = "intro"
         sections[current] = []
@@ -650,7 +713,9 @@ class PeopleApp(BaseApp):
                 sections[current] = []
             else:
                 sections.setdefault(current, []).append(line)
-        sections_clean = {k: "\n".join(v).strip() for k, v in sections.items() if "\n".join(v).strip()}
+        sections_clean = {
+            k: "\n".join(v).strip() for k, v in sections.items() if "\n".join(v).strip()
+        }
         return {
             **shaped,
             "frontmatter": fm,
@@ -684,7 +749,7 @@ class PeopleApp(BaseApp):
         if body.startswith("---"):
             end = body.find("---", 3)
             if end > 0:
-                body = body[end + 3:]
+                body = body[end + 3 :]
         new_content = self._serialize_frontmatter(fm) + body
         await self.write(str(target), new_content)
         display_name = target.stem.lstrip(_FILENAME_PREFIX).replace("-", " ")
@@ -697,7 +762,13 @@ class PeopleApp(BaseApp):
     @web_route("GET", "/api/frequency")
     async def api_frequency(self, request):
         people = await self.list_people()
-        groups: dict[str, list] = {"weekly": [], "monthly": [], "quarterly": [], "yearly": [], "unset": []}
+        groups: dict[str, list] = {
+            "weekly": [],
+            "monthly": [],
+            "quarterly": [],
+            "yearly": [],
+            "unset": [],
+        }
         for p in people:
             freq = (p.get("contact_frequency", "") or "").lower().strip()
             (groups[freq] if freq in groups else groups["unset"]).append(p)
@@ -723,13 +794,17 @@ class PeopleApp(BaseApp):
                     this_year = this_year.replace(year=today.year + 1)
                 days_until = (this_year - today).days
                 if days_until <= days:
-                    out.append({
-                        "id": p["id"],
-                        "name": p["name"],
-                        "birthday": bday,
-                        "days_until": days_until,
-                        "turning": this_year.year - bday_date.year if bday_date.year < today.year else 0,
-                    })
+                    out.append(
+                        {
+                            "id": p["id"],
+                            "name": p["name"],
+                            "birthday": bday,
+                            "days_until": days_until,
+                            "turning": this_year.year - bday_date.year
+                            if bday_date.year < today.year
+                            else 0,
+                        }
+                    )
             except (ValueError, TypeError):
                 continue
         out.sort(key=lambda x: x["days_until"])
@@ -759,23 +834,32 @@ class PeopleApp(BaseApp):
                 days_until = (this_year - today).days
                 if days_until <= days_ahead:
                     age = today.year - bday_date.year
-                    notifications.append({
-                        "type": "birthday", "id": p["id"], "name": p["name"],
-                        "message": f"Birthday in {days_until}d" + (f" (turning {age})" if days_until > 0 else " (TODAY!)"),
-                        "days": days_until,
-                        "priority": "high" if days_until <= 1 else "medium",
-                    })
+                    notifications.append(
+                        {
+                            "type": "birthday",
+                            "id": p["id"],
+                            "name": p["name"],
+                            "message": f"Birthday in {days_until}d"
+                            + (f" (turning {age})" if days_until > 0 else " (TODAY!)"),
+                            "days": days_until,
+                            "priority": "high" if days_until <= 1 else "medium",
+                        }
+                    )
             except ValueError:
                 continue
         if self.setting("people.overdue_alert", True):
             overdue = self._get_overdue(people)
             for c in overdue[:10]:
-                notifications.append({
-                    "type": "overdue", "id": c["id"], "name": c["name"],
-                    "message": f"Overdue by {c['days_overdue']}d ({c['contact_frequency']})",
-                    "days": c["days_overdue"],
-                    "priority": "high" if c["overdue_ratio"] >= 2.0 else "medium",
-                })
+                notifications.append(
+                    {
+                        "type": "overdue",
+                        "id": c["id"],
+                        "name": c["name"],
+                        "message": f"Overdue by {c['days_overdue']}d ({c['contact_frequency']})",
+                        "days": c["days_overdue"],
+                        "priority": "high" if c["overdue_ratio"] >= 2.0 else "medium",
+                    }
+                )
         notifications.sort(key=lambda n: n["days"])
         return notifications
 
@@ -808,27 +892,32 @@ class PeopleApp(BaseApp):
         people = await self.list_people()
         overdue = self._get_overdue(people)
         summary_lines = [
-            f"- {p['name']}: {p.get('relationship','')}, energy={p.get('energy','')}, "
-            f"trust={p.get('trust_level','')}, last={p.get('last_contact','')}, "
-            f"freq={p.get('contact_frequency','')}, health={p['health_score']}"
+            f"- {p['name']}: {p.get('relationship', '')}, energy={p.get('energy', '')}, "
+            f"trust={p.get('trust_level', '')}, last={p.get('last_contact', '')}, "
+            f"freq={p.get('contact_frequency', '')}, health={p['health_score']}"
             for p in people[:30]
         ]
         overdue_lines = [f"- {p['name']}: {p['days_overdue']}d overdue" for p in overdue[:10]]
         user_msg = (
             "Contacts:\n" + "\n".join(summary_lines) + "\n\n"
-            "Overdue:\n" + ("\n".join(overdue_lines) if overdue_lines else "None") + "\n\n"
+            "Overdue:\n"
+            + ("\n".join(overdue_lines) if overdue_lines else "None")
+            + "\n\n"
             + AI_SUGGEST_FORMAT
         )
         try:
             result = await self.think(
-                user_msg, system=AI_SUGGEST_SYSTEM, domain="text", temperature=0.4,
+                user_msg,
+                system=AI_SUGGEST_SYSTEM,
+                domain="text",
+                temperature=0.4,
             )
             items = parse_llm_json(result, fallback=[])
             if not isinstance(items, list):
                 items = []
             by_name = {p["name"].lower(): p for p in people}
             for item in items:
-                match = by_name.get(item.get("name", "").lower(), {})
+                match = by_name.get((item.get("name") or "").lower(), {})
                 item["id"] = match.get("id", "")
                 item["health_score"] = match.get("health_score", 0)
                 item["days_since"] = match.get("days_since")
@@ -856,7 +945,7 @@ class PeopleApp(BaseApp):
         if body.startswith("---"):
             end = body.find("---", 3)
             if end > 0:
-                body = body[end + 3:].strip()
+                body = body[end + 3 :].strip()
         display_name = target.stem.lstrip(_FILENAME_PREFIX).replace("-", " ")
         user_msg = (
             f"Person: {display_name}\n\n"
@@ -866,7 +955,10 @@ class PeopleApp(BaseApp):
         )
         try:
             result = await self.think(
-                user_msg, system=CHAT_SYSTEM, domain="text", temperature=0.3,
+                user_msg,
+                system=CHAT_SYSTEM,
+                domain="text",
+                temperature=0.3,
             )
             return {"id": ident, "name": display_name, "question": question, "answer": result}
         except Exception as e:
@@ -885,15 +977,17 @@ class PeopleApp(BaseApp):
         if body.startswith("---"):
             end = body.find("---", 3)
             if end > 0:
-                body = body[end + 3:].strip()
+                body = body[end + 3 :].strip()
         display_name = target.stem.lstrip(_FILENAME_PREFIX).replace("-", " ")
         user_msg = (
-            f"Interactions with {display_name}:\n{log_text}\n\n"
-            f"Additional notes:\n{body[:2000]}"
+            f"Interactions with {display_name}:\n{log_text}\n\nAdditional notes:\n{body[:2000]}"
         )
         try:
             result = await self.think(
-                user_msg, system=PERSONA_SYSTEM, domain="text", temperature=0.4,
+                user_msg,
+                system=PERSONA_SYSTEM,
+                domain="text",
+                temperature=0.4,
             )
             return {"id": ident, "name": display_name, "persona": result}
         except Exception as e:
@@ -923,7 +1017,7 @@ class PeopleApp(BaseApp):
                 print("  (no people yet)")
                 return
             for p in roster:
-                bar = f"{p['load_ratio']*100:.0f}%"
+                bar = f"{p['load_ratio'] * 100:.0f}%"
                 print(f"  {p['name']:<25} {p['role']:<20} {bar:<6} {p['band']}")
         elif action == "rebuild":
             await self._rebuild_index()
@@ -938,7 +1032,7 @@ class PeopleApp(BaseApp):
         elif action == "search" and query:
             results = await self.search_people(query)
             for p in results:
-                print(f"  {p['name']} ({p.get('company','')})")
+                print(f"  {p['name']} ({p.get('company', '')})")
             if not results:
                 print(f"  No people matching '{query}'")
 
@@ -949,11 +1043,14 @@ class PeopleApp(BaseApp):
         overloaded = [p for p in roster if p["band"] == "overloaded"]
         if not overloaded:
             return None
-        return [{
-            "label": f"{p['name']} · {int(p['load_ratio']*100)}%",
-            "href": f"/people/#{p['id']}",
-            "icon": "🔴",
-        } for p in overloaded[:6]]
+        return [
+            {
+                "label": f"{p['name']} · {int(p['load_ratio'] * 100)}%",
+                "href": f"/people/#{p['id']}",
+                "icon": "🔴",
+            }
+            for p in overloaded[:6]
+        ]
 
     async def panel_birthdays(self) -> list[dict] | None:
         """Upcoming birthdays in the next 30 days."""
@@ -972,15 +1069,18 @@ class PeopleApp(BaseApp):
                 days = (this_year - today).days
                 if days <= 30:
                     age = this_year.year - bday_date.year
-                    out.append({
-                        "title": f"🎂 {p['name']}",
-                        "href": f"/people/#{p['id']}",
-                        "subtitle": (
-                            "TODAY!" if days == 0
-                            else f"in {days}d" + (f" · turns {age}" if age > 0 else "")
-                        ),
-                        "days": days,
-                    })
+                    out.append(
+                        {
+                            "title": f"🎂 {p['name']}",
+                            "href": f"/people/#{p['id']}",
+                            "subtitle": (
+                                "TODAY!"
+                                if days == 0
+                                else f"in {days}d" + (f" · turns {age}" if age > 0 else "")
+                            ),
+                            "days": days,
+                        }
+                    )
             except (ValueError, TypeError):
                 continue
         if not out:

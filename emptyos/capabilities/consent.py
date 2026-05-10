@@ -113,7 +113,7 @@ class CloudConsentManager:
     # How long to wait for an approval before giving up (and denying).
     DEFAULT_TIMEOUT_SECONDS = 120
 
-    def __init__(self, policy: str = "ask", events: "EventBus | None" = None, kernel: Any = None):
+    def __init__(self, policy: str = "ask", events: EventBus | None = None, kernel: Any = None):
         self.policy = policy if policy in ("ask", "always", "never") else "ask"
         self.events = events
         # Kernel ref — only used for the optional local-LLM scan path
@@ -226,10 +226,11 @@ class CloudConsentManager:
 
         try:
             result = await asyncio.wait_for(
-                future, timeout=timeout or self.DEFAULT_TIMEOUT_SECONDS,
+                future,
+                timeout=timeout or self.DEFAULT_TIMEOUT_SECONDS,
             )
             return bool(result)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             self._last_decision[provider] = {
                 "decision": "denied",
                 "reason": "timeout",

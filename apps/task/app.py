@@ -23,8 +23,20 @@ from .indexer import Task, TaskIndexer
 log = logging.getLogger("emptyos.task")
 
 
-class TaskApp(BaseApp):
+TASK_SUGGEST_SYSTEM = (
+    "You are a calm prioritisation assistant. Given a flat list of tasks "
+    "with optional due dates, recommend what the user should do today. "
+    "Output a single short paragraph (2-3 sentences) that names the top "
+    "two or three tasks and a one-clause reason for each.\n\n"
+    "Do NOT:\n"
+    "- Use bullet points, headings, or numbered lists.\n"
+    "- Recommend more than three items.\n"
+    "- Echo the input list back verbatim.\n"
+    "- Moralise about productivity or workload."
+)
 
+
+class TaskApp(BaseApp):
     SETTABLE_FIELDS = frozenset({"done", "due", "text"})
 
     async def setup(self):
@@ -47,7 +59,8 @@ class TaskApp(BaseApp):
     def _persist_recent_adds(self):
         try:
             (self.data_dir / "recent_adds.json").write_text(
-                json.dumps(list(self._recent_adds)), encoding="utf-8")
+                json.dumps(list(self._recent_adds)), encoding="utf-8"
+            )
         except Exception:
             pass
 
@@ -97,31 +110,51 @@ class TaskApp(BaseApp):
         for t in source:
             if overdue_only and t.get("overdue_days", 0) <= 0:
                 continue
-            out.append(Task(
-                text=t["text"], done=t["done"], file=t["file"], line=t["line"],
-                due=t.get("due", ""), done_date=t.get("done_date", ""),
-                overdue_days=t.get("overdue_days", 0),
-                tier=t.get("tier", "fresh"),
-                focus_score=t.get("focus_score", 0),
-            ))
+            out.append(
+                Task(
+                    text=t["text"],
+                    done=t["done"],
+                    file=t["file"],
+                    line=t["line"],
+                    due=t.get("due", ""),
+                    done_date=t.get("done_date", ""),
+                    overdue_days=t.get("overdue_days", 0),
+                    tier=t.get("tier", "fresh"),
+                    focus_score=t.get("focus_score", 0),
+                )
+            )
         return out
 
     async def add(
-        self, text: str, file: str = "", due: str = "",
-        project: str = "", done: bool = False,
+        self,
+        text: str,
+        file: str = "",
+        due: str = "",
+        project: str = "",
+        done: bool = False,
     ) -> Task:
         """Add a task. Routes to a project when no explicit file is given."""
         if project or not file:
             target_project = project or "inbox"
             result = await self.call_app(
-                "projects", "add_task_to_project",
-                project_id=target_project, text=text, due=due, done=done,
+                "projects",
+                "add_task_to_project",
+                project_id=target_project,
+                text=text,
+                due=due,
+                done=done,
             )
             if result.get("error"):
                 raise RuntimeError(result["error"])
             display_text = f"{text} 📅 {due}" if due else text
             projects_dir = self.vault_config("projects_dir", "10_Projects")
-            task = Task(text=display_text, done=done, file=f"{projects_dir}/{target_project}.md", line=0, due=due)
+            task = Task(
+                text=display_text,
+                done=done,
+                file=f"{projects_dir}/{target_project}.md",
+                line=0,
+                due=due,
+            )
             self._record_recent_add(text=display_text, due=due, file=task.file)
             await self.emit("task:completed" if done else "task:added", task.to_dict())
             self._idx.invalidate()
@@ -129,10 +162,7 @@ class TaskApp(BaseApp):
 
         if due:
             text = f"{text} 📅 {due}"
-        line = (
-            f"- [x] {text} ✅ {date.today().isoformat()}\n"
-            if done else f"- [ ] {text}\n"
-        )
+        line = f"- [x] {text} ✅ {date.today().isoformat()}\n" if done else f"- [ ] {text}\n"
         existing = await self.read(file)
         await self.write(file, existing.rstrip("\n") + "\n" + line)
 
@@ -143,12 +173,14 @@ class TaskApp(BaseApp):
         return task
 
     def _record_recent_add(self, *, text: str, due: str, file: str):
-        self._recent_adds.append({
-            "text": text,
-            "due": due or "",
-            "file": file,
-            "ts": datetime.now().isoformat(timespec="seconds"),
-        })
+        self._recent_adds.append(
+            {
+                "text": text,
+                "due": due or "",
+                "file": file,
+                "ts": datetime.now().isoformat(timespec="seconds"),
+            }
+        )
         self._persist_recent_adds()
 
     async def complete(self, query: str) -> Task | None:
@@ -187,6 +219,7 @@ class TaskApp(BaseApp):
                 lines[i] = new_line
                 # Recover the new due-date for the emit payload.
                 from emptyos.sdk import DUE_PATTERN
+
                 m = DUE_PATTERN.search(new_line)
                 new_due = m.group(1) if m else ""
             break
@@ -199,7 +232,9 @@ class TaskApp(BaseApp):
             match.done = False
             await self.emit("task:reopened", match.to_dict())
         elif op == "snooze":
-            await self.emit("task:snoozed", {**match.to_dict(), "new_due": new_due, "days": kw["days"]})
+            await self.emit(
+                "task:snoozed", {**match.to_dict(), "new_due": new_due, "days": kw["days"]}
+            )
         return match
 
     # ── voice intents ────────────────────────────────────────────────────
@@ -249,7 +284,7 @@ class TaskApp(BaseApp):
     async def voice_list_recent(self, limit: int = 5) -> dict:
         if not self._recent_adds:
             return {"say": "No recently added tasks in this session."}
-        items = list(self._recent_adds)[-int(limit or 5):][::-1]
+        items = list(self._recent_adds)[-int(limit or 5) :][::-1]
         n = len(items)
         if n == 1:
             say = f"Most recent: {items[0]['text']}."
@@ -319,22 +354,64 @@ class TaskApp(BaseApp):
         elif action == "suggest":
             tasks = await self.list_tasks()
             task_text = "\n".join(f"- {t.text} (due: {t.due or 'none'})" for t in tasks[:20])
-            suggestion = await self.think(f"Prioritize these tasks for today. Be brief.\n\n{task_text}")
+            suggestion = await self.think(
+                f"Tasks:\n{task_text}",
+                system=TASK_SUGGEST_SYSTEM,
+                domain="text",
+                temperature=0.4,
+            )
             print(suggestion)
         else:
-            self.print_rich("[dim]Usage: eos task {add|done|list|overdue|suggest} [text] [--due DATE][/dim]")
+            self.print_rich(
+                "[dim]Usage: eos task {add|done|list|overdue|suggest} [text] [--due DATE][/dim]"
+            )
 
     # ── web API ──────────────────────────────────────────────────────────
+
+    def _apply_filter(self, tasks: list[dict], request) -> list[dict] | dict:
+        """?filter=today|overdue|tomorrow|this_week|later|undated narrows to
+        one agenda bucket. Returns the bucket, an error dict, or the input."""
+        flt = (request.query_params.get("filter") or "").strip().lower()
+        if not flt:
+            return tasks
+        buckets = queries.agenda(tasks, date.today())
+        if flt in buckets:
+            return buckets[flt]
+        return {"error": f"unknown filter '{flt}'", "available": list(buckets)}
 
     @web_route("GET", "/api/tasks")
     async def api_tasks(self, request):
         status = request.query_params.get("status", "open")
         open_tasks, done_tasks = await self._idx.get()
-        return done_tasks[:200] if status == "done" else open_tasks
+        tasks = done_tasks[:200] if status == "done" else open_tasks
+        return self._apply_filter(tasks, request)
 
     @web_route("GET", "/api/list")
     async def api_list(self, request):
-        return [t.to_dict() for t in await self.list_tasks()]
+        items = [t.to_dict() for t in await self.list_tasks()]
+        return self._apply_filter(items, request)
+
+    @web_route("GET", "/api/today")
+    async def api_today(self, request):
+        open_tasks, _ = await self._idx.get()
+        buckets = queries.agenda(open_tasks, date.today())
+        return {
+            "today": buckets.get("today", []),
+            "overdue": buckets.get("overdue", []),
+            "count": len(buckets.get("today", [])) + len(buckets.get("overdue", [])),
+        }
+
+    @web_route("GET", "/api/overdue")
+    async def api_overdue(self, request):
+        open_tasks, _ = await self._idx.get()
+        buckets = queries.agenda(open_tasks, date.today())
+        return {"tasks": buckets.get("overdue", []), "count": len(buckets.get("overdue", []))}
+
+    @web_route("GET", "/api/tomorrow")
+    async def api_tomorrow(self, request):
+        open_tasks, _ = await self._idx.get()
+        buckets = queries.agenda(open_tasks, date.today())
+        return {"tasks": buckets.get("tomorrow", []), "count": len(buckets.get("tomorrow", []))}
 
     @web_route("POST", "/api/refresh")
     async def api_refresh(self, request):
@@ -342,6 +419,37 @@ class TaskApp(BaseApp):
         self._idx.drop_disk_cache()
         open_tasks, done_tasks = await self._idx.get()
         return {"open": len(open_tasks), "done": len(done_tasks), "status": "refreshed"}
+
+    @web_route("POST", "/api/attach-room")
+    async def api_attach_room(self, request):
+        """Append (or replace) a 🗨️ <room_id> marker on a task line so the
+        room sees it under its attached-tasks panel. Mirrors the file+line
+        addressing used by snooze/toggle. POST {file, line, room_id} or
+        {file, line, room_id: ""} to detach.
+        """
+        import re
+        data = await request.json()
+        file_rel = data.get("file", "")
+        line_num = int(data.get("line", 0))
+        room_id = (data.get("room_id") or "").strip()
+
+        abs_path = self._abs_path(file_rel)
+        if not abs_path:
+            return {"error": "No notes path configured"}
+        lines = await self._read_lines(abs_path)
+        if line_num < 1 or line_num > len(lines):
+            return {"error": f"Line {line_num} out of range"}
+
+        # Strip any existing room marker first — one task, one room.
+        cleaned = re.sub(r"\s*\U0001f5e8️?\s*[A-Za-z0-9_\-]+", "", lines[line_num - 1]).rstrip()
+        if room_id:
+            cleaned = f"{cleaned} \U0001f5e8️ {room_id}"
+        lines[line_num - 1] = cleaned
+        await self._write_lines(abs_path, lines)
+        return {
+            "status": "attached" if room_id else "detached",
+            "file": file_rel, "line": line_num, "room_id": room_id,
+        }
 
     @web_route("POST", "/api/snooze")
     async def api_snooze(self, request):
@@ -362,6 +470,7 @@ class TaskApp(BaseApp):
         await self._write_lines(abs_path, lines)
 
         from emptyos.sdk import DUE_PATTERN
+
         m = DUE_PATTERN.search(new_line)
         new_due = m.group(1) if m else ""
         return {"status": "snoozed", "file": file_rel, "line": line_num, "new_due": new_due}
@@ -370,6 +479,21 @@ class TaskApp(BaseApp):
     async def api_calendar(self, request):
         open_tasks, done_tasks = await self._idx.get()
         return queries.group_by_date(open_tasks, done_tasks)
+
+    @web_route("GET", "/api/agenda")
+    async def api_agenda(self, request):
+        """Time-bucketed open tasks: overdue / today / tomorrow / this_week / later / undated.
+
+        Optional ?when=overdue|today|tomorrow|this_week|later|undated returns just that bucket.
+        """
+        open_tasks, _ = await self._idx.get()
+        buckets = queries.agenda(open_tasks, date.today())
+        when = (request.query_params.get("when") or "").strip().lower()
+        if when:
+            if when not in buckets:
+                return {"error": f"unknown bucket '{when}'", "available": list(buckets)}
+            return {"when": when, "tasks": buckets[when], "count": len(buckets[when])}
+        return {k: {"count": len(v), "tasks": v} for k, v in buckets.items()}
 
     @web_route("GET", "/api/focus")
     async def api_focus(self, request):
@@ -391,19 +515,21 @@ class TaskApp(BaseApp):
             text = (t.get("text") or "").strip()
             if not text:
                 continue
-            items.append({
-                "id": f"task-{t.get('file','')}-{t.get('line','')}-{i}",
-                "text": text,
-                "source": "task",
-                "file": t.get("file"),
-                "line": t.get("line"),
-                "act": {
-                    "label": "Complete",
-                    "method": "POST",
-                    "url": "/task/api/toggle",
-                    "body": {"file": t.get("file"), "line": t.get("line")},
-                },
-            })
+            items.append(
+                {
+                    "id": f"task-{t.get('file', '')}-{t.get('line', '')}-{i}",
+                    "text": text,
+                    "source": "task",
+                    "file": t.get("file"),
+                    "line": t.get("line"),
+                    "act": {
+                        "label": "Complete",
+                        "method": "POST",
+                        "url": "/task/api/toggle",
+                        "body": {"file": t.get("file"), "line": t.get("line")},
+                    },
+                }
+            )
         return {"items": items, "source": "tasks", "count": len(items)}
 
     @web_route("GET", "/api/tags")
@@ -456,29 +582,33 @@ class TaskApp(BaseApp):
         """Flat list shape consumed by boards. Stable id = ``{file}:{line}``."""
         open_tasks, done_tasks = await self._idx.get()
         rows: list[dict] = []
-        for t in (open_tasks + done_tasks[:200]):
+        for t in open_tasks + done_tasks[:200]:
             f = t.get("file", "") or ""
             ln = int(t.get("line", 0) or 0)
-            rows.append({
-                "id": f"{f}:{ln}",
-                "file": f,
-                "line": ln,
-                "text": t.get("text", ""),
-                "done": bool(t.get("done")),
-                "due": t.get("due", ""),
-                "done_date": t.get("done_date", ""),
-                "tier": t.get("tier", "fresh"),
-                "focus_score": t.get("focus_score", 0),
-                "overdue_days": t.get("overdue_days", 0),
-                "project": queries.project_from_path(f),
-            })
+            rows.append(
+                {
+                    "id": f"{f}:{ln}",
+                    "file": f,
+                    "line": ln,
+                    "text": t.get("text", ""),
+                    "done": bool(t.get("done")),
+                    "due": t.get("due", ""),
+                    "done_date": t.get("done_date", ""),
+                    "tier": t.get("tier", "fresh"),
+                    "focus_score": t.get("focus_score", 0),
+                    "overdue_days": t.get("overdue_days", 0),
+                    "project": queries.project_from_path(f),
+                }
+            )
         return rows
 
     async def set_field(self, id: str, field: str, value) -> dict:
         """Cross-app setter — same contract as ``projects.set_field``."""
         if field not in self.SETTABLE_FIELDS:
-            return {"error": f"field '{field}' not settable",
-                    "settable": sorted(self.SETTABLE_FIELDS)}
+            return {
+                "error": f"field '{field}' not settable",
+                "settable": sorted(self.SETTABLE_FIELDS),
+            }
 
         file_rel, _, line_str = (id or "").rpartition(":")
         try:
@@ -501,7 +631,8 @@ class TaskApp(BaseApp):
 
         if field == "done":
             want_done = (
-                bool(value) if not isinstance(value, str)
+                bool(value)
+                if not isinstance(value, str)
                 else value.lower() in ("true", "1", "yes", "x", "done")
             )
             if want_done and mutations.is_open(target):
@@ -528,7 +659,9 @@ class TaskApp(BaseApp):
         await self._write_lines(abs_path, lines)
         if emit_completed:
             await self.emit("task:completed", {"file": file_rel, "line": line_num})
-        await self.emit("task:updated", {"file": file_rel, "line": line_num, "field": field, "value": value})
+        await self.emit(
+            "task:updated", {"file": file_rel, "line": line_num, "field": field, "value": value}
+        )
         return {"ok": True, "id": id, "field": field, "value": value}
 
     @web_route("POST", "/api/set-field")

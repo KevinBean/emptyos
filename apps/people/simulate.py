@@ -13,9 +13,23 @@ from pathlib import Path
 from emptyos.sdk import web_route
 
 
+SIMULATE_LOG_SUMMARY_SYSTEM = (
+    "You summarise a logged conversation between the user and an AI-simulated "
+    "contact in a single concise line under 80 characters. Bilingual "
+    "(English/Chinese) is fine. Output the line only — no quotes, no "
+    "labels, no preamble.\n\n"
+    "Do NOT:\n"
+    "- Wrap the output in quotes or markdown.\n"
+    "- Repeat the contact's name unless it carries new info.\n"
+    "- Add 'Summary:' or any leading label.\n"
+    "- Exceed 80 characters."
+)
+
+
 # ---------------------------------------------------------------------------
 # Chat Simulation — AI simulates contacts, enriches profiles, advises
 # ---------------------------------------------------------------------------
+
 
 def _extract_body(self, content: str) -> str:
     """Extract markdown body after frontmatter."""
@@ -24,7 +38,7 @@ def _extract_body(self, content: str) -> str:
     end = content.find("---", 3)
     if end < 0:
         return content
-    body = content[end + 3:].strip()
+    body = content[end + 3 :].strip()
     lines = []
     in_block = False
     for line in body.split("\n"):
@@ -95,7 +109,10 @@ async def api_simulate(self, request):
         body = body[:3000] + "\n..."
 
     quick_log = self._parse_quick_log(content)
-    log_text = "\n".join(f"- {e['date']}: {e['text']}" for e in quick_log[:10]) or "No recent interactions."
+    log_text = (
+        "\n".join(f"- {e['date']}: {e['text']}" for e in quick_log[:10])
+        or "No recent interactions."
+    )
     user_profile = await self._load_user_profile()
     user_name = self.require("settings").get("user.name", "User")
 
@@ -165,6 +182,7 @@ async def api_simulate(self, request):
         )
     else:
         display_name = target.stem.lstrip("@").replace("-", " ")
+
         def _fmt(val):
             return ", ".join(val) if isinstance(val, list) else str(val) if val else "not specified"
 
@@ -199,6 +217,10 @@ async def api_simulate(self, request):
     try:
         result = await self.think(context, domain="text")
         return {"response": result, "mode": mode}
+    except RuntimeError as e:
+        if "No available provider for capability" in str(e):
+            raise
+        return {"error": f"AI unavailable: {e}"}
     except Exception as e:
         return {"error": f"AI unavailable: {e}"}
 
@@ -247,7 +269,7 @@ async def api_enrich_save(self, request):
         if "## 人生时间线" in content:
             idx = content.index("## 人生时间线")
             nl = content.index("\n", idx)
-            rest = content[nl + 1:]
+            rest = content[nl + 1 :]
             insert_pos = nl + 1
             for rline in rest.split("\n"):
                 if rline.strip().startswith("## ") and not rline.strip().startswith("### "):
@@ -293,7 +315,7 @@ async def api_enrich_save(self, request):
             if body.startswith("---"):
                 end = body.find("---", 3)
                 if end > 0:
-                    body = body[end + 3:]
+                    body = body[end + 3 :]
             content = self._serialize_frontmatter(fm) + body
 
         # Append to body sections
@@ -309,7 +331,7 @@ async def api_enrich_save(self, request):
             if section_heading in content:
                 idx = content.index(section_heading) + len(section_heading)
                 nl = content.index("\n", idx)
-                rest = content[nl + 1:]
+                rest = content[nl + 1 :]
                 insert_pos = nl + 1
                 for rline in rest.split("\n"):
                     if rline.strip().startswith("## "):
@@ -349,14 +371,18 @@ async def api_chat_archive(self, request):
         lines.append(f"{speaker}: {msg.get('content', '')}")
     convo_text = "\n".join(lines)
 
-    mode_label = {"chat": "simulated conversation", "advisor": "advisor session",
-                  "enrich": "profile enrichment"}.get(mode, "chat")
+    mode_label = {
+        "chat": "simulated conversation",
+        "advisor": "advisor session",
+        "enrich": "profile enrichment",
+    }.get(mode, "chat")
 
     try:
         summary = await self.think(
-            f"Summarize this {mode_label} in one concise line (under 80 chars). "
-            f"Bilingual OK.\n\n{convo_text[:2000]}",
+            f"Mode: {mode_label}\nTranscript:\n{convo_text[:2000]}",
+            system=SIMULATE_LOG_SUMMARY_SYSTEM,
             domain="text",
+            temperature=0.4,
         )
         summary = summary.strip().strip('"').strip("'")
     except Exception:
@@ -373,7 +399,7 @@ async def api_chat_archive(self, request):
     if "## Quick Log" in content:
         idx = content.index("## Quick Log")
         end_of_line = content.index("\n", idx)
-        content = content[:end_of_line + 1] + entry + "\n" + content[end_of_line + 1:]
+        content = content[: end_of_line + 1] + entry + "\n" + content[end_of_line + 1 :]
     else:
         content = content.rstrip() + "\n\n## Quick Log\n" + entry + "\n"
 
@@ -385,6 +411,7 @@ async def api_chat_archive(self, request):
 # ---------------------------------------------------------------------------
 # Profile Personality APIs — from vault personality assessment files
 # ---------------------------------------------------------------------------
+
 
 def _extract_table_rows(self, text: str, section_header: str) -> list[dict]:
     """Extract markdown table rows under a section header."""
@@ -437,7 +464,9 @@ def _strip_bold(self, s: str) -> str:
 @web_route("GET", "/api/profile/personality")
 async def api_personality(self, request):
     """MBTI, Big Five, DISC, Holland, Belbin from vault files."""
-    ws_file = self.vault_config_path("work_style", "20_Areas/Personal-Dev/Work-Style-Assessment.md") or Path(".")
+    ws_file = self.vault_config_path(
+        "work_style", "20_Areas/Personal-Dev/Work-Style-Assessment.md"
+    ) or Path(".")
     mbti_file = self.vault_config_path("mbti", "20_Areas/Personal-Dev/MBTI - INFJ.md") or Path(".")
 
     ws_text = ""

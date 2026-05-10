@@ -5,16 +5,17 @@ Covers: OpenAI, Ollama (with /v1/ endpoint), LM Studio, vLLM, llama.cpp, etc.
 
 from __future__ import annotations
 
-import asyncio
-import os
-
 import json
+import os
 
 import aiohttp
 
-from emptyos.capabilities import Provider
 from emptyos.capabilities.providers._tool_capable import (
-    AgentTurn, TextBlock, ToolCapableProvider, ToolUse, ToolUseBlock,
+    AgentTurn,
+    TextBlock,
+    ToolCapableProvider,
+    ToolUse,
+    ToolUseBlock,
 )
 
 
@@ -76,6 +77,7 @@ class OpenAICompatThinkProvider(ToolCapableProvider):
         # one visitor's key never bleeds into another visitor's call.
         try:
             from emptyos.capabilities.byok import get_byok_key
+
             host = (self.host or "").lower()
             if "openai.com" in host:
                 user_key = get_byok_key("openai")
@@ -96,7 +98,9 @@ class OpenAICompatThinkProvider(ToolCapableProvider):
         # For local APIs, try a quick health check
         try:
             async with aiohttp.ClientSession() as session:
-                async with session.get(f"{self.host}/v1/models", timeout=aiohttp.ClientTimeout(total=2)) as resp:
+                async with session.get(
+                    f"{self.host}/v1/models", timeout=aiohttp.ClientTimeout(total=2)
+                ) as resp:
                     return resp.status == 200
         except Exception:
             return False
@@ -114,17 +118,27 @@ class OpenAICompatThinkProvider(ToolCapableProvider):
         # Local API (ollama / lm-studio / vllm) — probe the host.
         try:
             async with aiohttp.ClientSession() as session:
-                async with session.get(f"{self.host}/v1/models", timeout=aiohttp.ClientTimeout(total=2)) as resp:
+                async with session.get(
+                    f"{self.host}/v1/models", timeout=aiohttp.ClientTimeout(total=2)
+                ) as resp:
                     if resp.status == 200:
                         return {"available": True, "reason": None, "recovery": None}
                     return {
                         "available": False,
                         "reason": f"{self.host}/v1/models returned HTTP {resp.status}",
-                        "recovery": {"kind": "service", "id": self.name, "url": self.host,
-                                     "hint": "Service is reachable but /v1/models did not return 200 — check the model is loaded"},
+                        "recovery": {
+                            "kind": "service",
+                            "id": self.name,
+                            "url": self.host,
+                            "hint": "Service is reachable but /v1/models did not return 200 — check the model is loaded",
+                        },
                     }
         except Exception as e:
-            hint = "Run `ollama serve`" if self._is_ollama else f"Start the OpenAI-compatible service at {self.host}"
+            hint = (
+                "Run `ollama serve`"
+                if self._is_ollama
+                else f"Start the OpenAI-compatible service at {self.host}"
+            )
             return {
                 "available": False,
                 "reason": f"cannot reach {self.host}: {e.__class__.__name__}",
@@ -143,7 +157,9 @@ class OpenAICompatThinkProvider(ToolCapableProvider):
         if "api.openai.com" not in self.host:
             return False
         m = (self.model or "").lower()
-        return m.startswith("gpt-5") or m.startswith("o1") or m.startswith("o3") or m.startswith("o4")
+        return (
+            m.startswith("gpt-5") or m.startswith("o1") or m.startswith("o3") or m.startswith("o4")
+        )
 
     def _apply_token_limit(self, payload: dict, kwargs: dict) -> None:
         """Set the right token-limit field for the current model."""
@@ -153,7 +169,9 @@ class OpenAICompatThinkProvider(ToolCapableProvider):
         else:
             payload["max_tokens"] = limit
 
-    def _build_request(self, prompt: str, system: str = "", *, messages: list[dict] | None = None, **kwargs) -> tuple[dict, dict]:
+    def _build_request(
+        self, prompt: str, system: str = "", *, messages: list[dict] | None = None, **kwargs
+    ) -> tuple[dict, dict]:
         """Build messages, headers, and payload for a chat completion request.
 
         If `messages` is supplied, it's used as-is (with system prepended when
@@ -180,7 +198,9 @@ class OpenAICompatThinkProvider(ToolCapableProvider):
     # Last usage data — captured for billing
     last_usage: dict | None = None
 
-    async def execute(self, *, prompt: str = "", system: str = "", messages: list[dict] | None = None, **kwargs) -> str:
+    async def execute(
+        self, *, prompt: str = "", system: str = "", messages: list[dict] | None = None, **kwargs
+    ) -> str:
         # Ollama: use native API with think:false for qwen3 models
         if self._is_ollama and "qwen3" in self.model.lower():
             return await self._execute_ollama_native(prompt, system, messages=messages, **kwargs)
@@ -207,8 +227,10 @@ class OpenAICompatThinkProvider(ToolCapableProvider):
                     ct = usage.get("completion_tokens", 0)
                     cached = _cached_tokens(usage)
                     self.last_usage = {
-                        "provider": self.name, "model": self.model,
-                        "prompt_tokens": pt, "completion_tokens": ct,
+                        "provider": self.name,
+                        "model": self.model,
+                        "prompt_tokens": pt,
+                        "completion_tokens": ct,
                         "cached_tokens": cached,
                         "total_tokens": usage.get("total_tokens", pt + ct),
                         "cost": self._calc_cost_with_cache(pt, ct, cached),
@@ -216,7 +238,9 @@ class OpenAICompatThinkProvider(ToolCapableProvider):
 
                 return data["choices"][0]["message"]["content"]
 
-    async def _execute_ollama_native(self, prompt: str, system: str = "", *, messages: list[dict] | None = None, **kwargs) -> str:
+    async def _execute_ollama_native(
+        self, prompt: str, system: str = "", *, messages: list[dict] | None = None, **kwargs
+    ) -> str:
         """Use Ollama native API with think:false to disable reasoning mode."""
         msgs = _chat_messages(prompt, system, messages)
 
@@ -241,7 +265,9 @@ class OpenAICompatThinkProvider(ToolCapableProvider):
                 data = await resp.json()
                 return data["message"]["content"]
 
-    async def _stream_ollama_native(self, prompt: str, system: str = "", *, messages: list[dict] | None = None, **kwargs):
+    async def _stream_ollama_native(
+        self, prompt: str, system: str = "", *, messages: list[dict] | None = None, **kwargs
+    ):
         """Streaming version of _execute_ollama_native — yields content chunks.
 
         Reaches Ollama's native ``/api/chat`` endpoint with ``think:false`` so
@@ -290,8 +316,10 @@ class OpenAICompatThinkProvider(ToolCapableProvider):
                         if pt or ct:
                             yield {
                                 "usage": {
-                                    "model": self.model, "prompt_tokens": pt,
-                                    "completion_tokens": ct, "total_tokens": pt + ct,
+                                    "model": self.model,
+                                    "prompt_tokens": pt,
+                                    "completion_tokens": ct,
+                                    "total_tokens": pt + ct,
                                     "cost": 0.0,
                                 },
                                 "done": False,
@@ -316,7 +344,8 @@ class OpenAICompatThinkProvider(ToolCapableProvider):
         if "model" in error_msg.lower() or error.get("error", {}).get("code") == "model_not_found":
             try:
                 async with session.get(
-                    f"{self.host}/v1/models", headers=headers,
+                    f"{self.host}/v1/models",
+                    headers=headers,
                     timeout=aiohttp.ClientTimeout(total=5),
                 ) as r:
                     if r.status == 200:
@@ -325,9 +354,13 @@ class OpenAICompatThinkProvider(ToolCapableProvider):
                         # Find similar model names
                         similar = [m for m in models if self.model.split("-")[0] in m][:5]
                         if similar:
-                            print(f"[{self.name}] Model '{self.model}' not found. Similar: {similar}")
+                            print(
+                                f"[{self.name}] Model '{self.model}' not found. Similar: {similar}"
+                            )
                         else:
-                            print(f"[{self.name}] Model '{self.model}' not found. Available: {models[:10]}")
+                            print(
+                                f"[{self.name}] Model '{self.model}' not found. Available: {models[:10]}"
+                            )
             except Exception:
                 pass
 
@@ -369,7 +402,9 @@ class OpenAICompatThinkProvider(ToolCapableProvider):
         "o4-mini": (1.10, 4.40),
     }
 
-    async def execute_stream(self, *, prompt: str = "", system: str = "", messages: list[dict] | None = None, **kwargs):
+    async def execute_stream(
+        self, *, prompt: str = "", system: str = "", messages: list[dict] | None = None, **kwargs
+    ):
         """Stream chat completion chunks.
 
         Yields:
@@ -380,7 +415,9 @@ class OpenAICompatThinkProvider(ToolCapableProvider):
         # disabled. Otherwise qwen3 burns the token budget on reasoning and
         # often emits zero content via the openai-compat endpoint.
         if self._is_ollama and "qwen3" in self.model.lower():
-            async for chunk in self._stream_ollama_native(prompt, system, messages=messages, **kwargs):
+            async for chunk in self._stream_ollama_native(
+                prompt, system, messages=messages, **kwargs
+            ):
                 yield chunk
             return
 
@@ -439,7 +476,9 @@ class OpenAICompatThinkProvider(ToolCapableProvider):
                     cached = _cached_tokens(usage_data)
                     usage_dict = {
                         "provider": self.name,
-                        "model": self.model, "prompt_tokens": pt, "completion_tokens": ct,
+                        "model": self.model,
+                        "prompt_tokens": pt,
+                        "completion_tokens": ct,
                         "cached_tokens": cached,
                         "total_tokens": usage_data.get("total_tokens", pt + ct),
                         "cost": self._calc_cost_with_cache(pt, ct, cached),
@@ -506,24 +545,27 @@ class OpenAICompatThinkProvider(ToolCapableProvider):
                             err = json.loads(body)
                             err_msg = (
                                 (err.get("error") or {}).get("message")
-                                or err.get("message") or body
+                                or err.get("message")
+                                or body
                             )
                         except Exception:
                             err_msg = body
                         try:
-                            await self._diagnose_error(session, headers, {"error": {"message": err_msg}})
+                            await self._diagnose_error(
+                                session, headers, {"error": {"message": err_msg}}
+                            )
                         except Exception:
                             pass
                         raise RuntimeError(
                             f"{self.name} tool-call request failed (HTTP {resp.status}): {err_msg}"
                         )
                     data = await resp.json()
-        except asyncio.TimeoutError:
+        except TimeoutError:
             raise RuntimeError(
                 f"{self.name} tool-call timed out after {tool_timeout}s "
                 f"(model={self.model}, messages={len(msgs)}, tools={len(tools or [])}). "
                 f"Try a smaller prompt or a faster model (e.g. /model openai)."
-            )
+            ) from None
 
         return self._turn_from_response(data)
 
@@ -558,11 +600,13 @@ class OpenAICompatThinkProvider(ToolCapableProvider):
                     elif isinstance(b, dict) and b.get("type") == "tool_result":
                         tool_call_id = b.get("tool_use_id", "")
                         if tool_call_id:
-                            out.append({
-                                "role": "tool",
-                                "tool_call_id": tool_call_id,
-                                "content": str(b.get("content", "")),
-                            })
+                            out.append(
+                                {
+                                    "role": "tool",
+                                    "tool_call_id": tool_call_id,
+                                    "content": str(b.get("content", "")),
+                                }
+                            )
                             seen_tool_parent = True
                 if text_parts:
                     msg = {"role": role, "content": "".join(text_parts)}
@@ -634,14 +678,18 @@ class OpenAICompatThinkProvider(ToolCapableProvider):
         # Cache hits are charged at 50% of the normal input rate — discount
         # the cost so the footer reflects actual spend.
         cached = _cached_tokens(usage)
-        usage_dict = {
-            "model": self.model,
-            "prompt_tokens": pt,
-            "completion_tokens": ct,
-            "cached_tokens": cached,
-            "total_tokens": usage.get("total_tokens", pt + ct),
-            "cost": self._calc_cost_with_cache(pt, ct, cached),
-        } if usage else {}
+        usage_dict = (
+            {
+                "model": self.model,
+                "prompt_tokens": pt,
+                "completion_tokens": ct,
+                "cached_tokens": cached,
+                "total_tokens": usage.get("total_tokens", pt + ct),
+                "cost": self._calc_cost_with_cache(pt, ct, cached),
+            }
+            if usage
+            else {}
+        )
         if usage_dict:
             self.last_usage = usage_dict
 

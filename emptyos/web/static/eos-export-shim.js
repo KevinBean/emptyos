@@ -341,6 +341,17 @@
     // through POST /api/apps/{app}/rpc/{method} — provided server-side.
     window.EOS.callApp = callApp;
 
+    // Capability bridges — implemented as opt-in per fallback. Apps call
+    // EOS.think / EOS.speak / EOS.listen / EOS.draw / EOS.animate the same
+    // way they would server-side; these route to BYOK cloud, browser APIs,
+    // or a polite refusal toast.
+    window.EOS.think = _exportThink;
+    window.EOS.speak = _exportSpeak;
+    window.EOS.listen = _exportListen;
+    window.EOS.draw = _exportDraw;
+    window.EOS.animate = _exportAnimate;
+    window.EOS.see = _exportSee;
+
     // Health probe — return a shaped object so pages that read EOS.vaultName don't crash.
     if (window.EOS.api) {
       var origApi = window.EOS.api.bind(window.EOS);
@@ -351,6 +362,178 @@
         return origApi(path, opts);
       };
     }
+  }
+
+  // ---------------------------------------------------------------
+  // Capability bridges
+  // ---------------------------------------------------------------
+  var CONSENT_KEY_OPENAI = 'eos_export_consent_openai_v1';
+
+  function _hasOpenAIConsent() {
+    return localStorage.getItem(CONSENT_KEY_OPENAI) === 'true';
+  }
+
+  function _askOpenAIConsent() {
+    var msg =
+      'This exported app wants to send a prompt to OpenAI using the API key ' +
+      'stored in this browser.\n\n' +
+      'The prompt and your key go directly to api.openai.com — they do not ' +
+      'pass through any EmptyOS server.\n\n' +
+      'Allow OpenAI calls from this bundle?';
+    var ok = false;
+    try { ok = window.confirm(msg); } catch (_) { ok = false; }
+    if (ok) localStorage.setItem(CONSENT_KEY_OPENAI, 'true');
+    return ok;
+  }
+
+  /**
+   * EOS.think(prompt, opts) — text-out think bridge.
+   *
+   * In live mode apps call self.think(); pages call their own /api endpoint
+   * which calls self.think(). In export mode, neither self nor the daemon
+   * exist. EOS.think gives page code a same-shape async fn that returns
+   * a string (or throws). Routes:
+   *
+   *   - if fallback "think:byok-openai" is declared AND localStorage has a
+   *     key AND the per-domain consent token is set → POST chat-completions
+   *   - otherwise → throw with a structured offline reason so callers can
+   *     fall back to a static heuristic
+   *
+   * opts: { system?, model?, max_tokens?, temperature? }
+   */
+  async function _exportThink(prompt, opts) {
+    opts = opts || {};
+    var key = (window.EOS_EXPORT && window.EOS_EXPORT.openaiKey && window.EOS_EXPORT.openaiKey()) || '';
+    if (!hasFallback('think:byok-openai')) {
+      throw _offlineErr('think', 'no_fallback', 'No think fallback declared in this bundle');
+    }
+    if (!key) {
+      _toast('Add an OpenAI key (🔒 pill) to enable AI here');
+      throw _offlineErr('think', 'no_key', 'No OpenAI key in this browser');
+    }
+    if (!_hasOpenAIConsent() && !_askOpenAIConsent()) {
+      throw _offlineErr('think', 'no_consent', 'User declined to send prompts to OpenAI');
+    }
+    var messages = [];
+    if (opts.system) messages.push({ role: 'system', content: String(opts.system) });
+    messages.push({ role: 'user', content: String(prompt || '') });
+    var body = {
+      model: opts.model || 'gpt-4o-mini',
+      messages: messages,
+      max_tokens: opts.max_tokens || 800,
+      temperature: opts.temperature == null ? 0.5 : opts.temperature,
+    };
+    var res;
+    try {
+      // Bypass our own /api/* interceptor — _origFetch is the un-patched
+      // browser fetch captured at boot.
+      res = await _origFetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer ' + key,
+        },
+        body: JSON.stringify(body),
+      });
+    } catch (e) {
+      throw _offlineErr('think', 'network', 'OpenAI request failed: ' + e);
+    }
+    if (!res.ok) {
+      var detail = '';
+      try { detail = (await res.json()).error.message || ''; } catch (_) {}
+      throw _offlineErr('think', 'http_' + res.status, 'OpenAI returned ' + res.status + (detail ? ': ' + detail : ''));
+    }
+    var data;
+    try { data = await res.json(); } catch (_) { throw _offlineErr('think', 'parse', 'OpenAI returned non-JSON'); }
+    var text = '';
+    try { text = data.choices[0].message.content || ''; } catch (_) {}
+    return text;
+  }
+
+  /**
+   * EOS.speak(text, opts) — Web Speech API fallback.
+   *
+   * No BYOK needed. Browsers ship at least one voice; quality varies by OS.
+   * opts: { rate?, pitch?, volume?, lang?, voiceURI? }
+   */
+  async function _exportSpeak(text, opts) {
+    if (!hasFallback('speak') && !hasFallback('speak:web-speech-api')) {
+      _toast('Speech disabled in export');
+      throw _offlineErr('speak', 'no_fallback', 'No speak fallback declared');
+    }
+    var synth = window.speechSynthesis;
+    if (!synth || !window.SpeechSynthesisUtterance) {
+      _toast('Speech synthesis not available in this browser');
+      throw _offlineErr('speak', 'unsupported', 'speechSynthesis not supported');
+    }
+    opts = opts || {};
+    var u = new window.SpeechSynthesisUtterance(String(text || ''));
+    if (opts.rate != null) u.rate = opts.rate;
+    if (opts.pitch != null) u.pitch = opts.pitch;
+    if (opts.volume != null) u.volume = opts.volume;
+    if (opts.lang) u.lang = opts.lang;
+    if (opts.voiceURI) {
+      var voices = synth.getVoices();
+      var pick = voices.find(function (v) { return v.voiceURI === opts.voiceURI; });
+      if (pick) u.voice = pick;
+    }
+    return new Promise(function (resolve, reject) {
+      u.onend = function () { resolve({ ok: true, offline: true }); };
+      u.onerror = function (e) { reject(_offlineErr('speak', 'synth_error', String(e.error || e))); };
+      try { synth.speak(u); } catch (e) { reject(_offlineErr('speak', 'speak_throw', String(e))); }
+    });
+  }
+
+  /**
+   * EOS.listen(opts) — MediaRecorder + Web Speech recognition fallback.
+   *
+   * Returns { transcript } when SpeechRecognition is available; otherwise
+   * throws. Browser support is patchy (Chrome only on desktop today).
+   */
+  async function _exportListen(opts) {
+    if (!hasFallback('listen') && !hasFallback('listen:web-speech-api')) {
+      _toast('Microphone listen disabled in export');
+      throw _offlineErr('listen', 'no_fallback', 'No listen fallback declared');
+    }
+    var SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SR) {
+      _toast('Speech recognition not available in this browser');
+      throw _offlineErr('listen', 'unsupported', 'SpeechRecognition not supported');
+    }
+    opts = opts || {};
+    var rec = new SR();
+    rec.lang = opts.lang || 'en-US';
+    rec.interimResults = false;
+    rec.maxAlternatives = 1;
+    return new Promise(function (resolve, reject) {
+      rec.onresult = function (e) {
+        var t = '';
+        try { t = e.results[0][0].transcript || ''; } catch (_) {}
+        resolve({ transcript: t, offline: true });
+      };
+      rec.onerror = function (e) { reject(_offlineErr('listen', 'rec_error', String(e.error || e))); };
+      rec.onend = function () { /* in case onresult never fired */ };
+      try { rec.start(); } catch (e) { reject(_offlineErr('listen', 'start_throw', String(e))); }
+    });
+  }
+
+  function _stubCapability(cap) {
+    return async function () {
+      _toast(cap + ' is not available in this export');
+      throw _offlineErr(cap, 'no_fallback', cap + ' has no offline fallback');
+    };
+  }
+  // Image/video gen needs GPU — no realistic browser-side fallback.
+  var _exportDraw = _stubCapability('draw');
+  var _exportAnimate = _stubCapability('animate');
+  var _exportSee = _stubCapability('see');
+
+  function _offlineErr(cap, reason, msg) {
+    var e = new Error(msg);
+    e.offline = true;
+    e.capability = cap;
+    e.reason = reason;
+    return e;
   }
 
   // ---------------------------------------------------------------
@@ -383,14 +566,14 @@
       'border-radius:10px', 'padding:14px 16px', 'width:320px',
       'font:400 13px/1.5 system-ui,sans-serif', 'box-shadow:0 12px 32px rgba(0,0,0,.35)'
     ].join(';');
-    var meta = window.EOS_EXPORT_META || {};
     var fbList = FALLBACKS.length
       ? FALLBACKS.map(function (f) { return '<li>' + f + '</li>'; }).join('')
       : '<li><em>(none declared)</em></li>';
     panel.innerHTML =
       '<div style="font-weight:600;margin-bottom:6px;">🔒 ' + (APP_ID) + ' — offline</div>' +
       '<div style="color:#a8b2d8;margin-bottom:10px;">This is a standalone export. Data is stored in your browser (IndexedDB). Some features are disabled.</div>' +
-      '<div style="font-weight:600;margin-bottom:4px;">Active fallbacks</div>' +
+      _capabilitiesHtml() +
+      '<div style="font-weight:600;margin-bottom:4px;">Declared fallbacks</div>' +
       '<ul style="margin:0 0 10px 18px;padding:0;color:#c0c8e8;">' + fbList + '</ul>' +
       (hasFallback('think:byok-openai') ? _byokHtml() : '') +
       '<button id="eos-export-close" style="margin-top:8px;background:#2a3355;color:#e8ebf7;border:0;border-radius:6px;padding:6px 10px;cursor:pointer;">Close</button>';
@@ -398,6 +581,36 @@
     document.getElementById('eos-export-close').onclick = function () { panel.remove(); };
     var save = document.getElementById('eos-export-byok-save');
     if (save) save.onclick = _saveByok;
+  }
+
+  function _capabilitiesHtml() {
+    var caps = window.EOS_EXPORT_CAPABILITIES || {};
+    var keys = Object.keys(caps);
+    if (!keys.length) return '';
+    var DOT = {
+      available: '#8de28d',
+      byok: '#f0c060',
+      disabled: '#9090a0',
+      'auto-rpc-only': '#9090a0',
+      'single-app': '#9090a0',
+      unavailable: '#e07070',
+    };
+    var rows = keys.map(function (k) {
+      var c = caps[k] || {};
+      var color = DOT[c.status] || '#9090a0';
+      var label = c.strategy || c.note || c.reason || c.status || '';
+      return (
+        '<li style="display:flex;align-items:center;gap:6px;margin:0;padding:1px 0;">' +
+          '<span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:' + color + ';"></span>' +
+          '<span style="flex:0 0 80px;color:#c0c8e8;font-family:ui-monospace,monospace;">' + k + '</span>' +
+          '<span style="color:#8090b0;font-size:11px;">' + label + '</span>' +
+        '</li>'
+      );
+    }).join('');
+    return (
+      '<div style="font-weight:600;margin-bottom:4px;">What works here</div>' +
+      '<ul style="margin:0 0 10px 0;padding:0;list-style:none;">' + rows + '</ul>'
+    );
   }
 
   function _byokHtml() {
@@ -469,6 +682,96 @@
   }
 
   // ---------------------------------------------------------------
+  // Collection helper — share the load/save/findById/set-field boilerplate
+  // that every "list of records keyed by id" export hook needs. Apps with
+  // a stable id and a SETTABLE_FIELDS whitelist call this once; the helper
+  // wires the cross-app `list_all` + `set_field` handlers and returns
+  // primitives the hook composes its remaining domain-specific handlers from.
+  //
+  // Apps whose data isn't a flat keyed list (captures, journals, etc.)
+  // shouldn't use this — they hand-roll their own routes.
+  // ---------------------------------------------------------------
+  /**
+   * Register a collection-shaped app data store.
+   *
+   * opts:
+   *   appId          — e.g. "task" / "projects" / "people"
+   *   dataKey        — primary IDB key + canonical GET path, e.g. "/task/api/tasks"
+   *   mirrorKeys     — additional IDB keys to keep in sync (GET aliases). Optional.
+   *   snapshotPath   — function(state) -> rows. Default: state[appId][lastSegmentOf(dataKey)] || state[lastSegmentOf(dataKey)] || []
+   *   idField        — primary key on rows. Default "id".
+   *   settableFields — array of field names allowed via cross-app set_field.
+   *   eventPrefix    — emits "<eventPrefix>:updated" on field change. Default appId.
+   *   onSetField     — optional async (row, field, value) -> void. Default: row[field] = value.
+   *
+   * Returns: { load(), save(rows), findById(rows, id), setField(id, field, value) }.
+   */
+  function registerCollection(opts) {
+    var appId = opts.appId;
+    var dataKey = opts.dataKey;
+    var mirrorKeys = opts.mirrorKeys || [];
+    var idField = opts.idField || 'id';
+    var settable = {};
+    (opts.settableFields || []).forEach(function (f) { settable[f] = 1; });
+    var eventPrefix = opts.eventPrefix || appId;
+    var onSetField = opts.onSetField || function (row, field, value) { row[field] = value; };
+    var lastSeg = dataKey.split('/').pop();
+    var snapshotPath = opts.snapshotPath || function (state) {
+      var nested = state && state[appId];
+      if (nested) {
+        if (Array.isArray(nested[lastSeg])) return nested[lastSeg];
+        // Common shapes: state[app][app] (e.g. state.people.people),
+        // state[app][app+'s'] (e.g. state.task.tasks).
+        if (Array.isArray(nested[appId])) return nested[appId];
+        if (Array.isArray(nested[appId + 's'])) return nested[appId + 's'];
+      }
+      if (Array.isArray(state[lastSeg])) return state[lastSeg];
+      return [];
+    };
+
+    async function load() {
+      var stored = await idbGet(dataKey);
+      if (Array.isArray(stored)) return stored;
+      var rows = snapshotPath(window.EOS_EXPORT_DATA || {}) || [];
+      await idbSet(dataKey, rows);
+      for (var i = 0; i < mirrorKeys.length; i++) await idbSet(mirrorKeys[i], rows);
+      return rows;
+    }
+    async function save(rows) {
+      await idbSet(dataKey, rows);
+      for (var i = 0; i < mirrorKeys.length; i++) await idbSet(mirrorKeys[i], rows);
+    }
+    function findById(rows, id) {
+      for (var i = 0; i < rows.length; i++) if (rows[i][idField] === id) return i;
+      return -1;
+    }
+    async function setField(id, field, value) {
+      if (!settable[field]) {
+        return { error: "field '" + field + "' not settable", settable: Object.keys(settable) };
+      }
+      var rows = await load();
+      var i = findById(rows, id);
+      if (i < 0) return { error: appId + ' not found', id: id };
+      await onSetField(rows[i], field, value);
+      await save(rows);
+      _localBus.dispatchEvent(new CustomEvent(eventPrefix + ':updated', {
+        detail: { id: id, field: field, value: value },
+      }));
+      return { ok: true, id: id, field: field, value: value };
+    }
+
+    // Auto-register cross-app methods. Hooks can re-register if they need
+    // domain-specific behaviour (e.g. task.add).
+    registerAppMethod(appId, 'list_all', async function () { return await load(); });
+    registerAppMethod(appId, 'set_field', async function (kwargs) {
+      kwargs = kwargs || {};
+      return await setField(kwargs.id || '', kwargs.field || '', kwargs.value);
+    });
+
+    return { load: load, save: save, findById: findById, setField: setField };
+  }
+
+  // ---------------------------------------------------------------
   // Public API
   // ---------------------------------------------------------------
   window.EOS_EXPORT = {
@@ -478,6 +781,7 @@
     hasFallback: hasFallback,
     registerRoute: registerRoute,
     registerAppMethod: registerAppMethod,
+    registerCollection: registerCollection,
     callApp: callApp,
     get: idbGet,
     set: idbSet,

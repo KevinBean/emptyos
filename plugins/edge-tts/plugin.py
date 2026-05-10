@@ -9,9 +9,9 @@ from __future__ import annotations
 
 import uuid
 
-from emptyos.sdk import BasePlugin
 from emptyos.capabilities import Provider
 from emptyos.capabilities.audio import AUDIO_DIR
+from emptyos.sdk import BasePlugin
 
 # Short aliases → full Edge voice names. Matches the aliases used by the
 # voice-api service so callers can swap providers without changing voice ids.
@@ -30,8 +30,8 @@ DEFAULT_VOICES = {
 
 
 def _detect_language(text: str) -> str:
-    cjk = sum(1 for c in text if '\u4e00' <= c <= '\u9fff')
-    ja = sum(1 for c in text if '\u3040' <= c <= '\u30ff')
+    cjk = sum(1 for c in text if "\u4e00" <= c <= "\u9fff")
+    ja = sum(1 for c in text if "\u3040" <= c <= "\u30ff")
     if ja > len(text) * 0.1:
         return "ja"
     if cjk > len(text) * 0.1:
@@ -55,6 +55,7 @@ class EdgeTTSProvider(Provider):
     async def available(self) -> bool:
         try:
             import edge_tts  # noqa: F401
+
             return True
         except ImportError:
             return False
@@ -62,16 +63,23 @@ class EdgeTTSProvider(Provider):
     async def health(self) -> dict:
         try:
             import edge_tts  # noqa: F401
+
             return {"available": True, "reason": None, "recovery": None}
         except ImportError:
             return {
                 "available": False,
                 "reason": "edge-tts package not installed",
-                "recovery": {"kind": "service", "id": "edge-tts", "url": "",
-                             "hint": "Run `pip install edge-tts` — free in-process TTS, no API key"},
+                "recovery": {
+                    "kind": "service",
+                    "id": "edge-tts",
+                    "url": "",
+                    "hint": "Run `pip install edge-tts` — free in-process TTS, no API key",
+                },
             }
 
-    async def execute(self, *, text: str, voice: str = "", speed: float = 1.0, language: str = "", **_) -> str:
+    async def execute(
+        self, *, text: str, voice: str = "", speed: float = 1.0, language: str = "", **_
+    ) -> str:
         import edge_tts
 
         if voice in VOICE_ALIASES:

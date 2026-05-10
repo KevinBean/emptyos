@@ -246,6 +246,17 @@ class TestCaptureTriageFlow:
         if isinstance(pending, dict):
             assert pending.get("pending", 0) >= 0
 
+    def test_capture_inline_hashtag_hoists_into_tag(self, http_client):
+        """Typing `#cables` inline (no tag arg) should populate the tag field."""
+        slug = uuid.uuid4().hex[:6]
+        text = f"{TEST_PREFIX}22kV idea {slug} #cables"
+        created = http_client.post(
+            "/quick-action/api/add",
+            json={"text": text},
+        ).json()
+        assert created.get("tag") == "cables", f"inline #cables not hoisted: {created}"
+        assert "#cables" not in created.get("text", ""), "tag still inline in text body"
+
     def test_capture_dismiss_removes_from_list(self, http_client):
         """Capture → dismiss → should be gone from recent."""
         text = f"{TEST_PREFIX}dismiss-{uuid.uuid4().hex[:6]}"

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import AsyncGenerator
 from dataclasses import dataclass
-from typing import Any, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from emptyos.capabilities.consent import CloudConsentManager
@@ -13,6 +13,7 @@ if TYPE_CHECKING:
 @dataclass
 class Result:
     """Result of a capability execution."""
+
     value: Any
     provider: str  # which provider fulfilled this
     is_cloud: bool = False  # True when this value came from a cloud provider
@@ -48,6 +49,7 @@ class Provider:
         vice versa).
         """
         from emptyos.capabilities.consent import host_is_local
+
         host = getattr(self, "host", "") or ""
         return bool(host) and not host_is_local(host)
 
@@ -140,7 +142,7 @@ class Capability:
     """
 
     name: str = "base"
-    consent_manager: "CloudConsentManager | None" = None
+    consent_manager: CloudConsentManager | None = None
 
     def __init__(self, providers: list[Provider] | None = None):
         self.providers: list[Provider] = providers or []
@@ -182,7 +184,13 @@ class Capability:
         kernel = getattr(self.consent_manager, "kernel", None) if self.consent_manager else None
         settings = getattr(kernel, "settings", None) if kernel else None
         if settings is None:
-            return {"mode": "off", "on_flag": "warn", "provider": "", "max_chars": 4000, "timeout": 5.0}
+            return {
+                "mode": "off",
+                "on_flag": "warn",
+                "provider": "",
+                "max_chars": 4000,
+                "timeout": 5.0,
+            }
         mode = settings.get("cloud.llm_scan.mode", "off") or "off"
         if mode not in ("off", "classify", "redact"):
             mode = "off"
@@ -216,11 +224,11 @@ class Capability:
             return True
         if self.consent_manager is None:
             return True
-        from emptyos.capabilities.outbound_scan import scan_outbound, llm_classify
+        from emptyos.capabilities.outbound_scan import llm_classify, scan_outbound
+
         summary = provider.consent_summary(**kwargs)
         findings = [
-            {"pattern": f.pattern_name, "preview": f.preview}
-            for f in scan_outbound(summary)
+            {"pattern": f.pattern_name, "preview": f.preview} for f in scan_outbound(summary)
         ]
 
         # Optional local-LLM classifier pass. In redact mode we still run the
@@ -230,25 +238,30 @@ class Capability:
         if scan_cfg["mode"] in ("classify", "redact") and summary:
             kernel = getattr(self.consent_manager, "kernel", None)
             result = await llm_classify(
-                summary, kernel,
+                summary,
+                kernel,
                 max_chars=scan_cfg["max_chars"],
                 preferred_variant=scan_cfg["provider"],
                 timeout=scan_cfg["timeout"],
             )
             if result.get("ran") and result.get("flagged"):
-                findings.append({
-                    "pattern": f"Local LLM classifier ({result.get('provider') or 'local'})",
-                    "preview": result.get("reasons", "") or "flagged as sensitive",
-                })
+                findings.append(
+                    {
+                        "pattern": f"Local LLM classifier ({result.get('provider') or 'local'})",
+                        "preview": result.get("reasons", "") or "flagged as sensitive",
+                    }
+                )
                 if scan_cfg["on_flag"] == "block":
                     return False
             elif result.get("ran") is False and result.get("reasons"):
                 # Surface classifier availability issues so the user knows the
                 # scan didn't actually run — don't silently pretend it passed.
-                findings.append({
-                    "pattern": "Local LLM classifier — not run",
-                    "preview": result.get("reasons", ""),
-                })
+                findings.append(
+                    {
+                        "pattern": "Local LLM classifier — not run",
+                        "preview": result.get("reasons", ""),
+                    }
+                )
 
         return await self.consent_manager.ensure_consent(
             provider=provider.name,
@@ -272,6 +285,7 @@ class Capability:
             return kwargs
 
         from emptyos.capabilities.outbound_scan import llm_redact
+
         kernel = getattr(self.consent_manager, "kernel", None)
         new_kwargs = dict(kwargs)
         changed = False
@@ -279,7 +293,8 @@ class Capability:
             val = new_kwargs.get(key)
             if isinstance(val, str) and val.strip():
                 result = await llm_redact(
-                    val, kernel,
+                    val,
+                    kernel,
                     max_chars=scan_cfg["max_chars"],
                     preferred_variant=scan_cfg["provider"],
                     timeout=scan_cfg["timeout"],
@@ -331,7 +346,9 @@ class Capability:
         available + consent + execute + fall-through-on-error logic.
         """
         if self._simulate_offline():
-            raise RuntimeError(f"Capability '{self.name}' is set to simulate offline (capability.simulate_offline)")
+            raise RuntimeError(
+                f"Capability '{self.name}' is set to simulate offline (capability.simulate_offline)"
+            )
         providers = self._get_providers(domain, task_shape, bucket)
         for pass_num in (1, 2):
             for provider in providers:
@@ -353,8 +370,12 @@ class Capability:
                 finally:
                     provider._current_load -= 1
 
-        chain_label = bucket or (f"{domain}/{task_shape}" if domain and task_shape else domain) or "default"
-        raise RuntimeError(f"No available provider for capability '{self.name}' (chain={chain_label})")
+        chain_label = (
+            bucket or (f"{domain}/{task_shape}" if domain and task_shape else domain) or "default"
+        )
+        raise RuntimeError(
+            f"No available provider for capability '{self.name}' (chain={chain_label})"
+        )
 
     async def execute_stream(
         self,
@@ -373,7 +394,9 @@ class Capability:
         chain falls through to the next provider cleanly.
         """
         if self._simulate_offline():
-            raise RuntimeError(f"Capability '{self.name}' is set to simulate offline (capability.simulate_offline)")
+            raise RuntimeError(
+                f"Capability '{self.name}' is set to simulate offline (capability.simulate_offline)"
+            )
         providers = self._get_providers(domain, task_shape, bucket)
         for pass_num in (1, 2):
             for provider in providers:
@@ -399,10 +422,21 @@ class Capability:
                 finally:
                     provider._current_load -= 1
 
-        chain_label = bucket or (f"{domain}/{task_shape}" if domain and task_shape else domain) or "default"
-        raise RuntimeError(f"No available provider for capability '{self.name}' (chain={chain_label})")
+        chain_label = (
+            bucket or (f"{domain}/{task_shape}" if domain and task_shape else domain) or "default"
+        )
+        raise RuntimeError(
+            f"No available provider for capability '{self.name}' (chain={chain_label})"
+        )
 
-    async def execute_compare(self, *, domain: str | None = None, task_shape: str | None = None, bucket: str | None = None, **kwargs) -> list[dict]:
+    async def execute_compare(
+        self,
+        *,
+        domain: str | None = None,
+        task_shape: str | None = None,
+        bucket: str | None = None,
+        **kwargs,
+    ) -> list[dict]:
         """Call ALL available providers in parallel (across all domains). For benchmarking.
 
         Cloud providers are filtered through the consent manager *silently* — a
@@ -436,17 +470,24 @@ class Capability:
             seen.add(vid)
             if not await p.available():
                 continue
-            if getattr(p, "is_cloud", False) and cm is not None and not cm.would_allow_silently(p.name):
+            if (
+                getattr(p, "is_cloud", False)
+                and cm is not None
+                and not cm.would_allow_silently(p.name)
+            ):
                 reason = (
-                    "consent policy = never" if cm.policy == "never"
+                    "consent policy = never"
+                    if cm.policy == "never"
                     else "cloud provider not pre-approved — approve it once, then re-run"
                 )
-                skipped.append({
-                    **p.variant_meta,
-                    "response": None,
-                    "latency_ms": 0,
-                    "error": f"skipped: {reason}",
-                })
+                skipped.append(
+                    {
+                        **p.variant_meta,
+                        "response": None,
+                        "latency_ms": 0,
+                        "error": f"skipped: {reason}",
+                    }
+                )
                 continue
             approved.append(p)
 
@@ -484,19 +525,25 @@ class Capability:
 
     async def status(self) -> list[dict]:
         """Check which providers are available, with capacity + recovery info."""
+
         async def _row(p, domain):
             try:
                 h = await p.health()
             except Exception as e:
                 h = {"available": False, "reason": f"health check failed: {e}", "recovery": None}
             return {
-                "name": p.name, "available": bool(h.get("available")),
-                "reason": h.get("reason"), "recovery": h.get("recovery"),
-                "domain": domain, "capacity": p.capacity, "current_load": p.current_load,
+                "name": p.name,
+                "available": bool(h.get("available")),
+                "reason": h.get("reason"),
+                "recovery": h.get("recovery"),
+                "domain": domain,
+                "capacity": p.capacity,
+                "current_load": p.current_load,
                 "is_cloud": bool(getattr(p, "is_cloud", False)),
                 "variant": getattr(p, "variant_id", p.name),
                 "model": getattr(p, "model", "") or "",
             }
+
         result = [await _row(p, "default") for p in self.providers]
         for domain, providers in self._domains.items():
             for p in providers:
@@ -509,16 +556,16 @@ class CapabilityRegistry:
 
     def __init__(self):
         self._capabilities: dict[str, Capability] = {}
-        self._consent_manager: "CloudConsentManager | None" = None
+        self._consent_manager: CloudConsentManager | None = None
 
-    def set_consent_manager(self, manager: "CloudConsentManager"):
+    def set_consent_manager(self, manager: CloudConsentManager):
         """Attach a consent manager so all capabilities use it for cloud calls."""
         self._consent_manager = manager
         for cap in self._capabilities.values():
             cap.consent_manager = manager
 
     @property
-    def consent_manager(self) -> "CloudConsentManager | None":
+    def consent_manager(self) -> CloudConsentManager | None:
         return self._consent_manager
 
     def register(self, name: str, capability: Capability):

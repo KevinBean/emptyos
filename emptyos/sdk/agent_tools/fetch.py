@@ -13,12 +13,10 @@ Everything else asks permission.
 
 from __future__ import annotations
 
-import asyncio
 import ipaddress
 from urllib.parse import urlparse
 
 from emptyos.sdk.agent_tools.base import Tool, ToolResult
-
 
 DEFAULT_TIMEOUT = 30
 MAX_BODY_CHARS = 30_000
@@ -54,18 +52,27 @@ class FetchTool(Tool):
     input_schema = {
         "type": "object",
         "properties": {
-            "url": {"type": "string", "description": "Full URL, e.g. http://localhost:9000/calculator/"},
+            "url": {
+                "type": "string",
+                "description": "Full URL, e.g. http://localhost:9000/calculator/",
+            },
             "method": {
                 "type": "string",
                 "enum": ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"],
                 "description": "HTTP method (default GET).",
             },
-            "body": {"type": "string", "description": "Request body (string). JSON? Send the JSON string."},
+            "body": {
+                "type": "string",
+                "description": "Request body (string). JSON? Send the JSON string.",
+            },
             "headers": {
                 "type": "object",
                 "description": "Extra headers as {name: value}. Content-Type defaults to application/json for POST/PUT/PATCH if a body is set.",
             },
-            "timeout": {"type": "integer", "description": f"Timeout in seconds (default {DEFAULT_TIMEOUT})."},
+            "timeout": {
+                "type": "integer",
+                "description": f"Timeout in seconds (default {DEFAULT_TIMEOUT}).",
+            },
         },
         "required": ["url"],
     }
@@ -118,8 +125,10 @@ class FetchTool(Tool):
             timeout = DEFAULT_TIMEOUT
 
         # Default Content-Type for body-bearing methods when the caller didn't specify.
-        if body_raw and method in ("POST", "PUT", "PATCH") and not any(
-            k.lower() == "content-type" for k in headers
+        if (
+            body_raw
+            and method in ("POST", "PUT", "PATCH")
+            and not any(k.lower() == "content-type" for k in headers)
         ):
             headers["Content-Type"] = "application/json"
 
@@ -157,7 +166,7 @@ class FetchTool(Tool):
                         v = resp.headers.get(k)
                         if v:
                             keep_headers[k] = v
-        except asyncio.TimeoutError:
+        except TimeoutError:
             return ToolResult(
                 ok=False,
                 content=f"error: {method} {url} timed out after {timeout}s",

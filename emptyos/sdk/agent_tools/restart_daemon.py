@@ -12,11 +12,8 @@ is replaced.
 
 from __future__ import annotations
 
-import asyncio
 import subprocess
 import sys
-from pathlib import Path
-from urllib.parse import urlparse
 
 from emptyos.sdk.agent_tools.base import Tool, ToolResult, repo_root
 
@@ -62,7 +59,9 @@ class RestartDaemonTool(Tool):
             # CREATE_NEW_PROCESS_GROUP + DETACHED_PROCESS: no console handle
             # shared, no signal inheritance. This survives our exit.
             try:
-                subprocess.Popen(
+                # Fire-and-forget detached respawn — Popen returns immediately,
+                # event loop is about to die anyway (this restarts our daemon).
+                subprocess.Popen(  # noqa: ASYNC220
                     ["cmd.exe", "/c", str(bat)],
                     cwd=str(repo),
                     creationflags=(
@@ -95,7 +94,8 @@ class RestartDaemonTool(Tool):
         # rely on the new process claiming port 9000 (the old one will error
         # out if it's still there — user sees it in their terminal).
         try:
-            subprocess.Popen(
+            # Same as Windows path: fire-and-forget detached respawn.
+            subprocess.Popen(  # noqa: ASYNC220
                 [sys.executable, "-m", "emptyos", "start"],
                 cwd=str(repo),
                 stdin=subprocess.DEVNULL,
@@ -113,5 +113,9 @@ class RestartDaemonTool(Tool):
                 "daemon, the new one will fail to bind — the user needs to Ctrl+C the old one. "
                 "After the new daemon starts, Fetch /api/health to verify."
             ),
-            display={"name": "RestartDaemon", "method": "python -m emptyos start", "reason": reason},
+            display={
+                "name": "RestartDaemon",
+                "method": "python -m emptyos start",
+                "reason": reason,
+            },
         )

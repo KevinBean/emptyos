@@ -14,7 +14,10 @@ from pathlib import Path
 
 from emptyos.sdk import BaseApp, cli_command, web_route
 from emptyos.sdk.utils import (
-    parse_frontmatter, parse_llm_json, slugify, strip_frontmatter,
+    parse_frontmatter,
+    parse_llm_json,
+    slugify,
+    strip_frontmatter,
 )
 
 from . import chatbot as _chatbot
@@ -37,35 +40,56 @@ _DEFAULT_SITE = {
     "original_language": "en",
     "favicon": "",  # filename inside source_folder (e.g. "favicon.svg")
     "search_engines": True,  # false → noindex meta + disallow-all robots.txt
-    "analytics": {"enabled": False, "collector_url": ""},  # {enabled, collector_url (blank → inherit global)}
+    "analytics": {
+        "enabled": False,
+        "collector_url": "",
+    },  # {enabled, collector_url (blank → inherit global)}
     "chatbot": {
         "enabled": False,
-        "endpoint": "",                # e.g. "https://chat.binbian.net"
-        "persona": "",                 # extra system-prompt text appended at service side
-        "daily_cap_usd": 2.0,          # per-site daily $ ceiling enforced by the chat service
-        "starter_questions": [],       # 3-4 chips shown on first widget open
+        "endpoint": "",  # e.g. "https://chat.binbian.net"
+        "persona": "",  # extra system-prompt text appended at service side
+        "daily_cap_usd": 2.0,  # per-site daily $ ceiling enforced by the chat service
+        "starter_questions": [],  # 3-4 chips shown on first widget open
         "model": "gpt-5-nano",
     },
 }
 
 _SITE_FIELDS = [
-    "name", "source_folder", "site_name", "site_description", "author",
-    "author_bio", "social_links", "theme", "domain", "repo",
-    "languages", "original_language", "favicon", "search_engines",
-    "analytics", "template", "chatbot",
+    "name",
+    "source_folder",
+    "site_name",
+    "site_description",
+    "author",
+    "author_bio",
+    "social_links",
+    "theme",
+    "domain",
+    "repo",
+    "languages",
+    "original_language",
+    "favicon",
+    "search_engines",
+    "analytics",
+    "template",
+    "chatbot",
 ]
 
 from .prompts import (
-    REVIEW_PROMPT_HEADER, CHAT_SYSTEM_PROMPT, APPLY_REVIEW_PROMPT,
-    SUGGEST_TITLE_PROMPT, SUGGEST_TOPICS_PROMPT, WRITER_SYSTEM,
-    POLISH_PROMPT, EXPAND_PROMPT, COMPRESS_PROMPT, TRANSLATE_PROMPT,
+    APPLY_REVIEW_PROMPT,
+    CHAT_SYSTEM_PROMPT,
+    COMPRESS_PROMPT,
+    EXPAND_PROMPT,
     OUTLINE_PROMPT,
+    POLISH_PROMPT,
+    REVIEW_PROMPT_HEADER,
+    SUGGEST_TITLE_PROMPT,
+    SUGGEST_TOPICS_PROMPT,
+    TRANSLATE_PROMPT,
+    WRITER_SYSTEM,
 )
 
 
-
 class PublishApp(BaseApp):
-
     # ── Site profiles ──────────────────────────────────────────
 
     def _sites_path(self) -> Path:
@@ -125,7 +149,6 @@ class PublishApp(BaseApp):
 
     # ── Derived helpers (now site-aware) ───────────────────────
 
-
     def _vault_dir(self) -> str:
         # Use Config.notes_path (resolved absolute) so paths returned to the
         # writer round-trip cleanly through load-post — a relative
@@ -175,10 +198,12 @@ class PublishApp(BaseApp):
             domain = (s.get("domain") or "").strip()
             if not domain:
                 continue
-            out.append({
-                "name": s.get("name") or s["id"],
-                "url": f"https://{domain}",
-            })
+            out.append(
+                {
+                    "name": s.get("name") or s["id"],
+                    "url": f"https://{domain}",
+                }
+            )
         return out
 
     def _builder(self, site: dict | None = None) -> SiteBuilder:
@@ -216,9 +241,7 @@ class PublishApp(BaseApp):
         ss.update(data)
         site_state[s["id"]] = ss
         existing["sites"] = site_state
-        self._state_path().write_text(
-            json.dumps(existing, indent=2), encoding="utf-8"
-        )
+        self._state_path().write_text(json.dumps(existing, indent=2), encoding="utf-8")
 
     def _site_state(self, site: dict | None = None) -> dict:
         s = site or self._active_site()
@@ -235,10 +258,13 @@ class PublishApp(BaseApp):
         """Build the static site for a given (or active) site profile."""
         s = site or self._active_site()
         stats = self._builder(s).build()
-        self._save_state({
-            "last_build": datetime.now().isoformat(),
-            "last_build_stats": stats,
-        }, s)
+        self._save_state(
+            {
+                "last_build": datetime.now().isoformat(),
+                "last_build_stats": stats,
+            },
+            s,
+        )
         return stats
 
     async def deploy(self, site: dict | None = None) -> dict:
@@ -265,9 +291,7 @@ class PublishApp(BaseApp):
 
         await self._run_git(site_dir, "add", "-A")
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M")
-        out, err, code = await self._run_git(
-            site_dir, "commit", "-m", f"publish: {timestamp}"
-        )
+        out, err, code = await self._run_git(site_dir, "commit", "-m", f"publish: {timestamp}")
         if code != 0 and "nothing to commit" in (out + err).lower():
             return {"status": "nothing_changed", "message": "Site already up to date."}
 
@@ -277,21 +301,33 @@ class PublishApp(BaseApp):
         if code != 0:
             return {"error": f"Push failed: {err}"}
 
-        self._save_state({
-            "last_deploy": datetime.now().isoformat(),
-            "deploy_repo": repo,
-        }, s)
+        self._save_state(
+            {
+                "last_deploy": datetime.now().isoformat(),
+                "deploy_repo": repo,
+            },
+            s,
+        )
 
-        await self.emit("publish:deployed", {
-            "repo": repo, "time": timestamp, "site": s["id"],
-        })
+        await self.emit(
+            "publish:deployed",
+            {
+                "repo": repo,
+                "time": timestamp,
+                "site": s["id"],
+            },
+        )
         # Auto-refresh chatbot corpus cache so the new content is live without
         # waiting for the service's TTL (default 1h). Best-effort — failure
         # here doesn't fail the deploy, since the cache will refresh on TTL.
         await self._chatbot_refresh_after_deploy(s)
 
         domain = config.get("domain", "")
-        url = f"https://{domain}" if domain else f"https://{repo.split('/')[0]}.github.io/{repo.split('/')[-1]}"
+        url = (
+            f"https://{domain}"
+            if domain
+            else f"https://{repo.split('/')[0]}.github.io/{repo.split('/')[-1]}"
+        )
         return {"status": "deployed", "url": url}
 
     async def _chatbot_refresh_after_deploy(self, site: dict) -> None:
@@ -302,7 +338,9 @@ class PublishApp(BaseApp):
             return
         try:
             await self._chatbot_admin_request(
-                "POST", f"/admin/refresh/{site['id']}", site=site,
+                "POST",
+                f"/admin/refresh/{site['id']}",
+                site=site,
             )
         except Exception:
             # The proxy already swallows errors — this is belt-and-braces
@@ -311,7 +349,8 @@ class PublishApp(BaseApp):
 
     async def _run_git(self, cwd: Path, *args: str) -> tuple[str, str, int]:
         proc = await asyncio.create_subprocess_exec(
-            "git", *args,
+            "git",
+            *args,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
             cwd=str(cwd),
@@ -336,7 +375,9 @@ class PublishApp(BaseApp):
             self.print_rich("[bold]Site profiles:[/bold]")
             for s in sites:
                 marker = " [green]*[/green]" if s["id"] == active else ""
-                self.print_rich(f"  {s['id']}{marker}  [dim]{s.get('site_name', '')}[/dim]  src={s.get('source_folder', '')}")
+                self.print_rich(
+                    f"  {s['id']}{marker}  [dim]{s.get('site_name', '')}[/dim]  src={s.get('source_folder', '')}"
+                )
             return
 
         if action == "list":
@@ -358,7 +399,9 @@ class PublishApp(BaseApp):
             if "error" in stats:
                 self.print_rich(f"[red]{stats['error']}[/red]")
             else:
-                self.print_rich(f"[green]Built {stats['pages']} pages, {stats['posts']} posts, {stats['tags']} tags, {stats['images']} images[/green]")
+                self.print_rich(
+                    f"[green]Built {stats['pages']} pages, {stats['posts']} posts, {stats['tags']} tags, {stats['images']} images[/green]"
+                )
                 self.print_rich(f"[dim]Output: {stats['output']}[/dim]")
 
         elif action == "deploy":
@@ -468,7 +511,11 @@ class PublishApp(BaseApp):
     @web_route("GET", "/api/sources")
     async def api_sources(self, request):
         """List notes for active site. ?include_drafts=1 to include drafts."""
-        include_drafts = request.query_params.get("include_drafts", "").lower() in ("1", "true", "yes")
+        include_drafts = request.query_params.get("include_drafts", "").lower() in (
+            "1",
+            "true",
+            "yes",
+        )
         return self.scan(include_drafts=include_drafts)
 
     @web_route("GET", "/api/drafts")
@@ -485,9 +532,7 @@ class PublishApp(BaseApp):
         all_items = self.scan(site, include_drafts=True)
         items = [i for i in all_items if not i.get("draft")]
         drafts = [i for i in all_items if i.get("draft")]
-        has_landing = any(
-            i.get("layout") == "landing" for i in items if i["type"] == "page"
-        )
+        has_landing = any(i.get("layout") == "landing" for i in items if i["type"] == "page")
         return {
             "config": self._site_config(site),
             "source_folder": self._source_folder(site),
@@ -553,21 +598,33 @@ class PublishApp(BaseApp):
             if svc:
                 project_id = svc.get("publish.firebase_project", "")
         if not project_id:
-            return {"error": "No Firebase project configured. Set firebase_project in site settings or publish.firebase_project in settings."}
+            return {
+                "error": "No Firebase project configured. Set firebase_project in site settings or publish.firebase_project in settings."
+            }
 
         fb_json = site_dir / "firebase.json"
         if not fb_json.exists():
-            fb_json.write_text(json.dumps({
-                "hosting": {
-                    "public": ".",
-                    "ignore": ["firebase.json", ".git/**"],
-                    "rewrites": [{"source": "**", "destination": "/index.html"}],
-                }
-            }, indent=2), encoding="utf-8")
+            fb_json.write_text(
+                json.dumps(
+                    {
+                        "hosting": {
+                            "public": ".",
+                            "ignore": ["firebase.json", ".git/**"],
+                            "rewrites": [{"source": "**", "destination": "/index.html"}],
+                        }
+                    },
+                    indent=2,
+                ),
+                encoding="utf-8",
+            )
 
         proc = await asyncio.create_subprocess_exec(
-            "firebase", "deploy", "--only", "hosting",
-            "--project", project_id,
+            "firebase",
+            "deploy",
+            "--only",
+            "hosting",
+            "--project",
+            project_id,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
             cwd=str(site_dir),
@@ -580,20 +637,28 @@ class PublishApp(BaseApp):
             return {"error": f"Firebase deploy failed: {err or out}"}
 
         import re
+
         url_match = re.search(r"https://[\w.-]+\.web\.app", out + err)
         url = url_match.group(0) if url_match else f"https://{project_id}.web.app"
 
-        self._save_state({
-            "last_deploy": datetime.now().isoformat(),
-            "deploy_target": "firebase",
-            "firebase_project": project_id,
-        }, s)
+        self._save_state(
+            {
+                "last_deploy": datetime.now().isoformat(),
+                "deploy_target": "firebase",
+                "firebase_project": project_id,
+            },
+            s,
+        )
 
-        await self.emit("publish:deployed", {
-            "target": "firebase", "project": project_id,
-            "time": datetime.now().strftime("%Y-%m-%d %H:%M"),
-            "site": s["id"],
-        })
+        await self.emit(
+            "publish:deployed",
+            {
+                "target": "firebase",
+                "project": project_id,
+                "time": datetime.now().strftime("%Y-%m-%d %H:%M"),
+                "site": s["id"],
+            },
+        )
         await self._chatbot_refresh_after_deploy(s)
 
         return {"status": "deployed", "url": url, "target": "firebase"}
@@ -635,6 +700,7 @@ class PublishApp(BaseApp):
         # Rewrite media/ src URLs to use the source-media API so the preview
         # panel can display images without needing the site to be built first.
         import re as _re
+
         body_html = _re.sub(
             r'src="(media/[^"]+)"',
             lambda m: f'src="/publish/api/source-media?file={m.group(1)[6:]}"',
@@ -652,7 +718,7 @@ class PublishApp(BaseApp):
     @web_route("GET", "/api/site-file")
     async def api_site_file(self, request):
         """Serve a file from the built site for preview."""
-        from starlette.responses import Response, FileResponse
+        from starlette.responses import FileResponse, Response
 
         site_id = request.query_params.get("site", "")
         site = self._get_site(site_id) if site_id else None
@@ -669,21 +735,44 @@ class PublishApp(BaseApp):
 
         ext = file_path.suffix.lower()
         content_types = {
-            ".html": "text/html", ".css": "text/css", ".xml": "application/xml",
-            ".json": "application/json", ".js": "text/javascript",
-            ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
-            ".gif": "image/gif", ".svg": "image/svg+xml", ".webp": "image/webp",
-            ".mp3": "audio/mpeg", ".wav": "audio/wav", ".ogg": "audio/ogg",
-            ".mp4": "video/mp4", ".webm": "video/webm",
+            ".html": "text/html",
+            ".css": "text/css",
+            ".xml": "application/xml",
+            ".json": "application/json",
+            ".js": "text/javascript",
+            ".png": "image/png",
+            ".jpg": "image/jpeg",
+            ".jpeg": "image/jpeg",
+            ".gif": "image/gif",
+            ".svg": "image/svg+xml",
+            ".webp": "image/webp",
+            ".mp3": "audio/mpeg",
+            ".wav": "audio/wav",
+            ".ogg": "audio/ogg",
+            ".mp4": "video/mp4",
+            ".webm": "video/webm",
         }
         media_type = content_types.get(ext, "application/octet-stream")
 
-        if ext in (".png", ".jpg", ".jpeg", ".gif", ".svg", ".webp", ".mp3", ".wav", ".ogg", ".mp4", ".webm"):
+        if ext in (
+            ".png",
+            ".jpg",
+            ".jpeg",
+            ".gif",
+            ".svg",
+            ".webp",
+            ".mp3",
+            ".wav",
+            ".ogg",
+            ".mp4",
+            ".webm",
+        ):
             return FileResponse(str(file_path), media_type=media_type)
 
         content = file_path.read_text(encoding="utf-8")
         if ext == ".html":
             import re
+
             parent = str(Path(path).parent).replace("\\", "/")
             if parent == ".":
                 parent = ""
@@ -706,7 +795,7 @@ class PublishApp(BaseApp):
                     resolved = parent + "/" + url
                 else:
                     resolved = url
-                return f'{attr}={quote}/publish/api/site-file?path={resolved}{quote}'
+                return f"{attr}={quote}/publish/api/site-file?path={resolved}{quote}"
 
             content = re.sub(r'(href|src|content)=(["\'])([^"\']+)\2', rewrite, content)
 
@@ -730,7 +819,10 @@ class PublishApp(BaseApp):
                 user_msg += f"**Additional focus for this review:** {focus}\n\n"
             user_msg += "Article:\n\n" + text
             result = await self.think(
-                user_msg, domain="text", system=REVIEW_PROMPT_HEADER,
+                user_msg,
+                domain="text",
+                system=REVIEW_PROMPT_HEADER,
+                temperature=0.4,
             )
             return {"review": result, "action": "review", "provenance": self.last_provenance()}
 
@@ -740,7 +832,10 @@ class PublishApp(BaseApp):
                 return {"error": "No review provided"}
             user_msg = f"REVIEW:\n\n{review}\n\nARTICLE:\n\n{text}"
             result = await self.think(
-                user_msg, domain="text", system=APPLY_REVIEW_PROMPT,
+                user_msg,
+                domain="text",
+                system=APPLY_REVIEW_PROMPT,
+                temperature=0.3,
             )
             return {"text": result, "action": "apply_review", "provenance": self.last_provenance()}
 
@@ -758,10 +853,13 @@ class PublishApp(BaseApp):
                 f"ARTICLE:\n\n{text}\n\n"
                 f"---\n\nCONVERSATION HISTORY:{history_str}\n\n"
                 f"---\n\nUSER MESSAGE: {message}\n\n"
-                f"Respond as JSON: {{\"reply\": \"...\", \"revised_article\": \"...\" or null}}"
+                f'Respond as JSON: {{"reply": "...", "revised_article": "..." or null}}'
             )
             result = await self.think(
-                prompt, domain="text", system=CHAT_SYSTEM_PROMPT,
+                prompt,
+                domain="text",
+                system=CHAT_SYSTEM_PROMPT,
+                temperature=0.4,
             )
             parsed = parse_llm_json(result, {"reply": "", "revised_article": None})
             return {
@@ -966,8 +1064,10 @@ class PublishApp(BaseApp):
         )
 
         topics = parse_llm_json(result, [])
-        return {"topics": topics if isinstance(topics, list) else [], "provenance": self.last_provenance()}
-
+        return {
+            "topics": topics if isinstance(topics, list) else [],
+            "provenance": self.last_provenance(),
+        }
 
     # --- Chatbot Q&A: admin proxies + faqs.toml writer (see chatbot.py) ---
     _chatbot_admin_creds = _chatbot._chatbot_admin_creds

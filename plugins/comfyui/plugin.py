@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import json
 import random
-import uuid
 
 import aiohttp
 
@@ -22,8 +21,10 @@ STYLE_PRESETS = {
     "photo": {
         "label": "Photorealistic",
         "checkpoint": "RealVisXL_V4.0.safetensors",
-        "sampler": "dpmpp_2m_sde", "scheduler": "karras",
-        "cfg": 5.0, "steps": 25,
+        "sampler": "dpmpp_2m_sde",
+        "scheduler": "karras",
+        "cfg": 5.0,
+        "steps": 25,
         "prefix": "RAW photo, ",
         "suffix": ", 8k uhd, DSLR, film grain, Fujifilm XT3",
         "negative": "cartoon, anime, drawing, painting, illustration, cgi, 3d render",
@@ -31,50 +32,61 @@ STYLE_PRESETS = {
     "anime": {
         "label": "Anime",
         "checkpoint": "animagine-xl-3.1.safetensors",
-        "sampler": "euler_ancestral", "scheduler": "normal",
-        "cfg": 7.0, "steps": 28,
+        "sampler": "euler_ancestral",
+        "scheduler": "normal",
+        "cfg": 7.0,
+        "steps": 28,
         "prefix": "masterpiece, best quality, ",
         "suffix": ", anime style, vibrant colors",
         "negative": "lowres, bad anatomy, bad hands, worst quality, low quality, photo, realistic",
     },
     "comic": {
         "label": "Comic Book",
-        "lora": "Eldritch_Comics_for_Flux", "lora_strength": 0.85,
+        "lora": "Eldritch_Comics_for_Flux",
+        "lora_strength": 0.85,
         "prefix": "comic book art, bold outlines, ",
         "suffix": ", graphic novel style, dynamic composition, vibrant colors",
     },
     "illustration": {
         "label": "Illustration",
-        "lora": "FLUX-dev-lora-blended_realistic_illustration", "lora_strength": 0.7,
+        "lora": "FLUX-dev-lora-blended_realistic_illustration",
+        "lora_strength": 0.7,
         "prefix": "detailed illustration, ",
         "suffix": ", semi-realistic, artstation, beautiful lighting",
     },
     "dream": {
         "label": "Dreamlike",
         "checkpoint": "dreamshaper_8.safetensors",
-        "sampler": "dpmpp_sde", "scheduler": "karras",
-        "cfg": 7.0, "steps": 30,
+        "sampler": "dpmpp_sde",
+        "scheduler": "karras",
+        "cfg": 7.0,
+        "steps": 30,
         "prefix": "dreamlike, ethereal, ",
         "suffix": ", fantasy art, magical atmosphere, soft glow",
         "negative": "ugly, blurry, low quality",
     },
     "cinematic": {
         "label": "Cinematic",
-        "prefix": "cinematic still, ", "suffix": ", dramatic lighting, film grain, anamorphic lens",
+        "prefix": "cinematic still, ",
+        "suffix": ", dramatic lighting, film grain, anamorphic lens",
     },
     "portrait": {
         "label": "Portrait",
         "checkpoint": "RealVisXL_V4.0.safetensors",
-        "sampler": "dpmpp_2m_sde", "scheduler": "karras",
-        "cfg": 5.0, "steps": 25,
+        "sampler": "dpmpp_2m_sde",
+        "scheduler": "karras",
+        "cfg": 5.0,
+        "steps": 25,
         "prefix": "portrait photo, ",
         "suffix": ", shallow depth of field, natural lighting, 85mm lens, bokeh",
         "negative": "cartoon, anime, drawing, deformed",
-        "width": 768, "height": 1024,
+        "width": 768,
+        "height": 1024,
     },
     "minimalist": {
         "label": "Minimalist",
-        "prefix": "", "suffix": ", minimalist, clean, simple shapes, flat design, modern",
+        "prefix": "",
+        "suffix": ", minimalist, clean, simple shapes, flat design, modern",
     },
 }
 
@@ -102,6 +114,7 @@ class ComfyUIPlugin(BasePlugin):
         if self._draw_registered:
             return
         from emptyos.capabilities import Provider
+
         plugin = self
 
         class ComfyUIDrawProvider(Provider):
@@ -116,8 +129,12 @@ class ComfyUIPlugin(BasePlugin):
                 return {
                     "available": False,
                     "reason": f"ComfyUI service unreachable at {plugin._host()}",
-                    "recovery": {"kind": "service", "id": "comfyui", "url": plugin._host(),
-                                 "hint": "Set [plugins.comfyui] launcher in emptyos.toml, then restart"},
+                    "recovery": {
+                        "kind": "service",
+                        "id": "comfyui",
+                        "url": plugin._host(),
+                        "hint": "Set [plugins.comfyui] launcher in emptyos.toml, then restart",
+                    },
                 }
 
             async def execute(self, *, prompt: str, **kwargs) -> str:
@@ -134,9 +151,11 @@ class ComfyUIPlugin(BasePlugin):
         animate_cap = self.kernel.capabilities.get("animate")
         if animate_cap is None:
             return
-        from emptyos.capabilities import Provider
-        from pathlib import Path
         import tempfile
+        from pathlib import Path
+
+        from emptyos.capabilities import Provider
+
         plugin = self
 
         class ComfyUIAnimateProvider(Provider):
@@ -154,13 +173,24 @@ class ComfyUIPlugin(BasePlugin):
                 return {
                     "available": False,
                     "reason": f"ComfyUI service unreachable at {plugin._host()}",
-                    "recovery": {"kind": "service", "id": "comfyui", "url": plugin._host(),
-                                 "hint": "Set [plugins.comfyui] launcher in emptyos.toml, then restart"},
+                    "recovery": {
+                        "kind": "service",
+                        "id": "comfyui",
+                        "url": plugin._host(),
+                        "hint": "Set [plugins.comfyui] launcher in emptyos.toml, then restart",
+                    },
                 }
 
-            async def execute(self, *, prompt: str, image: str = "",
-                              num_frames: int = 24, dest: str = "",
-                              workflow: str = "video", **kwargs) -> str:
+            async def execute(
+                self,
+                *,
+                prompt: str,
+                image: str = "",
+                num_frames: int = 24,
+                dest: str = "",
+                workflow: str = "video",
+                **kwargs,
+            ) -> str:
                 # workflow="video" → reads [plugins.comfyui] video_workflow
                 # workflow="parallax" → reads [plugins.comfyui] parallax_workflow
                 # Any value works; the config key is `{workflow}_workflow`.
@@ -174,7 +204,9 @@ class ComfyUIPlugin(BasePlugin):
                     return ""
                 filename = await plugin.generate_from_workflow(
                     workflow_key=workflow,
-                    prompt=prompt, image_filename=image, num_frames=num_frames,
+                    prompt=prompt,
+                    image_filename=image,
+                    num_frames=num_frames,
                     width=int(kwargs.get("width", 768)),
                     height=int(kwargs.get("height", 432)),
                 )
@@ -186,6 +218,7 @@ class ComfyUIPlugin(BasePlugin):
                     suffix = Path(filename).suffix or ".mp4"
                     fd, tmp = tempfile.mkstemp(prefix="anim-", suffix=suffix)
                     import os
+
                     os.close(fd)
                     dest_path = Path(tmp)
                 ok = await plugin.download_image(filename, dest_path)
@@ -198,8 +231,10 @@ class ComfyUIPlugin(BasePlugin):
         """Launch ComfyUI if not running. Returns True when ready."""
         if await self.available():
             return True
-        import subprocess, asyncio
+        import asyncio
+        import subprocess
         from pathlib import Path
+
         launcher = self.config("launcher", "")
         if not launcher:
             print("[ComfyUI] No launcher configured (set comfyui.launcher in emptyos.toml)")
@@ -210,11 +245,13 @@ class ComfyUIPlugin(BasePlugin):
         python_exe = str(launcher_path.parent / "python_embeded" / "python.exe")
         main_py = str(launcher_path.parent / "ComfyUI" / "main.py")
         try:
-            subprocess.Popen(
+            # Fire-and-forget headless launch — Popen returns immediately.
+            subprocess.Popen(  # noqa: ASYNC220
                 [python_exe, "-s", main_py, "--windows-standalone-build"],
                 cwd=launcher_dir,
                 creationflags=subprocess.CREATE_NO_WINDOW,
-                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
             )
             print("[ComfyUI] Starting...")
             for _ in range(30):  # wait up to 60s
@@ -263,27 +300,47 @@ class ComfyUIPlugin(BasePlugin):
                 f"{self._host()}/object_info/CheckpointLoaderSimple"
             ) as resp:
                 data = await resp.json()
-                return data.get("CheckpointLoaderSimple", {}).get("input", {}).get("required", {}).get("ckpt_name", [[]])[0]
+                return (
+                    data.get("CheckpointLoaderSimple", {})
+                    .get("input", {})
+                    .get("required", {})
+                    .get("ckpt_name", [[]])[0]
+                )
         except Exception:
             return []
 
     async def get_image_url(self, filename: str) -> str:
         return f"{self._host()}/view?filename={filename}"
 
-    async def generate_video(self, prompt: str, image_filename: str = "",
-                             num_frames: int = 97, seed: int = 0,
-                             template_path: str = "") -> str:
+    async def generate_video(
+        self,
+        prompt: str,
+        image_filename: str = "",
+        num_frames: int = 97,
+        seed: int = 0,
+        template_path: str = "",
+    ) -> str:
         """Convenience wrapper for the legacy video workflow path."""
         return await self.generate_from_workflow(
-            workflow_key="video", prompt=prompt, image_filename=image_filename,
-            num_frames=num_frames, seed=seed, template_path=template_path,
+            workflow_key="video",
+            prompt=prompt,
+            image_filename=image_filename,
+            num_frames=num_frames,
+            seed=seed,
+            template_path=template_path,
         )
 
-    async def generate_from_workflow(self, workflow_key: str, prompt: str,
-                                     image_filename: str = "",
-                                     num_frames: int = 97, seed: int = 0,
-                                     width: int = 768, height: int = 432,
-                                     template_path: str = "") -> str:
+    async def generate_from_workflow(
+        self,
+        workflow_key: str,
+        prompt: str,
+        image_filename: str = "",
+        num_frames: int = 97,
+        seed: int = 0,
+        width: int = 768,
+        height: int = 432,
+        template_path: str = "",
+    ) -> str:
         """Run any ComfyUI workflow from a JSON template, with placeholder
         substitution. Used for image-to-video (LTX-2 / Wan / SVD), depth
         parallax, and anything else that fits the "image in, mp4 out" shape.
@@ -294,8 +351,9 @@ class ComfyUIPlugin(BasePlugin):
         substituted. Returns the first video/gif/image filename produced,
         or "" on failure.
         """
+        import asyncio
+        import copy
         from pathlib import Path
-        import asyncio, copy
 
         path_str = template_path or self.config(f"{workflow_key}_workflow", "")
         if not path_str:
@@ -340,20 +398,24 @@ class ComfyUIPlugin(BasePlugin):
                     return int(width)
                 if node == "{height}":
                     return int(height)
-                return (node
-                        .replace("{prompt}", prompt)
-                        .replace("{image}", image_filename)
-                        .replace("{seed}", str(seed))
-                        .replace("{frames}", str(num_frames))
-                        .replace("{width}", str(width))
-                        .replace("{height}", str(height)))
+                return (
+                    node.replace("{prompt}", prompt)
+                    .replace("{image}", image_filename)
+                    .replace("{seed}", str(seed))
+                    .replace("{frames}", str(num_frames))
+                    .replace("{width}", str(width))
+                    .replace("{height}", str(height))
+                )
             return node
 
         workflow = _sub(copy.deepcopy(workflow))
 
         try:
-            self.kernel.syslog.info("comfyui", f"Queuing video: {prompt[:60]}...",
-                                    data={"frames": num_frames, "image": image_filename})
+            self.kernel.syslog.info(
+                "comfyui",
+                f"Queuing video: {prompt[:60]}...",
+                data={"frames": num_frames, "image": image_filename},
+            )
             async with self._session.post(
                 f"{self._host()}/prompt",
                 json={"prompt": workflow},
@@ -379,8 +441,7 @@ class ComfyUIPlugin(BasePlugin):
             self.kernel.syslog.error("comfyui", f"video generate failed: {e}")
             return ""
 
-    async def generate_depth(self, image_filename: str,
-                             template_path: str = "") -> str:
+    async def generate_depth(self, image_filename: str, template_path: str = "") -> str:
         """Run a depth-only workflow on an input image. Returns the depth-map
         filename produced by the SaveImage node, or "" on failure.
 
@@ -389,8 +450,11 @@ class ComfyUIPlugin(BasePlugin):
         workflow lives at ``plugins/comfyui/workflows/depth_parallax.json``.
         """
         return await self.generate_from_workflow(
-            workflow_key="parallax", prompt="",
-            image_filename=image_filename, num_frames=1, seed=0,
+            workflow_key="parallax",
+            prompt="",
+            image_filename=image_filename,
+            num_frames=1,
+            seed=0,
             template_path=template_path,
         )
 
@@ -400,17 +464,24 @@ class ComfyUIPlugin(BasePlugin):
         want to depth-process isn't already in ComfyUI's input dir.
         """
         from pathlib import Path
+
         p = Path(src_path)
         if not p.exists():
             return ""
         name = name or p.name
         try:
             data = aiohttp.FormData()
-            data.add_field("image", p.open("rb"), filename=name,
-                           content_type="application/octet-stream")
+            # Brief blocking open — aiohttp streams the file from here.
+            data.add_field(
+                "image",
+                p.open("rb"),  # noqa: ASYNC230
+                filename=name,
+                content_type="application/octet-stream",
+            )
             data.add_field("overwrite", "true")
             async with self._session.post(
-                f"{self._host()}/upload/image", data=data,
+                f"{self._host()}/upload/image",
+                data=data,
                 timeout=aiohttp.ClientTimeout(total=30),
             ) as resp:
                 if resp.status != 200:
@@ -423,6 +494,7 @@ class ComfyUIPlugin(BasePlugin):
     async def download_image(self, filename: str, dest) -> bool:
         """Fetch a generated file from ComfyUI and write it to dest (Path or str)."""
         from pathlib import Path
+
         if not filename:
             return False
         try:
@@ -448,16 +520,23 @@ class ComfyUIPlugin(BasePlugin):
                 f"{self._host()}/free",
                 json={"unload_models": True, "free_memory": True},
                 timeout=aiohttp.ClientTimeout(total=10),
-            ) as resp:
+            ):
                 pass
         except Exception:
             pass
 
     # --- Workflow Builder ---
 
-    def _build_workflow(self, prompt: str, width: int, height: int,
-                        seed: int, style: dict,
-                        lora: str = "", lora_strength: float = 0.8) -> dict:
+    def _build_workflow(
+        self,
+        prompt: str,
+        width: int,
+        height: int,
+        seed: int,
+        style: dict,
+        lora: str = "",
+        lora_strength: float = 0.8,
+    ) -> dict:
         """Build ComfyUI workflow. Handles FLUX, SDXL, SD1.5 + LoRA."""
         ckpt = style.get("checkpoint", "flux1-dev-fp8.safetensors")
         is_flux = "flux" in ckpt.lower()
@@ -470,43 +549,77 @@ class ComfyUIPlugin(BasePlugin):
 
         workflow = {
             "4": {"class_type": "CheckpointLoaderSimple", "inputs": {"ckpt_name": ckpt}},
-            "5": {"class_type": "EmptyLatentImage", "inputs": {"batch_size": 1, "height": height, "width": width}},
+            "5": {
+                "class_type": "EmptyLatentImage",
+                "inputs": {"batch_size": 1, "height": height, "width": width},
+            },
             "8": {"class_type": "VAEDecode", "inputs": {"samples": ["3", 0], "vae": ["4", 2]}},
-            "9": {"class_type": "SaveImage", "inputs": {"filename_prefix": "eos", "images": ["8", 0]}},
+            "9": {
+                "class_type": "SaveImage",
+                "inputs": {"filename_prefix": "eos", "images": ["8", 0]},
+            },
         }
 
         # LoRA support
         lora_name = lora or style.get("lora", "")
         if lora_name and is_flux:
-            lora_file = lora_name if lora_name.endswith(".safetensors") else f"{lora_name}.safetensors"
+            lora_file = (
+                lora_name if lora_name.endswith(".safetensors") else f"{lora_name}.safetensors"
+            )
             ls = style.get("lora_strength", lora_strength)
             workflow["10"] = {
                 "class_type": "LoraLoader",
-                "inputs": {"model": ["4", 0], "clip": ["4", 1], "lora_name": lora_file,
-                           "strength_model": ls, "strength_clip": ls},
+                "inputs": {
+                    "model": ["4", 0],
+                    "clip": ["4", 1],
+                    "lora_name": lora_file,
+                    "strength_model": ls,
+                    "strength_clip": ls,
+                },
             }
             model_input, clip_input = ["10", 0], ["10", 1]
         else:
             model_input, clip_input = ["4", 0], ["4", 1]
 
-        workflow["6"] = {"class_type": "CLIPTextEncode", "inputs": {"clip": clip_input, "text": prompt}}
-        workflow["7"] = {"class_type": "CLIPTextEncode", "inputs": {"clip": clip_input, "text": negative}}
+        workflow["6"] = {
+            "class_type": "CLIPTextEncode",
+            "inputs": {"clip": clip_input, "text": prompt},
+        }
+        workflow["7"] = {
+            "class_type": "CLIPTextEncode",
+            "inputs": {"clip": clip_input, "text": negative},
+        }
         workflow["3"] = {
             "class_type": "KSampler",
             "inputs": {
-                "cfg": cfg, "denoise": 1.0, "latent_image": ["5", 0],
-                "model": model_input, "negative": ["7", 0], "positive": ["6", 0],
-                "sampler_name": sampler, "scheduler": scheduler,
-                "seed": seed, "steps": steps,
+                "cfg": cfg,
+                "denoise": 1.0,
+                "latent_image": ["5", 0],
+                "model": model_input,
+                "negative": ["7", 0],
+                "positive": ["6", 0],
+                "sampler_name": sampler,
+                "scheduler": scheduler,
+                "seed": seed,
+                "steps": steps,
             },
         }
         return workflow
 
     # --- Generate ---
 
-    async def generate(self, prompt: str, width: int = 1024, height: int = 1024,
-                       steps: int = 30, cfg: float = 0, model: str = "",
-                       style: str = "", lora: str = "", lora_strength: float = 0.8) -> str:
+    async def generate(
+        self,
+        prompt: str,
+        width: int = 1024,
+        height: int = 1024,
+        steps: int = 30,
+        cfg: float = 0,
+        model: str = "",
+        style: str = "",
+        lora: str = "",
+        lora_strength: float = 0.8,
+    ) -> str:
         """Generate image. Returns filename.
 
         If style is given, applies preset (checkpoint, sampler, cfg, prefix/suffix, LoRA).
@@ -527,12 +640,21 @@ class ComfyUIPlugin(BasePlugin):
 
         # Build workflow with style params
         workflow = self._build_workflow(
-            styled_prompt, w, h, seed, style_preset,
-            lora=lora, lora_strength=lora_strength,
+            styled_prompt,
+            w,
+            h,
+            seed,
+            style_preset,
+            lora=lora,
+            lora_strength=lora_strength,
         )
 
         try:
-            self.kernel.syslog.info("comfyui", f"Queuing image: {prompt[:80]}...", data={"width": w, "height": h, "style": style})
+            self.kernel.syslog.info(
+                "comfyui",
+                f"Queuing image: {prompt[:80]}...",
+                data={"width": w, "height": h, "style": style},
+            )
             async with self._session.post(
                 f"{self._host()}/prompt",
                 json={"prompt": workflow},
@@ -555,6 +677,6 @@ class ComfyUIPlugin(BasePlugin):
                         return ""
             return ""
         except Exception as e:
-            raise RuntimeError(f"ComfyUI generation failed: {e}")
+            raise RuntimeError(f"ComfyUI generation failed: {e}") from e
         finally:
             await self.free_gpu()

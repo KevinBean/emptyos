@@ -6,7 +6,6 @@ from emptyos.sdk import on_event
 
 
 class WorkReactionsMixin:
-
     @on_event("task:added")
     async def on_task_added(self, event):
         self._log_action("task:added", event.data.get("text", "")[:40])
@@ -43,7 +42,10 @@ class WorkReactionsMixin:
 
     @on_event("projects:stage_changed")
     async def on_project_stage(self, event):
-        self._log_action("projects:stage_changed", f"{event.data.get('project', '')}: {event.data.get('stage', '')}")
+        self._log_action(
+            "projects:stage_changed",
+            f"{event.data.get('project', '')}: {event.data.get('stage', '')}",
+        )
 
     @on_event("projects:calc_attached")
     async def on_project_calc(self, event):
@@ -51,7 +53,10 @@ class WorkReactionsMixin:
 
     @on_event("projects:feature_toggled")
     async def on_project_feature(self, event):
-        self._log_action("projects:feature_toggled", f"{event.data.get('project', '')}: {event.data.get('feature', '')}")
+        self._log_action(
+            "projects:feature_toggled",
+            f"{event.data.get('project', '')}: {event.data.get('feature', '')}",
+        )
 
     @on_event("projects:sprint_created")
     async def on_project_sprint(self, event):
@@ -63,11 +68,17 @@ class WorkReactionsMixin:
 
     @on_event("projects:milestone_created")
     async def on_project_milestone(self, event):
-        self._log_action("projects:milestone_created", f"{event.data.get('project', '')}: {event.data.get('name', '')}")
+        self._log_action(
+            "projects:milestone_created",
+            f"{event.data.get('project', '')}: {event.data.get('name', '')}",
+        )
 
     @on_event("projects:release_created")
     async def on_project_release(self, event):
-        self._log_action("projects:release_created", f"{event.data.get('project', '')}: v{event.data.get('version', '')}")
+        self._log_action(
+            "projects:release_created",
+            f"{event.data.get('project', '')}: v{event.data.get('version', '')}",
+        )
 
     @on_event("projects:doc_created")
     async def on_project_doc(self, event):
@@ -126,16 +137,10 @@ class WorkReactionsMixin:
         company = event.data.get("company", "")[:30]
         self._log_action("jobs:prep_actions_ready", f"{count} prep task(s) for {company}")
 
-    @on_event("career:gap_promoted")
-    async def on_career_gap_promoted(self, event):
-        skill = event.data.get("skill", "")[:40]
-        self._log_action("career:gap_promoted", skill)
-
-    @on_event("career:goal_created")
-    async def on_career_goal_created(self, event):
-        skill = event.data.get("skill", "")[:40]
-        self._log_action("career:goal_created", skill)
-        await self._journal_ripple("🎯", f"New career goal: {skill}")
+    # career:gap_promoted and career:goal_created handlers live below
+    # (richer log strings + dimension-tagged journal ripples). The earlier
+    # stub copies were removed 2026-04-27 — they shadowed the real ones
+    # silently (ruff F811).
 
     @on_event("career:skill_level_up")
     async def on_career_skill_level_up(self, event):
@@ -152,9 +157,44 @@ class WorkReactionsMixin:
     async def on_assistant_msg(self, event):
         self._log_action("assistant:message", f"session {event.data.get('session', '')[:8]}")
 
-    @on_event("gpts:chat")
-    async def on_gpts_chat(self, event):
-        self._log_action("gpts:chat", f"persona: {event.data.get('persona', '')}")
+    @on_event("rooms:chat")
+    async def on_rooms_chat(self, event):
+        # rooms:chat stays internal-only — every turn would flood the journal.
+        # Lifecycle events (created / archived / exported / distilled / action)
+        # are the journal-worthy ones below.
+        self._log_action("rooms:chat", f"persona: {event.data.get('persona', '')}")
+
+    @on_event("rooms:created")
+    async def on_rooms_created(self, event):
+        title = event.data.get("title") or event.data.get("room_id", "")
+        self._log_action("rooms:created", title[:40])
+        await self._journal_ripple("🏠", f"New room: {title}")
+
+    @on_event("rooms:archived")
+    async def on_rooms_archived(self, event):
+        rid = event.data.get("room_id", "")
+        self._log_action("rooms:archived", rid[:40])
+        await self._journal_ripple("🗄️", f"Archived room: {rid}")
+
+    @on_event("rooms:exported")
+    async def on_rooms_exported(self, event):
+        path = event.data.get("path", "")
+        self._log_action("rooms:exported", path[:60])
+        await self._journal_ripple("📄", f"Exported room thread to {path}")
+
+    @on_event("rooms:distilled")
+    async def on_rooms_distilled(self, event):
+        path = event.data.get("path", "")
+        n = event.data.get("message_count", 0)
+        self._log_action("rooms:distilled", f"{n} msgs → {path[:40]}")
+        await self._journal_ripple("✨", f"Distilled {n} messages into {path}")
+
+    @on_event("rooms:action_applied")
+    async def on_rooms_action_applied(self, event):
+        verb = f"{event.data.get('app', '?')}.{event.data.get('method', '?')}"
+        rid = event.data.get("room_id", "")
+        self._log_action("rooms:action_applied", verb)
+        await self._journal_ripple("✓", f"Applied {verb} from room {rid}")
 
     @on_event("digest:generated")
     async def on_digest(self, event):
@@ -211,39 +251,57 @@ class WorkReactionsMixin:
 
     @on_event("board:column_added")
     async def on_board_column_added(self, event):
-        self._log_action("board:column_added", f"{event.data.get('id','')}: +{event.data.get('col','')}")
+        self._log_action(
+            "board:column_added", f"{event.data.get('id', '')}: +{event.data.get('col', '')}"
+        )
 
     @on_event("board:column_updated")
     async def on_board_column_updated(self, event):
-        self._log_action("board:column_updated", f"{event.data.get('id','')}: {event.data.get('col','')}")
+        self._log_action(
+            "board:column_updated", f"{event.data.get('id', '')}: {event.data.get('col', '')}"
+        )
 
     @on_event("board:column_deleted")
     async def on_board_column_deleted(self, event):
-        self._log_action("board:column_deleted", f"{event.data.get('id','')}: -{event.data.get('col','')}")
+        self._log_action(
+            "board:column_deleted", f"{event.data.get('id', '')}: -{event.data.get('col', '')}"
+        )
 
     @on_event("board:item_created")
     async def on_board_item_created(self, event):
-        self._log_action("board:item_created", f"{event.data.get('board','')}/{event.data.get('file','')}")
+        self._log_action(
+            "board:item_created", f"{event.data.get('board', '')}/{event.data.get('file', '')}"
+        )
 
     @on_event("board:item_updated")
     async def on_board_item_updated(self, event):
-        self._log_action("board:item_updated", f"{event.data.get('board','')}/{event.data.get('file','')}")
+        self._log_action(
+            "board:item_updated", f"{event.data.get('board', '')}/{event.data.get('file', '')}"
+        )
 
     @on_event("board:item_moved")
     async def on_board_item_moved(self, event):
-        self._log_action("board:item_moved", f"{event.data.get('board','')}: {event.data.get('file','')}")
+        self._log_action(
+            "board:item_moved", f"{event.data.get('board', '')}: {event.data.get('file', '')}"
+        )
 
     @on_event("board:item_archived")
     async def on_board_item_archived(self, event):
-        self._log_action("board:item_archived", f"{event.data.get('board','')}/{event.data.get('file','')}")
+        self._log_action(
+            "board:item_archived", f"{event.data.get('board', '')}/{event.data.get('file', '')}"
+        )
 
     @on_event("board:view_saved")
     async def on_board_view_saved(self, event):
-        self._log_action("board:view_saved", f"{event.data.get('board','')}: {event.data.get('view','')}")
+        self._log_action(
+            "board:view_saved", f"{event.data.get('board', '')}: {event.data.get('view', '')}"
+        )
 
     @on_event("board:view_deleted")
     async def on_board_view_deleted(self, event):
-        self._log_action("board:view_deleted", f"{event.data.get('board','')}: {event.data.get('view','')}")
+        self._log_action(
+            "board:view_deleted", f"{event.data.get('board', '')}: {event.data.get('view', '')}"
+        )
 
     @on_event("career:gap_promoted")
     async def on_career_gap_promoted(self, event):
@@ -387,3 +445,181 @@ class WorkReactionsMixin:
     async def on_vegetation_detected(self, event):
         loc = event.data.get("location") or event.data.get("span") or ""
         self._log_action("vegetation-intrusion:detected", str(loc)[:40])
+
+    # ── Engineering study/run completions — occupational dimension ──
+
+    @on_event("lightning:study_created")
+    async def on_lightning_study_created(self, event):
+        name = event.data.get("name") or event.data.get("id") or ""
+        self._log_action("lightning:study_created", str(name)[:50])
+
+    @on_event("lightning:study_analysed")
+    async def on_lightning_study_analysed(self, event):
+        name = event.data.get("name") or event.data.get("id") or ""
+        self._log_action("lightning:study_analysed", str(name)[:50])
+        await self._journal_ripple("⚡", f"Lightning study analysed: `{name}`", dim="occupational")
+
+    @on_event("interference:study_created")
+    async def on_interference_study_created(self, event):
+        name = event.data.get("name") or event.data.get("id") or ""
+        self._log_action("interference:study_created", str(name)[:50])
+
+    @on_event("interference:study_analysed")
+    async def on_interference_study_analysed(self, event):
+        name = event.data.get("name") or event.data.get("id") or ""
+        self._log_action("interference:study_analysed", str(name)[:50])
+        await self._journal_ripple("📡", f"Interference study analysed: `{name}`", dim="occupational")
+
+    @on_event("fault-distribution:solved")
+    async def on_fault_distribution_solved(self, event):
+        case = event.data.get("case") or event.data.get("id") or event.data.get("name") or ""
+        self._log_action("fault-distribution:solved", str(case)[:50])
+        await self._journal_ripple("🔌", f"Fault distribution solved: `{case}`", dim="occupational")
+
+    @on_event("sim:run_completed")
+    async def on_sim_run_completed(self, event):
+        name = event.data.get("name") or event.data.get("id") or ""
+        self._log_action("sim:run_completed", str(name)[:50])
+
+    @on_event("sim:run_failed")
+    async def on_sim_run_failed(self, event):
+        name = event.data.get("name") or event.data.get("id") or ""
+        err = (event.data.get("error") or "")[:60]
+        self._log_action("sim:run_failed", f"{name}: {err}")
+
+    @on_event("cables:project_created")
+    async def on_cables_project_created(self, event):
+        name = event.data.get("name") or event.data.get("id") or ""
+        self._log_action("cables:project_created", str(name)[:50])
+        await self._journal_ripple("🔗", f"Cables project: `{name}`", dim="occupational")
+
+    @on_event("cables:schedule_run")
+    async def on_cables_schedule_run(self, event):
+        # One breadcrumb per run (not per cable). Reads the schedule_run
+        # event schema (n_cables, n_ok, n_errors, method) emitted by
+        # apps/cables/rating.py:run_schedule.
+        d = event.data
+        proj = d.get("project") or ""
+        n = d.get("n_cables") or 0
+        ok = d.get("n_ok") or 0
+        errs = d.get("n_errors") or 0
+        skipped = d.get("n_skipped") or 0
+        method = d.get("method") or "native"
+        summary = f"{ok}/{n} ok"
+        if errs:
+            summary += f", {errs} err"
+        if skipped:
+            summary += f", {skipped} skip"
+        self._log_action("cables:schedule_run", f"{proj} · {method} · {summary}")
+        await self._journal_ripple(
+            "🔌", f"Cable schedule on `{proj}` ({method}): {summary}",
+            dim="occupational",
+        )
+
+    @on_event("cables:load_flow_run")
+    async def on_cables_load_flow_run(self, event):
+        d = event.data
+        proj = d.get("project") or ""
+        nodes = d.get("n_nodes") or 0
+        edges = d.get("n_edges") or 0
+        converged = d.get("converged")
+        violations = d.get("n_violations") or 0
+        iters = d.get("iterations") or 0
+        status = "converged" if converged else "did not converge"
+        tail = f"{nodes}n/{edges}e · {iters} iter · {status}"
+        if violations:
+            tail += f" · {violations} sizing violation" + ("s" if violations != 1 else "")
+        self._log_action("cables:load_flow_run", f"{proj} · {tail}")
+        await self._journal_ripple(
+            "⚡", f"Load-flow on `{proj}`: {tail}", dim="occupational",
+        )
+
+    @on_event("cables:cable_routed")
+    async def on_cables_cable_routed(self, event):
+        d = event.data
+        proj = d.get("project") or ""
+        cable_id = d.get("id") or ""
+        n_links = d.get("n_edge_links_set") or 0
+        path = d.get("path") or []
+        hops = max(len(path) - 1, 0)
+        self._log_action("cables:cable_routed", f"{proj}/{cable_id} · {hops} hop")
+        await self._journal_ripple(
+            "🛣️", f"Routed `{cable_id}` on `{proj}` ({hops} hop, {n_links} edges linked)",
+            dim="occupational",
+        )
+
+    @on_event("jobs:outreach_added")
+    async def on_jobs_outreach_added(self, event):
+        contact = event.data.get("contact") or event.data.get("name") or event.data.get("company") or ""
+        self._log_action("jobs:outreach_added", str(contact)[:50])
+        await self._journal_ripple("📩", f"Outreach: `{contact}`", dim="social")
+
+    @on_event("jobs:outreach_status_changed")
+    async def on_jobs_outreach_status(self, event):
+        contact = event.data.get("contact") or event.data.get("name") or ""
+        status = event.data.get("status", "")
+        self._log_action("jobs:outreach_status_changed", f"{contact}: {status}")
+
+    @on_event("jobs:outreach_updated")
+    async def on_jobs_outreach_updated(self, event):
+        contact = event.data.get("contact") or event.data.get("name") or ""
+        self._log_action("jobs:outreach_updated", str(contact)[:50])
+
+    # ── Engineering: earthing, soil, cables CRUD ──
+
+    @on_event("earthing:soil_fit")
+    async def on_earthing_soil_fit(self, event):
+        n = event.data.get("n_points") or event.data.get("n_layers") or ""
+        self._log_action("earthing:soil_fit", f"{n} points")
+
+    @on_event("earthing:verdict")
+    async def on_earthing_verdict(self, event):
+        proj = event.data.get("project_id") or event.data.get("id", "")
+        verdict = event.data.get("verdict") or ""
+        self._log_action("earthing:verdict", f"{proj}: {verdict}")
+        if verdict:
+            await self._journal_ripple(
+                "⚡", f"Earthing verdict on `{proj}`: {verdict}", dim="occupational"
+            )
+
+    @on_event("earthing:rg_computed")
+    async def on_earthing_rg(self, event):
+        self._log_action("earthing:rg_computed", str(event.data.get("rg_ohm",""))[:30])
+
+    @on_event("earthing:voltages_computed")
+    async def on_earthing_voltages(self, event):
+        self._log_action("earthing:voltages_computed", "")
+
+    @on_event("earthing:eg0_risk")
+    async def on_earthing_eg0(self, event):
+        self._log_action("earthing:eg0_risk", str(event.data.get("risk",""))[:30])
+
+    @on_event("soil:fit_completed")
+    async def on_soil_fit(self, event):
+        rms = event.data.get("rms_pct") or event.data.get("rms","")
+        self._log_action("soil:fit_completed", f"rms={rms}")
+
+    @on_event("soil:project_created")
+    async def on_soil_project_created(self, event):
+        name = event.data.get("name") or event.data.get("id", "")
+        self._log_action("soil:project_created", str(name)[:50])
+
+    @on_event("soil:project_updated")
+    async def on_soil_project_updated(self, event):
+        self._log_action("soil:project_updated", str(event.data.get("id",""))[:50])
+
+    @on_event("soil:project_deleted")
+    async def on_soil_project_deleted(self, event):
+        self._log_action("soil:project_deleted", str(event.data.get("id",""))[:50])
+
+    @on_event("soil:soundings_saved")
+    async def on_soil_soundings(self, event):
+        self._log_action("soil:soundings_saved", str(event.data.get("n",""))[:30])
+
+    @on_event("cables:project_updated")
+    async def on_cables_project_updated(self, event):
+        self._log_action("cables:project_updated", str(event.data.get("id",""))[:50])
+
+    @on_event("cables:project_deleted")
+    async def on_cables_project_deleted(self, event):
+        self._log_action("cables:project_deleted", str(event.data.get("id",""))[:50])

@@ -1,6 +1,7 @@
 """System Tray Plugin — puts EmptyOS in the native taskbar tray."""
 
 from __future__ import annotations
+
 import asyncio
 import os
 import subprocess
@@ -13,9 +14,11 @@ from emptyos.sdk import BasePlugin
 try:
     import pystray
     from PIL import Image, ImageDraw
+
     HAS_TRAY = True
 except ImportError:
     HAS_TRAY = False
+
 
 class SystemTrayPlugin(BasePlugin):
     name = "system-tray"
@@ -30,9 +33,9 @@ class SystemTrayPlugin(BasePlugin):
         if not HAS_TRAY:
             print("[Tray] 'pystray' or 'Pillow' not installed. Run: pip install pystray Pillow")
             return
-            
+
         self._loop = asyncio.get_running_loop()
-        
+
         # Start tray in a background thread (pystray blocks)
         self._thread = threading.Thread(target=self._run_tray, daemon=True)
         self._thread.start()
@@ -47,9 +50,9 @@ class SystemTrayPlugin(BasePlugin):
 
     def _create_image(self):
         # Generate a simple icon for the tray
-        image = Image.new('RGB', (64, 64), color='black')
+        image = Image.new("RGB", (64, 64), color="black")
         d = ImageDraw.Draw(image)
-        d.ellipse([16, 16, 48, 48], fill='white')
+        d.ellipse([16, 16, 48, 48], fill="white")
         return image
 
     def _run_tray(self):
@@ -69,8 +72,7 @@ class SystemTrayPlugin(BasePlugin):
     def _on_capture(self):
         if self._loop:
             asyncio.run_coroutine_threadsafe(
-                self.kernel.events.emit("tray:capture_clicked", {}),
-                self._loop
+                self.kernel.events.emit("tray:capture_clicked", {}), self._loop
             )
 
     def _project_root(self) -> Path:

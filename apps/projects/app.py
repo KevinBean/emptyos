@@ -8,14 +8,21 @@ and tool discovery via manifest [provides.project-tools].
 
 from __future__ import annotations
 
-import json
 import re
-from datetime import date, datetime, timedelta
+from datetime import date, datetime
 from pathlib import Path
 
 from emptyos.sdk import (
-    DONE_PATTERN, DUE_PATTERN, BaseApp, cli_command, compute_task_decay,
-    fm_list, parse_frontmatter, set_frontmatter_field, web_route,
+    DONE_PATTERN,
+    DUE_PATTERN,
+    ROOM_PATTERN,
+    BaseApp,
+    cli_command,
+    compute_task_decay,
+    fm_list,
+    parse_frontmatter,
+    set_frontmatter_field,
+    web_route,
 )
 
 from . import dev_features as _dev
@@ -23,15 +30,41 @@ from . import extended as _ext
 from . import operations as _ops
 from . import panels as _panels
 
+
+HEALTH_SYSTEM = """You are a project triage analyst rating one project's health.
+
+Output exactly three lines, in this order:
+1. Health rating: one of `healthy`, `at-risk`, or `critical`.
+2. One-line diagnosis (≤15 words) — what is the dominant signal driving the rating.
+3. One concrete next action the user should take (≤15 words, imperative verb).
+
+Weigh: deadline proximity / overdue, stale_days since last edit, ratio of done to total tasks, and any blockers visible in the content preview.
+
+Do NOT:
+- Invent metrics that aren't in the input.
+- Output more than three lines or any markdown headers, bullets, or bold.
+- Hedge with phrases like "perhaps", "might be", "could possibly".
+- Repeat the project name back at the user.
+- Add an empathetic preamble or closing sign-off.
+"""
+
+HEALTH_USER_TMPL = """Project: {name}
+Status: {status}, Tasks: {done}/{total} done, Progress: {progress}%, Stale: {stale_days}d since edit
+Deadline: {deadline}{overdue_clause}
+
+Content preview:
+{snippet}"""
+from .dependencies import resolve_dependencies as _resolve_dependencies
+
 # --- Project Folder Standard ---
 # Every project is a directory. The system creates and expects this layout.
 # Flat .md files in 10_Projects/ are legacy — scanned but flagged for upgrade.
 
 PROJECT_STRUCTURE = {
-    "main":   "{id}/{id}.md",       # Main project note (frontmatter + tasks + notes)
-    "docs":   "{id}/docs/",         # Specs, meeting notes, research
-    "assets": "{id}/assets/",       # Attachments (images, PDFs, exports)
-    "log":    "{id}/log/",          # Activity logs, changelogs, decision records
+    "main": "{id}/{id}.md",  # Main project note (frontmatter + tasks + notes)
+    "docs": "{id}/docs/",  # Specs, meeting notes, research
+    "assets": "{id}/assets/",  # Attachments (images, PDFs, exports)
+    "log": "{id}/log/",  # Activity logs, changelogs, decision records
 }
 
 # --- Project Type Definitions ---
@@ -47,8 +80,12 @@ PROJECT_TYPES = {
         "label": "Engineering",
         "stages": ["concept", "design", "calculation", "review", "approval", "construction"],
         "labels": {
-            "concept": "Concept", "design": "Design", "calculation": "Calculation",
-            "review": "Review", "approval": "Approval", "construction": "Construction",
+            "concept": "Concept",
+            "design": "Design",
+            "calculation": "Calculation",
+            "review": "Review",
+            "approval": "Approval",
+            "construction": "Construction",
         },
         "templates": ["engineering", "cable-design"],
     },
@@ -56,8 +93,11 @@ PROJECT_TYPES = {
         "label": "Development",
         "stages": ["planning", "development", "testing", "review", "release"],
         "labels": {
-            "planning": "Planning", "development": "Development",
-            "testing": "Testing", "review": "Review", "release": "Release",
+            "planning": "Planning",
+            "development": "Development",
+            "testing": "Testing",
+            "review": "Review",
+            "release": "Release",
         },
         "templates": ["development"],
     },
@@ -68,15 +108,35 @@ PROJECT_TYPES = {
 # Per-project frontmatter `features:` dict overrides defaults.
 
 PROJECT_FEATURES = {
-    "tasks":        {"label": "Tasks",        "tab": True,  "order": 10, "default_on": ["personal", "engineering", "development"]},
-    "docs":         {"label": "Docs",         "tab": True,  "order": 20, "default_on": ["personal", "engineering", "development"]},
-    "stages":       {"label": "Stages",       "tab": False, "order": 5,  "default_on": ["engineering", "development"]},
-    "code":         {"label": "Code",         "tab": True,  "order": 30, "default_on": ["development"]},
-    "sprints":      {"label": "Sprints",      "tab": True,  "order": 25, "default_on": ["development"]},
-    "milestones":   {"label": "Milestones",   "tab": True,  "order": 35, "default_on": ["development"]},
-    "releases":     {"label": "Releases",     "tab": True,  "order": 40, "default_on": ["development"]},
-    "tools":        {"label": "Tools",        "tab": True,  "order": 50, "default_on": ["engineering"]},
-    "calculations": {"label": "Calculations", "tab": True,  "order": 55, "default_on": ["engineering"]},
+    "tasks": {
+        "label": "Tasks",
+        "tab": True,
+        "order": 10,
+        "default_on": ["personal", "engineering", "development"],
+    },
+    "docs": {
+        "label": "Docs",
+        "tab": True,
+        "order": 20,
+        "default_on": ["personal", "engineering", "development"],
+    },
+    "stages": {
+        "label": "Stages",
+        "tab": False,
+        "order": 5,
+        "default_on": ["engineering", "development"],
+    },
+    "code": {"label": "Code", "tab": True, "order": 30, "default_on": ["development"]},
+    "sprints": {"label": "Sprints", "tab": True, "order": 25, "default_on": ["development"]},
+    "milestones": {"label": "Milestones", "tab": True, "order": 35, "default_on": ["development"]},
+    "releases": {"label": "Releases", "tab": True, "order": 40, "default_on": ["development"]},
+    "tools": {"label": "Tools", "tab": True, "order": 50, "default_on": ["engineering"]},
+    "calculations": {
+        "label": "Calculations",
+        "tab": True,
+        "order": 55,
+        "default_on": ["engineering"],
+    },
 }
 
 # Task metadata prefixes (indented lines under a task)
@@ -85,7 +145,6 @@ _META_RE = re.compile(r"\s+- (" + "|".join(META_PREFIXES) + r"):\s*(.+)")
 
 
 class ProjectsApp(BaseApp):
-
     def _resolve_features(self, project_type: str, fm: dict | None = None) -> dict[str, bool]:
         """Resolve which features are enabled for a project.
 
@@ -114,8 +173,9 @@ class ProjectsApp(BaseApp):
 
     def _infer_status(self, fm: dict, content: str, mtime_days: int) -> str:
         """Infer project status from frontmatter, content, and modification time."""
-        # 1. Explicit frontmatter status
-        status = fm.get("status", "").lower().strip()
+        # 1. Explicit frontmatter status — `status:` (empty) in YAML parses to None,
+        #    so .get(..., "") still returns None. Coerce defensively.
+        status = (fm.get("status") or "").lower().strip()
         if status in ("idea", "active", "blocked", "shelved", "completed", "archived"):
             return status
 
@@ -146,89 +206,28 @@ class ProjectsApp(BaseApp):
             m_done = re.match(r"\s*- \[x\] (.+)", line, re.IGNORECASE)
             if m_open:
                 open_tasks += 1
-                task_list.append({"text": m_open.group(1).strip(), "done": False, "line": i, "meta": []})
+                task_list.append(
+                    {"text": m_open.group(1).strip(), "done": False, "line": i, "meta": []}
+                )
             elif m_done:
                 done_tasks += 1
-                task_list.append({"text": m_done.group(1).strip(), "done": True, "line": i, "meta": []})
+                task_list.append(
+                    {"text": m_done.group(1).strip(), "done": True, "line": i, "meta": []}
+                )
             elif task_list:
                 # Check for indented metadata under the last task
                 m_meta = _META_RE.match(line)
                 if m_meta:
-                    task_list[-1]["meta"].append({
-                        "type": m_meta.group(1),
-                        "value": m_meta.group(2).strip(),
-                        "line": i,
-                    })
+                    task_list[-1]["meta"].append(
+                        {
+                            "type": m_meta.group(1),
+                            "value": m_meta.group(2).strip(),
+                            "line": i,
+                        }
+                    )
         return open_tasks, done_tasks, task_list
 
-    @staticmethod
-    def _resolve_dependencies(task_list: list[dict]) -> list[dict]:
-        """Resolve depends_on/blocks references between tasks.
-
-        Matches by case-insensitive substring of task text.
-        Annotates each task with: depends_on, blocks, ready, blocked_by.
-        """
-        # Build lookup: normalized text -> task index
-        text_map: dict[str, int] = {}
-        for idx, t in enumerate(task_list):
-            text_map[t["text"].lower().strip()] = idx
-
-        def _find_task(ref: str) -> int | None:
-            ref_lower = ref.strip().lower()
-            # Exact match first
-            if ref_lower in text_map:
-                return text_map[ref_lower]
-            # Substring match
-            for text, idx in text_map.items():
-                if ref_lower in text or text in ref_lower:
-                    return idx
-            return None
-
-        # Parse dependency metadata into structured refs
-        for t in task_list:
-            t["depends_on"] = []
-            t["blocks"] = []
-            t["blocked_by"] = []
-            for m in t.get("meta", []):
-                if m["type"] == "depends_on":
-                    for ref in m["value"].split(","):
-                        ref = ref.strip()
-                        if not ref:
-                            continue
-                        target = _find_task(ref)
-                        if target is not None:
-                            t["depends_on"].append({
-                                "text": task_list[target]["text"],
-                                "line": task_list[target]["line"],
-                                "done": task_list[target]["done"],
-                            })
-                        else:
-                            t["depends_on"].append({"text": ref, "line": -1, "done": False})
-                elif m["type"] == "blocks":
-                    for ref in m["value"].split(","):
-                        ref = ref.strip()
-                        if not ref:
-                            continue
-                        target = _find_task(ref)
-                        if target is not None:
-                            t["blocks"].append({
-                                "text": task_list[target]["text"],
-                                "line": task_list[target]["line"],
-                            })
-
-        # Compute ready/blocked_by: a task is ready if all depends_on are done
-        for t in task_list:
-            if t["done"]:
-                t["ready"] = True
-                continue
-            unmet = [d for d in t["depends_on"] if not d["done"]]
-            if unmet:
-                t["ready"] = False
-                t["blocked_by"] = [d["text"] for d in unmet]
-            else:
-                t["ready"] = True
-
-        return task_list
+    _resolve_dependencies = staticmethod(_resolve_dependencies)
 
     def _days_until(self, date_str: str) -> int | None:
         """Days until deadline. Negative = overdue."""
@@ -281,7 +280,9 @@ class ProjectsApp(BaseApp):
             "open_tasks": open_tasks,
             "done_tasks": done_tasks,
             "total_tasks": open_tasks + done_tasks,
-            "progress": round(done_tasks / (open_tasks + done_tasks) * 100) if (open_tasks + done_tasks) > 0 else 0,
+            "progress": round(done_tasks / (open_tasks + done_tasks) * 100)
+            if (open_tasks + done_tasks) > 0
+            else 0,
             "days_until_deadline": days_until,
             "overdue": days_until is not None and days_until < 0,
             "stale_days": mtime_days,
@@ -292,7 +293,14 @@ class ProjectsApp(BaseApp):
     def _read_dir_project(self, d: Path) -> dict | None:
         """Read a directory-based project (folder with README.md or index note)."""
         # Skip excluded dirs
-        if d.name in (".space", "__pycache__", "node_modules", ".git", ".firebase", ".pytest_cache"):
+        if d.name in (
+            ".space",
+            "__pycache__",
+            "node_modules",
+            ".git",
+            ".firebase",
+            ".pytest_cache",
+        ):
             return None
         # Find the main note
         readme = None
@@ -316,20 +324,40 @@ class ProjectsApp(BaseApp):
                     "id": d.name,
                     "file": d.name + "/",
                     "name": d.name.replace("-", " ").replace("_", " "),
-                    "status": "archived" if mtime_days > 180 else "shelved" if mtime_days > 90 else "active",
-                    "type": "personal", "stage": "", "stage_index": -1, "stage_total": 0,
-                    "created": "", "deadline": "", "tags": "", "repo": "",
-                    "open_tasks": 0, "done_tasks": 0, "total_tasks": 0,
-                    "progress": 0, "days_until_deadline": None, "overdue": False,
-                    "stale_days": mtime_days, "is_directory": True,
+                    "status": "archived"
+                    if mtime_days > 180
+                    else "shelved"
+                    if mtime_days > 90
+                    else "active",
+                    "type": "personal",
+                    "stage": "",
+                    "stage_index": -1,
+                    "stage_total": 0,
+                    "created": "",
+                    "deadline": "",
+                    "tags": "",
+                    "repo": "",
+                    "open_tasks": 0,
+                    "done_tasks": 0,
+                    "total_tasks": 0,
+                    "progress": 0,
+                    "days_until_deadline": None,
+                    "overdue": False,
+                    "stale_days": mtime_days,
+                    "is_directory": True,
                     "features": self._resolve_features("personal"),
                 }
         return self._read_project(readme)
 
     def _archive_dir(self) -> Path:
-        return self.vault_config_path("archive_dir", "40_Archive/10_Projects") or self.vault_root / "40_Archive" / "10_Projects"
+        return (
+            self.vault_config_path("archive_dir", "40_Archive/10_Projects")
+            or self.vault_root / "40_Archive" / "10_Projects"
+        )
 
-    def _scan_dir(self, directory: Path, seen_ids: set, status_filter: str, force_status: str = "") -> list[dict]:
+    def _scan_dir(
+        self, directory: Path, seen_ids: set, status_filter: str, force_status: str = ""
+    ) -> list[dict]:
         """Scan a directory for projects (.md files and subdirectories)."""
         if not directory.exists():
             return []
@@ -438,7 +466,9 @@ class ProjectsApp(BaseApp):
         # 1. Active projects from 10_Projects/
         results = self._scan_dir(self._projects_dir(), seen_ids, status_filter)
         # 2. Archived projects from 40_Archive/10_Projects/ (force status=archived)
-        results += self._scan_dir(self._archive_dir(), seen_ids, status_filter, force_status="archived")
+        results += self._scan_dir(
+            self._archive_dir(), seen_ids, status_filter, force_status="archived"
+        )
         return results
 
     @cli_command("projects", help="List and filter projects")
@@ -448,8 +478,8 @@ class ProjectsApp(BaseApp):
             print("  No projects found")
             return
         for p in projects:
-            tasks = f"[{p['done_tasks']}/{p['total_tasks']}]" if p['total_tasks'] > 0 else ""
-            dl = f" (due {p['deadline']})" if p.get('deadline') else ""
+            tasks = f"[{p['done_tasks']}/{p['total_tasks']}]" if p["total_tasks"] > 0 else ""
+            dl = f" (due {p['deadline']})" if p.get("deadline") else ""
             print(f"  {p['status']:<12} {p['name']:<35} {tasks}{dl}")
 
     # --- Web API ---
@@ -500,13 +530,21 @@ class ProjectsApp(BaseApp):
 
         reports: list[dict] = []
         try:
-            reports = await self.call_app("reports", "list_for_project", project_id=project_id) or []
+            reports = (
+                await self.call_app("reports", "list_for_project", project_id=project_id) or []
+            )
         except Exception:
             reports = []
 
-        return {**p, "tasks": task_list, "goal": goal.strip(),
-                "has_dependencies": has_deps, "ready_count": ready_count, "blocked_count": blocked_count,
-                "reports": reports}
+        return {
+            **p,
+            "tasks": task_list,
+            "goal": goal.strip(),
+            "has_dependencies": has_deps,
+            "ready_count": ready_count,
+            "blocked_count": blocked_count,
+            "reports": reports,
+        }
 
     @web_route("POST", "/api/refresh")
     async def api_refresh(self, request):
@@ -536,13 +574,25 @@ class ProjectsApp(BaseApp):
 
     # ── Generic frontmatter setter + flat-list API (used by boards view layer) ──
 
-    SETTABLE_FIELDS = frozenset({
-        "status", "stage", "deadline", "progress", "type", "description",
-        "assignees", "skills_required", "blocks", "blocked_by",
-        # Cross-board link targets — projects accepts lists of item IDs from
-        # other boards so link-record inverse maintenance can write through.
-        "deliverables", "tasks", "children",
-    })
+    SETTABLE_FIELDS = frozenset(
+        {
+            "status",
+            "stage",
+            "deadline",
+            "progress",
+            "type",
+            "description",
+            "assignees",
+            "skills_required",
+            "blocks",
+            "blocked_by",
+            # Cross-board link targets — projects accepts lists of item IDs from
+            # other boards so link-record inverse maintenance can write through.
+            "deliverables",
+            "tasks",
+            "children",
+        }
+    )
 
     async def _set_frontmatter_field(self, target: Path, field: str, value) -> bool:
         """Write one frontmatter field to a project file. Preserves other fields
@@ -576,7 +626,10 @@ class ProjectsApp(BaseApp):
         value = data.get("value")
 
         if field not in self.SETTABLE_FIELDS:
-            return {"error": f"field '{field}' not settable", "settable": sorted(self.SETTABLE_FIELDS)}
+            return {
+                "error": f"field '{field}' not settable",
+                "settable": sorted(self.SETTABLE_FIELDS),
+            }
 
         target = self._find_project_file(project_id)
         if not target:
@@ -584,8 +637,7 @@ class ProjectsApp(BaseApp):
 
         ok = await self._set_frontmatter_field(target, field, value)
         if ok:
-            await self.emit("project:updated",
-                            {"id": project_id, "field": field, "value": value})
+            await self.emit("project:updated", {"id": project_id, "field": field, "value": value})
         return {"ok": ok}
 
     async def list_all(self) -> list[dict]:
@@ -599,8 +651,12 @@ class ProjectsApp(BaseApp):
         people app's workload index. Weight scales loosely with status —
         active projects count full; blocked/shelved a fraction; completed/archived 0."""
         _STATUS_WEIGHT = {
-            "active": 5.0, "blocked": 2.0, "shelved": 1.0,
-            "idea": 1.0, "completed": 0.0, "archived": 0.0,
+            "active": 5.0,
+            "blocked": 2.0,
+            "shelved": 1.0,
+            "idea": 1.0,
+            "completed": 0.0,
+            "archived": 0.0,
         }
         rows: list[dict] = []
         for p in await self.list_projects(""):
@@ -612,18 +668,20 @@ class ProjectsApp(BaseApp):
             if isinstance(raw, str):
                 raw = [s.strip() for s in raw.split(",") if s.strip()]
             for person_id in raw:
-                rows.append({
-                    "person": person_id,
-                    "item": {
-                        "app": "projects",
-                        "id": p.get("id", ""),
-                        "title": p.get("name", ""),
-                        "status": p.get("status", ""),
-                        "deadline": p.get("deadline", ""),
-                    },
-                    "weight_hours": weight,
-                    "role": "assignee",
-                })
+                rows.append(
+                    {
+                        "person": person_id,
+                        "item": {
+                            "app": "projects",
+                            "id": p.get("id", ""),
+                            "title": p.get("name", ""),
+                            "status": p.get("status", ""),
+                            "deadline": p.get("deadline", ""),
+                        },
+                        "weight_hours": weight,
+                        "role": "assignee",
+                    }
+                )
         return rows
 
     async def set_field(self, id: str, field: str, value) -> dict:
@@ -660,7 +718,7 @@ class ProjectsApp(BaseApp):
         line = lines[line_num]
         if "- [ ] " in line:
             today = date.today().isoformat()
-            lines[line_num] = line.replace("- [ ] ", f"- [x] ", 1)
+            lines[line_num] = line.replace("- [ ] ", "- [x] ", 1)
             # Add completion date if not present
             if "\u2705" not in lines[line_num]:
                 lines[line_num] = lines[line_num].rstrip() + f" \u2705 {today}"
@@ -675,11 +733,17 @@ class ProjectsApp(BaseApp):
         await self.emit("projects:task_toggled", {"id": project_id, "line": line_num})
         return {"ok": True, "line": line_num}
 
-    async def add_task_to_project(self, project_id: str, text: str, due: str = "", done: bool = False) -> dict:
+    async def add_task_to_project(
+        self, project_id: str, text: str, due: str = "", done: bool = False,
+        room_id: str = "",
+    ) -> dict:
         """Add a task to a project file. Creates the project if it doesn't exist.
 
         Callable via call_app("projects", "add_task_to_project", project_id=..., text=...).
         Pass done=True to record the task as already completed (e.g. logging finished work).
+        Pass room_id to attach the task back to a room - appended as the
+        chat-bubble marker on the task line (see ROOM_PATTERN) so `_parse_tasks`
+        and `get_all_tasks` surface it for the rooms UI to query.
         """
         text = text.strip()
         if not text:
@@ -691,11 +755,14 @@ class ProjectsApp(BaseApp):
 
         if done:
             from datetime import date as _date
+
             task_line = f"- [x] {text} \u2705 {_date.today().isoformat()}"
         else:
             task_line = f"- [ ] {text}"
         if due:
             task_line += f" \U0001f4c5 {due}"
+        if room_id:
+            task_line += f" \U0001f5e8\ufe0f {room_id}"
 
         content = target.read_text(encoding="utf-8")
 
@@ -713,8 +780,14 @@ class ProjectsApp(BaseApp):
             content = content.rstrip() + "\n\n## Tasks\n" + task_line + "\n"
 
         target.write_text(content, encoding="utf-8")
-        await self.emit("projects:task_added", {"id": project_id, "text": text, "done": done})
-        return {"ok": True, "task": text, "project": project_id, "done": done}
+        await self.emit("projects:task_added", {
+            "id": project_id, "text": text, "done": done,
+            "room_id": room_id or None,
+        })
+        result = {"ok": True, "task": text, "project": project_id, "done": done}
+        if room_id:
+            result["room_id"] = room_id
+        return result
 
     # --- Bootstrap templates for auto-created projects ---
 
@@ -751,7 +824,7 @@ class ProjectsApp(BaseApp):
 
         # Write main project note
         today = date.today().isoformat()
-        fm_lines = [f"status: active", f"created: {today}", f"type: {ptype}"]
+        fm_lines = ["status: active", f"created: {today}", f"type: {ptype}"]
         if tmpl.get("stage"):
             fm_lines.append(f"stage: {tmpl['stage']}")
         if tmpl.get("repo"):
@@ -759,7 +832,7 @@ class ProjectsApp(BaseApp):
         fm_lines.append("tags:\n  - " + "\n  - ".join(tags))
 
         content = (
-            f"---\n" + "\n".join(fm_lines) + f"\n---\n\n"
+            "---\n" + "\n".join(fm_lines) + f"\n---\n\n"
             f"# {name}\n\n> {goal}\n\n## Goal\n{goal}\n\n## Tasks\n\n## Notes\n"
         )
         target = proj_dir / f"{project_id}.md"
@@ -771,9 +844,7 @@ class ProjectsApp(BaseApp):
         """Add a task to a project file."""
         project_id = request.path_params.get("id", "")
         data = await request.json()
-        return await self.add_task_to_project(
-            project_id, data.get("text", ""), data.get("due", "")
-        )
+        return await self.add_task_to_project(project_id, data.get("text", ""), data.get("due", ""))
 
     @web_route("GET", "/api/projects/{id}/health")
     async def api_health(self, request):
@@ -791,18 +862,24 @@ class ProjectsApp(BaseApp):
         # Truncate for LLM
         snippet = content[:2000]
 
-        prompt = (
-            f"Assess this project's health. Project: {p['name']}\n"
-            f"Status: {p['status']}, Tasks: {p['done_tasks']}/{p['total_tasks']} done, "
-            f"Progress: {p['progress']}%, Stale: {p['stale_days']}d since edit\n"
-            f"Deadline: {p['deadline'] or 'none'}"
-            f"{', OVERDUE by ' + str(abs(p['days_until_deadline'])) + ' days' if p.get('overdue') else ''}\n\n"
-            f"Content preview:\n{snippet}\n\n"
-            "Give: 1) Health rating (healthy/at-risk/critical), 2) One-line diagnosis, "
-            "3) Top recommended action. Be concise (3 lines max)."
+        overdue_clause = (
+            f", OVERDUE by {abs(p['days_until_deadline'])} days" if p.get("overdue") else ""
+        )
+        user_msg = HEALTH_USER_TMPL.format(
+            name=p["name"],
+            status=p["status"],
+            done=p["done_tasks"],
+            total=p["total_tasks"],
+            progress=p["progress"],
+            stale_days=p["stale_days"],
+            deadline=p["deadline"] or "none",
+            overdue_clause=overdue_clause,
+            snippet=snippet,
         )
         try:
-            result = await self.think(prompt, domain="text")
+            result = await self.think(
+                user_msg, system=HEALTH_SYSTEM, domain="text", temperature=0.3
+            )
             return {"health": result, "project": p["name"], "provenance": self.last_provenance()}
         except Exception as e:
             return {"health": f"AI unavailable: {e}"}
@@ -835,15 +912,17 @@ class ProjectsApp(BaseApp):
             if days_left is None:
                 continue
             if -overdue_days <= days_left <= days:
-                results.append({
-                    "id": p["id"],
-                    "name": p["name"],
-                    "deadline": dl,
-                    "days_left": days_left,
-                    "overdue": days_left < 0,
-                    "status": p["status"],
-                    "progress": p["progress"],
-                })
+                results.append(
+                    {
+                        "id": p["id"],
+                        "name": p["name"],
+                        "deadline": dl,
+                        "days_left": days_left,
+                        "overdue": days_left < 0,
+                        "status": p["status"],
+                        "progress": p["progress"],
+                    }
+                )
         results.sort(key=lambda x: x["days_left"])
         return results
 
@@ -879,19 +958,38 @@ class ProjectsApp(BaseApp):
                     due_str = due_m.group(1) if due_m else ""
                     done_m = DONE_PATTERN.search(t["text"])
                     done_date = done_m.group(1) if done_m else ""
-                    overdue_days, tier = compute_task_decay(due_str, today) if due_str and not t["done"] else (0, "fresh")
-                    all_tasks.append({
-                        "text": t["text"],
-                        "done": t["done"],
-                        "file": rel_path,
-                        "line": t["line"] + 1,
-                        "due": due_str,
-                        "done_date": done_date,
-                        "overdue_days": overdue_days,
-                        "tier": tier,
-                        "project": project_id,
-                    })
+                    room_m = ROOM_PATTERN.search(t["text"])
+                    room_id = room_m.group(1) if room_m else ""
+                    overdue_days, tier = (
+                        compute_task_decay(due_str, today)
+                        if due_str and not t["done"]
+                        else (0, "fresh")
+                    )
+                    all_tasks.append(
+                        {
+                            "text": t["text"],
+                            "done": t["done"],
+                            "file": rel_path,
+                            "line": t["line"] + 1,
+                            "due": due_str,
+                            "done_date": done_date,
+                            "overdue_days": overdue_days,
+                            "tier": tier,
+                            "project": project_id,
+                            "room_id": room_id,
+                        }
+                    )
         return all_tasks
+
+    async def tasks_for_room(self, room_id: str, status_filter: str = "") -> list[dict]:
+        """All tasks (across projects) attached to a given room. Thin filter
+        over `get_all_tasks` — kept here because the projects app owns the
+        scan; rooms calls it via `call_app("projects", "tasks_for_room", ...)`.
+        """
+        if not room_id:
+            return []
+        tasks = await self.get_all_tasks(status_filter)
+        return [t for t in tasks if t.get("room_id") == room_id]
 
     def _iter_project_files(self, directory: Path):
         """Yield main .md file for each project in a directory."""
@@ -917,6 +1015,15 @@ class ProjectsApp(BaseApp):
         """All tasks across all projects. Used by task app."""
         status_filter = request.query_params.get("status", "")
         return await self.get_all_tasks(status_filter)
+
+    @web_route("GET", "/api/tasks-for-room/{room_id}")
+    async def api_tasks_for_room(self, request):
+        """Tasks attached to *room_id* via the 🗨️ marker. Consumed by the
+        rooms UI to render its 'attached tasks' panel."""
+        status_filter = request.query_params.get("status", "")
+        return await self.tasks_for_room(
+            request.path_params["room_id"], status_filter,
+        )
 
     # ------------------------------------------------------------------
     # Type & Stage System
@@ -961,11 +1068,15 @@ class ProjectsApp(BaseApp):
         project_type = fm.get("type", "personal")
         type_def = PROJECT_TYPES.get(project_type, PROJECT_TYPES["personal"])
         if type_def["stages"] and new_stage not in type_def["stages"]:
-            return {"error": f"Invalid stage '{new_stage}' for type '{project_type}'. Valid: {type_def['stages']}"}
+            return {
+                "error": f"Invalid stage '{new_stage}' for type '{project_type}'. Valid: {type_def['stages']}"
+            }
 
         content = set_frontmatter_field(content, "stage", new_stage)
         await self.write(str(target), content)
-        await self.emit("projects:stage_changed", {"id": project_id, "stage": new_stage, "type": project_type})
+        await self.emit(
+            "projects:stage_changed", {"id": project_id, "stage": new_stage, "type": project_type}
+        )
         return {"ok": True, "stage": new_stage}
 
     @web_route("POST", "/api/projects/{id}/features")
@@ -993,7 +1104,10 @@ class ProjectsApp(BaseApp):
         project_type = fm.get("type", "personal")
         default = project_type in PROJECT_FEATURES[feature_id].get("default_on", [])
 
-        # Parse current on/off sets
+        # Parse current on/off sets (comma-separated frontmatter strings)
+        def _parse_csv_set(raw: str) -> set:
+            return {s.strip() for s in str(raw or "").split(",") if s.strip()}
+
         on_set = _parse_csv_set(fm.get("features_on", ""))
         off_set = _parse_csv_set(fm.get("features_off", ""))
 
@@ -1025,7 +1139,7 @@ class ProjectsApp(BaseApp):
                     fm_block += f"features_on: {new_on}\n"
                 if new_off:
                     fm_block += f"features_off: {new_off}\n"
-                content = "---" + fm_block + "---" + content[fm_end + 3:]
+                content = "---" + fm_block + "---" + content[fm_end + 3 :]
         else:
             extra = ""
             if new_on:
@@ -1039,7 +1153,10 @@ class ProjectsApp(BaseApp):
         # Re-parse to get resolved features
         fm_new = parse_frontmatter(content)
         features = self._resolve_features(project_type, fm_new)
-        await self.emit("projects:feature_toggled", {"id": project_id, "feature": feature_id, "enabled": enabled})
+        await self.emit(
+            "projects:feature_toggled",
+            {"id": project_id, "feature": feature_id, "enabled": enabled},
+        )
         return {"ok": True, "feature": feature_id, "enabled": enabled, "features": features}
 
     # ------------------------------------------------------------------
@@ -1093,7 +1210,7 @@ class ProjectsApp(BaseApp):
             active = [p for p in projects if p.get("status") == "active"]
             if not active:
                 return None
-                
+
             out = "Active Projects:\n"
             for p in active[:5]:
                 out += f"- {p['name']} ({p.get('done_tasks', 0)}/{p.get('total_tasks', 0)} tasks done)\n"
@@ -1103,6 +1220,7 @@ class ProjectsApp(BaseApp):
 
 
 # --- Helpers (outside class) ---
+
 
 class _FakeRequest:
     """Minimal request object for call_app to web_route methods."""

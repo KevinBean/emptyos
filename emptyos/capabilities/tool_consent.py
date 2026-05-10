@@ -30,8 +30,9 @@ from __future__ import annotations
 import asyncio
 import time
 import uuid
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, Awaitable, Callable, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 if TYPE_CHECKING:
     from emptyos.kernel.event_bus import EventBus
@@ -72,7 +73,7 @@ class ToolConsentManager:
     def __init__(
         self,
         policy: Policy = "ask",
-        events: "EventBus | None" = None,
+        events: EventBus | None = None,
         ui: PermissionUI | None = None,
     ):
         self.policy = policy if policy in ("ask", "auto", "deny") else "ask"
@@ -95,9 +96,7 @@ class ToolConsentManager:
 
     def reset_session(self, session_id: str):
         """Clear all approvals for a session (e.g. on session close)."""
-        self._session_approved = {
-            (s, t) for (s, t) in self._session_approved if s != session_id
-        }
+        self._session_approved = {(s, t) for (s, t) in self._session_approved if s != session_id}
 
     async def check(
         self,
@@ -120,14 +119,18 @@ class ToolConsentManager:
         # Hard kill switch — trumps everything, including auto tools
         if self.policy == "deny":
             self._last_decision[(session_id, tool)] = {
-                "decision": "denied", "reason": "policy=deny", "at": time.time(),
+                "decision": "denied",
+                "reason": "policy=deny",
+                "at": time.time(),
             }
             return False
 
         # Tool says "deny" → never allow
         if tool_default == "deny":
             self._last_decision[(session_id, tool)] = {
-                "decision": "denied", "reason": "tool=deny", "at": time.time(),
+                "decision": "denied",
+                "reason": "tool=deny",
+                "at": time.time(),
             }
             return False
 
@@ -166,7 +169,9 @@ class ToolConsentManager:
                 return bool(approved)
             except Exception as e:
                 self._last_decision[(session_id, tool)] = {
-                    "decision": "denied", "reason": f"ui error: {e}", "at": time.time(),
+                    "decision": "denied",
+                    "reason": f"ui error: {e}",
+                    "at": time.time(),
                 }
                 if not future.done():
                     future.set_result(False)
@@ -192,12 +197,15 @@ class ToolConsentManager:
 
         try:
             result = await asyncio.wait_for(
-                future, timeout=timeout or self.DEFAULT_TIMEOUT_SECONDS,
+                future,
+                timeout=timeout or self.DEFAULT_TIMEOUT_SECONDS,
             )
             return bool(result)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             self._last_decision[(session_id, tool)] = {
-                "decision": "denied", "reason": "timeout", "at": time.time(),
+                "decision": "denied",
+                "reason": "timeout",
+                "at": time.time(),
             }
             return False
         finally:
@@ -232,19 +240,22 @@ class ToolConsentManager:
         if self.events:
             try:
                 import asyncio as _a
+
                 loop = _a.get_event_loop()
                 if loop.is_running():
-                    loop.create_task(self.events.emit(
-                        "agent:permission_resolved",
-                        {
-                            "id": pending.id,
-                            "session_id": pending.session_id,
-                            "tool": pending.tool,
-                            "approved": approved,
-                            "scope": scope,
-                        },
-                        source="tool_consent",
-                    ))
+                    loop.create_task(
+                        self.events.emit(
+                            "agent:permission_resolved",
+                            {
+                                "id": pending.id,
+                                "session_id": pending.session_id,
+                                "tool": pending.tool,
+                                "approved": approved,
+                                "scope": scope,
+                            },
+                            source="tool_consent",
+                        )
+                    )
             except Exception:
                 pass
 
@@ -255,14 +266,16 @@ class ToolConsentManager:
         for p in self._pending.values():
             if session_id and p.session_id != session_id:
                 continue
-            out.append({
-                "id": p.id,
-                "session_id": p.session_id,
-                "tool": p.tool,
-                "input": p.input,
-                "summary": p.summary,
-                "created_at": p.created_at,
-            })
+            out.append(
+                {
+                    "id": p.id,
+                    "session_id": p.session_id,
+                    "tool": p.tool,
+                    "input": p.input,
+                    "summary": p.summary,
+                    "created_at": p.created_at,
+                }
+            )
         return out
 
     def status(self) -> dict:
@@ -270,7 +283,5 @@ class ToolConsentManager:
             "policy": self.policy,
             "approved": sorted(f"{s}::{t}" for (s, t) in self._session_approved),
             "pending": self.pending_list(),
-            "last_decisions": {
-                f"{s}::{t}": d for (s, t), d in self._last_decision.items()
-            },
+            "last_decisions": {f"{s}::{t}": d for (s, t), d in self._last_decision.items()},
         }

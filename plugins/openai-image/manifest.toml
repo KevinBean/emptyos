@@ -1,0 +1,12 @@
+[plugin]
+id = "openai-image"
+name = "OpenAI Image"
+version = "1.0.0"
+description = "Cloud image-gen fallback via OpenAI gpt-image-1. Cost-bearing — opt-in per call by domain routing, not auto-selected for free local generations."
+
+[plugin.entry]
+module = "plugin"
+class = "OpenAIImagePlugin"
+
+[provides]
+tags = ["cloud", "image"]

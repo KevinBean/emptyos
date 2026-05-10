@@ -9,8 +9,7 @@ from datetime import date, datetime
 from html import escape as html_escape
 from pathlib import Path
 
-from emptyos.sdk.utils import parse_frontmatter, strip_frontmatter, slugify, fm_str, fm_list
-
+from emptyos.sdk.utils import fm_list, fm_str, parse_frontmatter, slugify, strip_frontmatter
 
 # Corpus chunking — emits corpus.json alongside the built site for downstream
 # consumers (chatbot service, future search, embeddings). One chunk per H2
@@ -68,7 +67,7 @@ def _split_on_paragraph(text: str, max_chars: int) -> list[str]:
                 buf = []
                 buf_len = 0
             for i in range(0, len(para), max_chars):
-                parts.append(para[i:i + max_chars])
+                parts.append(para[i : i + max_chars])
         else:
             buf.append(para)
             buf_len += plen
@@ -96,13 +95,15 @@ def _chunk_body(body_md: str) -> list[dict]:
             return
         pieces = _split_on_paragraph(clean, _CHUNK_MAX_CHARS)
         for i, piece in enumerate(pieces):
-            sections.append({
-                "section": current_heading,
-                "section_slug": slugify(current_heading) if current_heading else "",
-                "part": i,                  # 0-based; >0 when section split
-                "part_count": len(pieces),
-                "text": piece,
-            })
+            sections.append(
+                {
+                    "section": current_heading,
+                    "section_slug": slugify(current_heading) if current_heading else "",
+                    "part": i,  # 0-based; >0 when section split
+                    "part_count": len(pieces),
+                    "text": piece,
+                }
+            )
 
     for line in body_md.split("\n"):
         if line.startswith("## ") and not line.startswith("### "):
@@ -122,6 +123,7 @@ def _load_faqs(source_dir: Path) -> list[dict]:
         return []
     try:
         import tomllib
+
         with open(fpath, "rb") as f:
             data = tomllib.load(f)
     except Exception:
@@ -139,6 +141,7 @@ def _load_faqs(source_dir: Path) -> list[dict]:
             out.append({"q": q, "a": a})
     return out
 
+
 def _parse_metrics_yaml(content: str) -> list:
     """Parse nested `metrics: [{val, lbl}, ...]` frontmatter using yaml.
 
@@ -152,6 +155,7 @@ def _parse_metrics_yaml(content: str) -> list:
         return []
     try:
         import yaml  # pyyaml
+
         fm = yaml.safe_load(content[3:end]) or {}
     except Exception:
         return []
@@ -159,31 +163,32 @@ def _parse_metrics_yaml(content: str) -> list:
     return m if isinstance(m, list) else []
 
 
-from emptyos.sdk.markdown_render import render_markdown, extract_images
+from emptyos.sdk.markdown_render import extract_images, render_markdown
+
 from .templates import (
-    BASE_TEMPLATE,
-    INDEX_CONTENT,
-    FEATURED_POST,
-    POST_CARD,
-    POST_ITEM,
-    POST_CONTENT,
-    PAGE_CONTENT,
-    DOCS_PAGE_CONTENT,
-    LANDING_CONTENT,
-    FEATURE_CARD,
-    BLOG_PREVIEW,
-    TOC_SIDEBAR,
+    AI_NOTICE,
     AUTHOR_CARD,
+    BASE_TEMPLATE,
+    BLOG_PREVIEW,
+    DOCS_PAGE_CONTENT,
+    FEATURE_CARD,
+    FEATURED_POST,
+    INDEX_CONTENT,
+    LANDING_CONTENT,
+    LANG_NAMES,
+    LANG_SWITCHER,
+    PAGE_CONTENT,
+    POST_CARD,
+    POST_CONTENT,
+    POST_ITEM,
+    RELATED_POST_ITEM,
+    RELATED_POSTS,
+    RSS_ENTRY,
+    RSS_TEMPLATE,
+    TAG_LINK,
     TAG_PAGE_CONTENT,
     TAGS_INDEX_CONTENT,
-    TAG_LINK,
-    RELATED_POSTS,
-    RELATED_POST_ITEM,
-    RSS_TEMPLATE,
-    RSS_ENTRY,
-    LANG_SWITCHER,
-    AI_NOTICE,
-    LANG_NAMES,
+    TOC_SIDEBAR,
     get_site_css,
 )
 
@@ -196,7 +201,12 @@ def _reading_time(text: str) -> int:
 def _first_paragraph(body: str) -> str:
     for line in body.split("\n"):
         line = line.strip()
-        if line and not line.startswith("#") and not line.startswith("!") and not line.startswith(">"):
+        if (
+            line
+            and not line.startswith("#")
+            and not line.startswith("!")
+            and not line.startswith(">")
+        ):
             return line[:200] + ("..." if len(line) > 200 else "")
     return ""
 
@@ -217,8 +227,11 @@ def _render_post_cards(posts: list[dict]) -> str:
     """Render a list of posts as POST_CARD HTML."""
     return "\n".join(
         POST_CARD.format(
-            slug=p["slug"], title=p["title"], date=p["date"],
-            reading_time=p["reading_time"], summary=p["summary"],
+            slug=p["slug"],
+            title=p["title"],
+            date=p["date"],
+            reading_time=p["reading_time"],
+            summary=p["summary"],
             tags_html=" ".join(f'<span class="tag">{t}</span>' for t in p["tags"]),
             cover_html=_cover_img_html(p.get("cover", ""), "card-cover", p["title"]),
         )
@@ -265,8 +278,9 @@ def _parse_landing_sections(body_md: str) -> dict:
             if in_hero:
                 in_hero = False
             elif current_heading is not None:
-                sections.append({"heading": current_heading,
-                                 "body_md": "\n".join(current_body).strip()})
+                sections.append(
+                    {"heading": current_heading, "body_md": "\n".join(current_body).strip()}
+                )
             current_heading = line[3:].strip()
             current_body = []
         elif in_hero:
@@ -275,8 +289,7 @@ def _parse_landing_sections(body_md: str) -> dict:
             current_body.append(line)
 
     if current_heading is not None:
-        sections.append({"heading": current_heading,
-                         "body_md": "\n".join(current_body).strip()})
+        sections.append({"heading": current_heading, "body_md": "\n".join(current_body).strip()})
 
     hero_text = "\n".join(hero_lines).strip()
 
@@ -294,15 +307,14 @@ def _parse_landing_sections(body_md: str) -> dict:
     _GALLERY_NAMES = {"gallery", "screenshots", "images", "tour"}
     has_blog = any(s["heading"].lower() in _BLOG_NAMES for s in sections)
 
-    gallery_section = next(
-        (s for s in sections if s["heading"].lower() in _GALLERY_NAMES), None
-    )
+    gallery_section = next((s for s in sections if s["heading"].lower() in _GALLERY_NAMES), None)
     gallery_items: list[dict] = []
     if gallery_section:
         for m in re.finditer(
             r"!\[\[([^\]]+\.(?:png|jpe?g|gif|svg|webp))\]\]"
             r"|!\[([^\]]*)\]\(([^)]+\.(?:png|jpe?g|gif|svg|webp))\)",
-            gallery_section["body_md"], flags=re.IGNORECASE,
+            gallery_section["body_md"],
+            flags=re.IGNORECASE,
         ):
             if m.group(1):
                 gallery_items.append({"src": m.group(1), "alt": ""})
@@ -310,16 +322,14 @@ def _parse_landing_sections(body_md: str) -> dict:
                 gallery_items.append({"src": m.group(3), "alt": (m.group(2) or "").strip()})
 
     features = [
-        s for s in sections
-        if s["heading"].lower() not in _BLOG_NAMES
-        and s["heading"].lower() not in _GALLERY_NAMES
+        s
+        for s in sections
+        if s["heading"].lower() not in _BLOG_NAMES and s["heading"].lower() not in _GALLERY_NAMES
     ]
 
     # Split a leading emoji off each feature heading → icon + heading.
     # Covers: pictographs (1F300–1FAFF), misc symbols + dingbats (2600–27BF).
-    _ICON_RE = re.compile(
-        r"^([\U0001F300-\U0001FAFF\U00002600-\U000027BF])\s+(.+)$"
-    )
+    _ICON_RE = re.compile(r"^([\U0001F300-\U0001FAFF\U00002600-\U000027BF])\s+(.+)$")
     for f in features:
         m = _ICON_RE.match(f["heading"])
         if m:
@@ -418,7 +428,9 @@ class SiteBuilder:
             try:
                 size = dj.stat().st_size
                 if size > self._DEMO_DATA_MAX_BYTES:
-                    print(f"[publish] demo_data: skipping {dj.name} ({size:,} bytes > {self._DEMO_DATA_MAX_BYTES:,} cap)")
+                    print(
+                        f"[publish] demo_data: skipping {dj.name} ({size:,} bytes > {self._DEMO_DATA_MAX_BYTES:,} cap)"
+                    )
                     continue
                 bundle[dj.stem] = json.loads(dj.read_text(encoding="utf-8"))
             except (OSError, json.JSONDecodeError, ValueError) as e:
@@ -426,7 +438,7 @@ class SiteBuilder:
         if not bundle:
             return html
         payload = json.dumps(bundle, ensure_ascii=False, separators=(",", ":"))
-        return html.replace("</head>", f'<script>window.DEMO_DATA = {payload};</script>\n</head>')
+        return html.replace("</head>", f"<script>window.DEMO_DATA = {payload};</script>\n</head>")
 
     def scan(self, include_drafts: bool = False) -> list[dict]:
         if not self.source_dir.exists():
@@ -453,7 +465,9 @@ class SiteBuilder:
             date_str = fm_str(fm, "date", "created") or date.today().isoformat()
             tags = fm_list(fm, "tags")
             tags = [t for t in tags if t not in ("publish", "private")]
-            summary = fm_str(fm, "summary", "description") or _first_paragraph(strip_frontmatter(content))
+            summary = fm_str(fm, "summary", "description") or _first_paragraph(
+                strip_frontmatter(content)
+            )
 
             item = {
                 "path": str(md_file),
@@ -478,7 +492,9 @@ class SiteBuilder:
             items.append(item)
 
         pages = sorted([i for i in items if i["type"] == "page"], key=lambda p: p["nav_order"])
-        posts = sorted([i for i in items if i["type"] == "post"], key=lambda p: p["date"], reverse=True)
+        posts = sorted(
+            [i for i in items if i["type"] == "post"], key=lambda p: p["date"], reverse=True
+        )
         return pages + posts
 
     def build(self) -> dict:
@@ -525,9 +541,7 @@ class SiteBuilder:
             self._copy_widget_asset(site)
 
         # Detect project site mode (has a landing page)
-        landing_page = next(
-            (p for p in pages if p.get("layout") == "landing"), None
-        )
+        landing_page = next((p for p in pages if p.get("layout") == "landing"), None)
         is_project_site = landing_page is not None
         doc_pages = [p for p in pages if p != landing_page] if landing_page else pages
 
@@ -567,7 +581,9 @@ class SiteBuilder:
                 name=author_name,
                 bio=author_bio,
                 links_html=_social_links_html(social_links, include_website=True),
-                avatar_img=f'<img src="../assets/avatar.png" class="author-avatar" alt="{author_name}">' if has_avatar else "",
+                avatar_img=f'<img src="../assets/avatar.png" class="author-avatar" alt="{author_name}">'
+                if has_avatar
+                else "",
             )
 
         # site_url is also computed later (for RSS) — hoisted here so _make_page
@@ -581,13 +597,18 @@ class SiteBuilder:
         if favicon_filename:
             ext = Path(favicon_filename).suffix.lower()
             mime = {
-                ".svg": "image/svg+xml", ".png": "image/png",
-                ".ico": "image/x-icon", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
+                ".svg": "image/svg+xml",
+                ".png": "image/png",
+                ".ico": "image/x-icon",
+                ".jpg": "image/jpeg",
+                ".jpeg": "image/jpeg",
             }.get(ext, "image/png")
             favicon_link_html = f'<link rel="icon" type="{mime}" href="{{root}}{favicon_filename}">'
 
         search_engines = self.config.get("search_engines", True)
-        robots_meta_html = "" if search_engines else '<meta name="robots" content="noindex, nofollow">'
+        robots_meta_html = (
+            "" if search_engines else '<meta name="robots" content="noindex, nofollow">'
+        )
 
         def _make_page(title, description, content_html, root, out_path, lang="en", cover=""):
             resolved_nav = nav_links.replace("{root}", root)
@@ -633,7 +654,9 @@ class SiteBuilder:
             for img_name in extract_images(body_md):
                 self._copy_image(img_name, pg["path"], site / "assets")
                 images_copied += 1
-            body_html, _ = render_markdown(body_md, published_slugs, assets_prefix="assets/", link_prefix="")
+            body_html, _ = render_markdown(
+                body_md, published_slugs, assets_prefix="assets/", link_prefix=""
+            )
 
             if is_project_site and doc_pages:
                 # Docs layout with sidebar
@@ -642,7 +665,8 @@ class SiteBuilder:
                     active = ' class="active"' if dp["slug"] == pg["slug"] else ""
                     sidebar_links += f'      <li><a href="{dp["slug"]}.html"{active}>{dp["nav_label"]}</a></li>\n'
                 page_html = DOCS_PAGE_CONTENT.format(
-                    title=pg["title"], sidebar_links=sidebar_links,
+                    title=pg["title"],
+                    sidebar_links=sidebar_links,
                 ).replace("%%BODY%%", body_html)
             else:
                 page_html = PAGE_CONTENT.format(title=pg["title"], body=body_html)
@@ -658,7 +682,9 @@ class SiteBuilder:
                 self._copy_image(img_name, post["path"], site / "assets")
                 images_copied += 1
 
-            body_html, toc_raw = render_markdown(body_md, published_slugs, assets_prefix="../assets/", link_prefix="../")
+            body_html, toc_raw = render_markdown(
+                body_md, published_slugs, assets_prefix="../assets/", link_prefix="../"
+            )
 
             toc_html = TOC_SIDEBAR.format(toc=toc_raw) if toc_raw and "<li>" in toc_raw else ""
 
@@ -670,12 +696,16 @@ class SiteBuilder:
             related_html = ""
             if post["tags"]:
                 post_tags = set(post["tags"])
-                scored = [(len(post_tags & set(o["tags"])), o) for o in posts if o["slug"] != post["slug"]]
+                scored = [
+                    (len(post_tags & set(o["tags"])), o) for o in posts if o["slug"] != post["slug"]
+                ]
                 scored = [(s, o) for s, o in scored if s > 0]
                 scored.sort(key=lambda x: x[0], reverse=True)
                 if scored:
                     related_items = "\n".join(
-                        RELATED_POST_ITEM.format(root="../", slug=s["slug"], title=s["title"], date=s["date"])
+                        RELATED_POST_ITEM.format(
+                            root="../", slug=s["slug"], title=s["title"], date=s["date"]
+                        )
                         for _, s in scored[:3]
                     )
                     related_html = RELATED_POSTS.format(items=related_items)
@@ -693,7 +723,15 @@ class SiteBuilder:
                 lang_switch_html="",
                 ai_notice_html="",
             )
-            _make_page(post["title"], post["summary"], post_html, "../", site / "posts" / f"{post['slug']}.html", lang=original_lang, cover=post.get("cover", ""))
+            _make_page(
+                post["title"],
+                post["summary"],
+                post_html,
+                "../",
+                site / "posts" / f"{post['slug']}.html",
+                lang=original_lang,
+                cover=post.get("cover", ""),
+            )
 
         # --- Index page ---
         if landing_page:
@@ -717,8 +755,10 @@ class SiteBuilder:
             feature_cards = ""
             for feat in parsed["features"]:
                 feat_html, _ = render_markdown(
-                    feat["body_md"], published_slugs,
-                    assets_prefix="assets/", link_prefix="",
+                    feat["body_md"],
+                    published_slugs,
+                    assets_prefix="assets/",
+                    link_prefix="",
                 )
                 icon = feat.get("icon") or ""
                 icon_html = f'<div class="feature-icon">{icon}</div>' if icon else ""
@@ -729,6 +769,7 @@ class SiteBuilder:
             metrics_html = ""
             if parsed.get("metrics"):
                 from html import escape as _esc
+
                 tiles = []
                 for m in parsed["metrics"]:
                     val = _esc(m.get("value") or "")
@@ -737,24 +778,22 @@ class SiteBuilder:
                         f'<div class="metric-tile">'
                         f'<div class="metric-value">{val}</div>'
                         f'<div class="metric-label">{lbl}</div>'
-                        f'</div>'
+                        f"</div>"
                     )
-                metrics_html = (
-                    f'<div class="metric-strip">{"".join(tiles)}</div>'
-                )
+                metrics_html = f'<div class="metric-strip">{"".join(tiles)}</div>'
 
             # Blog preview (latest 3 posts)
             blog_preview_html = ""
             if parsed["has_blog_preview"] and posts:
-                blog_preview_html = BLOG_PREVIEW.format(
-                    post_cards=_render_post_cards(posts[:3])
-                )
+                blog_preview_html = BLOG_PREVIEW.format(post_cards=_render_post_cards(posts[:3]))
 
             hero_note_html = ""
             if parsed.get("hero_note_md"):
                 note_html, _ = render_markdown(
-                    parsed["hero_note_md"], published_slugs,
-                    assets_prefix="assets/", link_prefix="",
+                    parsed["hero_note_md"],
+                    published_slugs,
+                    assets_prefix="assets/",
+                    link_prefix="",
                 )
                 hero_note_html = f'<div class="hero-note">{note_html}</div>'
 
@@ -762,24 +801,23 @@ class SiteBuilder:
             gallery_html = ""
             if parsed.get("gallery_items"):
                 from html import escape as _esc
+
                 tiles = []
                 for it in parsed["gallery_items"]:
                     src = "assets/" + Path(it["src"]).name
                     alt = _esc(it["alt"] or "")
-                    cap = (
-                        f'<figcaption>{alt}</figcaption>' if it["alt"] else ""
-                    )
+                    cap = f"<figcaption>{alt}</figcaption>" if it["alt"] else ""
                     tiles.append(
                         f'<figure class="gallery-tile">'
                         f'<a href="{src}" target="_blank" rel="noopener">'
                         f'<img src="{src}" alt="{alt}" loading="lazy">'
-                        f'</a>{cap}</figure>'
+                        f"</a>{cap}</figure>"
                     )
                 gallery_html = (
                     f'<div class="gallery-section">'
                     f'<div class="section-heading">{_esc(parsed["gallery_heading"])}</div>'
                     f'<div class="gallery-grid">{"".join(tiles)}</div>'
-                    f'</div>'
+                    f"</div>"
                 )
 
             index_html = LANDING_CONTENT.format(
@@ -792,8 +830,13 @@ class SiteBuilder:
                 gallery_html=gallery_html,
                 blog_preview_html=blog_preview_html,
             )
-            _make_page(landing_page["title"], landing_page.get("summary", site_desc),
-                       index_html, "", site / "index.html")
+            _make_page(
+                landing_page["title"],
+                landing_page.get("summary", site_desc),
+                index_html,
+                "",
+                site / "index.html",
+            )
 
             # Generate blog listing page
             if posts:
@@ -805,22 +848,33 @@ class SiteBuilder:
 
         else:
             # Blog site: classic hero + featured + card grid
-            featured_post = next((p for p in posts if p.get("featured")), posts[0] if posts else None)
+            featured_post = next(
+                (p for p in posts if p.get("featured")), posts[0] if posts else None
+            )
             remaining_posts = [p for p in posts if p != featured_post]
 
             featured_html = ""
             if featured_post:
                 ftags = " ".join(f'<span class="tag">{t}</span>' for t in featured_post["tags"])
                 featured_html = FEATURED_POST.format(
-                    slug=featured_post["slug"], title=featured_post["title"],
-                    summary=featured_post["summary"], date=featured_post["date"],
-                    reading_time=featured_post["reading_time"], tags_html=ftags,
-                    cover_html=_cover_img_html(featured_post.get("cover", ""), "featured-cover", featured_post["title"]),
+                    slug=featured_post["slug"],
+                    title=featured_post["title"],
+                    summary=featured_post["summary"],
+                    date=featured_post["date"],
+                    reading_time=featured_post["reading_time"],
+                    tags_html=ftags,
+                    cover_html=_cover_img_html(
+                        featured_post.get("cover", ""), "featured-cover", featured_post["title"]
+                    ),
                 )
 
             post_cards = _render_post_cards(remaining_posts)
 
-            avatar_html = f'<img src="assets/avatar.png" class="hero-avatar" alt="{author_name}">' if has_avatar else ""
+            avatar_html = (
+                f'<img src="assets/avatar.png" class="hero-avatar" alt="{author_name}">'
+                if has_avatar
+                else ""
+            )
             index_html = INDEX_CONTENT.format(
                 author_name=author_name or site_name,
                 site_description=site_desc,
@@ -840,20 +894,38 @@ class SiteBuilder:
         for tag_name, tag_posts in tag_map.items():
             tag_slug = slugify(tag_name)
             tag_post_items = "\n".join(
-                POST_ITEM.format(slug=p["slug"], title=p["title"], date=p["date"], tags_html="", summary=p["summary"])
+                POST_ITEM.format(
+                    slug=p["slug"],
+                    title=p["title"],
+                    date=p["date"],
+                    tags_html="",
+                    summary=p["summary"],
+                )
                 for p in tag_posts
             )
             tag_html = TAG_PAGE_CONTENT.format(tag=tag_name, post_items=tag_post_items, root="../")
-            _make_page(f"Tag: {tag_name}", f"Posts tagged {tag_name}", tag_html, "../", site / "tags" / f"{tag_slug}.html")
+            _make_page(
+                f"Tag: {tag_name}",
+                f"Posts tagged {tag_name}",
+                tag_html,
+                "../",
+                site / "tags" / f"{tag_slug}.html",
+            )
 
         tag_links = "\n".join(
             TAG_LINK.format(slug=slugify(t), name=t, count=len(ps))
             for t, ps in sorted(tag_map.items())
         )
-        _make_page("Tags", "All tags", TAGS_INDEX_CONTENT.format(tag_links=tag_links), "", site / "tags.html")
+        _make_page(
+            "Tags",
+            "All tags",
+            TAGS_INDEX_CONTENT.format(tag_links=tag_links),
+            "",
+            site / "tags.html",
+        )
 
         # --- Copy media (podcast audio/video) ---
-        media_copied = self._copy_media(site)
+        self._copy_media(site)
 
         # --- Passthrough: standalone .html files at source root ---
         # Any .html file sitting directly in the source folder (not a generated
@@ -864,8 +936,11 @@ class SiteBuilder:
         # --- Search index (posts + pages) ---
         search_data = [
             {
-                "title": p["title"], "slug": p["slug"], "date": p["date"],
-                "summary": p["summary"][:200], "tags": p["tags"],
+                "title": p["title"],
+                "slug": p["slug"],
+                "date": p["date"],
+                "summary": p["summary"][:200],
+                "tags": p["tags"],
                 "type": p["type"],
                 "body_preview": strip_frontmatter(
                     Path(p["path"]).read_text(encoding="utf-8")
@@ -873,7 +948,9 @@ class SiteBuilder:
             }
             for p in (posts + [pg for pg in doc_pages if pg is not landing_page])
         ]
-        (site / "search-index.json").write_text(json.dumps(search_data, ensure_ascii=False), encoding="utf-8")
+        (site / "search-index.json").write_text(
+            json.dumps(search_data, ensure_ascii=False), encoding="utf-8"
+        )
 
         # --- CNAME ---
         if domain:
@@ -891,7 +968,8 @@ class SiteBuilder:
         # --- robots.txt ---
         if not search_engines:
             (site / "robots.txt").write_text(
-                "User-agent: *\nDisallow: /\n", encoding="utf-8",
+                "User-agent: *\nDisallow: /\n",
+                encoding="utf-8",
             )
         elif domain:
             (site / "robots.txt").write_text(
@@ -902,12 +980,22 @@ class SiteBuilder:
         # --- RSS feed ---
         if site_url and posts:
             rss_entries = "\n".join(
-                RSS_ENTRY.format(title=p["title"], slug=p["slug"], date=p["date"], summary=p["summary"][:300], site_url=site_url)
+                RSS_ENTRY.format(
+                    title=p["title"],
+                    slug=p["slug"],
+                    date=p["date"],
+                    summary=p["summary"][:300],
+                    site_url=site_url,
+                )
                 for p in posts[:20]
             )
             rss = RSS_TEMPLATE.format(
-                site_name=site_name, site_description=site_desc, site_url=site_url,
-                updated=posts[0]["date"] + "T00:00:00Z", author=author_name, entries=rss_entries,
+                site_name=site_name,
+                site_description=site_desc,
+                site_url=site_url,
+                updated=posts[0]["date"] + "T00:00:00Z",
+                author=author_name,
+                entries=rss_entries,
             )
             (site / "atom.xml").write_text(rss, encoding="utf-8")
 
@@ -920,8 +1008,11 @@ class SiteBuilder:
         )
 
         return {
-            "pages": len(pages), "posts": len(posts), "tags": len(tag_map),
-            "images": images_copied, "output": str(site),
+            "pages": len(pages),
+            "posts": len(posts),
+            "tags": len(tag_map),
+            "images": images_copied,
+            "output": str(site),
         }
 
     # ── Corpus emission ───────────────────────────────────────────────
@@ -981,16 +1072,18 @@ class SiteBuilder:
             body_md = strip_frontmatter(content).strip()
             sections = _chunk_body(body_md)
             for sec in sections:
-                chunks.append({
-                    "id": self._chunk_id(f"post:{post['slug']}", sec),
-                    "type": "post",
-                    "slug": post["slug"],
-                    "title": post["title"],
-                    "section": sec["section"],
-                    "tags": post.get("tags", []),
-                    "url": self._post_url(post["slug"], sec["section_slug"]),
-                    "text": sec["text"],
-                })
+                chunks.append(
+                    {
+                        "id": self._chunk_id(f"post:{post['slug']}", sec),
+                        "type": "post",
+                        "slug": post["slug"],
+                        "title": post["title"],
+                        "section": sec["section"],
+                        "tags": post.get("tags", []),
+                        "url": self._post_url(post["slug"], sec["section_slug"]),
+                        "text": sec["text"],
+                    }
+                )
 
         for pg in pages or []:
             try:
@@ -1000,32 +1093,38 @@ class SiteBuilder:
             body_md = strip_frontmatter(content).strip()
             sections = _chunk_body(body_md)
             for sec in sections:
-                chunks.append({
-                    "id": self._chunk_id(f"page:{pg['slug']}", sec),
-                    "type": "page",
-                    "slug": pg["slug"],
-                    "title": pg["title"],
-                    "section": sec["section"],
-                    "tags": pg.get("tags", []),
-                    "url": self._page_url(pg["slug"], sec["section_slug"]),
-                    "text": sec["text"],
-                })
+                chunks.append(
+                    {
+                        "id": self._chunk_id(f"page:{pg['slug']}", sec),
+                        "type": "page",
+                        "slug": pg["slug"],
+                        "title": pg["title"],
+                        "section": sec["section"],
+                        "tags": pg.get("tags", []),
+                        "url": self._page_url(pg["slug"], sec["section_slug"]),
+                        "text": sec["text"],
+                    }
+                )
 
         if landing:
             try:
                 content = Path(landing["path"]).read_text(encoding="utf-8")
                 body_md = strip_frontmatter(content).strip()
                 for sec in _chunk_body(body_md):
-                    chunks.append({
-                        "id": self._chunk_id("landing", sec),
-                        "type": "landing",
-                        "slug": landing["slug"],
-                        "title": landing["title"],
-                        "section": sec["section"],
-                        "tags": landing.get("tags", []),
-                        "url": self._page_url(landing["slug"], sec["section_slug"], is_landing=True),
-                        "text": sec["text"],
-                    })
+                    chunks.append(
+                        {
+                            "id": self._chunk_id("landing", sec),
+                            "type": "landing",
+                            "slug": landing["slug"],
+                            "title": landing["title"],
+                            "section": sec["section"],
+                            "tags": landing.get("tags", []),
+                            "url": self._page_url(
+                                landing["slug"], sec["section_slug"], is_landing=True
+                            ),
+                            "text": sec["text"],
+                        }
+                    )
             except Exception:
                 pass
 
@@ -1052,7 +1151,7 @@ class SiteBuilder:
         """
         import asyncio
 
-        languages = [l.strip() for l in self.config.get("languages", "").split(",") if l.strip()]
+        languages = [l.strip() for l in (self.config.get("languages") or "").split(",") if l.strip()]
         original_lang = self.config.get("original_language", "en")
         if not languages:
             return {"translated": 0, "message": "No target languages configured"}
@@ -1066,7 +1165,6 @@ class SiteBuilder:
         site_name = self.config.get("site_name", "My Site")
         author_name = self.config.get("author", "")
         author_bio = self.config.get("author_bio", "")
-        social_links = self.config.get("social_links", "")
 
         # Published slugs
         published_slugs = {}
@@ -1085,15 +1183,15 @@ class SiteBuilder:
         # Author card
         author_card_html = ""
         if author_name:
-            author_card_html = AUTHOR_CARD.format(name=author_name, bio=author_bio, links_html="",
-                avatar_img='')
+            author_card_html = AUTHOR_CARD.format(
+                name=author_name, bio=author_bio, links_html="", avatar_img=""
+            )
 
         translated_count = 0
 
         for lang in languages:
             if lang == original_lang:
                 continue
-            lang_name = LANG_NAMES.get(lang, lang.upper())
 
             for post in posts:
                 cache_file = cache_dir / f"{post['slug']}-{lang}.md"
@@ -1111,7 +1209,9 @@ class SiteBuilder:
                     cache_file.write_text(translated_md, encoding="utf-8")
                     translated_count += 1
 
-                body_html, toc_raw = render_markdown(translated_md, published_slugs, assets_prefix="../assets/", link_prefix="../")
+                body_html, toc_raw = render_markdown(
+                    translated_md, published_slugs, assets_prefix="../assets/", link_prefix="../"
+                )
 
                 # TOC
                 toc_raw = toc_raw
@@ -1138,10 +1238,14 @@ class SiteBuilder:
                 )
 
                 post_html = POST_CONTENT.format(
-                    title=post["title"], date=post["date"],
-                    reading_time=post["reading_time"], tags_html=tags_html,
-                    body=body_html, root="../",
-                    related_html="", toc_html=toc_html,
+                    title=post["title"],
+                    date=post["date"],
+                    reading_time=post["reading_time"],
+                    tags_html=tags_html,
+                    body=body_html,
+                    root="../",
+                    related_html="",
+                    toc_html=toc_html,
                     author_card_html=author_card_html,
                     lang_switch_html=lang_switch_html,
                     ai_notice_html=ai_notice_html,
@@ -1149,13 +1253,19 @@ class SiteBuilder:
 
                 resolved_nav = nav_links.replace("{root}", "../")
                 page_html = BASE_TEMPLATE.format(
-                    title=post["title"], site_name=site_name,
-                    description=post["summary"][:160], root="../",
-                    extra_head=self.analytics_head, nav_links=resolved_nav,
-                    content=post_html, lang=lang,
+                    title=post["title"],
+                    site_name=site_name,
+                    description=post["summary"][:160],
+                    root="../",
+                    extra_head=self.analytics_head,
+                    nav_links=resolved_nav,
+                    content=post_html,
+                    lang=lang,
                     cross_site_html=self.cross_site_html,
                 )
-                (site / "posts" / f"{post['slug']}-{lang}.html").write_text(page_html, encoding="utf-8")
+                (site / "posts" / f"{post['slug']}-{lang}.html").write_text(
+                    page_html, encoding="utf-8"
+                )
 
         # Add language switcher to original posts too
         if languages:
@@ -1164,7 +1274,9 @@ class SiteBuilder:
                 if post_path.exists():
                     html = post_path.read_text(encoding="utf-8")
                     orig_label = LANG_NAMES.get(original_lang, original_lang.upper())
-                    lang_links = f'  <a href="{post["slug"]}.html" class="active">{orig_label}</a>\n'
+                    lang_links = (
+                        f'  <a href="{post["slug"]}.html" class="active">{orig_label}</a>\n'
+                    )
                     for tl in languages:
                         if tl == original_lang:
                             continue
@@ -1172,10 +1284,14 @@ class SiteBuilder:
                         lang_links += f'  <a href="{post["slug"]}-{tl}.html">{tl_name}</a>\n'
                     switcher = LANG_SWITCHER.format(links=lang_links)
                     # Insert after opening <article> tag
-                    html = html.replace('<article>\n  \n  \n', f'<article>\n  {switcher}\n  \n', 1)
+                    html = html.replace("<article>\n  \n  \n", f"<article>\n  {switcher}\n  \n", 1)
                     post_path.write_text(html, encoding="utf-8")
 
-        return {"translated": translated_count, "languages": languages, "cached": len(posts) * len(languages) - translated_count}
+        return {
+            "translated": translated_count,
+            "languages": languages,
+            "cached": len(posts) * len(languages) - translated_count,
+        }
 
     def _copy_widget_asset(self, site_dir: Path) -> None:
         """Copy chatbot-widget.js from apps/publish/static/ into site root."""
@@ -1210,7 +1326,18 @@ class SiteBuilder:
         media_out = site_dir / "media"
         media_out.mkdir(parents=True, exist_ok=True)
         for f in media_dir.iterdir():
-            if f.suffix.lower() in (".mp3", ".mp4", ".wav", ".ogg", ".m4a", ".webm", ".png", ".jpg", ".json", ".js"):
+            if f.suffix.lower() in (
+                ".mp3",
+                ".mp4",
+                ".wav",
+                ".ogg",
+                ".m4a",
+                ".webm",
+                ".png",
+                ".jpg",
+                ".json",
+                ".js",
+            ):
                 dest = media_out / f.name
                 if not dest.exists():
                     shutil.copy2(str(f), str(dest))
@@ -1278,31 +1405,31 @@ class SiteBuilder:
             tags = fm_list(fm, "tags")
             # Parse metrics from frontmatter (nested dicts need real YAML)
             metrics = _parse_metrics_yaml(content)
-            projects.append({
-                "slug": p["slug"],
-                "title": p["title"],
-                "category": raw_cats[0] if raw_cats else "",
-                "categories": raw_cats,
-                "categoryGroup": cat_groups[0] if cat_groups else "",
-                "categoryGroups": cat_groups,
-                "categoryLabel": cat_labels[0] if cat_labels else "",
-                "categoryLabels": cat_labels,
-                "date": str(p.get("date", "")),
-                "tags": tags,
-                "summary": p.get("summary", ""),
-                "context": fm_str(fm, "context"),
-                "metrics": metrics,
-                "body": body,
-            })
+            projects.append(
+                {
+                    "slug": p["slug"],
+                    "title": p["title"],
+                    "category": raw_cats[0] if raw_cats else "",
+                    "categories": raw_cats,
+                    "categoryGroup": cat_groups[0] if cat_groups else "",
+                    "categoryGroups": cat_groups,
+                    "categoryLabel": cat_labels[0] if cat_labels else "",
+                    "categoryLabels": cat_labels,
+                    "date": str(p.get("date", "")),
+                    "tags": tags,
+                    "summary": p.get("summary", ""),
+                    "context": fm_str(fm, "context"),
+                    "metrics": metrics,
+                    "body": body,
+                }
+            )
         projects.sort(key=lambda p: p["date"], reverse=True)
 
         # About content
         about_body = ""
         about_path = self.source_dir / "about.md"
         if about_path.exists():
-            about_body = strip_frontmatter(
-                about_path.read_text(encoding="utf-8", errors="ignore")
-            )
+            about_body = strip_frontmatter(about_path.read_text(encoding="utf-8", errors="ignore"))
 
         # Build PORTFOLIO_DATA payload
         payload = json.dumps(
@@ -1315,7 +1442,7 @@ class SiteBuilder:
         html = template_path.read_text(encoding="utf-8")
 
         # Inject data
-        data_script = f'<script>window.PORTFOLIO_DATA = {payload};</script>'
+        data_script = f"<script>window.PORTFOLIO_DATA = {payload};</script>"
         html = html.replace("</head>", data_script + "\n</head>")
 
         # Demo datasets: any JSON in {source_folder}/demo_data/ becomes
@@ -1353,14 +1480,20 @@ class SiteBuilder:
             key = d.get("key", "")
             dname = d.get("name", "")
             dtags = d.get("tags", "")
-            count = len([p for p in projects if key in (p.get("categoryGroups") or [p.get("categoryGroup", "")])])
+            count = len(
+                [
+                    p
+                    for p in projects
+                    if key in (p.get("categoryGroups") or [p.get("categoryGroup", "")])
+                ]
+            )
             domains_html += (
                 f'<a class="hero-domain" data-f="{key}" onclick="goFilter(\'{key}\');return false" href="#projects">'
-                f'<h3>{dname}</h3>'
+                f"<h3>{dname}</h3>"
                 f'<div class="hero-domain-count" id="hd-{key[:3]}-count">{count} project{"s" if count != 1 else ""}</div>'
                 f'<div class="hero-domain-tags">{dtags}</div>'
                 f'<div class="arrow">View projects &rarr;</div>'
-                f'</a>\n'
+                f"</a>\n"
             )
 
         # Skills HTML
@@ -1385,15 +1518,25 @@ class SiteBuilder:
                 tags_list = [t.strip() for t in tags_list.split(",") if t.strip()]
             stars = r.get("stars", "")
             lang_html = f'<span class="rcard-lang">{html_escape(str(lang))}</span>' if lang else ""
-            stars_html = f'<span class="rcard-stars">&#9733; {html_escape(str(stars))}</span>' if stars else ""
-            tags_html = "".join(f'<span class="rcard-tag">{html_escape(str(t))}</span>' for t in tags_list)
-            meta_html = f'<div class="rcard-meta">{tags_html}{stars_html}</div>' if (tags_html or stars_html) else ""
+            stars_html = (
+                f'<span class="rcard-stars">&#9733; {html_escape(str(stars))}</span>'
+                if stars
+                else ""
+            )
+            tags_html = "".join(
+                f'<span class="rcard-tag">{html_escape(str(t))}</span>' for t in tags_list
+            )
+            meta_html = (
+                f'<div class="rcard-meta">{tags_html}{stars_html}</div>'
+                if (tags_html or stars_html)
+                else ""
+            )
             desc_html = f'<div class="rcard-desc">{html_escape(str(desc))}</div>' if desc else ""
             cards.append(
                 f'<a class="rcard" href="{html_escape(str(url), quote=True)}" target="_blank" rel="noopener">'
                 f'<div class="rcard-head"><span class="rcard-name">{html_escape(str(rname))}</span>{lang_html}</div>'
-                f'{desc_html}{meta_html}'
-                f'</a>'
+                f"{desc_html}{meta_html}"
+                f"</a>"
             )
         if cards:
             repos_section_html = (
@@ -1401,7 +1544,7 @@ class SiteBuilder:
                 '<div class="sec-label">OPEN SOURCE</div>'
                 '<div class="sec-title">Repositories</div>'
                 f'<div class="rgrid">{"".join(cards)}</div>'
-                '</section>'
+                "</section>"
             )
             repos_nav_html = '<a href="#repos">Code</a>'
 
@@ -1446,15 +1589,19 @@ class SiteBuilder:
         css_path = static_dir / "eos-components.css"
         if css_path.exists():
             css = css_path.read_text(encoding="utf-8")
-            html = re.sub(r'<link[^>]*eos-components\.css[^>]*/?>',
-                          lambda _: f"<style>{css}</style>", html)
+            html = re.sub(
+                r"<link[^>]*eos-components\.css[^>]*/?>", lambda _: f"<style>{css}</style>", html
+            )
         js_path = static_dir / "eos-components.js"
         if js_path.exists():
             js = js_path.read_text(encoding="utf-8")
             js = js.replace("</script>", "<\\/script>")
-            html = re.sub(r'<script[^>]*eos-components\.js[^>]*>\s*</script>',
-                          lambda _: f"<script>{js}</script>", html)
-        html = re.sub(r'<link[^>]*theme\.css[^>]*/?>',  "", html)
+            html = re.sub(
+                r"<script[^>]*eos-components\.js[^>]*>\s*</script>",
+                lambda _: f"<script>{js}</script>",
+                html,
+            )
+        html = re.sub(r"<link[^>]*theme\.css[^>]*/?>", "", html)
 
         # Portfolio has its own two-tone palette (dark default, .light override).
         # Bake the site's theme choice into <html class=...> so a light publish
@@ -1486,28 +1633,32 @@ class SiteBuilder:
         portfolio_chunks: list[dict] = []
         for proj in projects:
             for sec in _chunk_body(proj.get("body", "") or ""):
-                portfolio_chunks.append({
-                    "id": self._chunk_id(f"project:{proj['slug']}", sec),
-                    "type": "project",
-                    "slug": proj["slug"],
-                    "title": proj["title"],
-                    "section": sec["section"],
-                    "tags": proj.get("tags", []),
-                    "url": f"/#project-{proj['slug']}",
-                    "text": sec["text"],
-                })
+                portfolio_chunks.append(
+                    {
+                        "id": self._chunk_id(f"project:{proj['slug']}", sec),
+                        "type": "project",
+                        "slug": proj["slug"],
+                        "title": proj["title"],
+                        "section": sec["section"],
+                        "tags": proj.get("tags", []),
+                        "url": f"/#project-{proj['slug']}",
+                        "text": sec["text"],
+                    }
+                )
         if about_body:
             for sec in _chunk_body(about_body):
-                portfolio_chunks.append({
-                    "id": self._chunk_id("about", sec),
-                    "type": "about",
-                    "slug": "about",
-                    "title": "About",
-                    "section": sec["section"],
-                    "tags": [],
-                    "url": "/#about",
-                    "text": sec["text"],
-                })
+                portfolio_chunks.append(
+                    {
+                        "id": self._chunk_id("about", sec),
+                        "type": "about",
+                        "slug": "about",
+                        "title": "About",
+                        "section": sec["section"],
+                        "tags": [],
+                        "url": "/#about",
+                        "text": sec["text"],
+                    }
+                )
 
         corpus = {
             **self._site_meta(),

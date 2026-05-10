@@ -18,10 +18,14 @@ def _register_config_pointer(config_path: Path) -> None:
         pointer_dir.mkdir(parents=True, exist_ok=True)
         pointer = pointer_dir / "config-path.txt"
         pointer.write_text(str(config_path.resolve()), encoding="utf-8")
-        console.print(f"  [dim]Registered config at {pointer} — `eos` now works from any directory.[/dim]")
+        console.print(
+            f"  [dim]Registered config at {pointer} — `eos` now works from any directory.[/dim]"
+        )
     except Exception as e:
         console.print(f"  [yellow]Could not register global config pointer: {e}[/yellow]")
-        console.print(f"  [dim]Set EOS_CONFIG={config_path.resolve()} to use `eos` outside this directory.[/dim]")
+        console.print(
+            f"  [dim]Set EOS_CONFIG={config_path.resolve()} to use `eos` outside this directory.[/dim]"
+        )
 
 
 def _check_eos_on_path() -> None:
@@ -38,6 +42,7 @@ def _check_eos_on_path() -> None:
     exe = "eos.exe" if platform.system() == "Windows" else "eos"
     try:
         import sysconfig
+
         for scheme in (f"{sysconfig.get_default_scheme()}_user", sysconfig.get_default_scheme()):
             try:
                 p = sysconfig.get_path("scripts", scheme)
@@ -47,11 +52,17 @@ def _check_eos_on_path() -> None:
                 pass
     except Exception:
         pass
-    candidates.append(Path(sys.executable).parent / ("Scripts" if platform.system() == "Windows" else "bin"))
+    candidates.append(
+        Path(sys.executable).parent / ("Scripts" if platform.system() == "Windows" else "bin")
+    )
     if platform.system() == "Windows":
         candidates.append(
-            Path.home() / "AppData" / "Roaming" / "Python"
-            / f"Python{sys.version_info.major}{sys.version_info.minor}" / "Scripts"
+            Path.home()
+            / "AppData"
+            / "Roaming"
+            / "Python"
+            / f"Python{sys.version_info.major}{sys.version_info.minor}"
+            / "Scripts"
         )
 
     scripts_dir = next((c for c in candidates if (c / exe).exists()), None)
@@ -63,11 +74,13 @@ def _check_eos_on_path() -> None:
         console.print("  Add permanently (PowerShell, then open a new window):")
         console.print(
             f"    [cyan][Environment]::SetEnvironmentVariable("
-            f"\"Path\", $env:Path + \";{scripts_dir}\", \"User\")[/cyan]"
+            f'"Path", $env:Path + ";{scripts_dir}", "User")[/cyan]'
         )
     elif scripts_dir:
         console.print(f"  eos is at: [cyan]{scripts_dir}[/cyan]")
-        console.print(f"  Add to PATH in your shell rc: [cyan]export PATH=\"{scripts_dir}:$PATH\"[/cyan]")
+        console.print(
+            f'  Add to PATH in your shell rc: [cyan]export PATH="{scripts_dir}:$PATH"[/cyan]'
+        )
     else:
         console.print("  Could not locate the scripts directory. Re-open your shell and try again.")
     console.print("  Alternative: run [bold]python -m emptyos[/bold] — works without PATH changes.")
@@ -101,8 +114,12 @@ def init_command(
     console.print()
     console.print("[bold]Deployment Mode[/bold]")
     console.print("  [cyan]1[/cyan]  local   — only this machine (default, safest)")
-    console.print("  [cyan]2[/cyan]  private — access from your own devices via Tailscale / LAN / VPN")
-    console.print("  [cyan]3[/cyan]  public  — internet-exposed (VPS / Docker) — requires auth token")
+    console.print(
+        "  [cyan]2[/cyan]  private — access from your own devices via Tailscale / LAN / VPN"
+    )
+    console.print(
+        "  [cyan]3[/cyan]  public  — internet-exposed (VPS / Docker) — requires auth token"
+    )
     console.print()
     _mode_choice = typer.prompt("Choose mode [1/2/3]", default="1")
     _mode_map = {"1": "local", "2": "private", "3": "public"}
@@ -110,6 +127,7 @@ def init_command(
     auth_token = ""
     if network_mode == "public":
         import secrets
+
         auth_token = secrets.token_urlsafe(32)
         console.print(f"[green]Generated auth token:[/green] {auth_token}")
         console.print("  Save this — you'll need it to access the dashboard from a browser or API.")
@@ -165,20 +183,22 @@ method = "{claude_method}"
     if typer.confirm("Do you have ComfyUI installed? (GPU image/video generation)", default=False):
         comfyui_launcher = typer.prompt("  Path to ComfyUI launcher (.bat)")
         comfyui_host = typer.prompt("  ComfyUI host", default="http://localhost:8188")
+        comfyui_launcher_norm = comfyui_launcher.replace("\\", "/")
         plugin_sections += f"""
 [plugins.comfyui]
 host = "{comfyui_host}"
-launcher = "{comfyui_launcher.replace("\\", "/")}"
+launcher = "{comfyui_launcher_norm}"
 autostart = true
 """
 
     if typer.confirm("Do you have Applio installed? (AI voice conversion)", default=False):
         applio_launcher = typer.prompt("  Path to Applio launcher (.bat)")
         applio_host = typer.prompt("  Applio host", default="http://localhost:6969")
+        applio_launcher_norm = applio_launcher.replace("\\", "/")
         plugin_sections += f"""
 [plugins.applio]
 host = "{applio_host}"
-launcher = "{applio_launcher.replace("\\", "/")}"
+launcher = "{applio_launcher_norm}"
 autostart = true
 """
 
@@ -190,7 +210,9 @@ host = "{voice_host}"
 """
 
     startup_section = ""
-    if typer.confirm("Launch any other programs on boot? (e.g. note editor, browser)", default=False):
+    if typer.confirm(
+        "Launch any other programs on boot? (e.g. note editor, browser)", default=False
+    ):
         startup_entries = {}
         while True:
             prog_name = typer.prompt("  Program name (e.g. 'notes')", default="")
@@ -289,12 +311,16 @@ autostart = []
             defaults["location.timezone"] = tz
 
         console.print()
-        console.print("  [dim]Countdowns track important dates (visa expiry, deadlines, etc.)[/dim]")
+        console.print(
+            "  [dim]Countdowns track important dates (visa expiry, deadlines, etc.)[/dim]"
+        )
         countdowns = []
         while typer.confirm("  Add a countdown?", default=bool(not countdowns)):
             label = typer.prompt("    Label (e.g., 'Visa expires')")
             cd_date = typer.prompt("    Date (YYYY-MM-DD)")
-            direction = typer.prompt("    Direction (down=days left, up=days elapsed)", default="down")
+            direction = typer.prompt(
+                "    Direction (down=days left, up=days elapsed)", default="down"
+            )
             countdowns.append({"label": label, "date": cd_date, "direction": direction})
         if countdowns:
             defaults["countdown.items"] = countdowns
@@ -306,11 +332,14 @@ autostart = []
 
     # Boot sequence setup
     import platform
+
     if platform.system() == "Windows":
         console.print()
         if typer.confirm("Install EmptyOS to start on login?", default=True):
-            from emptyos.cli.commands.boot import generate_boot_vbs, install_boot
             import tomllib
+
+            from emptyos.cli.commands.boot import generate_boot_vbs, install_boot
+
             with open(config_path, "rb") as f:
                 data = tomllib.load(f)
             boot_vbs = generate_boot_vbs(data, str(target))

@@ -34,7 +34,7 @@ body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-se
 .tb-btn:hover { border-color:var(--accent); color:var(--accent) }
 .tb-btn.active { border-color:var(--accent); color:var(--accent); background:color-mix(in srgb,var(--accent) 10%,transparent) }
 #status-dot { width:8px; height:8px; border-radius:50%; background:var(--text-muted); transition:background 0.3s }
-#status-dot.connected { background:#10b981 }
+#status-dot.connected { background:var(--green) }
 
 /* Messages — bubble base comes from eos-chat-shell.css (.eos-chat-turn).
    Assistant adds: per-provider role-label tint, system notices, transient
@@ -61,7 +61,7 @@ body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-se
 @media (hover: none) { .msg-actions { opacity:1 } } /* touch: always visible */
 .msg-action-btn { background:none; border:1px solid var(--border); color:var(--text-muted); padding:2px 8px; border-radius:4px; font-size:12px; cursor:pointer }
 .msg-action-btn:hover { border-color:var(--accent); color:var(--accent) }
-.msg-action-btn.speaking { border-color:#10b981; color:#10b981 }
+.msg-action-btn.speaking { border-color:var(--green); color:var(--green) }
 
 /* Compare view */
 .compare-container { display:flex; gap:12px; padding:8px 0; flex-wrap:wrap }
@@ -93,7 +93,7 @@ body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-se
 #input-row { display: flex; gap: 8px; align-items: flex-end }
 .input-btn { padding:12px; background:none; border:1px solid var(--border); color:var(--text-secondary); border-radius:8px; font-size:16px; cursor:pointer; min-width:40px; height:40px; display:flex; align-items:center; justify-content:center }
 .input-btn:hover { border-color:var(--accent); color:var(--accent) }
-.input-btn.active { border-color:#ef4444; color:#ef4444; background:color-mix(in srgb,#ef4444 8%,transparent) }
+.input-btn.active { border-color:var(--red); color:var(--red); background:color-mix(in srgb,var(--red) 8%,transparent) }
 #slash-hint { font-size:12px; color:var(--text-muted); margin-top:4px; display:none }
 #slash-hint.show { display:block }
 
@@ -344,7 +344,7 @@ async function sendCompare(text) {
         var body = document.createElement('div');
         body.className = 'compare-body';
         if (r.error) {
-          body.innerHTML = '<em style="color:#ef4444">' + esc(r.error) + '</em>';
+          body.innerHTML = '<em style="color:var(--red)">' + esc(r.error) + '</em>';
         } else {
           body.innerHTML = linkifyAttachments(renderMD(r.text || ''));
         }

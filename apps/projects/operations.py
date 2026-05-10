@@ -15,10 +15,10 @@ from emptyos.sdk import set_frontmatter_field, web_route
 
 from . import app as _core
 
-
 # ------------------------------------------------------------------
 # Ready Tasks & Dependency Graph
 # ------------------------------------------------------------------
+
 
 @web_route("GET", "/api/projects/{id}/ready-tasks")
 async def api_ready_tasks(self, request):
@@ -48,10 +48,15 @@ async def api_dependency_graph(self, request):
     nodes = []
     edges = []
     for i, t in enumerate(task_list):
-        nodes.append({
-            "id": i, "text": t["text"], "done": t["done"],
-            "ready": t["ready"], "line": t["line"],
-        })
+        nodes.append(
+            {
+                "id": i,
+                "text": t["text"],
+                "done": t["done"],
+                "ready": t["ready"],
+                "line": t["line"],
+            }
+        )
         for dep in t["depends_on"]:
             for j, src in enumerate(task_list):
                 if src["line"] == dep["line"] and dep["line"] >= 0:
@@ -69,6 +74,7 @@ async def api_dependency_graph(self, request):
 # ------------------------------------------------------------------
 # Tool Integration (manifest-driven discovery)
 # ------------------------------------------------------------------
+
 
 @web_route("POST", "/api/projects/{id}/run-tool")
 async def api_run_tool(self, request):
@@ -109,16 +115,22 @@ async def api_run_tool(self, request):
                 lines.insert(task_line + 1, meta_line)
                 target.write_text("\n".join(lines), encoding="utf-8")
 
-    await self.emit("projects:calc_attached", {
-        "project": project_id, "app": app_id, "method": method,
-        "result_file": result_file.name,
-    })
+    await self.emit(
+        "projects:calc_attached",
+        {
+            "project": project_id,
+            "app": app_id,
+            "method": method,
+            "result_file": result_file.name,
+        },
+    )
     return {"ok": True, "result": result, "saved": result_file.name}
 
 
 # ------------------------------------------------------------------
 # Bulk Operations
 # ------------------------------------------------------------------
+
 
 @web_route("POST", "/api/projects/{id}/tasks/bulk")
 async def api_bulk_tasks(self, request):
@@ -192,6 +204,7 @@ async def api_bulk_status(self, request):
 # Task Metadata
 # ------------------------------------------------------------------
 
+
 @web_route("POST", "/api/projects/{id}/tasks/{line}/meta")
 async def api_task_meta(self, request):
     """Add or update metadata on a task."""
@@ -232,6 +245,7 @@ async def api_task_meta(self, request):
 # ------------------------------------------------------------------
 # Create & Templates
 # ------------------------------------------------------------------
+
 
 @web_route("POST", "/api/create")
 async def api_create(self, request):
@@ -283,13 +297,95 @@ async def api_create(self, request):
 async def api_templates(self, request):
     """Project templates for quick creation."""
     return [
-        {"id": "standard", "name": "Standard Project", "type": "personal", "goal": "Define success criteria", "tasks": ["Define scope", "Research", "Implement", "Review", "Ship"]},
-        {"id": "learning", "name": "Learning Project", "type": "personal", "goal": "Master a new skill", "tasks": ["Find resources", "Study fundamentals", "Practice exercises", "Build a project", "Teach someone"]},
-        {"id": "creative", "name": "Creative Project", "type": "personal", "goal": "Create something", "tasks": ["Brainstorm ideas", "Draft outline", "First draft", "Revise", "Publish/Share"]},
-        {"id": "migration", "name": "Migration/Transition", "type": "personal", "goal": "Move from A to B", "tasks": ["Audit current state", "Plan migration", "Build new", "Test", "Cut over", "Decommission old"]},
-        {"id": "engineering", "name": "Engineering Project", "type": "engineering", "goal": "Design and deliver engineering solution", "tasks": ["Define requirements", "Preliminary design", "Run calculations", "Peer review", "Submit for approval", "Construction support"]},
-        {"id": "cable-design", "name": "Cable Design", "type": "engineering", "goal": "Complete cable system design", "tasks": ["Cable sizing calculation", "Route survey", "Pulling tension analysis", "Sheath voltage study", "ECC design", "Installation specification"]},
-        {"id": "development", "name": "Software Development", "type": "development", "goal": "Build and ship feature", "tasks": ["Define requirements", "Design architecture", "Implement", "Write tests", "Code review", "Deploy"]},
+        {
+            "id": "standard",
+            "name": "Standard Project",
+            "type": "personal",
+            "goal": "Define success criteria",
+            "tasks": ["Define scope", "Research", "Implement", "Review", "Ship"],
+        },
+        {
+            "id": "learning",
+            "name": "Learning Project",
+            "type": "personal",
+            "goal": "Master a new skill",
+            "tasks": [
+                "Find resources",
+                "Study fundamentals",
+                "Practice exercises",
+                "Build a project",
+                "Teach someone",
+            ],
+        },
+        {
+            "id": "creative",
+            "name": "Creative Project",
+            "type": "personal",
+            "goal": "Create something",
+            "tasks": [
+                "Brainstorm ideas",
+                "Draft outline",
+                "First draft",
+                "Revise",
+                "Publish/Share",
+            ],
+        },
+        {
+            "id": "migration",
+            "name": "Migration/Transition",
+            "type": "personal",
+            "goal": "Move from A to B",
+            "tasks": [
+                "Audit current state",
+                "Plan migration",
+                "Build new",
+                "Test",
+                "Cut over",
+                "Decommission old",
+            ],
+        },
+        {
+            "id": "engineering",
+            "name": "Engineering Project",
+            "type": "engineering",
+            "goal": "Design and deliver engineering solution",
+            "tasks": [
+                "Define requirements",
+                "Preliminary design",
+                "Run calculations",
+                "Peer review",
+                "Submit for approval",
+                "Construction support",
+            ],
+        },
+        {
+            "id": "cable-design",
+            "name": "Cable Design",
+            "type": "engineering",
+            "goal": "Complete cable system design",
+            "tasks": [
+                "Cable sizing calculation",
+                "Route survey",
+                "Pulling tension analysis",
+                "Sheath voltage study",
+                "ECC design",
+                "Installation specification",
+            ],
+        },
+        {
+            "id": "development",
+            "name": "Software Development",
+            "type": "development",
+            "goal": "Build and ship feature",
+            "tasks": [
+                "Define requirements",
+                "Design architecture",
+                "Implement",
+                "Write tests",
+                "Code review",
+                "Deploy",
+            ],
+        },
     ]
 
 
@@ -326,7 +422,7 @@ async def api_from_template(self, request):
     repo = data.get("repo", "")
     task_lines = "\n".join(f"- [ ] {t}" for t in tasks)
 
-    fm_lines = [f"status: active", f"created: {today}"]
+    fm_lines = ["status: active", f"created: {today}"]
     if project_type != "personal":
         fm_lines.append(f"type: {project_type}")
     if initial_stage:
@@ -341,13 +437,16 @@ async def api_from_template(self, request):
     content = f"---\n{fm_block}\n---\n\n# {name}\n\n## Goal\n{data.get('goal', tmpl.get('goal', 'TBD'))}\n\n## Tasks\n{task_lines}\n\n## Notes\n"
     target = proj_dir / f"{project_id}.md"
     target.write_text(content, encoding="utf-8")
-    await self.emit("projects:created", {"name": name, "template": template_id, "type": project_type})
+    await self.emit(
+        "projects:created", {"name": name, "template": template_id, "type": project_type}
+    )
     return {"ok": True, "file": target.name, "id": project_id}
 
 
 # ------------------------------------------------------------------
 # Structure Management
 # ------------------------------------------------------------------
+
 
 @web_route("POST", "/api/projects/{id}/upgrade")
 async def api_upgrade_structure(self, request):

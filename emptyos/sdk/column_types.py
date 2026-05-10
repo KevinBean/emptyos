@@ -10,8 +10,9 @@ validation, and a render hint (widget name + config) consumed by frontends.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Any, Callable
+from collections.abc import Callable
+from dataclasses import dataclass
+from typing import Any
 
 
 @dataclass
@@ -19,13 +20,13 @@ class ColumnType:
     """Describes one column kind. Subclass or instantiate with overrides."""
 
     id: str
-    storage: type = str                 # Python type for VaultLibrary round-trip
-    person_like: bool = False           # emits assignment deltas on change
-    list_like: bool = False             # multi-value (list of ids / tags)
-    role: str | None = None             # emit_assignment role (designer/checker/...)
+    storage: type = str  # Python type for VaultLibrary round-trip
+    person_like: bool = False  # emits assignment deltas on change
+    list_like: bool = False  # multi-value (list of ids / tags)
+    role: str | None = None  # emit_assignment role (designer/checker/...)
     default: Any = None
-    widget: str = "text"                # frontend renderer/editor key
-    groupable: bool = False             # makes sense as a group-by axis in board views
+    widget: str = "text"  # frontend renderer/editor key
+    groupable: bool = False  # makes sense as a group-by axis in board views
     # Optional per-type hooks. Default impls are pass-through.
     coerce_fn: Callable[[Any, dict], Any] | None = None
     validate_fn: Callable[[Any, dict], Any] | None = None
@@ -85,33 +86,66 @@ class ColumnTypeRegistry:
 
 _register = ColumnTypeRegistry.register
 
-_register(ColumnType("text",         storage=str,   widget="text",       groupable=True))
-_register(ColumnType("number",       storage=float, widget="number"))                    # continuous — not useful as group axis
-_register(ColumnType("select",       storage=str,   widget="select",     groupable=True))
-_register(ColumnType("multi-select", storage=list,  list_like=True, widget="multi-select", groupable=True))
-_register(ColumnType("date",         storage=str,   widget="date",       groupable=True))
-_register(ColumnType("checkbox",     storage=str,   widget="checkbox",   groupable=True))
-_register(ColumnType("link",         storage=str,   widget="url"))                       # URL — every value unique
-_register(ColumnType("formula",      storage=str,   widget="formula",    groupable=True)) # often yields a small set (badges)
-_register(ColumnType("timeline",     storage=str,   widget="timeline"))
+_register(ColumnType("text", storage=str, widget="text", groupable=True))
+_register(
+    ColumnType("number", storage=float, widget="number")
+)  # continuous — not useful as group axis
+_register(ColumnType("select", storage=str, widget="select", groupable=True))
+_register(
+    ColumnType("multi-select", storage=list, list_like=True, widget="multi-select", groupable=True)
+)
+_register(ColumnType("date", storage=str, widget="date", groupable=True))
+_register(ColumnType("checkbox", storage=str, widget="checkbox", groupable=True))
+_register(ColumnType("link", storage=str, widget="url"))  # URL — every value unique
+_register(
+    ColumnType("formula", storage=str, widget="formula", groupable=True)
+)  # often yields a small set (badges)
+_register(ColumnType("timeline", storage=str, widget="timeline"))
 
 # Person-family — always useful as group axis ("group by assignee").
-_register(ColumnType("person",       storage=str, person_like=True, widget="person",        groupable=True))
-_register(ColumnType("multi-person", storage=list, person_like=True, list_like=True, widget="multi-person", groupable=True))
-_register(ColumnType("designer",     storage=str, person_like=True, role="designer", widget="person", groupable=True))
-_register(ColumnType("checker",      storage=str, person_like=True, role="checker",  widget="person", groupable=True))
-_register(ColumnType("approver",     storage=str, person_like=True, role="approver", widget="person", groupable=True))
-_register(ColumnType("reviewer",     storage=str, person_like=True, role="reviewer", widget="person", groupable=True))
+_register(ColumnType("person", storage=str, person_like=True, widget="person", groupable=True))
+_register(
+    ColumnType(
+        "multi-person",
+        storage=list,
+        person_like=True,
+        list_like=True,
+        widget="multi-person",
+        groupable=True,
+    )
+)
+_register(
+    ColumnType(
+        "designer", storage=str, person_like=True, role="designer", widget="person", groupable=True
+    )
+)
+_register(
+    ColumnType(
+        "checker", storage=str, person_like=True, role="checker", widget="person", groupable=True
+    )
+)
+_register(
+    ColumnType(
+        "approver", storage=str, person_like=True, role="approver", widget="person", groupable=True
+    )
+)
+_register(
+    ColumnType(
+        "reviewer", storage=str, person_like=True, role="reviewer", widget="person", groupable=True
+    )
+)
 
 # List-shaped domain types (boards uses these for skills & dependencies today).
-_register(ColumnType("skills",       storage=list, list_like=True, widget="tags",         groupable=True))
+_register(ColumnType("skills", storage=list, list_like=True, widget="tags", groupable=True))
 _register(ColumnType("dependencies", storage=list, list_like=True, widget="dependencies"))
 
 # link-record — typed reference to items on another board. Stores a list of
 # item IDs. `multi=false` means single-target (stored as a 1-element list for
 # shape uniformity). `target_board` + optional `inverse` are per-column config.
 # Distinct from the `link` type (URL).
-_register(ColumnType("link-record", storage=list, list_like=True, widget="record-picker", groupable=True))
+_register(
+    ColumnType("link-record", storage=list, list_like=True, widget="record-picker", groupable=True)
+)
 
 
 __all__ = ["ColumnType", "ColumnTypeRegistry"]

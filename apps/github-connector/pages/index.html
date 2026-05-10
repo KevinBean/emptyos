@@ -18,6 +18,9 @@
             <h1>GitHub Connector</h1>
             <div style="font-size:13px;color:var(--text-secondary)" id="status-line">Checking connection...</div>
         </div>
+        <div>
+            <button class="eos-btn-sm eos-btn-ghost" onclick="openAppSettings()" title="Settings">&#9881;</button>
+        </div>
     </div>
 
     <div class="eos-hero" id="stats"></div>
@@ -96,6 +99,18 @@ async function loadPRs() {
         el.innerHTML = '<span style="color:var(--danger)">Failed to load</span>';
     }
 }
+
+var _appSettings = EOS_UI.settingsPanel({
+    id: 'github-connector-settings-panel',
+    title: 'GitHub Connector Settings',
+    fields: [
+        {key: 'github.token', label: 'GitHub Token', type: 'password', default: '',
+         hint: 'Personal access token with repo scope.'},
+        {key: 'github.default_repo', label: 'Default Repo (owner/repo)', type: 'text', default: ''},
+    ],
+    onSave: function() { checkStatus(); },
+});
+function openAppSettings() { _appSettings && _appSettings.open(); }
 
 checkStatus();
 </script>

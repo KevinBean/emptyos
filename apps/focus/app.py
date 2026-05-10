@@ -6,13 +6,24 @@ records completed sessions to app-local data.
 
 from __future__ import annotations
 
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 
 from emptyos.sdk import BaseApp, cli_command, load_json, save_json, web_route
 
 
-class FocusApp(BaseApp):
+FOCUS_PICK_SYSTEM = (
+    "You are a focus coach. Given a short list of open tasks, name the "
+    "single one the user should work on for the next pomodoro and give a "
+    "one-clause reason. Output one sentence, no preamble.\n\n"
+    "Do NOT:\n"
+    "- Pick more than one task.\n"
+    "- List or rank the alternatives.\n"
+    "- Add productivity advice or motivational filler.\n"
+    "- Quote the task verbatim — paraphrase it briefly."
+)
 
+
+class FocusApp(BaseApp):
     def _sessions_path(self):
         return self.data_dir / "sessions.json"
 
@@ -30,12 +41,16 @@ class FocusApp(BaseApp):
         """Suggest what to focus on using LLM + task list."""
         try:
             tasks = await self.call_app("task", "list_tasks")
-            task_text = "\n".join(f"- {t.text}" + (f" (due: {t.due})" if t.due else "") for t in tasks[:15])
+            task_text = "\n".join(
+                f"- {t.text}" + (f" (due: {t.due})" if t.due else "") for t in tasks[:15]
+            )
             if not task_text:
                 return "No open tasks. Pick something meaningful to you."
             return await self.think(
-                f"Pick ONE task to focus on right now. Be brief (1 sentence).\n\nTasks:\n{task_text}",
+                f"Tasks:\n{task_text}",
+                system=FOCUS_PICK_SYSTEM,
                 domain="text",
+                temperature=0.4,
             )
         except Exception:
             return "Pick your most important task and start."
@@ -49,13 +64,13 @@ class FocusApp(BaseApp):
             if active.get("started_at"):
                 try:
                     started = datetime.fromisoformat(active["started_at"])
-                    actual_min = (datetime.now(timezone.utc) - started).total_seconds() / 60
+                    actual_min = (datetime.now(UTC) - started).total_seconds() / 60
                     minutes = max(1, round(actual_min))
                 except Exception:
                     pass
         session = {
             "date": date.today().isoformat(),
-            "time": datetime.now(timezone.utc).strftime("%H:%M"),
+            "time": datetime.now(UTC).strftime("%H:%M"),
             "minutes": minutes,
             "task": task,
         }
@@ -90,7 +105,11 @@ class FocusApp(BaseApp):
         mins = stats.get("total_minutes", 0)
         if n == 0:
             return "You haven't focused today yet — ready to start a session?"
-        return f"You've completed {n} focus session" + ("s" if n != 1 else "") + f" today, {mins} minutes total."
+        return (
+            f"You've completed {n} focus session"
+            + ("s" if n != 1 else "")
+            + f" today, {mins} minutes total."
+        )
 
     @cli_command("focus", help="Pomodoro focus timer")
     async def cmd_focus(self, action: str = "suggest", minutes: str = "25", task: str = ""):
@@ -118,7 +137,7 @@ class FocusApp(BaseApp):
         data = await request.json()
         state = self.load_state({})
         state["active_session"] = {
-            "started_at": datetime.now(timezone.utc).isoformat(),
+            "started_at": datetime.now(UTC).isoformat(),
             "minutes": int(data.get("minutes", 25)),
             "task": data.get("task", ""),
         }
@@ -161,42 +180,24 @@ class FocusApp(BaseApp):
         self.save_state(state)
         return {"daily_goal": state["daily_goal"]}
 
-    @web_route("GET", "/api/achievements")
-    async def api_achievements(self, request):
-        sessions = self._load_sessions()
-        total = len(sessions)
-        milestones = [
-            (10, "\U0001f331", "First Steps"),
-            (25, "\U0001f33f", "Getting Started"),
-            (50, "\U0001f333", "Building Habit"),
-            (100, "\U0001f525", "Centurion"),
-            (250, "\u26a1", "Power Focuser"),
-            (500, "\U0001f48e", "Diamond Focus"),
-            (1000, "\U0001f3c6", "Legendary"),
-        ]
-        return {
-            "total_sessions": total,
-            "achievements": [
-                {"count": c, "emoji": e, "name": n, "earned": total >= c}
-                for c, e, n in milestones
-            ],
-            "earned_count": sum(1 for c, _, _ in milestones if total >= c),
-        }
-
     @web_route("GET", "/api/vault-report")
     async def api_vault_report(self, request):
         """Write weekly focus report to vault."""
         from datetime import timedelta
+
         today = date.today()
         sessions = self._load_sessions()
-        week_sessions = [s for s in sessions
-                         if s.get("date", "") >= (today - timedelta(days=7)).isoformat()]
+        week_sessions = [
+            s for s in sessions if s.get("date", "") >= (today - timedelta(days=7)).isoformat()
+        ]
         total_min = sum(s.get("minutes", 25) for s in week_sessions)
         tasks = {}
         for s in week_sessions:
             t = s.get("task", "unspecified") or "unspecified"
             tasks[t] = tasks.get(t, 0) + 1
-        task_lines = "\n".join(f"- {t}: {c} sessions" for t, c in sorted(tasks.items(), key=lambda x: -x[1]))
+        task_lines = "\n".join(
+            f"- {t}: {c} sessions" for t, c in sorted(tasks.items(), key=lambda x: -x[1])
+        )
         content = (
             f"---\ndate: {today.isoformat()}\ntype: focus-report\n---\n\n"
             f"## Focus Report — Week of {today.isoformat()}\n\n"
@@ -209,12 +210,21 @@ class FocusApp(BaseApp):
 
     @web_route("GET", "/api/config")
     async def api_config(self, request):
-        state = self.load_state({"daily_goal": 4, "work_min": 25, "break_min": 5, "long_break_min": 15, "long_break_every": 4})
+        state = self.load_state(
+            {
+                "daily_goal": 4,
+                "work_min": 25,
+                "break_min": 5,
+                "long_break_min": 15,
+                "long_break_every": 4,
+            }
+        )
         return state
 
     @web_route("GET", "/api/streak")
     async def api_streak(self, request):
         from datetime import timedelta
+
         sessions = self._load_sessions()
         dates = set(s.get("date", "") for s in sessions)
         streak = 0
@@ -227,23 +237,34 @@ class FocusApp(BaseApp):
     @web_route("GET", "/api/weekly")
     async def api_weekly(self, request):
         from datetime import timedelta
+
         sessions = self._load_sessions()
         today = date.today()
         days = []
         for i in range(6, -1, -1):
             d = (today - timedelta(days=i)).isoformat()
             day_sessions = [s for s in sessions if s.get("date") == d]
-            days.append({
-                "date": d,
-                "sessions": len(day_sessions),
-                "minutes": sum(s.get("minutes", 25) for s in day_sessions),
-            })
+            days.append(
+                {
+                    "date": d,
+                    "sessions": len(day_sessions),
+                    "minutes": sum(s.get("minutes", 25) for s in day_sessions),
+                }
+            )
         return days
 
     @web_route("POST", "/api/config")
     async def api_set_config(self, request):
         data = await request.json()
-        state = self.load_state({"daily_goal": 4, "work_min": 25, "break_min": 5, "long_break_min": 15, "long_break_every": 4})
+        state = self.load_state(
+            {
+                "daily_goal": 4,
+                "work_min": 25,
+                "break_min": 5,
+                "long_break_min": 15,
+                "long_break_every": 4,
+            }
+        )
         for key in ["daily_goal", "work_min", "break_min", "long_break_min", "long_break_every"]:
             if key in data:
                 state[key] = int(data[key])
@@ -257,7 +278,7 @@ class FocusApp(BaseApp):
         breaks = self._load_breaks()
         entry = {
             "date": date.today().isoformat(),
-            "time": datetime.now(timezone.utc).strftime("%H:%M"),
+            "time": datetime.now(UTC).strftime("%H:%M"),
             "minutes": int(data.get("minutes", 5)),
             "type": data.get("type", "short"),  # short/long/walk
         }
@@ -279,7 +300,7 @@ class FocusApp(BaseApp):
         distractions = self._load_distractions()
         entry = {
             "date": date.today().isoformat(),
-            "time": datetime.now(timezone.utc).strftime("%H:%M"),
+            "time": datetime.now(UTC).strftime("%H:%M"),
             "type": data.get("type", "phone"),  # phone/chat/browsing/noise/other
             "note": data.get("note", ""),
         }

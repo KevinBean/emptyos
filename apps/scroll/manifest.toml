@@ -1,0 +1,53 @@
+[app]
+id = "scroll"
+name = "Scroll"
+version = "1.0.0"
+description = "Vertical AI-generated short-clip feed driven by user-curated personas"
+dimensions = ["intellectual"]
+
+[app.entry]
+module = "app"
+class = "ScrollApp"
+
+[provides.cli]
+commands = ["scroll"]
+
+[provides.web]
+prefix = "/scroll"
+
+[provides.events]
+emits = [
+    "scroll:persona_added",
+    "scroll:clip_drafted",
+    "scroll:clip_published",
+    "scroll:clip_liked",
+    "scroll:clip_skipped",
+    "scroll:mood_changed",
+]
+# In-app UI workflow signals. Published/liked/skipped are the cross-app
+# moments (reactor consumes them); persona/draft/mood are pre-publish
+# state changes only this app cares about.
+internal = [
+    "scroll:persona_added",
+    "scroll:clip_drafted",
+    "scroll:mood_changed",
+]
+
+[requires]
+capabilities = ["read", "write", "think", "speak", "draw"]
+apps = ["rooms"]
+services = []
+events = []
+
+[provides.settings]
+schema = [
+    {key = "scroll.draft_review", label = "Review drafts before publishing", type = "boolean", default = true},
+    {key = "scroll.autoplay", label = "Autoplay next clip in feed", type = "boolean", default = true},
+]
+
+[[contributes.hub.panel]]
+id = "scroll-today"
+method = "panel_today"
+renderer = "stat-tile"
+group = "dashboard"
+priority = 220

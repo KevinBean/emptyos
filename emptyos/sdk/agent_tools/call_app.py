@@ -24,10 +24,15 @@ import json
 
 from emptyos.sdk.agent_tools.base import Tool, ToolResult
 
-
 BLOCKED_METHODS = {
-    "setup", "teardown", "shutdown", "unload", "reload",
-    "init", "__init__", "__del__",
+    "setup",
+    "teardown",
+    "shutdown",
+    "unload",
+    "reload",
+    "init",
+    "__init__",
+    "__del__",
 }
 
 MAX_RESULT_CHARS = 30_000
@@ -140,10 +145,7 @@ class CallAppTool(Tool):
             methods = _public_methods(inst)
             return ToolResult(
                 ok=False,
-                content=(
-                    f"error: {app_id}.{method} not found.\n"
-                    f"available: {', '.join(methods)}"
-                ),
+                content=(f"error: {app_id}.{method} not found.\navailable: {', '.join(methods)}"),
             )
 
         # Dispatch

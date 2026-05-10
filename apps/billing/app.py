@@ -20,14 +20,32 @@ _DEFAULT_RATES = {
 
 # Image generation costs
 _IMAGE_COSTS = {
-    "comfyui": 0.0,      # local GPU, free
+    "comfyui": 0.0,  # local GPU, free
     "openai-image": 0.008,  # gpt-image-2, ~$8/1M img tokens (est. ~0.008/image)
-    "dalle": 0.04,         # DALL-E 3, deprecated May 2026
+    "dalle": 0.04,  # DALL-E 3, deprecated May 2026
 }
 
 
-class BillingApp(BaseApp):
+COST_INSIGHT_SYSTEM = """You are a cost analyst reviewing the user's LLM usage.
 
+Give 2-3 brief, actionable cost-optimization tips grounded in the data shown.
+Each tip is one sentence. Name the specific provider or app the tip targets.
+
+Do NOT:
+- Invent numbers, providers, or apps the data doesn't mention.
+- Propose generic advice ("monitor your usage", "consider rate limiting") with no anchor in the data.
+- Recommend cloud upgrades or paid tools — the user runs local providers by default.
+- Restate totals back at the user — they can see them.
+- Hedge ("you might want to maybe consider…"); state the recommendation directly.
+- Add greetings, caveats about being an AI, or markdown headers.
+"""
+
+COST_INSIGHT_USER_TMPL = (
+    "{context}\n\nGive 2-3 cost-optimization tips. One sentence each."
+)
+
+
+class BillingApp(BaseApp):
     async def setup(self):
         await super().setup()
         self._init_billing_db()
@@ -65,7 +83,10 @@ class BillingApp(BaseApp):
         self.db.commit()
         # Migrate from JSON if exists and DB is empty
         json_path = self.data_dir / "daily_stats.json"
-        if json_path.exists() and self.db.execute("SELECT COUNT(*) FROM daily_stats").fetchone()[0] == 0:
+        if (
+            json_path.exists()
+            and self.db.execute("SELECT COUNT(*) FROM daily_stats").fetchone()[0] == 0
+        ):
             self._migrate_from_json(json_path)
 
     def _migrate_from_json(self, json_path):
@@ -74,9 +95,16 @@ class BillingApp(BaseApp):
             for day_str, day in data.items():
                 self.db.execute(
                     "INSERT OR IGNORE INTO daily_stats VALUES (?,?,?,?,?,?,?,?)",
-                    (day_str, day.get("calls", 0), day.get("prompt_tokens", 0),
-                     day.get("completion_tokens", 0), day.get("total_tokens", 0),
-                     day.get("cost", 0.0), day.get("images", 0), day.get("image_cost", 0.0)),
+                    (
+                        day_str,
+                        day.get("calls", 0),
+                        day.get("prompt_tokens", 0),
+                        day.get("completion_tokens", 0),
+                        day.get("total_tokens", 0),
+                        day.get("cost", 0.0),
+                        day.get("images", 0),
+                        day.get("image_cost", 0.0),
+                    ),
                 )
                 for p, pd in day.get("by_provider", {}).items():
                     self.db.execute(
@@ -94,9 +122,7 @@ class BillingApp(BaseApp):
             print(f"[Billing] JSON migration failed: {e}")
 
     def _ensure_day(self, day: str):
-        self.db.execute(
-            "INSERT OR IGNORE INTO daily_stats (date) VALUES (?)", (day,)
-        )
+        self.db.execute("INSERT OR IGNORE INTO daily_stats (date) VALUES (?)", (day,))
 
     def _cost_rates(self) -> dict:
         rates = dict(_DEFAULT_RATES)
@@ -131,41 +157,58 @@ class BillingApp(BaseApp):
             rates = self._cost_rates()
             real_cost = (pt + ct) / 1000 * rates.get(provider, 0)
 
-        self.db.execute("""
+        self.db.execute(
+            """
             UPDATE daily_stats SET calls = calls + 1,
                 prompt_tokens = prompt_tokens + ?, completion_tokens = completion_tokens + ?,
                 total_tokens = total_tokens + ?, cost = round(cost + ?, 6)
             WHERE date = ?
-        """, (pt, ct, pt + ct, real_cost, today))
+        """,
+            (pt, ct, pt + ct, real_cost, today),
+        )
 
-        self.db.execute("""
+        self.db.execute(
+            """
             INSERT INTO provider_stats (date, provider, calls, tokens, cost) VALUES (?,?,1,?,?)
             ON CONFLICT(date, provider) DO UPDATE SET
                 calls = calls + 1, tokens = tokens + ?, cost = round(cost + ?, 6)
-        """, (today, provider, pt + ct, real_cost, pt + ct, real_cost))
+        """,
+            (today, provider, pt + ct, real_cost, pt + ct, real_cost),
+        )
 
-        self.db.execute("""
+        self.db.execute(
+            """
             INSERT INTO app_stats (date, app, calls, tokens, cost) VALUES (?,?,1,?,?)
             ON CONFLICT(date, app) DO UPDATE SET
                 calls = calls + 1, tokens = tokens + ?, cost = round(cost + ?, 6)
-        """, (today, app, pt + ct, real_cost, pt + ct, real_cost))
+        """,
+            (today, app, pt + ct, real_cost, pt + ct, real_cost),
+        )
 
         self.db.commit()
 
         # Budget alert
         budget = self._get_budget()
         if budget > 0:
-            row = self.db.execute("SELECT cost, image_cost FROM daily_stats WHERE date = ?", (today,)).fetchone()
+            row = self.db.execute(
+                "SELECT cost, image_cost FROM daily_stats WHERE date = ?", (today,)
+            ).fetchone()
             total = (row["cost"] or 0) + (row["image_cost"] or 0) if row else 0
             if total > budget:
-                await self.emit("billing:budget_alert", {
-                    "total": round(total, 4), "budget": budget, "date": today,
-                })
+                await self.emit(
+                    "billing:budget_alert",
+                    {
+                        "total": round(total, 4),
+                        "budget": budget,
+                        "date": today,
+                    },
+                )
                 notif = self.service("notifications")
                 if notif:
                     await notif.send(
                         f"Daily budget exceeded: ${total:.4f} > ${budget:.2f}",
-                        priority="warning", source="billing",
+                        priority="warning",
+                        source="billing",
                     )
 
     @on_event("studio:generated")
@@ -176,10 +219,13 @@ class BillingApp(BaseApp):
         cost = _IMAGE_COSTS.get(backend, 0)
         today = today_iso()
         self._ensure_day(today)
-        self.db.execute("""
+        self.db.execute(
+            """
             UPDATE daily_stats SET images = images + 1,
                 image_cost = round(image_cost + ?, 6) WHERE date = ?
-        """, (cost, today))
+        """,
+            (cost, today),
+        )
         self.db.commit()
 
     # ── Budget ────────────────────────────────────────────────
@@ -210,7 +256,9 @@ class BillingApp(BaseApp):
         result = dict(row)
         result["by_provider"] = {
             r["provider"]: {"calls": r["calls"], "tokens": r["tokens"], "cost": r["cost"]}
-            for r in self.db.execute("SELECT * FROM provider_stats WHERE date = ?", (day,)).fetchall()
+            for r in self.db.execute(
+                "SELECT * FROM provider_stats WHERE date = ?", (day,)
+            ).fetchall()
         }
         result["by_app"] = {
             r["app"]: {"calls": r["calls"], "tokens": r["tokens"], "cost": r["cost"]}
@@ -241,44 +289,69 @@ class BillingApp(BaseApp):
         days = int(request.query_params.get("days", "30"))
         cutoff = (date.today() - timedelta(days=days)).isoformat()
 
-        total_row = self.db.execute("""
+        total_row = self.db.execute(
+            """
             SELECT COALESCE(SUM(calls),0) as calls, COALESCE(SUM(total_tokens),0) as tokens,
                    COALESCE(SUM(cost),0) as cost, COALESCE(SUM(images),0) as images,
                    COALESCE(SUM(image_cost),0) as image_cost
             FROM daily_stats WHERE date >= ?
-        """, (cutoff,)).fetchone()
+        """,
+            (cutoff,),
+        ).fetchone()
         total = {
-            "calls": total_row["calls"], "tokens": total_row["tokens"],
-            "cost": round(total_row["cost"], 6), "images": total_row["images"],
+            "calls": total_row["calls"],
+            "tokens": total_row["tokens"],
+            "cost": round(total_row["cost"], 6),
+            "images": total_row["images"],
             "image_cost": round(total_row["image_cost"], 6),
             "total_cost": round(total_row["cost"] + total_row["image_cost"], 6),
         }
 
         by_provider = {
             r["provider"]: {"calls": r["calls"], "tokens": r["tokens"], "cost": round(r["cost"], 6)}
-            for r in self.db.execute("""
+            for r in self.db.execute(
+                """
                 SELECT provider, SUM(calls) as calls, SUM(tokens) as tokens, SUM(cost) as cost
                 FROM provider_stats WHERE date >= ? GROUP BY provider ORDER BY cost DESC
-            """, (cutoff,)).fetchall()
+            """,
+                (cutoff,),
+            ).fetchall()
         }
         by_app = {
             r["app"]: {"calls": r["calls"], "tokens": r["tokens"], "cost": round(r["cost"], 6)}
-            for r in self.db.execute("""
+            for r in self.db.execute(
+                """
                 SELECT app, SUM(calls) as calls, SUM(tokens) as tokens, SUM(cost) as cost
                 FROM app_stats WHERE date >= ? GROUP BY app ORDER BY cost DESC
-            """, (cutoff,)).fetchall()
+            """,
+                (cutoff,),
+            ).fetchall()
         }
 
         daily = []
         for i in range(days - 1, -1, -1):
             d = (date.today() - timedelta(days=i)).isoformat()
-            row = self.db.execute("SELECT calls, cost, image_cost FROM daily_stats WHERE date = ?", (d,)).fetchone()
+            row = self.db.execute(
+                "SELECT calls, cost, image_cost FROM daily_stats WHERE date = ?", (d,)
+            ).fetchone()
             if row:
-                daily.append({"date": d, "cost": round(row["cost"] + row["image_cost"], 6), "calls": row["calls"]})
+                daily.append(
+                    {
+                        "date": d,
+                        "cost": round(row["cost"] + row["image_cost"], 6),
+                        "calls": row["calls"],
+                    }
+                )
             else:
                 daily.append({"date": d, "cost": 0, "calls": 0})
 
-        return {"days": days, "total": total, "by_provider": by_provider, "by_app": by_app, "daily": daily}
+        return {
+            "days": days,
+            "total": total,
+            "by_provider": by_provider,
+            "by_app": by_app,
+            "daily": daily,
+        }
 
     @web_route("GET", "/api/rates")
     async def api_rates(self, request):
@@ -305,21 +378,35 @@ class BillingApp(BaseApp):
                    SUM(cost) + SUM(image_cost) as cost, SUM(images) as images
             FROM daily_stats GROUP BY month ORDER BY month
         """).fetchall()
-        return {r["month"]: {"calls": r["calls"], "cost": round(r["cost"], 6),
-                             "tokens": r["tokens"], "images": r["images"]} for r in rows}
+        return {
+            r["month"]: {
+                "calls": r["calls"],
+                "cost": round(r["cost"], 6),
+                "tokens": r["tokens"],
+                "images": r["images"],
+            }
+            for r in rows
+        }
 
     @web_route("GET", "/api/vault-report")
     async def api_vault_report(self, request):
         """Write monthly cost report to vault."""
         today = date.today()
         month = today.strftime("%Y-%m")
-        row = self.db.execute("""
+        row = self.db.execute(
+            """
             SELECT SUM(calls) as calls, SUM(total_tokens) as tokens,
                    SUM(cost) + SUM(image_cost) as cost, SUM(images) as images
             FROM daily_stats WHERE date LIKE ?
-        """, (month + "%",)).fetchone()
-        total = {"calls": row["calls"] or 0, "cost": row["cost"] or 0.0,
-                 "tokens": row["tokens"] or 0, "images": row["images"] or 0}
+        """,
+            (month + "%",),
+        ).fetchone()
+        total = {
+            "calls": row["calls"] or 0,
+            "cost": row["cost"] or 0.0,
+            "tokens": row["tokens"] or 0,
+            "images": row["images"] or 0,
+        }
         content = (
             f"---\ndate: {today.isoformat()}\ntype: billing-report\nmonth: {month}\n---\n\n"
             f"## Billing Report — {month}\n\n"
@@ -342,26 +429,35 @@ class BillingApp(BaseApp):
         days = int(request.query_params.get("days", "30"))
         cutoff = (date.today() - timedelta(days=days)).isoformat()
 
-        total_row = self.db.execute("""
+        total_row = self.db.execute(
+            """
             SELECT COALESCE(SUM(calls),0) as calls, COALESCE(SUM(total_tokens),0) as tokens,
                    COALESCE(SUM(cost),0) + COALESCE(SUM(image_cost),0) as cost
             FROM daily_stats WHERE date >= ?
-        """, (cutoff,)).fetchone()
+        """,
+            (cutoff,),
+        ).fetchone()
 
         by_provider = [
             f"{r['provider']}: {r['calls']} calls, ${r['cost']:.4f}"
-            for r in self.db.execute("""
+            for r in self.db.execute(
+                """
                 SELECT provider, SUM(calls) as calls, SUM(cost) as cost
                 FROM provider_stats WHERE date >= ? GROUP BY provider ORDER BY cost DESC
-            """, (cutoff,)).fetchall()
+            """,
+                (cutoff,),
+            ).fetchall()
         ]
 
         by_app = [
             f"{r['app']}: {r['calls']} calls, ${r['cost']:.4f}"
-            for r in self.db.execute("""
+            for r in self.db.execute(
+                """
                 SELECT app, SUM(calls) as calls, SUM(cost) as cost
                 FROM app_stats WHERE date >= ? GROUP BY app ORDER BY cost DESC LIMIT 10
-            """, (cutoff,)).fetchall()
+            """,
+                (cutoff,),
+            ).fetchall()
         ]
 
         context = (
@@ -372,9 +468,10 @@ class BillingApp(BaseApp):
         )
 
         insight = await self.think(
-            f"Analyze this LLM usage data and give 2-3 brief, actionable cost optimization tips. "
-            f"Note which apps or providers consume the most. Be concise.\n\n{context}",
-            domain="text", temperature=0.4,
+            COST_INSIGHT_USER_TMPL.format(context=context),
+            system=COST_INSIGHT_SYSTEM,
+            domain="text",
+            temperature=0.4,
         )
         return {"insight": insight, "period_days": days, "total_cost": round(total_row["cost"], 4)}
 
@@ -385,7 +482,9 @@ class BillingApp(BaseApp):
         if action == "today":
             today = self._get_day(today_iso())
             total = today.get("cost", 0) + today.get("image_cost", 0)
-            print(f"\n  Today: {today.get('calls', 0)} calls, {today.get('total_tokens', 0)} tokens")
+            print(
+                f"\n  Today: {today.get('calls', 0)} calls, {today.get('total_tokens', 0)} tokens"
+            )
             print(f"  LLM cost: ${today.get('cost', 0):.4f}")
             print(f"  Image cost: ${today.get('image_cost', 0):.4f}")
             print(f"  Total: ${total:.4f}")

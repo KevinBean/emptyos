@@ -26,7 +26,7 @@ def load_module(
     namespace: str,
     manifest_path: Path,
     entry_class: str | None,
-    kernel: "Kernel",
+    kernel: Kernel,
     manifest: Any,
 ) -> Any:
     """Import a Python module from disk and optionally instantiate a class.

@@ -1,0 +1,16 @@
+[engine]
+id = "routing"
+name = "Routing Engine"
+version = "0.1.0"
+description = "Graph routing on NetworkTopo — BFS shortest path with optional waypoints + edge exclusions. Used by apps/cables to assign cable.networkPath through node/edge topology."
+
+[engine.entry]
+module = "engine"
+class = "RoutingEngine"
+
+[requires]
+packages = []
+
+[provides]
+services = ["routing"]
+tags = ["graph", "routing", "bfs", "cables", "lines"]

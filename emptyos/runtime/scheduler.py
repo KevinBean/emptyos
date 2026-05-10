@@ -28,7 +28,6 @@ class Scheduler:
 
         try:
             from apscheduler.schedulers.asyncio import AsyncIOScheduler
-            from apscheduler.triggers.cron import CronTrigger
         except ImportError:
             print("[Scheduler] APScheduler not installed, skipping")
             return
@@ -52,7 +51,9 @@ class Scheduler:
 
         from apscheduler.triggers.cron import CronTrigger
 
-        methods = instance._get_decorated("_eos_scheduled") if hasattr(instance, "_get_decorated") else []
+        methods = (
+            instance._get_decorated("_eos_scheduled") if hasattr(instance, "_get_decorated") else []
+        )
 
         for meta, method in methods:
             cron_expr = meta["cron"]

@@ -60,14 +60,14 @@ body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-se
 .hero-val { font-size:28px; font-weight:700; color:var(--text-heading) }
 .hero-val.sm { font-size:22px }
 .hero-sub { font-size:13px; color:var(--text-secondary); margin-top:2px }
-.trend-up { color:#ef4444 } .trend-down { color:#10b981 }
+.trend-up { color:var(--danger) } .trend-down { color:var(--success) }
 
 /* Budget bar */
 .budget-bar { height:6px; border-radius:3px; background:var(--border); overflow:hidden; margin-top:8px }
 .budget-fill { height:100%; border-radius:3px; transition:width 0.5s }
-.budget-ok { background:#10b981 }
-.budget-warn { background:#f59e0b }
-.budget-over { background:#ef4444 }
+.budget-ok { background:var(--success) }
+.budget-warn { background:var(--warning) }
+.budget-over { background:var(--danger) }
 
 /* Budget remaining card */
 .budget-remaining { background:var(--bg-card); border:1px solid var(--border); border-radius:12px; padding:10px 14px; margin-bottom:16px; display:flex; align-items:center; justify-content:space-between; animation:cardIn 0.35s ease 0.18s both }
@@ -111,7 +111,7 @@ body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-se
 .modal-actions { display:flex; gap:8px; margin-top:12px }
 .modal-actions button { flex:1; padding:12px; border:none; border-radius:10px; font-size:15px; font-weight:600; cursor:pointer }
 .btn-save { background:var(--accent); color: var(--accent-ink) }
-.btn-delete { background:#ef4444; color:#fff }
+.btn-delete { background:var(--danger); color:#fff }
 .btn-cancel { background:var(--bg); color:var(--text-secondary); border:1px solid var(--border) !important }
 
 /* Week compare */
@@ -132,10 +132,10 @@ body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-se
 .hm-cell { width:12px; height:12px; border-radius:2px; background:var(--border); transition:background 0.2s; cursor:default }
 .hm-cell[title]:hover { outline:1px solid var(--text-muted) }
 .hm-0 { background:var(--border) }
-.hm-1 { background:#10b98140 }
-.hm-2 { background:#f59e0b60 }
-.hm-3 { background:#ef444480 }
-.hm-4 { background:#ef4444 }
+.hm-1 { background:color-mix(in srgb, var(--success) 25%, transparent) }
+.hm-2 { background:color-mix(in srgb, var(--warning) 38%, transparent) }
+.hm-3 { background:color-mix(in srgb, var(--danger) 50%, transparent) }
+.hm-4 { background:var(--danger) }
 .heatmap-legend { display:flex; gap:4px; align-items:center; margin-top:6px; justify-content:flex-end; font-size:10px; color:var(--text-muted) }
 .heatmap-legend span { margin:0 4px }
 
@@ -160,7 +160,7 @@ body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-se
 .preset-list-modal { max-height:300px; overflow-y:auto }
 .preset-modal-item { display:flex; align-items:center; padding:10px 0; border-bottom:1px solid var(--border); gap:8px }
 .preset-modal-item input { flex:1; padding:8px; border:1px solid var(--border); border-radius:8px; background:var(--bg); color:var(--text); font-size:14px }
-.preset-modal-item .del-preset { width:32px; height:32px; border:none; background:rgba(239,68,68,0.1); color:#ef4444; border-radius:8px; cursor:pointer; font-size:16px }
+.preset-modal-item .del-preset { width:32px; height:32px; border:none; background:color-mix(in srgb, var(--danger) 10%, transparent); color:var(--danger); border-radius:8px; cursor:pointer; font-size:16px }
 
 /* ── Income ── */
 .income-form { display:flex; flex-direction:column; gap:8px; margin-bottom:16px; background:var(--bg-card); border:1px solid var(--border); border-radius:12px; padding:14px }
@@ -172,8 +172,8 @@ body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-se
 .income-item .inc-date { font-size:11px; color:var(--text-muted); min-width:38px; font-family:var(--mono) }
 .income-item .inc-source { flex:1; font-size:14px }
 .income-item .inc-type { font-size:11px; padding:2px 8px; border-radius:8px; background:color-mix(in srgb,var(--accent) 15%,transparent); color:var(--accent) }
-.income-item .inc-amt { font-weight:700; font-size:15px; color:#10b981; font-family:var(--mono); min-width:56px; text-align:right }
-.income-item .inc-del { width:28px; height:28px; border:none; background:rgba(239,68,68,0.1); color:#ef4444; border-radius:8px; cursor:pointer; font-size:14px; opacity:0; transition:opacity 0.15s }
+.income-item .inc-amt { font-weight:700; font-size:15px; color:var(--success); font-family:var(--mono); min-width:56px; text-align:right }
+.income-item .inc-del { width:28px; height:28px; border:none; background:color-mix(in srgb, var(--danger) 10%, transparent); color:var(--danger); border-radius:8px; cursor:pointer; font-size:14px; opacity:0; transition:opacity 0.15s }
 .income-item:hover .inc-del { opacity:1 }
 .empty { text-align:center; padding:32px; color:var(--text-muted) }
 .section-title { font-size:13px; font-weight:600; color:var(--text-secondary); text-transform:uppercase; letter-spacing:0.5px; margin-bottom:8px; margin-top:8px }
@@ -377,9 +377,9 @@ async function addExpense(){
     if(!p||p.amount<=0){toast('Enter amount + description',false);return}
     // Duplicate check
     var dup=recentEntries.find(function(e){return e.description&&p.note&&e.description.toLowerCase().includes(p.note.toLowerCase().slice(0,10))&&Math.abs(e.amount-p.amount)<0.01});
-    if(dup&&!confirm('Similar to recent: "'+dup.description+' $'+dup.amount+'". Add anyway?'))return;
+    if(dup&&!await EOS_UI.confirm('Similar to recent: "'+dup.description+' $'+dup.amount+'". Add anyway?'))return;
     // Large amount check
-    if(p.amount>200&&!confirm('$'+p.amount.toFixed(2)+' is a large amount. Continue?'))return;
+    if(p.amount>200&&!await EOS_UI.confirm('$'+p.amount.toFixed(2)+' is a large amount. Continue?'))return;
 
     var btn=document.getElementById('btn');btn.disabled=true;btn.textContent='...';
     try{await EOS.api('/expense/api/add',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({amount:p.amount,category:p.category,description:p.note})});
@@ -470,9 +470,9 @@ function renderEntries(entries,tid,limit){
         var ci=Object.keys(CAT_KW).indexOf(e.category);var col=COLORS[(ci>=0?ci:7)%COLORS.length];
         return '<div class="entry-item" onclick=\'openEdit('+JSON.stringify(e).replace(/'/g,"&#39;")+')\' style="animation:cardIn 0.3s ease both">'
             +'<span class="entry-date">'+(e.date||'').slice(5)+'</span>'
-            +'<span class="entry-desc">'+esc(e.description||e.note||'')+'</span>'
+            +'<span class="entry-desc eos-personal">'+esc(e.description||e.note||'')+'</span>'
             +'<span class="entry-cat" style="background:'+col+'18;color:'+col+'">'+esc(e.category||'')+'</span>'
-            +'<span class="entry-amt">$'+(typeof e.amount==='number'?e.amount.toFixed(2):e.amount)+'</span></div>'
+            +'<span class="entry-amt eos-personal">$'+(typeof e.amount==='number'?e.amount.toFixed(2):e.amount)+'</span></div>'
     }).join('')
 }
 
@@ -522,7 +522,7 @@ function renderBudgetRemaining(forecast) {
     var remaining = forecast.budget - spent;
     var daysLeft = daysRemainingInMonth();
     var dailyBudget = daysLeft > 0 ? (remaining / daysLeft) : 0;
-    var color = remaining < 0 ? '#ef4444' : remaining < forecast.budget * 0.2 ? '#f59e0b' : '#10b981';
+    var color = remaining < 0 ? 'var(--danger)' : remaining < forecast.budget * 0.2 ? 'var(--warning)' : 'var(--success)';
     el.style.display = 'flex';
     el.innerHTML = '<div><div class="br-label">Budget Remaining</div><div class="br-daily">$'+dailyBudget.toFixed(0)+'/day for '+daysLeft+' days</div></div><div class="br-val" style="color:'+color+'">$'+remaining.toFixed(0)+'</div>';
 }
@@ -552,8 +552,8 @@ async function loadData(){
         var barClass=budgetPct>100?'budget-over':budgetPct>80?'budget-warn':'budget-ok';
         var sparkHTML = renderSparkline(heatmap.dates || heatmap || {});
         document.getElementById('hero').innerHTML=
-            '<div class="hero-card card-in"><div class="hero-label">This Month</div><div class="hero-val">$'+total.toFixed(0)+'</div><div class="hero-sub">'+count+' entries</div><div class="budget-bar"><div class="budget-fill '+barClass+'" style="width:'+Math.min(100,budgetPct)+'%"></div></div><div style="font-size:11px;color:var(--text-muted);margin-top:4px">'+budgetPct+'% of $'+forecast.budget+' budget</div></div>'
-            +'<div class="hero-card card-in"><div class="hero-label">Forecast</div><div class="hero-val sm">$'+forecast.forecast.toFixed(0)+'</div><div class="hero-sub">avg $'+forecast.daily_avg.toFixed(0)+'/day</div><div class="hero-sub '+(forecast.on_track?'trend-down':'trend-up')+'">'+(forecast.on_track?'On track':'Over budget')+'</div></div>'
+            '<div class="hero-card card-in"><div class="hero-label">This Month</div><div class="hero-val eos-personal">$'+total.toFixed(0)+'</div><div class="hero-sub">'+count+' entries</div><div class="budget-bar"><div class="budget-fill '+barClass+'" style="width:'+Math.min(100,budgetPct)+'%"></div></div><div style="font-size:11px;color:var(--text-muted);margin-top:4px">'+budgetPct+'% of $'+forecast.budget+' budget</div></div>'
+            +'<div class="hero-card card-in"><div class="hero-label">Forecast</div><div class="hero-val sm eos-personal">$'+forecast.forecast.toFixed(0)+'</div><div class="hero-sub eos-personal">avg $'+forecast.daily_avg.toFixed(0)+'/day</div><div class="hero-sub '+(forecast.on_track?'trend-down':'trend-up')+'">'+(forecast.on_track?'On track':'Over budget')+'</div></div>'
             +'<div class="hero-card wide card-in"><div class="hero-label">Last 7 Days</div>'+sparkHTML+'</div>';
 
         // Budget remaining
@@ -565,7 +565,7 @@ async function loadData(){
             var r=50,cx=60,cy=60,C=2*Math.PI*r,off=0;
             var circles=cats.map(function(e,i){var pct=e[1]/total,dash=pct*C;var c='<circle cx="'+cx+'" cy="'+cy+'" r="'+r+'" fill="none" stroke="'+COLORS[i%COLORS.length]+'" stroke-width="14" stroke-dasharray="'+dash.toFixed(1)+' '+(C-dash).toFixed(1)+'" stroke-dashoffset="-'+off.toFixed(1)+'" style="transition:stroke-dasharray 0.5s"/>';off+=dash;return c}).join('');
             var svg='<div><svg width="130" height="130" viewBox="0 0 120 120" style="transform:rotate(-90deg)">'+circles+'</svg></div>';
-            var legend='<div class="legend">'+cats.slice(0,8).map(function(e,i){return '<div class="legend-row"><span class="legend-dot" style="background:'+COLORS[i%COLORS.length]+'"></span><span class="legend-name">'+e[0]+'</span><span class="legend-amt">$'+e[1].toFixed(0)+'</span><span class="legend-pct">'+(e[1]/total*100).toFixed(0)+'%</span></div>'}).join('')+'</div>';
+            var legend='<div class="legend">'+cats.slice(0,8).map(function(e,i){return '<div class="legend-row"><span class="legend-dot" style="background:'+COLORS[i%COLORS.length]+'"></span><span class="legend-name">'+e[0]+'</span><span class="legend-amt eos-personal">$'+e[1].toFixed(0)+'</span><span class="legend-pct">'+(e[1]/total*100).toFixed(0)+'%</span></div>'}).join('')+'</div>';
             document.getElementById('donut').innerHTML=svg+legend
         }else{document.getElementById('donut').innerHTML=''}
 
@@ -582,15 +582,20 @@ async function loadTrends(){
         var wc=await EOS.api('/expense/api/week-compare');
         var diff=wc.diff;var pct=wc.pct_change;
         document.getElementById('compare').innerHTML=
-            '<div class="compare-card"><div class="compare-val">$'+wc.this_week.toFixed(0)+'</div><div class="compare-label">This Week</div></div>'
-            +'<div class="compare-card"><div class="compare-val">$'+wc.last_week.toFixed(0)+'</div><div class="compare-label">Last Week</div></div>'
+            '<div class="compare-card"><div class="compare-val eos-personal">$'+wc.this_week.toFixed(0)+'</div><div class="compare-label">This Week</div></div>'
+            +'<div class="compare-card"><div class="compare-val eos-personal">$'+wc.last_week.toFixed(0)+'</div><div class="compare-label">Last Week</div></div>'
             +'<div class="compare-card"><div class="compare-val '+(diff>0?'trend-up':'trend-down')+'">'+(diff>0?'+':'')+pct+'%</div><div class="compare-label">Change</div></div>'
     }catch(e){}
 }
 
 async function loadInsight(){
     var el=document.getElementById('insight');el.style.display='block';el.textContent='Thinking...';
-    try{var data=await EOS.api('/expense/api/ai-insight?month='+curMonth);el.textContent=data.insight}catch(e){el.textContent='Error loading insight'}
+    try{
+        var data=await EOS.api('/expense/api/ai-insight?month='+curMonth);
+        var prov = (data.provenance && data.provenance.mode && window.EOS_UI && EOS_UI.provenance)
+            ? '<div style="margin-bottom:8px">' + EOS_UI.provenance(data.provenance) + '</div>' : '';
+        el.innerHTML = prov + '<div class="eos-personal" style="white-space:pre-wrap">' + EOS_UI.esc(data.insight || '') + '</div>';
+    }catch(e){el.textContent='Error loading insight'}
 }
 
 // ── More tab: Heatmap + Recurring ────────────────────────────
@@ -683,8 +688,8 @@ async function loadIncome(){
         ]);
         var items = Array.isArray(entries) ? entries : (entries.entries || []);
         EOS_UI.statCards('income-summary', [
-            {label:'Gross', value:'$'+(summary.income_gross||0).toFixed(0), color:'#10b981'},
-            {label:'Net', value:'$'+(summary.income_net||0).toFixed(0), color:'#10b981'},
+            {label:'Gross', value:'$'+(summary.income_gross||0).toFixed(0), color:'var(--success)'},
+            {label:'Net', value:'$'+(summary.income_net||0).toFixed(0), color:'var(--success)'},
             {label:'Entries', value:items.length}
         ]);
         var listEl = document.getElementById('income-list');

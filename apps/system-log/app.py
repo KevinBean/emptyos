@@ -11,8 +11,20 @@ from collections import Counter
 from emptyos.sdk import BaseApp, cli_command, web_route
 
 
-class SystemLogApp(BaseApp):
+SYSLOG_NARRATIVE_SYSTEM = (
+    "You are an observer narrating recent system activity for the user. "
+    "Given event-type and event-source counts, write 2-3 plain-prose "
+    "sentences describing what the user has been doing and any notable "
+    "pattern.\n\n"
+    "Do NOT:\n"
+    "- Use bullet points, headings, or markdown.\n"
+    "- Echo the raw counts back as numbers.\n"
+    "- Speculate beyond what the counts support.\n"
+    "- Begin with 'It looks like' or 'Based on the data'."
+)
 
+
+class SystemLogApp(BaseApp):
     async def recent(self, limit: int = 50) -> list[dict]:
         return await self.kernel.events.history(limit=limit)
 
@@ -48,10 +60,10 @@ class SystemLogApp(BaseApp):
         elif action == "summary":
             s = await self.summary()
             print(f"\n  {s['total_events']} events")
-            print(f"\n  By type:")
+            print("\n  By type:")
             for t, c in s["by_type"].items():
                 print(f"    {t:<30} {c}")
-            print(f"\n  By source:")
+            print("\n  By source:")
             for src, c in s["by_source"].items():
                 print(f"    {src:<20} {c}")
             print()
@@ -68,7 +80,11 @@ class SystemLogApp(BaseApp):
         if event_type:
             events = [e for e in events if e.get("type") == event_type]
         if q:
-            events = [e for e in events if q in str(e.get("data", "")).lower() or q in e.get("type", "").lower()]
+            events = [
+                e
+                for e in events
+                if q in str(e.get("data", "")).lower() or q in e.get("type", "").lower()
+            ]
         return events
 
     @web_route("GET", "/api/summary")
@@ -101,9 +117,10 @@ class SystemLogApp(BaseApp):
             f"Top sources: {', '.join(f'{s} ({c})' for s, c in source_counts.most_common(5))}."
         )
         narrative = await self.think(
-            f"Summarize this system activity in 2-3 sentences. "
-            f"What's the user been doing? Any notable patterns?\n\n{context}",
-            domain="text", temperature=0.5,
+            context,
+            system=SYSLOG_NARRATIVE_SYSTEM,
+            domain="text",
+            temperature=0.5,
         )
         return {"narrative": narrative, "events_analyzed": len(events)}
 
@@ -129,6 +146,7 @@ class SystemLogApp(BaseApp):
     async def api_log_errors(self, request):
         """Recent errors and warnings."""
         import time
+
         since = time.time() - 86400  # last 24h
         errors = self.kernel.syslog.query(limit=50, level="error", since=since)
         warns = self.kernel.syslog.query(limit=50, level="warn", since=since)

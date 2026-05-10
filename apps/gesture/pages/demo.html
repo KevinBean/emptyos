@@ -128,10 +128,10 @@ body {
     margin-left:8px;
     transition:opacity 0.15s, transform 0.4s;
     transform:translateY(0);
-    color:#66BB6A;
+    color:var(--green);
 }
 .score-delta.show { opacity:1; transform:translateY(-20px) }
-.score-delta.neg { color:#EF5350 }
+.score-delta.neg { color:var(--red) }
 
 /* Streak — top right */
 .streak-wrap {
@@ -688,7 +688,7 @@ window.startCamera = async function() {
         const errEl = document.getElementById("startBtn").parentElement.querySelector(".cam-error") || (() => {
             const el = document.createElement("p");
             el.className = "cam-error";
-            el.style.cssText = "color:#f87171;font-size:13px;margin-top:8px";
+            el.style.cssText = "color:var(--red);font-size:13px;margin-top:8px";
             document.getElementById("startBtn").after(el);
             return el;
         })();

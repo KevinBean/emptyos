@@ -9,13 +9,13 @@ ALL_APP_PREFIXES = [
     "/billing/", "/bookmarks/", "/briefing/", "/quick-action/",
     "/contacts/", "/dictionary/", "/digest/",
     "/divination/", "/english/", "/expense/", "/fiction-engine/", "/finance/",
-    "/focus/", "/git/", "/gpts/", "/healing/", "/hello/", "/hub/",
+    "/focus/", "/git/", "/healing/", "/hello/", "/hub/", "/improv/",
     "/integrity/", "/items/", "/jobs/", "/journal/", "/lessons/", "/link/",
     "/media/", "/meditation/", "/model-bench/",
     "/music-studio/", "/news-center/", "/note/", "/nutrition/",
     "/places/", "/podcast/", "/projects/", "/quickref/",
     "/quotes/", "/reactor/", "/recipes/", "/reflect/", "/release/",
-    "/reminders/", "/review/", "/search/", "/settings/", "/shadowing/",
+    "/reminders/", "/review/", "/rooms/", "/search/", "/settings/", "/shadowing/",
     "/speaking/", "/staff/", "/studio/",
     "/system-log/", "/task/", "/timeline/", "/tracker/", "/tts/",
     "/voice-review/", "/weather/", "/web-analytics/",
@@ -67,6 +67,7 @@ APP_GET_ENDPOINTS = {
         "/api/goals", "/api/wellness", "/api/streaks", "/api/month-compare",
     ],
     "quotes": ["/api/quote"],
+    "improv": ["/api/exercises", "/api/capabilities", "/api/sessions"],
     "contacts": ["/api/list"],
     "projects": [
         "/api/list", "/api/projects", "/api/deadlines", "/api/all-tasks",
@@ -86,7 +87,7 @@ APP_GET_ENDPOINTS = {
     ],
     "timeline": ["/api/events"],
     "news-center": ["/api/sources", "/api/articles", "/api/stats"],
-    "gpts": ["/api/agents"],
+    "rooms": ["/api/agents"],
     # System apps from Phase 2
     "quick-action": [
         "/api/list", "/api/stats", "/api/recent", "/api/pending",

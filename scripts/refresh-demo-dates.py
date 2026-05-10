@@ -26,7 +26,7 @@ from the committed baseline because git checkout reverts them first).
 from __future__ import annotations
 
 import re
-from datetime import date, datetime, timedelta
+from datetime import date, timedelta
 from pathlib import Path
 
 # Baseline = the date the seed task files were authored with. All dates
@@ -80,7 +80,7 @@ def main() -> None:
             content = md.read_text(encoding="utf-8")
         except Exception:
             continue
-        if "\U0001F4C5" not in content and "✅" not in content:
+        if "\U0001f4c5" not in content and "✅" not in content:
             continue
         new_content, n = shift_dates(content, delta)
         if n == 0 or new_content == content:

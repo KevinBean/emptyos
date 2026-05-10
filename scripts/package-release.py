@@ -38,9 +38,11 @@ def resolve_tier(release: dict, tier_name: str) -> dict:
         print(f"Error: unknown tier '{tier_name}'. Available: {', '.join(tiers)}")
         sys.exit(1)
 
-    result = {"apps": list(tier.get("apps", [])),
-              "plugins": list(tier.get("plugins", [])),
-              "skills": list(tier.get("skills", []))}
+    result = {
+        "apps": list(tier.get("apps", [])),
+        "plugins": list(tier.get("plugins", [])),
+        "skills": list(tier.get("skills", [])),
+    }
 
     parent_name = tier.get("extends")
     if parent_name and parent_name in tiers:
@@ -69,7 +71,9 @@ def load_plugin_platforms(plugin_id: str) -> list[str] | None:
     return list(supports) if isinstance(supports, list) else None
 
 
-def filter_plugins_by_platform(plugins: list[str], target: str | None) -> tuple[list[str], list[str]]:
+def filter_plugins_by_platform(
+    plugins: list[str], target: str | None
+) -> tuple[list[str], list[str]]:
     """Return (kept, dropped) plugin ids for target platform.
 
     Plugins without a [platforms] block are kept (backward-compatible).
@@ -94,8 +98,9 @@ def run_safety_checks() -> bool:
         if not script_path.exists():
             print(f"  Warning: {script} not found, skipping")
             continue
-        r = subprocess.run([sys.executable, str(script_path)], cwd=str(ROOT),
-                           capture_output=True, text=True)
+        r = subprocess.run(
+            [sys.executable, str(script_path)], cwd=str(ROOT), capture_output=True, text=True
+        )
         if r.returncode != 0:
             print(f"  FAIL: {script}")
             print(r.stdout)
@@ -185,20 +190,22 @@ def package(tier_name: str, dry_run: bool = False, platform_override: str | None
     if target_platform:
         known = set(release.get("platforms", {}).keys())
         if known and target_platform not in known:
-            print(f"Error: unknown platform '{target_platform}'. Available: {', '.join(sorted(known))}")
+            print(
+                f"Error: unknown platform '{target_platform}'. Available: {', '.join(sorted(known))}"
+            )
             sys.exit(1)
         kept, dropped = filter_plugins_by_platform(tier["plugins"], target_platform)
         tier["plugins"] = kept
         tier["_platform"] = target_platform
         tier["_platform_dropped"] = dropped
 
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"  EmptyOS {version} — {tier_name} tier", end="")
     if target_platform:
         print(f" @ {target_platform}")
     else:
         print()
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
     print(f"  Apps:    {len(tier['apps'])}")
     print(f"  Plugins: {len(tier['plugins'])}", end="")
     if target_platform and tier.get("_platform_dropped"):
@@ -262,9 +269,11 @@ def package(tier_name: str, dry_run: bool = False, platform_override: str | None
     )
 
     print(f"\nPackaged to: {out_dir}")
-    print(f"  {len(files)} files, {len(tier['apps'])} apps, "
-          f"{len(tier['plugins'])} plugins, {len(tier['skills'])} skills")
-    print(f"  MANIFEST.json written")
+    print(
+        f"  {len(files)} files, {len(tier['apps'])} apps, "
+        f"{len(tier['plugins'])} plugins, {len(tier['skills'])} skills"
+    )
+    print("  MANIFEST.json written")
 
 
 def main():
@@ -302,8 +311,10 @@ def main():
                 tier["plugins"], dropped = filter_plugins_by_platform(tier["plugins"], target)
             suffix = f" @ {target}" if target else ""
             drop_note = f"  (dropped: {', '.join(dropped)})" if dropped else ""
-            print(f"\n  {name}{suffix}: {len(tier['apps'])} apps, "
-                  f"{len(tier['plugins'])} plugins, {len(tier['skills'])} skills{drop_note}")
+            print(
+                f"\n  {name}{suffix}: {len(tier['apps'])} apps, "
+                f"{len(tier['plugins'])} plugins, {len(tier['skills'])} skills{drop_note}"
+            )
         return
 
     tier_name = args[0]

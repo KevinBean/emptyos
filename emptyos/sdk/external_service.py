@@ -62,7 +62,9 @@ class ExternalServiceBase(BaseApp):
         using_demo = self._base_url().rstrip("/") == self.DEMO_BASE.rstrip("/")
         if mode == "public" and using_demo:
             return {
-                "enabled": False, "mode": mode, "using_demo": True,
+                "enabled": False,
+                "mode": mode,
+                "using_demo": True,
                 "reason": (
                     f"{self.SERVICE_LABEL} is disabled in public mode — "
                     f"self-host or set [apps.{self.manifest.id}] base_url."

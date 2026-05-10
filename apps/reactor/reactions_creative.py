@@ -6,7 +6,6 @@ from emptyos.sdk import on_event
 
 
 class CreativeReactionsMixin:
-
     @on_event("music:composed")
     async def on_compose(self, event):
         self._log_action("music:composed", "new track")
@@ -76,3 +75,61 @@ class CreativeReactionsMixin:
         board_id = event.data.get("board_id", "")
         self._log_action("canvas:board_deleted", board_id)
         await self._journal_ripple("🎨", f"Canvas: deleted `{board_id}`")
+
+    @on_event("scroll:clip_published")
+    async def on_scroll_published(self, event):
+        title = event.data.get("title") or "(untitled)"
+        shape = event.data.get("shape") or "monologue"
+        self._log_action("scroll:clip_published", f"{shape}: {title[:40]}")
+        await self._journal_ripple("📺", f"New Scroll clip ({shape}): {title}")
+
+    @on_event("scroll:clip_liked")
+    async def on_scroll_liked(self, event):
+        participants = event.data.get("participants") or []
+        try:
+            scroll = self.kernel.apps.instances.get("scroll")
+            if not scroll:
+                return
+            # Boost mood toward "happy" via affinity tweak between participants
+            if len(participants) == 2:
+                scroll.relationships.update(
+                    participants[0], participants[1], {"affinity": 0.02, "familiarity": 0.01}
+                )
+        except Exception:
+            pass
+
+    @on_event("scroll:clip_skipped")
+    async def on_scroll_skipped(self, event):
+        # Light decay — don't punish hard, just signal disengagement
+        participants = event.data.get("participants") or []
+        try:
+            scroll = self.kernel.apps.instances.get("scroll")
+            if not scroll or len(participants) != 2:
+                return
+            scroll.relationships.update(
+                participants[0], participants[1], {"affinity": -0.005}
+            )
+        except Exception:
+            pass
+
+    # ── Improv & scroll ──
+
+    @on_event("improv:scene_started")
+    async def on_improv_scene_started(self, event):
+        ex = event.data.get("exercise", "scene")
+        self._log_action("improv:scene_started", str(ex)[:50])
+
+    @on_event("improv:scene_ended")
+    async def on_improv_scene_ended(self, event):
+        ex = event.data.get("exercise", "scene")
+        turns = event.data.get("turns", 0)
+        rating = event.data.get("rating")
+        detail = f"{ex} ({turns} turns)"
+        if rating:
+            detail += f" — rated {rating}"
+        self._log_action("improv:scene_ended", detail)
+        await self._journal_ripple("🎭", f"Improv: {detail}", dim="social")
+
+    @on_event("improv:warmup_run")
+    async def on_improv_warmup(self, event):
+        self._log_action("improv:warmup_run", str(event.data.get("kind",""))[:30])

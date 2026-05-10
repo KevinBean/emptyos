@@ -123,11 +123,59 @@ class TestExportBuild:
             assert meta_file.exists(), f"{app_id}: missing _meta/export.json"
             meta = json.loads(meta_file.read_text(encoding="utf-8"))
             assert meta["app_id"] == app_id
+            # Capabilities matrix must be present and shaped.
+            caps_file = extracted / "_meta" / "capabilities.json"
+            assert caps_file.exists(), f"{app_id}: missing _meta/capabilities.json"
+            caps = json.loads(caps_file.read_text(encoding="utf-8"))
+            assert "vault" in caps and "events" in caps and "viewer" in caps
             # Shim must be present — it's the whole point.
             assert (extracted / "_assets" / "eos-export-shim.js").exists()
             html = (extracted / "index.html").read_text(encoding="utf-8")
             assert "EOS_IS_EXPORT = true" in html, f"{app_id}: bootstrap missing"
             assert "eos-export-shim.js" in html, f"{app_id}: shim not linked"
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+
+
+# Per-bundle weight budget for ``_assets/`` only (uncompressed, KB). Snapshot
+# data lives in ``_data/state.json`` and scales with the user's vault — it's
+# not what we're guarding here. The budget catches JS/CSS/asset bloat so
+# Tier 3's ``[provides.export].assets`` opt-in doesn't silently regress.
+#
+# Today the full asset set is ~500 KB. The cap below has comfortable headroom
+# so ad-hoc additions don't trip the test, but a major regression (e.g. ship-
+# all-of-eos.js-twice) would.
+ASSETS_BUDGET_KB = 800
+
+
+def _dir_size_kb(p: Path) -> float:
+    total = 0
+    for f in p.rglob("*"):
+        if f.is_file():
+            total += f.stat().st_size
+    return total / 1024
+
+
+@pytest.mark.api
+class TestExportBudget:
+    """Soft guard so Tier 3 (assets opt-in) doesn't silently regress."""
+
+    @pytest.mark.parametrize("app_id", [a["id"] for a in _export_enabled_apps()])
+    def test_assets_within_budget(self, app_id, http_client):
+        r = http_client.post(f"/api/apps/{app_id}/export?format=zip")
+        assert r.status_code == 200, f"{app_id}: {r.text}"
+        tmp = Path(tempfile.mkdtemp(prefix=f"eos-budget-{app_id}-"))
+        try:
+            zf = tmp / "bundle.zip"
+            zf.write_bytes(r.content)
+            extracted = tmp / "out"
+            shutil.unpack_archive(str(zf), str(extracted))
+            assets_kb = _dir_size_kb(extracted / "_assets")
+            assert assets_kb <= ASSETS_BUDGET_KB, (
+                f"{app_id} _assets/ {assets_kb:.0f} KB > budget {ASSETS_BUDGET_KB} KB. "
+                f"Either declare [provides.export].assets = [\"minimal\", ...] in "
+                f"apps/{app_id}/manifest.toml, or raise ASSETS_BUDGET_KB."
+            )
         finally:
             shutil.rmtree(tmp, ignore_errors=True)
 
@@ -177,5 +225,137 @@ class TestExportUI:
 
             # No console errors at all.
             assert not errors, "errors during export UI run: " + "; ".join(errors[:6])
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+
+
+# Console errors we ignore in file:// smoke runs — Chromium emits these for
+# resource-load failures (Google Fonts CORS preflight under Origin: null,
+# missing favicon, etc.) that are environmental, not bundle bugs.
+_IGNORED_CONSOLE_PATTERNS = (
+    "Failed to load resource",
+    "fonts.gstatic.com",
+    "fonts.googleapis.com",
+    "Access to font at",
+    "ERR_FILE_NOT_FOUND",
+    "ERR_FAILED",
+    "favicon",
+)
+
+
+def _is_real_error(text: str) -> bool:
+    return not any(p in text for p in _IGNORED_CONSOLE_PATTERNS)
+
+
+def _open_export_bundle(http_client, page, app_id: str, prefix: str) -> Path:
+    """Build + extract + open ``app_id``'s export bundle. Returns tmp dir.
+
+    Caller is responsible for cleanup. Asserts the shim booted and the
+    capabilities matrix is populated; tolerates environmental resource-load
+    errors that come from running a bundle under ``file://``.
+    """
+    r = http_client.post(f"/api/apps/{app_id}/export?format=zip")
+    assert r.status_code == 200, f"{app_id}: {r.text}"
+    tmp = Path(tempfile.mkdtemp(prefix=f"eos-smoke-{app_id}-"))
+    zf = tmp / "bundle.zip"
+    zf.write_bytes(r.content)
+    shutil.unpack_archive(str(zf), str(tmp / "out"))
+    index = (tmp / "out" / "index.html").resolve()
+    errors: list[str] = []
+    page.on("pageerror", lambda e: errors.append(f"pageerror: {e}"))
+    page.on(
+        "console",
+        lambda msg: errors.append(f"console.error: {msg.text}")
+        if msg.type == "error" and _is_real_error(msg.text)
+        else None,
+    )
+    page.goto("file:///" + str(index).replace("\\", "/"))
+    try:
+        page.wait_for_load_state("networkidle", timeout=5000)
+    except Exception:
+        pass
+    # Shim must have booted and rendered the offline pill.
+    assert page.evaluate("!!document.getElementById('eos-export-pill')"), \
+        f"{app_id}: offline pill missing"
+    assert page.evaluate("!!window.EOS_EXPORT"), f"{app_id}: EOS_EXPORT not exposed"
+    # Capabilities matrix must be populated and contain vault.
+    caps_keys = page.evaluate("Object.keys(window.EOS_EXPORT_CAPABILITIES || {})")
+    assert "vault" in caps_keys, f"{app_id}: capabilities matrix missing vault"
+    if errors:
+        raise AssertionError(f"{app_id} console errors: " + "; ".join(errors[:6]))
+    return tmp
+
+
+@pytest.mark.interactive
+class TestExportUISmoke:
+    """Per-app smoke for the new export.py hooks. Each verifies the bundle
+    boots clean and exercises one offline write that the hook claims to handle."""
+
+    def test_task_offline_add(self, http_client, page):
+        tmp = _open_export_bundle(http_client, page, "task", "/task")
+        try:
+            # Fire the cross-app add the way capture / voice would in a real bundle.
+            result = page.evaluate(
+                "(async () => await window.EOS.callApp('task', 'add', "
+                "{text: 'PLAYWRIGHT-TEST-task-add', project: 'inbox'}))()"
+            )
+            assert isinstance(result, dict) and result.get("text", "").startswith("PLAYWRIGHT-TEST-")
+            # Reading back through the registered list_all should include it.
+            rows = page.evaluate("(async () => await window.EOS.callApp('task', 'list_all', {}))()")
+            assert any(r.get("text", "").startswith("PLAYWRIGHT-TEST-") for r in rows)
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+
+    def test_projects_offline_set_field(self, http_client, page):
+        tmp = _open_export_bundle(http_client, page, "projects", "/projects")
+        try:
+            # Pick the first project in the snapshot and flip its status.
+            rows = page.evaluate("(async () => await window.EOS.callApp('projects', 'list_all', {}))()")
+            assert isinstance(rows, list) and rows, "projects snapshot is empty"
+            target_id = rows[0]["id"]
+            res = page.evaluate(
+                "(async (id) => await window.EOS.callApp('projects', 'set_field', "
+                "{id: id, field: 'status', value: 'shelved'}))('" + target_id.replace("'", "\\'") + "')"
+            )
+            assert res.get("ok") is True, f"set_field returned {res}"
+            # Round-trip via list_all → status reflects the write.
+            rows2 = page.evaluate("(async () => await window.EOS.callApp('projects', 'list_all', {}))()")
+            updated = next((r for r in rows2 if r["id"] == target_id), None)
+            assert updated and updated.get("status") == "shelved"
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+
+    def test_people_offline_create(self, http_client, page):
+        tmp = _open_export_bundle(http_client, page, "people", "/people")
+        try:
+            res = page.evaluate(
+                "(async () => { var r = await fetch('/people/api/people', "
+                "{method: 'POST', headers: {'Content-Type': 'application/json'}, "
+                "body: JSON.stringify({name: 'PLAYWRIGHT-TEST-Person', role: 'tester'})}); "
+                "return await r.json(); })()"
+            )
+            assert res.get("ok") is True and res.get("id"), f"create returned {res}"
+            # Round-trip — list_all should now include the new person.
+            rows = page.evaluate("(async () => await window.EOS.callApp('people', 'list_all', {}))()")
+            assert any(r.get("name", "").startswith("PLAYWRIGHT-TEST-") for r in rows)
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+
+    def test_quick_action_offline_capture(self, http_client, page):
+        tmp = _open_export_bundle(http_client, page, "quick-action", "/quick-action")
+        try:
+            # POST /api/add — the primary capture path.
+            res = page.evaluate(
+                "(async () => { var r = await fetch('/quick-action/api/add', "
+                "{method: 'POST', headers: {'Content-Type': 'application/json'}, "
+                "body: JSON.stringify({text: 'PLAYWRIGHT-TEST-capture'})}); "
+                "return await r.json(); })()"
+            )
+            assert res.get("text", "").startswith("PLAYWRIGHT-TEST-"), f"add returned {res}"
+            # GET /api/list should pick it up.
+            rows = page.evaluate(
+                "(async () => { var r = await fetch('/quick-action/api/list'); return await r.json(); })()"
+            )
+            assert any(r.get("text", "").startswith("PLAYWRIGHT-TEST-") for r in rows)
         finally:
             shutil.rmtree(tmp, ignore_errors=True)

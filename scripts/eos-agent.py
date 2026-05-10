@@ -32,18 +32,15 @@ import functools
 import json
 import os
 import re
-import shlex
 import shutil
 import subprocess
 import sys
 import tempfile
 import tomllib
+import urllib.error
+import urllib.request
 from datetime import datetime
 from pathlib import Path
-
-import urllib.request
-import urllib.error
-
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 CASES_FILE = REPO_ROOT / "scripts" / "conv-test-cases.toml"
@@ -139,8 +136,13 @@ def build_repo_map() -> str:
                 if p.is_dir() and not p.name.startswith(("_", ".")):
                     personal_apps.append(p.name)
 
-    lines.append(f"Community apps ({len(community_apps)}, at `apps/<id>/`): " + ", ".join(community_apps))
-    lines.append(f"Personal apps ({len(personal_apps)}, at `apps/personal/<id>/`): " + ", ".join(personal_apps))
+    lines.append(
+        f"Community apps ({len(community_apps)}, at `apps/<id>/`): " + ", ".join(community_apps)
+    )
+    lines.append(
+        f"Personal apps ({len(personal_apps)}, at `apps/personal/<id>/`): "
+        + ", ".join(personal_apps)
+    )
 
     sdk_dir = REPO_ROOT / "emptyos" / "sdk"
     if sdk_dir.exists():
@@ -154,7 +156,11 @@ def build_repo_map() -> str:
 
     plugins_dir = REPO_ROOT / "plugins"
     if plugins_dir.exists():
-        plugins = [p.name for p in sorted(plugins_dir.iterdir()) if p.is_dir() and not p.name.startswith(("_", "."))]
+        plugins = [
+            p.name
+            for p in sorted(plugins_dir.iterdir())
+            if p.is_dir() and not p.name.startswith(("_", "."))
+        ]
         lines.append(f"Plugins: {', '.join(plugins)}")
 
     return "\n".join(lines)
@@ -188,7 +194,10 @@ _EMPTYOS_MARKERS = [
 ]
 
 _GENERIC_CONVENTION_DOCS = [
-    "AGENTS.md", "CONVENTIONS.md", "CONTRIBUTING.md", "CLAUDE.md",
+    "AGENTS.md",
+    "CONVENTIONS.md",
+    "CONTRIBUTING.md",
+    "CLAUDE.md",
 ]
 
 
@@ -211,9 +220,9 @@ def detect_context(cwd: Path, override: str | None = None) -> str:
 
 # Per-provider default model — used when /provider is switched without explicit /model
 PROVIDER_DEFAULT_MODEL = {
-    "openai": "gpt-5.4-mini",           # tool-native, cheap, matches Claude Code on benchmark
-    "ollama": "qwen3.5:latest",         # local, zero-cost, strong for chat
-    "claude-cli": "",                   # Claude picks its own default
+    "openai": "gpt-5.4-mini",  # tool-native, cheap, matches Claude Code on benchmark
+    "ollama": "qwen3.5:latest",  # local, zero-cost, strong for chat
+    "claude-cli": "",  # Claude picks its own default
     "claude-cli-raw": "",
 }
 
@@ -334,8 +343,9 @@ def build_generic_system_prompt(mode: str, cwd: Path) -> str:
     return head + doc_section + GENERIC_SYSTEM_TAIL + MODE_PROMPT_ADDENDA.get(mode, "")
 
 
-def build_system_prompt_for_context(context: str, mode: str, cwd: Path,
-                                     vault_path: str | None = None) -> str:
+def build_system_prompt_for_context(
+    context: str, mode: str, cwd: Path, vault_path: str | None = None
+) -> str:
     """Dispatcher: 'eos' → full CLAUDE.md prompt; 'generic' → slim + convention docs.
 
     If `vault_path` is passed (or detected from emptyos.toml for eos context),
@@ -389,7 +399,10 @@ TOOLS = [
                 "type": "object",
                 "properties": {
                     "path": {"type": "string", "description": "Absolute path inside sandbox"},
-                    "find": {"type": "string", "description": "Exact text to find (must be unique in file)"},
+                    "find": {
+                        "type": "string",
+                        "description": "Exact text to find (must be unique in file)",
+                    },
                     "replace": {"type": "string", "description": "Replacement text"},
                 },
                 "required": ["path", "find", "replace"],
@@ -456,7 +469,10 @@ TOOLS = [
                 "type": "object",
                 "properties": {
                     "action": {"type": "string", "enum": ["add", "complete", "list"]},
-                    "item": {"type": "string", "description": "Required for 'add' and 'complete'. For 'complete', match the exact text used in 'add'."},
+                    "item": {
+                        "type": "string",
+                        "description": "Required for 'add' and 'complete'. For 'complete', match the exact text used in 'add'.",
+                    },
                 },
                 "required": ["action"],
             },
@@ -526,6 +542,7 @@ MODE_PROMPT_ADDENDA: dict[str, str] = {
 
 # ---------- Tool implementations ----------
 
+
 def tool_read_file(path: str, sandbox: Path) -> str:
     p = Path(path)
     if not p.is_absolute():
@@ -538,10 +555,14 @@ def tool_read_file(path: str, sandbox: Path) -> str:
     except FileNotFoundError:
         # Provide hint for the apps/personal/ convention
         if "/apps/" in path.replace("\\", "/") and "/apps/personal/" not in path.replace("\\", "/"):
-            alt = path.replace("/apps/", "/apps/personal/").replace("\\apps\\", "\\apps\\personal\\")
+            alt = path.replace("/apps/", "/apps/personal/").replace(
+                "\\apps\\", "\\apps\\personal\\"
+            )
             if Path(alt).exists():
-                return (f"ERROR: file not found at {path}\n"
-                        f"HINT: found at {alt} — try apps/personal/ for user apps.")
+                return (
+                    f"ERROR: file not found at {path}\n"
+                    f"HINT: found at {alt} — try apps/personal/ for user apps."
+                )
         return f"ERROR: file not found: {path}"
     except Exception as e:
         return f"ERROR: {e}"
@@ -566,14 +587,14 @@ def tool_edit_file(path: str, find: str, replace: str, sandbox: Path) -> str:
     try:
         p.relative_to(sandbox.resolve())
     except ValueError:
-        return f"ERROR: edit_file refused — path outside sandbox"
+        return "ERROR: edit_file refused — path outside sandbox"
     if not p.exists():
         return f"ERROR: file not found: {path}"
     try:
         original = p.read_text(encoding="utf-8")
         count = original.count(find)
         if count == 0:
-            return f"ERROR: search text not found in file. Check exact whitespace/casing."
+            return "ERROR: search text not found in file. Check exact whitespace/casing."
         if count > 1:
             return f"ERROR: search text appears {count} times — must be unique. Provide more context in 'find'."
         updated = original.replace(find, replace, 1)
@@ -627,7 +648,8 @@ def tool_grep(pattern: str, path: str, sandbox: Path) -> str:
     try:
         result = subprocess.run(
             [rg, "-n", "--max-count", "20", "--max-columns", "200", pattern, path],
-            capture_output=True, timeout=15,
+            capture_output=True,
+            timeout=15,
         )
         out = result.stdout.decode("utf-8", errors="replace").strip()
         if not out:
@@ -644,16 +666,26 @@ def tool_grep(pattern: str, path: str, sandbox: Path) -> str:
 def tool_bash(command: str, sandbox: Path, allow_writes: bool = False) -> str:
     # Basic safety: refuse known-dangerous patterns unless explicit override
     dangerous = [
-        r"\brm\s+-rf\s", r"\brd\s+/s", r"\bdel\s+/s",
-        r"\b>\s*[/\\]", r"\bshutdown\b", r"\breboot\b",
-        r"\bmkfs", r"\bdd\s+if=", r"\bgit\s+push", r"\bgit\s+reset\s+--hard",
+        r"\brm\s+-rf\s",
+        r"\brd\s+/s",
+        r"\bdel\s+/s",
+        r"\b>\s*[/\\]",
+        r"\bshutdown\b",
+        r"\breboot\b",
+        r"\bmkfs",
+        r"\bdd\s+if=",
+        r"\bgit\s+push",
+        r"\bgit\s+reset\s+--hard",
     ]
     for pat in dangerous:
         if re.search(pat, command):
             return f"ERROR: bash refused — pattern matches dangerous operation: {pat!r}"
     try:
         result = subprocess.run(
-            command, shell=True, capture_output=True, timeout=30,
+            command,
+            shell=True,
+            capture_output=True,
+            timeout=30,
             cwd=str(REPO_ROOT),
         )
         stdout = result.stdout.decode("utf-8", errors="replace")
@@ -664,7 +696,9 @@ def tool_bash(command: str, sandbox: Path, allow_writes: bool = False) -> str:
         out = out.strip()
         if len(out) > 8000:
             out = out[:8000] + "\n... (truncated)"
-        return f"exit {result.returncode}\n{out}" if out else f"exit {result.returncode} (no output)"
+        return (
+            f"exit {result.returncode}\n{out}" if out else f"exit {result.returncode} (no output)"
+        )
     except subprocess.TimeoutExpired:
         return "ERROR: command timed out (30s)"
     except Exception as e:
@@ -698,7 +732,9 @@ def dispatch_tool(name: str, args: dict, sandbox: Path) -> str:
     if name == "write_file":
         return tool_write_file(args.get("path", ""), args.get("content", ""), sandbox)
     if name == "edit_file":
-        return tool_edit_file(args.get("path", ""), args.get("find", ""), args.get("replace", ""), sandbox)
+        return tool_edit_file(
+            args.get("path", ""), args.get("find", ""), args.get("replace", ""), sandbox
+        )
     if name == "list_dir":
         return tool_list_dir(args.get("path", ""), sandbox)
     if name == "glob":
@@ -714,6 +750,7 @@ def dispatch_tool(name: str, args: dict, sandbox: Path) -> str:
 
 # ---------- Provider calls (normalized) ----------
 
+
 def call_ollama(model: str, messages: list[dict], tools: list[dict]) -> dict:
     payload = {
         "model": model,
@@ -725,7 +762,8 @@ def call_ollama(model: str, messages: list[dict], tools: list[dict]) -> dict:
         payload["tools"] = tools
     data = json.dumps(payload).encode("utf-8")
     req = urllib.request.Request(
-        "http://localhost:11434/api/chat", data=data,
+        "http://localhost:11434/api/chat",
+        data=data,
         headers={"Content-Type": "application/json"},
     )
     with urllib.request.urlopen(req, timeout=900) as resp:
@@ -736,11 +774,13 @@ def call_ollama(model: str, messages: list[dict], tools: list[dict]) -> dict:
     for tc in msg.get("tool_calls") or []:
         args_raw = tc["function"].get("arguments", {})
         args = json.loads(args_raw) if isinstance(args_raw, str) else (args_raw or {})
-        tool_calls.append({
-            "id": tc.get("id", f"call_ollama_{len(tool_calls)}"),
-            "name": tc["function"]["name"],
-            "args": args,
-        })
+        tool_calls.append(
+            {
+                "id": tc.get("id", f"call_ollama_{len(tool_calls)}"),
+                "name": tc["function"]["name"],
+                "args": args,
+            }
+        )
     return {
         "content": msg.get("content", "") or "",
         "tool_calls": tool_calls,
@@ -755,8 +795,11 @@ def call_openai(model: str, messages: list[dict], tools: list[dict]) -> dict:
 
     clean = []
     for m in messages:
-        cm = {k: v for k, v in m.items()
-              if k in ("role", "content", "tool_calls", "tool_call_id", "name")}
+        cm = {
+            k: v
+            for k, v in m.items()
+            if k in ("role", "content", "tool_calls", "tool_call_id", "name")
+        }
         if cm.get("content") is None:
             cm["content"] = ""
         clean.append(cm)
@@ -773,7 +816,8 @@ def call_openai(model: str, messages: list[dict], tools: list[dict]) -> dict:
         payload["temperature"] = 0.3
     data = json.dumps(payload).encode("utf-8")
     req = urllib.request.Request(
-        "https://api.openai.com/v1/chat/completions", data=data,
+        "https://api.openai.com/v1/chat/completions",
+        data=data,
         headers={"Content-Type": "application/json", "Authorization": f"Bearer {api_key}"},
     )
     try:
@@ -791,11 +835,13 @@ def call_openai(model: str, messages: list[dict], tools: list[dict]) -> dict:
             args = json.loads(args_raw) if isinstance(args_raw, str) else (args_raw or {})
         except json.JSONDecodeError:
             args = {}
-        tool_calls.append({
-            "id": tc.get("id", f"call_openai_{len(tool_calls)}"),
-            "name": tc["function"]["name"],
-            "args": args,
-        })
+        tool_calls.append(
+            {
+                "id": tc.get("id", f"call_openai_{len(tool_calls)}"),
+                "name": tc["function"]["name"],
+                "args": args,
+            }
+        )
     return {
         "content": msg.get("content", "") or "",
         "tool_calls": tool_calls,
@@ -857,10 +903,13 @@ def call_claude_cli(model: str, messages: list[dict], tools: list[dict]) -> dict
     system = _strip_claude_md_block(system)
 
     cmd = [
-        claude_bin, "-p", user_msg,
+        claude_bin,
+        "-p",
+        user_msg,
         "--no-session-persistence",
         "--dangerously-skip-permissions",
-        "--output-format", "text",
+        "--output-format",
+        "text",
     ]
     if model:
         cmd.extend(["--model", model])
@@ -873,11 +922,14 @@ def call_claude_cli(model: str, messages: list[dict], tools: list[dict]) -> dict
 
     try:
         result = subprocess.run(
-            cmd, capture_output=True, timeout=900,
-            cwd=str(REPO_ROOT), env=env,
+            cmd,
+            capture_output=True,
+            timeout=900,
+            cwd=str(REPO_ROOT),
+            env=env,
         )
     except subprocess.TimeoutExpired:
-        raise RuntimeError("claude CLI timed out (15min)")
+        raise RuntimeError("claude CLI timed out (15min)") from None
 
     stdout = result.stdout.decode("utf-8", errors="replace").strip()
     stderr = result.stderr.decode("utf-8", errors="replace").strip()
@@ -951,11 +1003,15 @@ def call_claude_cli_raw(model: str, messages: list[dict], tools: list[dict]) -> 
     system = slim_system
 
     cmd = [
-        claude_bin, "-p", user_msg,
+        claude_bin,
+        "-p",
+        user_msg,
         "--no-session-persistence",
         "--dangerously-skip-permissions",
-        "--output-format", "text",
-        "--allowedTools", "",  # CRITICAL: disable claude's own tools so it uses ours
+        "--output-format",
+        "text",
+        "--allowedTools",
+        "",  # CRITICAL: disable claude's own tools so it uses ours
     ]
     if model:
         cmd.extend(["--model", model])
@@ -966,11 +1022,14 @@ def call_claude_cli_raw(model: str, messages: list[dict], tools: list[dict]) -> 
 
     try:
         result = subprocess.run(
-            cmd, capture_output=True, timeout=300,
-            cwd=str(REPO_ROOT), env=env,
+            cmd,
+            capture_output=True,
+            timeout=300,
+            cwd=str(REPO_ROOT),
+            env=env,
         )
     except subprocess.TimeoutExpired:
-        raise RuntimeError("claude CLI timed out (5min)")
+        raise RuntimeError("claude CLI timed out (5min)") from None
 
     stdout = result.stdout.decode("utf-8", errors="replace").strip()
     if result.returncode != 0:
@@ -983,11 +1042,13 @@ def call_claude_cli_raw(model: str, messages: list[dict], tools: list[dict]) -> 
     for i, match in enumerate(tc_pattern.finditer(stdout)):
         try:
             call = json.loads(match.group(1))
-            tool_calls.append({
-                "id": f"call_claude_raw_{i}",
-                "name": call.get("name", ""),
-                "args": call.get("args", {}),
-            })
+            tool_calls.append(
+                {
+                    "id": f"call_claude_raw_{i}",
+                    "name": call.get("name", ""),
+                    "args": call.get("args", {}),
+                }
+            )
         except json.JSONDecodeError:
             pass
 
@@ -1015,10 +1076,18 @@ def call_provider(provider: str, model: str, messages: list[dict], tools: list[d
 
 # ---------- Agent loop ----------
 
-def _run_turn(provider: str, model: str, messages: list[dict],
-              tools_subset: list[dict], sandbox: Path,
-              approver=None, trace: list[dict] | None = None,
-              iteration: int = 0, mode: str = "full") -> dict:
+
+def _run_turn(
+    provider: str,
+    model: str,
+    messages: list[dict],
+    tools_subset: list[dict],
+    sandbox: Path,
+    approver=None,
+    trace: list[dict] | None = None,
+    iteration: int = 0,
+    mode: str = "full",
+) -> dict:
     """Execute ONE model call + all its tool dispatches. Returns turn result.
 
     Mutates `messages` in place (appends assistant + tool results).
@@ -1047,13 +1116,17 @@ def _run_turn(provider: str, model: str, messages: list[dict],
         return {"done": True, "content": "", "tool_calls": [], "error": str(e)}
 
     if trace is not None:
-        trace.append({
-            "step": iteration,
-            "type": "model_response",
-            "content": response["content"][:500],
-            "tool_calls": [{"name": tc["name"], "args": {k: str(v)[:100] for k, v in tc["args"].items()}}
-                           for tc in response["tool_calls"]],
-        })
+        trace.append(
+            {
+                "step": iteration,
+                "type": "model_response",
+                "content": response["content"][:500],
+                "tool_calls": [
+                    {"name": tc["name"], "args": {k: str(v)[:100] for k, v in tc["args"].items()}}
+                    for tc in response["tool_calls"]
+                ],
+            }
+        )
 
     messages.append(response["raw_message"])
 
@@ -1083,25 +1156,35 @@ def _run_turn(provider: str, model: str, messages: list[dict],
 
         executed.append({"name": tc["name"], "args": tc["args"], "result": result})
         if trace is not None:
-            trace.append({
-                "step": iteration,
-                "type": "tool_result",
-                "tool": tc["name"],
-                "result_preview": result[:300],
-                "result_len": len(result),
-            })
-        messages.append({
-            "role": "tool",
-            "tool_call_id": tc["id"],
-            "content": result,
-        })
+            trace.append(
+                {
+                    "step": iteration,
+                    "type": "tool_result",
+                    "tool": tc["name"],
+                    "result_preview": result[:300],
+                    "result_len": len(result),
+                }
+            )
+        messages.append(
+            {
+                "role": "tool",
+                "tool_call_id": tc["id"],
+                "content": result,
+            }
+        )
 
     return {"done": False, "content": response["content"], "tool_calls": executed, "error": None}
 
 
-def run_agent(provider: str, model: str, user_prompt: str, sandbox: Path,
-              max_iterations: int = 20, trace_file: Path | None = None,
-              mode: str = "full") -> dict:
+def run_agent(
+    provider: str,
+    model: str,
+    user_prompt: str,
+    sandbox: Path,
+    max_iterations: int = 20,
+    trace_file: Path | None = None,
+    mode: str = "full",
+) -> dict:
     """Core loop: send messages, execute tool calls, loop until no more tool calls.
 
     `mode` scopes which tools are available and which system-prompt addendum is used.
@@ -1125,8 +1208,15 @@ def run_agent(provider: str, model: str, user_prompt: str, sandbox: Path,
     while iteration < max_loop:
         iteration += 1
         turn = _run_turn(
-            provider, model, messages, tools_subset, sandbox,
-            approver=None, trace=trace, iteration=iteration, mode=mode,
+            provider,
+            model,
+            messages,
+            tools_subset,
+            sandbox,
+            approver=None,
+            trace=trace,
+            iteration=iteration,
+            mode=mode,
         )
         if turn["error"]:
             break
@@ -1155,6 +1245,7 @@ SESSION_SCHEMA_VERSION = 1
 
 def _cwd_hash(cwd: Path) -> str:
     import hashlib
+
     return hashlib.sha1(str(cwd.resolve()).encode()).hexdigest()[:8]
 
 
@@ -1176,34 +1267,46 @@ class Session:
     # ---- factory ----
 
     @classmethod
-    def new(cls, *, cwd: Path, sandbox: Path, provider: str, model: str,
-            mode: str, context: str, name: str | None = None,
-            yolo: bool = False, max_iterations: int = 20,
-            vault: str = "") -> "Session":
+    def new(
+        cls,
+        *,
+        cwd: Path,
+        sandbox: Path,
+        provider: str,
+        model: str,
+        mode: str,
+        context: str,
+        name: str | None = None,
+        yolo: bool = False,
+        max_iterations: int = 20,
+        vault: str = "",
+    ) -> "Session":
         now = datetime.now().isoformat(timespec="seconds")
         name = name or _default_session_name(cwd)
         # Auto-detect vault from emptyos.toml when context=eos and no explicit vault given
         if not vault:
             vault = detect_vault_path(cwd, context)
-        return cls({
-            "version": SESSION_SCHEMA_VERSION,
-            "name": name,
-            "created_at": now,
-            "updated_at": now,
-            "context": context,
-            "cwd": str(cwd),
-            "sandbox": str(sandbox),
-            "vault": vault,
-            "provider": provider,
-            "model": model,
-            "mode": mode,
-            "yolo": yolo,
-            "always_allow": [],
-            "max_iterations": max_iterations,
-            "messages": [],
-            "todos": [],
-            "repl_meta": {},
-        })
+        return cls(
+            {
+                "version": SESSION_SCHEMA_VERSION,
+                "name": name,
+                "created_at": now,
+                "updated_at": now,
+                "context": context,
+                "cwd": str(cwd),
+                "sandbox": str(sandbox),
+                "vault": vault,
+                "provider": provider,
+                "model": model,
+                "mode": mode,
+                "yolo": yolo,
+                "always_allow": [],
+                "max_iterations": max_iterations,
+                "messages": [],
+                "todos": [],
+                "repl_meta": {},
+            }
+        )
 
     @classmethod
     def load(cls, name: str) -> "Session":
@@ -1281,7 +1384,10 @@ class Session:
         """Re-render the system prompt from current context/mode/cwd/vault and
         install it as messages[0]. Call after mutating any of those fields."""
         prompt = build_system_prompt_for_context(
-            self.context, self.mode, Path(self.cwd), vault_path=self.vault,
+            self.context,
+            self.mode,
+            Path(self.cwd),
+            vault_path=self.vault,
         )
         self.replace_system_prompt(prompt)
 
@@ -1296,20 +1402,23 @@ def list_sessions() -> list[dict]:
             data = json.loads(p.read_text(encoding="utf-8", errors="replace"))
         except Exception:
             continue
-        out.append({
-            "name": data.get("name", p.stem),
-            "updated_at": data.get("updated_at", ""),
-            "context": data.get("context", ""),
-            "provider": data.get("provider", ""),
-            "model": data.get("model", ""),
-            "mode": data.get("mode", ""),
-            "turns": sum(1 for m in data.get("messages", []) if m.get("role") == "user"),
-            "size_kb": p.stat().st_size // 1024,
-        })
+        out.append(
+            {
+                "name": data.get("name", p.stem),
+                "updated_at": data.get("updated_at", ""),
+                "context": data.get("context", ""),
+                "provider": data.get("provider", ""),
+                "model": data.get("model", ""),
+                "mode": data.get("mode", ""),
+                "turns": sum(1 for m in data.get("messages", []) if m.get("role") == "user"),
+                "size_kb": p.stat().st_size // 1024,
+            }
+        )
     return out
 
 
 # ---------- Modes ----------
+
 
 def load_cases() -> list[dict]:
     with CASES_FILE.open("rb") as f:
@@ -1348,8 +1457,9 @@ def run_eval(provider: str, model: str, test_filter: str | None = None) -> None:
 
         started = datetime.now()
         try:
-            result = run_agent(provider, model, prompt, sandbox,
-                               trace_file=trace_file, mode=case_mode)
+            result = run_agent(
+                provider, model, prompt, sandbox, trace_file=trace_file, mode=case_mode
+            )
             elapsed = (datetime.now() - started).total_seconds()
 
             summary = {
@@ -1384,8 +1494,9 @@ def run_eval(provider: str, model: str, test_filter: str | None = None) -> None:
     print(f"\nAll done. Results in {results_dir}")
 
 
-def run_exec(provider: str, model: str, prompt: str, sandbox_dir: str | None = None,
-             mode: str = "full") -> None:
+def run_exec(
+    provider: str, model: str, prompt: str, sandbox_dir: str | None = None, mode: str = "full"
+) -> None:
     if sandbox_dir:
         sandbox = Path(sandbox_dir)
         sandbox.mkdir(parents=True, exist_ok=True)
@@ -1426,8 +1537,9 @@ class Approver:
     If `yolo=True`, auto-approves everything (still logs to console).
     """
 
-    def __init__(self, console, sandbox: Path, always_allow: list[str] | None = None,
-                 yolo: bool = False):
+    def __init__(
+        self, console, sandbox: Path, always_allow: list[str] | None = None, yolo: bool = False
+    ):
         self.console = console
         self.sandbox = sandbox
         self.always_allow: set[str] = set(always_allow or [])
@@ -1446,7 +1558,7 @@ class Approver:
 
         # Build preview panel
         from rich.panel import Panel
-        from rich.text import Text
+
         preview = self._render_args_preview(tool_name, args)
         warn = self._sandbox_warning(tool_name, args)
         title = f"Tool request: {tool_name}"
@@ -1476,16 +1588,20 @@ class Approver:
         if tool_name == "write_file":
             path = args.get("path", "")
             content = args.get("content", "")
-            return (f"path:    [cyan]{path}[/cyan]\n"
-                    f"content ({len(content)} chars, first 20 lines):\n"
-                    f"[dim]{_truncate_display(content, 20)}[/dim]")
+            return (
+                f"path:    [cyan]{path}[/cyan]\n"
+                f"content ({len(content)} chars, first 20 lines):\n"
+                f"[dim]{_truncate_display(content, 20)}[/dim]"
+            )
         if tool_name == "edit_file":
             path = args.get("path", "")
             find = args.get("find", "")
             replace = args.get("replace", "")
-            return (f"path:    [cyan]{path}[/cyan]\n"
-                    f"find ({len(find)} chars):\n[red]{_truncate_display(find, 8)}[/red]\n"
-                    f"replace ({len(replace)} chars):\n[green]{_truncate_display(replace, 8)}[/green]")
+            return (
+                f"path:    [cyan]{path}[/cyan]\n"
+                f"find ({len(find)} chars):\n[red]{_truncate_display(find, 8)}[/red]\n"
+                f"replace ({len(replace)} chars):\n[green]{_truncate_display(replace, 8)}[/green]"
+            )
         return json.dumps(args, indent=2)[:500]
 
     def _sandbox_warning(self, tool_name: str, args: dict) -> str | None:
@@ -1518,15 +1634,18 @@ SLASH_COMMANDS: dict[str, callable] = {}
 
 def slash(name: str, help_text: str = ""):
     """Register a slash command handler."""
+
     def deco(fn):
         SLASH_COMMANDS[name] = (fn, help_text)
         return fn
+
     return deco
 
 
 @slash("help", "Show this help")
 def cmd_help(ctx, args: str) -> str:
     from rich.table import Table
+
     t = Table(show_header=True, header_style="bold cyan")
     t.add_column("Command")
     t.add_column("Description")
@@ -1582,9 +1701,13 @@ def cmd_provider(ctx, args: str) -> str:
     default_model = PROVIDER_DEFAULT_MODEL.get(new_prov, "")
     ctx.session.set("model", default_model)
     ctx.console.print(f"[green]provider -> {new_prov}[/green]")
-    ctx.console.print(f"[dim]model -> {default_model or '<claude default>'}  (use /model to override)[/dim]")
+    ctx.console.print(
+        f"[dim]model -> {default_model or '<claude default>'}  (use /model to override)[/dim]"
+    )
     if new_prov == "claude-cli":
-        ctx.console.print("[yellow]note: claude-cli runs tools internally — approval gate disabled for this provider[/yellow]")
+        ctx.console.print(
+            "[yellow]note: claude-cli runs tools internally — approval gate disabled for this provider[/yellow]"
+        )
     return "continue"
 
 
@@ -1639,6 +1762,7 @@ def cmd_load(ctx, args: str) -> str:
 @slash("sessions", "List saved sessions")
 def cmd_sessions(ctx, args: str) -> str:
     from rich.table import Table
+
     sessions = list_sessions()
     if not sessions:
         ctx.console.print("[dim]no saved sessions[/dim]")
@@ -1647,8 +1771,21 @@ def cmd_sessions(ctx, args: str) -> str:
     for col in ("name", "updated_at", "context", "provider", "model", "mode", "turns", "size_kb"):
         t.add_column(col)
     for s in sessions:
-        t.add_row(*(str(s[k]) for k in ("name", "updated_at", "context", "provider",
-                                         "model", "mode", "turns", "size_kb")))
+        t.add_row(
+            *(
+                str(s[k])
+                for k in (
+                    "name",
+                    "updated_at",
+                    "context",
+                    "provider",
+                    "model",
+                    "mode",
+                    "turns",
+                    "size_kb",
+                )
+            )
+        )
     ctx.console.print(t)
     return "continue"
 
@@ -1660,6 +1797,7 @@ def cmd_tools(ctx, args: str) -> str:
         ctx.console.print(f"[dim]mode '{ctx.session.mode}' has no tools[/dim]")
         return "continue"
     from rich.table import Table
+
     t = Table(show_header=True, header_style="bold cyan")
     t.add_column("Tool")
     t.add_column("Description")
@@ -1692,7 +1830,9 @@ def cmd_vault(ctx, args: str) -> str:
     if not arg:
         current = ctx.session.vault or "(not set)"
         ctx.console.print(f"current vault: {current}")
-        ctx.console.print("[dim]Usage: /vault <path>  (agent will search it for daily notes, projects, etc)[/dim]")
+        ctx.console.print(
+            "[dim]Usage: /vault <path>  (agent will search it for daily notes, projects, etc)[/dim]"
+        )
         ctx.console.print("[dim]       /vault off   (clear vault awareness)[/dim]")
         return "continue"
     if arg.lower() == "off":
@@ -1763,6 +1903,7 @@ def cmd_retry(ctx, args: str) -> str:
 
 
 # ---------- REPL: main loop ----------
+
 
 def _read_multiline_input(prompt: str = "> ") -> str | None:
     """Read input. Blank line OR EOF terminates multi-line. Returns None on immediate EOF.
@@ -1838,13 +1979,21 @@ def _execute_user_turn(ctx: ReplCtx, user_text: str) -> None:
         iteration += 1
         with ctx.console.status("[cyan]thinking...[/cyan]", spinner="dots"):
             turn = _run_turn(
-                session.provider, session.model, session.messages,
-                tools_subset, sandbox,
-                approver=ctx.approver, trace=None, iteration=iteration, mode=session.mode,
+                session.provider,
+                session.model,
+                session.messages,
+                tools_subset,
+                sandbox,
+                approver=ctx.approver,
+                trace=None,
+                iteration=iteration,
+                mode=session.mode,
             )
         # Show tool calls that ran this iteration
         for tc in turn["tool_calls"]:
-            ctx.console.print(f"[dim magenta]-> {tc['name']}({_fmt_tool_args(tc['args'])})[/dim magenta]")
+            ctx.console.print(
+                f"[dim magenta]-> {tc['name']}({_fmt_tool_args(tc['args'])})[/dim magenta]"
+            )
         if turn["error"]:
             ctx.console.print(f"[red]error: {turn['error']}[/red]")
             break
@@ -1858,6 +2007,7 @@ def _execute_user_turn(ctx: ReplCtx, user_text: str) -> None:
     # Render final response
     if final_text:
         from rich.markdown import Markdown
+
         ctx.console.print(Markdown(final_text))
     ctx.console.print()  # trailing blank line
 
@@ -1881,6 +2031,7 @@ def _fmt_tool_args(args: dict) -> str:
 
 def repl_main(args) -> None:
     from rich.console import Console
+
     # legacy_windows=False bypasses the cp1252-limited console renderer;
     # Rich falls back to writing ANSI directly, which our stdout handles
     # (Windows Terminal + modern cmd.exe both support ANSI). When stdout is
@@ -1929,15 +2080,23 @@ def repl_main(args) -> None:
         model = args.model or PROVIDER_DEFAULT_MODEL.get(provider, "")
         mode = args.mode or "full"
         session = Session.new(
-            cwd=cwd, sandbox=sandbox, provider=provider, model=model,
-            mode=mode, context=context, name=args.name,
-            yolo=args.yolo, max_iterations=args.max_iterations,
+            cwd=cwd,
+            sandbox=sandbox,
+            provider=provider,
+            model=model,
+            mode=mode,
+            context=context,
+            name=args.name,
+            yolo=args.yolo,
+            max_iterations=args.max_iterations,
         )
         session.rebuild_system_prompt()
 
     approver = Approver(
-        console=console, sandbox=Path(session.sandbox),
-        always_allow=list(session.always_allow), yolo=session.yolo,
+        console=console,
+        sandbox=Path(session.sandbox),
+        always_allow=list(session.always_allow),
+        yolo=session.yolo,
     )
     ctx = ReplCtx(session=session, console=console, approver=approver)
 
@@ -1949,11 +2108,17 @@ def repl_main(args) -> None:
         f"yolo={'ON' if session.yolo else 'off'}[/dim]"
     )
     if session.provider == "claude-cli":
-        console.print("[yellow]note: claude-cli runs its own tools — approval gate disabled[/yellow]")
+        console.print(
+            "[yellow]note: claude-cli runs its own tools — approval gate disabled[/yellow]"
+        )
     console.print(f"[dim]sandbox: {session.sandbox}[/dim]")
     if session.vault:
-        console.print(f"[dim]vault:   {session.vault}  (agent will search here for notes/schedule/projects)[/dim]")
-    console.print("[dim]Type your message (blank line to send multi-line). /help for commands. /exit to quit.[/dim]\n")
+        console.print(
+            f"[dim]vault:   {session.vault}  (agent will search here for notes/schedule/projects)[/dim]"
+        )
+    console.print(
+        "[dim]Type your message (blank line to send multi-line). /help for commands. /exit to quit.[/dim]\n"
+    )
 
     # Main loop
     while ctx.running:
@@ -1973,7 +2138,7 @@ def repl_main(args) -> None:
             if action == "exit":
                 break
             if action.startswith("retry:"):
-                line = action[len("retry:"):]
+                line = action[len("retry:") :]
                 # fall through to execute
             else:
                 continue
@@ -1987,10 +2152,12 @@ def repl_main(args) -> None:
         except KeyboardInterrupt:
             console.print("\n[yellow]turn cancelled[/yellow]")
             # Append a note to history so model knows
-            session.append_message({
-                "role": "user",
-                "content": "(user pressed Ctrl-C — previous request cancelled)",
-            })
+            session.append_message(
+                {
+                    "role": "user",
+                    "content": "(user pressed Ctrl-C — previous request cancelled)",
+                }
+            )
             try:
                 session.save()
             except Exception:
@@ -2540,9 +2707,15 @@ def _build_server_session(cwd: Path, args) -> "Session":
     mode = args.mode or "full"
 
     session = Session.new(
-        cwd=cwd, sandbox=sandbox, provider=provider, model=model,
-        mode=mode, context=context, name=args.name,
-        yolo=args.yolo, max_iterations=args.max_iterations,
+        cwd=cwd,
+        sandbox=sandbox,
+        provider=provider,
+        model=model,
+        mode=mode,
+        context=context,
+        name=args.name,
+        yolo=args.yolo,
+        max_iterations=args.max_iterations,
     )
     session.rebuild_system_prompt()
     return session
@@ -2571,10 +2744,11 @@ class WebApprover:
 def serve_main(args) -> None:
     """Run the web CLI server: single HTML page + WebSocket endpoint."""
     try:
-        from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request, HTTPException
-        from fastapi.responses import HTMLResponse
-        import uvicorn
         import asyncio
+
+        import uvicorn
+        from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+        from fastapi.responses import HTMLResponse
     except ImportError as e:
         print(f"ERROR: web CLI needs fastapi + uvicorn: {e}")
         print("Install: pip install fastapi uvicorn")
@@ -2606,45 +2780,57 @@ def serve_main(args) -> None:
         """
         if provider == "ollama":
             try:
-                req = urllib.request.Request("http://localhost:11434/api/tags")
-                with urllib.request.urlopen(req, timeout=5) as resp:
-                    data = json.loads(resp.read().decode("utf-8"))
+
+                def _fetch_tags():
+                    req = urllib.request.Request("http://localhost:11434/api/tags")
+                    with urllib.request.urlopen(req, timeout=5) as resp:
+                        return json.loads(resp.read().decode("utf-8"))
+
+                data = await asyncio.to_thread(_fetch_tags)
                 names = [m["name"] for m in data.get("models", [])]
                 # put qwen/llama variants first, embeddings last
-                names.sort(key=lambda n: (
-                    "embed" in n.lower() or "bge" in n.lower() or "nomic" in n.lower(),
-                    not n.startswith(("qwen", "llama", "deepseek", "glm", "gemma")),
-                    n,
-                ))
+                names.sort(
+                    key=lambda n: (
+                        "embed" in n.lower() or "bge" in n.lower() or "nomic" in n.lower(),
+                        not n.startswith(("qwen", "llama", "deepseek", "glm", "gemma")),
+                        n,
+                    )
+                )
                 return {"provider": "ollama", "models": names}
             except Exception as e:
                 return {"provider": "ollama", "models": [], "error": str(e)}
         elif provider == "openai":
-            return {"provider": "openai", "models": [
-                "gpt-5.4",
-                "gpt-5.4-mini",
-                "gpt-5.4-nano",
-                "gpt-5.4-pro",
-                "gpt-5",
-                "gpt-5-mini",
-                "gpt-5-nano",
-                "gpt-5-pro",
-                "gpt-5-codex",
-                "gpt-5.3-codex",
-                "gpt-4o",
-                "gpt-4o-mini",
-                "gpt-4.1",
-                "gpt-4.1-mini",
-                "o3",
-                "o4-mini",
-            ]}
+            return {
+                "provider": "openai",
+                "models": [
+                    "gpt-5.4",
+                    "gpt-5.4-mini",
+                    "gpt-5.4-nano",
+                    "gpt-5.4-pro",
+                    "gpt-5",
+                    "gpt-5-mini",
+                    "gpt-5-nano",
+                    "gpt-5-pro",
+                    "gpt-5-codex",
+                    "gpt-5.3-codex",
+                    "gpt-4o",
+                    "gpt-4o-mini",
+                    "gpt-4.1",
+                    "gpt-4.1-mini",
+                    "o3",
+                    "o4-mini",
+                ],
+            }
         elif provider in ("claude-cli", "claude-cli-raw"):
-            return {"provider": provider, "models": [
-                "",  # let claude pick its default
-                "sonnet",
-                "opus",
-                "haiku",
-            ]}
+            return {
+                "provider": provider,
+                "models": [
+                    "",  # let claude pick its default
+                    "sonnet",
+                    "opus",
+                    "haiku",
+                ],
+            }
         return {"provider": provider, "models": []}
 
     @app.websocket("/ws")
@@ -2673,16 +2859,18 @@ def serve_main(args) -> None:
             except Exception:
                 pass
 
-        await send({
-            "type": "hello",
-            "session_name": session.name,
-            "provider": session.provider,
-            "model": session.model or "",
-            "mode": session.mode,
-            "context": session.context,
-            "sandbox": session.sandbox,
-            "vault": session.vault or "",
-        })
+        await send(
+            {
+                "type": "hello",
+                "session_name": session.name,
+                "provider": session.provider,
+                "model": session.model or "",
+                "mode": session.mode,
+                "context": session.context,
+                "sandbox": session.sandbox,
+                "vault": session.vault or "",
+            }
+        )
 
         # Main recv loop
         try:
@@ -2716,7 +2904,7 @@ def serve_main(args) -> None:
 
     # Banner
     addr_disp = "0.0.0.0" if args.bind == "0.0.0.0" else args.bind
-    print(f"eos-agent serve")
+    print("eos-agent serve")
     print(f"  cwd:      {cwd}")
     print(f"  context:  {detect_context(cwd, args.context if args.context != 'auto' else None)}")
     print(f"  provider: {args.provider or 'auto'}")
@@ -2725,8 +2913,10 @@ def serve_main(args) -> None:
     print(f"  auth:     {'token required' if token else 'OPEN (no token)'}")
     print(f"  url:      http://{addr_disp}:{args.port}{f'?t={token}' if token else ''}")
     if args.bind == "0.0.0.0":
-        print(f"  phone:    add Tailscale (tailscale.com) on both devices, then access")
-        print(f"            http://<this-machine-tailscale-name>:{args.port}{f'?t={token}' if token else ''}")
+        print("  phone:    add Tailscale (tailscale.com) on both devices, then access")
+        print(
+            f"            http://<this-machine-tailscale-name>:{args.port}{f'?t={token}' if token else ''}"
+        )
     print()
 
     uvicorn.run(app, host=args.bind, port=args.port, log_level="info")
@@ -2735,6 +2925,7 @@ def serve_main(args) -> None:
 async def _web_run_turn(session, user_text: str, ws, send) -> None:
     """Execute one user turn over the web socket. No streaming yet — runs sync _run_turn in executor."""
     import asyncio
+
     # Append user message
     session.append_message({"role": "user", "content": user_text})
     tools_subset = filtered_tools(session.mode)
@@ -2751,14 +2942,24 @@ async def _web_run_turn(session, user_text: str, ws, send) -> None:
     loop = asyncio.get_running_loop()
     while iteration < max_loop:
         iteration += 1
-        # Run _run_turn in a thread since it's sync + does subprocess/urllib
+        # Run _run_turn in a thread since it's sync + does subprocess/urllib.
+        # Use functools.partial to bind loop variables explicitly — avoids the
+        # late-binding closure trap (B023) and is awaited inline, so capture
+        # would be safe in practice anyway.
         try:
             turn = await loop.run_in_executor(
                 None,
-                lambda: _run_turn(
-                    session.provider, session.model, session.messages,
-                    tools_subset, sandbox,
-                    approver=approver, trace=None, iteration=iteration, mode=session.mode,
+                functools.partial(
+                    _run_turn,
+                    session.provider,
+                    session.model,
+                    session.messages,
+                    tools_subset,
+                    sandbox,
+                    approver=approver,
+                    trace=None,
+                    iteration=iteration,
+                    mode=session.mode,
                 ),
             )
         except Exception as e:
@@ -2768,11 +2969,13 @@ async def _web_run_turn(session, user_text: str, ws, send) -> None:
         # Emit tool call traces
         for tc in turn["tool_calls"]:
             args_summary = _fmt_tool_args(tc["args"])
-            await send({
-                "type": "tool_call",
-                "name": tc["name"],
-                "args_summary": args_summary[:200],
-            })
+            await send(
+                {
+                    "type": "tool_call",
+                    "name": tc["name"],
+                    "args_summary": args_summary[:200],
+                }
+            )
 
         if turn["error"]:
             await send({"type": "error", "message": turn["error"]})
@@ -2880,22 +3083,26 @@ async def _web_handle_slash(session, line: str, send) -> None:
             session.set("yolo", not session.yolo)
         msg = f"yolo: {'ON' if session.yolo else 'off'}"
     elif cmd == "status":
-        msg = (f"provider={session.provider} model={session.model or '<default>'} "
-               f"mode={session.mode} context={session.context} "
-               f"yolo={'ON' if session.yolo else 'off'} sandbox={session.sandbox}")
+        msg = (
+            f"provider={session.provider} model={session.model or '<default>'} "
+            f"mode={session.mode} context={session.context} "
+            f"yolo={'ON' if session.yolo else 'off'} sandbox={session.sandbox}"
+        )
     else:
         msg = f"unknown command: /{cmd}. type /help"
 
     await send({"type": "system", "message": msg})
     # Push state update so header reflects changes
-    await send({
-        "type": "state",
-        "provider": session.provider,
-        "model": session.model or "",
-        "mode": session.mode,
-        "context": session.context,
-        "vault": session.vault or "",
-    })
+    await send(
+        {
+            "type": "state",
+            "provider": session.provider,
+            "model": session.model or "",
+            "mode": session.mode,
+            "context": session.context,
+            "vault": session.vault or "",
+        }
+    )
 
 
 def main():
@@ -2903,49 +3110,75 @@ def main():
     sub = ap.add_subparsers(dest="cmd", required=True)
 
     eval_p = sub.add_parser("eval", help="Run the conversation-mode test suite")
-    eval_p.add_argument("--provider", default="openai", choices=["openai", "ollama", "claude-cli", "claude-cli-raw"])
+    eval_p.add_argument(
+        "--provider", default="openai", choices=["openai", "ollama", "claude-cli", "claude-cli-raw"]
+    )
     eval_p.add_argument("--model", default=None)
     eval_p.add_argument("--test", help="Filter to one test by id prefix")
 
     exec_p = sub.add_parser("exec", help="One-shot: execute a prompt")
     exec_p.add_argument("prompt", help="Task for the agent")
-    exec_p.add_argument("--provider", default="openai", choices=["openai", "ollama", "claude-cli", "claude-cli-raw"])
+    exec_p.add_argument(
+        "--provider", default="openai", choices=["openai", "ollama", "claude-cli", "claude-cli-raw"]
+    )
     exec_p.add_argument("--model", default=None)
     exec_p.add_argument("--sandbox", help="Sandbox directory (default: temp dir)")
-    exec_p.add_argument("--mode", default="full",
-                        choices=["chat", "research", "analyze", "edit", "full"],
-                        help="Tool scope: chat (no tools), research (read-only), analyze (+write), edit (full), full (default)")
+    exec_p.add_argument(
+        "--mode",
+        default="full",
+        choices=["chat", "research", "analyze", "edit", "full"],
+        help="Tool scope: chat (no tools), research (read-only), analyze (+write), edit (full), full (default)",
+    )
 
     repl_p = sub.add_parser("repl", help="Interactive shell (like claude code)")
-    repl_p.add_argument("--provider", default=None,
-                        choices=["openai", "ollama", "claude-cli", "claude-cli-raw"])
+    repl_p.add_argument(
+        "--provider", default=None, choices=["openai", "ollama", "claude-cli", "claude-cli-raw"]
+    )
     repl_p.add_argument("--model", default=None)
-    repl_p.add_argument("--mode", default=None,
-                        choices=["chat", "research", "analyze", "edit", "full"],
-                        help="Tool scope (default: full, or loaded from resumed session)")
+    repl_p.add_argument(
+        "--mode",
+        default=None,
+        choices=["chat", "research", "analyze", "edit", "full"],
+        help="Tool scope (default: full, or loaded from resumed session)",
+    )
     repl_p.add_argument("--sandbox", default=None, help="Sandbox directory (default: cwd or auto)")
     repl_p.add_argument("--context", default="auto", choices=["auto", "eos", "generic"])
     repl_p.add_argument("--resume", default=None, help="Resume saved session by name")
     repl_p.add_argument("--name", default=None, help="Session name (default: auto)")
-    repl_p.add_argument("--yolo", action="store_true",
-                        help="Skip approval prompts for destructive tools")
-    repl_p.add_argument("--max-iterations", type=int, default=20,
-                        help="Max tool-loop iterations per turn (default 20)")
+    repl_p.add_argument(
+        "--yolo", action="store_true", help="Skip approval prompts for destructive tools"
+    )
+    repl_p.add_argument(
+        "--max-iterations",
+        type=int,
+        default=20,
+        help="Max tool-loop iterations per turn (default 20)",
+    )
 
     serve_p = sub.add_parser("serve", help="Web CLI: run a FastAPI server with chat UI")
-    serve_p.add_argument("--bind", default="127.0.0.1",
-                         help="Bind address (default: 127.0.0.1; use 0.0.0.0 for remote access via Tailscale/LAN)")
+    serve_p.add_argument(
+        "--bind",
+        default="127.0.0.1",
+        help="Bind address (default: 127.0.0.1; use 0.0.0.0 for remote access via Tailscale/LAN)",
+    )
     serve_p.add_argument("--port", type=int, default=8765, help="Port (default: 8765)")
-    serve_p.add_argument("--token", default=None,
-                         help="Shared secret token for auth. Also reads EOS_AGENT_TOKEN env var.")
-    serve_p.add_argument("--provider", default=None,
-                         choices=["openai", "ollama", "claude-cli", "claude-cli-raw"])
+    serve_p.add_argument(
+        "--token",
+        default=None,
+        help="Shared secret token for auth. Also reads EOS_AGENT_TOKEN env var.",
+    )
+    serve_p.add_argument(
+        "--provider", default=None, choices=["openai", "ollama", "claude-cli", "claude-cli-raw"]
+    )
     serve_p.add_argument("--model", default=None)
-    serve_p.add_argument("--mode", default="full",
-                         choices=["chat", "research", "analyze", "edit", "full"])
+    serve_p.add_argument(
+        "--mode", default="full", choices=["chat", "research", "analyze", "edit", "full"]
+    )
     serve_p.add_argument("--sandbox", default=None)
     serve_p.add_argument("--context", default="auto", choices=["auto", "eos", "generic"])
-    serve_p.add_argument("--resume", default=None, help="Resume saved session by name on every connection")
+    serve_p.add_argument(
+        "--resume", default=None, help="Resume saved session by name on every connection"
+    )
     serve_p.add_argument("--name", default=None)
     serve_p.add_argument("--yolo", action="store_true")
     serve_p.add_argument("--max-iterations", type=int, default=20)

@@ -27,7 +27,6 @@ import aiohttp
 
 from emptyos.sdk import BaseApp, cli_command, on_event, web_route
 
-
 VALID_PROVIDER_TYPES = ("openai_compat", "claude_cli")
 
 
@@ -48,6 +47,7 @@ def _instantiate(row: dict):
     ptype = (row.get("provider_type") or "").lower()
     if ptype == "openai_compat":
         from emptyos.capabilities.providers.openai_compat import OpenAICompatThinkProvider
+
         return OpenAICompatThinkProvider(
             host=row.get("host") or "http://localhost:11434",
             model=row.get("model") or "",
@@ -57,6 +57,7 @@ def _instantiate(row: dict):
         )
     if ptype == "claude_cli":
         from emptyos.capabilities.providers.claude_cli import ClaudeCLIThinkProvider
+
         return ClaudeCLIThinkProvider(
             model=row.get("model") or "",
             max_tokens=int(row.get("max_tokens", 4096) or 4096),
@@ -67,7 +68,6 @@ def _instantiate(row: dict):
 
 
 class ProvidersApp(BaseApp):
-
     async def setup(self):
         await super().setup()
         self._migrate_from_model_bench()
@@ -234,18 +234,20 @@ class ProvidersApp(BaseApp):
         except Exception as e:
             return {"error": f"could not reach ollama at {host}: {e}"}
         models = []
-        for m in (data.get("models") or []):
+        for m in data.get("models") or []:
             name = m.get("name") or ""
             if not name:
                 continue
             size = m.get("size") or 0
-            models.append({
-                "name": name,
-                "size_bytes": size,
-                "size_gb": round(size / (1024 ** 3), 2) if size else 0,
-                "modified_at": m.get("modified_at", ""),
-                "suggested_id": f"ollama-{name.replace(':', '-').replace('/', '-')}",
-            })
+            models.append(
+                {
+                    "name": name,
+                    "size_bytes": size,
+                    "size_gb": round(size / (1024**3), 2) if size else 0,
+                    "modified_at": m.get("modified_at", ""),
+                    "suggested_id": f"ollama-{name.replace(':', '-').replace('/', '-')}",
+                }
+            )
         return {"host": host, "models": models}
 
     @web_route("GET", "/api/providers/seeded")
@@ -264,7 +266,11 @@ class ProvidersApp(BaseApp):
 
         rows = []
         for name in names:
-            section = cfg.get_section(f"capabilities.think.{name}") or cfg.get_section(f"llm.providers.{name}") or {}
+            section = (
+                cfg.get_section(f"capabilities.think.{name}")
+                or cfg.get_section(f"llm.providers.{name}")
+                or {}
+            )
             host = section.get("host", "")
             model = section.get("model", "")
             # Match the same inference rules as _build_think_provider
@@ -294,29 +300,35 @@ class ProvidersApp(BaseApp):
             parts = [provider_name]
             if model:
                 parts.append(model)
-            rows.append({
-                "id": name,
-                "source": "emptyos.toml",
-                "provider_type": provider_type,
-                "provider_name": provider_name,
-                "display_name": name,
-                "host": host,
-                "model": model,
-                "mode": section.get("effort", "") if name == "claude" else "",
-                "api_key_env": section.get("api_key_env", ""),
-                "enabled": True,
-                "variant_id": ":".join(parts),
-            })
+            rows.append(
+                {
+                    "id": name,
+                    "source": "emptyos.toml",
+                    "provider_type": provider_type,
+                    "provider_name": provider_name,
+                    "display_name": name,
+                    "host": host,
+                    "model": model,
+                    "mode": section.get("effort", "") if name == "claude" else "",
+                    "api_key_env": section.get("api_key_env", ""),
+                    "enabled": True,
+                    "variant_id": ":".join(parts),
+                }
+            )
         return {"providers": rows}
+
+    async def live_chain(self) -> list[dict]:
+        """Current live `think` chain (in order). Public for call_app."""
+        try:
+            think = self.kernel.capabilities.get("think")
+        except Exception:
+            return []
+        return [_provider_view(p) for p in think.providers]
 
     @web_route("GET", "/api/providers/live")
     async def api_live(self, request):
         """Current live chain — what `think` will actually try, in order."""
-        try:
-            think = self.kernel.capabilities.get("think")
-        except Exception:
-            return {"providers": []}
-        return {"providers": [_provider_view(p) for p in think.providers]}
+        return {"providers": await self.live_chain()}
 
     @web_route("GET", "/api/providers/capabilities")
     async def api_capabilities(self, request):
@@ -331,15 +343,19 @@ class ProvidersApp(BaseApp):
         for name, cap in registry.list().items():
             chains = [{"label": "default", "providers": [_provider_view(p) for p in cap.providers]}]
             for domain_name, domain_providers in getattr(cap, "_domains", {}).items():
-                chains.append({
-                    "label": f"domain: {domain_name}",
-                    "providers": [_provider_view(p) for p in domain_providers],
-                })
-            out.append({
-                "capability": name,
-                "chains": chains,
-                "managed_here": name == "think",
-            })
+                chains.append(
+                    {
+                        "label": f"domain: {domain_name}",
+                        "providers": [_provider_view(p) for p in domain_providers],
+                    }
+                )
+            out.append(
+                {
+                    "capability": name,
+                    "chains": chains,
+                    "managed_here": name == "think",
+                }
+            )
         return {"capabilities": out}
 
     # --- CLI --------------------------------------------------------------
@@ -362,6 +378,6 @@ class ProvidersApp(BaseApp):
                 return
             for i, p in enumerate(think.providers):
                 tag = " (cloud)" if getattr(p, "is_cloud", False) else ""
-                print(f"  {i+1}. {p.variant_id}{tag}")
+                print(f"  {i + 1}. {p.variant_id}{tag}")
         else:
             print("Usage: eos providers [list|live]")

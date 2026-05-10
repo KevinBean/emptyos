@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import json
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 
@@ -42,7 +42,7 @@ class SessionStore:
 
     def create(self, data: dict | None = None, id_len: int = 12) -> dict:
         """Create a new session dict with auto-generated id and timestamp."""
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
         session = {
             "id": uuid.uuid4().hex[:id_len],
             "created": now,
@@ -54,10 +54,12 @@ class SessionStore:
 
     def save(self, session: dict):
         """Persist session to disk."""
-        session["updated"] = datetime.now(timezone.utc).isoformat()
+        session["updated"] = datetime.now(UTC).isoformat()
         sid = session["id"]
         p = self._dir / f"{sid}.json"
-        p.write_text(json.dumps(session, ensure_ascii=False, indent=2, default=str), encoding="utf-8")
+        p.write_text(
+            json.dumps(session, ensure_ascii=False, indent=2, default=str), encoding="utf-8"
+        )
 
     def load(self, session_id: str) -> dict | None:
         """Load a session by ID. Returns None if not found."""
@@ -128,7 +130,7 @@ class HistoryStore:
 
     def save(self, entries: list[dict]):
         self._path.write_text(
-            json.dumps(entries[-self._max:], ensure_ascii=False, indent=2),
+            json.dumps(entries[-self._max :], ensure_ascii=False, indent=2),
             encoding="utf-8",
         )
 

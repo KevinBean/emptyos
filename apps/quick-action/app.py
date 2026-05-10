@@ -7,9 +7,42 @@ confirms → execute via the voice-intent registry + staff workflows.
 Phase 0: app renamed; existing verbs unchanged. Orchestrator lands in Phase 3.
 """
 
-from datetime import datetime, timezone
+import re
+from datetime import UTC, datetime
 
 from emptyos.sdk import BaseApp, cli_command, dimensions, parse_captures, web_route
+
+_INLINE_TAG_RE = re.compile(r"(?:^|\s)#([A-Za-z][\w-]*)")
+
+SMART_TAG_SYSTEM = """You are a one-token classifier for inbox captures.
+Pick the single best tag from this fixed set:
+  idea, task, note, link, question, reminder, dev
+
+Rules:
+- Output ONLY the tag word. Nothing else.
+- No punctuation, no quotes, no explanation, no "Tag:" prefix.
+- Do NOT echo the user's text.
+- Do NOT invent tags outside the set.
+- If genuinely ambiguous, pick `note`."""
+
+SMART_TAG_USER = "Capture:\n{text}"
+
+
+def _hoist_inline_tag(text: str, tag: str) -> tuple[str, str]:
+    """If tag is empty, lift the first inline ``#word`` out of text into tag.
+
+    Keeps the on-disk capture line canonical (single trailing ``#tag``) so
+    parse_captures round-trips and the API carries the tag instead of an
+    empty string when the user typed ``capture 22kV idea #cables``.
+    """
+    if tag:
+        return text, tag
+    m = _INLINE_TAG_RE.search(text or "")
+    if not m:
+        return text, tag
+    stripped = (text[: m.start()] + text[m.end() :]).strip()
+    stripped = re.sub(r"\s{2,}", " ", stripped)
+    return stripped, m.group(1)
 
 
 def _resolve_dimension(text: str, tag: str) -> str:
@@ -22,7 +55,6 @@ def _resolve_dimension(text: str, tag: str) -> str:
 
 
 class QuickActionApp(BaseApp):
-
     def _capture_path(self) -> str:
         p = self.vault_config_path("inbox", "00_Inbox/_captures.md")
         if p:
@@ -36,7 +68,8 @@ class QuickActionApp(BaseApp):
         appends the capture as a node to that board (the capture still lands in
         inbox — user can dismiss manually).
         """
-        now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M")
+        text, tag = _hoist_inline_tag(text, tag)
+        now = datetime.now(UTC).strftime("%Y-%m-%d %H:%M")
         tag_str = f" #{tag}" if tag else ""
         line = f"- {now} — {text}{tag_str}\n"
 
@@ -61,8 +94,9 @@ class QuickActionApp(BaseApp):
                 if suffix:
                     board_id = suffix
             try:
-                await self.call_app("canvas", "add_node",
-                                    board_id=board_id, text=text, source="capture")
+                await self.call_app(
+                    "canvas", "add_node", board_id=board_id, text=text, source="capture"
+                )
             except Exception:
                 pass  # canvas may not be loaded; capture still persists
         return entry
@@ -111,39 +145,60 @@ class QuickActionApp(BaseApp):
             text = c.get("text") or ""
             tag = c.get("tag") or ""
             spoken = (f"{tag}: " if tag else "") + text
-            items.append({
-                "id": f"capture-{c.get('timestamp','')}-{i}",
-                "text": spoken,
-                "source": "capture",
-                "timestamp": c.get("timestamp"),
-                "act": {
-                    "label": "Save as task",
-                    "method": "POST",
-                    "url": "/task/api/add",
-                    "body": {"text": text},
-                },
-            })
+            items.append(
+                {
+                    "id": f"capture-{c.get('timestamp', '')}-{i}",
+                    "text": spoken,
+                    "source": "capture",
+                    "timestamp": c.get("timestamp"),
+                    "act": {
+                        "label": "Save as task",
+                        "method": "POST",
+                        "url": "/task/api/add",
+                        "body": {"text": text},
+                    },
+                }
+            )
         return {"items": items, "source": "inbox", "count": len(items)}
 
     @web_route("POST", "/api/smart-add")
     async def api_smart_add(self, request):
         """AI auto-tags a capture based on content."""
-        data = await request.json()
+        data = await self.read_json(request)
         text = data.get("text", "")
         if not text:
             return {"error": "text required"}
-        result = await self.think(
-            f"Classify this inbox capture into ONE tag: idea, task, note, link, question, reminder, dev. "
-            f"Return ONLY the tag word, nothing else.\n\n{text}",
-            domain="text", temperature=0.2,
-        )
-        tag = result.strip().lower().split()[0] if result.strip() else ""
+        # Fall back to a plain capture (with inline-#tag extraction) when
+        # no think provider is available, so AI-offline doesn't 500 the
+        # whole inbox surface.
+        try:
+            result = await self.think(
+                SMART_TAG_USER.format(text=text),
+                system=SMART_TAG_SYSTEM,
+                domain="text",
+                temperature=0.2,
+            )
+            tag = result.strip().lower().split()[0] if result.strip() else ""
+            if tag not in {"idea", "task", "note", "link", "question", "reminder", "dev"}:
+                tag = "note"
+        except Exception:
+            res = await self.add(text, "")
+            res["ai_offline"] = True
+            return res
         return await self.add(text, tag)
 
     @web_route("POST", "/api/add")
     async def api_add(self, request):
-        data = await request.json()
+        data = await self.read_json(request)
         return await self.add(data["text"], data.get("tag", ""))
+
+    @web_route("POST", "/api/capture")
+    async def api_capture(self, request):
+        return await self.api_add(request)
+
+    @web_route("POST", "/api/save")
+    async def api_save(self, request):
+        return await self.api_add(request)
 
     @web_route("GET", "/api/list")
     async def api_list(self, request):
@@ -193,14 +248,14 @@ class QuickActionApp(BaseApp):
     @web_route("POST", "/api/update")
     async def api_update(self, request):
         """Update an existing capture (atomic: remove old + add new in one write)."""
-        data = await request.json()
+        data = await self.read_json(request)
         old_ts = data.get("old_timestamp", "")
         old_text = data.get("old_text", "")
         new_text = data.get("text", "")
         new_tag = data.get("tag", "")
         if not new_text:
             return {"error": "text required"}
-        now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M")
+        now = datetime.now(UTC).strftime("%Y-%m-%d %H:%M")
         tag_str = f" #{new_tag}" if new_tag else ""
         new_line = f"- {now} — {new_text}{tag_str}"
         path = self._capture_path()
@@ -225,18 +280,19 @@ class QuickActionApp(BaseApp):
 
     @web_route("POST", "/api/dismiss")
     async def api_dismiss(self, request):
-        data = await request.json()
+        data = await self.read_json(request)
         removed = await self._remove_capture(data.get("timestamp", ""), data.get("text", ""))
         return {"dismissed": removed}
 
     # Tag → project routing for capture triage
     _TAG_PROJECT = {
         "dev": "emptyos-development",
+        "dogfood": "emptyos-dogfood",
     }
 
     @web_route("POST", "/api/to-task")
     async def api_to_task(self, request):
-        data = await request.json()
+        data = await self.read_json(request)
         text = data.get("text", "")
         tag = data.get("tag", "")
         if not text:
@@ -244,8 +300,9 @@ class QuickActionApp(BaseApp):
         try:
             project_id = self._TAG_PROJECT.get(tag)
             if project_id:
-                await self.call_app("projects", "add_task_to_project",
-                                    project_id=project_id, text=text)
+                await self.call_app(
+                    "projects", "add_task_to_project", project_id=project_id, text=text
+                )
             else:
                 await self.call_app("task", "add", text=text)
         except Exception as e:
@@ -256,7 +313,7 @@ class QuickActionApp(BaseApp):
     @web_route("POST", "/api/to-done-task")
     async def api_to_done_task(self, request):
         """Capture as an already-completed task — keeps a record without adding to TODOs."""
-        data = await request.json()
+        data = await self.read_json(request)
         text = data.get("text", "")
         tag = data.get("tag", "")
         if not text:
@@ -264,23 +321,31 @@ class QuickActionApp(BaseApp):
         try:
             project_id = self._TAG_PROJECT.get(tag)
             if project_id:
-                await self.call_app("projects", "add_task_to_project",
-                                    project_id=project_id, text=text, done=True)
+                await self.call_app(
+                    "projects", "add_task_to_project", project_id=project_id, text=text, done=True
+                )
             else:
                 await self.call_app("task", "add", text=text, done=True)
         except Exception as e:
             return {"error": f"done-task creation failed: {e}"}
         await self._remove_capture(data.get("timestamp", ""), text)
-        return {"converted": True, "text": text, "done": True, "project": project_id if project_id else None}
+        return {
+            "converted": True,
+            "text": text,
+            "done": True,
+            "project": project_id if project_id else None,
+        }
 
     @web_route("POST", "/api/to-journal")
     async def api_to_journal(self, request):
-        data = await request.json()
+        data = await self.read_json(request)
         text = data.get("text", "")
         if not text:
             return {"error": "text required"}
         try:
-            await self.call_app("journal", "_add_entry", d=datetime.now(timezone.utc).date(), text=text, mood="okay")
+            await self.call_app(
+                "journal", "_add_entry", d=datetime.now(UTC).date(), text=text, mood="okay"
+            )
         except Exception as e:
             return {"error": f"journal write failed: {e}"}
         await self._remove_capture(data.get("timestamp", ""), text)
@@ -327,7 +392,11 @@ class QuickActionApp(BaseApp):
     @web_route("POST", "/api/clear")
     async def api_clear(self, request):
         """Archive old captures — moves all but the most recent `keep` entries to an archive section."""
-        data = await request.json() if request.headers.get("content-type", "").startswith("application/json") else {}
+        data = (
+            await self.read_json(request)
+            if request.headers.get("content-type", "").startswith("application/json")
+            else {}
+        )
         keep = int(data.get("keep", 10))
         path = self._capture_path()
         try:
@@ -336,6 +405,7 @@ class QuickActionApp(BaseApp):
             return {"archived": 0}
 
         import re
+
         lines = content.split("\n")
         entries = []
         other = []
@@ -353,7 +423,7 @@ class QuickActionApp(BaseApp):
         to_keep = entries[-keep:]
 
         header = [l for l in other if l.strip()]
-        now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M")
+        now = datetime.now(UTC).strftime("%Y-%m-%d %H:%M")
         new_content = "\n".join(header) + "\n\n" + "\n".join(to_keep) + "\n"
         new_content += f"\n## Archive ({now})\n\n" + "\n".join(to_archive) + "\n"
 

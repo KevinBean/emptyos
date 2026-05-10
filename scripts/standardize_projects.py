@@ -1,4 +1,5 @@
 import os
+
 """Standardize 10_Projects/ to directory-based project structure.
 
 Usage:
@@ -12,7 +13,6 @@ Standard structure per project:
     {id}/log/           activity logs, changelogs
 """
 
-import re
 import shutil
 import sys
 from datetime import datetime
@@ -73,7 +73,11 @@ FLAT_UPGRADES = [
     ("本科学位认证申请.md", "degree-certification", "completed"),
     ("委托书公证（远程视频） 2023-02-17.md", "notarization-2023", "completed"),
     ("Project - Human systems - C3L.md", "human-systems-c3l", "completed"),
-    ("Project - check chatGPT's performance in answering quizs.md", "chatgpt-quiz-test", "completed"),
+    (
+        "Project - check chatGPT's performance in answering quizs.md",
+        "chatgpt-quiz-test",
+        "completed",
+    ),
     ("54-Day-Safe-Projects.md", "54-day-safe-projects", "completed"),
     # Active
     ("EmptyOS.md", "emptyos", "active"),
@@ -212,6 +216,7 @@ def create_main_note(proj_dir: Path, project_id: str, status: str):
 # ------------------------------------------------------------------------
 # Execution
 # ------------------------------------------------------------------------
+
 
 def run():
     print(f"{'DRY RUN' if DRY_RUN else 'APPLYING'} — standardizing {PROJECTS}\n")
@@ -362,7 +367,7 @@ def run():
     if ti.exists():
         nm = ti / "node_modules"
         if nm.exists() and nm.is_dir():
-            log(f"rmtree tomodachi-island/node_modules/")
+            log("rmtree tomodachi-island/node_modules/")
             if not DRY_RUN:
                 shutil.rmtree(str(nm))
         ensure_subdirs(ti)

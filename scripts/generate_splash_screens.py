@@ -33,8 +33,8 @@ def _bg_from_manifest() -> tuple[int, int, int, int]:
 
 # (width, height) — portrait.
 SIZES = [
-    (750, 1334),   # iPhone SE / 8
-    (828, 1792),   # iPhone XR / 11
+    (750, 1334),  # iPhone SE / 8
+    (828, 1792),  # iPhone XR / 11
     (1125, 2436),  # iPhone X / XS / 11 Pro
     (1170, 2532),  # iPhone 12 / 13 / 14
     (1179, 2556),  # iPhone 14 Pro / 15 / 16

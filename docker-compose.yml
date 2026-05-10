@@ -1,13 +1,18 @@
 # docker-compose.yml — EmptyOS reference deployment
 #
-# Quick start:
+# Quick start (zero config):
+#   docker compose up -d
+#   The entrypoint generates a default emptyos.toml on first boot, seeds the
+#   vault with PARA folders, and prints a generated auth token to the logs.
+#
+# Bring your own config:
 #   1. Copy emptyos.example.toml to emptyos.toml and edit it
-#   2. Pick a network mode: local | private | public (see comments below)
+#   2. Uncomment the bind-mount line below
 #   3. docker compose up -d
 #
-# Environment variables (optional, override emptyos.toml):
-#   EOS_NETWORK_MODE       - local | private | public
-#   EOS_NETWORK_AUTH_TOKEN - required in public mode
+# Environment variables (optional, override emptyos.toml field-by-field):
+#   EOS_NETWORK_MODE       - local | private | public (default: private inside Docker)
+#   EOS_NETWORK_AUTH_TOKEN - required in public mode; auto-generated otherwise
 #   EOS_CLOUD_CONSENT      - ask | always | never
 #   EOS_DEMO_ENABLED       - true | false
 
@@ -20,18 +25,22 @@ services:
     ports:
       - "9000:9000"
     volumes:
-      # Your markdown vault — EmptyOS treats this as its hard drive
+      # Your markdown vault — EmptyOS treats this as its hard drive.
+      # Created on the host on first `up` if it doesn't exist.
       - ./vault:/vault
-      # Machine config (gitignored, machine-specific)
-      - ./emptyos.toml:/app/emptyos.toml:ro
-      # Runtime state — persist events, syslog, app state across restarts
+      # Optional: bring your own config. With this commented out, the
+      # entrypoint writes a sensible default emptyos.toml to the data volume.
+      # - ./emptyos.toml:/app/emptyos.toml:ro
+      # Runtime state — persists events, syslog, generated auth token across
+      # restarts. Don't delete this volume unless you want a fresh install.
       - emptyos-data:/app/data
     environment:
       # Uncomment and set for public mode:
       # - EOS_NETWORK_MODE=public
       # - EOS_NETWORK_AUTH_TOKEN=change-me-to-a-long-random-token
       - EOS_CLOUD_CONSENT=ask
-    # Uncomment the depends_on block if you want the built-in Ollama sidecar
+    # If you uncomment the `ollama` service below, also uncomment this
+    # depends_on block so the Ollama sidecar boots before EmptyOS:
     # depends_on:
     #   - ollama
     healthcheck:

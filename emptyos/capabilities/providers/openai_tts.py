@@ -109,7 +109,8 @@ class OpenAIWhisperSTTProvider(Provider):
         if language:
             data.add_field("language", language)
         if isinstance(audio, (str, Path)):
-            data.add_field("file", open(str(audio), "rb"), filename=Path(str(audio)).name)
+            # Brief blocking open — aiohttp streams the file from here. # noqa: ASYNC230
+            data.add_field("file", open(str(audio), "rb"), filename=Path(str(audio)).name)  # noqa: ASYNC230
         else:
             data.add_field("file", audio, filename="audio.wav")
 

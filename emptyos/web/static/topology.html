@@ -79,6 +79,170 @@ body { background: #0a0a0a; color: #e5e5e5; font-family: system-ui, -apple-syste
 #analysis .dim-fill { height: 100%; border-radius: 2px; }
 
 svg { width: 100vw; height: 100vh; }
+svg.hidden, #tree-view.hidden, #pyramid-view.hidden, #dictionary-view.hidden { display: none; }
+
+/* Tree view — natural tree with trunk, branches, leaves */
+#tree-view {
+    position: fixed; top: 44px; left: 0; right: 0; bottom: 52px;
+    overflow: hidden;
+    background: radial-gradient(ellipse at 50% 100%, #0e1410 0%, #0a0a0a 60%);
+}
+#tree-view svg { width: 100%; height: 100%; display: block; }
+.tree-trunk { fill: #2a2018; }
+.tree-branch { stroke: #2a2018; fill: none; stroke-linecap: round; }
+.tree-cap-label { fill: #fbbf24; font-size: 13px; font-weight: 600; text-anchor: middle;
+    paint-order: stroke; stroke: rgba(10,10,10,0.85); stroke-width: 4; cursor: pointer;
+    user-select: none; }
+.tree-cap-count { fill: #666; font-size: 10px; text-anchor: middle; }
+.tree-leaf-g { cursor: pointer; transform-box: fill-box; transform-origin: center; }
+.tree-leaf-g:hover ellipse { stroke: #fff; stroke-width: 1.2; }
+.tree-leaf-vein { stroke: rgba(0,0,0,0.35); stroke-width: 0.6; fill: none; }
+.tree-tooltip {
+    position: fixed; pointer-events: none; z-index: 12;
+    background: rgba(20,20,20,0.97); border: 1px solid #333; border-radius: 6px;
+    padding: 6px 10px; font-size: 11px; color: #e5e5e5; display: none;
+    max-width: 240px;
+}
+.tree-tooltip .t-type { font-size: 9px; text-transform: uppercase; letter-spacing: 0.4px; color: #888; }
+.tree-tooltip .t-date { color: #fbbf24; font-size: 10px; margin-top: 2px; }
+
+/* Dictionary view — catalog of all nodes by layer (clean, no edges) */
+#dictionary-view {
+    position: fixed; top: 44px; left: 0; right: 0; bottom: 52px;
+    overflow: auto; padding: 24px 40px;
+}
+.pyr-row {
+    display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+    padding: 12px 0; border-bottom: 1px solid #1a1a1a;
+}
+.pyr-row-head { width: 140px; flex-shrink: 0; }
+.pyr-row-lv { font-size: 10px; color: #666; font-weight: 700; }
+.pyr-row-name { font-size: 12px; color: #ccc; }
+.pyr-row-count { font-size: 10px; color: #555; }
+.pyr-node {
+    padding: 4px 10px; border-radius: 4px; font-size: 11px; cursor: pointer;
+    background: rgba(60,60,60,0.4); color: #ccc; border: 1px solid transparent;
+}
+.pyr-node:hover { background: rgba(80,80,80,0.6); color: #fff; }
+
+/* Pyramid view — layered rows WITH connection edges (Sankey-ish) */
+#pyramid-view {
+    position: fixed; top: 44px; left: 0; right: 0; bottom: 52px;
+    overflow: hidden;
+    background: radial-gradient(ellipse at 50% 100%, #0e1014 0%, #0a0a0a 70%);
+}
+#pyramid-view svg { width: 100%; height: 100%; display: block; }
+.cpyr-edge { fill: none; stroke-opacity: 0.35; stroke-width: 1; transition: stroke-opacity 0.2s; }
+.cpyr-edge.dim { stroke-opacity: 0.06; }
+.cpyr-edge.lit { stroke-opacity: 0.95; stroke-width: 1.8; }
+.cpyr-node { cursor: pointer; transition: opacity 0.2s; }
+.cpyr-node.dim { opacity: 0.18; }
+.cpyr-node text { pointer-events: none; user-select: none; }
+.cpyr-node:hover rect { stroke-width: 2; filter: drop-shadow(0 0 6px currentColor); }
+.cpyr-row-label { fill: #555; font-size: 10px; font-weight: 700; pointer-events: none; }
+.cpyr-row-name  { fill: #888; font-size: 10px; pointer-events: none; }
+.cpyr-row-band  { fill: rgba(255,255,255,0.012); }
+
+#pyr-filters {
+    position: absolute; top: 10px; right: 14px; z-index: 5;
+    display: flex; gap: 6px; flex-wrap: wrap;
+    background: rgba(10,10,10,0.7); backdrop-filter: blur(6px);
+    padding: 6px 8px; border: 1px solid #1a1a1a; border-radius: 8px;
+}
+.pyr-chip {
+    display: inline-flex; align-items: center; gap: 5px;
+    padding: 3px 10px; border-radius: 12px; font-size: 11px;
+    border: 1px solid currentColor; cursor: pointer;
+    background: transparent; color: var(--chip-color, #888);
+    opacity: 0.35; transition: opacity 0.15s, background 0.15s;
+    user-select: none; font-weight: 500;
+}
+.pyr-chip:hover { opacity: 0.85; }
+.pyr-chip.on { opacity: 1; background: rgba(255,255,255,0.06); }
+.pyr-chip-dot {
+    width: 8px; height: 2px; background: currentColor; border-radius: 1px;
+}
+.cpyr-edge.hidden-by-filter { display: none; }
+.cpyr-node.unconnected { opacity: 0.18; }
+
+/* Timeline scrubber */
+#timeline-bar {
+    position: fixed; bottom: 0; left: 0; right: 0; z-index: 11;
+    height: 52px; padding: 8px 16px; background: rgba(10,10,10,0.95);
+    border-top: 1px solid #222; display: flex; align-items: center; gap: 12px;
+    backdrop-filter: blur(8px);
+}
+#timeline-bar button {
+    padding: 4px 10px; border: 1px solid #444; border-radius: 4px;
+    background: transparent; color: #ccc; cursor: pointer; font-size: 11px;
+}
+#timeline-bar button:hover { border-color: #888; color: #fff; }
+#timeline-bar button.on { border-color: #3b82f6; color: #3b82f6; }
+#timeline-slider { width: 100%; accent-color: #3b82f6; position: relative; z-index: 1; }
+#timeline-bar.off #timeline-slider { opacity: 0.4; pointer-events: none; }
+#slider-wrap { flex: 1; position: relative; height: 36px; display: flex; align-items: center; }
+#release-marks { position: absolute; inset: 0; pointer-events: none; }
+.release-tick {
+    position: absolute; top: 2px; bottom: 18px; width: 1px;
+    background: #fbbf24; opacity: 0.45; pointer-events: auto; cursor: pointer;
+    transform: translateX(-0.5px);
+}
+.release-tick.major { background: #3b82f6; opacity: 0.7; width: 2px; top: 0; }
+.release-tick:hover { opacity: 1; width: 2px; }
+.release-label {
+    position: absolute; top: 0; transform: translateX(-50%);
+    font-size: 9px; color: #fbbf24; pointer-events: none;
+    white-space: nowrap; opacity: 0.75;
+    font-variant-numeric: tabular-nums;
+}
+.release-label.major { color: #3b82f6; font-weight: 600; }
+#timeline-bar.off #release-marks { opacity: 0.3; }
+#timeline-date { color: #fbbf24; font-size: 12px; font-variant-numeric: tabular-nums;
+    min-width: 90px; text-align: center; }
+#timeline-range { color: #555; font-size: 10px; font-variant-numeric: tabular-nums; }
+
+.node-hidden { opacity: 0.08; transition: opacity 0.6s; }
+
+/* Birth log side panel */
+#birth-log {
+    position: fixed; top: 44px; right: 0; bottom: 52px; width: 340px;
+    z-index: 9; background: rgba(14,14,14,0.97); border-left: 1px solid #222;
+    overflow-y: auto; padding: 12px 14px; font-size: 12px;
+    transform: translateX(100%); transition: transform 0.2s ease;
+}
+#birth-log.open { transform: translateX(0); }
+#birth-log-head { display: flex; align-items: center; gap: 8px; padding-bottom: 8px;
+    border-bottom: 1px solid #1a1a1a; margin-bottom: 8px; position: sticky; top: -12px;
+    background: rgba(14,14,14,0.97); padding-top: 12px; margin-top: -12px; z-index: 2; }
+#birth-log-head h3 { font-size: 11px; color: #888; letter-spacing: 0.5px; text-transform: uppercase; flex: 1; }
+#birth-log-head .close { color: #666; cursor: pointer; padding: 0 6px; }
+#birth-log-head .close:hover { color: #fff; }
+#birth-log-marker { font-size: 10px; color: #fbbf24; padding: 4px 0 8px; font-variant-numeric: tabular-nums; }
+.bl-item { padding: 6px 0; border-bottom: 1px solid #1a1a1a; transition: opacity 0.3s; }
+.bl-item.future { opacity: 0.18; }
+.bl-item-row { display: flex; align-items: center; gap: 6px; }
+.bl-item-date { color: #555; font-size: 10px; font-variant-numeric: tabular-nums; min-width: 96px; }
+.bl-item-label { color: #ccc; font-weight: 500; cursor: pointer; flex: 1; }
+.bl-item-label:hover { color: #fff; text-decoration: underline; }
+.bl-item-type { font-size: 9px; text-transform: uppercase; letter-spacing: 0.4px;
+    padding: 1px 5px; border-radius: 3px; }
+.bl-item-msg { color: #777; font-size: 11px; margin-top: 2px; line-height: 1.35; padding-left: 102px; }
+.bl-item.fresh {
+    background: rgba(251,191,36,0.06);
+    border-left: 2px solid #fbbf24;
+    padding-left: 6px; margin-left: -8px;
+    animation: bl-flash 1.4s ease-out;
+}
+@keyframes bl-flash {
+    0%   { background: rgba(251,191,36,0.35); }
+    100% { background: rgba(251,191,36,0.06); }
+}
+@keyframes node-grow {
+    0% { opacity: 0; transform: scale(0.4); filter: drop-shadow(0 0 8px #fbbf24); }
+    60% { opacity: 1; transform: scale(1.2); filter: drop-shadow(0 0 12px #fbbf24); }
+    100% { opacity: 1; transform: scale(1); filter: drop-shadow(0 0 0 transparent); }
+}
+.node-fresh { animation: node-grow 1.2s ease-out; transform-origin: center; transform-box: fill-box; }
 
 .link { stroke-opacity: 0.4; fill: none; }
 .link.uses_capability { stroke: #fbbf24; }
@@ -105,7 +269,12 @@ svg { width: 100vw; height: 100vh; }
 <div id="header">
     <h1>System Topology</h1>
     <a href="/">Home</a>
+    <button class="btn" id="btn-view-graph" onclick="setView('graph')">Graph</button>
+    <button class="btn" id="btn-view-tree" onclick="setView('tree')">Tree</button>
+    <button class="btn" id="btn-view-pyramid" onclick="setView('pyramid')">Pyramid</button>
+    <button class="btn" id="btn-view-dictionary" onclick="setView('dictionary')">Dictionary</button>
     <button class="btn" id="btn-analysis" onclick="toggleAnalysis()">Analysis</button>
+    <button class="btn" id="btn-events" onclick="toggleEventFlow()">Event flow</button>
     <div style="position:relative">
         <input type="text" id="node-search" placeholder="Find node..." autocomplete="off"
             oninput="onSearch(this.value)" onkeydown="if(event.key==='Enter')selectSearchResult()">
@@ -145,6 +314,23 @@ svg { width: 100vw; height: 100vh; }
 </div>
 
 <svg></svg>
+<div id="tree-view" class="hidden"></div>
+<div id="pyramid-view" class="hidden"></div>
+<div id="dictionary-view" class="hidden"></div>
+<div id="birth-log"></div>
+
+<div id="timeline-bar" class="off">
+    <button id="tl-toggle" onclick="toggleTimeline()">Timeline: Off</button>
+    <button id="tl-play" onclick="togglePlay()" disabled>&#9654;</button>
+    <button id="tl-log" onclick="toggleBirthLog()">Log</button>
+    <span id="timeline-date">—</span>
+    <div id="slider-wrap">
+        <div id="release-marks"></div>
+        <input type="range" id="timeline-slider" min="0" max="1000" step="any" value="1000"
+            oninput="onScrub(this.value)" disabled>
+    </div>
+    <span id="timeline-range"><span id="tl-min">—</span> &middot; <span id="tl-max">—</span></span>
+</div>
 
 <script>
 const WIDTH = window.innerWidth;
@@ -172,6 +358,11 @@ const SHAPES = {
 };
 
 let nodes = [], edges = [];
+
+// HTML-escape for inline templates. All renderers in this file use this.
+const esc = s => String(s == null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+    .replace(/'/g, '&#39;').replace(/"/g, '&quot;');
 
 let healthData = null;  // cached health state
 
@@ -314,6 +505,46 @@ function toggleAnalysis() {
     const btn = document.getElementById('btn-analysis');
     panel.classList.toggle('open');
     btn.classList.toggle('active');
+}
+
+let eventFlowMode = false;
+const EVENT_EDGE_TYPES = new Set(['emits_event', 'listens_event']);
+
+function toggleEventFlow() {
+    eventFlowMode = !eventFlowMode;
+    document.getElementById('btn-events').classList.toggle('active', eventFlowMode);
+    applyEventFlowFilter();
+}
+
+function applyEventFlowFilter() {
+    // Compute which nodes/edges are visible. In event-flow mode: keep only
+    // emits_event / listens_event edges plus their endpoint nodes. Otherwise
+    // everything is visible.
+    const visibleNodeIds = new Set();
+    const visibleEdgeIdx = new Set();
+    if (eventFlowMode) {
+        edges.forEach((e, i) => {
+            if (EVENT_EDGE_TYPES.has(e.type)) {
+                visibleEdgeIdx.add(i);
+                visibleNodeIds.add(e.source);
+                visibleNodeIds.add(e.target);
+            }
+        });
+    }
+    const showAll = !eventFlowMode;
+    const svg = document.querySelector('svg');
+    svg.querySelectorAll('#edges line').forEach(line => {
+        const i = parseInt(line.dataset.idx, 10);
+        line.style.display = (showAll || visibleEdgeIdx.has(i)) ? '' : 'none';
+    });
+    svg.querySelectorAll('#nodes > *').forEach(el => {
+        const n = nodes[parseInt(el.dataset.idx, 10)];
+        el.style.display = (showAll || visibleNodeIds.has(n.id)) ? '' : 'none';
+    });
+    svg.querySelectorAll('#labels text').forEach(t => {
+        const n = nodes[parseInt(t.dataset.idx, 10)];
+        t.style.display = (showAll || visibleNodeIds.has(n.id)) ? '' : 'none';
+    });
 }
 
 // ── Health annotation: overlay status onto topology nodes ──
@@ -583,6 +814,7 @@ function render() {
         label.dataset.idx = i;
         labelGroup.appendChild(label);
     });
+    applyEventFlowFilter();
 }
 
 function updatePositions() {
@@ -839,7 +1071,6 @@ function onSearch(query) {
     const q = query.toLowerCase();
     searchResults = nodes.filter(n => n.label.toLowerCase().includes(q) || n.id.toLowerCase().includes(q));
     if (!searchResults.length) { box.style.display = 'none'; return; }
-    const esc = s => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/'/g,'&#39;').replace(/"/g,'&quot;');
     box.style.display = 'block';
     box.innerHTML = searchResults.slice(0, 12).map(n =>
         `<div class="search-item" style="color:${COLORS[n.type]||'#ccc'}"
@@ -877,7 +1108,877 @@ document.addEventListener('keydown', (e) => {
     }
 });
 
-load();
+// ── View switcher ──────────────────────────────────────────────────────
+let currentView = 'graph';
+let layersData = null;     // cached /api/topology/layers
+let treeData = null;       // cached /api/topology/tree
+let timelineData = null;   // {min_date, max_date, nodes: {id: ISO}}
+
+function setView(mode) {
+    currentView = mode;
+    localStorage.setItem('eos.topology.view', mode);
+    document.getElementById('btn-view-graph').classList.toggle('active', mode === 'graph');
+    document.getElementById('btn-view-tree').classList.toggle('active', mode === 'tree');
+    document.getElementById('btn-view-pyramid').classList.toggle('active', mode === 'pyramid');
+    document.getElementById('btn-view-dictionary').classList.toggle('active', mode === 'dictionary');
+    document.querySelector('svg').classList.toggle('hidden', mode !== 'graph');
+    document.getElementById('tree-view').classList.toggle('hidden', mode !== 'tree');
+    document.getElementById('pyramid-view').classList.toggle('hidden', mode !== 'pyramid');
+    document.getElementById('dictionary-view').classList.toggle('hidden', mode !== 'dictionary');
+    if (mode === 'tree') renderTree();
+    if (mode === 'pyramid') renderPyramid();
+    if (mode === 'dictionary') renderDictionary();
+    if (timelineActive) applyCutoff(currentCutoff);
+}
+
+// ── Tree view — natural tree with trunk, branches, leaves ──────────────
+async function renderTree() {
+    const host = document.getElementById('tree-view');
+    if (!treeData) {
+        host.innerHTML = '<div style="color:#666;padding:40px;text-align:center">Loading…</div>';
+        try {
+            const r = await fetch('/api/topology/tree');
+            treeData = await r.json();
+        } catch (e) {
+            host.innerHTML = '<div style="color:#ef4444;padding:40px">Failed to load tree.</div>';
+            return;
+        }
+    }
+    drawNaturalTree();
+    // Re-draw on resize
+    if (!window._treeResizeBound) {
+        window.addEventListener('resize', () => { if (currentView === 'tree') drawNaturalTree(); });
+        window._treeResizeBound = true;
+    }
+}
+
+// Seeded pseudo-random so leaves don't shuffle on every redraw
+function _seededRand(seed) {
+    let s = seed >>> 0;
+    return () => { s = (s * 1664525 + 1013904223) >>> 0; return s / 0xffffffff; };
+}
+
+function drawNaturalTree() {
+    const host = document.getElementById('tree-view');
+    const W = host.clientWidth || window.innerWidth;
+    const H = host.clientHeight || (window.innerHeight - 96);
+
+    const trunkX = W / 2;
+    const baseY = H - 12;
+    const trunkTopY = H * 0.62;
+    const trunkW = Math.min(46, W * 0.05);
+
+    // Trunk shape — slightly tapered, with subtle root flare
+    const trunkPath =
+        `M${trunkX-trunkW},${baseY} ` +
+        `Q${trunkX-trunkW*1.4},${baseY-30} ${trunkX-trunkW*0.5},${baseY-60} ` +
+        `Q${trunkX-trunkW*0.6},${trunkTopY+30} ${trunkX-trunkW*0.35},${trunkTopY} ` +
+        `L${trunkX+trunkW*0.35},${trunkTopY} ` +
+        `Q${trunkX+trunkW*0.6},${trunkTopY+30} ${trunkX+trunkW*0.5},${baseY-60} ` +
+        `Q${trunkX+trunkW*1.4},${baseY-30} ${trunkX+trunkW},${baseY} Z`;
+
+    const caps = treeData.roots;
+    const N = caps.length;
+
+    // Distribute branches in a fan from -75° to +75° (0° = straight up).
+    // Sort caps by total "richness" so dense branches go to the outside —
+    // looks more balanced than richest-in-the-middle.
+    const ordered = [...caps].sort((a, b) => {
+        const ra = a.providers.length + a.consumers.length + a.engines.length;
+        const rb = b.providers.length + b.consumers.length + b.engines.length;
+        return ra - rb;
+    });
+    // interleave outward: [richest, 2nd, 3rd...] into [center-out alternating]
+    const fan = new Array(N);
+    let li = Math.floor(N / 2), ri = Math.floor(N / 2) + 1;
+    let toggle = true;
+    for (const c of ordered.reverse()) {
+        if (toggle && li >= 0) { fan[li--] = c; }
+        else if (ri < N) { fan[ri++] = c; }
+        else if (li >= 0) { fan[li--] = c; }
+        toggle = !toggle;
+    }
+
+    let svg = `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMax meet">`;
+
+    // Soft canopy glow behind branches
+    svg += `<defs>
+        <radialGradient id="canopy-glow" cx="50%" cy="50%" r="50%">
+            <stop offset="0%" stop-color="rgba(34,197,94,0.06)"/>
+            <stop offset="100%" stop-color="rgba(34,197,94,0)"/>
+        </radialGradient>
+    </defs>`;
+    svg += `<ellipse cx="${trunkX}" cy="${trunkTopY * 0.55}" rx="${W*0.42}" ry="${H*0.32}" fill="url(#canopy-glow)"/>`;
+
+    // Trunk
+    svg += `<path class="tree-trunk" d="${trunkPath}"/>`;
+
+    // Branches + leaves
+    fan.forEach((cap, i) => {
+        if (!cap) return;
+        const t = N === 1 ? 0.5 : i / (N - 1);
+        const angleDeg = -75 + 150 * t;
+        const angle = angleDeg * Math.PI / 180;
+        // Start the branch at varying heights along the trunk so they don't all
+        // emerge from one point — more natural.
+        const startOffset = (Math.abs(angleDeg) / 75) * 60;   // outer branches start lower
+        const startY = trunkTopY + 8 + startOffset;
+        const startX = trunkX + (angleDeg < 0 ? -trunkW*0.3 : trunkW*0.3);
+
+        const reach = Math.min(W * 0.42, H * 0.45);
+        const tipX = trunkX + Math.sin(angle) * reach;
+        const tipY = startY - Math.cos(angle) * reach * 0.95;
+
+        // Curved branch via cubic bezier — control points pull from straight line
+        const c1x = trunkX + Math.sin(angle) * reach * 0.25;
+        const c1y = startY - Math.cos(angle) * reach * 0.55;
+        const c2x = trunkX + Math.sin(angle) * reach * 0.7;
+        const c2y = startY - Math.cos(angle) * reach * 0.85;
+
+        const sw = 11 - Math.abs(angleDeg) / 18;   // thicker near vertical
+        svg += `<path class="tree-branch" d="M${startX},${startY} C${c1x},${c1y} ${c2x},${c2y} ${tipX},${tipY}" stroke-width="${sw.toFixed(1)}"/>`;
+
+        // Capability label — perpendicular offset from tip, away from trunk
+        const labelOffX = Math.sin(angle) * 18;
+        const labelOffY = -Math.cos(angle) * 18 - 8;
+        const totalLeaves = cap.providers.length + cap.engines.length + cap.consumers.length;
+        svg += `<text class="tree-cap-label" x="${tipX + labelOffX}" y="${tipY + labelOffY - 6}"
+            data-id="${esc(cap.id)}" data-created="${esc(cap.created||'')}"
+            onclick="locateOrInfo('${esc(cap.id)}')">${esc(cap.label)}</text>`;
+        svg += `<text class="tree-cap-count" x="${tipX + labelOffX}" y="${tipY + labelOffY + 8}">${totalLeaves} ${totalLeaves === 1 ? 'leaf' : 'leaves'}</text>`;
+
+        // Leaves — providers + engines + consuming apps
+        const leaves = [
+            ...cap.providers.map(p => ({...p, _color: '#737373', _type: 'provider'})),
+            ...cap.engines.map(e => ({...e, _color: '#2dd4bf', _type: 'engine'})),
+            ...cap.consumers.map(c => ({...c, _color: '#60a5fa', _type: 'app'})),
+        ];
+
+        // Cluster radius scales with leaf count
+        const clusterR = 38 + Math.sqrt(leaves.length) * 14;
+        const rand = _seededRand(cap.label.split('').reduce((a,c) => a + c.charCodeAt(0), 0));
+
+        leaves.forEach((leaf, j) => {
+            // Sunflower / Fibonacci spiral for natural cluster
+            const r = clusterR * Math.sqrt((j + 0.5) / leaves.length);
+            const theta = j * 2.39996;
+            const jitter = (rand() - 0.5) * 8;
+            const lx = tipX + Math.cos(theta) * r + jitter;
+            const ly = tipY + Math.sin(theta) * r * 0.85 + jitter * 0.6;
+            const tilt = (rand() - 0.5) * 60 + (angleDeg * 0.3);
+
+            // Leaf shape — small ellipse with a midrib
+            svg += `<g transform="translate(${lx.toFixed(1)},${ly.toFixed(1)})">
+                <g class="tree-leaf-g" data-id="${esc(leaf.id)}" data-created="${esc(leaf.created||'')}"
+                   data-type="${esc(leaf._type)}" data-label="${esc(leaf.label)}">
+                    <g transform="rotate(${tilt.toFixed(1)})">
+                        <ellipse cx="0" cy="0" rx="6.5" ry="11" fill="${leaf._color}" opacity="0.92"/>
+                        <path class="tree-leaf-vein" d="M0,-10 Q0.5,0 0,10"/>
+                    </g>
+                </g>
+            </g>`;
+        });
+    });
+
+    // Groundcover — wildflowers + grass for apps that declare no capabilities.
+    // Drawn last so they render in front of the canopy glow but behind nothing
+    // important; positioned along the bottom strip.
+    const ground = treeData.groundcover || [];
+    if (ground.length > 0) {
+        const PETAL_COLORS = ['#d97757', '#fbbf24', '#f9a8d4', '#a78bfa', '#86efac', '#fef3c7', '#fb7185'];
+        const xPad = 60;
+        const xSpan = W - xPad * 2;
+        svg += `<rect x="0" y="${baseY - 6}" width="${W}" height="6" fill="rgba(60,42,24,0.18)"/>`;
+        ground.forEach((app, i) => {
+            const seed = (app.label || '').split('').reduce((a, c) => a + c.charCodeAt(0), 0);
+            const rand = _seededRand(seed + i);
+            const t = (i + 0.5) / ground.length;
+            let x = xPad + xSpan * t + (rand() - 0.5) * (xSpan / ground.length) * 0.6;
+            // Push x off the trunk base so root flare reads cleanly
+            const trunkGap = 60;
+            if (Math.abs(x - trunkX) < trunkGap) {
+                x = trunkX + (x < trunkX ? -trunkGap : trunkGap) - (rand() - 0.5) * 14;
+            }
+            x = Math.max(xPad - 10, Math.min(W - xPad + 10, x));
+            const y = baseY - 4 - rand() * 18;
+            const colorA = PETAL_COLORS[seed % PETAL_COLORS.length];
+            const colorB = PETAL_COLORS[(seed + 3) % PETAL_COLORS.length];
+            const tilt = (rand() - 0.5) * 22;
+
+            svg += `<g class="tree-leaf-g ground-app" data-id="${esc(app.id)}" data-created="${esc(app.created || '')}"
+                data-type="app" data-label="${esc(app.label || '')}"
+                transform="translate(${x.toFixed(1)},${y.toFixed(1)}) rotate(${tilt.toFixed(1)})">`;
+
+            if (app.kind === 'sapling') {
+                svg += `<line x1="0" y1="0" x2="0" y2="-14" stroke="#3a2a18" stroke-width="1.6" stroke-linecap="round"/>`;
+                svg += `<ellipse cx="-3.5" cy="-15" rx="3" ry="5" fill="${colorA}" opacity="0.85" transform="rotate(-25 -3.5 -15)"/>`;
+                svg += `<ellipse cx="3.5"  cy="-15" rx="3" ry="5" fill="${colorB}" opacity="0.85" transform="rotate(25 3.5 -15)"/>`;
+                svg += `<ellipse cx="0"    cy="-19" rx="3" ry="5" fill="${colorA}" opacity="0.92"/>`;
+            } else {
+                svg += `<line x1="0" y1="0" x2="0" y2="-12" stroke="#3a4a2a" stroke-width="1.2" stroke-linecap="round"/>`;
+                svg += `<line x1="-4" y1="-1" x2="-3" y2="-7" stroke="#4a5a30" stroke-width="0.8" stroke-linecap="round"/>`;
+                svg += `<line x1="4"  y1="-1" x2="3"  y2="-7" stroke="#4a5a30" stroke-width="0.8" stroke-linecap="round"/>`;
+                const cy = -14;
+                for (let p = 0; p < 5; p++) {
+                    const a = (p / 5) * Math.PI * 2;
+                    const px = Math.cos(a) * 2.6;
+                    const py = cy + Math.sin(a) * 2.6;
+                    svg += `<circle cx="${px.toFixed(1)}" cy="${py.toFixed(1)}" r="2" fill="${colorA}" opacity="0.95"/>`;
+                }
+                svg += `<circle cx="0" cy="${cy}" r="1.5" fill="#fde68a"/>`;
+            }
+            svg += `</g>`;
+        });
+    }
+
+    svg += '</svg>';
+    // Tooltip element
+    svg += '<div class="tree-tooltip" id="tree-tooltip"></div>';
+    host.innerHTML = svg;
+
+    // Wire up leaf interactions (delegated)
+    host.addEventListener('mousemove', _treeMouseMove);
+    host.addEventListener('mouseleave', _treeMouseLeave);
+    host.querySelectorAll('.tree-leaf-g').forEach(g => {
+        g.addEventListener('click', () => locateOrInfo(g.dataset.id));
+    });
+}
+
+function _treeMouseMove(e) {
+    const tip = document.getElementById('tree-tooltip');
+    if (!tip) return;
+    const leaf = e.target.closest('.tree-leaf-g');
+    if (!leaf) { tip.style.display = 'none'; return; }
+    const label = leaf.dataset.label || '';
+    const type = leaf.dataset.type || '';
+    const created = leaf.dataset.created || '';
+    const dateStr = created ? created.slice(0, 10) : '';
+    tip.innerHTML = `<div class="t-type">${type}</div><div>${label}</div>${dateStr ? `<div class="t-date">${dateStr}</div>` : ''}`;
+    tip.style.display = 'block';
+    tip.style.left = (e.clientX + 14) + 'px';
+    tip.style.top = (e.clientY + 14) + 'px';
+}
+function _treeMouseLeave() {
+    const tip = document.getElementById('tree-tooltip');
+    if (tip) tip.style.display = 'none';
+}
+
+function locateOrInfo(nodeId) {
+    setView('graph');
+    setTimeout(() => locateNode(nodeId), 50);
+}
+
+// ── Dictionary view — strict layered rows, no edges (catalog) ──────────
+function renderDictionary() {
+    const host = document.getElementById('dictionary-view');
+    if (!layersData) {
+        host.innerHTML = '<div style="color:#666;padding:40px;text-align:center">Loading…</div>';
+        return;
+    }
+    // Reverse so apex sits on top, providers at bottom
+    const layers = [...layersData.layers].reverse();
+    let html = '';
+    for (const layer of layers) {
+        const nodeChips = layer.nodes.map(n => {
+            const created = _nodeDate(n.id);
+            const c = COLORS[n.type] || '#666';
+            return `<span class="pyr-node" data-id="${esc(n.id)}" data-created="${esc(created)}"
+                onclick="locateOrInfo('${esc(n.id)}')"
+                style="border-color:${c}66;color:${c}">${esc(n.label)}</span>`;
+        }).join('');
+        html += `<div class="pyr-row">
+            <div class="pyr-row-head">
+                <div class="pyr-row-lv">L${layer.level}</div>
+                <div class="pyr-row-name">${esc(layer.name)}</div>
+                <div class="pyr-row-count">${layer.nodes.length} nodes</div>
+            </div>
+            <div class="pyr-row-body" style="display:flex;flex-wrap:wrap;gap:6px;flex:1">${nodeChips}</div>
+        </div>`;
+    }
+    host.innerHTML = html;
+}
+
+// ── Pyramid view — layered rows + connection edges (the architecture story) ─
+function renderPyramid() {
+    const host = document.getElementById('pyramid-view');
+    if (!layersData || !nodes.length) {
+        host.innerHTML = '<div style="color:#666;padding:40px;text-align:center">Loading…</div>';
+        return;
+    }
+    drawConnectedPyramid();
+    if (!window._pyrResizeBound) {
+        window.addEventListener('resize', () => { if (currentView === 'pyramid') drawConnectedPyramid(); });
+        window._pyrResizeBound = true;
+    }
+}
+
+function drawConnectedPyramid() {
+    const host = document.getElementById('pyramid-view');
+    const W = host.clientWidth || window.innerWidth;
+    const H = host.clientHeight || (window.innerHeight - 96);
+
+    // Top → bottom: apex first (apps), providers last
+    const layers = [...layersData.layers].reverse();
+    const ROW_PAD_TOP = 20;
+    const ROW_PAD_BOT = 16;
+    const usableH = H - ROW_PAD_TOP - ROW_PAD_BOT;
+    const ROW_H = usableH / layers.length;
+    const LEFT_PAD = 100;
+    const RIGHT_PAD = 24;
+
+    // Index edges for fast lookup + neighbor traversal
+    const inEdges = new Map(), outEdges = new Map();
+    edges.forEach(e => {
+        if (!inEdges.has(e.target)) inEdges.set(e.target, []);
+        if (!outEdges.has(e.source)) outEdges.set(e.source, []);
+        inEdges.get(e.target).push(e.source);
+        outEdges.get(e.source).push(e.target);
+    });
+
+    // Position pass: top layer alphabetical, then barycenter ordering downward.
+    // Two passes (down then up) for slightly better crossings.
+    const pos = new Map();
+    function placeRow(layer, li, sortFn) {
+        const sorted = [...layer.nodes].sort(sortFn);
+        const y = ROW_PAD_TOP + ROW_H * (li + 0.5);
+        const rowW = W - LEFT_PAD - RIGHT_PAD;
+        const N = Math.max(1, sorted.length);
+        sorted.forEach((n, i) => {
+            const x = LEFT_PAD + rowW * (i + 0.5) / N;
+            pos.set(n.id, { x, y, layer: li });
+        });
+    }
+    // Pass 1: top alphabetical
+    placeRow(layers[0], 0, (a, b) => a.label.localeCompare(b.label));
+    // Pass 2: each subsequent layer ordered by mean X of placed neighbors above
+    for (let li = 1; li < layers.length; li++) {
+        placeRow(layers[li], li, (a, b) => barycenter(a) - barycenter(b));
+    }
+    // Pass 3 (refine): re-order top-down a second time using both up + down neighbors
+    for (let li = 0; li < layers.length; li++) {
+        placeRow(layers[li], li, (a, b) => barycenter(a) - barycenter(b));
+    }
+
+    function barycenter(node) {
+        const nbrs = [
+            ...(inEdges.get(node.id) || []),
+            ...(outEdges.get(node.id) || []),
+        ].filter(id => pos.has(id));
+        if (!nbrs.length) return W / 2;
+        return nbrs.reduce((s, id) => s + pos.get(id).x, 0) / nbrs.length;
+    }
+
+    // Edge color map mirrors graph view
+    const EDGE_COLORS = {
+        uses_capability: '#fbbf24', uses_service: '#f87171',
+        provides_service: '#a78bfa', has_provider: '#555',
+        emits_event: '#c084fc', listens_event: '#c084fc',
+        calls_app: '#f43f5e', uses_engine: '#2dd4bf',
+        reads_data: '#4ade80', writes_data: '#4ade80',
+    };
+
+    let svg = `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet">`;
+
+    // Row bands + labels on the left
+    layers.forEach((layer, li) => {
+        const yMid = ROW_PAD_TOP + ROW_H * (li + 0.5);
+        const yTop = ROW_PAD_TOP + ROW_H * li;
+        if (li % 2 === 0) {
+            svg += `<rect class="cpyr-row-band" x="0" y="${yTop}" width="${W}" height="${ROW_H}"/>`;
+        }
+        svg += `<text class="cpyr-row-label" x="20" y="${yMid - 4}">L${layer.level}</text>`;
+        svg += `<text class="cpyr-row-name"  x="20" y="${yMid + 10}">${esc(layer.name)}</text>`;
+    });
+
+    // Edges (drawn before nodes so nodes sit on top)
+    edges.forEach((e, i) => {
+        const sp = pos.get(e.source);
+        const tp = pos.get(e.target);
+        if (!sp || !tp) return;
+        const dy = tp.y - sp.y;
+        const c1y = sp.y + dy * 0.55;
+        const c2y = tp.y - dy * 0.55;
+        const color = EDGE_COLORS[e.type] || '#444';
+        svg += `<path class="cpyr-edge" d="M${sp.x.toFixed(1)},${sp.y.toFixed(1)} C${sp.x.toFixed(1)},${c1y.toFixed(1)} ${tp.x.toFixed(1)},${c2y.toFixed(1)} ${tp.x.toFixed(1)},${tp.y.toFixed(1)}"
+            stroke="${color}" data-source="${esc(e.source)}" data-target="${esc(e.target)}" data-type="${esc(e.type)}"/>`;
+    });
+
+    // Nodes — pill chips
+    nodes.forEach(n => {
+        const p = pos.get(n.id);
+        if (!p) return;
+        const c = COLORS[n.type] || '#666';
+        const created = (timelineData && timelineData.nodes[n.id]) || '';
+        const labelW = Math.max(40, n.label.length * 6.4 + 14);
+        svg += `<g class="cpyr-node" data-id="${esc(n.id)}" data-created="${esc(created)}"
+            transform="translate(${p.x.toFixed(1)},${p.y.toFixed(1)})" style="color:${c}">
+            <rect x="${(-labelW/2).toFixed(1)}" y="-9" width="${labelW.toFixed(1)}" height="18" rx="9"
+                fill="rgba(15,15,15,0.92)" stroke="${c}" stroke-width="1"/>
+            <text x="0" y="3.5" text-anchor="middle" fill="${c}" font-size="10" font-weight="600"
+                style="font-family:system-ui,sans-serif">${esc(n.label)}</text>
+        </g>`;
+    });
+
+    svg += '</svg>';
+    host.innerHTML = svg;
+    mountPyramidFilters(host);
+
+    // Wire up: click → locate, hover → highlight connected sub-graph
+    host.querySelectorAll('.cpyr-node').forEach(g => {
+        g.addEventListener('click', () => locateOrInfo(g.dataset.id));
+        g.addEventListener('mouseenter', () => highlightPyramid(g.dataset.id, host));
+        g.addEventListener('mouseleave', () => clearPyramidHighlight(host));
+    });
+    applyPyramidFilters();
+}
+
+// ── Edge-type filter chips on Pyramid view ─────────────────────────────
+const PYR_GROUPS = {
+    capability: { types: ['uses_capability', 'has_provider'],     color: '#fbbf24', label: 'capability' },
+    service:    { types: ['uses_service', 'provides_service'],    color: '#f87171', label: 'service'    },
+    event:      { types: ['emits_event', 'listens_event'],        color: '#c084fc', label: 'event'      },
+    app:        { types: ['calls_app'],                           color: '#f43f5e', label: 'app→app'    },
+    engine:     { types: ['uses_engine'],                         color: '#2dd4bf', label: 'engine'     },
+    data:       { types: ['reads_data', 'writes_data'],           color: '#4ade80', label: 'data'       },
+};
+let pyrActiveGroups = null;   // Set populated from localStorage on first use
+
+function _loadPyrFilters() {
+    if (pyrActiveGroups !== null) return;
+    pyrActiveGroups = new Set(Object.keys(PYR_GROUPS));
+    try {
+        const raw = localStorage.getItem('eos.topology.pyramid_filters');
+        if (raw) {
+            const arr = JSON.parse(raw);
+            if (Array.isArray(arr)) pyrActiveGroups = new Set(arr);
+        }
+    } catch (e) { /* ignore */ }
+}
+
+function _savePyrFilters() {
+    try {
+        localStorage.setItem('eos.topology.pyramid_filters', JSON.stringify([...pyrActiveGroups]));
+    } catch (e) { /* ignore */ }
+}
+
+function mountPyramidFilters(host) {
+    _loadPyrFilters();
+    const bar = document.createElement('div');
+    bar.id = 'pyr-filters';
+    bar.innerHTML = Object.entries(PYR_GROUPS).map(([key, g]) => {
+        const on = pyrActiveGroups.has(key);
+        return `<span class="pyr-chip ${on ? 'on' : ''}" data-group="${key}"
+            style="--chip-color:${g.color}">
+            <span class="pyr-chip-dot"></span>${g.label}
+        </span>`;
+    }).join('') + `
+        <span class="pyr-chip" data-group="__all__" style="--chip-color:#888;border-style:dashed">all</span>
+        <span class="pyr-chip" data-group="__none__" style="--chip-color:#888;border-style:dashed">none</span>`;
+    host.appendChild(bar);
+    bar.querySelectorAll('.pyr-chip').forEach(chip => {
+        chip.addEventListener('click', () => {
+            const g = chip.dataset.group;
+            if (g === '__all__') {
+                pyrActiveGroups = new Set(Object.keys(PYR_GROUPS));
+            } else if (g === '__none__') {
+                pyrActiveGroups = new Set();
+            } else if (pyrActiveGroups.has(g)) {
+                pyrActiveGroups.delete(g);
+            } else {
+                pyrActiveGroups.add(g);
+            }
+            _savePyrFilters();
+            // Refresh chip on-states without redrawing the SVG
+            bar.querySelectorAll('.pyr-chip').forEach(c => {
+                const k = c.dataset.group;
+                if (k === '__all__' || k === '__none__') return;
+                c.classList.toggle('on', pyrActiveGroups.has(k));
+            });
+            applyPyramidFilters();
+        });
+    });
+}
+
+function applyPyramidFilters() {
+    _loadPyrFilters();
+    const activeTypes = new Set();
+    pyrActiveGroups.forEach(g => {
+        const grp = PYR_GROUPS[g];
+        if (grp) grp.types.forEach(t => activeTypes.add(t));
+    });
+    const host = document.getElementById('pyramid-view');
+    if (!host) return;
+
+    const reachable = new Set();
+    host.querySelectorAll('.cpyr-edge').forEach(p => {
+        const visible = activeTypes.has(p.dataset.type);
+        p.classList.toggle('hidden-by-filter', !visible);
+        if (visible) {
+            reachable.add(p.dataset.source);
+            reachable.add(p.dataset.target);
+        }
+    });
+    // Dim nodes that no active edge touches.  Keep apex apps (no out-edges) +
+    // pure providers visible if their group is active — otherwise the row
+    // headers look populated but unconnected.
+    host.querySelectorAll('.cpyr-node').forEach(n => {
+        const id = n.dataset.id;
+        const orphan = !reachable.has(id);
+        n.classList.toggle('unconnected', orphan);
+    });
+}
+
+function highlightPyramid(nodeId, host) {
+    // Compute connected set (1-hop in + 1-hop out)
+    const connected = new Set([nodeId]);
+    edges.forEach(e => {
+        if (e.source === nodeId) connected.add(e.target);
+        if (e.target === nodeId) connected.add(e.source);
+    });
+    host.querySelectorAll('.cpyr-node').forEach(n => {
+        n.classList.toggle('dim', !connected.has(n.dataset.id));
+    });
+    host.querySelectorAll('.cpyr-edge').forEach(p => {
+        const isConn = p.dataset.source === nodeId || p.dataset.target === nodeId;
+        p.classList.toggle('lit', isConn);
+        p.classList.toggle('dim', !isConn);
+    });
+}
+
+function clearPyramidHighlight(host) {
+    host.querySelectorAll('.cpyr-node').forEach(n => n.classList.remove('dim'));
+    host.querySelectorAll('.cpyr-edge').forEach(p => { p.classList.remove('lit'); p.classList.remove('dim'); });
+}
+
+// ── Timeline scrubber (millisecond resolution) ─────────────────────────
+let timelineActive = false;
+let timelinePlaying = false;
+let currentCutoffMs = null;
+let minDateMs = 0, maxDateMs = 0;
+let prevCutoffMs = null;
+const SLIDER_MAX = 1000;
+
+// Read either {date,message} or a bare string from timelineData.nodes[id].
+// Cache migration safety + handles the new birth-log shape uniformly.
+function _nodeDate(id) {
+    if (!timelineData || !timelineData.nodes) return '';
+    const v = timelineData.nodes[id];
+    if (!v) return '';
+    return typeof v === 'string' ? v : (v.date || '');
+}
+function _nodeMsg(id) {
+    const v = timelineData && timelineData.nodes && timelineData.nodes[id];
+    return (v && typeof v === 'object') ? (v.message || '') : '';
+}
+
+function fmtCutoff(ms) {
+    // Always render as YYYY-MM-DD — never expose hour-of-day in any UI
+    // surface. The slider keeps ms precision internally so the growing-dot
+    // pulse still fires per-commit across same-day commits.
+    if (!ms) return '—';
+    const d = new Date(ms);
+    const pad = n => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+}
+
+function fmtRange(iso) {
+    if (!iso) return '—';
+    return iso.slice(0, 10);
+}
+
+function toggleTimeline() {
+    timelineActive = !timelineActive;
+    document.getElementById('tl-toggle').textContent = 'Timeline: ' + (timelineActive ? 'On' : 'Off');
+    document.getElementById('tl-toggle').classList.toggle('on', timelineActive);
+    document.getElementById('timeline-bar').classList.toggle('off', !timelineActive);
+    document.getElementById('timeline-slider').disabled = !timelineActive;
+    document.getElementById('tl-play').disabled = !timelineActive;
+    if (!timelineActive) {
+        if (timelinePlaying) togglePlay();
+        applyCutoff(null);
+    } else {
+        const slider = document.getElementById('timeline-slider');
+        slider.value = SLIDER_MAX;
+        applyCutoff(maxDateMs);
+    }
+}
+
+function onScrub(val) {
+    if (!timelineData || !maxDateMs) return;
+    const pct = Number(val) / SLIDER_MAX;
+    const ms = minDateMs + (maxDateMs - minDateMs) * pct;
+    applyCutoff(ms);
+}
+
+function togglePlay() {
+    timelinePlaying = !timelinePlaying;
+    document.getElementById('tl-play').textContent = timelinePlaying ? '⏸' : '▶';
+    if (timelinePlaying) {
+        const slider = document.getElementById('timeline-slider');
+        if (Number(slider.value) >= SLIDER_MAX) slider.value = 0;
+        playStep();
+    }
+}
+
+function playStep() {
+    if (!timelinePlaying) return;
+    const slider = document.getElementById('timeline-slider');
+    // ~60s for full traversal at 60ms tick → 1000/60 ≈ 16.7 increments per step
+    const STEP = SLIDER_MAX / 600;
+    let v = Number(slider.value) + STEP;
+    if (v > SLIDER_MAX) {
+        v = SLIDER_MAX;
+        timelinePlaying = false;
+        document.getElementById('tl-play').textContent = '▶';
+    }
+    slider.value = v;
+    onScrub(v);
+    if (timelinePlaying) setTimeout(playStep, 60);
+}
+
+// Public alias retained for setView() reapplication after view switch
+let currentCutoff = null;
+
+function applyCutoff(cutoffMs) {
+    // Backward-compat: callers may pass null to clear or an ISO string from old code paths
+    if (typeof cutoffMs === 'string') cutoffMs = new Date(cutoffMs).getTime();
+    currentCutoffMs = cutoffMs;
+    currentCutoff = cutoffMs;
+    const wasMs = prevCutoffMs;
+    prevCutoffMs = cutoffMs;
+
+    document.getElementById('timeline-date').textContent = fmtCutoff(cutoffMs);
+
+    // Graph SVG: nodes + labels + edges
+    const svg = document.querySelector('svg');
+    svg.querySelectorAll('#nodes > *').forEach(el => {
+        const n = nodes[parseInt(el.dataset.idx, 10)];
+        if (!n) return;
+        decorateForCutoff(el, _nodeDate(n.id), cutoffMs, wasMs);
+    });
+    svg.querySelectorAll('#labels text').forEach(t => {
+        const n = nodes[parseInt(t.dataset.idx, 10)];
+        if (!n) return;
+        const created = _nodeDate(n.id);
+        const cMs = created ? new Date(created).getTime() : null;
+        const hidden = cutoffMs && cMs && cMs > cutoffMs;
+        t.classList.toggle('node-hidden', !!hidden);
+    });
+    svg.querySelectorAll('#edges line').forEach((line, i) => {
+        const e = edges[i];
+        if (!e) return;
+        const sMs = (d => d && new Date(d).getTime())(_nodeDate(e.source));
+        const tMs = (d => d && new Date(d).getTime())(_nodeDate(e.target));
+        const hidden = cutoffMs && ((sMs && sMs > cutoffMs) || (tMs && tMs > cutoffMs));
+        line.classList.toggle('node-hidden', !!hidden);
+    });
+
+    // Tree + Pyramid + Dictionary: any element with data-created
+    document.querySelectorAll('[data-created]').forEach(el => {
+        const created = el.dataset.created;
+        decorateForCutoff(el, created, cutoffMs, wasMs);
+    });
+
+    // Connected-pyramid edges: dim by cutoff too
+    document.querySelectorAll('.cpyr-edge').forEach(p => {
+        const sMs = (d => d && new Date(d).getTime())(_nodeDate(p.dataset.source));
+        const tMs = (d => d && new Date(d).getTime())(_nodeDate(p.dataset.target));
+        const hidden = cutoffMs && ((sMs && sMs > cutoffMs) || (tMs && tMs > cutoffMs));
+        p.classList.toggle('node-hidden', !!hidden);
+    });
+
+    updateBirthLogStates(cutoffMs, wasMs);
+}
+
+function decorateForCutoff(el, createdIso, cutoffMs, prevMs) {
+    if (!cutoffMs || !createdIso) {
+        el.classList.remove('node-hidden', 'node-fresh');
+        return;
+    }
+    const cMs = new Date(createdIso).getTime();
+    const hidden = cMs > cutoffMs;
+    el.classList.toggle('node-hidden', hidden);
+    // Growing-dot: fired when a node crosses from hidden → visible on this scrub step
+    if (!hidden && prevMs !== null && cMs > prevMs && cMs <= cutoffMs) {
+        el.classList.remove('node-fresh');
+        void el.offsetWidth;       // force reflow so the animation restarts
+        el.classList.add('node-fresh');
+    } else if (hidden) {
+        el.classList.remove('node-fresh');
+    }
+}
+
+// ── Birth log side panel ───────────────────────────────────────────────
+let birthLogOpen = false;
+
+function toggleBirthLog() {
+    birthLogOpen = !birthLogOpen;
+    const log = document.getElementById('birth-log');
+    log.classList.toggle('open', birthLogOpen);
+    document.getElementById('tl-log').classList.toggle('on', birthLogOpen);
+    if (birthLogOpen) renderBirthLog();
+}
+
+function renderBirthLog() {
+    const host = document.getElementById('birth-log');
+    if (!host || !timelineData || !timelineData.nodes) {
+        host.innerHTML = '<div style="color:#666;padding:20px">No timeline data.</div>';
+        return;
+    }
+    // Build items from timeline; pull labels/types from main `nodes` array
+    const nodeMap = new Map(nodes.map(n => [n.id, n]));
+    const items = Object.keys(timelineData.nodes).map(id => {
+        const date = _nodeDate(id);
+        const message = _nodeMsg(id);
+        const node = nodeMap.get(id);
+        const type = node ? node.type : (id.split(':')[0] || '');
+        const label = node ? node.label : id.replace(/^[^:]+:/, '');
+        return { id, date, message, type, label };
+    }).filter(it => it.date && it.type !== 'event' && it.type !== 'data')
+      .sort((a, b) => b.date.localeCompare(a.date));   // newest first
+
+    let html = `<div id="birth-log-head">
+        <h3>Birth log</h3>
+        <span style="color:#555;font-size:10px">${items.length}</span>
+        <span class="close" onclick="toggleBirthLog()">✕</span>
+    </div>`;
+    html += `<div id="birth-log-marker">▶ now: <span id="bl-now">—</span></div>`;
+
+    for (const it of items) {
+        const c = COLORS[it.type] || '#666';
+        const dt = it.date;
+        const dateStr = dt.slice(0, 10);
+        html += `<div class="bl-item" data-id="${esc(it.id)}" data-created="${esc(dt)}">
+            <div class="bl-item-row">
+                <span class="bl-item-date">${esc(dateStr)}</span>
+                <span class="bl-item-label" onclick="locateOrInfo('${esc(it.id)}')">+ ${esc(it.label)}</span>
+                <span class="bl-item-type" style="background:${c}33;color:${c}">${esc(it.type)}</span>
+            </div>
+            ${it.message ? `<div class="bl-item-msg">${esc(it.message)}</div>` : ''}
+        </div>`;
+    }
+    host.innerHTML = html;
+    updateBirthLogStates(currentCutoffMs, prevCutoffMs);
+}
+
+function updateBirthLogStates(cutoffMs, wasMs) {
+    const host = document.getElementById('birth-log');
+    if (!host || !host.classList.contains('open')) return;
+    const nowEl = document.getElementById('bl-now');
+    if (nowEl) nowEl.textContent = cutoffMs ? fmtCutoff(cutoffMs) : 'all';
+
+    let firstFresh = null;
+    host.querySelectorAll('.bl-item').forEach(el => {
+        const created = el.dataset.created;
+        if (!created) return;
+        const cMs = new Date(created).getTime();
+        const future = cutoffMs && cMs > cutoffMs;
+        el.classList.toggle('future', !!future);
+        const justAppeared = !future && wasMs && cMs > wasMs && cMs <= cutoffMs;
+        if (justAppeared) {
+            el.classList.remove('fresh');
+            void el.offsetWidth;
+            el.classList.add('fresh');
+            if (!firstFresh) firstFresh = el;
+        } else {
+            // Don't strip 'fresh' on every cutoff change — animation will end on its own
+        }
+    });
+    if (firstFresh) firstFresh.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+}
+
+// Auto-close the birth log when the timeline turns off — it's only useful
+// while scrubbing. The Log button still works as a manual toggle either way.
+const _origToggleTimeline = toggleTimeline;
+toggleTimeline = function() {
+    const wasActive = timelineActive;
+    _origToggleTimeline();
+    if (wasActive && !timelineActive && birthLogOpen) {
+        toggleBirthLog();
+    }
+};
+
+async function loadTimeline() {
+    try {
+        const r = await fetch('/api/topology/timeline');
+        timelineData = await r.json();
+        if (!timelineData || !timelineData.min_date) return;
+        minDateMs = new Date(timelineData.min_date).getTime();
+        maxDateMs = new Date(timelineData.max_date).getTime();
+        document.getElementById('tl-min').textContent = fmtRange(timelineData.min_date);
+        document.getElementById('tl-max').textContent = fmtRange(timelineData.max_date);
+        document.getElementById('timeline-date').textContent = fmtCutoff(maxDateMs);
+    } catch (e) { /* timeline unavailable — bar stays disabled */ }
+    // Releases load independently — failure here doesn't break the timeline
+    try {
+        const r = await fetch('/api/topology/releases');
+        const data = await r.json();
+        renderReleaseMarks(data.releases || []);
+        if (!window._relResizeBound) {
+            window.addEventListener('resize', () => renderReleaseMarks(data.releases || []));
+            window._relResizeBound = true;
+            window._releases = data.releases || [];
+        }
+    } catch (e) { /* no releases */ }
+}
+
+function renderReleaseMarks(releases) {
+    const wrap = document.getElementById('release-marks');
+    if (!wrap || !maxDateMs) return;
+    wrap.innerHTML = '';
+    const range = maxDateMs - minDateMs;
+    if (range <= 0) return;
+    const wrapW = wrap.clientWidth || 800;
+    // Sort + dedupe by tag
+    const sorted = [...releases].sort((a, b) => new Date(a.date) - new Date(b.date));
+    let lastLabelLeft = -Infinity;
+    sorted.forEach(rel => {
+        const ms = new Date(rel.date).getTime();
+        if (isNaN(ms) || ms < minDateMs || ms > maxDateMs) return;
+        const pct = (ms - minDateMs) / range;
+        const leftPx = pct * wrapW;
+        // Tick
+        const tick = document.createElement('div');
+        const m = rel.tag.match(/^v?(\d+)\.(\d+)\.(\d+)/);
+        const isMinor = m && m[3] === '0';
+        const isMajor = m && m[2] === '0' && m[3] === '0';
+        tick.className = 'release-tick' + (isMajor ? ' major' : '');
+        tick.style.left = (pct * 100).toFixed(3) + '%';
+        tick.title = `${rel.tag}\n${rel.date.slice(0, 10)}\n${rel.message || ''}`;
+        tick.addEventListener('click', () => {
+            const slider = document.getElementById('timeline-slider');
+            if (!timelineActive) toggleTimeline();
+            const v = ((ms - minDateMs) / range) * SLIDER_MAX;
+            slider.value = v;
+            onScrub(v);
+        });
+        wrap.appendChild(tick);
+        // Label minor + major bumps that are spaced enough
+        if (isMinor && (leftPx - lastLabelLeft > 44)) {
+            const lbl = document.createElement('div');
+            lbl.className = 'release-label' + (isMajor ? ' major' : '');
+            lbl.style.left = (pct * 100).toFixed(3) + '%';
+            lbl.textContent = rel.tag;
+            wrap.appendChild(lbl);
+            lastLabelLeft = leftPx;
+        }
+    });
+}
+
+// ── Boot: cache layersData inside renderAnalysis flow, restore view mode ──
+const _origRenderAnalysis = renderAnalysis;
+renderAnalysis = function(analysis, integrity) {
+    layersData = analysis;
+    return _origRenderAnalysis(analysis, integrity);
+};
+
+async function bootViews() {
+    await load();
+    await loadTimeline();
+    const saved = localStorage.getItem('eos.topology.view') || 'graph';
+    setView(saved);
+}
+bootViews();
 </script>
 </body>
 </html>

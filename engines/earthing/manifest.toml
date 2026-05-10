@@ -1,0 +1,16 @@
+[engine]
+id = "earthing"
+name = "Earthing Engine"
+version = "0.1.0"
+description = "Substation grounding-grid analysis — Wenner soil-resistivity test (RESAP) interpretation + IEEE Std 80 grid resistance + tolerable touch / step voltage criteria. Phase A: homogeneous-soil Sverak Rg; Phase B (queued): full Schwarz two-term + two-layer soil."
+
+[engine.entry]
+module = "engine"
+class = "EarthingEngine"
+
+[requires]
+packages = []  # pure-Python; no scipy/numpy
+
+[provides]
+services = ["earthing"]
+tags = ["earthing", "grounding", "ieee80", "ieee81", "wenner", "resap", "substation"]

@@ -7,11 +7,12 @@ prompt-review loop cheap: one file to open, one diff to reason about.
 
 from __future__ import annotations
 
-
 # Slash commands — special cases needing custom kwargs beyond the default dispatch.
 BUILTIN_OVERRIDES = {
     "/journal": {"extra_kwargs": {"n": 7}},
-    "/image":   {"usage_hint": "Usage: `/image a sunset over mountains`\nRequires a GPU image generation service."},
+    "/image": {
+        "usage_hint": "Usage: `/image a sunset over mountains`\nRequires a GPU image generation service."
+    },
 }
 
 # Handled inside the assistant itself (not dispatched via call_app).

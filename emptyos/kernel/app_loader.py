@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 import tomllib
 from dataclasses import dataclass, field
 from enum import Enum
@@ -72,6 +73,7 @@ class _ManifestRegistry(dict):
     duplicate the same manifest under multiple keys (otherwise UI launchers,
     health counts, etc. show the same app twice).
     """
+
     def __init__(self):
         super().__init__()
         self._aliases: dict[str, str] = {}
@@ -106,6 +108,9 @@ class AppLoader:
         self.manifests: _ManifestRegistry = _ManifestRegistry()
         self.instances: dict[str, Any] = {}
         self.states: dict[str, AppState] = {}
+        # Per-app load timings (import_ms / setup_ms / total_ms) so a
+        # slow boot can be diagnosed after the fact via /system/diag.
+        self._load_timings: dict[str, dict[str, float]] = {}
 
     @property
     def running(self) -> list[str]:
@@ -128,10 +133,19 @@ class AppLoader:
         if personal_path.exists():
             scan_dirs.append(personal_path)
 
-        # Demo-mode app suppression — for public demos that don't have the
-        # infra (camera, GPU, voice-api service) for some apps. Listing an app
-        # here removes it from the loader entirely; it's invisible to nav,
-        # routing, and dependency resolution.
+        # Demo-mode app suppression. Two mechanisms:
+        #   - demo.hide_apps (config list): deployment-time blocklist for apps
+        #     whose infra (camera, GPU, voice-api service) isn't available in
+        #     a given demo environment. Maintained per deployment.
+        #   - [app] private = true (manifest flag): app self-declares "I am not
+        #     for public/demo deployments". Same effect as hide_apps, but lives
+        #     with the app, so every demo deployment honours it without the
+        #     operator having to remember to add it.
+        # `private = true` is gated on demo.enabled (it's a "don't show in demo"
+        # flag, not a hard exclusion); `demo.hide_apps` is honoured whenever
+        # set, which preserves existing behaviour for operators who used it as
+        # a generic blocklist before this flag existed.
+        demo_on = self.kernel.config.demo_enabled
         hide = set(self.kernel.config.get("demo.hide_apps", []) or [])
 
         for scan_dir in scan_dirs:
@@ -145,11 +159,16 @@ class AppLoader:
                     manifest = AppManifest.from_toml(manifest_file)
                     if manifest.id in hide:
                         continue
+                    if demo_on and manifest.raw.get("app", {}).get("private", False):
+                        continue
                     # Only warn on real canonical-id collisions, not when a new
                     # app's id happens to match an alias from another app —
                     # `in self.manifests` would match either via __contains__.
                     if dict.__contains__(self.manifests, manifest.id):
-                        self.kernel.syslog.warn("app_loader", f"'{manifest.id}' in {scan_dir.name}/ overrides {self.manifests[manifest.id].path}")
+                        self.kernel.syslog.warn(
+                            "app_loader",
+                            f"'{manifest.id}' in {scan_dir.name}/ overrides {self.manifests[manifest.id].path}",
+                        )
                     self.manifests[manifest.id] = manifest
                     self.states[manifest.id] = AppState.DISCOVERED
                     # Aliases also resolve to this manifest (for dependency strings)
@@ -192,11 +211,17 @@ class AppLoader:
         self._validate_dependencies(app_id, manifest)
 
         try:
+            t_start = time.perf_counter()
             module_file = manifest.path / f"{manifest.entry_module}.py"
             instance = load_module(
-                module_file, f"eos_apps.{app_id}",
-                manifest.path, manifest.entry_class, self.kernel, manifest,
+                module_file,
+                f"eos_apps.{app_id}",
+                manifest.path,
+                manifest.entry_class,
+                self.kernel,
+                manifest,
             )
+            t_import = time.perf_counter()
 
             self.instances[app_id] = instance
             self.states[app_id] = AppState.LOADED
@@ -208,10 +233,27 @@ class AppLoader:
             # Run setup if available
             if hasattr(instance, "setup"):
                 await instance.setup()
+            t_setup = time.perf_counter()
 
             # Register scheduled jobs if scheduler is available
             if self.kernel.scheduler:
                 self.kernel.scheduler.register_app_jobs(app_id, instance)
+
+            # Boot-time observability: warn loudly if any single app blocked
+            # the loader for more than a second so future slow boots tell us
+            # which app stalled instead of going silent.
+            import_ms = (t_import - t_start) * 1000.0
+            setup_ms = (t_setup - t_import) * 1000.0
+            self._load_timings[app_id] = {
+                "import_ms": import_ms, "setup_ms": setup_ms,
+                "total_ms": import_ms + setup_ms,
+            }
+            if (import_ms + setup_ms) > 1000.0:
+                self.kernel.syslog.warn(
+                    "app_loader",
+                    f"slow load '{app_id}': import={import_ms:.0f}ms "
+                    f"setup={setup_ms:.0f}ms",
+                )
 
             return instance
         except Exception as e:
@@ -240,6 +282,14 @@ class AppLoader:
             except Exception as e:
                 self.kernel.syslog.error("app_loader", f"Error tearing down '{app_id}': {e}")
         self.states[app_id] = AppState.STOPPED
+
+    def get_load_timings(self) -> dict[str, dict[str, float]]:
+        """Per-app boot-time load timings (import_ms / setup_ms / total_ms).
+
+        Populated as apps load; useful for diagnosing slow boots.
+        Returns a copy so callers can't mutate the loader's state.
+        """
+        return {aid: dict(t) for aid, t in self._load_timings.items()}
 
     def get_cli_commands(self) -> dict[str, AppManifest]:
         """Get all apps that provide CLI commands."""

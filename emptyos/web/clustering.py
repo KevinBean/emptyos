@@ -7,7 +7,7 @@ auto-names clusters. No external dependencies.
 from __future__ import annotations
 
 import random
-from collections import Counter, defaultdict
+from collections import defaultdict
 from typing import Any
 
 from emptyos.kernel.app_loader import AppManifest
@@ -17,8 +17,8 @@ W_CALL_APP = 5
 W_EVENT_FLOW = 4
 W_SHARED_CONNECTOR = 3
 W_SHARED_REQ_APP = 2
-W_RARE_CAP = 2       # speak, listen, draw — distinguishing
-W_SHARED_CAPS = 0.5   # common caps (think, read, write, search) — weak
+W_RARE_CAP = 2  # speak, listen, draw — distinguishing
+W_SHARED_CAPS = 0.5  # common caps (think, read, write, search) — weak
 
 # Capabilities that almost every app has — not useful for clustering
 COMMON_CAPS = {"think", "read", "write", "search"}
@@ -33,16 +33,89 @@ MIN_CLUSTER_SIZE = 2
 
 # Cluster naming rules (checked in order)
 CLUSTER_HINTS = [
-    (lambda ids, ms: _count_in(ids, ("hub", "reactor", "assistant", "staff")) >= len(ids) * 0.5, "🔄", "Aggregators"),
-    (lambda ids, ms: _count_in(ids, ("english", "speaking", "shadowing", "voice-review", "tts", "lessons")) >= 2, "🎤", "Voice & English"),
+    (
+        lambda ids, ms: _count_in(ids, ("hub", "reactor", "assistant", "staff")) >= len(ids) * 0.5,
+        "🔄",
+        "Aggregators",
+    ),
+    (
+        lambda ids, ms: (
+            _count_in(ids, ("english", "speaking", "shadowing", "voice-review", "tts", "lessons"))
+            >= 2
+        ),
+        "🎤",
+        "Voice & English",
+    ),
     (lambda ids, ms: any("interview" in i for i in ids), "💼", "Career"),
-    (lambda ids, ms: any(_has_connector(ms[i], "comfyui") for i in ids if i in ms), "🎨", "Creative"),
-    (lambda ids, ms: _count_in(ids, ("healing", "nutrition", "meditation", "divination")) >= 2, "🧘", "Wellness"),
-    (lambda ids, ms: _count_in(ids, ("settings", "billing", "app-analytics", "app-gen", "reactor", "system-log", "run", "git", "tmpl", "note", "quick-action")) >= len(ids) * 0.4, "⚙️", "System"),
-    (lambda ids, ms: _count_in(ids, ("expense", "focus", "journal", "briefing", "tracker", "contacts", "items", "places", "news-center", "nutrition")) >= 2, "📊", "Life"),
-    (lambda ids, ms: _count_in(ids, ("search", "dictionary", "media", "gpts", "assistant", "model-bench")) >= 2, "🧠", "Knowledge"),
+    (
+        lambda ids, ms: any(_has_connector(ms[i], "comfyui") for i in ids if i in ms),
+        "🎨",
+        "Creative",
+    ),
+    (
+        lambda ids, ms: _count_in(ids, ("healing", "nutrition", "meditation", "divination")) >= 2,
+        "🧘",
+        "Wellness",
+    ),
+    (
+        lambda ids, ms: (
+            _count_in(
+                ids,
+                (
+                    "settings",
+                    "billing",
+                    "app-analytics",
+                    "app-gen",
+                    "reactor",
+                    "system-log",
+                    "run",
+                    "git",
+                    "tmpl",
+                    "note",
+                    "quick-action",
+                ),
+            )
+            >= len(ids) * 0.4
+        ),
+        "⚙️",
+        "System",
+    ),
+    (
+        lambda ids, ms: (
+            _count_in(
+                ids,
+                (
+                    "expense",
+                    "focus",
+                    "journal",
+                    "briefing",
+                    "tracker",
+                    "contacts",
+                    "items",
+                    "places",
+                    "news-center",
+                    "nutrition",
+                ),
+            )
+            >= 2
+        ),
+        "📊",
+        "Life",
+    ),
+    (
+        lambda ids, ms: (
+            _count_in(ids, ("search", "dictionary", "media", "rooms", "assistant", "model-bench"))
+            >= 2
+        ),
+        "🧠",
+        "Knowledge",
+    ),
     (lambda ids, ms: _count_in(ids, ("music-studio", "tts", "podcast")) >= 2, "🎵", "Music"),
-    (lambda ids, ms: _count_in(ids, ("link", "app-analytics", "projects", "timeline")) >= 2, "📂", "Vault"),
+    (
+        lambda ids, ms: _count_in(ids, ("link", "app-analytics", "projects", "timeline")) >= 2,
+        "📂",
+        "Vault",
+    ),
 ]
 
 
@@ -65,7 +138,6 @@ def _rare_caps(m: AppManifest) -> set[str]:
 def build_graph(manifests: dict[str, AppManifest]) -> dict[str, dict[str, float]]:
     """Build weighted adjacency from manifests."""
     graph: dict[str, dict[str, float]] = defaultdict(lambda: defaultdict(float))
-    ids = list(manifests.keys())
 
     for aid, m in manifests.items():
         # call_app edges — aggregators get weak weight to avoid mega-clusters
@@ -101,7 +173,7 @@ def build_graph(manifests: dict[str, AppManifest]) -> dict[str, dict[str, float]
             connector_apps[conn].append(aid)
     for conn, apps in connector_apps.items():
         for i, a in enumerate(apps):
-            for b in apps[i + 1:]:
+            for b in apps[i + 1 :]:
                 graph[a][b] += W_SHARED_CONNECTOR
                 graph[b][a] += W_SHARED_CONNECTOR
 
@@ -113,7 +185,7 @@ def build_graph(manifests: dict[str, AppManifest]) -> dict[str, dict[str, float]
     for dep, users in req_app_users.items():
         non_agg = [u for u in users if u not in AGGREGATOR_APPS]
         for i, a in enumerate(non_agg):
-            for b in non_agg[i + 1:]:
+            for b in non_agg[i + 1 :]:
                 graph[a][b] += W_SHARED_REQ_APP
                 graph[b][a] += W_SHARED_REQ_APP
 
@@ -124,7 +196,7 @@ def build_graph(manifests: dict[str, AppManifest]) -> dict[str, dict[str, float]
             rare_cap_apps[cap].append(aid)
     for cap, apps in rare_cap_apps.items():
         for i, a in enumerate(apps):
-            for b in apps[i + 1:]:
+            for b in apps[i + 1 :]:
                 graph[a][b] += W_RARE_CAP
                 graph[b][a] += W_RARE_CAP
 
@@ -133,52 +205,91 @@ def build_graph(manifests: dict[str, AppManifest]) -> dict[str, dict[str, float]
     W_SEMANTIC = 4
     SEMANTIC_PAIRS = [
         # Wellness
-        ("healing", "meditation"), ("healing", "divination"), ("healing", "quotes"),
-        ("meditation", "divination"), ("meditation", "quotes"),
+        ("healing", "meditation"),
+        ("healing", "divination"),
+        ("healing", "quotes"),
+        ("meditation", "divination"),
+        ("meditation", "quotes"),
         ("nutrition", "healing"),
         # Knowledge
-        ("assistant", "gpts"), ("assistant", "search"), ("gpts", "search"),
-        ("gpts", "model-bench"), ("search", "model-bench"),
+        ("assistant", "rooms"),
+        ("assistant", "search"),
+        ("rooms", "search"),
+        ("rooms", "model-bench"),
+        ("search", "model-bench"),
         ("dictionary", "search"),
         # Creative / Music
-        ("music-studio", "studio"), ("music-studio", "media"),
+        ("music-studio", "studio"),
+        ("music-studio", "media"),
         ("studio", "media"),
         # System / Infra (one group)
-        ("settings", "billing"), ("settings", "app-analytics"),
-        ("billing", "app-analytics"), ("system-log", "app-analytics"),
-        ("run", "git"), ("git", "tmpl"), ("run", "tmpl"),
-        ("quick-action", "note"), ("note", "tmpl"),
-        ("link", "app-analytics"), ("link", "note"),
-        ("app-analytics", "settings"), ("quick-action", "settings"),
+        ("settings", "billing"),
+        ("settings", "app-analytics"),
+        ("billing", "app-analytics"),
+        ("system-log", "app-analytics"),
+        ("run", "git"),
+        ("git", "tmpl"),
+        ("run", "tmpl"),
+        ("quick-action", "note"),
+        ("note", "tmpl"),
+        ("link", "app-analytics"),
+        ("link", "note"),
+        ("app-analytics", "settings"),
+        ("quick-action", "settings"),
         ("app-gen", "app-analytics"),
         # Merge infra fragments into one system cluster
-        ("note", "quick-action"), ("note", "settings"), ("quick-action", "run"),
-        ("tmpl", "settings"), ("git", "settings"), ("run", "settings"),
+        ("note", "quick-action"),
+        ("note", "settings"),
+        ("quick-action", "run"),
+        ("tmpl", "settings"),
+        ("git", "settings"),
+        ("run", "settings"),
         ("link", "settings"),
-        ("note", "run"), ("quick-action", "tmpl"),
+        ("note", "run"),
+        ("quick-action", "tmpl"),
         # Life — daily life management apps
-        ("items", "places"), ("items", "contacts"), ("places", "contacts"),
-        ("items", "expense"), ("expense", "journal"), ("expense", "contacts"),
-        ("journal", "contacts"), ("tracker", "expense"), ("tracker", "contacts"),
-        ("nutrition", "journal"), ("focus", "task"),
+        ("items", "places"),
+        ("items", "contacts"),
+        ("places", "contacts"),
+        ("items", "expense"),
+        ("expense", "journal"),
+        ("expense", "contacts"),
+        ("journal", "contacts"),
+        ("tracker", "expense"),
+        ("tracker", "contacts"),
+        ("nutrition", "journal"),
+        ("focus", "task"),
         # Voice & English
-        ("english", "speaking"), ("english", "shadowing"), ("english", "voice-review"),
-        ("speaking", "shadowing"), ("speaking", "voice-review"),
-        ("shadowing", "voice-review"), ("english", "tts"),
-        ("speaking", "tts"), ("shadowing", "tts"),
+        ("english", "speaking"),
+        ("english", "shadowing"),
+        ("english", "voice-review"),
+        ("speaking", "shadowing"),
+        ("speaking", "voice-review"),
+        ("shadowing", "voice-review"),
+        ("english", "tts"),
+        ("speaking", "tts"),
+        ("shadowing", "tts"),
         # Career
-        ("jobs", "reader"), ("jobs", "briefing"),
+        ("jobs", "reader"),
+        ("jobs", "briefing"),
         # Knowledge
-        ("dictionary", "reader"), ("dictionary", "lessons"),
-        ("gpts", "dictionary"), ("reader", "media"),
+        ("dictionary", "reader"),
+        ("dictionary", "lessons"),
+        ("rooms", "dictionary"),
+        ("reader", "media"),
         # Aggregators cluster together (they're all meta-apps)
         ("hub", "briefing"),
-        ("assistant", "gpts"), ("staff", "reactor"),
+        ("assistant", "rooms"),
+        ("staff", "reactor"),
         # Vault
         ("projects", "timeline"),
         # Wired orphans (2026-04-12)
-        ("reminders", "briefing"), ("weather", "briefing"), ("weather", "hub"),
-        ("recipes", "nutrition"), ("bookmarks", "search"), ("quickref", "search"),
+        ("reminders", "briefing"),
+        ("weather", "briefing"),
+        ("weather", "hub"),
+        ("recipes", "nutrition"),
+        ("bookmarks", "search"),
+        ("quickref", "search"),
         ("news-center", "briefing"),
         ("github-connector", "projects"),
         ("3d-studio", "studio"),
@@ -270,7 +381,7 @@ def get_clusters(manifests: dict[str, AppManifest]) -> list[dict[str, Any]]:
     DOMAIN_GROUPS = [
         {"english", "speaking", "shadowing", "voice-review", "tts", "lessons", "podcast"},
         {"healing", "meditation", "divination", "quotes", "nutrition"},
-        {"search", "dictionary", "gpts", "model-bench"},
+        {"search", "dictionary", "rooms", "model-bench"},
         {"journal", "briefing", "expense", "contacts", "tracker", "items", "places", "news-center"},
         {"hub", "reactor", "assistant", "staff"},
     ]
@@ -339,23 +450,25 @@ def get_clusters(manifests: dict[str, AppManifest]) -> list[dict[str, Any]]:
             graph.get(a, {}).get(b, 0) for a in members for b in members if a != b
         )
 
-        clusters.append({
-            "name": name,
-            "icon": icon,
-            "apps": [
-                {
-                    "id": aid,
-                    "name": manifests[aid].name,
-                    "description": manifests[aid].description,
-                    "web_prefix": manifests[aid].provides.get("web", {}).get("prefix", ""),
-                    "cli_commands": manifests[aid].provides.get("cli", {}).get("commands", []),
-                    "centrality": round(_centrality(aid, graph), 1),
-                }
-                for aid in members
-            ],
-            "count": len(members),
-            "weight": round(internal_weight, 1),
-        })
+        clusters.append(
+            {
+                "name": name,
+                "icon": icon,
+                "apps": [
+                    {
+                        "id": aid,
+                        "name": manifests[aid].name,
+                        "description": manifests[aid].description,
+                        "web_prefix": manifests[aid].provides.get("web", {}).get("prefix", ""),
+                        "cli_commands": manifests[aid].provides.get("cli", {}).get("commands", []),
+                        "centrality": round(_centrality(aid, graph), 1),
+                    }
+                    for aid in members
+                ],
+                "count": len(members),
+                "weight": round(internal_weight, 1),
+            }
+        )
 
     clusters.sort(key=lambda c: (c["weight"], c["count"]), reverse=True)
     return clusters
@@ -383,7 +496,7 @@ KEYWORD_GROUPS = {
     "media": ["music-studio", "studio"],
     "studio": ["tts", "music-studio"],
     # Knowledge
-    "gpts": ["assistant", "search"],
+    "rooms": ["assistant", "search"],
     "news-center": ["briefing"],
     "weather": ["briefing", "hub"],
     "recipes": ["nutrition"],
@@ -392,9 +505,9 @@ KEYWORD_GROUPS = {
     "3d-studio": ["studio"],
     "release": ["app-analytics", "app-gen"],
     "github-connector": ["projects"],
-    "assistant": ["gpts", "search"],
-    "search": ["assistant", "gpts"],
-    "model-bench": ["assistant", "gpts"],
+    "assistant": ["rooms", "search"],
+    "search": ["assistant", "rooms"],
+    "model-bench": ["assistant", "rooms"],
     # System
     "app-gen": ["reactor", "app-analytics"],
     "app-analytics": ["billing", "system-log"],
@@ -427,7 +540,16 @@ def _keyword_assign(aid: str, m: AppManifest | None) -> list[str] | None:
 
 def _is_orphan_cluster(members: list[str], manifests: dict) -> bool:
     """Check if a cluster is mostly orphans (no capabilities)."""
-    no_caps = sum(1 for m in members if not _caps_set(manifests.get(m, AppManifest(
-        id=m, name=m, version="", description="", path=__import__("pathlib").Path(".")
-    ))))
+    no_caps = sum(
+        1
+        for m in members
+        if not _caps_set(
+            manifests.get(
+                m,
+                AppManifest(
+                    id=m, name=m, version="", description="", path=__import__("pathlib").Path(".")
+                ),
+            )
+        )
+    )
     return no_caps >= len(members) * 0.5

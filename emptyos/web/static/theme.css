@@ -221,9 +221,19 @@ a:focus-visible { border-radius: 4px; }
 .nav a:active { transform: scale(0.96); }
 .nav .current { color: var(--accent); font-weight: 600; background: color-mix(in srgb, var(--accent) 10%, transparent); }
 .nav-spacer { flex: 1; }
-.nav-more, .nav-theme { color: var(--text-muted); cursor: pointer; padding: 4px 8px; border-radius: 6px; font-size: 16px; line-height: 1; flex-shrink: 0; user-select: none; min-height: 32px; display: flex; align-items: center; }
-.nav-more:hover, .nav-theme:hover { color: var(--text); background: color-mix(in srgb, var(--text) 5%, transparent); }
+.nav-more, .nav-theme, .nav-presenting { color: var(--text-muted); cursor: pointer; padding: 4px 8px; border-radius: 6px; font-size: 16px; line-height: 1; flex-shrink: 0; user-select: none; min-height: 32px; display: flex; align-items: center; }
+.nav-more:hover, .nav-theme:hover, .nav-presenting:hover { color: var(--text); background: color-mix(in srgb, var(--text) 5%, transparent); }
+.nav-presenting { margin-left: auto; font-size: 14px; }
+.nav-presenting + .nav-theme { margin-left: 0; }
 .nav-theme { margin-left: auto; }
+.nav-presenting.on { color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent); }
+.nav-presenting.on .nav-presenting-icon { filter: drop-shadow(0 0 4px var(--accent)); }
+/* Chrome itself never gets blurred by presentation mode, even if it lives
+   inside a redacted container. */
+html.eos-redact .nav-presenting,
+html.eos-redact .nav-theme,
+html.eos-redact .nav-more,
+html.eos-redact .nav a { filter: none !important; }
 .nav-spacer + .nav-more, .nav-theme + .nav-more { margin-left: 0; }
 body { padding-top: calc(46px + env(safe-area-inset-top)) !important; }
 

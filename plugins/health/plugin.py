@@ -8,19 +8,20 @@ from __future__ import annotations
 
 import asyncio
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 from emptyos.sdk import BasePlugin
 
 try:
     import aiohttp
+
     _HAS_AIOHTTP = True
 except ImportError:
     _HAS_AIOHTTP = False
 
 if TYPE_CHECKING:
-    from emptyos.kernel import Kernel
+    pass
 
 
 class HealthPlugin(BasePlugin):
@@ -100,22 +101,28 @@ class HealthPlugin(BasePlugin):
             try:
                 avail = await instance.available()
                 if not avail:
-                    self._connector_failures[plugin_id] = self._connector_failures.get(plugin_id, 0) + 1
-                    problems.append({
-                        "type": "connector_down",
-                        "id": plugin_id,
-                        "failures": self._connector_failures[plugin_id],
-                    })
+                    self._connector_failures[plugin_id] = (
+                        self._connector_failures.get(plugin_id, 0) + 1
+                    )
+                    problems.append(
+                        {
+                            "type": "connector_down",
+                            "id": plugin_id,
+                            "failures": self._connector_failures[plugin_id],
+                        }
+                    )
                 else:
                     self._connector_failures[plugin_id] = 0
             except Exception as e:
                 self._connector_failures[plugin_id] = self._connector_failures.get(plugin_id, 0) + 1
-                problems.append({
-                    "type": "connector_error",
-                    "id": plugin_id,
-                    "error": str(e),
-                    "failures": self._connector_failures[plugin_id],
-                })
+                problems.append(
+                    {
+                        "type": "connector_error",
+                        "id": plugin_id,
+                        "error": str(e),
+                        "failures": self._connector_failures[plugin_id],
+                    }
+                )
 
         # Check capabilities — any with zero available providers?
         for name, cap in self.kernel.capabilities.list().items():
@@ -132,6 +139,7 @@ class HealthPlugin(BasePlugin):
 
         # Check apps in error state
         from emptyos.kernel.app_loader import AppState
+
         for app_id, state in self.kernel.apps.states.items():
             if state == AppState.ERROR:
                 problems.append({"type": "app_error", "id": app_id})
@@ -146,9 +154,11 @@ class HealthPlugin(BasePlugin):
             pid = problem["id"]
             instance = self.kernel.plugins.instances.get(pid)
             if instance:
-                host = getattr(instance, '_host', lambda: 'unknown')()
+                host = getattr(instance, "_host", lambda: "unknown")()
                 diagnosis["diagnosis"] = f"service unreachable at {host}"
-                diagnosis["fixable"] = problem.get("failures", 0) >= 3  # try reconnect after 3 failures
+                diagnosis["fixable"] = (
+                    problem.get("failures", 0) >= 3
+                )  # try reconnect after 3 failures
 
         elif problem["type"] == "connector_error":
             diagnosis["diagnosis"] = f"exception: {problem.get('error', '')[:100]}"
@@ -159,7 +169,7 @@ class HealthPlugin(BasePlugin):
             diagnosis["fixable"] = False  # can't create providers on the fly
 
         elif problem["type"] == "app_error":
-            diagnosis["diagnosis"] = f"app failed to load"
+            diagnosis["diagnosis"] = "app failed to load"
             diagnosis["fixable"] = True  # can try reload
 
         return diagnosis
@@ -195,7 +205,6 @@ class HealthPlugin(BasePlugin):
 
     async def _report(self, problem: dict, diagnosis: dict, fixed: bool):
         """Report the problem — via event bus + notifications."""
-        severity = "info" if fixed else "warning"
         action = "fixed" if fixed else "detected"
 
         await self.kernel.events.emit(
@@ -226,7 +235,7 @@ class HealthPlugin(BasePlugin):
     async def check(self) -> dict:
         """Run a full system health check."""
         result = {
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
             "uptime_seconds": round(self.uptime),
             "kernel": "ok",
             "vault": await self._check_vault(),
@@ -267,7 +276,10 @@ class HealthPlugin(BasePlugin):
                     avail = False
                 providers.append({"name": p.name, "available": avail})
             any_available = any(p["available"] for p in providers)
-            results[name] = {"status": "ok" if any_available else "degraded", "providers": providers}
+            results[name] = {
+                "status": "ok" if any_available else "degraded",
+                "providers": providers,
+            }
         return results
 
     async def _check_connectors(self) -> dict:
@@ -288,8 +300,12 @@ class HealthPlugin(BasePlugin):
 
     def _check_apps(self) -> dict:
         from emptyos.kernel.app_loader import AppState
+
         return {
-            app_id: {"status": self.kernel.apps.states.get(app_id, AppState.DISCOVERED).value, "name": m.name}
+            app_id: {
+                "status": self.kernel.apps.states.get(app_id, AppState.DISCOVERED).value,
+                "name": m.name,
+            }
             for app_id, m in self.kernel.apps.manifests.items()
         }
 

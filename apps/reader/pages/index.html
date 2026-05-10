@@ -1,0 +1,975 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Reader</title>
+<link rel="stylesheet" href="/static/theme.css">
+<link rel="stylesheet" href="/static/eos-components.css">
+<link rel="stylesheet" href="/static/eos-keys.css">
+<style>
+  .reader-shell { display: grid; grid-template-columns: 1fr; gap: var(--eos-gap-lg, 16px); padding: 16px; max-width: 1200px; margin: 0 auto; }
+  .reader-shell.has-detail { grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); }
+  @media (max-width: 900px) { .reader-shell.has-detail { grid-template-columns: 1fr; } }
+
+  .book-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; }
+  .book-list .eos-entity-card { margin-bottom: 0; }
+
+  .reading-pane { display: flex; flex-direction: column; height: calc(100vh - 100px); }
+  .reading-pane h2 { margin: 0 0 4px; }
+  .reading-pane .crumbs { font-size: 12px; opacity: 0.6; margin-bottom: 16px; }
+  #paras { flex: 1; overflow-y: auto; padding-right: 12px; }
+  .paragraph { position: relative; padding: 12px 14px; border-radius: 8px; cursor: pointer; line-height: var(--reader-lh, 1.7); font-size: var(--reader-fs, 18px); transition: background 0.08s ease; }
+  .paragraph:hover { background: var(--eos-hover, rgba(255,255,255,0.04)); }
+  .paragraph.active { background: var(--eos-accent-soft, rgba(90,169,255,0.08)); border-left: 3px solid var(--eos-accent, #5aa9ff); padding-left: 11px; }
+  .paragraph.heading { font-weight: 700; font-size: 1.2em; opacity: 0.9; }
+  .para-controls { position: absolute; right: 6px; top: 6px; display: none; gap: 4px; }
+  .paragraph.active .para-controls,
+  .paragraph:hover .para-controls { display: flex; }
+  .para-controls button { font-size: 11px; padding: 3px 8px; line-height: 1.2; background: var(--eos-bg-elev, #2a2a2e); border: 1px solid var(--eos-border, rgba(255,255,255,0.1)); border-radius: 4px; cursor: pointer; color: var(--eos-text, #f2f2f2); }
+  .para-controls button:hover { background: var(--eos-accent, #5aa9ff); color: #fff; }
+  .paragraph.reading { background: var(--eos-accent-soft, rgba(90,169,255,0.14)); }
+  .paragraph.reading::after { content: '🔊'; position: absolute; right: 8px; bottom: 6px; font-size: 11px; opacity: 0.7; }
+
+  .side-rail { position: sticky; top: 16px; align-self: start; display: flex; flex-direction: column; gap: 12px; max-height: calc(100vh - 32px); overflow-y: auto; }
+  .side-card { border: 1px solid var(--eos-border, rgba(255,255,255,0.08)); border-radius: 10px; padding: 12px; background: var(--eos-surface, rgba(255,255,255,0.02)); }
+  .side-card h4 { margin: 0 0 8px; font-size: 13px; text-transform: uppercase; letter-spacing: 0.05em; opacity: 0.7; }
+  .scene-img { width: 100%; border-radius: 6px; display: block; }
+  .scene-empty { font-size: 13px; opacity: 0.6; }
+
+  .concept-graph { font-size: 13px; }
+  .concept-graph .node { display: inline-block; padding: 3px 8px; margin: 3px; border-radius: 6px; background: var(--eos-chip, rgba(255,255,255,0.06)); }
+  .concept-graph .node.person { background: rgba(255,180,90,0.15); }
+  .concept-graph .node.place { background: rgba(90,200,150,0.15); }
+  .concept-graph .node.idea { background: rgba(180,140,255,0.15); }
+  .concept-graph .edge { font-size: 12px; opacity: 0.7; margin: 2px 0; }
+
+  .reader-toolbar { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+  .reader-toolbar button { padding: 6px 12px; }
+
+  .word-pop { position: fixed; max-width: 360px; padding: 14px 16px; border-radius: 10px; background: var(--eos-bg-elev, #1f1f22); border: 1px solid var(--eos-border, rgba(255,255,255,0.12)); box-shadow: 0 12px 32px rgba(0,0,0,0.55); z-index: 100; font-size: 14px; color: var(--eos-text, #f2f2f2); }
+  .word-pop .head { display: flex; align-items: baseline; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
+  .word-pop .w { font-weight: 700; font-size: 16px; color: var(--eos-accent, #5aa9ff); }
+  .word-pop .phon { font-size: 12px; opacity: 0.6; font-family: ui-monospace, monospace; }
+  .word-pop .pos { font-size: 11px; padding: 1px 6px; border-radius: 3px; background: rgba(255,255,255,0.08); opacity: 0.8; text-transform: lowercase; }
+  .word-pop .d { color: var(--eos-text, #f2f2f2); opacity: 0.95; line-height: 1.5; margin-bottom: 8px; }
+  .word-pop .d.loading { opacity: 0.55; font-style: italic; }
+  .word-pop .ex { font-size: 13px; opacity: 0.75; font-style: italic; padding-left: 10px; border-left: 2px solid var(--eos-accent, #5aa9ff); margin: 8px 0; }
+  .word-pop .zh { font-size: 13px; opacity: 0.85; margin-top: 6px; }
+  .word-pop .syn { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 8px; }
+  .word-pop .syn span { font-size: 11px; padding: 2px 7px; border-radius: 4px; background: rgba(255,255,255,0.06); opacity: 0.8; }
+  .word-pop .actions { display: flex; gap: 8px; justify-content: space-between; align-items: center; margin-top: 10px; padding-top: 8px; border-top: 1px solid rgba(255,255,255,0.08); font-size: 12px; }
+  .word-pop .actions button { font-size: 12px; padding: 4px 10px; }
+  .word-pop .src { opacity: 0.5; }
+
+  .empty-hint { padding: 24px; opacity: 0.7; text-align: center; }
+  .send-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+  .send-btn { font-size: 12px; padding: 6px 8px; text-align: left; }
+  #send-result { line-height: 1.5; }
+  #send-result a { color: var(--eos-accent, #5aa9ff); }
+  #send-result .ans { padding: 8px 10px; background: rgba(255,255,255,0.04); border-radius: 6px; margin-top: 6px; font-size: 13px; }
+  .cast-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; }
+  .cast-card { text-align: center; }
+  .cast-card img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 6px; border: 1px solid var(--eos-border, rgba(255,255,255,0.08)); }
+  .cast-card .name { font-size: 11px; opacity: 0.85; margin-top: 4px; }
+  .cast-card.placeholder { padding: 18px 6px; border: 1px dashed var(--eos-border, rgba(255,255,255,0.12)); border-radius: 6px; font-size: 11px; opacity: 0.55; }
+  .prod-tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--eos-border, rgba(255,255,255,0.12)); margin-bottom: 12px; flex-wrap: wrap; }
+  .prod-tab { padding: 8px 14px; border: none; background: transparent; cursor: pointer; font-size: 13px; opacity: 0.6; border-bottom: 2px solid transparent; color: var(--eos-text); }
+  .prod-tab:hover { opacity: 0.9; }
+  .prod-tab.active { opacity: 1; border-bottom-color: var(--eos-accent, #5aa9ff); }
+  .prod-tab .agent { font-size: 10px; margin-left: 4px; opacity: 0.55; }
+  .prod-tab .agent:empty { display: none; }
+  /* "·yours" — user-owned tab (Director's notes). Always usable. */
+  .prod-tab[data-kind="user"] .agent,
+  .prod-tab .agent[data-kind="user"] { color: var(--eos-accent, #5aa9ff); opacity: 0.85; }
+  /* "·planned" — agent not yet built. Tab works for viewing but no regen. */
+  .prod-tab[data-kind="planned"] .agent { opacity: 0.4; font-style: italic; }
+  .prod-status-empty { padding: 16px; opacity: 0.55; font-size: 13px; font-style: italic; }
+  .prod-actions { display: flex; gap: 8px; align-items: center; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--eos-border, rgba(255,255,255,0.08)); font-size: 12px; }
+  .prod-actions .agent-badge { background: var(--eos-chip, rgba(255,255,255,0.06)); padding: 3px 8px; border-radius: 3px; font-size: 11px; opacity: 0.85; }
+  .prod-actions .grow { flex: 1; }
+  .prod-textarea { width: 100%; min-height: 320px; max-height: 60vh; font-family: ui-monospace, monospace; font-size: 12px; line-height: 1.5; padding: 12px; box-sizing: border-box; background: var(--eos-bg, #15151a); color: var(--eos-text); border: 1px solid var(--eos-border); border-radius: 6px; resize: vertical; }
+  .prod-rendered { padding: 12px 0; line-height: 1.6; font-size: 14px; max-height: 60vh; overflow-y: auto; }
+  .prod-rendered ol { padding-left: 24px; }
+  .prod-rendered li { margin-bottom: 12px; }
+  .prod-doc-link { font-size: 11px; opacity: 0.5; margin-top: 8px; }
+</style>
+</head>
+<body>
+<div class="app-shell">
+  <header class="app-header" style="display:flex;justify-content:space-between;align-items:center;padding:12px 16px;">
+    <h1 style="margin:0;">Reader</h1>
+    <div style="display:flex;gap:8px;">
+      <button id="back-btn" style="display:none" onclick="closeBook()">&larr; Library</button>
+      <button class="btn-settings" onclick="openAppSettings()">&#9881; Settings</button>
+    </div>
+  </header>
+
+  <div id="reader-shell" class="reader-shell">
+    <main id="main"></main>
+    <aside id="rail" class="side-rail" style="display:none;"></aside>
+  </div>
+</div>
+
+<script src="/static/eos.js"></script>
+<script src="/static/eos-components.js"></script>
+<script src="/static/eos-keys.js"></script>
+<script>
+var STATE = { books: [], current: null, paragraphs: [], activeIndex: -1, sceneCache: {} };
+
+var _appSettings = EOS_UI.settingsPanel({
+    id: 'reader-settings-panel',
+    title: 'Reader Settings',
+    fields: [
+        {key: 'reader.font_size', label: 'Font size (px)', type: 'number', default: 18},
+        {key: 'reader.line_height', label: 'Line height', type: 'number', default: 1.7},
+        {key: 'reader.concept_map', label: 'Auto concept map', type: 'boolean', default: true},
+        {key: 'reader.scene_preset', label: 'Scene preset (FLUX)', type: 'select',
+         options: [
+            {value: 'illustration', label: 'Illustration (FLUX + realistic-illustration LoRA — atmospheric novels)'},
+            {value: 'cinematic', label: 'Cinematic (FLUX + film-still framing)'},
+            {value: 'comic', label: 'Comic (FLUX + Eldritch Comics LoRA — bold, graphic)'},
+            {value: 'dream', label: 'Dreamlike (Dreamshaper SD1.5 — fantasy)'},
+            {value: 'photo', label: 'Photorealistic (RealVisXL — modern setting)'},
+            {value: 'minimalist', label: 'Minimalist (FLUX, clean shapes)'},
+            {value: '', label: '(bare FLUX, no preset)'},
+         ],
+         default: 'illustration', hint: 'Switches the underlying checkpoint + LoRA. Illustration is best for atmospheric fiction.'},
+        {key: 'reader.scene_style', label: 'Extra style hints (appended)', type: 'text', default: 'atmospheric, soft light, no text'},
+        {key: 'reader.tts_provider', label: 'TTS provider', type: 'select',
+         options: [
+            {value: 'kokoro',     label: 'Kokoro 🔒 local — high-quality, your reading stays on your machine'},
+            {value: 'xtts',       label: 'XTTS 🔒 local — voice cloning (needs a reference voice)'},
+            {value: 'edge-tts',   label: 'Edge-TTS 🔒 local — Microsoft voices, robotic'},
+            {value: 'openai-tts', label: 'OpenAI ☁ cloud — paragraph text leaves your machine, NOT recommended'},
+         ],
+         default: 'kokoro', hint: 'Kokoro runs locally on :8602 (the EmptyOS voice-api service). Cloud TTS is included only for completeness — it would mean sending the book you\'re reading to OpenAI.'},
+    ],
+});
+function openAppSettings() { _appSettings.open(); }
+
+var _route = EOS_UI.hashRoute({
+    onShow: function(slug) { openBook(slug); },
+    onHide: function() { closeBook(); },
+});
+
+async function loadLibrary() {
+    var res = await fetch('/reader/api/books').then(function(r){ return r.json(); });
+    STATE.books = res.books || [];
+    renderLibrary(res.books_dir);
+}
+
+function renderLibrary(booksDir) {
+    document.getElementById('reader-shell').classList.remove('has-detail');
+    document.getElementById('rail').style.display = 'none';
+    document.getElementById('back-btn').style.display = 'none';
+    var main = document.getElementById('main');
+    if (!STATE.books.length) {
+        main.innerHTML = '<div class="empty-hint">No books found.<br><br>Drop a markdown file (or a directory of chapter files) into <code>' + (booksDir || '30_Resources/Books') + '</code> in your vault.<br><br>Try <a href="https://www.gutenberg.org/ebooks/12350" target="_blank" rel="noopener">The Machine Stops</a> (Project Gutenberg) for a quick test.</div>';
+        return;
+    }
+    main.innerHTML = '<h2>Library</h2><div class="book-list">' +
+        STATE.books.map(function(b) {
+            var ch = b.kind === 'dir' ? (b.chapters || []).length + ' chapters' : 'single file';
+            return EOS_UI.entityCard({
+                title: b.title,
+                meta: ch,
+                onClick: "window.location.hash='#" + escAttr(b.slug) + "'",
+            });
+        }).join('') + '</div>';
+}
+
+async function openBook(slug) {
+    var res = await fetch('/reader/api/book/' + encodeURIComponent(slug)).then(function(r){ return r.json(); });
+    if (res.error) { EOS_UI.toast(res.error, false); return; }
+    STATE.current = res;
+    STATE.paragraphs = res.paragraphs || [];
+    STATE.activeIndex = (res.progress && res.progress.paragraph) || 0;
+    STATE.sceneCache = {};
+    renderReader();
+    _route.set(slug);
+    document.getElementById('back-btn').style.display = '';
+}
+
+function renderReader() {
+    document.getElementById('reader-shell').classList.add('has-detail');
+    document.getElementById('rail').style.display = '';
+    var fs = (window._settings && window._settings['reader.font_size']) || 18;
+    var lh = (window._settings && window._settings['reader.line_height']) || 1.7;
+    var main = document.getElementById('main');
+    main.innerHTML = '<div class="reading-pane">' +
+        '<h2>' + esc(STATE.current.title) + '</h2>' +
+        '<div class="crumbs">' + STATE.paragraphs.length + ' paragraphs</div>' +
+        '<div class="reader-toolbar">' +
+            '<button onclick="highlightActive()">&#9733; Highlight active</button>' +
+            '<button onclick="showBookMap()" title="Aggregated relation map across paragraphs you\'ve read">&#128279; Book map</button>' +
+            '<button onclick="openProduction()" title="The production document — beats, shots, cast. Edit any section; AI agents fill in their parts.">&#127916; Production</button>' +
+            '<span style="font-size:12px;opacity:0.6;align-self:center;margin-left:8px;">Hover any paragraph for inline play.</span>' +
+        '</div>' +
+        '<div id="paras" style="--reader-fs:' + Number(fs) + 'px; --reader-lh:' + Number(lh) + ';">' +
+            STATE.paragraphs.map(function(p, i) {
+                var isHeading = /^#{1,6}\s/.test(p);
+                var disp = isHeading ? p.replace(/^#+\s+/, '') : p;
+                var controls = '<div class="para-controls" onclick="event.stopPropagation()">' +
+                    '<button class="play-here-btn" data-i="' + i + '" onclick="event.stopPropagation();toggleReadFrom(' + i + ')" title="Read from this paragraph">▶</button>' +
+                '</div>';
+                return '<div class="paragraph' + (isHeading ? ' heading' : '') +
+                    (i === STATE.activeIndex ? ' active' : '') +
+                    '" data-i="' + i + '" onclick="setActive(' + i + ')">' + escWithWords(disp) + controls + '</div>';
+            }).join('') +
+        '</div></div>';
+    renderRail();
+    setActive(STATE.activeIndex, /*initial=*/true);
+    loadCast();
+    loadPresenceStatus();
+}
+
+function renderRail() {
+    document.getElementById('rail').innerHTML =
+        '<div class="side-card" id="scene-card">' +
+            '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">' +
+                '<h4 style="margin:0;">Scene</h4>' +
+                '<button id="scene-gen-btn" style="display:none;font-size:11px;padding:3px 8px;" onclick="generateActiveScene()" title="Generate an AI scene visual for this paragraph (uses GPU)">&#127912; Generate</button>' +
+            '</div>' +
+            '<div id="scene-body" class="scene-empty">Click a paragraph, then press <em>Generate</em> to create a scene.</div>' +
+        '</div>' +
+        '<div class="side-card" id="concept-card">' +
+            '<h4>Relations</h4>' +
+            '<div class="concept-graph"></div>' +
+        '</div>' +
+        '<div class="side-card" id="cast-card">' +
+            '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">' +
+                '<h4 style="margin:0;">Cast</h4>' +
+                '<div style="display:flex;gap:4px;">' +
+                    '<button id="presence-btn" style="font-size:11px;padding:3px 8px;" onclick="buildPresenceMap()" title="Scan whole book to map which character is the subject of every paragraph (~30s on local LLM). Improves IP-Adapter accuracy on dialogue paragraphs.">🧭 Map subjects</button>' +
+                    '<button id="cast-regen-btn" style="font-size:11px;padding:3px 8px;" onclick="regenCast()" title="Re-derive world card and regenerate every canonical portrait">↻</button>' +
+                '</div>' +
+            '</div>' +
+            '<div id="cast-body" class="scene-empty">Loading…</div>' +
+            '<div id="presence-status" style="margin-top:8px;font-size:11px;opacity:0.6;"></div>' +
+        '</div>' +
+        '<div class="side-card" id="send-card">' +
+            '<h4>Send to</h4>' +
+            '<div class="send-grid">' +
+                '<button class="send-btn" onclick="sendTo(\'quote\')" title="Save as a quote">📜 Quote</button>' +
+                '<button class="send-btn" onclick="sendTo(\'kb\')" title="Save as a kb note in your vault">📚 Note</button>' +
+                '<button class="send-btn" onclick="sendTo(\'ask\')" title="Ask the assistant about this passage">💬 Ask</button>' +
+                '<button class="send-btn" onclick="sendTo(\'search\')" title="Find this concept across your whole vault">🔍 Vault</button>' +
+                '<button class="send-btn" onclick="sendTo(\'focus\')" title="Start a 25-min focused reading session">🎯 Focus</button>' +
+            '</div>' +
+            '<div id="send-result" style="margin-top:10px;font-size:13px;opacity:0.85;"></div>' +
+        '</div>' +
+        '<div class="side-card"><h4>Tip</h4><div style="font-size:13px;opacity:0.75;">Click any word to look it up.<br><br>Use <strong>Book map</strong> in the toolbar once you\'ve read a few paragraphs.</div></div>';
+}
+
+async function sendTo(target) {
+    var i = STATE.activeIndex;
+    if (i < 0 || !STATE.current) return;
+    var out = document.getElementById('send-result');
+    if (out) out.textContent = 'Sending…';
+    var payload = {slug: STATE.current.slug, paragraph_index: i};
+
+    if (target === 'quote') {
+        var line = await fetch('/reader/api/send/quote', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}).then(function(r){return r.json();});
+        if (!line.ok) { if (out) out.textContent = line.error || 'Failed'; return; }
+        var save = await fetch('/quotes/api/add', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({quote: line.line})}).then(function(r){return r.json();});
+        if (save.ok && out) out.innerHTML = 'Saved to quotes (' + save.total + ' total). <a href="/quotes/" target="_blank">Open quotes →</a>';
+        else if (out) out.textContent = save.error || 'Quote save failed';
+        return;
+    }
+
+    if (target === 'kb') {
+        EOS_UI.formModal('Send to KB', [
+            {key:'note', label:'Optional note', type:'textarea', placeholder:'Your thought about this passage…'},
+        ], async function(values) {
+            var res = await fetch('/reader/api/send/kb', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(Object.assign({}, payload, {note: values.note || ''}))}).then(function(r){return r.json();});
+            if (res.ok && out) out.innerHTML = 'Saved to vault: <code style="font-size:11px;">' + esc(res.path) + '</code>';
+            else if (out) out.textContent = res.error || 'Note save failed';
+        });
+        return;
+    }
+
+    if (target === 'ask') {
+        EOS_UI.formModal('Ask the assistant', [
+            {key:'q', label:'Question', type:'textarea', value:'What is this passage saying? Highlight the key idea and any subtext.'},
+        ], async function(values) {
+            var q = values.q;
+            if (!q) { if (out) out.textContent = ''; return; }
+            if (out) out.textContent = 'Thinking…';
+            var res = await fetch('/reader/api/send/ask', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(Object.assign({}, payload, {question:q}))}).then(function(r){return r.json();});
+            if (res.ok && out) out.innerHTML = '<div class="ans">' + esc(res.answer) + '</div>';
+            else if (out) out.textContent = res.error || 'Ask failed';
+        });
+        return;
+    }
+
+    if (target === 'search') {
+        var res = await fetch('/reader/api/send/search', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}).then(function(r){return r.json();});
+        if (res.ok && out) {
+            var items = (res.results || []).map(function(r){
+                var p = r.path || r.file || JSON.stringify(r);
+                return '<li style="font-size:12px;">' + esc(String(p)) + '</li>';
+            }).join('');
+            out.innerHTML = 'Found <strong>' + res.count + '</strong> matches for <em>"' + esc(res.query) + '"</em>:<ul style="margin:6px 0 0 18px;padding:0;">' + items + '</ul>';
+        } else if (out) out.textContent = res.error || 'Search failed';
+        return;
+    }
+
+    if (target === 'focus') {
+        EOS_UI.formModal('Start focus session', [
+            {key:'minutes', label:'Minutes', type:'number', value:25},
+        ], async function(values) {
+            var minutes = parseInt(values.minutes, 10) || 25;
+            var task = 'Reading: ' + (STATE.current.title || STATE.current.slug);
+            var res = await fetch('/focus/api/start', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({task: task, minutes: minutes})}).then(function(r){return r.json();}).catch(function(e){return {error: String(e)};});
+            if (out) {
+                if (res && (res.ok || res.session_id || res.started)) out.innerHTML = '🎯 Focus session started: <strong>' + esc(task) + '</strong> for ' + minutes + ' min. <a href="/focus/" target="_blank">Open focus →</a>';
+                else out.textContent = (res && res.error) ? res.error : 'Focus started (no confirmation).';
+            }
+        });
+        return;
+    }
+}
+
+async function loadCast() {
+    if (!STATE.current) return;
+    var body = document.getElementById('cast-body');
+    if (!body) return;
+    var [castRes, voiceRes] = await Promise.all([
+        fetch('/reader/api/canon/' + encodeURIComponent(STATE.current.slug)).then(function(r){return r.json();}).catch(function(){return {portraits:[]};}),
+        fetch('/reader/api/voices/' + encodeURIComponent(STATE.current.slug)).then(function(r){return r.json();}).catch(function(){return {voices:{}, available:[]};}),
+    ]);
+    var portraits = (castRes && castRes.portraits) || [];
+    window._readerVoiceState = voiceRes;
+    if (!portraits.length) {
+        body.innerHTML = '<div class="cast-card placeholder">No portraits yet. Generate a scene to derive the world card and start the cast.</div>';
+        return;
+    }
+    var voices = voiceRes.voices || {};
+    var available = voiceRes.available || [];
+    var defaults = voiceRes.defaults || {};
+    function voiceSelect(key, fallback, withChars) {
+        var current = voices[key] || fallback || '';
+        var opts = '<option value="">— default (' + esc(fallback || '') + ') —</option>' +
+            available.map(function(v) {
+                return '<option value="' + esc(v.id) + '"' + (v.id === current ? ' selected' : '') + '>' + esc(v.label) + '</option>';
+            }).join('');
+        return '<select onchange="setVoice(\'' + esc(key) + '\', this.value)" style="font-size:11px;width:100%;margin-top:4px;">' + opts + '</select>';
+    }
+    body.innerHTML = '<div class="cast-grid">' +
+        portraits.map(function(p) {
+            return '<div class="cast-card">' +
+                '<img src="' + esc(p.url) + '" alt="' + esc(p.name) + '">' +
+                '<div class="name">' + esc(p.name) + '</div>' +
+                voiceSelect(p.name, '') +
+            '</div>';
+        }).join('') +
+        '</div>' +
+        '<div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--eos-border, rgba(255,255,255,0.08));">' +
+            '<div style="font-size:11px;opacity:0.7;margin-bottom:4px;">Narrator</div>' +
+            voiceSelect('__narrator__', defaults.narrator) +
+            '<div style="font-size:11px;opacity:0.7;margin:8px 0 4px;">Generic dialogue (unattributed)</div>' +
+            voiceSelect('__dialogue__', defaults.dialogue) +
+        '</div>' +
+        '<div style="margin-top:8px;font-size:11px;opacity:0.55;">Portraits → IP-Adapter scene reference. Voices → multi-voice TTS during read-aloud.<br>' +
+        'Active TTS: ' + (function(p){
+            var lock = (p === 'openai-tts') ? '☁' : '🔒';
+            return '<strong>' + lock + ' ' + esc(p || 'auto') + '</strong>';
+        })(voiceRes.active_provider) + ' ' +
+        '<a href="#" onclick="event.preventDefault();openAppSettings();" style="color:var(--eos-accent);">change</a></div>';
+}
+
+async function setVoice(key, voiceId) {
+    if (!STATE.current) return;
+    var current = (window._readerVoiceState && window._readerVoiceState.voices) || {};
+    if (voiceId) current[key] = voiceId;
+    else delete current[key];
+    window._readerVoiceState.voices = current;
+    await fetch('/reader/api/voices/' + encodeURIComponent(STATE.current.slug), {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({voices: current}),
+    });
+    if (window.EOS_UI && EOS_UI.toast) EOS_UI.toast('Voice updated for ' + key.replace(/^__/, '').replace(/__$/, ''));
+}
+
+// ── Production document ──────────────────────────────────────
+var PROD_AGENTS = {
+    "Director's notes": {agent: 'director',            label: '🎯 You (Director)',      ready: false, userOwned: true, hint: 'Your channel to shape every other agent. Each worker reads these notes before doing their job. Examples: "anxious sterility, cold blue-grey palette" / "fewer longer scenes" / "no Victorian decoration".'},
+    'Beats':            {agent: 'plot-writer',         label: '📝 Marta — Plot Writer', ready: true,  hint: 'Marta Chen, dramaturg, 20 years. Pragmatic, structural, compresses aggressively. Identifies the dramatic spine.'},
+    'Shots':            {agent: 'storyboard-artist',   label: '🎬 Yuki — Storyboard',   ready: true,  hint: 'Yuki Tanaka, 15 years on graphic novel adaptations. Distrusts over-cutting; prefers wide establishing shots, lets conversations breathe.'},
+    'World card':       {agent: 'production-designer', label: '🏛 Production Designer', ready: false, hint: 'Will set era + palette + mood. Already partially derived from world card; full migration coming.'},
+    'Objects':          {agent: 'production-designer', label: '🏛 Production Designer', ready: false, hint: 'Recurring props with anchor descriptions. Lock the chair, the desk, the blue plate.'},
+    'Cast':             {agent: 'casting-director',    label: '🎭 Casting Director',    ready: false, hint: 'Each character with anchor + portrait. Already exists in the right rail; will migrate here for editing.'},
+    'Cinematography':   {agent: 'cinematographer',     label: '💡 Cinematographer',     ready: false, hint: 'Per-shot lighting, lens, palette notes that flow into FLUX prompts.'},
+};
+var PROD_TABS_ORDER = ["Director's notes", 'Beats', 'Shots', 'World card', 'Objects', 'Cast', 'Cinematography'];
+var _prodDoc = null;
+var _prodActiveTab = "Director's notes";
+
+async function openProduction() {
+    if (!STATE.current) return;
+    // Land on Director's notes if it's empty (the right entry point); else
+    // remember the last tab the user was viewing.
+    await refreshProductionDoc();
+    var sections = (_prodDoc && _prodDoc.sections) || {};
+    if (!sections["Director's notes"] || !sections["Director's notes"].trim()) {
+        _prodActiveTab = "Director's notes";
+    }
+    EOS_UI.modal({
+        title: '🎬 Production: ' + esc(STATE.current.title),
+        body: '<div id="prod-host">' + buildProductionInner() + '</div>',
+        width: 880
+    });
+}
+
+async function refreshProductionDoc() {
+    var res = await fetch('/reader/api/production/' + encodeURIComponent(STATE.current.slug)).then(function(r){return r.json();});
+    _prodDoc = res;
+}
+
+function renderProductionModal() {
+    var host = document.getElementById('prod-host');
+    if (!host) return;
+    host.innerHTML = buildProductionInner();
+}
+
+function buildProductionInner() {
+    var tabs = '<div class="prod-tabs">' +
+        PROD_TABS_ORDER.map(function(name) {
+            var info = PROD_AGENTS[name] || {};
+            var active = name === _prodActiveTab ? ' active' : '';
+            var badge = '';
+            var kind = '';
+            if (info.userOwned) { badge = ' ·yours'; kind = 'user'; }
+            else if (info.ready) { badge = ''; kind = 'ready'; }
+            else { badge = ' ·planned'; kind = 'planned'; }
+            return '<button class="prod-tab' + active + '" data-kind="' + kind + '" onclick="switchProdTab(\'' + name + '\')">' +
+                esc(name) + '<span class="agent" data-kind="' + kind + '">' + badge + '</span></button>';
+        }).join('') +
+        '</div>';
+    var sections = (_prodDoc && _prodDoc.sections) || {};
+    var content = sections[_prodActiveTab] || '';
+    // Legacy placeholder from older scaffold — treat as empty
+    if (content.trim() === '_(not yet generated)_') content = '';
+    var info = PROD_AGENTS[_prodActiveTab] || {};
+    var emptyMsg;
+    if (info.userOwned) {
+        emptyMsg = '<div class="prod-status-empty">Empty for now. Write your aesthetic preferences here — every agent (Marta, Yuki, the designers) will read this before doing their job. Examples are in the hint above.</div>';
+    } else if (info.ready) {
+        emptyMsg = '<div class="prod-status-empty">No content yet. Click <strong>Regenerate</strong> to have ' + esc(info.label || 'the agent') + ' write this section, or write it yourself with <strong>Edit</strong>.</div>';
+    } else {
+        emptyMsg = '<div class="prod-status-empty">No content yet. The agent for this section is coming soon — for now, you can write it yourself with <strong>Edit</strong> below. Whatever you put here will feed downstream agents.</div>';
+    }
+    var rendered = content.trim() ? renderProdMarkdown(content) : emptyMsg;
+    var body =
+        '<div style="font-size:12px;opacity:0.7;margin-bottom:8px;">' + esc(info.hint || '') + '</div>' +
+        '<div class="prod-rendered" id="prod-rendered">' + rendered + '</div>' +
+        '<textarea class="prod-textarea" id="prod-textarea" style="display:none;">' + esc(content) + '</textarea>' +
+        '<div class="prod-actions">' +
+            '<span class="agent-badge">' + esc(info.label || '—') + '</span>' +
+            '<button id="prod-edit-btn" onclick="toggleProdEdit()">' + (info.userOwned ? '✎ Write' : '✎ Edit') + '</button>' +
+            '<button id="prod-save-btn" onclick="saveProdSection()" style="display:none;">💾 Save</button>' +
+            '<button id="prod-cancel-btn" onclick="cancelProdEdit()" style="display:none;">Cancel</button>' +
+            '<span class="grow"></span>' +
+            (info.ready
+                ? '<button onclick="regenProdSection()" title="Run the agent that owns this section. Overwrites only this section. Reads Director\'s notes + upstream sections.">🤖 Regenerate</button>'
+                : '') +
+        '</div>' +
+        (_prodDoc && _prodDoc.path ? '<div class="prod-doc-link">Vault path: <code>' + esc(_prodDoc.path) + '</code></div>' : '');
+    return tabs + body;
+}
+
+function switchProdTab(name) {
+    _prodActiveTab = name;
+    renderProductionModal();
+}
+
+function toggleProdEdit() {
+    document.getElementById('prod-rendered').style.display = 'none';
+    document.getElementById('prod-textarea').style.display = '';
+    document.getElementById('prod-edit-btn').style.display = 'none';
+    document.getElementById('prod-save-btn').style.display = '';
+    document.getElementById('prod-cancel-btn').style.display = '';
+}
+
+function cancelProdEdit() {
+    renderProductionModal();
+}
+
+async function saveProdSection() {
+    var content = document.getElementById('prod-textarea').value;
+    var btn = document.getElementById('prod-save-btn');
+    btn.disabled = true; btn.textContent = 'Saving…';
+    var res = await fetch('/reader/api/production/' + encodeURIComponent(STATE.current.slug) + '/section', {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({section: _prodActiveTab, content: content})
+    }).then(function(r){return r.json();});
+    if (res.ok) {
+        if (window.EOS_UI && EOS_UI.toast) EOS_UI.toast('Saved');
+        await refreshProductionDoc();
+        renderProductionModal();
+    } else {
+        if (window.EOS_UI && EOS_UI.toast) EOS_UI.toast(res.error || 'Save failed');
+        btn.disabled = false; btn.textContent = '💾 Save';
+    }
+}
+
+async function regenProdSection() {
+    var section = _prodActiveTab;
+    var info = PROD_AGENTS[section];
+    if (!info || !info.ready) return;
+    var rendered = document.getElementById('prod-rendered');
+    if (rendered) rendered.innerHTML = '<div class="prod-status-empty">' + esc(info.label) + ' is working… (~30–60s)</div>';
+    var res = await fetch('/reader/api/production/' + encodeURIComponent(STATE.current.slug) + '/regenerate', {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({section: section})
+    }).then(function(r){return r.json();});
+    if (res.ok) {
+        if (window.EOS_UI && EOS_UI.toast) EOS_UI.toast(esc(info.label) + ' wrote ' + section);
+        await refreshProductionDoc();
+        renderProductionModal();
+    } else {
+        if (window.EOS_UI && EOS_UI.toast) EOS_UI.toast(res.error || 'Regenerate failed');
+        renderProductionModal();
+    }
+}
+
+function renderProdMarkdown(md) {
+    // Tiny renderer: numbered lists + bold + line breaks. Good enough for beats.
+    var lines = md.split('\n');
+    var html = [];
+    var inList = false;
+    lines.forEach(function(line) {
+        var m = line.match(/^(\d+)\.\s+(.+)$/);
+        if (m) {
+            if (!inList) { html.push('<ol>'); inList = true; }
+            html.push('<li>' + applyInlineMd(m[2]) + '</li>');
+            return;
+        }
+        if (line.match(/^\s+/) && inList) {
+            // Continuation line of a list item — append to previous
+            var last = html[html.length - 1];
+            if (last && last.endsWith('</li>')) {
+                html[html.length - 1] = last.replace('</li>', '<br><span style="opacity:0.8;">' + applyInlineMd(line.trim()) + '</span></li>');
+            }
+            return;
+        }
+        if (inList) { html.push('</ol>'); inList = false; }
+        if (line.trim()) html.push('<p>' + applyInlineMd(line) + '</p>');
+    });
+    if (inList) html.push('</ol>');
+    return html.join('');
+}
+
+function applyInlineMd(s) {
+    return esc(s)
+        .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+        .replace(/\*(.+?)\*/g, '<em>$1</em>')
+        .replace(/`([^`]+)`/g, '<code>$1</code>');
+}
+
+async function buildPresenceMap() {
+    if (!STATE.current) return;
+    var btn = document.getElementById('presence-btn');
+    var status = document.getElementById('presence-status');
+    if (btn) { btn.disabled = true; btn.textContent = 'Mapping… (~30s)'; }
+    if (status) status.textContent = 'Reading every paragraph to figure out who is the subject…';
+    try {
+        var res = await fetch('/reader/api/presence-map/' + encodeURIComponent(STATE.current.slug) + '?regen=1', {method: 'POST'}).then(function(r){return r.json();});
+        if (status) {
+            if (res.ok) {
+                var counts = res.character_appearances || {};
+                var summary = Object.keys(counts).map(function(n){ return n + ' ×' + counts[n]; }).join(' · ');
+                status.innerHTML = '✓ Mapped <strong>' + res.paragraphs_with_subjects + '</strong> of ' + res.paragraphs_scanned + ' paragraphs.<br>' + esc(summary);
+            } else {
+                status.textContent = res.error || 'Mapping failed';
+            }
+        }
+    } catch (e) {
+        if (status) status.textContent = 'Mapping failed: ' + String(e);
+    }
+    if (btn) { btn.disabled = false; btn.textContent = '🧭 Map subjects'; }
+}
+
+async function loadPresenceStatus() {
+    if (!STATE.current) return;
+    try {
+        var res = await fetch('/reader/api/presence-map/' + encodeURIComponent(STATE.current.slug)).then(function(r){return r.json();});
+        var status = document.getElementById('presence-status');
+        if (!status) return;
+        if (res.built) {
+            var counts = res.character_appearances || {};
+            var summary = Object.keys(counts).map(function(n){ return n + ' ×' + counts[n]; }).join(' · ');
+            status.innerHTML = '🧭 Subject map: <strong>' + res.paragraphs_with_subjects + '</strong> paragraphs · ' + esc(summary);
+        } else {
+            status.textContent = 'Subject map not built yet — paragraphs without an explicit name use recency fallback.';
+        }
+    } catch (e) {}
+}
+
+async function regenCast() {
+    if (!STATE.current) return;
+    var btn = document.getElementById('cast-regen-btn');
+    var body = document.getElementById('cast-body');
+    if (btn) { btn.disabled = true; btn.textContent = '…'; }
+    if (body) body.innerHTML = '<div class="cast-card placeholder">Regenerating cast (one portrait per character — 30-60s each)…</div>';
+    await fetch('/reader/api/world-card/' + encodeURIComponent(STATE.current.slug) + '?regen=1');
+    await fetch('/reader/api/canon/' + encodeURIComponent(STATE.current.slug) + '/regen', {method: 'POST'});
+    if (btn) { btn.disabled = false; btn.textContent = '↻'; }
+    loadCast();
+}
+
+async function showBookMap() {
+    var res = await fetch('/reader/api/book-map/' + encodeURIComponent(STATE.current.slug))
+        .then(function(r){ return r.json(); });
+    if (res.error) { EOS_UI.toast(res.error, false); return; }
+    var seen = res.paragraphs_seen || 0;
+    if (!seen) {
+        if (window.EOS_UI && EOS_UI.toast) EOS_UI.toast('Read a few paragraphs first — the map grows as you go.');
+        return;
+    }
+    var nodes = res.nodes || [], edges = res.edges || [];
+    var maxW = Math.max.apply(null, nodes.map(function(n){return n.weight||1;}).concat([1]));
+    var nodesHtml = nodes.map(function(n){
+        var size = 12 + 4 * Math.min(5, Math.log2((n.weight||1) + 1));
+        return '<span class="node ' + esc(n.kind || '') + '" style="font-size:' + size + 'px;" title="appears in ' + n.weight + ' passages">' + esc(n.label) + ' <small style="opacity:0.6;">×' + n.weight + '</small></span>';
+    }).join('');
+    var edgesHtml = edges.slice(0, 80).map(function(e){
+        return '<div class="edge"><strong>' + esc(e.from) + '</strong> &rarr; <strong>' + esc(e.to) + '</strong> <em>' + esc(e.label) + '</em> <small style="opacity:0.5;">×' + e.weight + '</small></div>';
+    }).join('');
+    var body = '<div style="font-size:13px;opacity:0.7;margin-bottom:12px;">From <strong>' + seen + '</strong> paragraph' + (seen===1?'':'s') + ' you\'ve viewed. ' +
+        'Heavier nodes/edges recur more across the book.</div>' +
+        '<div class="concept-graph" style="margin-bottom:16px;line-height:2;">' + (nodesHtml || '<em>No concepts yet.</em>') + '</div>' +
+        (edgesHtml ? '<h4 style="margin:16px 0 8px;font-size:13px;text-transform:uppercase;letter-spacing:0.05em;opacity:0.7;">Relations</h4>' +
+        '<div style="max-height:380px;overflow-y:auto;">' + edgesHtml + '</div>' : '');
+    if (window.EOS_UI && EOS_UI.modal) {
+        EOS_UI.modal({title: 'Map: ' + esc(res.title), body: body, width: 720});
+    } else {
+        var w = window.open('', '_blank'); w.document.write('<pre>' + body + '</pre>');
+    }
+}
+
+async function setActive(i, initial) {
+    if (i < 0 || i >= STATE.paragraphs.length) return;
+    STATE.activeIndex = i;
+    document.querySelectorAll('.paragraph').forEach(function(el) {
+        el.classList.toggle('active', Number(el.dataset.i) === i);
+    });
+    var text = STATE.paragraphs[i];
+    if (!initial) {
+        fetch('/reader/api/progress', {
+            method: 'POST', headers: {'Content-Type':'application/json'},
+            body: JSON.stringify({slug: STATE.current.slug, paragraph: i, chapter: STATE.current.chapter})
+        });
+    }
+    if (window._settings && window._settings['reader.concept_map'] !== false) {
+        loadConcepts(text, i);
+    }
+    // Scene visuals are explicit-only (expensive). Show cached, never auto-gen.
+    showCachedScene(STATE.current.slug, i);
+}
+
+function paintScene(i) {
+    var body = document.getElementById('scene-body');
+    var btn = document.getElementById('scene-gen-btn');
+    if (!body) return;
+    if (btn) { btn.style.display = ''; btn.disabled = false; }
+    var url = STATE.sceneCache[i];
+    if (url) {
+        body.innerHTML = '<img class="scene-img" src="' + esc(url) + '" alt="generated scene">';
+        if (btn) btn.textContent = '🎨 Regenerate';
+    } else {
+        body.innerHTML = '<div class="scene-empty">Press <em>Generate</em> to create a scene for this paragraph.</div>';
+        if (btn) btn.textContent = '🎨 Generate';
+    }
+}
+
+async function showCachedScene(slug, i) {
+    // 1. Synchronous render from client cache — no flash on revisit
+    paintScene(i);
+    // 2. Background sync from server (covers cross-session revisits)
+    if (STATE.sceneCache[i]) return;  // already have it client-side, done
+    try {
+        var res = await fetch('/reader/api/scene-cached?slug=' + encodeURIComponent(slug) + '&i=' + i)
+            .then(function(r){ return r.json(); });
+        if (res && res.url && i === STATE.activeIndex) {
+            STATE.sceneCache[i] = res.url;
+            paintScene(i);
+        }
+    } catch (e) {}
+}
+
+async function generateActiveScene() {
+    var btn = document.getElementById('scene-gen-btn');
+    var body = document.getElementById('scene-body');
+    var i = STATE.activeIndex;
+    var t = STATE.paragraphs[i];
+    if (!t) return;
+    if (btn) { btn.disabled = true; btn.textContent = 'Generating…'; }
+    body.innerHTML = '<div class="scene-empty">Generating (10–30s)…</div>';
+    var res = await fetch('/reader/api/scene', {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({slug: STATE.current.slug, paragraph_index: i, text: t, force: true})
+    }).then(function(r){ return r.json(); });
+    if (res.url) {
+        STATE.sceneCache[i] = res.url;
+        if (i === STATE.activeIndex) paintScene(i);
+    } else {
+        if (i === STATE.activeIndex) {
+            body.innerHTML = '<div class="scene-empty">' + esc(res.error || res.reason || 'Failed') + '</div>';
+            if (btn) { btn.textContent = '🎨 Generate'; btn.disabled = false; }
+        }
+    }
+}
+
+async function loadConcepts(text, i) {
+    var card = document.getElementById('concept-card');
+    if (!card) return;
+    card.querySelector('.concept-graph').innerHTML = '<div class="scene-empty">Reading…</div>';
+    var res = await fetch('/reader/api/concepts', {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({slug: STATE.current.slug, paragraph_index: i, text: text})
+    }).then(function(r){ return r.json(); });
+    var g = res.graph || {nodes:[], edges:[]};
+    var nodes = (g.nodes || []).map(function(n){
+        return '<span class="node ' + esc(n.kind || '') + '">' + esc(n.label || n.id) + '</span>';
+    }).join('');
+    var edges = (g.edges || []).map(function(e){
+        return '<div class="edge">' + esc(e.from) + ' &rarr; ' + esc(e.to) + ' <em>' + esc(e.label || '') + '</em></div>';
+    }).join('');
+    card.querySelector('.concept-graph').innerHTML = (nodes || '<div class="scene-empty">No concepts.</div>') + edges;
+}
+
+var _readAudio = null;
+var _readActive = false;   // true while a continuous read session is running
+var _readingIndex = -1;    // which paragraph is currently being read (audio active)
+
+function _markReading(i) {
+    document.querySelectorAll('.paragraph.reading').forEach(function(el){ el.classList.remove('reading'); });
+    document.querySelectorAll('.play-here-btn').forEach(function(btn){ btn.textContent = '▶'; });
+    if (i >= 0) {
+        var p = document.querySelector('.paragraph[data-i="' + i + '"]');
+        if (p) p.classList.add('reading');
+        var b = document.querySelector('.play-here-btn[data-i="' + i + '"]');
+        if (b) b.textContent = '⏹';
+    }
+    _readingIndex = i;
+}
+
+var _segPrebuffer = {};  // {paragraphIndex: Promise<segments>}
+
+async function _fetchSegments(i) {
+    if (_segPrebuffer[i]) return _segPrebuffer[i];
+    var promise = fetch('/reader/api/speak-paragraph', {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({slug: STATE.current.slug, paragraph_index: i})
+    }).then(function(r){ return r.json(); }).catch(function(e){ return {error: String(e)}; });
+    _segPrebuffer[i] = promise;
+    return promise;
+}
+
+function _prebufferNext(i) {
+    // Fire-and-forget; ignore result. The fetch warms the audio cache server-side.
+    if (i + 1 < STATE.paragraphs.length) _fetchSegments(i + 1);
+}
+
+function stopReading() {
+    _readActive = false;
+    if (_readAudio) {
+        try { _readAudio.pause(); } catch (e) {}
+        _readAudio = null;
+    }
+    _markReading(-1);
+}
+
+async function _playSegments(segments) {
+    // Sequential playback. Returns when the last segment ends or user stops.
+    for (var k = 0; k < segments.length; k++) {
+        if (!_readActive) return;
+        var seg = segments[k];
+        if (!seg.url) continue;
+        _readAudio = new Audio(seg.url);
+        try {
+            await _readAudio.play();
+        } catch (e) {
+            if (window.EOS_UI && EOS_UI.toast) EOS_UI.toast('Browser blocked playback — click again');
+            return false;
+        }
+        await new Promise(function(resolve) {
+            if (!_readAudio) return resolve();
+            _readAudio.addEventListener('ended', resolve, {once: true});
+            _readAudio.addEventListener('error', resolve, {once: true});
+        });
+    }
+    return true;
+}
+
+async function toggleReadFrom(startIndex) {
+    if (_readActive && _readingIndex === startIndex) {
+        stopReading();
+        if (window.EOS_UI && EOS_UI.toast) EOS_UI.toast('Stopped');
+        return;
+    }
+    if (_readActive) stopReading();
+    _readActive = true;
+    _segPrebuffer = {};  // fresh session, drop old prebuffers
+    setActive(startIndex);
+
+    while (_readActive && startIndex >= 0 && startIndex < STATE.paragraphs.length) {
+        var i = startIndex;
+        var text = STATE.paragraphs[i];
+        if (!text || !text.trim()) {
+            if (i + 1 < STATE.paragraphs.length) { startIndex = i + 1; setActive(startIndex); continue; }
+            break;
+        }
+        _markReading(i);
+        // Prefetch the NEXT paragraph in parallel — audio cache warms while
+        // we're still synthesizing/playing the current one.
+        _prebufferNext(i);
+        var res = await _fetchSegments(i);
+        if (!_readActive) return;
+        if (!res || res.error) {
+            if (window.EOS_UI && EOS_UI.toast) EOS_UI.toast(res && res.error ? res.error : 'TTS unavailable');
+            stopReading();
+            return;
+        }
+        var segments = res.segments || [];
+        if (segments.length === 0) {
+            // Heading or empty paragraph — skip without delay
+            if (i + 1 < STATE.paragraphs.length) { startIndex = i + 1; setActive(startIndex); continue; }
+            break;
+        }
+        var ok = await _playSegments(segments);
+        if (ok === false) { stopReading(); return; }
+        if (!_readActive) return;
+        if (i + 1 < STATE.paragraphs.length) {
+            startIndex = i + 1;
+            setActive(startIndex);
+            var el = document.querySelector('.paragraph[data-i="' + startIndex + '"]');
+            if (el && el.scrollIntoView) el.scrollIntoView({behavior: 'smooth', block: 'center'});
+        } else {
+            if (window.EOS_UI && EOS_UI.toast) EOS_UI.toast('End of book');
+            stopReading();
+            return;
+        }
+    }
+    stopReading();
+}
+
+async function highlightActive() {
+    var t = STATE.paragraphs[STATE.activeIndex];
+    if (!t) return;
+    var res = await fetch('/reader/api/highlight', {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({slug: STATE.current.slug, paragraph_index: STATE.activeIndex, text: t})
+    }).then(function(r){ return r.json(); });
+    if (window.EOS_UI && EOS_UI.toast) EOS_UI.toast(res.forwarded_to_media ? 'Highlighted (saved to media)' : 'Highlighted');
+}
+
+function closeBook() {
+    STATE.current = null;
+    STATE.paragraphs = [];
+    _route.clear();
+    renderLibrary();
+}
+
+// ── Word lookup popover ──────────────────────────────────────────
+document.addEventListener('click', async function(e) {
+    var w = e.target.closest('.word');
+    if (!w) {
+        document.querySelectorAll('.word-pop').forEach(function(p) { p.remove(); });
+        return;
+    }
+    e.stopPropagation();
+    document.querySelectorAll('.word-pop').forEach(function(p) { p.remove(); });
+    var word = w.textContent.replace(/[^a-zA-Z'-]/g, '');
+    if (!word) return;
+    var pop = document.createElement('div');
+    pop.className = 'word-pop';
+    var rect = w.getBoundingClientRect();
+    pop.style.left = Math.min(window.innerWidth - 340, rect.left) + 'px';
+    pop.style.top = (rect.bottom + 6) + 'px';
+    pop.innerHTML = '<div class="head"><span class="w">' + esc(word) + '</span></div><div class="d loading">Looking up…</div>';
+    document.body.appendChild(pop);
+    var res = await fetch('/reader/api/lookup', {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({word: word})
+    }).then(function(r){ return r.json(); });
+    renderWordPop(pop, word, res);
+});
+
+function renderWordPop(pop, word, res) {
+    if (!res) res = {};
+    var def = res.definition || (res.meanings && res.meanings[0] && res.meanings[0].definition) || res.error || 'No definition available.';
+    var phon = res.phonetic || '';
+    var pos = res.part_of_speech || '';
+    var ex = res.example || '';
+    var zh = res.chinese || '';
+    var syns = (res.synonyms || []).slice(0, 5);
+    var src = res.cached ? 'vault cache' : 'AI lookup';
+    var html = '<div class="head"><span class="w">' + esc(word) + '</span>' +
+        (phon ? '<span class="phon">' + esc(phon) + '</span>' : '') +
+        (pos ? '<span class="pos">' + esc(pos) + '</span>' : '') +
+        '</div>' +
+        '<div class="d">' + esc(def) + '</div>' +
+        (ex ? '<div class="ex">' + esc(ex) + '</div>' : '') +
+        (zh ? '<div class="zh">' + esc(zh) + '</div>' : '') +
+        (syns.length ? '<div class="syn">' + syns.map(function(s){ return '<span>' + esc(s) + '</span>'; }).join('') + '</div>' : '') +
+        '<div class="actions">' +
+            '<span class="src">' + esc(src) + '</span>' +
+            (res.cached ? '' : '<button onclick="event.stopPropagation();saveLookupToVault(' + JSON.stringify(word).replace(/"/g, '&quot;') + ')">Save to vocabulary</button>') +
+        '</div>';
+    pop.innerHTML = html;
+    pop._lookup = res;
+}
+
+async function saveLookupToVault(word) {
+    var pop = document.querySelector('.word-pop');
+    var res = pop && pop._lookup;
+    if (!res) return;
+    var payload = {
+        word: word,
+        definition: res.definition || '',
+        phonetic: res.phonetic || '',
+        part_of_speech: res.part_of_speech || '',
+        example: res.example || '',
+        synonyms: res.synonyms || [],
+        antonyms: res.antonyms || [],
+        chinese: res.chinese || '',
+        etymology: res.etymology || '',
+        usage_notes: res.usage_notes || '',
+    };
+    try {
+        await fetch('/dictionary/api/save', {
+            method: 'POST', headers: {'Content-Type':'application/json'},
+            body: JSON.stringify(payload),
+        });
+        if (window.EOS_UI && EOS_UI.toast) EOS_UI.toast('Saved to vocabulary');
+        var btn = pop.querySelector('.actions button');
+        if (btn) { btn.textContent = 'Saved ✓'; btn.disabled = true; }
+        var srcEl = pop.querySelector('.src');
+        if (srcEl) srcEl.textContent = 'vault cache';
+    } catch (e) {
+        if (window.EOS_UI && EOS_UI.toast) EOS_UI.toast('Save failed');
+    }
+}
+
+// ── Helpers ──────────────────────────────────────────────────────
+function esc(s) { return String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function escAttr(s) { return esc(s).replace(/'/g, '&#39;'); }
+function escWithWords(s) {
+    // Wrap each English word in a <span class="word"> for click-to-lookup
+    return esc(s).replace(/([A-Za-z][A-Za-z'-]+)/g, '<span class="word">$1</span>');
+}
+
+// ── Boot ─────────────────────────────────────────────────────────
+async function loadSettings() {
+    try {
+        var s = await fetch('/settings/api/config').then(function(r){ return r.json(); });
+        window._settings = s || {};
+    } catch (e) { window._settings = {}; }
+}
+loadSettings().then(loadLibrary).then(function() { _route.init(); });
+</script>
+</body>
+</html>

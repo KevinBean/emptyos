@@ -279,7 +279,7 @@
     btn.disabled = true;
     var orig = btn.innerHTML;
     btn.innerHTML = '...';
-    EOS.post('/gpts/api/undo', {}).then(function(res) {
+    EOS.post('/rooms/api/undo', {}).then(function(res) {
       if (res && res.ok) {
         btn.innerHTML = '&#10003; Undone';
         btn.classList.add('pa-action-done');
@@ -356,13 +356,13 @@
     var apiCall;
 
     if (pageGpt) {
-      // Route to GPTs — agent has persona, knowledge, server actions
+      // Route to Rooms — agent has persona, knowledge, server actions
       // Build context: page identity + description + live data
       var gptContext = 'Page: ' + appId + ' (' + location.pathname + ')';
       if (ctx.page_description) gptContext += '\n' + ctx.page_description;
       if (ctx.live_data) gptContext += '\n\nLive data:\n' + ctx.live_data;
       if (ctx.metrics && ctx.metrics.length) gptContext += '\nVisible metrics: ' + ctx.metrics.join(', ');
-      apiCall = EOS.post('/gpts/api/chat', {
+      apiCall = EOS.post('/rooms/api/chat', {
         agent_id: pageGpt,
         text: msg,
         context: gptContext,

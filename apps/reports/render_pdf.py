@@ -46,7 +46,7 @@ async def to_pdf(html: str, out_path: Path) -> None:
                     '<div style="width:100%;font-size:8px;color:#888;padding:0 18mm;">'
                     '<span style="float:left;"><span class="date"></span></span>'
                     '<span style="float:right;">Page <span class="pageNumber"></span> of <span class="totalPages"></span></span>'
-                    '</div>'
+                    "</div>"
                 ),
                 print_background=True,
                 prefer_css_page_size=True,

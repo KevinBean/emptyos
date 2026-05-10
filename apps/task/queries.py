@@ -8,8 +8,7 @@ surfaces consume verbatim.
 from __future__ import annotations
 
 import re
-from datetime import date
-
+from datetime import date, timedelta
 
 CONTEXT_KEYWORDS = {
     "career": ["career", "job", "resume", "interview", "application", "linkedin"],
@@ -49,9 +48,7 @@ def pulse_stats(open_tasks: list[dict], done_tasks: list[dict], today: date) -> 
         d = _days_until(t.get("due") or "", today)
         if d is not None and 0 <= d <= 7:
             due_week += 1
-    done_today = sum(
-        1 for t in done_tasks if (t.get("done_date") or "")[:10] == today_str
-    )
+    done_today = sum(1 for t in done_tasks if (t.get("done_date") or "")[:10] == today_str)
     return [
         {"value": overdue, "label": "Overdue", "tone": "red", "href": "/task/"},
         {"value": due_today, "label": "Today", "tone": "amber", "href": "/task/"},
@@ -87,13 +84,15 @@ def todays_tasks_rows(open_tasks: list[dict], today: date, limit: int = 5) -> li
             tag, tag_tone = due[5:], "week"
         else:
             tag, tag_tone = "", ""
-        out.append({
-            "text": t["text"],
-            "done": t.get("done", False),
-            "tag": tag,
-            "tag_tone": tag_tone,
-            "href": "/task/",
-        })
+        out.append(
+            {
+                "text": t["text"],
+                "done": t.get("done", False),
+                "tag": tag,
+                "tag_tone": tag_tone,
+                "href": "/task/",
+            }
+        )
     return out
 
 
@@ -114,9 +113,7 @@ def needs_attention_slot(open_tasks: list[dict], limit: int = 5) -> list[dict]:
 
 def due_today_slot(open_tasks: list[dict], today: date) -> list[dict]:
     today_str = today.isoformat()
-    due_today = [
-        t for t in open_tasks if (t.get("due") or "")[:10] == today_str
-    ]
+    due_today = [t for t in open_tasks if (t.get("due") or "")[:10] == today_str]
     due_today.sort(key=lambda t: -t.get("focus_score", 0))
     return [
         {
@@ -143,6 +140,36 @@ def group_by_context(open_tasks: list[dict]) -> dict[str, list]:
         if not matched:
             groups["other"].append(t)
     return groups
+
+
+def agenda(open_tasks: list[dict], today: date) -> dict[str, list[dict]]:
+    """Bucket open tasks into overdue / today / tomorrow / this-week / later / undated."""
+    today_s = today.isoformat()
+    tomorrow_s = (today + timedelta(days=1)).isoformat()
+    week_end = today + timedelta(days=7)
+    buckets: dict[str, list[dict]] = {
+        "overdue": [], "today": [], "tomorrow": [],
+        "this_week": [], "later": [], "undated": [],
+    }
+    for t in open_tasks:
+        due = (t.get("due") or "")[:10]
+        if not due:
+            buckets["undated"].append(t)
+            continue
+        if due < today_s:
+            buckets["overdue"].append(t)
+        elif due == today_s:
+            buckets["today"].append(t)
+        elif due == tomorrow_s:
+            buckets["tomorrow"].append(t)
+        elif due <= week_end.isoformat():
+            buckets["this_week"].append(t)
+        else:
+            buckets["later"].append(t)
+    buckets["overdue"].sort(key=lambda t: t.get("due", ""))
+    for k in ("today", "tomorrow", "this_week", "later"):
+        buckets[k].sort(key=lambda t: (t.get("due", ""), -t.get("focus_score", 0)))
+    return buckets
 
 
 def group_by_date(open_tasks: list[dict], done_tasks: list[dict]) -> dict[str, list[dict]]:

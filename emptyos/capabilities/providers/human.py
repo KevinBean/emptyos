@@ -70,7 +70,7 @@ class HumanWriteProvider(Provider):
         return _is_interactive()
 
     async def execute(self, *, path: str, content: str, **kwargs) -> str:
-        print(f"\n--- EmptyOS needs you to save a file ---")
+        print("\n--- EmptyOS needs you to save a file ---")
         print(f"Path: {path}")
         print(f"Content:\n{content[:500]}{'...' if len(content) > 500 else ''}\n")
         await _async_input("Press Enter when you've saved it: ")

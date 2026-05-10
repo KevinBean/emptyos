@@ -195,15 +195,113 @@ var EOS_UI = {
         }
     },
 
+    // --- Radial neighborhood graph ---
+    // Tiny SVG graph for "1 entity + N peers on each side" views (KB notes,
+    // app dependencies, related items). Not a force layout — for full network
+    // graphs see emptyos/web/static/topology.html.
+    //
+    // EOS_UI.radialGraph(container, {
+    //   center:    {label, color?},                       // required
+    //   outgoing:  [{label, color?, clickable?, data?}],  // fan right
+    //   incoming:  [{label, color?, clickable?, data?}],  // fan left
+    //   onNodeClick: function(node) {},                   // peripheral nodes only
+    //   maxPerSide: 8,                                    // truncate beyond
+    // });
+    radialGraph: function(container, opts) {
+        opts = opts || {};
+        if (typeof container === 'string') container = document.getElementById(container) || document.querySelector(container);
+        if (!container) return;
+        var center = opts.center || {label: '', color: 'var(--accent)'};
+        var outgoing = (opts.outgoing || []).slice(0, opts.maxPerSide || 8);
+        var incoming = (opts.incoming || []).slice(0, opts.maxPerSide || 8);
+
+        if (!outgoing.length && !incoming.length) {
+            container.innerHTML = '<div class="rg-empty">No incoming or outgoing links yet.</div>';
+            return;
+        }
+
+        // Layout: stack peripheral nodes vertically on each side, lined up
+        // with a small column. Labels render OUTSIDE the circle (right of
+        // right-side circles, left of left-side circles) so vertical stacks
+        // don't overlap. Width auto-grows with the longest label.
+        var maxRows = Math.max(outgoing.length, incoming.length, 1);
+        var rowH = 36;
+        var H = Math.max(180, 72 + maxRows * rowH);
+        var W = 720, cx = W/2, cy = H/2;
+        var colX = 240;  // horizontal distance from center to each side column
+
+        function stack(items, side) {
+            var n = items.length;
+            if (!n) return [];
+            var totalH = (n - 1) * rowH;
+            var startY = cy - totalH/2;
+            var x = side === 'right' ? cx + colX : cx - colX;
+            return items.map(function(item, i) {
+                return {x: x, y: startY + i * rowH, item: item, side: side};
+            });
+        }
+        var rightPts = stack(outgoing, 'right');
+        var leftPts = stack(incoming, 'left');
+
+        function trunc(s, n) { s = String(s||''); return s.length > n ? s.slice(0, n - 1) + '…' : s; }
+        function lbl(s) { return EOS_UI.esc(trunc(s, 32)); }
+
+        var svg = ['<svg viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="xMidYMid meet">'];
+        rightPts.forEach(function(p) {
+            svg.push('<line class="rg-edge rg-edge-out" x1="' + cx + '" y1="' + cy + '" x2="' + p.x + '" y2="' + p.y + '"/>');
+        });
+        leftPts.forEach(function(p) {
+            svg.push('<line class="rg-edge rg-edge-in" x1="' + p.x + '" y1="' + p.y + '" x2="' + cx + '" y2="' + cy + '"/>');
+        });
+        var centerColor = center.color || 'var(--accent)';
+        svg.push('<g class="rg-node rg-node-center">' +
+            '<circle cx="' + cx + '" cy="' + cy + '" r="22" fill="color-mix(in srgb,' + centerColor + ' 22%,transparent)" stroke="' + centerColor + '" stroke-width="2"/>' +
+            '<text x="' + cx + '" y="' + (cy + 38) + '" text-anchor="middle">' + lbl(center.label) + '</text>' +
+            '</g>');
+        function drawNode(p) {
+            var item = p.item;
+            var color = item.color || 'var(--text-muted)';
+            var clickable = item.clickable !== false;
+            var anchor, labelX;
+            if (p.side === 'right') { anchor = 'start'; labelX = p.x + 22; }
+            else                    { anchor = 'end';   labelX = p.x - 22; }
+            return '<g class="rg-node" data-clickable="' + clickable + '">' +
+                '<circle cx="' + p.x + '" cy="' + p.y + '" r="14" fill="color-mix(in srgb,' + color + ' 16%,transparent)" stroke="' + color + '" stroke-width="1.5"' + (clickable ? '' : ' opacity="0.5"') + '/>' +
+                '<text x="' + labelX + '" y="' + (p.y + 4) + '" text-anchor="' + anchor + '">' + lbl(item.label) + '</text>' +
+                '</g>';
+        }
+        rightPts.forEach(function(p) { svg.push(drawNode(p)); });
+        leftPts.forEach(function(p) { svg.push(drawNode(p)); });
+        svg.push('</svg>');
+        container.innerHTML = svg.join('');
+
+        if (typeof opts.onNodeClick === 'function') {
+            var groups = container.querySelectorAll('.rg-node:not(.rg-node-center)');
+            groups.forEach(function(g, idx) {
+                if (g.dataset.clickable === 'false') return;
+                var pt = idx < rightPts.length ? rightPts[idx] : leftPts[idx - rightPts.length];
+                g.style.cursor = 'pointer';
+                g.addEventListener('click', function() { opts.onNodeClick(pt.item); });
+            });
+        }
+    },
+
     // --- Markdown renderer with Obsidian-flavored note links ---
-    renderMarkdown: function(text) {
+    // opts.wikiLink(target, label) -> HTML string. Override to route wikilinks
+    // somewhere other than EOS.viewNote (e.g. KB hash routes). Receives bare
+    // target slug (no #anchor, no |alias) and the display label.
+    renderMarkdown: function(text, opts) {
+        opts = opts || {};
         // Step 1: Extract wikilinks + vault paths BEFORE esc (they contain [] which survive esc, but do it cleanly)
         var _links = [];
         var _ph = function(html) { var id = '\x00LINK' + _links.length + '\x00'; _links.push(html); return id; };
 
-        // Wikilinks: [[Note Name]] or [[Note Name|Display]]
-        text = text.replace(/\[\[([^\]|]+?)(?:\|([^\]]+?))?\]\]/g, function(_, target, display) {
+        // Wikilinks: [[Note Name]] or [[Note Name|Display]] or [[Note#section]]
+        text = text.replace(/\[\[([^\]|#]+?)(?:#[^\]|]*)?(?:\|([^\]]+?))?\]\]/g, function(_, target, display) {
             var label = display || target;
+            if (typeof opts.wikiLink === 'function') {
+                return _ph(opts.wikiLink(target.trim(), label));
+            }
             var path = target.replace(/\s/g, '-');
             if (!path.endsWith('.md')) path += '.md';
             return _ph('<a href="#" onclick="EOS.viewNote(\'' + EOS.escPath(path) + '\');return false" class="obs-link note-ref" title="' + EOS_UI.esc(target) + '">📎 ' + EOS_UI.esc(label) + '</a>');
@@ -563,6 +661,64 @@ var EOS_UI = {
         }
     },
 
+    // --- Page Header ---
+    // Render the canonical app-page header: title + optional subtitle + optional
+    // tab strip + optional right-side actions. Replaces hand-rolled .header /
+    // .app-header / .jh patterns across apps.
+    //
+    // opts = {
+    //   title: string,                              // required
+    //   subtitle?: string,
+    //   tabs?: [{id, label, active?}],              // optional pill-mode bar
+    //   onTabChange?: function(id),                 // optional handler; tabs auto-toggle .active
+    //   actions?: string,                           // HTML for right-side buttons (use .eos-btn*)
+    //   mount?: string | HTMLElement                // if given, writes into element; else returns HTML
+    // }
+    //
+    // Returns the HTML string (always). When mount is provided, also writes it
+    // and wires tab clicks.
+    pageHeader: function(opts) {
+        opts = opts || {};
+        var titleHtml = '<div class="eos-ph-titles">'
+            + '<div class="eos-ph-title">' + EOS_UI.esc(opts.title || '') + '</div>'
+            + (opts.subtitle ? '<div class="eos-ph-sub">' + EOS_UI.esc(opts.subtitle) + '</div>' : '')
+            + '</div>';
+        var tabsHtml = '';
+        if (opts.tabs && opts.tabs.length) {
+            tabsHtml = '<div class="eos-ph-tabs" role="tablist">'
+                + opts.tabs.map(function(t) {
+                    return '<button class="eos-ph-tab' + (t.active ? ' active' : '') + '"'
+                        + ' data-ph-tab="' + EOS_UI.esc(t.id) + '"'
+                        + ' role="tab" aria-selected="' + (t.active ? 'true' : 'false') + '"'
+                        + '>' + EOS_UI.esc(t.label) + '</button>';
+                }).join('')
+                + '</div>';
+        }
+        var actionsHtml = opts.actions ? '<div class="eos-ph-actions">' + opts.actions + '</div>' : '';
+        // Order: titles | tabs | actions. Tabs+actions both right-aligned via flex.
+        var html = '<header class="eos-page-header">' + titleHtml + tabsHtml + actionsHtml + '</header>';
+        if (opts.mount) {
+            var el = (typeof opts.mount === 'string') ? document.getElementById(opts.mount) : opts.mount;
+            if (el) {
+                el.outerHTML = html;
+                // After outerHTML replacement, the original element is gone — re-find by class.
+                if (opts.onTabChange && opts.tabs) {
+                    var tabs = document.querySelectorAll('.eos-page-header .eos-ph-tab');
+                    tabs.forEach(function(btn) {
+                        btn.addEventListener('click', function() {
+                            tabs.forEach(function(b) {
+                                b.classList.toggle('active', b === btn);
+                                b.setAttribute('aria-selected', b === btn ? 'true' : 'false');
+                            });
+                            opts.onTabChange(btn.getAttribute('data-ph-tab'));
+                        });
+                    });
+                }
+            }
+        }
+        return html;
+    },
+
     // --- Stat Cards ---
     // Render a row of stat cards into a target element.
     // items: [{value, label, color?}] or {label: value, ...}
@@ -674,6 +830,151 @@ var EOS_UI = {
         return '<div class="eos-error-state">' + parts.join('') + '</div>';
     },
 
+    // --- Entity list — fetch + render + delete + state lifecycle ---
+    // The CRUD-list workhorse. Apps that want a generic list of items rendered
+    // as eos-entity-cards drop one call into their page:
+    //
+    //   var list = EOS_UI.entityList({
+    //       url:        '/myapp/api/items',
+    //       mountId:    'item-list',
+    //       deleteUrl:  '/myapp/api/items',     // {id} appended; omit to disable delete
+    //       onClick:    function(id, item) { ... },
+    //       renderRow:  function(item) { ... }, // optional override; default uses entityCard
+    //       titleField: 'title',
+    //       metaFields: ['updated', 'created'],
+    //       emptyMessage: 'No items yet.',
+    //       emptyAction:  {label: '+ Add', onAction: 'openAdd()'},
+    //       confirmLabelField: 'title',
+    //   });
+    //   list.reload();    // call after add/edit modal saves
+    //
+    // Handles loading (skeleton), empty (emptyState), error (errorState w/ retry),
+    // and per-row delete via confirmDelete + DELETE deleteUrl/{id}. Returns
+    // {reload, render, items}.
+    entityList: function(opts) {
+        opts = opts || {};
+        var esc = EOS_UI.esc;
+        var mount = document.getElementById(opts.mountId);
+        if (!mount) {
+            console.warn('[entityList] mount #' + opts.mountId + ' not found');
+            return {reload: function(){}, render: function(){}, items: []};
+        }
+        var state = {items: [], loading: false, error: null};
+        var instanceKey = '_eosListInst_' + opts.mountId;
+
+        function pickTitle(item) {
+            if (opts.titleField && item[opts.titleField] != null) return item[opts.titleField];
+            return item.title || item.name || item.label || item.id || '(untitled)';
+        }
+        function pickMeta(item) {
+            var fields = opts.metaFields || ['updated', 'created'];
+            var bits = [];
+            fields.forEach(function(f) {
+                var v = item[f];
+                if (v) bits.push('<span class="eec-meta-field">' + esc(String(v)) + '</span>');
+            });
+            return bits.join(' · ');
+        }
+        function rowHtml(item) {
+            if (opts.renderRow) return opts.renderRow(item);
+            var id = item.id != null ? String(item.id) : (item.file || '');
+            var clickAttr = opts.onClick
+                ? 'window.' + instanceKey + '.click(' + JSON.stringify(id) + ')'
+                : null;
+            var card = EOS_UI.entityCard({
+                title: pickTitle(item),
+                subtitle: opts.subtitleField ? item[opts.subtitleField] : '',
+                meta: pickMeta(item),
+                onClick: clickAttr,
+                className: 'eos-entity-card-row',
+            });
+            if (opts.deleteUrl && id) {
+                var del = '<button class="eos-row-del" data-del="' + esc(id) +
+                    '" aria-label="Delete"></button>';
+                card = card.replace('<div class="eec-head">', del + '<div class="eec-head">');
+            }
+            return card;
+        }
+        function render() {
+            if (state.loading && !state.items.length) {
+                mount.innerHTML = '<div class="eos-loading"><span class="eos-spinner"></span></div>';
+                return;
+            }
+            if (state.error) {
+                mount.innerHTML = EOS_UI.errorState({
+                    message: state.error,
+                    onRetry: 'window.' + instanceKey + '.reload()',
+                });
+                return;
+            }
+            if (!state.items.length) {
+                var empty = {message: opts.emptyMessage || 'Nothing here yet.'};
+                if (opts.emptyAction) {
+                    empty.actionLabel = opts.emptyAction.label;
+                    empty.onAction = opts.emptyAction.onAction;
+                }
+                mount.innerHTML = EOS_UI.emptyState(empty);
+                return;
+            }
+            mount.innerHTML = state.items.map(rowHtml).join('');
+            mount.querySelectorAll('.eos-row-del').forEach(function(btn) {
+                btn.addEventListener('click', function(e) {
+                    e.stopPropagation();
+                    var id = btn.dataset.del;
+                    var item = state.items.find(function(x) {
+                        return String(x.id != null ? x.id : x.file) === id;
+                    }) || {};
+                    var label = opts.confirmLabelField ? item[opts.confirmLabelField] : pickTitle(item);
+                    EOS_UI.confirmDelete({label: String(label || id)}).then(function(ok) {
+                        if (!ok) return;
+                        fetch(opts.deleteUrl + '/' + encodeURIComponent(id), {method: 'DELETE'})
+                            .then(function(r) { return r.json(); })
+                            .then(function(data) {
+                                if (data && data.error) { EOS_UI.toast(data.error, false); return; }
+                                EOS_UI.toast('Deleted');
+                                instance.reload();
+                            })
+                            .catch(function(err) { EOS_UI.toast('Delete failed: ' + err, false); });
+                    });
+                });
+            });
+        }
+        function reload() {
+            state.loading = true;
+            state.error = null;
+            render();
+            return fetch(opts.url, {headers: {'Accept': 'application/json'}})
+                .then(function(r) {
+                    if (!r.ok) throw new Error('HTTP ' + r.status);
+                    return r.json();
+                })
+                .then(function(data) {
+                    state.items = Array.isArray(data) ? data : (data.items || []);
+                    state.loading = false;
+                    render();
+                })
+                .catch(function(err) {
+                    state.error = err.message || String(err);
+                    state.loading = false;
+                    render();
+                });
+        }
+        var instance = {
+            reload: reload,
+            render: render,
+            click: function(id) {
+                var item = state.items.find(function(x) {
+                    return String(x.id != null ? x.id : x.file) === id;
+                });
+                if (opts.onClick) opts.onClick(id, item);
+            },
+            get items() { return state.items; },
+        };
+        window[instanceKey] = instance;
+        reload();
+        return instance;
+    },
+
     // --- Warning banner ---
     // Inline warning strip — feature-disabled notices, public-mode gates, etc.
     // Returns HTML string; caller assigns to a container's innerHTML.
@@ -716,6 +1017,10 @@ var EOS_UI = {
         document.body.appendChild(overlay);
         EOS_UI._modalOnClose = options.onClose || null;
 
+        // innerHTML-injected `autofocus` attributes don't auto-focus — do it manually.
+        var autoEl = modal.querySelector('[autofocus]');
+        if (autoEl) setTimeout(function() { try { autoEl.focus(); } catch (e) {} }, 0);
+
         // Escape key closes modal
         if (EOS_UI._modalEscHandler) {
             document.removeEventListener('keydown', EOS_UI._modalEscHandler);
@@ -734,21 +1039,28 @@ var EOS_UI = {
     // Build a simple form inside a modal. Returns form HTML string.
     // fields: [{key, label, type?, placeholder?, value?, options?}]
     formHtml: function(fields, submitLabel) {
-        return fields.map(function(f) {
+        // First field gets autofocus by default; pass {autofocus:true} to force it on a specific field
+        // (overrides default-first behavior when an earlier field already opted out via autofocus:false).
+        var explicitAuto = fields.some(function(f) { return f.autofocus === true; });
+        return fields.map(function(f, i) {
             var id = 'eos-form-' + f.key;
             var val = f.value || '';
+            var auto = (f.autofocus === true) || (!explicitAuto && f.autofocus !== false && i === 0);
+            var autoAttr = auto ? ' autofocus' : '';
             var input;
             if (f.type === 'textarea') {
-                input = '<textarea id="' + id + '" class="eos-form-input" placeholder="' + EOS_UI.esc(f.placeholder || '') + '" rows="3">' + EOS_UI.esc(val) + '</textarea>';
+                input = '<textarea id="' + id + '" class="eos-form-input" placeholder="' + EOS_UI.esc(f.placeholder || '') + '" rows="3"' + autoAttr + '>' + EOS_UI.esc(val) + '</textarea>';
             } else if (f.type === 'select' && f.options) {
                 var opts = f.options.map(function(o) {
                     return '<option value="' + EOS_UI.esc(o) + '"' + (o === val ? ' selected' : '') + '>' + EOS_UI.esc(o) + '</option>';
                 }).join('');
-                input = '<select id="' + id + '" class="eos-form-input">' + opts + '</select>';
+                input = '<select id="' + id + '" class="eos-form-input"' + autoAttr + '>' + opts + '</select>';
             } else if (f.type === 'number') {
-                input = '<input id="' + id + '" class="eos-form-input" type="number" value="' + EOS_UI.esc(val) + '" placeholder="' + EOS_UI.esc(f.placeholder || '') + '" step="any">';
+                input = '<input id="' + id + '" class="eos-form-input" type="number" value="' + EOS_UI.esc(val) + '" placeholder="' + EOS_UI.esc(f.placeholder || '') + '" step="any"' + autoAttr + '>';
+            } else if (f.type === 'date') {
+                input = '<input id="' + id + '" class="eos-form-input" type="date" value="' + EOS_UI.esc(val) + '"' + autoAttr + '>';
             } else {
-                input = '<input id="' + id + '" class="eos-form-input" type="text" value="' + EOS_UI.esc(val) + '" placeholder="' + EOS_UI.esc(f.placeholder || '') + '">';
+                input = '<input id="' + id + '" class="eos-form-input" type="text" value="' + EOS_UI.esc(val) + '" placeholder="' + EOS_UI.esc(f.placeholder || '') + '"' + autoAttr + '>';
             }
             return '<div class="eos-form-group"><label class="eos-form-label">' + EOS_UI.esc(f.label) + '</label>' + input + '</div>';
         }).join('') +
@@ -1089,6 +1401,22 @@ var EOS_UI = {
         if (show !== false) {
             el.innerHTML = '<div class="eos-loading"><div class="eos-spinner"></div></div>';
         }
+    },
+
+    // Canonical delete confirmation. Wraps confirm() with consistent copy +
+    // danger styling so every app's delete prompt reads the same.
+    //   var ok = await EOS_UI.confirmDelete({label: 'EmptyOS deck'});
+    //   if (ok) { await fetch('/myapp/api/items/' + id, {method:'DELETE'}); ... }
+    // Optional: action ('Delete' default), extra (extra sentence appended).
+    confirmDelete: function(opts) {
+        opts = opts || {};
+        var label = opts.label ? '"' + opts.label + '"' : 'this item';
+        var extra = opts.extra ? ' ' + opts.extra : '';
+        return EOS_UI.confirm({
+            message: 'Delete ' + label + '? This cannot be undone.' + extra,
+            action: opts.action || 'Delete',
+            danger: true,
+        });
     },
 
     // --- Confirm Dialog ---
@@ -1485,9 +1813,12 @@ var EOS_UI = {
             set: function(id) {
                 if (!id || read() === id) return;
                 history.pushState({eosId: id}, '', '#' + encodeURIComponent(id));
+                apply();
             },
             clear: function() {
-                if (location.hash) history.pushState({}, '', location.pathname + location.search);
+                if (!location.hash) return;
+                history.pushState({}, '', location.pathname + location.search);
+                apply();
             },
             init: function() { apply(); },
             current: read,
@@ -2584,7 +2915,7 @@ EOS_UI.searchBar = function(opts) {
     var wrap = document.createElement('div');
     wrap.className = 'eos-search';
     wrap.innerHTML =
-        '<span class="eos-search-icon">&#128269;</span>' +
+        '<span class="eos-search-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.5-3.5"></path></svg></span>' +
         '<input class="eos-search-input" type="text" placeholder="' + escHtml(placeholder) + '" autocomplete="off" spellcheck="false">' +
         (showKbd && focusKey ? '<span class="eos-search-kbd">' + escHtml(focusKey) + '</span>' : '') +
         '<div class="eos-search-results"></div>';
@@ -2753,3 +3084,131 @@ EOS_UI.searchBar = function(opts) {
         },
     };
 };
+
+// EOS_UI.methodPicker({mount, app, endpoint, value, onChange})
+//   Calculator framework — renders a <select> of methods declared at
+//   /<app>/api/methods. Methods with available=false are disabled with the
+//   disabled_reason rendered in the option text. Returns {get, set, refresh}.
+//
+//   Pair with [[provides.methods.<endpoint>]] manifest blocks. See
+//   emptyos/sdk/method_registry.py for the contract.
+EOS_UI.methodPicker = function(opts) {
+    var mount = typeof opts.mount === 'string'
+        ? document.querySelector(opts.mount) : opts.mount;
+    if (!mount) return null;
+    var app = opts.app;
+    var endpoint = opts.endpoint || 'solve';
+    var current = opts.value || '';
+    var onChange = typeof opts.onChange === 'function' ? opts.onChange : function(){};
+
+    function render(items) {
+        var defaultId = '';
+        items.forEach(function(m){ if (m.default) defaultId = m.id; });
+        var picked = current || defaultId || (items[0] && items[0].id) || '';
+        current = picked;
+        var html = '<label class="eos-method-picker">';
+        html += '<span class="eos-method-picker-label">Method</span>';
+        html += '<select class="eos-method-picker-select">';
+        items.forEach(function(m){
+            var label = EOS_UI.esc(m.label || m.id);
+            if (!m.available) label += ' — ' + EOS_UI.esc(m.disabled_reason || 'unavailable');
+            html += '<option value="' + EOS_UI.esc(m.id) + '"' +
+                (m.id === picked ? ' selected' : '') +
+                (!m.available ? ' disabled' : '') +
+                (m.description ? ' title="' + EOS_UI.esc(m.description) + '"' : '') +
+                '>' + label + (m.default ? ' (default)' : '') + '</option>';
+        });
+        html += '</select>';
+        if (items.length) {
+            var picked_meta = items.find(function(m){ return m.id === picked; });
+            if (picked_meta && picked_meta.references && picked_meta.references.length) {
+                html += '<span class="eos-method-picker-refs">refs: ' +
+                    picked_meta.references.map(EOS_UI.esc).join(' · ') + '</span>';
+            }
+        }
+        html += '</label>';
+        mount.innerHTML = html;
+        var sel = mount.querySelector('select');
+        sel.addEventListener('change', function(){
+            current = sel.value;
+            onChange(current, items.find(function(m){ return m.id === current; }));
+            // Re-render to refresh the refs line for the new pick
+            render(items);
+        });
+        // Fire onChange once at boot so callers see the initial value
+        onChange(current, items.find(function(m){ return m.id === current; }));
+    }
+
+    function refresh() {
+        return fetch('/' + app + '/api/methods')
+            .then(function(r){ return r.json(); })
+            .then(function(j){ render(j.methods || []); })
+            .catch(function(e){
+                mount.innerHTML = '<div class="eos-method-picker-error">' +
+                    EOS_UI.esc('method picker failed: ' + e.message) + '</div>';
+            });
+    }
+
+    refresh();
+    return {
+        get: function(){ return current; },
+        set: function(v){ current = v; refresh(); },
+        refresh: refresh,
+    };
+};
+
+/* ── Keyboard accessibility for [onclick] divs/spans ─────────────────────
+   Any non-native-focusable element with an onclick handler gets:
+     - tabindex="0" so it joins the tab order
+     - role="button" so screen readers announce it
+     - Enter/Space firing click via a single delegated keydown listener
+   Skips: native focusables (button/a/input/etc.), modal backdrops that
+   only fire on event.target===this, and elements explicitly opted out
+   with data-no-key-enhance.
+   Re-runs on DOM mutations so dynamically rendered cards are covered.
+*/
+(function() {
+    var NATIVE = {BUTTON:1, A:1, INPUT:1, SELECT:1, TEXTAREA:1, LABEL:1, SUMMARY:1};
+    function enhance(root) {
+        var nodes = (root || document).querySelectorAll('[onclick]');
+        for (var i = 0; i < nodes.length; i++) {
+            var el = nodes[i];
+            if (NATIVE[el.tagName]) continue;
+            if (el.hasAttribute('data-no-key-enhance')) continue;
+            var oc = el.getAttribute('onclick') || '';
+            // Modal backdrop pattern: click only fires when target is the backdrop itself
+            if (oc.indexOf('event.target===this') !== -1 || oc.indexOf('event.target === this') !== -1) continue;
+            if (!el.hasAttribute('tabindex')) el.setAttribute('tabindex', '0');
+            if (!el.hasAttribute('role')) el.setAttribute('role', 'button');
+        }
+    }
+    document.addEventListener('keydown', function(e) {
+        if (e.key !== 'Enter' && e.key !== ' ') return;
+        var el = e.target;
+        if (!el || !el.hasAttribute || !el.hasAttribute('onclick')) return;
+        if (NATIVE[el.tagName]) return;
+        // Don't hijack Space inside text inputs nested in a clickable wrapper
+        var ae = document.activeElement;
+        if (ae && (NATIVE[ae.tagName] || ae.isContentEditable)) return;
+        e.preventDefault();
+        el.click();
+    });
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', function() { enhance(); watch(); });
+    } else {
+        enhance(); watch();
+    }
+    function watch() {
+        if (!window.MutationObserver) return;
+        var mo = new MutationObserver(function(muts) {
+            for (var i = 0; i < muts.length; i++) {
+                var added = muts[i].addedNodes;
+                for (var j = 0; j < added.length; j++) {
+                    var n = added[j];
+                    if (n.nodeType === 1) enhance(n);
+                }
+            }
+        });
+        mo.observe(document.body, {childList: true, subtree: true});
+    }
+})();

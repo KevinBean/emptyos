@@ -1,7 +1,7 @@
 """NDJSON streaming helpers for web endpoints.
 
 Two apps already stream from think_stream() over NDJSON with different
-envelopes (gpts uses {text, done}; speaking uses {type: text|audio|done|error}).
+envelopes (rooms uses {text, done}; speaking uses {type: text|audio|done|error}).
 The transport plumbing is shared; the envelope is not — each app composes
 its own event dicts and passes them through.
 
@@ -18,7 +18,7 @@ Usage:
 from __future__ import annotations
 
 import json
-from typing import AsyncIterator
+from collections.abc import AsyncIterator
 
 from starlette.responses import StreamingResponse
 
@@ -33,9 +33,11 @@ def ndjson_response(gen: AsyncIterator[dict | list]) -> StreamingResponse:
     are silently skipped so a caller can ``yield None`` as a no-op without
     corrupting the stream.
     """
+
     async def _lines():
         async for ev in gen:
             if not isinstance(ev, (dict, list)):
                 continue
             yield json.dumps(ev, ensure_ascii=False) + "\n"
+
     return StreamingResponse(_lines(), media_type=NDJSON_MEDIA)

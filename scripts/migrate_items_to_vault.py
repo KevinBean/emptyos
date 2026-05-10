@@ -1,4 +1,3 @@
-import os
 """Migrate items.json → per-item vault .md files with frontmatter.
 
 Each item becomes a markdown note in 30_Resources/Items/{category}/:
@@ -18,6 +17,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import sys
 from pathlib import Path
@@ -35,10 +35,18 @@ def slugify(name: str) -> str:
 def item_to_frontmatter(item: dict) -> str:
     lines = ["---"]
     lines.append("type: item")
-    lines.append(f"title: \"{item.get('name', '')}\"")
+    lines.append(f'title: "{item.get("name", "")}"')
 
-    for key in ("category", "location", "brand", "price", "currency",
-                 "purchase_date", "warranty_expires", "vault_link"):
+    for key in (
+        "category",
+        "location",
+        "brand",
+        "price",
+        "currency",
+        "purchase_date",
+        "warranty_expires",
+        "vault_link",
+    ):
         val = item.get(key, "")
         if val:
             if isinstance(val, str) and (":" in val or '"' in val or "[[" in val):
@@ -102,6 +110,7 @@ def item_to_body(item: dict) -> str:
 
 def main():
     import io
+
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
 
     parser = argparse.ArgumentParser(description="Migrate items.json to vault .md files")
@@ -115,9 +124,9 @@ def main():
     items = json.loads(ITEMS_JSON.read_text(encoding="utf-8"))
     mode = "APPLY" if args.apply else "DRY-RUN"
 
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"  Items Migration: JSON → Vault .md ({mode})")
-    print(f"{'='*60}\n")
+    print(f"{'=' * 60}\n")
     print(f"Source: {ITEMS_JSON}")
     print(f"Target: {ITEMS_DIR}/{{category}}/")
     print(f"Total items: {len(items)}\n")
@@ -148,14 +157,16 @@ def main():
             target_dir.mkdir(parents=True, exist_ok=True)
             target_file.write_text(content, encoding="utf-8")
 
-        created.append({
-            "name": name,
-            "path": str(target_file.relative_to(VAULT)),
-            "category": category,
-        })
+        created.append(
+            {
+                "name": name,
+                "path": str(target_file.relative_to(VAULT)),
+                "category": category,
+            }
+        )
 
     # Report
-    print(f"--- Results ---")
+    print("--- Results ---")
     print(f"{'Created' if args.apply else 'Would create'}: {len(created)}")
     print(f"Skipped: {len(skipped)}")
 
@@ -176,7 +187,7 @@ def main():
         for s in skipped:
             r = s["reason"]
             reasons[r] = reasons.get(r, 0) + 1
-        print(f"\n--- Skipped ---")
+        print("\n--- Skipped ---")
         for r, n in reasons.items():
             print(f"  {r}: {n}")
 
@@ -185,7 +196,7 @@ def main():
 
     # Update vault-map suggestion
     if args.apply and created:
-        print(f"\n  vault-map: items_dir = \"30_Resources/Items\"")
+        print('\n  vault-map: items_dir = "30_Resources/Items"')
         print(f"  Original items.json preserved at: {ITEMS_JSON}")
 
     print()

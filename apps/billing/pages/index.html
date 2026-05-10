@@ -19,7 +19,7 @@ body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-se
 .daily-bar { flex:1; background:var(--accent); border-radius:4px 4px 0 0; min-width:4px; transition:height 0.3s; cursor:pointer; position:relative }
 .daily-bar:hover { opacity:0.8 }
 .daily-bar:hover::after { content:attr(data-tip); position:absolute; bottom:100%; left:50%; transform:translateX(-50%); background:var(--bg-card); border:1px solid var(--border); padding:2px 8px; border-radius:4px; font-size:10px; white-space:nowrap; z-index:1 }
-.over { color:#ef4444; font-weight:600 }
+.over { color:var(--danger); font-weight:600 }
 </style>
 </head>
 <body>

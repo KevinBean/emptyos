@@ -34,7 +34,6 @@ import json
 import re
 from typing import Any
 
-
 _META_FENCE_RE = re.compile(r"```json\s*\n(.*?)\n```", re.DOTALL)
 
 RESERVED_FM = {"type", "tags", "board_id", "title", "updated", "node_count", "edge_count"}
@@ -95,13 +94,16 @@ def decode_body(body: str) -> dict | None:
         if lay.get("prov"):
             node["provenance"] = lay["prov"]
         nodes.append(node)
-    edges = [{
-        "id": e.get("id"),
-        "sourceId": e.get("source"),
-        "sourceSide": e.get("source_side"),
-        "targetId": e.get("target"),
-        "targetSide": e.get("target_side"),
-    } for e in edges_raw]
+    edges = [
+        {
+            "id": e.get("id"),
+            "sourceId": e.get("source"),
+            "sourceSide": e.get("source_side"),
+            "targetId": e.get("target"),
+            "targetSide": e.get("target_side"),
+        }
+        for e in edges_raw
+    ]
     return {"nodes": nodes, "edges": edges}
 
 
@@ -142,13 +144,16 @@ def encode_board_file(
             entry["prov"] = n["provenance"]
         layout[nid] = entry
 
-    edges_out = [{
-        "id": e.get("id"),
-        "source": e.get("sourceId"),
-        "source_side": e.get("sourceSide"),
-        "target": e.get("targetId"),
-        "target_side": e.get("targetSide"),
-    } for e in edges]
+    edges_out = [
+        {
+            "id": e.get("id"),
+            "source": e.get("sourceId"),
+            "source_side": e.get("sourceSide"),
+            "target": e.get("targetId"),
+            "target_side": e.get("targetSide"),
+        }
+        for e in edges
+    ]
 
     fm_lines = [
         "---",

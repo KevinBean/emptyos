@@ -22,25 +22,24 @@ provider_stats / app_stats). Reused in apps/web-analytics.
 from __future__ import annotations
 
 import sqlite3
-from datetime import datetime, timedelta, timezone
-from typing import Iterable
-
+from collections.abc import Iterable
+from datetime import UTC, datetime, timedelta
 
 _VALID_GRANULARITY = ("day", "hour")
 
 
 def today_utc() -> str:
     """Today's date as a UTC 'YYYY-MM-DD' string — the query-side companion to bump()."""
-    return datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    return datetime.now(UTC).strftime("%Y-%m-%d")
 
 
 def days_ago_utc(n: int) -> str:
     """UTC date string for *n* days before today."""
-    return (datetime.now(timezone.utc) - timedelta(days=n)).strftime("%Y-%m-%d")
+    return (datetime.now(UTC) - timedelta(days=n)).strftime("%Y-%m-%d")
 
 
 def _bucket(at: datetime | None, granularity: str) -> str:
-    at = at or datetime.now(timezone.utc)
+    at = at or datetime.now(UTC)
     if granularity == "day":
         return at.strftime("%Y-%m-%d")
     return at.strftime("%Y-%m-%dT%H")
@@ -53,7 +52,6 @@ def _safe_ident(s: str) -> str:
 
 
 class TimeSeriesCounter:
-
     def __init__(
         self,
         conn: sqlite3.Connection,
@@ -149,7 +147,7 @@ class TimeSeriesCounter:
             return [{"key": r[0], "count": r[1]} for r in self.conn.execute(sql, args)]
         cols = ["bucket", *self.dims, "count"]
         sql = f"SELECT {','.join(cols)} FROM {self.name}{where_sql} ORDER BY bucket"
-        return [dict(zip(cols, r)) for r in self.conn.execute(sql, args)]
+        return [dict(zip(cols, r, strict=False)) for r in self.conn.execute(sql, args)]
 
     def top(
         self,

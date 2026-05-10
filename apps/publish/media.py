@@ -13,7 +13,6 @@ from pathlib import Path
 from emptyos.sdk import web_route
 from emptyos.sdk.utils import parse_frontmatter, set_frontmatter_field, strip_frontmatter
 
-
 # Fallback prompts used when the staff app isn't available.
 # Primary path routes through `staff.consult("summarizer" | "art-director", ...)`.
 _FALLBACK_SUMMARIZER_SYSTEM = (
@@ -46,6 +45,7 @@ _COVER_PROMPT_WRAP = (
 # Status endpoints — what's been generated for each post?
 # ------------------------------------------------------------------
 
+
 @web_route("GET", "/api/podcast-status")
 async def api_podcast_status(self, request):
     """Check which posts have podcasts generated."""
@@ -59,8 +59,10 @@ async def api_podcast_status(self, request):
             has_slideshow = (media_dir / f"podcast-{slug}-slideshow.json").exists()
             has_video = (media_dir / f"podcast-{slug}.mp4").exists()
             status[slug] = {
-                "file": f.name, "type": "slideshow" if has_slideshow else "audio",
-                "size_kb": f.stat().st_size // 1024, "has_slideshow": has_slideshow,
+                "file": f.name,
+                "type": "slideshow" if has_slideshow else "audio",
+                "size_kb": f.stat().st_size // 1024,
+                "has_slideshow": has_slideshow,
                 "has_video": has_video,
             }
     return {"podcasts": status}
@@ -73,7 +75,8 @@ async def api_source_media(self, request):
     Scoped to media/ only — used by the cover preview modal before Build copies
     the asset into the site output.
     """
-    from starlette.responses import Response, FileResponse
+    from starlette.responses import FileResponse, Response
+
     filename = request.query_params.get("file", "")
     if not filename or "/" in filename or "\\" in filename or ".." in filename:
         return Response("Invalid filename", status_code=400)
@@ -89,10 +92,16 @@ async def api_source_media(self, request):
 
     ext = file_path.suffix.lower()
     types = {
-        ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
-        ".gif": "image/gif", ".webp": "image/webp", ".svg": "image/svg+xml",
-        ".mp3": "audio/mpeg", ".mp4": "video/mp4",
-        ".js": "text/javascript", ".json": "application/json",
+        ".png": "image/png",
+        ".jpg": "image/jpeg",
+        ".jpeg": "image/jpeg",
+        ".gif": "image/gif",
+        ".webp": "image/webp",
+        ".svg": "image/svg+xml",
+        ".mp3": "audio/mpeg",
+        ".mp4": "video/mp4",
+        ".js": "text/javascript",
+        ".json": "application/json",
     }
     return FileResponse(str(file_path), media_type=types.get(ext, "application/octet-stream"))
 
@@ -100,7 +109,8 @@ async def api_source_media(self, request):
 @web_route("GET", "/api/source-media/{filename:path}")
 async def api_source_media_file(self, request):
     """Serve a file from the vault source's media/ folder via path segment (used by preview panel)."""
-    from starlette.responses import Response, FileResponse
+    from starlette.responses import FileResponse, Response
+
     filename = request.path_params.get("filename", "")
     if not filename or ".." in filename:
         return Response("Forbidden", status_code=403)
@@ -116,10 +126,16 @@ async def api_source_media_file(self, request):
 
     ext = file_path.suffix.lower()
     types = {
-        ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
-        ".gif": "image/gif", ".webp": "image/webp", ".svg": "image/svg+xml",
-        ".mp3": "audio/mpeg", ".mp4": "video/mp4",
-        ".js": "text/javascript", ".json": "application/json",
+        ".png": "image/png",
+        ".jpg": "image/jpeg",
+        ".jpeg": "image/jpeg",
+        ".gif": "image/gif",
+        ".webp": "image/webp",
+        ".svg": "image/svg+xml",
+        ".mp3": "audio/mpeg",
+        ".mp4": "video/mp4",
+        ".js": "text/javascript",
+        ".json": "application/json",
     }
     return FileResponse(str(file_path), media_type=types.get(ext, "application/octet-stream"))
 
@@ -156,6 +172,7 @@ async def api_cover_status(self, request):
 # Cover generation — draw → preview → approve/reject
 # ------------------------------------------------------------------
 
+
 @web_route("POST", "/api/generate-cover")
 async def api_generate_cover(self, request):
     """Generate a cover image for a post via the draw capability."""
@@ -186,8 +203,10 @@ async def api_generate_cover(self, request):
     summary = (fm.get("summary") or "").strip()
     if not summary:
         summary = await self._consult_or_fallback(
-            "summarizer", body[:4000] or post["title"],
-            _FALLBACK_SUMMARIZER_SYSTEM, temperature=0.3,
+            "summarizer",
+            body[:4000] or post["title"],
+            _FALLBACK_SUMMARIZER_SYSTEM,
+            temperature=0.3,
         )
         if summary:
             content = self._set_frontmatter_field(content, "summary", summary)
@@ -197,7 +216,9 @@ async def api_generate_cover(self, request):
     if rewrite_brief or not image_prompt:
         art_input = f"Title: {post['title']}\n\nSummary: {summary or post['title']}"
         image_prompt = await self._consult_or_fallback(
-            "art-director", art_input, _FALLBACK_ART_DIRECTOR_SYSTEM,
+            "art-director",
+            art_input,
+            _FALLBACK_ART_DIRECTOR_SYSTEM,
             temperature=0.7,
         )
         if image_prompt:
@@ -223,6 +244,10 @@ async def api_generate_cover(self, request):
     draw_kwargs = {"style": image_style} if image_style else {}
     try:
         filename = await self.draw(prompt, **draw_kwargs)
+    except RuntimeError as e:
+        if "No available provider for capability" in str(e):
+            raise
+        return {"error": f"Image generation failed: {e}"}
     except Exception as e:
         return {"error": f"Image generation failed: {e}"}
 
@@ -296,13 +321,19 @@ async def api_reject_cover(self, request):
     if post:
         try:
             import re as _re
+
             content = await self.read(post["path"])
             new_content = _re.sub(
                 r"<!-- eos-cover -->.*?<!-- /eos-cover -->\s*\n",
-                "", content, flags=_re.DOTALL,
+                "",
+                content,
+                flags=_re.DOTALL,
             )
             new_content = _re.sub(
-                r"^cover\s*:.*\n", "", new_content, flags=_re.MULTILINE,
+                r"^cover\s*:.*\n",
+                "",
+                new_content,
+                flags=_re.MULTILINE,
             )
             if new_content != content:
                 await self.write(post["path"], new_content)
@@ -317,24 +348,27 @@ async def api_reject_cover(self, request):
 # Helpers — staff consult, frontmatter, cover download/embed
 # ------------------------------------------------------------------
 
-async def _consult_or_fallback(self, agent_id: str, input_text: str,
-                               fallback_system: str, temperature: float = 0.5) -> str:
+
+async def _consult_or_fallback(
+    self, agent_id: str, input_text: str, fallback_system: str, temperature: float = 0.5
+) -> str:
     """Ask a staff consult-agent, or fall back to inline self.think() if staff isn't loaded.
 
     Keeps publish (core) soft-dependent on staff (personal) — works without it but
     benefits from editable persona prompts when present.
     """
     try:
-        result = await self.call_app("staff", "consult",
-                                     agent_id=agent_id, input_text=input_text,
-                                     temperature=temperature)
+        result = await self.call_app(
+            "staff", "consult", agent_id=agent_id, input_text=input_text, temperature=temperature
+        )
         if result:
             return str(result).strip().strip('"').strip()
     except Exception:
         pass
     try:
-        raw = await self.think(input_text, system=fallback_system,
-                               domain="text", temperature=temperature)
+        raw = await self.think(
+            input_text, system=fallback_system, domain="text", temperature=temperature
+        )
         return (raw or "").strip().strip('"').strip()
     except Exception:
         return ""
@@ -350,40 +384,13 @@ def _set_frontmatter_field(self, content: str, key: str, value: str) -> str:
     return set_frontmatter_field(content, key, f'"{safe}"')
 
 
-async def _download_cover_image(self, filename: str, dest: "Path") -> bool:
-    """Download a generated image from ComfyUI to a local path."""
-    try:
-        comfyui = self.service("comfyui") if hasattr(self, "service") else None
-    except Exception:
-        comfyui = None
-    if not comfyui:
-        try:
-            src = Path(filename)
-            if src.exists():
-                import shutil as _sh
-                _sh.copy2(str(src), str(dest))
-                return True
-        except Exception:
-            pass
-        return False
-    try:
-        session = getattr(comfyui, "_session", None)
-        if not session:
-            return False
-        url = ""
-        if hasattr(comfyui, "get_image_url"):
-            url = await comfyui.get_image_url(filename)
-        if not url:
-            host = comfyui.config("host", "http://localhost:8188") if hasattr(comfyui, "config") else "http://localhost:8188"
-            url = f"{host}/view?filename={filename}"
-        async with session.get(url) as resp:
-            if resp.status == 200:
-                dest.parent.mkdir(parents=True, exist_ok=True)
-                dest.write_bytes(await resp.read())
-                return True
-    except Exception:
-        pass
-    return False
+async def _download_cover_image(self, filename: str, dest: Path) -> bool:
+    """Download a generated image from ComfyUI to a local path.
+
+    Thin alias over `BaseApp.download_drawn_image` — kept on the publish app
+    so existing call sites in this module read naturally as cover-fetching.
+    """
+    return await self.download_drawn_image(filename, dest)
 
 
 async def _insert_cover_marker(self, post_path: str, title: str, cover_name: str) -> bool:
@@ -394,17 +401,18 @@ async def _insert_cover_marker(self, post_path: str, title: str, cover_name: str
     """
     try:
         import re as _re
+
         content = await self.read(str(post_path))
 
         content = _re.sub(
             r"<!-- eos-cover -->.*?<!-- /eos-cover -->\s*\n",
-            "", content, flags=_re.DOTALL,
+            "",
+            content,
+            flags=_re.DOTALL,
         )
 
         cover_block = (
-            f"<!-- eos-cover -->\n"
-            f"![{title} — cover](media/{cover_name})\n"
-            f"<!-- /eos-cover -->\n\n"
+            f"<!-- eos-cover -->\n![{title} — cover](media/{cover_name})\n<!-- /eos-cover -->\n\n"
         )
 
         if content.startswith("---"):
@@ -425,6 +433,7 @@ async def _insert_cover_marker(self, post_path: str, title: str, cover_name: str
 # ------------------------------------------------------------------
 # Podcast generation — call podcast app, copy assets, embed player
 # ------------------------------------------------------------------
+
 
 @web_route("POST", "/api/generate-podcast")
 async def api_generate_podcast(self, request):
@@ -457,7 +466,9 @@ async def api_generate_podcast(self, request):
 
     with_video = data.get("video", True)
     try:
-        result = await self.call_app("podcast", "_full_generate",
+        result = await self.call_app(
+            "podcast",
+            "_full_generate",
             topic=post["title"],
             context=body,
             voice_a=data.get("voice_a", "emma"),
@@ -471,6 +482,7 @@ async def api_generate_podcast(self, request):
         )
 
         import shutil
+
         media_dir = Path(self._vault_dir()) / self._source_folder() / "media"
         media_dir.mkdir(parents=True, exist_ok=True)
 
@@ -511,17 +523,21 @@ async def api_generate_podcast(self, request):
                 "scenes": [],
             }
             for i, sc in enumerate(result.get("scenes", [])):
-                slideshow_data["scenes"].append({
-                    "start_ms": sc.get("start_ms", 0),
-                    "end_ms": sc.get("end_ms", 0),
-                    "summary": sc.get("summary", ""),
-                    "image_file": scene_files[i] if i < len(scene_files) else "",
-                })
+                slideshow_data["scenes"].append(
+                    {
+                        "start_ms": sc.get("start_ms", 0),
+                        "end_ms": sc.get("end_ms", 0),
+                        "summary": sc.get("summary", ""),
+                        "image_file": scene_files[i] if i < len(scene_files) else "",
+                    }
+                )
 
             import json as _json
+
             slideshow_json_path = media_dir / f"podcast-{slug}-slideshow.json"
             slideshow_json_path.write_text(
-                _json.dumps(slideshow_data, ensure_ascii=False, indent=2), encoding="utf-8",
+                _json.dumps(slideshow_data, ensure_ascii=False, indent=2),
+                encoding="utf-8",
             )
 
             player_src = Path(__file__).parent / "static" / "slideshow-player.js"
@@ -537,9 +553,12 @@ async def api_generate_podcast(self, request):
         if embed:
             post_content = await self.read(post["path"])
             import re
+
             post_content = re.sub(
-                r'\n---\n\n## Listen to this post\n.*?AI-generated podcast discussion of this article</p>\n',
-                '', post_content, flags=re.DOTALL
+                r"\n---\n\n## Listen to this post\n.*?AI-generated podcast discussion of this article</p>\n",
+                "",
+                post_content,
+                flags=re.DOTALL,
             )
             post_content = post_content.rstrip() + "\n" + embed
             await self.write(post["path"], post_content)
@@ -560,7 +579,7 @@ async def api_generate_podcast(self, request):
         return {"error": f"Podcast generation failed: {e}"}
 
 
-def _render_slideshow_video(self, slug: str, media_dir: "Path", slideshow_data: dict) -> str:
+def _render_slideshow_video(self, slug: str, media_dir: Path, slideshow_data: dict) -> str:
     """Render an MP4 from slideshow scenes + podcast audio for social sharing.
 
     Returns the video filename (relative to media_dir) on success, "" if skipped/failed.
@@ -606,13 +625,34 @@ def _render_slideshow_video(self, slug: str, media_dir: "Path", slideshow_data: 
     trim_t = duration_s if duration_s > 0 else 0
 
     cmd = [
-        ffmpeg, "-y", "-hide_banner", "-loglevel", "error",
-        "-f", "concat", "-safe", "0", "-i", concat_file.name,
-        "-i", audio_path.name,
-        "-vf", "fps=30,format=yuv420p,scale=1080:1080:flags=lanczos",
-        "-c:v", "libx264", "-preset", "medium", "-crf", "20",
-        "-c:a", "aac", "-b:a", "192k",
-        "-movflags", "+faststart", "-shortest",
+        ffmpeg,
+        "-y",
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-f",
+        "concat",
+        "-safe",
+        "0",
+        "-i",
+        concat_file.name,
+        "-i",
+        audio_path.name,
+        "-vf",
+        "fps=30,format=yuv420p,scale=1080:1080:flags=lanczos",
+        "-c:v",
+        "libx264",
+        "-preset",
+        "medium",
+        "-crf",
+        "20",
+        "-c:a",
+        "aac",
+        "-b:a",
+        "192k",
+        "-movflags",
+        "+faststart",
+        "-shortest",
     ]
     if trim_t > 0:
         cmd += ["-t", f"{trim_t:.3f}"]
@@ -630,9 +670,14 @@ def _render_slideshow_video(self, slug: str, media_dir: "Path", slideshow_data: 
             pass
 
 
-def _podcast_embed_code(self, slug: str, audio_path: str,
-                        has_slideshow: bool = False, scene_files: list[str] | None = None,
-                        video_file: str = "") -> str:
+def _podcast_embed_code(
+    self,
+    slug: str,
+    audio_path: str,
+    has_slideshow: bool = False,
+    scene_files: list[str] | None = None,
+    video_file: str = "",
+) -> str:
     """Generate markdown embed code for the podcast.
 
     Uses relative paths — media/ at root, ../media/ from posts/ subdir.
@@ -651,56 +696,56 @@ def _podcast_embed_code(self, slug: str, audio_path: str,
             f'<p id="vid-{vuid}" style="margin:6px 0 0;font-size:0.85rem">'
             f'<a href="media/{video_file}" download>&#11015; Download as video</a>'
             f' <span style="color:var(--text-muted)">— share on LinkedIn, X, etc.</span>'
-            f'</p>\n'
-            f'<script>(function(){{'
+            f"</p>\n"
+            f"<script>(function(){{"
             f'var a=document.querySelector("#vid-{vuid} a");'
-            f'if(!a)return;'
+            f"if(!a)return;"
             f'if(location.pathname.indexOf("/posts/")>=0)a.href="../media/{video_file}";'
             f'else if(location.search.indexOf("path=posts/")>=0)a.href="/publish/api/site-file?path=media/{video_file}";'
-            f'}})();</script>\n'
+            f"}})();</script>\n"
         )
 
     if has_slideshow and scene_files:
         uid = slug.replace("-", "_")
         return (
-            f'\n---\n\n'
-            f'## Listen to this post\n\n'
+            f"\n---\n\n"
+            f"## Listen to this post\n\n"
             f'<div id="podcast-{uid}" style="margin:12px 0"></div>\n'
-            f'<noscript>\n'
+            f"<noscript>\n"
             f'<audio controls style="width:100%">\n'
             f'  <source src="{audio_path}" type="audio/mpeg">\n'
-            f'</audio>\n'
-            f'</noscript>\n'
-            f'<script>\n'
-            f'(function(){{\n'
+            f"</audio>\n"
+            f"</noscript>\n"
+            f"<script>\n"
+            f"(function(){{\n"
             f'  var el = document.getElementById("podcast-{uid}");\n'
             f'  var mb = (location.pathname.indexOf("/posts/") >= 0) ? "../media/" : (location.search.indexOf("path=posts/") >= 0) ? "/publish/api/site-file?path=media/" : "media/";\n'
-            f'  function go(d) {{\n'
+            f"  function go(d) {{\n"
             f'    d.audioUrl = mb + "podcast-{slug}.mp3";\n'
-            f'    (d.scenes || []).forEach(function(sc) {{ if (sc.image_file) sc.image_url = mb + sc.image_file; }});\n'
-            f'    SlideshowPlayer.create(el, d);\n'
-            f'  }}\n'
-            f'  function load() {{\n'
+            f"    (d.scenes || []).forEach(function(sc) {{ if (sc.image_file) sc.image_url = mb + sc.image_file; }});\n"
+            f"    SlideshowPlayer.create(el, d);\n"
+            f"  }}\n"
+            f"  function load() {{\n"
             f'    fetch(mb + "podcast-{slug}-slideshow.json").then(function(r) {{ return r.json(); }}).then(go);\n'
-            f'  }}\n'
-            f'  if (window.SlideshowPlayer) {{ load(); return; }}\n'
+            f"  }}\n"
+            f"  if (window.SlideshowPlayer) {{ load(); return; }}\n"
             f'  var s = document.createElement("script");\n'
             f'  s.src = mb + "slideshow-player.js";\n'
-            f'  s.onload = load;\n'
-            f'  document.head.appendChild(s);\n'
-            f'}})();\n'
-            f'</script>\n'
-            f'{video_link}'
+            f"  s.onload = load;\n"
+            f"  document.head.appendChild(s);\n"
+            f"}})();\n"
+            f"</script>\n"
+            f"{video_link}"
             f'<p style="font-size:0.8rem;color:var(--text-muted)">'
-            f'AI-generated podcast discussion of this article</p>\n'
+            f"AI-generated podcast discussion of this article</p>\n"
         )
     else:
         return (
-            f'\n---\n\n'
-            f'## Listen to this post\n\n'
+            f"\n---\n\n"
+            f"## Listen to this post\n\n"
             f'<audio controls style="width:100%;margin:12px 0">\n'
             f'  <source src="{audio_path}" type="audio/mpeg">\n'
-            f'</audio>\n'
+            f"</audio>\n"
             f'<p style="font-size:0.8rem;color:var(--text-muted)">'
-            f'AI-generated podcast discussion of this article</p>\n'
+            f"AI-generated podcast discussion of this article</p>\n"
         )

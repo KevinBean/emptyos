@@ -1,0 +1,16 @@
+[engine]
+id = "sim"
+name = "Simulation Engine"
+version = "0.1.0"
+description = "Native EMTP-class time-domain power-systems simulator. Power-frequency band (50/60 Hz), Dommel companion-circuit method, trapezoidal integration."
+
+[engine.entry]
+module = "engine"
+class = "SimEngine"
+
+[requires]
+packages = ["numpy", "scipy"]
+
+[provides]
+services = ["sim"]
+tags = ["power-systems", "emtp", "earthing", "transient", "time-domain"]

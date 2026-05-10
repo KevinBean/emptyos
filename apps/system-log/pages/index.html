@@ -28,10 +28,10 @@
 .log-header { display: flex; gap: 8px; align-items: center; font-size: 12px; }
 .log-time { font-family: var(--mono); color: var(--text-muted); font-size: 11px; }
 .log-level { padding: 2px 8px; border-radius: 4px; font-size: 10px; font-weight: 700; text-transform: uppercase; }
-.log-level.info { background: rgba(59,130,246,0.12); color: #60a5fa; }
-.log-level.warn { background: rgba(245,158,11,0.12); color: #f59e0b; }
-.log-level.error { background: rgba(239,68,68,0.12); color: #ef4444; }
-.log-level.debug { background: rgba(156,163,175,0.12); color: #9ca3af; }
+.log-level.info { background: color-mix(in srgb, var(--blue) 12%, transparent); color: var(--blue); }
+.log-level.warn { background: color-mix(in srgb, var(--amber) 12%, transparent); color: var(--amber); }
+.log-level.error { background: color-mix(in srgb, var(--red) 12%, transparent); color: var(--red); }
+.log-level.debug { background: color-mix(in srgb, var(--text-muted) 12%, transparent); color: var(--text-muted); }
 .log-source { color: var(--accent); font-weight: 600; font-size: 12px; }
 .log-msg { font-size: 13px; color: var(--text); margin-top: 4px; line-height: 1.4; }
 .log-data { font-size: 11px; color: var(--text-muted); font-family: var(--mono); margin-top: 2px; max-height: 40px; overflow: hidden; }

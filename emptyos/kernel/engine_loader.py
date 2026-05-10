@@ -81,10 +81,15 @@ class EngineLoader:
                 try:
                     manifest = EngineManifest.from_toml(manifest_file)
                     if manifest.id in self.manifests:
-                        self.kernel.syslog.warn("engine_loader", f"'{manifest.id}' in {scan_dir.name}/ overrides {self.manifests[manifest.id].path}")
+                        self.kernel.syslog.warn(
+                            "engine_loader",
+                            f"'{manifest.id}' in {scan_dir.name}/ overrides {self.manifests[manifest.id].path}",
+                        )
                     self.manifests[manifest.id] = manifest
                 except Exception as e:
-                    self.kernel.syslog.error("engine_loader", f"Failed to parse {manifest_file}: {e}")
+                    self.kernel.syslog.error(
+                        "engine_loader", f"Failed to parse {manifest_file}: {e}"
+                    )
 
         return list(self.manifests.values())
 
@@ -94,8 +99,12 @@ class EngineLoader:
             try:
                 module_file = manifest.path / f"{manifest.entry_module}.py"
                 instance = load_module(
-                    module_file, f"eos_engines.{engine_id}",
-                    manifest.path, manifest.entry_class, self.kernel, manifest,
+                    module_file,
+                    f"eos_engines.{engine_id}",
+                    manifest.path,
+                    manifest.entry_class,
+                    self.kernel,
+                    manifest,
                 )
                 await instance.init()
                 avail = await instance.available()
@@ -107,10 +116,15 @@ class EngineLoader:
                 if avail:
                     self.kernel.syslog.info("engine_loader", f"Loaded engine '{engine_id}'")
                 else:
-                    self.kernel.syslog.warn("engine_loader", f"Engine '{engine_id}' loaded but unavailable (missing deps)")
+                    self.kernel.syslog.warn(
+                        "engine_loader",
+                        f"Engine '{engine_id}' loaded but unavailable (missing deps)",
+                    )
 
             except Exception as e:
-                self.kernel.syslog.error("engine_loader", f"Failed to load engine '{engine_id}': {e}")
+                self.kernel.syslog.error(
+                    "engine_loader", f"Failed to load engine '{engine_id}': {e}"
+                )
 
     def get(self, engine_id: str) -> Any | None:
         """Get a loaded engine instance by ID."""
@@ -123,5 +137,7 @@ class EngineLoader:
                 try:
                     await instance.shutdown()
                 except Exception as e:
-                    self.kernel.syslog.error("engine_loader", f"Error shutting down '{engine_id}': {e}")
+                    self.kernel.syslog.error(
+                        "engine_loader", f"Error shutting down '{engine_id}': {e}"
+                    )
         self.instances.clear()

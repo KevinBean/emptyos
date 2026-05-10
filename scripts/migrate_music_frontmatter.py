@@ -1,4 +1,3 @@
-import os
 """Migrate music vault notes to standard frontmatter format.
 
 Scans the entire songs directory (recursively) for .md files.
@@ -20,6 +19,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import os
 import re
 import sys
 from pathlib import Path
@@ -33,11 +33,30 @@ SONGS_DIR = VAULT / "10_Projects/YouTube-Music-Channel/songs"
 
 # Standard frontmatter fields for songs
 SONG_FIELDS = [
-    "type", "title", "title_en", "artist", "album", "track_number",
-    "tags", "status", "genre", "language", "energy", "mood", "theme",
-    "bpm", "key", "voice", "persona", "duration",
-    "created", "published",
-    "suno_url", "suno_model", "youtube_url", "youtube_id",
+    "type",
+    "title",
+    "title_en",
+    "artist",
+    "album",
+    "track_number",
+    "tags",
+    "status",
+    "genre",
+    "language",
+    "energy",
+    "mood",
+    "theme",
+    "bpm",
+    "key",
+    "voice",
+    "persona",
+    "duration",
+    "created",
+    "published",
+    "suno_url",
+    "suno_model",
+    "youtube_url",
+    "youtube_id",
 ]
 
 # Fields we consider "complete" — if all present, skip the file
@@ -48,11 +67,12 @@ def parse_frontmatter(content: str) -> tuple[dict, str]:
     """Parse YAML frontmatter, return (fm_dict, body)."""
     fm = {}
     body = content
+    _last_key = None
     if content.startswith("---"):
         end = content.find("\n---", 3)
         if end != -1:
             fm_text = content[4:end]
-            body = content[end + 4:].lstrip("\n")
+            body = content[end + 4 :].lstrip("\n")
             for line in fm_text.split("\n"):
                 line = line.strip()
                 if not line or line.startswith("#"):
@@ -67,7 +87,7 @@ def parse_frontmatter(content: str) -> tuple[dict, str]:
                     k, v = line.split(":", 1)
                     k = k.strip()
                     v = v.strip().strip('"').strip("'")
-                    _last_key = k  # noqa: F841
+                    _last_key = k
                     if v == "":
                         fm[k] = ""
                     elif v.startswith("[") and v.endswith("]"):
@@ -75,7 +95,7 @@ def parse_frontmatter(content: str) -> tuple[dict, str]:
                     else:
                         fm[k] = v
                     continue
-                _last_key = None  # noqa: F841
+                _last_key = None
     # Handle list parsing properly
     _last_key = None
     if content.startswith("---"):
@@ -83,7 +103,7 @@ def parse_frontmatter(content: str) -> tuple[dict, str]:
         if end != -1:
             fm = {}
             fm_text = content[4:end]
-            body = content[end + 4:].lstrip("\n")
+            body = content[end + 4 :].lstrip("\n")
             current_key = None
             for line in fm_text.split("\n"):
                 stripped = line.strip()
@@ -102,7 +122,9 @@ def parse_frontmatter(content: str) -> tuple[dict, str]:
                     if v == "":
                         fm[k] = ""
                     elif v.startswith("[") and v.endswith("]"):
-                        fm[k] = [x.strip().strip('"').strip("'") for x in v[1:-1].split(",") if x.strip()]
+                        fm[k] = [
+                            x.strip().strip('"').strip("'") for x in v[1:-1].split(",") if x.strip()
+                        ]
                     else:
                         fm[k] = v
     return fm, body
@@ -112,7 +134,7 @@ def extract_from_markdown_table(body: str) -> dict:
     """Extract key-value pairs from markdown tables like | 项目 | 内容 |."""
     extracted = {}
     # Match table rows: | key | value |
-    for m in re.finditer(r'\|\s*(.+?)\s*\|\s*(.+?)\s*\|', body):
+    for m in re.finditer(r"\|\s*(.+?)\s*\|\s*(.+?)\s*\|", body):
         key = m.group(1).strip().lower()
         val = m.group(2).strip()
         if key in ("项目", "内容", "field", "value", "---", "------", "-"):
@@ -122,14 +144,22 @@ def extract_from_markdown_table(body: str) -> dict:
 
         # Map Chinese/English keys to standard fields
         key_map = {
-            "类型": "genre", "曲风": "genre", "style": "genre",
+            "类型": "genre",
+            "曲风": "genre",
+            "style": "genre",
             "bpm": "bpm",
-            "创建日期": "created", "生成日期": "created", "created": "created",
-            "语言": "language", "language": "language",
+            "创建日期": "created",
+            "生成日期": "created",
+            "created": "created",
+            "语言": "language",
+            "language": "language",
             "系列": "series",
             "persona": "persona",
-            "suno 模型": "suno_model", "suno模型": "suno_model",
-            "suno 链接": "suno_url", "suno链接": "suno_url", "suno": "suno_url",
+            "suno 模型": "suno_model",
+            "suno模型": "suno_model",
+            "suno 链接": "suno_url",
+            "suno链接": "suno_url",
+            "suno": "suno_url",
             "youtube": "youtube_url",
             "专辑": "album",
             "关联": "related",
@@ -145,7 +175,7 @@ def extract_from_markdown_table(body: str) -> dict:
         if mapped:
             # Clean up value — remove markdown links for URLs
             if mapped in ("suno_url", "youtube_url"):
-                url_match = re.search(r'\((https?://[^\)]+)\)', val)
+                url_match = re.search(r"\((https?://[^\)]+)\)", val)
                 if url_match:
                     val = url_match.group(1)
                 elif val.startswith("http"):
@@ -162,14 +192,19 @@ def extract_from_markdown_table(body: str) -> dict:
 def extract_from_bullet_list(body: str) -> dict:
     """Extract from - **key**: value bullet lists."""
     extracted = {}
-    for m in re.finditer(r'-\s+\*\*(.+?)\*\*\s*[:：]\s*(.+)', body):
+    for m in re.finditer(r"-\s+\*\*(.+?)\*\*\s*[:：]\s*(.+)", body):
         key = m.group(1).strip().lower()
         val = m.group(2).strip()
 
         key_map = {
-            "歌名": "title", "曲风": "genre", "生成日期": "created",
-            "语言": "language", "系列": "series", "bpm": "bpm",
-            "style": "genre", "for": "for_person",
+            "歌名": "title",
+            "曲风": "genre",
+            "生成日期": "created",
+            "语言": "language",
+            "系列": "series",
+            "bpm": "bpm",
+            "style": "genre",
+            "for": "for_person",
         }
         mapped = key_map.get(key)
         if mapped:
@@ -180,40 +215,40 @@ def extract_from_bullet_list(body: str) -> dict:
 
 def extract_suno_url(body: str) -> str | None:
     """Find suno.com URLs in body."""
-    m = re.search(r'https://suno\.com/song/[\w-]+', body)
+    m = re.search(r"https://suno\.com/song/[\w-]+", body)
     return m.group(0) if m else None
 
 
 def extract_youtube_url(body: str) -> str | None:
     """Find youtube URLs in body."""
-    m = re.search(r'https://(?:www\.)?youtube\.com/watch\?v=([\w-]+)', body)
+    m = re.search(r"https://(?:www\.)?youtube\.com/watch\?v=([\w-]+)", body)
     if m:
         return m.group(0)
-    m = re.search(r'https://youtu\.be/([\w-]+)', body)
+    m = re.search(r"https://youtu\.be/([\w-]+)", body)
     return m.group(0) if m else None
 
 
 def extract_youtube_id(body: str) -> str | None:
     """Extract YouTube video ID."""
-    m = re.search(r'youtube\.com/watch\?v=([\w-]+)', body)
+    m = re.search(r"youtube\.com/watch\?v=([\w-]+)", body)
     if m:
         return m.group(1)
-    m = re.search(r'youtu\.be/([\w-]+)', body)
+    m = re.search(r"youtu\.be/([\w-]+)", body)
     return m.group(1) if m else None
 
 
 def extract_album_link(body: str) -> str | None:
     """Find [[_Album-Name]] wikilinks."""
-    m = re.search(r'\[\[(_[^\]]*[Aa]lbum[^\]]*)\]\]', body)
+    m = re.search(r"\[\[(_[^\]]*[Aa]lbum[^\]]*)\]\]", body)
     return f"[[{m.group(1)}]]" if m else None
 
 
 def detect_language(body: str) -> str:
     """Rough language detection from lyrics."""
     # Count CJK characters vs latin
-    cjk = len(re.findall(r'[\u4e00-\u9fff]', body))
-    latin = len(re.findall(r'[a-zA-Z]', body))
-    jp = len(re.findall(r'[\u3040-\u309f\u30a0-\u30ff]', body))
+    cjk = len(re.findall(r"[\u4e00-\u9fff]", body))
+    latin = len(re.findall(r"[a-zA-Z]", body))
+    jp = len(re.findall(r"[\u3040-\u309f\u30a0-\u30ff]", body))
     if jp > 10:
         return "ja"
     if cjk > latin:
@@ -225,7 +260,7 @@ def detect_language(body: str) -> str:
 
 def guess_created_from_dirname(dir_name: str) -> str | None:
     """Extract date from directory names like 2026-01-02__One_Step_就好."""
-    m = re.match(r'(\d{4}-\d{2}-\d{2})__', dir_name)
+    m = re.match(r"(\d{4}-\d{2}-\d{2})__", dir_name)
     return m.group(1) if m else None
 
 
@@ -253,7 +288,7 @@ def build_song_frontmatter(path: Path, existing_fm: dict, body: str) -> dict:
 
     # Title — from frontmatter, or h1, or filename
     if not fm.get("title"):
-        h1 = re.search(r'^#\s+(?:《)?(.+?)(?:》)?\s*$', body, re.MULTILINE)
+        h1 = re.search(r"^#\s+(?:《)?(.+?)(?:》)?\s*$", body, re.MULTILINE)
         if h1:
             fm["title"] = h1.group(1).strip()
         else:
@@ -281,9 +316,12 @@ def build_song_frontmatter(path: Path, existing_fm: dict, body: str) -> dict:
 
     # Status normalization
     status_map = {
-        "published": "released", "complete": "released",
-        "suno-complete": "released", "uploaded": "released",
-        "": "draft", "unknown": "draft",
+        "published": "released",
+        "complete": "released",
+        "suno-complete": "released",
+        "uploaded": "released",
+        "": "draft",
+        "unknown": "draft",
     }
     status = fm.get("status", "draft")
     fm["status"] = status_map.get(status, status)
@@ -300,9 +338,15 @@ def build_song_frontmatter(path: Path, existing_fm: dict, body: str) -> dict:
         fm["language"] = detect_language(body)
     else:
         lang_norm = {
-            "中文": "zh", "chinese": "zh", "Chinese": "zh",
-            "英文": "en", "english": "en", "English": "en",
-            "日文": "ja", "japanese": "ja", "Japanese": "ja",
+            "中文": "zh",
+            "chinese": "zh",
+            "Chinese": "zh",
+            "英文": "en",
+            "english": "en",
+            "English": "en",
+            "日文": "ja",
+            "japanese": "ja",
+            "Japanese": "ja",
             "English + Japanese": "en-ja",
         }
         fm["language"] = lang_norm.get(fm["language"], fm["language"])
@@ -323,7 +367,7 @@ def build_song_frontmatter(path: Path, existing_fm: dict, body: str) -> dict:
 
     # BPM — extract number
     if fm.get("bpm"):
-        bpm_match = re.search(r'(\d+)', str(fm["bpm"]))
+        bpm_match = re.search(r"(\d+)", str(fm["bpm"]))
         if bpm_match:
             fm["bpm"] = bpm_match.group(1)
 
@@ -341,13 +385,35 @@ def format_frontmatter(fm: dict) -> str:
 
     # Ordered output — important fields first
     order = [
-        "type", "title", "title_en", "artist", "album", "track_number",
-        "tags", "status", "genre", "language",
-        "energy", "mood", "theme", "persona", "voice",
-        "bpm", "key", "duration",
-        "created", "published",
-        "suno_url", "suno_model", "youtube_url", "youtube_id",
-        "series", "related", "channel", "for_person", "source",
+        "type",
+        "title",
+        "title_en",
+        "artist",
+        "album",
+        "track_number",
+        "tags",
+        "status",
+        "genre",
+        "language",
+        "energy",
+        "mood",
+        "theme",
+        "persona",
+        "voice",
+        "bpm",
+        "key",
+        "duration",
+        "created",
+        "published",
+        "suno_url",
+        "suno_model",
+        "youtube_url",
+        "youtube_id",
+        "series",
+        "related",
+        "channel",
+        "for_person",
+        "source",
     ]
 
     written = set()
@@ -394,7 +460,11 @@ def process_song(path: Path, apply: bool) -> dict:
 
     # Calculate what changed
     added = {k: v for k, v in new_fm.items() if k not in existing_fm and v not in ("", None, [])}
-    changed = {k: v for k, v in new_fm.items() if k in existing_fm and existing_fm[k] != v and v not in ("", None, [])}
+    changed = {
+        k: v
+        for k, v in new_fm.items()
+        if k in existing_fm and existing_fm[k] != v and v not in ("", None, [])
+    }
 
     if not added and not changed:
         return {"path": str(path), "status": "skip", "reason": "no changes needed"}
@@ -444,7 +514,7 @@ def check_album_frontmatter(path: Path, apply: bool) -> dict:
     fm = dict(existing_fm)
     fm["type"] = "album"
     if not fm.get("title"):
-        h1 = re.search(r'^#\s+(.+)$', body, re.MULTILINE)
+        h1 = re.search(r"^#\s+(.+)$", body, re.MULTILINE)
         fm["title"] = h1.group(1).strip() if h1 else path.stem.lstrip("_").replace("-", " ")
     if not fm.get("artist"):
         fm["artist"] = "3:30 Channel"
@@ -482,6 +552,7 @@ def check_album_frontmatter(path: Path, apply: bool) -> dict:
 
 def main():
     import io
+
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
 
     parser = argparse.ArgumentParser(description="Migrate music notes to standard frontmatter")
@@ -494,9 +565,9 @@ def main():
         sys.exit(1)
 
     mode = "APPLY" if args.apply else "DRY-RUN"
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"  Music Frontmatter Migration ({mode})")
-    print(f"{'='*60}\n")
+    print(f"{'=' * 60}\n")
 
     # Process songs
     songs = scan_all_songs(SONGS_DIR)
@@ -523,7 +594,7 @@ def main():
                 skipped.append(result)
 
     # Report
-    print(f"\n--- Results ---")
+    print("\n--- Results ---")
     print(f"Total files scanned: {len(songs) + (len(albums) if args.albums else 0)}")
     print(f"Would update: {len(updated)}")
     print(f"Skipped: {len(skipped)}")
@@ -544,8 +615,8 @@ def main():
                 print(f"  {'':30s}   {'; '.join(parts)}")
 
     if not args.apply and updated:
-        print(f"\n  Run with --apply to write changes.")
-        print(f"  Run with --apply --albums to also update album notes.")
+        print("\n  Run with --apply to write changes.")
+        print("  Run with --apply --albums to also update album notes.")
 
     print()
 

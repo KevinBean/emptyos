@@ -48,6 +48,13 @@ Exceptions: plugins may wrap external binaries directly; `data/` SQLite/JSON wri
 - If the app queries by frontmatter, prefer `self.vault_query(tags=..., **props)` over globbing.
 - If the change adds a vault write, confirm the path comes from `_vault-map.toml` via `self.vault_config()`, not a string literal.
 - **Two-domain rule**: human-authored / recovery-critical → vault; high-frequency telemetry → `data/`. Flag any crossover.
+- **YAML-None crash check** — grep the diff for the fragile shape:
+
+  ```bash
+  grep -nE "\.get\([^)]+,\s*\"[^\"]*\"\)\.(lower|upper|strip|startswith|endswith|split|replace)" <changed-files>
+  ```
+
+  YAML `key:` (empty) parses to `None`, not absent. `dict.get(K, "")` returns the default *only when the key is missing* — when present-but-None, it returns `None`, and `.lower()` / `.startswith()` / `.split()` raises `AttributeError`. Fix shape: `(d.get(K) or "").method()` instead of `d.get(K, "").method()`. The `or` chain catches both `None` and absent. Triage hits by source: `fm.get(...)` / `props.get(...)` / `p.get(...)` from a YAML-parsed dict are dangerous; `request.headers.get(...)` / `request.query_params.get(...)` / `os.environ.get(...)` are always strings and safe. See memory `feedback_yaml_get_method_crash.md`.
 
 ### 3. Frontend reuse (EOS_UI / EOS helpers)
 

@@ -12,6 +12,7 @@ Usage:
 
 Outputs to: results/conv-test-codex-{timestamp}/{case_id}/
 """
+
 from __future__ import annotations
 
 import argparse
@@ -19,11 +20,9 @@ import json
 import shutil
 import subprocess
 import sys
-import tempfile
 import tomllib
 from datetime import datetime
 from pathlib import Path
-
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 CASES_FILE = REPO_ROOT / "scripts" / "conv-test-cases.toml"
@@ -82,10 +81,13 @@ def run_one_test(model: str, case: dict, results_dir: Path) -> dict:
     # If model is "default", omit -m and use Codex's configured default.
     # cwd = D:/emptyos so Codex sees the actual project; sandbox is a subdir.
     cmd = [
-        codex_bin, "exec",
+        codex_bin,
+        "exec",
         "--dangerously-bypass-approvals-and-sandbox",
-        "-C", str(REPO_ROOT),
-        "-o", str(last_msg_file),
+        "-C",
+        str(REPO_ROOT),
+        "-o",
+        str(last_msg_file),
     ]
     if model and model != "default":
         cmd.extend(["-m", model])
@@ -95,7 +97,8 @@ def run_one_test(model: str, case: dict, results_dir: Path) -> dict:
     try:
         result = subprocess.run(
             cmd,
-            capture_output=True, timeout=900,
+            capture_output=True,
+            timeout=900,
         )
         stdout = result.stdout.decode("utf-8", errors="replace")
         stderr = result.stderr.decode("utf-8", errors="replace")
@@ -129,9 +132,7 @@ def run_one_test(model: str, case: dict, results_dir: Path) -> dict:
         "sandbox_files": sandbox_files,
         "rubric": case.get("rubric", []),
     }
-    (case_dir / "codex_summary.json").write_text(
-        json.dumps(summary, indent=2), encoding="utf-8"
-    )
+    (case_dir / "codex_summary.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
 
     print(f"  return_code: {return_code}, elapsed: {elapsed:.1f}s")
     print(f"  files written: {sandbox_files}")
@@ -141,8 +142,11 @@ def run_one_test(model: str, case: dict, results_dir: Path) -> dict:
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--model", default="default",
-                    help="Model name. 'default' uses Codex's configured default (recommended for ChatGPT subscription auth)")
+    ap.add_argument(
+        "--model",
+        default="default",
+        help="Model name. 'default' uses Codex's configured default (recommended for ChatGPT subscription auth)",
+    )
     ap.add_argument("--test", help="Run a single test by id")
     args = ap.parse_args()
 

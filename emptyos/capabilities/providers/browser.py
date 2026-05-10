@@ -24,7 +24,6 @@ provider (typically `human` for typed input).
 
 from __future__ import annotations
 
-import asyncio
 from typing import TYPE_CHECKING
 
 from emptyos.capabilities import Provider
@@ -59,20 +58,27 @@ class BrowserListenProvider(Provider):
             return {
                 "available": False,
                 "reason": "realtime service not running",
-                "recovery": {"kind": "service", "id": "realtime",
-                             "hint": "Realtime is core; this shouldn't normally happen"},
+                "recovery": {
+                    "kind": "service",
+                    "id": "realtime",
+                    "hint": "Realtime is core; this shouldn't normally happen",
+                },
             }
         if rt.client_count == 0:
             return {
                 "available": False,
                 "reason": "no browser tab connected to /ws",
-                "recovery": {"kind": "human", "id": "browser",
-                             "hint": "Open the EmptyOS web UI in a browser tab"},
+                "recovery": {
+                    "kind": "human",
+                    "id": "browser",
+                    "hint": "Open the EmptyOS web UI in a browser tab",
+                },
             }
         return {"available": True, "reason": None, "recovery": None}
 
     async def execute(
-        self, *,
+        self,
+        *,
         prompt: str = "",
         language: str = "",
         timeout: float = 0,
@@ -96,8 +102,8 @@ class BrowserListenProvider(Provider):
                 language=language or self.default_lang,
                 timeout=timeout or self.default_timeout,
             )
-        except asyncio.TimeoutError:
-            raise RuntimeError("browser-speech: timed out waiting for browser to capture")
+        except TimeoutError:
+            raise RuntimeError("browser-speech: timed out waiting for browser to capture") from None
 
         if response.get("error"):
             raise RuntimeError(f"browser-speech: {response['error']}")
@@ -138,7 +144,10 @@ class BrowserSeeProvider(Provider):
         if rt is None or rt.client_count == 0:
             raise RuntimeError("browser-webcam: no browser connected")
         response = await rt.request_capture(
-            capability="see", mode=mode, prompt=prompt, timeout=self.default_timeout,
+            capability="see",
+            mode=mode,
+            prompt=prompt,
+            timeout=self.default_timeout,
         )
         if response.get("error"):
             raise RuntimeError(f"browser-webcam: {response['error']}")

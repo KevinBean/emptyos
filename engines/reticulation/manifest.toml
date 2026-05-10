@@ -1,0 +1,16 @@
+[engine]
+id = "reticulation"
+name = "Reticulation Engine"
+version = "0.1.0"
+description = "Radial AC load-flow + segment sizing checks for cable/line distribution networks. Backward/forward sweep on a tree rooted at the slack node. Consumes engines/thermal ampacity for utilisation checks."
+
+[engine.entry]
+module = "engine"
+class = "ReticulationEngine"
+
+[requires]
+packages = []  # pure-Python; complex math via cmath
+
+[provides]
+services = ["reticulation"]
+tags = ["cables", "lines", "loadflow", "voltage-drop", "sizing", "distribution"]

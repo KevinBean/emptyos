@@ -28,9 +28,25 @@
 .eos-toast-ok { background:rgba(52,211,153,0.92); color:#064e3b }
 .eos-toast-err { background:rgba(248,113,113,0.92); color:#7f1d1d }
 
-/* === Header === */
+/* === Header ===
+   Two forms. Legacy `.eos-header` (a flex container holding an <h1>) is still
+   supported. The newer `.eos-page-header` adds optional subtitle, tab strip,
+   and right-side action slot — emit via EOS_UI.pageHeader(). All three slots
+   are optional; missing slots collapse cleanly.
+*/
 .eos-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:16px; animation:fadeDown 0.4s }
 .eos-header h1 { font-size:24px; font-weight:700; color:var(--text-heading); letter-spacing:-0.02em }
+
+.eos-page-header { display:flex; align-items:flex-start; justify-content:space-between; gap:16px; margin-bottom:16px; flex-wrap:wrap; animation:fadeDown 0.4s }
+.eos-page-header .eos-ph-titles { flex:1 1 auto; min-width:0 }
+.eos-page-header .eos-ph-title { font-size:24px; font-weight:700; color:var(--text-heading); letter-spacing:-0.02em; line-height:1.2 }
+.eos-page-header .eos-ph-sub { font-size:13px; color:var(--text-secondary); margin-top:2px; letter-spacing:0.01em }
+.eos-page-header .eos-ph-actions { display:flex; gap:8px; align-items:center; flex-shrink:0 }
+.eos-page-header .eos-ph-tabs { display:flex; gap:4px; background:var(--bg-card); border:1px solid var(--border); border-radius:8px; padding:4px; flex-wrap:wrap }
+.eos-page-header .eos-ph-tab { padding:8px 16px; font-size:13px; font-weight:600; border-radius:6px; border:none; background:transparent; color:var(--text-muted); cursor:pointer; transition:color 0.15s, background 0.15s; font-family:inherit }
+.eos-page-header .eos-ph-tab:hover { color:var(--text) }
+.eos-page-header .eos-ph-tab.active { background:var(--accent); color:var(--accent-ink) }
+@media(max-width:560px) { .eos-page-header .eos-ph-actions { width:100% } .eos-page-header .eos-ph-tabs { width:100% } .eos-page-header .eos-ph-tab { flex:1 } }
 
 /* === Hero Stats === */
 .eos-hero { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:16px }
@@ -319,6 +335,16 @@ blockquote { border-left:3px solid var(--accent); padding:4px 12px; margin:8px 0
     a { padding:4px 0 }
 }
 
+/* Keyboard focus indicator for [onclick] divs/spans auto-enhanced with
+   tabindex="0" + role="button" by eos-components.js. Native focusables
+   keep their own browser/component-defined focus styles. */
+[role="button"][tabindex="0"]:focus-visible,
+[onclick][tabindex="0"]:focus-visible {
+    outline: none;
+    box-shadow: var(--focus-ring);
+    border-radius: inherit;
+}
+
 /* Tablet and below */
 @media(max-width:768px) {
     /* Grids collapse to fewer columns */
@@ -530,6 +556,30 @@ body.eos-demo-active { scroll-padding-top: 48px; }
 body.eos-think-offline { scroll-padding-top: 40px; }
 .eos-demo-banner + .eos-think-banner { top: 34px; }
 
+/* Redact mode — set on <html> when URL has ?demo=1 or ?redact=1 (see eos.js).
+   Hides personal data on a per-iframe basis without flipping the daemon's
+   global demo.enabled flag. Apps mark sensitive elements with .eos-personal,
+   [data-redact], or .eos-redact-text and the framework hides them on demand. */
+html.eos-redact .eos-personal,
+html.eos-redact [data-redact] {
+    filter: blur(6px) !important;
+    pointer-events: none !important;
+    user-select: none !important;
+}
+html.eos-redact .eos-redact-text {
+    color: transparent !important;
+    text-shadow: 0 0 8px currentColor !important;
+    user-select: none !important;
+}
+/* Drop heavy chrome that's noisy in embedded demos: top-left dock + capture
+   FAB + voice FAB. Apps that want to expose their own controls in redact mode
+   can override this rule with `html.eos-redact .my-element { opacity: 1; }`. */
+html.eos-redact .eos-fab-pill,
+html.eos-redact #eos-capture-fab,
+html.eos-redact #eos-demo-banner {
+    display: none !important;
+}
+
 /* PWA install banner — dismissible, shown only when the browser offers install or on iOS Safari. */
 .eos-pwa-banner {
     position: sticky; top: 0; z-index: 9001;
@@ -728,6 +778,38 @@ body.eos-think-offline { scroll-padding-top: 40px; }
 .eos-empty-state-icon { font-size: 28px; opacity: 0.5; margin-bottom: 8px; display: block; }
 .eos-empty-state-message { margin: 0 0 16px; }
 .eos-empty-state-action { display: inline-flex; }
+
+/* === Hover-reveal delete affordance for list rows ===
+   Drop <button class="eos-row-del" aria-label="Delete"></button> inside any
+   row with a `position:relative` parent. The trash icon is rendered via CSS
+   mask so it inherits currentColor (muted at rest, red on hover). Button
+   content must be empty — never use × (× means close, not delete). Pair
+   with `EOS_UI.confirmDelete()`. */
+.eos-row-del {
+    --eos-icon-trash: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round'><path d='M2.5 4h11M6.25 4V2.5h3.5V4M4 4v8.5a1.25 1.25 0 0 0 1.25 1.25h5.5A1.25 1.25 0 0 0 12 12.5V4M6.5 7v4M9.5 7v4'/></svg>");
+    position:absolute; top:6px; right:6px;
+    width:24px; height:24px; padding:0;
+    display:inline-flex; align-items:center; justify-content:center;
+    border:1px solid transparent; border-radius:6px;
+    background:transparent; color:var(--text-muted); cursor:pointer;
+    /* Always visible at low opacity — discoverable without hover. */
+    opacity:.35; transition:opacity .12s ease, color .12s ease, background-color .12s ease;
+    font-size:0; line-height:0;
+}
+.eos-row-del::before {
+    content:''; width:14px; height:14px;
+    background-color:currentColor;
+    -webkit-mask:var(--eos-icon-trash) center/contain no-repeat;
+    mask:var(--eos-icon-trash) center/contain no-repeat;
+}
+*:hover > .eos-row-del { opacity:.7 }
+.eos-row-del:hover, .eos-row-del:focus-visible {
+    opacity:1;
+    color:var(--red, #ef4444);
+    background:color-mix(in srgb, var(--red, #ef4444) 10%, transparent);
+}
+.eos-row-del:focus-visible { outline:none; box-shadow:0 0 0 2px var(--focus-ring) }
+@media (hover: none) { .eos-row-del { opacity:.55 } }
 
 /* --- Error state block — shown when a load fails. Same chrome as empty,
    danger-toned. Required on every list-rendering page. --- */
@@ -965,14 +1047,43 @@ body.eos-think-offline { scroll-padding-top: 40px; }
 .eos-search-input::placeholder { color: var(--text-muted); }
 .eos-search-icon {
     position: absolute; left: 12px; top: 50%; transform: translateY(-50%);
-    font-size: 14px; color: var(--text-muted); pointer-events: none;
+    width: 14px; height: 14px; color: var(--text-muted); pointer-events: none;
+    display: flex; align-items: center; justify-content: center;
 }
+.eos-search-icon svg { width: 14px; height: 14px; display: block; }
 .eos-search-kbd {
     position: absolute; right: 10px; top: 50%; transform: translateY(-50%);
     font-family: var(--font-mono, ui-monospace, monospace); font-size: 11px;
     color: var(--text-muted); background: var(--bg-card-hover);
     border: 1px solid var(--border); border-radius: 4px; padding: 2px 6px;
-    pointer-events: none;
+    pointer-events: none; transition: opacity 0.2s;
+}
+.eos-search:focus-within .eos-search-icon { color: var(--accent); }
+.eos-search-input:focus ~ .eos-search-kbd { opacity: 0; }
+/* Large variant — hero search inputs (e.g. /search/ landing) */
+.eos-search-input.large {
+    font-size: 18px; padding: 16px 100px 16px 50px;
+    border-radius: var(--radius-lg); border-width: 1.5px;
+}
+.eos-search-icon.large { left: 18px; width: 18px; height: 18px; }
+.eos-search-icon.large svg { width: 18px; height: 18px; }
+/* Optional clear button (used by the large variant) */
+.eos-search-clear {
+    position: absolute; right: 70px; top: 50%; transform: translateY(-50%);
+    background: none; border: none; color: var(--text-muted);
+    font-size: 18px; cursor: pointer; padding: 4px 8px; display: none; line-height: 1;
+}
+.eos-search-clear.show { display: block; }
+.eos-search-clear:hover { color: var(--text); }
+/* Touch devices: hide kbd hint, reclaim padding */
+@media (hover: none) and (pointer: coarse) {
+    .eos-search-kbd { display: none; }
+    .eos-search-input.large { padding-right: 44px; }
+    .eos-search-clear { right: 8px; }
+}
+@media (max-width: 600px) {
+    .eos-search-input.large { font-size: 16px; padding: 14px 90px 14px 44px; }
+    .eos-search-icon.large { left: 14px; }
 }
 .eos-search-results {
     position: absolute; top: calc(100% + 4px); left: 0; right: 0;
@@ -1001,3 +1112,49 @@ body.eos-think-offline { scroll-padding-top: 40px; }
 }
 .eos-search-section:first-child { border-top: none; }
 .eos-search-loading { font-weight: 400; text-transform: none; opacity: 0.7; margin-left: 6px; }
+
+/* --- Radial neighborhood graph (EOS_UI.radialGraph) --- */
+.eos-rg-wrap { background:var(--bg-card); border:1px solid var(--border); border-radius:12px; padding:16px; overflow:hidden; }
+.eos-rg-wrap svg { width:100%; height:auto; display:block; max-height:480px; }
+.eos-rg-wrap .rg-empty { text-align:center; padding:20px; color:var(--text-muted); font-size:13px; }
+.eos-rg-wrap .rg-node text { fill:var(--text); font-size:11px; pointer-events:none; font-family:inherit; }
+.eos-rg-wrap .rg-node-center text { font-weight:600; }
+.eos-rg-wrap .rg-node:hover circle { stroke-width:2.5; }
+.eos-rg-wrap .rg-edge { stroke:var(--border); stroke-width:1.2; fill:none; }
+.eos-rg-wrap .rg-edge-out { stroke:color-mix(in srgb,var(--accent) 50%,transparent); }
+.eos-rg-wrap .rg-edge-in  { stroke:color-mix(in srgb,var(--success) 50%,transparent); }
+
+/* --- Method picker (EOS_UI.methodPicker — calculator framework) --- */
+.eos-method-picker { display: inline-flex; align-items: center; gap: 8px;
+    flex-wrap: wrap; font-size: 13px; }
+.eos-method-picker-label { font-size: 11px; text-transform: uppercase;
+    letter-spacing: 0.05em; color: var(--text-muted); }
+.eos-method-picker-select { padding: 4px 8px; font-size: 13px;
+    background: var(--bg); color: var(--text);
+    border: 1px solid var(--border); border-radius: 4px; }
+.eos-method-picker-select:focus { outline: none; border-color: var(--accent); }
+.eos-method-picker-refs { font-size: 11px; color: var(--text-muted);
+    font-family: var(--mono); }
+.eos-method-picker-error { font-size: 12px; color: var(--danger);
+    font-style: italic; }
+
+/* ── iOS Safari zoom-on-focus prevention ─────────────────────────────────
+   Mobile Safari auto-zooms when a focused <input>/<select>/<textarea> has
+   computed font-size < 16px, which breaks every form layout on the site.
+   We force ≥16px on touch devices only via the canonical touch-detector
+   `(hover: none) and (pointer: coarse)` — desktop laptops keep the
+   designed 14–15px size; iPhone/iPad/Android get a thumb-friendly 16px.
+   This is the system-wide fix for every .sf-* / .eos-form-input /
+   .eos-modal input across all apps. */
+@media (hover: none) and (pointer: coarse) {
+    .eos-modal input,
+    .eos-modal select,
+    .eos-modal textarea,
+    .eos-form-input,
+    .eos-settings-panel .sf-input,
+    .eos-settings-panel .sf-select,
+    .eos-settings-panel .sf-textarea,
+    .eos-method-picker-select {
+        font-size: 16px;
+    }
+}

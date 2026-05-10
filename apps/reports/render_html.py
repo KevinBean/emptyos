@@ -20,9 +20,10 @@ from emptyos.sdk.utils import parse_frontmatter, strip_frontmatter
 
 from . import tables as tables_mod
 
-
 # Public so the rest of the package can inspect in tests.
-FIGURE_RE = re.compile(r"!\[\[([^\]|]+\.(png|jpg|jpeg|gif|svg|webp))(?:\|([^\]]+))?\]\]", re.IGNORECASE)
+FIGURE_RE = re.compile(
+    r"!\[\[([^\]|]+\.(png|jpg|jpeg|gif|svg|webp))(?:\|([^\]]+))?\]\]", re.IGNORECASE
+)
 TABLE_TOKEN_RE = re.compile(r"\{\{table:([a-z_][a-z0-9_-]*)\}\}", re.IGNORECASE)
 REQ_LINK_RE = re.compile(r"\{\{(req|risk):([A-Z]+-\d+)\}\}", re.IGNORECASE)
 WIKILINK_REQ_RE = re.compile(r"\[\[((?:REQ|RISK)-\d+)\]\]", re.IGNORECASE)
@@ -32,16 +33,29 @@ WIKILINK_REQ_RE = re.compile(r"\[\[((?:REQ|RISK)-\d+)\]\]", re.IGNORECASE)
 # Download button. The match covers both codehilite (`<div class="highlight">
 # <pre>…</pre></div>`) and plain (`<pre><code>…</code></pre>`) output shapes.
 CODE_BLOCK_RE = re.compile(
-    r'<!--\s*file:\s*([^\n>]+?)\s*-->\s*'
+    r"<!--\s*file:\s*([^\n>]+?)\s*-->\s*"
     r'(<div class="highlight">.*?</div>|<pre><code[^>]*>.*?</code></pre>)',
     re.DOTALL,
 )
 
 _EXT_LANG = {
-    "py": "python", "html": "html", "css": "css", "js": "javascript",
-    "ts": "typescript", "toml": "toml", "json": "json", "md": "markdown",
-    "yaml": "yaml", "yml": "yaml", "sh": "bash", "bash": "bash",
-    "rs": "rust", "go": "go", "java": "java", "c": "c", "cpp": "cpp",
+    "py": "python",
+    "html": "html",
+    "css": "css",
+    "js": "javascript",
+    "ts": "typescript",
+    "toml": "toml",
+    "json": "json",
+    "md": "markdown",
+    "yaml": "yaml",
+    "yml": "yaml",
+    "sh": "bash",
+    "bash": "bash",
+    "rs": "rust",
+    "go": "go",
+    "java": "java",
+    "c": "c",
+    "cpp": "cpp",
 }
 
 _CODE_BLOCK_CSS = """
@@ -98,6 +112,7 @@ function fallbackCopy(text) {
 
 def _wrap_code_blocks(html: str) -> str:
     """Decorate `<!-- file: X -->` marked code blocks with a filename header + actions."""
+
     def _sub(m: re.Match) -> str:
         filename = m.group(1).strip()
         body = m.group(2)
@@ -112,10 +127,11 @@ def _wrap_code_blocks(html: str) -> str:
             f'<span class="code-block-spacer"></span>'
             f'<button type="button" class="code-block-btn" data-action="copy">Copy</button>'
             f'<button type="button" class="code-block-btn" data-action="download">Download</button>'
-            f'</figcaption>'
-            f'{body}'
-            f'</figure>'
+            f"</figcaption>"
+            f"{body}"
+            f"</figure>"
         )
+
     return CODE_BLOCK_RE.sub(_sub, html)
 
 
@@ -167,7 +183,11 @@ def assemble_html(
         # Custom token preprocessing ---
         body_md = _expand_table_tokens(body_md, tables_dir)
         body_md, figure_counter = _expand_figures(
-            body_md, figures_dir, figure_counter, assets_as_file_urls, figure_url_prefix,
+            body_md,
+            figures_dir,
+            figure_counter,
+            assets_as_file_urls,
+            figure_url_prefix,
         )
         body_md = _expand_req_links(body_md)
 
@@ -185,13 +205,17 @@ def assemble_html(
 
         section_id = f"sec-{slug}"
         toc_entries.append((title, section_id))
-        status_badge = f'<span class="section-status status-{_safe_class(status)}">{_html_escape(status)}</span>' if status else ""
+        status_badge = (
+            f'<span class="section-status status-{_safe_class(status)}">{_html_escape(status)}</span>'
+            if status
+            else ""
+        )
         body_parts.append(
             f'<section class="report-section" id="{section_id}">'
-            f'<h1>{_html_escape(title)} {status_badge}</h1>'
-            f'{html_body}'
-            f'{directive_html}'
-            f'</section>'
+            f"<h1>{_html_escape(title)} {status_badge}</h1>"
+            f"{html_body}"
+            f"{directive_html}"
+            f"</section>"
         )
 
     toc_html = _render_toc(toc_entries)
@@ -205,11 +229,11 @@ def assemble_html(
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>{_html_escape(meta.get('title') or 'Report')}</title>
+<title>{_html_escape(meta.get("title") or "Report")}</title>
 {styles}
 <style>{_CODE_BLOCK_CSS}</style>
 </head>
-<body class="report-doc report-type-{_safe_class(meta.get('type') or 'report')}">
+<body class="report-doc report-type-{_safe_class(meta.get("type") or "report")}">
 {body_html}
 <script>{_CODE_BLOCK_JS}</script>
 </body>
@@ -271,17 +295,21 @@ def _render_md(md_text: str) -> tuple[str, str]:
     except Exception:
         return f"<pre>{_html_escape(md_text)}</pre>", ""
     try:
-        return render_markdown(md_text, published_slugs={}, assets_prefix="figures/", link_prefix="")
+        return render_markdown(
+            md_text, published_slugs={}, assets_prefix="figures/", link_prefix=""
+        )
     except Exception:
         return f"<pre>{_html_escape(md_text)}</pre>", ""
 
 
 def _expand_table_tokens(body: str, tables_dir: Path) -> str:
     """Replace {{table:requirements}} tokens with rendered HTML tables."""
+
     def _sub(m: re.Match) -> str:
         name = m.group(1).lower()
         rows = tables_mod.load_table(tables_dir / f"{name}.yaml")
         return tables_mod.render_table_html(name, rows)
+
     return TABLE_TOKEN_RE.sub(_sub, body)
 
 
@@ -296,6 +324,7 @@ def _expand_figures(
 
     Figures are numbered sequentially across the whole document.
     """
+
     def _sub(m: re.Match) -> str:
         name = m.group(1).strip()
         caption = (m.group(3) or "").strip()
@@ -312,20 +341,24 @@ def _expand_figures(
         return (
             f'<figure class="report-figure">'
             f'<img src="{_html_escape(src)}" alt="{_html_escape(caption or name)}">'
-            f'<figcaption>{_html_escape(cap_text)}</figcaption>'
-            f'</figure>'
+            f"<figcaption>{_html_escape(cap_text)}</figcaption>"
+            f"</figure>"
         )
+
     return FIGURE_RE.sub(_sub, body), counter
 
 
 def _expand_req_links(body: str) -> str:
     """Turn {{req:REQ-001}} and [[REQ-001]] into internal anchor links."""
+
     def _sub_token(m: re.Match) -> str:
-        kind, rid = m.group(1).lower(), m.group(2).upper()
+        rid = m.group(2).upper()
         return f'<a class="req-link" href="#row-{_safe_class(rid)}">{_html_escape(rid)}</a>'
+
     def _sub_wiki(m: re.Match) -> str:
         rid = m.group(1).upper()
         return f'<a class="req-link" href="#row-{_safe_class(rid)}">{_html_escape(rid)}</a>'
+
     body = REQ_LINK_RE.sub(_sub_token, body)
     body = WIKILINK_REQ_RE.sub(_sub_wiki, body)
     return body
@@ -363,7 +396,7 @@ def _render_title_page(meta: dict) -> str:
   <div class="title-block">
     <div class="doc-type">{_html_escape(doc_type)}</div>
     <h1 class="doc-title">{_html_escape(title)}</h1>
-    {f'<p class="doc-subtitle">{_html_escape(subtitle)}</p>' if subtitle else ''}
+    {f'<p class="doc-subtitle">{_html_escape(subtitle)}</p>' if subtitle else ""}
   </div>
   <table class="title-meta">{rows_html}</table>
 </section>
@@ -404,18 +437,18 @@ def _render_signoff_block(meta: dict) -> str:
             role = str(a)
             name = date_s = signature = ""
         rows.append(
-            f'<tr>'
+            f"<tr>"
             f'<td class="role">{_html_escape(role)}</td>'
             f'<td class="name">{_html_escape(name)}</td>'
             f'<td class="date">{_html_escape(date_s)}</td>'
             f'<td class="sig">{_html_escape(signature)}</td>'
-            f'</tr>'
+            f"</tr>"
         )
     return (
         '<table class="signoff-table">'
-        '<thead><tr><th>Role</th><th>Name</th><th>Date</th><th>Signature</th></tr></thead>'
-        f'<tbody>{"".join(rows)}</tbody>'
-        '</table>'
+        "<thead><tr><th>Role</th><th>Name</th><th>Date</th><th>Signature</th></tr></thead>"
+        f"<tbody>{''.join(rows)}</tbody>"
+        "</table>"
     )
 
 

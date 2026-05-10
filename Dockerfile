@@ -6,7 +6,12 @@
 # Build:
 #   docker build -t emptyos:latest .
 #
-# Run (minimum):
+# Run (one-liner, no pre-existing config — entrypoint bootstraps first boot):
+#   docker run -d -p 9000:9000 \
+#       -v $HOME/emptyos-vault:/vault \
+#       ghcr.io/kevinbean/emptyos:latest
+#
+# Run (with your own config):
 #   docker run -d -p 9000:9000 \
 #       -v /path/to/your/vault:/vault \
 #       -v $(pwd)/emptyos.toml:/app/emptyos.toml \
@@ -15,7 +20,7 @@
 # Run (public mode with inline token):
 #   docker run -d -p 9000:9000 \
 #       -v /path/to/your/vault:/vault \
-#       -v $(pwd)/emptyos.toml:/app/emptyos.toml \
+#       -e EOS_NETWORK_MODE=public \
 #       -e EOS_NETWORK_AUTH_TOKEN=your-long-random-token \
 #       emptyos:latest
 
@@ -48,7 +53,13 @@ COPY emptyos.example.toml ./emptyos.example.toml
 # Install EmptyOS and its runtime dependencies
 RUN pip install --no-cache-dir -e .
 
-# Default config location inside the container. Mount your real config over this.
+# First-boot bootstrap — writes a default config + auth token + PARA-seeded
+# vault when those don't already exist. Idempotent on restart.
+COPY docker/entrypoint.sh /usr/local/bin/entrypoint.sh
+RUN chmod +x /usr/local/bin/entrypoint.sh
+
+# Default config location inside the container. Mount your real config over
+# this to skip the auto-generated one.
 ENV EOS_CONFIG=/app/emptyos.toml
 
 # Vault mount point — map your host vault here.
@@ -59,7 +70,9 @@ VOLUME ["/app/data"]
 
 EXPOSE 9000
 
-# Start the daemon. The `network.mode = "public"` + auth_token requirement is
-# enforced in Python — the container refuses to start in public mode without a
-# token set (via emptyos.toml or EOS_NETWORK_AUTH_TOKEN env var).
+# The entrypoint bootstraps first-boot state (config, token, vault skeleton)
+# then exec's CMD. The `network.mode = "public"` + auth_token requirement is
+# enforced in Python — the container refuses to start in public mode without
+# a token set (via emptyos.toml or EOS_NETWORK_AUTH_TOKEN env var).
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 CMD ["python", "-m", "emptyos", "start"]

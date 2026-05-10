@@ -1,0 +1,299 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Scroll</title>
+<link rel="stylesheet" href="/static/theme.css">
+<link rel="stylesheet" href="/static/eos-components.css">
+<link rel="stylesheet" href="/static/eos-keys.css">
+<style>
+  .scroll-shell { max-width: 480px; margin: 0 auto; display: flex; flex-direction: column; }
+  .scroll-header { display: flex; align-items: center; gap: 12px; padding: 12px 16px; border-bottom: 1px solid var(--border); }
+  .scroll-header h1 { margin: 0; font-size: 18px; font-weight: var(--fw-label); flex: 1; color: var(--text-heading); }
+  .scroll-tabs { display: flex; gap: 6px; padding: 12px 16px; border-bottom: 1px solid var(--border); }
+  .scroll-tab { padding: 6px 14px; border-radius: var(--radius-pill); background: var(--bg-card); border: 1px solid var(--border); color: var(--text); cursor: pointer; font: inherit; font-size: var(--fs-small); transition: background var(--dur-fast) var(--ease); }
+  .scroll-tab:hover { background: var(--bg-card-hover); }
+  .scroll-tab.active { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+  .scroll-view { padding: 16px; }
+  .clip-card { aspect-ratio: 9/16; border-radius: var(--radius-lg); background: linear-gradient(135deg, var(--accent), var(--accent-dim)); display: flex; align-items: flex-end; padding: 18px; margin-bottom: 14px; position: relative; overflow: hidden; cursor: pointer; background-size: cover; background-position: center; }
+  .clip-card.has-image::after { content:''; position:absolute; inset:0; background: linear-gradient(180deg, transparent 40%, rgba(0,0,0,0.55) 100%); pointer-events:none; }
+  .clip-card.has-image .clip-meta, .clip-card.has-image .clip-shape-badge, .clip-card.has-image .clip-actions { position: relative; z-index: 1; }
+  .clip-card.has-image .clip-actions { position: absolute; }
+  .clip-media-row { display: flex; gap: 10px; align-items: center; margin-top: 10px; flex-wrap: wrap; }
+  .clip-media-row audio { height: 32px; }
+  .clip-media-label { font-size: var(--fs-meta); letter-spacing: var(--tracking-meta); text-transform: uppercase; color: var(--text-muted); }
+  .seed-btn { padding: 6px 12px; border-radius: var(--radius-pill); background: var(--bg-card); border: 1px dashed var(--border-strong); color: var(--text-secondary); cursor: pointer; font: inherit; font-size: var(--fs-small); margin-left: 8px; }
+  .seed-btn:hover { color: var(--accent); border-color: var(--accent); }
+  .clip-meta { color: var(--accent-ink); }
+  .clip-meta .persona { font-size: var(--fs-small); opacity: .85; margin-bottom: 4px; }
+  .clip-meta .title { font-size: 16px; font-weight: var(--fw-label); }
+  .clip-actions { position: absolute; right: 10px; bottom: 18px; display: flex; flex-direction: column; gap: 12px; }
+  .clip-action { background: rgba(0,0,0,.25); color: var(--accent-ink); border: 0; width: 40px; height: 40px; border-radius: 50%; font-size: 18px; cursor: pointer; }
+  .clip-action:hover { background: rgba(0,0,0,.4); }
+  .persona-row { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-radius: var(--radius); background: var(--bg-card); border: 1px solid var(--border); margin-bottom: 8px; cursor: pointer; transition: background var(--dur-fast) var(--ease); }
+  .persona-row:hover { background: var(--bg-card-hover); }
+  .persona-row .name { font-weight: var(--fw-label); color: var(--text-heading); }
+  .persona-row .meta { font-size: var(--fs-small); color: var(--text-secondary); margin-top: 2px; }
+  .empty-hint { text-align: center; padding: 60px 20px; color: var(--text-muted); font-size: var(--fs-small); }
+  .add-persona-btn { margin-bottom: 12px; padding: 8px 14px; border-radius: var(--radius-pill); background: var(--accent-bg); border: 1px solid var(--accent); color: var(--accent); cursor: pointer; font: inherit; font-size: var(--fs-small); }
+  .add-persona-btn:hover { background: var(--accent); color: var(--accent-ink); }
+  .clip-shape-badge { position: absolute; top: 12px; left: 12px; padding: 3px 8px; border-radius: var(--radius-pill); background: rgba(0,0,0,.35); color: var(--accent-ink); font-size: 10px; letter-spacing: var(--tracking-meta); text-transform: uppercase; }
+  .persona-mood { display: inline-block; padding: 2px 8px; border-radius: var(--radius-pill); background: var(--accent-bg); color: var(--accent); font-size: 11px; margin-left: 6px; }
+  .persona-row .gen-btn { background: var(--bg-input); border: 1px solid var(--border); padding: 4px 10px; border-radius: var(--radius-pill); color: var(--text); font: inherit; font-size: var(--fs-small); cursor: pointer; }
+  .persona-row .gen-btn:hover { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+  .clip-script { white-space: pre-wrap; padding: 12px; border-radius: var(--radius); background: var(--bg-card); border: 1px solid var(--border); font-family: var(--font); line-height: var(--lh-prose); margin-top: 8px; max-height: 320px; overflow-y: auto; }
+</style>
+</head>
+<body>
+<div class="scroll-shell">
+  <header class="scroll-header">
+    <h1>Scroll</h1>
+    <button class="btn-settings" onclick="openAppSettings()" title="Settings">&#9881;</button>
+  </header>
+
+  <nav class="scroll-tabs">
+    <button class="scroll-tab active" data-tab="feed" onclick="switchTab('feed')">Feed</button>
+    <button class="scroll-tab" data-tab="drafts" onclick="switchTab('drafts')">Drafts</button>
+    <button class="scroll-tab" data-tab="personas" onclick="switchTab('personas')">Personas</button>
+  </nav>
+
+  <main id="view" class="scroll-view"></main>
+</div>
+
+<script src="/static/eos.js"></script>
+<script src="/static/eos-components.js"></script>
+<script src="/static/eos-keys.js"></script>
+<script>
+var STATE = { tab: 'feed', feed: [], drafts: [], personas: [] };
+
+var _appSettings = EOS_UI.settingsPanel({
+  id: 'scroll-settings-panel',
+  title: 'Scroll Settings',
+  fields: [
+    { key: 'scroll.draft_review', label: 'Review drafts before publishing', type: 'boolean', default: true,
+      hint: 'New clips wait in Drafts until you approve them.' },
+    { key: 'scroll.autoplay', label: 'Autoplay next clip', type: 'boolean', default: true },
+  ],
+});
+function openAppSettings() { _appSettings.open(); }
+
+var _route = EOS_UI.hashRoute({
+  onShow: function (id) { showDetail(id); },
+  onHide: function () { renderTab(); },
+});
+
+function switchTab(tab) {
+  STATE.tab = tab;
+  document.querySelectorAll('.scroll-tab').forEach(function (b) {
+    b.classList.toggle('active', b.dataset.tab === tab);
+  });
+  renderTab();
+}
+
+async function loadAll() {
+  var [feed, drafts, personas] = await Promise.all([
+    fetch('/scroll/api/feed').then(function (r) { return r.json(); }),
+    fetch('/scroll/api/drafts').then(function (r) { return r.json(); }),
+    fetch('/scroll/api/personas').then(function (r) { return r.json(); }),
+  ]);
+  STATE.feed = feed || [];
+  STATE.drafts = drafts || [];
+  STATE.personas = personas || [];
+  renderTab();
+}
+
+function renderTab() {
+  var view = document.getElementById('view');
+  if (STATE.tab === 'feed') return renderClips(view, STATE.feed, 'Nothing published yet. Approve a draft, or add a persona to start generating.');
+  if (STATE.tab === 'drafts') return renderClips(view, STATE.drafts, 'No drafts. Generated clips land here for review before publishing.');
+  if (STATE.tab === 'personas') return renderPersonas(view);
+}
+
+function renderClips(view, clips, emptyMsg) {
+  if (!clips.length) { view.innerHTML = '<div class="empty-hint">' + EOS_UI.esc(emptyMsg) + '</div>'; return; }
+  view.innerHTML = clips.map(function (c) {
+    var actions = STATE.tab === 'drafts'
+      ? '<button class="clip-action" onclick="publishClip(\'' + EOS_UI.esc(c.id) + '\')" title="Publish">✓</button>'
+      : '<button class="clip-action" onclick="likeClip(\'' + EOS_UI.esc(c.id) + '\')" title="Like">♥</button>'
+        + '<button class="clip-action" onclick="skipClip(\'' + EOS_UI.esc(c.id) + '\')" title="Skip">↓</button>';
+    var shape = c.shape || 'monologue';
+    var imgUrl = c.image_url || '';
+    var hasImg = imgUrl ? ' has-image' : '';
+    var bgStyle = imgUrl ? ' style="background-image:url(\'' + EOS_UI.esc(imgUrl) + '\')"' : '';
+    return ''
+      + '<div class="clip-card' + hasImg + '"' + bgStyle + ' onclick="_route.set(\'' + EOS_UI.esc(c.id) + '\')">'
+      +   '<div class="clip-shape-badge">' + EOS_UI.esc(shape) + '</div>'
+      +   '<div class="clip-meta">'
+      +     '<div class="persona">@' + EOS_UI.esc(c.persona || 'unknown') + '</div>'
+      +     '<div class="title">' + EOS_UI.esc(c.title || '(untitled)') + '</div>'
+      +   '</div>'
+      +   '<div class="clip-actions" onclick="event.stopPropagation()">' + actions + '</div>'
+      + '</div>';
+  }).join('');
+}
+
+function renderPersonas(view) {
+  var addBtn = '<button class="add-persona-btn" onclick="openAddPersona()">+ New Persona</button>';
+  if (!STATE.personas.length) { view.innerHTML = addBtn + '<div class="empty-hint">No personas yet. Add one to start generating clips.</div>'; return; }
+  view.innerHTML = addBtn + STATE.personas.map(function (p) {
+    var moodChip = p.mood ? '<span class="persona-mood">' + EOS_UI.esc(p.mood) + '</span>' : '';
+    return ''
+      + '<div class="persona-row">'
+      +   '<div style="flex:1; cursor:pointer" onclick="_route.set(\'persona:' + EOS_UI.esc(p.id) + '\')">'
+      +     '<div class="name">' + EOS_UI.esc(p.name || p.id) + moodChip + '</div>'
+      +     '<div class="meta">' + EOS_UI.esc(p.cadence || 'weekly') + ' · ' + (p.topics || []).slice(0, 3).map(EOS_UI.esc).join(', ') + '</div>'
+      +   '</div>'
+      +   '<button class="gen-btn" onclick="openGenerate(\'' + EOS_UI.esc(p.id) + '\')">Generate</button>'
+      +   '<button class="seed-btn" onclick="seedAndGenerate(\'' + EOS_UI.esc(p.id) + '\')" title="Pick a vault note as topic">🌱</button>'
+      + '</div>';
+  }).join('');
+}
+
+async function seedAndGenerate(persona_id) {
+  var seed = await fetch('/scroll/api/seed-topic').then(function (r) { return r.json(); }).catch(function () { return {}; });
+  var hint = (seed && seed.hint) || '';
+  if (!hint) { EOS_UI.toast('No vault topic found', false); return; }
+  EOS_UI.toast('Seeded: ' + hint);
+  var r = await fetch('/scroll/api/generate', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ persona_id: persona_id, shape: 'monologue', topic_hint: hint }),
+  });
+  var body = await r.json();
+  if (body && body.error) { EOS_UI.toast(body.error, false); return; }
+  EOS_UI.toast('Draft ready');
+  await loadAll();
+  switchTab('drafts');
+}
+
+function openGenerate(persona_id) {
+  var others = STATE.personas.filter(function (p) { return p.id !== persona_id; });
+  var shapeOptions = others.length
+    ? ['monologue', 'dialogue', 'news-flash']
+    : ['monologue'];
+  var fields = [
+    { key: 'shape', label: 'Shape', type: 'select', options: shapeOptions, value: 'monologue' },
+    { key: 'topic_hint', label: 'Topic hint (optional)' },
+  ];
+  if (others.length) {
+    fields.push({
+      key: 'other_id',
+      label: 'With (required for dialogue / news-flash)',
+      type: 'select',
+      options: others.map(function (p) { return p.id; }),
+      value: others[0].id,
+    });
+  }
+  EOS_UI.formModal('Generate clip', fields, async function (data) {
+    if (data.shape !== 'monologue' && !data.other_id) {
+      EOS_UI.toast('Add a second persona for ' + data.shape + ' clips', false);
+      return;
+    }
+    EOS_UI.toast('Generating script + voice + image…');
+    var r = await fetch('/scroll/api/generate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        persona_id: persona_id,
+        shape: data.shape,
+        other_id: data.other_id || '',
+        topic_hint: data.topic_hint || '',
+      }),
+    });
+    var body = await r.json();
+    if (body && body.error) { EOS_UI.toast(body.error, false); return; }
+    EOS_UI.toast('Draft ready');
+    await loadAll();
+    switchTab('drafts');
+  });
+}
+
+function showDetail(rawId) {
+  if (rawId.indexOf('persona:') === 0) {
+    var pid = rawId.slice(8);
+    fetch('/scroll/api/personas/' + encodeURIComponent(pid)).then(function (r) { return r.json(); }).then(function (p) {
+      if (!p || p.error) { _route.clear(); return; }
+      EOS_UI.modal({
+        title: p.name || p.id,
+        body: ''
+          + '<div><strong>Voice:</strong> ' + EOS_UI.esc(p.voice || '—') + '</div>'
+          + '<div><strong>Style:</strong> ' + EOS_UI.esc(p.draw_style || '—') + '</div>'
+          + '<div><strong>Cadence:</strong> ' + EOS_UI.esc(p.cadence || 'daily') + '</div>'
+          + '<div><strong>Topics:</strong> ' + (p.topics || []).map(EOS_UI.esc).join(', ') + '</div>'
+          + '<hr>'
+          + '<pre style="white-space:pre-wrap">' + EOS_UI.esc(p.system_prompt || '') + '</pre>'
+          + (p._path ? '<div style="margin-top:8px">' + EOS.noteActions(p._path) + '</div>' : ''),
+        onClose: function () { _route.clear(); },
+      });
+    });
+    return;
+  }
+  fetch('/scroll/api/clips/' + encodeURIComponent(rawId)).then(function (r) {
+    return r.ok ? r.json() : { error: 'fetch failed' };
+  }).then(function (clip) {
+    if (!clip || clip.error) { _route.clear(); return; }
+    var body = clip.body || '';
+    var media = '';
+    if (clip.audio_url) {
+      media += '<div class="clip-media-row"><span class="clip-media-label">narration</span>'
+        + '<audio controls preload="none" src="' + EOS_UI.esc(clip.audio_url) + '"></audio></div>';
+    }
+    if (clip.music_url) {
+      media += '<div class="clip-media-row"><span class="clip-media-label">bg music</span>'
+        + '<audio controls preload="none" src="' + EOS_UI.esc(clip.music_url) + '"></audio>'
+        + (clip.music ? '<span class="clip-media-label">' + EOS_UI.esc(clip.music) + '</span>' : '')
+        + '</div>';
+    }
+    var img = clip.image_url
+      ? '<img src="' + EOS_UI.esc(clip.image_url) + '" style="width:100%; max-height:360px; object-fit:cover; border-radius:var(--radius); margin-top:8px"/>'
+      : '';
+    EOS_UI.modal({
+      title: clip.title || '(untitled)',
+      body: ''
+        + '<div><span class="persona-mood">' + EOS_UI.esc(clip.shape || 'monologue') + '</span>'
+        + ' · @' + EOS_UI.esc(clip.persona || 'unknown')
+        + ' · ' + EOS_UI.esc(clip.status) + '</div>'
+        + img
+        + (body ? '<div class="clip-script">' + EOS_UI.esc(body) + '</div>' : '')
+        + media
+        + (clip._path ? '<div style="margin-top:8px">' + EOS.noteActions(clip._path) + '</div>' : ''),
+      onClose: function () { _route.clear(); },
+    });
+  });
+}
+
+function openAddPersona() {
+  EOS_UI.formModal('New Persona', [
+    { key: 'name', label: 'Name' },
+    { key: 'voice', label: 'Voice (timbre, pace, accent)' },
+    { key: 'draw_style', label: 'Visual style' },
+    { key: 'topics', label: 'Topics (comma-separated)' },
+    { key: 'cadence', label: 'Cadence', type: 'select', options: ['daily', 'weekly', 'manual'], value: 'weekly' },
+    { key: 'system_prompt', label: 'System prompt', type: 'textarea' },
+  ], async function (data) {
+    if (!data.name) { EOS_UI.toast('Name is required', false); return; }
+    data.topics = (data.topics || '').split(',').map(function (s) { return s.trim(); }).filter(Boolean);
+    var r = await fetch('/scroll/api/personas', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    var body = await r.json();
+    if (body && body.error) { EOS_UI.toast(body.error, false); return; }
+    EOS_UI.toast('Persona added');
+    await loadAll();
+  });
+}
+
+async function publishClip(id) {
+  var r = await fetch('/scroll/api/clips/' + encodeURIComponent(id) + '/publish', { method: 'POST' });
+  if (r.ok) { EOS_UI.toast('Published'); await loadAll(); }
+}
+async function likeClip(id) { await fetch('/scroll/api/clips/' + encodeURIComponent(id) + '/like', { method: 'POST' }); EOS_UI.toast('♥'); }
+async function skipClip(id) { await fetch('/scroll/api/clips/' + encodeURIComponent(id) + '/skip', { method: 'POST' }); }
+
+loadAll().then(function () { _route.init && _route.init(); });
+</script>
+</body>
+</html>

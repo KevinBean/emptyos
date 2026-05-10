@@ -21,24 +21,39 @@ EXEMPT_PREFIXES = (
     "plugins/",
     ".eos-branding",
     "scripts/check-branding.py",
-    "scripts/",            # migration/utility scripts
-    "CLAUDE.md",           # development rules reference product names for documentation
-    "DESIGN.md",           # design tokens contract — references brands when stating "don't" rules
-    "docs/",               # design docs may reference integrations
-    ".claude/",            # claude code config
-    "skills/",             # skill definitions
-    "data/",               # runtime data
-    "tests/",              # test fixtures
-    "results/",            # benchmark/test results
-    ".gitignore",          # folder names like .obsidian
+    "scripts/",  # migration/utility scripts
+    "CLAUDE.md",  # development rules reference product names for documentation
+    "DESIGN.md",  # design tokens contract — references brands when stating "don't" rules
+    "docs/",  # design docs may reference integrations
+    ".claude/",  # claude code config
+    "skills/",  # skill definitions
+    "data/",  # runtime data
+    "tests/",  # test fixtures
+    "results/",  # benchmark/test results
+    ".gitignore",  # folder names like .obsidian
     "emptyos.example.toml",
     "emptyos.toml.example",
-    "release.toml",        # build manifest — plugin IDs are functional identifiers
+    "release.toml",  # build manifest — plugin IDs are functional identifiers
 )
 
 # Binary extensions to skip
-BINARY_EXT = {".png", ".jpg", ".jpeg", ".gif", ".ico", ".wav", ".mp3", ".mp4",
-              ".woff", ".woff2", ".ttf", ".eot", ".db", ".sqlite", ".pyc"}
+BINARY_EXT = {
+    ".png",
+    ".jpg",
+    ".jpeg",
+    ".gif",
+    ".ico",
+    ".wav",
+    ".mp3",
+    ".mp4",
+    ".woff",
+    ".woff2",
+    ".ttf",
+    ".eot",
+    ".db",
+    ".sqlite",
+    ".pyc",
+}
 
 # Files where product names are functional identifiers (provider selectors, CSS classes)
 FUNCTIONAL_FILES = {
@@ -48,13 +63,15 @@ FUNCTIONAL_FILES = {
 
 # Line-level patterns that are NOT branding violations (technical identifiers)
 FALSE_POSITIVE_RE = [
-    re.compile(r'\.obsidian'),           # .obsidian folder name
-    re.compile(r'obsidian://'),          # URI scheme (technical protocol)
-    re.compile(r'Obsidian(Search|CLI|Provider|Plugin)'),  # code identifiers (CLI plugin, search provider)
-    re.compile(r'obsidian-cli'),         # plugin ID
-    re.compile(r'obs-link|obs-icon'),    # CSS class names
+    re.compile(r"\.obsidian"),  # .obsidian folder name
+    re.compile(r"obsidian://"),  # URI scheme (technical protocol)
+    re.compile(
+        r"Obsidian(Search|CLI|Provider|Plugin)"
+    ),  # code identifiers (CLI plugin, search provider)
+    re.compile(r"obsidian-cli"),  # plugin ID
+    re.compile(r"obs-link|obs-icon"),  # CSS class names
     re.compile(r'"vault-obsidian-format"'),  # skill ID
-    re.compile(r'"suno[_-]'),           # legacy field alias (backwards compat)
+    re.compile(r'"suno[_-]'),  # legacy field alias (backwards compat)
 ]
 
 
@@ -142,9 +159,9 @@ def main():
                     violations.append((filepath, lineno, pattern.pattern, stripped[:120]))
 
     if violations:
-        print(f"\n{'='*60}", file=sys.stderr)
+        print(f"\n{'=' * 60}", file=sys.stderr)
         print(f"  THIRD-PARTY BRANDING in {len(violations)} location(s)", file=sys.stderr)
-        print(f"{'='*60}\n", file=sys.stderr)
+        print(f"{'=' * 60}\n", file=sys.stderr)
         for filepath, lineno, pattern, preview in violations:
             # Sanitize for console output
             safe = preview.encode("ascii", "replace").decode("ascii")
@@ -152,12 +169,14 @@ def main():
             print(f"    Pattern: {pattern}", file=sys.stderr)
             print(f"    Content: {safe}", file=sys.stderr)
             print(file=sys.stderr)
-        print(f"Use generic terms instead. See .eos-branding for details.", file=sys.stderr)
-        print(f"Exempt: plugin code, docs, CLAUDE.md, provider selectors\n", file=sys.stderr)
+        print("Use generic terms instead. See .eos-branding for details.", file=sys.stderr)
+        print("Exempt: plugin code, docs, CLAUDE.md, provider selectors\n", file=sys.stderr)
         sys.exit(1)
     else:
         mode = "staged files" if staged_only else "all tracked files"
-        print(f"OK: No third-party branding found in {mode} ({len(files)} files, {len(patterns)} patterns)")
+        print(
+            f"OK: No third-party branding found in {mode} ({len(files)} files, {len(patterns)} patterns)"
+        )
         sys.exit(0)
 
 

@@ -7,12 +7,13 @@ Apps call: self.require("notifications").send("message")
 from __future__ import annotations
 
 import os
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from emptyos.sdk import BasePlugin
 
 try:
     import aiohttp
+
     _HAS_AIOHTTP = True
 except ImportError:
     _HAS_AIOHTTP = False
@@ -47,7 +48,7 @@ class NotificationsPlugin(BasePlugin):
     async def send(self, message: str, priority: str = "info", source: str = "system"):
         """Send a notification. Writes to vault and optionally Telegram."""
         emoji = {"info": "🔔", "success": "✅", "warning": "⚠️", "error": "❌"}.get(priority, "🔔")
-        now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M")
+        now = datetime.now(UTC).strftime("%Y-%m-%d %H:%M")
         line = f"- **{now}** | {emoji} {message}\n"
 
         self._append_to_vault(line)
@@ -84,10 +85,13 @@ class NotificationsPlugin(BasePlugin):
         chat_id = self.config("chat_id", "")
         try:
             url = f"https://api.telegram.org/bot{token}/sendMessage"
-            await self._session.post(url, json={
-                "chat_id": chat_id,
-                "text": f"{emoji} {message}",
-                "parse_mode": "Markdown",
-            })
+            await self._session.post(
+                url,
+                json={
+                    "chat_id": chat_id,
+                    "text": f"{emoji} {message}",
+                    "parse_mode": "Markdown",
+                },
+            )
         except Exception as e:
             print(f"[Notifications] Telegram failed: {e}")

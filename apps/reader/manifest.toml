@@ -1,0 +1,65 @@
+[app]
+id = "reader"
+name = "Reader"
+version = "0.1.0"
+description = "Read books with AI scene visualization, concept map, and dictionary lookup"
+dimensions = ["intellectual"]
+
+[app.entry]
+module = "app"
+class = "ReaderApp"
+
+[requires]
+capabilities = ["read", "write", "think", "search", "speak", "draw"]
+apps = []
+services = []
+events = []
+
+[provides.cli]
+commands = ["reader"]
+
+[provides.web]
+prefix = "/reader"
+
+[provides.events]
+emits = [
+    "reader:opened",
+    "reader:progress",
+    "reader:highlighted",
+    "reader:scene_generated",
+]
+# Per-paragraph reading position — fired on every scroll, UI bookmark sync only.
+internal = ["reader:progress"]
+
+[provides.settings]
+schema = [
+    {key = "reader.font_size", label = "Font size (px)", type = "number", default = 18},
+    {key = "reader.line_height", label = "Line height", type = "number", default = 1.7},
+    {key = "reader.concept_map", label = "Auto-build concept map", type = "boolean", default = true},
+    {key = "reader.scene_preset", label = "Scene visual preset (FLUX style)", type = "select", default = "illustration", options = ["illustration", "cinematic", "comic", "dream", "photo", "minimalist", ""]},
+    {key = "reader.scene_style", label = "Extra style hints (appended to prompt)", type = "text", default = "atmospheric, soft light, no text"},
+    {key = "reader.tts_provider", label = "TTS provider", type = "select", default = "kokoro", options = ["kokoro", "xtts", "edge-tts", "openai-tts"], hint = "Kokoro (default): local, high quality, free, your reading stays on your machine. XTTS: local voice cloning. Edge-TTS: local but robotic. OpenAI: cloud — sends paragraph text to OpenAI, NOT recommended for private reading."},
+]
+
+[[contributes.hub.panel]]
+id = "reader.currently-reading"
+method = "panel_currently_reading"
+renderer = "plain-list"
+title = "Currently reading"
+priority = 320
+group = ""
+limit = 3
+
+[[contributes.voice-assistant.intent]]
+verb = "reader.open"
+method = "voice_open"
+example = "open the machine stops"
+args = { query = "string" }
+description = "Open a book by title or slug"
+
+[[contributes.voice-assistant.intent]]
+verb = "reader.read_aloud"
+method = "voice_read_aloud"
+example = "read this paragraph aloud"
+args = {}
+description = "Read the current paragraph aloud"

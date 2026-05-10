@@ -23,10 +23,8 @@ Scope:
 from __future__ import annotations
 
 import ast
-from pathlib import Path
 
 from emptyos.sdk.agent_tools.base import Tool, ToolResult, resolve_path, unified_diff
-
 
 MAX_BYTES = 5_000_000
 
@@ -53,8 +51,10 @@ def _find_def_span(source: str, name: str) -> tuple[int, int, str] | None:
         if node.name != name:
             continue
         kind = (
-            "async def" if isinstance(node, ast.AsyncFunctionDef)
-            else "class" if isinstance(node, ast.ClassDef)
+            "async def"
+            if isinstance(node, ast.AsyncFunctionDef)
+            else "class"
+            if isinstance(node, ast.ClassDef)
             else "def"
         )
         # Include decorators in the span. ast assigns each decorator its
@@ -183,7 +183,7 @@ class DeleteFunctionTool(Tool):
         # Splice out lines [start_line .. end_line] inclusive.
         # Convert 1-indexed lines to 0-indexed list slice.
         lines = text.splitlines(keepends=True)
-        before = lines[:start_line - 1]
+        before = lines[: start_line - 1]
         after = lines[end_line:]
         # Trim a trailing blank line just before the deleted span IF the
         # span is followed by another def — keeps PEP-8 spacing tidy and
@@ -195,7 +195,12 @@ class DeleteFunctionTool(Tool):
             last_before = before[-1].strip()
             first_after = after[0].lstrip() if after[0].strip() else ""
             looks_like_def = first_after.startswith(("def ", "async def ", "class ", "@"))
-            if last_before == "" and looks_like_def and len(before) >= 2 and before[-2].strip() == "":
+            if (
+                last_before == ""
+                and looks_like_def
+                and len(before) >= 2
+                and before[-2].strip() == ""
+            ):
                 # Two consecutive blanks before the span and a def follows —
                 # drop one to restore PEP-8 single blank between defs.
                 before = before[:-1]

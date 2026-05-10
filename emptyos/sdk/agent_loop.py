@@ -38,7 +38,11 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 from emptyos.capabilities.providers._tool_capable import (
-    AgentTurn, NativelyAgenticProvider, TextBlock, ToolCapableProvider, ToolUseBlock,
+    AgentTurn,
+    NativelyAgenticProvider,
+    TextBlock,
+    ToolCapableProvider,
+    ToolUseBlock,
 )
 from emptyos.sdk.agent_tools.base import Tool
 
@@ -158,7 +162,7 @@ DEFAULT_SYSTEM_PROMPT = (
     "• Invent framework patterns. If you're about to `import aiohttp.web` in an EmptyOS app,\n"
     "  `import flask`, or write a Django view — STOP. EmptyOS is FastAPI. Handlers return `dict`\n"
     "  (auto-JSON) or `fastapi.responses.HTMLResponse` / `FileResponse` for non-JSON.\n"
-    "• Write a `@web_route(\"GET\", \"/\")` handler to serve `pages/index.html`. The platform\n"
+    '• Write a `@web_route("GET", "/")` handler to serve `pages/index.html`. The platform\n'
     "  auto-mounts pages/index.html at {prefix}/ when the pages/ directory exists\n"
     "  (see emptyos/web/server.py `_mount_loaded_app_routes`). A custom `/` handler SHADOWS\n"
     "  the auto-mount and breaks the UI.\n"
@@ -186,6 +190,7 @@ class AgentSession:
     app persists these to SQLite between turns; the loop operates on the
     in-memory list passed in and mutates it in place.
     """
+
     id: str
     messages: list[dict] = field(default_factory=list)
     cancel_event: asyncio.Event = field(default_factory=asyncio.Event)
@@ -208,7 +213,9 @@ async def _emit(events, event_type: str, data: dict, source: str = "agent"):
         pass
 
 
-def _format_tool_result_for_provider(kind: str, tool_use_id: str, content: str, is_error: bool) -> dict | list[dict]:
+def _format_tool_result_for_provider(
+    kind: str, tool_use_id: str, content: str, is_error: bool
+) -> dict | list[dict]:
     """Provider-specific wire shape for injecting a tool_result back in messages.
 
     Anthropic: user message with content=[{type: "tool_result", tool_use_id, content, is_error}]
@@ -342,12 +349,14 @@ def _assistant_message_for_provider(kind: str, turn: AgentTurn) -> dict:
             if isinstance(block, TextBlock):
                 content.append({"type": "text", "text": block.text})
             elif isinstance(block, ToolUseBlock):
-                content.append({
-                    "type": "tool_use",
-                    "id": block.id,
-                    "name": block.name,
-                    "input": block.input,
-                })
+                content.append(
+                    {
+                        "type": "tool_use",
+                        "id": block.id,
+                        "name": block.name,
+                        "input": block.input,
+                    }
+                )
         return {"role": "assistant", "content": content}
 
     # OpenAI: text in content, tool_use blocks as tool_calls.
@@ -360,11 +369,14 @@ def _assistant_message_for_provider(kind: str, turn: AgentTurn) -> dict:
     for block in turn.assistant_blocks:
         if isinstance(block, ToolUseBlock):
             import json as _json
-            tool_calls.append({
-                "id": block.id,
-                "type": "function",
-                "function": {"name": block.name, "arguments": _json.dumps(block.input)},
-            })
+
+            tool_calls.append(
+                {
+                    "id": block.id,
+                    "type": "function",
+                    "function": {"name": block.name, "arguments": _json.dumps(block.input)},
+                }
+            )
     if tool_calls:
         msg["tool_calls"] = tool_calls
     return msg
@@ -376,8 +388,8 @@ async def run_turn(
     user_text: str,
     provider: ToolCapableProvider,
     tools: dict[str, Tool],
-    tool_consent: "ToolConsentManager | None",
-    events: "EventBus | None",
+    tool_consent: ToolConsentManager | None,
+    events: EventBus | None,
     app_ref: Any = None,  # passed to Tool.run() as `app`
     system: str = DEFAULT_SYSTEM_PROMPT,
     max_iters: int = DEFAULT_MAX_ITERS,
@@ -395,18 +407,23 @@ async def run_turn(
 
     # Append the user message in the provider's native shape
     session.messages.append({"role": "user", "content": user_text})
-    await _emit(events, "agent:turn_start", {
-        "session_id": session.id, "user_text": user_text,
-    })
+    await _emit(
+        events,
+        "agent:turn_start",
+        {
+            "session_id": session.id,
+            "user_text": user_text,
+        },
+    )
 
     # Serialize tools once per turn — schemas don't change mid-turn
     wire_tools = [t.to_wire(kind) for t in tools.values()]
     last_turn: AgentTurn | None = None
 
     # Safety-reflex state (Phase 2). Turn-scoped; reset every user message.
-    consecutive_errors = 0          # 2.1 — appended nudge when ≥ ERROR_LOOP_THRESHOLD
+    consecutive_errors = 0  # 2.1 — appended nudge when ≥ ERROR_LOOP_THRESHOLD
     edit_counts: dict[str, int] = {}  # 2.3 — count Edit calls per path
-    _plan_nudge_sent = False         # only inject the plan reminder once per turn
+    _plan_nudge_sent = False  # only inject the plan reminder once per turn
 
     def _maybe_loop_guard(content: str, counter: int) -> tuple[str, int]:
         """Increment the consecutive-error counter and, if we've hit the
@@ -429,9 +446,14 @@ async def run_turn(
             await _emit(events, "agent:cancelled", {"session_id": session.id})
             raise asyncio.CancelledError()
 
-        await _emit(events, "agent:iter_start", {
-            "session_id": session.id, "iter": iter_idx,
-        })
+        await _emit(
+            events,
+            "agent:iter_start",
+            {
+                "session_id": session.id,
+                "iter": iter_idx,
+            },
+        )
 
         # ── Session compaction (Phase 4.1) ──
         # If the message history has grown past the budget, summarize old
@@ -441,11 +463,15 @@ async def run_turn(
         compacted, saved = _compact_history(session.messages)
         if saved > 0:
             session.messages = compacted
-            await _emit(events, "agent:compacted", {
-                "session_id": session.id,
-                "chars_saved": saved,
-                "message_count": len(session.messages),
-            })
+            await _emit(
+                events,
+                "agent:compacted",
+                {
+                    "session_id": session.id,
+                    "chars_saved": saved,
+                    "message_count": len(session.messages),
+                },
+            )
 
         try:
             turn = await provider.execute_tools(
@@ -457,11 +483,15 @@ async def run_turn(
         except Exception as e:
             # str(e) is empty for asyncio.TimeoutError and some connection errors —
             # include the type so the UI never shows a bare "Error:".
-            await _emit(events, "agent:error", {
-                "session_id": session.id,
-                "error": str(e) or type(e).__name__,
-                "type": type(e).__name__,
-            })
+            await _emit(
+                events,
+                "agent:error",
+                {
+                    "session_id": session.id,
+                    "error": str(e) or type(e).__name__,
+                    "type": type(e).__name__,
+                },
+            )
             raise
 
         last_turn = turn
@@ -471,20 +501,36 @@ async def run_turn(
         # Narrate text + tool_calls to listeners
         for block in turn.assistant_blocks:
             if isinstance(block, TextBlock) and block.text:
-                await _emit(events, "agent:text", {
-                    "session_id": session.id, "delta": block.text,
-                })
+                await _emit(
+                    events,
+                    "agent:text",
+                    {
+                        "session_id": session.id,
+                        "delta": block.text,
+                    },
+                )
             elif isinstance(block, ToolUseBlock):
-                await _emit(events, "agent:tool_call", {
-                    "session_id": session.id,
-                    "id": block.id, "name": block.name, "input": block.input,
-                })
+                await _emit(
+                    events,
+                    "agent:tool_call",
+                    {
+                        "session_id": session.id,
+                        "id": block.id,
+                        "name": block.name,
+                        "input": block.input,
+                    },
+                )
 
         if turn.stop_reason != "tool_use":
-            await _emit(events, "agent:done", {
-                "session_id": session.id, "usage": turn.usage,
-                "stop_reason": turn.stop_reason,
-            })
+            await _emit(
+                events,
+                "agent:done",
+                {
+                    "session_id": session.id,
+                    "usage": turn.usage,
+                    "stop_reason": turn.stop_reason,
+                },
+            )
             return turn
 
         # Dispatch tool_uses. Collect tool_results in a single user message.
@@ -500,17 +546,27 @@ async def run_turn(
             if tool is None:
                 err = f"error: tool {tu.name!r} is not registered in this session"
                 err, consecutive_errors = _maybe_loop_guard(err, consecutive_errors)
-                await _emit(events, "agent:tool_result", {
-                    "session_id": session.id, "id": tu.id, "is_error": True,
-                    "display": {"name": tu.name, "error": err},
-                })
+                await _emit(
+                    events,
+                    "agent:tool_result",
+                    {
+                        "session_id": session.id,
+                        "id": tu.id,
+                        "is_error": True,
+                        "display": {"name": tu.name, "error": err},
+                    },
+                )
                 _append_result(tool_result_blocks, tool_result_messages, kind, tu.id, err, True)
                 continue
 
             # Resolve per-call permission (Bash may override its class default)
             tool_default = getattr(tool, "permission_for", None)
             perm_default = tool_default(tu.input) if callable(tool_default) else tool.permission
-            summary = tool.permission_summary(tu.input) if hasattr(tool, "permission_summary") else f"{tu.name}(...)"
+            summary = (
+                tool.permission_summary(tu.input)
+                if hasattr(tool, "permission_summary")
+                else f"{tu.name}(...)"
+            )
 
             allowed = True
             if tool_consent is not None:
@@ -525,10 +581,16 @@ async def run_turn(
             if not allowed:
                 err = "denied by user"
                 err, consecutive_errors = _maybe_loop_guard(err, consecutive_errors)
-                await _emit(events, "agent:tool_result", {
-                    "session_id": session.id, "id": tu.id, "is_error": True,
-                    "display": {"name": tu.name, "denied": True},
-                })
+                await _emit(
+                    events,
+                    "agent:tool_result",
+                    {
+                        "session_id": session.id,
+                        "id": tu.id,
+                        "is_error": True,
+                        "display": {"name": tu.name, "denied": True},
+                    },
+                )
                 _append_result(tool_result_blocks, tool_result_messages, kind, tu.id, err, True)
                 continue
 
@@ -538,7 +600,8 @@ async def run_turn(
             # /execute (or /scrap) before anything actually changes.
             _plan_active = (
                 bool(getattr(app_ref, "_plan_modes", {}).get(session.id, False))
-                if app_ref is not None else False
+                if app_ref is not None
+                else False
             )
             if _plan_active and not tool.is_readonly(tu.input or {}):
                 gate_msg = (
@@ -549,13 +612,21 @@ async def run_turn(
                     "or /scrap to discard the plan."
                 )
                 gate_msg, consecutive_errors = _maybe_loop_guard(gate_msg, consecutive_errors)
-                await _emit(events, "agent:tool_result", {
-                    "session_id": session.id, "id": tu.id, "is_error": True,
-                    "content": gate_msg,
-                    "display": {"name": tu.name, "gated": "plan_mode"},
-                    "error_snippet": gate_msg[:300],
-                })
-                _append_result(tool_result_blocks, tool_result_messages, kind, tu.id, gate_msg, True)
+                await _emit(
+                    events,
+                    "agent:tool_result",
+                    {
+                        "session_id": session.id,
+                        "id": tu.id,
+                        "is_error": True,
+                        "content": gate_msg,
+                        "display": {"name": tu.name, "gated": "plan_mode"},
+                        "error_snippet": gate_msg[:300],
+                    },
+                )
+                _append_result(
+                    tool_result_blocks, tool_result_messages, kind, tu.id, gate_msg, True
+                )
                 continue
 
             # ── Safety reflex 2.3: Edit loop-guard ──
@@ -574,13 +645,21 @@ async def run_turn(
                         f"ask the user. Don't keep patching. (User can raise the cap with /grant-edits N.)"
                     )
                     guard_msg, consecutive_errors = _maybe_loop_guard(guard_msg, consecutive_errors)
-                    await _emit(events, "agent:tool_result", {
-                        "session_id": session.id, "id": tu.id, "is_error": True,
-                        "content": guard_msg,
-                        "display": {"name": tu.name, "guard": "edit_loop", "path": edit_path},
-                        "error_snippet": guard_msg[:300],
-                    })
-                    _append_result(tool_result_blocks, tool_result_messages, kind, tu.id, guard_msg, True)
+                    await _emit(
+                        events,
+                        "agent:tool_result",
+                        {
+                            "session_id": session.id,
+                            "id": tu.id,
+                            "is_error": True,
+                            "content": guard_msg,
+                            "display": {"name": tu.name, "guard": "edit_loop", "path": edit_path},
+                            "error_snippet": guard_msg[:300],
+                        },
+                    )
+                    _append_result(
+                        tool_result_blocks, tool_result_messages, kind, tu.id, guard_msg, True
+                    )
                     continue
 
             # ── Pre-tool hooks ──
@@ -639,7 +718,8 @@ async def run_turn(
                 if hasattr(app_ref, "_push_edit") and isinstance(display, dict):
                     entry = {
                         "path": display.get("path") or edited_path,
-                        "action": display.get("action") or ("edit" if tu.name == "Edit" else "overwrite"),
+                        "action": display.get("action")
+                        or ("edit" if tu.name == "Edit" else "overwrite"),
                         "previous_content": display.get("previous_content", ""),
                     }
                     if entry["path"]:
@@ -666,12 +746,18 @@ async def run_turn(
             ui_content = content if isinstance(content, str) else str(content)
             if len(ui_content) > 8000:
                 ui_content = ui_content[:8000] + f"\n... (truncated from {len(content)} chars)"
-            await _emit(events, "agent:tool_result", {
-                "session_id": session.id, "id": tu.id, "is_error": is_error,
-                "content": ui_content,
-                "display": {"name": tu.name, **display},
-                "error_snippet": error_snippet,
-            })
+            await _emit(
+                events,
+                "agent:tool_result",
+                {
+                    "session_id": session.id,
+                    "id": tu.id,
+                    "is_error": is_error,
+                    "content": ui_content,
+                    "display": {"name": tu.name, **display},
+                    "error_snippet": error_snippet,
+                },
+            )
             _append_result(tool_result_blocks, tool_result_messages, kind, tu.id, content, is_error)
 
         # Append tool_results in the provider's native shape
@@ -689,14 +775,19 @@ async def run_turn(
             if steps:
                 nudge = (
                     "[Plan reminder — steps you said you'd take: "
-                    + "; ".join(f"{i+1}. {s}" for i, s in enumerate(steps[:5]))
+                    + "; ".join(f"{i + 1}. {s}" for i, s in enumerate(steps[:5]))
                     + "]"
                 )
                 session.messages.append({"role": "user", "content": nudge})
                 _plan_nudge_sent = True
-                await _emit(events, "agent:plan_nudge", {
-                    "session_id": session.id, "iter": iter_idx,
-                })
+                await _emit(
+                    events,
+                    "agent:plan_nudge",
+                    {
+                        "session_id": session.id,
+                        "iter": iter_idx,
+                    },
+                )
 
     # Exhausted iterations
     await _emit(events, "agent:max_iters", {"session_id": session.id, "iters": max_iters})
@@ -721,12 +812,13 @@ def _append_result(
 
 # ── Native-agent turn (for providers that run their own tool loop) ────────
 
+
 async def run_native_turn(
     *,
     session: AgentSession,
     user_text: str,
     provider: NativelyAgenticProvider,
-    events: "EventBus | None",
+    events: EventBus | None,
     system: str = DEFAULT_SYSTEM_PROMPT,
     temperature: float = DEFAULT_TEMPERATURE,
 ) -> str:
@@ -743,9 +835,15 @@ async def run_native_turn(
     session.messages.append({"role": "user", "content": user_text})
     session.provider_kind = "native"
 
-    await _emit(events, "agent:turn_start", {
-        "session_id": session.id, "user_text": user_text, "native": True,
-    })
+    await _emit(
+        events,
+        "agent:turn_start",
+        {
+            "session_id": session.id,
+            "user_text": user_text,
+            "native": True,
+        },
+    )
     await _emit(events, "agent:iter_start", {"session_id": session.id, "iter": 0})
 
     # Synthetic tool_call events indexed by an incrementing counter — the
@@ -755,18 +853,30 @@ async def run_native_turn(
     async def _emit_tool_status(status: str, name: str):
         tool_event_counter[0] += 1
         eid = f"native_{tool_event_counter[0]}"
-        await _emit(events, "agent:tool_call", {
-            "session_id": session.id, "id": eid, "name": name or "tool",
-            "input": {"summary": status},
-            "native": True,
-        })
+        await _emit(
+            events,
+            "agent:tool_call",
+            {
+                "session_id": session.id,
+                "id": eid,
+                "name": name or "tool",
+                "input": {"summary": status},
+                "native": True,
+            },
+        )
         # Natively-agentic tools don't surface result payloads back to us —
         # the CLI has already consumed them. Emit a matched result so the UI
         # can close the pair visually.
-        await _emit(events, "agent:tool_result", {
-            "session_id": session.id, "id": eid, "is_error": False,
-            "display": {"name": name or "tool", "status": status, "native": True},
-        })
+        await _emit(
+            events,
+            "agent:tool_result",
+            {
+                "session_id": session.id,
+                "id": eid,
+                "is_error": False,
+                "display": {"name": name or "tool", "status": status, "native": True},
+            },
+        )
 
     accumulated_text = ""
     last_text_chunk = ""
@@ -800,15 +910,25 @@ async def run_native_turn(
                     accumulated_text += text
                     last_text_chunk = text
                     if not done:
-                        await _emit(events, "agent:text", {
-                            "session_id": session.id, "delta": text,
-                        })
+                        await _emit(
+                            events,
+                            "agent:text",
+                            {
+                                "session_id": session.id,
+                                "delta": text,
+                            },
+                        )
 
             if "usage" in chunk:
                 last_usage = chunk["usage"] or {}
-                await _emit(events, "agent:usage", {
-                    "session_id": session.id, "usage": last_usage,
-                })
+                await _emit(
+                    events,
+                    "agent:usage",
+                    {
+                        "session_id": session.id,
+                        "usage": last_usage,
+                    },
+                )
     except asyncio.CancelledError:
         raise
     except Exception as e:
@@ -816,7 +936,14 @@ async def run_native_turn(
         raise
 
     session.messages.append({"role": "assistant", "content": accumulated_text})
-    await _emit(events, "agent:done", {
-        "session_id": session.id, "usage": last_usage, "stop_reason": "end_turn", "native": True,
-    })
+    await _emit(
+        events,
+        "agent:done",
+        {
+            "session_id": session.id,
+            "usage": last_usage,
+            "stop_reason": "end_turn",
+            "native": True,
+        },
+    )
     return accumulated_text

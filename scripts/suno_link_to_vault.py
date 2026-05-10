@@ -15,7 +15,9 @@ Usage:
 
 Vault path is read from emptyos.toml `[notes] path` unless --vault is passed.
 """
+
 from __future__ import annotations
+
 import argparse
 import json
 import re
@@ -44,7 +46,7 @@ def parse_frontmatter(text: str):
     end = text.find("\n---", 3)
     if end == -1:
         return None, text
-    return text[3:end].strip("\n"), text[end + 4:].lstrip("\n")
+    return text[3:end].strip("\n"), text[end + 4 :].lstrip("\n")
 
 
 def update_fm(fm: str, updates: dict[str, str]) -> str:
@@ -76,12 +78,23 @@ def load_vault_notes(songs_dir: Path) -> list[dict]:
         fm, body = parse_frontmatter(text)
         if fm is None:
             continue
-        is_song = bool(re.search(r"^type:\s*song\b", fm, re.M) or re.search(r"^\s*-\s*song\s*$", fm, re.M))
+        is_song = bool(
+            re.search(r"^type:\s*song\b", fm, re.M) or re.search(r"^\s*-\s*song\s*$", fm, re.M)
+        )
         title_match = re.search(r"^title:\s*(.+)$", fm, re.M)
         if not is_song and not title_match:
             continue
         title = title_match.group(1).strip().strip('"').strip("'") if title_match else md.stem
-        out.append({"folder": md.parent, "md": md, "title": title, "title_norm": norm(title), "fm": fm, "body": body})
+        out.append(
+            {
+                "folder": md.parent,
+                "md": md,
+                "title": title,
+                "title_norm": norm(title),
+                "fm": fm,
+                "body": body,
+            }
+        )
     return out
 
 
@@ -108,7 +121,9 @@ def resolve_vault(arg: str | None) -> Path:
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--captured", required=True, help="Output dir from suno_capture.py")
-    ap.add_argument("--vault", default=None, help="Vault root (defaults to emptyos.toml [notes] path)")
+    ap.add_argument(
+        "--vault", default=None, help="Vault root (defaults to emptyos.toml [notes] path)"
+    )
     ap.add_argument("--songs-dir", required=True, help="Vault-relative dir to scan for song notes")
     ap.add_argument("--apply", action="store_true", help="Write changes (default: dry run)")
     args = ap.parse_args()

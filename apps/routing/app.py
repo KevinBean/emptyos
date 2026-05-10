@@ -29,7 +29,8 @@ class RoutingApp(ExternalServiceBase):
         points: list[tuple[float, float]] = []
         for p in raw or []:
             if isinstance(p, dict):
-                lat = p.get("lat"); lng = p.get("lng") if p.get("lng") is not None else p.get("lon")
+                lat = p.get("lat")
+                lng = p.get("lng") if p.get("lng") is not None else p.get("lon")
             elif isinstance(p, (list, tuple)) and len(p) >= 2:
                 lat, lng = p[0], p[1]
             else:
@@ -68,6 +69,7 @@ class RoutingApp(ExternalServiceBase):
         await self._throttle()
         try:
             import aiohttp
+
             url = f"{self._base_url()}/route/v1/{profile}/{coord_str}"
             params = {"overview": "full", "geometries": "geojson", "steps": "false"}
             async with aiohttp.ClientSession(headers={"User-Agent": self._user_agent()}) as session:
@@ -92,17 +94,25 @@ class RoutingApp(ExternalServiceBase):
                 for leg in best.get("legs", [])
             ],
             "waypoints": [
-                {"lat": wp.get("location", [0, 0])[1], "lng": wp.get("location", [0, 0])[0],
-                 "name": wp.get("name", "")}
+                {
+                    "lat": wp.get("location", [0, 0])[1],
+                    "lng": wp.get("location", [0, 0])[0],
+                    "name": wp.get("name", ""),
+                }
                 for wp in raw.get("waypoints", [])
             ],
             "profile": profile,
         }
         self._cache[cache_key] = result
-        await self.emit("routing:planned", {
-            "profile": profile, "stops": len(pts),
-            "distance_m": result["distance_m"], "duration_s": result["duration_s"],
-        })
+        await self.emit(
+            "routing:planned",
+            {
+                "profile": profile,
+                "stops": len(pts),
+                "distance_m": result["distance_m"],
+                "duration_s": result["duration_s"],
+            },
+        )
         return result
 
     # ── HTTP ─────────────────────────────────────────────────────

@@ -59,8 +59,9 @@
       <div class="ml-title">Music Library</div>
       <div class="ml-meta" id="ml-meta">Loading…</div>
     </div>
-    <div>
+    <div style="display:flex;gap:8px;align-items:center">
       <button class="ml-btn" onclick="openLyricsPanel()">+ Write Lyrics</button>
+      <button class="ml-btn ml-btn-secondary" onclick="openAppSettings()" title="Settings">&#9881;</button>
     </div>
   </div>
 
@@ -247,6 +248,20 @@ async function saveLyrics(){
     loadAll();
   } catch (e) { EOS_UI.toast('Save failed: ' + e, false); }
 }
+
+var _appSettings = EOS_UI.settingsPanel({
+  id: 'music-library-settings-panel',
+  title: 'Music Library Settings',
+  fields: [
+    {key: 'music-library.songs_dir', label: 'Songs Directory (relative to vault)', type: 'text',
+     default: 'Music/Songs'},
+    {key: 'music-library.default_language', label: 'Default Lyrics Language', type: 'select',
+     default: 'en',
+     options: [{value:'en',label:'English'},{value:'zh',label:'Chinese'},{value:'ja',label:'Japanese'}]},
+    {key: 'music-library.default_style', label: 'Default Lyrics Style', type: 'text', default: ''},
+  ],
+});
+function openAppSettings() { _appSettings && _appSettings.open(); }
 
 document.addEventListener('DOMContentLoaded', loadAll);
 </script>

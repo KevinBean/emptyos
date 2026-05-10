@@ -23,6 +23,7 @@ Usage:
   python scripts/sdk_duplicate_scan.py --min 3          # loosen threshold
   python scripts/sdk_duplicate_scan.py apps plugins     # extra roots
 """
+
 from __future__ import annotations
 
 import argparse
@@ -69,7 +70,12 @@ class Normaliser(ast.NodeTransformer):
 
 
 def _strip_docstring(body: list[ast.stmt]) -> list[ast.stmt]:
-    if body and isinstance(body[0], ast.Expr) and isinstance(body[0].value, ast.Constant) and isinstance(body[0].value.value, str):
+    if (
+        body
+        and isinstance(body[0], ast.Expr)
+        and isinstance(body[0].value, ast.Constant)
+        and isinstance(body[0].value.value, str)
+    ):
         return body[1:]
     return body
 
@@ -83,7 +89,9 @@ def _fn_signature(fn: ast.FunctionDef | ast.AsyncFunctionDef, file: Path, cls: s
     return {"file": str(file), "line": fn.lineno, "qual": qual, "stmts": _count_statements(fn.body)}
 
 
-def _iter_functions(tree: ast.AST) -> list[tuple[ast.FunctionDef | ast.AsyncFunctionDef, str | None]]:
+def _iter_functions(
+    tree: ast.AST,
+) -> list[tuple[ast.FunctionDef | ast.AsyncFunctionDef, str | None]]:
     out: list[tuple[ast.FunctionDef | ast.AsyncFunctionDef, str | None]] = []
     for node in ast.walk(tree):
         if isinstance(node, ast.ClassDef):
@@ -144,9 +152,22 @@ def _iter_py_files(roots: list[str]) -> list[Path]:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("roots", nargs="*", default=DEFAULT_ROOTS, help=f"Directories to scan (default: {DEFAULT_ROOTS})")
-    parser.add_argument("--min", type=int, default=DEFAULT_MIN_STATEMENTS, dest="min_statements", help=f"Minimum statements in a function body (default: {DEFAULT_MIN_STATEMENTS})")
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    parser.add_argument(
+        "roots",
+        nargs="*",
+        default=DEFAULT_ROOTS,
+        help=f"Directories to scan (default: {DEFAULT_ROOTS})",
+    )
+    parser.add_argument(
+        "--min",
+        type=int,
+        default=DEFAULT_MIN_STATEMENTS,
+        dest="min_statements",
+        help=f"Minimum statements in a function body (default: {DEFAULT_MIN_STATEMENTS})",
+    )
     parser.add_argument("--limit", type=int, default=20, help="Max groups to report (default: 20)")
     args = parser.parse_args()
 
@@ -159,10 +180,14 @@ def main() -> int:
     dup_groups.sort(key=lambda item: (len(item[1]), max(e["stmts"] for e in item[1])), reverse=True)
 
     if not dup_groups:
-        print(f"scanned {len(files)} files, no structural duplicates found (min_statements={args.min_statements})")
+        print(
+            f"scanned {len(files)} files, no structural duplicates found (min_statements={args.min_statements})"
+        )
         return 0
 
-    print(f"scanned {len(files)} files, {len(dup_groups)} duplicate groups (min_statements={args.min_statements})\n")
+    print(
+        f"scanned {len(files)} files, {len(dup_groups)} duplicate groups (min_statements={args.min_statements})\n"
+    )
     for digest, entries in dup_groups[: args.limit]:
         stmts = max(e["stmts"] for e in entries)
         print(f"=== group {digest} | {len(entries)} callers | ~{stmts} stmts ===")

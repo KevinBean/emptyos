@@ -19,11 +19,9 @@ from __future__ import annotations
 
 import ipaddress
 import time
-from pathlib import Path
 from urllib.parse import urlparse
 
 from emptyos.sdk.agent_tools.base import Tool, ToolResult, repo_root
-
 
 DEFAULT_TIMEOUT_MS = 15_000
 DEFAULT_SETTLE_MS = 500
@@ -62,7 +60,7 @@ class ScreenshotTool(Tool):
             "wait_ms": {
                 "type": "integer",
                 "description": f"Additional settle time after networkidle (default {DEFAULT_SETTLE_MS}). "
-                               f"Bump this if the page does deferred work after load.",
+                f"Bump this if the page does deferred work after load.",
             },
             "viewport": {
                 "type": "string",
@@ -143,6 +141,7 @@ class ScreenshotTool(Tool):
                     def _console(msg):
                         if msg.type in ("error", "warning"):
                             console_errors.append(f"[{msg.type}] {msg.text}")
+
                     page.on("console", _console)
 
                     response = await page.goto(
@@ -190,8 +189,7 @@ class ScreenshotTool(Tool):
         )
 
         ok = (
-            200 <= status < 400
-            and not page_errors  # any JS exception is a red flag
+            200 <= status < 400 and not page_errors  # any JS exception is a red flag
         )
         return ToolResult(
             ok=ok,

@@ -20,7 +20,6 @@ import textwrap
 from datetime import date, timedelta
 from pathlib import Path
 
-
 DEMO_CLAUDE_MD = """# Demo Vault
 
 This is a curated sample vault shipped with the EmptyOS live demo.
@@ -66,11 +65,20 @@ def build(output: Path, force: bool = False):
     (output / "README.md").write_text(DEMO_CLAUDE_MD, encoding="utf-8")
 
     # --- PARA folders ---
-    for folder in ["00_Inbox", "10_Projects", "20_Areas", "30_Resources", "40_Archive", "50_Journal"]:
+    for folder in [
+        "00_Inbox",
+        "10_Projects",
+        "20_Areas",
+        "30_Resources",
+        "40_Archive",
+        "50_Journal",
+    ]:
         (output / folder).mkdir(parents=True, exist_ok=True)
 
     # --- Inbox captures ---
-    _write(output / "00_Inbox" / "2026-04-15-book-idea.md", """
+    _write(
+        output / "00_Inbox" / "2026-04-15-book-idea.md",
+        """
         ---
         created: 2026-04-15
         tags: [capture, idea]
@@ -79,9 +87,12 @@ def build(output: Path, force: bool = False):
         ## Book idea
         A field guide for switching careers after 35. Lean on real stories
         from people who did it, not survivorship-bias advice.
-    """)
+    """,
+    )
 
-    _write(output / "00_Inbox" / "2026-04-16-quote.md", """
+    _write(
+        output / "00_Inbox" / "2026-04-16-quote.md",
+        """
         ---
         created: 2026-04-16
         tags: [capture, quote]
@@ -89,7 +100,8 @@ def build(output: Path, force: bool = False):
 
         ## Quote
         > The vault is the point. The tools come and go.
-    """)
+    """,
+    )
 
     # --- Projects ---
     _project(
@@ -191,7 +203,9 @@ def build(output: Path, force: bool = False):
     )
 
     # --- Areas ---
-    _write(output / "20_Areas" / "Health.md", """
+    _write(
+        output / "20_Areas" / "Health.md",
+        """
         ---
         title: Health
         tags: [area, physical]
@@ -203,9 +217,12 @@ def build(output: Path, force: bool = False):
         ## Notes
         Track sleep debt, not sleep duration. A 7-hour night after a 5-hour
         one doesn't "make up" — the deficit compounds.
-    """)
+    """,
+    )
 
-    _write(output / "20_Areas" / "Relationships.md", """
+    _write(
+        output / "20_Areas" / "Relationships.md",
+        """
         ---
         title: Relationships
         tags: [area, social]
@@ -217,10 +234,13 @@ def build(output: Path, force: bool = False):
         ## Notes
         Quality > quantity. Two hours of full attention beats ten hours of
         half-listening.
-    """)
+    """,
+    )
 
     # --- Resources ---
-    _write(output / "30_Resources" / "Books" / "the-overstory.md", """
+    _write(
+        output / "30_Resources" / "Books" / "the-overstory.md",
+        """
         ---
         title: The Overstory
         author: Richard Powers
@@ -239,9 +259,12 @@ def build(output: Path, force: bool = False):
         ## Thoughts
         Reads slow on purpose. The first 100 pages are nine self-contained
         short stories. They weave together only once you've lived with each one.
-    """)
+    """,
+    )
 
-    _write(output / "30_Resources" / "Music" / "chopin-prelude-op28-no4.md", """
+    _write(
+        output / "30_Resources" / "Music" / "chopin-prelude-op28-no4.md",
+        """
         ---
         title: Chopin Prelude Op. 28 No. 4 in E minor
         composer: Chopin
@@ -255,11 +278,16 @@ def build(output: Path, force: bool = False):
         ## Why this piece
         Short. Manageable. Every practice ends feeling like I played music,
         not drills.
-    """)
+    """,
+    )
 
     # --- Journal ---
     today = date(2026, 4, 17)
-    _journal(output, today - timedelta(days=2), "content", """
+    _journal(
+        output,
+        today - timedelta(days=2),
+        "content",
+        """
         ## Morning
         Walked before work. Saw the first swallows back.
 
@@ -268,13 +296,23 @@ def build(output: Path, force: bool = False):
 
         ## Piano
         15 minutes, Chopin. Hands finally relaxed on the descending phrase.
-    """)
-    _journal(output, today - timedelta(days=1), "tired", """
+    """,
+    )
+    _journal(
+        output,
+        today - timedelta(days=1),
+        "tired",
+        """
         ## Notes
         Up too late reading. Payment comes tomorrow — sleep is non-negotiable
         tonight.
-    """)
-    _journal(output, today, "focused", """
+    """,
+    )
+    _journal(
+        output,
+        today,
+        "focused",
+        """
         ## Morning
         Eight hours of sleep. The difference isn't subtle.
 
@@ -283,12 +321,15 @@ def build(output: Path, force: bool = False):
 
         ## Evening
         Garden: planted three lavenders. Bees within the hour.
-    """)
+    """,
+    )
 
     # --- EmptyOS vault-map (auto-generated on first boot, but pre-seeded
     #     here so the demo is ready to serve immediately) ---
     (output / "30_Resources" / "EmptyOS").mkdir(parents=True, exist_ok=True)
-    _write(output / "30_Resources" / "EmptyOS" / "_vault-map.toml", """
+    _write(
+        output / "30_Resources" / "EmptyOS" / "_vault-map.toml",
+        """
         # Vault map — app data locations within this vault.
         # Auto-generated on first boot in a real install; pre-seeded for the demo.
 
@@ -303,7 +344,8 @@ def build(output: Path, force: bool = False):
 
         [note]
         path = "30_Resources"
-    """)
+    """,
+    )
 
     print(f"Demo vault created at: {output}")
     print(f"  Notes:    {sum(1 for _ in output.rglob('*.md'))}")

@@ -11,6 +11,7 @@ Usage:
 
 Outputs to: results/conv-test-{timestamp}/
 """
+
 from __future__ import annotations
 
 import argparse
@@ -21,12 +22,10 @@ import subprocess
 import sys
 import tempfile
 import tomllib
+import urllib.error
+import urllib.request
 from datetime import datetime
 from pathlib import Path
-
-import urllib.request
-import urllib.error
-
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 CASES_FILE = REPO_ROOT / "scripts" / "conv-test-cases.toml"
@@ -117,6 +116,7 @@ TOOLS = [
 
 # ---------- Tool implementations ----------
 
+
 def tool_read_file(path: str, sandbox: Path) -> str:
     p = Path(path)
     if not p.is_absolute():
@@ -171,7 +171,8 @@ def tool_grep(pattern: str, path: str, sandbox: Path) -> str:
     try:
         result = subprocess.run(
             [rg, "-n", "--max-count", "20", "--max-columns", "200", pattern, path],
-            capture_output=True, timeout=15,
+            capture_output=True,
+            timeout=15,
         )
         out = result.stdout.decode("utf-8", errors="replace").strip()
         if not out:
@@ -204,6 +205,7 @@ def dispatch_tool(name: str, args: dict, sandbox: Path) -> str:
 #    "raw_message": dict_for_history}
 # raw_message is what to append to the messages list to maintain the protocol.
 
+
 def call_ollama(model: str, messages: list[dict], tools: list[dict]) -> dict:
     payload = {
         "model": model,
@@ -214,7 +216,8 @@ def call_ollama(model: str, messages: list[dict], tools: list[dict]) -> dict:
     }
     data = json.dumps(payload).encode("utf-8")
     req = urllib.request.Request(
-        "http://localhost:11434/api/chat", data=data,
+        "http://localhost:11434/api/chat",
+        data=data,
         headers={"Content-Type": "application/json"},
     )
     try:
@@ -229,11 +232,13 @@ def call_ollama(model: str, messages: list[dict], tools: list[dict]) -> dict:
     for tc in msg.get("tool_calls") or []:
         args_raw = tc["function"].get("arguments", {})
         args = json.loads(args_raw) if isinstance(args_raw, str) else (args_raw or {})
-        tool_calls.append({
-            "id": tc.get("id", f"call_ollama_{len(tool_calls)}"),
-            "name": tc["function"]["name"],
-            "args": args,
-        })
+        tool_calls.append(
+            {
+                "id": tc.get("id", f"call_ollama_{len(tool_calls)}"),
+                "name": tc["function"]["name"],
+                "args": args,
+            }
+        )
     return {
         "content": msg.get("content", "") or "",
         "tool_calls": tool_calls,
@@ -249,7 +254,11 @@ def call_openai(model: str, messages: list[dict], tools: list[dict]) -> dict:
     # Strip any Ollama-only fields (like 'images') from messages before sending
     clean_msgs = []
     for m in messages:
-        cm = {k: v for k, v in m.items() if k in ("role", "content", "tool_calls", "tool_call_id", "name")}
+        cm = {
+            k: v
+            for k, v in m.items()
+            if k in ("role", "content", "tool_calls", "tool_call_id", "name")
+        }
         # OpenAI requires content to be string or null; Ollama may have None
         if cm.get("content") is None:
             cm["content"] = ""
@@ -263,7 +272,8 @@ def call_openai(model: str, messages: list[dict], tools: list[dict]) -> dict:
     }
     data = json.dumps(payload).encode("utf-8")
     req = urllib.request.Request(
-        "https://api.openai.com/v1/chat/completions", data=data,
+        "https://api.openai.com/v1/chat/completions",
+        data=data,
         headers={
             "Content-Type": "application/json",
             "Authorization": f"Bearer {api_key}",
@@ -284,11 +294,13 @@ def call_openai(model: str, messages: list[dict], tools: list[dict]) -> dict:
             args = json.loads(args_raw) if isinstance(args_raw, str) else (args_raw or {})
         except json.JSONDecodeError:
             args = {}
-        tool_calls.append({
-            "id": tc.get("id", f"call_openai_{len(tool_calls)}"),
-            "name": tc["function"]["name"],
-            "args": args,
-        })
+        tool_calls.append(
+            {
+                "id": tc.get("id", f"call_openai_{len(tool_calls)}"),
+                "name": tc["function"]["name"],
+                "args": args,
+            }
+        )
     return {
         "content": msg.get("content", "") or "",
         "tool_calls": tool_calls,
@@ -306,8 +318,15 @@ def call_provider(provider: str, model: str, messages: list[dict], tools: list[d
 
 # ---------- Agent loop ----------
 
-def run_agent(provider: str, model: str, user_prompt: str, sandbox: Path,
-              max_iterations: int = 15, trace_file: Path | None = None) -> dict:
+
+def run_agent(
+    provider: str,
+    model: str,
+    user_prompt: str,
+    sandbox: Path,
+    max_iterations: int = 15,
+    trace_file: Path | None = None,
+) -> dict:
     """Run the agent loop until the model stops making tool calls or iterations cap."""
     messages = [
         {"role": "system", "content": SYSTEM_PROMPT},
@@ -327,12 +346,16 @@ def run_agent(provider: str, model: str, user_prompt: str, sandbox: Path,
             trace.append({"step": iteration, "type": "error", "error": str(e)})
             break
 
-        trace.append({
-            "step": iteration,
-            "type": "model_response",
-            "content": response["content"],
-            "tool_calls": [{"name": tc["name"], "args": tc["args"]} for tc in response["tool_calls"]],
-        })
+        trace.append(
+            {
+                "step": iteration,
+                "type": "model_response",
+                "content": response["content"],
+                "tool_calls": [
+                    {"name": tc["name"], "args": tc["args"]} for tc in response["tool_calls"]
+                ],
+            }
+        )
 
         messages.append(response["raw_message"])
 
@@ -342,19 +365,23 @@ def run_agent(provider: str, model: str, user_prompt: str, sandbox: Path,
 
         for tc in response["tool_calls"]:
             result = dispatch_tool(tc["name"], tc["args"], sandbox)
-            trace.append({
-                "step": iteration,
-                "type": "tool_result",
-                "tool": tc["name"],
-                "args": tc["args"],
-                "result_preview": result[:500],
-                "result_len": len(result),
-            })
-            messages.append({
-                "role": "tool",
-                "tool_call_id": tc["id"],
-                "content": result,
-            })
+            trace.append(
+                {
+                    "step": iteration,
+                    "type": "tool_result",
+                    "tool": tc["name"],
+                    "args": tc["args"],
+                    "result_preview": result[:500],
+                    "result_len": len(result),
+                }
+            )
+            messages.append(
+                {
+                    "role": "tool",
+                    "tool_call_id": tc["id"],
+                    "content": result,
+                }
+            )
 
     if trace_file:
         trace_file.write_text(json.dumps(trace, indent=2, default=str), encoding="utf-8")
@@ -372,6 +399,7 @@ def list_sandbox_outputs(sandbox: Path) -> list[str]:
 
 
 # ---------- Test runner ----------
+
 
 def load_cases() -> list[dict]:
     with CASES_FILE.open("rb") as f:
@@ -448,8 +476,11 @@ def smoke_test(provider: str, model: str) -> None:
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--provider", default="ollama", choices=["ollama", "openai"])
-    ap.add_argument("--model", default=None,
-                    help="Model name. Defaults: ollama=qwen3.5:latest, openai=gpt-4o-mini")
+    ap.add_argument(
+        "--model",
+        default=None,
+        help="Model name. Defaults: ollama=qwen3.5:latest, openai=gpt-4o-mini",
+    )
     ap.add_argument("--test", help="Run a single test by id (e.g., 1-pattern-match)")
     ap.add_argument("--smoke", action="store_true", help="Run smoke test only")
     args = ap.parse_args()

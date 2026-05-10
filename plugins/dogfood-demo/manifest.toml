@@ -1,0 +1,13 @@
+[plugin]
+id = "dogfood-demo"
+name = "Dogfood Demo"
+version = "1.0.0"
+description = "Sidecar EmptyOS daemon on :9001 with a curated sample vault. Lets ppt embed slides, screenshots, and any other share-shaped surface render against demo content instead of the user's personal vault — without flipping the personal daemon's demo mode."
+
+[plugin.entry]
+module = "plugin"
+class = "DogfoodDemoPlugin"
+
+[provides]
+services = ["dogfood-demo"]
+tags = ["demo", "sidecar"]

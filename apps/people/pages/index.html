@@ -132,8 +132,8 @@
 <!-- Detail slide-out -->
 <aside class="detail" id="detail">
     <button class="close" onclick="closeDetail()">×</button>
-    <h2 id="detail-name">…</h2>
-    <div id="detail-role" class="role" style="color:var(--text-secondary)"></div>
+    <h2 id="detail-name" class="eos-personal">…</h2>
+    <div id="detail-role" class="role eos-personal" style="color:var(--text-secondary)"></div>
 
     <div class="detail-section">
         <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:0.6rem">
@@ -313,8 +313,8 @@ function renderRoster() {
         return '<div class="card '+esc(p.band)+'" onclick="openDetail(\''+esc(p.id)+'\')">' +
             donut +
             '<div class="meta">' +
-                '<div class="name">'+esc(p.name)+' '+typeChip+'</div>' +
-                '<div class="role">'+esc(p.role || '&nbsp;')+'</div>' +
+                '<div class="name eos-personal">'+esc(p.name)+' '+typeChip+'</div>' +
+                '<div class="role eos-personal">'+esc(p.role || '&nbsp;')+'</div>' +
                 '<div class="chips">'+skills+'</div>' +
             '</div></div>';
     }).join('');
@@ -338,8 +338,8 @@ function renderRelationships() {
         var last = p.last_contact ? '<div style="font-size:11px;color:var(--text-muted)">last: '+esc(p.last_contact)+'</div>' : '';
         return '<div class="card" onclick="openDetail(\''+esc(p.id)+'\')">' +
             '<div class="meta">' +
-                '<div class="name">'+esc(p.name)+'</div>' +
-                '<div class="role">'+esc(p.company || p.role || '&nbsp;')+'</div>' +
+                '<div class="name eos-personal">'+esc(p.name)+'</div>' +
+                '<div class="role eos-personal">'+esc(p.company || p.role || '&nbsp;')+'</div>' +
                 '<div class="chips">'+rel+'</div>' +
                 last +
             '</div>' +
@@ -357,7 +357,7 @@ async function renderDue() {
     }
     el.innerHTML = due.map(function(p) {
         return '<div class="due-item" onclick="openDetail(\''+esc(p.id)+'\')">' +
-            '<div class="due-name">'+esc(p.name)+
+            '<div class="due-name eos-personal">'+esc(p.name)+
                 '<div class="due-freq">'+esc(p.contact_frequency || '')+' · last '+esc(p.last_contact || 'never')+'</div>' +
             '</div>' +
             '<div class="due-days">'+p.days_overdue+'d</div>' +
@@ -376,7 +376,7 @@ async function renderBirthdays() {
         var label = b.days_until === 0 ? 'TODAY!' : 'in ' + b.days_until + 'd';
         if (b.turning) label += ' · turns ' + b.turning;
         return '<div class="bday-item" onclick="openDetail(\''+esc(b.id)+'\')">' +
-            '<div><strong>🎂 '+esc(b.name)+'</strong><div style="font-size:11px;color:var(--text-muted)">'+esc(b.birthday)+'</div></div>' +
+            '<div class="eos-personal"><strong>🎂 '+esc(b.name)+'</strong><div style="font-size:11px;color:var(--text-muted)">'+esc(b.birthday)+'</div></div>' +
             '<div style="color:var(--accent);font-weight:600">'+label+'</div>' +
         '</div>';
     }).join('');

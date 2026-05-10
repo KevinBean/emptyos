@@ -22,7 +22,6 @@ from pathlib import Path
 
 from emptyos.sdk.agent_tools.base import Tool, ToolResult, repo_root
 
-
 DEFAULT_TIMEOUT = 120  # seconds
 MAX_OUTPUT_CHARS = 30_000
 
@@ -131,9 +130,15 @@ class BashTool(Tool):
                 "type": "string",
                 "description": "Shell command, e.g. 'git status' or 'ls apps/'. No pipes, redirects, or &&.",
             },
-            "timeout": {"type": "integer", "description": f"Timeout in seconds (default {DEFAULT_TIMEOUT})"},
+            "timeout": {
+                "type": "integer",
+                "description": f"Timeout in seconds (default {DEFAULT_TIMEOUT})",
+            },
             "cwd": {"type": "string", "description": "Working directory (default: repo root)"},
-            "description": {"type": "string", "description": "Short 1-line description of what this command does"},
+            "description": {
+                "type": "string",
+                "description": "Short 1-line description of what this command does",
+            },
         },
         "required": ["command"],
     }
@@ -188,7 +193,9 @@ class BashTool(Tool):
             shell_exe, shell_args = shell
             try:
                 proc = await asyncio.create_subprocess_exec(
-                    shell_exe, *shell_args, command,
+                    shell_exe,
+                    *shell_args,
+                    command,
                     stdout=asyncio.subprocess.PIPE,
                     stderr=asyncio.subprocess.PIPE,
                     cwd=cwd,
@@ -221,7 +228,9 @@ class BashTool(Tool):
                 shell_exe, shell_args = shell
                 try:
                     proc = await asyncio.create_subprocess_exec(
-                        shell_exe, *shell_args, command,
+                        shell_exe,
+                        *shell_args,
+                        command,
                         stdout=asyncio.subprocess.PIPE,
                         stderr=asyncio.subprocess.PIPE,
                         cwd=cwd,
@@ -233,7 +242,7 @@ class BashTool(Tool):
 
         try:
             stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             proc.kill()
             return ToolResult(ok=False, content=f"error: timed out after {timeout}s")
 
@@ -254,9 +263,14 @@ class BashTool(Tool):
 
         # Emit run:completed to preserve the event-bus convention
         try:
-            await app.emit("run:completed", {
-                "command": command, "exit_code": exit_code, "stdout_len": len(out),
-            })
+            await app.emit(
+                "run:completed",
+                {
+                    "command": command,
+                    "exit_code": exit_code,
+                    "stdout_len": len(out),
+                },
+            )
         except Exception:
             pass
 

@@ -116,6 +116,17 @@ timezone = "UTC"
 # width = 1280
 # height = 720
 # warmup_frames = 3   # skip initial frames while sensor auto-exposes
+#
+# [plugins.dogfood-demo]
+# enabled = true       # spawn a sidecar EmptyOS daemon on :9001 for sharable
+#                      # surfaces (ppt embeds, screenshots) so demos don't leak
+#                      # personal data. First-time setup:
+#                      #   cp dogfood/emptyos.toml.example dogfood/emptyos.toml
+#                      # Restart the personal daemon — the sidecar auto-starts.
+# autostart = true     # spawn on personal daemon boot (default)
+# port = 9001
+# config_path = "./dogfood/emptyos.toml"
+# vault_path = "./dogfood/vault"
 
 # --- System Startup ---
 # Non-plugin programs to launch on boot (via eos boot --generate).

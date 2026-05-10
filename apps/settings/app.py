@@ -26,7 +26,7 @@ def _write_network_config(toml_path: Path, updates: dict[str, str]) -> tuple[boo
         return False, f"read error: {e}"
 
     def _set_key_in(section_text: str, key: str, value: str) -> str:
-        pattern = re.compile(rf'(?m)^{re.escape(key)}\s*=.*$')
+        pattern = re.compile(rf"(?m)^{re.escape(key)}\s*=.*$")
         replacement = f'{key} = "{value}"'
         if pattern.search(section_text):
             return pattern.sub(replacement, section_text, count=1)
@@ -34,10 +34,10 @@ def _write_network_config(toml_path: Path, updates: dict[str, str]) -> tuple[boo
             section_text += "\n"
         return section_text + replacement + "\n"
 
-    header_match = re.search(r'(?m)^\[network\]\s*$', text)
+    header_match = re.search(r"(?m)^\[network\]\s*$", text)
     if header_match:
         section_start = header_match.end()
-        next_header = re.search(r'(?m)^\[', text[section_start:])
+        next_header = re.search(r"(?m)^\[", text[section_start:])
         section_end = section_start + next_header.start() if next_header else len(text)
         section = text[section_start:section_end]
         for key, value in updates.items():
@@ -63,7 +63,6 @@ _MODE_HOSTS = {"local": "127.0.0.1", "private": "0.0.0.0", "public": "0.0.0.0"}
 
 
 class SettingsApp(BaseApp):
-
     def _settings(self):
         return self.require("settings")
 
@@ -76,7 +75,10 @@ class SettingsApp(BaseApp):
             caps[name] = {"providers": providers, "domains": domains}
 
         from emptyos.kernel.app_loader import AppState
-        apps_loaded = sum(1 for s in k.apps.states.values() if s in (AppState.LOADED, AppState.STARTED))
+
+        apps_loaded = sum(
+            1 for s in k.apps.states.values() if s in (AppState.LOADED, AppState.STARTED)
+        )
 
         return {
             "os_name": k.config.get("os.name", "EmptyOS"),
@@ -97,7 +99,7 @@ class SettingsApp(BaseApp):
             print(f"  Apps: {info['apps']['loaded']}/{info['apps']['total']}")
             all_settings = self._settings().all()
             if all_settings:
-                print(f"\n  Settings:")
+                print("\n  Settings:")
                 for k, v in all_settings.items():
                     if isinstance(v, dict):
                         for sk, sv in v.items():
@@ -105,7 +107,7 @@ class SettingsApp(BaseApp):
                     else:
                         print(f"    {k} = {v}")
             else:
-                print(f"\n  No custom settings yet")
+                print("\n  No custom settings yet")
             print()
         elif action == "get" and key:
             print(f"  {key} = {self._settings().get(key)}")
@@ -207,6 +209,58 @@ class SettingsApp(BaseApp):
         await self.emit("settings:network_changed", {"mode": mode})
         return {"ok": True, "restart_required": True, "mode": mode, "host": _MODE_HOSTS[mode]}
 
+    # --- Daemon restart (Windows: spawns restart.bat detached) ----------------
+    # Lives here, not in any single app, because restart is system-wide. The
+    # command palette has a "Restart Daemon" entry that POSTs here from any page.
+    @web_route("POST", "/api/restart-daemon")
+    async def api_restart_daemon(self, request):
+        """Trigger restart.bat as a detached process. Confirm-gated.
+
+        restart.bat does `taskkill /F /IM python.exe` — including this daemon. The
+        spawned cmd.exe must outlive the kill: detached, breakaway-from-job, no
+        inherited handles. The browser will lose its connection mid-response.
+        """
+        import os
+        import subprocess
+
+        try:
+            data = await request.json()
+        except Exception:
+            data = {}
+        if not data.get("confirm"):
+            return {"error": "missing confirm: true — this kills the running daemon"}
+
+        if os.name != "nt":
+            return {"error": "restart-daemon is Windows-only (uses restart.bat)"}
+
+        bat = self.repo_root / "restart.bat"
+        if not bat.exists():
+            return {"error": f"restart.bat not found at {bat}"}
+
+        flags = 0
+        for name in ("DETACHED_PROCESS", "CREATE_NEW_PROCESS_GROUP", "CREATE_BREAKAWAY_FROM_JOB"):
+            flags |= getattr(subprocess, name, 0)
+
+        try:
+            subprocess.Popen(
+                ["cmd.exe", "/c", "start", "", "/min", str(bat)],
+                cwd=str(self.repo_root),
+                creationflags=flags,
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                close_fds=True,
+            )
+        except Exception as e:
+            return {"error": f"spawn failed: {e}"}
+
+        await self.emit("system:restart_requested", {"source": "settings"})
+        return {
+            "ok": True,
+            "message": "restart.bat spawned detached. Daemon will die in ~2s and reboot. "
+            "Refresh the page in 15-20s.",
+        }
+
     # User-facing preference sections (rendered on the "Settings" tab).
     # The "System" tab holds infrastructure (network mode, capabilities, plugins, vault).
     # Order here is the display order: identity → appearance → behavior → integrations.
@@ -216,15 +270,32 @@ class SettingsApp(BaseApp):
             "icon": "user",
             "settings": [
                 {"key": "user.name", "label": "Your Name", "type": "text", "default": ""},
-                {"key": "user.cv_path", "label": "CV Path (in vault)", "type": "text", "default": ""},
+                {
+                    "key": "user.cv_path",
+                    "label": "CV Path (in vault)",
+                    "type": "text",
+                    "default": "",
+                },
             ],
         },
         {
             "title": "Appearance",
             "icon": "gear",
             "settings": [
-                {"key": "system.theme", "label": "Theme", "type": "select", "options": ["eos", "void-dark", "warm-dark", "nord", "soft-light"], "default": "eos"},
-                {"key": "system.language", "label": "Language", "type": "select", "options": ["en", "zh-en", "zh"], "default": "zh-en"},
+                {
+                    "key": "system.theme",
+                    "label": "Theme",
+                    "type": "select",
+                    "options": ["eos", "void-dark", "warm-dark", "nord", "soft-light"],
+                    "default": "eos",
+                },
+                {
+                    "key": "system.language",
+                    "label": "Language",
+                    "type": "select",
+                    "options": ["en", "zh-en", "zh"],
+                    "default": "zh-en",
+                },
             ],
         },
         {
@@ -240,45 +311,104 @@ class SettingsApp(BaseApp):
             "title": "LLM Routing",
             "icon": "brain",
             "settings": [
-                {"key": "think.default", "label": "Default Provider", "type": "select", "options": ["claude-cli", "openai", "openai-mini", "openai-nano", "ollama"], "default": "claude-cli"},
-                {"key": "think.openai.model", "label": "OpenAI Full Model", "type": "select", "options": ["gpt-5.4", "gpt-5.4-mini", "gpt-5.4-nano"], "default": "gpt-5.4", "hint": "Which model the `openai` provider uses (full tier). `openai-mini` and `openai-nano` are independent providers with their own models. Restart daemon to apply."},
-                {"key": "think.domain.code", "label": "Code Domain", "type": "select", "options": ["claude-cli", "openai", "openai-mini", "ollama"], "default": "openai"},
-                {"key": "think.domain.text", "label": "Text Domain", "type": "select", "options": ["claude-cli", "openai", "openai-mini", "openai-nano", "ollama"], "default": "claude-cli"},
-                {"key": "think.domain.reason", "label": "Reason Domain", "type": "select", "options": ["claude-cli", "openai", "openai-mini", "ollama"], "default": "claude-cli"},
-                {"key": "think.global_timeout", "label": "Provider Timeout (seconds)", "type": "number", "default": 30},
-                {"key": "capability.simulate_offline", "label": "Simulate Capability Offline", "type": "select",
-                 "options": ["", "think", "all"], "default": "",
-                 "hint": "Pretend this capability has no provider (raises immediately, bypassing real providers). Used to test graceful degradation — pages show the AI-offline banner and AI buttons degrade. Leave empty for normal operation."},
+                {
+                    "key": "think.default",
+                    "label": "Default Provider",
+                    "type": "select",
+                    "options": ["claude-cli", "openai", "openai-mini", "openai-nano", "ollama"],
+                    "default": "claude-cli",
+                },
+                {
+                    "key": "think.openai.model",
+                    "label": "OpenAI Full Model",
+                    "type": "select",
+                    "options": ["gpt-5.4", "gpt-5.4-mini", "gpt-5.4-nano"],
+                    "default": "gpt-5.4",
+                    "hint": "Which model the `openai` provider uses (full tier). `openai-mini` and `openai-nano` are independent providers with their own models. Restart daemon to apply.",
+                },
+                {
+                    "key": "think.domain.code",
+                    "label": "Code Domain",
+                    "type": "select",
+                    "options": ["claude-cli", "openai", "openai-mini", "ollama"],
+                    "default": "openai",
+                },
+                {
+                    "key": "think.domain.text",
+                    "label": "Text Domain",
+                    "type": "select",
+                    "options": ["claude-cli", "openai", "openai-mini", "openai-nano", "ollama"],
+                    "default": "claude-cli",
+                },
+                {
+                    "key": "think.domain.reason",
+                    "label": "Reason Domain",
+                    "type": "select",
+                    "options": ["claude-cli", "openai", "openai-mini", "ollama"],
+                    "default": "claude-cli",
+                },
+                {
+                    "key": "think.global_timeout",
+                    "label": "Provider Timeout (seconds)",
+                    "type": "number",
+                    "default": 30,
+                },
+                {
+                    "key": "capability.simulate_offline",
+                    "label": "Simulate Capability Offline",
+                    "type": "select",
+                    "options": ["", "think", "all"],
+                    "default": "",
+                    "hint": "Pretend this capability has no provider (raises immediately, bypassing real providers). Used to test graceful degradation — pages show the AI-offline banner and AI buttons degrade. Leave empty for normal operation.",
+                },
             ],
         },
         {
             "title": "Notifications",
             "icon": "bell",
             "settings": [
-                {"key": "notify.enabled", "label": "Notifications Enabled", "type": "toggle", "default": True},
+                {
+                    "key": "notify.enabled",
+                    "label": "Notifications Enabled",
+                    "type": "toggle",
+                    "default": True,
+                },
             ],
         },
         {
             "title": "Navigation",
             "icon": "compass",
             "settings": [
-                {"key": "layout.nav_apps", "label": "Nav Bar Apps (JSON array)", "type": "text",
-                 "default": '[{"id":"task","prefix":"/task","name":"Tasks"},{"id":"expense","prefix":"/expense","name":"Expense"},{"id":"english","prefix":"/english","name":"English"},{"id":"journal","prefix":"/journal","name":"Journal"},{"id":"healing","prefix":"/healing","name":"Healing"},{"id":"search","prefix":"/search","name":"Search"}]'},
+                {
+                    "key": "layout.nav_apps",
+                    "label": "Nav Bar Apps (JSON array)",
+                    "type": "text",
+                    "default": '[{"id":"task","prefix":"/task","name":"Tasks"},{"id":"expense","prefix":"/expense","name":"Expense"},{"id":"english","prefix":"/english","name":"English"},{"id":"journal","prefix":"/journal","name":"Journal"},{"id":"healing","prefix":"/healing","name":"Healing"},{"id":"search","prefix":"/search","name":"Search"}]',
+                },
             ],
         },
         {
             "title": "Countdowns",
             "icon": "calendar",
             "settings": [
-                {"key": "countdown.items", "label": "Countdown Items (JSON array)", "type": "text",
-                 "default": "[]"},
+                {
+                    "key": "countdown.items",
+                    "label": "Countdown Items (JSON array)",
+                    "type": "text",
+                    "default": "[]",
+                },
             ],
         },
         {
             "title": "Keyboard Shortcuts",
             "icon": "keyboard",
             "settings": [
-                {"key": "shortcuts.enabled", "label": "Shortcuts Enabled", "type": "toggle", "default": True},
+                {
+                    "key": "shortcuts.enabled",
+                    "label": "Shortcuts Enabled",
+                    "type": "toggle",
+                    "default": True,
+                },
             ],
         },
     ]
@@ -286,17 +416,32 @@ class SettingsApp(BaseApp):
     @web_route("GET", "/api/shortcuts")
     async def api_shortcuts_page(self, request):
         """Shortcuts data for the settings page — includes current go-map and all shortcuts."""
-        import json as _json
+
         settings = self._settings()
         custom_map = settings.get("shortcuts.go_map")
 
         # Default go map
         default_map = {
-            "h": "Home", "t": "Tasks", "j": "Journal", "e": "Expense",
-            "s": "Search", "a": "Assistant", "b": "Briefing", "d": "Dashboard",
-            "n": "Nutrition", "p": "Projects", "c": "Contacts", "i": "Items",
-            "l": "Healing", "m": "Media", "r": "Reader", "k": "Tracker",
-            "v": "Vault Analytics", "x": "English", "w": "Review", "q": "Quotes",
+            "h": "Home",
+            "t": "Tasks",
+            "j": "Journal",
+            "e": "Expense",
+            "s": "Search",
+            "a": "Assistant",
+            "b": "Briefing",
+            "d": "Dashboard",
+            "n": "Nutrition",
+            "p": "Projects",
+            "c": "Contacts",
+            "i": "Items",
+            "l": "Healing",
+            "m": "Media",
+            "r": "Reader",
+            "k": "Tracker",
+            "v": "Vault Analytics",
+            "x": "English",
+            "w": "Review",
+            "q": "Quotes",
         }
 
         # Merge custom
@@ -338,11 +483,13 @@ class SettingsApp(BaseApp):
             app_settings = manifest.provides.get("settings", {})
             schema = app_settings.get("schema", [])
             if schema:
-                sections.append({
-                    "title": manifest.name,
-                    "icon": "app",
-                    "app_id": app_id,
-                    "settings": schema,
-                })
+                sections.append(
+                    {
+                        "title": manifest.name,
+                        "icon": "app",
+                        "app_id": app_id,
+                        "settings": schema,
+                    }
+                )
 
         return {"sections": sections}

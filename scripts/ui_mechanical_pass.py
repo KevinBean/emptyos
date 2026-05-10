@@ -8,6 +8,7 @@ Usage: python scripts/ui_mechanical_pass.py [--dry-run]
 """
 
 from __future__ import annotations
+
 import re
 import sys
 from pathlib import Path
@@ -20,17 +21,44 @@ SKIP_DIRS = {"_retired", "_example", "tmpl", "tests", "personal"}
 # Mappings pick the nearest in-scale value; 10px radius → 8 (button bias,
 # cards already use 14 explicitly); 99px radius → 999 (pill).
 RADIUS_MAP = {
-    1: 0, 2: 4, 3: 4, 5: 4, 7: 8, 9: 8, 10: 8, 11: 8,
-    12: 14, 13: 14, 15: 14, 16: 14, 18: 14, 20: 14, 99: 999,
+    1: 0,
+    2: 4,
+    3: 4,
+    5: 4,
+    7: 8,
+    9: 8,
+    10: 8,
+    11: 8,
+    12: 14,
+    13: 14,
+    15: 14,
+    16: 14,
+    18: 14,
+    20: 14,
+    99: 999,
 }
 SPACING_MAP = {
-    1: 2, 3: 4, 5: 4, 6: 8, 7: 8, 9: 8, 10: 12, 11: 12,
-    14: 16, 15: 16, 18: 16, 20: 24, 22: 24, 28: 32,
+    1: 2,
+    3: 4,
+    5: 4,
+    6: 8,
+    7: 8,
+    9: 8,
+    10: 12,
+    11: 12,
+    14: 16,
+    15: 16,
+    18: 16,
+    20: 24,
+    22: 24,
+    28: 32,
 }
 
 STYLE_RE = re.compile(r"(<style[^>]*>)(.*?)(</style>)", re.DOTALL | re.IGNORECASE)
 RADIUS_DECL_RE = re.compile(r"(border-radius\s*:\s*)([^;}\n]+)", re.IGNORECASE)
-SPACING_DECL_RE = re.compile(r"((?:padding|margin|gap|row-gap|column-gap)\s*:\s*)([^;}\n]+)", re.IGNORECASE)
+SPACING_DECL_RE = re.compile(
+    r"((?:padding|margin|gap|row-gap|column-gap)\s*:\s*)([^;}\n]+)", re.IGNORECASE
+)
 SPACING_SIDE_DECL_RE = re.compile(
     r"((?:padding|margin)-(?:top|right|bottom|left)\s*:\s*)([^;}\n]+)", re.IGNORECASE
 )

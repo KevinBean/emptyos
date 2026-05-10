@@ -9,7 +9,6 @@ from __future__ import annotations
 
 from emptyos.sdk.agent_tools.base import Tool, ToolResult, resolve_path
 
-
 MAX_RESULTS = 200
 CONTENT_MAX_LINES = 400
 
@@ -27,12 +26,28 @@ class GrepTool(Tool):
         "type": "object",
         "properties": {
             "pattern": {"type": "string", "description": "Regex pattern to search for"},
-            "path": {"type": "string", "description": "Path to search in (default: current working directory)"},
-            "mode": {"type": "string", "enum": ["files_with_matches", "content"], "description": "Output mode"},
+            "path": {
+                "type": "string",
+                "description": "Path to search in (default: current working directory)",
+            },
+            "mode": {
+                "type": "string",
+                "enum": ["files_with_matches", "content"],
+                "description": "Output mode",
+            },
             "glob": {"type": "string", "description": "Glob filter, e.g. '*.py' or '**/*.md'"},
-            "type": {"type": "string", "description": "File type filter (ripgrep --type), e.g. 'py', 'md'"},
-            "case_insensitive": {"type": "boolean", "description": "Case-insensitive search (default true)"},
-            "context": {"type": "integer", "description": "Lines of context around each match (mode=content only)"},
+            "type": {
+                "type": "string",
+                "description": "File type filter (ripgrep --type), e.g. 'py', 'md'",
+            },
+            "case_insensitive": {
+                "type": "boolean",
+                "description": "Case-insensitive search (default true)",
+            },
+            "context": {
+                "type": "integer",
+                "description": "Lines of context around each match (mode=content only)",
+            },
         },
         "required": ["pattern"],
     }

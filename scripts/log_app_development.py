@@ -29,7 +29,7 @@ def _relpath(fp: str, project_root: Path) -> str:
     fp_n = fp.replace("\\", "/")
     rp = str(project_root).replace("\\", "/").rstrip("/")
     if fp_n.startswith(rp):
-        return fp_n[len(rp):].lstrip("/")
+        return fp_n[len(rp) :].lstrip("/")
     return fp_n
 
 
@@ -88,7 +88,10 @@ def git_status(project_root: Path) -> list[tuple[str, str]]:
     try:
         out = subprocess.run(
             ["git", "status", "--porcelain", "--", "apps/"],
-            cwd=project_root, capture_output=True, text=True, timeout=10,
+            cwd=project_root,
+            capture_output=True,
+            text=True,
+            timeout=10,
         )
         if out.returncode != 0:
             return []
@@ -108,7 +111,10 @@ def git_head_show(project_root: Path, path: str) -> str | None:
     try:
         out = subprocess.run(
             ["git", "show", f"HEAD:{path}"],
-            cwd=project_root, capture_output=True, text=True, timeout=10,
+            cwd=project_root,
+            capture_output=True,
+            text=True,
+            timeout=10,
         )
         if out.returncode != 0:
             return None
@@ -134,10 +140,15 @@ def detect_events(project_root: Path) -> list[dict]:
             continue
         app_id = manifest.get("app", {}).get("id") or norm.split("/")[-2]
         if code.strip() == "??":
-            events.append({
-                "app_id": app_id, "event": "created",
-                "manifest_path": norm, "manifest": manifest, "diff_summary": [],
-            })
+            events.append(
+                {
+                    "app_id": app_id,
+                    "event": "created",
+                    "manifest_path": norm,
+                    "manifest": manifest,
+                    "diff_summary": [],
+                }
+            )
         elif "M" in code:
             prev = git_head_show(project_root, norm)
             if prev is None:
@@ -148,10 +159,15 @@ def detect_events(project_root: Path) -> list[dict]:
                 continue
             diff = diff_manifest(old, manifest)
             if diff:
-                events.append({
-                    "app_id": app_id, "event": "changed",
-                    "manifest_path": norm, "manifest": manifest, "diff_summary": diff,
-                })
+                events.append(
+                    {
+                        "app_id": app_id,
+                        "event": "changed",
+                        "manifest_path": norm,
+                        "manifest": manifest,
+                        "diff_summary": diff,
+                    }
+                )
     return events
 
 
@@ -201,7 +217,9 @@ def parse_transcript(path: Path) -> dict:
     first_ts: str | None = None
     last_ts: str | None = None
     tokens_by_model: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
-    agents_by_type: dict[str, dict[str, int]] = defaultdict(lambda: {"count": 0, "prompt_chars": 0, "result_chars": 0})
+    agents_by_type: dict[str, dict[str, int]] = defaultdict(
+        lambda: {"count": 0, "prompt_chars": 0, "result_chars": 0}
+    )
     tool_use_to_subagent: dict[str, str] = {}
     skill_triggers: list[str] = []
     files_touched: set[str] = set()
@@ -245,7 +263,9 @@ def parse_transcript(path: Path) -> dict:
                             sa = inp.get("subagent_type") or "default"
                             tool_use_to_subagent[c.get("id", "")] = sa
                             agents_by_type[sa]["count"] += 1
-                            agents_by_type[sa]["prompt_chars"] += len(json.dumps(inp.get("prompt") or ""))
+                            agents_by_type[sa]["prompt_chars"] += len(
+                                json.dumps(inp.get("prompt") or "")
+                            )
                         if name in ("Write", "Edit", "MultiEdit"):
                             fp = inp.get("file_path")
                             if fp:
@@ -278,11 +298,13 @@ def parse_transcript(path: Path) -> dict:
     duration_min = 0
     if first_ts and last_ts:
         try:
+
             def parse(ts: str) -> datetime:
                 # Handle both Z-suffix and explicit offsets
                 if ts.endswith("Z"):
                     ts = ts[:-1] + "+00:00"
                 return datetime.fromisoformat(ts)
+
             duration_min = max(0, int((parse(last_ts) - parse(first_ts)).total_seconds() // 60))
         except Exception:
             pass
@@ -308,7 +330,16 @@ def fmt_int(n: int) -> str:
     return f"{n:,}"
 
 
-_NOISE_COMMANDS = {"/clear", "/compact", "/loop", "/exit", "/help", "/init", "/review", "/security-review"}
+_NOISE_COMMANDS = {
+    "/clear",
+    "/compact",
+    "/loop",
+    "/exit",
+    "/help",
+    "/init",
+    "/review",
+    "/security-review",
+}
 
 
 def pick_trigger(skills: list[str]) -> str:
@@ -411,6 +442,7 @@ Rolling record of app creations and major changes. Entries written by the Stop h
 def _acquire_lock(lock_path: Path, timeout_s: float = 5.0) -> Path:
     """Cross-platform advisory lock via exclusive-create of a sidecar file."""
     import time
+
     start = time.monotonic()
     lock_path.parent.mkdir(parents=True, exist_ok=True)
     while True:
@@ -429,7 +461,7 @@ def _acquire_lock(lock_path: Path, timeout_s: float = 5.0) -> Path:
                         continue
                 except Exception:
                     pass
-                raise TimeoutError(f"could not acquire {lock_path}")
+                raise TimeoutError(f"could not acquire {lock_path}") from None
             time.sleep(0.05)
 
 
@@ -471,7 +503,9 @@ def write_log(log_path: Path, session_id: str, entries: list[tuple[dict, str]]) 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="App development auto-log (Stop hook).")
-    parser.add_argument("--dry-run", action="store_true", help="Print what would be logged instead of writing.")
+    parser.add_argument(
+        "--dry-run", action="store_true", help="Print what would be logged instead of writing."
+    )
     parser.add_argument("--transcript", help="Override transcript path (dry-run diagnostics).")
     parser.add_argument("--session-id", help="Override session_id (dry-run diagnostics).")
     args = parser.parse_args()
@@ -504,9 +538,11 @@ def main() -> int:
         if not args.dry_run and not session_id:
             return 0
 
-        metrics = parse_transcript(Path(transcript_path)) if transcript_path else {
-            "duration_min": 0, "tokens_by_model": {}, "agents": {}, "skills": [], "files": []
-        }
+        metrics = (
+            parse_transcript(Path(transcript_path))
+            if transcript_path
+            else {"duration_min": 0, "tokens_by_model": {}, "agents": {}, "skills": [], "files": []}
+        )
 
         # Prevent uncommitted work from past sessions being re-attributed to
         # whichever session's Stop hook fires next — require the manifest to
@@ -541,7 +577,10 @@ def main() -> int:
 
         vault = read_vault_path(project_root)
         if vault is None:
-            log_error(project_root, "vault path not resolvable (no vault-connection.json or emptyos.toml notes.path)")
+            log_error(
+                project_root,
+                "vault path not resolvable (no vault-connection.json or emptyos.toml notes.path)",
+            )
             return 0
 
         log_path = vault / "10_Projects" / "emptyos" / "log" / "app-development.md"

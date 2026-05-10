@@ -8,7 +8,8 @@
   <link rel="stylesheet" href="/static/eos-components.css">
   <style>
     body { padding-top:44px; padding-bottom:env(safe-area-inset-bottom); }
-    .stats-bar { display:grid; grid-template-columns:repeat(4,1fr); gap:8px; margin-bottom:16px; animation:fadeDown 0.4s ease }
+    .stats-bar { display:grid; grid-template-columns:repeat(5,1fr); gap:8px; margin-bottom:16px; animation:fadeDown 0.4s ease }
+    .eos-stat-card.eos-stat-active { border-color:var(--accent); box-shadow:0 0 0 1px var(--accent) inset }
     .decay-bar { display:flex; height:8px; border-radius:4px; overflow:hidden; margin-bottom:16px; background:var(--border); animation:fadeDown 0.4s ease 0.05s both }
     .decay-seg { height:100%; transition:width 0.6s ease; min-width:0 }
     .decay-fresh{background:var(--success)} .decay-aging{background:var(--warning)} .decay-stale{background:var(--danger)} .decay-zombie{background:var(--purple)}
@@ -22,7 +23,8 @@
     .search-bar { margin-bottom:12px; animation:fadeDown 0.4s ease 0.1s both }
     .search-bar input { width:100%; background:var(--bg-card); border:1px solid var(--border); border-radius:14px; padding:12px 16px 12px 36px; font-size:14px; color:var(--text); outline:none; font-family:inherit; transition:border-color 0.2s }
     .search-bar input:focus{border-color:var(--accent)} .search-bar input::placeholder{color:var(--text-secondary)}
-    .search-wrap{position:relative} .search-icon{position:absolute;left:12px;top:50%;transform:translateY(-50%);color:var(--text-secondary);font-size:14px;pointer-events:none}
+    .search-wrap{position:relative} .search-icon{position:absolute;left:12px;top:50%;transform:translateY(-50%);width:14px;height:14px;color:var(--text-secondary);pointer-events:none;display:flex;align-items:center;justify-content:center}
+    .search-icon svg{width:14px;height:14px;display:block}
     .toolbar-row { display:flex; align-items:center; justify-content:space-between; margin-bottom:16px }
     .focus-section { margin-bottom:24px }
     .focus-card { background:var(--bg-card); border-left:3px solid var(--accent); border-radius:14px; padding:16px 16px; margin-bottom:8px; display:flex; align-items:center; gap:12px; animation:cardIn 0.35s ease both; box-shadow:0 0 0 1px var(--border) }
@@ -31,7 +33,6 @@
     .focus-text{flex:1;min-width:0} .focus-text .task-name{font-weight:600;color:var(--text-heading);font-size:14px} .focus-text .task-meta{font-size:12px;color:var(--text-secondary);margin-top:2px}
     .tier-group{margin-bottom:24px}
     .tier-header { font-size:12px; font-weight:600; text-transform:uppercase; letter-spacing:1px; padding:8px 0; display:flex; align-items:center; gap:8px; color:var(--text-secondary) }
-    .tier-dot{width:8px;height:8px;border-radius:50%;display:inline-block}
     .tier-count { background:var(--bg-card); padding:2px 8px; border-radius:8px; font-size:11px; color:var(--text-muted); border:1px solid var(--border) }
     .task-item { display:flex; align-items:flex-start; gap:12px; padding:12px 16px; border-radius:8px; margin-bottom:4px; transition:all 0.2s; position:relative; background:var(--bg-card); border-left:3px solid transparent; animation:cardIn 0.35s ease both }
     .task-item:hover{box-shadow:0 2px 8px var(--shadow)}
@@ -42,12 +43,11 @@
     .task-cb:hover{border-color:var(--accent);background:var(--accent-bg);transform:scale(1.1)}
     .task-cb.done{background:var(--success);border-color:var(--success);transform:scale(1.1)} .task-cb.done::after{content:"\2713";color:var(--accent-ink);font-size:13px;font-weight:700}
     .task-body{flex:1;min-width:0} .task-text{font-size:14px;color:var(--text);line-height:1.4;word-break:break-word} .task-file{font-size:11px;color:var(--text-muted);margin-top:2px}
-    .project-badge{display:inline-block;font-size:10px;font-weight:600;padding:2px 8px;border-radius:8px;background:rgba(6,182,212,0.15);color:#06b6d4;text-decoration:none;vertical-align:middle;margin-right:2px}
+    .project-badge{display:inline-block;font-size:10px;font-weight:600;padding:2px 8px;border-radius:8px;background:color-mix(in srgb,var(--blue) 15%,transparent);color:var(--blue);text-decoration:none;vertical-align:middle;margin-right:2px}
     .task-due { font-size:11px; padding:4px 12px; border-radius:6px; white-space:nowrap; flex-shrink:0; font-weight:500 }
     .task-actions{display:flex;gap:4px;opacity:0;transition:opacity 0.2s} .task-item:hover .task-actions{opacity:1}
     .task-actions button{background:var(--bg);border:1px solid var(--border);color:var(--text-secondary);border-radius:6px;padding:4px 12px;font-size:11px;cursor:pointer;transition:all 0.15s}
     .task-actions button:hover{border-color:var(--accent);color:var(--accent)}
-    .tier-fresh .tier-dot{background:var(--success)} .tier-aging .tier-dot{background:var(--warning)} .tier-stale .tier-dot{background:var(--danger)} .tier-zombie .tier-dot{background:var(--purple)}
     .due-fresh{background:color-mix(in srgb,var(--success) 15%,transparent);color:var(--success)} .due-aging{background:color-mix(in srgb,var(--warning) 15%,transparent);color:var(--warning)} .due-stale{background:color-mix(in srgb,var(--danger) 15%,transparent);color:var(--danger)} .due-zombie{background:color-mix(in srgb,var(--purple) 15%,transparent);color:var(--purple)} .due-future{background:var(--bg);color:var(--text-secondary)}
     .cal-nav{display:flex;align-items:center;gap:12px;margin-bottom:12px}
     .cal-nav button{background:var(--bg-card);border:1px solid var(--border);color:var(--text);padding:8px 16px;border-radius:8px;cursor:pointer;font-size:14px;transition:all 0.15s}
@@ -111,7 +111,7 @@
     <!-- Search -->
     <div class="search-bar">
       <div class="search-wrap">
-        <span class="search-icon">&#x1F50D;</span>
+        <span class="search-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.5-3.5"></path></svg></span>
         <input type="text" id="search-input" placeholder="Filter tasks..." oninput="filterTasks()">
       </div>
     </div>
@@ -182,6 +182,28 @@
     var calYear = new Date().getFullYear();
     var selectedCalDay = null;
     var searchQuery = '';
+    var bucketFilter = '';
+
+    function setBucket(b) {
+      bucketFilter = (bucketFilter === b) ? '' : b;
+      document.querySelectorAll('#stats .eos-stat-card').forEach(function(el) {
+        el.classList.toggle('eos-stat-active', el.dataset.bucket === bucketFilter);
+      });
+      renderList();
+    }
+
+    function inBucket(t, bucket) {
+      var today = new Date(); today.setHours(0,0,0,0);
+      var todayS = today.toISOString().slice(0,10);
+      var tom = new Date(today.getTime() + 86400000).toISOString().slice(0,10);
+      var weekEnd = new Date(today.getTime() + 7*86400000).toISOString().slice(0,10);
+      var due = (t.due || '').slice(0,10);
+      if (bucket === 'overdue')   return due && due < todayS;
+      if (bucket === 'today')     return due === todayS;
+      if (bucket === 'tomorrow')  return due === tom;
+      if (bucket === 'this_week') return due && due > todayS && due <= weekEnd;
+      return true;
+    }
 
     function projectBadge(file) {
       var norm = file.replace(/\\/g, '/');
@@ -236,16 +258,30 @@
       weekEnd.setDate(weekEnd.getDate() + 7);
       var weekStr = weekEnd.toISOString().slice(0, 10);
 
+      var tomorrow = new Date(); tomorrow.setDate(tomorrow.getDate() + 1);
+      var tomorrowStr = tomorrow.toISOString().slice(0, 10);
+
       var overdue = allTasks.filter(function(t) { return t.due && t.due < today; }).length;
       var todayCount = allTasks.filter(function(t) { return t.due === today; }).length;
-      var weekCount = allTasks.filter(function(t) { return t.due && t.due >= today && t.due <= weekStr; }).length;
+      var tomorrowCount = allTasks.filter(function(t) { return t.due === tomorrowStr; }).length;
+      var weekCount = allTasks.filter(function(t) { return t.due && t.due > today && t.due <= weekStr; }).length;
 
       EOS_UI.statCards('stats', [
-        {value: overdue,    label: 'Overdue',    variant: 'danger'},
-        {value: todayCount, label: 'Today',      variant: 'warning'},
-        {value: weekCount,  label: 'This Week',  variant: 'accent'},
-        {value: '-',        label: 'Done Today', variant: 'success'},
+        {value: overdue,       label: 'Overdue',    variant: 'danger'},
+        {value: todayCount,    label: 'Today',      variant: 'warning'},
+        {value: tomorrowCount, label: 'Tomorrow',   variant: 'accent'},
+        {value: weekCount,     label: 'This Week',  variant: 'accent'},
+        {value: '-',           label: 'Done Today', variant: 'success'},
       ]);
+      var cards = document.querySelectorAll('#stats .eos-stat-card');
+      ['overdue','today','tomorrow','this_week'].forEach(function(b, i) {
+        if (cards[i]) {
+          cards[i].dataset.bucket = b;
+          cards[i].style.cursor = 'pointer';
+          cards[i].onclick = function() { setBucket(b); };
+          cards[i].classList.toggle('eos-stat-active', bucketFilter === b);
+        }
+      });
       EOS.api('/task/api/tasks?status=done').then(function(done) {
         var n = done.filter(function(t) { return t.done_date === today; }).length;
         var cell = document.querySelector('#stats .eos-stat-card:nth-child(4) .eos-stat-val');
@@ -304,6 +340,9 @@
       var el = document.getElementById('view-list');
       var tasks = allTasks;
 
+      if (bucketFilter) {
+        tasks = tasks.filter(function(t) { return inBucket(t, bucketFilter); });
+      }
       if (searchQuery) {
         tasks = tasks.filter(function(t) {
           return (t.text && t.text.toLowerCase().indexOf(searchQuery) >= 0) ||
@@ -343,7 +382,7 @@
         var items = grouped[tierKey];
         if (!items || !items.length) continue;
         html += '<div class="tier-group tier-' + tierKey + '">' +
-          '<div class="tier-header"><span class="tier-dot"></span>' +
+          '<div class="tier-header">' +
           tierLabels[tierKey] + ' <span class="tier-count">' + items.length + '</span></div>';
         for (var j = 0; j < items.length; j++) {
           html += taskRow(items[j], tierKey, itemIdx++);
@@ -373,7 +412,7 @@
       return '<div class="task-item' + tierClass + '" style="animation-delay:' + delay + 's">' +
         '<div class="task-cb" onclick="toggleTask(\'' + escAttr(t.file) + '\',' + t.line + ',this)"></div>' +
         '<div class="task-body">' +
-          '<div class="task-text">' + esc(t.text) + '</div>' +
+          '<div class="task-text eos-personal">' + esc(t.text) + '</div>' +
           '<div class="task-file">' + projectBadge(t.file) + EOS.noteActions(t.file) + '</div>' +
         '</div>' +
         (dueLabel ? '<span class="task-due ' + dueClass + '">' + dueLabel + '</span>' : '') +

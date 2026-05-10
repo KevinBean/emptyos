@@ -92,16 +92,15 @@ class PythonTool(Tool):
 
         try:
             proc = await asyncio.create_subprocess_exec(
-                sys.executable, tmp_path,
+                sys.executable,
+                tmp_path,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
                 cwd=cwd,
             )
             try:
-                stdout, stderr = await asyncio.wait_for(
-                    proc.communicate(), timeout=timeout
-                )
-            except asyncio.TimeoutError:
+                stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
+            except TimeoutError:
                 proc.kill()
                 return ToolResult(ok=False, content=f"error: timed out after {timeout}s")
         finally:

@@ -20,7 +20,6 @@ from __future__ import annotations
 
 from emptyos.sdk.agent_tools.base import Tool, ToolResult
 
-
 VALID_STATUSES = {"pending", "in_progress", "completed"}
 
 
@@ -36,7 +35,7 @@ class TaskListTool(Tool):
         "and a stable `id` (reuse across calls to track the same task)."
     )
     permission = "auto"  # pure planning artifact — no side effects
-    readonly = True       # plan-mode safe (it IS the planning tool)
+    readonly = True  # plan-mode safe (it IS the planning tool)
     input_schema = {
         "type": "object",
         "properties": {

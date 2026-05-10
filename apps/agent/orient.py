@@ -11,8 +11,10 @@ from __future__ import annotations
 import re
 
 from apps.agent.prompts import (
-    CLASSIFY_PROMPT, CLASSIFY_SYSTEM,
-    ORIENT_PROMPT, ORIENT_SYSTEM,
+    CLASSIFY_PROMPT,
+    CLASSIFY_SYSTEM,
+    ORIENT_PROMPT,
+    ORIENT_SYSTEM,
 )
 
 
@@ -31,8 +33,8 @@ async def orient(self, user_text: str, session_id: str) -> dict | None:
 
     Both think() calls are cached independently by content hash.
     """
-    from emptyos.sdk import utils as _utils
     from emptyos.sdk import think_cache
+    from emptyos.sdk import utils as _utils
 
     # Skip for trivial messages and for follow-up turns in live sessions
     if len(user_text.strip()) < 20:
@@ -54,21 +56,28 @@ async def orient(self, user_text: str, session_id: str) -> dict | None:
     else:
         try:
             cls_raw = await self.think(
-                classify_prompt, system=CLASSIFY_SYSTEM, domain="text",
+                classify_prompt,
+                system=CLASSIFY_SYSTEM,
+                domain="text",
                 temperature=0.1,
             )
             think_cache.put(
-                cache_path, cls_key,
-                prompt=classify_prompt, system=CLASSIFY_SYSTEM, model="",
-                response=cls_raw, app_id=self.manifest.id, ttl_hours=24,
+                cache_path,
+                cls_key,
+                prompt=classify_prompt,
+                system=CLASSIFY_SYSTEM,
+                model="",
+                response=cls_raw,
+                app_id=self.manifest.id,
+                ttl_hours=24,
             )
             classification = _utils.parse_llm_json(cls_raw)
         except Exception:
             classification = None
 
     task_type = (classification or {}).get("task_type") or "other"
-    subject    = (classification or {}).get("subject") or ""
-    scope      = (classification or {}).get("scope") or "module"
+    subject = (classification or {}).get("subject") or ""
+    scope = (classification or {}).get("scope") or "module"
 
     # ── Stage 2: Contextualize — load context informed by classification ─
     try:
@@ -82,7 +91,7 @@ async def orient(self, user_text: str, session_id: str) -> dict | None:
             return ""
         start = m.end()
         nxt = re.search(r"^## ", text[start:], flags=re.MULTILINE)
-        return text[start: start + nxt.start()].strip() if nxt else text[start:].strip()
+        return text[start : start + nxt.start()].strip() if nxt else text[start:].strip()
 
     rules_text = _extract_section(claude_md, "## Development Rules")
     gotchas_text = _extract_section(claude_md, "## Development Gotchas")
@@ -98,9 +107,7 @@ async def orient(self, user_text: str, session_id: str) -> dict | None:
         archives.sort(key=lambda r: r.get("modified", 0), reverse=True)
         matches = []
         for r in archives[:10]:
-            goal = self.vault_read_section(
-                str(self.vault_root / r["path"]), "Goal"
-            ).strip()
+            goal = self.vault_read_section(str(self.vault_root / r["path"]), "Goal").strip()
             if not goal:
                 continue
             goal_words = {w.lower() for w in goal.split() if len(w) >= 5}
@@ -110,9 +117,8 @@ async def orient(self, user_text: str, session_id: str) -> dict | None:
             if len(matches) >= 2:
                 break
         if matches:
-            past_sessions_block = (
-                "Past sessions on related tasks (for reference):\n"
-                + "\n".join(matches)
+            past_sessions_block = "Past sessions on related tasks (for reference):\n" + "\n".join(
+                matches
             )
     except Exception:
         pass
@@ -137,15 +143,22 @@ async def orient(self, user_text: str, session_id: str) -> dict | None:
     else:
         try:
             plan_raw = await self.think(
-                orient_prompt, system=ORIENT_SYSTEM, domain="text",
+                orient_prompt,
+                system=ORIENT_SYSTEM,
+                domain="text",
                 temperature=0.2,
             )
         except Exception:
             return None
         think_cache.put(
-            cache_path, plan_key,
-            prompt=orient_prompt, system=ORIENT_SYSTEM, model="",
-            response=plan_raw, app_id=self.manifest.id, ttl_hours=24,
+            cache_path,
+            plan_key,
+            prompt=orient_prompt,
+            system=ORIENT_SYSTEM,
+            model="",
+            response=plan_raw,
+            app_id=self.manifest.id,
+            ttl_hours=24,
         )
         try:
             plan = _utils.parse_llm_json(plan_raw)
@@ -163,7 +176,7 @@ async def orient(self, user_text: str, session_id: str) -> dict | None:
 def orient_block(self, plan: dict) -> str:
     """Format the orient plan as a compact prefix for the user message."""
     task_type = plan.get("task_type") or ""
-    subject   = plan.get("subject") or ""
+    subject = plan.get("subject") or ""
     header = "Orient — pre-turn analysis"
     if task_type:
         header += f" [{task_type}"

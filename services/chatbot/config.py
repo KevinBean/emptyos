@@ -95,6 +95,7 @@ def load_config(path: str | None = None) -> Config:
 
 # ── Atomic sites.toml rewrite (used by /admin/sites/{id}) ────────────
 
+
 def _toml_escape_basic(s: str) -> str:
     """Escape a string for inclusion in a TOML basic-string ("..."). Escapes
     backslashes, double-quotes, and control chars."""

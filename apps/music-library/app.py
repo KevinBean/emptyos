@@ -7,8 +7,8 @@ working music browser out of the box. Heavier ComfyUI-driven generation
 
 from __future__ import annotations
 
+import shutil
 from pathlib import Path
-
 from urllib.parse import quote
 
 from fastapi.responses import FileResponse
@@ -24,20 +24,26 @@ def _quote_url_path(p: str) -> str:
     """
     return quote(p, safe="/")
 
+
 from . import library, lyrics
 from .lyrics import STYLES
 
 MIME_TYPES = {
-    ".mp3": "audio/mpeg", ".wav": "audio/wav", ".flac": "audio/flac",
-    ".m4a": "audio/mp4", ".ogg": "audio/ogg", ".aac": "audio/aac",
+    ".mp3": "audio/mpeg",
+    ".wav": "audio/wav",
+    ".flac": "audio/flac",
+    ".m4a": "audio/mp4",
+    ".ogg": "audio/ogg",
+    ".aac": "audio/aac",
     ".webm": "audio/webm",
-    ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
     ".webp": "image/webp",
 }
 
 
 class MusicLibraryApp(BaseApp):
-
     def __init__(self, kernel, manifest):
         super().__init__(kernel, manifest)
         self._library = library.LibraryMixin(self)
@@ -60,8 +66,23 @@ class MusicLibraryApp(BaseApp):
     async def cover_art(self, filename: str) -> str:
         return await self._library.cover_art(filename)
 
-    async def generate_lyrics(self, description: str, style: str = "", language: str = "en") -> dict:
+    async def generate_lyrics(
+        self, description: str, style: str = "", language: str = "en"
+    ) -> dict:
         return await self._lyrics.generate(description, style, language)
+
+    async def add_song(self, file_path: str, song_name: str) -> dict:
+        if not file_path:
+            return {"error": "file path required"}
+        src = Path(file_path)
+        if not src.exists():
+            return {"error": f"source file not found: {file_path}"}
+        songs_dir = self._songs_dir()
+        songs_dir.mkdir(parents=True, exist_ok=True)
+        dest = songs_dir / f"{song_name}{src.suffix}"
+        shutil.copy2(str(src), str(dest))
+        await self.emit("music:updated", {"song_name": song_name, "path": str(dest)})
+        return {"copied": str(dest), "song_name": song_name}
 
     # ── CLI ──
 
@@ -143,7 +164,9 @@ class MusicLibraryApp(BaseApp):
         return {
             "detail": detail,
             "audio": audio,
-            "cover": f"/music-library/api/image/{_quote_url_path(cover_path)}" if cover_path else None,
+            "cover": f"/music-library/api/image/{_quote_url_path(cover_path)}"
+            if cover_path
+            else None,
             "cover_path": cover_path or "",
             "copyright": copyright_files,
             "song_key": song_key,
@@ -200,7 +223,9 @@ class MusicLibraryApp(BaseApp):
         description = data.get("description", "")
         if not description:
             return {"error": "description required"}
-        result = await self._lyrics.generate(description, data.get("style", ""), data.get("language", "en"))
+        result = await self._lyrics.generate(
+            description, data.get("style", ""), data.get("language", "en")
+        )
         if data.get("save", False):
             result["saved_to"] = await self._lyrics.save_to_vault(result)
         return result
@@ -233,6 +258,7 @@ class MusicLibraryApp(BaseApp):
     @web_route("GET", "/")
     async def page_home(self, request):
         from fastapi.responses import HTMLResponse
+
         page = Path(self.manifest.path) / "pages" / "index.html"
         if page.exists():
             return HTMLResponse(page.read_text(encoding="utf-8"))

@@ -24,12 +24,10 @@ from emptyos.sdk.utils import parse_llm_json
 from . import layout, storage
 from .prompts import BRAINSTORM_SYSTEM, NODE_PROMPTS
 
-
 _CHECKBOX_RE = re.compile(r"^\s*-\s*\[\s*\]\s*(.+)$")
 
 
 class CanvasApp(BaseApp):
-
     # ── paths ────────────────────────────────────────────────────────────
 
     def _boards_dir(self) -> Path:
@@ -39,7 +37,9 @@ class CanvasApp(BaseApp):
         return self.kernel.config.data_dir / "notes" / "canvas"
 
     def _board_path(self, board_id: str) -> Path:
-        safe = "".join(c for c in (board_id or "inbox") if c.isalnum() or c in ("-", "_")) or "inbox"
+        safe = (
+            "".join(c for c in (board_id or "inbox") if c.isalnum() or c in ("-", "_")) or "inbox"
+        )
         return self._boards_dir() / f"{safe}.md"
 
     def _vault_rel_path(self, p: str) -> str:
@@ -49,7 +49,7 @@ class CanvasApp(BaseApp):
             return ""
         vault_root = str(self.kernel.config.notes_path).replace("\\", "/").rstrip("/")
         if vault_root and p.startswith(vault_root + "/"):
-            p = p[len(vault_root) + 1:]
+            p = p[len(vault_root) + 1 :]
         return p.lstrip("/")
 
     # ── load / save ──────────────────────────────────────────────────────
@@ -80,7 +80,9 @@ class CanvasApp(BaseApp):
             "updated": str(fm.get("updated") or ""),
         }
 
-    async def save_board(self, board_id: str, nodes: list, edges: list, meta: dict | None = None) -> dict:
+    async def save_board(
+        self, board_id: str, nodes: list, edges: list, meta: dict | None = None
+    ) -> dict:
         path = self._board_path(board_id)
         path.parent.mkdir(parents=True, exist_ok=True)
         updated = datetime.utcnow().isoformat(timespec="seconds") + "Z"
@@ -100,17 +102,28 @@ class CanvasApp(BaseApp):
 
         content = storage.encode_board_file(board_id, nodes, edges, merged_meta, updated)
         await self.write(str(path), content)
-        await self.emit("canvas:board_saved", {
-            "board_id": board_id, "nodes": len(nodes), "edges": len(edges),
-        })
+        await self.emit(
+            "canvas:board_saved",
+            {
+                "board_id": board_id,
+                "nodes": len(nodes),
+                "edges": len(edges),
+            },
+        )
         return {
-            "ok": True, "path": str(path), "board_id": board_id,
-            "updated": updated, "nodes": nodes, "edges": edges,
+            "ok": True,
+            "path": str(path),
+            "board_id": board_id,
+            "updated": updated,
+            "nodes": nodes,
+            "edges": edges,
         }
 
     # ── add nodes ────────────────────────────────────────────────────────
 
-    async def add_node(self, board_id: str, text: str, color: str = "default", source: str = "") -> dict:
+    async def add_node(
+        self, board_id: str, text: str, color: str = "default", source: str = ""
+    ) -> dict:
         """Append a text node below the existing cluster."""
         board_id = (board_id or "inbox").strip() or "inbox"
         text = str(text or "").strip()
@@ -125,17 +138,26 @@ class CanvasApp(BaseApp):
         node_id = secrets.token_hex(5)
         new_node = {
             "id": node_id,
-            "x": x, "y": y, "width": 250, "height": 200,
-            "text": text, "color": color or "default",
+            "x": x,
+            "y": y,
+            "width": 250,
+            "height": 200,
+            "text": text,
+            "color": color or "default",
         }
         if source:
             new_node["provenance"] = {"mode": "user", "provider": source, "model": ""}
         nodes.append(new_node)
 
         await self.save_board(board_id, nodes, edges)
-        await self.emit("canvas:node_added", {
-            "board_id": board_id, "node_id": node_id, "source": source or "api",
-        })
+        await self.emit(
+            "canvas:node_added",
+            {
+                "board_id": board_id,
+                "node_id": node_id,
+                "source": source or "api",
+            },
+        )
         return {"ok": True, "board_id": board_id, "node_id": node_id}
 
     @web_route("POST", "/api/node")
@@ -161,15 +183,29 @@ class CanvasApp(BaseApp):
         x, y = layout.below_cluster(nodes)
 
         node_id = secrets.token_hex(5)
-        nodes.append({
-            "id": node_id, "type": "vault_note", "path": path,
-            "x": x, "y": y, "width": 300, "height": 180,
-            "text": "", "color": "default",
-        })
+        nodes.append(
+            {
+                "id": node_id,
+                "type": "vault_note",
+                "path": path,
+                "x": x,
+                "y": y,
+                "width": 300,
+                "height": 180,
+                "text": "",
+                "color": "default",
+            }
+        )
         await self.save_board(board_id, nodes, edges)
-        await self.emit("canvas:node_added", {
-            "board_id": board_id, "node_id": node_id, "source": "vault", "path": path,
-        })
+        await self.emit(
+            "canvas:node_added",
+            {
+                "board_id": board_id,
+                "node_id": node_id,
+                "source": "vault",
+                "path": path,
+            },
+        )
         return {"ok": True, "board_id": board_id, "node_id": node_id, "path": path}
 
     @web_route("POST", "/api/node/vault")
@@ -202,8 +238,11 @@ class CanvasApp(BaseApp):
             section_name, first_section = next(iter(sections.items()))
         preview = first_section.strip() if first_section else body[:500]
         return {
-            "ok": True, "path": path, "title": title,
-            "section": section_name, "body": preview[:800],
+            "ok": True,
+            "path": path,
+            "title": title,
+            "section": section_name,
+            "body": preview[:800],
         }
 
     # ── AI children (think + search) ─────────────────────────────────────
@@ -229,10 +268,12 @@ class CanvasApp(BaseApp):
             return []
         positions = layout.column_right_of(src, len(items))
         created: list[str] = []
-        for (x, y), item in zip(positions, items):
+        for (x, y), item in zip(positions, items, strict=False):
             nid = secrets.token_hex(5)
             node = {
-                "id": nid, "x": x, "y": y,
+                "id": nid,
+                "x": x,
+                "y": y,
                 "width": item.get("width", 250),
                 "height": item.get("height", 200),
                 "text": str(item.get("text") or ""),
@@ -242,11 +283,15 @@ class CanvasApp(BaseApp):
                 if item.get(k):
                     node[k] = item[k]
             nodes.append(node)
-            edges.append({
-                "id": secrets.token_hex(5),
-                "sourceId": str(node_id), "sourceSide": connect_side,
-                "targetId": nid, "targetSide": "left",
-            })
+            edges.append(
+                {
+                    "id": secrets.token_hex(5),
+                    "sourceId": str(node_id),
+                    "sourceSide": connect_side,
+                    "targetId": nid,
+                    "targetSide": "left",
+                }
+            )
             created.append(nid)
         await self.save_board(board_id, nodes, edges)
         return created
@@ -272,7 +317,9 @@ class CanvasApp(BaseApp):
 
         response = await self.think(
             f"Concept: {text}",
-            system=system, domain="text", temperature=0.7,
+            system=system,
+            domain="text",
+            temperature=0.7,
         )
         try:
             ideas = parse_llm_json(response, fallback=[])
@@ -290,14 +337,13 @@ class CanvasApp(BaseApp):
                 "provider": provenance.get("provider") or "",
                 "model": provenance.get("model") or "",
             }
-        items = [
-            {"text": idea, "color": color, "provenance": prov_payload}
-            for idea in ideas
-        ]
+        items = [{"text": idea, "color": color, "provenance": prov_payload} for idea in ideas]
         created = await self._spawn_children(board_id, node_id, items)
         return {
-            "ok": True, "kind": kind,
-            "node_ids": created, "ideas": ideas,
+            "ok": True,
+            "kind": kind,
+            "node_ids": created,
+            "ideas": ideas,
             "provenance": provenance,
         }
 
@@ -324,7 +370,7 @@ class CanvasApp(BaseApp):
 
         seen: set[str] = set()
         rel_paths: list[str] = []
-        for h in (hits or []):
+        for h in hits or []:
             raw = h.get("path") if isinstance(h, dict) else str(h)
             rel = self._vault_rel_path(raw or "")
             if not rel or rel in seen:
@@ -349,13 +395,16 @@ class CanvasApp(BaseApp):
     async def list_nodes(self, board_id: str) -> list[dict]:
         """Compact ``[{id, text, color, x, y}]`` view of a board (agent-facing)."""
         board = await self.load_board(board_id)
-        return [{
-            "id": n.get("id"),
-            "text": str(n.get("text") or ""),
-            "color": n.get("color", "default"),
-            "x": n.get("x", 0),
-            "y": n.get("y", 0),
-        } for n in (board.get("nodes") or [])]
+        return [
+            {
+                "id": n.get("id"),
+                "text": str(n.get("text") or ""),
+                "color": n.get("color", "default"),
+                "x": n.get("x", 0),
+                "y": n.get("y", 0),
+            }
+            for n in (board.get("nodes") or [])
+        ]
 
     @web_route("GET", "/api/nodes")
     async def api_list_nodes(self, request):
@@ -398,12 +447,14 @@ class CanvasApp(BaseApp):
                             pass
             except Exception:
                 pass
-            out.append({
-                "board_id": board_id,
-                "updated": updated,
-                "node_count": node_count,
-                "edge_count": edge_count,
-            })
+            out.append(
+                {
+                    "board_id": board_id,
+                    "updated": updated,
+                    "node_count": node_count,
+                    "edge_count": edge_count,
+                }
+            )
         out.sort(key=lambda b: b.get("updated") or "", reverse=True)
         return out
 
@@ -442,8 +493,12 @@ class CanvasApp(BaseApp):
     # ── connect + promote ────────────────────────────────────────────────
 
     async def connect(
-        self, board_id: str, source_id: str, target_id: str,
-        source_side: str = "right", target_side: str = "left",
+        self,
+        board_id: str,
+        source_id: str,
+        target_id: str,
+        source_side: str = "right",
+        target_side: str = "left",
     ) -> dict:
         """Add an edge. Idempotent on (source, target, sides)."""
         board = await self.load_board(board_id)
@@ -453,17 +508,23 @@ class CanvasApp(BaseApp):
             return {"ok": False, "error": "unknown node id"}
         edges = list(board.get("edges") or [])
         for e in edges:
-            if (str(e.get("sourceId")) == str(source_id)
-                    and str(e.get("targetId")) == str(target_id)
-                    and str(e.get("sourceSide")) == source_side
-                    and str(e.get("targetSide")) == target_side):
+            if (
+                str(e.get("sourceId")) == str(source_id)
+                and str(e.get("targetId")) == str(target_id)
+                and str(e.get("sourceSide")) == source_side
+                and str(e.get("targetSide")) == target_side
+            ):
                 return {"ok": True, "edge_id": e.get("id"), "existing": True}
         edge_id = secrets.token_hex(5)
-        edges.append({
-            "id": edge_id,
-            "sourceId": source_id, "sourceSide": source_side,
-            "targetId": target_id, "targetSide": target_side,
-        })
+        edges.append(
+            {
+                "id": edge_id,
+                "sourceId": source_id,
+                "sourceSide": source_side,
+                "targetId": target_id,
+                "targetSide": target_side,
+            }
+        )
         await self.save_board(board_id, nodes, edges)
         return {"ok": True, "edge_id": edge_id, "existing": False}
 
@@ -479,7 +540,10 @@ class CanvasApp(BaseApp):
         )
 
     async def promote_to_project(
-        self, board_id: str, project_id: str, node_ids: list[str] | None = None,
+        self,
+        board_id: str,
+        project_id: str,
+        node_ids: list[str] | None = None,
     ) -> dict:
         """Promote nodes to project tasks. Without ``node_ids``, picks the largest cluster."""
         board = await self.load_board(board_id)
@@ -508,7 +572,9 @@ class CanvasApp(BaseApp):
             if not text:
                 continue
             lines = text.split("\n")
-            checkbox_hits = [m.group(1).strip() for line in lines if (m := _CHECKBOX_RE.match(line))]
+            checkbox_hits = [
+                m.group(1).strip() for line in lines if (m := _CHECKBOX_RE.match(line))
+            ]
             if checkbox_hits:
                 task_lines.extend(checkbox_hits)
             else:
@@ -520,8 +586,9 @@ class CanvasApp(BaseApp):
         created: list[str] = []
         for line in task_lines:
             try:
-                await self.call_app("projects", "add_task_to_project",
-                                    project_id=project_id, text=line)
+                await self.call_app(
+                    "projects", "add_task_to_project", project_id=project_id, text=line
+                )
                 created.append(line)
             except Exception:
                 pass
@@ -534,12 +601,18 @@ class CanvasApp(BaseApp):
         except Exception:
             pass
 
-        await self.emit("canvas:promoted", {
-            "board_id": board_id, "project_id": project_id,
-            "node_count": len(selected_ids), "task_count": len(created),
-        })
+        await self.emit(
+            "canvas:promoted",
+            {
+                "board_id": board_id,
+                "project_id": project_id,
+                "node_count": len(selected_ids),
+                "task_count": len(created),
+            },
+        )
         return {
-            "ok": True, "project_id": project_id,
+            "ok": True,
+            "project_id": project_id,
             "nodes_promoted": len(selected_ids),
             "tasks_created": len(created),
         }
@@ -565,7 +638,8 @@ class CanvasApp(BaseApp):
         response = await self.think(
             f"Concept: {text}",
             system=BRAINSTORM_SYSTEM,
-            domain="text", temperature=0.7,
+            domain="text",
+            temperature=0.7,
         )
         try:
             ideas = parse_llm_json(response, fallback=[])
@@ -588,10 +662,12 @@ class CanvasApp(BaseApp):
         for b in boards[:5]:
             board_id = b.get("board_id", "inbox")
             nc = b.get("node_count", 0)
-            chips.append({
-                "title": f"{board_id} ({nc})" if nc else board_id,
-                "href": f"/canvas/?board={board_id}",
-            })
+            chips.append(
+                {
+                    "title": f"{board_id} ({nc})" if nc else board_id,
+                    "href": f"/canvas/?board={board_id}",
+                }
+            )
         return chips or None
 
 

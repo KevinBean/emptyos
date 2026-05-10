@@ -1,0 +1,718 @@
+- generic [ref=e3]:
+  - generic [ref=e5]:
+    - generic [ref=e6]:
+      - button "Toggle Left Sidebar" [ref=e7] [cursor=pointer]:
+        - img [ref=e8]
+      - heading "Cable Reticulation Tool" [level=1] [ref=e10]
+      - generic [ref=e11]: Wind Farm & BESS Design
+    - generic [ref=e12]:
+      - button "File" [ref=e14] [cursor=pointer]:
+        - img [ref=e15]
+        - generic [ref=e18]: File
+        - img [ref=e19]
+      - button "Project" [ref=e22] [cursor=pointer]:
+        - img [ref=e23]
+        - generic [ref=e26]: Project
+        - img [ref=e27]
+      - button "📋 Checklist 0/7" [ref=e29] [cursor=pointer]:
+        - generic [ref=e30]: 📋
+        - generic [ref=e31]: Checklist
+        - generic [ref=e32]: 0/7
+      - button "3D" [ref=e33] [cursor=pointer]:
+        - img [ref=e34]
+        - generic [ref=e37]: 3D
+      - button "Toggle Right Sidebar" [ref=e38] [cursor=pointer]:
+        - img [ref=e39]
+  - generic [ref=e43]:
+    - generic [ref=e44]:
+      - button "Select" [ref=e45] [cursor=pointer]:
+        - img [ref=e46]
+        - generic [ref=e49]: Select
+      - button "Multi" [ref=e50] [cursor=pointer]:
+        - img [ref=e51]
+        - generic [ref=e54]: Multi
+      - button "Copy Equipment (Ctrl+C)" [disabled] [ref=e55]:
+        - img [ref=e56]
+      - button "Delete Selected (Del)" [disabled] [ref=e59]:
+        - img [ref=e60]
+      - button "Undo (Ctrl+Z)" [ref=e64] [cursor=pointer]:
+        - img [ref=e65]
+      - button "Redo (Ctrl+Y)" [disabled] [ref=e68]:
+        - img [ref=e69]
+    - generic [ref=e72]:
+      - button "Add Junction" [ref=e73] [cursor=pointer]:
+        - img [ref=e74]
+      - button "Connect" [ref=e75] [cursor=pointer]:
+        - img [ref=e76]
+        - generic [ref=e80]: Connect
+      - button "Polyline" [ref=e81] [cursor=pointer]:
+        - img [ref=e82]
+        - generic [ref=e86]: Polyline
+    - button "Add" [ref=e89] [cursor=pointer]:
+      - img [ref=e90]
+      - generic [ref=e91]: Add
+    - button "Multi-Connection Equipment" [ref=e94] [cursor=pointer]:
+      - img [ref=e95]
+    - button "Annotate" [ref=e101] [cursor=pointer]:
+      - img [ref=e102]
+      - generic [ref=e105]: Annotate
+    - generic [ref=e106]:
+      - button "Equipment Templates" [ref=e107] [cursor=pointer]:
+        - img [ref=e108]
+      - button "Number Nodes" [ref=e110] [cursor=pointer]:
+        - img [ref=e111]
+    - generic [ref=e115]:
+      - button "Route" [ref=e116] [cursor=pointer]:
+        - img [ref=e117]
+        - generic [ref=e123]: Route
+      - button "Auto" [ref=e124] [cursor=pointer]:
+        - img [ref=e125]
+        - generic [ref=e131]: Auto
+      - button "Manage cable connections" [ref=e132] [cursor=pointer]:
+        - img [ref=e133]
+      - button "Replace Node" [ref=e139] [cursor=pointer]:
+        - img [ref=e140]
+    - generic [ref=e145]:
+      - button "Schedule" [ref=e146] [cursor=pointer]:
+        - img [ref=e147]
+        - generic [ref=e148]: Schedule
+      - button "Network Manager" [ref=e149] [cursor=pointer]:
+        - img [ref=e150]
+      - button "Single Line Diagram" [ref=e155] [cursor=pointer]:
+        - img [ref=e156]
+      - button "Toggle Right Sidebar" [ref=e160] [cursor=pointer]:
+        - img [ref=e161]
+  - generic [ref=e163]:
+    - generic [ref=e164]:
+      - generic [ref=e165]:
+        - heading "Network Layers" [level=3] [ref=e166]
+        - generic [ref=e167]:
+          - generic [ref=e168]:
+            - generic [ref=e169]:
+              - img [ref=e170]
+              - generic [ref=e172]: Total Power
+            - generic [ref=e173]: 74.4 MW
+          - generic [ref=e174]:
+            - generic [ref=e175]:
+              - img [ref=e176]
+              - generic [ref=e182]: Total Length
+            - generic [ref=e183]: 0.90 km
+      - generic [ref=e184]:
+        - generic [ref=e185]:
+          - heading "Canvas & Display" [level=4] [ref=e186]
+          - button "Canvas Size 1000×650" [ref=e188] [cursor=pointer]:
+            - generic [ref=e189]: Canvas Size
+            - generic [ref=e190]: 1000×650
+          - generic [ref=e191]:
+            - generic [ref=e192]:
+              - generic [ref=e193]: Element Scale
+              - generic [ref=e194]: (calibrated)
+            - generic [ref=e195]:
+              - 'slider "Element size: 200%" [ref=e196]': "100"
+              - generic [ref=e197]: 100%
+          - generic [ref=e198]:
+            - generic [ref=e200]: Font Scale
+            - generic [ref=e201]:
+              - slider [ref=e202]: "100"
+              - generic [ref=e203]: 100%
+          - button "Element Colors" [ref=e205] [cursor=pointer]:
+            - generic [ref=e206]: Element Colors
+          - generic [ref=e211]:
+            - button "Undo" [ref=e212] [cursor=pointer]:
+              - img [ref=e213]
+              - text: Undo
+            - button "Redo" [disabled] [ref=e216]:
+              - img [ref=e217]
+              - text: Redo
+          - generic [ref=e220]: "History: 2/2"
+          - generic [ref=e222]:
+            - generic [ref=e223]:
+              - generic [ref=e224]: Scale Calibration
+              - generic [ref=e225]: grid
+            - generic [ref=e226]:
+              - generic [ref=e227]: 1 grid =
+              - generic [ref=e228]:
+                - spinbutton [ref=e229]: "10"
+                - generic [ref=e230]: m
+        - generic [ref=e231]:
+          - generic [ref=e232]:
+            - img [ref=e233]
+            - textbox "Search all layers..." [ref=e236]
+          - generic [ref=e237]:
+            - button "Show All" [ref=e238] [cursor=pointer]:
+              - img [ref=e239]
+              - text: Show All
+            - button "Hide All" [ref=e242] [cursor=pointer]:
+              - img [ref=e243]
+              - text: Hide All
+        - generic [ref=e248]:
+          - generic [ref=e250]:
+            - button [ref=e251] [cursor=pointer]:
+              - img [ref=e252]
+            - button [ref=e255] [cursor=pointer]:
+              - img [ref=e256]
+            - img [ref=e259]
+            - generic [ref=e264]: Background
+            - button [ref=e265] [cursor=pointer]:
+              - img [ref=e266]
+          - generic [ref=e269]:
+            - button [ref=e270] [cursor=pointer]:
+              - img [ref=e271]
+            - button [ref=e274] [cursor=pointer]:
+              - img [ref=e275]
+            - img [ref=e278]
+            - generic [ref=e280]: Information
+            - generic [ref=e281]: "0"
+            - button [ref=e282] [cursor=pointer]:
+              - img [ref=e283]
+          - generic [ref=e285]:
+            - generic [ref=e286]:
+              - button [ref=e287] [cursor=pointer]:
+                - img [ref=e288]
+              - button [ref=e291] [cursor=pointer]:
+                - img [ref=e292]
+              - img [ref=e295]
+              - generic [ref=e297]: Power Generation
+              - generic [ref=e298]: "4"
+              - button [ref=e299] [cursor=pointer]:
+                - img [ref=e300]
+            - generic [ref=e304]:
+              - img [ref=e306]
+              - generic [ref=e310]: Turbines
+              - generic [ref=e311]: "4"
+          - generic [ref=e312]:
+            - generic [ref=e313]:
+              - button [ref=e314] [cursor=pointer]:
+                - img [ref=e315]
+              - button [ref=e318] [cursor=pointer]:
+                - img [ref=e319]
+              - img [ref=e322]
+              - generic [ref=e325]: Distribution
+              - generic [ref=e326]: "3"
+              - button [ref=e327] [cursor=pointer]:
+                - img [ref=e328]
+            - generic [ref=e330]:
+              - generic [ref=e332]:
+                - img [ref=e334]
+                - generic [ref=e337]: Substations
+                - generic [ref=e338]: "1"
+              - generic [ref=e340]:
+                - img [ref=e342]
+                - generic [ref=e345]: RMUs
+                - generic [ref=e346]: "2"
+          - generic [ref=e348]:
+            - button [ref=e349] [cursor=pointer]:
+              - img [ref=e350]
+            - button [ref=e353] [cursor=pointer]:
+              - img [ref=e354]
+            - img [ref=e357]
+            - generic [ref=e360]: Auxiliary
+            - generic [ref=e361]: "0"
+            - button [ref=e362] [cursor=pointer]:
+              - img [ref=e363]
+          - generic [ref=e366]:
+            - generic [ref=e367]:
+              - button [ref=e368] [cursor=pointer]:
+                - img [ref=e369]
+              - button [ref=e372] [cursor=pointer]:
+                - img [ref=e373]
+              - img [ref=e376]
+              - generic [ref=e380]: Infrastructure
+              - generic [ref=e381]: "7"
+              - button [ref=e382] [cursor=pointer]:
+                - img [ref=e383]
+            - generic [ref=e385]:
+              - generic [ref=e386] [cursor=pointer]:
+                - img [ref=e387]
+                - generic [ref=e391]
+                - button "Pan to edge" [ref=e394]
+              - generic [ref=e399] [cursor=pointer]:
+                - img [ref=e400]
+                - generic [ref=e404]
+                - button "Pan to edge" [ref=e407]
+              - generic [ref=e412] [cursor=pointer]:
+                - img [ref=e413]
+                - generic [ref=e417]
+                - button "Pan to edge" [ref=e420]
+              - generic [ref=e425] [cursor=pointer]:
+                - img [ref=e426]
+                - generic [ref=e430]
+                - button "Pan to edge" [ref=e433]
+              - generic [ref=e438] [cursor=pointer]:
+                - img [ref=e439]
+                - generic [ref=e443]
+                - button "Pan to edge" [ref=e446]
+              - generic [ref=e451] [cursor=pointer]:
+                - img [ref=e452]
+                - generic [ref=e456]
+                - button "Pan to edge" [ref=e459]
+              - generic [ref=e464] [cursor=pointer]:
+                - img [ref=e465]
+                - generic [ref=e469]
+                - button "Pan to edge" [ref=e472]
+          - generic [ref=e477]:
+            - generic [ref=e478]:
+              - button [ref=e479] [cursor=pointer]:
+                - img [ref=e480]
+              - button [ref=e483] [cursor=pointer]:
+                - img [ref=e484]
+              - img [ref=e487]
+              - generic [ref=e490]: Annotations
+              - generic [ref=e491]: "0"
+              - button [ref=e492] [cursor=pointer]:
+                - img [ref=e493]
+            - generic [ref=e495]:
+              - generic [ref=e497]:
+                - button [ref=e498] [cursor=pointer]
+                - img [ref=e503]
+                - generic [ref=e506]: Drawings
+                - generic [ref=e507]: "0"
+                - 'slider "Opacity: 100%" [ref=e508]': "100"
+              - generic [ref=e510]:
+                - button [ref=e511] [cursor=pointer]
+                - img [ref=e516]
+                - generic [ref=e522]: Dimensions
+                - generic [ref=e523]: "0"
+                - 'slider "Opacity: 100%" [ref=e524]': "100"
+              - generic [ref=e526]:
+                - button [ref=e527] [cursor=pointer]
+                - img [ref=e532]
+                - generic [ref=e535]: Labels
+                - generic [ref=e536]: "0"
+                - 'slider "Opacity: 100%" [ref=e537]': "100"
+              - generic [ref=e539]:
+                - button [ref=e540] [cursor=pointer]
+                - img [ref=e547]
+                - generic [ref=e550]: Circuit Counts
+                - generic [ref=e551]: "0"
+                - 'slider "Opacity: 100%" [ref=e552]': "100"
+              - generic [ref=e554]:
+                - generic [ref=e555]: "Master Opacity:"
+                - slider [ref=e556]: "100"
+                - generic [ref=e557]: 100%
+          - generic [ref=e558]:
+            - generic [ref=e559]:
+              - button [ref=e560] [cursor=pointer]:
+                - img [ref=e561]
+              - button [ref=e564] [cursor=pointer]:
+                - img [ref=e565]
+              - img [ref=e568]
+              - generic [ref=e574]: Cables
+              - generic [ref=e575]: "7"
+              - button [ref=e576] [cursor=pointer]:
+                - img [ref=e577]
+            - generic [ref=e579]:
+              - generic [ref=e581]:
+                - combobox [ref=e582]
+                - combobox [ref=e583]
+              - generic [ref=e584]:
+                - generic [ref=e585] [cursor=pointer]
+                - generic [ref=e600] [cursor=pointer]
+                - generic [ref=e615] [cursor=pointer]
+                - generic [ref=e630] [cursor=pointer]
+                - generic [ref=e645] [cursor=pointer]
+                - generic [ref=e660] [cursor=pointer]
+                - generic [ref=e675] [cursor=pointer]
+          - generic [ref=e690]:
+            - generic [ref=e691]:
+              - button [ref=e692] [cursor=pointer]:
+                - img [ref=e693]
+              - button [ref=e698] [cursor=pointer]:
+                - img [ref=e699]
+              - img [ref=e702]
+              - generic [ref=e706]: Trenches
+              - generic [ref=e707]: "7"
+              - button [ref=e708] [cursor=pointer]:
+                - img [ref=e709]
+            - generic [ref=e711]:
+              - generic [ref=e712] [cursor=pointer]:
+                - generic [ref=e714]: Pattern 1 (4 trenches)
+                - generic [ref=e716]: 3C×95mm² 11kV
+                - generic [ref=e717]: WTG-01 ↔ RMU-01, WTG-02 ↔ RMU-01 +2 more
+              - generic [ref=e718] [cursor=pointer]:
+                - generic [ref=e720]: Pattern 2 (2 trenches)
+                - generic [ref=e722]: 3C×185mm² 11kV
+                - generic [ref=e723]: RMU-01 ↔ JB-01, RMU-02 ↔ JB-01
+              - generic [ref=e724] [cursor=pointer]:
+                - generic [ref=e726]: Pattern 3 (1 trenches)
+                - generic [ref=e728]: 3C×630mm² 33kV
+                - generic [ref=e729]: JB-01 ↔ BESS-SUB-01
+        - generic [ref=e731]:
+          - paragraph [ref=e732]:
+            - strong [ref=e733]: "Tips:"
+          - paragraph [ref=e734]: • Shift+click for multi-select
+          - paragraph [ref=e735]: • Shift+click in Route Cable for pass-by
+          - paragraph [ref=e736]: • Del key to delete selected
+          - paragraph [ref=e737]: • Ctrl+Z/Y for undo/redo
+          - paragraph [ref=e738]: • Mouse wheel to zoom
+    - generic [ref=e740]:
+      - generic [ref=e741]:
+        - generic [ref=e743]:
+          - generic [ref=e744]:
+            - button [ref=e745] [cursor=pointer]:
+              - img [ref=e746]
+            - button [ref=e748] [cursor=pointer]:
+              - img [ref=e749]
+            - button [ref=e754] [cursor=pointer]:
+              - img [ref=e755]
+            - button [disabled] [ref=e760]:
+              - img [ref=e761]
+          - button [ref=e763] [cursor=pointer]:
+            - img [ref=e764]
+          - button [ref=e765] [cursor=pointer]:
+            - img [ref=e766]
+          - button "1:1" [ref=e767] [cursor=pointer]:
+            - generic [ref=e768]: 1:1
+          - button [ref=e769] [cursor=pointer]:
+            - img [ref=e770]
+          - button [ref=e772] [cursor=pointer]:
+            - img [ref=e773]
+          - generic [ref=e776]: 200%
+        - img [ref=e779]:
+          - generic [ref=e780]:
+            - generic [ref=e783]:
+              - generic: 280m
+            - generic [ref=e785]:
+              - generic: 270m
+            - generic [ref=e787]:
+              - generic: 270m
+            - generic [ref=e789]:
+              - generic: 280m
+            - generic [ref=e791]:
+              - generic: 250m
+            - generic [ref=e793]:
+              - generic: 250m
+            - generic [ref=e795]:
+              - generic: 320m
+            - generic [ref=e796]:
+              - generic: ⚠
+              - generic: 6.2MW | 112% | 3C×95mm²
+            - generic [ref=e799]:
+              - generic: ⚠
+              - generic: 6.2MW | 112% | 3C×95mm²
+            - generic [ref=e802]:
+              - generic: ⚠
+              - generic: 6.2MW | 112% | 3C×95mm²
+            - generic [ref=e805]:
+              - generic: ⚠
+              - generic: 6.2MW | 112% | 3C×95mm²
+            - generic [ref=e808]:
+              - generic: ⚠
+              - generic: 12.4MW | 133% | 3C×185mm²
+            - generic [ref=e811]:
+              - generic: ⚠
+              - generic: 12.4MW | 133% | 3C×185mm²
+            - generic [ref=e814]:
+              - generic: 24.8MW | 53% | 3C×630mm²
+            - generic [ref=e815]:
+              - generic: WTG-01
+              - generic: 6.2MW
+            - generic [ref=e817]:
+              - generic: WTG-02
+              - generic: 6.2MW
+            - generic [ref=e819]:
+              - generic: WTG-03
+              - generic: 6.2MW
+            - generic [ref=e821]:
+              - generic: WTG-04
+              - generic: 6.2MW
+            - generic [ref=e823]:
+              - generic: RMU-01
+              - generic: 12.4MW
+            - generic [ref=e825]:
+              - generic: RMU-02
+              - generic: 12.4MW
+            - generic [ref=e827]:
+              - generic: JB-01
+              - generic: 24.8MW
+            - generic [ref=e829]:
+              - generic: BESS-SUB-01
+              - generic: 50MW
+      - generic [ref=e1374]:
+        - generic [ref=e1375]:
+          - generic [ref=e1376]:
+            - generic [ref=e1377]: Data Panel
+            - generic [ref=e1378]:
+              - button "Connections" [ref=e1379] [cursor=pointer]:
+                - img [ref=e1380]
+                - generic [ref=e1386]: Connections
+              - button "Cable Schedule" [pressed] [ref=e1387] [cursor=pointer]:
+                - img [ref=e1388]
+                - generic [ref=e1391]: Cable Schedule
+              - button "Network" [ref=e1392] [cursor=pointer]:
+                - img [ref=e1393]
+                - generic [ref=e1398]: Network
+              - button "Trench Analysis" [ref=e1399] [cursor=pointer]:
+                - img [ref=e1400]
+                - generic [ref=e1404]: Trench Analysis
+              - button "Trench Library" [ref=e1405] [cursor=pointer]:
+                - img [ref=e1406]
+                - generic [ref=e1409]: Trench Library
+          - generic [ref=e1410]:
+            - button "Dock Bottom" [ref=e1411] [cursor=pointer]
+            - button "Close data panel" [ref=e1412] [cursor=pointer]:
+              - img [ref=e1413]
+        - generic [ref=e1418]:
+          - generic [ref=e1419]:
+            - generic [ref=e1420]:
+              - heading "Cable Schedule" [level=2] [ref=e1421]
+              - generic [ref=e1422]:
+                - button "📊 Grouped" [ref=e1423] [cursor=pointer]
+                - button "Essential ▾" [ref=e1425] [cursor=pointer]
+                - button "⚙️ Cols" [ref=e1426] [cursor=pointer]
+                - button "ƒ" [ref=e1427] [cursor=pointer]
+              - generic [ref=e1428]:
+                - button "Batch" [ref=e1429] [cursor=pointer]
+                - button "🔗 Sync" [ref=e1430] [cursor=pointer]
+                - button "🔢 Number" [ref=e1431] [cursor=pointer]
+              - button "Recalculate ▾" [ref=e1433] [cursor=pointer]
+              - button "Derating ▾" [ref=e1435] [cursor=pointer]
+              - button "Export ▾" [ref=e1437] [cursor=pointer]
+              - button "Close" [ref=e1439] [cursor=pointer]:
+                - img [ref=e1440]
+            - textbox "Search by cable number, area/zone, circuit, endpoints, type, voltage, notes..." [ref=e1445]
+          - generic [ref=e1446]:
+            - 'button "Column Types: Essential Input Calculated Override" [ref=e1447] [cursor=pointer]':
+              - generic [ref=e1448]: "Column Types:"
+              - generic [ref=e1449]:
+                - generic "Essential" [ref=e1450]
+                - generic "Input" [ref=e1451]
+                - generic "Calculated" [ref=e1452]
+                - generic "Override" [ref=e1453]
+              - img [ref=e1454]
+            - generic [ref=e1456]:
+              - generic [ref=e1457]:
+                - img [ref=e1458]
+                - generic [ref=e1460]: 7 validation issues
+                - button "Review" [ref=e1461] [cursor=pointer]
+              - button "Auto-fill defaults" [ref=e1462] [cursor=pointer]
+          - table [ref=e1466]:
+            - rowgroup [ref=e1467]:
+              - row "Actions Cable Number Start Number/Tag End Number/Tag Area / Zone Voltage Type Voltage Rating (kV) Cable Type Description Conductor Material Size (mm²) Cores Number of Phases Cables per Phase / Polarity Cable Route Length (m) Installation Environment Line Current (A) Remarks / Notes" [ref=e1468]:
+                - columnheader "Actions" [ref=e1469]
+                - columnheader "Cable Number" [ref=e1470]
+                - columnheader "Start Number/Tag" [ref=e1471]
+                - columnheader "End Number/Tag" [ref=e1472]
+                - columnheader "Area / Zone" [ref=e1473]
+                - columnheader "Voltage Type" [ref=e1474]
+                - columnheader "Voltage Rating (kV)" [ref=e1475]
+                - columnheader "Cable Type Description" [ref=e1476]
+                - columnheader "Conductor Material" [ref=e1477]
+                - columnheader "Size (mm²)" [ref=e1478]
+                - columnheader "Cores" [ref=e1479]
+                - columnheader "Number of Phases" [ref=e1480]
+                - columnheader "Cables per Phase / Polarity" [ref=e1481]
+                - columnheader "Cable Route Length (m)" [ref=e1482]
+                - columnheader "Installation Environment" [ref=e1483]
+                - columnheader "Line Current (A)" [ref=e1484]
+                - columnheader "Remarks / Notes" [ref=e1485]
+            - rowgroup [ref=e1486]:
+              - row "🔍 🏗️ 📋 ✏️ 🗑️ wtg01 Collection Network AC 11kV 3C 95mm² Al XLPE Al 95 3 3 1 131 direct-buried 325" [ref=e1487]:
+                - cell "🔍 🏗️ 📋 ✏️ 🗑️" [ref=e1488]
+                - cell "wtg01" [ref=e1495]
+                - cell [ref=e1496]
+                - cell [ref=e1497]
+                - cell "Collection Network" [ref=e1498]
+                - cell "AC" [ref=e1500]
+                - cell "11kV" [ref=e1502]
+                - cell "3C 95mm² Al XLPE" [ref=e1504]
+                - cell "Al" [ref=e1506] [cursor=pointer]
+                - cell "95" [ref=e1507]
+                - cell "3" [ref=e1508]
+                - cell "3" [ref=e1510]
+                - cell "1" [ref=e1512]
+                - cell "131" [ref=e1514]
+                - cell "direct-buried" [ref=e1520]
+                - cell "325" [ref=e1522]
+                - cell [ref=e1523]
+              - row "🔍 🏗️ 📋 ✏️ 🗑️ wtg02 Collection Network AC 11kV 3C 95mm² Al XLPE Al 95 3 3 1 131 direct-buried 325" [ref=e1524]:
+                - cell "🔍 🏗️ 📋 ✏️ 🗑️" [ref=e1525]
+                - cell "wtg02" [ref=e1532]
+                - cell [ref=e1533]
+                - cell [ref=e1534]
+                - cell "Collection Network" [ref=e1535]
+                - cell "AC" [ref=e1537]
+                - cell "11kV" [ref=e1539]
+                - cell "3C 95mm² Al XLPE" [ref=e1541]
+                - cell "Al" [ref=e1543] [cursor=pointer]
+                - cell "95" [ref=e1544]
+                - cell "3" [ref=e1545]
+                - cell "3" [ref=e1547]
+                - cell "1" [ref=e1549]
+                - cell "131" [ref=e1551]
+                - cell "direct-buried" [ref=e1557]
+                - cell "325" [ref=e1559]
+                - cell [ref=e1560]
+              - row "🔍 🏗️ 📋 ✏️ 🗑️ rmu01 Collection Network AC 11kV 3C 185mm² Al XLPE Al 185 3 3 1 125 direct-buried 650" [ref=e1561]:
+                - cell "🔍 🏗️ 📋 ✏️ 🗑️" [ref=e1562]
+                - cell "rmu01" [ref=e1569]
+                - cell [ref=e1570]
+                - cell [ref=e1571]
+                - cell "Collection Network" [ref=e1572]
+                - cell "AC" [ref=e1574]
+                - cell "11kV" [ref=e1576]
+                - cell "3C 185mm² Al XLPE" [ref=e1578]
+                - cell "Al" [ref=e1580] [cursor=pointer]
+                - cell "185" [ref=e1581]
+                - cell "3" [ref=e1582]
+                - cell "3" [ref=e1584]
+                - cell "1" [ref=e1586]
+                - cell "125" [ref=e1588]
+                - cell "direct-buried" [ref=e1594]
+                - cell "650" [ref=e1596]
+                - cell [ref=e1597]
+              - row "🔍 🏗️ 📋 ✏️ 🗑️ rmu02 Collection Network AC 11kV 3C 185mm² Al XLPE Al 185 3 3 1 125 direct-buried 650" [ref=e1598]:
+                - cell "🔍 🏗️ 📋 ✏️ 🗑️" [ref=e1599]
+                - cell "rmu02" [ref=e1606]
+                - cell [ref=e1607]
+                - cell [ref=e1608]
+                - cell "Collection Network" [ref=e1609]
+                - cell "AC" [ref=e1611]
+                - cell "11kV" [ref=e1613]
+                - cell "3C 185mm² Al XLPE" [ref=e1615]
+                - cell "Al" [ref=e1617] [cursor=pointer]
+                - cell "185" [ref=e1618]
+                - cell "3" [ref=e1619]
+                - cell "3" [ref=e1621]
+                - cell "1" [ref=e1623]
+                - cell "125" [ref=e1625]
+                - cell "direct-buried" [ref=e1631]
+                - cell "650" [ref=e1633]
+                - cell [ref=e1634]
+              - row "🔍 🏗️ 📋 ✏️ 🗑️ wtg03 Collection Network AC 11kV 3C 95mm² Al XLPE Al 95 3 3 1 131 direct-buried 325" [ref=e1635]:
+                - cell "🔍 🏗️ 📋 ✏️ 🗑️" [ref=e1636]
+                - cell "wtg03" [ref=e1643]
+                - cell [ref=e1644]
+                - cell [ref=e1645]
+                - cell "Collection Network" [ref=e1646]
+                - cell "AC" [ref=e1648]
+                - cell "11kV" [ref=e1650]
+                - cell "3C 95mm² Al XLPE" [ref=e1652]
+                - cell "Al" [ref=e1654] [cursor=pointer]
+                - cell "95" [ref=e1655]
+                - cell "3" [ref=e1656]
+                - cell "3" [ref=e1658]
+                - cell "1" [ref=e1660]
+                - cell "131" [ref=e1662]
+                - cell "direct-buried" [ref=e1668]
+                - cell "325" [ref=e1670]
+                - cell [ref=e1671]
+              - row "🔍 🏗️ 📋 ✏️ 🗑️ wtg04 Collection Network AC 11kV 3C 95mm² Al XLPE Al 95 3 3 1 131 direct-buried 325" [ref=e1672]:
+                - cell "🔍 🏗️ 📋 ✏️ 🗑️" [ref=e1673]
+                - cell "wtg04" [ref=e1680]
+                - cell [ref=e1681]
+                - cell [ref=e1682]
+                - cell "Collection Network" [ref=e1683]
+                - cell "AC" [ref=e1685]
+                - cell "11kV" [ref=e1687]
+                - cell "3C 95mm² Al XLPE" [ref=e1689]
+                - cell "Al" [ref=e1691] [cursor=pointer]
+                - cell "95" [ref=e1692]
+                - cell "3" [ref=e1693]
+                - cell "3" [ref=e1695]
+                - cell "1" [ref=e1697]
+                - cell "131" [ref=e1699]
+                - cell "direct-buried" [ref=e1705]
+                - cell "325" [ref=e1707]
+                - cell [ref=e1708]
+              - row "🔍 🏗️ 📋 ✏️ 🗑️ jb01 Transmission AC 33kV 3C 630mm² Al XLPE Al 630 3 3 1 125 direct-buried 434" [ref=e1709]:
+                - cell "🔍 🏗️ 📋 ✏️ 🗑️" [ref=e1710]
+                - cell "jb01" [ref=e1717]
+                - cell [ref=e1718]
+                - cell [ref=e1719]
+                - cell "Transmission" [ref=e1720]
+                - cell "AC" [ref=e1722]
+                - cell "33kV" [ref=e1724]
+                - cell "3C 630mm² Al XLPE" [ref=e1726]
+                - cell "Al" [ref=e1728] [cursor=pointer]
+                - cell "630" [ref=e1729]
+                - cell "3" [ref=e1730]
+                - cell "3" [ref=e1732]
+                - cell "1" [ref=e1734]
+                - cell "125" [ref=e1736]
+                - cell "direct-buried" [ref=e1742]
+                - cell "434" [ref=e1744]
+                - cell [ref=e1745]
+          - generic [ref=e1746]:
+            - generic [ref=e1747]: "Groups: 1 |"
+            - generic [ref=e1748]: "Total Cables: 7 | Total Length: 899m"
+      - generic [ref=e831]:
+        - generic [ref=e833]:
+          - generic [ref=e834]:
+            - heading "Workspace" [level=3] [ref=e835]
+            - generic [ref=e836]: Project
+          - button "Close workspace panel" [ref=e837] [cursor=pointer]:
+            - img [ref=e838]
+        - generic [ref=e841]:
+          - generic [ref=e842]:
+            - generic [ref=e844] [cursor=pointer]:
+              - generic [ref=e845]:
+                - img [ref=e846]
+                - heading "Information" [level=4] [ref=e848]
+              - img [ref=e849]
+            - generic [ref=e852]:
+              - heading "Project Summary" [level=5] [ref=e853]
+              - generic [ref=e854]:
+                - generic [ref=e855]: Equipment
+                - generic [ref=e856]
+                - generic [ref=e859]
+                - generic [ref=e862]
+                - generic [ref=e865]
+              - generic [ref=e868]:
+                - generic [ref=e869]: Network
+                - generic [ref=e870]
+                - generic [ref=e873]
+                - generic [ref=e876]
+          - generic [ref=e879]:
+            - generic [ref=e881] [cursor=pointer]:
+              - generic [ref=e882]:
+                - img [ref=e883]
+                - heading "Quick Actions" [level=4] [ref=e885]
+              - img [ref=e886]
+            - generic [ref=e889]:
+              - generic [ref=e890]:
+                - heading "Grid Snap" [level=6] [ref=e891]
+                - button "Guidelines OFF" [ref=e892] [cursor=pointer]
+                - button "Fine Grid OFF" [ref=e898] [cursor=pointer]
+                - button "Auto Straighten" [ref=e902] [cursor=pointer]
+              - button "Validate Network (Dev)" [disabled] [ref=e906]:
+                - img [ref=e907]
+                - text: Validate Network
+                - generic [ref=e910]: (Dev)
+          - generic [ref=e911]:
+            - generic [ref=e913] [cursor=pointer]:
+              - generic [ref=e914]:
+                - img [ref=e915]
+                - heading "Tools & Utilities" [level=4] [ref=e918]
+              - img [ref=e919]
+            - generic [ref=e921]:
+              - generic [ref=e922]:
+                - heading "Data Management" [level=6] [ref=e923]
+                - generic [ref=e924]
+              - generic [ref=e940]:
+                - heading "View Controls" [level=6] [ref=e941]
+                - generic [ref=e942]
+          - generic [ref=e949]:
+            - generic [ref=e951] [cursor=pointer]:
+              - generic [ref=e952]:
+                - img [ref=e953]
+                - heading "Project Overview" [level=4] [ref=e955]
+              - img [ref=e956]
+            - generic [ref=e958]:
+              - generic [ref=e959]:
+                - heading "Performance Metrics" [level=6] [ref=e960]
+                - generic [ref=e961]
+              - generic [ref=e968]:
+                - heading "Network Health" [level=6] [ref=e969]
+                - generic [ref=e970]
+              - generic [ref=e984]:
+                - heading "Current Operation" [level=6] [ref=e985]
+                - generic [ref=e986]
+  - generic [ref=e991]:
+    - generic [ref=e992]: Select mode • Click to select • Drag to move • Shift+Click for multi-select • Del to delete
+    - generic [ref=e993]:
+      - generic [ref=e994]: "Scale: 1 grid = 10m"
+      - generic [ref=e995]: "Canvas: 1000×650"
+      - generic [ref=e996]: "Nodes: 8"
+      - generic [ref=e997]: "Edges: 7"
+      - generic [ref=e998]: "Cables: 7"

@@ -1,6 +1,6 @@
 """Layer 3 — Live LLM smoke tests for the page-assistant drawer.
 
-Sends real messages through the GPTs /api/chat endpoint and validates:
+Sends real messages through the Rooms /api/chat endpoint and validates:
 - LLM responds (non-empty)
 - Any [DO:app.method(...)] actions reference allowlisted methods
 - No hallucinated parameter names
@@ -27,7 +27,7 @@ from helpers import BASE_URL
 ROOT = Path(__file__).resolve().parents[1]
 APPS = ROOT / "apps"
 
-# [DO:app.method({"arg":"val"})] pattern — same as gpts/app.py
+# [DO:app.method({"arg":"val"})] pattern — same as rooms/app.py
 DO_PATTERN = re.compile(r"\[DO:(\w+)\.(\w+)\((\{.*?\})\)\]", re.DOTALL)
 
 # Parametrize: (app_id, user_message, expected_keywords, forbidden_methods)
@@ -133,21 +133,21 @@ def allowlisted():
 
 
 @pytest.fixture(scope="module")
-def gpts_available():
-    """Check GPTs agent is reachable and has a working LLM."""
+def rooms_available():
+    """Check Rooms agent is reachable and has a working LLM."""
     try:
         resp = httpx.post(
-            f"{BASE_URL}/gpts/api/chat",
+            f"{BASE_URL}/rooms/api/chat",
             json={"agent_id": "general-assistant", "text": "ping", "context": ""},
             timeout=30,
         )
     except httpx.HTTPError as e:
-        pytest.skip(f"GPTs endpoint unreachable: {e}")
+        pytest.skip(f"Rooms endpoint unreachable: {e}")
     if resp.status_code != 200:
-        pytest.skip(f"GPTs returned {resp.status_code}")
+        pytest.skip(f"Rooms returned {resp.status_code}")
     data = resp.json()
     if not data.get("response"):
-        pytest.skip("GPTs returned empty response — LLM may be offline")
+        pytest.skip("Rooms returned empty response — LLM may be offline")
     return True
 
 
@@ -156,7 +156,7 @@ def gpts_available():
 
 @pytest.mark.llm
 class TestPageAssistantLLM:
-    """Per-app smoke tests with a real LLM behind the GPTs endpoint."""
+    """Per-app smoke tests with a real LLM behind the Rooms endpoint."""
 
     @pytest.mark.parametrize(
         "app_id, message, expected_keywords, forbidden",
@@ -164,7 +164,7 @@ class TestPageAssistantLLM:
     )
     def test_smoke(
         self,
-        gpts_available,
+        rooms_available,
         allowlisted,
         app_id,
         message,
@@ -174,7 +174,7 @@ class TestPageAssistantLLM:
         """Send a message as if the user is on a specific app page."""
         context = f"Page: {app_id} (/{app_id}/)"
         resp = httpx.post(
-            f"{BASE_URL}/gpts/api/chat",
+            f"{BASE_URL}/rooms/api/chat",
             json={
                 "agent_id": "general-assistant",
                 "text": message,
@@ -222,10 +222,10 @@ class TestPageAssistantLLM:
                 f"LLM called forbidden method {do_method} for '{message}'"
             )
 
-    def test_no_action_when_none_needed(self, gpts_available, allowlisted):
+    def test_no_action_when_none_needed(self, rooms_available, allowlisted):
         """Conversational message should NOT trigger [DO:] actions."""
         resp = httpx.post(
-            f"{BASE_URL}/gpts/api/chat",
+            f"{BASE_URL}/rooms/api/chat",
             json={
                 "agent_id": "general-assistant",
                 "text": "What is EmptyOS?",
@@ -243,10 +243,10 @@ class TestPageAssistantLLM:
             f"Response: {reply[:300]}"
         )
 
-    def test_unknown_app_graceful(self, gpts_available):
+    def test_unknown_app_graceful(self, rooms_available):
         """Message referencing a non-existent app should still get a response."""
         resp = httpx.post(
-            f"{BASE_URL}/gpts/api/chat",
+            f"{BASE_URL}/rooms/api/chat",
             json={
                 "agent_id": "general-assistant",
                 "text": "Launch the spaceship",

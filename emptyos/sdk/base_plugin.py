@@ -55,5 +55,14 @@ class BasePlugin:
         """Get a plugin config value from emptyos.toml [plugins.<id>] section."""
         return self._config.get(key, default)
 
+    @staticmethod
+    def bearer_headers(token: str | None) -> dict[str, str]:
+        """Build an `Authorization: Bearer <token>` header dict, or empty dict
+        when token is falsy. Plugins gating an HTTP-RPC over a shared secret
+        (Blender bridge, voice-api, …) compose this with their own token-source
+        logic — token sourcing differs per service (file, env, config), but the
+        header shape doesn't."""
+        return {"Authorization": f"Bearer {token}"} if token else {}
+
     def __repr__(self) -> str:
         return f"<Plugin:{self.name}>"

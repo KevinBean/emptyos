@@ -18,16 +18,24 @@ from pathlib import Path
 
 from emptyos.sdk.utils import slugify
 
-
 # Stable across all known view-rich apps. Apps that need extra keys can
 # subclass and extend ``ALLOWED_KEYS``; unknown keys are dropped on save.
 ALLOWED_KEYS: set[str] = {
-    "id", "name", "description",
-    "view_type", "sort_col", "sort_desc", "group_by",
-    "filters",         # column-level filter array [{col_id, op, value}, ...]
-    "search", "person_filter",
-    "visible_columns", "hidden_columns", "kanban_group_by",
-    "created_at", "updated_at",
+    "id",
+    "name",
+    "description",
+    "view_type",
+    "sort_col",
+    "sort_desc",
+    "group_by",
+    "filters",  # column-level filter array [{col_id, op, value}, ...]
+    "search",
+    "person_filter",
+    "visible_columns",
+    "hidden_columns",
+    "kanban_group_by",
+    "created_at",
+    "updated_at",
 }
 
 

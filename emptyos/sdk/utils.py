@@ -2,7 +2,8 @@
 
 import json
 import re
-from datetime import date, timedelta
+import uuid
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -22,17 +23,34 @@ def load_json(path: Path, default: Any) -> Any:
     return default
 
 
-def save_json(path: Path, data: Any, *, indent: int = 2) -> None:
+def save_json(path: Path, data: Any, *, indent: int = 2, mkdir: bool = False) -> None:
     """Write ``data`` as UTF-8 JSON to ``path``.
 
     ``default=str`` so datetime/Path values serialise without crashing.
     ``ensure_ascii=False`` preserves non-ASCII characters readably (e.g. note
     titles in other scripts) instead of escaping to ``\\uXXXX``.
+
+    Pass ``mkdir=True`` to ensure the parent directory exists — useful for
+    sidecar JSON files in vault folders that may not yet be present on first
+    run. Idempotent on existing dirs.
     """
+    if mkdir:
+        path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
         json.dumps(data, indent=indent, default=str, ensure_ascii=False),
         encoding="utf-8",
     )
+
+
+def new_id(prefix: str, n: int = 8) -> str:
+    """Generate a short opaque ID like ``"out-3a7c91f2"``.
+
+    Used across apps for ephemeral record IDs (learnings, outreach, stories,
+    canvas cards, etc.). The prefix carries the type; the suffix carries
+    enough entropy for collision avoidance within a single store.
+    """
+    return f"{prefix}-{uuid.uuid4().hex[:n]}"
+
 
 # --- Task parsing constants ---
 
@@ -41,10 +59,13 @@ TASK_RE = re.compile(
 )
 DUE_PATTERN = re.compile(r"📅\s*(\d{4}-\d{2}-\d{2})")
 DONE_PATTERN = re.compile(r"✅\s*(\d{4}-\d{2}-\d{2})")
+# Room pointer on a task line: 🗨️ <room-id>. Captures the id (kebab-case
+# slug of letters, digits, dashes, underscores). One room per task; first
+# match wins. Followed by a word boundary so "abc-12345" stops cleanly
+# without eating trailing markdown.
+ROOM_PATTERN = re.compile(r"🗨️\s*([A-Za-z0-9_\-]+)")
 
-CAPTURE_LINE_RE = re.compile(
-    r"^- (\d{4}-\d{2}-\d{2} \d{2}:\d{2}) — (.+?)(?:\s+#(\S+))?$"
-)
+CAPTURE_LINE_RE = re.compile(r"^- (\d{4}-\d{2}-\d{2} \d{2}:\d{2}) — (.+?)(?:\s+#(\S+))?$")
 
 
 def parse_captures(content: str, limit: int | None = None) -> list[dict]:
@@ -58,13 +79,16 @@ def parse_captures(content: str, limit: int | None = None) -> list[dict]:
     for line in (content or "").split("\n"):
         m = CAPTURE_LINE_RE.match(line.strip())
         if m:
-            entries.append({
-                "timestamp": m.group(1),
-                "text": m.group(2).strip(),
-                "tag": m.group(3) or "",
-            })
+            entries.append(
+                {
+                    "timestamp": m.group(1),
+                    "text": m.group(2).strip(),
+                    "tag": m.group(3) or "",
+                }
+            )
     entries.reverse()
     return entries[:limit] if limit else entries
+
 
 _TIER_THRESHOLDS = [(90, "zombie"), (30, "stale"), (7, "aging")]
 
@@ -217,11 +241,13 @@ def parse_frontmatter(content: str) -> dict:
             if val:
                 # Inline YAML array: [a, b, c]
                 if val.startswith("[") and val.endswith("]"):
+
                     def _unquote(v: str) -> str:
                         v = v.strip()
                         if len(v) >= 2 and v[0] == v[-1] and v[0] in ('"', "'"):
                             return v[1:-1]
                         return v
+
                     items = [_unquote(v) for v in val[1:-1].split(",") if v.strip()]
                     fm[key] = items if items else ""
                 else:
@@ -280,7 +306,7 @@ def strip_frontmatter(content: str) -> str:
     if content.startswith("---"):
         end = content.find("---", 3)
         if end > 0:
-            return content[end + 3:]
+            return content[end + 3 :]
     return content
 
 
@@ -320,11 +346,23 @@ def today_iso() -> str:
     "what did I do today" summaries — where the user's local day boundary is
     what matters.
 
-    Not for: timestamps (use ``datetime.now(timezone.utc).isoformat()``);
-    UTC date keys (call ``today_utc()`` from ``time_series`` so the timezone
-    intent is visible at the call site).
+    Not for: timestamps (use ``now_iso()``); UTC date keys (call ``today_utc()``
+    from ``time_series`` so the timezone intent is visible at the call site).
     """
     return date.today().isoformat()
+
+
+def now_iso() -> str:
+    """UTC timestamp ISO string with seconds precision.
+
+    Canonical form for ``created`` / ``updated`` frontmatter on vault notes
+    and similar machine-readable timestamps. Equivalent to
+    ``datetime.now(timezone.utc).isoformat(timespec="seconds")``.
+
+    For local-day strings use ``today_iso``; for date-keyed UTC counters use
+    ``today_utc`` from ``time_series``.
+    """
+    return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
 def streak_from_dates(dates: set[str] | list[str], from_date: date | None = None) -> int:
@@ -359,14 +397,53 @@ def parse_data_url(data_url: str) -> tuple[str, bytes]:
     Raises ValueError if the input isn't a base64-encoded data URL.
     """
     import base64
+
     if not isinstance(data_url, str) or not data_url.startswith("data:"):
         raise ValueError("not a data URL")
     try:
         header, payload = data_url.split(",", 1)
     except ValueError:
-        raise ValueError("malformed data URL: missing comma separator")
+        raise ValueError("malformed data URL: missing comma separator") from None
     if ";base64" not in header:
         raise ValueError("only base64-encoded data URLs are supported")
-    mime = header[len("data:"):].split(";", 1)[0] or "application/octet-stream"
+    mime = header[len("data:") :].split(";", 1)[0] or "application/octet-stream"
     raw = base64.b64decode(payload)
     return mime, raw
+
+
+# Wikilinks ------------------------------------------------------------------
+# Canonical pattern for [[Note]] / [[Note|label]] / [[Note#section]] /
+# [[Note#section|label]]. Group 1 is always the bare slug (no label, no anchor).
+# Use this from any app that needs to scan note bodies — extracted because
+# apps/link, apps/kb, and emptyos/sdk/markdown_render all had near-identical
+# private regexes that drifted in subtle ways (anchor support, label group).
+class FakeRequest:
+    """Minimal Request shim for cross-app `call_app` invocations.
+
+    `@web_route` handlers on the called app expect a Starlette-shaped request:
+    `request.path_params["..."]` for path vars, `await request.json()` for the
+    body. When invoked via `call_app` instead of an HTTP round-trip, callers
+    construct one of these to satisfy that contract.
+
+    Either argument is optional — pass only what the target handler reads.
+    """
+
+    def __init__(self, *, body: dict | None = None, path_params: dict | None = None):
+        self.path_params = path_params or {}
+        self._body = body or {}
+
+    async def json(self):
+        return self._body
+
+
+WIKILINK_RE = re.compile(r"\[\[([^\]|#]+?)(?:#[^\]|]*)?(?:\|[^\]]*)?\]\]")
+
+
+def extract_wikilinks(text: str) -> set[str]:
+    """Return the set of wikilink target slugs in ``text``.
+
+    Strips ``#section`` anchors and ``|label`` aliases. Empty input → empty set.
+    """
+    if not text:
+        return set()
+    return {m.group(1).strip() for m in WIKILINK_RE.finditer(text) if m.group(1).strip()}

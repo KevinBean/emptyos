@@ -94,11 +94,14 @@ class TourApp(BaseApp):
         except Exception:
             pass
         import time
+
         state = self._read_state()
         state["dismissed"] = True
         if body.get("completed"):
             state["completed_at"] = time.time()
         self._write_state(state)
+        if body.get("completed"):
+            await self.emit("tour:completed", {"last_step": state.get("last_step")})
         return {"ok": True, "state": state}
 
     @web_route("POST", "/api/state")
@@ -109,12 +112,15 @@ class TourApp(BaseApp):
         if "last_step" in body:
             state["last_step"] = body["last_step"]
         self._write_state(state)
+        if "last_step" in body:
+            await self.emit("tour:step_advanced", {"step": body["last_step"]})
         return {"ok": True, "state": state}
 
     @web_route("GET", "/debug/steps")
     async def debug_steps(self, request):
         """Dev introspection — raw step contributions + their resolved form."""
         from starlette.responses import HTMLResponse
+
         steps_resp = await self.api_steps(request)
         rows = []
         for s in steps_resp["steps"]:
@@ -136,7 +142,7 @@ class TourApp(BaseApp):
             f"<h1>Tour steps ({len(steps_resp['steps'])})</h1>"
             f"<p style='color:var(--text-muted)'>State: <code>{json.dumps(steps_resp['state'])}</code></p>"
             "<table><thead><tr><th>Pri</th><th>id</th><th>app</th><th>route</th><th>spotlight</th><th>requires</th><th>missing</th></tr></thead><tbody>"
-            + "".join(rows) +
-            "</tbody></table>"
+            + "".join(rows)
+            + "</tbody></table>"
         )
         return HTMLResponse(html)

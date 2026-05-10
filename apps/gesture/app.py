@@ -14,10 +14,9 @@ subscribe to `gesture:detected` and match on `data["gesture"]`.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from emptyos.sdk import BaseApp, HistoryStore, cli_command, load_json, save_json, web_route
-
 
 GESTURE_CLASSES = [
     "Open_Palm",
@@ -43,7 +42,6 @@ HISTORY_LIMIT = 200
 
 
 class GestureApp(BaseApp):
-
     def _history(self) -> HistoryStore:
         return HistoryStore(self.data_dir / "history.json", max_entries=HISTORY_LIMIT)
 
@@ -90,16 +88,19 @@ class GestureApp(BaseApp):
         entry = {
             "gesture": gesture,
             "confidence": round(confidence, 4),
-            "ts": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            "ts": datetime.now(UTC).isoformat(timespec="seconds"),
         }
         self._history().append(entry)
 
         action = self._load_actions().get(gesture, "")
-        await self.emit("gesture:detected", {
-            "gesture": gesture,
-            "confidence": entry["confidence"],
-            "action": action,
-        })
+        await self.emit(
+            "gesture:detected",
+            {
+                "gesture": gesture,
+                "confidence": entry["confidence"],
+                "action": action,
+            },
+        )
         return {"ok": True, "entry": entry, "action": action}
 
     @web_route("GET", "/api/history")
@@ -135,8 +136,11 @@ class GestureApp(BaseApp):
                 {"label": "Total", "value": len(hist), "detail": "detections"},
                 {"label": "Gestures", "value": len(counts), "detail": "unique"},
                 {"label": "Top", "value": top.replace("_", " "), "detail": f"{counts[top]}×"},
-                {"label": "Last", "value": last.get("gesture", "?").replace("_", " "),
-                 "detail": (last.get("ts") or "")[-8:-3]},
+                {
+                    "label": "Last",
+                    "value": last.get("gesture", "?").replace("_", " "),
+                    "detail": (last.get("ts") or "")[-8:-3],
+                },
             ]
         }
 

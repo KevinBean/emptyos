@@ -17,9 +17,12 @@ from collections.abc import AsyncGenerator
 from typing import Any
 
 from emptyos.capabilities.providers._tool_capable import (
-    AgentTurn, TextBlock, ToolUse, ToolUseBlock, ToolCapableProvider,
+    AgentTurn,
+    TextBlock,
+    ToolCapableProvider,
+    ToolUse,
+    ToolUseBlock,
 )
-
 
 DEFAULT_MODEL = "claude-sonnet-4-5-20250929"
 DEFAULT_MAX_TOKENS = 8192
@@ -77,6 +80,7 @@ class AnthropicSDKProvider(ToolCapableProvider):
             return False
         try:
             import anthropic  # noqa: F401
+
             return True
         except ImportError:
             return False
@@ -88,8 +92,12 @@ class AnthropicSDKProvider(ToolCapableProvider):
             return {
                 "available": False,
                 "reason": "anthropic SDK not installed",
-                "recovery": {"kind": "service", "id": "anthropic-sdk",
-                             "url": "", "hint": "Run `pip install anthropic>=0.40`"},
+                "recovery": {
+                    "kind": "service",
+                    "id": "anthropic-sdk",
+                    "url": "",
+                    "hint": "Run `pip install anthropic>=0.40`",
+                },
             }
         if not self._api_key():
             return {
@@ -178,9 +186,12 @@ class AnthropicSDKProvider(ToolCapableProvider):
                     block = getattr(event, "content_block", None)
                     btype = getattr(block, "type", "")
                     if btype == "tool_use":
-                        yield {"tool_use_start": {
-                            "id": block.id, "name": block.name,
-                        }}
+                        yield {
+                            "tool_use_start": {
+                                "id": block.id,
+                                "name": block.name,
+                            }
+                        }
                 elif etype == "content_block_delta":
                     delta = getattr(event, "delta", None)
                     dtype = getattr(delta, "type", "")
@@ -188,10 +199,12 @@ class AnthropicSDKProvider(ToolCapableProvider):
                         yield {"text_delta": delta.text}
                     elif dtype == "input_json_delta":
                         # index identifies the content block
-                        yield {"tool_use_delta": {
-                            "index": event.index,
-                            "partial_json": delta.partial_json,
-                        }}
+                        yield {
+                            "tool_use_delta": {
+                                "index": event.index,
+                                "partial_json": delta.partial_json,
+                            }
+                        }
                 elif etype == "content_block_stop":
                     yield {"content_block_stop": {"index": event.index}}
             final = await stream.get_final_message()
@@ -285,10 +298,10 @@ class AnthropicSDKProvider(ToolCapableProvider):
                 break
         in_rate, out_rate = pricing
         cost = (
-            inp         * in_rate        / 1_000_000 +
-            cache_read  * in_rate * 0.1  / 1_000_000 +
-            cache_create * in_rate * 1.25 / 1_000_000 +
-            out         * out_rate       / 1_000_000
+            inp * in_rate / 1_000_000
+            + cache_read * in_rate * 0.1 / 1_000_000
+            + cache_create * in_rate * 1.25 / 1_000_000
+            + out * out_rate / 1_000_000
         )
         return round(cost, 6)
 
@@ -296,12 +309,12 @@ class AnthropicSDKProvider(ToolCapableProvider):
     # so substring match picks up "opus" / "sonnet" / "haiku" correctly regardless
     # of trailing version suffix.
     PRICING = [
-        ("claude-opus-4-7",   (15.00, 75.00)),
-        ("claude-opus",       (15.00, 75.00)),
+        ("claude-opus-4-7", (15.00, 75.00)),
+        ("claude-opus", (15.00, 75.00)),
         ("claude-sonnet-4-6", (3.00, 15.00)),
-        ("claude-sonnet",     (3.00, 15.00)),
-        ("claude-haiku-4-5",  (0.80, 4.00)),
-        ("claude-haiku",      (0.80, 4.00)),
+        ("claude-sonnet", (3.00, 15.00)),
+        ("claude-haiku-4-5", (0.80, 4.00)),
+        ("claude-haiku", (0.80, 4.00)),
     ]
 
     def _record_usage(self, resp: Any) -> None:

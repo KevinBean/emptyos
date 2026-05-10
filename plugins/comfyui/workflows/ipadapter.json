@@ -1,0 +1,96 @@
+{
+  "_comment": "IP-Adapter character-consistency workflow for cubiq's ComfyUI_IPAdapter_plus. Uses SDXL (RealVisXL) — cubiq's plugin doesn't ship FLUX support out of the box. To use FLUX instead, install x-flux-comfyui or the BFL FLUX IP-Adapter separately and rewire nodes 3 + 4 to the FLUX-specific loader/applier.",
+  "_requires": ["ComfyUI_IPAdapter_plus", "RealVisXL_V4.0.safetensors", "ClipVision_ViT-H or auto-downloaded by IPAdapterUnifiedLoader"],
+
+  "1": {
+    "class_type": "CheckpointLoaderSimple",
+    "inputs": {
+      "ckpt_name": "RealVisXL_V4.0.safetensors"
+    }
+  },
+
+  "2": {
+    "class_type": "LoadImage",
+    "inputs": {
+      "image": "{image}",
+      "upload": "image"
+    }
+  },
+
+  "3": {
+    "class_type": "IPAdapterUnifiedLoader",
+    "inputs": {
+      "model": ["1", 0],
+      "preset": "PLUS FACE (portraits)"
+    }
+  },
+
+  "4": {
+    "class_type": "IPAdapter",
+    "inputs": {
+      "model": ["3", 0],
+      "ipadapter": ["3", 1],
+      "image": ["2", 0],
+      "weight": 0.85,
+      "start_at": 0.0,
+      "end_at": 1.0
+    }
+  },
+
+  "5": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+      "text": "{prompt}",
+      "clip": ["1", 1]
+    }
+  },
+
+  "6": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+      "text": "lowres, bad anatomy, blurry, deformed, extra limbs, watermark, text, signature, cartoon, anime",
+      "clip": ["1", 1]
+    }
+  },
+
+  "7": {
+    "class_type": "EmptyLatentImage",
+    "inputs": {
+      "width": "{width}",
+      "height": "{height}",
+      "batch_size": 1
+    }
+  },
+
+  "8": {
+    "class_type": "KSampler",
+    "inputs": {
+      "model": ["4", 0],
+      "positive": ["5", 0],
+      "negative": ["6", 0],
+      "latent_image": ["7", 0],
+      "seed": "{seed}",
+      "steps": 25,
+      "cfg": 5.0,
+      "sampler_name": "dpmpp_2m_sde",
+      "scheduler": "karras",
+      "denoise": 1.0
+    }
+  },
+
+  "9": {
+    "class_type": "VAEDecode",
+    "inputs": {
+      "samples": ["8", 0],
+      "vae": ["1", 2]
+    }
+  },
+
+  "10": {
+    "class_type": "SaveImage",
+    "inputs": {
+      "images": ["9", 0],
+      "filename_prefix": "reader_scene"
+    }
+  }
+}

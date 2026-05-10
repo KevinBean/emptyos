@@ -28,3 +28,127 @@ jobs:
         # All @pytest.mark.* must be registered in pyproject.toml.
         # Fails the build if an unknown mark slipped in.
         run: pytest tests/ --ignore=tests/personal --collect-only -W error::pytest.PytestUnknownMarkWarning -q
+
+      - name: Lint — real bugs only (F821 + F811 + E9)
+        # F821 = undefined name (will crash on the path), F811 = redefined-
+        # while-unused (silently shadows earlier defs), E9 = SyntaxError.
+        # The wider rule set lives in pyproject.toml [tool.ruff.lint] and
+        # is run locally / opt-in; CI still gates on real-crash bugs only
+        # until the ~200 remaining violations (B904, ASYNC*, …) are triaged.
+        run: |
+          pip install ruff
+          ruff check --select F821,F811,E9 emptyos apps plugins services scripts
+
+      - name: Format check (ruff format)
+        # Load-bearing — codebase is fully formatted as of v0.2.x.
+        # Fails the build if a contributor introduces style drift.
+        run: ruff format --check emptyos apps plugins services scripts
+
+      - name: Lint — wider rule set (non-blocking)
+        # Runs the full config in pyproject.toml [tool.ruff.lint]. Stays
+        # non-blocking until the stylistic tail is fully cleared — the
+        # narrow F821/F811/E9 gate above is the real-bug blocker.
+        continue-on-error: true
+        run: ruff check emptyos apps plugins services scripts
+
+      - name: Dependency vulnerability audit (pip-audit)
+        # Non-blocking: known-vuln deps surface as build warnings, not
+        # failures, so an upstream advisory doesn't block unrelated PRs.
+        # Promote to a hard fail once the inventory is clean.
+        continue-on-error: true
+        run: |
+          pip install pip-audit
+          pip-audit --strict --progress-spinner off || true
+
+  api-tests:
+    name: API tests (tier 2, daemon-up)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install EmptyOS + test deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .
+          pip install pytest pytest-asyncio pytest-playwright pytest-timeout pytest-rerunfailures httpx
+
+      - name: Set up throwaway vault
+        run: |
+          mkdir -p ./ci-vault/50_Journal/2026
+          mkdir -p ./ci-vault/10_Projects
+          mkdir -p ./ci-vault/30_Resources/Items
+          mkdir -p ./ci-vault/30_Resources/Places
+          mkdir -p ./ci-vault/30_Resources/Recipes
+          mkdir -p ./ci-vault/00_Inbox
+
+      - name: Write CI emptyos.toml
+        run: |
+          cat > emptyos.toml <<'EOF'
+          [os]
+          name = "EmptyOS CI"
+          data_dir = "./data"
+          log_level = "WARNING"
+
+          [notes]
+          path = "./ci-vault"
+          watch = true
+
+          [network]
+          mode = "local"
+          port = 9000
+
+          [scheduler]
+          enabled = true
+          timezone = "UTC"
+
+          [apps]
+          path = "./apps"
+          autostart = []
+
+          [plugins]
+          path = "./plugins"
+          EOF
+
+      - name: Boot EmptyOS daemon
+        run: |
+          python -m emptyos start > eos.log 2>&1 &
+          echo $! > eos.pid
+
+      - name: Wait for daemon health
+        run: |
+          for i in $(seq 1 60); do
+            if curl -sf http://localhost:9000/api/health > /dev/null; then
+              echo "Daemon healthy after ${i}s"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "Daemon never became healthy. Tail of log:"
+          tail -80 eos.log
+          exit 1
+
+      - name: Run API tests (no LLM, no Playwright)
+        # Tier 2 — exercises every app's HTTP surface against the live daemon.
+        # Excludes interactive (Playwright UI) and llm (cost-bearing) tests.
+        run: pytest tests/ --ignore=tests/personal -m "api and not llm and not interactive" -q --timeout=60 --reruns 2
+
+      - name: Shut down daemon
+        if: always()
+        run: |
+          if [ -f eos.pid ]; then
+            kill $(cat eos.pid) 2>/dev/null || true
+          fi
+
+      - name: Upload daemon log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: eos-daemon-log-api
+          path: eos.log
+          retention-days: 7

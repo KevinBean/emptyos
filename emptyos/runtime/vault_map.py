@@ -42,7 +42,12 @@ DEFAULT_PATHS = {
         "entertainment": ["30_Resources/Entertainment", "Entertainment", "Movies"],
     },
     "dictionary": {
-        "words_dir": ["30_Resources/Reference/Dictionary", "30_Resources/Learning/Dictionary", "Dictionary", "Vocabulary"],
+        "words_dir": [
+            "30_Resources/Reference/Dictionary",
+            "30_Resources/Learning/Dictionary",
+            "Dictionary",
+            "Vocabulary",
+        ],
     },
     "music": {
         "songs_dir": ["10_Projects/YouTube-Music-Channel/songs", "Music/songs", "Songs"],
@@ -61,7 +66,10 @@ DEFAULT_PATHS = {
         "archive_dir": ["40_Archive/10_Projects", "40_Archive/Projects", "Archive/Projects"],
     },
     "tracker": {
-        "career": ["20_Areas/Career/Career-Development-Plan.md", "Career/Career-Development-Plan.md"],
+        "career": [
+            "20_Areas/Career/Career-Development-Plan.md",
+            "Career/Career-Development-Plan.md",
+        ],
         "net_worth": ["20_Areas/Finances/net-worth/_净值跟踪.md"],
         "investment": ["20_Areas/Finances/Investment-Plan.md"],
     },
@@ -119,7 +127,20 @@ DEFAULT_PATHS = {
         "scan_folders": ["30_Resources,20_Areas,10_Projects"],
         "podcast_dir": ["30_Resources/EmptyOS/podcast"],
     },
-
+    "improv": {
+        "sessions_dir": ["30_Resources/EmptyOS/improv/sessions"],
+    },
+    "earthing": {
+        "projects": ["30_Resources/EmptyOS/earthing/{project_id}/{project_id}.md"],
+        "soundings": ["30_Resources/EmptyOS/earthing/{project_id}/_soundings.json"],
+        "geometry": ["30_Resources/EmptyOS/earthing/{project_id}/_geometry.json"],
+        "scenarios_dir": ["30_Resources/EmptyOS/earthing/{project_id}/scenarios"],
+    },
+    "geo-cad": {
+        "layers": ["30_Resources/EmptyOS/geo-cad"],
+        "exports_dir": ["30_Resources/EmptyOS/geo-cad/_exports"],
+        "imports_dir": ["30_Resources/EmptyOS/geo-cad/_imports"],
+    },
 }
 
 
@@ -168,7 +189,9 @@ class VaultMap:
 
         # 2. Smart scan — configured path broken, find alternative
         if val and not self._path_valid(val):
-            logger.info("[VaultMap] Path broken for %s.%s: %s — scanning alternatives", app_id, key, val)
+            logger.info(
+                "[VaultMap] Path broken for %s.%s: %s — scanning alternatives", app_id, key, val
+            )
             found = self._find_alternative(app_id, key)
             if found:
                 logger.info("[VaultMap] Auto-healed %s.%s → %s", app_id, key, found)
@@ -221,7 +244,9 @@ class VaultMap:
                         self._update(app_id, key, found)
                         changes.setdefault(app_id, []).append(f"{key}: {old} → {found}")
                     elif not found:
-                        changes.setdefault(app_id, []).append(f"{key}: {val} (BROKEN, no alternative)")
+                        changes.setdefault(app_id, []).append(
+                            f"{key}: {val} (BROKEN, no alternative)"
+                        )
 
         # Also check for new apps with defaults but no map entry
         for app_id, paths in DEFAULT_PATHS.items():

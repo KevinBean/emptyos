@@ -20,14 +20,14 @@ STT provider is hybrid and chosen per-runtime by the overlay:
 
 from __future__ import annotations
 
+import asyncio
 import ctypes
 import json
 import platform
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from emptyos.sdk import BaseApp, cli_command, on_event, scheduled, web_route
-
 
 CLEANUP_PROMPT = (
     "You are a transcription polisher. The text below is a raw speech-to-text "
@@ -56,9 +56,9 @@ DEFAULT_CONFIG = {
     # opt into events one at a time via proactive_events.
     "proactive_enabled": False,
     "proactive_min_gap_sec": 45,
-    "proactive_quiet_start": "22:00",   # HH:MM, 24h local time
+    "proactive_quiet_start": "22:00",  # HH:MM, 24h local time
     "proactive_quiet_end": "07:00",
-    "proactive_events": [],             # list of event keys, e.g. ["focus:completed"]
+    "proactive_events": [],  # list of event keys, e.g. ["focus:completed"]
     # V5 — read-aloud queue defaults.
     "read_autoadvance": True,
     "read_pause_ms": 900,
@@ -72,36 +72,36 @@ DEFAULT_CONFIG = {
     # V2 "jump one viewport per gesture" default. On by default but gated to
     # idle state + unregistered Pointing_Up so task-page "complete top task"
     # still wins.
-        "finger_scroll_enabled": True,
-        "finger_scroll_gain": 900,        # max px/sec at full displacement
-        "finger_scroll_deadzone": 0.06,   # fraction of frame height (no scroll inside)
-        # Advanced finger scroll tuning (exposed for power users)
-        "finger_scroll_smooth_alpha": 0.25,   # EMA smoothing for fingertip Y (0.05–0.6)
-        "finger_scroll_inertia_decay": 0.94,  # per-frame velocity decay (0.9–0.99)
-        "finger_scroll_inertia_ms": 450,      # inertia window cap in ms (0–1500)
-        # Cursor (in-browser) — fingertip mapped to page-local cursor; pinch/dwell to click.
-        "cursor_enabled": False,
-        "cursor_smooth_alpha": 0.25,
-        "cursor_dwell_ms": 800,
-        "cursor_pinch_on": 0.05,
-        "cursor_pinch_off": 0.07,
-        # V6 — ambient ritual (one daily check-in slot). Off by default; user sets time +
+    "finger_scroll_enabled": True,
+    "finger_scroll_gain": 900,  # max px/sec at full displacement
+    "finger_scroll_deadzone": 0.06,  # fraction of frame height (no scroll inside)
+    # Advanced finger scroll tuning (exposed for power users)
+    "finger_scroll_smooth_alpha": 0.25,  # EMA smoothing for fingertip Y (0.05–0.6)
+    "finger_scroll_inertia_decay": 0.94,  # per-frame velocity decay (0.9–0.99)
+    "finger_scroll_inertia_ms": 450,  # inertia window cap in ms (0–1500)
+    # Cursor (in-browser) — fingertip mapped to page-local cursor; pinch/dwell to click.
+    "cursor_enabled": False,
+    "cursor_smooth_alpha": 0.25,
+    "cursor_dwell_ms": 800,
+    "cursor_pinch_on": 0.05,
+    "cursor_pinch_off": 0.07,
+    # V6 — ambient ritual (one daily check-in slot). Off by default; user sets time +
     # prompt + target action. Skips if quiet hours, if chip off (client-side), or if
     # it already fired today.
     "ritual_enabled": False,
-    "ritual_time": "07:00",             # HH:MM local
+    "ritual_time": "07:00",  # HH:MM local
     "ritual_prompt": "Good morning. What's today's intention?",
-    "ritual_action": "capture",         # capture | journal-milestone | task
+    "ritual_action": "capture",  # capture | journal-milestone | task
 }
 
 # Short, unobtrusive announcement templates. TTS interrupts — every second costs
 # the user attention — so phrases stay under ~6 words.
 ANNOUNCE_TEMPLATES = {
-    "focus:completed":   "Focus session complete.",
-    "task:completed":    "Task completed.",
-    "task:added":        "Task added.",
-    "capture:saved":     "Captured.",
-    "journal:entry":     "Journal entry saved.",
+    "focus:completed": "Focus session complete.",
+    "task:completed": "Task completed.",
+    "task:added": "Task added.",
+    "capture:saved": "Captured.",
+    "journal:entry": "Journal entry saved.",
     "journal:milestone": "Milestone saved.",
 }
 
@@ -111,7 +111,6 @@ HISTORY_LIMIT = 500
 
 
 class HandsFreeApp(BaseApp):
-
     def _history_path(self):
         return self.data_dir / "history.jsonl"
 
@@ -123,7 +122,9 @@ class HandsFreeApp(BaseApp):
         # settings panel (the shared helper doesn't do lists), so coerce here.
         raw = cfg.get("proactive_events", [])
         if isinstance(raw, str):
-            cfg["proactive_events"] = [p.strip() for p in raw.replace("\n", ",").split(",") if p.strip()]
+            cfg["proactive_events"] = [
+                p.strip() for p in raw.replace("\n", ",").split(",") if p.strip()
+            ]
         elif not isinstance(raw, list):
             cfg["proactive_events"] = []
         return cfg
@@ -169,7 +170,7 @@ class HandsFreeApp(BaseApp):
         ]
         if hist:
             last = hist[-1]
-            lines.append(f"Last: {last.get('transcript','')!r} → {last.get('intent','?')}")
+            lines.append(f"Last: {last.get('transcript', '')!r} → {last.get('intent', '?')}")
         return "\n".join(lines)
 
     @web_route("GET", "/api/config")
@@ -185,7 +186,9 @@ class HandsFreeApp(BaseApp):
         text = (data.get("text") or "").strip()
         if not text:
             return {"cleaned": ""}
-        threshold = int(self.app_config("cleanup_threshold_words", DEFAULT_CONFIG["cleanup_threshold_words"]))
+        threshold = int(
+            self.app_config("cleanup_threshold_words", DEFAULT_CONFIG["cleanup_threshold_words"])
+        )
         if len(text.split()) <= threshold:
             return {"cleaned": text, "skipped": "below_threshold"}
         cleaned = await self.think(text, system=CLEANUP_PROMPT, domain="text", temperature=0.2)
@@ -200,7 +203,7 @@ class HandsFreeApp(BaseApp):
     async def api_dispatch(self, request):
         data = await request.json()
         entry = {
-            "ts": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            "ts": datetime.now(UTC).isoformat(timespec="seconds"),
             "transcript": (data.get("transcript") or "").strip()[:400],
             "intent": (data.get("intent") or "").strip()[:80],
             "target": (data.get("target") or "").strip()[:80],
@@ -208,11 +211,14 @@ class HandsFreeApp(BaseApp):
             "outcome": (data.get("outcome") or "fired").strip()[:40],
         }
         self._append_history(entry)
-        await self.emit("handsfree:dispatched", {
-            "intent": entry["intent"],
-            "target": entry["target"],
-            "outcome": entry["outcome"],
-        })
+        await self.emit(
+            "handsfree:dispatched",
+            {
+                "intent": entry["intent"],
+                "target": entry["target"],
+                "outcome": entry["outcome"],
+            },
+        )
         return {"ok": True, "entry": entry}
 
     @web_route("GET", "/api/history")
@@ -235,10 +241,16 @@ class HandsFreeApp(BaseApp):
     @web_route("POST", "/api/os-dictate")
     async def api_os_dictate(self, request):
         if platform.system() != "Windows":
-            return {"ok": False, "reason": f"os-native dictation unsupported on {platform.system()}"}
+            return {
+                "ok": False,
+                "reason": f"os-native dictation unsupported on {platform.system()}",
+            }
         client_host = (request.client.host if request.client else "") or ""
         if client_host not in ("127.0.0.1", "::1", "localhost"):
-            return {"ok": False, "reason": f"os-dictate refused for non-local origin: {client_host}"}
+            return {
+                "ok": False,
+                "reason": f"os-dictate refused for non-local origin: {client_host}",
+            }
         try:
             body = await request.json()
         except Exception:
@@ -252,7 +264,7 @@ class HandsFreeApp(BaseApp):
             user32 = ctypes.windll.user32
             user32.keybd_event(VK_LWIN, 0, 0, 0)
             user32.keybd_event(VK_H, 0, 0, 0)
-            time.sleep(0.02)
+            await asyncio.sleep(0.02)
             user32.keybd_event(VK_H, 0, KEYEVENTF_KEYUP, 0)
             user32.keybd_event(VK_LWIN, 0, KEYEVENTF_KEYUP, 0)
             return {"ok": True, "method": "win+h"}
@@ -264,14 +276,16 @@ class HandsFreeApp(BaseApp):
         g = event.data.get("gesture") or ""
         if not g:
             return
-        self._append_history({
-            "ts": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-            "transcript": "",
-            "intent": f"gesture:{g}",
-            "target": "debug",
-            "params": {"confidence": event.data.get("confidence", 0)},
-            "outcome": "logged",
-        })
+        self._append_history(
+            {
+                "ts": datetime.now(UTC).isoformat(timespec="seconds"),
+                "transcript": "",
+                "intent": f"gesture:{g}",
+                "target": "debug",
+                "params": {"confidence": event.data.get("confidence", 0)},
+                "outcome": "logged",
+            }
+        )
 
     # ────────────────────────── V4 proactive announcements ──────────────────────────
     # Lazily-initialised instance state. BaseApp doesn't wire __init__ for us and we
@@ -310,7 +324,9 @@ class HandsFreeApp(BaseApp):
         allowed = cfg.get("proactive_events") or []
         if key not in allowed:
             return
-        if self._in_quiet_hours(cfg.get("proactive_quiet_start", ""), cfg.get("proactive_quiet_end", "")):
+        if self._in_quiet_hours(
+            cfg.get("proactive_quiet_start", ""), cfg.get("proactive_quiet_end", "")
+        ):
             return
         st = self._proactive_state()
         now = time.time()
@@ -327,7 +343,7 @@ class HandsFreeApp(BaseApp):
             "key": key,
             "text": template,
             "ts": now,
-            "iso": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            "iso": datetime.now(UTC).isoformat(timespec="seconds"),
         }
         st["queue"].append(entry)
         if len(st["queue"]) > PROACTIVE_QUEUE_LIMIT:
@@ -368,7 +384,11 @@ class HandsFreeApp(BaseApp):
             since = 0.0
         st = self._proactive_state()
         pending = [a for a in st["queue"] if a["ts"] > since]
-        return {"announcements": pending, "now": time.time(), "enabled": bool(self._config().get("proactive_enabled"))}
+        return {
+            "announcements": pending,
+            "now": time.time(),
+            "enabled": bool(self._config().get("proactive_enabled")),
+        }
 
     @web_route("GET", "/api/proactive/templates")
     async def api_proactive_templates(self, request):
@@ -397,7 +417,7 @@ class HandsFreeApp(BaseApp):
             "text": prompt,
             "action": action,
             "ts": time.time(),
-            "iso": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            "iso": datetime.now(UTC).isoformat(timespec="seconds"),
         }
         pst["queue"].append(entry)
         if len(pst["queue"]) > PROACTIVE_QUEUE_LIMIT:
@@ -426,7 +446,9 @@ class HandsFreeApp(BaseApp):
         today = now.date().isoformat()
         if rst.get("last_fire_date") == today:
             return
-        if self._in_quiet_hours(cfg.get("proactive_quiet_start", ""), cfg.get("proactive_quiet_end", "")):
+        if self._in_quiet_hours(
+            cfg.get("proactive_quiet_start", ""), cfg.get("proactive_quiet_end", "")
+        ):
             return
         rst["last_fire_date"] = today
         self._enqueue_ritual(
@@ -439,7 +461,9 @@ class HandsFreeApp(BaseApp):
         """Immediately enqueue the configured ritual so the user can verify it.
         Respects quiet hours but bypasses the once-a-day and schedule checks."""
         cfg = self._config()
-        if self._in_quiet_hours(cfg.get("proactive_quiet_start", ""), cfg.get("proactive_quiet_end", "")):
+        if self._in_quiet_hours(
+            cfg.get("proactive_quiet_start", ""), cfg.get("proactive_quiet_end", "")
+        ):
             return {"ok": False, "reason": "quiet hours"}
         entry = self._enqueue_ritual(
             str(cfg.get("ritual_prompt") or "Daily check-in."),
@@ -458,17 +482,27 @@ class HandsFreeApp(BaseApp):
             return {"ok": False, "reason": f"unknown key: {key}"}
         # Force a one-shot announcement even if enabled=False, but keep gap/quiet checks.
         cfg = self._config()
-        if self._in_quiet_hours(cfg.get("proactive_quiet_start", ""), cfg.get("proactive_quiet_end", "")):
+        if self._in_quiet_hours(
+            cfg.get("proactive_quiet_start", ""), cfg.get("proactive_quiet_end", "")
+        ):
             return {"ok": False, "reason": "quiet hours"}
         st = self._proactive_state()
         now = time.time()
         gap = float(cfg.get("proactive_min_gap_sec", 45))
         if now - st["last_announce"] < gap:
-            return {"ok": False, "reason": f"gap active, {gap - (now - st['last_announce']):.1f}s remaining"}
+            return {
+                "ok": False,
+                "reason": f"gap active, {gap - (now - st['last_announce']):.1f}s remaining",
+            }
         st["last_announce"] = now
         st["seq"] += 1
-        entry = {"id": st["seq"], "key": key, "text": ANNOUNCE_TEMPLATES[key], "ts": now,
-                 "iso": datetime.now(timezone.utc).isoformat(timespec="seconds")}
+        entry = {
+            "id": st["seq"],
+            "key": key,
+            "text": ANNOUNCE_TEMPLATES[key],
+            "ts": now,
+            "iso": datetime.now(UTC).isoformat(timespec="seconds"),
+        }
         st["queue"].append(entry)
         if len(st["queue"]) > PROACTIVE_QUEUE_LIMIT:
             st["queue"] = st["queue"][-PROACTIVE_QUEUE_LIMIT:]

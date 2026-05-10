@@ -1,0 +1,31 @@
+[app]
+id = "kb"
+name = "Knowledge Base"
+version = "0.1.0"
+description = "Domain-general knowledge base — concepts, formulas, standards, cases, lessons"
+dimensions = ["intellectual"]
+
+[app.entry]
+module = "app"
+class = "KBApp"
+
+[requires]
+capabilities = ["read"]
+apps = []
+services = []
+
+[provides.cli]
+commands = ["kb"]
+
+[provides.web]
+prefix = "/kb"
+
+[provides.events]
+emits = ["kb:viewed"]
+
+[[contributes.hub.panel]]
+id = "kb-summary"
+method = "panel_summary"
+renderer = "stat-tile"
+group = "dashboard"
+priority = 220

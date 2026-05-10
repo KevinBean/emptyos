@@ -12,7 +12,9 @@ What it does:
   2. Run check-personal.py + check-branding.py against the working tree
   3. git archive HEAD into a fresh temp dir (history-free snapshot of tracked files only)
   4. Defensive sweep: strip known-cruft (caddy.exe, results/, dist/, build/, *.pyc)
-  5. Re-run scans inside the snapshot to confirm clean state
+  5. Filter to public tiers (core + standard from release.toml) — drops dev/uncategorized
+     apps + plugins. Use --all to skip and ship everything tracked.
+  6. Re-run scans inside the snapshot to confirm clean state
   6. Init the snapshot as a fresh git repo, single commit
   7. Force-push to PUBLIC_REMOTE (default: github.com/KevinBean/emptyos)
   8. Tag the snapshot commit AND tag the private HEAD with the same version
@@ -65,6 +67,7 @@ def rmtree_force(path: Path) -> None:
     except TypeError:
         shutil.rmtree(path, onerror=lambda f, p, e: _force_writable_then_remove(f, p, e))
 
+
 # Windows consoles default to cp1252 which can't encode the unicode arrows /
 # checkmarks used in status output. Reconfigure stdout/stderr to utf-8 so the
 # script runs the same on Windows / macOS / Linux.
@@ -89,6 +92,11 @@ CRUFT_PATHS = [
 
 VERSION_RE = re.compile(r"^v\d+\.\d+\.\d+(?:-[a-z0-9]+)?$")
 
+# Public tier filter — only apps + plugins listed in these release.toml tiers
+# (and their `extends` chain) ship to the public repo. Dev/personal/uncategorized
+# apps stay private. Override per-invocation with --all.
+PUBLIC_TIERS = ("core", "standard")
+
 
 def fail(msg: str, code: int = 1) -> None:
     print(f"\n  ✗ {msg}\n", file=sys.stderr)
@@ -102,7 +110,11 @@ def step(label: str) -> None:
 def run(cmd: list[str], cwd: Path | None = None, capture: bool = False) -> str:
     """Run a command, fail loud on non-zero exit, optionally capture stdout."""
     result = subprocess.run(
-        cmd, cwd=cwd, capture_output=capture, text=True, check=False,
+        cmd,
+        cwd=cwd,
+        capture_output=capture,
+        text=True,
+        check=False,
     )
     if result.returncode != 0:
         out = (result.stdout or "") + (result.stderr or "")
@@ -133,7 +145,41 @@ def run_scans(target_dir: Path | None = None) -> None:
         # can run inside the snapshot dir which has its own copy.
         path = ROOT / "scripts" / script
         run(["python", str(path)], cwd=cwd)
+    check_no_private_apps(cwd)
     print(f"    OK: {label} scans clean")
+
+
+def check_no_private_apps(cwd: Path) -> None:
+    """Refuse the release if any app under apps/ declares `[app] private = true`.
+
+    Mirrors the spirit of `.eos-personal`: things flagged private must never
+    reach the public snapshot. The release script is the load-bearing gate;
+    `app_loader` honours the same flag at runtime to hide the app from demo
+    deployments. Both layers read the same manifest field — one source of
+    truth.
+    """
+    import tomllib
+
+    apps_dir = cwd / "apps"
+    if not apps_dir.is_dir():
+        return
+    offenders: list[str] = []
+    for manifest_path in apps_dir.rglob("manifest.toml"):
+        try:
+            with open(manifest_path, "rb") as f:
+                data = tomllib.load(f)
+        except (OSError, tomllib.TOMLDecodeError):
+            continue
+        if data.get("app", {}).get("private", False):
+            rel = manifest_path.relative_to(cwd)
+            offenders.append(str(rel))
+    if offenders:
+        joined = "\n      ".join(offenders)
+        fail(
+            f"private apps must not be in the public snapshot:\n      {joined}\n"
+            f"Either remove them from apps/, gitignore the dir, or drop the "
+            f"`private = true` flag if they're meant to ship publicly."
+        )
 
 
 def snapshot_to(temp_dir: Path) -> None:
@@ -149,7 +195,9 @@ def snapshot_to(temp_dir: Path) -> None:
     step(f"Snapshot HEAD via git archive → {temp_dir}")
     result = subprocess.run(
         ["git", "archive", "--format=tar", "HEAD"],
-        cwd=ROOT, capture_output=True, check=False,
+        cwd=ROOT,
+        capture_output=True,
+        check=False,
     )
     if result.returncode != 0:
         fail(f"git archive failed: {result.stderr.decode(errors='replace')}")
@@ -163,6 +211,67 @@ def snapshot_to(temp_dir: Path) -> None:
             tar.extractall(path=temp_dir)
     file_count = sum(1 for _ in temp_dir.rglob("*") if _.is_file())
     print(f"    OK: extracted {file_count} files")
+
+
+def _tier_union(release_toml: Path, tier_names: tuple[str, ...]) -> tuple[set[str], set[str]]:
+    """Resolve `tier_names` (and their `extends` chains) into a (apps, plugins) set pair."""
+    import tomllib
+
+    from emptyos.sdk.release_tiers import tier_union
+
+    with open(release_toml, "rb") as f:
+        data = tomllib.load(f)
+    tiers = data.get("tiers", {}) or {}
+    return (
+        tier_union(tiers, tier_names, "apps"),
+        tier_union(tiers, tier_names, "plugins"),
+    )
+
+
+def filter_to_tiers(temp_dir: Path, tier_names: tuple[str, ...]) -> None:
+    """Drop apps/<id>/ and plugins/<id>/ not in the union of `tier_names`.
+
+    Source of truth is `release.toml` in the snapshot. Anything not declared in
+    a public tier — dev tooling, uncategorized work-in-progress, scaffolding —
+    stays in the private repo only.
+    """
+    release_toml = temp_dir / "release.toml"
+    if not release_toml.is_file():
+        fail("release.toml missing from snapshot — cannot resolve tier filter")
+    allowed_apps, allowed_plugins = _tier_union(release_toml, tier_names)
+    step(f"Filter to tiers {list(tier_names)}: {len(allowed_apps)} apps, {len(allowed_plugins)} plugins")
+
+    dropped_apps: list[str] = []
+    apps_dir = temp_dir / "apps"
+    if apps_dir.is_dir():
+        for child in sorted(apps_dir.iterdir()):
+            if not child.is_dir():
+                continue
+            # `apps/personal/` is gitignored so won't be in the snapshot, but be defensive
+            if child.name == "personal":
+                shutil.rmtree(child)
+                dropped_apps.append("personal/")
+                continue
+            if child.name not in allowed_apps:
+                shutil.rmtree(child)
+                dropped_apps.append(child.name)
+
+    dropped_plugins: list[str] = []
+    plugins_dir = temp_dir / "plugins"
+    if plugins_dir.is_dir():
+        for child in sorted(plugins_dir.iterdir()):
+            if not child.is_dir():
+                continue
+            if child.name not in allowed_plugins:
+                shutil.rmtree(child)
+                dropped_plugins.append(child.name)
+
+    if dropped_apps:
+        print(f"    dropped apps: {', '.join(dropped_apps)}")
+    if dropped_plugins:
+        print(f"    dropped plugins: {', '.join(dropped_plugins)}")
+    if not dropped_apps and not dropped_plugins:
+        print("    nothing to drop")
 
 
 def sweep_cruft(temp_dir: Path) -> None:
@@ -202,7 +311,8 @@ def commit_and_push(snapshot_src: Path, version: str, message: str, dry_run: boo
         rmtree_force(work)
     clone_result = subprocess.run(
         ["git", "clone", "--depth", "50", PUBLIC_REMOTE, str(work)],
-        capture_output=True, text=True,
+        capture_output=True,
+        text=True,
     )
     is_first_release = clone_result.returncode != 0 or not (work / ".git").exists()
     if is_first_release:
@@ -217,7 +327,7 @@ def commit_and_push(snapshot_src: Path, version: str, message: str, dry_run: boo
             run(["git", "checkout", PUBLIC_BRANCH], cwd=work)
         except SystemExit:
             run(["git", "checkout", "-b", PUBLIC_BRANCH], cwd=work)
-        print(f"    OK: cloned (history depth ~50 commits)")
+        print("    OK: cloned (history depth ~50 commits)")
 
     # Configure committer identity from the private repo's last committer
     name = run(["git", "log", "-1", "--format=%an"], cwd=ROOT, capture=True)
@@ -237,8 +347,10 @@ def commit_and_push(snapshot_src: Path, version: str, message: str, dry_run: boo
             continue
         dest = work / item.name
         if dest.exists():
-            if dest.is_dir(): shutil.rmtree(dest)
-            else: dest.unlink()
+            if dest.is_dir():
+                shutil.rmtree(dest)
+            else:
+                dest.unlink()
         if item.is_dir():
             shutil.copytree(item, dest)
         else:
@@ -247,7 +359,9 @@ def commit_and_push(snapshot_src: Path, version: str, message: str, dry_run: boo
 
     # Check if there's actually a diff (snapshot may be identical to last release)
     diff_check = subprocess.run(
-        ["git", "diff", "--cached", "--quiet"], cwd=work, capture_output=True,
+        ["git", "diff", "--cached", "--quiet"],
+        cwd=work,
+        capture_output=True,
     )
     if diff_check.returncode == 0:
         print("    NOTE: snapshot is identical to current public HEAD — skipping commit")
@@ -260,14 +374,18 @@ def commit_and_push(snapshot_src: Path, version: str, message: str, dry_run: boo
 
     step(f"Tag snapshot {version}")
     # If the tag already exists locally (from a previous attempt), force-replace
-    existing_tag = subprocess.run(["git", "tag", "--list", version], cwd=work, capture_output=True, text=True)
+    existing_tag = subprocess.run(
+        ["git", "tag", "--list", version], cwd=work, capture_output=True, text=True
+    )
     if existing_tag.stdout.strip():
         run(["git", "tag", "-d", version], cwd=work)
     run(["git", "tag", "-a", version, "-m", f"EmptyOS {version}"], cwd=work)
 
     if dry_run:
         sha = run(["git", "rev-parse", "HEAD"], cwd=work, capture=True)
-        print(f"\n  [DRY RUN] Would push commit {sha[:8]} to {PUBLIC_REMOTE} {PUBLIC_BRANCH} (fast-forward)")
+        print(
+            f"\n  [DRY RUN] Would push commit {sha[:8]} to {PUBLIC_REMOTE} {PUBLIC_BRANCH} (fast-forward)"
+        )
         print(f"  [DRY RUN] Would push tag {version}")
         return
 
@@ -292,7 +410,10 @@ def tag_private(version: str) -> None:
     if existing:
         print(f"    NOTE: tag {version} already exists in private repo, replacing")
         run(["git", "tag", "-d", version], cwd=ROOT)
-    run(["git", "tag", "-a", version, "-m", f"EmptyOS {version} (private HEAD at release)"], cwd=ROOT)
+    run(
+        ["git", "tag", "-a", version, "-m", f"EmptyOS {version} (private HEAD at release)"],
+        cwd=ROOT,
+    )
     # Push to private origin
     run(["git", "push", "origin", "-f", version], cwd=ROOT)
     print(f"    OK: tagged + pushed {version} to private origin")
@@ -313,8 +434,17 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Ship a clean snapshot release to public.")
     parser.add_argument("version", help="Version tag, e.g. v0.2.3")
     parser.add_argument("--message", "-m", default=None, help="Override the default commit message")
-    parser.add_argument("--dry-run", action="store_true", help="Do everything except the force-push")
-    parser.add_argument("--no-tag-private", action="store_true", help="Skip tagging the private HEAD")
+    parser.add_argument(
+        "--dry-run", action="store_true", help="Do everything except the force-push"
+    )
+    parser.add_argument(
+        "--no-tag-private", action="store_true", help="Skip tagging the private HEAD"
+    )
+    parser.add_argument(
+        "--all",
+        action="store_true",
+        help=f"Skip the public-tier filter (default: only ship apps+plugins in tiers {list(PUBLIC_TIERS)})",
+    )
     args = parser.parse_args()
 
     if not VERSION_RE.match(args.version):
@@ -331,6 +461,8 @@ def main() -> None:
         temp_dir = Path(tmp)
         snapshot_to(temp_dir)
         sweep_cruft(temp_dir)
+        if not args.all:
+            filter_to_tiers(temp_dir, PUBLIC_TIERS)
         run_scans(temp_dir)  # snapshot
         message = args.message or default_message(args.version)
         commit_and_push(temp_dir, args.version, message, args.dry_run)
@@ -338,7 +470,9 @@ def main() -> None:
     if not args.no_tag_private and not args.dry_run:
         tag_private(args.version)
 
-    print(f"\n  ✓ Done. Public release: {PUBLIC_REMOTE.replace('.git', '')}/releases/tag/{args.version}\n")
+    print(
+        f"\n  ✓ Done. Public release: {PUBLIC_REMOTE.replace('.git', '')}/releases/tag/{args.version}\n"
+    )
 
 
 if __name__ == "__main__":

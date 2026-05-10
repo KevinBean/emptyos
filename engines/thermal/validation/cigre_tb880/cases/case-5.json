@@ -1,0 +1,43 @@
+{
+  "id": "case-5",
+  "title": "Free air, vertical trefoil with solar radiation",
+  "source": "CIGRE TB 880 (2022) \u00c2\u00a74.6.7, Table 4-2 row 'Case 0-4'",
+  "input": {
+    "cable": {
+      "id": "tb880-132kv-630cu-xlpe",
+      "rated_voltage_kv": 132.0,
+      "n_conductors": 1,
+      "conductor_material": "Cu",
+      "conductor_csa_mm2": 630.0,
+      "conductor_dc_resistance_20c_ohm_per_km": 0.0283,
+      "insulation_material": "XLPE",
+      "insulation_max_temp_c": 90.0,
+      "sheath_material": "Al",
+      "geometry": {
+        "conductor_diameter": 0.0303,
+        "insulation_thickness": 0.0155,
+        "inner_semicon_thickness": 0.0015,
+        "outer_semicon_thickness": 0.0013,
+        "sheath_thickness": 0.0008,
+        "sheath_inner_diameter": 0.0669,
+        "overall_diameter": 0.0755
+      }
+    },
+    "installation": "in_air",
+    "bonding": "solidly_bonded",
+    "burial_depth_m": 1.0,
+    "spacing_mode": "trefoil",
+    "grouped_cables": 3,
+    "soil_thermal_resistivity_kmw": 1.0,
+    "ambient_temperature_c": 25.0,
+    "conductor_max_temp_c": 90.0,
+    "frequency_hz": 50.0,
+    "solar_absorption_coefficient": 0.4,
+    "solar_radiation_w_per_m2": 1000.0
+  },
+  "expected": {
+    "ampacity_a": 974.2801,
+    "tolerance_a": 0.5
+  },
+  "notes": "Vertical trefoil in free air, ambient 25 C (note: warmer than buried cases at 20 C). TB 880 includes solar radiation H = 1000 W/m^2, sigma = 0.4, contributing Delta-theta_solar = 17.06 K. Engine does not yet model solar absorption; expected to over-rate (cooler effective ambient) vs reference until solar lands."
+}

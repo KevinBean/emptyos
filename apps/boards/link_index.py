@@ -76,8 +76,9 @@ class LinkIndex:
         # Add new back-references. We don't resolve target_board here either;
         # callers pass (col → target_board) via register_edge() when known.
 
-    def register_edge(self, from_board: str, from_item: str, from_col: str,
-                      to_board: str, to_item: str) -> None:
+    def register_edge(
+        self, from_board: str, from_item: str, from_col: str, to_board: str, to_item: str
+    ) -> None:
         """Record a single outgoing + incoming edge. Used during rebuild and
         after set_item to populate the target side with board info."""
         out = self._outgoing.setdefault(from_board, {}).setdefault(from_item, {})
@@ -123,8 +124,10 @@ class LinkIndex:
 
     def stats(self) -> dict:
         edges = sum(
-            len(tgts) for board in self._outgoing.values()
-            for item in board.values() for tgts in item.values()
+            len(tgts)
+            for board in self._outgoing.values()
+            for item in board.values()
+            for tgts in item.values()
         )
         return {
             "boards_with_outgoing": len(self._outgoing),

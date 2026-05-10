@@ -54,25 +54,38 @@ class Config:
 
     @property
     def notes_path(self) -> Path | None:
-        """Path to the notes directory (markdown vault)."""
+        """Path to the notes directory (markdown vault). Always absolute so
+        callers that build paths off it don't accidentally double-prefix when
+        the value is later passed back through `FilesystemReadProvider` /
+        `FilesystemWriteProvider` (whose `base_path` is also vault-rooted)."""
         p = self.get("notes.path")
-        return Path(p) if p else None
+        if not p:
+            return None
+        path = Path(p)
+        return path if path.is_absolute() else path.resolve()
 
     # --- Network / deployment mode -------------------------------------------
     # Modes describe the trust level of the network EmptyOS is accessible on.
     # They are independent of demo mode (see demo_enabled).
     #
     #   "local"   — 127.0.0.1 only, no auth. Single machine.
-    #   "private" — 0.0.0.0, no auth. Tailscale / LAN / WireGuard — you trust
-    #               the network layer to gate access.
+    #   "private" — 0.0.0.0, auth_token REQUIRED by default. Tailscale / LAN /
+    #               WireGuard — the network layer is the *outer* gate; the
+    #               token is the *inner* gate. Override with
+    #               `network.auth_required = false` if you genuinely want
+    #               token-less LAN access (you're accepting full data exposure
+    #               to anyone on the same subnet).
     #   "public"  — 0.0.0.0, auth_token REQUIRED. Internet-exposed / VPS.
     #
     # Raw network.host / network.auth_token still work as overrides for power users.
 
     _MODE_DEFAULTS = {
-        "local":   {"host": "127.0.0.1", "auth_required": False},
-        "private": {"host": "0.0.0.0",   "auth_required": False},
-        "public":  {"host": "0.0.0.0",   "auth_required": True},
+        "local": {"host": "127.0.0.1", "auth_required": False},
+        # Private was historically auth-off; defaults flipped on 2026-04-27
+        # following a security review — "private" implied trust we never
+        # actually enforced. Set network.auth_required = false to opt back out.
+        "private": {"host": "0.0.0.0", "auth_required": True},
+        "public": {"host": "0.0.0.0", "auth_required": True},
     }
 
     @property
@@ -97,7 +110,14 @@ class Config:
 
     @property
     def auth_required(self) -> bool:
-        """True when the current mode requires an auth token."""
+        """True when the current mode requires an auth token.
+
+        Power-user override: `network.auth_required = false` in emptyos.toml
+        forces auth off (e.g. you're behind your own reverse proxy that
+        terminates auth). Default is mode-driven."""
+        explicit = self.get("network.auth_required", None)
+        if explicit is not None:
+            return self._as_bool(explicit, default=True)
         return bool(self._MODE_DEFAULTS[self.network_mode]["auth_required"])
 
     @property
@@ -128,6 +148,10 @@ class Config:
     @property
     def demo_reset_on_restart(self) -> bool:
         return self._as_bool(self.get("demo.reset_on_restart", False))
+
+    @property
+    def demo_seed_on_boot(self) -> bool:
+        return self._as_bool(self.get("demo.seed_on_boot", False))
 
     # --- Cloud consent --------------------------------------------------------
     @property

@@ -393,6 +393,28 @@ Adds a banner, disables GPU capabilities, and exposes BYOK (Bring Your Own Key) 
 
 Want to see EmptyOS without installing? **[Try the demo →](https://demo.emptyos.dev)** *(placeholder)*
 
+### Parallel "dogfood" daemon (optional second instance)
+
+You can run a **second EmptyOS daemon side-by-side with your real one** — same code checkout, different config, different port. Useful for testing migrations, trying new apps, or showing EmptyOS to someone without exposing your real vault.
+
+```bash
+cp dogfood/emptyos.toml.example dogfood/emptyos.toml
+# (optional) tweak dogfood/emptyos.toml — defaults work
+```
+
+After that, `restart.bat` (Windows) auto-boots both daemons:
+
+- **Main** → `http://localhost:9000` — your real config + vault
+- **Dogfood** → `http://localhost:9001` — `dogfood/vault/`, `dogfood/data/`, `human`-only think (zero cost)
+
+On any OS, launch dogfood manually with:
+
+```bash
+EOS_CONFIG=dogfood/emptyos.toml python -m emptyos start
+```
+
+Both daemons share the same Python install and external services (Ollama / ComfyUI / voice-api). They have independent SQLite, vault watchers, and event buses — they don't see each other. To stop dogfood, kill the process or rename `dogfood/emptyos.toml` (the `restart.bat` if-exists guard then silently skips it).
+
 ## What's Next
 
 - **Explore apps** — visit `localhost:9000` and click through the app launcher

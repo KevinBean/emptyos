@@ -56,18 +56,30 @@ from __future__ import annotations
 
 from typing import Any, Literal, TypedDict
 
-
 COLUMN_TYPES: tuple[str, ...] = (
-    "text", "number", "date", "boolean",
-    "select", "multi-select",
-    "url", "email",
-    "person", "people",
-    "tags", "rating",
-    "formula", "link-record",
+    "text",
+    "number",
+    "date",
+    "boolean",
+    "select",
+    "multi-select",
+    "url",
+    "email",
+    "person",
+    "people",
+    "tags",
+    "rating",
+    "formula",
+    "link-record",
 )
 
 VIEW_TYPES: tuple[str, ...] = (
-    "table", "kanban", "timeline", "calendar", "chart", "gallery",
+    "table",
+    "kanban",
+    "timeline",
+    "calendar",
+    "chart",
+    "gallery",
 )
 
 SourceType = Literal["vault_tag", "app", "mixed"]
@@ -92,19 +104,19 @@ class MixedSource(TypedDict, total=False):
 class ColumnConfig(TypedDict, total=False):
     id: str
     label: str
-    type: str                     # one of COLUMN_TYPES
-    options: list[str]            # for select / multi-select
-    color_map: dict[str, str]     # value → eos-badge variant
+    type: str  # one of COLUMN_TYPES
+    options: list[str]  # for select / multi-select
+    color_map: dict[str, str]  # value → eos-badge variant
     prefix: str
     suffix: str
-    expression: str               # for type=formula
-    target_board: str             # for type=link-record
+    expression: str  # for type=formula
+    target_board: str  # for type=link-record
     multi: bool
     inverse: str
 
 
 class ViewConfig(TypedDict, total=False):
-    type: str                     # one of VIEW_TYPES
+    type: str  # one of VIEW_TYPES
     default: bool
     group_by: str
     start_field: str
@@ -118,8 +130,8 @@ class BoardConfig(TypedDict, total=False):
     id: str
     name: str
     description: str
-    source: dict                  # VaultTagSource | AppSource | MixedSource
-    source_tag: str               # legacy fallback when ``source`` is absent
+    source: dict  # VaultTagSource | AppSource | MixedSource
+    source_tag: str  # legacy fallback when ``source`` is absent
     tags: list[str]
     columns: list[ColumnConfig]
     views: list[ViewConfig]

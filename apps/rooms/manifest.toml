@@ -1,0 +1,80 @@
+[app]
+id = "rooms"
+name = "Rooms"
+version = "2.0.0"
+description = "Conversation rooms — single-agent (1:1) and multi-participant. Each room has a system prompt, optional knowledge files, and persistent history. The shared substrate where the user, named agents, and (in v2) CLI participants meet. Renamed from `gpts` 2026-05-09; existing per-agent histories migrate losslessly to 1:1 rooms."
+dimensions = ["intellectual"]
+
+[app.entry]
+module = "app"
+class = "RoomsApp"
+
+[requires]
+capabilities = ["think", "read", "write"]
+services = ["agent-runtime"]
+# Optional cross-app calls (NOT in [requires].apps so rooms boots without
+# them): `projects` for task attach/query, `task` for /api/attach-room.
+# Both routed through call_app inside try/except — missing-app failures
+# surface as user-visible errors but don't break rooms itself.
+
+[provides.cli]
+commands = ["rooms"]
+
+[provides.web]
+prefix = "/rooms"
+
+[provides.events]
+emits = [
+    "rooms:chat", "rooms:undo", "rooms:created", "rooms:participant_added",
+    "rooms:action_applied", "rooms:action_rejected",
+    "rooms:archived", "rooms:unarchived", "rooms:exported", "rooms:distilled",
+    "rooms:pinned", "rooms:unpinned",
+    "rooms:reminder_fired", "rooms:scheduled_fired",
+]
+
+[provides.settings]
+schema = [
+    {key = "rooms.default_model", label = "Default LLM Model", type = "select", options = ["ollama", "openai", "claude-cli"], default = "ollama"},
+    {key = "rooms.history_limit", label = "Chat History Limit", type = "number", default = 20},
+]
+
+# ── Hub panels (Phase 7a) ───────────────────────────────────────
+# Surface room activity on /hub/ so the user sees pending reviews and
+# recently-active rooms without clicking into the rooms app.
+
+[[contributes.hub.panel]]
+id = "rooms-pending"
+method = "panel_pending_count"
+renderer = "stat-tile"
+title = "Pending"
+priority = 90
+group = "dashboard"
+
+[[contributes.hub.panel]]
+id = "rooms-recent"
+method = "panel_recent_rooms"
+renderer = "plain-list"
+title = "Recent rooms"
+priority = 240
+limit = 5
+
+# ── Voice intents (Phase 7c) ────────────────────────────────────
+# Aura learns about rooms — list them aloud, jump into one by name.
+
+[[contributes.voice-assistant.intent]]
+verb = "rooms.list"
+method = "voice_list_rooms"
+example = "what rooms do I have"
+description = "List recently-active conversation rooms (top 5)."
+args = {}
+always = true
+card = "plain-list"
+
+[[contributes.voice-assistant.intent]]
+verb = "rooms.open"
+method = "voice_open_room"
+example = "open the brainstorm room"
+description = "Open a room by name fragment (case-insensitive). Returns a card with a link to the room URL."
+args = { name = "string" }
+always = true
+card = "entity-card"

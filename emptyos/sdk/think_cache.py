@@ -100,9 +100,7 @@ def get(path: Path, cache_id: str) -> str | None:
             conn.execute("DELETE FROM entries WHERE cache_id = ?", (cache_id,))
             conn.commit()
             return None
-        conn.execute(
-            "UPDATE entries SET hits = hits + 1 WHERE cache_id = ?", (cache_id,)
-        )
+        conn.execute("UPDATE entries SET hits = hits + 1 WHERE cache_id = ?", (cache_id,))
         conn.commit()
         return row["response"]
     except Exception:

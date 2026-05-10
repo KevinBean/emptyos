@@ -1,0 +1,37 @@
+# Named screenshot recipes — invoked via `eos-screenshot --scenario <name>`.
+# Add entries when an article reuses a shot across versions or when a shot
+# becomes part of the EmptyOS site's recurring imagery.
+
+[capability-inspector]
+# The Simulate Capability Offline toggle lives in /settings under the LLM Routing section.
+# Crop to that section so the toggle is shown in context.
+url = "http://localhost:9000/settings/"
+selector = '.section[data-section-title="llm routing"]'
+wait_ms = 1500
+out = "ai-relationship-simulate-offline-toggle"
+alt = "Settings page — LLM Routing section with the Simulate Capability Offline dropdown"
+
+[ai-offline-banner]
+# Precondition: flip the setting once before running the skill —
+#   curl -X POST http://localhost:9000/settings/api/set -H 'Content-Type: application/json' -d '{"key":"capability.simulate_offline","value":"all"}'
+# The #eos-think-banner element is injected on page load when /api/think-status reports available:false.
+url = "http://localhost:9000/journal/"
+wait_ms = 1500
+out = "ai-relationship-offline-banner"
+alt = "Journal page with the AI offline banner shown — capability set to simulate offline, CRUD features still working"
+
+[journal-default]
+url = "http://localhost:9000/journal/"
+out = "vault-under-ai-journal"
+alt = "Journal — the daily ground state where notes get written"
+
+[claude-md-skill]
+url = "http://localhost:9000/system"
+selector = "#claude-md-preview"
+out = "vault-under-ai-skill"
+alt = "A slice of EmptyOS's CLAUDE.md — plain prose that the AI reads at every session"
+
+[staff-agents]
+url = "http://localhost:9000/staff/"
+out = "vault-under-ai-staff"
+alt = "Staff — markdown-defined agents running on schedule"

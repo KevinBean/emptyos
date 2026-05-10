@@ -7,6 +7,7 @@ per-band pixel motion. Pass criteria: FG marker moves >> MG marker >> BG marker.
 
 Run: ``python scripts/verify_layered_parallax.py``
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -29,23 +30,23 @@ BANDS = [
     # Depth values chosen at each layer's full-alpha zone so the marker
     # belongs cleanly to one layer (FG smoothstep edge1=0.78, MG full at
     # ~0.50, BG full ≤ 0.28).
-    ("BG-far",   100, 280, (60, 80, 200),  0.10),
-    ("MG-mid",   550, 730, (200, 100, 80), 0.50),
-    ("FG-near",  1000, 1180, (40, 220, 100), 0.90),
+    ("BG-far", 100, 280, (60, 80, 200), 0.10),
+    ("MG-mid", 550, 730, (200, 100, 80), 0.50),
+    ("FG-near", 1000, 1180, (40, 220, 100), 0.90),
 ]
 MARKER_BAR_H = 20  # tall row near top to track horizontally
 
 
 def synth_image_and_depth(out_dir: Path) -> tuple[Path, Path]:
     img = np.full((H, W, 3), 30, dtype=np.uint8)  # dark base
-    dep = np.full((H, W), 50, dtype=np.uint8)     # mid depth base ≈ 0.20
+    dep = np.full((H, W), 50, dtype=np.uint8)  # mid depth base ≈ 0.20
 
     for label, x0, x1, rgb, dval in BANDS:
         # Full-height stripe so the layer alpha picks it up cleanly.
         img[:, x0:x1] = rgb
         dep[:, x0:x1] = int(dval * 255)
         # Top marker bar — narrow horizontal band we'll track frame-to-frame.
-        img[40:40 + MARKER_BAR_H, x0:x1] = [255, 255, 255]
+        img[40 : 40 + MARKER_BAR_H, x0:x1] = [255, 255, 255]
 
     img_path = out_dir / "synth-image.png"
     dep_path = out_dir / "synth-depth.png"
@@ -60,7 +61,7 @@ def find_marker_centroid(frame: np.ndarray, x_search_lo: int, x_search_hi: int) 
     even after parallax shift; we widen the search window beyond the original
     stripe edges so we can detect motion in either direction.
     """
-    row = frame[40:40 + MARKER_BAR_H, :, :]  # (MARKER_BAR_H, W, 3)
+    row = frame[40 : 40 + MARKER_BAR_H, :, :]  # (MARKER_BAR_H, W, 3)
     # White marker = roughly equal high values across channels.
     is_marker = (row > 220).all(axis=-1).any(axis=0)  # W booleans
     xs = np.where(is_marker)[0]
@@ -73,19 +74,40 @@ def find_marker_centroid(frame: np.ndarray, x_search_lo: int, x_search_hi: int) 
 def extract_frames(video: Path, n_samples: int = 5) -> list[np.ndarray]:
     """Pull n evenly-spaced frames from the encoded video into numpy arrays."""
     probe = subprocess.run(
-        ["ffprobe", "-v", "error", "-select_streams", "v:0",
-         "-show_entries", "stream=nb_frames", "-of", "default=nokey=1:noprint_wrappers=1",
-         str(video)],
-        capture_output=True, text=True,
+        [
+            "ffprobe",
+            "-v",
+            "error",
+            "-select_streams",
+            "v:0",
+            "-show_entries",
+            "stream=nb_frames",
+            "-of",
+            "default=nokey=1:noprint_wrappers=1",
+            str(video),
+        ],
+        capture_output=True,
+        text=True,
     )
     total = int((probe.stdout or "0").strip() or "0")
     if not total:
         # Fallback: count frames by decoding once (slower).
         probe2 = subprocess.run(
-            ["ffprobe", "-v", "error", "-count_frames", "-select_streams", "v:0",
-             "-show_entries", "stream=nb_read_frames", "-of",
-             "default=nokey=1:noprint_wrappers=1", str(video)],
-            capture_output=True, text=True,
+            [
+                "ffprobe",
+                "-v",
+                "error",
+                "-count_frames",
+                "-select_streams",
+                "v:0",
+                "-show_entries",
+                "stream=nb_read_frames",
+                "-of",
+                "default=nokey=1:noprint_wrappers=1",
+                str(video),
+            ],
+            capture_output=True,
+            text=True,
         )
         total = int((probe2.stdout or "0").strip() or "0")
     if not total:
@@ -97,8 +119,19 @@ def extract_frames(video: Path, n_samples: int = 5) -> list[np.ndarray]:
         for i, idx in enumerate(indices):
             out = Path(td) / f"f-{i}.png"
             subprocess.run(
-                ["ffmpeg", "-y", "-loglevel", "error", "-i", str(video),
-                 "-vf", f"select=eq(n\\,{idx})", "-vframes", "1", str(out)],
+                [
+                    "ffmpeg",
+                    "-y",
+                    "-loglevel",
+                    "error",
+                    "-i",
+                    str(video),
+                    "-vf",
+                    f"select=eq(n\\,{idx})",
+                    "-vframes",
+                    "1",
+                    str(out),
+                ],
                 check=True,
             )
             frames.append(np.asarray(Image.open(out).convert("RGB")))
@@ -108,8 +141,10 @@ def extract_frames(video: Path, n_samples: int = 5) -> list[np.ndarray]:
 async def main() -> int:
     # The app dir has a hyphen, can't `import apps.music-studio`. Load directly.
     import importlib.util
+
     spec = importlib.util.spec_from_file_location(
-        "ms_assembler", ROOT / "apps" / "music-studio" / "assembler.py",
+        "ms_assembler",
+        ROOT / "apps" / "music-studio" / "assembler.py",
     )
     asm = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(asm)
@@ -147,8 +182,10 @@ async def main() -> int:
         orig_c = (x0 + x1) / 2.0
         diffs = [c - orig_c if not np.isnan(c) else float("nan") for c in centroids]
         motion_per_band[label] = diffs
-        print(f"  {label:<10} {orig_c:>6.0f}  " +
-              "  ".join(f"{d:+5.1f}" if not np.isnan(d) else "  nan" for d in diffs))
+        print(
+            f"  {label:<10} {orig_c:>6.0f}  "
+            + "  ".join(f"{d:+5.1f}" if not np.isnan(d) else "  nan" for d in diffs)
+        )
 
     # Pass criteria.
     bg = motion_per_band["BG-far"]
@@ -162,16 +199,24 @@ async def main() -> int:
         return max(valid) - min(valid)
 
     bg_amp, mg_amp, fg_amp = amp(bg), amp(mg), amp(fg)
-    print(f"\n[summary] motion amplitude (peak-to-peak px):"
-          f"  BG={bg_amp:.1f}  MG={mg_amp:.1f}  FG={fg_amp:.1f}")
+    print(
+        f"\n[summary] motion amplitude (peak-to-peak px):"
+        f"  BG={bg_amp:.1f}  MG={mg_amp:.1f}  FG={fg_amp:.1f}"
+    )
 
     fails = []
     if fg_amp < 30:
-        fails.append(f"FG amplitude only {fg_amp:.1f}px — expected >= 30 (8% of 1280 = ~100, allowing for half-cycle motion)")
+        fails.append(
+            f"FG amplitude only {fg_amp:.1f}px — expected >= 30 (8% of 1280 = ~100, allowing for half-cycle motion)"
+        )
     if not (fg_amp > mg_amp > bg_amp):
-        fails.append(f"Layer ordering wrong: FG({fg_amp:.1f}) > MG({mg_amp:.1f}) > BG({bg_amp:.1f}) does NOT hold")
+        fails.append(
+            f"Layer ordering wrong: FG({fg_amp:.1f}) > MG({mg_amp:.1f}) > BG({bg_amp:.1f}) does NOT hold"
+        )
     if mg_amp / max(0.1, bg_amp) < 1.8:
-        fails.append(f"MG/BG ratio {mg_amp / max(0.1, bg_amp):.2f} too small — bands aren't separating")
+        fails.append(
+            f"MG/BG ratio {mg_amp / max(0.1, bg_amp):.2f} too small — bands aren't separating"
+        )
 
     if fails:
         print("\n[FAIL]")
@@ -181,7 +226,7 @@ async def main() -> int:
 
     print("\n[PASS] depth-aware layered parallax verified:")
     print(f"  FG/BG ratio = {fg_amp / max(0.1, bg_amp):.2f}x (> 1.8 required)")
-    print(f"  Layer ordering FG > MG > BG holds.")
+    print("  Layer ordering FG > MG > BG holds.")
     return 0
 
 

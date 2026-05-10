@@ -1,0 +1,432 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Knowledge Base — EmptyOS</title>
+<link rel="stylesheet" href="/static/theme.css">
+<link rel="stylesheet" href="/static/eos-components.css">
+<style>
+* { margin:0; padding:0; box-sizing:border-box }
+body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif; background:var(--bg); color:var(--text); min-height:100dvh; padding:env(safe-area-inset-top) 16px calc(env(safe-area-inset-bottom) + 80px); -webkit-font-smoothing:antialiased }
+.hero { padding:32px 0 16px }
+.hero h1 { font-size:28px; font-weight:700; color:var(--text-heading); margin-bottom:4px }
+.hero .desc { font-size:14px; color:var(--text-secondary) }
+.toolbar { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:16px; align-items:center }
+.toolbar select, .toolbar input { padding:8px 12px; background:var(--bg-card); border:1px solid var(--border); border-radius:10px; color:var(--text); font-size:14px; font-family:inherit }
+.toolbar .spacer { flex:1 }
+.toolbar .count { font-size:13px; color:var(--text-muted) }
+.domain-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); gap:12px; margin-bottom:24px }
+.domain-card { background:var(--bg-card); border:1px solid var(--border); border-radius:12px; padding:16px; cursor:pointer; transition:border-color 0.15s }
+.domain-card:hover { border-color:var(--accent) }
+.domain-card.active { border-color:var(--accent); box-shadow:0 0 0 2px color-mix(in srgb,var(--accent) 25%,transparent) }
+.domain-card h3 { font-size:15px; font-weight:600; color:var(--text-heading); margin-bottom:6px; text-transform:capitalize }
+.domain-card .total { font-size:24px; font-weight:700; color:var(--accent); line-height:1 }
+.domain-card .breakdown { display:flex; gap:6px; flex-wrap:wrap; margin-top:10px }
+.kind-chip { font-size:11px; padding:2px 8px; background:color-mix(in srgb,var(--accent) 12%,transparent); color:var(--accent); border-radius:999px; font-weight:500 }
+.note-list { display:grid; gap:8px }
+.note-visual {
+  display: inline-block; margin-left: 8px;
+  font-size: 14px; color: var(--accent);
+  vertical-align: middle;
+}
+.explore-link {
+  font-size: 13px; font-weight: 500;
+  color: var(--accent); text-decoration: none;
+  margin-left: 12px; padding: 3px 10px;
+  border: 1px solid var(--accent);
+  border-radius: 999px;
+  vertical-align: middle;
+}
+.explore-link:hover { background: color-mix(in srgb, var(--accent) 12%, transparent); }
+.note-row { background:var(--bg-card); border:1px solid var(--border); border-radius:10px; padding:12px 14px; cursor:pointer; display:flex; gap:12px; align-items:center; transition:border-color 0.15s,background 0.15s }
+.note-row:hover { border-color:var(--accent); background:color-mix(in srgb,var(--accent) 4%,var(--bg-card)) }
+.note-kind { font-size:11px; font-weight:600; padding:3px 8px; border-radius:6px; text-transform:uppercase; letter-spacing:0.04em; min-width:72px; text-align:center }
+.kind-formula { background:color-mix(in srgb,var(--accent) 18%,transparent); color:var(--accent) }
+.kind-concept { background:color-mix(in srgb,var(--text-secondary) 18%,transparent); color:var(--text-secondary) }
+.kind-standard { background:color-mix(in srgb,var(--warning) 18%,transparent); color:var(--warning) }
+.kind-case { background:color-mix(in srgb,var(--success) 18%,transparent); color:var(--success) }
+.kind-lesson { background:color-mix(in srgb,var(--danger) 18%,transparent); color:var(--danger) }
+.note-name { flex:1; font-size:14px; color:var(--text); font-weight:500 }
+.note-domain { font-size:12px; color:var(--text-muted) }
+.empty { text-align:center; padding:40px 20px; color:var(--text-muted); font-size:14px }
+
+/* Detail view */
+.detail-wrap { display:none }
+.detail-wrap.show { display:block }
+.list-wrap.hide { display:none }
+.detail-back { display:inline-flex; align-items:center; gap:6px; padding:6px 12px; background:transparent; border:1px solid var(--border); border-radius:8px; color:var(--text-secondary); cursor:pointer; font-size:13px; margin-bottom:16px }
+.detail-back:hover { border-color:var(--accent); color:var(--accent) }
+.detail-head { margin-bottom:20px }
+.detail-head h1 { font-size:26px; font-weight:700; color:var(--text-heading); margin-bottom:8px }
+.detail-meta { display:flex; flex-wrap:wrap; gap:8px; align-items:center; font-size:13px; color:var(--text-muted) }
+.detail-grid { display:grid; grid-template-columns:1fr 320px; gap:24px; align-items:start }
+@media (max-width: 900px) { .detail-grid { grid-template-columns:1fr } }
+.detail-body { background:var(--bg-card); border:1px solid var(--border); border-radius:12px; padding:24px; line-height:1.6; font-size:14px }
+.detail-body h1, .detail-body h2, .detail-body h3 { color:var(--text-heading); margin:18px 0 10px; font-weight:600 }
+.detail-body h1 { font-size:22px } .detail-body h2 { font-size:18px } .detail-body h3 { font-size:15px }
+.detail-body p { margin:8px 0 }
+.detail-body code { background:color-mix(in srgb,var(--accent) 8%,transparent); padding:1px 6px; border-radius:6px; font-size:13px; font-family:'SF Mono',Monaco,Consolas,monospace }
+.detail-body pre { background:var(--bg); border:1px solid var(--border); border-radius:8px; padding:12px; overflow-x:auto; margin:12px 0 }
+.detail-body pre code { background:transparent; padding:0 }
+.detail-body ul, .detail-body ol { margin:8px 0 8px 24px }
+.detail-body li { margin:4px 0 }
+.detail-body a { color:var(--accent); text-decoration:none }
+.detail-body a:hover { text-decoration:underline }
+.detail-body blockquote { border-left:3px solid var(--accent); padding:6px 12px; margin:12px 0; color:var(--text-secondary); background:color-mix(in srgb,var(--accent) 4%,transparent) }
+.side-card { background:var(--bg-card); border:1px solid var(--border); border-radius:12px; padding:16px; margin-bottom:12px }
+.side-card h3 { font-size:12px; font-weight:600; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.06em; margin-bottom:10px }
+.side-card .item { display:block; padding:6px 0; font-size:13px; color:var(--text); border-bottom:1px solid var(--border) }
+.side-card .item:last-child { border-bottom:0 }
+.side-card .item a { color:var(--accent); text-decoration:none }
+.side-card .item a:hover { text-decoration:underline }
+.side-card .empty-side { font-size:12px; color:var(--text-muted); font-style:italic }
+.impl-ok { color:var(--success) }
+.impl-bad { color:var(--danger) }
+
+/* Neighborhood graph wrapper — sizing only; visual styles come from .eos-rg-wrap */
+.neighborhood { margin-bottom:16px }
+
+/* Sidebar item links */
+.side-card .item-link { display:flex; align-items:center; gap:8px; padding:8px 0; border-bottom:1px solid var(--border); text-decoration:none; color:var(--text); font-size:13px; cursor:pointer }
+.side-card .item-link:last-child { border-bottom:0 }
+.side-card .item-link:hover { color:var(--accent) }
+.side-card .item-link .mini-kind { font-size:10px; padding:2px 6px; border-radius:6px; font-weight:600; text-transform:uppercase; letter-spacing:0.04em; flex-shrink:0 }
+.side-card .item-link .item-slug { flex:1; word-break:break-word }
+.side-card .item-link.external { color:var(--text-muted); cursor:default }
+.side-card .item-link.external:hover { color:var(--text-muted) }
+.bl-count { font-size:11px; color:var(--text-muted); font-weight:400; text-transform:none; letter-spacing:0; margin-left:6px }
+.refs-text { font-size:12px; line-height:1.6; color:var(--text-secondary); padding:8px 0; border-bottom:1px solid var(--border); word-break:break-word }
+.refs-text:last-child { border-bottom:0 }
+.impl-card { padding:8px 0; border-bottom:1px solid var(--border); font-size:12px }
+.impl-card:last-child { border-bottom:0 }
+.impl-card-row { display:flex; align-items:flex-start; gap:6px }
+.impl-card-sym { font-family:'SF Mono',Monaco,Consolas,monospace; color:var(--accent); font-weight:600 }
+.impl-card-path { font-family:'SF Mono',Monaco,Consolas,monospace; font-size:11px; color:var(--text-muted); word-break:break-all; margin-top:2px; margin-left:18px }
+</style>
+</head>
+<body>
+<div id="kb-app">
+  <div class="hero">
+    <h1>Knowledge Base</h1>
+    <div class="desc" id="kb-desc">Loading…</div>
+  </div>
+
+  <!-- LIST VIEW -->
+  <div class="list-wrap" id="list-wrap">
+    <div class="toolbar">
+      <select id="filter-domain"><option value="">All domains</option></select>
+      <select id="filter-kind">
+        <option value="">All kinds</option>
+        <option value="concept">Concepts</option>
+        <option value="formula">Formulas</option>
+        <option value="standard">Standards</option>
+        <option value="case">Cases</option>
+        <option value="lesson">Lessons</option>
+      </select>
+      <input id="filter-q" type="search" placeholder="Filter notes…" />
+      <div class="spacer"></div>
+      <button class="detail-back" id="health-btn" style="margin-bottom:0">Health</button>
+      <span class="count" id="count"></span>
+    </div>
+    <div class="domain-grid" id="domain-grid"></div>
+    <div class="note-list" id="note-list"></div>
+  </div>
+
+  <!-- DETAIL VIEW -->
+  <div class="detail-wrap" id="detail-wrap">
+    <button class="detail-back" id="detail-back">← Back to list</button>
+    <div class="detail-head" id="detail-head"></div>
+    <div class="neighborhood eos-rg-wrap" id="neighborhood"></div>
+    <div class="detail-grid">
+      <div class="detail-body" id="detail-body"></div>
+      <div>
+        <div class="side-card">
+          <h3>References</h3>
+          <div id="detail-refs"></div>
+        </div>
+        <div class="side-card">
+          <h3>Outgoing links</h3>
+          <div id="detail-outgoing"></div>
+        </div>
+        <div class="side-card">
+          <h3>Implemented in</h3>
+          <div id="detail-impl"></div>
+        </div>
+        <div class="side-card">
+          <h3>Backlinks <span class="bl-count" id="bl-count"></span></h3>
+          <div id="detail-backlinks"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="/static/eos.js"></script>
+<script src="/static/eos-components.js"></script>
+<script>
+EOS.nav('kb');
+
+var STATE = { domains:[], notes:[], filter:{domain:'',kind:'',q:''}, detail:null };
+
+function esc(s){ return String(s||'').replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+async function loadAll(){
+  var [d, n] = await Promise.all([
+    fetch('/kb/api/domains').then(r=>r.json()),
+    fetch('/kb/api/notes').then(r=>r.json()),
+  ]);
+  STATE.domains = d.domains || [];
+  STATE.notes = n.notes || [];
+  document.getElementById('kb-desc').textContent =
+    STATE.notes.length + ' notes across ' + STATE.domains.length + ' domain' + (STATE.domains.length===1?'':'s');
+  renderDomains();
+  renderFilters();
+  renderNotes();
+  _route.init();
+}
+
+function renderDomains(){
+  var g = document.getElementById('domain-grid');
+  if(!STATE.domains.length){
+    g.innerHTML = '<div class="empty">No KB notes yet. Tag vault notes with <code>kb</code> + <code>domain: ...</code> + <code>kind: ...</code>.</div>';
+    return;
+  }
+  g.innerHTML = STATE.domains.map(d => {
+    var chips = Object.entries(d.by_kind).map(([k,v]) =>
+      '<span class="kind-chip">'+esc(k)+' '+v+'</span>').join('');
+    var active = STATE.filter.domain === d.domain ? ' active' : '';
+    return '<div class="domain-card'+active+'" data-domain="'+esc(d.domain)+'">' +
+           '<h3>'+esc(d.domain.replace(/-/g,' '))+'</h3>' +
+           '<div class="total">'+d.total+'</div>' +
+           '<div class="breakdown">'+chips+'</div></div>';
+  }).join('');
+  g.querySelectorAll('.domain-card').forEach(el => {
+    el.addEventListener('click', () => {
+      var d = el.dataset.domain;
+      STATE.filter.domain = (STATE.filter.domain === d) ? '' : d;
+      document.getElementById('filter-domain').value = STATE.filter.domain;
+      renderDomains(); renderNotes();
+    });
+  });
+}
+
+function renderFilters(){
+  var sel = document.getElementById('filter-domain');
+  var current = sel.value;
+  sel.innerHTML = '<option value="">All domains</option>' +
+    STATE.domains.map(d => '<option value="'+esc(d.domain)+'">'+esc(d.domain)+'</option>').join('');
+  sel.value = current;
+}
+
+function renderNotes(){
+  var list = document.getElementById('note-list');
+  var f = STATE.filter;
+  var q = (f.q||'').toLowerCase();
+  var rows = STATE.notes.filter(n =>
+    (!f.domain || n.domain === f.domain) &&
+    (!f.kind || n.kind === f.kind) &&
+    (!q || (n.slug+' '+(n.topic||'')+' '+n.name).toLowerCase().includes(q))
+  );
+  document.getElementById('count').textContent = rows.length + ' / ' + STATE.notes.length;
+  if(!rows.length){
+    list.innerHTML = '<div class="empty">No notes match.</div>';
+    return;
+  }
+  list.innerHTML = rows.map(n => {
+    var visual = n.domain === 'explore'
+      ? '<span class="note-visual" title="Has visual rendering">◊</span>' : '';
+    return '<div class="note-row" data-slug="'+esc(n.slug)+'">' +
+      '<span class="note-kind kind-'+esc(n.kind||'')+'">'+esc(n.kind||'?')+'</span>' +
+      '<span class="note-name">'+esc(n.slug.replace(/-/g,' '))+visual+'</span>' +
+      '<span class="note-domain">'+esc(n.domain)+'</span>' +
+    '</div>';
+  }).join('');
+  list.querySelectorAll('.note-row').forEach(el => {
+    el.addEventListener('click', () => _route.set(el.dataset.slug));
+  });
+}
+
+function kindColor(k){
+  switch((k||'').toLowerCase()){
+    case 'formula':  return 'var(--accent)';
+    case 'concept':  return 'var(--text-secondary)';
+    case 'standard': return 'var(--warning)';
+    case 'case':     return 'var(--success)';
+    case 'lesson':   return 'var(--danger)';
+    default:         return 'var(--text-muted)';
+  }
+}
+
+function linkRow(slug, kind, opts){
+  opts = opts || {};
+  var color = kindColor(kind);
+  var label = String(slug).replace(/-/g,' ');
+  var miniKind = kind ? '<span class="mini-kind" style="background:color-mix(in srgb,'+color+' 18%,transparent);color:'+color+'">'+esc(kind)+'</span>' : '<span class="mini-kind" style="background:color-mix(in srgb,var(--text-muted) 12%,transparent);color:var(--text-muted)">·</span>';
+  if(opts.external){
+    return '<div class="item-link external" title="Not in KB">'+miniKind+'<span class="item-slug">'+esc(label)+'</span></div>';
+  }
+  return '<a class="item-link" href="#'+encodeURIComponent(slug)+'" data-wiki="'+esc(slug)+'">'+miniKind+'<span class="item-slug">'+esc(label)+'</span></a>';
+}
+
+function bindWikiLinks(scopeId){
+  document.querySelectorAll('#'+scopeId+' a[data-wiki]').forEach(a => {
+    a.addEventListener('click', e => { e.preventDefault(); _route.set(a.dataset.wiki); });
+  });
+}
+
+function toGraphNode(o){
+  return {
+    label: String(o.slug||'').replace(/-/g,' ').slice(0,28),
+    color: kindColor(o.kind),
+    clickable: o.in_kb !== false,
+    data: o,
+  };
+}
+
+function renderNeighborhood(centerSlug, centerKind, outgoing, backlinks){
+  EOS_UI.radialGraph('neighborhood', {
+    center: { label: centerSlug.replace(/-/g,' '), color: kindColor(centerKind) },
+    outgoing: outgoing.map(toGraphNode),
+    incoming: backlinks.map(toGraphNode),
+    onNodeClick: function(n){ if(n.data && n.data.slug) _route.set(n.data.slug); },
+  });
+}
+
+async function showDetail(slug){
+  document.getElementById('list-wrap').classList.add('hide');
+  document.getElementById('detail-wrap').classList.add('show');
+  document.getElementById('detail-body').innerHTML = '<div class="empty">Loading…</div>';
+  document.getElementById('detail-head').innerHTML = '';
+  document.getElementById('neighborhood').innerHTML = '';
+  document.getElementById('detail-refs').innerHTML = '';
+  document.getElementById('detail-outgoing').innerHTML = '';
+  document.getElementById('detail-impl').innerHTML = '';
+  document.getElementById('detail-backlinks').innerHTML = '';
+  document.getElementById('bl-count').textContent = '';
+
+  var data;
+  try {
+    data = await fetch('/kb/api/notes/'+encodeURIComponent(slug)).then(r=>r.json());
+  } catch(e){ data = {error:String(e)}; }
+  if(data.error){
+    document.getElementById('detail-body').innerHTML = '<div class="empty">'+esc(data.error)+': <code>'+esc(slug)+'</code></div>';
+    return;
+  }
+  STATE.detail = data;
+  var p = data.properties || {};
+
+  // Detect notes that have an Explore visual rendering available.
+  // Two signals: domain == "explore", or body has both Diagram + Callouts sections.
+  var hasExplore = (p.domain === 'explore') ||
+    (/##\s+Diagram[\s\S]*?##\s+Callouts/.test(data.body||''));
+  var exploreTopic = p.topic || (data.name||slug).replace(/-/g,' ');
+  var exploreLink = hasExplore
+    ? ' <a class="explore-link" href="/explore/?topic='+encodeURIComponent(exploreTopic)+
+      '" title="Open this note as an interactive visual page">◊ Visual ↗</a>'
+    : '';
+
+  // Header
+  document.getElementById('detail-head').innerHTML =
+    '<h1>'+esc(data.name||slug)+exploreLink+'</h1>' +
+    '<div class="detail-meta">' +
+      (p.kind ? '<span class="note-kind kind-'+esc(p.kind)+'">'+esc(p.kind)+'</span>' : '') +
+      (p.domain ? '<span>'+esc(p.domain.replace(/-/g,' '))+'</span>' : '') +
+      (p.topic ? '<span>· '+esc(p.topic)+'</span>' : '') +
+    '</div>';
+
+  // Neighborhood graph
+  renderNeighborhood(slug, p.kind, data.outgoing||[], data.backlinks||[]);
+
+  // Body — KB wikilinks route to KB hash routes (not EOS.viewNote)
+  document.getElementById('detail-body').innerHTML = EOS_UI.renderMarkdown(data.body||'', {
+    wikiLink: function(target, label){
+      return '<a href="#'+encodeURIComponent(target)+'" data-wiki="'+esc(target)+'" class="kb-wiki">'+esc(label)+'</a>';
+    },
+  });
+  bindWikiLinks('detail-body');
+
+  // References (external citations — papers, books, standards)
+  var refs = p.references || [];
+  if(Array.isArray(refs) && refs.length){
+    document.getElementById('detail-refs').innerHTML = refs.map(r =>
+      '<div class="refs-text">'+esc(String(r))+'</div>'
+    ).join('');
+  } else {
+    document.getElementById('detail-refs').innerHTML = '<div class="empty-side">No external citations.</div>';
+  }
+
+  // Outgoing — combine `related` + `verified_against` + body wikilinks (deduped server-side)
+  var out = data.outgoing || [];
+  if(out.length){
+    document.getElementById('detail-outgoing').innerHTML = out.map(o =>
+      linkRow(o.slug, o.kind, {external: !o.in_kb})
+    ).join('');
+    bindWikiLinks('detail-outgoing');
+  } else {
+    document.getElementById('detail-outgoing').innerHTML = '<div class="empty-side">No outgoing links.</div>';
+  }
+
+  // Implemented_in — richer cards
+  var impl = data.implemented_in_status || [];
+  if(impl.length){
+    document.getElementById('detail-impl').innerHTML = impl.map(r => {
+      var symbol = r.symbol ? esc(r.symbol)+'()' : esc((r.path||'').split('/').pop());
+      var status = r.exists
+        ? '<span class="impl-ok" title="Path exists">✓</span>'
+        : '<span class="impl-bad" title="Path missing — likely renamed or moved">✗</span>';
+      return '<div class="impl-card">' +
+        '<div class="impl-card-row">'+status+' <span class="impl-card-sym">'+symbol+'</span></div>' +
+        '<div class="impl-card-path">'+esc(r.path||'(no path)')+'</div>' +
+      '</div>';
+    }).join('');
+  } else {
+    document.getElementById('detail-impl').innerHTML = '<div class="empty-side">No code references.</div>';
+  }
+
+  // Backlinks — clickable rows with kind chip
+  var bl = data.backlinks || [];
+  document.getElementById('bl-count').textContent = bl.length ? '('+bl.length+')' : '';
+  if(bl.length){
+    document.getElementById('detail-backlinks').innerHTML = bl.map(b =>
+      linkRow(b.slug, b.kind, {})
+    ).join('');
+    bindWikiLinks('detail-backlinks');
+  } else {
+    document.getElementById('detail-backlinks').innerHTML = '<div class="empty-side">No backlinks found.</div>';
+  }
+}
+
+function hideDetail(){
+  document.getElementById('list-wrap').classList.remove('hide');
+  document.getElementById('detail-wrap').classList.remove('show');
+}
+
+var _route = EOS_UI.hashRoute({
+  onShow: function(slug){ showDetail(slug); },
+  onHide: function(){ hideDetail(); },
+});
+
+document.getElementById('detail-back').addEventListener('click', () => _route.clear());
+document.getElementById('health-btn').addEventListener('click', async () => {
+  var r = await fetch('/kb/api/health').then(r=>r.json());
+  EOS_UI.modal({
+    title: 'KB Health',
+    body:
+      '<p style="margin-bottom:12px"><strong>Broken implemented_in:</strong> '+(r.broken_implemented_in||[]).length+'</p>' +
+      ((r.broken_implemented_in||[]).map(b => '<div style="font-size:12px;color:var(--danger)">✗ '+esc(b.slug)+' → <code>'+esc(b.ref)+'</code></div>').join('')) +
+      '<p style="margin:12px 0"><strong>Formulas missing verified_against:</strong> '+(r.formulas_missing_verification||[]).length+'</p>' +
+      ((r.formulas_missing_verification||[]).slice(0,10).map(b => '<div style="font-size:12px;color:var(--text-muted)">· '+esc(b.slug)+'</div>').join('')) +
+      '<p style="margin:12px 0"><strong>Orphans (no backlinks, no related):</strong> '+(r.orphans||[]).length+'</p>' +
+      ((r.orphans||[]).slice(0,10).map(b => '<div style="font-size:12px;color:var(--text-muted)">· '+esc(b.slug)+'</div>').join(''))
+  });
+});
+
+document.getElementById('filter-domain').addEventListener('change', e => { STATE.filter.domain = e.target.value; renderDomains(); renderNotes(); });
+document.getElementById('filter-kind').addEventListener('change', e => { STATE.filter.kind = e.target.value; renderNotes(); });
+document.getElementById('filter-q').addEventListener('input', e => { STATE.filter.q = e.target.value; renderNotes(); });
+
+loadAll();
+</script>
+</body>
+</html>

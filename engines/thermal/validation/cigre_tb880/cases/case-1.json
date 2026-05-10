@@ -1,0 +1,41 @@
+{
+  "id": "case-1",
+  "title": "Direct buried trefoil, single-point bonding (eddy currents only, no circulating)",
+  "source": "CIGRE TB 880 (2022) \u00c2\u00a74.6.3, 'Case 0-SPB'",
+  "input": {
+    "cable": {
+      "id": "tb880-132kv-630cu-xlpe",
+      "rated_voltage_kv": 132.0,
+      "n_conductors": 1,
+      "conductor_material": "Cu",
+      "conductor_csa_mm2": 630.0,
+      "conductor_dc_resistance_20c_ohm_per_km": 0.0283,
+      "insulation_material": "XLPE",
+      "insulation_max_temp_c": 90.0,
+      "sheath_material": "Al",
+      "geometry": {
+        "conductor_diameter": 0.0303,
+        "insulation_thickness": 0.0155,
+        "inner_semicon_thickness": 0.0015,
+        "outer_semicon_thickness": 0.0013,
+        "sheath_thickness": 0.0008,
+        "sheath_inner_diameter": 0.0669,
+        "overall_diameter": 0.0755
+      }
+    },
+    "installation": "direct_buried",
+    "bonding": "single_point",
+    "burial_depth_m": 1.0,
+    "spacing_mode": "trefoil",
+    "grouped_cables": 3,
+    "soil_thermal_resistivity_kmw": 1.0,
+    "ambient_temperature_c": 20.0,
+    "conductor_max_temp_c": 90.0,
+    "frequency_hz": 50.0
+  },
+  "expected": {
+    "ampacity_a": 886.1753,
+    "tolerance_a": 0.5
+  },
+  "notes": "TB 880 \u00c2\u00a74.6.3: single-point bonding eliminates circulating sheath currents; only eddy-current losses (lambda_1'' ~ 0.0173) remain. NOT in Table 4-2; bonding-variant validation case."
+}

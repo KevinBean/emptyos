@@ -37,37 +37,93 @@ CAPABILITIES = [
 
 APP_CATEGORIES = {
     "Infrastructure": [
-        "quick-action", "note", "task", "link", "tmpl", "run", "git",
+        "quick-action",
+        "note",
+        "task",
+        "link",
+        "tmpl",
+        "run",
+        "git",
     ],
     "Productivity": [
-        "search", "journal", "briefing", "expense", "contacts", "projects",
-        "assistant", "focus", "tracker", "review", "timeline", "nutrition",
-        "reader", "items", "places", "news-center", "quotes", "dictionary",
-        "healing", "media", "divination", "meditation",
-        "bookmarks", "habits", "quickref", "recipes", "reminders", "sleep",
-        "weather", "workout", "reflect",
+        "search",
+        "journal",
+        "briefing",
+        "expense",
+        "contacts",
+        "projects",
+        "assistant",
+        "focus",
+        "tracker",
+        "review",
+        "timeline",
+        "nutrition",
+        "reader",
+        "items",
+        "places",
+        "news-center",
+        "quotes",
+        "dictionary",
+        "healing",
+        "media",
+        "divination",
+        "meditation",
+        "bookmarks",
+        "habits",
+        "quickref",
+        "recipes",
+        "reminders",
+        "sleep",
+        "weather",
+        "workout",
+        "reflect",
     ],
     "Creative": [
-        "music-studio", "studio", "gpts", "publish", "fiction-engine",
-        "comfyui-app", "3d-studio",
+        "music-studio",
+        "studio",
+        "gpts",
+        "publish",
+        "fiction-engine",
+        "comfyui-app",
+        "3d-studio",
     ],
     "Voice & Language": [
-        "english", "speaking", "voice-review", "shadowing", "tts", "lessons",
+        "english",
+        "speaking",
+        "voice-review",
+        "shadowing",
+        "tts",
+        "lessons",
     ],
     "Career": [
-        "jobs", "github-connector",
+        "jobs",
+        "github-connector",
     ],
     "Engineering": [
-        "cable", "sheath-voltage",
+        "cable",
+        "sheath-voltage",
     ],
     "System": [
-        "settings", "system-log", "billing",
-        "app-analytics", "app-gen", "reactor", "model-bench",
-        "integrity", "finance", "hub", "web-analytics",
-        "plugin-gen", "release", "tests", "ai-queue",
+        "settings",
+        "system-log",
+        "billing",
+        "app-analytics",
+        "app-gen",
+        "reactor",
+        "model-bench",
+        "integrity",
+        "finance",
+        "hub",
+        "web-analytics",
+        "plugin-gen",
+        "release",
+        "tests",
+        "ai-queue",
     ],
     "Composition": [
-        "digest", "staff", "podcast",
+        "digest",
+        "staff",
+        "podcast",
     ],
 }
 
@@ -200,7 +256,9 @@ def generate_apps_md(apps: list[dict]) -> str:
     lines.append("    └── index.html")
     lines.append("```")
     lines.append("")
-    lines.append("Apps without `pages/` get an auto-generated UI. Apps with custom pages get hot-reloaded HTML — edit and refresh, no restart needed.")
+    lines.append(
+        "Apps without `pages/` get an auto-generated UI. Apps with custom pages get hot-reloaded HTML — edit and refresh, no restart needed."
+    )
     lines.append("")
     return "\n".join(lines)
 
@@ -251,77 +309,79 @@ def generate_plugins_md(plugins: list[dict]) -> str:
         ptype = plugin_types.get(pid, "Service")
         lines.append(f"| **{pid}** | {ptype} | {desc} |")
 
-    lines.extend([
-        "",
-        "## How Enhancers Work",
-        "",
-        "When the Ollama plugin starts, it registers itself as a provider for the `think` capability at priority 0 (highest). The capability's provider chain becomes:",
-        "",
-        "```",
-        "think: ollama → openai → claude-cli → human",
-        "```",
-        "",
-        "If Ollama crashes mid-request, the capability automatically falls back to OpenAI. Apps never see the failure — they just get a response.",
-        "",
-        "```python",
-        "# This code never changes regardless of which providers are available",
-        'result = await self.think("Analyze this code", domain="code")',
-        "```",
-        "",
-        "## Plugin Configuration",
-        "",
-        "Plugins are configured in `emptyos.toml`:",
-        "",
-        "```toml",
-        "[plugins.ollama]",
-        'url = "http://localhost:11434"',
-        "",
-        "[plugins.comfyui]",
-        'url = "http://127.0.0.1:8188"',
-        'launcher = "D:/ComfyUI/run.bat"',
-        "",
-        "[plugins.telegram]",
-        'token = "bot-token-here"',
-        "allowed_users = [123456789]",
-        "```",
-        "",
-        "Plugins with a `launcher` config can auto-start their external service when EmptyOS boots.",
-        "",
-        "## Auto-Start Pattern",
-        "",
-        "External services use embedded runtimes with headless launch:",
-        "",
-        "```python",
-        "# Plugin auto_start() — no visible windows",
-        "subprocess.Popen(",
-        '    [python_exe, "-s", main_py, "--flags"],',
-        "    cwd=launcher_dir,",
-        "    creationflags=subprocess.CREATE_NO_WINDOW,",
-        "    stdout=subprocess.DEVNULL,",
-        "    stderr=subprocess.DEVNULL,",
-        ")",
-        "```",
-        "",
-        "The health plugin polls each service endpoint until ready, with a 60-second timeout.",
-        "",
-        "## Writing a Plugin",
-        "",
-        "```python",
-        "class MyPlugin(BasePlugin):",
-        "    async def on_start(self):",
-        "        # Register as a service",
-        '        self.register_service("my_service", self)',
-        "        ",
-        "        # Or inject into a capability (enhancer pattern)",
-        '        self.inject_provider("think", MyProvider(), priority=0)',
-        "    ",
-        "    async def on_stop(self):",
-        "        pass",
-        "```",
-        "",
-        "Place in `plugins/my-plugin/` with a `plugin.py` and manifest. The plugin loader discovers it automatically.",
-        "",
-    ])
+    lines.extend(
+        [
+            "",
+            "## How Enhancers Work",
+            "",
+            "When the Ollama plugin starts, it registers itself as a provider for the `think` capability at priority 0 (highest). The capability's provider chain becomes:",
+            "",
+            "```",
+            "think: ollama → openai → claude-cli → human",
+            "```",
+            "",
+            "If Ollama crashes mid-request, the capability automatically falls back to OpenAI. Apps never see the failure — they just get a response.",
+            "",
+            "```python",
+            "# This code never changes regardless of which providers are available",
+            'result = await self.think("Analyze this code", domain="code")',
+            "```",
+            "",
+            "## Plugin Configuration",
+            "",
+            "Plugins are configured in `emptyos.toml`:",
+            "",
+            "```toml",
+            "[plugins.ollama]",
+            'url = "http://localhost:11434"',
+            "",
+            "[plugins.comfyui]",
+            'url = "http://127.0.0.1:8188"',
+            'launcher = "D:/ComfyUI/run.bat"',
+            "",
+            "[plugins.telegram]",
+            'token = "bot-token-here"',
+            "allowed_users = [123456789]",
+            "```",
+            "",
+            "Plugins with a `launcher` config can auto-start their external service when EmptyOS boots.",
+            "",
+            "## Auto-Start Pattern",
+            "",
+            "External services use embedded runtimes with headless launch:",
+            "",
+            "```python",
+            "# Plugin auto_start() — no visible windows",
+            "subprocess.Popen(",
+            '    [python_exe, "-s", main_py, "--flags"],',
+            "    cwd=launcher_dir,",
+            "    creationflags=subprocess.CREATE_NO_WINDOW,",
+            "    stdout=subprocess.DEVNULL,",
+            "    stderr=subprocess.DEVNULL,",
+            ")",
+            "```",
+            "",
+            "The health plugin polls each service endpoint until ready, with a 60-second timeout.",
+            "",
+            "## Writing a Plugin",
+            "",
+            "```python",
+            "class MyPlugin(BasePlugin):",
+            "    async def on_start(self):",
+            "        # Register as a service",
+            '        self.register_service("my_service", self)',
+            "        ",
+            "        # Or inject into a capability (enhancer pattern)",
+            '        self.inject_provider("think", MyProvider(), priority=0)',
+            "    ",
+            "    async def on_stop(self):",
+            "        pass",
+            "```",
+            "",
+            "Place in `plugins/my-plugin/` with a `plugin.py` and manifest. The plugin loader discovers it automatically.",
+            "",
+        ]
+    )
     return "\n".join(lines)
 
 
@@ -352,39 +412,41 @@ def generate_capabilities_md() -> str:
     for name, purpose, providers in CAPABILITIES:
         lines.append(f"| **{name}** | {purpose} | {providers} |")
 
-    lines.extend([
-        "",
-        "## Provider Chains",
-        "",
-        "Providers are tried in priority order. Plugins inject high-priority providers at startup (enhancer pattern).",
-        "",
-        "```",
-        "think: ollama → openai → claude-cli → human",
-        "read:  filesystem → human",
-        "write: filesystem → human",
-        "search: grep → human",
-        "speak: voice-api (kokoro → edge-tts → xtts)",
-        "listen: voice-api (whisper)",
-        "draw:  comfyui",
-        "```",
-        "",
-        "If a plugin is absent, its provider simply isn't in the chain. Apps never know which provider answered — they just call `self.think()` or `self.search()`.",
-        "",
-        "## Domain Routing",
-        "",
-        "The `think` capability supports domain-specific routing. Different domains can use different models:",
-        "",
-        "```python",
-        "# Uses the domain-specific provider chain for 'code'",
-        'result = await self.think("Analyze this", domain="code")',
-        "",
-        "# Default chain",
-        'result = await self.think("Summarize this article")',
-        "```",
-        "",
-        "Domains are configured in `emptyos.toml` under `[capabilities.think.domains]`.",
-        "",
-    ])
+    lines.extend(
+        [
+            "",
+            "## Provider Chains",
+            "",
+            "Providers are tried in priority order. Plugins inject high-priority providers at startup (enhancer pattern).",
+            "",
+            "```",
+            "think: ollama → openai → claude-cli → human",
+            "read:  filesystem → human",
+            "write: filesystem → human",
+            "search: grep → human",
+            "speak: voice-api (kokoro → edge-tts → xtts)",
+            "listen: voice-api (whisper)",
+            "draw:  comfyui",
+            "```",
+            "",
+            "If a plugin is absent, its provider simply isn't in the chain. Apps never know which provider answered — they just call `self.think()` or `self.search()`.",
+            "",
+            "## Domain Routing",
+            "",
+            "The `think` capability supports domain-specific routing. Different domains can use different models:",
+            "",
+            "```python",
+            "# Uses the domain-specific provider chain for 'code'",
+            'result = await self.think("Analyze this", domain="code")',
+            "",
+            "# Default chain",
+            'result = await self.think("Summarize this article")',
+            "```",
+            "",
+            "Domains are configured in `emptyos.toml` under `[capabilities.think.domains]`.",
+            "",
+        ]
+    )
     return "\n".join(lines)
 
 
@@ -407,8 +469,10 @@ def fetch_integrity_audit() -> dict | None:
     """
     try:
         import urllib.request
+
         with urllib.request.urlopen(
-            "http://localhost:9000/integrity/api/audit", timeout=3,
+            "http://localhost:9000/integrity/api/audit",
+            timeout=3,
         ) as resp:
             data = json.loads(resp.read())
             if isinstance(data, dict) and "total_score" in data:
@@ -420,7 +484,6 @@ def fetch_integrity_audit() -> dict | None:
 
 def build_stats_block(apps: list[dict], plugins: list[dict], endpoints: int) -> str:
     total_apps = len(apps)
-    ui_count = sum(1 for a in apps if a.get("_has_ui"))
     plugin_count = len(plugins)
     cap_count = len(CAPABILITIES)
 
@@ -431,34 +494,15 @@ def build_stats_block(apps: list[dict], plugins: list[dict], endpoints: int) -> 
             file=sys.stderr,
         )
 
-    lines = [
-        f"## {total_apps} Apps, One Kernel",
-        "",
-        (
-            f"Capture, journal, search, expense tracking, project management, "
-            f"AI chat, music production, voice practice — all built as equal "
-            f"first-class apps sharing the same manifest format and lifecycle. "
-            f"{ui_count} with custom UIs, {endpoints} API endpoints, "
-            f"{plugin_count} plugins, {cap_count} capabilities."
-        ),
-    ]
+    pct = audit.get("pct", 0) if audit else None
 
-    if audit:
-        pct = audit.get("pct", 0)
-        total = audit.get("total_score", 0)
-        max_score = audit.get("max_score", 0)
-        dim_count = len(audit.get("dimensions", {}))
-        lines += [
-            "",
-            f"**System integrity: {total}/{max_score} ({pct}%)** across {dim_count} dimensions — self-audited by the integrity app. Score updates as the system is extended or refactored.",
-        ]
+    metric_parts = [f"{total_apps} Apps"]
+    if pct is not None:
+        metric_parts.append(f"{pct}% Integrity")
+    metric_parts += [f"{cap_count} Capabilities", f"{plugin_count} Plugins"]
+    metric_line = "<!-- metrics: " + " · ".join(metric_parts) + " -->"
 
-    lines += [
-        "",
-        f"_Generated {date.today().isoformat()} from live system state._",
-    ]
-
-    return "\n".join(lines)
+    return metric_line + f"\n\n_Generated {date.today().isoformat()} from live system state._"
 
 
 def update_architecture_counts(content: str, app_count: int) -> str:
@@ -479,9 +523,12 @@ def main():
     parser = argparse.ArgumentParser(description="Generate EmptyOS site pages")
     parser.add_argument("--dry-run", action="store_true", help="Show changes without writing")
     parser.add_argument("--vault", type=str, help="Vault path override")
-    parser.add_argument("--include-personal", action="store_true",
-                        help="Scan apps/personal/ too (default: community apps only — "
-                             "the public site should not list machine-specific apps)")
+    parser.add_argument(
+        "--include-personal",
+        action="store_true",
+        help="Scan apps/personal/ too (default: community apps only — "
+        "the public site should not list machine-specific apps)",
+    )
     args = parser.parse_args()
 
     vault = resolve_vault_path(args.vault)

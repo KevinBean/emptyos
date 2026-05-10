@@ -12,10 +12,10 @@ from pathlib import Path
 
 from emptyos.sdk import parse_frontmatter, web_route
 
-
 # ------------------------------------------------------------------
 # Grouped / Stats / Portfolio Health
 # ------------------------------------------------------------------
+
 
 @web_route("GET", "/api/grouped")
 async def api_grouped(self, request):
@@ -130,6 +130,7 @@ async def api_portfolio_health(self, request):
 # Activity / Timeline / Calendar
 # ------------------------------------------------------------------
 
+
 @web_route("GET", "/api/projects/{id}/activity")
 async def api_activity(self, request):
     """90-day edit activity heatmap data for a project."""
@@ -187,13 +188,21 @@ async def api_timeline(self, request):
                 end = (s + timedelta(days=90)).isoformat()
             except Exception:
                 end = today
-        items.append({
-            "id": p["id"], "name": p["name"], "status": p["status"],
-            "type": p.get("type", "personal"), "stage": p.get("stage", ""),
-            "start": start, "end": end, "progress": p.get("progress", 0),
-            "open_tasks": p.get("open_tasks", 0), "done_tasks": p.get("done_tasks", 0),
-            "overdue": p.get("overdue", False),
-        })
+        items.append(
+            {
+                "id": p["id"],
+                "name": p["name"],
+                "status": p["status"],
+                "type": p.get("type", "personal"),
+                "stage": p.get("stage", ""),
+                "start": start,
+                "end": end,
+                "progress": p.get("progress", 0),
+                "open_tasks": p.get("open_tasks", 0),
+                "done_tasks": p.get("done_tasks", 0),
+                "overdue": p.get("overdue", False),
+            }
+        )
     # Compute date range
     all_dates = [i["start"] for i in items] + [i["end"] for i in items]
     all_dates = [d for d in all_dates if d]
@@ -209,9 +218,19 @@ async def api_calendar(self, request):
     projects = await self.list_projects()
     calendar: dict[str, list[dict]] = {}
     for p in projects:
-        if p["status"] in ("archived", "completed"):
+        # YAML frontmatter without a value parses to None, so .get(key, "") still
+        # returns None — coerce explicitly. Same pattern across every field.
+        status = p.get("status") or ""
+        pid = p.get("id") or ""
+        name = p.get("name") or pid
+        ptype = p.get("type") or "personal"
+        deadline = p.get("deadline") or ""
+
+        if status in ("archived", "completed"):
             continue
-        target = self._find_project_file(p["id"])
+        if not pid:
+            continue
+        target = self._find_project_file(pid)
         if not target:
             continue
         try:
@@ -221,17 +240,25 @@ async def api_calendar(self, request):
         for line in content.split("\n"):
             m = re.search(r"- \[ \] (.+?)\s*\U0001f4c5\s*(\d{4}-\d{2}-\d{2})", line)
             if m and m.group(2).startswith(month):
-                calendar.setdefault(m.group(2), []).append({
-                    "project": p["name"], "project_id": p["id"],
-                    "task": m.group(1).strip(), "type": p.get("type", "personal"),
-                })
+                calendar.setdefault(m.group(2), []).append(
+                    {
+                        "project": name,
+                        "project_id": pid,
+                        "task": m.group(1).strip(),
+                        "type": ptype,
+                    }
+                )
         # Also add project deadline
-        if p.get("deadline", "").startswith(month):
-            calendar.setdefault(p["deadline"], []).append({
-                "project": p["name"], "project_id": p["id"],
-                "task": "Deadline: " + p["name"], "type": p.get("type", "personal"),
-                "is_deadline": True,
-            })
+        if deadline.startswith(month):
+            calendar.setdefault(deadline, []).append(
+                {
+                    "project": name,
+                    "project_id": pid,
+                    "task": "Deadline: " + name,
+                    "type": ptype,
+                    "is_deadline": True,
+                }
+            )
     return {"calendar": calendar, "month": month}
 
 
@@ -260,25 +287,37 @@ async def api_docs(self, request):
         docs = []
         for f in sorted(proj_dir.rglob("*.md")):
             # Skip hidden dirs
-            if any(p.startswith(".") or p.startswith("_") for p in f.relative_to(proj_dir).parts[:-1]):
+            if any(
+                p.startswith(".") or p.startswith("_") for p in f.relative_to(proj_dir).parts[:-1]
+            ):
                 continue
             try:
                 stat = f.stat()
                 rel = str(f.relative_to(vault)).replace("\\", "/")
-                docs.append({
-                    "name": f.name,
-                    "path": rel,
-                    "rel_path": str(f.relative_to(proj_dir)).replace("\\", "/"),
-                    "size": stat.st_size,
-                    "modified": datetime.fromtimestamp(stat.st_mtime).strftime("%Y-%m-%d %H:%M"),
-                    "is_main": f.name.lower() in main_names,
-                })
+                docs.append(
+                    {
+                        "name": f.name,
+                        "path": rel,
+                        "rel_path": str(f.relative_to(proj_dir)).replace("\\", "/"),
+                        "size": stat.st_size,
+                        "modified": datetime.fromtimestamp(stat.st_mtime).strftime(
+                            "%Y-%m-%d %H:%M"
+                        ),
+                        "is_main": f.name.lower() in main_names,
+                    }
+                )
             except Exception:
                 continue
         # Sort: main file first, then by modified desc
         main = [d for d in docs if d["is_main"]]
-        rest = sorted([d for d in docs if not d["is_main"]], key=lambda d: d["modified"], reverse=True)
-        return {"docs": main + rest, "is_directory": True, "project_dir": str(proj_dir.relative_to(vault)).replace("\\", "/")}
+        rest = sorted(
+            [d for d in docs if not d["is_main"]], key=lambda d: d["modified"], reverse=True
+        )
+        return {
+            "docs": main + rest,
+            "is_directory": True,
+            "project_dir": str(proj_dir.relative_to(vault)).replace("\\", "/"),
+        }
 
     # File-based project: just the single project file
     f = self._find_project_file(project_id)
@@ -289,14 +328,21 @@ async def api_docs(self, request):
                 rel = str(f.relative_to(vault)).replace("\\", "/")
             except ValueError:
                 rel = f.name  # fallback if not under vault
-            return {"docs": [{
-                "name": f.name,
-                "path": rel,
-                "rel_path": f.name,
-                "size": stat.st_size,
-                "modified": datetime.fromtimestamp(stat.st_mtime).strftime("%Y-%m-%d %H:%M"),
-                "is_main": True,
-            }], "is_directory": False}
+            return {
+                "docs": [
+                    {
+                        "name": f.name,
+                        "path": rel,
+                        "rel_path": f.name,
+                        "size": stat.st_size,
+                        "modified": datetime.fromtimestamp(stat.st_mtime).strftime(
+                            "%Y-%m-%d %H:%M"
+                        ),
+                        "is_main": True,
+                    }
+                ],
+                "is_directory": False,
+            }
         except Exception as e:
             return {"docs": [], "is_directory": False, "error": str(e)}
 
@@ -308,7 +354,7 @@ async def api_create_doc(self, request):
     """Create a new document within a project directory."""
     project_id = request.path_params.get("id", "")
     data = await request.json()
-    title = data.get("title", "").strip()
+    title = (data.get("title") or "").strip()
     template = data.get("template", "blank")
 
     if not title:
@@ -316,10 +362,12 @@ async def api_create_doc(self, request):
 
     proj_dir = self._find_project_dir(project_id)
     if not proj_dir:
-        return {"error": "Only directory-based projects support creating docs. This is a single-file project."}
+        return {
+            "error": "Only directory-based projects support creating docs. This is a single-file project."
+        }
 
     # Sanitize filename
-    safe_name = re.sub(r'[<>:"/\\|?*]', '', title).strip()
+    safe_name = re.sub(r'[<>:"/\\|?*]', "", title).strip()
     if not safe_name:
         return {"error": "Invalid title"}
     filename = safe_name + ".md"
@@ -344,6 +392,7 @@ async def api_create_doc(self, request):
 # Calculations / Dev Status
 # ------------------------------------------------------------------
 
+
 @web_route("GET", "/api/projects/{id}/calculations")
 async def api_calculations(self, request):
     """List saved calculation results for a project."""
@@ -356,13 +405,15 @@ async def api_calculations(self, request):
         try:
             data = json.loads(f.read_text(encoding="utf-8"))
             parts = f.stem.split("-", 2)  # timestamp-app-method
-            results.append({
-                "file": f.name,
-                "timestamp": parts[0] if parts else "",
-                "app": parts[1] if len(parts) > 1 else "",
-                "method": parts[2] if len(parts) > 2 else "",
-                "summary": _summarize_calc(data),
-            })
+            results.append(
+                {
+                    "file": f.name,
+                    "timestamp": parts[0] if parts else "",
+                    "app": parts[1] if len(parts) > 1 else "",
+                    "method": parts[2] if len(parts) > 2 else "",
+                    "summary": _summarize_calc(data),
+                }
+            )
         except Exception:
             continue
     return {"calculations": results}
@@ -394,10 +445,13 @@ async def api_dev_status(self, request):
 
 # --- Helpers ---
 
+
 def _summarize_calc(data: dict) -> str:
     """One-line summary of a calculation result."""
     if "max_tension_kN" in data:
-        return f"Tension: {data['max_tension_kN']} kN, SWP: {'OK' if data.get('swp_ok') else 'FAIL'}"
+        return (
+            f"Tension: {data['max_tension_kN']} kN, SWP: {'OK' if data.get('swp_ok') else 'FAIL'}"
+        )
     if "algorithms" in data:
         return f"{len(data['algorithms'])} algorithms compared"
     if "error" in data:
@@ -408,6 +462,7 @@ def _summarize_calc(data: dict) -> str:
 # ------------------------------------------------------------------
 # Metadata updates — tags / deadline / description frontmatter edit
 # ------------------------------------------------------------------
+
 
 @web_route("POST", "/api/projects/{id}/meta")
 async def api_update_meta(self, request):
@@ -452,7 +507,9 @@ async def api_update_meta(self, request):
     updated = {}
     if "tags" in data:
         raw = data["tags"]
-        items = [t.strip().lstrip("#") for t in (raw if isinstance(raw, list) else str(raw).split(","))]
+        items = [
+            t.strip().lstrip("#") for t in (raw if isinstance(raw, list) else str(raw).split(","))
+        ]
         fm_block = _set_list(fm_block, "tags", items)
         updated["tags"] = [i for i in items if i]
     if "deadline" in data:
@@ -464,7 +521,7 @@ async def api_update_meta(self, request):
         fm_block = _set_scalar(fm_block, "description", v)
         updated["description"] = v
 
-    content = "---" + fm_block.rstrip() + "\n---" + content[fm_end + 3:]
+    content = "---" + fm_block.rstrip() + "\n---" + content[fm_end + 3 :]
     target.write_text(content, encoding="utf-8")
     await self.emit("projects:refreshed", {"id": project_id})
     return {"ok": True, "updated": updated}

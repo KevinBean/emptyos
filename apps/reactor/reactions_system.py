@@ -8,7 +8,6 @@ from emptyos.sdk import on_event
 
 
 class SystemReactionsMixin:
-
     # ── Vault ──
 
     @on_event("vault:changed")
@@ -92,7 +91,7 @@ class SystemReactionsMixin:
             msg = f"😔 You logged feeling {mood}. Consider a break or grounding exercise."
             await self._notify(msg, priority="info")
             await self._telegram(msg)
-            self._log_action("journal:entry", f"low mood support sent")
+            self._log_action("journal:entry", "low mood support sent")
 
     @on_event("journal:created")
     async def on_journal_created(self, event):
@@ -149,10 +148,13 @@ class SystemReactionsMixin:
         self._log_action("staff:shift_completed", f"agent shift: {agent}")
         if actions and agent == "growth-agent":
             try:
-                await self.call_app("journal", "_add_entry",
+                await self.call_app(
+                    "journal",
+                    "_add_entry",
                     d=_dt.date.today(),
                     text=f"Growth Agent: {actions} action(s) taken",
-                    mood="good")
+                    mood="good",
+                )
             except Exception:
                 pass
 
@@ -166,7 +168,9 @@ class SystemReactionsMixin:
         if weak:
             msg = f"🧬 Weak lifecycle verbs: {', '.join(weak)}"
             self._log_action("integrity:verb_health", msg)
-            await self._journal_ripple("🧬", f"Verb health alert: {', '.join(weak)} need strengthening")
+            await self._journal_ripple(
+                "🧬", f"Verb health alert: {', '.join(weak)} need strengthening"
+            )
 
     @on_event("reflect:insight")
     async def on_reflect_insight(self, event):
@@ -188,8 +192,12 @@ class SystemReactionsMixin:
         self._log_action("system:reflected", f"health={health}, {insights} insights, {mods} mods")
         await self._journal_ripple("🪞", f"System reflected: {health} — {insights} insights")
         if health == "declining":
-            await self._notify(f"System health declining — {insights} insights found", priority="warning")
-            await self._telegram(f"⚠️ System health declining. {insights} insights, {mods} self-modifications applied.")
+            await self._notify(
+                f"System health declining — {insights} insights found", priority="warning"
+            )
+            await self._telegram(
+                f"⚠️ System health declining. {insights} insights, {mods} self-modifications applied."
+            )
 
     @on_event("settings:changed")
     async def on_settings_changed(self, event):
@@ -219,7 +227,9 @@ class SystemReactionsMixin:
     @on_event("model-bench:agent_run_completed")
     async def on_model_bench_agent(self, event):
         turns = event.data.get("turns")
-        self._log_action("model-bench:agent_run_completed", f"turns: {turns}" if turns is not None else "")
+        self._log_action(
+            "model-bench:agent_run_completed", f"turns: {turns}" if turns is not None else ""
+        )
 
     @on_event("model-bench:chain_applied")
     async def on_model_bench_chain(self, event):
@@ -268,7 +278,10 @@ class SystemReactionsMixin:
 
     @on_event("link:scan_completed")
     async def on_link_scan(self, event):
-        self._log_action("link:scan_completed", f"notes: {event.data.get('total_notes', 0)}, orphans: {event.data.get('orphan_count', 0)}")
+        self._log_action(
+            "link:scan_completed",
+            f"notes: {event.data.get('total_notes', 0)}, orphans: {event.data.get('orphan_count', 0)}",
+        )
 
     @on_event("system-log:feed_viewed")
     async def on_syslog_feed(self, event):
@@ -326,7 +339,9 @@ class SystemReactionsMixin:
 
     @on_event("cable-pulling:calculated")
     async def on_cable_calc(self, event):
-        self._log_action("cable-pulling:calculated", f"tension: {event.data.get('max_tension_kN', 0)} kN")
+        self._log_action(
+            "cable-pulling:calculated", f"tension: {event.data.get('max_tension_kN', 0)} kN"
+        )
 
     @on_event("cable:rating_calculated")
     async def on_cable_rating(self, event):

@@ -38,6 +38,28 @@ class TestSearchAPI:
         data = assert_ok(resp)
         assert isinstance(data, dict)
 
+    def test_embed_mode_returns_scored_results(self, http_client):
+        """mode=embed returns each result with a `score` field — distinct
+        from grep mode which returns bare paths. Embeddings may fall back
+        to grep when OPENAI_API_KEY is missing; in that case `mode` is
+        reported as 'grep' so analytics stays honest."""
+        resp = http_client.get("/search/api/search?q=cable+thermal+modeling&mode=embed&top=3")
+        data = assert_ok(resp)
+        assert data.get("query") == "cable thermal modeling"
+        assert data.get("mode") in ("embed", "grep")
+        results = data.get("results") or []
+        # Either we got hits or we didn't — but if we did, each must be a
+        # {path, score} dict (not a bare string).
+        for r in results:
+            assert isinstance(r, dict)
+            assert "path" in r and "score" in r
+            assert isinstance(r["score"], (int, float))
+
+    def test_embed_mode_empty_query(self, http_client):
+        """mode=embed with an empty query short-circuits cleanly."""
+        data = assert_ok(http_client.get("/search/api/search?q=&mode=embed"))
+        assert data.get("results") == []
+
 
 @pytest.mark.interactive
 class TestSearchUI:

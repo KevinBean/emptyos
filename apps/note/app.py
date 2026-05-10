@@ -2,17 +2,29 @@
 
 from __future__ import annotations
 
-import os
 from datetime import date
 from pathlib import Path
-
-import json
 
 from emptyos.sdk import BaseApp, cli_command, parse_llm_json, web_route
 
 
-class NoteApp(BaseApp):
+NOTE_TAG_SYSTEM = (
+    "You suggest tags for a note. Given the note's title and an excerpt of "
+    "its content, return a JSON array of 3 to 5 short tag strings only.\n\n"
+    "Tag conventions:\n"
+    "- Lowercase, kebab-case (e.g. \"design-language\", \"prompt-engineering\").\n"
+    "- Single concept per tag — never a phrase.\n"
+    "- Prefer reusable category tags (\"meeting-notes\", \"refactor\") over "
+    "  one-off project names that won't appear on other notes.\n\n"
+    "Do NOT:\n"
+    "- Wrap the JSON array in markdown fences or any prose.\n"
+    "- Return an object — return a bare JSON array.\n"
+    "- Include a leading '#' on tags.\n"
+    "- Repeat the title verbatim as a tag."
+)
 
+
+class NoteApp(BaseApp):
     def _notes_dir(self) -> Path:
         p = self.kernel.config.get("notes.path", "")
         return Path(p) if p else self.kernel.config.data_dir / "notes"
@@ -40,11 +52,17 @@ class NoteApp(BaseApp):
                 return path
         return results[0].get("path", results[0]) if isinstance(results[0], dict) else results[0]
 
-    async def create(self, title: str, folder: str = "", tags: list[str] | None = None, content: str = "") -> str:
+    async def create(
+        self, title: str, folder: str = "", tags: list[str] | None = None, content: str = ""
+    ) -> str:
         """Create a new note with frontmatter."""
         path = self._resolve(title, folder)
         tag_str = "\n".join(f"  - {t}" for t in (tags or []))
-        frontmatter = f"---\ncreated: {date.today()}\ntags:\n{tag_str}\n---\n\n" if tag_str else f"---\ncreated: {date.today()}\n---\n\n"
+        frontmatter = (
+            f"---\ncreated: {date.today()}\ntags:\n{tag_str}\n---\n\n"
+            if tag_str
+            else f"---\ncreated: {date.today()}\n---\n\n"
+        )
         body = f"# {title}\n\n{content}"
         await self.write(str(path), frontmatter + body)
         await self.emit("note:created", {"path": str(path), "title": title})
@@ -74,18 +92,18 @@ class NoteApp(BaseApp):
         if not search_dir.exists():
             return []
         return sorted(
-            str(p.relative_to(base))
-            for p in search_dir.rglob("*.md")
-            if not p.name.startswith(".")
+            str(p.relative_to(base)) for p in search_dir.rglob("*.md") if not p.name.startswith(".")
         )
 
     async def voice_create_note(self, title: str, body: str) -> dict:
         """Voice intent — create a titled note with body content in the default folder."""
-        path = await self.create(title.strip(), folder="", tags=None, content=body or "")
+        await self.create(title.strip(), folder="", tags=None, content=body or "")
         return {"say": f"Note saved: {title.strip()}."}
 
     @cli_command("note", help="Manage notes")
-    async def cmd_note(self, action: str = "list", title: str = "", folder: str = "", text: str = ""):
+    async def cmd_note(
+        self, action: str = "list", title: str = "", folder: str = "", text: str = ""
+    ):
         if action == "create" and title:
             path = await self.create(title, folder)
             self.print_rich(f"[green]Created:[/green] {path}")
@@ -102,7 +120,9 @@ class NoteApp(BaseApp):
             if len(notes) > 30:
                 print(f"  ... and {len(notes) - 30} more")
         else:
-            self.print_rich("[dim]Usage: eos note {create|read|append|list} [title] [--folder F] [--text T][/dim]")
+            self.print_rich(
+                "[dim]Usage: eos note {create|read|append|list} [title] [--folder F] [--text T][/dim]"
+            )
 
     @web_route("GET", "/api/list")
     async def api_list(self, request):
@@ -116,11 +136,13 @@ class NoteApp(BaseApp):
             sub = parts[0] if len(parts) == 2 else ""
             name = parts[-1]
             title = name[:-3] if name.endswith(".md") else name
-            out.append({
-                "title": title,
-                "path": str(base / rel),
-                "folder": sub,
-            })
+            out.append(
+                {
+                    "title": title,
+                    "path": str(base / rel),
+                    "folder": sub,
+                }
+            )
         return out
 
     @web_route("GET", "/api/get")
@@ -141,7 +163,9 @@ class NoteApp(BaseApp):
         title = data.get("title", "").strip()
         if not title:
             return {"error": "title is required"}
-        path = await self.create(title, data.get("folder", ""), data.get("tags"), data.get("content", ""))
+        path = await self.create(
+            title, data.get("folder", ""), data.get("tags"), data.get("content", "")
+        )
         return {"ok": True, "path": path}
 
     @web_route("POST", "/api/append")
@@ -163,9 +187,10 @@ class NoteApp(BaseApp):
         if not title and not content:
             return {"error": "title or content required"}
         result = await self.think(
-            f"Suggest 3-5 short tags for this note. Return JSON array of strings only.\n\n"
             f"Title: {title}\nContent: {content[:300]}",
-            domain="text", temperature=0.3,
+            system=NOTE_TAG_SYSTEM,
+            domain="text",
+            temperature=0.3,
         )
         tags = parse_llm_json(result, fallback=[])
         if not isinstance(tags, list):

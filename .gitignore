@@ -4,6 +4,7 @@ emptyos.toml
 .claude/settings.local.json
 .claude/scheduled_tasks.lock
 data/
+!engines/thermal/data/
 services/voice-api/models/
 __pycache__/
 *.pyc
@@ -22,6 +23,14 @@ results/
 apps/test-app/
 .playwright-mcp/
 *.wav
+
+# Dogfood-agent throwaway vault + config (personal, never ships).
+# The .example template IS committed so public users can bootstrap a
+# parallel daemon on :9001 from a fresh clone. `dogfood/*` (not `dogfood/`)
+# is required so the negation below can re-include a single file — git
+# won't descend into a directory wholly ignored by the directory form.
+dogfood/*
+!dogfood/emptyos.toml.example
 
 # Personal apps & engines (not shipped with core OS)
 apps/personal/
@@ -72,6 +81,16 @@ boot.vbs
 
 # Playwright snapshot dumps
 rating-snapshot.yml
+
+# Claude Code worktrees (local working copies, machine-specific)
+.claude/worktrees/
+
+# Personal persona definitions for the dogfood-agent app. The app code +
+# the generic `new-user.md` persona ship; user-specific personas (with
+# real names, employers, life context) stay local. Drop additional .md
+# files into apps/dogfood-agent/personas/ — they'll be picked up by the
+# loader without being tracked.
+apps/dogfood-agent/personas/kevin-weekday.md
 
 # Local scratch dir for dogfood runs, one-off drivers, transcripts
 /tmp/

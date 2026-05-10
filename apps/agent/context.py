@@ -18,7 +18,8 @@ def runtime_info_block(app, provider, is_native: bool) -> str:
         "Runtime (factual, for self-reference — don't recite unprompted):",
         f"• provider: {provider.name}" + (f" ({kind} wire protocol)" if kind else ""),
         f"• model: {model or 'unknown'}",
-        f"• tools available: {tool_count}" + (" (native agent manages its own tools)" if is_native else ""),
+        f"• tools available: {tool_count}"
+        + (" (native agent manages its own tools)" if is_native else ""),
         "When the user asks which model you are, tell them this provider+model directly.",
     ]
     for extra in (
@@ -55,7 +56,9 @@ def app_catalog_block(app, is_native: bool) -> str:
             continue
         if len(desc) > 50:
             desc = desc[:47] + "…"
-        cli = (m.provides.get("cli", {}) if hasattr(m, "provides") else {}).get("commands", []) or []
+        cli = (m.provides.get("cli", {}) if hasattr(m, "provides") else {}).get(
+            "commands", []
+        ) or []
         web = (m.provides.get("web", {}) if hasattr(m, "provides") else {}).get("prefix", "") or ""
         extras = []
         if any(c != app_id for c in cli):
@@ -95,9 +98,7 @@ def claude_md_block(app, is_native: bool) -> str:
             current_lines.append(line)
     _flush()
 
-    rules_subsample = extract_development_rules(
-        text, keep_ids={1, 5, 9, 13, 14, 15, 16, 17, 18}
-    )
+    rules_subsample = extract_development_rules(text, keep_ids={1, 5, 9, 13, 14, 15, 16, 17, 18})
     if rules_subsample:
         sections["## Development Rules (curated)"] = (
             "## Development Rules (curated — full list in CLAUDE.md)\n" + rules_subsample
@@ -145,6 +146,7 @@ def extract_development_rules(text: str, keep_ids: set[int]) -> str:
 def load_skill_catalog(app) -> dict:
     try:
         from apps.agent.skills import discover_skills
+
         return discover_skills(app.repo_root)
     except Exception:
         return {}
@@ -169,6 +171,7 @@ def expand_skill_slash(app, text: str) -> str | None:
         return None
 
     from apps.agent.skills import parse_skill_args, substitute_skill_params
+
     params = parse_skill_args(arg)
     body = substitute_skill_params(body, params)
 
@@ -211,10 +214,21 @@ def skills_info_block(app, is_native: bool) -> str:
 
 
 APP_SCOPE_PATTERNS = (
-    "apps/", "app.py", "manifest.toml", "plugins/",
-    "new app", "new plugin", "create app", "create an app",
-    "create a plugin", "build app", "build an app", "scaffold",
-    "baseapp", "web_route", "cli_command",
+    "apps/",
+    "app.py",
+    "manifest.toml",
+    "plugins/",
+    "new app",
+    "new plugin",
+    "create app",
+    "create an app",
+    "create a plugin",
+    "build app",
+    "build an app",
+    "scaffold",
+    "baseapp",
+    "web_route",
+    "cli_command",
 )
 
 
@@ -229,24 +243,24 @@ def app_scaffold_block(user_text: str, is_native: bool) -> str:
         "\n"
         "manifest.toml:\n"
         "    [app]\n"
-        "    id = \"myapp\"\n"
-        "    name = \"My App\"\n"
-        "    version = \"1.0.0\"\n"
-        "    description = \"One line — what it does\"\n"
+        '    id = "myapp"\n'
+        '    name = "My App"\n'
+        '    version = "1.0.0"\n'
+        '    description = "One line — what it does"\n'
         "\n"
         "    [app.entry]\n"
-        "    module = \"app\"\n"
-        "    class = \"MyApp\"\n"
+        '    module = "app"\n'
+        '    class = "MyApp"\n'
         "\n"
         "    [requires]\n"
         "    capabilities = []   # pick from: think, read, write, search, speak, listen, draw, see\n"
         "    apps = []           # other app_ids this one calls via CallApp\n"
         "\n"
         "    [provides.cli]\n"
-        "    commands = [\"myapp\"]\n"
+        '    commands = ["myapp"]\n'
         "\n"
         "    [provides.web]\n"
-        "    prefix = \"/myapp\"\n"
+        '    prefix = "/myapp"\n'
         "\n"
         "    [provides.events]\n"
         "    emits = []\n"
@@ -255,29 +269,29 @@ def app_scaffold_block(user_text: str, is_native: bool) -> str:
         "    from emptyos.sdk import BaseApp, cli_command, web_route\n"
         "\n"
         "    class MyApp(BaseApp):\n"
-        "        @web_route(\"GET\", \"/api/ping\")\n"
+        '        @web_route("GET", "/api/ping")\n'
         "        async def api_ping(self, request):\n"
-        "            return {\"ok\": True}\n"
+        '            return {"ok": True}\n'
         "\n"
-        "        @web_route(\"POST\", \"/api/do\")\n"
+        '        @web_route("POST", "/api/do")\n'
         "        async def api_do(self, request):\n"
         "            data = await request.json()\n"
-        "            await self.emit(\"myapp:did\", {\"got\": data})\n"
-        "            return {\"ok\": True}\n"
+        '            await self.emit("myapp:did", {"got": data})\n'
+        '            return {"ok": True}\n'
         "\n"
-        "        async def cli_myapp(self, arg: str = \"\"):\n"
-        "            return f\"ran with {arg}\"\n"
+        '        async def cli_myapp(self, arg: str = ""):\n'
+        '            return f"ran with {arg}"\n'
         "\n"
         "Hard rules (violations silently break the app):\n"
         "• NEVER `from fastapi import APIRouter` in app code. BaseApp owns the router;\n"
         "  the loader discovers routes via `@web_route` on instance methods ONLY.\n"
         "  Module-level `router = APIRouter()` + `@router.post(...)` is IGNORED.\n"
-        "• NEVER write `@web_route(\"GET\", \"/\")`. pages/index.html auto-mounts at\n"
+        '• NEVER write `@web_route("GET", "/")`. pages/index.html auto-mounts at\n'
         "  `{prefix}/` — a custom `/` handler shadows it and the UI goes blank.\n"
-        "• Route paths are RELATIVE to `[provides.web].prefix`. Declare `@web_route(\"POST\",\n"
-        "  \"/api/eval\")`; the full URL becomes `{prefix}/api/eval`. Don't repeat the prefix.\n"
+        '• Route paths are RELATIVE to `[provides.web].prefix`. Declare `@web_route("POST",\n'
+        '  "/api/eval")`; the full URL becomes `{prefix}/api/eval`. Don\'t repeat the prefix.\n'
         "• Fetch from pages/index.html JS using the full path: `/{prefix}/api/...`.\n"
-        "• For cross-app work use `await self.call_app(\"other_id\", \"method\", ...)`,\n"
+        '• For cross-app work use `await self.call_app("other_id", "method", ...)`,\n'
         "  NOT imports of the other app's module.\n"
         "\n"
         "If anything above feels underspecified, call `Skill(op='load', name='eos-new-app')`\n"

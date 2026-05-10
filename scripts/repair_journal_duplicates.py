@@ -60,7 +60,7 @@ def split_journal_section(content: str) -> tuple[str, list[str], str]:
     body_start = header_idx + 1
     if body_start < len(lines) and lines[body_start].strip() == "":
         body_start += 1
-    head = "\n".join(lines[: body_start])
+    head = "\n".join(lines[:body_start])
     body = lines[body_start:end_idx]
     tail = "\n".join(lines[end_idx:])
     return head, body, tail
@@ -170,8 +170,9 @@ def process_file(path: Path, apply: bool) -> dict:
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("paths", nargs="+", help="Journal file paths to repair")
-    ap.add_argument("--apply", action="store_true",
-                    help="Actually rewrite files (default is preview-only)")
+    ap.add_argument(
+        "--apply", action="store_true", help="Actually rewrite files (default is preview-only)"
+    )
     args = ap.parse_args()
 
     any_changes = False

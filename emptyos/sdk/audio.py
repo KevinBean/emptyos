@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import re
 
-
 # Common English filler words
 FILLER_WORDS = {"um", "uh", "like", "basically", "actually", "so", "well", "right", "okay"}
 
@@ -63,7 +62,10 @@ def assess_pacing(wpm: int) -> dict:
     if wpm == 0:
         return {"rating": "unknown", "feedback": "No pace data available."}
     if wpm < 110:
-        return {"rating": "slow", "feedback": f"Speaking pace is slow ({wpm} WPM). Ideal: 130-160 WPM."}
+        return {
+            "rating": "slow",
+            "feedback": f"Speaking pace is slow ({wpm} WPM). Ideal: 130-160 WPM.",
+        }
     if wpm <= 180:
         return {"rating": "good", "feedback": f"Good speaking pace ({wpm} WPM)."}
     return {"rating": "fast", "feedback": f"Speaking pace is fast ({wpm} WPM). Ideal: 130-160 WPM."}
@@ -81,5 +83,13 @@ def assess_fillers(filler_count: int, word_count: int) -> dict:
     if filler_count <= 1:
         return {"rating": "good", "feedback": "Minimal filler words.", "ratio": ratio}
     if ratio < 3:
-        return {"rating": "moderate", "feedback": f"{filler_count} filler words ({ratio}%). Try pausing instead.", "ratio": ratio}
-    return {"rating": "high", "feedback": f"{filler_count} filler words ({ratio}%). Practice pausing between thoughts.", "ratio": ratio}
+        return {
+            "rating": "moderate",
+            "feedback": f"{filler_count} filler words ({ratio}%). Try pausing instead.",
+            "ratio": ratio,
+        }
+    return {
+        "rating": "high",
+        "feedback": f"{filler_count} filler words ({ratio}%). Practice pausing between thoughts.",
+        "ratio": ratio,
+    }

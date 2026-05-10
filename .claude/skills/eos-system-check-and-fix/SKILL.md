@@ -66,6 +66,91 @@ Report:
 - Top fan-in nodes (most depended on — these are load-bearing)
 - Top fan-out nodes (most dependencies — these are fragile)
 
+### Step 2.5: App Completeness Scan
+
+Filesystem-only check (runs even if the daemon is down). Verifies every app has the canonical file set.
+
+```bash
+PYTHONIOENCODING=utf-8 python -c "
+import sys
+sys.stdout.reconfigure(encoding='utf-8')
+from pathlib import Path
+
+NO_PAGE_OK = {'tour'}
+NO_TEST_OK = {'_example', 'tmpl', 'tests', 'test-app'}
+
+def find_test(app_id, scope):
+    norm = app_id.replace('-', '_')
+    # Check both core tests/ and tests/personal/ regardless of scope —
+    # engineering personal apps (cer-hosting etc.) put tests in core dir.
+    cands = [
+        f'test_sys_{app_id}.py', f'test_sys_{norm}.py',
+        f'personal/test_{norm}.py', f'personal/test_sys_{norm}.py',
+    ]
+    for c in cands:
+        if (Path('tests') / c).exists(): return True
+    for p in Path('tests').rglob('*.py'):
+        n = p.name
+        if n.startswith(f'test_sys_{norm}_') or n.startswith(f'test_{norm}_') or n.startswith(f'test_dogfood_{norm}'):
+            return True
+    return False
+
+def scan(root, scope):
+    apps = []
+    for d in sorted(root.iterdir()):
+        if not d.is_dir() or d.name.startswith('_') or d.name == 'personal': continue
+        if not (d/'manifest.toml').exists(): continue  # stub dir, skip
+        apps.append({
+            'id': d.name,
+            'core_ok': (d/'app.py').exists(),
+            'page': (d/'pages'/'index.html').exists(),
+            'test': find_test(d.name, scope),
+            'seed': (d/'demo'/'seed.py').exists(),
+            'readme': (d/'README.md').exists(),
+        })
+    return apps
+
+core = scan(Path('apps'), 'core')
+personal = scan(Path('apps/personal'), 'personal')
+
+def fmt_section(name, apps):
+    n = len(apps); t = sum(a['test'] for a in apps); r = sum(a['readme'] for a in apps)
+    print(f'{name}: {n} apps · {t} with smoke test · {r} with README')
+
+print('=== App Completeness ===')
+fmt_section('Core', core)
+fmt_section('Personal', personal)
+print()
+
+gaps = []
+for a in core + personal:
+    if not a['core_ok']:
+        gaps.append(f'- {a[\"id\"]}: missing app.py')
+    if not a['page'] and a['id'] not in NO_PAGE_OK:
+        gaps.append(f'- {a[\"id\"]}: missing pages/index.html')
+    if not a['test'] and a['id'] not in NO_TEST_OK:
+        norm = a['id'].replace('-', '_')
+        gaps.append(f'- {a[\"id\"]}: missing test_sys_{norm}.py')
+    if a['readme']:
+        gaps.append(f'- {a[\"id\"]}: README.md present (anti-pattern, Rule 6)')
+
+if gaps:
+    print('Real gaps:')
+    for g in gaps: print(g)
+else:
+    print('Real gaps: none')
+print()
+print('(Templates/scaffolding excluded:', ', '.join(sorted(NO_TEST_OK)) + ')')
+"
+```
+
+If the user asks for the **full per-app table** (`--full-table` or "show the full app table"), expand the script to print one row per app with columns `id | core | page | test | seed | readme` for both `apps/` and `apps/personal/`. Default output stays scannable.
+
+Report:
+- Counts (apps, smoke-test coverage, README count)
+- "Real gaps" — entries that fail the contract and aren't in the intentional-exception allowlist
+- Anti-pattern: any `README.md` inside an app dir — Rule 6 says apps self-document via `eos app info`, not READMEs
+
 ### Step 3: Capability Utilization
 
 How well are the 7 capabilities being used across apps?
@@ -154,7 +239,7 @@ Synthesize all 7 steps into a brief verdict:
 - Overall health: Thriving / Healthy / Needs Attention / Critical
 - Strongest dimensions
 - Weakest dimensions
-- Top 3 recommended next actions (with priority)
+- Top 3 recommended next actions (with priority) — fold any "Real gaps" from Step 2.5 into this list
 - Whether the system has grown well since last check
 
 **Only after the full check is complete**, ask the user if they want to fix any issues found.
@@ -359,3 +444,4 @@ Evolution path: WRAP → ABSORB → REPLACE → SHED
 - A page without a backend is a wireframe
 - Never remove an event that another app *could* listen to — only prune truly dead signals
 - Prefer event-based communication over direct `call_app()` (events over imports principle)
+- `README.md` inside an app directory — apps self-document via `eos app info` (Rule 6); a README is a smell, not a feature
