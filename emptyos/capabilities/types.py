@@ -87,3 +87,44 @@ class SeeCapability(Capability):
 
     async def execute(self, *, mode: str = "snapshot", domain: str | None = None, **kwargs):
         return await super().execute(mode=mode, domain=domain, **kwargs)
+
+
+class PronounceCapability(Capability):
+    """Score a learner's pronunciation against a reference text.
+
+    Returns a structured dict: per-phone alignment (match/sub/del),
+    word-level scores, weak-phone roll-up, model + device metadata.
+    Different verb from `listen` — listen returns text, pronounce
+    returns scored phones. Providers are local-first by design.
+    """
+
+    name = "pronounce"
+
+    async def execute(self, *, audio, reference_text: str, language: str = "en-us", **kwargs):
+        return await super().execute(
+            audio=audio, reference_text=reference_text, language=language, **kwargs
+        )
+
+
+class BrowseCapability(Capability):
+    """Drive a headless browser. `action` is the verb; provider interprets kwargs.
+
+    Verbs (provider contract):
+        navigate(url, wait=...)            → {"url": str, "title": str}
+        click(selector, [context_id])      → {"ok": True}
+        fill(selector, value, [context_id])→ {"ok": True}
+        screenshot([selector], [full_page])→ {"path": str}
+        snapshot([selector])               → {"text": str, "html": str}
+        eval(expression, [context_id])     → {"value": <jsonable>}
+        wait_for(selector, [state], [timeout]) → {"ok": True}
+        close([context_id])                → {"ok": True}
+
+    `context_id` is opaque — providers use it to keep a persistent browser
+    context (cookies, page) across calls. Apps pass the same id for stateful
+    sessions; omit for one-shot.
+    """
+
+    name = "browse"
+
+    async def execute(self, *, action: str, **kwargs):
+        return await super().execute(action=action, **kwargs)

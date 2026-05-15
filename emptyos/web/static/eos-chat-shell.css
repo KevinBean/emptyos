@@ -116,8 +116,12 @@
 .eos-chat-session-item:hover .sess-actions { opacity: 1; }
 .eos-chat-session-item .sess-actions button {
   background: none; border: none; color: var(--text-muted, var(--text-secondary));
-  font-size: 13px; cursor: pointer; padding: 2px 4px; border-radius: 4px;
+  font-size: 14px; cursor: pointer; padding: 2px 4px; border-radius: 4px;
+  min-width: 32px; min-height: 32px;
+  display: inline-flex; align-items: center; justify-content: center;
 }
+/* Sidebar is hover-driven on desktop; touch users see persistent affordance */
+@media (hover: none) { .eos-chat-session-item .sess-actions { opacity: 0.75 } }
 .eos-chat-session-item .sess-actions .del:hover {
   background: color-mix(in srgb, var(--danger, #da3633) 20%, transparent);
   color: var(--danger, #da3633);
@@ -219,6 +223,7 @@
 .eos-chat-scrim {
   display: none; position: fixed; inset: 0;
   background: rgba(0,0,0,0.45); z-index: 45;
+  cursor: pointer; -webkit-tap-highlight-color: transparent;
 }
 
 /* ── Mobile: sidebar becomes a slide-in drawer ─────────
@@ -233,6 +238,8 @@
     position: fixed; inset: 0 auto 0 0; width: 82vw; max-width: 320px;
     z-index: 50; transform: translateX(-100%); transition: transform 0.2s;
     box-shadow: 2px 0 18px rgba(0,0,0,0.25); height: 100dvh;
+    padding-top: env(safe-area-inset-top, 0px);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
   }
   .eos-chat-shell.sidebar-open .eos-chat-sidebar { transform: translateX(0); }
   .eos-chat-shell.sidebar-open .eos-chat-scrim { display: block; }

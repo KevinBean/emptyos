@@ -37,10 +37,10 @@
 .post-list .eos-entity-card { margin-bottom:0 }
 .post-list .eos-entity-card.is-draft { border-style:dashed; background:color-mix(in srgb,var(--warning) 4%,var(--bg-card)) }
 .pi-summary { font-size:12px; color:var(--text-secondary); display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden }
-.pi-btn { background:none; border:1px solid var(--border); border-radius:6px; color:var(--accent); font-size:13px; padding:4px 8px; cursor:pointer; transition:all 0.15s; text-decoration:none; display:inline-flex; align-items:center; justify-content:center }
+.pi-btn { background:none; border:1px solid var(--border); border-radius:6px; color:var(--accent); font-size:13px; padding:4px 8px; cursor:pointer; transition:all 0.15s; text-decoration:none; display:inline-flex; align-items:center; justify-content:center; min-width:32px; min-height:32px }
 .pi-btn:hover { background:color-mix(in srgb,var(--accent) 12%,transparent); border-color:var(--accent) }
 
-.preview-panel { display:none; position:fixed; top:0; right:0; bottom:0; width:min(600px,85vw); background:var(--bg); border-left:1px solid var(--border); z-index:200; overflow-y:auto; animation:slideIn 0.25s ease }
+.preview-panel { display:none; position:fixed; top:0; right:0; bottom:0; width:min(600px,85vw); background:var(--bg); border-left:1px solid var(--border); z-index:200; overflow-y:auto; padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px); animation:slideIn 0.25s ease }
 .preview-panel.open { display:block }
 .preview-header { display:flex; align-items:center; justify-content:space-between; padding:16px; border-bottom:1px solid var(--border) }
 .preview-header h3 { font-size:16px; font-weight:600; color:var(--text-heading) }
@@ -60,7 +60,7 @@
 .preview-body .article th { text-align:left; font-size:11px; color:var(--text-muted); text-transform:uppercase; padding:8px 8px; border-bottom:1px solid var(--border) }
 .preview-body .article td { padding:8px 8px; border-bottom:1px solid var(--border); font-size:13px }
 
-.overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,0.5); z-index:199 }
+.overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,0.5); z-index:199; cursor:pointer; -webkit-tap-highlight-color:transparent }
 .overlay.open { display:block }
 
 .empty-state { text-align:center; padding:48px 24px; color:var(--text-muted) }
@@ -122,7 +122,7 @@ if(window.EOS&&EOS.registerActions){EOS.registerActions({},[],{description:"Publ
     <button class="btn-settings" onclick="openSettings()">&#9881; Site</button>
     <button class="btn-settings" onclick="openAppSettings()">&#9881; App</button>
     <button class="btn-settings" id="btn-chatbot-qa" onclick="openChatbotQA()" style="display:none">&#128172; Chatbot Q&amp;A</button>
-    <a href="/publish/pages/guide.html" style="font-size:12px;color:var(--text-muted);align-self:center">Format Guide</a>
+    <a href="/publish/pages/guide.html" style="font-size:12px;color:var(--text-muted);align-self:center;padding:6px 8px;min-height:32px;display:inline-flex;align-items:center">Format Guide</a>
     <span class="info" id="toolbar-info"></span>
   </div>
 

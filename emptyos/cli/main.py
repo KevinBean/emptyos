@@ -293,15 +293,27 @@ def start(
     async def _start():
         await kernel.start()
 
-        # Load all apps (not just autostart) so their web routes are available
-        for app_id, manifest in kernel.apps.manifests.items():
+        # Load every enabled app (per store state) so web routes are available.
+        # Uninstalled and disabled apps stay discovered (kernel.apps.manifests)
+        # but unloaded — the store's catalog endpoint lists them, but no
+        # routes mount until they're enabled + the daemon is restarted.
+        enabled = kernel.apps.enabled_manifests()
+        for app_id, manifest in enabled.items():
             if app_id not in kernel.apps.instances:
                 try:
                     await kernel.apps.load(app_id)
                 except Exception as e:
                     console.print(f"[yellow]Warning: failed to load '{app_id}': {e}[/yellow]")
 
-        console.print(f"[green]Kernel started. {len(kernel.apps.instances)} apps loaded.[/green]")
+        total_discovered = len(kernel.apps.manifests)
+        loaded = len(kernel.apps.instances)
+        if loaded < total_discovered:
+            console.print(
+                f"[green]Kernel started. {loaded}/{total_discovered} apps loaded "
+                f"({total_discovered - loaded} not enabled — see /store).[/green]"
+            )
+        else:
+            console.print(f"[green]Kernel started. {loaded} apps loaded.[/green]")
 
         if not no_web:
             import uvicorn
@@ -312,17 +324,23 @@ def start(
             _mode = kernel.config.network_mode
             _host = kernel.config.host
             _token = kernel.config.auth_token
-            if kernel.config.auth_required and not _token:
+            _password = kernel.config.login_password
+            if kernel.config.auth_required and not (_token or _password):
                 console.print(
                     f"[bold red]Refusing to start.[/bold red] "
-                    f"network.mode = '{_mode}' requires network.auth_token to be set."
+                    f"network.mode = '{_mode}' requires network.auth_token "
+                    f"or network.password to be set."
                 )
                 console.print(
                     "  Set a long random token in emptyos.toml, e.g. "
                     "[cyan]auth_token = \"$(python -c 'import secrets;print(secrets.token_urlsafe(32))')\"[/cyan]"
                 )
+                console.print(
+                    "  Or set a human-typeable password (browser login):\n"
+                    "  [cyan]password = \"choose-something-strong\"[/cyan]"
+                )
                 return
-            if kernel.config.is_remote_bind and _mode == "private" and not _token:
+            if kernel.config.is_remote_bind and _mode == "private" and not (_token or _password):
                 # Reachable only when user explicitly set
                 # `network.auth_required = false` — they've opted out of the
                 # default-on auth gate that landed 2026-04-27.

@@ -51,13 +51,13 @@ In a Claude Code session: `/eos-session-resume` to pick up the last session, `/e
 │  Connectors:  ollama, comfyui, voice-api, obsidian   │
 ├──────────────────────────────────────────────────────┤
 │  Kernel                                              │
-│  Config, 9 Capabilities, EventBus, ServiceRegistry,  │
+│  Config, 10 Capabilities, EventBus, ServiceRegistry, │
 │  AppLoader, PluginLoader, WorkerPool, Providers      │
 └──────────────────────────────────────────────────────┘
 Vault (external) ← mounted via emptyos.toml: notes.path = "D:/YourVault"
 ```
 
-### 9 Capabilities
+### 10 Capabilities
 
 | Capability | Providers |
 |---|---|
@@ -70,32 +70,11 @@ Vault (external) ← mounted via emptyos.toml: notes.path = "D:/YourVault"
 | **draw** | comfyui |
 | **animate** | comfyui-ltx (image-to-video via user-supplied workflow JSON); cloud providers (Runway/Luma/Kling) plug in here |
 | **see** | webcam (OpenCV, local) → human (upload a file) |
+| **browse** | playwright (headless Chromium) — no human fallback; raises when no provider, app catches |
 
-### 16 Plugins
+### 20 Plugins
 
-| Plugin | Type | Purpose |
-|---|---|---|
-| health | service | Heartbeat, capability probes, GPU VRAM monitoring |
-| agent-runtime | service | Ephemeral CLI subprocess driver (claude-cli/codex/gemini); one-shot per turn with stdout/stderr drain + tick callback + timeout kill |
-| notifications | service | Vault + Telegram push |
-| ollama | enhancer (think) | Local LLM |
-| comfyui | enhancer (draw) | GPU image/video/music generation |
-| openai-image | enhancer (draw + think, cloud-explicit domain) | gpt-image-1 + gpt-4o-mini vision; opt-in only |
-| edge-tts | enhancer (speak) | Free in-process TTS via Microsoft Edge voices |
-| voice-api | enhancer (speak+listen) | Kokoro + XTTS (TTS) + Whisper (STT), :8602 |
-| webcam | enhancer (see) + service | Local camera capture via OpenCV |
-| applio | service | AI voice conversion |
-| obsidian | service (registers `viewer`) | URI scheme + cross-platform apps for viewing/editing notes |
-| telegram | service | Two-way bot — commands + push notifications |
-| blender | service | 3D modeling, cable routing, headless rendering |
-| global-hotkey | service | Global OS keyboard shortcuts → EventBus |
-| system-tray | service | Native system tray icon (Windows/macOS) |
-| dogfood-demo | service | Spawns + supervises a parallel daemon on :9001 with `dogfood/emptyos.toml` (throwaway vault, human-only think) for screenshare/test scenarios |
-
-**Service plugins** expose named services — apps access via `self.require("name")`.
-**Enhancer plugins** inject providers into capabilities at startup (`priority=0`); capability falls back to next provider if plugin is absent/offline. No app code changes — "Graceful Enhancement" pattern. See `docs/DESIGN.md`.
-
-**Obsidian is a dependency, not a given.** EmptyOS uses the external markdown vault as its "hard drive" (`notes.path`) and Obsidian as the **vault viewer** — cross-platform desktop/mobile apps + the `obsidian://` URI scheme that every `EOS.noteActions()` link uses. The `obsidian` plugin registers service `viewer` and owns the URI templates; swap the plugin (or override its `uri_templates` in config) to switch viewers. Sync is independent — the vault is plain files, so Syncthing/git/iCloud all work without Obsidian Sync. Search runs through EmptyOS's own grep provider against the vault files — no Obsidian CLI dependency.
+Service plugins expose named services (`self.require("name")`); enhancer plugins inject providers into capabilities at startup with graceful fallback. Inventory + Obsidian-dependency clause: `.claude/rules/plugins.md`. Browse `plugins/` for source.
 
 ## Storage & Vault
 
@@ -111,6 +90,23 @@ Vault (external) ← mounted via emptyos.toml: notes.path = "D:/YourVault"
 ### VaultLibrary standard
 
 All vault-backed collections use `VaultLibrary` (SDK). Each item is a `.md` note with frontmatter + type tag (e.g. `tags: [song]`). Query by tag via `vault_query()`, not folder. Folder is default creation location only. See `emptyos/sdk/vault_library.py`.
+
+### KB note kinds
+
+Every KB note carries `tag: kb` and one of eight `kind`s — one corpus, role typing via kind (Notes + Blocks + Documents were unified 2026-05-15):
+
+| Kind | Shape |
+|---|---|
+| `concept` | Explanatory standalone |
+| `formula` | Implementable spec — `verified_against:` anchors to a case, `implemented_in:` to a code path |
+| `reference` | Whole external source (IEC 60287, TB 880, Anders textbook…) — landing page that aggregates its clauses via the `standard_id:` field |
+| `clause` | Verbatim text of one section/clause from a reference — frontmatter `standard`, `edition`, `clause` |
+| `case` | Worked example with published numbers |
+| `lesson` | Practical / hard-won knowledge |
+| `doc` | Composition outline via `paragraphs_json` — each paragraph carries `noteRefs: [slug | slug#section]` resolved server-side at view time |
+| `moc` | Map of content / navigation hub |
+
+Free-text `references:` strings in any KB note auto-resolve to clickable `clause` notes via the citation parser in `apps/kb/app.py`. Reverse-lookup endpoints: `/kb/api/references` (citation index), `/kb/api/implementations/<path>` (which formulas implement a code path), `/kb/api/notes/<slug>/section/<name>` (slice a single section). `BaseApp.kb_explain(slug)` lets any app pull a KB note's body for tooltip / "?" surfaces. Clauses live flat under `30_Resources/EmptyOS/kb/sources/<slug>.md`; docs under `kb/docs/<slug>.md`.
 
 ### Project standard
 
@@ -146,7 +142,7 @@ Task app       → scans entire vault for - [ ] lines (cross-project view)
 D:\emptyos\
 ├── emptyos/
 │   ├── kernel/             # Config, EventBus, ServiceRegistry, loaders
-│   ├── capabilities/       # 9 capabilities + providers
+│   ├── capabilities/       # 10 capabilities + providers
 │   ├── sdk/                # BaseApp, BasePlugin, decorators, VaultLibrary, srs, utils
 │   ├── cli/                # eos command (Typer) — daemon client mode
 │   ├── web/                # FastAPI server + auto-UI + topology
@@ -154,7 +150,7 @@ D:\emptyos\
 │   └── runtime/            # vault watcher, vault_index, scheduler, realtime, vault_map
 ├── apps/                   # Core apps (git-tracked)
 ├── apps/personal/          # User apps (gitignored)
-├── plugins/                # 15 plugins (auto-discovered, loaded before apps)
+├── plugins/                # 19 plugins (auto-discovered, loaded before apps)
 ├── engines/personal/       # User engines (gitignored)
 ├── data/                   # Runtime state
 ├── emptyos.toml            # Machine config (.gitignored)
@@ -168,6 +164,10 @@ Loaders scan both `apps/` and `apps/personal/` — all apps equal at runtime. Fr
 Live inventory is authoritative — `eos app list`, or browse `apps/` + `apps/personal/`. Every app is self-documenting: `eos app info <id>` generates docs from manifest + code. Don't maintain an app catalog here — it drifts.
 
 To scaffold a new app, invoke the `eos-new-app` skill (or `eos-new-plugin` for plugins). It generates manifest, `app.py`, `pages/`, and a `tests/test_sys_<id>.py` skeleton.
+
+### Store (per-user install gate)
+
+`/store` is the per-user install/enable gate for apps + plugins + skills (Obsidian-community-plugins-style). State at `data/store/installed-{apps,plugins}.json`; loader.enabled_ids = installed - disabled ∪ essentials. `ESSENTIAL_APPS = {store, settings, system, hub}`; `ESSENTIAL_PLUGINS = {health}`. Demo mode bypasses the gate. Full contract: `.claude/rules/store.md`.
 
 ## App Development Pattern
 
@@ -228,6 +228,10 @@ Each pattern below has a dedicated rule file with full examples + manifest snipp
 | **Standalone export** | App should run without the daemon → `[provides.export]` + optional `export.py` hook (`export_state` / `stub_routes` / `client_overrides`); one-way snapshot, no sync | `.claude/rules/app-conventions-for-export.md` |
 | **Tour steps** | App should appear in the product tour → `[[contributes.tour.step]]` with `route` + `spotlight` selector + optional `requires`; capability-missing steps auto-rewrite to `/system` | `.claude/rules/tour-steps.md` |
 | **Private to repo, hidden from demo** | App must never appear in a public/demo deployment → `[app] private = true`; `app_loader` skips it when `demo.enabled`, `release-public.py` aborts if it shows up in a public snapshot | `.claude/rules/demo-mode.md` |
+| **Multi-CLI participants** | App spawns external coding-agent CLIs (claude-cli, codex, gemini) per @-mention → `agent-runtime` plugin's `text_cli_run` for buffered text, `claude_cli_run` for stream-json + tool events; per-CLI config in `[plugins.agent-runtime.clis.<id>]` | `.claude/rules/multi-cli-participants.md` |
+| **Slash command palette** | App's text input has 4+ verbs that need keyboard-first firing → single `SLASH_COMMANDS` array, mode-aware popup state, command-owned arg parsing | `.claude/rules/slash-command-palette.md` |
+| **Room review gate** | CLI / agent emits `[DO:app.method({...})]` tokens that should require Apply/Reject before executing → `_gate_server_actions` parses + persists pending; per-action card renders in chat + activity drawer + global dashboard | `.claude/rules/room-review-gate.md` |
+| **Multi-module app decomposition** | `app.py` crossed ~1200L (P4 Atomic threshold) → split into helper modules (module-level fns taking `self`, decorators preserved, re-bind in class body); 5 mandatory conventions (docstring template, binding banner, `TYPE_CHECKING` guard, no helper-to-helper imports, constants travel with consumer). Tooling: `scripts/decompose_app.py`. References: `apps/dogfood-agent/`, `apps/rooms/`, `apps/projects/` | `.claude/rules/multi-module-apps.md` |
 
 Triggers: `eos app export <id>` for export bundles. Debug surfaces: `/hub/debug/panels`, `/voice-assistant/debug/intents`.
 
@@ -344,6 +348,8 @@ Variants compose with lanes (don't multiply them): `worker` (no vhost on Lane 1)
 
 **Demo vs public vs private:** `network.mode = "public"`, `demo.enabled`, and `.eos-personal` + `[app] private = true` are three orthogonal knobs — see `.claude/rules/demo-mode.md` for the contract (what each does, when to use which, and how reset/seed-on-boot are wired).
 
+**Auth model:** EmptyOS is single-user by design — `auth_token` (machine) + `password` (human) are the only two credentials, applied as a network gate (not an identity system). See `docs/AUTH.md` for the pin and the rationale for never growing a users table inside the daemon.
+
 ## Tech Stack
 
 Python 3.12+, FastAPI, Typer, Rich, aiohttp, SQLite, APScheduler, watchfiles.
@@ -377,8 +383,6 @@ Requires daemon at `localhost:9000`. One-time setup: `pip install playwright pyt
 
 ### Four layers, four questions
 
-Distinct purposes — don't conflate or duplicate:
-
 | Layer | Files | Answers |
 |---|---|---|
 | **System** | `test_sys_<app>.py` | Does each button/endpoint work? (smoke) |
@@ -386,11 +390,11 @@ Distinct purposes — don't conflate or duplicate:
 | **Journey** | `test_journeys.py` | Do cross-app event chains ripple? |
 | **Dogfood** | `test_dogfood.py` + `test_dogfood_<app>.py` | Could I use this for a week/month without noticing something broken? |
 
-Dogfood tests are narrative, ordered (`test_01_*` → `test_07_*`), and thread state via class-level `state: dict`. `test_dogfood.py` = week-in-the-life across apps; `test_dogfood_<app>.py` = month-in-the-life per rot-prone app (apps not used daily, which silently drift). Dogfood earns its keep when it either spans ≥2 apps or catches interleaving/aggregation bugs that endpoint tests miss. Below that bar, `test_user_stories.py` is the right home. LLM-hitting steps use `@pytest.mark.llm` so `-m "dogfood and not llm"` stays fast and free.
+Don't conflate or duplicate across layers. Dogfood is narrative + ordered + state-threading; earns its keep when it spans ≥2 apps or catches aggregation bugs endpoint tests miss. Below that bar, `test_user_stories.py` is the right home. LLM-hitting steps use `@pytest.mark.llm` so `-m "dogfood and not llm"` stays fast and free. CI runs the non-LLM dogfood suite on every push. Full workflow: `.claude/rules/testing.md`.
 
-CI (`.github/workflows/dogfood.yml`) boots the daemon against a throwaway vault and runs the non-LLM dogfood suite on every push to `main` and every PR. Personal-app dogfood files skip gracefully when their app isn't in the fresh clone via a class-scoped `@pytest.fixture(autouse=True)` availability check.
+### Test-fix-verify loop
 
-See `.claude/rules/testing.md` for full workflow (when to run, story tests, adding tests for new apps).
+EmptyOS tests/fixes/verifies itself by composing four roles via the event bus: **friction source** (today `dogfood-agent`) → **fix-driver** (`apps/fix-agent/`, worktree-per-fix, py_compile-gated merge) → **sandbox** (`:9001` via `plugins/dogfood-demo/`, restarted between merge + verify) → **verifier** (dogfood-agent re-runs scenario, auto-reverts on failure). Main daemon never restarted by the loop. Contract + safety invariants: `.claude/rules/test-fix-verify-loop.md`.
 
 ## External Service Launch Pattern
 
@@ -427,25 +431,9 @@ The architecturally load-bearing ones are inline below. Generic Python/web/integ
 
 ## Shared Frontend
 
-**Design language — read this before touching a page.** `docs/FRONTEND-DESIGN-LANGUAGE.md` is the visual + interaction DNA: token usage, spacing/radius/type scales, AI-surface treatment, motion discipline, forbidden patterns. Audits run via `/eos-ui-audit-and-consolidate`.
+Visual + interaction DNA: `docs/FRONTEND-DESIGN-LANGUAGE.md` (read before touching a page). Shared bundles + geo stack + keyboard shortcuts: `.claude/rules/shared-frontend.md`.
 
-- `emptyos/web/static/eos-components.css` + `.js` — shared UI (toast, hero, donut, tabs, modal, entry list, ring, heatmap). Use `EOS_UI.modal()`, `EOS_UI.formModal()`, `EOS_UI.statCards()`, `EOS_UI.confirm()`, `EOS_UI.entityCard()`, `EOS_UI.emptyState()`, `EOS_UI.errorState()`, `EOS_UI.provenance()`, `EOS_UI.searchBar({mount, onSelectApp?, onFallback?, focusKey?})` (inline app+vault search) in new pages. Status/priority/age badges: `.eos-badge` + `.eos-badge-status-*` / `-priority-*` / `-age-*` (no more hand-rolled status pill CSS per app). AI provenance chip: `.eos-badge-provenance` + `-local`/`-cloud`/`-user` variants — pair with `BaseApp.last_provenance()` to return provenance from the API after a `self.think()` call. Floating pill FABs: `.eos-fab-pill` + `-icon` + `-label` (used by capture, assistant, voice, hands-free).
-- `emptyos/web/static/eos-keys.js` + `.css` — keyboard shortcuts (command palette, go-to nav, help)
-- `emptyos/web/static/eos-map.js` + `.css` — Leaflet wrapper (`EOS_MAP.create(container, {center, zoom, tiles:'osm'|'aerial'|'both'|'both-aerial'})` → `.setMarkers(items, {latFor, lngFor, popupFor, iconFor, onClick})`, `.setPolylines(lines, {styleFor})`, `.fitBounds()`, `.invalidateSize()`). `iconFor` returns `{className, size, html?}`; `html` lets you render arbitrary content inside the marker (e.g. trip-stop numbers). Leaflet loads on demand via CDN; drop to raw Leaflet via `.L()` / `.map()`. Consumers: `apps/personal/places/`, `apps/personal/scan-map/`.
-- **Geo stack**: `apps/geocode/` (address ↔ lat/lon via OSM Nominatim) + `apps/routing/` (multi-stop routes via OSRM) + `EOS_MAP`. Both geo apps cache + throttle; both configurable via `[apps.<id>]` `user_agent` + `base_url`. Frontend helpers: `EOS.geocode(address, limit)`, `EOS.reverseGeocode(lat, lon)`, `EOS.getRoute(points, profile)`, `EOS.fmtDistance(m)`, `EOS.fmtDuration(s)`. (Named `getRoute`, not `route` — `EOS.route` is the client-side SPA router.) **Public-mode gate:** both apps expose `GET /api/status`; when `network.mode = "public"` *and* still using the demo URL, `.enabled = false` with a human `reason`. Handlers short-circuit, and UIs consuming the gate (e.g. `apps/personal/places/`) hide the geocode/trip buttons. Self-hosters pointing `base_url` at their own OSRM/Nominatim stay enabled in all modes.
-- `emptyos/web/static/eos-geocad.js` + `.css` — Leaflet-Geoman drawing layer for georeferenced editing. Two surfaces: `EOS_GEOCAD.mount(el, {layerId, basemap, readonly, onFeatureChange})` creates its own map; `EOS_GEOCAD.attach(eosMap, {layerId, ...})` adds drawing controls to an existing `EOS_MAP`. GeoJSON I/O via `loadFromServer()` / `saveToServer()`. Lazy-loads Leaflet-Geoman from CDN on first use. Owned by `apps/geo-cad/`, which stores layers as paired `.md` sidecar + `.geojson` (RFC 7946 FeatureCollection) under `30_Resources/EmptyOS/geo-cad/<project_id>/`. Consumer apps call `self.call_app("geo-cad", "add_layer"|"add_feature", ...)`. Vault frontmatter convention for individual-feature notes (flat `lat/lon` for points, `geo: {type, coordinates, crs}` for geometries) is in `.claude/rules/geo.md`.
-- **Vault paths are always clickable** — use `EOS.noteActions(path)`, never plain `esc(path)`. Renders view + edit + open-external links.
-- `emptyos/web/clustering.py` — auto-clustering for home screen
-- `emptyos/web/auto_ui.py` — auto-generated UI for apps without `pages/`
-
-### Keyboard Shortcuts
-
-- `Ctrl+K` / `Cmd+K` — command palette
-- `g` + letter — go-to nav (g-t=Tasks, g-j=Journal, g-e=Expense, g-s=Search, g-a=Assistant)
-- `?` or `Ctrl+/` — shortcut help
-- `/` — focus search input
-- `Esc` — close overlays
-- Data-driven: `GET /api/shortcuts`; editable in settings "Shortcuts" tab
+Quick pointers — `EOS_UI.*` for modal/form/cards/badges/FABs; `EOS_MAP` for Leaflet; `EOS.noteActions(path)` for clickable vault links; `apps/geocode/` + `apps/routing/` for geo; `Ctrl+K` opens the command palette; `g`+letter go-to nav. Audits run via `/eos-ui-audit-and-consolidate`.
 
 ## Session Continuation
 
@@ -468,6 +456,7 @@ For recent work, use `git log` and `10_Projects/emptyos/log/`. Don't maintain ch
 - `docs/FRONTEND-DESIGN-LANGUAGE.md` — visual + interaction DNA for every page
 - `docs/GETTING-STARTED.md` — public onboarding
 - `AGENTS.md` — non-Claude-Code AI self-config
+- `apps/forge/FORGE.md` — Forge growth charter (read before adding a Target / Skill / Protocol method)
 - `emptyos.toml` — machine config (gitignored)
 - `emptyos/kernel/__init__.py` — kernel boot sequence
 - `emptyos/sdk/base_app.py` — BaseApp with all capabilities
@@ -479,5 +468,5 @@ For recent work, use `git log` and `10_Projects/emptyos/log/`. Don't maintain ch
 - `emptyos/runtime/vault_map.py` — app-specific path discovery + auto-heal
 - `emptyos/capabilities/providers/claude_cli.py` — Claude Code provider
 - `emptyos/capabilities/providers/openai_compat.py` — OpenAI/Ollama provider
-- `.claude/rules/` — testing, docs-sync, vault-operator, addons, hub-panels, voice-intents, tour-steps, app-ui-patterns, app-conventions-for-export, boards-as-view-layer, demo-mode, dev-gotchas, daemon-handling
+- `.claude/rules/` — addons, app-conventions-for-export, app-ui-patterns, boards-as-view-layer, daemon-handling, demo-mode, dev-gotchas, docs-sync, geo, hub-panels, multi-cli-participants, multi-module-apps, plugins, proposed-action, room-review-gate, sandbox-driven-testing, sandbox-usage, shared-frontend, slash-command-palette, store, test-fix-verify-loop, testing, tour-steps, vault-operator, voice-intents
 - `restart.bat` — kill python, check external services, boot EmptyOS

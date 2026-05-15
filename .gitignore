@@ -32,6 +32,15 @@ apps/test-app/
 dogfood/*
 !dogfood/emptyos.toml.example
 
+# Sandbox-pool member directories — auto-generated per pool member at
+# spawn time. Each holds an auto-rendered emptyos.toml + isolated data/
+# + throwaway vault/. Per-machine runtime state, never committed.
+# Anchor with leading `/` so this matches the project root only — apps/
+# can still have a legitimate `sandbox/` directory.
+/sandbox-*/
+# Legacy single-sandbox config dir (pre-pool); also runtime state.
+/sandbox/
+
 # Personal apps & engines (not shipped with core OS)
 apps/personal/
 engines/personal/
@@ -116,3 +125,6 @@ scratch/
 
 # Private one-off scripts (underscore prefix)
 scripts/_*.py
+
+# Serena MCP server cache (server removed 2026-05-14; ignore stragglers if uvx re-spawns it)
+.serena/

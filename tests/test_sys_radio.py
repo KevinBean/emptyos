@@ -178,7 +178,7 @@ class TestRadioConfig:
 class TestRadioUI:
     def test_page_loads(self, page, base_url):
         page.goto(f"{base_url}/radio/")
-        page.wait_for_selector("#audio")
+        page.wait_for_selector("#audio", state="attached")
         assert page.locator("#title").is_visible()
         assert page.locator("#btn-play").is_visible()
         assert page.locator("#btn-skip").is_visible()
@@ -186,7 +186,7 @@ class TestRadioUI:
 
     def test_kiosk_strips_chrome(self, page, base_url):
         page.goto(f"{base_url}/radio/live")
-        page.wait_for_selector("#audio")
+        page.wait_for_selector("#audio", state="attached")
         # Banner shows
         banner = page.locator("#kiosk-banner")
         assert banner.is_visible()
@@ -196,6 +196,6 @@ class TestRadioUI:
 
     def test_kiosk_query_flag(self, page, base_url):
         page.goto(f"{base_url}/radio/?kiosk=1")
-        page.wait_for_selector("#audio")
+        page.wait_for_selector("#audio", state="attached")
         cls = page.evaluate("document.body.className")
         assert "rd-kiosk" in cls

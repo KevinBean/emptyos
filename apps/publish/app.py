@@ -551,10 +551,7 @@ class PublishApp(BaseApp):
         }
 
     async def _site_from_request(self, request) -> dict | None:
-        try:
-            data = await request.json()
-        except Exception:
-            data = {}
+        data = await self.safe_json(request)
         site_id = (data or {}).get("site_id") or (data or {}).get("site") or ""
         if not site_id:
             return None
@@ -946,20 +943,17 @@ class PublishApp(BaseApp):
         file_path.write_text("".join(lines), encoding="utf-8")
         return {"ok": True, "path": str(file_path), "publish": target}
 
-    @web_route("POST", "/api/save-draft")
-    async def api_save_draft(self, request):
-        """Save content to vault as a markdown file."""
-        data = await request.json()
-        title = data.get("title", "").strip()
-        content = data.get("content", "")
-        existing_path = data.get("path", "")
-
+    async def save_draft(self, title: str = "", content: str = "", path: str = "") -> dict:
+        """Save content to vault as a markdown file. Public method for
+        call_app — used by `apps/company/` scenario deliverables. The web
+        route below is a thin wrapper that unpacks the request body."""
+        title = (title or "").strip()
         if not title:
             return {"error": "Title is required"}
 
-        if existing_path and Path(existing_path).exists():
-            Path(existing_path).write_text(content, encoding="utf-8")
-            return {"ok": True, "path": existing_path}
+        if path and Path(path).exists():
+            Path(path).write_text(content or "", encoding="utf-8")
+            return {"ok": True, "path": path}
 
         vault = self._vault_dir()
         source = self._source_folder()
@@ -974,8 +968,18 @@ class PublishApp(BaseApp):
             file_path = folder / f"{slug}-{counter}.md"
             counter += 1
 
-        file_path.write_text(content, encoding="utf-8")
+        file_path.write_text(content or "", encoding="utf-8")
         return {"ok": True, "path": str(file_path)}
+
+    @web_route("POST", "/api/save-draft")
+    async def api_save_draft(self, request):
+        """Save content to vault as a markdown file."""
+        data = await request.json()
+        return await self.save_draft(
+            title=data.get("title", ""),
+            content=data.get("content", ""),
+            path=data.get("path", ""),
+        )
 
     @web_route("GET", "/api/load-post")
     async def api_load_post(self, request):

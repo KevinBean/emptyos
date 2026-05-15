@@ -25,7 +25,7 @@ body {
     background: var(--bg);
     color: var(--text);
     margin: 0;
-    padding-top: 44px;             /* room for EOS.nav('boards') */
+    padding-top: calc(44px + env(safe-area-inset-top, 0px));   /* room for EOS.nav('boards') + iOS notch */
     padding-bottom: env(safe-area-inset-bottom);
     -webkit-font-smoothing: antialiased;
 }
@@ -34,7 +34,7 @@ body {
 .app-shell {
     display: flex;
     flex-direction: column;
-    height: calc(100vh - 44px);
+    height: calc(100dvh - 44px);
     overflow: hidden;
 }
 
@@ -115,7 +115,7 @@ body {
 
 .btn:hover {
     background: var(--bg-card-hover);
-    border-color: rgba(255,255,255,0.12);
+    border-color: var(--border);
 }
 
 .btn-primary {
@@ -301,7 +301,7 @@ body.board-readonly .cell-editable:hover { background: transparent; }
 
 .board-table td {
     padding: 0.55rem 0.85rem;
-    border-bottom: 1px solid rgba(255,255,255,0.035);
+    border-bottom: 1px solid var(--border);
     color: var(--text);
     vertical-align: middle;
     max-width: 320px;
@@ -315,7 +315,7 @@ body.board-readonly .cell-editable:hover { background: transparent; }
 
 /* Inline editing */
 .cell-editable { cursor: pointer; border-radius: var(--radius); padding: 0.2rem 0.4rem; }
-.cell-editable:hover { background: rgba(255,255,255,0.06); }
+.cell-editable:hover { background: var(--bg-card-hover); }
 
 /* Inline cell editor (.eos-cell-edit-input), pill palette (.eos-pill-*),
    and the kanban shell (.eos-kanban*) live in eos-components.css. */
@@ -351,7 +351,7 @@ body.board-readonly .cell-editable:hover { background: transparent; }
 }
 
 .calendar-day.other-month { opacity: 0.35; }
-.calendar-day.today { background: rgba(124,106,247,0.06); }
+.calendar-day.today { background: color-mix(in srgb, var(--accent) 6%, transparent); }
 
 .calendar-day-num {
     font-size: 0.75rem;
@@ -376,7 +376,7 @@ body.board-readonly .cell-editable:hover { background: transparent; }
     padding: 0.15rem 0.35rem;
     margin-bottom: 2px;
     border-radius: 3px;
-    background: rgba(124,106,247,0.15);
+    background: color-mix(in srgb, var(--accent) 15%, transparent);
     color: var(--accent);
     white-space: nowrap;
     overflow: hidden;
@@ -431,7 +431,7 @@ body.board-readonly .cell-editable:hover { background: transparent; }
 .bar-track {
     flex: 1;
     height: 24px;
-    background: rgba(255,255,255,0.04);
+    background: var(--bg-card-hover);
     border-radius: 4px;
     overflow: hidden;
 }
@@ -445,7 +445,7 @@ body.board-readonly .cell-editable:hover { background: transparent; }
     padding-left: 0.5rem;
     font-size: 0.72rem;
     font-weight: 600;
-    color: rgba(255,255,255,0.85);
+    color: var(--accent-ink);
 }
 
 /* Donut chart */
@@ -572,9 +572,10 @@ body.board-readonly .cell-editable:hover { background: transparent; }
    MODAL / SLIDE-OUT
    ═══════════════════════════════════════════════════════════ */
 .modal-overlay {
+    /* eos-ios-ok: N H — scrim backdrop; .modal-box is centered with max-height 80vh */
     position: fixed;
     inset: 0;
-    background: rgba(0,0,0,0.6);
+    background: color-mix(in srgb, var(--text) 60%, transparent);
     backdrop-filter: blur(4px);
     z-index: 100;
     display: none;
@@ -668,7 +669,7 @@ body.board-readonly .cell-editable:hover { background: transparent; }
 .boards-shell {
     display: grid;
     grid-template-columns: 240px 1fr;
-    height: calc(100vh - 44px);
+    height: calc(100dvh - 44px);
     overflow: hidden;
     transition: grid-template-columns 0.18s ease;
 }
@@ -847,14 +848,19 @@ body.board-readonly .cell-editable:hover { background: transparent; }
 }
 .board-detail-close {
     position: absolute;
-    top: 0.6rem;
-    right: 0.6rem;
+    top: 0.4rem;
+    right: 0.4rem;
     background: transparent;
     border: 0;
     color: var(--text-secondary);
     font-size: 1.5rem;
     cursor: pointer;
     line-height: 1;
+    min-width: 36px;
+    min-height: 36px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
 }
 .board-detail-close:hover { color: var(--text); }
 .board-detail-path {
@@ -981,8 +987,8 @@ body.board-readonly .cell-editable:hover { background: transparent; }
     text-overflow: ellipsis;
 }
 
-.btn-danger { background: var(--boards-pill-red-bg); color: var(--boards-danger-fg); border-color: rgba(220,80,80,0.3); }
-.btn-danger:hover { background: rgba(220, 80, 80, 0.3); }
+.btn-danger { background: var(--boards-pill-red-bg); color: var(--boards-danger-fg); border-color: color-mix(in srgb, var(--boards-pill-red-fg) 30%, transparent); }
+.btn-danger:hover { background: color-mix(in srgb, var(--boards-pill-red-fg) 30%, transparent); }
 
 /* ── Person chips (person/designer/checker/approver/multi-person) ── */
 .person-chip {
@@ -1051,6 +1057,8 @@ body.board-readonly .cell-editable:hover { background: transparent; }
         top: 0; right: 0; bottom: 0;
         width: min(92vw, 440px);
         z-index: 100;
+        padding-top: env(safe-area-inset-top, 0px);
+        padding-bottom: env(safe-area-inset-bottom, 0px);
     }
 }
 
@@ -1124,7 +1132,7 @@ body.board-readonly .cell-editable:hover { background: transparent; }
     background: var(--bg-card);
     border: 1px solid var(--border);
     border-radius: var(--radius);
-    box-shadow: 0 4px 16px rgba(0,0,0,0.25);
+    box-shadow: 0 4px 16px var(--shadow);
     z-index: 200;
     min-width: 160px;
     padding: 0.25rem;
@@ -1144,7 +1152,7 @@ body.board-readonly .cell-editable:hover { background: transparent; }
 }
 .col-menu-item:hover { background: var(--bg-card-hover); }
 .col-menu-danger { color: var(--danger); }
-.col-menu-danger:hover { background: rgba(220, 80, 80, 0.12); }
+.col-menu-danger:hover { background: var(--boards-pill-red-bg); }
 
 /* Column modal helpers */
 .col-modal-hint {
@@ -1173,7 +1181,7 @@ body.board-readonly .cell-editable:hover { background: transparent; }
     background: var(--bg-card);
     border: 1px solid var(--border);
     border-radius: var(--radius);
-    box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+    box-shadow: 0 4px 20px var(--shadow);
     padding: 0.75rem;
     min-width: 240px;
     z-index: 210;
@@ -1191,7 +1199,7 @@ body.board-readonly .cell-editable:hover { background: transparent; }
     gap: 0.4rem;
 }
 .filter-pill-col {
-    background: rgba(100,149,237,0.12);
+    background: var(--boards-pill-blue-bg);
     color: var(--boards-pill-blue-fg);
     border: 1px solid var(--boards-pill-blue-fg);
 }
@@ -1207,7 +1215,7 @@ body.board-readonly .cell-editable:hover { background: transparent; }
     box-shadow: inset 3px 0 0 var(--accent);
 }
 .hidden-cols-chip {
-    background: rgba(160,160,180,0.12);
+    background: var(--boards-pill-gray-bg);
     color: var(--text-secondary);
     border: 1px solid var(--border);
 }
@@ -1280,13 +1288,13 @@ body.board-readonly .cell-editable:hover { background: transparent; }
     font-family: inherit;
     letter-spacing: 0.02em;
 }
-.bulk-action-main:hover { background: rgba(255,255,255,0.12); }
+.bulk-action-main:hover { background: color-mix(in srgb, var(--accent-ink) 12%, transparent); }
 .bulk-action-clear {
     padding: 0.3rem 0.6rem;
-    border-left: 1px solid rgba(255,255,255,0.28);
+    border-left: 1px solid color-mix(in srgb, var(--accent-ink) 28%, transparent);
     font-weight: 700;
 }
-.bulk-action-clear:hover { background: rgba(255,255,255,0.18); }
+.bulk-action-clear:hover { background: color-mix(in srgb, var(--accent-ink) 18%, transparent); }
 
 /* ── Kanban axis picker toolbar ───────────────────────────── */
 .kanban-toolbar {
@@ -1341,7 +1349,7 @@ body.embed-mode .boards-nav { display: none; }
 body.embed-mode .board-topbar { display: none; }
 body.embed-mode .board-detail { display: none !important; }
 body.embed-mode .boards-home { display: none !important; }
-body.embed-mode #board-view { height: 100vh; }
+body.embed-mode #board-view { height: 100dvh; }
 body.embed-mode .app-shell { padding: 0; }
 body.embed-mode .eos-fab-pill,
 body.embed-mode .eos-fab-dial,

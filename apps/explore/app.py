@@ -18,6 +18,7 @@ from starlette.responses import FileResponse
 
 from emptyos.sdk import (
     BaseApp,
+    extract_wikilinks,
     parse_llm_json,
     web_route,
 )
@@ -265,6 +266,119 @@ class ExploreApp(GenerationMixin, VaultIOMixin, BaseApp):
             "summary": peek["summary"],
             "facts": peek["facts"],
             "from_cache": False,
+        }
+
+    @web_route("GET", "/api/graph")
+    async def api_graph(self, request):
+        """Return a vault-wide knowledge graph: notes as nodes, wikilinks as edges.
+
+        Query params:
+            kinds — comma-separated tags to restrict node pool (default: all)
+            limit — node cap (default 400, hard cap 1500) — keeps the
+                    frontend responsive on huge vaults
+            shared_tags — "1" to add dashed `tag-shared` edges between notes
+                          sharing ≥1 non-trivial tag (default off; can explode)
+        """
+        kinds_raw = (request.query_params.get("kinds") or "").strip()
+        kinds = [k.strip() for k in kinds_raw.split(",") if k.strip()] if kinds_raw else []
+        try:
+            limit = min(1500, max(10, int(request.query_params.get("limit") or 400)))
+        except ValueError:
+            limit = 400
+        include_tag_edges = (request.query_params.get("shared_tags") or "").strip() == "1"
+
+        vault_index = self.kernel.services.get("vault_index")
+        if not vault_index:
+            return {"nodes": [], "edges": [], "error": "vault_index unavailable"}
+
+        if kinds:
+            pool: dict[str, dict] = {}
+            for k in kinds:
+                for e in vault_index.find(tags=[k]):
+                    pool[e["path"]] = e
+            entries = list(pool.values())
+        else:
+            entries = list(vault_index._files.values())
+
+        # Sort by recency, cap to limit
+        entries.sort(key=lambda e: e.get("modified", 0), reverse=True)
+        entries = entries[:limit]
+
+        name_to_path: dict[str, str] = {}
+        for e in entries:
+            n = (e.get("name") or "").lower()
+            if n and n not in name_to_path:
+                name_to_path[n] = e["path"]
+
+        nodes = []
+        for e in entries:
+            tags = e.get("tags") or []
+            primary_kind = next((t for t in tags if "/" not in t), tags[0] if tags else "note")
+            nodes.append({
+                "id": e["path"],
+                "label": (e.get("name") or "").replace("-", " "),
+                "kind": primary_kind,
+                "folder": e.get("folder", ""),
+                "modified": e.get("modified", 0),
+            })
+
+        # Wikilink edges — walk each note's body once, resolve targets
+        # against the in-pool name index (skip unresolved links to avoid
+        # phantom nodes that aren't part of the requested slice).
+        edges: list[dict] = []
+        seen_edges: set[tuple[str, str, str]] = set()
+        notes_dir = self.vault_root
+        for e in entries:
+            if not notes_dir:
+                break
+            try:
+                content = await self.read(str(notes_dir / e["path"]))
+            except Exception:
+                continue
+            for target in extract_wikilinks(content):
+                key = target.lower()
+                target_path = name_to_path.get(key)
+                if not target_path or target_path == e["path"]:
+                    continue
+                edge_key = (e["path"], target_path, "wikilink")
+                if edge_key in seen_edges:
+                    continue
+                seen_edges.add(edge_key)
+                edges.append({"from": e["path"], "to": target_path, "kind": "wikilink"})
+
+        # Optional: dashed shared-tag edges. Skip the rapidly-shared "kb",
+        # "note", folder-y tags that would saturate the graph.
+        if include_tag_edges:
+            from collections import defaultdict
+            ignore = {"note", "kb", "guideline", "draft", "verified", "tag", "explore"}
+            tag_to_paths: dict[str, list[str]] = defaultdict(list)
+            for e in entries:
+                for t in e.get("tags") or []:
+                    if t in ignore or "/" in t:
+                        continue
+                    tag_to_paths[t].append(e["path"])
+            for t, paths in tag_to_paths.items():
+                if len(paths) > 8 or len(paths) < 2:
+                    continue  # too generic or trivial
+                for i in range(len(paths)):
+                    for j in range(i + 1, len(paths)):
+                        a, b = paths[i], paths[j]
+                        edge_key = (a, b, "tag")
+                        rev_key = (b, a, "tag")
+                        if edge_key in seen_edges or rev_key in seen_edges:
+                            continue
+                        seen_edges.add(edge_key)
+                        edges.append({"from": a, "to": b, "kind": "tag", "tag": t})
+
+        return {
+            "nodes": nodes,
+            "edges": edges,
+            "stats": {
+                "total_indexed": vault_index.file_count(),
+                "in_slice": len(nodes),
+                "wikilink_edges": sum(1 for e in edges if e.get("kind") == "wikilink"),
+                "tag_edges": sum(1 for e in edges if e.get("kind") == "tag"),
+            },
         }
 
     @web_route("GET", "/api/list")

@@ -17,6 +17,13 @@
 (function() {
     'use strict';
 
+    // Idempotency guard — pages that both hard-code <script src="...eos-keys.js">
+    // (e.g. auto_ui.py) AND load eos.js (which auto-injects this script) would
+    // otherwise double-mount the palette overlay, producing two #eos-palette-input
+    // elements that break strict-mode locators in tests.
+    if (window.__EOS_KEYS_LOADED) return;
+    window.__EOS_KEYS_LOADED = true;
+
     // --- State ---
     var palette = null;
     var helpOverlay = null;
@@ -152,12 +159,32 @@
 
     function filterPalette(query) {
         var q = query.toLowerCase().trim();
-        filteredActions = allActions.filter(function(a) {
-            if (!q) return true;
-            return (a.name || '').toLowerCase().includes(q) ||
-                   (a.desc || '').toLowerCase().includes(q) ||
-                   (a.id || '').toLowerCase().includes(q);
-        }).slice(0, 12);
+        if (!q) {
+            filteredActions = allActions.slice(0, 12);
+        } else {
+            // Score matches so name/id hits outrank description-only hits.
+            // Otherwise typing "journal" can pick Calendar (whose description
+            // mentions "journal entries") above the actual Journal app.
+            // Lower score = better match.
+            //   0: exact name/id match
+            //   1: name/id starts with query
+            //   2: name/id contains query
+            //   3: description contains query (and name/id doesn't)
+            var scored = [];
+            allActions.forEach(function(a) {
+                var name = (a.name || '').toLowerCase();
+                var id = (a.id || '').toLowerCase();
+                var desc = (a.desc || '').toLowerCase();
+                var score = -1;
+                if (name === q || id === q) score = 0;
+                else if (name.indexOf(q) === 0 || id.indexOf(q) === 0) score = 1;
+                else if (name.indexOf(q) >= 0 || id.indexOf(q) >= 0) score = 2;
+                else if (desc.indexOf(q) >= 0) score = 3;
+                if (score >= 0) scored.push({a: a, s: score});
+            });
+            scored.sort(function(x, y) { return x.s - y.s; });
+            filteredActions = scored.slice(0, 12).map(function(x) { return x.a; });
+        }
         selectedIdx = 0;
         renderPaletteResults();
     }

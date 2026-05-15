@@ -32,20 +32,51 @@ If scope is unclear, default to: all apps + design-language + dialogs + badges +
 
 ## The Pass
 
-### Phase 0 — Sync DESIGN.md (mechanical, always run first)
+### Phase 0 — Mechanical pre-flight (always run first)
+
+Two fail-fast checks that catch the highest-noise drift before any subjective audit.
+
+**0a. DESIGN.md ↔ theme.css sync**
 
 `DESIGN.md` at the repo root is the machine-readable token contract for non-Claude AI tools and exported bundles. Its frontmatter mirrors `theme.css`. Drift between them silently mis-trains every external agent that reads the repo.
-
-Run the generator and check for drift:
 
 ```bash
 python scripts/gen-design-md.py --check
 ```
 
-- If it exits 0 → in sync, continue to Phase 1a.
+- If it exits 0 → in sync, continue.
 - If it exits 1 → run `python scripts/gen-design-md.py` to regenerate, stage the change, then continue. Mention the regen in the final report.
 
 This is purely mechanical — never hand-edit the frontmatter of `DESIGN.md`. The body (after the closing `---`) is hand-maintained and the generator preserves it untouched.
+
+**0b. App-page nav include**
+
+Every `apps/<id>/pages/*.html` (and `apps/personal/<id>/pages/*.html`) must load `/static/eos.js` so the global nav bar + speed-dial dock render. Pages without it ship a broken back-to-Home / app-switcher / keyboard-shortcut experience — and the bug is invisible until someone opens the page and notices the chrome missing (cf. `apps/store` + `apps/fix-agent`, 2026-05-14).
+
+```bash
+python scripts/check-app-nav.py             # report violations
+python scripts/check-app-nav.py --fix       # auto-insert the canonical 3-script block
+```
+
+The canonical block inserted after `<body>` is:
+
+```html
+<script src="/static/eos.js"></script>
+<script src="/static/eos-components.js"></script>
+<script>EOS.nav('<app-id>');</script>
+```
+
+Opt-out is allowed but must be explicit. Some pages legitimately ship without global chrome (fullscreen presenters, immersive demos, first-run onboarding). Mark those with an HTML comment in the `<head>`:
+
+```html
+<!-- eos-nav: skip — fullscreen presenter view, deck only -->
+<!-- eos-nav: skip — first-run onboarding, deliberately minimal chrome -->
+<!-- eos-nav: skip — full-bleed immersive canvas, no global chrome -->
+```
+
+The dash + rationale is mandatory — a bare `<!-- eos-nav: skip -->` is rejected so every opt-out carries audit context.
+
+Pair: `tests/test_sys_app_nav.py` shells the scanner in CI so any new violation trips the build.
 
 ### Phase 1a — Design-language audit (read-only)
 
@@ -166,6 +197,11 @@ Pair with the render function using them to see the title + meta + badge + actio
 **E. Mandatory-rule violations** (CLAUDE.md §In-App Settings Panel, §Deep-linking Detail Views):
 - Apps with `[provides.settings]` but no `EOS_UI.settingsPanel` call
 - Apps with a `showDetail(` pattern but no `EOS_UI.hashRoute` call
+- Missing global nav include — Phase 0b already ran the canonical scanner (`scripts/check-app-nav.py`). Re-run here only if Phase 0b was skipped or the user added pages mid-audit.
+
+> **Audit-tooling note (settings + hashRoute checks).** Grep `apps/<id>/pages/**/*.{html,js}`, NOT just `pages/*.html`. Apps that follow `app-ui-patterns.md` and split their JS into `pages/app.js` / `pages/dialogs.js` / `pages/<app>.js` will false-flag if you only scan HTML — the `EOS_UI.settingsPanel(...)` definition lives in the JS file, not the HTML. Confirmed with the 2026-05-10 audit run, where 27/30 false MISSes were apps whose panel call was in `dialogs.js` or `<app>.js`. Always grep both extensions before reporting any mandatory-rule gap.
+>
+> Reference glob (ripgrep): `rg -lE 'EOS_UI\.(settingsPanel|hashRoute)\(' D:/emptyos/apps/<id>/pages/`
 
 Count occurrences per pattern per app. Flag any pattern with ≥5 app occurrences as a high-value consolidation target.
 
@@ -324,6 +360,9 @@ Order of operations — each independent, easy to revert. Design-language fixes 
 ```bash
 # Invariant: DESIGN.md still in sync with theme.css
 python scripts/gen-design-md.py --check
+
+# Invariant: every app page still loads /static/eos.js (or carries an explicit opt-out)
+python scripts/check-app-nav.py
 
 # Invariant: no native dialogs leaking back in
 grep -rnE "\b(confirm|alert|prompt)\s*\(" apps/**/pages/*.html | grep -vE "EOS_UI\.|await "

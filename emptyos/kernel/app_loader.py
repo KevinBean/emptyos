@@ -40,6 +40,10 @@ class AppManifest:
     events_listens: list[str] = field(default_factory=list)
     aliases: list[str] = field(default_factory=list)
     raw: dict[str, Any] = field(default_factory=dict)
+    # True when the manifest was discovered under apps/_catalog/ — code is
+    # on disk but excluded from loading regardless of install state. The
+    # store moves the folder out of _catalog/ on install.
+    parked: bool = False
 
     @classmethod
     def from_toml(cls, manifest_path: Path) -> AppManifest:
@@ -100,6 +104,14 @@ class _ManifestRegistry(dict):
         self._aliases.clear()
 
 
+# Always-on apps — loaded regardless of the store's installed set.
+# Without these the daemon can't be operated: store to manage installs,
+# settings to configure things, system to inspect state, hub for home.
+# A user who really wants to disable one can edit data/store/installed-apps.json
+# directly; the store UI refuses the toggle on these ids.
+ESSENTIAL_APPS: frozenset[str] = frozenset({"store", "settings", "system", "hub"})
+
+
 class AppLoader:
     """Discovers and manages apps."""
 
@@ -127,11 +139,17 @@ class AppLoader:
         if not apps_path.exists():
             return []
 
-        # Scan core apps + personal apps (if present)
-        scan_dirs = [apps_path]
+        # Scan core apps + personal apps (if present) + the _catalog/ park area.
+        # Parked apps surface in the registry so the store can list them, but
+        # they're flagged so installed_ids() and the loader skip them. Installing
+        # a parked app physically moves the folder out of _catalog/ first.
+        scan_dirs: list[tuple[Path, bool]] = [(apps_path, False)]
         personal_path = apps_path / "personal"
         if personal_path.exists():
-            scan_dirs.append(personal_path)
+            scan_dirs.append((personal_path, False))
+        catalog_path = apps_path / "_catalog"
+        if catalog_path.exists():
+            scan_dirs.append((catalog_path, True))
 
         # Demo-mode app suppression. Two mechanisms:
         #   - demo.hide_apps (config list): deployment-time blocklist for apps
@@ -148,10 +166,12 @@ class AppLoader:
         demo_on = self.kernel.config.demo_enabled
         hide = set(self.kernel.config.get("demo.hide_apps", []) or [])
 
-        for scan_dir in scan_dirs:
+        for scan_dir, is_catalog in scan_dirs:
             for manifest_file in sorted(scan_dir.glob("*/manifest.toml")):
-                # Skip _example, _retired, and other underscore-prefixed dirs
-                if manifest_file.parent.name.startswith("_"):
+                # Skip _example, _retired, and other underscore-prefixed dirs.
+                # NB: when `is_catalog`, the parent IS _catalog/ but the manifest
+                # is in a child dir — so we check the *grandchild*-level name.
+                if manifest_file.parent.name.startswith("_") and not is_catalog:
                     continue
                 if manifest_file.parent.name in hide:
                     continue
@@ -161,13 +181,20 @@ class AppLoader:
                         continue
                     if demo_on and manifest.raw.get("app", {}).get("private", False):
                         continue
+                    manifest.parked = is_catalog
                     # Only warn on real canonical-id collisions, not when a new
                     # app's id happens to match an alias from another app —
                     # `in self.manifests` would match either via __contains__.
                     if dict.__contains__(self.manifests, manifest.id):
+                        # A parked manifest must never override an active one —
+                        # if the same id exists in both apps/ and apps/_catalog/,
+                        # the active copy wins (the parked one is leftover).
+                        existing = self.manifests[manifest.id]
+                        if is_catalog and not existing.parked:
+                            continue
                         self.kernel.syslog.warn(
                             "app_loader",
-                            f"'{manifest.id}' in {scan_dir.name}/ overrides {self.manifests[manifest.id].path}",
+                            f"'{manifest.id}' in {scan_dir.name}/ overrides {existing.path}",
                         )
                     self.manifests[manifest.id] = manifest
                     self.states[manifest.id] = AppState.DISCOVERED
@@ -180,6 +207,82 @@ class AppLoader:
                     self.kernel.syslog.error("app_loader", f"Failed to parse {manifest_file}: {e}")
 
         return list(self.manifests.values())
+
+    def essential_ids(self) -> frozenset[str]:
+        """App ids the store cannot disable/uninstall. Public surface so
+        consumers (notably `apps/store/`) don't reach into module constants."""
+        return ESSENTIAL_APPS
+
+    def parked_ids(self) -> set[str]:
+        """App ids whose code lives under apps/_catalog/ rather than apps/.
+
+        Parked apps are always "not installed" no matter what the JSON state
+        file says — the filesystem is the source of truth here. Surfaced by
+        the store catalog as a distinct status; the install handler moves
+        the folder out before flipping JSON state.
+        """
+        return {aid for aid, m in self.manifests.items() if m.parked}
+
+    def installed_ids(self) -> set[str]:
+        """Set of app ids marked installed in the store's state file.
+
+        Pure read of `data/store/installed-apps.json` minus the parked set
+        (parked code can't be "installed" — installation includes the
+        folder move). Does NOT subtract the disabled set or union
+        essentials. Use `enabled_ids()` for the "what should load at boot"
+        decision.
+
+        Seeds the file on first call so existing daemons see today's
+        behaviour preserved. Demo mode bypasses the gate entirely.
+        """
+        from emptyos.runtime import store_state
+
+        if self.kernel.config.demo_enabled:
+            return {aid for aid, m in self.manifests.items() if not m.parked}
+
+        data_dir = self.kernel.config.data_dir
+        # Seed only with non-parked manifests — parked apps must not be
+        # auto-marked installed on first boot, otherwise the seed would
+        # contradict their filesystem location.
+        store_state.seed_if_missing(
+            data_dir,
+            "apps",
+            ((m.id, m.version) for m in self.manifests.values() if not m.parked),
+        )
+        return store_state.installed_ids(data_dir, "apps") - self.parked_ids()
+
+    def disabled_ids(self) -> set[str]:
+        """Set of installed app ids the user has disabled. Essentials cannot be disabled.
+
+        Demo mode reports an empty disabled set — the bundled experience
+        ignores per-user disable choices.
+        """
+        from emptyos.runtime import store_state
+
+        if self.kernel.config.demo_enabled:
+            return set()
+        return store_state.disabled_ids(self.kernel.config.data_dir, "apps") - ESSENTIAL_APPS
+
+    def enabled_ids(self) -> set[str]:
+        """`installed - disabled ∪ essentials` — what the kernel should load.
+
+        This is the set Kernel.start(), `cli start`, and the web lazy-load
+        middleware all iterate over. Essentials are unioned in last so a
+        determined user disabling `store` via direct file edit still gets
+        the store back at boot.
+        """
+        if self.kernel.config.demo_enabled:
+            return set(self.manifests.keys()) | ESSENTIAL_APPS
+        return (self.installed_ids() - self.disabled_ids()) | ESSENTIAL_APPS
+
+    def enabled_manifests(self) -> dict[str, AppManifest]:
+        """Discovered manifests filtered by enabled_ids().
+
+        What gets actually loaded. Distinct from `installed_ids()` —
+        a disabled-but-installed app is in `installed_ids()` but not here.
+        """
+        enabled = self.enabled_ids()
+        return {aid: m for aid, m in self.manifests.items() if aid in enabled}
 
     async def load(self, app_id: str, _loading: set[str] | None = None) -> Any:
         """Import and instantiate an app. Loads required apps first.

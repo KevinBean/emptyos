@@ -79,7 +79,9 @@ class RestartDaemonTool(Tool):
             msg = (
                 "Spawned restart.bat (detached). The daemon will be down for ~3–5 seconds while "
                 "it respawns. After that, Fetch http://localhost:9000/api/health or the endpoint "
-                "you care about to verify the restart completed and your edits took effect."
+                "you care about to verify the restart completed and your edits took effect. "
+                "If the dogfood sidecar is enabled, it auto-respawns on :9001 alongside the main "
+                "daemon — probe http://localhost:9001/api/health to confirm it's back."
             )
             if reason:
                 msg = f"{msg}\n(reason: {reason})"

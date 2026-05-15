@@ -217,6 +217,7 @@ def compute_lambda1(
     sheath_thickness_m: float | None = None,
     include_eddy_for_solid_bonding: bool = True,
     formation: str = "trefoil",
+    n_cores: int = 1,
 ) -> float:
     """Aggregate λ1 = λ1' + λ1'' for the given bonding.
 
@@ -228,7 +229,15 @@ def compute_lambda1(
     Set `include_eddy_for_solid_bonding=False` to reproduce the
     IEC-strict baseline that neglects the eddy term for solid bonding
     with round-stranded Cu/Al conductors (CIGRE TB 880 Case 0).
+
+    ``n_cores`` is the cable's number of conductors sharing one sheath.
+    A 3-core common-sheath cable has no net induced loop in the sheath
+    (three balanced currents sum to zero), so λ1 = 0 regardless of
+    bonding — IEC 60287-1-1 §4.3 / sheath_losses module docstring.
+    Set explicitly per cable; single-core trefoil keeps the default 1.
     """
+    if n_cores >= 3:
+        return 0.0
     eddy = 0.0
     if (
         sheath_mean_radius_m is not None

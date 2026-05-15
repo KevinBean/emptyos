@@ -220,10 +220,12 @@ class TestCaptureTriageFlow:
     def test_capture_then_convert_to_task(self, http_client):
         """Capture idea → convert to task → verify capture removed → task should exist."""
         text = f"{TEST_PREFIX}triage-story-{uuid.uuid4().hex[:6]}"
-        # Step 1: capture
+        # Step 1: capture (use a non-routing tag — `task` auto-routes via
+        # quick-action._TAG_ROUTE and would skip the captures file entirely,
+        # so step 2 wouldn't find the entry in recent.)
         created = http_client.post(
             "/quick-action/api/add",
-            json={"text": text, "tag": "task"},
+            json={"text": text, "tag": "todo"},
         ).json()
         ts = created.get("timestamp") or created.get("ts")
 
@@ -545,12 +547,10 @@ class TestBillingStory:
 @pytest.mark.interactive
 class TestHomeAggregation:
     def test_home_pulls_from_multiple_apps(self, http_client):
-        """Home queries hub endpoints — none should 500."""
+        """Home queries the unified hub panels aggregator — must not 500."""
         endpoints = [
-            "/hub/api/health-score",
-            "/hub/api/what-now",
-            "/hub/api/countdowns",
-            "/hub/api/streaks",
+            "/hub/api/panels",
+            "/hub/api/panels/all",
         ]
         for ep in endpoints:
             resp = http_client.get(ep)

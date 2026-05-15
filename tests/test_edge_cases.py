@@ -121,7 +121,7 @@ class TestConcurrency:
             "/task/api/stats",
             "/focus/api/stats",
             "/journal/api/streak",
-            "/hub/api/health-score",
+            "/hub/api/panels",
             "/api/events?limit=5",
         ]
         for ep in endpoints:

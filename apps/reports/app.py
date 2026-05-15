@@ -255,14 +255,13 @@ class ReportsApp(BaseApp):
     async def api_list_reports(self, request):
         return {"reports": self._scan_reports()}
 
-    @web_route("POST", "/api/reports")
-    async def api_create_report(self, request):
-        data = await request.json()
-        template_id = (
-            data.get("template") or self.setting("reports.default_template", "report") or "report"
-        ).strip()
-        title = (data.get("title") or "").strip() or "Untitled Report"
-        project_id = (data.get("project_id") or "").strip()
+    async def create_report(self, title: str = "", template: str = "", project_id: str = "") -> dict:
+        """Create a report scaffold. Public method for call_app — used by
+        `apps/company/` scenario deliverables. The web route below is a thin
+        wrapper that unpacks the request body."""
+        template_id = (template or self.setting("reports.default_template", "report") or "report").strip()
+        title = (title or "").strip() or "Untitled Report"
+        project_id = (project_id or "").strip()
 
         tpl = get_template(template_id)
         if not tpl:
@@ -345,6 +344,15 @@ class ReportsApp(BaseApp):
 
         await self.emit("reports:created", {"id": doc_id, "type": template_id, "title": title})
         return {"ok": True, "id": doc_id, "title": title, "type": template_id}
+
+    @web_route("POST", "/api/reports")
+    async def api_create_report(self, request):
+        data = await request.json()
+        return await self.create_report(
+            title=data.get("title", ""),
+            template=data.get("template", ""),
+            project_id=data.get("project_id", ""),
+        )
 
     @web_route("GET", "/api/reports/{doc_id}")
     async def api_get_report(self, request):

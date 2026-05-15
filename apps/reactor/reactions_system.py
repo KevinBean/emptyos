@@ -204,6 +204,40 @@ class SystemReactionsMixin:
         key = event.data.get("key", event.data.get("keys", ""))
         self._log_action("settings:changed", f"key: {str(key)[:40]}")
 
+    @on_event("store:installed")
+    async def on_store_installed(self, event):
+        what = event.data.get("kind", "app")
+        ident = event.data.get("id", "")
+        self._log_action("store:installed", f"{what}: {ident}")
+
+    @on_event("store:uninstalled")
+    async def on_store_uninstalled(self, event):
+        what = event.data.get("kind", "app")
+        ident = event.data.get("id", "")
+        self._log_action("store:uninstalled", f"{what}: {ident}")
+
+    @on_event("store:enabled")
+    async def on_store_enabled(self, event):
+        what = event.data.get("kind", "app")
+        ident = event.data.get("id", "")
+        self._log_action("store:enabled", f"{what}: {ident}")
+
+    @on_event("store:disabled")
+    async def on_store_disabled(self, event):
+        what = event.data.get("kind", "app")
+        ident = event.data.get("id", "")
+        self._log_action("store:disabled", f"{what}: {ident}")
+
+    @on_event("forge:scaffolded")
+    async def on_forge_scaffolded(self, event):
+        target = event.data.get("target") or event.data.get("name", "")
+        self._log_action("forge:scaffolded", f"new target: {target}")
+
+    @on_event("forge:built")
+    async def on_forge_built(self, event):
+        target = event.data.get("target") or event.data.get("name", "")
+        self._log_action("forge:built", f"target: {target}")
+
     @on_event("run:completed")
     async def on_run_completed(self, event):
         cmd = event.data.get("command", "")[:40]
@@ -421,3 +455,54 @@ class SystemReactionsMixin:
     @on_event("agent:tool_result")
     async def on_agent_tool_result(self, event):
         pass
+
+    # ── Dogfood agent + fix-agent loop ──
+    # The test-fix-verify infrastructure emits these as bookkeeping
+    # signals; the reactor logs them so the integrity audit's
+    # unheard-events count stays clean.
+
+    @on_event("dogfood:ui_walk_finished")
+    async def on_dogfood_ui_walk_finished(self, event):
+        preset = event.data.get("preset", "")
+        steps = event.data.get("step_count")
+        ok = event.data.get("ok")
+        parts = []
+        if preset:
+            parts.append(f"preset {preset}")
+        if isinstance(steps, int):
+            parts.append(f"{steps} steps")
+        if ok is False:
+            parts.append("FAILED")
+        self._log_action("dogfood:ui_walk_finished", " · ".join(parts) or "ui walk done")
+
+    @on_event("fix-agent:repro_finished")
+    async def on_fix_agent_repro_finished(self, event):
+        verdict = event.data.get("verdict") or event.data.get("status") or "done"
+        url = (event.data.get("url") or "")[:60]
+        detail = f"verdict: {verdict}"
+        if url:
+            detail += f" ({url})"
+        self._log_action("fix-agent:repro_finished", detail)
+
+    @on_event("dogfood:queue_drained")
+    async def on_dogfood_queue_drained(self, event):
+        applied = event.data.get("applied", 0)
+        stuck = event.data.get("stuck", 0)
+        self._log_action("dogfood:queue_drained", f"applied: {applied}, stuck: {stuck}")
+
+    # ── Sandbox pool ──
+
+    @on_event("sandbox:leased")
+    async def on_sandbox_leased(self, event):
+        port = event.data.get("port", "?")
+        purpose = (event.data.get("purpose") or "")[:60]
+        self._log_action("sandbox:leased", f"port {port}" + (f" — {purpose}" if purpose else ""))
+
+    @on_event("sandbox:released")
+    async def on_sandbox_released(self, event):
+        self._log_action("sandbox:released", "lease released")
+
+    @on_event("sandbox:restarted")
+    async def on_sandbox_restarted(self, event):
+        port = event.data.get("port", "?")
+        self._log_action("sandbox:restarted", f"port {port}")

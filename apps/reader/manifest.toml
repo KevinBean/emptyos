@@ -11,7 +11,7 @@ class = "ReaderApp"
 
 [requires]
 capabilities = ["read", "write", "think", "search", "speak", "draw"]
-apps = []
+apps = ["dictionary"]
 services = []
 events = []
 

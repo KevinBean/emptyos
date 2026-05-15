@@ -4,23 +4,160 @@
 */
 
 var EOS_UI = {
-    // Toast notification
+    // Toast notification — hover/touch pauses dismiss; click dismisses.
+    // Errors stay 2x longer than success since users actually want to read them.
+    // Last 30 toasts kept in EOS_UI._toastLog and reopenable via the 🔔 bell
+    // (top-right) or EOS_UI.toastHistory().
+    _toastLog: (function() {
+        try {
+            var raw = sessionStorage.getItem('eos.toastLog');
+            var arr = raw ? JSON.parse(raw) : [];
+            return Array.isArray(arr) ? arr : [];
+        } catch (e) { return []; }
+    })(),
+    _toastMax: 30,
+    _toastPersist: function() {
+        try { sessionStorage.setItem('eos.toastLog', JSON.stringify(EOS_UI._toastLog)); } catch (e) {}
+    },
     toast: function(msg, ok) {
+        var isErr = ok === false;
+        EOS_UI._toastLog.unshift({ts: Date.now(), msg: String(msg == null ? '' : msg), ok: !isErr});
+        if (EOS_UI._toastLog.length > EOS_UI._toastMax) EOS_UI._toastLog.length = EOS_UI._toastMax;
+        EOS_UI._toastPersist();
+        EOS_UI._updateToastBell();
+        EOS_UI._toastShow(msg, ok);
+    },
+    _toastShow: function(msg, ok) {
         var el = document.getElementById('eos-toast');
         if (!el) {
             el = document.createElement('div');
             el.id = 'eos-toast';
             el.className = 'eos-toast eos-toast-ok';
+            el.title = 'Hover to keep open · click to dismiss';
+            el.addEventListener('mouseenter', function() { clearTimeout(el._timer); });
+            el.addEventListener('mouseleave', function() {
+                el._timer = setTimeout(function() { el.classList.remove('show'); }, 3000);
+            });
+            el.addEventListener('click', function() {
+                clearTimeout(el._timer);
+                el.classList.remove('show');
+            });
             document.body.appendChild(el);
         }
         el.textContent = msg;
-        el.className = 'eos-toast ' + (ok !== false ? 'eos-toast-ok' : 'eos-toast-err') + ' show';
+        var isErr = ok === false;
+        el.className = 'eos-toast ' + (isErr ? 'eos-toast-err' : 'eos-toast-ok') + ' show';
         clearTimeout(el._timer);
-        el._timer = setTimeout(function() { el.classList.remove('show'); }, 2500);
+        el._timer = setTimeout(function() { el.classList.remove('show'); }, isErr ? 14000 : 7000);
+    },
+    _updateToastBell: function() {
+        var bell = document.getElementById('eos-toast-bell');
+        if (!bell) {
+            bell = document.createElement('button');
+            bell.id = 'eos-toast-bell';
+            bell.type = 'button';
+            bell.className = 'eos-toast-bell';
+            bell.title = 'Recent notifications — click to reopen';
+            bell.setAttribute('aria-label', 'Recent notifications');
+            bell.addEventListener('click', function() { EOS_UI.toastHistory(); });
+            document.body.appendChild(bell);
+        }
+        var n = EOS_UI._toastLog.length;
+        bell.style.display = n ? '' : 'none';
+        bell.innerHTML = '<span class="eos-toast-bell-icon">&#128276;</span>' +
+                         '<span class="eos-toast-bell-count">' + n + '</span>';
+    },
+    _fmtAgo: function(ms) {
+        var s = Math.max(0, Math.floor(ms / 1000));
+        if (s < 60) return s + 's ago';
+        var m = Math.floor(s / 60);
+        if (m < 60) return m + 'm ago';
+        var h = Math.floor(m / 60);
+        if (h < 24) return h + 'h ago';
+        return Math.floor(h / 24) + 'd ago';
+    },
+    toastHistory: function() {
+        var rows = EOS_UI._toastLog.map(function(t, i) {
+            var ago = EOS_UI._fmtAgo(Date.now() - t.ts);
+            var cls = t.ok ? 'ok' : 'err';
+            return '<div class="eos-toast-log-row eos-toast-log-' + cls + '" data-idx="' + i + '">' +
+                   '<div class="eos-toast-log-msg">' + EOS_UI.esc(t.msg) + '</div>' +
+                   '<div class="eos-toast-log-meta">' +
+                       '<span class="eos-toast-log-ago">' + ago + '</span>' +
+                       '<button type="button" class="eos-toast-log-btn" data-act="reopen" data-idx="' + i + '">Reopen</button>' +
+                       '<button type="button" class="eos-toast-log-btn" data-act="copy" data-idx="' + i + '">Copy</button>' +
+                   '</div>' +
+                   '</div>';
+        }).join('');
+        if (!rows) rows = '<div class="eos-toast-log-empty">No notifications yet.</div>';
+        var footer = EOS_UI._toastLog.length
+            ? '<div class="eos-toast-log-footer"><button type="button" class="eos-btn" id="eos-toast-log-clear">Clear all</button></div>'
+            : '';
+        EOS_UI.modal({
+            title: 'Recent notifications',
+            body: '<div class="eos-toast-log">' + rows + '</div>' + footer,
+            width: '520px',
+        });
+        var clearBtn = document.getElementById('eos-toast-log-clear');
+        if (clearBtn) clearBtn.addEventListener('click', function() {
+            EOS_UI._toastLog = [];
+            EOS_UI._toastPersist();
+            EOS_UI._updateToastBell();
+            EOS_UI.closeModal();
+        });
+        document.querySelectorAll('.eos-toast-log-row').forEach(function(row) {
+            row.querySelectorAll('.eos-toast-log-btn').forEach(function(btn) {
+                btn.addEventListener('click', function(ev) {
+                    ev.stopPropagation();
+                    var idx = parseInt(btn.getAttribute('data-idx'), 10);
+                    var entry = EOS_UI._toastLog[idx];
+                    if (!entry) return;
+                    if (btn.getAttribute('data-act') === 'copy') {
+                        try {
+                            navigator.clipboard.writeText(entry.msg);
+                            btn.textContent = 'Copied';
+                            setTimeout(function() { btn.textContent = 'Copy'; }, 1200);
+                        } catch (e) {}
+                    } else {
+                        EOS_UI._toastShow(entry.msg, entry.ok);
+                    }
+                });
+            });
+            row.addEventListener('click', function() {
+                var idx = parseInt(row.getAttribute('data-idx'), 10);
+                var entry = EOS_UI._toastLog[idx];
+                if (entry) EOS_UI._toastShow(entry.msg, entry.ok);
+            });
+        });
     },
 
     // Escape HTML
     esc: function(s) { var d = document.createElement('div'); d.textContent = s; return d.innerHTML; },
+
+    // Render a row of action-result links produced by a [DO:] execution or
+    // pending-action apply. `links` is the shape returned by /rooms/api/do
+    // and /rooms/api/pending/{id}/apply:
+    //   [{type:"note", path:"...", label?}, {type:"app", url:"...", label?}, ...]
+    // Returns "" when there are no usable links so callers can concatenate
+    // safely. Used by page-assistant.js (click-to-execute + auto-exec server
+    // results) and rooms/pages/index.html (review-gate apply + chat scrollback).
+    actionLinks: function(links) {
+        if (!links || !links.length) return '';
+        var parts = [];
+        links.forEach(function(l) {
+            if (l.type === 'note' && l.path && window.EOS && EOS.noteActions) {
+                parts.push(EOS.noteActions(l.path, l.label || ''));
+            } else if (l.type === 'app' && l.url) {
+                var url = (window.escAttr || EOS_UI.esc)(l.url);
+                var label = (window.esc || EOS_UI.esc)(l.label || l.url);
+                parts.push('<a href="' + url + '">' + label + '</a>');
+            }
+        });
+        if (!parts.length) return '';
+        return '<div class="eos-action-links">' +
+               parts.join('<span class="eos-action-links-sep">·</span>') +
+               '</div>';
+    },
 
     // Strip markdown noise so TTS reads prose, not punctuation. Collapses fenced
     // code blocks to a short marker (too long to speak verbatim), flattens inline
@@ -244,9 +381,14 @@ var EOS_UI = {
         var leftPts = stack(incoming, 'left');
 
         function trunc(s, n) { s = String(s||''); return s.length > n ? s.slice(0, n - 1) + '…' : s; }
-        function lbl(s) { return EOS_UI.esc(trunc(s, 32)); }
+        function lbl(s) { return EOS_UI.esc(trunc(s, 22)); }
+        // Widen viewBox horizontally so peripheral labels have room. SVG content
+        // outside the viewBox is clipped by the .eos-rg-wrap overflow:hidden, so
+        // we reserve ~160px of padding each side for the longest labels.
+        var pad = 160;
+        var vbX = -pad, vbW = W + pad * 2;
 
-        var svg = ['<svg viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="xMidYMid meet">'];
+        var svg = ['<svg viewBox="' + vbX + ' 0 ' + vbW + ' ' + H + '" preserveAspectRatio="xMidYMid meet">'];
         rightPts.forEach(function(p) {
             svg.push('<line class="rg-edge rg-edge-out" x1="' + cx + '" y1="' + cy + '" x2="' + p.x + '" y2="' + p.y + '"/>');
         });
@@ -315,7 +457,10 @@ var EOS_UI = {
         });
 
         // Bare filenames: Something-Name.md
-        text = text.replace(/(?<![\/\w])(\b[\w][\w-]+\.md)\b/g, function(m) {
+        // Lookbehind rejects /, word chars, AND hyphens — otherwise
+        // "Inbox/test-sandbox.md" wrongly matched the inner "sandbox.md"
+        // tail at the hyphen, mangling hyphen-bearing paths in chat.
+        text = text.replace(/(?<![\/\w-])(\b[\w][\w-]+\.md)\b/g, function(m) {
             var name = m.replace('.md', '').replace(/-/g, ' ');
             return _ph('<a href="#" onclick="EOS.viewNote(\'' + EOS.escPath(m) + '\');return false" class="obs-link note-ref">' + EOS_UI.esc(name) + '</a>');
         });
@@ -450,6 +595,7 @@ var EOS_UI = {
                         '<button class="eos-note-btn eos-note-btn-close" onclick="EOS_UI.closeNote()">×</button>' +
                     '</div>' +
                 '</div>' +
+                '<div class="eos-note-backlinks" id="eos-note-backlinks" style="display:none"></div>' +
                 '<div class="eos-note-body" id="eos-note-body">' +
                     '<pre class="eos-note-content" id="eos-note-view"></pre>' +
                     '<textarea class="eos-note-editor" id="eos-note-editor" style="display:none"></textarea>' +
@@ -484,7 +630,8 @@ var EOS_UI = {
         var editBtn = document.getElementById('eos-note-edit-btn');
 
         // Show loading
-        titleEl.textContent = EOS.fileName(path).replace(/-/g, ' ');
+        var noteTitle = EOS.fileName(path).replace(/-/g, ' ');
+        titleEl.textContent = noteTitle;
         viewEl.textContent = 'Loading...';
         editorEl.style.display = 'none';
         viewEl.style.display = 'block';
@@ -492,6 +639,12 @@ var EOS_UI = {
         editBtn.textContent = 'Edit';
         overlay.classList.add('open');
         document.body.style.overflow = 'hidden';
+
+        // Live backlinks chip strip — render from /link/api/backlinks lookup
+        var backlinksEl = document.getElementById('eos-note-backlinks');
+        if (backlinksEl) {
+            EOS_UI.backlinkBadges(backlinksEl, { target: EOS.fileName(path).replace(/\.md$/, '') });
+        }
 
         // Fetch content
         fetch(EOS.base + '/api/vault/read?path=' + encodeURIComponent(path))
@@ -606,6 +759,7 @@ var EOS_UI = {
             footerEl.style.display = 'flex';
             editBtn.textContent = 'View';
             editorEl.onkeydown = EOS_UI._editorKeydown;
+            EOS_UI.wikiLinkInput(editorEl);
             editorEl.focus();
         } else {
             EOS_UI._noteOriginal = editorEl.value;
@@ -669,14 +823,14 @@ var EOS_UI = {
     // opts = {
     //   title: string,                              // required
     //   subtitle?: string,
-    //   tabs?: [{id, label, active?}],              // optional pill-mode bar
-    //   onTabChange?: function(id),                 // optional handler; tabs auto-toggle .active
+    //   tabs?: [{id, label, active?, href?}],       // optional pill-mode bar; href => <a> (cross-page nav)
+    //   onTabChange?: function(id),                 // optional handler for in-page tabs (ignored when href set)
     //   actions?: string,                           // HTML for right-side buttons (use .eos-btn*)
     //   mount?: string | HTMLElement                // if given, writes into element; else returns HTML
     // }
     //
     // Returns the HTML string (always). When mount is provided, also writes it
-    // and wires tab clicks.
+    // and wires tab clicks (in-page tabs only — href tabs use native navigation).
     pageHeader: function(opts) {
         opts = opts || {};
         var titleHtml = '<div class="eos-ph-titles">'
@@ -687,7 +841,13 @@ var EOS_UI = {
         if (opts.tabs && opts.tabs.length) {
             tabsHtml = '<div class="eos-ph-tabs" role="tablist">'
                 + opts.tabs.map(function(t) {
-                    return '<button class="eos-ph-tab' + (t.active ? ' active' : '') + '"'
+                    var cls = 'eos-ph-tab' + (t.active ? ' active' : '');
+                    if (t.href) {
+                        return '<a class="' + cls + '" href="' + EOS_UI.esc(t.href) + '"'
+                            + ' role="tab" aria-selected="' + (t.active ? 'true' : 'false') + '"'
+                            + '>' + EOS_UI.esc(t.label) + '</a>';
+                    }
+                    return '<button class="' + cls + '"'
                         + ' data-ph-tab="' + EOS_UI.esc(t.id) + '"'
                         + ' role="tab" aria-selected="' + (t.active ? 'true' : 'false') + '"'
                         + '>' + EOS_UI.esc(t.label) + '</button>';
@@ -2437,12 +2597,533 @@ var EOS_UI = {
             }
         },
     },
+
+    // --- Wikilink autocomplete ---
+    // Attach to any <textarea> or <input>: typing `[[` opens a floating picker
+    // listing matching vault notes. ↑/↓ navigates, Enter/Tab inserts the
+    // selected target as `[[Title]]`, Esc closes.
+    //
+    // Usage: EOS_UI.wikiLinkInput(textarea, {kinds: ['kb','note']});
+    //   kinds   — array of tags to restrict suggestions (default: all notes)
+    //   onPick  — optional callback(picked) → string to insert (default `[[Title]]`)
+    //   limit   — max suggestions (default 10)
+    _wlPopup: null,
+    _wlState: null,
+
+    wikiLinkInput: function(el, opts) {
+        opts = opts || {};
+        if (!el || el._eosWikiAttached) return;
+        el._eosWikiAttached = true;
+        var self = EOS_UI;
+
+        el.addEventListener('input', function() { self._wlMaybeOpen(el, opts); });
+        el.addEventListener('keydown', function(e) {
+            if (!self._wlState || self._wlState.el !== el) return;
+            if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                self._wlMove(1);
+            } else if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                self._wlMove(-1);
+            } else if (e.key === 'Enter' || e.key === 'Tab') {
+                e.preventDefault();
+                self._wlAccept();
+            } else if (e.key === 'Escape') {
+                e.preventDefault();
+                self._wlClose();
+            }
+        });
+        el.addEventListener('blur', function() {
+            // Delay so a click on the popup can land before close.
+            setTimeout(function() { self._wlClose(); }, 160);
+        });
+    },
+
+    _wlScanAtCursor: function(el) {
+        // Return {start, query} if cursor is inside an unclosed `[[…`, else null.
+        var pos = el.selectionStart;
+        if (pos == null) return null;
+        var v = el.value || '';
+        var before = v.slice(0, pos);
+        var open = before.lastIndexOf('[[');
+        if (open < 0) return null;
+        var afterOpen = before.slice(open + 2);
+        if (/[\]\n]/.test(afterOpen)) return null;
+        return { start: open, query: afterOpen };
+    },
+
+    _wlMaybeOpen: function(el, opts) {
+        var scan = EOS_UI._wlScanAtCursor(el);
+        if (!scan) { EOS_UI._wlClose(); return; }
+        var kinds = (opts.kinds || []).join(',');
+        var url = '/link/api/suggest?limit=' + (opts.limit || 10) +
+                  '&q=' + encodeURIComponent(scan.query) +
+                  (kinds ? '&kinds=' + encodeURIComponent(kinds) : '');
+        fetch(url).then(function(r) { return r.json(); }).then(function(data) {
+            var items = (data && data.suggestions) || [];
+            EOS_UI._wlRender(el, items, scan.start, scan.query, opts);
+        }).catch(function() { EOS_UI._wlClose(); });
+    },
+
+    _wlEnsurePopup: function() {
+        if (EOS_UI._wlPopup) return EOS_UI._wlPopup;
+        var p = document.createElement('div');
+        p.className = 'eos-wl-popup';
+        p.setAttribute('role', 'listbox');
+        document.body.appendChild(p);
+        EOS_UI._wlPopup = p;
+        return p;
+    },
+
+    _wlRender: function(el, items, start, query, opts) {
+        var p = EOS_UI._wlEnsurePopup();
+        if (!items.length) { EOS_UI._wlClose(); return; }
+        var html = items.map(function(it, i) {
+            var k = it.kind ? '<span class="eos-wl-kind">' + EOS_UI.esc(it.kind) + '</span>' : '';
+            return '<div class="eos-wl-row' + (i === 0 ? ' active' : '') + '" data-idx="' + i + '">' +
+                   k +
+                   '<span class="eos-wl-title">' + EOS_UI.esc(it.title || it.name || '') + '</span>' +
+                   '</div>';
+        }).join('');
+        p.innerHTML = html;
+        // Position near caret — fall back to bottom of input rect
+        var rect = el.getBoundingClientRect();
+        p.style.left = (rect.left + 12) + 'px';
+        p.style.top = (rect.bottom + 4) + 'px';
+        p.classList.add('open');
+        EOS_UI._wlState = { el: el, items: items, active: 0, start: start, query: query, opts: opts };
+        p.onclick = function(e) {
+            var row = e.target.closest('.eos-wl-row');
+            if (!row) return;
+            EOS_UI._wlState.active = parseInt(row.dataset.idx, 10) || 0;
+            EOS_UI._wlAccept();
+        };
+        p.onmousedown = function(e) { e.preventDefault(); };  // keep focus
+    },
+
+    _wlMove: function(delta) {
+        var st = EOS_UI._wlState;
+        if (!st) return;
+        st.active = (st.active + delta + st.items.length) % st.items.length;
+        var p = EOS_UI._wlPopup;
+        if (!p) return;
+        Array.prototype.forEach.call(p.querySelectorAll('.eos-wl-row'), function(r, i) {
+            r.classList.toggle('active', i === st.active);
+        });
+    },
+
+    _wlAccept: function() {
+        var st = EOS_UI._wlState;
+        if (!st) return;
+        var picked = st.items[st.active];
+        if (!picked) { EOS_UI._wlClose(); return; }
+        var insert = (st.opts.onPick && st.opts.onPick(picked)) || ('[[' + (picked.title || picked.name) + ']]');
+        var el = st.el;
+        var pos = el.selectionStart;
+        var v = el.value || '';
+        // Replace from `[[` through current cursor with the new wikilink
+        el.value = v.slice(0, st.start) + insert + v.slice(pos);
+        var newPos = st.start + insert.length;
+        el.selectionStart = el.selectionEnd = newPos;
+        EOS_UI._wlClose();
+        el.dispatchEvent(new Event('input', { bubbles: true }));
+        el.focus();
+    },
+
+    _wlClose: function() {
+        if (EOS_UI._wlPopup) EOS_UI._wlPopup.classList.remove('open');
+        EOS_UI._wlState = null;
+    },
+
+    // --- Transclusion (kb-blocks, generic vault notes) ---
+    // Fetches a block's body via `/kb/api/blocks/<slug>` and renders it inline
+    // through EOS_UI.renderMarkdown(). Wraps in a frame with a source link so
+    // the reader knows the content lives elsewhere.
+    //
+    // Usage:
+    //   EOS_UI.transclude(mountEl, {slug: 'maxwell-stress'});
+    //   EOS_UI.transclude(mountEl, {slug: 'maxwell-stress', section: 'Pitfalls'});
+    //   EOS_UI.transclude(mountEl, {slug, depth: 2, onMissing: fn});
+    //   depth caps recursive transclusion (default 2; max 3) to prevent cycles.
+    //
+    // After the KB Notes+Blocks unification, transclude resolves against any
+    // kb-tagged note (formerly only kb-blocks). Optional `section` slices the
+    // body to a single `## Heading` block, server-side via
+    // /kb/api/notes/<slug>/section/<name>.
+    transclude: function(mountEl, opts) {
+        opts = opts || {};
+        var mount = (typeof mountEl === 'string') ? document.getElementById(mountEl) : mountEl;
+        if (!mount) return;
+        // Accept `slug` directly, or `slug#section` as a shorthand.
+        var raw = (opts.slug || '').trim();
+        if (!raw) { mount.innerHTML = ''; return; }
+        var hashIdx = raw.indexOf('#');
+        var slug = hashIdx >= 0 ? raw.slice(0, hashIdx) : raw;
+        var section = opts.section || (hashIdx >= 0 ? raw.slice(hashIdx + 1) : '');
+        var depth = Math.min(3, Math.max(0, opts.depth == null ? 2 : opts.depth));
+        var refLabel = section ? (slug + '#' + section) : slug;
+        mount.classList.add('eos-transclude');
+        mount.innerHTML = '<div class="eos-transclude-loading">Loading [[' + EOS_UI.esc(refLabel) + ']]…</div>';
+        var url = section
+            ? '/kb/api/notes/' + encodeURIComponent(slug) + '/section/' + encodeURIComponent(section)
+            : '/kb/api/notes/' + encodeURIComponent(slug);
+        fetch(url)
+            .then(function(r) { return r.json(); })
+            .then(function(note) {
+                if (note.error) {
+                    if (opts.onMissing) { opts.onMissing(slug); }
+                    mount.innerHTML = '<div class="eos-transclude-missing">⚠ <code>[[' + EOS_UI.esc(refLabel) + ']]</code> not found</div>';
+                    return;
+                }
+                // /api/notes returns body at top-level for the section endpoint, or
+                // inside properties.references for the full-note endpoint. Tolerate both.
+                var body = note.body || '';
+                if (depth <= 0) {
+                    body = body.replace(/!\[\[[^\]]+\]\]/g, '<em>(nested transclusion suppressed)</em>');
+                }
+                var rendered = EOS_UI.renderMarkdown(body);
+                var titleLabel = (note.title || slug) + (section ? ' §' + section : '');
+                mount.innerHTML =
+                    '<div class="eos-transclude-frame">' +
+                        '<div class="eos-transclude-head">' +
+                            '<a href="/kb/#' + encodeURIComponent(slug) + '" class="eos-transclude-source">📎 ' + EOS_UI.esc(titleLabel) + '</a>' +
+                        '</div>' +
+                        '<div class="eos-transclude-body">' + rendered + '</div>' +
+                    '</div>';
+                // Resolve nested ![[slug]] transclusions one level deeper
+                if (depth > 0) {
+                    var bodyEl = mount.querySelector('.eos-transclude-body');
+                    if (bodyEl) {
+                        bodyEl.innerHTML = bodyEl.innerHTML.replace(/!\[\[([^\]|]+?)(?:\|[^\]]+)?\]\]/g, function(_, target) {
+                            var id = 'tx-' + Math.random().toString(36).slice(2, 9);
+                            setTimeout(function() {
+                                EOS_UI.transclude(document.getElementById(id), { slug: target.trim(), depth: depth - 1 });
+                            }, 0);
+                            return '<div id="' + id + '"></div>';
+                        });
+                    }
+                }
+            })
+            .catch(function(e) {
+                mount.innerHTML = '<div class="eos-transclude-missing">⚠ Failed to load <code>[[' + EOS_UI.esc(refLabel) + ']]</code>: ' + EOS_UI.esc(e.message || '') + '</div>';
+            });
+    },
+
+    // --- Backlink badges ---
+    // Render a row of chip-links from `/link/api/backlinks?title=...` into mountEl.
+    // mountEl can be an element or an id string.
+    //
+    // Usage: EOS_UI.backlinkBadges('my-mount', {target: 'note-title'});
+    //   target  — the title to look up backlinks for (required)
+    //   max     — cap visible chips (default 12)
+    //   empty   — text shown when no backlinks (default: hide mount)
+    //   onClick — callback(path) → if returns truthy, default navigation is skipped
+    backlinkBadges: function(mountEl, opts) {
+        opts = opts || {};
+        var mount = (typeof mountEl === 'string') ? document.getElementById(mountEl) : mountEl;
+        if (!mount) return;
+        var target = (opts.target || '').trim();
+        if (!target) { mount.innerHTML = ''; mount.style.display = 'none'; return; }
+        var max = opts.max || 12;
+        mount.classList.add('eos-bl-row');
+        mount.innerHTML = '<span class="eos-bl-loading">Loading backlinks…</span>';
+        mount.style.display = '';
+        fetch('/link/api/backlinks?title=' + encodeURIComponent(target))
+            .then(function(r) { return r.json(); })
+            .then(function(items) {
+                var list = Array.isArray(items) ? items : (items && items.backlinks) || [];
+                if (!list.length) {
+                    if (opts.empty) {
+                        mount.innerHTML = '<span class="eos-bl-empty">' + EOS_UI.esc(opts.empty) + '</span>';
+                    } else {
+                        mount.innerHTML = '';
+                        mount.style.display = 'none';
+                    }
+                    return;
+                }
+                var shown = list.slice(0, max);
+                var more = list.length - shown.length;
+                var html = '<span class="eos-bl-label">⇇ Linked from</span>' +
+                    shown.map(function(p) {
+                        var name = String(p).split(/[\\/]/).pop().replace(/\.md$/, '').replace(/-/g, ' ');
+                        return '<a class="eos-bl-chip" href="#" data-path="' + EOS_UI.esc(p) + '">' +
+                               EOS_UI.esc(name) + '</a>';
+                    }).join('') +
+                    (more > 0 ? '<span class="eos-bl-more">+' + more + ' more</span>' : '');
+                mount.innerHTML = html;
+                Array.prototype.forEach.call(mount.querySelectorAll('.eos-bl-chip'), function(a) {
+                    a.addEventListener('click', function(e) {
+                        e.preventDefault();
+                        var path = a.dataset.path;
+                        var handled = opts.onClick && opts.onClick(path);
+                        if (!handled && window.EOS && EOS.viewNote) EOS.viewNote(path);
+                    });
+                });
+            })
+            .catch(function() {
+                mount.innerHTML = '';
+                mount.style.display = 'none';
+            });
+    },
+
+    // ── aiFormFill — chat-driven form filler ─────────────────────
+    //
+    //   EOS_UI.aiFormFill({
+    //       title: 'Create org',
+    //       intro: 'Tell me about the org…',          // first assistant message
+    //       schema: [                                  // same shape as formModal
+    //           {key:'name', label:'Name', type:'text', required:true},
+    //           {key:'kind', label:'Kind', type:'select', options:['team','household','other']},
+    //           {key:'mission', label:'Mission', type:'textarea'},
+    //       ],
+    //       endpoint: '/api/sdk/ai-form-fill',          // optional override
+    //       initial: {name: 'Foo'},                     // optional prefill
+    //       submitLabel: 'Create',
+    //       onSubmit: async function(values) { ... },   // called when user clicks submit
+    //       onCancel: function() { ... },               // optional
+    //   })
+    //
+    // Falls back to a "Fill manually" link if the AI extraction endpoint
+    // is unreachable (503/offline) so the form is still usable.
+    aiFormFill: function(opts) {
+        opts = opts || {};
+        var esc = EOS_UI.esc;
+        var schema = opts.schema || [];
+        var endpoint = opts.endpoint || '/api/sdk/ai-form-fill';
+        var submitLabel = opts.submitLabel || 'Create';
+        var values = Object.assign({}, opts.initial || {});
+        var history = [];
+        var intro = opts.intro || ("I'll help you fill out this form. Tell me about it in your own words.");
+        history.push({role: 'assistant', content: intro});
+
+        // Build modal body shell
+        var body =
+            '<div class="eos-aifill" style="display:flex;flex-direction:column;gap:14px;min-height:320px">' +
+                '<div class="eos-aifill-chat" id="aifill-chat" style="background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:12px;max-height:260px;overflow-y:auto;font-size:13px;line-height:1.5"></div>' +
+                '<div class="eos-aifill-preview" id="aifill-preview" style="background:color-mix(in srgb, var(--accent) 6%, var(--bg-card));border:1px solid color-mix(in srgb, var(--accent) 30%, var(--border));border-radius:10px;padding:10px"></div>' +
+                '<div class="eos-aifill-input" style="display:flex;gap:6px">' +
+                    '<input type="text" id="aifill-input" placeholder="Type a reply…" autofocus style="flex:1;padding:9px 12px;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:8px;font-size:14px">' +
+                    '<button class="eos-btn" id="aifill-send" onclick="EOS_UI._aiFillSend()">Send</button>' +
+                '</div>' +
+                '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;border-top:1px solid var(--border);padding-top:10px">' +
+                    '<a id="aifill-manual" href="javascript:void(0)" style="color:var(--text-muted);font-size:12px;text-decoration:underline">Fill manually instead</a>' +
+                    '<div style="display:flex;gap:8px">' +
+                        '<button class="eos-btn" onclick="EOS_UI.closeModal()">Cancel</button>' +
+                        '<button class="eos-btn eos-btn-primary" id="aifill-submit" onclick="EOS_UI._aiFillSubmit()" disabled>' + esc(submitLabel) + '</button>' +
+                    '</div>' +
+                '</div>' +
+            '</div>';
+
+        EOS_UI.modal({title: opts.title || 'Create with AI', body: body, width: '600px'});
+
+        // Stash state on EOS_UI so the inline button handlers can reach it.
+        EOS_UI._aiFill = {
+            schema: schema,
+            values: values,
+            history: history,
+            endpoint: endpoint,
+            onSubmit: opts.onSubmit,
+            onCancel: opts.onCancel,
+            submitLabel: submitLabel,
+        };
+
+        EOS_UI._aiFillRenderChat();
+        EOS_UI._aiFillRenderPreview();
+        EOS_UI._aiFillRefreshSubmitState();
+
+        // Wire keyboard
+        var inp = document.getElementById('aifill-input');
+        if (inp) inp.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                EOS_UI._aiFillSend();
+            }
+        });
+
+        // Wire fallback to manual fill
+        var manual = document.getElementById('aifill-manual');
+        if (manual && opts.onManual) {
+            manual.onclick = function() {
+                EOS_UI.closeModal();
+                try { opts.onManual(values); } catch (e) {}
+            };
+        } else if (manual) {
+            // Default fallback: open formModal with same schema + values
+            manual.onclick = function() {
+                EOS_UI.closeModal();
+                EOS_UI.formModal(opts.title || 'Create', schema.map(function(f) {
+                    return Object.assign({}, f, {value: values[f.key] || ''});
+                }), opts.onSubmit);
+            };
+        }
+    },
+
+    _aiFill: null,
+    _aiFillBusy: false,
+
+    _aiFillRenderChat: function() {
+        var s = EOS_UI._aiFill;
+        if (!s) return;
+        var el = document.getElementById('aifill-chat');
+        if (!el) return;
+        var esc = EOS_UI.esc;
+        el.innerHTML = s.history.map(function(m) {
+            var bg = m.role === 'assistant' ? 'color-mix(in srgb, var(--accent) 8%, var(--bg-card))' : 'var(--bg-card)';
+            var align = m.role === 'assistant' ? 'flex-start' : 'flex-end';
+            var who = m.role === 'assistant' ? '✨ AI' : 'You';
+            return '<div style="display:flex;justify-content:' + align + ';margin-bottom:8px">' +
+                '<div style="max-width:80%;background:' + bg + ';border:1px solid var(--border);border-radius:10px;padding:8px 12px">' +
+                    '<div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:3px">' + esc(who) + '</div>' +
+                    '<div style="color:var(--text);white-space:pre-wrap">' + esc(m.content) + '</div>' +
+                '</div>' +
+            '</div>';
+        }).join('');
+        el.scrollTop = el.scrollHeight;
+    },
+
+    _aiFillRenderPreview: function() {
+        var s = EOS_UI._aiFill;
+        if (!s) return;
+        var el = document.getElementById('aifill-preview');
+        if (!el) return;
+        var esc = EOS_UI.esc;
+        var parts = ['<div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:6px">Form preview</div>'];
+        var rows = s.schema.map(function(f) {
+            var v = s.values[f.key];
+            var hasValue = v !== undefined && v !== null && v !== '';
+            var display = hasValue ? esc(String(v)) : '<span style="color:var(--text-muted);font-style:italic">' + (f.required ? '(required, not yet filled)' : '(not set)') + '</span>';
+            var labelColor = hasValue ? 'var(--text-heading)' : 'var(--text-muted)';
+            return '<div style="display:flex;gap:8px;margin-bottom:4px;font-size:13px">' +
+                '<span style="color:' + labelColor + ';font-weight:500;min-width:90px">' + esc(f.label || f.key) + ':</span>' +
+                '<span style="flex:1">' + display + '</span>' +
+                (hasValue ? '<button class="eos-btn" style="font-size:11px;padding:2px 8px" onclick="EOS_UI._aiFillEdit(\'' + esc(f.key) + '\')">Edit</button>' : '') +
+            '</div>';
+        });
+        parts.push(rows.join(''));
+        el.innerHTML = parts.join('');
+    },
+
+    _aiFillRefreshSubmitState: function() {
+        var s = EOS_UI._aiFill;
+        if (!s) return;
+        var btn = document.getElementById('aifill-submit');
+        if (!btn) return;
+        var missing = s.schema.filter(function(f) {
+            return f.required && !s.values[f.key];
+        });
+        btn.disabled = missing.length > 0;
+        btn.title = missing.length ? 'Missing required: ' + missing.map(function(f){return f.label||f.key;}).join(', ') : '';
+    },
+
+    _aiFillEdit: function(key) {
+        var s = EOS_UI._aiFill;
+        if (!s) return;
+        var field = s.schema.find(function(f) { return f.key === key; });
+        if (!field) return;
+        var current = s.values[key] || '';
+        var newVal = window.prompt('Edit "' + (field.label || key) + '"', current);
+        if (newVal === null) return;
+        s.values[key] = newVal;
+        EOS_UI._aiFillRenderPreview();
+        EOS_UI._aiFillRefreshSubmitState();
+    },
+
+    _aiFillSend: async function() {
+        if (EOS_UI._aiFillBusy) return;
+        var s = EOS_UI._aiFill;
+        if (!s) return;
+        var inp = document.getElementById('aifill-input');
+        var text = (inp.value || '').trim();
+        if (!text) return;
+        s.history.push({role: 'user', content: text});
+        inp.value = '';
+        EOS_UI._aiFillBusy = true;
+        EOS_UI._aiFillRenderChat();
+        // Show thinking indicator
+        s.history.push({role: 'assistant', content: '…thinking'});
+        EOS_UI._aiFillRenderChat();
+        s.history.pop(); // remove thinking placeholder before real reply lands
+
+        try {
+            var res = await fetch(s.endpoint, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    schema: s.schema,
+                    history: s.history,
+                    current: s.values,
+                }),
+            });
+            var data = await res.json();
+            if (!res.ok || data.error) {
+                var msg = data.error || ('AI extraction failed (' + res.status + ')');
+                s.history.push({role: 'assistant', content: '⚠ ' + msg + '\n\nFill manually using the link below, or try a simpler description.'});
+                EOS_UI._aiFillRenderChat();
+                return;
+            }
+            // Merge filled values
+            if (data.current && typeof data.current === 'object') {
+                s.values = data.current;
+            } else if (data.filled && typeof data.filled === 'object') {
+                Object.keys(data.filled).forEach(function(k) { s.values[k] = data.filled[k]; });
+            }
+            var reply = data.next_question || (data.ready ? "Looks good — click " + s.submitLabel + " to confirm, or keep refining." : "Got it.");
+            s.history.push({role: 'assistant', content: reply});
+            EOS_UI._aiFillRenderChat();
+            EOS_UI._aiFillRenderPreview();
+            EOS_UI._aiFillRefreshSubmitState();
+        } catch (e) {
+            s.history.push({role: 'assistant', content: '⚠ Network error — try again or fill manually.'});
+            EOS_UI._aiFillRenderChat();
+        } finally {
+            EOS_UI._aiFillBusy = false;
+            var i = document.getElementById('aifill-input');
+            if (i) i.focus();
+        }
+    },
+
+    _aiFillSubmit: async function() {
+        var s = EOS_UI._aiFill;
+        if (!s) return;
+        var missing = s.schema.filter(function(f) {
+            return f.required && !s.values[f.key];
+        });
+        if (missing.length) {
+            if (window.EOS_UI && EOS_UI.toast) EOS_UI.toast('Missing: ' + missing.map(function(f){return f.label||f.key;}).join(', '), false);
+            return;
+        }
+        var btn = document.getElementById('aifill-submit');
+        if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
+        try {
+            if (typeof s.onSubmit === 'function') await s.onSubmit(s.values);
+            EOS_UI.closeModal();
+        } catch (e) {
+            if (btn) { btn.disabled = false; btn.textContent = s.submitLabel; }
+            if (window.EOS_UI && EOS_UI.toast) EOS_UI.toast('Save failed: ' + (e.message || e), false);
+        }
+    },
 };
 
 // Global fetch wrapper — turns 503 `{error:"ai_offline"}` responses into
 // a toast + banner refresh so clicking an AI button while AI is offline
 // gives honest feedback instead of a silent failure. The response object
 // itself is returned unchanged so callers can still handle .ok / .status.
+// Render the toast bell on page load if sessionStorage carried a log over
+// from a previous page navigation in this tab.
+(function _eosInitToastBell() {
+    if (typeof document === 'undefined') return;
+    function go() {
+        if (window.EOS_UI && EOS_UI._toastLog && EOS_UI._toastLog.length) {
+            EOS_UI._updateToastBell();
+        }
+    }
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', go);
+    } else {
+        go();
+    }
+})();
+
 (function _eosWrapFetch() {
     if (typeof window === 'undefined' || window._eosFetchWrapped) return;
     window._eosFetchWrapped = true;

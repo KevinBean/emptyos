@@ -45,7 +45,7 @@ class _FakeProc:
     def kill(self):
         pass
 
-    async def communicate(self):
+    async def communicate(self, input=None):
         return (self._stdout, self._stderr)
 
 

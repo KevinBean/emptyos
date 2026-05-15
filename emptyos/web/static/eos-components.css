@@ -23,10 +23,39 @@
 .eos-panel.active { display:block; animation:fadeUp 0.25s ease }
 
 /* === Toast === */
-.eos-toast { position:fixed; top:20px; left:50%; z-index:100; transform:translateX(-50%) translateY(-60px); padding:10px 24px; border-radius:10px; font-size:14px; font-weight:600; box-shadow:0 4px 24px rgba(0,0,0,0.5); backdrop-filter:blur(16px); transition:transform 0.3s cubic-bezier(0.34,1.56,0.64,1); white-space:nowrap; letter-spacing:0.01em }
+.eos-toast { position:fixed; top:calc(20px + env(safe-area-inset-top,0px)); left:50%; z-index:100; transform:translateX(-50%) translateY(calc(-60px - env(safe-area-inset-top,0px))); padding:10px 24px; border-radius:10px; font-size:14px; font-weight:600; box-shadow:0 4px 24px rgba(0,0,0,0.5); backdrop-filter:blur(16px); transition:transform 0.3s cubic-bezier(0.34,1.56,0.64,1); letter-spacing:0.01em; cursor:pointer; max-width:min(640px, calc(100vw - 32px)); user-select:text; -webkit-user-select:text }
+
+/* Action-result link row — rendered by EOS_UI.actionLinks() for [DO:] outcomes */
+.eos-action-links { display:block; margin:6px 0 10px 0; padding:8px 12px; border-left:3px solid var(--accent); background:color-mix(in srgb, var(--accent) 6%, transparent); border-radius:4px; font-size:12px; line-height:1.6 }
+.eos-action-links a { color:var(--accent); text-decoration:none; font-weight:600 }
+.eos-action-links a:hover { text-decoration:underline }
+.eos-action-links-sep { opacity:0.4; margin:0 6px }
 .eos-toast.show { transform:translateX(-50%) translateY(0) }
-.eos-toast-ok { background:rgba(52,211,153,0.92); color:#064e3b }
-.eos-toast-err { background:rgba(248,113,113,0.92); color:#7f1d1d }
+.eos-toast-ok { background:rgba(52,211,153,0.92); color:#064e3b; white-space:nowrap }
+.eos-toast-err { background:rgba(248,113,113,0.92); color:#7f1d1d; white-space:normal; line-height:1.45 }
+
+/* === Toast bell (recent notifications) ===
+   Top-right corner so it doesn't collide with the bottom-right FAB stack
+   (page-assistant FAB at 90px, capture FAB at 144px, capture modal at 190px). */
+.eos-toast-bell { position:fixed; top:calc(16px + env(safe-area-inset-top,0px)); right:calc(16px + env(safe-area-inset-right,0px)); z-index:99; display:flex; align-items:center; gap:4px; padding:8px 12px; min-height:32px; border-radius:999px; border:1px solid var(--border,rgba(255,255,255,0.12)); background:rgba(0,0,0,0.55); color:var(--text,#fff); font-size:12px; font-weight:600; cursor:pointer; backdrop-filter:blur(12px); box-shadow:0 2px 8px rgba(0,0,0,0.3); transition:transform 0.15s, background 0.15s }
+.eos-toast-bell:hover { transform:translateY(-1px); background:rgba(0,0,0,0.75) }
+.eos-toast-bell-icon { font-size:14px; line-height:1 }
+.eos-toast-bell-count { opacity:0.85 }
+.theme-eos .eos-toast-bell { background:#ffffff; color:#1f2937; border:1px solid var(--border,#e5e7eb); box-shadow:0 2px 12px rgba(0,0,0,0.08) }
+.theme-eos .eos-toast-bell:hover { background:#f9fafb }
+
+.eos-toast-log { display:flex; flex-direction:column; gap:8px; max-height:60vh; overflow-y:auto }
+.eos-toast-log-empty { padding:24px; text-align:center; color:var(--text-muted,#9ca3af); font-size:13px }
+.eos-toast-log-row { padding:10px 12px; border-radius:8px; border:1px solid var(--border,rgba(255,255,255,0.08)); background:var(--bg-card,rgba(255,255,255,0.03)); cursor:pointer; transition:background 0.12s }
+.eos-toast-log-row:hover { background:color-mix(in srgb, var(--accent,#3b82f6) 8%, var(--bg-card,rgba(255,255,255,0.03))) }
+.eos-toast-log-ok { border-left:3px solid var(--success,#10b981) }
+.eos-toast-log-err { border-left:3px solid var(--danger,#ef4444) }
+.eos-toast-log-msg { font-size:13px; line-height:1.5; color:var(--text,inherit); white-space:pre-wrap; word-break:break-word; user-select:text; -webkit-user-select:text }
+.eos-toast-log-meta { display:flex; align-items:center; gap:8px; margin-top:6px; font-size:11px; color:var(--text-muted,#9ca3af) }
+.eos-toast-log-ago { flex:1 }
+.eos-toast-log-btn { padding:3px 10px; font-size:11px; font-weight:600; border-radius:6px; border:1px solid var(--border,rgba(255,255,255,0.12)); background:transparent; color:var(--text,inherit); cursor:pointer }
+.eos-toast-log-btn:hover { background:color-mix(in srgb, var(--accent,#3b82f6) 12%, transparent); border-color:var(--accent,#3b82f6) }
+.eos-toast-log-footer { margin-top:14px; display:flex; justify-content:flex-end }
 
 /* === Header ===
    Two forms. Legacy `.eos-header` (a flex container holding an <h1>) is still
@@ -43,7 +72,7 @@
 .eos-page-header .eos-ph-sub { font-size:13px; color:var(--text-secondary); margin-top:2px; letter-spacing:0.01em }
 .eos-page-header .eos-ph-actions { display:flex; gap:8px; align-items:center; flex-shrink:0 }
 .eos-page-header .eos-ph-tabs { display:flex; gap:4px; background:var(--bg-card); border:1px solid var(--border); border-radius:8px; padding:4px; flex-wrap:wrap }
-.eos-page-header .eos-ph-tab { padding:8px 16px; font-size:13px; font-weight:600; border-radius:6px; border:none; background:transparent; color:var(--text-muted); cursor:pointer; transition:color 0.15s, background 0.15s; font-family:inherit }
+.eos-page-header .eos-ph-tab { padding:8px 16px; font-size:13px; font-weight:600; border-radius:6px; border:none; background:transparent; color:var(--text-muted); cursor:pointer; transition:color 0.15s, background 0.15s; font-family:inherit; text-decoration:none; display:inline-block }
 .eos-page-header .eos-ph-tab:hover { color:var(--text) }
 .eos-page-header .eos-ph-tab.active { background:var(--accent); color:var(--accent-ink) }
 @media(max-width:560px) { .eos-page-header .eos-ph-actions { width:100% } .eos-page-header .eos-ph-tabs { width:100% } .eos-page-header .eos-ph-tab { flex:1 } }
@@ -93,9 +122,9 @@
 .eos-entry-val { font-weight:700; font-size:15px; color:var(--text-heading); font-family:var(--mono); min-width:56px; text-align:right }
 
 /* === Modal / Bottom Sheet === */
-.eos-modal-bg { position:fixed; inset:0; background:rgba(0,0,0,0.5); z-index:50; display:none; align-items:flex-end; justify-content:center; backdrop-filter:blur(4px) }
+.eos-modal-bg { position:fixed; inset:0; background:rgba(0,0,0,0.5); z-index:50; display:none; align-items:flex-end; justify-content:center; backdrop-filter:blur(4px); cursor:pointer; -webkit-tap-highlight-color:transparent }
 .eos-modal-bg.show { display:flex }
-.eos-modal { background:var(--bg-surface); border-radius:16px 16px 0 0; padding:20px; width:100%; max-width:500px; max-height:70dvh; overflow-y:auto; animation:cardIn 0.25s }
+.eos-modal { background:var(--bg-surface); border-radius:16px 16px 0 0; padding:20px 20px calc(20px + env(safe-area-inset-bottom,0px)); width:100%; max-width:500px; max-height:70dvh; overflow-y:auto; animation:cardIn 0.25s; cursor:auto }
 .eos-modal-handle { width:40px; height:4px; background:var(--border); border-radius:2px; margin:0 auto 16px }
 .eos-modal h3 { margin-bottom:12px }
 .eos-modal input,.eos-modal select,.eos-modal textarea { width:100%; padding:10px; border:1px solid var(--border); border-radius:10px; background:var(--bg); color:var(--text); font-size:15px; margin-bottom:8px; font-family:inherit }
@@ -172,6 +201,23 @@
 .obs-link:hover { opacity:0.8; text-decoration:underline }
 .obs-icon { font-size:0.8em; opacity:0.5 }
 
+/* Shared icon-button sizing — apply to any icon-only <button>/<a> to guarantee
+   a 32×32 mobile tap target with the icon centered. Stacks with the element's
+   own background/border/color styles. */
+.eos-tap-target {
+  display:inline-flex; align-items:center; justify-content:center;
+  min-width:32px; min-height:32px;
+}
+
+@media (max-width:640px){
+  .eos-note-edit-icon, .obs-icon { display:inline-flex; align-items:center; justify-content:center; min-width:32px; min-height:32px; padding:4px; font-size:1em }
+  .obs-icon { font-size:0.9em }
+  /* The text portion of a vault note-link also needs a tappable line — the
+     icon siblings get 32px min-height above, so without this the row's name
+     link is shorter than its sibling icons and feels misaligned. */
+  .eos-note-link .obs-link { display:inline-flex; align-items:center; min-height:32px; padding:4px 0 }
+}
+
 /* Note reference pills */
 .note-ref { background:color-mix(in srgb,var(--accent) 10%,transparent); padding:2px 8px; border-radius:6px; font-size:13px; white-space:nowrap; text-decoration:none; transition:background 0.15s }
 .note-ref:hover { background:color-mix(in srgb,var(--accent) 20%,transparent); text-decoration:none }
@@ -203,7 +249,7 @@ blockquote { border-left:3px solid var(--accent); padding:4px 12px; margin:8px 0
 .trend-down { color:#10b981 }
 
 /* === Note Viewer / Editor === */
-.eos-note-overlay { position:fixed; inset:0; background:rgba(0,0,0,0.6); z-index:200; display:none; justify-content:center; align-items:center; backdrop-filter:blur(4px) }
+.eos-note-overlay { position:fixed; inset:0; background:rgba(0,0,0,0.6); z-index:200; display:none; justify-content:center; align-items:center; backdrop-filter:blur(4px); cursor:pointer; -webkit-tap-highlight-color:transparent }
 .eos-note-overlay.open { display:flex }
 .eos-note-panel { background:var(--bg-surface); border-radius:16px; width:90vw; max-width:800px; height:80vh; display:flex; flex-direction:column; animation:cardIn 0.25s; box-shadow:0 8px 40px rgba(0,0,0,0.4) }
 .eos-note-header { display:flex; align-items:center; justify-content:space-between; padding:16px 20px; border-bottom:1px solid var(--border); flex-shrink:0 }
@@ -215,6 +261,9 @@ blockquote { border-left:3px solid var(--accent); padding:4px 12px; margin:8px 0
 .eos-note-btn-edit:hover { opacity:0.9; color:#fff }
 .eos-note-btn-close { font-size:18px; line-height:1; padding:4px 10px; font-weight:300 }
 .eos-note-body { flex:1; overflow-y:auto; padding:0 }
+.eos-note-backlinks { padding:8px 20px; border-bottom:1px solid var(--border); flex-shrink:0 }
+.eos-note-backlinks .eos-bl-row { margin:0 }
+@media (max-width:600px) { .eos-note-backlinks { padding:8px 16px } }
 .eos-note-content { padding:20px; margin:0; font-family:var(--mono, 'Menlo', 'Consolas', monospace); font-size:13px; line-height:1.7; color:var(--text); white-space:pre-wrap; word-break:break-word; background:transparent; border:none; tab-size:4 }
 .eos-note-editor { width:100%; height:100%; padding:20px; margin:0; font-family:var(--mono, 'Menlo', 'Consolas', monospace); font-size:13px; line-height:1.7; color:var(--text); background:var(--bg); border:none; outline:none; resize:none; tab-size:4; box-sizing:border-box }
 .eos-note-footer { display:flex; gap:8px; align-items:center; padding:12px 20px; border-top:1px solid var(--border); flex-shrink:0 }
@@ -278,7 +327,7 @@ blockquote { border-left:3px solid var(--accent); padding:4px 12px; margin:8px 0
 .eos-stat-card--muted   .eos-stat-val { color:var(--text-muted) }
 
 /* === Modal === */
-.eos-modal-overlay { position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.5); z-index:200; display:none; justify-content:center; align-items:center; padding:16px; backdrop-filter:blur(4px) }
+.eos-modal-overlay { position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.5); z-index:200; display:none; justify-content:center; align-items:center; padding:16px; backdrop-filter:blur(4px); cursor:pointer; -webkit-tap-highlight-color:transparent }
 .eos-modal-overlay.show { display:flex }
 .eos-modal { background:var(--bg-surface); border:1px solid var(--border); border-radius:16px; padding:24px; max-width:500px; width:100%; max-height:85dvh; overflow-y:auto; animation:cardIn 0.2s ease }
 .eos-modal-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:16px }
@@ -317,7 +366,7 @@ blockquote { border-left:3px solid var(--accent); padding:4px 12px; margin:8px 0
 .eos-btn-primary:hover { opacity:0.9 }
 .eos-btn-danger { border-color:#ef4444; color:#ef4444 }
 .eos-btn-danger:hover { background:#ef4444; color:#fff }
-.eos-btn-sm { padding:6px 14px; font-size:13px; border-radius:8px }
+.eos-btn-sm { padding:7px 14px; font-size:13px; border-radius:8px; min-height:32px }
 .eos-btn-ghost { background:none; border-color:transparent; color:var(--text-muted) }
 .eos-btn-ghost:hover { color:var(--text); border-color:var(--border) }
 
@@ -382,8 +431,9 @@ blockquote { border-left:3px solid var(--accent); padding:4px 12px; margin:8px 0
     .eos-actions { grid-template-columns:repeat(2,1fr) }
     .eos-donut-section { flex-direction:column; align-items:center }
 
-    /* Modals full-width */
-    .eos-modal { padding:16px; border-radius:12px 12px 0 0; max-width:100%; margin:0 }
+    /* Modals full-width. Bottom padding clears the iOS home indicator so
+       sticky action buttons (e.g. rooms "Create room") stay tappable. */
+    .eos-modal { padding:16px 16px calc(16px + env(safe-area-inset-bottom,0px)); border-radius:12px 12px 0 0; max-width:100%; margin:0 }
     .eos-modal-bg, .eos-modal-overlay { align-items:flex-end; padding:0 }
 
     /* Input bars stack */
@@ -473,6 +523,18 @@ blockquote { border-left:3px solid var(--accent); padding:4px 12px; margin:8px 0
 .theme-eos .eos-entry { transition:background 0.15s }
 .theme-eos .eos-entry:hover { background:rgba(108,92,231,0.03) }
 
+/* ===== Drawer primitive (full-height side-pinned panel) =====
+   Apps add `.eos-drawer .eos-drawer-right` (or `-left`) to their drawer
+   element and override width/z-index/transition timing as needed. The
+   primitive carries the iOS-load-bearing bits — 100dvh, safe-area top+bottom,
+   transform anchor — so consumers can't ship a drawer that breaks the notch
+   or home-indicator. Toggle visibility with `.open`. */
+.eos-drawer { position:fixed; top:0; bottom:0; z-index:200; height:100dvh; display:flex; flex-direction:column; background:var(--bg-card); padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px); transition:transform 0.2s ease; }
+.eos-drawer-right { right:0; border-left:1px solid var(--border); box-shadow:-8px 0 24px var(--shadow); transform:translateX(100%); }
+.eos-drawer-right.open { transform:translateX(0); }
+.eos-drawer-left { left:0; border-right:1px solid var(--border); box-shadow:8px 0 24px var(--shadow); transform:translateX(-100%); }
+.eos-drawer-left.open { transform:translateX(0); }
+
 /* ===== Settings slide-out (shared) ===== */
 .eos-settings-panel { display:none; position:fixed; top:0; right:0; bottom:0; width:min(420px,92vw); background:var(--bg); border-left:1px solid var(--border); z-index:200; overflow-y:auto; box-shadow:-8px 0 24px rgba(0,0,0,0.12); padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px); }
 .eos-settings-panel.open { display:block; animation:eosSettingsSlideIn 0.22s ease; }
@@ -491,7 +553,7 @@ blockquote { border-left:3px solid var(--accent); padding:4px 12px; margin:8px 0
 .eos-settings-panel .sf-checkbox { display:flex; align-items:flex-start; gap:10px; font-size:14px; color:var(--text); cursor:pointer; line-height:1.4; }
 .eos-settings-panel .sf-checkbox input[type="checkbox"] { width:16px; height:16px; margin:2px 0 0; accent-color: var(--accent); flex-shrink:0; cursor:pointer; }
 .eos-settings-panel .sf-checkbox span { flex:1; }
-.btn-settings { background:transparent; border:1px solid var(--border); color:var(--text-secondary); padding:6px 10px; border-radius:8px; font-size:12px; cursor:pointer; display:inline-flex; align-items:center; gap:4px; }
+.btn-settings { background:transparent; border:1px solid var(--border); color:var(--text-secondary); padding:6px 10px; border-radius:8px; font-size:12px; cursor:pointer; display:inline-flex; align-items:center; justify-content:center; gap:4px; min-width:32px; min-height:32px; }
 .btn-settings:hover { border-color:var(--accent); color:var(--accent); }
 
 /* ===== Shared badge system (status / priority / age) ===== */
@@ -599,8 +661,11 @@ html.eos-redact #eos-demo-banner {
 .eos-pwa-dismiss-btn {
     background: transparent; border: 0; color: var(--muted, #8b949e);
     font-size: 18px; line-height: 1; cursor: pointer; padding: 0 4px;
+    min-width: 36px; min-height: 36px;
+    display: inline-flex; align-items: center; justify-content: center;
 }
 .eos-pwa-dismiss-btn:hover { color: var(--fg, #e6edf3); }
+.eos-pwa-install-btn { min-height: 36px; display: inline-flex; align-items: center; }
 
 /* ===== Shared entity card (list-item card with title/meta/badges/actions) ===== */
 .eos-entity-card { background:var(--bg); border:1px solid var(--border); border-radius:10px; padding:12px; margin-bottom:8px; cursor:pointer; transition:border-color 0.2s, transform 0.1s, box-shadow 0.15s; animation:cardIn 0.3s ease both; }
@@ -662,7 +727,7 @@ html.eos-redact #eos-demo-banner {
 /* --- Slide Panel (full-height detail view) --- */
 .eos-slide-panel { position:fixed; inset:0; z-index:200; transform:translateY(100%); transition:transform 0.35s cubic-bezier(0.4,0,0.2,1); pointer-events:none; }
 .eos-slide-panel.open { transform:translateY(0); pointer-events:auto; }
-.eos-slide-panel-backdrop { position:absolute; inset:0; background:rgba(0,0,0,0.5); }
+.eos-slide-panel-backdrop { position:absolute; inset:0; background:rgba(0,0,0,0.5); cursor:pointer; -webkit-tap-highlight-color:transparent; }
 .eos-slide-panel-sheet { position:absolute; top:48px; left:0; right:0; bottom:0; background:var(--bg, #1a1d23); border-radius:20px 20px 0 0; overflow-y:auto; }
 .eos-slide-panel-close { position:absolute; top:12px; right:20px; z-index:210; background:none; border:1px solid var(--border); color:var(--text-muted); padding:6px 14px; border-radius:8px; font-family:var(--mono, monospace); font-size:12px; cursor:pointer; transition:border-color 0.2s, color 0.2s; }
 .eos-slide-panel-close:hover { border-color:var(--text-secondary); color:var(--text); }
@@ -788,7 +853,7 @@ html.eos-redact #eos-demo-banner {
 .eos-row-del {
     --eos-icon-trash: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round'><path d='M2.5 4h11M6.25 4V2.5h3.5V4M4 4v8.5a1.25 1.25 0 0 0 1.25 1.25h5.5A1.25 1.25 0 0 0 12 12.5V4M6.5 7v4M9.5 7v4'/></svg>");
     position:absolute; top:6px; right:6px;
-    width:24px; height:24px; padding:0;
+    width:32px; height:32px; padding:0;
     display:inline-flex; align-items:center; justify-content:center;
     border:1px solid transparent; border-radius:6px;
     background:transparent; color:var(--text-muted); cursor:pointer;
@@ -1138,6 +1203,34 @@ html.eos-redact #eos-demo-banner {
 .eos-method-picker-error { font-size: 12px; color: var(--danger);
     font-style: italic; }
 
+/* ── Installation / config chip strip ──────────────────────────────────
+   Loud one-line summary for the most consequential physical-configuration
+   facts about a record — pinned at the top of a detail modal so the user
+   never has to scroll to see "why is the number so different from what I
+   expected". First consumer: cables/ cable detail (single-core vs 3-core).
+   Set --eos-chip-accent on the wrapper to color-shift hue (--blue default;
+   --purple for 3-core, --warning for misconfigured, etc.). */
+.eos-chip-strip {
+    --eos-chip-accent: var(--blue);
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    align-items: center;
+    margin-bottom: 1rem;
+    padding: 10px 12px;
+    background: color-mix(in srgb, var(--eos-chip-accent) 8%, var(--bg-card));
+    border: 1px solid color-mix(in srgb, var(--eos-chip-accent) 35%, var(--border));
+    border-radius: 8px;
+    font-size: 12px;
+}
+.eos-chip-strip-lead {
+    font-weight: 600;
+    color: var(--eos-chip-accent);
+    text-transform: uppercase;
+    letter-spacing: .04em;
+}
+.eos-chip-strip-sep { color: var(--text-muted); }
+
 /* ── iOS Safari zoom-on-focus prevention ─────────────────────────────────
    Mobile Safari auto-zooms when a focused <input>/<select>/<textarea> has
    computed font-size < 16px, which breaks every form layout on the site.
@@ -1158,3 +1251,114 @@ html.eos-redact #eos-demo-banner {
         font-size: 16px;
     }
 }
+
+/* ── Wikilink autocomplete popup (EOS_UI.wikiLinkInput) ─────────────── */
+.eos-wl-popup {
+    position: fixed;
+    z-index: 10000;
+    min-width: 260px;
+    max-width: 360px;
+    max-height: 280px;
+    overflow-y: auto;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.18);
+    padding: 4px;
+    display: none;
+    font-size: 13px;
+}
+.eos-wl-popup.open { display: block; }
+.eos-wl-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 10px;
+    border-radius: 6px;
+    cursor: pointer;
+    color: var(--text);
+    line-height: 1.3;
+}
+.eos-wl-row.active,
+.eos-wl-row:hover { background: color-mix(in srgb, var(--accent) 12%, transparent); }
+.eos-wl-kind {
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: .04em;
+    padding: 2px 6px;
+    border-radius: 4px;
+    background: color-mix(in srgb, var(--accent) 16%, transparent);
+    color: var(--accent);
+    flex-shrink: 0;
+}
+.eos-wl-title { flex: 1; word-break: break-word; }
+
+/* ── Backlink badges row (EOS_UI.backlinkBadges) ─────────────────────── */
+.eos-bl-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    align-items: center;
+    margin: 8px 0;
+    font-size: 12px;
+}
+.eos-bl-label {
+    color: var(--text-muted);
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: .04em;
+    font-size: 10px;
+    margin-right: 4px;
+}
+.eos-bl-chip {
+    display: inline-block;
+    padding: 3px 10px;
+    background: color-mix(in srgb, var(--accent) 10%, transparent);
+    color: var(--accent);
+    border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
+    border-radius: 999px;
+    text-decoration: none;
+    font-size: 12px;
+    transition: background 0.15s, border-color 0.15s;
+}
+.eos-bl-chip:hover {
+    background: color-mix(in srgb, var(--accent) 18%, transparent);
+    border-color: var(--accent);
+}
+.eos-bl-more { color: var(--text-muted); font-size: 11px; padding-left: 4px; }
+.eos-bl-empty { color: var(--text-muted); font-style: italic; }
+.eos-bl-loading { color: var(--text-muted); font-style: italic; }
+
+/* ── Transclusion frame (EOS_UI.transclude) ─────────────────────────── */
+.eos-transclude { margin: 12px 0; }
+.eos-transclude-frame {
+    border-left: 3px solid var(--accent);
+    background: color-mix(in srgb, var(--accent) 4%, transparent);
+    border-radius: 0 8px 8px 0;
+    padding: 8px 14px;
+}
+.eos-transclude-head {
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-bottom: 6px;
+    font-weight: 500;
+}
+.eos-transclude-source {
+    color: var(--accent);
+    text-decoration: none;
+    font-weight: 600;
+}
+.eos-transclude-source:hover { text-decoration: underline; }
+.eos-transclude-body { font-size: 14px; line-height: 1.55; color: var(--text); }
+.eos-transclude-body p { margin: 6px 0; }
+.eos-transclude-loading,
+.eos-transclude-missing {
+    padding: 8px 14px;
+    border-left: 3px solid var(--text-muted);
+    background: color-mix(in srgb, var(--text-muted) 6%, transparent);
+    border-radius: 0 8px 8px 0;
+    color: var(--text-muted);
+    font-size: 13px;
+}
+.eos-transclude-missing { border-left-color: var(--warning); }

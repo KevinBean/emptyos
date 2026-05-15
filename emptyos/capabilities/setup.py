@@ -19,8 +19,10 @@ from emptyos.capabilities.providers.human import (
 )
 from emptyos.capabilities.types import (
     AnimateCapability,
+    BrowseCapability,
     DrawCapability,
     ListenCapability,
+    PronounceCapability,
     ReadCapability,
     SearchCapability,
     SeeCapability,
@@ -133,6 +135,14 @@ def build_capabilities(config: Config, settings=None, kernel=None) -> Capability
         _register_browser_listen(listen, kernel, config)
     registry.register("listen", listen)
 
+    # --- Pronounce (phoneme scoring) — providers added by plugins/pronounce.
+    # Registered with an empty chain so apps can call `pronounce()` and get a
+    # clean "no provider available" error when the plugin is offline, rather
+    # than a KeyError. No human fallback: a human can't score per-phone
+    # accuracy by ear, and the app should surface "scoring offline" upstream.
+    pronounce = PronounceCapability()
+    registry.register("pronounce", pronounce)
+
     # --- Draw (image generation) — providers added by plugins ---
     draw = DrawCapability()
     registry.register("draw", draw)
@@ -150,6 +160,13 @@ def build_capabilities(config: Config, settings=None, kernel=None) -> Capability
         _register_browser_see(see, kernel, config)
     see.add_provider(HumanSeeProvider())
     registry.register("see", see)
+
+    # --- Browse (headless browser automation) — providers added by plugins
+    # (playwright, etc.). No human fallback: a human can't fulfil a
+    # `click("#submit")` call in any meaningful way, so the capability simply
+    # raises when no provider is wired — the app should detect that and skip.
+    browse = BrowseCapability()
+    registry.register("browse", browse)
 
     return registry
 

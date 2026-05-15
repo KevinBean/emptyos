@@ -4,7 +4,7 @@
 # Usage: python scripts/package-release.py <tier> [--check] [--platform=<name>]
 
 [release]
-version = "0.3.0"
+version = "0.4.0"
 
 # ── Platforms ─────────────────────────────────────────────────
 # Named deployment profiles. Plugins declare compatibility in
@@ -41,6 +41,7 @@ apps = [
     "run",
     "search",
     "settings",
+    "store",
     "system-log",
     "task",
     "weather",
@@ -83,6 +84,7 @@ skills = []
 description = "Full community OS — productivity, AI, creative (end-user value)"
 extends = "core"
 apps = [
+    "actions",
     "agent",
     "app-analytics",
     "assistant",
@@ -90,13 +92,16 @@ apps = [
     "boards",
     "calendar",
     "canvas",
+    "company",
     "expense",
     "explore",
     "focus",
+    "forge",
     "gesture",
     "geocode",
     "git",
     "github-connector",
+    "guideline",
     "hands-free",
     "journal",
     "kb",
@@ -127,6 +132,7 @@ plugins = [
     "obsidian",
     "ollama",
     "openai-image",
+    "playwright",
     "system-tray",
     "telegram",
     "voice-api",
@@ -187,14 +193,16 @@ apps = [
     "app-gen",
     "dogfood-agent",
     "fix-agent",
+    "grill",
     "model-bench",
     "release",
+    "sandbox",
     "tests",
     "tiers",
     "tmpl",
     "web-analytics",
 ]
-plugins = ["agent-runtime"]
+plugins = ["agent-runtime", "sandbox-pool"]
 skills = []
 
 # ── Always included (platform layer) ─────────────────────────

@@ -109,6 +109,14 @@ class Config:
         return (self.get("network.auth_token", "") or "").strip()
 
     @property
+    def login_password(self) -> str:
+        """Human-typeable login password. Distinct from auth_token (the
+        machine bearer credential). Either gates the daemon equally —
+        password is for the browser login form, token is for CLI/API.
+        See docs/AUTH.md for the design pin."""
+        return (self.get("network.password", "") or "").strip()
+
+    @property
     def auth_required(self) -> bool:
         """True when the current mode requires an auth token.
 

@@ -2,7 +2,7 @@
 
 The hub (`/hub/`) is a panel aggregator. Apps declare `[[contributes.hub.panel]]` in their manifest and implement a matching `panel_*` instance method. The hub calls each contributor in parallel, dispatches to a named renderer, and fails soft per panel. Hub code has zero knowledge of which apps contribute what.
 
-**First reference implementation:** `apps/task/` `pulse-stats` + `todays-tasks`, `apps/projects/` `upcoming-deadlines`, `apps/personal/hub/` (own panels). Full docs at `docs/APP-DEVELOPMENT.md` § "Hub Panel Contributions".
+**First reference implementation:** `apps/task/` `pulse-stats` + `todays-tasks`, `apps/projects/` `upcoming-deadlines`, `apps/hub/` (own panels). Full docs at `docs/APP-DEVELOPMENT.md` § "Hub Panel Contributions".
 
 ## Principles
 
@@ -67,7 +67,7 @@ See `docs/APP-DEVELOPMENT.md` for the full table. Common picks:
 - **`task-list`** — actionable rows with checkboxes.
 - **`stat-tile` (no group)** — standalone tile.
 
-If no existing renderer fits, don't inline HTML. Add a renderer to `apps/personal/hub/pages/index.html` with a documented data contract, then use it.
+If no existing renderer fits, don't inline HTML. Add a renderer to `apps/hub/pages/index.html` with a documented data contract, then use it.
 
 ## Lazy panels
 

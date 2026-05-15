@@ -33,7 +33,7 @@ body { background: #0a0a0a; color: #e5e5e5; font-family: system-ui, -apple-syste
 #info {
     position: fixed; top: 54px; right: 20px; z-index: 10;
     background: rgba(26,26,26,0.95); border: 1px solid #333; border-radius: 8px;
-    padding: 14px; max-width: 300px; max-height: calc(100vh - 80px); overflow-y: auto; font-size: 12px; display: none;
+    padding: 14px; max-width: 300px; max-height: calc(100dvh - 80px); overflow-y: auto; font-size: 12px; display: none;
 }
 #info h3 { margin-bottom: 6px; font-size: 13px; }
 #info .type-badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 10px; margin-bottom: 6px; }
@@ -78,7 +78,7 @@ body { background: #0a0a0a; color: #e5e5e5; font-family: system-ui, -apple-syste
 #analysis .dim-bar { width: 40px; height: 3px; background: #222; border-radius: 2px; overflow: hidden; }
 #analysis .dim-fill { height: 100%; border-radius: 2px; }
 
-svg { width: 100vw; height: 100vh; }
+svg { width: 100vw; height: 100dvh; }
 svg.hidden, #tree-view.hidden, #pyramid-view.hidden, #dictionary-view.hidden { display: none; }
 
 /* Tree view — natural tree with trunk, branches, leaves */

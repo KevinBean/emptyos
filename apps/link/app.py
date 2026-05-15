@@ -132,6 +132,66 @@ class LinkApp(BaseApp):
         await self.emit("link:scan_completed", result)
         return result
 
+    @web_route("GET", "/api/suggest")
+    async def api_suggest(self, request):
+        """Title-prefix suggestions for `[[` autocomplete in any app's textarea.
+
+        Query params:
+            q     — partial title (case-insensitive; matches stem or words)
+            limit — max results (default 10, hard cap 50)
+            kinds — comma-separated tag filter (e.g. "kb,note"); empty = all
+        """
+        q = (request.query_params.get("q") or "").strip().lower()
+        try:
+            limit = min(50, max(1, int(request.query_params.get("limit") or 10)))
+        except ValueError:
+            limit = 10
+        kinds_raw = (request.query_params.get("kinds") or "").strip()
+        kinds = [k.strip() for k in kinds_raw.split(",") if k.strip()] if kinds_raw else []
+
+        vault_index = self.kernel.services.get("vault_index")
+        if not vault_index:
+            return {"suggestions": []}
+
+        if kinds:
+            # Union of per-tag finds (hierarchical match per VaultIndex._tag_matches).
+            entries: dict[str, dict] = {}
+            for k in kinds:
+                for e in vault_index.find(tags=[k]):
+                    entries[e["path"]] = e
+            pool = list(entries.values())
+        else:
+            pool = list(vault_index._files.values())
+
+        out = []
+        for e in pool:
+            name = e.get("name") or ""
+            title = name.replace("-", " ")
+            haystack = (name + " " + title).lower()
+            if q and q not in haystack:
+                continue
+            tags = e.get("tags") or []
+            primary_kind = next((t for t in tags if "/" not in t), tags[0] if tags else "note")
+            out.append({
+                "title": title,
+                "name": name,
+                "path": e.get("path", ""),
+                "kind": primary_kind,
+                "folder": e.get("folder", ""),
+            })
+
+        # Rank: prefix match on stem first, then contains, then alphabetical
+        def _rank(row):
+            n = row["name"].lower()
+            if q and n.startswith(q):
+                return (0, n)
+            if q and q in n:
+                return (1, n)
+            return (2, n)
+
+        out.sort(key=_rank)
+        return {"suggestions": out[:limit], "count": len(out)}
+
     @web_route("GET", "/api/orphan-insights")
     async def api_orphan_insights(self, request):
         """AI suggests why notes are orphaned and how to connect them."""

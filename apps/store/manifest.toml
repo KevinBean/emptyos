@@ -1,0 +1,16 @@
+[app]
+id = "store"
+name = "Store"
+version = "0.1.0"
+description = "Browse, install, and uninstall apps / plugins / skills. Restart-required toggle UI over the local catalog — every manifest in the repo shows up here, install state is per-user."
+store_category = "core"
+
+[app.entry]
+module = "app"
+class = "StoreApp"
+
+[provides.web]
+prefix = "/store"
+
+[provides.events]
+emits = ["store:installed", "store:uninstalled", "store:enabled", "store:disabled"]

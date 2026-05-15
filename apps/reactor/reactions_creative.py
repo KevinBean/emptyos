@@ -133,3 +133,23 @@ class CreativeReactionsMixin:
     @on_event("improv:warmup_run")
     async def on_improv_warmup(self, event):
         self._log_action("improv:warmup_run", str(event.data.get("kind",""))[:30])
+
+    # ── Presentations ──
+
+    @on_event("ppt:created")
+    async def on_ppt_created(self, event):
+        title = event.data.get("title") or event.data.get("id", "")
+        self._log_action("ppt:created", f"deck: {str(title)[:50]}")
+
+    @on_event("ppt:exported")
+    async def on_ppt_exported(self, event):
+        title = event.data.get("title") or event.data.get("id", "")
+        fmt = event.data.get("format", "")
+        self._log_action("ppt:exported", f"{str(title)[:40]} ({fmt})")
+
+    # ── Radio ──
+
+    @on_event("radio:liked")
+    async def on_radio_liked(self, event):
+        track = event.data.get("track") or event.data.get("title", "")
+        self._log_action("radio:liked", f"{str(track)[:50]}")

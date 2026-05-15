@@ -81,6 +81,7 @@
       '.pa-send{padding:10px 16px;border-radius:10px;background:var(--accent);color:#fff;border:none;font-size:14px;font-weight:600;cursor:pointer;flex-shrink:0}.pa-send:disabled{opacity:0.4}',
       '.pa-quick{display:flex;flex-wrap:wrap;gap:6px;padding:8px 16px;flex-shrink:0}',
       '.pa-quick-btn{padding:6px 12px;border-radius:8px;border:1px solid var(--border);background:var(--bg-card);color:var(--text-secondary);font-size:11px;cursor:pointer;white-space:nowrap;flex-shrink:0;transition:all 0.15s}.pa-quick-btn:hover{border-color:var(--accent);color:var(--accent)}',
+      '@media (max-width:640px),(pointer:coarse){.pa-quick-btn{min-height:36px;padding:8px 14px;font-size:12px}}',
       '.pa-quick-btn.capture{border-color:color-mix(in srgb,var(--accent) 30%,var(--border));background:color-mix(in srgb,var(--accent) 5%,var(--bg-card));max-width:180px;overflow:hidden;text-overflow:ellipsis}',
       '.pa-quick-sep{width:100%;height:0;flex-basis:100%}',
       '.pa-spinner{display:inline-block;width:16px;height:16px;border:2px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:pa-spin 0.6s linear infinite}',
@@ -227,6 +228,11 @@
     isOpen = !isOpen;
     document.querySelector('.pa-fab').classList.toggle('open', isOpen);
     document.querySelector('.pa-drawer').classList.toggle('open', isOpen);
+    // Hide the master FAB dock (eos.js #eos-fab-dock) — it lives in the same
+    // bottom-right corner as the drawer's Send button. eos.js sets inline
+    // display:flex; restore that, not '', when closing.
+    var dock = document.getElementById('eos-fab-dock');
+    if (dock) dock.style.display = isOpen ? 'none' : 'flex';
     if (isOpen) {
       _loadCaptures();
       setTimeout(function() { document.getElementById('__pa_input').focus(); }, 250);
@@ -246,10 +252,26 @@
   // --- Render AI response: markdown + ACTION buttons ---
   function renderResponse(text) {
     // Parse [ACTION:name(param)] → execute immediately
-    // Parse [BUTTON:label|action(param)] → render clickable button
+    // Parse [BUTTON:label|DO:app.method({json})] → click-to-execute server action
+    // Parse [BUTTON:label|action(param)] → render clickable client-action button
     var html = _renderMd(text);
 
-    // Replace [BUTTON:label|action(param)] with clickable buttons
+    // [BUTTON:label|DO:app.method({json})] — server-action click-to-execute.
+    // Must run BEFORE the bare [BUTTON:] regex since the inner shape contains
+    // a colon which the \w+ in the bare regex rejects (the whole token would
+    // otherwise fall through as raw text).
+    html = html.replace(
+      /\[BUTTON:([^|\]]+)\|DO:([\w-]+)\.(\w+)\((\{[^{}]*\})\)\]/g,
+      function(_, label, appId, method, jsonStr) {
+        var id = 'pa-do-' + (++_btnCounter);
+        var spec = JSON.stringify({app: appId, method: method, json: jsonStr});
+        return '<button class="pa-action-btn" id="' + id +
+               '" data-do="' + _escAttr(spec) +
+               '" onclick="window.__paExecDo(this)">' + _esc(label) + '</button>';
+      }
+    );
+
+    // [BUTTON:label|action(param)] — client-action button (page-registered actions).
     html = html.replace(/\[BUTTON:([^|]+)\|(\w+)\(([^)]*)\)\]/g, function(_, label, action, param) {
       var id = 'pa-btn-' + (++_btnCounter);
       return '<button class="pa-action-btn" id="' + id + '" onclick="window.__paExec(\'' + _escAttr(action) + '\',\'' + _escAttr(param) + '\',this)">' + _esc(label) + '</button>';
@@ -273,6 +295,63 @@
       btn.textContent = '✓ ' + btn.textContent;
     }
   };
+
+  // Click-to-execute server action — fires when user clicks a
+  // [BUTTON:label|DO:app.method({json})] button. POSTs to /rooms/api/do
+  // which validates against the agent's server_actions allowlist before
+  // calling call_app.
+  window.__paExecDo = function(btn) {
+    if (!btn || btn.disabled) return;
+    var raw = btn.getAttribute('data-do');
+    if (!raw) return;
+    var spec, args;
+    try {
+      spec = JSON.parse(raw);
+      args = JSON.parse(spec.json);
+    } catch (e) {
+      if (window.EOS_UI) EOS_UI.toast('Bad action payload', false);
+      return;
+    }
+    var orig = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '...';
+    EOS.post('/rooms/api/do', {
+      agent_id: pageGpt,
+      app: spec.app,
+      method: spec.method,
+      args: args,
+    }).then(function(res) {
+      if (res && res.ok) {
+        btn.classList.add('pa-action-done');
+        btn.innerHTML = '&#10003; ' + orig;
+        _renderActionResult(btn, res);
+        if (window.EOS_UI) EOS_UI.toast(spec.app + '.' + spec.method + ' done', true);
+      } else {
+        btn.disabled = false;
+        btn.innerHTML = orig;
+        if (window.EOS_UI) EOS_UI.toast((res && (res.error || res.message)) || 'Action failed', false);
+      }
+    }).catch(function(e) {
+      btn.disabled = false;
+      btn.innerHTML = orig;
+      if (window.EOS_UI) EOS_UI.toast('Error: ' + (e && e.message || e), false);
+    });
+  };
+
+  // Build the link-row HTML for an action result — delegates to the shared
+  // EOS_UI.actionLinks helper so this surface and rooms/index.html stay in sync.
+  function _actionLinksHtml(links) {
+    return (window.EOS_UI && EOS_UI.actionLinks) ? EOS_UI.actionLinks(links) : '';
+  }
+
+  // Render the post-click result chip below the button.
+  function _renderActionResult(btn, res) {
+    var html = _actionLinksHtml(res && res.links);
+    if (!html || !btn.parentNode) return;
+    var wrap = document.createElement('div');
+    wrap.innerHTML = html;
+    btn.parentNode.insertBefore(wrap.firstChild, btn.nextSibling);
+  }
 
   // Global undo (called from inline server-results undo button)
   window.__paUndo = function(btn) {
@@ -399,6 +478,7 @@
           var icon = r.ok ? '&#10003;' : '&#10007;';
           var color = r.ok ? 'var(--success,#34d399)' : '#f87171';
           srHtml += '<div style="color:'+color+'">'+icon+' '+_esc(r.app)+'.'+_esc(r.method)+(r.ok?' — done':' — '+_esc(r.error||'failed'))+'</div>';
+          srHtml += _actionLinksHtml(r.links);
           if (r.ok && r.reversible) anyReversible = true;
         });
         if (anyReversible) {
@@ -453,13 +533,18 @@
     btn.textContent = 'Saving...';
     var body = { text: text };
     if (_capSelectedTag) body.tag = _capSelectedTag;
-    EOS.post('/quick-action/api/add', body).then(function() {
+    EOS.post('/quick-action/api/add', body).then(function(res) {
       btn.disabled = false;
       btn.textContent = 'Capture';
       _capToggle();
       _capSelectedTag = '';
       document.querySelectorAll('.cap-tag').forEach(function(t) { t.classList.remove('active'); });
-      if (window.EOS_UI) EOS_UI.toast('Captured');
+      if (window.EOS_UI) {
+        var msg = (res && res.routed_to)
+          ? '→ ' + (res.project_name || res.routed_to)
+          : 'Captured';
+        EOS_UI.toast(msg);
+      }
     }).catch(function() {
       btn.disabled = false;
       btn.textContent = 'Capture';

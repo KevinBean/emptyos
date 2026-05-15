@@ -33,6 +33,26 @@ class TestLinkAPI:
         data = http_client.get("/link/api/stats").json()
         assert isinstance(data, (dict, list))
 
+    def test_suggest_shape(self, http_client):
+        """`/link/api/suggest` always returns {suggestions: [...]} even on no match."""
+        resp = http_client.get("/link/api/suggest?q=zzz-no-match-expected")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "suggestions" in data
+        assert isinstance(data["suggestions"], list)
+
+    def test_suggest_limit_capped(self, http_client):
+        """Limit param honored and capped at 50."""
+        data = http_client.get("/link/api/suggest?q=&limit=500").json()
+        assert len(data.get("suggestions", [])) <= 50
+
+    def test_suggest_kinds_filter(self, http_client):
+        """`kinds=` filters by tag — returns same shape, possibly empty."""
+        resp = http_client.get("/link/api/suggest?q=&limit=5&kinds=kb")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert isinstance(data.get("suggestions"), list)
+
 
 @pytest.mark.interactive
 class TestLinkUI:

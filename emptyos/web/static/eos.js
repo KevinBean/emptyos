@@ -582,6 +582,20 @@
         try { window.dispatchEvent(new CustomEvent('eos:theme-changed', {detail: {theme: name}})); } catch(e) {}
     };
 
+    // Compat: some apps call EOS.toast(...). Canonical is EOS_UI.toast.
+    // Defer to EOS_UI when it's loaded; map common second-arg shapes ('success',
+    // 'error', 'warn', 'info', true/false) onto EOS_UI's (msg, ok) signature.
+    EOS.toast = function(msg, kind) {
+        var ok = kind === true || kind === 'success' || kind === 'info' || kind === undefined;
+        if (typeof EOS_UI !== 'undefined' && EOS_UI.toast) {
+            return EOS_UI.toast(msg, ok);
+        }
+        // EOS_UI may load async; queue once
+        setTimeout(function() {
+            if (typeof EOS_UI !== 'undefined' && EOS_UI.toast) EOS_UI.toast(msg, ok);
+        }, 50);
+    };
+
     EOS.cycleTheme = function() {
         var current = localStorage.getItem('eos-theme') || 'eos';
         var i = EOS.THEMES.indexOf(current);
@@ -621,7 +635,12 @@
 
     var keyScript = document.createElement('script');
     keyScript.src = base + '/static/eos-keys.js';
-    document.body.appendChild(keyScript);
+    // eos.js may be loaded synchronously in <head> before <body> exists.
+    // Defer until body is present rather than crashing.
+    (function attachKeys() {
+        if (!document.body) return setTimeout(attachKeys, 10);
+        document.body.appendChild(keyScript);
+    })();
 
     // --- App-presence map (used to gate tier-specific UI) ---
     // Tiers (core / demo / standard / dev) bundle different app sets. Globally
@@ -652,10 +671,15 @@
         return EOS._loadedAppIds ? !!EOS._loadedAppIds[id] : false;
     };
     // Run `fn()` as soon as the app-id set is known. Synchronous if the cache
-    // was already populated from localStorage; otherwise awaits the fetch.
+    // was already populated from localStorage AND body is ready; otherwise
+    // awaits the fetch / DOMContentLoaded so callers can safely touch document.body.
     EOS._whenAppsKnown = function(fn) {
-        if (EOS._loadedAppIds) { fn(); return; }
-        EOS._appIdsReady.then(fn);
+        var run = function() {
+            if (!document.body) return setTimeout(run, 10);
+            fn();
+        };
+        if (EOS._loadedAppIds) { run(); return; }
+        EOS._appIdsReady.then(run);
     };
 
     // --- Hands-Free Mode (gesture PTT + voice intents) ---

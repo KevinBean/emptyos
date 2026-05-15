@@ -110,16 +110,19 @@ class TestWeekInTheLife:
         panels = http_client.get("/hub/api/panels").json()
         assert isinstance(panels, dict) and "blocks" in panels, "hub panels returned unexpected shape"
 
-        # Three Monday captures: one task, two ideas
-        for kind in ("task", "idea", "idea"):
+        # Three Monday captures: one to-do, two ideas. We use "todo" (not
+        # "task") for the to-do because tag="task" auto-routes via
+        # quick-action._TAG_ROUTE and would skip the captures file entirely,
+        # so the manual-promotion step below couldn't find it in recent.
+        for kind, tag in (("task", "todo"), ("idea", "idea"), ("idea", "idea")):
             m = _marker("mon", kind)
             resp = http_client.post(
-                "/quick-action/api/add", json={"text": m, "tag": kind}
+                "/quick-action/api/add", json={"text": m, "tag": tag}
             )
             assert resp.status_code == 200, f"capture failed: {resp.text[:200]}"
             self._record("mon", m)
 
-        # Promote the first (task) capture into an actual task
+        # Promote the first (to-do) capture into an actual task
         recent = http_client.get("/quick-action/api/recent?limit=20").json()
         entries = recent if isinstance(recent, list) else recent.get("captures", [])
         task_entry = next(

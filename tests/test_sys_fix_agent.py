@@ -46,9 +46,14 @@ class TestFixAgentAPI:
         assert "error" in resp.json()
 
     def test_run_invalid_id_traversal(self, http_client):
-        """Path-traversal-shaped run_ids must error, not 500."""
+        """Path-traversal-shaped run_ids must be rejected — either by the router
+        (404 after %2F is URL-decoded to / and the path doesn't match) or by the
+        handler (200 with JSON error). Both are valid defenses; what's banned is
+        500 or any 2xx-success that returns real data."""
         resp = http_client.get("/fix-agent/api/runs/..%2Fetc")
-        assert resp.status_code == 200
+        assert resp.status_code in (200, 404)
+        if resp.status_code == 200:
+            assert "error" in resp.json()
 
     def test_run_missing_filename(self, http_client):
         resp = http_client.post("/fix-agent/api/run", json={})
@@ -61,6 +66,18 @@ class TestFixAgentAPI:
             resp = http_client.post("/fix-agent/api/run", json={"filename": bad})
             assert resp.status_code == 200
             assert "error" in resp.json(), f"accepted traversal-shaped filename: {bad!r}"
+
+    def test_run_null_filename_does_not_crash(self, http_client):
+        """{"filename": null} is the JSON shape that crashes ``dict.get(K, "").strip()``
+        because the default fires only on *absent* keys, not present-but-None.
+        The handler must coerce None → "" before calling .strip()."""
+        for body in ({"filename": None}, {"filename": ""}, None):
+            resp = http_client.post("/fix-agent/api/run", json=body)
+            assert resp.status_code == 200, (
+                f"body={body!r} returned {resp.status_code} (expected 200 with error body)"
+            )
+            data = resp.json()
+            assert "error" in data, f"body={body!r} did not return a structured error: {data}"
 
     def test_merge_unknown_run(self, http_client):
         resp = http_client.post("/fix-agent/api/runs/zzz-nonexistent/merge")
@@ -81,6 +98,36 @@ class TestFixAgentAPI:
         resp = http_client.post("/fix-agent/api/runs/zzz-nonexistent/discard")
         assert resp.status_code == 200
         assert "error" in resp.json()
+
+    # ── Repro loop (browse capability) ──────────────────────────────
+    # Full /api/repro launches headless Chromium; exercised manually.
+    # These tests cover the validation-shape + screenshot-serving paths
+    # so CI catches route regressions without paying for a browser.
+
+    def test_repro_missing_url(self, http_client):
+        """No url → early error, no browser launch."""
+        resp = http_client.post("/fix-agent/api/repro", json={})
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data.get("error") == "url required"
+
+    def test_repro_shot_not_found(self, http_client):
+        """Missing screenshot file → 404."""
+        resp = http_client.get("/fix-agent/api/repros/zzz-no-such-ts/foo/missing.png")
+        assert resp.status_code == 404
+        assert "error" in resp.json()
+
+    def test_repro_shot_rejects_traversal(self, http_client):
+        """Path-traversal-shaped components are rejected."""
+        for ts, label, name in (
+            ("..", "lbl", "shot.png"),
+            ("ok", "..", "shot.png"),
+            ("ok", "lbl", "..%2Fshot.png"),
+        ):
+            resp = http_client.get(f"/fix-agent/api/repros/{ts}/{label}/{name}")
+            assert resp.status_code in (400, 404), (
+                f"traversal {ts!r}/{label!r}/{name!r} returned {resp.status_code}"
+            )
 
 
 @pytest.mark.interactive

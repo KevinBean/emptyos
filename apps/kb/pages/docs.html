@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>KB Documents</title>
+<link rel="stylesheet" href="/static/theme.css">
+<link rel="stylesheet" href="/static/eos-components.css">
+<style>
+* { margin:0; padding:0; box-sizing:border-box }
+body { font-family:var(--font); background:var(--bg); color:var(--text); min-height:100dvh; padding:env(safe-area-inset-top) 16px calc(env(safe-area-inset-bottom) + 80px); -webkit-font-smoothing:antialiased }
+.toolbar { display:flex; gap:8px; margin-bottom:16px; margin-top:16px }
+.toolbar input { flex:1; padding:8px 12px; background:var(--bg-card); border:1px solid var(--border); border-radius:10px; color:var(--text); font-size:14px }
+.toolbar .btn { padding:8px 16px; background:var(--accent); color:var(--accent-ink); border:none; border-radius:10px; font-size:13px; font-weight:600; cursor:pointer }
+.doc-list { display:grid; gap:8px }
+.doc-row { background:var(--bg-card); border:1px solid var(--border); border-radius:10px; padding:12px 14px; cursor:pointer; transition:border-color 0.15s }
+.doc-row:hover { border-color:var(--accent) }
+.doc-title { font-size:14px; font-weight:600; color:var(--text); margin-bottom:2px }
+.doc-meta { font-size:12px; color:var(--text-muted) }
+.empty { text-align:center; padding:40px 20px; color:var(--text-muted); font-size:14px }
+
+.detail-wrap { display:none }
+.detail-wrap.show { display:block }
+.list-wrap.hide { display:none }
+.detail-back { display:inline-flex; padding:6px 12px; background:transparent; border:1px solid var(--border); border-radius:8px; color:var(--text-secondary); cursor:pointer; font-size:13px; margin-bottom:16px; text-decoration:none }
+.detail-back:hover { border-color:var(--accent); color:var(--accent) }
+.detail-head { margin-bottom:16px }
+.detail-head h1 { font-size:24px; font-weight:700; color:var(--text-heading); margin-bottom:6px }
+.detail-meta { font-size:12px; color:var(--text-muted) }
+
+.para-card { background:var(--bg-card); border:1px solid var(--border); border-radius:12px; padding:16px 18px; margin-bottom:12px }
+.para-title { font-size:15px; font-weight:600; color:var(--text-heading); margin-bottom:8px }
+.para-content { font-size:14px; line-height:1.6; color:var(--text); margin-bottom:8px }
+
+.para-edit { background:var(--bg); border:1px dashed var(--border); border-radius:10px; padding:12px; margin-bottom:12px }
+.para-edit input, .para-edit textarea { width:100%; padding:8px 10px; background:var(--bg-card); border:1px solid var(--border); border-radius:6px; font-size:13px; color:var(--text); font-family:inherit; margin-bottom:6px }
+.para-edit textarea { font-family:var(--font-mono); min-height:60px; resize:vertical }
+.para-edit .row { display:flex; gap:6px; margin-bottom:6px; align-items:center }
+.para-edit .row label { font-size:11px; color:var(--text-muted); min-width:64px }
+.para-edit .delete-btn { background:transparent; border:1px solid var(--border); border-radius:6px; color:var(--danger); cursor:pointer; padding:3px 8px; font-size:12px }
+
+.add-para-btn { padding:6px 12px; background:var(--bg-card); border:1px solid var(--border); border-radius:8px; color:var(--text-secondary); cursor:pointer; font-size:13px; margin-bottom:12px }
+.add-para-btn:hover { border-color:var(--accent); color:var(--accent) }
+.save-row { display:flex; gap:8px; margin-top:8px }
+.save-row .btn { padding:8px 14px; border-radius:8px; font-size:13px; font-weight:600; cursor:pointer; border:1px solid var(--border); background:var(--bg-card); color:var(--text) }
+.save-row .btn-primary { background:var(--accent); color:var(--accent-ink); border-color:var(--accent) }
+</style>
+</head>
+<body>
+<div id="kb-app">
+  <div id="page-head"></div>
+
+  <div class="list-wrap" id="list-wrap">
+    <div class="toolbar">
+      <input id="filter-q" type="search" placeholder="Filter docs…">
+      <button class="btn" id="new-btn">+ New document</button>
+    </div>
+    <div class="doc-list" id="doc-list"></div>
+  </div>
+
+  <div class="detail-wrap" id="detail-wrap">
+    <a class="detail-back" href="#" id="detail-back">← Back</a>
+    <div class="detail-head" id="detail-head"></div>
+    <div id="paragraphs"></div>
+    <button class="add-para-btn" id="add-para-btn" style="display:none">+ Add paragraph</button>
+    <div class="save-row" id="save-row" style="display:none">
+      <button class="btn btn-primary" id="save-btn">Save changes</button>
+      <button class="btn" id="cancel-btn">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<script src="/static/eos.js"></script>
+<script src="/static/eos-components.js"></script>
+<script>
+EOS.nav('kb');
+
+EOS_UI.pageHeader({
+  title: 'KB Documents',
+  subtitle: 'Compose blocks into paragraphs. Each paragraph can transclude one or more blocks.',
+  tabs: [
+    { id: 'notes', label: 'Notes', href: '/kb/' },
+    { id: 'blocks', label: 'Blocks', href: '/kb/pages/blocks.html' },
+    { id: 'docs', label: 'Documents', href: '/kb/pages/docs.html', active: true },
+  ],
+  mount: 'page-head',
+});
+
+var STATE = { docs: [], detail: null, editing: false, draft: null };
+
+function esc(s) { return String(s||'').replace(/[&<>"']/g, function(c) { return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]; }); }
+
+async function loadDocs() {
+  var data = await fetch('/kb/api/docs').then(function(r){return r.json();});
+  STATE.docs = data.docs || [];
+  renderList();
+  _route.init();
+}
+
+function renderList() {
+  var q = (document.getElementById('filter-q').value || '').toLowerCase();
+  var rows = STATE.docs.filter(function(d) {
+    return !q || (d.slug + ' ' + (d.title||'')).toLowerCase().indexOf(q) !== -1;
+  });
+  var list = document.getElementById('doc-list');
+  if (!rows.length) {
+    list.innerHTML = '<div class="empty">No documents yet. Click + New document to create one.</div>';
+    return;
+  }
+  list.innerHTML = rows.map(function(d) {
+    return '<div class="doc-row" data-slug="' + esc(d.slug) + '">' +
+             '<div class="doc-title">' + esc(d.title) + '</div>' +
+             '<div class="doc-meta">' + d.paragraph_count + ' paragraph' + (d.paragraph_count===1?'':'s') + ' · ' + d.block_refs + ' block ref' + (d.block_refs===1?'':'s') + '</div>' +
+           '</div>';
+  }).join('');
+  list.querySelectorAll('.doc-row').forEach(function(el) {
+    el.addEventListener('click', function() { _route.set(el.dataset.slug); });
+  });
+}
+
+async function showDetail(slug) {
+  document.getElementById('list-wrap').classList.add('hide');
+  document.getElementById('detail-wrap').classList.add('show');
+  var data = await fetch('/kb/api/docs/' + encodeURIComponent(slug)).then(function(r){return r.json();});
+  if (data.error) {
+    document.getElementById('detail-head').innerHTML = '<h1>Not found</h1>';
+    return;
+  }
+  STATE.detail = data;
+  STATE.editing = false;
+  renderDetail();
+}
+
+function renderDetail() {
+  var data = STATE.detail;
+  document.getElementById('detail-head').innerHTML =
+    '<h1>' + esc(data.title) + '</h1>' +
+    '<div class="detail-meta">' + esc(data.slug) + ' · <a href="#" id="edit-btn">' + (STATE.editing ? 'Cancel edit' : 'Edit') + '</a></div>';
+  document.getElementById('edit-btn').addEventListener('click', function(e) {
+    e.preventDefault();
+    if (STATE.editing) { STATE.editing = false; renderDetail(); return; }
+    STATE.editing = true;
+    STATE.draft = JSON.parse(JSON.stringify({ title: data.title, paragraphs: data.paragraphs }));
+    renderDetail();
+  });
+
+  var paras = STATE.editing ? STATE.draft.paragraphs : data.paragraphs;
+  var pEl = document.getElementById('paragraphs');
+  if (!paras || !paras.length) {
+    pEl.innerHTML = '<div class="empty">No paragraphs. Click Edit to compose.</div>';
+  } else if (STATE.editing) {
+    pEl.innerHTML = paras.map(function(p, i) {
+      // Read either noteRefs (new) or blockRefs (legacy in-flight content).
+      var refs = (p.noteRefs || p.blockRefs || []);
+      return '<div class="para-edit" data-idx="' + i + '">' +
+        '<div class="row"><label>Title</label><input type="text" data-field="title" value="' + esc(p.title||'') + '" placeholder="Paragraph heading"></div>' +
+        '<div class="row"><label>Notes</label><input type="text" data-field="noteRefs" value="' + esc(refs.join(',')) + '" placeholder="note-slug-a, note-slug-b#section"></div>' +
+        '<div class="row"><label>Inline</label><textarea data-field="content" placeholder="Optional prose between transclusions">' + esc(p.content||'') + '</textarea></div>' +
+        '<button class="delete-btn" data-action="delete">Delete paragraph</button>' +
+      '</div>';
+    }).join('');
+    pEl.querySelectorAll('.para-edit').forEach(function(box) {
+      var idx = parseInt(box.dataset.idx, 10);
+      box.querySelectorAll('[data-field]').forEach(function(el) {
+        el.addEventListener('input', function() {
+          var f = el.dataset.field;
+          if (f === 'noteRefs') {
+            STATE.draft.paragraphs[idx].noteRefs = el.value.split(',').map(function(s){return s.trim();}).filter(Boolean);
+            // Drop legacy blockRefs once the user has edited.
+            delete STATE.draft.paragraphs[idx].blockRefs;
+          } else {
+            STATE.draft.paragraphs[idx][f] = el.value;
+          }
+        });
+      });
+      box.querySelector('[data-action="delete"]').addEventListener('click', function() {
+        STATE.draft.paragraphs.splice(idx, 1);
+        renderDetail();
+      });
+      var ta = box.querySelector('textarea');
+      if (ta) EOS_UI.wikiLinkInput(ta, { kinds: ['kb'] });
+    });
+  } else {
+    pEl.innerHTML = paras.map(function(p, i) {
+      var rendered = (p.rendered || []).map(function(r) {
+        // Server returns r.ref / r.slug / r.section; legacy r.block tolerated.
+        var refLabel = r.ref || r.slug || r.block || '';
+        if (r.missing) {
+          return '<div class="eos-transclude-missing">⚠ <code>[[' + esc(refLabel) + ']]</code> not found</div>';
+        }
+        var sectionLabel = r.section ? ' §' + esc(r.section) : '';
+        return '<div class="eos-transclude"><div class="eos-transclude-frame">' +
+                 '<div class="eos-transclude-head"><a href="/kb/#' + encodeURIComponent(r.slug || refLabel) + '" class="eos-transclude-source">📎 ' + esc(r.title || refLabel) + sectionLabel + '</a></div>' +
+                 '<div class="eos-transclude-body">' + EOS_UI.renderMarkdown(r.body || '') + '</div>' +
+               '</div></div>';
+      }).join('');
+      var inline = p.content ? '<div class="para-content">' + EOS_UI.renderMarkdown(p.content) + '</div>' : '';
+      return '<div class="para-card">' +
+               (p.title ? '<div class="para-title">' + esc(p.title) + '</div>' : '') +
+               inline + rendered +
+             '</div>';
+    }).join('');
+  }
+  document.getElementById('add-para-btn').style.display = STATE.editing ? '' : 'none';
+  document.getElementById('save-row').style.display = STATE.editing ? '' : 'none';
+}
+
+document.getElementById('add-para-btn').addEventListener('click', function() {
+  if (!STATE.draft) return;
+  STATE.draft.paragraphs.push({ title: '', noteRefs: [], content: '' });
+  renderDetail();
+});
+
+document.getElementById('save-btn').addEventListener('click', async function() {
+  if (!STATE.draft) return;
+  var res = await fetch('/kb/api/docs/' + encodeURIComponent(STATE.detail.slug) + '/update', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ title: STATE.draft.title, paragraphs: STATE.draft.paragraphs }),
+  }).then(function(r){return r.json();});
+  if (res.ok) {
+    EOS_UI.toast('Saved', true);
+    STATE.editing = false;
+    await showDetail(STATE.detail.slug);
+  } else {
+    EOS_UI.toast('Save failed: ' + (res.error || 'unknown'), false);
+  }
+});
+
+document.getElementById('cancel-btn').addEventListener('click', function() {
+  STATE.editing = false;
+  STATE.draft = null;
+  renderDetail();
+});
+
+function hideDetail() {
+  document.getElementById('list-wrap').classList.remove('hide');
+  document.getElementById('detail-wrap').classList.remove('show');
+}
+
+var _route = EOS_UI.hashRoute({
+  onShow: function(slug) { showDetail(slug); },
+  onHide: function() { hideDetail(); },
+});
+
+document.getElementById('detail-back').addEventListener('click', function(e) {
+  e.preventDefault();
+  _route.clear();
+});
+
+document.getElementById('new-btn').addEventListener('click', function() {
+  EOS_UI.formModal('Create document', [
+    { key: 'title', label: 'Title', type: 'text', required: true },
+  ], async function(values) {
+    var res = await fetch('/kb/api/docs', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(values),
+    }).then(function(r){return r.json();});
+    if (res.ok) {
+      EOS_UI.toast('Document created', true);
+      await loadDocs();
+      _route.set(res.slug);
+    } else {
+      EOS_UI.toast('Create failed: ' + (res.error || 'unknown'), false);
+    }
+  });
+});
+
+document.getElementById('filter-q').addEventListener('input', renderList);
+
+loadDocs();
+</script>
+</body>
+</html>

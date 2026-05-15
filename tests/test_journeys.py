@@ -119,13 +119,12 @@ class TestCrossAppJourneys:
         assert resp.status_code == 200
 
     def test_home_aggregates_app_state(self, http_client):
-        """Home (hub) pulls state from multiple apps without crashing."""
-        hs = http_client.get("/hub/api/health-score")
-        wn = http_client.get("/hub/api/what-now")
-        sk = http_client.get("/hub/api/streaks")
-        assert hs.status_code == 200
-        assert wn.status_code == 200
-        assert sk.status_code == 200
+        """Home (hub) pulls state from multiple apps without crashing.
+        Per-domain endpoints collapsed into the unified /api/panels aggregator."""
+        r = http_client.get("/hub/api/panels")
+        assert r.status_code == 200, r.text[:200]
+        data = r.json()
+        assert isinstance(data, dict) and "blocks" in data
 
     def test_event_bus_history_after_activity(self, http_client):
         """Trigger a few actions → event bus history grows."""

@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <title>EmptyOS</title>
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <link rel="stylesheet" href="/static/theme.css">
 <link rel="stylesheet" href="/static/eos-components.css">
 <link rel="stylesheet" href="/static/eos-keys.css">
@@ -18,6 +18,14 @@
 .panel { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 14px 16px; margin-bottom: var(--hub-gap); }
 .panel-title { font-size: 12px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--text-muted); margin-bottom: 10px; }
 .err { color: var(--danger); font-size: 12px; }
+
+/* Ambient divider — splits cognitive (priority < 150) from ambient (≥ 150)
+   per .claude/rules/hub-panels.md priority bands. Without this, hero CTAs
+   and ambient quote/countdowns read at the same weight. */
+.hub-ambient-marker { display: flex; align-items: center; gap: 10px; margin: 8px 0 var(--hub-gap); font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.06em; }
+.hub-ambient-marker::after { content: ''; flex: 1; height: 1px; background: var(--border); }
+.hub-blocks-ambient .panel,
+.hub-blocks-ambient > [class^="r-"] { opacity: 0.92; }
 
 /* tiles-row */
 .r-tiles-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px; }
@@ -37,18 +45,32 @@
 .r-stat-label { font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.03em; }
 .r-stat-sub { font-size: 12px; color: var(--text-muted); margin-top: 4px; }
 
+/* quick-add — bordered with weak accent so the input panel reads as the action target */
+.r-qa { padding: 12px 14px; border-color: color-mix(in srgb, var(--accent) 30%, var(--border)); }
+.r-qa-head { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 8px; }
+.r-qa-title { font-size: 12px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--text-muted); }
+.r-qa-open { font-size: 11px; color: var(--text-muted); text-decoration: none; padding: 6px 8px; min-height: 32px; display: inline-flex; align-items: center; }
+.r-qa-open:hover { color: var(--accent); }
+.r-qa-row { display: flex; gap: 8px; }
+.r-qa-input { flex: 1; padding: 9px 12px; background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius-sm); color: var(--text); font: inherit; font-size: 14px; }
+.r-qa-input:focus { outline: none; border-color: var(--accent); }
+.r-qa-btn { padding: 9px 16px; background: var(--accent); color: var(--accent-ink); border: none; border-radius: var(--radius-sm); font: inherit; font-size: 13px; font-weight: 500; cursor: pointer; }
+.r-qa-btn:disabled { opacity: 0.6; cursor: default; }
+.r-qa-hint { font-size: 11px; color: var(--text-muted); margin-top: 6px; }
+
 /* accent-card */
 .r-accent-card { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 16px 18px; background: var(--accent-tint-weak); border: 1px solid var(--accent, var(--border)); border-radius: var(--radius-lg); text-decoration: none; color: var(--text); margin-bottom: var(--hub-gap); }
 .r-accent-card-label { font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 4px; }
 .r-accent-card-text { font-size: 15px; line-height: 1.4; }
 .r-accent-card-btn { padding: 6px 12px; background: var(--accent); color: var(--accent-ink); border-radius: var(--radius-sm); font-size: 12px; font-weight: 500; white-space: nowrap; }
 
-/* hero-weather (consumed by header chrome) */
-.hub-hero-weather { font-size: 13px; color: var(--text-muted); }
+/* hero-weather (consumed by header chrome) — chip aligned to title baseline */
+.hub-hero-weather { font-size: 12px; color: var(--text-muted); padding: 4px 10px; border-radius: 999px; background: var(--bg-card); border: 1px solid var(--border); white-space: nowrap; }
+.hub-hero-weather:empty { display: none; }
 
 /* plain-list / task-list / deadline-row */
 .r-list { display: flex; flex-direction: column; gap: 4px; }
-.r-list-row { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: var(--radius-sm); text-decoration: none; color: var(--text); transition: background 0.12s; }
+.r-list-row { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: var(--radius-sm); text-decoration: none; color: var(--text); transition: background 0.12s; min-height: 36px; }
 .r-list-row:hover { background: var(--bg-card-hover); }
 .r-list-icon { font-size: 14px; }
 .r-list-body { flex: 1; min-width: 0; }
@@ -138,6 +160,16 @@
 .r-media-emoji { font-size: 28px; }
 .r-media-title { font-size: 14px; font-weight: 500; }
 .r-media-subtitle { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+
+/* entity-card */
+.r-entity-card { display: block; padding: 14px 16px; background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-lg); text-decoration: none; color: var(--text); }
+.r-entity-card:hover { background: var(--bg-card-hover); }
+.r-entity-card-title { font-size: 14px; font-weight: 600; color: var(--text); }
+.r-entity-card-subtitle { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+.r-entity-card-fields { display: flex; flex-direction: column; gap: 4px; margin-top: 10px; }
+.r-entity-card-field { display: flex; gap: 8px; font-size: 13px; line-height: 1.45; }
+.r-entity-card-field-label { font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em; flex-shrink: 0; min-width: 56px; padding-top: 2px; }
+.r-entity-card-field-value { color: var(--text); flex: 1; min-width: 0; }
 </style>
 </head>
 <body>
@@ -154,8 +186,8 @@
         title="Take the 2-minute product tour"
         onclick="if (window.EOS && EOS.tour) EOS.tour.start();"
         style="position:fixed;bottom:calc(env(safe-area-inset-bottom,0px) + 20px);left:20px;z-index:9991;
-               padding:10px 16px;border:none;border-radius:999px;
-               background:var(--accent);color:var(--accent-ink);
+               padding:10px 16px;border:1px solid var(--border-strong, var(--border));border-radius:999px;
+               background:var(--bg-card);color:var(--text);
                font-size:13px;font-weight:600;cursor:pointer;
                box-shadow:0 4px 14px var(--shadow);
                display:flex;align-items:center;gap:6px;
@@ -191,7 +223,7 @@ setTimeout(function(){
       <div class="hub-title" id="hub-title">EmptyOS</div>
       <div class="hub-meta" id="hub-meta"></div>
     </div>
-    <div style="display:flex;align-items:center;gap:10px">
+    <div style="display:flex;align-items:baseline;gap:10px">
       <div class="hub-hero-weather" id="hub-hero-weather"></div>
       <button class="eos-btn eos-btn-sm eos-btn-ghost" onclick="openHubSettings()" title="Hub settings" aria-label="Hub settings">&#9881;</button>
     </div>
@@ -245,6 +277,25 @@ function flatItems(items) {
 
 var RENDERERS = {
 
+  'quick-add': function(items){
+    var d = items[0].data;
+    var hint = d.hint ? '<div class="r-qa-hint">' + esc(d.hint) + '</div>' : '';
+    var head = (d.icon || d.title || d.href)
+      ? '<div class="r-qa-head">' +
+          '<span class="r-qa-title">' + esc((d.icon ? d.icon + ' ' : '') + (d.title || '')) + '</span>' +
+          (d.href ? '<a class="r-qa-open" href="' + esc(d.href) + '">Open →</a>' : '') +
+        '</div>'
+      : '';
+    return '<form class="panel r-qa" onsubmit="return hubQuickAdd(event,this,\'' + esc(d.endpoint) + '\',\'' + esc(d.field || 'text') + '\')">' +
+      head +
+      '<div class="r-qa-row">' +
+        '<input class="r-qa-input" name="' + esc(d.field || 'text') + '" type="text" autocomplete="off" placeholder="' + esc(d.placeholder || '') + '">' +
+        '<button class="r-qa-btn" type="submit">Add</button>' +
+      '</div>' +
+      hint +
+    '</form>';
+  },
+
   'accent-card': function(items){
     var d = items[0].data;
     var btn = d.button_label ? '<span class="r-accent-card-btn">' + esc(d.button_label) + '</span>' : '';
@@ -257,8 +308,9 @@ var RENDERERS = {
   },
 
   'hero-weather': function(items){
-    var d = items[0].data;
-    var s = (d.emoji || '') + ' ' + (d.temperature != null ? d.temperature + '°' : '');
+    var d = items[0].data || {};
+    var hasData = d.emoji || d.temperature != null;
+    var s = hasData ? ((d.emoji || '') + ' ' + (d.temperature != null ? d.temperature + '°' : '')).trim() : '';
     document.getElementById('hub-hero-weather').textContent = s;
     return '';
   },
@@ -495,7 +547,52 @@ var RENDERERS = {
       '</div>' +
     '</a>';
   },
+
+  'entity-card': function(items, block){
+    var d = items[0].data;
+    if (!d) return '';
+    var fields = (Array.isArray(d.fields) ? d.fields : []).map(function(f){
+      if (!f || (f.value == null || f.value === '')) return '';
+      return '<div class="r-entity-card-field">' +
+        '<div class="r-entity-card-field-label">' + esc(f.label || '') + '</div>' +
+        '<div class="r-entity-card-field-value">' + esc(f.value) + '</div>' +
+      '</div>';
+    }).filter(function(s){ return s; }).join('');
+    var hdr = block.title ? '<div class="panel-title">' + esc(block.title) + '</div>' : '';
+    var href = d.link || d.href;
+    return hdr + '<a class="r-entity-card"' + hrefAttr(href) + '>' +
+      '<div class="r-entity-card-title">' + esc(d.title || '') + '</div>' +
+      (d.subtitle ? '<div class="r-entity-card-subtitle">' + esc(d.subtitle) + '</div>' : '') +
+      (fields ? '<div class="r-entity-card-fields">' + fields + '</div>' : '') +
+    '</a>';
+  },
 };
+
+async function hubQuickAdd(ev, formEl, endpoint, fieldName){
+  ev.preventDefault();
+  var input = formEl.querySelector('.r-qa-input');
+  var btn = formEl.querySelector('.r-qa-btn');
+  var val = (input.value || '').trim();
+  if (!val) { input.focus(); return false; }
+  var payload = {}; payload[fieldName] = val;
+  btn.disabled = true; btn.textContent = '…';
+  try {
+    var res = await fetch(endpoint, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)});
+    var json = await res.json();
+    if (json && json.error) {
+      EOS_UI.toast(json.error, false);
+    } else {
+      EOS_UI.toast('Added', true);
+      input.value = '';
+      loadPanels();
+    }
+  } catch (e) {
+    EOS_UI.toast('Failed: ' + e, false);
+  } finally {
+    btn.disabled = false; btn.textContent = 'Add';
+  }
+  return false;
+}
 
 async function hubToggleCheck(rowEl, endpoint, index){
   rowEl.classList.toggle('done');
@@ -527,19 +624,29 @@ function renderBlocks(blocks) {
     '</div>';
     return;
   }
-  var html = blocks.map(function(b){
+  // Pull quick-add to the very top regardless of priority — it's the page's
+  // primary verb and shouldn't sink below ambient tiles.
+  var qaIdx = blocks.findIndex(function(b){ return b.renderer === 'quick-add'; });
+  if (qaIdx > 0) { var qa = blocks.splice(qaIdx, 1)[0]; blocks.unshift(qa); }
+  // Split cognitive (priority < 150) from ambient (≥ 150) per
+  // .claude/rules/hub-panels.md priority bands.
+  var renderOne = function(b){
     var fn = RENDERERS[b.renderer];
     if (!fn) {
       return '<div class="panel err">Unknown renderer: <code>' + esc(b.renderer) + '</code> (panel <code>' + esc(b.id) + '</code>, source <code>' + esc(b.items[0].source) + '</code>)</div>';
     }
-    try {
-      return fn(b.items, b);
-    } catch (e) {
-      return '<div class="panel err">Render error in ' + esc(b.id) + ': ' + esc(String(e)) + '</div>';
-    }
-  }).join('');
+    try { return fn(b.items, b); }
+    catch (e) { return '<div class="panel err">Render error in ' + esc(b.id) + ': ' + esc(String(e)) + '</div>'; }
+  };
+  var cognitive = blocks.filter(function(b){ return (b.priority || 100) < 150; });
+  var ambient = blocks.filter(function(b){ return (b.priority || 100) >= 150; });
+  var html = cognitive.map(renderOne).join('');
+  if (ambient.length) {
+    html += '<div class="hub-ambient-marker">Ambient</div>';
+    html += '<div class="hub-blocks-ambient">' + ambient.map(renderOne).join('') + '</div>';
+  }
   blocksEl.innerHTML = html;
-  document.getElementById('hub-meta').textContent = blocks.length + ' panel' + (blocks.length === 1 ? '' : 's');
+  document.getElementById('hub-meta').textContent = '';
 }
 
 document.addEventListener('DOMContentLoaded', loadPanels);

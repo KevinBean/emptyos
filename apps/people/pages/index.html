@@ -7,7 +7,7 @@
     <link rel="stylesheet" href="/static/theme.css">
     <link rel="stylesheet" href="/static/eos-components.css">
     <style>
-        body { padding-top: 44px; padding-bottom: env(safe-area-inset-bottom); font-family: var(--font); background: var(--bg); color: var(--text); margin: 0; }
+        body { padding-top: calc(44px + env(safe-area-inset-top, 0px)); padding-bottom: env(safe-area-inset-bottom); font-family: var(--font); background: var(--bg); color: var(--text); margin: 0; }
         .wrap { max-width: 1100px; margin: 0 auto; padding: 1.2rem; }
         h1 { font-size: 1.6rem; margin: 0 0 0.2rem; color: var(--text-heading); }
         .subtitle { color: var(--text-secondary); font-size: 0.9rem; margin-bottom: 1rem; }
@@ -57,10 +57,10 @@
         .empty { text-align: center; color: var(--text-muted); padding: 2rem; background: var(--bg-card); border-radius: var(--radius-lg); border: 1px dashed var(--border); }
 
         /* Detail slide-out */
-        .detail { position: fixed; top: 44px; right: 0; bottom: 0; width: min(92vw, 460px); background: var(--bg-card); border-left: 1px solid var(--border); transform: translateX(100%); transition: transform 0.2s; padding: 1.2rem; overflow-y: auto; box-shadow: -8px 0 24px var(--shadow); z-index: 10; }
+        .detail { position: fixed; top: calc(44px + env(safe-area-inset-top, 0px)); right: 0; bottom: 0; width: min(92vw, 460px); background: var(--bg-card); border-left: 1px solid var(--border); transform: translateX(100%); transition: transform 0.2s; padding: 1.2rem 1.2rem calc(1.2rem + env(safe-area-inset-bottom, 0px)); overflow-y: auto; box-shadow: -8px 0 24px var(--shadow); z-index: 10; }
         .detail.open { transform: translateX(0); }
         .detail h2 { margin: 0 0 0.3rem; color: var(--text-heading); }
-        .detail .close { position: absolute; top: 0.6rem; right: 0.8rem; background: transparent; border: 0; color: var(--text-secondary); font-size: 1.4rem; cursor: pointer; }
+        .detail .close { position: absolute; top: 0.4rem; right: 0.4rem; background: transparent; border: 0; color: var(--text-secondary); font-size: 1.4rem; cursor: pointer; min-width: 36px; min-height: 36px; display: inline-flex; align-items: center; justify-content: center; }
         .detail-section { margin-top: 1rem; }
         .detail-section h3 { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-secondary); margin: 0 0 0.4rem; }
         .bars { display: flex; flex-direction: column; gap: 0.3rem; }
@@ -104,6 +104,7 @@
             <div style="display:flex;gap:6px">
                 <button class="btn" onclick="showAISuggest()">✨ Suggest</button>
                 <button class="btn" onclick="openAppSettings()" title="Settings">&#9881;</button>
+                <button class="btn" onclick="openCreateAI()" title="Describe in plain English; AI fills the form">✨ AI</button>
                 <button class="btn btn-primary" onclick="openCreate()">＋ Add person</button>
             </div>
         </div>
@@ -141,6 +142,11 @@
             <button class="btn" onclick="openChat()">💬 Chat about</button>
             <button class="btn" onclick="loadPersona()">🎭 Persona</button>
         </div>
+    </div>
+
+    <div class="detail-section">
+        <h3>Orgs</h3>
+        <div id="detail-orgs"></div>
     </div>
 
     <div class="detail-section">
@@ -409,6 +415,34 @@ async function openDetail(id) {
     var pct = Math.round((p.load_ratio || 0) * 100);
     document.getElementById('detail-capacity').innerHTML =
         '<div style="font-size:0.9rem">' + p.load_hours + 'h assigned / ' + p.capacity_hours_per_week + 'h capacity — <strong style="color:'+bandColor(p.band)+'">' + pct + '%</strong></div>';
+
+    // Orgs — load independently; quiet if orgs app is uninstalled.
+    var orgsEl = document.getElementById('detail-orgs');
+    orgsEl.innerHTML = '<span style="color:var(--text-muted);font-size:0.8rem">loading…</span>';
+    (async function() {
+        try {
+            var res = await fetch('/orgs/api/memberships?person_id=' + encodeURIComponent(id));
+            if (!res.ok) throw new Error('orgs app unavailable');
+            var data = await res.json();
+            var rows = (data.memberships || []).filter(function(m) { return !(m.left || '').trim(); });
+            if (!rows.length) {
+                orgsEl.innerHTML = '<span style="color:var(--text-muted);font-size:0.8rem">(not a member of any org)</span>';
+                return;
+            }
+            orgsEl.innerHTML = rows.map(function(m) {
+                var name = m.org_name || m.org_id;
+                var role = m.role ? ' — ' + esc(m.role) : '';
+                var joined = m.joined ? ' <span style="color:var(--text-muted);font-size:11px">joined ' + esc(m.joined) + '</span>' : '';
+                var kind = m.org_kind ? ' <span class="chip" style="font-size:10px">' + esc(m.org_kind) + '</span>' : '';
+                return '<div style="margin-bottom:6px;font-size:0.85rem">' +
+                    '<a href="/orgs/#org/' + esc(m.org_id) + '" style="color:var(--accent)">' + esc(name) + '</a>' +
+                    kind + role + joined +
+                '</div>';
+            }).join('');
+        } catch (e) {
+            orgsEl.innerHTML = '<span style="color:var(--text-muted);font-size:0.8rem">(orgs app unavailable)</span>';
+        }
+    })();
     document.getElementById('detail-skills').innerHTML = (p.skills || []).map(function(s){return '<span class="chip">'+esc(s)+'</span>';}).join('') || '<span style="color:var(--text-muted);font-size:0.8rem">(none)</span>';
 
     // Relationship panel
@@ -459,6 +493,49 @@ function closeDetail() {
     document.getElementById('detail').classList.remove('open');
     STATE.currentId = null;
     if (typeof _route !== 'undefined') _route.clear();
+}
+
+/* Create — AI form-fill path */
+function openCreateAI() {
+    var schema = [
+        {key: 'name', label: 'Name', type: 'text', required: true},
+        {key: 'role', label: 'Role', type: 'text', placeholder: 'e.g. Design lead'},
+        {key: 'relationship', label: 'Relationship', type: 'select', options: ['friend','family','colleague','acquaintance']},
+        {key: 'type', label: 'Type', type: 'select', options: ['internal','vendor','client','subcontractor']},
+        {key: 'capacity_hours_per_week', label: 'Capacity (h/week)', type: 'number'},
+        {key: 'skills', label: 'Skills (comma-separated)', type: 'text'},
+        {key: 'birthday', label: 'Birthday (YYYY-MM-DD)', type: 'text'},
+    ];
+    var submit = async function(vals) {
+        if (!vals.name) { EOS_UI.toast('Name required', false); return; }
+        var body = {
+            name: String(vals.name || '').trim(),
+            role: String(vals.role || '').trim(),
+            type: vals.type || 'internal',
+            relationship: vals.relationship || '',
+            birthday: String(vals.birthday || '').trim(),
+            capacity_hours_per_week: parseFloat(vals.capacity_hours_per_week) || 40,
+            skills: typeof vals.skills === 'string'
+                ? vals.skills.split(',').map(function(s){return s.trim();}).filter(Boolean)
+                : (Array.isArray(vals.skills) ? vals.skills : []),
+        };
+        var r = await fetch('/people/api/people', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)}).then(function(r){return r.json();});
+        if (r.error) { EOS_UI.toast(r.error, false); throw new Error(r.error); }
+        EOS_UI.toast('Person added');
+        await loadAll();
+    };
+    EOS_UI.aiFormFill({
+        title: '+ Add person',
+        intro: "Tell me about them — name, role, how you know them (friend / colleague / family), what they're good at. I'll fill the form as you talk.",
+        schema: schema,
+        initial: {type: 'internal', capacity_hours_per_week: 40},
+        submitLabel: 'Add person',
+        onSubmit: submit,
+        onManual: function() {
+            // Fall back to the existing inline modal — it's already wired up.
+            openCreate();
+        },
+    });
 }
 
 /* Create */

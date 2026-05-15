@@ -10,9 +10,10 @@ Usage:
 """
 
 import re
-import subprocess
 import sys
 from pathlib import Path
+
+from _check_base import REPO_ROOT, git_staged, git_tracked
 
 PATTERNS_FILE = ".eos-branding"
 
@@ -93,12 +94,8 @@ def load_patterns(path: str) -> list[re.Pattern]:
 
 
 def get_files(staged_only: bool = False) -> list[str]:
-    if staged_only:
-        cmd = ["git", "diff", "--cached", "--name-only", "--diff-filter=ACM"]
-    else:
-        cmd = ["git", "ls-files"]
-    result = subprocess.run(cmd, capture_output=True, text=True)
-    return [f for f in result.stdout.strip().split("\n") if f]
+    paths = git_staged() if staged_only else git_tracked()
+    return [p.relative_to(REPO_ROOT).as_posix() for p in paths]
 
 
 def is_exempt(filepath: str) -> bool:

@@ -40,6 +40,7 @@ body.report-doc {
 /* --- Title page --------------------------------------------------------- */
 
 .report-title-page {
+    /* eos-ios-ok: V — print/PDF context, dvh isn't paginated-safe */
     page-break-after: always;
     break-after: page;
     min-height: 100vh;

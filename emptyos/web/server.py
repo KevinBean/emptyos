@@ -107,9 +107,63 @@ def create_server(kernel: Kernel) -> FastAPI:
 
     server.add_middleware(PresentationMiddleware)
 
-    # --- Auth middleware (activates only when network.auth_token is set) ---
+    # Without viewport-fit=cover, iOS resolves env(safe-area-inset-*) to 0
+    # and every safe-area rule downstream is dead code. Patching here at the
+    # response boundary so per-page boilerplate can't regress the invariant.
+    import re as _re
+
+    _VIEWPORT_META_RE = _re.compile(
+        rb'(<meta\s+[^>]*\bname\s*=\s*["\']viewport["\'][^>]*\bcontent\s*=\s*)["\']([^"\']*)["\']',
+        _re.IGNORECASE,
+    )
+    _HEAD_OPEN_RE = _re.compile(rb"<head\b[^>]*>", _re.IGNORECASE)
+    _DEFAULT_VIEWPORT_META = (
+        b'\n<meta name="viewport" '
+        b'content="width=device-width, initial-scale=1.0, viewport-fit=cover">'
+    )
+
+    def _inject_viewport_fit(body: bytes) -> bytes:
+        m = _VIEWPORT_META_RE.search(body)
+        if m:
+            content = m.group(2)
+            if b"viewport-fit" in content.lower():
+                return body
+            new_content = content.rstrip(b",; ") + b", viewport-fit=cover"
+            return body[: m.start(2)] + new_content + body[m.end(2) :]
+        h = _HEAD_OPEN_RE.search(body)
+        if not h:
+            return body
+        return body[: h.end()] + _DEFAULT_VIEWPORT_META + body[h.end() :]
+
+    class ViewportMiddleware(_BHM):
+        async def dispatch(self, request, call_next):
+            response = await call_next(request)
+            ctype = (response.headers.get("content-type") or "").lower()
+            if "text/html" not in ctype:
+                return response
+            # Drain streamed body so we can patch it.
+            chunks = [c async for c in response.body_iterator]
+            body = b"".join(chunks)
+            patched = _inject_viewport_fit(body)
+            headers = dict(response.headers)
+            headers.pop("content-length", None)
+            return _R(
+                content=patched,
+                status_code=response.status_code,
+                headers=headers,
+                media_type=response.media_type,
+            )
+
+    server.add_middleware(ViewportMiddleware)
+
+    # --- Auth middleware (activates when token OR password is set) ---
+    # Two credentials, one trust boundary — see docs/AUTH.md.
+    #   auth_token: machine bearer (CLI, API clients, deep links)
+    #   password:   human-typeable browser login
+    # Either alone activates the gate; both work simultaneously.
     _auth_token: str = kernel.config.auth_token
-    if _auth_token:
+    _login_password: str = kernel.config.login_password
+    if _auth_token or _login_password:
         import hmac
 
         from starlette.middleware.base import BaseHTTPMiddleware
@@ -141,8 +195,68 @@ def create_server(kernel: Kernel) -> FastAPI:
                 _AUTH_EXEMPT_PREFIXES.append(_full)
         _AUTH_EXEMPT_PREFIXES = tuple(_AUTH_EXEMPT_PREFIXES)
 
+        # Cookie value is whichever credential the user signed in with —
+        # not normalized — so rotating one without the other doesn't
+        # invalidate the other's sessions. compare_digest against both.
         def _check_token(provided: str) -> bool:
-            return bool(provided) and hmac.compare_digest(provided, _auth_token)
+            if not provided:
+                return False
+            if _auth_token and hmac.compare_digest(provided, _auth_token):
+                return True
+            if _login_password and hmac.compare_digest(provided, _login_password):
+                return True
+            return False
+
+        def _check_bearer(provided: str) -> bool:
+            # Bearer header is for machines — only the token is valid here.
+            # Humans don't paste passwords as Authorization headers.
+            return bool(provided) and bool(_auth_token) and hmac.compare_digest(
+                provided, _auth_token,
+            )
+
+        # --- Rate limit /login + ?token= attempts ---
+        # Sliding window per client IP. Failures inside the window count;
+        # crossing the threshold trips a fixed cooldown. In-process state —
+        # resets on daemon restart, doesn't need to survive that.
+        _LOGIN_WINDOW_S = 60.0
+        _LOGIN_MAX_FAILS = 5
+        _LOGIN_COOLDOWN_S = 30.0
+        _login_fails: dict[str, list[float]] = {}
+        _login_locked_until: dict[str, float] = {}
+
+        def _client_ip(request: Request) -> str:
+            xff = request.headers.get("x-forwarded-for", "")
+            if xff:
+                first = xff.split(",")[0].strip()
+                if first:
+                    return first
+            return (request.client.host if request.client else "") or "unknown"
+
+        def _login_check_lock(ip: str) -> float:
+            import time as _t
+
+            until = _login_locked_until.get(ip, 0.0)
+            if until and until > _t.time():
+                return until - _t.time()
+            if until:
+                _login_locked_until.pop(ip, None)
+            return 0.0
+
+        def _login_record_fail(ip: str) -> None:
+            import time as _t
+
+            now = _t.time()
+            buf = _login_fails.setdefault(ip, [])
+            buf.append(now)
+            cutoff = now - _LOGIN_WINDOW_S
+            buf[:] = [t for t in buf if t >= cutoff]
+            if len(buf) >= _LOGIN_MAX_FAILS:
+                _login_locked_until[ip] = now + _LOGIN_COOLDOWN_S
+                _login_fails.pop(ip, None)
+
+        def _login_record_success(ip: str) -> None:
+            _login_fails.pop(ip, None)
+            _login_locked_until.pop(ip, None)
 
         class AuthMiddleware(BaseHTTPMiddleware):
             async def dispatch(self, request: Request, call_next):
@@ -153,10 +267,10 @@ def create_server(kernel: Kernel) -> FastAPI:
                 if any(path.startswith(p) for p in _AUTH_EXEMPT_PREFIXES):
                     return await call_next(request)
 
-                # Check bearer token (API clients, CLI)
+                # Check bearer token (API clients, CLI) — token only, not password
                 auth_header = request.headers.get("authorization", "")
                 if auth_header.lower().startswith("bearer "):
-                    if _check_token(auth_header[7:].strip()):
+                    if _check_bearer(auth_header[7:].strip()):
                         return await call_next(request)
 
                 # Check session cookie (browser)
@@ -167,26 +281,52 @@ def create_server(kernel: Kernel) -> FastAPI:
                 # Check ?token= query param (deep-link sign-in for landing pages).
                 # On match, set the cookie and 302 to the same path with token
                 # stripped from the URL — so it never lingers in the address bar
-                # or browser history beyond the first hop.
+                # or browser history beyond the first hop. Wrong values count
+                # against the per-IP rate limit (same brute-force shape as
+                # POST /login). Absent token is not a failure.
                 qtok = request.query_params.get("token", "")
-                if qtok and _check_token(qtok):
-                    clean_qs = "&".join(
-                        f"{k}={v}" for k, v in request.query_params.multi_items() if k != "token"
-                    )
-                    clean_url = path + (("?" + clean_qs) if clean_qs else "")
-                    resp = RedirectResponse(url=clean_url, status_code=302)
-                    resp.set_cookie(
-                        _AUTH_COOKIE,
-                        _auth_token,
-                        httponly=True,
-                        samesite="lax",
-                        max_age=60 * 60 * 24 * 30,
-                    )
-                    return resp
+                if qtok:
+                    ip = _client_ip(request)
+                    remaining = _login_check_lock(ip)
+                    if remaining > 0:
+                        return JSONResponse(
+                            {"error": "too many failed attempts",
+                             "retry_after_seconds": int(remaining) + 1},
+                            status_code=429,
+                            headers={"Retry-After": str(int(remaining) + 1)},
+                        )
+                    if _check_token(qtok):
+                        _login_record_success(ip)
+                        clean_qs = "&".join(
+                            f"{k}={v}" for k, v in request.query_params.multi_items()
+                            if k != "token"
+                        )
+                        clean_url = path + (("?" + clean_qs) if clean_qs else "")
+                        resp = RedirectResponse(url=clean_url, status_code=302)
+                        resp.set_cookie(
+                            _AUTH_COOKIE,
+                            qtok,
+                            httponly=True,
+                            samesite="lax",
+                            max_age=60 * 60 * 24 * 30,
+                        )
+                        return resp
+                    _login_record_fail(ip)
 
-                # API returns 401 JSON, browser redirects to login
+                # API returns 401 JSON, browser redirects to login.
+                # Match `/api/` anywhere in the path so app-namespaced
+                # endpoints like `/dogfood-agent/api/...`, `/cables/api/...`
+                # get a JSON 401 too — without this, SPA fetches with an
+                # expired cookie silently 302 → /login (HTML), the SPA's
+                # response.json() throws, and the user sees "nothing happens"
+                # (or a generic Network error) instead of a real auth failure.
                 accept = request.headers.get("accept", "")
-                if path.startswith("/api/") or "application/json" in accept:
+                ctype = request.headers.get("content-type", "")
+                if (
+                    "/api/" in path
+                    or "application/json" in accept
+                    or "application/json" in ctype
+                ):
                     return JSONResponse({"error": "unauthorized"}, status_code=401)
                 return RedirectResponse(url=f"/login?next={path}", status_code=302)
 
@@ -194,9 +334,9 @@ def create_server(kernel: Kernel) -> FastAPI:
 
         # Login page — GET shows form, POST sets cookie
         _LOGIN_HTML = """<!DOCTYPE html>
-<html><head><meta charset="utf-8"><title>EmptyOS — Login</title>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover"><title>EmptyOS — Login</title>
 <style>
-body{font-family:system-ui,sans-serif;background:#0e1117;color:#e6edf3;margin:0;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;padding:24px;box-sizing:border-box}
+body{font-family:system-ui,sans-serif;background:#0e1117;color:#e6edf3;margin:0;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100dvh;padding:24px;box-sizing:border-box}
 .box{background:#161b22;border:1px solid #30363d;border-radius:8px;padding:32px;width:320px}
 h1{margin:0 0 8px;font-size:18px;font-weight:600}
 p{margin:0 0 16px;color:#8b949e;font-size:13px}
@@ -210,8 +350,8 @@ button:hover{background:#2ea043}
 .foot .sep{margin:0 6px;color:#30363d}
 </style></head><body>
 <form class="box" method="post" action="/login">
-<h1>EmptyOS</h1><p>Enter your access token to continue.</p>
-<input type="password" name="token" placeholder="Access token" autofocus required>
+<h1>EmptyOS</h1><p>Sign in with your password or access token.</p>
+<input type="password" name="token" placeholder="Password or token" autofocus required>
 <input type="hidden" name="next" value="__NEXT__">
 <button type="submit">Sign in</button>
 __ERR__
@@ -245,6 +385,16 @@ EmptyOS — a mind companion. Think and create with you, not for you.<br>
 
         @server.post("/login")
         async def login_submit(request: Request):
+            ip = _client_ip(request)
+            remaining = _login_check_lock(ip)
+            if remaining > 0:
+                return JSONResponse(
+                    {"error": "too many failed attempts",
+                     "retry_after_seconds": int(remaining) + 1},
+                    status_code=429,
+                    headers={"Retry-After": str(int(remaining) + 1)},
+                )
+
             form = await request.form()
             provided = str(form.get("token", ""))
             next_url = str(form.get("next", "/")) or "/"
@@ -252,14 +402,16 @@ EmptyOS — a mind companion. Think and create with you, not for you.<br>
             if not next_url.startswith("/") or next_url.startswith("//"):
                 next_url = "/"
             if not _check_token(provided):
+                _login_record_fail(ip)
                 return RedirectResponse(
                     url=f"/login?next={next_url}&err=Invalid+token",
                     status_code=302,
                 )
+            _login_record_success(ip)
             resp = RedirectResponse(url=next_url, status_code=302)
             resp.set_cookie(
                 _AUTH_COOKIE,
-                _auth_token,
+                provided,
                 httponly=True,
                 samesite="lax",
                 max_age=60 * 60 * 24 * 30,
@@ -456,6 +608,149 @@ EmptyOS — a mind companion. Think and create with you, not for you.<br>
         if not available:
             return {"available": False, "reason": "no think provider is currently available"}
         return {"available": True, "providers": available}
+
+    # --- AI form-fill: chat-driven extraction shared across every app ---
+    # POST /api/sdk/ai-form-fill
+    # Body: {"schema": [...], "history": [{"role":"user|assistant","content":"..."}], "current": {...}}
+    # Returns: {"filled":{...}, "missing":[...], "next_question":"...", "ready":bool, "provenance":{...}}
+    @server.post("/api/sdk/ai-form-fill")
+    async def ai_form_fill(request: Request):
+        try:
+            body = await request.json()
+        except Exception:
+            return JSONResponse({"error": "invalid body"}, status_code=400)
+
+        schema = body.get("schema") or []
+        history = body.get("history") or []
+        current = body.get("current") or {}
+        if not isinstance(schema, list) or not schema:
+            return JSONResponse({"error": "schema required (list of field dicts)"}, status_code=400)
+        if not isinstance(history, list) or not history:
+            return JSONResponse({"error": "history required (list of role/content dicts)"}, status_code=400)
+
+        # Build a concise schema description for the LLM. Only the fields it needs to know.
+        schema_lines = []
+        for f in schema:
+            if not isinstance(f, dict) or not f.get("key"):
+                continue
+            line = f"- {f['key']} ({f.get('type', 'text')})"
+            if f.get("required"):
+                line += " [required]"
+            if f.get("label"):
+                line += f": {f['label']}"
+            if f.get("options"):
+                opts = f["options"]
+                if isinstance(opts, list):
+                    opt_vals = [o if isinstance(o, str) else o.get("value", "") for o in opts]
+                    line += f" — one of: {', '.join(str(o) for o in opt_vals if o)}"
+            schema_lines.append(line)
+
+        # Filter history to the last 20 turns to keep prompts bounded.
+        clean_history = []
+        for msg in history[-20:]:
+            if not isinstance(msg, dict):
+                continue
+            role = (msg.get("role") or "").strip()
+            content = (msg.get("content") or "").strip()
+            if role in ("user", "assistant") and content:
+                clean_history.append({"role": role, "content": content})
+
+        system = (
+            "You help a user fill out a form by chatting with them. You are given:\n"
+            "1. SCHEMA — the fields the form needs.\n"
+            "2. CURRENT — what's already filled in (from earlier turns).\n"
+            "3. CONVERSATION — the chat so far. The last message is from the user.\n\n"
+            "Your job each turn:\n"
+            "(a) Extract any new field values from the latest user message. Only fill values "
+            "the user clearly stated — do NOT invent, guess, or paraphrase silently. If the user "
+            "uses a synonym for a known option (e.g. 'workplace' → 'team'), map it.\n"
+            "(b) Decide if the form is ready to submit: ready=true when every [required] field is "
+            "filled AND either (i) the user signaled they're done, or (ii) only optional fields remain.\n"
+            "(c) Produce ONE short follow-up question to gather the most important still-missing "
+            "field. Skip the question (return empty string) when ready=true.\n\n"
+            "Return ONLY valid JSON, no markdown fences, in this exact shape:\n"
+            '{"filled": {<key>: <value>, ...}, "missing": [<key>, ...], '
+            '"next_question": "...", "ready": true|false}\n\n'
+            "Do NOT: invent values not in the user's message; ask multi-part questions; restate "
+            "the schema back at the user; produce keys that aren't in the schema; wrap the JSON in "
+            "markdown code fences."
+        )
+
+        prompt_parts = ["SCHEMA:"]
+        prompt_parts.extend(schema_lines)
+        prompt_parts.append("")
+        prompt_parts.append("CURRENT:")
+        for k, v in current.items():
+            if v not in (None, "", []):
+                prompt_parts.append(f"  {k}: {v}")
+        if not current:
+            prompt_parts.append("  (empty — no fields filled yet)")
+        prompt_parts.append("")
+        prompt_parts.append("CONVERSATION:")
+        for m in clean_history:
+            who = "User" if m["role"] == "user" else "Assistant"
+            prompt_parts.append(f"  {who}: {m['content']}")
+        prompt_parts.append("")
+        prompt_parts.append("Now respond with the JSON object.")
+        prompt = "\n".join(prompt_parts)
+
+        try:
+            result = await kernel.capability("think").execute(
+                prompt=prompt,
+                system=system,
+                domain="text",
+                task_shape="parse-json",
+                temperature=0.2,
+            )
+        except RuntimeError as e:
+            return JSONResponse({"error": str(e)}, status_code=503)
+        except Exception as e:
+            return JSONResponse({"error": f"think failed: {e}"}, status_code=500)
+
+        from emptyos.sdk.utils import parse_llm_json
+
+        text = getattr(result, "value", "") or ""
+        parsed = parse_llm_json(text, fallback={})
+        if not isinstance(parsed, dict):
+            parsed = {}
+
+        # Merge filled values into current, restricted to schema keys.
+        schema_keys = {f.get("key") for f in schema if isinstance(f, dict) and f.get("key")}
+        raw_filled = parsed.get("filled") or {}
+        filled: dict = {}
+        if isinstance(raw_filled, dict):
+            for k, v in raw_filled.items():
+                if k in schema_keys and v not in (None, ""):
+                    filled[k] = v
+
+        merged = {**current, **filled}
+
+        # Compute missing required fields server-side (don't trust the LLM here).
+        missing = [
+            f["key"] for f in schema
+            if isinstance(f, dict)
+            and f.get("key")
+            and f.get("required")
+            and not merged.get(f["key"])
+        ]
+
+        next_question = (parsed.get("next_question") or "").strip()
+        ready = bool(parsed.get("ready")) and not missing
+
+        provenance = {
+            "provider": getattr(result, "provider", ""),
+            "is_cloud": bool(getattr(result, "is_cloud", False)),
+            "mode": "cloud" if getattr(result, "is_cloud", False) else "local",
+        }
+
+        return {
+            "filled": filled,
+            "current": merged,
+            "missing": missing,
+            "next_question": next_question,
+            "ready": ready,
+            "provenance": provenance,
+        }
 
     # --- Cloud consent endpoints ---
     @server.get("/api/cloud/status")
@@ -1345,6 +1640,8 @@ EmptyOS — a mind companion. Think and create with you, not for you.<br>
         args = data.get("args", [])
 
         if app_id not in kernel.apps.instances:
+            if app_id in kernel.apps.manifests and app_id not in kernel.apps.enabled_ids():
+                return {"error": f"App '{app_id}' is not enabled — install/enable via /store and restart."}
             try:
                 await kernel.apps.load(app_id)
             except Exception as e:
@@ -1395,12 +1692,17 @@ EmptyOS — a mind companion. Think and create with you, not for you.<br>
     # --- WebSocket endpoint ---
     @server.websocket("/ws")
     async def websocket_endpoint(ws: WebSocket):
-        # Auth check: when auth_token is set, require it via ?token= query or cookie
-        if _auth_token:
+        # Auth check: when token OR password is set, require either via
+        # ?token= query or cookie. Mirrors the HTTP middleware's accept set.
+        if _auth_token or _login_password:
             import hmac
 
             tok = ws.query_params.get("token") or ws.cookies.get("eos_session", "")
-            if not (tok and hmac.compare_digest(tok, _auth_token)):
+            ok = bool(tok) and (
+                (bool(_auth_token) and hmac.compare_digest(tok, _auth_token))
+                or (bool(_login_password) and hmac.compare_digest(tok, _login_password))
+            )
+            if not ok:
                 await ws.close(code=1008, reason="Unauthorized")
                 return
         if kernel.realtime:
@@ -1531,10 +1833,19 @@ EmptyOS — a mind companion. Think and create with you, not for you.<br>
 
     @server.middleware("http")
     async def _lazy_load_middleware(request: Request, call_next):
-        """Lazy-load apps on first request to their web prefix."""
+        """Lazy-load enabled apps on first request to their web prefix.
+
+        Uninstalled AND disabled apps stay discovered (so the store can
+        list them) but never mount routes — requests to their prefix fall
+        through to the 404 handler. Restart-required after a `/store`
+        install/uninstall/enable/disable.
+        """
         path = request.url.path
+        enabled = kernel.apps.enabled_ids()
         for app_id, manifest in kernel.apps.manifests.items():
             if app_id in _lazy_mounted:
+                continue
+            if app_id not in enabled:
                 continue
             prefix = manifest.provides.get("web", {}).get("prefix", "")
             if not prefix:
@@ -1722,6 +2033,17 @@ def _mount_single_app_routes(server: FastAPI, kernel, app_id: str):
     if not prefix:
         return
 
+    # External FastAPI sub-mount — manifest [provides.web] mount_external =
+    # "pkg.mod:app" turns an EmptyOS app into a thin wrapper around an
+    # existing FastAPI app (e.g. a standalone tool we host inside the
+    # daemon without rewriting its routes). The sub-app's full route
+    # surface lands under this app's prefix. Wrapper's own @web_route
+    # methods + pages/ still take priority — they're registered first
+    # below; the sub-app catches everything that falls through. We skip
+    # the auto-UI + catch-all paths for external-mounted apps so they
+    # don't shadow the sub-app's own routing.
+    mount_external = web_section.get("mount_external")
+
     # Mount @web_route decorated methods
     # Sort: more specific routes first (more segments, fewer {params}) to avoid
     # greedy {id} capturing sub-paths like /api/projects/{id} eating /api/projects/{id}/docs
@@ -1762,6 +2084,12 @@ def _mount_single_app_routes(server: FastAPI, kernel, app_id: str):
             StaticFiles(directory=str(pages_dir), html=True),
             name=f"{app_id}_pages",
         )
+    elif mount_external:
+        # External-mount wrappers skip auto-UI — the sub-app's own routing
+        # fills the prefix surface (its StaticFiles mount usually serves
+        # index.html at /). Wrapper's @web_route + pages/ above still win
+        # because they're registered before the mount below.
+        pass
     else:
         # Check for template declaration in manifest
         web_config = manifest.provides.get("web", {})
@@ -1794,6 +2122,28 @@ def _mount_single_app_routes(server: FastAPI, kernel, app_id: str):
 
             _auto_page.__name__ = f"{app_id}_auto_page"
             server.get(f"{prefix}/")(_auto_page)
+
+    # External FastAPI sub-mount — register LAST so wrapper's @web_route
+    # methods and pages/ assets (registered above) take priority. The
+    # sub-app handles everything that falls through.
+    if mount_external:
+        try:
+            module_path, _, attr = mount_external.partition(":")
+            attr = attr or "app"
+            import importlib
+            mod = importlib.import_module(module_path)
+            sub_app = getattr(mod, attr)
+            server.mount(prefix, sub_app, name=f"{app_id}_external")
+            import logging
+            logging.getLogger("emptyos.web").info(
+                "[%s] mounted external app '%s' at %s", app_id, mount_external, prefix,
+            )
+        except Exception as e:
+            import logging
+            logging.getLogger("emptyos.web").error(
+                "[%s] failed to mount_external %r: %s", app_id, mount_external, e,
+            )
+        return  # external-mount wins; skip catch-all
 
     # --- Deep-path catch-all: serve index for any unmatched sub-path ---
     # Registered LAST so API routes, WebSocket routes, and StaticFiles all take priority.

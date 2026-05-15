@@ -30,18 +30,6 @@ body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-se
 .heatmap-stats { display:flex; gap:16px; margin-top:12px; font-size:12px; color:var(--text-muted) }
 .heatmap-stats strong { color:var(--text-heading) }
 
-/* Wellbeing wheel strip */
-.wheel-wrap { background:var(--bg-card); border:1px solid var(--border); border-radius:14px; padding:12px 12px; margin-bottom:16px; animation:cardIn 0.35s ease 0.12s both }
-.wheel-wrap h4 { margin:0 0 8px; font-size:11px; font-weight:600; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.5px }
-.wheel-strip { display:grid; grid-template-columns:repeat(8,1fr); gap:8px }
-.wt { position:relative; overflow:hidden; border:1px solid var(--border); border-radius:8px; padding:8px 2px; text-align:center; background:var(--bg-card) }
-.wt.empty { opacity:0.3 }
-.wt.active { border-color:var(--accent) }
-.wt-fill { position:absolute; left:0; bottom:0; width:100%; background:color-mix(in srgb,var(--accent) 22%,transparent); transition:height 0.4s }
-.wt-icon { font-size:17px; line-height:1; position:relative }
-.wt-count { font-size:10px; font-weight:700; color:var(--text-heading); margin-top:4px; position:relative }
-.wt-label { font-size:9px; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.3px; position:relative }
-
 /* Mood + Weather row */
 .mood-weather { display:flex; align-items:center; gap:8px; margin-bottom:16px; flex-wrap:wrap; animation:fadeDown 0.4s ease 0.15s both }
 .mood-btn { width:40px; height:40px; border-radius:50%; border:2px solid var(--border); background:var(--bg-card); cursor:pointer; font-size:20px; display:flex; align-items:center; justify-content:center; transition:all 0.2s; -webkit-tap-highlight-color:transparent }
@@ -190,12 +178,6 @@ if(window.EOS&&EOS.registerActions){EOS.registerActions({go_today:function(){goT
     <div class="heatmap-wrap">
         <div class="heatmap-grid" id="heatmap"></div>
         <div class="heatmap-stats" id="heatmap-stats"></div>
-    </div>
-
-    <!-- Wellbeing wheel strip -->
-    <div class="wheel-wrap">
-        <h4>Today's Wellbeing Signals</h4>
-        <div class="wheel-strip" id="wheel-strip"></div>
     </div>
 
     <!-- Mood selector + Weather -->
@@ -517,37 +499,6 @@ async function loadHeatmap() {
 }
 
 // --- Load today's data ---
-const WB_DIMS = [
-    ['physical','🏃','Body'],
-    ['social','👥','Social'],
-    ['intellectual','📚','Mind'],
-    ['emotional','❤️','Heart'],
-    ['spiritual','🕯️','Spirit'],
-    ['environmental','🏠','Space'],
-    ['financial','💰','Money'],
-    ['occupational','💼','Work'],
-];
-
-function renderWheelStrip(by) {
-    const el = document.getElementById('wheel-strip');
-    if (!el) return;
-    if (!by) { el.innerHTML = ''; return; }
-    const max = Math.max(1, ...WB_DIMS.map(([k]) => (by[k]?.total ?? 0)));
-    el.innerHTML = WB_DIMS.map(([key, icon, label]) => {
-        const v = by[key] || {total:0, captures:0, habits_done:0, habits_total:0, journal:0};
-        const total = v.total || 0;
-        const cls = total === 0 ? 'empty' : 'active';
-        const fill = total === 0 ? 0 : Math.min(100, (total / max) * 100);
-        const tip = `${label}: ${total} signals (${v.captures||0} captures, ${v.habits_done||0}/${v.habits_total||0} habits, ${v.journal||0} notes)`;
-        return `<div class="wt ${cls}" title="${tip}">
-            <div class="wt-fill" style="height:${fill}%"></div>
-            <div class="wt-icon">${icon}</div>
-            <div class="wt-count">${total}</div>
-            <div class="wt-label">${label}</div>
-        </div>`;
-    }).join('');
-}
-
 async function loadToday() {
     const ds = fmtDate(currentDate);
     document.getElementById('date-label').textContent = fmtLabel(currentDate);
@@ -558,7 +509,6 @@ async function loadToday() {
         // section back as a single entry's text, cascading into corruption.
         renderTodayEntries(data.entries || []);
         if (data.mood && MOODS[data.mood]) selectMood(data.mood);
-        renderWheelStrip(data.by_dimension);
     } catch(e) {}
 }
 

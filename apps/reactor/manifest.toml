@@ -10,10 +10,12 @@ class = "ReactorApp"
 
 [requires]
 capabilities = ["think"]
-apps = ["journal"]
-# briefing + expense are listened-for emitters, not callees. Reactor is purely
-# event-driven — when those apps aren't installed, their events simply don't
-# fire and the matching reactors stay quiet. Don't list them here as required.
+apps = ["journal", "expense"]
+# briefing is a listened-for emitter only. Reactor is purely event-driven —
+# when emitters aren't installed, their events simply don't fire and the
+# matching reactors stay quiet. expense is a call_app target for budget
+# rollups, so it IS declared here (try/except guards keep reactor running
+# when expense is absent).
 
 [provides.cli]
 commands = ["reactor"]

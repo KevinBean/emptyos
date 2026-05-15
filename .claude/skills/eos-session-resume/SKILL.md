@@ -5,7 +5,7 @@ description: Resume an EmptyOS session from where a previous track left off. Rea
 
 # EmptyOS Session Resume
 
-Cold-start the next session with the previous session's context intact. The companion skill to `/eos-session-wrapup` Step 5 — wrapup writes per-track briefs, this skill reads + acts on them.
+Cold-start the next session with the previous session's context intact. The companion skill to `/eos-session-wrapup` Step 6 — wrapup writes per-track briefs, this skill reads + acts on them.
 
 ## When to Use
 
@@ -60,6 +60,7 @@ The brief was written N hours/days ago. State may have moved. Before acting on i
 - For each file path mentioned in the brief (recommended starting move, TODO markers): check the file exists with `Read` or `Glob`. If a referenced file has been moved, deleted, or renamed since the brief was written, flag it.
 - Run `git log --oneline --since="<last_session date>" --no-merges` to see if anything has been committed since the brief was written. If yes, those commits may have already advanced one of the open threads — possibly within a *different* track that ran wrapup later.
 - Run `git status --short` to see if there are uncommitted changes — they're either work-in-progress on the recommended move or unrelated drift from a parallel track.
+- If the brief has a `## Working-tree snapshot` section, diff its contents against current `git status --short`. Files in the snapshot but no longer in status = committed since wrapup (good — fold into the commit summary). Files in status but not the snapshot = drift from another track or post-wrapup work (flag — these aren't covered by the brief's recommendations and may entangle the recommended starting move). A clean snapshot with a dirty current status is the load-bearing signal that the recommended commit shape no longer matches the diff.
 
 This is a **read-only** verification pass. Don't fix discrepancies yet — surface them in Step 5.
 
@@ -115,7 +116,7 @@ This skill requires vault connection. Check `.claude/vault-connection.json` firs
 
 ## Relationship to Other Systems
 
-- **`/eos-session-wrapup` Step 5**: writes the chosen track's `_next/<track>.md` and refreshes its row in `_index.md`. Without that step the brief doesn't exist.
+- **`/eos-session-wrapup` Step 6**: writes the chosen track's `_next/<track>.md` and refreshes its row in `_index.md`. Without that step the brief doesn't exist.
 - **Dated session logs** (`YYYY-MM-DD.md`): the source of truth for session detail. The brief is the on-deck card.
 - **`git log` / `git status`**: authoritative state. Always trust these over the brief if they conflict.
 - **Memory system**: persistent preferences and facts. Briefs are per-track per-session context; memory is across-session context. Both apply at session start.

@@ -55,3 +55,38 @@ def test_repo_root_falls_back_to_cwd_when_config_missing():
     # Simulate an unusable config.path — property should not raise.
     app.kernel.config.path = None
     assert app.repo_root == Path.cwd()
+
+
+# ── safe_json ────────────────────────────────────────────────────────
+
+
+class _FakeRequest:
+    def __init__(self, body: bytes):
+        self._body = body
+
+    async def body(self) -> bytes:
+        return self._body
+
+
+def _run(coro):
+    import asyncio
+    return asyncio.run(coro)
+
+
+def test_safe_json_decodes_valid_body():
+    req = _FakeRequest(b'{"a": 1, "b": "x"}')
+    assert _run(BaseApp.safe_json(req)) == {"a": 1, "b": "x"}
+
+
+def test_safe_json_returns_empty_on_empty_body():
+    assert _run(BaseApp.safe_json(_FakeRequest(b""))) == {}
+
+
+def test_safe_json_returns_empty_on_malformed_json():
+    assert _run(BaseApp.safe_json(_FakeRequest(b"not json at all"))) == {}
+
+
+def test_safe_json_handles_cp1252_em_dash():
+    # Windows curl em-dash inheritance: byte 0x97 in cp1252 → "—"
+    body = b'{"note": "hello \x97 world"}'
+    assert _run(BaseApp.safe_json(req := _FakeRequest(body))) == {"note": "hello — world"}

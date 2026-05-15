@@ -64,12 +64,41 @@ class QuickActionApp(BaseApp):
     async def add(self, text: str, tag: str = "") -> dict:
         """Add a capture entry. Returns the entry dict.
 
+        Direct project routing: tags in ``_TAG_PROJECT`` (currently ``dev`` →
+        emptyos-development, ``dogfood`` → emptyos-dogfood) skip the inbox and
+        create a task on the target project directly. Falls back to the inbox
+        if the projects app errors so the capture is never lost.
+
         Ambient tag routing: a tag of ``canvas`` or ``canvas/<board_id>`` also
         appends the capture as a node to that board (the capture still lands in
         inbox — user can dismiss manually).
         """
         text, tag = _hoist_inline_tag(text, tag)
         now = datetime.now(UTC).strftime("%Y-%m-%d %H:%M")
+        dimension = _resolve_dimension(text, tag)
+        entry = {"text": text, "tag": tag, "dimension": dimension, "timestamp": now}
+
+        route = self._TAG_ROUTE.get(tag)
+        if route:
+            try:
+                kind, target, text_transform = route
+                routed_text = text_transform(text) if text_transform else text
+                if kind == "project":
+                    await self.call_app(
+                        "projects", "add_task_to_project",
+                        project_id=target, text=routed_text,
+                    )
+                elif kind == "task":
+                    await self.call_app("task", "add", text=routed_text)
+                entry["routed_to"] = target
+                entry["project_name"] = self._ROUTE_NAMES.get(target, target)
+                await self.emit("capture:saved", entry)
+                return entry
+            except Exception:
+                # Target app missing/erroring — fall through to inbox so
+                # the capture is never lost.
+                pass
+
         tag_str = f" #{tag}" if tag else ""
         line = f"- {now} — {text}{tag_str}\n"
 
@@ -81,8 +110,7 @@ class QuickActionApp(BaseApp):
             content = f"# Captures\n\n{line}"
 
         await self.write(path, content)
-        dimension = _resolve_dimension(text, tag)
-        entry = {"text": text, "tag": tag, "dimension": dimension, "timestamp": now}
+        entry["path"] = path
         await self.emit("capture:saved", entry)
 
         # Ambient canvas routing — #canvas[/<board>] appends to that board
@@ -284,10 +312,29 @@ class QuickActionApp(BaseApp):
         removed = await self._remove_capture(data.get("timestamp", ""), data.get("text", ""))
         return {"dismissed": removed}
 
-    # Tag → project routing for capture triage
+    # Tag → destination routing. ``add()`` consults this to skip the inbox
+    # when the user typed an explicit destination tag. Triage (``api_to_task``)
+    # uses ``_TAG_PROJECT`` for project-targeted routes only.
+    #
+    # Shape: tag → (kind, target, text_transform | None)
+    #   kind="project" → call_app("projects", "add_task_to_project", project_id=target, text=...)
+    #   kind="task"    → call_app("task", "add", text=...)
+    _TAG_ROUTE = {
+        "dev":     ("project", "emptyos-development", None),
+        "dogfood": ("project", "emptyos-dogfood",    None),
+        "bug":     ("project", "emptyos-development", lambda t: f"[bug] {t}"),
+        "task":    ("task",    "inbox",              None),
+    }
+    _ROUTE_NAMES = {
+        "emptyos-development": "EmptyOS Development",
+        "emptyos-dogfood":     "EmptyOS Dogfood",
+        "inbox":               "Tasks",
+    }
+    # Triage helper still needs the project-only subset
     _TAG_PROJECT = {
-        "dev": "emptyos-development",
-        "dogfood": "emptyos-dogfood",
+        tag: target
+        for tag, (kind, target, _) in _TAG_ROUTE.items()
+        if kind == "project"
     }
 
     @web_route("POST", "/api/to-task")

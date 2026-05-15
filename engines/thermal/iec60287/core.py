@@ -256,6 +256,7 @@ def _component_losses_and_resistances(
                 sheath_thickness_m=geom.sheath_thickness,
                 include_eddy_for_solid_bonding=input.include_eddy_for_solid_bonding,
                 formation=("flat" if input.spacing_mode == "flat" else "trefoil"),
+                n_cores=cable.n_conductors,
             )
         )
         # Per-cable λ₁ for flat solid-bonded — feeds the Δθ_P mutual heating
@@ -265,6 +266,7 @@ def _component_losses_and_resistances(
             input.spacing_mode == "flat"
             and input.bonding == "solidly_bonded"
             and input.sheath_loss_factor_lambda1 is None
+            and cable.n_conductors < 3
         ):
             flat_split = sheath_losses.lambda1_solidly_bonded_flat(
                 Rs, sheath_mean_r, s, input.frequency_hz,

@@ -843,9 +843,11 @@ class _StubApp:
 
 class TestShape:
     def test_all_subjects_handled_or_documented(self):
-        # Every listed subject must be claude-external OR start with eos+
+        # Every listed subject must be a documented external baseline (claude-
+        # external / claude-code-eos) OR start with eos+ (EmptyOS-native agent).
+        known_externals = {"claude-external", "claude-code-eos"}
         for sid in agent_bench.ALL_SUBJECTS:
-            assert sid == "claude-external" or sid.startswith("eos+")
+            assert sid in known_externals or sid.startswith("eos+")
 
     def test_agent_run_result_is_serializable(self):
         r = agent_bench.AgentRunResult(
@@ -862,7 +864,13 @@ class TestShape:
             assert s.max_iters > 0
             assert callable(s.setup)
             assert callable(s.verify)
-            assert "{scratch}" in s.task_template
+            # Either the task threads through a scratch dir, OR the scenario
+            # operates on the real project root (eos_use_project_root=True for
+            # open-ended app-creation scenarios like canvas-app).
+            assert "{scratch}" in s.task_template or getattr(s, "eos_use_project_root", False), (
+                f"scenario {s.id!r} has neither {{scratch}} in task_template "
+                f"nor eos_use_project_root=True"
+            )
 
 
 # ── Learning-loop metadata (quick-wins bundle) ───────────────────────

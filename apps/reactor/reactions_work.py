@@ -196,6 +196,21 @@ class WorkReactionsMixin:
         self._log_action("rooms:action_applied", verb)
         await self._journal_ripple("✓", f"Applied {verb} from room {rid}")
 
+    @on_event("rooms:action_rejected")
+    async def on_rooms_action_rejected(self, event):
+        verb = f"{event.data.get('app', '?')}.{event.data.get('method', '?')}"
+        self._log_action("rooms:action_rejected", verb)
+
+    @on_event("rooms:participant_added")
+    async def on_rooms_participant_added(self, event):
+        pid = event.data.get("id") or event.data.get("participant", "")
+        self._log_action("rooms:participant_added", str(pid)[:40])
+
+    @on_event("rooms:pinned")
+    async def on_rooms_pinned(self, event):
+        rid = event.data.get("room_id", "")
+        self._log_action("rooms:pinned", str(rid)[:40])
+
     @on_event("digest:generated")
     async def on_digest(self, event):
         self._log_action("digest:generated", "daily digest created")
@@ -623,3 +638,36 @@ class WorkReactionsMixin:
     @on_event("cables:project_deleted")
     async def on_cables_project_deleted(self, event):
         self._log_action("cables:project_deleted", str(event.data.get("id",""))[:50])
+
+    @on_event("earthing:project_created")
+    async def on_earthing_project_created(self, event):
+        name = event.data.get("name") or event.data.get("id", "")
+        self._log_action("earthing:project_created", str(name)[:50])
+
+    @on_event("earthing:project_deleted")
+    async def on_earthing_project_deleted(self, event):
+        self._log_action("earthing:project_deleted", str(event.data.get("id",""))[:50])
+
+    @on_event("earthing:soundings_saved")
+    async def on_earthing_soundings(self, event):
+        self._log_action("earthing:soundings_saved", str(event.data.get("n",""))[:30])
+
+    @on_event("geo-cad:layer_added")
+    async def on_geocad_layer_added(self, event):
+        name = event.data.get("title") or event.data.get("id", "")
+        self._log_action("geo-cad:layer_added", str(name)[:50])
+
+    @on_event("geo-cad:feature_added")
+    async def on_geocad_feature_added(self, event):
+        layer = event.data.get("layer_id") or event.data.get("layer", "")
+        self._log_action("geo-cad:feature_added", f"layer: {str(layer)[:40]}")
+
+    @on_event("company:created")
+    async def on_company_created(self, event):
+        name = event.data.get("name") or event.data.get("id", "")
+        self._log_action("company:created", str(name)[:50])
+
+    @on_event("company:worker_added")
+    async def on_company_worker_added(self, event):
+        worker = event.data.get("id") or event.data.get("name", "")
+        self._log_action("company:worker_added", str(worker)[:50])

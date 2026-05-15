@@ -12,10 +12,11 @@ class = "RoomsApp"
 [requires]
 capabilities = ["think", "read", "write"]
 services = ["agent-runtime"]
-# Optional cross-app calls (NOT in [requires].apps so rooms boots without
-# them): `projects` for task attach/query, `task` for /api/attach-room.
-# Both routed through call_app inside try/except — missing-app failures
-# surface as user-visible errors but don't break rooms itself.
+# `projects` is used for task attach/query; routed through call_app inside
+# try/except so rooms still boots when projects is uninstalled (errors surface
+# as user-visible messages, not crashes). Declared so the dependency graph
+# reflects reality.
+apps = ["projects"]
 
 [provides.cli]
 commands = ["rooms"]
@@ -30,6 +31,7 @@ emits = [
     "rooms:archived", "rooms:unarchived", "rooms:exported", "rooms:distilled",
     "rooms:pinned", "rooms:unpinned",
     "rooms:reminder_fired", "rooms:scheduled_fired",
+    "rooms:note_written",
 ]
 
 [provides.settings]

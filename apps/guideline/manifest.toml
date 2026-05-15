@@ -1,0 +1,63 @@
+[app]
+id = "guideline"
+name = "Guideline"
+version = "0.1.0"
+description = "Organize prescriptive guidelines (rules, principles, conventions) by category"
+dimensions = ["intellectual"]
+store_category = "productivity"
+
+[app.entry]
+module = "app"
+class = "GuidelineApp"
+
+[requires]
+capabilities = ["read", "write"]
+apps = []
+services = []
+
+[provides.cli]
+commands = ["guideline"]
+
+[provides.web]
+prefix = "/guideline"
+
+[provides.events]
+emits = [
+    "guideline:added",
+    "guideline:updated",
+    "guideline:deprecated",
+    "guideline:removed",
+    "guideline:clause_added",
+    "guideline:clause_updated",
+    "guideline:clause_removed",
+]
+
+[provides.settings]
+schema = [
+    {key = "guideline.default_category", label = "Default category for new guidelines", type = "text", default = "general"},
+    {key = "guideline.hub_panel_enabled", label = "Show daily guideline on hub", type = "boolean", default = true},
+]
+
+[[contributes.hub.panel]]
+id = "guideline-daily"
+method = "panel_daily"
+renderer = "entity-card"
+group = ""
+priority = 320
+title = "Guideline of the day"
+lazy = false
+
+[[contributes.voice-assistant.intent]]
+verb = "guideline.show"
+method = "voice_show"
+example = "show me guidelines for testing"
+args = { category = "string" }
+description = "List active guidelines in a category"
+card = "task-list"
+
+[[contributes.voice-assistant.intent]]
+verb = "guideline.random"
+method = "voice_random"
+example = "remind me of a guideline"
+args = {}
+description = "Speak a random active guideline"

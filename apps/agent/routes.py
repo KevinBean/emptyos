@@ -34,10 +34,7 @@ async def api_get_session(self, request):
 
 @web_route("POST", "/api/sessions")
 async def api_create_session(self, request):
-    try:
-        data = await request.json()
-    except Exception:
-        data = {}
+    data = await self.safe_json(request)
     return self._create_session(
         name=data.get("name", ""),
         provider=data.get("provider", ""),
@@ -57,10 +54,7 @@ async def api_update_session(self, request):
     sid = request.path_params["sid"]
     if not self._get_session(sid):
         return {"error": "not found"}
-    try:
-        data = await request.json()
-    except Exception:
-        data = {}
+    data = await self.safe_json(request)
     fields = {}
     if "name" in data:
         fields["name"] = str(data["name"])[:200]
@@ -108,10 +102,7 @@ async def api_fork_session(self, request):
     Returns the new session dict.
     """
     sid = request.path_params["sid"]
-    try:
-        body = await request.json()
-    except Exception:
-        body = {}
+    body = await self.safe_json(request)
     at = body.get("at")  # None = full clone
     name = body.get("name", "")
     forked = self._sessions.fork_session(sid, at_message=at, name=name)
@@ -126,10 +117,7 @@ async def api_revert(self, request):
     Pops up to N entries off the session's edit stack and restores each.
     Returns the structured summary from `_revert_last_edits`."""
     sid = request.path_params["sid"]
-    try:
-        body = await request.json()
-    except Exception:
-        body = {}
+    body = await self.safe_json(request)
     n_raw = body.get("n", 1) if isinstance(body, dict) else 1
     return self._revert_last_edits(sid, n_raw)
 
@@ -273,10 +261,7 @@ async def api_slash_commands(self, request):
 @web_route("POST", "/api/permission/{req_id}/approve")
 async def api_approve_permission(self, request):
     req_id = request.path_params["req_id"]
-    try:
-        data = await request.json()
-    except Exception:
-        data = {}
+    data = await self.safe_json(request)
     scope = data.get("scope", "once")
     if scope not in ("once", "session"):
         scope = "once"

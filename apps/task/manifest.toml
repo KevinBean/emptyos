@@ -25,9 +25,9 @@ fallbacks = ["vault:indexeddb", "events:local-bus", "call_app:bundled", "viewer:
 
 [requires]
 capabilities = ["read", "write", "think"]
-apps = []
-# projects + journal are optional task sources — indexer.py merges their
-# tasks if present, otherwise just shows tasks from notes in the vault.
+# projects is an optional task source — indexer.py merges its tasks if present,
+# otherwise just shows tasks from notes in the vault (call_app under try/except).
+apps = ["projects"]
 services = []
 events = []
 

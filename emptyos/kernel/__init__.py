@@ -244,15 +244,26 @@ class Kernel:
         # the rest, mirroring plugin_loader. Without this, one bad app blocks
         # the daemon from binding :9000 entirely.
         self.apps.discover()
+        # Calling enabled_ids() also seeds data/store/installed-apps.json on
+        # first boot with every discovered manifest — preserves today's
+        # behaviour on existing daemons (everything stays enabled until the
+        # user prunes via the store). Demo mode bypasses the gate.
+        enabled_apps = self.apps.enabled_ids()
         for app_id in self.config.get("apps.autostart", []):
-            if app_id in self.apps.manifests:
-                try:
-                    await self.apps.load(app_id)
-                    await self.apps.start(app_id)
-                except Exception as e:
-                    # `e` already carries the "Failed to load app 'X': …"
-                    # prefix from app_loader.load — don't double it up.
-                    self.syslog.error("kernel", f"autostart '{app_id}': {e}")
+            if app_id not in self.apps.manifests:
+                continue
+            if app_id not in enabled_apps:
+                # Autostart entry for an uninstalled-or-disabled app — log + skip
+                # rather than silently override the store. User pruned it; respect that.
+                self.syslog.info("kernel", f"autostart '{app_id}' skipped (not enabled)")
+                continue
+            try:
+                await self.apps.load(app_id)
+                await self.apps.start(app_id)
+            except Exception as e:
+                # `e` already carries the "Failed to load app 'X': …"
+                # prefix from app_loader.load — don't double it up.
+                self.syslog.error("kernel", f"autostart '{app_id}': {e}")
 
         # 4b. Demo seed — populate fresh state with sample content per app.
         # Runs only when demo.enabled and demo.seed_on_boot are both set.

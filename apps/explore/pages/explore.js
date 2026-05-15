@@ -23,7 +23,7 @@ function render() {
           '<p>Type a topic. Click a callout to dive deeper.</p>' +
           '<input id="ex-topic" type="text" autofocus ' +
             'placeholder="e.g. underground power cables" />' +
-          '<div class="hint">Press Enter to begin.</div>' +
+          '<div class="hint">Press Enter to begin. · <a href="/explore/pages/graph.html" class="ex-graph-link">View vault graph →</a></div>' +
           '<div id="ex-saved" class="ex-saved-list">' +
             '<div class="ex-saved-loading">Loading saved explorations…</div>' +
           '</div>' +

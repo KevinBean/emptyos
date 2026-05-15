@@ -187,13 +187,28 @@ def pytest_runtest_makereport(item, call):
     _write_summary(s)
 
 
-@pytest.fixture(scope="session", autouse=True)
+_DAEMON_FREE_TEST_PREFIXES = ("test_sdk_", "test_unit_")
+
+
+@pytest.fixture(scope="session")
 def server_health():
-    """Skip entire suite if EmptyOS is not running."""
+    """Daemon health probe — session-cached. Returns True if daemon is up."""
     try:
         resp = httpx.get(f"{BASE_URL}/api/health", timeout=5, headers=_AUTH_HEADERS)
-        assert resp.status_code == 200
-    except (httpx.ConnectError, httpx.TimeoutException, AssertionError):
+        return resp.status_code == 200
+    except (httpx.ConnectError, httpx.TimeoutException):
+        return False
+
+
+@pytest.fixture(autouse=True)
+def _require_daemon_for_http_tests(request, server_health):
+    # Pure-Python tests (SDK + unit) don't touch the daemon — let them run
+    # offline so `/eos-simplify` can verify them without a restart. HTTP /
+    # UI tests still skip when the daemon isn't up.
+    module_name = request.node.module.__name__.rsplit(".", 1)[-1]
+    if module_name.startswith(_DAEMON_FREE_TEST_PREFIXES):
+        return
+    if not server_health:
         pytest.skip("EmptyOS not running on localhost:9000")
 
 
@@ -442,6 +457,42 @@ def cleanup_after_all():
     except Exception:
         pass
 
+    # --- Guideline ---
+    try:
+        resp = client.get("/guideline/api/items")
+        if resp.status_code == 200:
+            data = resp.json()
+            items = data.get("items", []) if isinstance(data, dict) else []
+            for g in items:
+                gid = g.get("id", "")
+                title = g.get("title", "")
+                cat = g.get("category", "")
+                if TEST_PREFIX in gid or TEST_PREFIX in title or TEST_PREFIX in cat:
+                    _safe_request(client, "DELETE", f"/guideline/api/items/{gid}")
+    except Exception:
+        pass
+
+    # --- KB blocks / docs ---
+    # Created by `test_block_lifecycle` / `test_doc_lifecycle` with titles
+    # prefixed by TEST_PREFIX. The slug is the lower-kebab-case of the title,
+    # so the prefix check is case-insensitive.
+    try:
+        resp = client.get("/kb/api/blocks")
+        if resp.status_code == 200:
+            for b in resp.json().get("blocks", []):
+                if TEST_PREFIX.lower() in str(b.get("slug", "")).lower():
+                    _safe_request(client, "DELETE", f"/kb/api/blocks/{b['slug']}")
+    except Exception:
+        pass
+    try:
+        resp = client.get("/kb/api/docs")
+        if resp.status_code == 200:
+            for d in resp.json().get("docs", []):
+                if TEST_PREFIX.lower() in str(d.get("slug", "")).lower():
+                    _safe_request(client, "DELETE", f"/kb/api/docs/{d['slug']}")
+    except Exception:
+        pass
+
     # --- Recipes ---
     try:
         resp = client.get("/recipes/api/recipes")
@@ -598,6 +649,27 @@ def cleanup_after_all():
                 if pid and TEST_PREFIX in name:
                     _safe_request(client, "DELETE",
                                   f"/earthing/api/projects/{pid}")
+    except Exception:
+        pass
+
+    # --- Forge (vault-backed native projects) ---
+    # Ids are slugged-lowercase so name might be uppercase TEST_PREFIX or
+    # the id itself carries lowercased prefix. Match both shapes.
+    try:
+        resp = client.get("/forge/api/projects")
+        if resp.status_code == 200:
+            data = resp.json()
+            projects = data.get("projects", []) if isinstance(data, dict) else []
+            lower_prefix = TEST_PREFIX.lower()
+            for p in projects:
+                pid = str(p.get("id", ""))
+                name = str(p.get("name", ""))
+                if TEST_PREFIX in name or lower_prefix in pid:
+                    # Soft delete only — leaves the external repo dir on
+                    # disk if scaffold ever wrote anything (tests target a
+                    # throwaway HOME, so disk leak is bounded).
+                    _safe_request(client, "DELETE",
+                                  f"/forge/api/projects/{pid}")
     except Exception:
         pass
 

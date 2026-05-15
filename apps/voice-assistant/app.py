@@ -348,10 +348,7 @@ class VoiceAssistantApp(BaseApp):
     @web_route("POST", "/api/chat_text")
     async def api_chat_text(self, request):
         """Text-mode chat — same NDJSON event stream as /api/chat_stream, no STT."""
-        try:
-            data = await request.json()
-        except Exception:
-            data = {}
+        data = await self.safe_json(request)
         user_text = (data.get("text") or "").strip()
         messages = data.get("messages") or []
         if not isinstance(messages, list):

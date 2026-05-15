@@ -138,7 +138,66 @@ This ensures no personal information or unwanted branding leaks into the codebas
 
 ---
 
-### Step 3: Dev Log — Record what happened this session
+### Step 3: Vault Ripple — Propagate facts that changed in this session
+
+A Claude Code session produces three durable outputs: **code** (git + devlog), **behavioral learnings** (auto-memory), and **vault-tracked facts that changed** (this step). Steps 1+2 handle code-side state. This step handles vault-side facts so notes don't go stale silently.
+
+#### When to run
+
+Scan the conversation for fact-changing signals. Run ripple when **any** of these landed in the session:
+
+- Career / posture changes — "switching to X", "stopped pursuing Y", "we decided to leave Z"
+- Status changes — "the offer came in", "the interview happened", "RFI is now active", "deadline moved to…"
+- Strategic decisions — "we're picking A over B", "dropping the C plan", "the experiment finished"
+- Income / finance shifts — new salary number, expense pattern change, financial decision
+- Project pivots — "Foo project is dead", "Bar is now the priority", "rebuilding Baz"
+- Relationship / health updates — anything the user stated about people, body, energy
+
+#### Skip when
+
+- Session was pure code (UI fixes, refactors, dependency bumps, scanner cleanups)
+- Session was pure exploration without commitments ("let's investigate X" without a decision)
+- Session only changed things tracked **in code**, not in vault notes — e.g. adding a new app's manifest is code, not a vault fact
+
+If none of the signals fired, **skip silently** — report "Vault Ripple: no fact changes this session, skipped." and move on. Do NOT invent fact changes to justify running the skill.
+
+#### How to run
+
+Invoke the `vault-info-ripple` skill with a one-line summary of each fact change. The skill scans the vault for stale references to the **old** state, surfaces what's stale, proposes edits, applies approved ones, and logs the decision in today's journal entry.
+
+```
+Skill: vault-info-ripple
+Args: <one-line-per-fact summary of what changed>
+```
+
+Example: if today's session included "stopped Enerven salary push, now actively pursuing external roles", the ripple skill might surface every vault note that says "negotiating with Enerven" and propose updates.
+
+#### Report
+
+```
+Vault Ripple:
+  Facts surfaced: 2
+    - Enerven salary push → halted (2026-05-13)
+    - Job focus → external roles in energy
+  Vault notes updated: 5 (audited 14 stale references)
+  Journal entry: 50_Journal/2026/2026-05-13.md (decision logged)
+```
+
+Or if skipped:
+
+```
+Vault Ripple: no fact changes this session, skipped
+```
+
+#### Safety
+
+- **Always surface before applying** — `vault-info-ripple` proposes edits; user approves each batch. Wrapup should not auto-apply.
+- **One-line summaries, not transcripts** — feed the ripple skill distilled facts, not raw conversation. The skill is fact-shaped, not transcript-shaped (that's `vault-ai-conversation-digest`'s job, which is wrong tool here).
+- **Don't double-write to the journal** — ripple logs to today's journal entry. Step 4 (devlog) writes to the project log under `10_Projects/emptyos/log/`. Different files, no conflict.
+
+---
+
+### Step 4: Dev Log — Record what happened this session
 
 Write a structured session summary to the project log in the vault.
 
@@ -179,6 +238,7 @@ Write to `{vault}/10_Projects/emptyos/log/YYYY-MM-DD.md`:
 date: YYYY-MM-DD
 type: dev-session
 tags: [emptyos, dev-log, <affected-apps>]
+skills_used: [eos-session-wrapup, ...]   # every /<skill> invoked this session
 ---
 
 # YYYY-MM-DD — <Session Title>
@@ -192,6 +252,14 @@ tags: [emptyos, dev-log, <affected-apps>]
 ## Result
 <1-2 sentences on outcome and verification status>
 ```
+
+**`skills_used` sourcing:** list every `.claude/skills/*` (or `/<skill>`) invocation
+from this session, in order, deduplicated. Include `eos-session-wrapup` itself.
+Skip CLI command-palette hits that aren't skills. This field exists to
+correlate skill use with outcome later — accumulate now, analyze when
+there's 4+ weeks of data and a specific bet to test (e.g. "does
+`eos-design-review` cut UI consolidation passes in half?"). No analyzer
+ships today; the data is just grep-able in vault frontmatter.
 
 #### Format Rules
 
@@ -217,7 +285,7 @@ If the log file already exists (second session same day), append with a separato
 
 ---
 
-### Step 4: Site Sync — Regenerate EmptyOS live site
+### Step 5: Site Sync — Regenerate EmptyOS live site
 
 If the vault is connected and the session changed app/plugin inventory, capabilities, or system architecture:
 
@@ -245,7 +313,7 @@ If daemon is not running, note in the report: "Site source updated — rebuild w
 
 **Do not auto-push.** The script updates local site source. Publishing to `eos.binbian.net` is a deliberate user action via the Publish app UI or `/publish/api/deploy`.
 
-**Note on session content:** `generate_emptyos_site.py` only regenerates inventory pages (apps/plugins/capabilities/stats). It does **not** turn the session devlog into a public post. If the session is worth surfacing publicly, suggest `/eos-devlog-publish` as a follow-up step — it reads the log written in Step 3, writes a `type: post` note to the EmptyOS site source, checks discrepancies vs already-published sessions, and triggers a rebuild (never auto-deploys).
+**Note on session content:** `generate_emptyos_site.py` only regenerates inventory pages (apps/plugins/capabilities/stats). It does **not** turn the session devlog into a public post. If the session is worth surfacing publicly, suggest `/eos-devlog-publish` as a follow-up step — it reads the log written in Step 4, writes a `type: post` note to the EmptyOS site source, checks discrepancies vs already-published sessions, and triggers a rebuild (never auto-deploys).
 
 #### Report
 ```
@@ -262,7 +330,7 @@ If no changes detected → report "Site: up to date, no changes."
 
 ---
 
-### Step 5: Next Session Brief — Write a primer for the next conversation
+### Step 6: Next Session Brief — Write a primer for the next conversation
 
 While the session's context is still fresh, write a concise primer the **next** Claude can read to skip the warmup. Briefs are stored **per work track** so parallel tracks (engines, career, publish, infra) can't clobber each other when their wrapups land back-to-back.
 
@@ -301,6 +369,9 @@ track: <track-slug>
 written: <YYYY-MM-DD HH:MM>
 last_session: <YYYY-MM-DD>
 last_session_title: <Session Title>
+threads_cleared: <N>     # open threads from previous brief resolved this session
+threads_added: <N>       # new open threads introduced this session
+threads_carried: <N>     # open threads still open at end of this session
 ---
 
 # Next session — <on-deck title>
@@ -322,7 +393,14 @@ last_session_title: <Session Title>
 
 ## Verification reminders
 <Anything that needs a daemon restart, a test rerun, or a manual check before the next session declares something done. Skip if none.>
+
+## Working-tree snapshot
+<Paste the literal `git status --short` output at wrapup time, fenced. If empty, write `(clean)`. This lets `/eos-session-resume` detect drift between brief-time state and resume-time state — without it, a brief written after one track's session can be silently wrong if another track left uncommitted work in the same tree.>
 ```
+
+#### Sourcing the working-tree snapshot
+
+Run `git status --short` and `git log --oneline -1` at wrapup time. Paste verbatim (no editing). The next resume's verification pass diffs this snapshot against current state to surface "the working tree changed since this brief was written" — usually because another track ran wrapup between this brief and the next resume.
 
 After writing the track brief, update `_index.md`:
 
@@ -336,6 +414,11 @@ After writing the track brief, update `_index.md`:
 - **Open threads**: re-read the session devlog you just wrote — anything phrased as "follow-up", "want me to", "out of scope", or "deferred" is an open thread. Don't invent threads that aren't real.
 - **TODO markers**: `git diff HEAD` for `TODO|FIXME|XXX|TODO\(extract\)` lines that **didn't exist** before this session. Use `git diff` not `git log` so unstaged work is included.
 - **Recommended starting move**: prefer the most concrete open thread. If none stands out, leave the section as `(no specific recommendation — start by reading {dated log path})`. Don't manufacture a move just to fill the slot.
+- **Thread counts** (`threads_cleared` / `threads_added` / `threads_carried`):
+  - `threads_cleared`: read the previous brief for this track (`_next/<track>.md` *before* overwriting); count how many of its "Open threads" bullets are resolved by this session's work. If there's no previous brief, this is `0`.
+  - `threads_added`: count "Open threads" bullets in *this* brief that weren't in the previous one.
+  - `threads_carried`: total bullets in this brief's "Open threads" section (resolved threads should already be omitted from this section per the existing rules).
+  - These don't have to be exact — they're trend signals over many sessions, not metrics. Skip-or-zero when ambiguous. Same compounding-data purpose as `skills_used` in the dated log: no analyzer today, but the fields make future analysis a grep instead of a re-read.
 
 #### Skip conditions
 
@@ -357,18 +440,19 @@ If skipped (trivial session): `Next Session Brief: skipped — trivial session`.
 
 ---
 
-### Step 6: Report Summary
+### Step 7: Report Summary
 
 After all steps, output a brief summary:
 
 ```
 Session Wrapup Complete:
-  Docs: CLAUDE.md updated (apps 63→65, endpoints 687→695)
+  Docs:   CLAUDE.md updated (apps 63→65, endpoints 687→695)
   Safety: CLEAN (personal + branding)
-  Site: regenerated (74 apps, 9 plugins) — rebuild triggered
-  Log:  10_Projects/emptyos/log/2026-04-12.md written
-  Next: 10_Projects/emptyos/log/_next/<track>.md written (3 open threads)
-        Other tracks untouched: <track1> (last touched <date>), <track2> (last touched <date>)
+  Ripple: 2 facts surfaced, 5 vault notes updated  (or: skipped — no fact changes)
+  Log:    10_Projects/emptyos/log/2026-04-12.md written
+  Site:   regenerated (74 apps, 9 plugins) — rebuild triggered
+  Next:   10_Projects/emptyos/log/_next/<track>.md written (3 open threads)
+          Other tracks untouched: <track1> (last touched <date>), <track2> (last touched <date>)
 ```
 
 Suggest as a follow-up at next session start: `/eos-session-resume` (or `/eos-session-resume <track>` to jump straight to a specific track).

@@ -1,5 +1,43 @@
 // Projects — modals, settings panels, template picker, task metadata, health.
 
+function openCreateAI() {
+    var schema = [
+        {key: 'name', label: 'Name', type: 'text', required: true, placeholder: 'Project name'},
+        {key: 'goal', label: 'Goal / purpose', type: 'textarea'},
+        {key: 'type', label: 'Type', type: 'select', options: ['personal','engineering','development']},
+        {key: 'status', label: 'Status', type: 'select', options: ['idea','active']},
+        {key: 'deadline', label: 'Deadline (YYYY-MM-DD)', type: 'date'},
+        {key: 'repo', label: 'Repo path (for development projects only)', type: 'text'},
+    ];
+    var submit = async function(vals) {
+        if (!vals.name) { EOS_UI.toast('Name required', false); return; }
+        var payload = {
+            name: vals.name,
+            goal: vals.goal || '',
+            status: vals.status || 'idea',
+            deadline: vals.deadline || '',
+            type: vals.type || 'personal',
+        };
+        if (payload.type === 'development') payload.repo = vals.repo || '';
+        var r = await EOS.post('/projects/api/create', payload);
+        if (r.error) { EOS_UI.toast(r.error, false); throw new Error(r.error); }
+        EOS_UI.toast('Created: ' + payload.name);
+        if (typeof load === 'function') load();
+    };
+    EOS_UI.aiFormFill({
+        title: '+ New Project',
+        intro: "Describe the project — name, what it's for, what type (personal / engineering / development), and a deadline if any.",
+        schema: schema,
+        initial: {type: 'personal', status: 'idea'},
+        submitLabel: 'Create Project',
+        onSubmit: submit,
+        onManual: function() {
+            // Fall back to the existing inline modal flow.
+            openCreate();
+        },
+    });
+}
+
 function openCreate() {
     document.getElementById('new-name').value = '';
     document.getElementById('new-goal').value = '';
@@ -91,45 +129,88 @@ async function submitDoc() {
 }
 
 function openCreateSprint(projectId) {
-    EOS_UI.formModal('New Sprint', [
-        {id: 'name', label: 'Sprint Name', type: 'text', placeholder: 'e.g. Foundation'},
-        {id: 'start', label: 'Start Date', type: 'date', value: new Date().toISOString().split('T')[0]},
-        {id: 'end', label: 'End Date', type: 'date'},
-        {id: 'goal', label: 'Sprint Goal', type: 'text', placeholder: 'What we aim to deliver'},
-    ], async function(data) {
+    var schema = [
+        {key: 'name', label: 'Sprint Name', type: 'text', required: true, placeholder: 'e.g. Foundation'},
+        {key: 'start', label: 'Start Date', type: 'date'},
+        {key: 'end', label: 'End Date', type: 'date', required: true},
+        {key: 'goal', label: 'Sprint Goal', type: 'text', placeholder: 'What we aim to deliver'},
+    ];
+    var today = new Date().toISOString().split('T')[0];
+    var submit = async function(data) {
         if (!data.name) { EOS_UI.toast('Name required', false); return; }
         if (!data.end) { EOS_UI.toast('End date required', false); return; }
         var r = await EOS.post('/projects/api/projects/' + encodeURIComponent(projectId) + '/sprints', data);
-        if (r.error) { EOS_UI.toast(r.error, false); return; }
+        if (r.error) { EOS_UI.toast(r.error, false); throw new Error(r.error); }
         EOS_UI.toast('Sprint ' + r.num + ' created');
         showDetail(projectId);
+    };
+    EOS_UI.aiFormFill({
+        title: 'New Sprint',
+        intro: "Describe the sprint — name, dates (start defaults to today), and the goal you're chasing.",
+        schema: schema,
+        initial: {start: today},
+        submitLabel: 'Create Sprint',
+        onSubmit: submit,
+        onManual: function(prefill) {
+            EOS_UI.formModal('New Sprint (manual)', schema.map(function(f) {
+                return Object.assign({}, f, {value: prefill[f.key] || (f.key === 'start' ? today : '')});
+            }), submit);
+        },
     });
 }
 
 function openCreateMilestone(projectId) {
-    EOS_UI.formModal('New Milestone', [
-        {id: 'id', label: 'Version / ID', type: 'text', placeholder: 'e.g. v0.1'},
-        {id: 'name', label: 'Name', type: 'text', placeholder: 'e.g. Feature System'},
-        {id: 'target', label: 'Target Date', type: 'date'},
-    ], async function(data) {
+    var schema = [
+        {key: 'id', label: 'Version / ID', type: 'text', required: true, placeholder: 'e.g. v0.1'},
+        {key: 'name', label: 'Name', type: 'text', required: true, placeholder: 'e.g. Feature System'},
+        {key: 'target', label: 'Target Date', type: 'date'},
+    ];
+    var submit = async function(data) {
         if (!data.id || !data.name) { EOS_UI.toast('ID and name required', false); return; }
         var r = await EOS.post('/projects/api/projects/' + encodeURIComponent(projectId) + '/milestones', data);
-        if (r.error) { EOS_UI.toast(r.error, false); return; }
+        if (r.error) { EOS_UI.toast(r.error, false); throw new Error(r.error); }
         EOS_UI.toast('Milestone ' + r.id + ' created');
         showDetail(projectId);
+    };
+    EOS_UI.aiFormFill({
+        title: 'New Milestone',
+        intro: "Describe the milestone — version/ID (like v0.1), what it delivers, and target date.",
+        schema: schema,
+        submitLabel: 'Create Milestone',
+        onSubmit: submit,
+        onManual: function(prefill) {
+            EOS_UI.formModal('New Milestone (manual)', schema.map(function(f) {
+                return Object.assign({}, f, {value: prefill[f.key] || ''});
+            }), submit);
+        },
     });
 }
 
 function openCreateRelease(projectId) {
-    EOS_UI.formModal('New Release', [
-        {id: 'version', label: 'Version', type: 'text', placeholder: 'e.g. v0.1.0'},
-        {id: 'date', label: 'Release Date', type: 'date', value: new Date().toISOString().split('T')[0]},
-    ], async function(data) {
+    var schema = [
+        {key: 'version', label: 'Version', type: 'text', required: true, placeholder: 'e.g. v0.1.0'},
+        {key: 'date', label: 'Release Date', type: 'date'},
+    ];
+    var today = new Date().toISOString().split('T')[0];
+    var submit = async function(data) {
         if (!data.version) { EOS_UI.toast('Version required', false); return; }
         var r = await EOS.post('/projects/api/projects/' + encodeURIComponent(projectId) + '/releases', data);
-        if (r.error) { EOS_UI.toast(r.error, false); return; }
+        if (r.error) { EOS_UI.toast(r.error, false); throw new Error(r.error); }
         EOS_UI.toast('Release ' + r.version + ' created');
         showDetail(projectId);
+    };
+    EOS_UI.aiFormFill({
+        title: 'New Release',
+        intro: "What version are you releasing? Date defaults to today.",
+        schema: schema,
+        initial: {date: today},
+        submitLabel: 'Create Release',
+        onSubmit: submit,
+        onManual: function(prefill) {
+            EOS_UI.formModal('New Release (manual)', schema.map(function(f) {
+                return Object.assign({}, f, {value: prefill[f.key] || (f.key === 'date' ? today : '')});
+            }), submit);
+        },
     });
 }
 

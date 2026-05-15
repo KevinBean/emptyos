@@ -339,6 +339,35 @@ def slugify(text: str, max_len: int = 60) -> str:
     return re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")[:max_len]
 
 
+_UNIQUE_SLUG_RE = re.compile(r"[^a-z0-9-]+")
+
+
+def unique_slug(text: str, *, prefix: str) -> str:
+    """Slug suitable for stable ids — always non-empty.
+
+    Preserves dashes already present in the input (unlike :func:`slugify`,
+    which collapses any run of non-alphanumerics into a single dash). When
+    the input has no slugifiable characters, returns
+    ``f"{prefix}-{8-char hex}"`` so callers can store the result as an id
+    without an ``or ...`` branch at every call site.
+
+    Use when:
+        - You need a stable id derived from user-supplied free text and
+          "" is not an acceptable result.
+        - You want to preserve embedded dashes (dates, hyphenated names).
+
+    Not for:
+        - Canonical URL slugs — prefer :func:`slugify`, which collapses
+          dash runs.
+        - Cryptographic randomness in the fallback — use
+          :mod:`secrets` directly.
+    """
+    s = _UNIQUE_SLUG_RE.sub("-", (text or "").lower()).strip("-")
+    if s:
+        return s
+    return f"{prefix}-{uuid.uuid4().hex[:8]}"
+
+
 def today_iso() -> str:
     """Local-timezone date today as ISO string (``"YYYY-MM-DD"``).
 
@@ -447,3 +476,124 @@ def extract_wikilinks(text: str) -> set[str]:
     if not text:
         return set()
     return {m.group(1).strip() for m in WIKILINK_RE.finditer(text) if m.group(1).strip()}
+
+
+# Markdown tables ------------------------------------------------------------
+# Pure transforms between pipe-shaped markdown tables, list-of-dicts, and CSV.
+# Apps use these at the LLM boundary: feed a vault table to ``self.think()``
+# as CSV (LLMs reason over tabular data more reliably as CSV than as a pipe
+# table), parse the response back into rows, and write rows back as a pipe
+# table that the vault and Obsidian both render natively. The vault stays
+# plain markdown; CSV is a transient transport format, never the source of
+# truth.
+
+
+def _is_md_table_separator(line: str) -> bool:
+    s = line.strip()
+    if not s or "-" not in s:
+        return False
+    return all(c in "|-: \t" for c in s)
+
+
+def _split_md_table_row(line: str) -> list[str]:
+    """Split a pipe-table row into trimmed cells, tolerating optional outer pipes."""
+    s = line.strip()
+    if s.startswith("|"):
+        s = s[1:]
+    if s.endswith("|"):
+        s = s[:-1]
+    return [cell.strip() for cell in s.split("|")]
+
+
+def parse_markdown_table(text: str) -> list[dict]:
+    """Parse the first pipe-shaped markdown table in ``text`` into rows of dicts.
+
+    Returns an empty list when no table is found. Keys come from the header
+    row in the order they appear; cells are stripped. The table ends at the
+    first non-table line (blank, prose, new heading). Outer pipes are
+    optional (GFM tolerates both ``| a | b |`` and ``a | b``).
+
+    Multiple tables in one chunk are not supported — split the text first
+    (e.g. by ``##`` section) and call once per chunk.
+    """
+    if not text:
+        return []
+    lines = text.splitlines()
+    for i in range(len(lines) - 1):
+        if "|" not in lines[i] or _is_md_table_separator(lines[i]):
+            continue
+        if not _is_md_table_separator(lines[i + 1]):
+            continue
+        headers = _split_md_table_row(lines[i])
+        rows: list[dict] = []
+        for line in lines[i + 2 :]:
+            if not line.strip() or "|" not in line:
+                break
+            cells = _split_md_table_row(line)
+            cells = (cells + [""] * len(headers))[: len(headers)]
+            rows.append(dict(zip(headers, cells)))
+        return rows
+    return []
+
+
+def format_markdown_table(rows: list[dict], columns: list[str] | None = None) -> str:
+    """Format a list-of-dicts as a GitHub-flavored pipe table.
+
+    Column order comes from ``columns`` if given, otherwise the first row's
+    insertion order. Missing keys render as empty cells. All values pass
+    through ``str()``. Returns an empty string when ``rows`` is empty.
+
+    Column widths are sized to the widest cell or header (ASCII-width;
+    CJK content will visually misalign but parses identically).
+    """
+    if not rows:
+        return ""
+    cols = list(columns) if columns else list(rows[0].keys())
+    body = [
+        ["" if r.get(c) is None else str(r.get(c)) for c in cols] for r in rows
+    ]
+    widths = [max(len(c), *(len(row[i]) for row in body)) for i, c in enumerate(cols)]
+
+    def _fmt(cells: list[str]) -> str:
+        return "| " + " | ".join(c.ljust(w) for c, w in zip(cells, widths)) + " |"
+
+    sep = "| " + " | ".join("-" * w for w in widths) + " |"
+    return "\n".join([_fmt(cols), sep, *(_fmt(r) for r in body)])
+
+
+def rows_to_csv(rows: list[dict], columns: list[str] | None = None) -> str:
+    """Serialize a list-of-dicts as CSV (RFC 4180-ish, via stdlib :mod:`csv`).
+
+    Use this at the LLM boundary — tabular reasoning is more reliable when
+    the model sees CSV than a markdown table. Column order follows
+    ``columns`` if given, otherwise the first row's insertion order. ``None``
+    cell values render as empty fields. Returns an empty string when ``rows``
+    is empty. Uses ``\\r\\n`` line endings (RFC 4180 default from stdlib csv).
+    """
+    if not rows:
+        return ""
+    import csv
+    import io
+
+    cols = list(columns) if columns else list(rows[0].keys())
+    buf = io.StringIO()
+    writer = csv.DictWriter(buf, fieldnames=cols, extrasaction="ignore")
+    writer.writeheader()
+    for r in rows:
+        writer.writerow({c: ("" if r.get(c) is None else r.get(c)) for c in cols})
+    return buf.getvalue()
+
+
+def csv_to_rows(text: str) -> list[dict]:
+    """Parse CSV text into a list of dicts keyed by header.
+
+    Use to ingest LLM output that returns tabular data. Empty input returns
+    an empty list. Cells are returned verbatim — CSV is transparent about
+    whitespace, so callers strip if they need to.
+    """
+    if not text or not text.strip():
+        return []
+    import csv
+    import io
+
+    return [dict(row) for row in csv.DictReader(io.StringIO(text))]

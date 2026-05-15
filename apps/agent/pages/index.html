@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>Coding Agent · EmptyOS</title>
 <link rel="stylesheet" href="/static/theme.css">
 <link rel="stylesheet" href="/static/eos-components.css">
@@ -36,7 +36,9 @@
   #sidebar .sidebar-links a,
   #sidebar .sidebar-links button.btn-settings {
     text-decoration: none; color: inherit; font-size: 12px; opacity: 0.55;
-    background: none; border: none; cursor: pointer; padding: 0;
+    background: none; border: none; cursor: pointer; padding: 4px 8px;
+    min-width: 32px; min-height: 32px;
+    display: inline-flex; align-items: center; justify-content: center;
   }
   #sidebar .sidebar-links a:hover,
   #sidebar .sidebar-links button.btn-settings:hover { opacity: 1; }
@@ -76,8 +78,11 @@
   .session-item .del,
   .session-item .arch {
     background: none; border: none; color: var(--text-muted, var(--text-secondary));
-    font-size: 13px; cursor: pointer; padding: 2px 4px; border-radius: 4px;
+    font-size: 14px; cursor: pointer; padding: 2px 4px; border-radius: 4px;
+    min-width: 32px; min-height: 32px;
+    display: inline-flex; align-items: center; justify-content: center;
   }
+  @media (hover: none) { .session-item .sess-actions { opacity: 0.75; } }
   .session-item .del:hover { background: color-mix(in srgb, var(--danger, #da3633) 20%, transparent); color: var(--danger, #da3633); }
   .session-item .arch:hover { background: color-mix(in srgb, var(--accent) 18%, transparent); color: var(--accent); }
 
@@ -369,11 +374,12 @@
      is collapsed, so users can bring it back.
      Mobile (<=720px): always visible as the drawer handle. */
   #sidebar-toggle {
-    display: none; position: fixed; top: 54px; left: 10px; z-index: 50;
-    width: 30px; height: 30px; border: 1px solid var(--border);
+    display: none; position: fixed; top: calc(54px + env(safe-area-inset-top, 0px)); left: 10px; z-index: 50;
+    width: 36px; height: 36px; border: 1px solid var(--border);
     background: var(--bg-surface, var(--bg-card, var(--bg)));
-    color: var(--text); border-radius: 6px; font-size: 14px; cursor: pointer;
+    color: var(--text); border-radius: 6px; font-size: 16px; cursor: pointer;
     opacity: 0.55; transition: opacity 0.15s;
+    align-items: center; justify-content: center;
   }
   #sidebar-toggle:hover { opacity: 1; }
   @media (min-width: 721px) {
@@ -388,6 +394,7 @@
   #sidebar-scrim {
     display: none; position: fixed; inset: 0;
     background: rgba(0,0,0,0.45); z-index: 45;
+    cursor: pointer; -webkit-tap-highlight-color: transparent;
   }
   @media (max-width: 720px) {
     body { grid-template-columns: 1fr; }
@@ -396,6 +403,8 @@
       position: fixed; inset: 0 auto 0 0; width: 82vw; max-width: 320px;
       z-index: 50; transform: translateX(-100%); transition: transform 0.2s;
       box-shadow: 2px 0 18px rgba(0,0,0,0.25); height: 100dvh;
+      padding-top: calc(16px + env(safe-area-inset-top, 0px));
+      padding-bottom: calc(16px + env(safe-area-inset-bottom, 0px));
     }
     body.sidebar-open #sidebar { transform: translateX(0); }
     body.sidebar-open #sidebar-scrim { display: block; }

@@ -251,10 +251,7 @@ class HandsFreeApp(BaseApp):
                 "ok": False,
                 "reason": f"os-dictate refused for non-local origin: {client_host}",
             }
-        try:
-            body = await request.json()
-        except Exception:
-            body = {}
+        body = await self.safe_json(request)
         if body and body.get("dry_run"):
             return {"ok": True, "method": "win+h", "dry_run": True}
         try:

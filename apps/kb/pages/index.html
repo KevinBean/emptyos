@@ -44,9 +44,13 @@ body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-se
 .note-kind { font-size:11px; font-weight:600; padding:3px 8px; border-radius:6px; text-transform:uppercase; letter-spacing:0.04em; min-width:72px; text-align:center }
 .kind-formula { background:color-mix(in srgb,var(--accent) 18%,transparent); color:var(--accent) }
 .kind-concept { background:color-mix(in srgb,var(--text-secondary) 18%,transparent); color:var(--text-secondary) }
-.kind-standard { background:color-mix(in srgb,var(--warning) 18%,transparent); color:var(--warning) }
+.kind-reference { background:color-mix(in srgb,var(--warning) 18%,transparent); color:var(--warning) }
+.kind-clause { background:color-mix(in srgb,var(--text-muted) 22%,transparent); color:var(--text-muted) }
 .kind-case { background:color-mix(in srgb,var(--success) 18%,transparent); color:var(--success) }
 .kind-lesson { background:color-mix(in srgb,var(--danger) 18%,transparent); color:var(--danger) }
+.kind-doc { background:color-mix(in srgb,var(--accent) 10%,transparent); color:var(--accent) }
+.kind-moc { background:color-mix(in srgb,var(--accent) 28%,transparent); color:var(--accent) }
+.kind-empty { background:color-mix(in srgb,var(--text-muted) 12%,transparent); color:var(--text-muted) }
 .note-name { flex:1; font-size:14px; color:var(--text); font-weight:500 }
 .note-domain { font-size:12px; color:var(--text-muted) }
 .empty { text-align:center; padding:40px 20px; color:var(--text-muted); font-size:14px }
@@ -81,6 +85,7 @@ body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-se
 .side-card .item a { color:var(--accent); text-decoration:none }
 .side-card .item a:hover { text-decoration:underline }
 .side-card .empty-side { font-size:12px; color:var(--text-muted); font-style:italic }
+.side-card .clauses-group-header { font-size:11px; font-weight:600; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.04em; padding:8px 0 4px; border-bottom:1px solid var(--border) }
 .impl-ok { color:var(--success) }
 .impl-bad { color:var(--danger) }
 
@@ -103,6 +108,12 @@ body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-se
 .impl-card-row { display:flex; align-items:flex-start; gap:6px }
 .impl-card-sym { font-family:'SF Mono',Monaco,Consolas,monospace; color:var(--accent); font-weight:600 }
 .impl-card-path { font-family:'SF Mono',Monaco,Consolas,monospace; font-size:11px; color:var(--text-muted); word-break:break-all; margin-top:2px; margin-left:18px }
+
+/* Sibling-page nav strip — Notes / Blocks / Documents */
+.kb-views { display:flex; gap:6px; flex-wrap:wrap }
+.kb-view-link { display:inline-block; padding:5px 12px; background:var(--bg-card); border:1px solid var(--border); border-radius:999px; font-size:12px; color:var(--text-secondary); text-decoration:none; transition:border-color 0.15s,color 0.15s }
+.kb-view-link:hover { border-color:var(--accent); color:var(--accent) }
+.kb-view-link.active { background:color-mix(in srgb,var(--accent) 12%,transparent); border-color:var(--accent); color:var(--accent); font-weight:600 }
 </style>
 </head>
 <body>
@@ -120,12 +131,16 @@ body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-se
         <option value="">All kinds</option>
         <option value="concept">Concepts</option>
         <option value="formula">Formulas</option>
-        <option value="standard">Standards</option>
+        <option value="reference">References</option>
+        <option value="clause">Clauses</option>
         <option value="case">Cases</option>
         <option value="lesson">Lessons</option>
+        <option value="doc">Documents</option>
+        <option value="moc">MOCs</option>
       </select>
       <input id="filter-q" type="search" placeholder="Filter notes…" />
       <div class="spacer"></div>
+      <a class="detail-back" href="/kb/pages/docs.html" style="margin-bottom:0;text-decoration:none">Docs editor</a>
       <button class="detail-back" id="health-btn" style="margin-bottom:0">Health</button>
       <span class="count" id="count"></span>
     </div>
@@ -141,6 +156,10 @@ body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-se
     <div class="detail-grid">
       <div class="detail-body" id="detail-body"></div>
       <div>
+        <div class="side-card" id="detail-clauses-card" style="display:none">
+          <h3>Clauses in this standard <span class="bl-count" id="cl-count"></span></h3>
+          <div id="detail-clauses"></div>
+        </div>
         <div class="side-card">
           <h3>References</h3>
           <div id="detail-refs"></div>
@@ -236,10 +255,15 @@ function renderNotes(){
   list.innerHTML = rows.map(n => {
     var visual = n.domain === 'explore'
       ? '<span class="note-visual" title="Has visual rendering">◊</span>' : '';
+    var displayName = n.title
+      || (n.name && n.name !== n.slug ? n.name : n.slug.replace(/-/g,' '));
+    var kindLabel = n.kind || '—';
+    var kindClass = n.kind ? 'kind-'+esc(n.kind) : 'kind-empty';
+    var domain = n.domain || 'uncategorized';
     return '<div class="note-row" data-slug="'+esc(n.slug)+'">' +
-      '<span class="note-kind kind-'+esc(n.kind||'')+'">'+esc(n.kind||'?')+'</span>' +
-      '<span class="note-name">'+esc(n.slug.replace(/-/g,' '))+visual+'</span>' +
-      '<span class="note-domain">'+esc(n.domain)+'</span>' +
+      '<span class="note-kind '+kindClass+'">'+esc(kindLabel)+'</span>' +
+      '<span class="note-name">'+esc(displayName)+visual+'</span>' +
+      '<span class="note-domain">'+esc(domain)+'</span>' +
     '</div>';
   }).join('');
   list.querySelectorAll('.note-row').forEach(el => {
@@ -249,12 +273,15 @@ function renderNotes(){
 
 function kindColor(k){
   switch((k||'').toLowerCase()){
-    case 'formula':  return 'var(--accent)';
-    case 'concept':  return 'var(--text-secondary)';
-    case 'standard': return 'var(--warning)';
-    case 'case':     return 'var(--success)';
-    case 'lesson':   return 'var(--danger)';
-    default:         return 'var(--text-muted)';
+    case 'formula':   return 'var(--accent)';
+    case 'concept':   return 'var(--text-secondary)';
+    case 'reference': return 'var(--warning)';
+    case 'clause':    return 'var(--text-muted)';
+    case 'case':      return 'var(--success)';
+    case 'lesson':    return 'var(--danger)';
+    case 'doc':       return 'var(--accent)';
+    case 'moc':       return 'var(--accent)';
+    default:          return 'var(--text-muted)';
   }
 }
 
@@ -304,6 +331,9 @@ async function showDetail(slug){
   document.getElementById('detail-impl').innerHTML = '';
   document.getElementById('detail-backlinks').innerHTML = '';
   document.getElementById('bl-count').textContent = '';
+  document.getElementById('detail-clauses').innerHTML = '';
+  document.getElementById('cl-count').textContent = '';
+  document.getElementById('detail-clauses-card').style.display = 'none';
 
   var data;
   try {
@@ -326,9 +356,13 @@ async function showDetail(slug){
       '" title="Open this note as an interactive visual page">◊ Visual ↗</a>'
     : '';
 
-  // Header
+  // Header — prefer frontmatter title, then body H1, then humanized slug
+  var bodyH1 = (data.body||'').match(/^#\s+(.+?)\s*$/m);
+  var headerTitle = p.title
+    || (bodyH1 ? bodyH1[1] : null)
+    || (data.name && data.name !== slug ? data.name : slug.replace(/-/g,' '));
   document.getElementById('detail-head').innerHTML =
-    '<h1>'+esc(data.name||slug)+exploreLink+'</h1>' +
+    '<h1>'+esc(headerTitle)+exploreLink+'</h1>' +
     '<div class="detail-meta">' +
       (p.kind ? '<span class="note-kind kind-'+esc(p.kind)+'">'+esc(p.kind)+'</span>' : '') +
       (p.domain ? '<span>'+esc(p.domain.replace(/-/g,' '))+'</span>' : '') +
@@ -346,14 +380,55 @@ async function showDetail(slug){
   });
   bindWikiLinks('detail-body');
 
-  // References (external citations — papers, books, standards)
+  // References (external citations — papers, books, standards).
+  // Server resolves free-text strings to {text, target_slug, in_kb}; legacy string
+  // entries are tolerated for back-compat.
   var refs = p.references || [];
   if(Array.isArray(refs) && refs.length){
-    document.getElementById('detail-refs').innerHTML = refs.map(r =>
-      '<div class="refs-text">'+esc(String(r))+'</div>'
-    ).join('');
+    document.getElementById('detail-refs').innerHTML = refs.map(function(r){
+      if (typeof r === 'string') {
+        return '<div class="refs-text">'+esc(r)+'</div>';
+      }
+      if (r && r.target_slug) {
+        return '<div class="refs-text"><a href="#'+encodeURIComponent(r.target_slug)+'" data-wiki="'+esc(r.target_slug)+'" class="kb-wiki">'+esc(r.text||'')+'</a></div>';
+      }
+      return '<div class="refs-text">'+esc((r && r.text) || '')+'</div>';
+    }).join('');
+    bindWikiLinks('detail-refs');
   } else {
     document.getElementById('detail-refs').innerHTML = '<div class="empty-side">No external citations.</div>';
+  }
+
+  // Clauses sidebar — only populated for `kind: standard` notes with `standard_id:`.
+  // Renders every reference note in this standard, grouped by standard part and
+  // sorted by clause number, so the user can read a standard end-to-end.
+  var clauses = data.clauses || [];
+  if (clauses.length) {
+    document.getElementById('detail-clauses-card').style.display = 'block';
+    document.getElementById('cl-count').textContent = clauses.length;
+    // Group by (standard + edition) so multi-part standards (IEC 60287-1-1 vs -2-1) stack visibly.
+    var groups = {};
+    var groupOrder = [];
+    clauses.forEach(function(c){
+      var key = c.standard + (c.edition ? ':' + c.edition : '');
+      if (!(key in groups)) { groups[key] = []; groupOrder.push(key); }
+      groups[key].push(c);
+    });
+    var html = groupOrder.map(function(key){
+      var rows = groups[key].map(function(c){
+        var label = (c.clause ? '§' + esc(c.clause) : '(whole standard)');
+        var title = c.clause_title ? ' — ' + esc(c.clause_title) : '';
+        return '<a class="item-link" href="#'+encodeURIComponent(c.slug)+'" data-wiki="'+esc(c.slug)+'">' +
+               '<span class="item-slug">'+label+title+'</span></a>';
+      }).join('');
+      // Group header only when there's more than one group (otherwise the H3 already covers it).
+      var header = (groupOrder.length > 1)
+        ? '<div class="clauses-group-header">'+esc(key)+'</div>'
+        : '';
+      return header + rows;
+    }).join('');
+    document.getElementById('detail-clauses').innerHTML = html;
+    bindWikiLinks('detail-clauses');
   }
 
   // Outgoing — combine `related` + `verified_against` + body wikilinks (deduped server-side)
@@ -367,17 +442,26 @@ async function showDetail(slug){
     document.getElementById('detail-outgoing').innerHTML = '<div class="empty-side">No outgoing links.</div>';
   }
 
-  // Implemented_in — richer cards
+  // Implemented_in — richer cards. `kind=method` refs are pointer-only with
+  // exists=null; render as informational (no green/red), no path row.
   var impl = data.implemented_in_status || [];
   if(impl.length){
     document.getElementById('detail-impl').innerHTML = impl.map(r => {
-      var symbol = r.symbol ? esc(r.symbol)+'()' : esc((r.path||'').split('/').pop());
-      var status = r.exists
-        ? '<span class="impl-ok" title="Path exists">✓</span>'
-        : '<span class="impl-bad" title="Path missing — likely renamed or moved">✗</span>';
+      var isMethod = r.kind === 'method';
+      var symbol = isMethod
+        ? esc(r.symbol||'')
+        : (r.symbol ? esc(r.symbol)+'()' : esc((r.path||'').split('/').pop()));
+      var status = isMethod
+        ? '<span style="color:var(--text-muted)" title="Method reference (no path)">·</span>'
+        : (r.exists
+            ? '<span class="impl-ok" title="Path exists">✓</span>'
+            : '<span class="impl-bad" title="Path missing — likely renamed or moved">✗</span>');
+      var pathRow = isMethod
+        ? ''
+        : '<div class="impl-card-path">'+esc(r.path||'(no path)')+'</div>';
       return '<div class="impl-card">' +
         '<div class="impl-card-row">'+status+' <span class="impl-card-sym">'+symbol+'</span></div>' +
-        '<div class="impl-card-path">'+esc(r.path||'(no path)')+'</div>' +
+        pathRow +
       '</div>';
     }).join('');
   } else {

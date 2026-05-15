@@ -30,6 +30,8 @@
 
   * { box-sizing: border-box; }
   html, body {
+    /* eos-ios-ok: V — Aura is an intentional immersive surface; layout
+       relies on the URL bar collapse to maintain frame symmetry. */
     margin: 0; padding: 0;
     height: 100vh;
     overflow: hidden;
@@ -68,6 +70,7 @@
       "rail brand"
       "rail transcript"
       "rail instrument";
+    /* eos-ios-ok: V — see html, body above */
     height: 100vh;
   }
 
@@ -115,7 +118,7 @@
     transform: translateX(-100%);
     transition: transform 0.22s cubic-bezier(0.4, 0.1, 0.2, 1);
     z-index: 80;
-    padding: 24px 22px;
+    padding: calc(24px + env(safe-area-inset-top, 0px)) 22px calc(24px + env(safe-area-inset-bottom, 0px));
     display: flex; flex-direction: column;
     gap: 18px;
   }
@@ -590,6 +593,7 @@
 
   /* ── Settings drawer ────────────────────────────────────────────── */
   .settings-drawer {
+    /* eos-ios-ok: N H — .settings-header / .settings-section apply insets */
     position: fixed; top: 0; right: 0; bottom: 0;
     width: min(440px, 92vw);
     background: var(--graphite-soft);
@@ -602,7 +606,7 @@
   }
   .settings-drawer.show { transform: translateX(0); }
   .settings-header {
-    padding: 22px 24px 16px;
+    padding: calc(22px + env(safe-area-inset-top,0px)) 24px 16px;
     display: flex; align-items: baseline; gap: 12px;
     border-bottom: 1px solid var(--rule);
   }
@@ -698,7 +702,7 @@
   .settings-section {
     flex: 1;
     overflow-y: auto;
-    padding: 22px 24px;
+    padding: 22px 24px calc(22px + env(safe-area-inset-bottom,0px));
     color: var(--cream-soft);
     font-family: var(--serif);
     line-height: 1.65;

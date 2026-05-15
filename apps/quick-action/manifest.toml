@@ -25,9 +25,11 @@ fallbacks = ["vault:indexeddb", "think:byok-openai", "events:local-bus", "call_a
 
 [requires]
 capabilities = ["read", "write", "think"]
-apps = []
-# task / projects / journal are optional routing targets — quick-action falls
-# through to plain capture when any are absent. Don't list as requires.
+# task / projects / journal / canvas are optional routing targets — quick-action
+# falls through to plain capture when any are absent (call_app inside try/except).
+# Declared so dependency graph + manifest-deps lint reflect reality; loader logs
+# but doesn't refuse on missing optional deps.
+apps = ["task", "projects", "journal", "canvas"]
 services = []
 events = []
 

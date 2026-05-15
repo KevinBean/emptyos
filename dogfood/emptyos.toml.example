@@ -56,3 +56,16 @@ host = "127.0.0.1"
 # instance is just the HTTP target it pokes as a user would.
 [capabilities.think]
 providers = ["human"]
+
+# Hide personal/expert apps from the synthetic-user persona. The persona
+# tests as a fresh-clone public user would, so power-tools that ship under
+# apps/personal/ with [app] private = true should be invisible — otherwise
+# the persona files friction reports on UIs that were never meant for casual
+# users (e.g. cable-rating-pro's FEM defaults at 132kV are correct for its
+# actual user but read as "wrong" from a 22kV-reticulation perspective).
+#
+# `demo.enabled = true` honours every manifest's `[app] private = true` flag
+# AND pre-approves cloud providers for BYOK demos. Dogfood has no cloud, so
+# the practical effect is just hiding private apps.
+[demo]
+enabled = true

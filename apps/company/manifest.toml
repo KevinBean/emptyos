@@ -1,0 +1,47 @@
+[app]
+id = "company"
+name = "Orgs"
+version = "0.3.0"
+description = "One Org primitive covering real teams, virtual sims, target employers, and mixed. Members can be humans (linked to apps/people/) or AI personas. Scenarios (critique / workshop / interview) operate on the AI members of any org."
+store_category = "productivity"
+dimensions = ["intellectual", "occupational"]
+
+[app.entry]
+module = "app"
+class = "CompanyApp"
+
+[requires]
+capabilities = ["read", "write", "think"]
+# `rooms` is used by in-room scenario mode + persona mirror.
+# `people` is used to resolve `person_id` on human members.
+apps = ["rooms", "people"]
+
+[provides.cli]
+commands = ["company"]
+
+[provides.web]
+prefix = "/orgs"
+
+[provides.events]
+emits = [
+    "orgs:org_created",
+    "orgs:org_updated",
+    "orgs:org_archived",
+    "orgs:member_added",
+    "orgs:member_updated",
+    "orgs:member_removed",
+    # Scenario lifecycle — names retained from the persona-sim era for
+    # back-compat with reactor handlers and the run-record schema.
+    "company:run_started",
+    "company:run_complete",
+    "company:action_applied",
+    "company:action_rejected",
+]
+
+[provides.settings]
+schema = [
+    {key = "company.default_model", label = "Default AI Member Model", type = "select", options = ["", "ollama", "openai", "claude-cli"], default = ""},
+    {key = "company.parallel_fanout", label = "Parallel Fan-Out", type = "boolean", default = true},
+    {key = "company.scenario_timeout_s", label = "Per-Member Timeout (s)", type = "number", default = 120},
+    {key = "company.digest_enabled", label = "Generate Digest", type = "boolean", default = true},
+]

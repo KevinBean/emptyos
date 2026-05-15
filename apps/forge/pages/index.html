@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Forge — EmptyOS</title>
+<script>try{document.documentElement.className='theme-'+(localStorage.getItem('eos-theme')||'eos');}catch(e){document.documentElement.className='theme-eos';}</script>
+<link rel="stylesheet" href="/static/theme.css">
+<link rel="stylesheet" href="/static/eos-components.css">
+<script src="/static/eos.js"></script>
+<style>
+  body { padding: calc(44px + env(safe-area-inset-top,0px)) 16px 80px; }
+  .forge-wrap { max-width: 1100px; margin: 0 auto; }
+  .forge-head { display:flex; justify-content:space-between; align-items:baseline; gap:16px; margin-bottom:16px; flex-wrap:wrap; }
+  .forge-title { font-size: 22px; font-weight: 600; letter-spacing: -0.01em; }
+  .forge-sub { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+
+  /* Target strip — preflight rows per target */
+  .targets-strip { display:grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 10px; margin-bottom: 20px; }
+  .target-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 12px 14px; }
+  .target-card.dim { opacity: 0.5; }
+  .target-name { font-weight: 600; font-size: 14px; }
+  .target-desc { font-size: 11px; color: var(--text-muted); margin-top: 2px; min-height: 26px; }
+  .target-checks { display: grid; gap: 4px; margin-top: 8px; font-size: 11px; font-family: var(--mono); }
+  .target-check { display: flex; justify-content: space-between; gap: 8px; }
+  .target-check.ok { color: var(--text-secondary); }
+  .target-check.bad { color: var(--danger); }
+  .target-check .name::before { content: "•"; margin-right: 6px; opacity: 0.5; }
+  .target-check.ok .name::before { content: "✓"; color: var(--success); }
+  .target-check.bad .name::before { content: "✗"; color: var(--danger); }
+  .target-check .detail { color: var(--text-muted); }
+
+  /* Project grid */
+  .grid-toolbar { display:flex; align-items:center; justify-content: space-between; gap:8px; margin-bottom: 12px; }
+  .project-grid { display:grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 12px; }
+  .project-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 14px; display:flex; flex-direction:column; gap: 8px; }
+  .project-card:hover { border-color: color-mix(in srgb, var(--accent) 40%, var(--border)); }
+  .project-head { display:flex; justify-content:space-between; align-items:flex-start; gap: 8px; }
+  .project-title { font-weight: 600; font-size: 15px; line-height: 1.3; }
+  .project-id { font-size: 11px; color: var(--text-muted); font-family: var(--mono); margin-top: 2px; }
+  .project-meta { display:flex; flex-wrap:wrap; gap: 6px; font-size: 11px; color: var(--text-muted); }
+  .project-actions { display:flex; gap: 6px; margin-top: 4px; flex-wrap: wrap; }
+  .pill { display:inline-block; padding: 2px 8px; border-radius: var(--radius-pill); font-size: 11px; font-weight: 500; }
+  .pill-status-scaffolding { background: color-mix(in srgb, var(--warning) 16%, transparent); color: var(--warning); }
+  .pill-status-scaffolded  { background: color-mix(in srgb, var(--text-muted) 16%, transparent); color: var(--text-secondary); }
+  .pill-status-stub        { background: color-mix(in srgb, var(--text-muted) 16%, transparent); color: var(--text-muted); }
+  .pill-status-dev         { background: color-mix(in srgb, var(--success) 16%, transparent); color: var(--success); }
+  .pill-status-built       { background: color-mix(in srgb, var(--accent) 16%, transparent); color: var(--accent); }
+  .pill-status-released    { background: color-mix(in srgb, var(--accent) 26%, transparent); color: var(--accent); font-weight: 600; }
+  .pill-status-building    { background: color-mix(in srgb, var(--warning) 16%, transparent); color: var(--warning); }
+  .pill-status-scaffold-failed { background: color-mix(in srgb, var(--danger) 16%, transparent); color: var(--danger); }
+  .pill-status-build-failed    { background: color-mix(in srgb, var(--danger) 16%, transparent); color: var(--danger); }
+  .pill-target { background: var(--bg); border: 1px solid var(--border); }
+
+  .btn-mini { padding: 5px 10px; border-radius: var(--radius-sm); font-size: 12px; font-weight: 500; cursor: pointer; border: 1px solid var(--border); background: var(--bg-card); color: var(--text); }
+  .btn-mini:hover:not(:disabled) { border-color: var(--text-muted); }
+  .btn-mini:disabled { opacity: 0.4; cursor: not-allowed; }
+  .btn-mini.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+  .btn-mini.danger  { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 40%, var(--border)); }
+
+  .empty-state { padding: 48px 24px; text-align: center; color: var(--text-muted); font-size: 13px; }
+
+  /* Detail drawer (hash-routed) */
+  .detail-wrap { display: none; background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 18px; margin-bottom: 20px; }
+  .detail-wrap.open { display: block; }
+  .detail-head { display:flex; justify-content:space-between; align-items:flex-start; gap: 12px; margin-bottom: 12px; }
+  .detail-title { font-size: 18px; font-weight: 600; }
+  .detail-section { margin-top: 14px; }
+  .detail-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-secondary); margin-bottom: 6px; }
+  .design-input { width: 100%; min-height: 140px; padding: 10px; background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius-sm); color: var(--text); font-family: inherit; font-size: 13px; resize: vertical; }
+  .tail-log { font-family: var(--mono); font-size: 11px; background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 10px; max-height: 280px; overflow: auto; white-space: pre-wrap; color: var(--text-secondary); }
+</style>
+</head>
+<body>
+<div class="forge-wrap">
+  <div class="forge-head">
+    <div>
+      <div class="forge-title">🔨 Forge</div>
+      <div class="forge-sub">Scaffold and track native apps. Tauri target in V1.</div>
+    </div>
+    <a href="/" style="font-size:13px; color:var(--text-muted); text-decoration:none; padding:6px 8px; min-height:32px; display:inline-flex; align-items:center;">← Home</a>
+  </div>
+
+  <div id="targets" class="targets-strip"><div class="empty-state">loading targets…</div></div>
+
+  <div id="detail" class="detail-wrap"></div>
+
+  <div class="grid-toolbar">
+    <div style="font-size:13px; color: var(--text-secondary);">Projects</div>
+    <div style="display:flex; gap:8px;">
+      <button class="btn-mini" onclick="refresh()">↻ Refresh</button>
+      <button class="btn-mini primary" onclick="newProject()">+ New project</button>
+    </div>
+  </div>
+
+  <div id="grid" class="project-grid"></div>
+</div>
+
+<script src="/static/eos-components.js"></script>
+<script>
+var STATE = {
+  targets: [],
+  projects: [],
+  default_root: '',
+};
+
+function esc(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]);
+}
+
+async function loadTargets() {
+  var r = await fetch('/forge/api/targets').then(r => r.json());
+  STATE.targets = r.targets || [];
+  STATE.default_root = r.default_root || '';
+  renderTargets();
+}
+
+function renderTargets() {
+  var el = document.getElementById('targets');
+  if (!STATE.targets.length) { el.innerHTML = '<div class="empty-state">no targets configured</div>'; return; }
+  el.innerHTML = STATE.targets.map(t => {
+    var checks = (t.preflight || []).map(c => `
+      <div class="target-check ${c.ok ? 'ok' : 'bad'}" ${c.hint_url ? `title="${esc(c.hint_url)}"` : ''}>
+        <span class="name">${esc(c.name)}</span>
+        <span class="detail">${esc(c.detail)}</span>
+      </div>`).join('');
+    var dim = t.coming_soon ? ' dim' : '';
+    var soon = t.coming_soon ? '<span style="font-size:10px; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.06em;">coming soon</span>' : '';
+    return `
+      <div class="target-card${dim}">
+        <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:8px;">
+          <div class="target-name">${esc(t.name)}</div>
+          ${soon}
+        </div>
+        <div class="target-desc">${esc(t.description || '')}</div>
+        ${checks ? `<div class="target-checks">${checks}</div>` : ''}
+      </div>`;
+  }).join('');
+}
+
+async function loadProjects() {
+  var r = await fetch('/forge/api/projects').then(r => r.json());
+  STATE.projects = r.projects || [];
+  renderProjects();
+}
+
+function renderProjects() {
+  var el = document.getElementById('grid');
+  if (!STATE.projects.length) {
+    el.innerHTML = '<div class="empty-state" style="grid-column: 1 / -1;">No projects yet. Click <strong>+ New project</strong> to scaffold one.</div>';
+    return;
+  }
+  el.innerHTML = STATE.projects.map(p => {
+    var statusClass = `pill-status-${(p.status || 'scaffolded').replace(/[^a-z0-9-]/g, '-')}`;
+    return `
+      <div class="project-card" onclick="openDetail('${esc(p.id)}', event)">
+        <div class="project-head">
+          <div>
+            <div class="project-title">${esc(p.name)}</div>
+            <div class="project-id">${esc(p.id)}</div>
+          </div>
+          <div style="display:flex; flex-direction:column; gap:4px; align-items:flex-end;">
+            <span class="pill pill-target">${esc(p.target)}</span>
+            <span class="pill ${statusClass}">${esc(p.status)}</span>
+          </div>
+        </div>
+        <div class="project-meta">
+          <span>v${esc(p.version)}</span>
+          ${p.last_build ? `<span>· built ${esc(p.last_build)}</span>` : ''}
+          ${p.git_remote ? `<span>· git remote</span>` : ''}
+        </div>
+        <div style="font-size: 11px; color: var(--text-muted); font-family: var(--mono); word-break: break-all;">${esc(p.repo_path)}</div>
+        <div class="project-actions" onclick="event.stopPropagation()">
+          ${p.running
+            ? `<button class="btn-mini" onclick="stopDev('${esc(p.id)}')">⏹ Stop</button>`
+            : `<button class="btn-mini" onclick="startDev('${esc(p.id)}')">▶ Dev</button>`}
+          <button class="btn-mini" onclick="build('${esc(p.id)}')">⚙ Build</button>
+          <button class="btn-mini" onclick="release('${esc(p.id)}', '${esc(p.version)}')">↑ Release</button>
+          <button class="btn-mini danger" onclick="del('${esc(p.id)}')">Delete</button>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+async function refresh() {
+  await Promise.all([loadTargets(), loadProjects()]);
+}
+
+function newProject() {
+  var ready = STATE.targets.filter(t => !t.coming_soon);
+  if (!ready.length) {
+    EOS_UI.toast('No ready targets. Resolve preflight first.', false);
+    return;
+  }
+  // EOS_UI.formModal signature: formModal(title, fields, onSubmit).
+  // Select fields take plain string options (the option text doubles as
+  // the submitted value). We resolve the target id from name on submit.
+  var fields = [
+    {key: 'name', label: 'Name', type: 'text', placeholder: 'My Tauri App'},
+    {key: 'id', label: 'Project id (optional)', type: 'text', placeholder: '(auto-slugged from name)'},
+    {key: 'target', label: 'Target', type: 'select', options: ready.map(t => t.id), value: ready[0].id},
+    {key: 'root', label: 'Root dir (parent, optional)', type: 'text', placeholder: STATE.default_root || '~/dev/forge'},
+  ];
+  EOS_UI.formModal('New native project', fields, async function(values) {
+    if (!values.name) { EOS_UI.toast('Name is required', false); return; }
+    var r = await fetch('/forge/api/projects', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(values),
+    }).then(r => r.json());
+    if (r.error) { EOS_UI.toast(r.error, false); return; }
+    EOS_UI.toast(r.ok ? `Scaffolded ${r.id}` : `Vault note created — ${r.error || 'scaffold pending'}`, r.ok ? true : false);
+    await refresh();
+  });
+}
+
+async function startDev(id) {
+  var r = await fetch(`/forge/api/projects/${encodeURIComponent(id)}/dev`, {method: 'POST'}).then(r => r.json());
+  if (r.error) { EOS_UI.toast(r.error, false); return; }
+  EOS_UI.toast('Dev started', true);
+  await refresh();
+}
+async function stopDev(id) {
+  await fetch(`/forge/api/projects/${encodeURIComponent(id)}/dev/stop`, {method: 'POST'});
+  EOS_UI.toast('Dev stopped', true);
+  await refresh();
+}
+async function build(id) {
+  var r = await fetch(`/forge/api/projects/${encodeURIComponent(id)}/build`, {method: 'POST'}).then(r => r.json());
+  if (r.error) { EOS_UI.toast(r.error, false); return; }
+  EOS_UI.toast('Build started', true);
+  await refresh();
+}
+async function release(id, currentVersion) {
+  // Suggest a patch bump from the current version (X.Y.Z -> X.Y.(Z+1)).
+  // User can edit to major/minor/pre-release in the modal.
+  var parts = (currentVersion || '0.0.0').split('.');
+  var patch = parseInt(parts[2] || '0', 10);
+  var suggested = `${parts[0] || 0}.${parts[1] || 0}.${isNaN(patch) ? 1 : patch + 1}`;
+  EOS_UI.formModal(`Release ${id}`, [
+    {key: 'version', label: 'Version (semver, e.g. 1.2.3)', type: 'text', value: suggested, placeholder: suggested},
+  ], async function(values) {
+    var version = (values.version || '').trim();
+    if (!version) { EOS_UI.toast('Version required', false); return; }
+    var r = await fetch(`/forge/api/projects/${encodeURIComponent(id)}/release`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({version: version}),
+    }).then(r => r.json());
+    if (r.error && !r.tag) { EOS_UI.toast(r.error, false); return; }
+    if (r.ok) {
+      EOS_UI.toast(`Released ${r.tag}${r.pushed ? ' + pushed' : ' (local only)'}`, true);
+    } else {
+      EOS_UI.toast(`${r.tag || 'Release'} partial: ${r.error}`, false);
+    }
+    await refresh();
+  });
+}
+async function del(id) {
+  if (!await EOS_UI.confirm({message: `Delete forge tracking note for "${id}"? The external repo on disk is left alone.`, action: 'Delete', danger: true})) return;
+  await fetch(`/forge/api/projects/${encodeURIComponent(id)}`, {method: 'DELETE'});
+  EOS_UI.toast('Deleted', true);
+  if (location.hash) { history.replaceState(null, '', location.pathname); closeDetail(); }
+  await refresh();
+}
+
+// ── Detail drawer (hash-routed) ─────────────────────────────────────────────
+async function openDetail(id, ev) {
+  if (ev && ev.target && ev.target.closest('.project-actions')) return;
+  _route.set(id);
+}
+function closeDetail() {
+  document.getElementById('detail').classList.remove('open');
+  document.getElementById('detail').innerHTML = '';
+  if (_tailTimer) { clearTimeout(_tailTimer); _tailTimer = null; }
+}
+var _tailTimer = null;
+var _tailOffset = 0;
+
+async function showDetail(id) {
+  var box = document.getElementById('detail');
+  box.classList.add('open');
+  box.innerHTML = '<div class="empty-state">loading…</div>';
+  var r = await fetch(`/forge/api/projects/${encodeURIComponent(id)}`).then(r => r.json());
+  if (r.error) { box.innerHTML = `<div class="empty-state">${esc(r.error)}</div>`; return; }
+  var fm = r.frontmatter || {};
+  box.innerHTML = `
+    <div class="detail-head">
+      <div>
+        <div class="detail-title">${esc(fm.name || id)}</div>
+        <div style="font-size: 12px; color: var(--text-muted); margin-top: 4px;">
+          <span>${esc(fm.target)}</span> ·
+          <span>v${esc(fm.version)}</span> ·
+          <code style="font-family: var(--mono); color: var(--text-secondary);">${esc(fm.repo_path)}</code>
+        </div>
+      </div>
+      <button class="btn-mini" onclick="history.replaceState(null,'',location.pathname); closeDetail()">✕</button>
+    </div>
+
+    <div class="detail-section">
+      <div class="detail-label">Design notes</div>
+      <textarea class="design-input" id="design-input" placeholder="What is this project for? What's the smallest first version?">${esc(r.design || '')}</textarea>
+      <div style="display:flex; justify-content:flex-end; margin-top: 6px;">
+        <button class="btn-mini" onclick="saveDesign('${esc(id)}')">Save</button>
+      </div>
+    </div>
+
+    <div class="detail-section" id="tail-section" style="${r.running ? '' : 'display:none;'}">
+      <div class="detail-label">Dev log (live)</div>
+      <div id="tail-log" class="tail-log">waiting for output…</div>
+    </div>
+  `;
+  _tailOffset = 0;
+  if (r.running) startTail(id);
+}
+
+async function saveDesign(id) {
+  var text = document.getElementById('design-input').value;
+  var r = await fetch(`/forge/api/projects/${encodeURIComponent(id)}/design`, {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({text: text}),
+  }).then(r => r.json());
+  if (r.error) { EOS_UI.toast(r.error, false); return; }
+  EOS_UI.toast('Saved', true);
+}
+
+function startTail(id) {
+  async function tick() {
+    var r = await fetch(`/forge/api/projects/${encodeURIComponent(id)}/dev/tail?offset=${_tailOffset}`).then(r => r.json());
+    var log = document.getElementById('tail-log');
+    if (!log) return;
+    if (r.chunk) {
+      log.textContent = (log.textContent === 'waiting for output…' ? '' : log.textContent) + r.chunk;
+      log.scrollTop = log.scrollHeight;
+    }
+    _tailOffset = r.offset;
+    if (r.running) {
+      _tailTimer = setTimeout(tick, 1500);
+    } else {
+      log.textContent += '\n[process ended]';
+    }
+  }
+  tick();
+}
+
+var _route = EOS_UI.hashRoute({
+  onShow: function(id) { showDetail(id); },
+  onHide: function() { closeDetail(); },
+});
+
+// ── Boot ────────────────────────────────────────────────────────────────────
+(async function() {
+  await refresh();
+  _route.init();
+})();
+</script>
+</body>
+</html>

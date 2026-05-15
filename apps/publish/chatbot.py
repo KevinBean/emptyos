@@ -101,10 +101,7 @@ async def api_chatbot_qa_update(self, request):
     site = self._get_site(site_id)
     if not site:
         return {"error": f"site '{site_id}' not found"}
-    try:
-        body = await request.json()
-    except Exception:
-        body = {}
+    body = await self.safe_json(request)
     return await self._chatbot_admin_request(
         "POST",
         f"/admin/qa-log/{qa_id}",

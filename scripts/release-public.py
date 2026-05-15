@@ -88,6 +88,13 @@ CRUFT_PATHS = [
     "dist",
     "build",
     ".venv",
+    # Sandbox pool runtime directories — auto-created by plugins/sandbox-pool/
+    # on member spawn. Each holds machine-specific paths + isolated state.
+    "sandbox",
+]
+# Glob patterns (vs. exact paths) for cruft that varies by port/instance.
+CRUFT_GLOBS = [
+    "sandbox-*",
 ]
 
 VERSION_RE = re.compile(r"^v\d+\.\d+\.\d+(?:-[a-z0-9]+)?$")
@@ -150,21 +157,42 @@ def run_scans(target_dir: Path | None = None) -> None:
 
 
 def check_no_private_apps(cwd: Path) -> None:
-    """Refuse the release if any app under apps/ declares `[app] private = true`.
+    """Refuse the release if any tracked app under apps/ declares `[app] private = true`.
 
     Mirrors the spirit of `.eos-personal`: things flagged private must never
     reach the public snapshot. The release script is the load-bearing gate;
     `app_loader` honours the same flag at runtime to hide the app from demo
     deployments. Both layers read the same manifest field — one source of
     truth.
+
+    Only consults git-tracked manifests — gitignored paths (e.g. apps/personal/)
+    never enter the snapshot, so flagging them here is a false positive that
+    blocks releases the snapshot itself would never carry. Inside a snapshot
+    dir (no `.git`), falls back to filesystem glob because every file there
+    is by definition tracked.
     """
     import tomllib
 
     apps_dir = cwd / "apps"
     if not apps_dir.is_dir():
         return
+
+    # In a git working tree, restrict to tracked manifests. In a snapshot
+    # (no .git), every file present is part of the snapshot, so glob it.
+    if (cwd / ".git").exists():
+        try:
+            out = subprocess.run(
+                ["git", "ls-files", "apps/**/manifest.toml"],
+                cwd=cwd, capture_output=True, text=True, check=True,
+            ).stdout
+            manifests = [cwd / line for line in out.splitlines() if line.strip()]
+        except (subprocess.CalledProcessError, FileNotFoundError):
+            manifests = list(apps_dir.rglob("manifest.toml"))
+    else:
+        manifests = list(apps_dir.rglob("manifest.toml"))
+
     offenders: list[str] = []
-    for manifest_path in apps_dir.rglob("manifest.toml"):
+    for manifest_path in manifests:
         try:
             with open(manifest_path, "rb") as f:
                 data = tomllib.load(f)
@@ -285,6 +313,16 @@ def sweep_cruft(temp_dir: Path) -> None:
         elif path.is_dir():
             shutil.rmtree(path)
             removed.append(name + "/")
+    # Glob-style cruft (sandbox-9002, sandbox-9003, …) — anything matching
+    # one of CRUFT_GLOBS in the temp dir root.
+    for pattern in CRUFT_GLOBS:
+        for path in temp_dir.glob(pattern):
+            if path.is_file():
+                path.unlink()
+                removed.append(path.name)
+            elif path.is_dir():
+                shutil.rmtree(path)
+                removed.append(path.name + "/")
     # Also strip pycache + pyc anywhere
     for pyc in list(temp_dir.rglob("*.pyc")):
         pyc.unlink()

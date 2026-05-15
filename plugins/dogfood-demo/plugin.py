@@ -15,12 +15,12 @@ from __future__ import annotations
 import asyncio
 import os
 import subprocess
-import sys
 from pathlib import Path
 
 import aiohttp
 
 from emptyos.sdk import BasePlugin
+from emptyos.sdk.daemon_supervisor import spawn_emptyos_daemon, terminate_daemon
 
 
 class DogfoodDemoPlugin(BasePlugin):
@@ -163,25 +163,11 @@ class DogfoodDemoPlugin(BasePlugin):
             )
             return False
 
-        # Use python.exe (NOT pythonw.exe — firewall-blocked per Kevin's memory).
-        python_exe = sys.executable
-        if python_exe.lower().endswith("pythonw.exe"):
-            python_exe = python_exe[:-len("pythonw.exe")] + "python.exe"
-
-        env = os.environ.copy()
-        env["EOS_CONFIG"] = str(cfg)
-        env["EOS_DEMO_INSTANCE"] = "1"
-
-        # CREATE_NO_WINDOW on Windows; harmless flag on POSIX.
-        flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
         try:
-            self._proc = subprocess.Popen(  # noqa: ASYNC220
-                [python_exe, "-m", "emptyos", "start"],
-                cwd=str(cfg.parent.parent),  # project root
-                env=env,
-                creationflags=flags,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
+            self._proc = spawn_emptyos_daemon(
+                config_path=cfg,
+                cwd=cfg.parent.parent,  # project root
+                extra_env={"EOS_DEMO_INSTANCE": "1"},
             )
             print(f"[dogfood-demo] Spawning sidecar at {self._host()} (pid {self._proc.pid})…")
         except Exception as e:
@@ -195,3 +181,41 @@ class DogfoodDemoPlugin(BasePlugin):
                 return True
         print(f"[dogfood-demo] Timed out waiting for {self._host()} — check {cfg.parent}/data-demo/eos-stderr.log")
         return False
+
+    async def stop(self) -> dict:
+        """Terminate the sidecar daemon. Only kills the subprocess this
+        plugin spawned (self._proc) — never an arbitrary python.exe. Safe
+        per .claude/rules/daemon-handling.md because we own the handle."""
+        if self._is_inner_daemon():
+            return {"ok": False, "reason": "inside_demo_daemon"}
+        proc = self._proc
+        if proc is None:
+            # Plugin didn't spawn this one (already running when we booted, or
+            # spawned by a prior daemon process). Refuse to kill an unowned
+            # process; operator action required.
+            if await self.available():
+                return {"ok": False, "reason": "running_but_unowned",
+                        "hint": "stop the :9001 daemon manually"}
+            return {"ok": True, "already_stopped": True}
+        result = await terminate_daemon(proc, probe=self.available)
+        # Match original semantics: only release the Popen handle on
+        # successful terminate. On failure the proc may still be alive
+        # and a future stop()/restart() needs the handle to retry.
+        if result.get("ok"):
+            self._proc = None
+        return result
+
+    async def restart(self) -> dict:
+        """Stop + start the sidecar daemon. Used by the dogfood-agent
+        fix-agent lane between code edits and verify-runs so the sandbox
+        always loads the patched code. Returns a structured dict so the
+        caller can branch on failures."""
+        if self._is_inner_daemon():
+            return {"ok": False, "reason": "inside_demo_daemon"}
+        if not self._enabled():
+            return {"ok": False, "reason": "disabled_in_config"}
+        stop = await self.stop()
+        if not stop.get("ok") and not stop.get("already_stopped"):
+            return {"ok": False, "stage": "stop", **stop}
+        ok = await self.auto_start()
+        return {"ok": bool(ok), "stage": "start", "host": self._host()}

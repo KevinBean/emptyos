@@ -7,7 +7,7 @@
   <link rel="stylesheet" href="/static/theme.css">
   <link rel="stylesheet" href="/static/eos-components.css">
   <style>
-    body { padding-top:44px; padding-bottom:env(safe-area-inset-bottom); }
+    body { padding-top:calc(44px + env(safe-area-inset-top,0px)); padding-bottom:env(safe-area-inset-bottom); }
     .stats-bar { display:grid; grid-template-columns:repeat(5,1fr); gap:8px; margin-bottom:16px; animation:fadeDown 0.4s ease }
     .eos-stat-card.eos-stat-active { border-color:var(--accent); box-shadow:0 0 0 1px var(--accent) inset }
     .decay-bar { display:flex; height:8px; border-radius:4px; overflow:hidden; margin-bottom:16px; background:var(--border); animation:fadeDown 0.4s ease 0.05s both }
@@ -39,14 +39,14 @@
     .task-item.completing{opacity:0;transform:translateX(40px) scale(0.95);transition:all 0.4s ease-out}
     .task-item.tier-fresh{border-left-color:var(--success)} .task-item.tier-aging{border-left-color:var(--warning)} .task-item.tier-stale{border-left-color:var(--danger)} .task-item.tier-zombie{border-left-color:var(--purple)}
     .task-item.tier-zombie .task-text{text-decoration:line-through;color:var(--text-muted)}
-    .task-cb { width:22px; height:22px; border-radius:50%; border:2px solid var(--border-strong); cursor:pointer; flex-shrink:0; margin-top:2px; transition:all 0.2s; display:flex; align-items:center; justify-content:center }
+    .task-cb { width:32px; height:32px; border-radius:50%; border:2px solid var(--border-strong); cursor:pointer; flex-shrink:0; transition:all 0.2s; display:flex; align-items:center; justify-content:center }
     .task-cb:hover{border-color:var(--accent);background:var(--accent-bg);transform:scale(1.1)}
     .task-cb.done{background:var(--success);border-color:var(--success);transform:scale(1.1)} .task-cb.done::after{content:"\2713";color:var(--accent-ink);font-size:13px;font-weight:700}
     .task-body{flex:1;min-width:0} .task-text{font-size:14px;color:var(--text);line-height:1.4;word-break:break-word} .task-file{font-size:11px;color:var(--text-muted);margin-top:2px}
     .project-badge{display:inline-block;font-size:10px;font-weight:600;padding:2px 8px;border-radius:8px;background:color-mix(in srgb,var(--blue) 15%,transparent);color:var(--blue);text-decoration:none;vertical-align:middle;margin-right:2px}
     .task-due { font-size:11px; padding:4px 12px; border-radius:6px; white-space:nowrap; flex-shrink:0; font-weight:500 }
     .task-actions{display:flex;gap:4px;opacity:0;transition:opacity 0.2s} .task-item:hover .task-actions{opacity:1}
-    .task-actions button{background:var(--bg);border:1px solid var(--border);color:var(--text-secondary);border-radius:6px;padding:4px 12px;font-size:11px;cursor:pointer;transition:all 0.15s}
+    .task-actions button{background:var(--bg);border:1px solid var(--border);color:var(--text-secondary);border-radius:6px;padding:6px 12px;font-size:11px;cursor:pointer;transition:all 0.15s;min-height:32px}
     .task-actions button:hover{border-color:var(--accent);color:var(--accent)}
     .due-fresh{background:color-mix(in srgb,var(--success) 15%,transparent);color:var(--success)} .due-aging{background:color-mix(in srgb,var(--warning) 15%,transparent);color:var(--warning)} .due-stale{background:color-mix(in srgb,var(--danger) 15%,transparent);color:var(--danger)} .due-zombie{background:color-mix(in srgb,var(--purple) 15%,transparent);color:var(--purple)} .due-future{background:var(--bg);color:var(--text-secondary)}
     .cal-nav{display:flex;align-items:center;gap:12px;margin-bottom:12px}
@@ -467,7 +467,7 @@
     // ----- Confetti -----
     function confetti(anchor) {
       var rect = anchor ? anchor.getBoundingClientRect() : { left: window.innerWidth / 2, top: window.innerHeight / 2 };
-      var colors = ['var(--success)', '#3b82f6', 'var(--warning)', 'var(--danger)', 'var(--purple)'];
+      var colors = ['var(--success)', 'var(--blue)', 'var(--warning)', 'var(--danger)', 'var(--purple)'];
       for (var i = 0; i < 15; i++) {
         var c = document.createElement('div');
         c.className = 'confetti-particle';

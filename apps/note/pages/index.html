@@ -212,6 +212,9 @@ document.getElementById('search-input').addEventListener('keydown', function(e) 
   if (e.key === 'Enter') { clearTimeout(searchTimer); doSearch(); }
 });
 
+// `[[`-autocomplete in the create-note body.
+EOS_UI.wikiLinkInput(document.getElementById('cf-content'));
+
 loadFolders();
 loadNotes();
 </script>

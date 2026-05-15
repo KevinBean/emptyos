@@ -1,0 +1,366 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Guideline</title>
+<link rel="stylesheet" href="/static/theme.css">
+<link rel="stylesheet" href="/static/eos-components.css">
+<link rel="stylesheet" href="/static/eos-keys.css">
+<style>
+  .layout { display: grid; grid-template-columns: 240px 1fr; gap: var(--space-4); padding: var(--space-4); min-height: 100dvh; }
+  @media (max-width: 720px) { .layout { grid-template-columns: 1fr; } .sidebar { order: 2; } }
+  .sidebar { border-right: 1px solid var(--border); padding-right: var(--space-3); }
+  .sidebar h3 { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-muted); margin: 0 0 var(--space-2); }
+  .cat-row { display: flex; justify-content: space-between; padding: var(--space-2) var(--space-2); border-radius: var(--radius-sm); cursor: pointer; }
+  .cat-row:hover { background: var(--bg-hover); }
+  .cat-row.active { background: var(--bg-active); color: var(--accent); }
+  .cat-row .count { color: var(--text-muted); font-variant-numeric: tabular-nums; }
+
+  .list-row { padding: var(--space-3); border-bottom: 1px solid var(--border); cursor: pointer; display: flex; gap: var(--space-3); align-items: baseline; }
+  .list-row:hover { background: var(--bg-hover); }
+  .list-row.deprecated { opacity: 0.45; }
+  .list-row .title { font-weight: 500; flex: 1; }
+  .list-row .cat { color: var(--text-muted); font-size: 0.85rem; }
+  .list-row .clauses { color: var(--text-muted); font-size: 0.8rem; font-variant-numeric: tabular-nums; min-width: 80px; text-align: right; }
+
+  .detail { padding: var(--space-4); }
+  .detail-header { display: flex; gap: var(--space-3); align-items: baseline; margin-bottom: var(--space-2); }
+  .detail-header h2 { margin: 0; }
+  .detail-meta { color: var(--text-muted); font-size: 0.85rem; margin-bottom: var(--space-4); }
+  .toc { border: 1px solid var(--border); border-radius: var(--radius-md); padding: var(--space-3); margin-bottom: var(--space-4); background: var(--bg-card); }
+  .toc h4 { margin: 0 0 var(--space-2); font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-muted); }
+  .toc a { display: block; padding: var(--space-1) 0; color: var(--text); text-decoration: none; }
+  .toc a:hover { color: var(--accent); }
+  .clause-card { border: 1px solid var(--border); border-radius: var(--radius-md); padding: var(--space-3); margin-bottom: var(--space-3); background: var(--bg-card); position: relative; }
+  .clause-card.highlight { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+  .clause-card h3 { margin: 0 0 var(--space-2); font-size: 1.05rem; }
+  .clause-card .body { white-space: pre-wrap; font-family: var(--font); line-height: 1.6; color: var(--text); }
+  .clause-card .actions { position: absolute; top: var(--space-2); right: var(--space-2); display: none; gap: var(--space-1); }
+  .clause-card:hover .actions { display: flex; }
+  .clause-card .empty-body { color: var(--text-muted); font-style: italic; }
+  .add-clause-bar { margin-top: var(--space-4); padding-top: var(--space-3); border-top: 1px dashed var(--border); display: flex; justify-content: center; }
+  .cite-chip { display: inline-flex; align-items: center; gap: 4px; padding: 1px 8px; margin: 0 2px; border-radius: 999px; background: var(--bg-active); color: var(--accent); font-size: 0.85em; text-decoration: none; line-height: 1.5; white-space: nowrap; vertical-align: baseline; border: 1px solid var(--border); }
+  .cite-chip:hover { background: var(--accent); color: var(--bg); }
+  .cite-chip.broken { color: var(--text-muted); background: var(--bg-card); border-style: dashed; cursor: help; }
+  .cite-chip .cite-icon { font-size: 0.9em; opacity: 0.85; }
+  .sidebar-actions { margin-top: var(--space-4); }
+  .sidebar-actions + .sidebar-actions { margin-top: var(--space-3); }
+  .sidebar-actions .eos-btn { width: 100%; }
+  .detail-header-row { margin-top: var(--space-3); }
+</style>
+</head>
+<body>
+<div class="layout">
+  <aside class="sidebar">
+    <h3>Categories</h3>
+    <div id="cats"></div>
+    <div class="sidebar-actions">
+      <button class="eos-btn eos-btn-primary" onclick="openAddGuideline()">+ Add guideline</button>
+    </div>
+    <div class="sidebar-actions">
+      <button class="eos-btn" onclick="openAppSettings()">&#9881; Settings</button>
+    </div>
+  </aside>
+  <main id="main"></main>
+</div>
+
+<script src="/static/eos.js"></script>
+<script src="/static/eos-components.js"></script>
+<script src="/static/eos-keys.js"></script>
+<script>
+var STATE = { items: [], cats: [], filter: '', detail: null, highlightSlug: '' };
+
+function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){ return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]; }); }
+
+var CITE_RE = /\[\[kb:([a-z0-9][a-z0-9-]*)\]\]/g;
+var CITE_ICONS = { block: '◧', doc: '📑', standard: '⚖', concept: '💡', formula: '∑', case: '📂', lesson: '📓', note: '·', unknown: '?' };
+
+function renderClauseBody(body, cites) {
+  // Walk body, escape text portions, inject chip HTML at each [[kb:slug]] marker.
+  // Cites array comes from backend resolver with {slug, kind, title, link, resolved}.
+  var lookup = {};
+  (cites || []).forEach(function(c){ lookup[c.slug] = c; });
+  CITE_RE.lastIndex = 0;
+  var out = '';
+  var last = 0;
+  var m;
+  while ((m = CITE_RE.exec(body)) !== null) {
+    out += esc(body.slice(last, m.index));
+    var slug = m[1];
+    var meta = lookup[slug];
+    if (meta && meta.resolved) {
+      var icon = CITE_ICONS[meta.kind] || '·';
+      out += '<a class="cite-chip" href="' + esc(meta.link) + '" target="_blank" rel="noopener" title="' + esc(meta.kind) + ': ' + esc(meta.title) + '">' +
+             '<span class="cite-icon">' + icon + '</span>' + esc(meta.title) + '</a>';
+    } else {
+      out += '<span class="cite-chip broken" title="No kb entry found for ' + esc(slug) + '">' +
+             '<span class="cite-icon">?</span>kb:' + esc(slug) + '</span>';
+    }
+    last = m.index + m[0].length;
+  }
+  out += esc(body.slice(last));
+  return out;
+}
+
+async function loadList() {
+  var r = await fetch('/guideline/api/items').then(function(r){return r.json();});
+  STATE.items = r.items || [];
+  var c = await fetch('/guideline/api/categories').then(function(r){return r.json();});
+  STATE.cats = c.categories || [];
+  render();
+}
+
+function render() {
+  renderCats();
+  if (STATE.detail) { renderDetail(STATE.detail); } else { renderList(); }
+}
+
+function renderCats() {
+  var html = '<div class="cat-row ' + (STATE.filter === '' ? 'active' : '') + '" onclick="setFilter(\'\')"><span>All</span><span class="count">' + STATE.items.length + '</span></div>';
+  STATE.cats.forEach(function(c){
+    html += '<div class="cat-row ' + (STATE.filter === c.category ? 'active' : '') + '" onclick="setFilter(\'' + esc(c.category) + '\')">' +
+            '<span>' + esc(c.category) + '</span><span class="count">' + c.total + '</span></div>';
+  });
+  document.getElementById('cats').innerHTML = html;
+}
+
+function setFilter(cat) { STATE.filter = cat; STATE.detail = null; _route.clear(); render(); }
+
+function renderList() {
+  var items = STATE.items;
+  if (STATE.filter) items = items.filter(function(i){ return i.category === STATE.filter; });
+  if (!items.length) {
+    document.getElementById('main').innerHTML = '<div style="padding:var(--space-4);color:var(--text-muted)">No guidelines' + (STATE.filter ? ' in <b>' + esc(STATE.filter) + '</b>' : '') + ' yet. Click <b>+ Add guideline</b> to start.</div>';
+    return;
+  }
+  var html = '';
+  items.forEach(function(i){
+    var extra = (i.status === 'deprecated' ? ' deprecated' : '');
+    var n = i.clause_count || 0;
+    html += '<div class="list-row' + extra + '" onclick="showDetail(\'' + esc(i.id) + '\')">' +
+            '<span class="title">' + esc(i.title) + '</span>' +
+            '<span class="cat">' + esc(i.category) + '</span>' +
+            '<span class="clauses">' + n + ' clause' + (n === 1 ? '' : 's') + '</span>' +
+            '</div>';
+  });
+  document.getElementById('main').innerHTML = html;
+}
+
+async function showDetail(gid, slug) {
+  var r = await fetch('/guideline/api/items/' + encodeURIComponent(gid)).then(function(r){return r.json();});
+  if (r.error) { window.EOS && EOS.toast && EOS.toast('Not found', 'error'); return; }
+  STATE.detail = r;
+  STATE.highlightSlug = slug || '';
+  _route.set(slug ? (gid + '/' + slug) : gid);
+  renderDetail(r);
+  if (slug) {
+    setTimeout(function(){
+      var el = document.getElementById('clause-' + slug);
+      if (el) el.scrollIntoView({behavior:'smooth', block:'start'});
+    }, 50);
+  }
+}
+
+function renderDetail(d) {
+  var clauses = d.clauses || [];
+  var depAction = d.status === 'deprecated'
+    ? '<button class="eos-btn" onclick="reactivate(\'' + esc(d.id) + '\')">Reactivate</button>'
+    : '<button class="eos-btn" onclick="deprecate(\'' + esc(d.id) + '\')">Deprecate</button>';
+  var tocHtml = clauses.length
+    ? '<div class="toc"><h4>Clauses</h4>' + clauses.map(function(c){
+        return '<a href="#" onclick="jumpTo(\'' + esc(c.slug) + '\');return false;">' + esc(c.heading) + '</a>';
+      }).join('') + '</div>'
+    : '';
+  var clauseCards = clauses.length
+    ? clauses.map(function(c){
+        var cls = 'clause-card' + (STATE.highlightSlug === c.slug ? ' highlight' : '');
+        var bodyHtml = c.body
+          ? '<div class="body">' + renderClauseBody(c.body, c.cites) + '</div>'
+          : '<div class="body empty-body">(empty — click Edit to add content)</div>';
+        return '<div class="' + cls + '" id="clause-' + esc(c.slug) + '">' +
+               '<div class="actions">' +
+                 '<button class="eos-btn" onclick="editClause(\'' + esc(d.id) + '\',\'' + esc(c.slug) + '\')">Edit</button>' +
+                 '<button class="eos-btn" onclick="deleteClause(\'' + esc(d.id) + '\',\'' + esc(c.slug) + '\')">Delete</button>' +
+               '</div>' +
+               '<h3>' + esc(c.heading) + '</h3>' +
+               bodyHtml +
+               '</div>';
+      }).join('')
+    : '<div style="color:var(--text-muted);padding:var(--space-3);font-style:italic">No clauses yet. Add the first one below.</div>';
+  document.getElementById('main').innerHTML =
+    '<div class="detail">' +
+      '<button class="eos-btn" onclick="hideDetail()">&larr; Back</button>' +
+      '<div class="detail-header detail-header-row">' +
+        '<h2>' + esc(d.title) + '</h2>' +
+      '</div>' +
+      '<div class="detail-meta">' + esc(d.category) + ' · ' + esc(d.status) + ' · ' + clauses.length + ' clause' + (clauses.length === 1 ? '' : 's') + ' · created ' + esc(d.created) + '</div>' +
+      tocHtml +
+      clauseCards +
+      '<div class="add-clause-bar">' +
+        '<button class="eos-btn eos-btn-primary" onclick="openAddClause(\'' + esc(d.id) + '\')">+ Add clause</button>' +
+        ' &nbsp; ' + depAction +
+      '</div>' +
+    '</div>';
+}
+
+function jumpTo(slug) {
+  STATE.highlightSlug = slug;
+  if (STATE.detail) {
+    _route.set(STATE.detail.id + '/' + slug);
+    renderDetail(STATE.detail);
+    setTimeout(function(){
+      var el = document.getElementById('clause-' + slug);
+      if (el) el.scrollIntoView({behavior:'smooth', block:'start'});
+    }, 30);
+  }
+}
+
+function hideDetail() { STATE.detail = null; STATE.highlightSlug = ''; _route.clear(); render(); }
+
+async function deprecate(gid) {
+  var ok = await EOS_UI.confirm('Deprecate this guideline?');
+  if (!ok) return;
+  await fetch('/guideline/api/items/' + encodeURIComponent(gid) + '/deprecate', { method: 'POST' });
+  window.EOS && EOS.toast && EOS.toast('Deprecated');
+  STATE.detail = null; _route.clear();
+  await loadList();
+}
+
+async function reactivate(gid) {
+  await fetch('/guideline/api/items/' + encodeURIComponent(gid) + '/field', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ field: 'status', value: 'active' }),
+  });
+  window.EOS && EOS.toast && EOS.toast('Reactivated');
+  STATE.detail = null; _route.clear();
+  await loadList();
+}
+
+function openAddGuideline() {
+  var defaultCat = STATE.filter || '';
+  var bodyHTML =
+    '<label style="display:block;margin-bottom:var(--space-3)">Title<input id="g-title" class="eos-input" style="width:100%" autofocus></label>' +
+    '<label style="display:block">Category<input id="g-cat" class="eos-input" style="width:100%" value="' + esc(defaultCat) + '"></label>' +
+    '<div style="margin-top:var(--space-3);color:var(--text-muted);font-size:0.85rem">Clauses are added once the guideline exists.</div>';
+  EOS_UI.modal({
+    title: 'Add guideline',
+    body: bodyHTML,
+    actions: [
+      { label: 'Cancel', onclick: function(m){ m.close(); } },
+      { label: 'Add', primary: true, onclick: async function(m){
+          var title = document.getElementById('g-title').value.trim();
+          var cat = document.getElementById('g-cat').value.trim();
+          if (!title) { window.EOS && EOS.toast && EOS.toast('Title required', 'error'); return; }
+          var r = await fetch('/guideline/api/items', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ title: title, category: cat }),
+          }).then(function(r){return r.json();});
+          if (r.error) { window.EOS && EOS.toast && EOS.toast(r.error, 'error'); return; }
+          window.EOS && EOS.toast && EOS.toast('Added');
+          m.close();
+          await loadList();
+          await showDetail(r.id);
+        }
+      },
+    ],
+  });
+}
+
+function openAddClause(gid) {
+  var bodyHTML =
+    '<label style="display:block;margin-bottom:var(--space-3)">Clause heading<input id="c-head" class="eos-input" style="width:100%" placeholder="e.g. always pin provider order in TOML" autofocus></label>' +
+    '<label style="display:block">Body (rule + rationale + how-to-apply)<textarea id="c-body" class="eos-input" style="width:100%;min-height:160px;font-family:var(--font-mono)"></textarea></label>';
+  EOS_UI.modal({
+    title: 'Add clause',
+    body: bodyHTML,
+    actions: [
+      { label: 'Cancel', onclick: function(m){ m.close(); } },
+      { label: 'Add', primary: true, onclick: async function(m){
+          var heading = document.getElementById('c-head').value.trim();
+          var body = document.getElementById('c-body').value;
+          if (!heading) { window.EOS && EOS.toast && EOS.toast('Heading required', 'error'); return; }
+          var r = await fetch('/guideline/api/items/' + encodeURIComponent(gid) + '/clauses', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ heading: heading, body: body }),
+          }).then(function(r){return r.json();});
+          if (r.error) { window.EOS && EOS.toast && EOS.toast(r.error, 'error'); return; }
+          window.EOS && EOS.toast && EOS.toast('Clause added');
+          m.close();
+          await showDetail(gid, r.slug);
+          await loadList();
+        }
+      },
+    ],
+  });
+}
+
+function editClause(gid, slug) {
+  var clause = (STATE.detail && (STATE.detail.clauses || []).find(function(c){return c.slug === slug;})) || {heading:'', body:''};
+  var bodyHTML =
+    '<div style="margin-bottom:var(--space-3);color:var(--text-muted);font-size:0.85rem">Heading: <b>' + esc(clause.heading) + '</b> (renaming is out-of-scope for v1)</div>' +
+    '<label style="display:block">Body<textarea id="c-body-edit" class="eos-input" style="width:100%;min-height:200px;font-family:var(--font-mono)">' + esc(clause.body) + '</textarea></label>';
+  EOS_UI.modal({
+    title: 'Edit clause',
+    body: bodyHTML,
+    actions: [
+      { label: 'Cancel', onclick: function(m){ m.close(); } },
+      { label: 'Save', primary: true, onclick: async function(m){
+          var body = document.getElementById('c-body-edit').value;
+          var r = await fetch('/guideline/api/items/' + encodeURIComponent(gid) + '/clauses/' + encodeURIComponent(slug), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ body: body }),
+          }).then(function(r){return r.json();});
+          if (r.error) { window.EOS && EOS.toast && EOS.toast(r.error, 'error'); return; }
+          window.EOS && EOS.toast && EOS.toast('Saved');
+          m.close();
+          await showDetail(gid, slug);
+        }
+      },
+    ],
+  });
+}
+
+async function deleteClause(gid, slug) {
+  var ok = await EOS_UI.confirm('Delete this clause?');
+  if (!ok) return;
+  var r = await fetch('/guideline/api/items/' + encodeURIComponent(gid) + '/clauses/' + encodeURIComponent(slug), {
+    method: 'DELETE',
+  }).then(function(r){return r.json();});
+  if (r.error) { window.EOS && EOS.toast && EOS.toast(r.error, 'error'); return; }
+  window.EOS && EOS.toast && EOS.toast('Deleted');
+  await showDetail(gid);
+  await loadList();
+}
+
+var _appSettings = EOS_UI.settingsPanel({
+  id: 'guideline-settings-panel',
+  title: 'Guideline Settings',
+  fields: [
+    { key: 'guideline.default_category', label: 'Default category for new guidelines', type: 'text', default: 'general' },
+    { key: 'guideline.hub_panel_enabled', label: 'Show daily guideline clause on hub', type: 'boolean', default: true },
+  ],
+});
+function openAppSettings() { _appSettings.open(); }
+
+// Hash route: #<gid> or #<gid>/<clause-slug>
+var _route = EOS_UI.hashRoute({
+  onShow: function(routeId) {
+    if (routeId.indexOf('/') > -1) {
+      var parts = routeId.split('/');
+      showDetail(parts[0], parts.slice(1).join('/'));
+    } else {
+      showDetail(routeId);
+    }
+  },
+  onHide: function() { STATE.detail = null; STATE.highlightSlug = ''; render(); },
+});
+
+loadList().then(function(){ _route && _route.init && _route.init(); });
+</script>
+</body>
+</html>

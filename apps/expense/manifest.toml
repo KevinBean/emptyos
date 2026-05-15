@@ -39,6 +39,12 @@ commands = [
 # ── Hub panels ──
 
 [[contributes.hub.panel]]
+id = "expense-quick-add"
+method = "panel_quick_add"
+renderer = "quick-add"
+priority = 140
+
+[[contributes.hub.panel]]
 id = "expense-month"
 method = "panel_month_spend"
 renderer = "stat-tile"

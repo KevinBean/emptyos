@@ -19,6 +19,19 @@ if TYPE_CHECKING:
     from emptyos.kernel.app_loader import AppManifest
 
 
+# Appended to system= when think(with_confidence=True). Asks for a JSON
+# envelope so the model self-rates and surfaces what it couldn't find.
+# Feeds the demand log on low scores.
+CONFIDENCE_ENVELOPE = (
+    "\n\nReturn your reply as a single JSON object with this shape: "
+    '{"answer": "<your full answer>", '
+    '"confidence": <integer 1-5, where 1=guessing, 5=certain>, '
+    '"missing": ["<term/concept/fact you needed but could not find>", ...], '
+    '"assumed": ["<assumption you made to answer>", ...]}. '
+    "Do not wrap in code fences. Output JSON only."
+)
+
+
 class BaseApp:
     """Base class for EmptyOS apps.
 
@@ -61,6 +74,57 @@ class BaseApp:
     def engine(self, engine_id: str) -> Any | None:
         """Get an engine by ID. Returns None if not available."""
         return self.kernel.services.get_optional(f"engine:{engine_id}")
+
+    # --- Cron / interval scheduling --------------------------------------------
+    # Apps that schedule recurring work (rooms reminders, rooms scheduled
+    # check-ins, dogfood-agent unattended runs) all walked the same dance:
+    # check kernel.scheduler exists, build an APScheduler trigger, add_job
+    # with replace_existing. Extracted here so each consumer is one line.
+
+    def add_cron_job(
+        self,
+        job_id: str,
+        callable_,
+        *,
+        cron: str | None = None,
+        interval_seconds: float | None = None,
+    ) -> bool:
+        """Register a recurring job. Provide exactly one of `cron` (crontab
+        expression) or `interval_seconds`. Returns True when registration
+        succeeded, False when the scheduler is unavailable or the trigger
+        spec is invalid. Idempotent — calling twice with the same job_id
+        replaces the previous trigger.
+        """
+        sched = getattr(self.kernel, "scheduler", None)
+        if not sched or not getattr(sched, "_scheduler", None):
+            return False
+        if (cron is None) == (interval_seconds is None):
+            return False  # exactly one must be set
+        try:
+            if cron is not None:
+                from apscheduler.triggers.cron import CronTrigger
+                trigger = CronTrigger.from_crontab(cron)
+            else:
+                from apscheduler.triggers.interval import IntervalTrigger
+                trigger = IntervalTrigger(seconds=interval_seconds)
+            sched._scheduler.add_job(
+                callable_, trigger=trigger, id=job_id, replace_existing=True,
+            )
+            return True
+        except Exception:
+            return False
+
+    def remove_cron_job(self, job_id: str) -> bool:
+        """Drop a job by id. Returns False when scheduler missing or job
+        wasn't registered (also a benign condition for fail-soft cleanup)."""
+        sched = getattr(self.kernel, "scheduler", None)
+        if not sched or not getattr(sched, "_scheduler", None):
+            return False
+        try:
+            sched._scheduler.remove_job(job_id)
+            return True
+        except Exception:
+            return False
 
     # --- Per-entity locking ---------------------------------------------------
     # Many apps need to serialize read-modify-write on a single entity (a
@@ -401,8 +465,10 @@ class BaseApp:
         messages: list[dict] | None = None,
         cache: bool = False,
         cache_ttl_hours: int | None = None,
+        with_confidence: bool = False,
+        confidence_threshold: float = 3.0,
         **kwargs,
-    ) -> str:
+    ) -> str | dict:
         """Ask the OS to think. Routes to best provider for the domain.
 
         Accepts either `prompt` (single-turn) or `messages=[{role, content}, ...]`
@@ -426,6 +492,14 @@ class BaseApp:
 
         This is separate from provider-side caching (Anthropic prompt cache,
         OpenAI cached tokens) which reduces cost but still makes API calls.
+
+        Set with_confidence=True to ask the model for a structured self-rating.
+        Returns a dict `{answer, confidence (1-5), missing: [...], assumed: [...]}`
+        instead of a string. Answers below `confidence_threshold` (default 3)
+        are logged to the demand log so the system can later surface what's
+        chronically under-documented. On parse failure, returns
+        `{answer: raw_text, confidence: None, missing: [], assumed: []}` —
+        opt-in callers never see an exception.
         """
         import asyncio
 
@@ -433,6 +507,16 @@ class BaseApp:
             kwargs["messages"] = messages
         if not prompt and not messages:
             raise ValueError("think() requires either prompt= or messages=")
+
+        # with_confidence: append a structured-output envelope to the
+        # system prompt and parse the response as JSON. Inspired by
+        # Demand-Driven Context — every think() call can self-rate, and
+        # low-confidence answers feed the demand log. The caller gets back
+        # a dict {answer, confidence, missing, assumed}; on parse failure
+        # we fall back to {answer: raw, confidence: None} so existing
+        # call sites that opt in never see an exception.
+        if with_confidence:
+            kwargs["system"] = (kwargs.get("system") or "") + CONFIDENCE_ENVELOPE
 
         # Snapshot any citations the caller registered via self.cite() before
         # this think() call, then reset for the next one. Citations describe
@@ -462,7 +546,12 @@ class BaseApp:
             )
             _hit = _tc.get(_cache_db, _cache_id)
             if _hit is not None:
-                return _hit
+                return self._finalize_think(
+                    _hit,
+                    with_confidence=with_confidence,
+                    prompt=prompt,
+                    threshold=confidence_threshold,
+                )
 
         # --- Agent resolution ---
         if agent:
@@ -497,7 +586,12 @@ class BaseApp:
             if app_provider and "," not in str(app_provider):
                 result = await self._think_with_provider(app_provider, prompt, domain, kwargs)
                 if result:
-                    return result
+                    return self._finalize_think(
+                        result,
+                        with_confidence=with_confidence,
+                        prompt=prompt,
+                        threshold=confidence_threshold,
+                    )
 
             # App-level provider chain with timeout + fallback
             app_providers = settings.get(f"think.app.{app_id}.providers")
@@ -512,7 +606,12 @@ class BaseApp:
                             timeout=timeout,
                         )
                         if val is not None:
-                            return val
+                            return self._finalize_think(
+                                val,
+                                with_confidence=with_confidence,
+                                prompt=prompt,
+                                threshold=confidence_threshold,
+                            )
                     except (TimeoutError, Exception):
                         continue
 
@@ -524,7 +623,12 @@ class BaseApp:
                         domain_provider, prompt, domain, kwargs
                     )
                     if result:
-                        return result
+                        return self._finalize_think(
+                            result,
+                            with_confidence=with_confidence,
+                            prompt=prompt,
+                            threshold=confidence_threshold,
+                        )
 
         # Default: use capability chain
         t0 = time.monotonic()
@@ -571,15 +675,21 @@ class BaseApp:
                 ttl_hours=cache_ttl_hours,
             )
 
-        return result.value
+        return self._finalize_think(
+            result.value,
+            with_confidence=with_confidence,
+            prompt=prompt,
+            threshold=confidence_threshold,
+        )
 
     def cite(self, kind: str, ref: str, **extra) -> None:
         """Register a source the next think() call is grounded in.
 
         ``kind`` is one of: ``vault_note`` (ref = vault-relative path),
         ``eos_doc`` (ref = repo-relative path), ``web_page`` (ref = url),
-        ``app_record`` (ref = "<app>/<id>"). Extra fields (e.g. lines, title)
-        are passed through verbatim.
+        ``app_record`` (ref = "<app>/<id>"), ``kb`` (ref = KB slug — resolves
+        via call_app("kb", "get_note", slug) at response time). Extra fields
+        (e.g. lines, title) are passed through verbatim.
 
         Citations are consumed by the next ``think()`` call and surface in
         ``last_provenance()['citations']`` so UIs can show users what the
@@ -589,6 +699,22 @@ class BaseApp:
         if not hasattr(self, "_pending_citations"):
             self._pending_citations = []
         self._pending_citations.append({"kind": kind, "ref": ref, **extra})
+
+    async def kb_explain(self, slug: str) -> dict:
+        """Fetch a KB note's body + metadata for in-app explanation surfaces.
+
+        Returns ``{slug, title, kind, body}`` for the named KB note, or
+        ``{error, slug}`` if no such note exists. Intended for "?"/tooltip
+        widgets — a UI can show the verbatim explanation of a formula,
+        concept, or clause without re-implementing KB rendering.
+
+        Asynchronous because it crosses the call_app boundary. Safe to call
+        from any app; no cost if KB is unavailable (returns error dict).
+        """
+        try:
+            return await self.call_app("kb", "get_note", slug=slug) or {"error": "kb unavailable", "slug": slug}
+        except Exception as e:  # noqa: BLE001 — call_app failures should not crash callers
+            return {"error": str(e), "slug": slug}
 
     def last_provenance(self) -> dict:
         """Return provenance metadata for the most recent think() call.
@@ -612,6 +738,79 @@ class BaseApp:
             "latency_ms": meta.get("latency_ms"),
             "citations": list(getattr(self, "_last_think_citations", [])),
         }
+
+    def _finalize_think(
+        self,
+        raw: str,
+        *,
+        with_confidence: bool,
+        prompt: str,
+        threshold: float,
+    ) -> str | dict:
+        """Post-process a think() result. When with_confidence is set,
+        parse the envelope JSON, log low-confidence calls to the demand
+        log, and return a dict. Otherwise return the raw string."""
+        if not with_confidence:
+            return raw
+        from emptyos.sdk.utils import parse_llm_json
+
+        parsed = parse_llm_json(raw, fallback={})
+        if not isinstance(parsed, dict) or "answer" not in parsed:
+            return {"answer": raw, "confidence": None, "missing": [], "assumed": []}
+        try:
+            conf = float(parsed.get("confidence")) if parsed.get("confidence") is not None else None
+        except (TypeError, ValueError):
+            conf = None
+        missing = parsed.get("missing") or []
+        if isinstance(missing, str):
+            missing = [missing]
+        if conf is not None and conf < threshold:
+            self._record_demand(
+                kind="think",
+                query=prompt[:500],
+                result="low_confidence",
+                confidence=conf,
+                missing=[str(m)[:200] for m in missing][:10],
+            )
+        return {
+            "answer": parsed.get("answer", ""),
+            "confidence": conf,
+            "missing": missing,
+            "assumed": parsed.get("assumed") or [],
+        }
+
+    def _record_demand(
+        self,
+        *,
+        kind: str,
+        query: str,
+        result: str = "empty",
+        confidence: float | None = None,
+        missing: list[str] | None = None,
+        **extra,
+    ) -> None:
+        """Append one entry to data/demand_log.jsonl.
+
+        kind: "search" | "vault_query" | "think". Frees the schema for
+        future hook points without a migration.
+        result: "empty" | "low_confidence" | "no_match".
+        Never raises — log writes must not break the caller.
+        """
+        from emptyos.sdk import demand_log
+
+        entry = {
+            "app": self.manifest.id,
+            "kind": kind,
+            "query": query,
+            "result": result,
+        }
+        if confidence is not None:
+            entry["confidence"] = confidence
+        if missing:
+            entry["missing"] = missing
+        if extra:
+            entry.update(extra)
+        demand_log.append(self.kernel.config.data_dir, entry)
 
     async def think_safe(
         self,
@@ -946,6 +1145,30 @@ class BaseApp:
         result = await self.kernel.capability("listen").execute(audio=audio, **kwargs)
         return result.value
 
+    async def pronounce(
+        self,
+        audio: bytes | str,
+        reference_text: str,
+        *,
+        language: str = "en-us",
+        **kwargs,
+    ) -> dict:
+        """Score pronunciation of `audio` against `reference_text`.
+
+        Returns the structured response from the pronounce service —
+        `alignment` (per-phone match/sub/del rows with timestamps),
+        `word_alignment`, `summary` with `phone_accuracy` + `weak_phones`,
+        plus the raw transcript and reference phone lists.
+
+        Raises when no provider is available (plugin offline or model still
+        loading); callers should `try/except` and fall back to a heuristic
+        path. See `services/pronounce/server.py` for the response shape.
+        """
+        result = await self.kernel.capability("pronounce").execute(
+            audio=audio, reference_text=reference_text, language=language, **kwargs
+        )
+        return result.value
+
     async def draw(self, prompt: str, **kwargs) -> str:
         """Generate an image from text. Returns file path."""
         result = await self.kernel.capability("draw").execute(prompt=prompt, **kwargs)
@@ -1005,6 +1228,41 @@ class BaseApp:
         result = await self.kernel.capability("see").execute(mode=mode, **kwargs)
         return result.value
 
+    async def browse(self, action: str, **kwargs) -> Any:
+        """Drive a headless browser. Returns provider-shaped dict per verb.
+
+        Verbs: navigate, click, fill, screenshot, snapshot, eval, wait_for,
+        close. Pass `context_id="..."` across calls to keep cookies + the
+        same page open between actions; omit for a one-shot using the
+        default context.
+
+        Examples:
+            await self.browse("navigate", url="http://127.0.0.1:9001/")
+            await self.browse("click", selector="#add-text")
+            await self.browse("fill", selector="#new-task", value="buy milk")
+            shot = await self.browse("screenshot", full_page=True)
+            snap = await self.browse("snapshot", selector="#task-list")
+
+        Raises RuntimeError if no `browse` provider is available — apps that
+        treat browser automation as optional should catch and degrade.
+        """
+        result = await self.kernel.capability("browse").execute(action=action, **kwargs)
+        return result.value
+
+    async def try_browse(self, action: str, **kwargs) -> tuple[bool, Any]:
+        """Non-raising variant of `browse` for trace-shaped UI scripts.
+
+        Returns ``(True, result)`` on success or ``(False, error_str)`` on
+        any failure. Lets multi-step scripts (dogfood UI walks, fix-agent
+        repro loops) record per-step status in a trace instead of aborting
+        on the first failure — the error path stringifies the exception so
+        it can land directly in a response payload.
+        """
+        try:
+            return True, await self.browse(action, **kwargs)
+        except Exception as e:
+            return False, str(e)
+
     async def animate(self, prompt: str, *, image: str = "", num_frames: int = 24, **kwargs) -> str:
         """Generate a video clip. Returns local file path to the rendered MP4/WEBP.
 
@@ -1040,6 +1298,46 @@ class BaseApp:
         filepath = audio_dir / filename
         filepath.write_bytes(await upload_file.read())
         return filepath, filename
+
+    def serve_data_file(
+        self,
+        subdir: str,
+        *parts: str,
+        media_type: str = "application/octet-stream",
+    ):
+        """Serve a file under ``data_dir/{subdir}/{*parts}``.
+
+        Path-traversal-safe via two checks: any segment containing ``/`` or
+        ``\\`` is rejected up-front (those split a single component into
+        many — almost always a routing error), then the fully resolved
+        target must still sit under the resolved ``data_dir/{subdir}``
+        root. The latter catches ``..`` traversals, symlink escapes, and
+        any future filesystem escape vector — without rejecting legitimate
+        filenames that happen to contain ``..`` as a substring (e.g.
+        ``file..tar.gz``).
+
+        Returns 400 ``{"error": "invalid path"}`` on a routing-shape
+        violation or a resolved-out-of-root attempt, 404 on a missing
+        file. Use this for serving generated artifacts (screenshots,
+        exports) through a route shaped like ``/api/<thing>/{ts}/{name}``.
+        """
+        from starlette.responses import FileResponse, JSONResponse
+
+        for p in parts:
+            if "/" in p or "\\" in p:
+                return JSONResponse({"error": "invalid path"}, status_code=400)
+        root = (self.data_dir / subdir).resolve()
+        target = root
+        for p in parts:
+            target = target / p
+        try:
+            target = target.resolve()
+            target.relative_to(root)
+        except (ValueError, OSError):
+            return JSONResponse({"error": "invalid path"}, status_code=400)
+        if not target.is_file():
+            return JSONResponse({"error": "not found"}, status_code=404)
+        return FileResponse(str(target), media_type=media_type)
 
     def serve_audio_file(self, filename: str, *, subdir: str = "audio"):
         """Return a Starlette FileResponse for data_dir/{subdir}/{filename}.
@@ -1166,10 +1464,29 @@ class BaseApp:
                 continue
         return json.loads(body.decode("utf-8", errors="replace"))
 
+    @staticmethod
+    async def safe_json(request) -> dict:
+        # Tolerant sibling of read_json: returns {} on any decode error
+        # instead of raising. Use when an empty or malformed body should
+        # be silently treated as no payload (most write endpoints where
+        # individual fields are optional). Use read_json when invalid
+        # JSON should surface as an error to the caller.
+        try:
+            return await BaseApp.read_json(request)
+        except Exception:
+            return {}
+
     async def search(self, query: str, **kwargs) -> list:
-        """Ask the OS to search. Human remembers, or grep/search-engine finds."""
+        """Ask the OS to search. Human remembers, or grep/search-engine finds.
+
+        Empty results are logged to the demand log so periodic classification
+        can surface unknown unknowns. See `emptyos.sdk.demand_log`.
+        """
         result = await self.kernel.capability("search").execute(query=query, **kwargs)
-        return result.value
+        value = result.value
+        if not value:
+            self._record_demand(kind="search", query=query, result="empty")
+        return value
 
     # --- Embedding helpers (semantic search, related-item discovery) ---
     #
@@ -1559,7 +1876,14 @@ class BaseApp:
         vi = self.kernel.services.get_optional("vault_index")
         if not vi:
             return []
-        return vi.find(tags=tags, folder=folder, **properties)
+        rows = vi.find(tags=tags, folder=folder, **properties)
+        if not rows:
+            self._record_demand(
+                kind="vault_query",
+                query=json.dumps({"tags": tags, "folder": folder, **properties}, default=str)[:500],
+                result="empty",
+            )
+        return rows
 
     def vault_update(self, rel_path: str, properties: dict):
         """Update frontmatter properties in a vault note and re-index.
@@ -1570,6 +1894,37 @@ class BaseApp:
         vi = self.kernel.services.get_optional("vault_index")
         if vi:
             vi.update_properties(rel_path, properties)
+
+    # ── flat-frontmatter JSON encoding ──
+    # Vault frontmatter is flat YAML — nested structures (list of dicts,
+    # etc.) must be JSON-encoded into a single string field. The `@json `
+    # sentinel prefix keeps `vault_index._parse_fm` from misreading the
+    # value as an inline YAML array, which would silently corrupt every
+    # nested dict on read. Two consumers today: `apps/kb/` (Document
+    # paragraphs) and `apps/actions/` (Workflow steps).
+    @staticmethod
+    def vault_encode_json(value) -> str:
+        """Serialize a nested structure for storage in a single frontmatter field."""
+        return "@json " + json.dumps(value if value is not None else [])
+
+    @staticmethod
+    def vault_decode_json(raw, default=None):
+        """Decode the inverse of `vault_encode_json`. Tolerates legacy/empty/malformed input."""
+        if default is None:
+            default = []
+        if raw is None:
+            return default
+        if not isinstance(raw, str):
+            return raw  # already-decoded list/dict — pass through
+        payload = raw.strip()
+        if payload.startswith("@json "):
+            payload = payload[len("@json "):].strip()
+        if not payload:
+            return default
+        try:
+            return json.loads(payload)
+        except Exception:
+            return default
 
     def vault_create_note(self, rel_path: str, frontmatter: dict, body: str = ""):
         """Create a new vault note with frontmatter + body and index it.
@@ -1797,6 +2152,72 @@ class BaseApp:
         if event_name:
             await self.emit(event_name, {"id": project_id})
         return {"ok": True}
+
+    def vault_project_get(self, path: str) -> dict | None:
+        """Read a project note's frontmatter, with ``_path`` injected.
+
+        Returns the merged frontmatter dict or ``None`` if no note exists at
+        ``path``. Callers typically wrap as ``return {"project": fm}`` or
+        ``return {"error": "project not found"}``.
+        """
+        fm = self.vault_get_properties(path)
+        if not fm:
+            return None
+        return {**fm, "_path": path}
+
+    def vault_project_read_sidecar(
+        self,
+        *,
+        project_path: str,
+        sidecar_path: str,
+        key: str = "readings",
+    ) -> dict:
+        """Read a sidecar JSON file next to a project note.
+
+        Sidecars hold structured data (lists of readings, geometry, …) that
+        vault frontmatter can't carry — frontmatter is flat-only. Returns
+        ``{"ok": True, <key>: [...]}`` on success, ``{"error": ...}`` if the
+        project is missing or the sidecar can't be parsed. Empty/missing
+        sidecar returns ``{"ok": True, <key>: []}`` — the absence of a
+        sidecar is not an error.
+        """
+        if not self.vault_get_properties(project_path):
+            return {"error": "project not found"}
+        raw = self.vault_read_at(sidecar_path)
+        if not raw:
+            return {"ok": True, key: []}
+        try:
+            data = json.loads(raw)
+        except ValueError as e:
+            return {"error": f"cannot read sidecar: {e}"}
+        items = data if isinstance(data, list) else (data.get(key) or [])
+        return {"ok": True, key: items}
+
+    async def vault_project_write_sidecar(
+        self,
+        *,
+        project_id: str,
+        project_path: str,
+        sidecar_path: str,
+        items: list,
+        key: str = "readings",
+        event_name: str | None = None,
+    ) -> dict:
+        """Replace a project's sidecar JSON. Caller pre-cleans ``items``.
+
+        Writes ``{<key>: items}`` as indented JSON, bumps the project's
+        ``updated`` timestamp, and (optionally) emits ``event_name`` with
+        ``{"id": project_id, "n": len(items)}``. Returns ``{"ok": True,
+        "n": ...}`` or ``{"error": "project not found"}``. Row-shape
+        validation lives in the caller — sidecar schemas vary per app.
+        """
+        if not self.vault_get_properties(project_path):
+            return {"error": "project not found"}
+        self.vault_write_at(sidecar_path, json.dumps({key: items}, indent=2))
+        self.vault_update(project_path, {"updated": now_iso()})
+        if event_name:
+            await self.emit(event_name, {"id": project_id, "n": len(items)})
+        return {"ok": True, "n": len(items)}
 
     # --- Job Tracking (platform-level progress for long-running operations) ---
 

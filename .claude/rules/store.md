@@ -1,0 +1,13 @@
+# Store — Per-User Install Gate
+
+`/store` is the ComfyUI-Manager/Obsidian-community-plugins-style UI for browsing and toggling apps + plugins + skills. Restart-required for apps and plugins; skills hot-load (Claude Code reads `.claude/skills/` live).
+
+- **Catalog source** — every `apps/*/manifest.toml`, `apps/personal/*/manifest.toml`, `plugins/*/manifest.toml`, and `.claude/skills/eos-*/SKILL.md` in the repo. Local only in V1; remote install from URL is deferred.
+- **Three states (Obsidian-style)** — apps + plugins have *installed / enabled* as separate toggles. Installed-and-disabled keeps the code + config + dep graph intact but skips loading at boot — quick "I don't want this running today" without losing setup. Skills only have two states (installed / uninstalled) since their toggle is a folder move (`.claude/skills/eos-<id>/` ↔ `.claude/skills/_archive/eos-<id>/`).
+- **State location** — apps + plugins in `data/store/installed-{apps,plugins}.json` (per-user, mutable, schema v2: `{installed: {...}, disabled: [...], last_change: ...}`). State stays out of manifests so `git pull` can't clobber per-user choices.
+- **Loader semantics** — `loader.installed_ids()` = raw install set (for catalog UI); `loader.disabled_ids()` = subset that's installed but disabled; `loader.enabled_ids()` = `installed - disabled ∪ essentials` (what actually loads). Kernel/CLI/web-middleware all iterate `enabled_ids()`.
+- **First-boot seed** — `AppLoader.installed_ids()` and `PluginLoader.installed_ids()` write the state file once with every discovered manifest marked installed. Existing daemons see no behavior change after upgrade; curation is opt-in.
+- **Always-on essentials** — `ESSENTIAL_APPS = {store, settings, system, hub}` in `emptyos/kernel/app_loader.py` and `ESSENTIAL_PLUGINS = {health}` in `plugin_loader.py`. The store UI refuses to toggle these; a determined user can edit the JSON file directly.
+- **Demo mode bypasses the gate** — `demo.enabled = true` ⇒ every discovered manifest is treated as installed (preserves the bundled-experience semantics); `/store` UI is reachable but state changes have no effect at boot.
+- **Optional manifest field** — `[app] store_category = "engineering"` (or `productivity`, `creative`, `engineering`, `personal`, `ai`, `dev`, `core`, `meta`). Drives the store's category filter; defaults to `"other"`.
+- **Sunset on `release.toml` tiers** — `[tiers.standard]` / `[tiers.engineering]` / `[tiers.english-learning]` / `[tiers.dev]` were "use-case bundles" that are now per-user store choices. They survive in `release.toml` until V1 settles, then collapse to `[tiers.core]` (fresh-clone seed) + `[tiers.demo]` (VPS packaging) + `[platforms.*]`.

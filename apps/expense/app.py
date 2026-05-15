@@ -115,6 +115,18 @@ class ExpenseApp(BaseApp):
 
     # ── Hub panel contributions ──
 
+    async def panel_quick_add(self) -> dict:
+        """Hub: inline quick-add form, posts to smart-add endpoint."""
+        return {
+            "icon": "💰",
+            "title": "Add expense",
+            "endpoint": "/expense/api/smart-add",
+            "field": "text",
+            "placeholder": "35 lunch coffee",
+            "hint": "amount + description · 'aa 2' splits in half",
+            "href": "/expense/",
+        }
+
     async def panel_month_spend(self) -> dict | None:
         """Dashboard tile: this month's spend + entry count."""
         s = await self.summary()
@@ -291,7 +303,9 @@ class ExpenseApp(BaseApp):
     async def api_smart_add(self, request):
         """Parse natural language: '35 lunch coffee' or '50 dinner AA 2'."""
         data = await request.json()
-        text = data.get("text", "").strip()
+        # `or ""` not `, ""` — JSON null parses to None, and dict.get's default
+        # only fires for absent keys (see feedback_yaml_get_method_crash).
+        text = (data.get("text") or "").strip()
         if not text:
             return {"error": "text required"}
 

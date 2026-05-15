@@ -10,7 +10,7 @@ module = "app"
 class = "KBApp"
 
 [requires]
-capabilities = ["read"]
+capabilities = ["read", "write", "think"]
 apps = []
 services = []
 
@@ -21,7 +21,12 @@ commands = ["kb"]
 prefix = "/kb"
 
 [provides.events]
-emits = ["kb:viewed"]
+emits = [
+    "kb:viewed",
+    "kb:doc_created",
+    "kb:doc_updated",
+    "kb:doc_deleted",
+]
 
 [[contributes.hub.panel]]
 id = "kb-summary"
@@ -29,3 +34,15 @@ method = "panel_summary"
 renderer = "stat-tile"
 group = "dashboard"
 priority = 220
+
+# Action template: summarize N selected KB notes into a single summary.
+# Items are note slugs; output is markdown (bullet list or single paragraph).
+[[contributes.actions.template]]
+id = "summarize-notes"
+method = "action_summarize_notes"
+label = "Summarize selected"
+icon = "📝"
+kind = "llm"
+description = "Render N notes into a single summary (bullet or paragraph)."
+is_risky = false
+args_schema = "[{\"key\":\"style\",\"label\":\"Style\",\"type\":\"select\",\"options\":[\"bullet\",\"paragraph\"],\"default\":\"bullet\"}]"

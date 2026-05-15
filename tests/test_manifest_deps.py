@@ -19,7 +19,9 @@ REPO = Path(__file__).resolve().parent.parent
 APPS_ROOTS = [REPO / "apps", REPO / "apps" / "personal"]
 
 # Exclude self, kernel, and a few known placeholder call sites.
-_IGNORE_TARGETS = {"self", "kwargs"}
+# `other_id`/`app_id`/`some-app` show up in documentation strings (e.g.
+# the agent's context-prompt example), not real calls.
+_IGNORE_TARGETS = {"self", "kwargs", "other_id", "app_id", "some-app", "some_app"}
 
 # Matches self.call_app("<app_id>", ...) — app_id must be a bare string literal.
 # String-concatenation / variable-based call_app is not checked (rare and

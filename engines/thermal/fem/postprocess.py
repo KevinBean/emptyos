@@ -216,6 +216,7 @@ def compute_fem_rating(
                 sheath_thickness_m=geom.sheath_thickness,
                 include_eddy_for_solid_bonding=input.include_eddy_for_solid_bonding,
                 formation="trefoil",
+                n_cores=cable.n_conductors,
             )
 
             W_c = I * I * R_ac

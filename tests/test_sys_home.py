@@ -13,30 +13,20 @@ from page_helpers import (
 
 @pytest.mark.api
 class TestHomeAPI:
-    def test_health_score(self, http_client):
-        data = assert_dict_response(http_client.get("/hub/api/health-score"))
-        assert any(k in data for k in ("score", "total", "overall", "value")), (
-            f"health-score response missing expected key: {list(data.keys())}"
-        )
+    # The hub was consolidated: per-domain endpoints
+    # (/hub/api/{health-score,what-now,streaks,countdowns,wellness,goals})
+    # collapsed into the unified panels aggregator. Each app now contributes
+    # via [[contributes.hub.panel]] and is rendered through /hub/api/panels.
 
-    def test_what_now(self, http_client):
-        data = assert_ok(http_client.get("/hub/api/what-now"))
-        assert isinstance(data, dict)
+    def test_panels_aggregator(self, http_client):
+        """The unified panels endpoint returns the panel blocks the hub renders."""
+        data = assert_dict_response(http_client.get("/hub/api/panels"))
+        assert "blocks" in data, f"panels response missing 'blocks': {list(data.keys())}"
+        assert isinstance(data["blocks"], list)
 
-    def test_countdowns(self, http_client):
-        data = assert_ok(http_client.get("/hub/api/countdowns"))
-        assert isinstance(data, (list, dict))
-
-    def test_streaks(self, http_client):
-        data = assert_ok(http_client.get("/hub/api/streaks"))
-        assert isinstance(data, (list, dict))
-
-    def test_wellness(self, http_client):
-        data = assert_ok(http_client.get("/hub/api/wellness"))
-        assert isinstance(data, dict)
-
-    def test_goals(self, http_client):
-        data = assert_ok(http_client.get("/hub/api/goals"))
+    def test_panels_all_lists_known_panels(self, http_client):
+        """The catalog endpoint enumerates every contributed panel."""
+        data = assert_ok(http_client.get("/hub/api/panels/all"))
         assert isinstance(data, (list, dict))
 
     def test_shortcuts_filtered_to_loaded_apps(self, http_client):

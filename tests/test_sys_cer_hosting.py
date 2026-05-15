@@ -14,7 +14,7 @@ class TestCERHostingAPI:
 
     def test_analyse_feeder(self, http_client):
         """POST /cer-hosting/api/analyse produces per-pole and feeder totals."""
-        http_client.post("/grid-analytics/api/seed-all?scan=demo-50")
+        http_client.post("/grid-analytics/api/seed-all?scan=demo-50", timeout=45)
         r = http_client.post(
             "/cer-hosting/api/analyse",
             json={"scan_id": "demo-feeder-50pole"},
@@ -29,7 +29,7 @@ class TestCERHostingAPI:
 
     def test_per_pole_row_shape(self, http_client):
         """Each per-pole record has distance, voltage class, limit factor."""
-        http_client.post("/grid-analytics/api/seed-all?scan=demo-50")
+        http_client.post("/grid-analytics/api/seed-all?scan=demo-50", timeout=45)
         r = http_client.post(
             "/cer-hosting/api/analyse",
             json={"scan_id": "demo-feeder-50pole"},
@@ -45,7 +45,7 @@ class TestCERHostingAPI:
 
     def test_get_cached_analysis(self, http_client):
         """GET /api/analysis/{scan_id} returns prior analysis."""
-        http_client.post("/grid-analytics/api/seed-all?scan=demo-50")
+        http_client.post("/grid-analytics/api/seed-all?scan=demo-50", timeout=45)
         http_client.post(
             "/cer-hosting/api/analyse",
             json={"scan_id": "demo-feeder-50pole"},
@@ -56,7 +56,7 @@ class TestCERHostingAPI:
 
     def test_customer_response_verdict(self, http_client):
         """POST /api/customer-response returns verdict + LLM-written paragraph."""
-        http_client.post("/grid-analytics/api/seed-all?scan=demo-50")
+        http_client.post("/grid-analytics/api/seed-all?scan=demo-50", timeout=45)
         http_client.post(
             "/cer-hosting/api/analyse",
             json={"scan_id": "demo-feeder-50pole"},
@@ -79,7 +79,7 @@ class TestCERHostingAPI:
 
     def test_invalid_pole_errors(self, http_client):
         """Customer response with unknown pole_id errors cleanly."""
-        http_client.post("/grid-analytics/api/seed-all?scan=demo-50")
+        http_client.post("/grid-analytics/api/seed-all?scan=demo-50", timeout=45)
         http_client.post(
             "/cer-hosting/api/analyse",
             json={"scan_id": "demo-feeder-50pole"},

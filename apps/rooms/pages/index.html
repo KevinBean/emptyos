@@ -27,7 +27,7 @@
 .agent-preview-msg { font-size:12px; color:var(--text-muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; margin-top:1px }
 .tier-badge { font-size:10px; padding:1px 6px; border-radius:4px; font-weight:600; text-transform:uppercase; letter-spacing:0.3px; vertical-align:middle; margin-left:4px }
 .tier-badge.system { background:color-mix(in srgb, var(--accent) 15%, transparent); color:var(--accent) }
-.tier-badge.user { background:color-mix(in srgb, #10b981 15%, transparent); color:#10b981 }
+.tier-badge.user { background:color-mix(in srgb, var(--success) 15%, transparent); color:var(--success) }
 .tier-filter { display:flex; gap:4px; padding:4px 12px }
 .tier-filter button { flex:1; padding:5px; border-radius:8px; border:1px solid var(--border); background:var(--bg); color:var(--text-secondary); font-size:11px; cursor:pointer; transition:all 0.15s }
 .tier-filter button.active { background:var(--accent-bg); color:var(--accent); border-color:color-mix(in srgb, var(--accent) 30%, transparent) }
@@ -79,7 +79,7 @@
 body.bulk-select-on .agent-item { padding-left:10px }
 body.bulk-select-on .agent-item::before { content:''; width:18px; height:18px; border:1.5px solid var(--border); border-radius:4px; flex-shrink:0; background:var(--bg); margin-right:6px; transition:background 0.1s,border-color 0.1s }
 body.bulk-select-on .agent-item.bulk-selected::before { background:var(--accent); border-color:var(--accent); content:'✓'; color:var(--accent-ink); font-size:12px; font-weight:700; display:flex; align-items:center; justify-content:center }
-.bulk-action-bar { position:fixed; bottom:20px; left:20px; z-index:10001; display:none; gap:8px; padding:10px 12px; background:var(--bg-card); border:1px solid var(--border); border-radius:10px; box-shadow:0 6px 20px rgba(0,0,0,0.18); align-items:center; font-size:13px }
+.bulk-action-bar { position:fixed; bottom:20px; left:20px; z-index:10001; display:none; gap:8px; padding:10px 12px; background:var(--bg-card); border:1px solid var(--border); border-radius:10px; box-shadow:0 6px 20px var(--shadow); align-items:center; font-size:13px }
 .bulk-action-bar.open { display:flex }
 .bulk-action-bar .count { font-weight:600; padding:0 6px; color:var(--text) }
 
@@ -107,6 +107,10 @@ body.bulk-select-on .agent-item.bulk-selected::before { background:var(--accent)
 .msg-speaker-row .member-avatar { width:18px; height:18px; font-size:9px }
 
 /* Group create modal — roster picker */
+.group-modal-bar { display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-top:16px; padding-top:12px; border-top:1px solid var(--border) }
+.group-modal-bar .group-modal-status { flex:1; min-width:160px; font-size:12px; color:var(--text-muted); line-height:1.4 }
+.group-modal-bar .group-modal-status.err { color:#ef4444 }
+.group-modal-bar button { flex-shrink:0 }
 .roster-section { margin-bottom:14px }
 .roster-label { font-size:11px; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.5px; margin-bottom:8px; display:flex; align-items:center; gap:6px }
 .roster-label .count-pill { background:var(--bg-elevated); border-radius:10px; padding:1px 8px; font-size:10px; letter-spacing:0; text-transform:none; color:var(--text-muted) }
@@ -124,32 +128,39 @@ body.bulk-select-on .agent-item.bulk-selected::before { background:var(--accent)
 .roster-cli-config select { flex:1; padding:6px 8px; border-radius:6px; background:var(--bg); border:1px solid var(--border); color:var(--text); font-size:12px }
 
 /* Overflow menu (chat header ⋯ button) */
-.chat-overflow-menu { position:absolute; top:calc(100% + 4px); right:0; background:var(--bg-card); border:1px solid var(--border); border-radius:8px; box-shadow:0 8px 20px rgba(0,0,0,0.18); padding:4px; min-width:160px; display:none; z-index:60 }
+.chat-overflow-menu { position:absolute; top:calc(100% + 4px); right:0; background:var(--bg-card); border:1px solid var(--border); border-radius:8px; box-shadow:0 8px 20px var(--shadow); padding:4px; min-width:160px; display:none; z-index:60 }
 .chat-overflow-menu.open { display:flex; flex-direction:column; gap:2px }
 .chat-overflow-menu button { background:transparent; border:0; color:var(--text); padding:8px 12px; font-size:13px; text-align:left; border-radius:5px; cursor:pointer }
 .chat-overflow-menu button:hover { background:var(--bg-hover) }
 
-/* Activity drawer — slide-in panel from the right */
-.activity-drawer { position:fixed; top:0; right:0; width:min(420px, 100vw); height:100vh; background:var(--bg-card); border-left:1px solid var(--border); box-shadow:-8px 0 24px rgba(0,0,0,0.18); z-index:10000; transform:translateX(100%); transition:transform 0.18s ease; display:flex; flex-direction:column }
-.activity-drawer.open { transform:translateX(0) }
+/* Activity drawer — slide-in panel from the right. Layout primitives
+   (position/height/safe-area/transform anchor) come from .eos-drawer +
+   .eos-drawer-right; this rule only carries app-specific overrides. */
+.activity-drawer { width:min(420px, 100vw); z-index:10000; transition:transform 0.18s ease }
 .activity-drawer-head { display:flex; align-items:center; gap:8px; padding:14px 16px; border-bottom:1px solid var(--border); flex-shrink:0 }
 .activity-drawer-head h3 { font-size:15px; font-weight:600; flex:1 }
 .activity-drawer-tabs { display:flex; gap:2px; padding:8px 16px 0; border-bottom:1px solid var(--border); flex-shrink:0 }
 .activity-drawer-tabs button { background:transparent; border:0; color:var(--text-muted); padding:8px 14px; font-size:13px; font-weight:500; cursor:pointer; border-bottom:2px solid transparent; margin-bottom:-1px }
 .activity-drawer-tabs button.active { color:var(--text); border-bottom-color:var(--accent) }
 .activity-drawer-body { flex:1; overflow-y:auto; padding:14px 16px }
-.activity-drawer-backdrop { position:fixed; inset:0; background:rgba(0,0,0,0.2); z-index:9999; display:none }
+.activity-drawer-backdrop { /* eos-ios-ok: N H — scrim backdrop, drawer carries safe-area */ position:fixed; inset:0; background:color-mix(in srgb, var(--text) 20%, transparent); z-index:9999; display:none; cursor:pointer; -webkit-tap-highlight-color:transparent }
 .activity-drawer-backdrop.open { display:block }
 
 /* Pending-action cards (Phase 5 review gate) */
 .pending-card { border:1px solid color-mix(in srgb,var(--accent) 50%,var(--border)); border-radius:8px; padding:10px 12px; margin-top:8px; background:color-mix(in srgb,var(--accent) 6%,var(--bg-card)); font-size:13px; display:flex; flex-direction:column; gap:8px }
-.pending-card.applied { border-color:#10b981; background:color-mix(in srgb,#10b981 8%,var(--bg-card)) }
-.pending-card.rejected, .pending-card.failed { border-color:#ef4444; background:color-mix(in srgb,#ef4444 6%,var(--bg-card)); opacity:0.75 }
+.pending-card.applied { border-color:var(--success); background:color-mix(in srgb,var(--success) 8%,var(--bg-card)) }
+.pending-card.rejected, .pending-card.failed { border-color:var(--danger); background:color-mix(in srgb,var(--danger) 6%,var(--bg-card)); opacity:0.75 }
 .pending-card .pending-head { display:flex; align-items:center; gap:8px; font-weight:600 }
 .pending-card .pending-verb { color:var(--accent); font-family:var(--font-mono,monospace); font-size:12px }
 .pending-card .pending-args { font-family:var(--font-mono,monospace); font-size:11px; color:var(--text-muted); white-space:pre-wrap; max-height:120px; overflow-y:auto; padding:6px 8px; border-radius:4px; background:var(--bg) }
 .pending-card .pending-actions { display:flex; gap:6px; justify-content:flex-end }
 .pending-card .pending-status { font-size:11px; color:var(--text-muted); margin-left:auto }
+.pending-card .pending-diff { font-family:var(--font-mono,monospace); font-size:11px; max-height:220px; overflow-y:auto; padding:6px 8px; border-radius:4px; background:var(--bg); border:1px solid var(--border); white-space:pre; line-height:1.4 }
+.pending-card .pending-diff-head { font-size:11px; color:var(--text-muted); display:flex; justify-content:space-between; align-items:center }
+.pending-card .pending-diff .d-add { color:var(--success); display:block }
+.pending-card .pending-diff .d-del { color:var(--danger); display:block }
+.pending-card .pending-diff .d-ctx { color:var(--text-muted); display:block }
+.pending-card .pending-diff .d-hunk { color:var(--accent); display:block; opacity:0.7 }
 .chat-back { display:none; background:none; border:none; font-size:20px; cursor:pointer; color:var(--text-secondary); padding:4px }
 .chat-agent-info { flex:1; min-width:0 }
 .chat-agent-name { font-size:16px; font-weight:700; color:var(--text-heading) }
@@ -176,7 +187,7 @@ body.bulk-select-on .agent-item.bulk-selected::before { background:var(--accent)
 .chat-input:focus { border-color:color-mix(in srgb,var(--accent) 60%,transparent); box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 10%,transparent) }
 
 /* @mention autocomplete popup */
-.mention-popup { position:absolute; bottom:calc(100% + 4px); left:20px; right:20px; max-width:320px; background:var(--bg-card); border:1px solid var(--border); border-radius:8px; box-shadow:0 4px 12px rgba(0,0,0,0.15); padding:4px; max-height:240px; overflow-y:auto; z-index:50; display:none }
+.mention-popup { position:absolute; bottom:calc(100% + 4px); left:20px; right:20px; max-width:320px; background:var(--bg-card); border:1px solid var(--border); border-radius:8px; box-shadow:0 4px 12px var(--shadow); padding:4px; max-height:240px; overflow-y:auto; z-index:50; display:none }
 .mention-popup.open { display:block }
 .mention-item { display:flex; align-items:center; gap:10px; padding:6px 8px; border-radius:6px; cursor:pointer; font-size:13px }
 .mention-item:hover, .mention-item.active { background:var(--bg-hover) }
@@ -382,7 +393,7 @@ body.bulk-select-on .agent-item.bulk-selected::before { background:var(--accent)
         <input type="hidden" id="f-builtin">
         <div class="eos-modal-actions">
             <button onclick="EOS_UI.closeModal('agent-modal')" style="background:var(--bg);color:var(--text-secondary);border:1px solid var(--border)">Cancel</button>
-            <button id="modal-delete" onclick="deleteAgent()" style="background:#ef4444;color:#fff;display:none">Delete</button>
+            <button id="modal-delete" onclick="deleteAgent()" style="background:var(--danger);color:var(--accent-ink);display:none">Delete</button>
             <button onclick="saveAgent()" style="background:var(--accent);color: var(--accent-ink)">Save</button>
         </div>
     </div>
@@ -392,13 +403,13 @@ body.bulk-select-on .agent-item.bulk-selected::before { background:var(--accent)
 <div class="bulk-action-bar" id="bulk-action-bar">
     <span class="count"><span id="bulk-selected-count">0</span> selected</span>
     <button class="eos-btn-sm eos-btn-ghost" onclick="bulkArchive()">Archive</button>
-    <button class="eos-btn-sm eos-btn-ghost" onclick="bulkDelete()" style="color:#ef4444">Delete</button>
+    <button class="eos-btn-sm eos-btn-ghost" onclick="bulkDelete()" style="color:var(--danger)">Delete</button>
     <button class="eos-btn-sm eos-btn-ghost" onclick="setBulkSelect(false)">Cancel</button>
 </div>
 
 <!-- Activity drawer: tabbed view of Tasks + Pending for the current room -->
 <div class="activity-drawer-backdrop" id="activity-backdrop" onclick="closeActivityDrawer()"></div>
-<aside class="activity-drawer" id="activity-drawer" aria-hidden="true">
+<aside class="eos-drawer eos-drawer-right activity-drawer" id="activity-drawer" aria-hidden="true">
     <div class="activity-drawer-head">
         <h3 id="activity-drawer-title">Activity</h3>
         <button class="eos-btn-sm eos-btn-ghost" onclick="closeActivityDrawer()" aria-label="Close">×</button>
@@ -782,6 +793,16 @@ function renderMessages(messages) {
                 return action ? renderPendingCard(action) : '';
             }).join('');
         }
+        // Auto-exec [DO:] results — per-action chip with view/edit links to the
+        // touched note + an "→ <app>" exit link. Mirrors the page-assistant
+        // server_results block for the rooms-chat surface.
+        var resultsHtml = '';
+        if (Array.isArray(m.server_results) && m.server_results.length) {
+            resultsHtml = m.server_results.map(function(r) {
+                if (!r.ok) return '';
+                return _pendingLinksHtml(r.links);
+            }).filter(Boolean).join('');
+        }
         // Pin toggle — only render on messages with a stable ts.
         var pinBtn = m.ts ? '<button class="msg-pin" onclick="togglePin(\'' + escAttr(m.ts) + '\')" title="' + (isPinned ? 'Unpin' : 'Pin') + '">' + (isPinned ? '📌' : '📍') + '</button>' : '';
         // Voice playback — only on non-user turns.
@@ -809,6 +830,7 @@ function renderMessages(messages) {
         return '<div class="msg ' + cls + '" data-ts="' + escAttr(m.ts || '') + '">' +
             pinBtn + speakBtn + replyBtn + quoteHtml + who + '<div' + bodyStyle + '>' + esc(m.text) + '</div>' +
             pendingHtml +
+            resultsHtml +
             (time ? '<div class="msg-time">' + time + '</div>' : '') + '</div>';
     }).join('');
     el.innerHTML = pinnedHtml + messagesHtml;
@@ -859,7 +881,7 @@ async function sendMessage() {
                    '<span class="member-avatar" id="stream-avatar" style="background:var(--text-muted)">…</span>' +
                    '<span id="stream-speaker" style="font-size:11px;color:var(--text-muted);font-weight:600">…</span>' +
                    '</div>' : '') +
-        '<div class="msg-text" id="stream-target"><span class="typing-dot">●●●</span></div>' +
+        '<div class="msg-text" id="stream-target"><span class="typing-dot"></span><span class="typing-dot"></span><span class="typing-dot"></span></div>' +
         '<div id="stream-tools" style="display:flex;flex-direction:column;gap:4px;margin-top:6px"></div>' +
         '<div id="stream-pending" style="display:flex;flex-direction:column;gap:4px"></div>';
     document.getElementById('chat-messages').appendChild(msgEl);
@@ -919,6 +941,18 @@ async function sendMessage() {
                     pendingEl.insertAdjacentHTML('beforeend', renderPendingCard(action));
                 }
                 updatePendingBadge();
+                continue;
+            }
+            // Backend stripped [DO:] tokens from the reply after the stream
+            // finished — replace what we already painted so the user doesn't
+            // see the raw token sitting above the pending card.
+            if (typeof chunk.text_replace === 'string') {
+                fullText = chunk.text_replace;
+                if (fullText) {
+                    targetEl.innerHTML = typeof EOS_UI !== 'undefined' && EOS_UI.renderMarkdown ? EOS_UI.renderMarkdown(fullText) : esc(fullText);
+                } else {
+                    targetEl.innerHTML = '';
+                }
                 continue;
             }
             var t = chunk.text || '';
@@ -1108,7 +1142,8 @@ function openGroupModal() {
             '<div class="roster-label">Agents <span class="count-pill">' + pickable.length + '</span></div>' +
             '<div class="roster-list dense" id="group-pick-list">' + agentRows + '</div>' +
         '</div>' +
-        '<div class="eos-form-actions">' +
+        '<div class="group-modal-bar">' +
+            '<div class="group-modal-status" id="group-modal-status">Select at least 2 participants and enter a title.</div>' +
             '<button class="eos-btn eos-btn-primary" onclick="submitGroupRoom()">Create room</button>' +
         '</div>';
     // The group-pick-list id is reused by submitGroupRoom — we still want the
@@ -1118,6 +1153,20 @@ function openGroupModal() {
         'id="group-pick-list" data-section="agents">',
     );
     EOS_UI.modal({title: 'New Group', body: body, width: '600px'});
+    // Live status bar — refresh whenever the user toggles a checkbox or edits
+    // the title. Event delegation off the modal so we catch dynamic CLI rows.
+    var modalEl = document.querySelector('.eos-modal');
+    if (modalEl) {
+        modalEl.addEventListener('change', function(ev) {
+            if (ev.target && ev.target.matches('input[type=checkbox][data-kind]')) {
+                updateGroupModalStatus();
+            }
+        });
+        modalEl.addEventListener('input', function(ev) {
+            if (ev.target && ev.target.id === 'group-title') updateGroupModalStatus();
+        });
+    }
+    updateGroupModalStatus();
 }
 
 // Phase 27 — suggest agents based on the room title the user is typing.
@@ -1164,9 +1213,44 @@ function acceptSuggestion(agentId) {
     }
 }
 
+function _groupStatus(msg, isError) {
+    var el = document.getElementById('group-modal-status');
+    if (!el) return;
+    el.textContent = msg;
+    el.classList.toggle('err', !!isError);
+}
+
+function _groupPickedCount() {
+    var modal = document.querySelector('.eos-modal') || document;
+    return modal.querySelectorAll('input[type=checkbox][data-kind]:checked').length;
+}
+
+// Refresh the inline status line whenever the user toggles a checkbox or
+// edits the title. Bound via event delegation in openGroupModal.
+function updateGroupModalStatus() {
+    var titleEl = document.getElementById('group-title');
+    if (!titleEl) return;
+    var title = (titleEl.value || '').trim();
+    var picked = _groupPickedCount();
+    var missing = [];
+    if (!title) missing.push('a title');
+    if (picked < 2) missing.push((picked === 0 ? 'at least 2 participants' : (2 - picked) + ' more participant' + (2 - picked === 1 ? '' : 's')));
+    if (missing.length === 0) {
+        _groupStatus('Ready · ' + picked + ' picked', false);
+    } else {
+        _groupStatus('Add ' + missing.join(' and '), false);
+    }
+}
+
 async function submitGroupRoom() {
-    var title = (document.getElementById('group-title').value || '').trim();
-    if (!title) { EOS_UI.toast('Title is required', false); return; }
+    var titleEl = document.getElementById('group-title');
+    var title = (titleEl.value || '').trim();
+    if (!title) {
+        _groupStatus('Title is required', true);
+        EOS_UI.toast('Title is required', false);
+        try { titleEl.focus(); titleEl.scrollIntoView({behavior:'smooth', block:'center'}); } catch(e) {}
+        return;
+    }
     // Both the CLI tools section and the agents grid carry data-kind on
     // their checkboxes. Query all checked checkboxes inside the modal.
     var modal = document.querySelector('.eos-modal-content, .eos-modal') || document;
@@ -1183,16 +1267,32 @@ async function submitGroupRoom() {
         }
         return entry;
     });
-    if (picked.length < 2) { EOS_UI.toast('Pick at least 2 participants', false); return; }
+    if (picked.length < 2) {
+        var need = 2 - picked.length;
+        var msg = 'Pick ' + need + ' more participant' + (need === 1 ? '' : 's') + ' (need at least 2)';
+        _groupStatus(msg, true);
+        EOS_UI.toast(msg, false);
+        try {
+            var firstRoster = document.querySelector('.roster-section');
+            if (firstRoster) firstRoster.scrollIntoView({behavior:'smooth', block:'start'});
+        } catch(e) {}
+        return;
+    }
     try {
         var room = await EOS.post('/rooms/api/rooms', {title: title, participants: picked});
-        if (room && room.error) { EOS_UI.toast(room.error, false); return; }
+        if (room && room.error) {
+            _groupStatus(room.error, true);
+            EOS_UI.toast(room.error, false);
+            return;
+        }
         EOS_UI.closeModal();
         EOS_UI.toast('Group created');
         await loadAgents();
         if (room && room.id) openChat(room.id);
     } catch(e) {
-        EOS_UI.toast('Failed to create group', false);
+        var err = 'Failed to create group';
+        _groupStatus(err, true);
+        EOS_UI.toast(err, false);
     }
 }
 
@@ -2809,7 +2909,7 @@ function onKnowledgePickerSearch(v) {
         results.innerHTML = files.map(function(f) {
             var path = f.path || '';
             var isAttached = attached.has(path) || attached.has(path.replace(/\.md$/i, ''));
-            return '<div style="display:flex;align-items:center;gap:8px;padding:6px 10px;border-radius:6px;font-size:12px;margin-bottom:3px;background:var(--bg-elevated);' + (isAttached ? 'opacity:0.5' : 'cursor:pointer') + '"' +
+            return '<div style="cursor:pointer;display:flex;align-items:center;gap:8px;padding:6px 10px;border-radius:6px;font-size:12px;margin-bottom:3px;background:var(--bg-elevated);' + (isAttached ? 'opacity:0.5;cursor:default' : '') + '"' +
                 (isAttached ? '' : ' onclick="addKnowledgeFromDrawer(\'' + escAttr(path) + '\')"') + '>' +
                 '<span style="flex-shrink:0">📄</span>' +
                 '<div style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' +
@@ -2896,16 +2996,51 @@ function renderPendingCard(action) {
     } else {
         buttons = '<span class="pending-status">failed: ' + esc(action.error || 'error') + '</span>';
     }
+    var linksHtml = (st === 'applied') ? _pendingLinksHtml(action.links) : '';
+    var proposed = action.proposed_changes || [];
+    var diffHtml = proposed.length ? proposed.map(_pendingDiffHtml).join('') : '';
+    // When a sandboxed write is the actual payload, the raw args (path +
+    // full file content) duplicate the diff and make the card huge. Drop
+    // the args block in that case — the diff IS the args, more legibly.
+    var argsBlock = proposed.length ? '' :
+        '<div class="pending-args">' + esc(argsStr) + '</div>';
     return '<div class="pending-card ' + esc(st) + '" id="pending-card-' + escAttr(action.id) + '">' +
         '<div class="pending-head">' +
             '<span>' + icon + '</span>' +
             '<span style="font-size:11px;color:var(--text-muted)">' + actorIcon + ' ' + esc(actorName) + ' proposes</span>' +
             '<span class="pending-verb">' + esc(action.app + '.' + action.method) + '</span>' +
         '</div>' +
-        '<div class="pending-args">' + esc(argsStr) + '</div>' +
+        argsBlock +
+        diffHtml +
         '<div class="pending-actions">' + buttons + '</div>' +
+        linksHtml +
         (st === 'applied' && action.result ? '<div style="font-size:11px;color:var(--text-muted);font-family:var(--font-mono,monospace);max-height:80px;overflow-y:auto">' + esc(String(action.result).slice(0, 300)) + '</div>' : '') +
         '</div>';
+}
+
+// Render one proposed-change diff panel inside a pending card. Uses
+// EOS.noteActions for the path header so the user can jump to the file
+// (where it exists) in one click.
+function _pendingDiffHtml(change) {
+    var path = change.path || '';
+    var lines = change.diff_lines || [];
+    var kindToClass = {add:'d-add', del:'d-del', ctx:'d-ctx', hunk:'d-hunk'};
+    var rendered = lines.map(function(l) {
+        var cls = kindToClass[l.kind] || 'd-ctx';
+        return '<span class="' + cls + '">' + esc(l.text || '') + '</span>';
+    }).join('');
+    if (!rendered) {
+        rendered = '<span class="d-ctx" style="color:var(--text-muted)">(no changes — proposed content matches current file)</span>';
+    }
+    var actions = (window.EOS && EOS.noteActions) ? EOS.noteActions(path) : esc(path);
+    return '<div class="pending-diff-head"><span>' + esc(path) + '</span><span>' + actions + '</span></div>' +
+        '<div class="pending-diff">' + rendered + '</div>';
+}
+
+// Render the post-apply link row for an action card. Delegates to the shared
+// EOS_UI.actionLinks helper so this surface and page-assistant stay in sync.
+function _pendingLinksHtml(links) {
+    return (window.EOS_UI && EOS_UI.actionLinks) ? EOS_UI.actionLinks(links) : '';
 }
 
 async function applyAction(actionId) {

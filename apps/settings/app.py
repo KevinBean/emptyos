@@ -177,6 +177,7 @@ class SettingsApp(BaseApp):
             "port": c.port,
             "auth_required": c.auth_required,
             "auth_token_set": bool(c.auth_token),
+            "password_set": bool(c.login_password),
             "is_remote_bind": c.is_remote_bind,
         }
 
@@ -223,10 +224,7 @@ class SettingsApp(BaseApp):
         import os
         import subprocess
 
-        try:
-            data = await request.json()
-        except Exception:
-            data = {}
+        data = await self.safe_json(request)
         if not data.get("confirm"):
             return {"error": "missing confirm: true — this kills the running daemon"}
 

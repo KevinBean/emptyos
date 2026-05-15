@@ -38,13 +38,18 @@ body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-se
 
 .card { background:var(--bg-card); border:1px solid var(--border); border-radius:14px; overflow:hidden }
 
+.log-table-wrap { width:100%; overflow-x:auto; -webkit-overflow-scrolling:touch }
 .log-table { width:100%; border-collapse:collapse; font-size:13px }
 .log-table th { text-align:left; padding:12px 12px; font-size:11px; font-weight:600; color:var(--text-secondary); text-transform:uppercase; letter-spacing:0.5px; border-bottom:1px solid var(--border) }
 .log-table td { padding:8px 12px; border-bottom:1px solid color-mix(in srgb,var(--border) 50%,transparent); vertical-align:top }
 .log-table tr:last-child td { border-bottom:none }
 .log-hash { font-family:var(--mono); font-size:12px; color:var(--accent); font-weight:500 }
-.log-msg { color:var(--text-heading); font-weight:500 }
+.log-msg { color:var(--text-heading); font-weight:500; word-break:break-word; overflow-wrap:anywhere }
 .log-meta { color:var(--text-secondary); font-size:12px }
+@media (max-width:640px){
+  .log-table th, .log-table td { padding:8px 8px; font-size:12px }
+  .log-table .col-author, .log-table .col-date { display:none }
+}
 
 .diff-pre { padding:16px; font-family:var(--mono); font-size:12px; line-height:1.6; white-space:pre-wrap; word-break:break-all; max-height:400px; overflow:auto; color:var(--text) }
 .diff-pre .add { color:var(--success,#10b981) }
@@ -80,8 +85,10 @@ body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-se
     <h3>Commit Log</h3><span class="toggle open" id="tog-log">&#9654;</span>
   </div>
   <div class="card" id="sec-log">
-    <table class="log-table"><thead><tr><th>Hash</th><th>Message</th><th>Author</th><th>Date</th></tr></thead>
+    <div class="log-table-wrap">
+    <table class="log-table"><thead><tr><th>Hash</th><th>Message</th><th class="col-author">Author</th><th class="col-date">Date</th></tr></thead>
     <tbody id="log-body"><tr><td colspan="4" class="empty">Loading...</td></tr></tbody></table>
+    </div>
   </div>
 </div>
 
@@ -162,8 +169,8 @@ async function loadLog() {
     tb.innerHTML = commits.map(c => `<tr>
       <td><span class="log-hash">${c.short}</span></td>
       <td><span class="log-msg">${esc(c.message)}</span></td>
-      <td><span class="log-meta">${esc(c.author)}</span></td>
-      <td><span class="log-meta">${esc(c.ago)}</span></td>
+      <td class="col-author"><span class="log-meta">${esc(c.author)}</span></td>
+      <td class="col-date"><span class="log-meta">${esc(c.ago)}</span></td>
     </tr>`).join('');
   } catch(e) { console.error('log', e); }
 }

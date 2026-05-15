@@ -26,12 +26,17 @@ watch = false
 #               Binds 0.0.0.0; the network layer is the gate.
 #   "public"  — internet-exposed (VPS, Docker, cloud). auth_token REQUIRED.
 #
-# `host` and `auth_token` below are overrides — usually you just pick a mode.
+# `host`, `auth_token`, `password` below are overrides — usually you just pick a mode.
+# Either credential gates the daemon equally (see docs/AUTH.md):
+#   auth_token — machine bearer for CLI / API / deep links
+#   password   — human-typeable, used by the browser login form
+# At least one is required in "private" / "public" modes.
 [network]
 mode = "local"
 port = 9000
 # host = "127.0.0.1"         # override the mode default
-# auth_token = ""              # required in "public" mode
+# auth_token = ""            # 32+ random chars, e.g. `python -c "import secrets;print(secrets.token_urlsafe(32))"`
+# password = ""              # human-typeable login (browser form)
 
 # --- Demo mode (orthogonal to network mode) ---
 # When enabled: shows demo banner, disables GPU capabilities, enables BYOK
@@ -127,6 +132,14 @@ timezone = "UTC"
 # port = 9001
 # config_path = "./dogfood/emptyos.toml"
 # vault_path = "./dogfood/vault"
+#
+# [plugins.playwright]
+# # Headless browser automation — provides the `browse` capability.
+# # One-time install:  pip install playwright && playwright install chromium
+# headless = true        # set false to watch the browser (debug only)
+# timeout_s = 30         # per-action timeout
+# viewport_width = 1280
+# viewport_height = 800
 
 # --- System Startup ---
 # Non-plugin programs to launch on boot (via eos boot --generate).

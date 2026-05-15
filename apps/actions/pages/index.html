@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Actions — EmptyOS</title>
+<link rel="stylesheet" href="/static/theme.css">
+<link rel="stylesheet" href="/static/eos-components.css">
+<style>
+* { margin:0; padding:0; box-sizing:border-box }
+body { font-family:var(--font); background:var(--bg); color:var(--text); min-height:100dvh; padding:env(safe-area-inset-top) 16px calc(env(safe-area-inset-bottom) + 80px); -webkit-font-smoothing:antialiased }
+.tpl-grid { display:grid; gap:10px; grid-template-columns:repeat(auto-fill,minmax(280px,1fr)); margin-top:16px }
+.tpl-card { background:var(--bg-card); border:1px solid var(--border); border-radius:12px; padding:14px 16px; cursor:pointer; transition:border-color 0.15s }
+.tpl-card:hover { border-color:var(--accent) }
+.tpl-head { display:flex; gap:8px; align-items:center; margin-bottom:6px }
+.tpl-icon { font-size:18px }
+.tpl-label { font-size:15px; font-weight:600; color:var(--text-heading) }
+.tpl-kind { font-size:10px; padding:2px 7px; border-radius:999px; background:color-mix(in srgb,var(--accent) 14%,transparent); color:var(--accent); text-transform:uppercase; letter-spacing:.04em; font-weight:600 }
+.tpl-kind.plain { background:color-mix(in srgb,var(--text-muted) 18%,transparent); color:var(--text-secondary) }
+.tpl-risky { font-size:10px; padding:2px 7px; border-radius:999px; background:color-mix(in srgb,var(--warning) 18%,transparent); color:var(--warning); text-transform:uppercase; letter-spacing:.04em; font-weight:600 }
+.tpl-desc { font-size:13px; color:var(--text-secondary); line-height:1.5 }
+.tpl-app { font-size:11px; color:var(--text-muted); margin-top:6px; font-family:var(--font-mono) }
+.empty { text-align:center; padding:40px 20px; color:var(--text-muted); font-size:14px }
+
+.run-modal-section { margin-bottom:14px }
+.run-modal-section label { display:block; font-size:12px; color:var(--text-muted); font-weight:600; margin-bottom:4px; text-transform:uppercase; letter-spacing:.04em }
+.run-modal-section textarea,
+.run-modal-section input { width:100%; padding:8px 10px; background:var(--bg); border:1px solid var(--border); border-radius:8px; color:var(--text); font-size:13px; font-family:inherit }
+.run-modal-section textarea { font-family:var(--font-mono); min-height:80px; resize:vertical }
+.result-card { background:var(--bg-card); border:1px solid var(--border); border-radius:10px; padding:14px 16px; margin-top:14px }
+.result-card pre { background:var(--bg); border:1px solid var(--border); border-radius:6px; padding:10px; overflow:auto; font-size:12px; max-height:280px }
+</style>
+</head>
+<body>
+<div id="page-head"></div>
+
+<div id="pane-templates">
+  <div class="tpl-grid" id="tpl-grid"></div>
+</div>
+
+<div id="pane-workflows" style="display:none">
+  <div class="tpl-grid" id="wf-grid"></div>
+  <div class="empty" id="wf-empty" style="display:none">
+    No workflows yet. Edit a markdown file under <code>30_Resources/EmptyOS/workflows/</code> with frontmatter <code>tags: [workflow]</code> and <code>steps_json: "[…]"</code>.
+  </div>
+</div>
+
+<script src="/static/eos.js"></script>
+<script src="/static/eos-components.js"></script>
+<script>
+EOS.nav('actions');
+
+EOS_UI.pageHeader({
+  title: 'Actions',
+  subtitle: 'Run named templates over selected vault items. Workflows chain steps.',
+  tabs: [
+    { id: 'templates', label: 'Templates', active: true },
+    { id: 'workflows', label: 'Workflows' },
+  ],
+  onTabChange: function(tab) {
+    document.getElementById('pane-templates').style.display = tab === 'templates' ? '' : 'none';
+    document.getElementById('pane-workflows').style.display = tab === 'workflows' ? '' : 'none';
+    if (tab === 'workflows') loadWorkflows();
+  },
+  mount: 'page-head',
+});
+
+var STATE = { templates: [], workflows: [], current: null };
+
+function esc(s) { return String(s||'').replace(/[&<>"']/g, function(c) { return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]; }); }
+
+async function loadTemplates() {
+  var data = await fetch('/actions/api/templates').then(function(r){return r.json();});
+  STATE.templates = data.templates || [];
+  var grid = document.getElementById('tpl-grid');
+  if (!STATE.templates.length) {
+    grid.innerHTML = '<div class="empty">No action templates registered. Add <code>[[contributes.actions.template]]</code> to any app\'s manifest.</div>';
+    return;
+  }
+  grid.innerHTML = STATE.templates.map(function(t, i) {
+    return '<div class="tpl-card" data-idx="' + i + '">' +
+             '<div class="tpl-head">' +
+               (t.icon ? '<span class="tpl-icon">' + esc(t.icon) + '</span>' : '') +
+               '<span class="tpl-label">' + esc(t.label) + '</span>' +
+               '<span class="tpl-kind ' + esc(t.kind) + '">' + esc(t.kind) + '</span>' +
+               (t.is_risky ? '<span class="tpl-risky">risky</span>' : '') +
+             '</div>' +
+             '<div class="tpl-desc">' + esc(t.description || '(no description)') + '</div>' +
+             '<div class="tpl-app">' + esc(t.app) + '.' + esc(t.id) + '</div>' +
+           '</div>';
+  }).join('');
+  grid.querySelectorAll('.tpl-card').forEach(function(el) {
+    el.addEventListener('click', function() {
+      openRunModal(STATE.templates[parseInt(el.dataset.idx, 10)]);
+    });
+  });
+}
+
+async function loadWorkflows() {
+  var data = await fetch('/actions/api/workflows').then(function(r){return r.json();});
+  STATE.workflows = data.workflows || [];
+  var grid = document.getElementById('wf-grid');
+  var empty = document.getElementById('wf-empty');
+  if (!STATE.workflows.length) {
+    grid.innerHTML = '';
+    empty.style.display = '';
+    return;
+  }
+  empty.style.display = 'none';
+  grid.innerHTML = STATE.workflows.map(function(w, i) {
+    return '<div class="tpl-card" data-idx="' + i + '">' +
+             '<div class="tpl-head">' +
+               '<span class="tpl-icon">⛓</span>' +
+               '<span class="tpl-label">' + esc(w.title) + '</span>' +
+             '</div>' +
+             '<div class="tpl-desc">' + w.step_count + ' step' + (w.step_count===1?'':'s') + '</div>' +
+             '<div class="tpl-app">' + esc(w.id) + '</div>' +
+           '</div>';
+  }).join('');
+  grid.querySelectorAll('.tpl-card').forEach(function(el) {
+    el.addEventListener('click', function() {
+      openWorkflowRunModal(STATE.workflows[parseInt(el.dataset.idx, 10)]);
+    });
+  });
+}
+
+function openRunModal(tpl) {
+  STATE.current = tpl;
+  var argsHtml = (tpl.args_schema || []).map(function(a) {
+    var def = a.default != null ? a.default : '';
+    if (a.type === 'select' && a.options) {
+      return '<div class="run-modal-section"><label>' + esc(a.label || a.key) + '</label>' +
+        '<select data-arg="' + esc(a.key) + '">' +
+        a.options.map(function(o) { return '<option value="' + esc(o) + '"' + (o === def ? ' selected' : '') + '>' + esc(o) + '</option>'; }).join('') +
+        '</select></div>';
+    }
+    return '<div class="run-modal-section"><label>' + esc(a.label || a.key) + '</label>' +
+      '<input type="text" data-arg="' + esc(a.key) + '" value="' + esc(def) + '"></div>';
+  }).join('');
+  EOS_UI.modal({
+    title: tpl.icon + ' ' + tpl.label,
+    body:
+      '<div class="run-modal-section"><label>Items (JSON array — slugs or paths)</label>' +
+        '<textarea id="run-items" placeholder=\'["slug-a", "slug-b"]\'>[]</textarea></div>' +
+      argsHtml +
+      '<div class="run-modal-section">' +
+        '<button class="eos-btn eos-btn-primary" id="run-fire">Run</button>' +
+      '</div>' +
+      '<div id="run-result"></div>',
+    width: '600px',
+  });
+  setTimeout(function() {
+    var btn = document.getElementById('run-fire');
+    if (!btn) return;
+    btn.addEventListener('click', fireAction);
+  }, 40);
+}
+
+async function fireAction() {
+  var itemsTxt = (document.getElementById('run-items').value || '[]').trim();
+  var items;
+  try { items = JSON.parse(itemsTxt); }
+  catch (e) { EOS_UI.toast('Items must be a JSON array', false); return; }
+  if (!Array.isArray(items)) { EOS_UI.toast('Items must be an array', false); return; }
+  var args = {};
+  document.querySelectorAll('[data-arg]').forEach(function(el) {
+    args[el.dataset.arg] = el.value;
+  });
+  var resEl = document.getElementById('run-result');
+  resEl.innerHTML = '<div class="result-card"><em>Running…</em></div>';
+  var resp = await fetch('/actions/api/run', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ template_id: STATE.current.id, items: items, args: args }),
+  }).then(function(r){return r.json();});
+  if (resp.error) {
+    resEl.innerHTML = '<div class="result-card" style="border-color:var(--danger)"><strong>Error:</strong> ' + esc(resp.error) + '</div>';
+    return;
+  }
+  resEl.innerHTML = '<div class="result-card">' +
+    '<div style="font-size:12px;color:var(--text-muted);margin-bottom:6px">Result' + (resp.provenance ? ' · ' + esc(resp.provenance.mode || '') : '') + '</div>' +
+    '<pre>' + esc(JSON.stringify(resp.result, null, 2)) + '</pre></div>';
+}
+
+function openWorkflowRunModal(wf) {
+  EOS_UI.modal({
+    title: '⛓ ' + wf.title,
+    body:
+      '<div class="run-modal-section"><label>Items (JSON array — passed to step 1)</label>' +
+        '<textarea id="wf-items">[]</textarea></div>' +
+      '<div class="run-modal-section">' +
+        '<button class="eos-btn eos-btn-primary" id="wf-fire">Run workflow</button>' +
+      '</div>' +
+      '<div id="wf-result"></div>',
+    width: '600px',
+  });
+  setTimeout(function() {
+    var btn = document.getElementById('wf-fire');
+    if (!btn) return;
+    btn.addEventListener('click', async function() {
+      var itemsTxt = (document.getElementById('wf-items').value || '[]').trim();
+      var items;
+      try { items = JSON.parse(itemsTxt); }
+      catch (e) { EOS_UI.toast('Items must be a JSON array', false); return; }
+      var resEl = document.getElementById('wf-result');
+      resEl.innerHTML = '<div class="result-card"><em>Running workflow…</em></div>';
+      var resp = await fetch('/actions/api/workflows/' + encodeURIComponent(wf.id) + '/run', {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ items: items }),
+      }).then(function(r){return r.json();});
+      resEl.innerHTML = '<div class="result-card"><pre>' + esc(JSON.stringify(resp, null, 2)) + '</pre></div>';
+    });
+  }, 40);
+}
+
+loadTemplates();
+</script>
+</body>
+</html>

@@ -1,0 +1,1161 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Orgs - EmptyOS</title>
+<link rel="stylesheet" href="/static/theme.css">
+<link rel="stylesheet" href="/static/eos-components.css">
+<script>
+(function() {
+    try {
+        var t = localStorage.getItem('eos.theme') || 'dark';
+        document.documentElement.classList.add('theme-' + t);
+    } catch (e) { document.documentElement.classList.add('theme-dark'); }
+})();
+</script>
+<style>
+* { margin:0; padding:0; box-sizing:border-box }
+body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif; background:var(--bg); color:var(--text); min-height:100dvh; padding:env(safe-area-inset-top) 20px calc(env(safe-area-inset-bottom) + 80px) }
+
+.app-header { display:flex; align-items:center; justify-content:space-between; margin:20px 0 18px }
+.app-title { font-size:22px; font-weight:700; color:var(--text-heading); display:flex; align-items:center; gap:10px }
+.app-title .icon { font-size:24px }
+.header-actions { display:flex; gap:8px }
+.btn { background:var(--bg-card); border:1px solid var(--border); color:var(--text); padding:8px 14px; border-radius:8px; font-size:13px; cursor:pointer; transition:all 0.15s }
+.btn:hover { border-color:var(--accent) }
+.btn-primary { background:var(--accent); color:var(--accent-ink); border-color:var(--accent) }
+.btn-primary:hover { filter:brightness(1.1) }
+.btn-ghost { background:transparent }
+.btn-icon { padding:8px 12px; font-size:16px; line-height:1 }
+
+.crumbs { font-size:12px; color:var(--text-muted); margin-bottom:14px }
+.crumbs a { color:var(--text-secondary); text-decoration:none; cursor:pointer }
+.crumbs a:hover { color:var(--accent) }
+.crumbs .sep { margin:0 6px; opacity:0.5 }
+
+.filter-bar { display:flex; gap:6px; margin-bottom:18px; flex-wrap:wrap }
+.filter-chip { background:var(--bg-card); border:1px solid var(--border); color:var(--text-secondary); padding:6px 14px; border-radius:18px; font-size:12px; cursor:pointer; transition:all 0.15s; display:inline-flex; align-items:center; gap:6px }
+.filter-chip:hover { border-color:var(--accent) }
+.filter-chip.active { background:var(--accent); color:var(--accent-ink); border-color:var(--accent) }
+.filter-chip .count { background:color-mix(in srgb, var(--text) 12%, transparent); padding:1px 7px; border-radius:10px; font-size:11px; font-weight:600 }
+.filter-chip.active .count { background:color-mix(in srgb, var(--accent-ink) 25%, transparent); color:var(--accent-ink) }
+
+.grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(280px, 1fr)); gap:14px }
+
+.company-hero { background:var(--bg-card); border:1px solid var(--border); border-radius:14px; padding:20px; margin-bottom:20px }
+.company-hero h2 { font-size:20px; color:var(--text-heading); margin-bottom:8px }
+.company-hero p { color:var(--text-secondary); margin-bottom:6px; font-size:14px; line-height:1.5 }
+.company-hero .label { color:var(--text-muted); font-size:11px; text-transform:uppercase; letter-spacing:0.06em; margin-right:6px }
+
+.section { margin-bottom:24px }
+.section-head { display:flex; align-items:center; justify-content:space-between; margin-bottom:10px }
+.section-head h3 { font-size:14px; color:var(--text-heading); font-weight:600; text-transform:uppercase; letter-spacing:0.05em }
+
+.member-row { display:flex; align-items:center; justify-content:space-between; padding:10px 12px; background:var(--bg-card); border:1px solid var(--border); border-radius:10px; margin-bottom:8px }
+.member-row .who { display:flex; flex-direction:column; gap:2px }
+.member-row .name { font-size:14px; color:var(--text-heading); font-weight:600; display:flex; align-items:center; gap:8px }
+.member-row .role { font-size:12px; color:var(--text-muted) }
+.member-row .mode-badge { font-size:10px; padding:2px 8px; border-radius:10px; text-transform:uppercase; letter-spacing:0.05em; font-weight:600 }
+.member-row .mode-badge.human { background:color-mix(in srgb, var(--accent) 15%, transparent); color:var(--accent) }
+.member-row .mode-badge.ai { background:color-mix(in srgb, var(--warning) 18%, transparent); color:var(--warning) }
+.member-row .role-chip { display:inline-block; margin-left:8px; padding:2px 8px; border-radius:10px; font-size:11px; background:color-mix(in srgb, var(--accent) 12%, transparent); color:var(--accent); font-weight:500 }
+
+.tabs { display:flex; gap:6px; margin-bottom:14px; border-bottom:1px solid var(--border) }
+.tab-btn { background:transparent; border:0; color:var(--text-secondary); padding:8px 14px; cursor:pointer; border-bottom:2px solid transparent; font-size:13px }
+.tab-btn.active { color:var(--accent); border-bottom-color:var(--accent) }
+
+.role-row { display:flex; align-items:center; justify-content:space-between; padding:10px 12px; background:var(--bg-card); border:1px solid var(--border); border-radius:10px; margin-bottom:8px }
+.role-row .role-name { font-size:14px; color:var(--text-heading); font-weight:600 }
+.role-row .role-assignments { font-size:12px; color:var(--text-muted) }
+.role-row.vacancy { border-left:3px solid var(--warning) }
+
+.asset-row { background:var(--bg-card); border:1px solid var(--border); border-radius:10px; padding:12px 14px; margin-bottom:10px }
+.asset-row .asset-head { display:flex; align-items:center; gap:8px; margin-bottom:6px }
+.asset-row .asset-head .title { font-size:14px; color:var(--text-heading); font-weight:600; text-decoration:none }
+.asset-row .asset-head a.title:hover { color:var(--accent); text-decoration:underline }
+.asset-row .badge { font-size:10px; padding:2px 8px; border-radius:10px; text-transform:uppercase; letter-spacing:0.05em; font-weight:600; background:color-mix(in srgb, var(--accent) 15%, transparent); color:var(--accent) }
+.asset-row .badge.kind-vault { background:color-mix(in srgb, var(--accent) 15%, transparent); color:var(--accent) }
+.asset-row .badge.kind-kb { background:color-mix(in srgb, var(--warning) 18%, transparent); color:var(--warning) }
+.asset-row .asset-ref { font-size:12px; color:var(--text-muted); margin-bottom:4px }
+.asset-row .asset-ref code { background:var(--bg); padding:1px 6px; border-radius:4px }
+.asset-row .asset-preview { font-size:12px; color:var(--text-secondary); line-height:1.5; margin:6px 0 8px; font-style:italic }
+.asset-row .btn-row { margin-top:4px }
+.warn { color:var(--warning); font-size:12px }
+
+.person-picker-result { padding:8px 12px; cursor:pointer; border-radius:6px }
+.person-picker-result:hover { background:var(--bg-card) }
+.person-picker-result.selected { background:color-mix(in srgb, var(--accent) 20%, transparent); color:var(--accent) }
+
+.runner-card { background:var(--bg-card); border:1px solid var(--border); border-radius:14px; padding:18px }
+.runner-row { display:flex; gap:10px; margin-bottom:12px; flex-wrap:wrap }
+.runner-row label { font-size:12px; color:var(--text-muted); display:flex; flex-direction:column; gap:4px; flex:1; min-width:140px }
+.runner-row select, .runner-row input { background:var(--bg); border:1px solid var(--border); color:var(--text); padding:8px 10px; border-radius:8px; font-size:13px }
+.runner-prompt { width:100%; min-height:90px; background:var(--bg); border:1px solid var(--border); color:var(--text); padding:10px; border-radius:8px; font-size:14px; font-family:inherit; resize:vertical; margin-bottom:12px }
+.runner-prompt:focus { outline:none; border-color:var(--accent) }
+
+.response-card { background:var(--bg-card); border:1px solid var(--border); border-radius:12px; padding:16px; margin-bottom:12px }
+.response-head { display:flex; align-items:center; justify-content:space-between; margin-bottom:10px; gap:10px }
+.response-who { display:flex; align-items:center; gap:8px }
+.response-emoji { font-size:20px }
+.response-name { font-weight:600; color:var(--text-heading); font-size:14px }
+.response-role { font-size:12px; color:var(--text-muted) }
+.response-body { color:var(--text); font-size:14px; line-height:1.6; white-space:pre-wrap }
+.response-vote { display:inline-block; padding:2px 10px; border-radius:12px; font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:0.05em; margin-top:8px }
+.vote-support { background:color-mix(in srgb, var(--success) 25%, transparent); color:var(--success) }
+.vote-against { background:color-mix(in srgb, var(--danger) 25%, transparent); color:var(--danger) }
+.vote-abstain { background:color-mix(in srgb, var(--text-muted) 20%, transparent); color:var(--text-muted) }
+
+.digest-card { background:color-mix(in srgb, var(--accent) 8%, var(--bg-card)); border:1px solid color-mix(in srgb, var(--accent) 30%, var(--border)); border-radius:14px; padding:18px; margin-bottom:18px }
+.digest-card h4 { font-size:13px; color:var(--text-heading); margin-bottom:10px; text-transform:uppercase; letter-spacing:0.06em }
+.digest-body { color:var(--text); font-size:14px; line-height:1.6; white-space:pre-wrap }
+
+.tally { display:flex; gap:8px; margin-top:12px; flex-wrap:wrap }
+.tally-chip { background:var(--bg); border:1px solid var(--border); border-radius:18px; padding:4px 12px; font-size:12px }
+
+.pending-card { background:color-mix(in srgb, var(--warning) 6%, var(--bg-card)); border:1px solid color-mix(in srgb, var(--warning) 40%, var(--border)); border-radius:12px; padding:14px; margin-bottom:10px }
+.pending-card.applied { border-color:var(--success); background:color-mix(in srgb, var(--success) 6%, var(--bg-card)) }
+.pending-card.rejected, .pending-card.failed { border-color:var(--border); opacity:0.7 }
+.pending-meta { display:flex; align-items:center; gap:8px; margin-bottom:6px; flex-wrap:wrap }
+.pending-actor { font-size:12px; color:var(--text-muted) }
+.pending-verb { font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; font-size:13px; color:var(--text-heading); background:var(--bg); padding:2px 6px; border-radius:4px }
+.pending-args { font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; font-size:12px; color:var(--text-secondary); background:var(--bg); padding:6px 8px; border-radius:6px; margin:6px 0; overflow-x:auto }
+.pending-actions { display:flex; gap:8px; margin-top:8px }
+.pending-status { font-size:11px; text-transform:uppercase; letter-spacing:0.05em; padding:2px 8px; border-radius:10px }
+.pending-status.pending { background:color-mix(in srgb, var(--warning) 25%, transparent); color:var(--warning) }
+.pending-status.applied { background:color-mix(in srgb, var(--success) 25%, transparent); color:var(--success) }
+.pending-status.rejected { background:color-mix(in srgb, var(--text-muted) 20%, transparent); color:var(--text-muted) }
+.pending-status.failed { background:color-mix(in srgb, var(--danger) 25%, transparent); color:var(--danger) }
+
+.runs-list { display:flex; flex-direction:column; gap:8px }
+.run-row { background:var(--bg-card); border:1px solid var(--border); border-radius:10px; padding:12px; cursor:pointer; transition:all 0.15s }
+.run-row:hover { border-color:var(--accent) }
+.run-row .top { display:flex; justify-content:space-between; align-items:center; margin-bottom:4px }
+.run-row .scenario-tag { font-size:11px; color:var(--accent); text-transform:uppercase; letter-spacing:0.05em }
+.run-row .ts { font-size:11px; color:var(--text-muted) }
+.run-row .prompt-preview { font-size:13px; color:var(--text-secondary); line-height:1.4 }
+
+.empty { text-align:center; padding:40px 20px; color:var(--text-muted) }
+.empty .icon { font-size:48px; opacity:0.5; margin-bottom:12px }
+.empty .hint { margin-top:8px; font-size:13px }
+
+.loading { display:flex; align-items:center; justify-content:center; padding:40px; color:var(--text-muted); font-size:14px }
+
+.scenario-banner { display:flex; align-items:center; gap:10px; margin-bottom:16px; padding:10px 14px; background:var(--bg-card); border:1px solid var(--border); border-radius:10px; font-size:13px; color:var(--text-secondary) }
+.scenario-banner .e { font-size:18px }
+
+.btn-row { display:flex; gap:8px; flex-wrap:wrap }
+.btn-apply { background:var(--success); color:#fff; border-color:var(--success) }
+.btn-reject { background:transparent; border-color:var(--danger); color:var(--danger) }
+</style>
+</head>
+<body>
+
+<div class="app-header">
+    <div class="app-title"><span class="icon">🏛️</span><span>Orgs</span></div>
+    <div class="header-actions">
+        <button class="btn btn-ghost btn-icon" onclick="openAppSettings()" title="Settings">&#9881;</button>
+        <button class="btn btn-primary" onclick="openNewOrg()">+ New Org</button>
+    </div>
+</div>
+
+<div class="crumbs" id="crumbs"></div>
+
+<div id="view-root">
+    <div class="loading">Loading…</div>
+</div>
+
+<script src="/static/eos.js"></script>
+<script src="/static/eos-components.js"></script>
+<script>
+// ── State ────────────────────────────────────────────────────────
+var STATE = {
+    view: 'list',             // list | org | run
+    filter: 'all',            // all | real | virtual | external (client-side over the same /orgs response)
+    orgs: [],
+    scenarios: [],
+    currentOrg: null,
+    currentRun: null,
+    orgTab: 'roster',         // roster | roles | scenarios | notes
+};
+try {
+    var stored = localStorage.getItem('orgs.filter');
+    if (['all','real','virtual','external'].indexOf(stored) >= 0) STATE.filter = stored;
+} catch (e) {}
+
+var esc = (window.EOS_UI && EOS_UI.esc) || function(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function(c) {
+        return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
+    });
+};
+var toast = function(msg, ok) {
+    if (window.EOS_UI && EOS_UI.toast) EOS_UI.toast(msg, ok !== false);
+};
+
+async function fetchJSON(url, opts) {
+    var res = await fetch(url, opts || {});
+    return res.json();
+}
+
+async function loadOrgs() {
+    var data = await fetchJSON('/orgs/api/orgs');
+    STATE.orgs = data.orgs || [];
+}
+
+async function loadOrg(id) {
+    var data = await fetchJSON('/orgs/api/orgs/' + encodeURIComponent(id));
+    if (data.error) return null;
+    return data;
+}
+
+async function loadScenarios() {
+    if (STATE.scenarios.length) return;
+    var data = await fetchJSON('/orgs/api/scenarios');
+    STATE.scenarios = data.scenarios || [];
+}
+
+async function loadRun(id) {
+    var data = await fetchJSON('/orgs/api/runs/' + encodeURIComponent(id));
+    if (data.error) return null;
+    return data;
+}
+
+async function loadRuns(org_id) {
+    var url = '/orgs/api/runs' + (org_id ? '?org_id=' + encodeURIComponent(org_id) : '');
+    var data = await fetchJSON(url);
+    return data.runs || [];
+}
+
+// ── Routing ──────────────────────────────────────────────────────
+var route = EOS_UI.hashRoute({
+    onShow: function(id) {
+        if (id.indexOf('run/') === 0) showRun(id.slice(4));
+        else if (id.indexOf('org/') === 0) showOrg(id.slice(4));
+        else showList();
+    },
+    onHide: function() { showList(); },
+});
+
+function navTo(hash) {
+    if (hash) route.set(hash);
+    else route.clear();
+}
+
+// ── List view ────────────────────────────────────────────────────
+function classifyOrg(o) {
+    if ((o.scope || 'member') === 'external') return 'external';
+    if ((o.reality || 'real') === 'virtual') return 'virtual';
+    return 'real';
+}
+
+function filteredOrgs() {
+    if (STATE.filter === 'all') return STATE.orgs;
+    return STATE.orgs.filter(function(o) { return classifyOrg(o) === STATE.filter; });
+}
+
+function setFilter(f) {
+    STATE.filter = f;
+    try { localStorage.setItem('orgs.filter', f); } catch (e) {}
+    if (STATE.view === 'list') showList();
+}
+
+function renderFilterBar() {
+    var counts = {all: STATE.orgs.length, real: 0, virtual: 0, external: 0};
+    STATE.orgs.forEach(function(o) { counts[classifyOrg(o)]++; });
+    var chips = [
+        {id: 'all',      label: 'All',           icon: ''},
+        {id: 'real',     label: 'Real',          icon: '👥'},
+        {id: 'virtual',  label: 'Virtual',       icon: '🤖'},
+        {id: 'external', label: 'External',      icon: '🌐'},
+    ];
+    return '<div class="filter-bar">' + chips.map(function(c) {
+        var active = STATE.filter === c.id ? ' active' : '';
+        return '<button class="filter-chip' + active + '" onclick="setFilter(\'' + c.id + '\')">' +
+            (c.icon ? '<span>' + c.icon + '</span>' : '') +
+            '<span>' + esc(c.label) + '</span>' +
+            '<span class="count">' + counts[c.id] + '</span>' +
+        '</button>';
+    }).join('') + '</div>';
+}
+
+async function showList() {
+    STATE.view = 'list';
+    document.getElementById('crumbs').innerHTML = '';
+    var root = document.getElementById('view-root');
+    root.innerHTML = '<div class="loading">Loading orgs…</div>';
+    await loadOrgs();
+    var rows = filteredOrgs();
+    var filterBar = renderFilterBar();
+    if (!STATE.orgs.length) {
+        root.innerHTML = filterBar +
+            '<div class="empty">' +
+                '<div class="icon">🏛️</div>' +
+                '<div>No orgs yet.</div>' +
+                '<div class="hint">An org is a team, household, side-business, community, employer you track, or a virtual sim with AI workers. Members can be human, AI, or mixed.</div>' +
+                '<button class="btn btn-primary" style="margin-top:18px" onclick="openNewOrg()">+ New Org</button>' +
+            '</div>';
+        return;
+    }
+    if (!rows.length) {
+        root.innerHTML = filterBar +
+            '<div class="empty"><div>No orgs match the current filter.</div></div>';
+        return;
+    }
+    var cards = rows.map(function(o) {
+        var badges = [];
+        if (o.kind) badges.push({label: o.kind, variant: 'neutral'});
+        var bits = [];
+        bits.push(o.member_count + ' member' + (o.member_count === 1 ? '' : 's'));
+        if (o.ai_count) bits.push(o.ai_count + ' AI');
+        var realityIcon = (o.reality === 'virtual') ? '🤖' : (o.scope === 'external' ? '🌐' : '👥');
+        return EOS_UI.entityCard({
+            title: realityIcon + '  ' + (o.name || o.id),
+            subtitle: o.mission || '',
+            badges: badges,
+            meta: '<span style="color:var(--text-muted);font-size:12px">' + esc(bits.join(' · ')) + '</span>',
+            onClick: "navTo('org/" + esc(o.id) + "')",
+        });
+    });
+    root.innerHTML = filterBar + '<div class="grid">' + cards.join('') + '</div>';
+}
+
+// ── Org detail view ──────────────────────────────────────────────
+async function showOrg(id) {
+    STATE.view = 'org';
+    document.getElementById('crumbs').innerHTML =
+        '<a onclick="navTo(\'\')">Orgs</a><span class="sep">›</span><span>' + esc(id) + '</span>';
+    var root = document.getElementById('view-root');
+    root.innerHTML = '<div class="loading">Loading org…</div>';
+    var org = await loadOrg(id);
+    if (!org) {
+        root.innerHTML = '<div class="empty"><div class="icon">⚠</div><div>Org not found.</div></div>';
+        return;
+    }
+    STATE.currentOrg = org;
+    await loadScenarios();
+    var runs = await loadRuns(id);
+    renderOrg(org, runs);
+}
+
+function renderHero(org) {
+    var kindBadge = org.kind ? '<span class="eos-badge eos-badge-status-neutral" style="margin-left:8px">' + esc(org.kind) + '</span>' : '';
+    var realityBadge = '<span class="eos-badge eos-badge-status-neutral" style="margin-left:6px">' + esc(org.reality || 'real') + '</span>';
+    var scopeBadge = '<span class="eos-badge eos-badge-status-neutral" style="margin-left:6px">' + esc(org.scope || 'member') + '</span>';
+    var visionHtml = org.vision
+        ? '<p style="font-style:italic;color:var(--text-secondary);border-left:3px solid var(--accent);padding-left:10px;margin:10px 0">"' + esc(org.vision) + '"</p>'
+        : '';
+    var valuesHtml = '';
+    if (org.values && org.values.length) {
+        valuesHtml = '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">' +
+            org.values.map(function(v) {
+                return '<span class="eos-badge eos-badge-status-neutral">' + esc(v) + '</span>';
+            }).join('') +
+        '</div>';
+    }
+    return '<div class="company-hero">' +
+        '<h2>' + esc(org.name || org.id) + kindBadge + realityBadge + scopeBadge + '</h2>' +
+        visionHtml +
+        (org.mission ? '<p><span class="label">Mission</span>' + esc(org.mission) + '</p>' : '') +
+        (org.culture ? '<p><span class="label">Culture</span>' + esc(org.culture) + '</p>' : '') +
+        valuesHtml +
+    '</div>';
+}
+
+function renderOrg(org, runs) {
+    var root = document.getElementById('view-root');
+    var aiCount = (org.members || []).filter(function(m) { return (m.mode || 'human') === 'ai'; }).length;
+    var hasAI = aiCount > 0;
+
+    var tab = STATE.orgTab || 'roster';
+    var assetCount = (STATE.assets && STATE.assets[org.id]) ? STATE.assets[org.id].length : '·';
+    var tabsHtml =
+        '<div class="tabs">' +
+            '<button class="tab-btn ' + (tab === 'roster' ? 'active' : '') + '" onclick="switchOrgTab(\'roster\')">👥 Roster (' + (org.members || []).length + ')</button>' +
+            '<button class="tab-btn ' + (tab === 'roles' ? 'active' : '') + '" onclick="switchOrgTab(\'roles\')">🎯 Roles (' + (org.roles || []).length + ')</button>' +
+            (hasAI ? '<button class="tab-btn ' + (tab === 'scenarios' ? 'active' : '') + '" onclick="switchOrgTab(\'scenarios\')">🎭 Scenarios</button>' : '') +
+            '<button class="tab-btn ' + (tab === 'assets' ? 'active' : '') + '" onclick="switchOrgTab(\'assets\')">📎 Assets (' + assetCount + ')</button>' +
+            '<button class="tab-btn ' + (tab === 'notes' ? 'active' : '') + '" onclick="switchOrgTab(\'notes\')">📓 Notes</button>' +
+        '</div>';
+
+    var body;
+    if (tab === 'roster') body = renderRoster(org);
+    else if (tab === 'roles') body = renderRoles(org);
+    else if (tab === 'scenarios') body = renderScenarios(org, runs);
+    else if (tab === 'assets') body = renderAssets(org);
+    else body = renderNotes(org);
+
+    root.innerHTML = renderHero(org) + tabsHtml + body;
+    if (tab === 'assets') { hydrateAssets(org.id); }
+}
+
+function switchOrgTab(t) {
+    STATE.orgTab = t;
+    if (STATE.currentOrg) showOrg(STATE.currentOrg.id);
+}
+
+function renderRoster(org) {
+    var members = org.members || [];
+    if (!members.length) {
+        return '<div class="empty">' +
+            '<div>No members yet.</div>' +
+            '<div class="hint">Add a person from your people directory, or an AI persona with a role + system prompt.</div>' +
+            '<div class="btn-row" style="justify-content:center;margin-top:14px">' +
+                '<button class="btn" onclick="openAddHuman()">+ Add Human</button>' +
+                '<button class="btn" onclick="openAddAI()">+ Add AI Member</button>' +
+            '</div>' +
+        '</div>';
+    }
+    var rows = members.map(function(m) {
+        var mode = m.mode || 'human';
+        var modeBadge = '<span class="mode-badge ' + esc(mode) + '">' + (mode === 'ai' ? '🤖 AI' : '👤 Human') + '</span>';
+        var name;
+        if (mode === 'ai') {
+            name = (m.emoji ? m.emoji + ' ' : '') + esc(m.name || m.id);
+        } else {
+            var p = m.person || {};
+            name = esc(p.name || m.person_id || '(unknown)');
+        }
+        var role = m.role ? esc(m.role) : '<span style="opacity:0.6">(no role)</span>';
+        // Show the matched org-role chip if the member's role slug-matches
+        // an entry in org.roles. Visual cue that this member fills a slot.
+        var roleChip = '';
+        if (m.matched_role) {
+            roleChip = ' <span class="role-chip" title="Fills org role: ' + esc(m.matched_role) + '">🎯 ' + esc(m.matched_role) + '</span>';
+        }
+        var actions = '';
+        if (mode === 'ai') {
+            actions += '<a class="btn" href="/rooms/#/' + esc(m.id) + '" target="_blank" rel="noopener" title="1:1 chat">💬</a>';
+        } else if (m.person_id) {
+            actions += '<a class="btn" href="/people/#' + esc(m.person_id) + '" title="Open person">↗</a>';
+        }
+        actions += '<button class="btn" onclick="openEditMember(\'' + esc(m.id) + '\')" title="Edit">✏️</button>';
+        actions += '<button class="btn" style="border-color:var(--danger);color:var(--danger)" onclick="removeMember(\'' + esc(m.id) + '\',\'' + esc(name.replace(/'/g, "\\'")) + '\')" title="Remove">🗑</button>';
+        return '<div class="member-row">' +
+            '<div class="who">' +
+                '<span class="name">' + modeBadge + name + '</span>' +
+                '<span class="role">' + role + (m.dept ? ' · ' + esc(m.dept) : '') + roleChip + '</span>' +
+            '</div>' +
+            '<div class="btn-row">' + actions + '</div>' +
+        '</div>';
+    }).join('');
+    return '<div class="section">' +
+        '<div class="section-head">' +
+            '<h3>Members</h3>' +
+            '<div class="btn-row">' +
+                '<button class="btn" onclick="openAddHuman()">+ Add Human</button>' +
+                '<button class="btn" onclick="openAddAI()">+ Add AI</button>' +
+            '</div>' +
+        '</div>' +
+        rows +
+    '</div>';
+}
+
+function renderRoles(org) {
+    var roles = org.roles || [];
+    var assignments = org.role_assignments || {};
+    var content;
+    if (!roles.length) {
+        content = '<div class="empty">' +
+            '<div>No roles defined yet.</div>' +
+            '<div class="hint">Roles are org-chart positions (Engineering Manager, Senior Engineer, …). Members can be assigned to roles; unfilled roles surface as vacancies.</div>' +
+        '</div>';
+    } else {
+        content = roles.map(function(r) {
+            var holders = assignments[r] || [];
+            var vacancy = !holders.length;
+            var holderText = holders.length
+                ? holders.map(function(m) {
+                    var mode = m.mode || 'human';
+                    var who = mode === 'ai' ? (m.name || m.id) : ((m.person && m.person.name) || m.person_id || m.id);
+                    return (mode === 'ai' ? '🤖 ' : '👤 ') + who;
+                }).join(', ')
+                : '⚠ vacancy';
+            return '<div class="role-row ' + (vacancy ? 'vacancy' : '') + '">' +
+                '<div class="role-name">' + esc(r) + '</div>' +
+                '<div class="role-assignments">' + esc(holderText) + '</div>' +
+            '</div>';
+        }).join('');
+    }
+    return '<div class="section">' +
+        '<div class="section-head">' +
+            '<h3>Roles (org chart)</h3>' +
+            '<button class="btn" onclick="editRoles()">Edit roles</button>' +
+        '</div>' + content +
+    '</div>';
+}
+
+function renderScenarios(org, runs) {
+    var scenOptions = STATE.scenarios.map(function(s) {
+        return '<option value="' + esc(s.id) + '">' + esc(s.emoji || '') + ' ' + esc(s.label) + ' — ' + esc(s.description) + '</option>';
+    }).join('');
+    var runsHtml = '';
+    if (runs && runs.length) {
+        runsHtml = '<div class="section"><div class="section-head"><h3>Past Runs</h3></div><div class="runs-list">' +
+            runs.map(function(r) {
+                return '<div class="run-row" onclick="navTo(\'run/' + esc(r.id) + '\')">' +
+                    '<div class="top">' +
+                        '<span class="scenario-tag">' + esc(r.scenario || '') + '</span>' +
+                        '<span class="ts">' + esc((r.started || '').slice(0, 16).replace('T', ' ')) + '</span>' +
+                    '</div>' +
+                    '<div class="prompt-preview">' + esc(r.prompt || '_no prompt_') + '</div>' +
+                '</div>';
+            }).join('') +
+        '</div></div>';
+    }
+    return '<div class="section">' +
+        '<div class="section-head"><h3>Run Scenario</h3></div>' +
+        '<div class="runner-card">' +
+            '<div class="runner-row">' +
+                '<label>Scenario<select id="scenario-select">' + scenOptions + '</select></label>' +
+                '<label>Mode<select id="scenario-mode"><option value="headless">Headless (parallel fan-out)</option><option value="in-room">In-Room (live debate)</option></select></label>' +
+            '</div>' +
+            '<textarea class="runner-prompt" id="scenario-prompt" placeholder="What do you want this org\'s AI members to react to?"></textarea>' +
+            '<button class="btn btn-primary" onclick="runScenario()">Run</button>' +
+        '</div>' +
+    '</div>' + runsHtml;
+}
+
+function renderNotes(org) {
+    function renderSection(sec, label, addable) {
+        var content = (org.sections && org.sections[sec]) || '';
+        if (content === '_not set yet_') content = '';
+        var addBtn = addable ? '<button class="btn" style="font-size:11px;padding:4px 10px" onclick="openAppendOrgSection(\'' + esc(sec) + '\')">+ Add</button>' : '';
+        var inner = content
+            ? '<div style="white-space:pre-wrap;font-size:13px;line-height:1.5;color:var(--text)">' + esc(content) + '</div>'
+            : '<div style="font-size:12px;color:var(--text-muted);font-style:italic">(empty)</div>';
+        return '<div class="section">' +
+            '<div class="section-head">' +
+                '<h3>' + esc(label) + '</h3>' + addBtn +
+            '</div>' + inner +
+        '</div>';
+    }
+    return '<div class="company-hero">' +
+            '<p><span class="label">Vault</span>' + esc(org.vault_path) + '</p>' +
+            '<p><span class="label">Created</span>' + esc((org.created || '').slice(0, 10)) + '</p>' +
+            (org.parent ? '<p><span class="label">Parent</span><a onclick="navTo(\'org/' + esc(org.parent) + '\')">' + esc(org.parent) + '</a></p>' : '') +
+        '</div>' +
+        renderSection('Mission', 'Mission', false) +
+        renderSection('Vision', 'Vision', false) +
+        renderSection('Values', 'Values', false) +
+        renderSection('Culture', 'Culture', false) +
+        renderSection('Roles', 'Roles (detail)', false) +
+        renderSection('Decisions', 'Decisions', true) +
+        renderSection('Rituals', 'Rituals', true) +
+        renderSection('Notes', 'Notes', true);
+}
+
+function renderAssets(org) {
+    var oid = org.id;
+    var assets = (STATE.assets && STATE.assets[oid]) || null;
+    var help =
+        '<div class="hint">' +
+        'Assets are vault notes or KB slugs fed into every scenario prompt as context. ' +
+        'Use them to ground personas in real evidence — pricing tables, competitor pages, ' +
+        'positioning docs, customer quotes. Each entry is truncated to ~2000 chars; ' +
+        'total context capped at ~8000 chars. Hybrid: bare slug → KB, slash/<code>.md</code> → vault.' +
+        '</div>';
+    var addBtn =
+        '<div class="btn-row">' +
+            '<button class="btn btn-primary" onclick="openAddAsset()">+ Link asset</button>' +
+        '</div>';
+    var listHtml;
+    if (assets === null) {
+        listHtml = '<div class="loading">Loading assets…</div>';
+    } else if (!assets.length) {
+        listHtml =
+            '<div class="empty">' +
+                '<div>No assets linked yet.</div>' +
+                '<div class="hint">Try linking a KB note that captures your positioning, or a vault path to a competitor scrape.</div>' +
+            '</div>';
+    } else {
+        listHtml = '<div class="assets-list">' + assets.map(function(a) {
+            var ref = esc(a.ref || '');
+            var title = esc(a.title || a.ref || '(untitled)');
+            var kind = esc(a.kind || 'asset');
+            var bodyPreview = (a.body || '').slice(0, 160).replace(/\s+/g, ' ').trim();
+            var err = a.error ? '<span class="warn"> ⚠ ' + esc(a.error) + '</span>' : '';
+            // Build the open-link for the title. KB slugs route to /kb/#<slug>
+            // (the hashRoute pattern owned by apps/kb/pages/index.html).
+            // Vault paths use EOS.noteActions to surface view + edit links.
+            var titleLink, extraLinks = '';
+            if (a.kind === 'kb') {
+                // Docs live in /kb/pages/docs.html; other KB kinds live on the main /kb/ page.
+                var kbHref = (a.kb_kind === 'doc')
+                    ? ('/kb/pages/docs.html#' + encodeURIComponent(a.ref || ''))
+                    : ('/kb/#' + encodeURIComponent(a.ref || ''));
+                titleLink = '<a href="' + kbHref + '" target="_blank" rel="noopener" class="title">' + title + ' ↗</a>';
+            } else if (a.kind === 'vault') {
+                var vaultHref = '/files/?path=' + encodeURIComponent(a.ref || '');
+                titleLink = '<a href="' + vaultHref + '" target="_blank" rel="noopener" class="title">' + title + ' ↗</a>';
+                if (window.EOS && EOS.noteActions) {
+                    extraLinks = ' ' + EOS.noteActions(a.ref);
+                }
+            } else {
+                titleLink = '<span class="title">' + title + '</span>';
+            }
+            return '<div class="asset-row">' +
+                '<div class="asset-head">' +
+                    '<span class="badge kind-' + kind + '">' + kind + '</span>' +
+                    titleLink + err +
+                '</div>' +
+                '<div class="asset-ref"><code>' + ref + '</code>' + extraLinks + '</div>' +
+                (bodyPreview ? '<div class="asset-preview">' + esc(bodyPreview) + (a.body && a.body.length > 160 ? '…' : '') + '</div>' : '') +
+                '<div class="btn-row"><button class="btn" onclick="removeAsset(this.dataset.ref)" data-ref="' + ref + '">Remove</button></div>' +
+            '</div>';
+        }).join('') + '</div>';
+    }
+    return '<div class="section">' +
+        '<div class="section-head"><h3>Assets</h3>' + addBtn + '</div>' +
+        help +
+        '<div id="assets-mount">' + listHtml + '</div>' +
+    '</div>';
+}
+
+async function hydrateAssets(oid) {
+    // Guard against the re-render loop: only hydrate when we don't already
+    // have data for this org (first visit to the tab) OR when explicitly
+    // forced (after add/remove). renderOrg calls this every render; without
+    // the guard, hydrate → renderOrg → hydrate → renderOrg → ∞.
+    var alreadyLoaded = STATE.assets && Object.prototype.hasOwnProperty.call(STATE.assets, oid);
+    if (alreadyLoaded) return;
+    try {
+        var res = await fetchJSON('/orgs/api/orgs/' + encodeURIComponent(oid) + '/assets');
+        STATE.assets = STATE.assets || {};
+        STATE.assets[oid] = (res && res.assets) || [];
+        // Re-render only if the user is still looking at this org's Assets tab.
+        if (STATE.view === 'org' && STATE.orgTab === 'assets' && STATE.currentOrg && STATE.currentOrg.id === oid) {
+            renderOrg(STATE.currentOrg, STATE.currentRuns || []);
+        }
+    } catch (e) {
+        var mount = document.getElementById('assets-mount');
+        if (mount) mount.innerHTML = '<div class="warn">Failed to load assets: ' + esc(String(e)) + '</div>';
+    }
+}
+
+// Force-refresh assets after add/remove. Clears cache + re-hydrates.
+function refreshAssets(oid) {
+    if (STATE.assets && oid in STATE.assets) delete STATE.assets[oid];
+    hydrateAssets(oid);
+}
+
+function openAddAsset() {
+    var org = STATE.currentOrg;
+    if (!org) return;
+    EOS_UI.formModal('Link an asset to ' + (org.name || org.id), [
+        {key: 'ref', label: 'Vault path (e.g. 30_Resources/.../note.md) or KB slug', type: 'text', autofocus: true},
+    ], function(vals) {
+        var ref = (vals.ref || '').trim();
+        if (!ref) return;
+        fetchJSON('/orgs/api/orgs/' + encodeURIComponent(org.id) + '/assets', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ref: ref}),
+        }).then(function(res) {
+            if (res && res.error) { toast(res.error, false); return; }
+            toast('Linked: ' + ref);
+            refreshAssets(org.id);
+        });
+    });
+}
+
+function removeAsset(ref) {
+    var org = STATE.currentOrg;
+    if (!org) return;
+    EOS_UI.confirm('Unlink "' + ref + '" from this org?', function() {
+        fetchJSON('/orgs/api/orgs/' + encodeURIComponent(org.id) + '/assets', {
+            method: 'DELETE',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ref: ref}),
+        }).then(function(res) {
+            if (res && res.error) { toast(res.error, false); return; }
+            toast('Unlinked');
+            refreshAssets(org.id);
+        });
+    });
+}
+
+function openAppendOrgSection(section) {
+    var org = STATE.currentOrg;
+    if (!org) return;
+    var promptText = {
+        Decisions: 'What did the org just decide? (one line)',
+        Rituals: 'What ritual / cadence are you adding?',
+        Notes: 'What note do you want to capture?',
+    }[section] || ('Add a line to "' + section + '"');
+    EOS_UI.formModal('Append to ' + section, [
+        {key: 'text', label: promptText, type: 'textarea', autofocus: true},
+    ], function(vals) {
+        var text = (vals.text || '').trim();
+        if (!text) return;
+        fetchJSON('/orgs/api/orgs/' + encodeURIComponent(org.id) + '/append', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({section: section, text: text, prepend_date: section === 'Decisions'}),
+        }).then(function(res) {
+            if (res.error) { toast(res.error, false); return; }
+            toast('Added to ' + section);
+            showOrg(org.id);
+        });
+    });
+}
+
+function editRoles() {
+    var org = STATE.currentOrg;
+    if (!org) return;
+    var current = (org.roles || []).join(', ');
+    EOS_UI.formModal('Edit roles', [
+        {key: 'roles', label: 'Org chart roles (comma-separated)', type: 'text', value: current, autofocus: true},
+    ], function(vals) {
+        if (vals.roles === undefined) return;
+        fetchJSON('/orgs/api/set-field', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({id: org.id, field: 'roles', value: vals.roles}),
+        }).then(function(res) {
+            if (res.error) { toast(res.error, false); return; }
+            toast('Roles updated');
+            showOrg(org.id);
+        });
+    });
+}
+
+// ── Run detail ───────────────────────────────────────────────────
+async function showRun(id) {
+    STATE.view = 'run';
+    var root = document.getElementById('view-root');
+    root.innerHTML = '<div class="loading">Loading run…</div>';
+    var run = await loadRun(id);
+    if (!run) {
+        root.innerHTML = '<div class="empty"><div class="icon">⚠</div><div>Run not found.</div></div>';
+        return;
+    }
+    STATE.currentRun = run;
+    var org_id = run.company_id || '';
+    document.getElementById('crumbs').innerHTML =
+        '<a onclick="navTo(\'\')">Orgs</a><span class="sep">›</span>' +
+        '<a onclick="navTo(\'org/' + esc(org_id) + '\')">' + esc(run.company_name || org_id) + '</a>' +
+        '<span class="sep">›</span><span>' + esc((run.scenario || '') + ' · ' + (run.id || '')) + '</span>';
+    renderRun(run);
+}
+
+function renderProv(prov) {
+    if (!prov || !prov.provider) return '';
+    if (!window.EOS_UI || !EOS_UI.provenance) return '';
+    return EOS_UI.provenance({
+        mode: prov.mode || 'user',
+        provider: prov.provider,
+        model: prov.model,
+    });
+}
+
+function renderResponse(r) {
+    var prov = renderProv(r.provenance);
+    var voteHtml = '';
+    if (r.vote) {
+        voteHtml = '<div class="response-vote vote-' + esc(r.vote) + '">' + esc(r.vote) + '</div>';
+    }
+    var errHtml = r.error ? '<div style="color:var(--danger);font-size:12px;margin-top:6px">⚠ ' + esc(r.error) + '</div>' : '';
+    return '<div class="response-card">' +
+        '<div class="response-head">' +
+            '<div class="response-who">' +
+                (r.emoji ? '<span class="response-emoji">' + esc(r.emoji) + '</span>' : '') +
+                '<div>' +
+                    '<div class="response-name">' + esc(r.name || 'member') + '</div>' +
+                    '<div class="response-role">' + esc(r.role || '') + '</div>' +
+                '</div>' +
+            '</div>' +
+            (prov || '') +
+        '</div>' +
+        '<div class="response-body">' + esc(r.response || '_no response_') + '</div>' +
+        voteHtml +
+        errHtml +
+    '</div>';
+}
+
+function renderPending(p) {
+    var argsStr = JSON.stringify(p.args || {}, null, 2);
+    var status = p.status || 'pending';
+    var actor = p.source_actor || {};
+    var actions = '';
+    if (status === 'pending') {
+        actions = '<div class="pending-actions">' +
+            '<button class="btn btn-apply" onclick="applyPending(\'' + esc(p.id) + '\')">Apply</button>' +
+            '<button class="btn btn-reject" onclick="rejectPending(\'' + esc(p.id) + '\')">Reject</button>' +
+        '</div>';
+    } else if (status === 'failed') {
+        actions = '<div style="color:var(--danger);font-size:12px;margin-top:6px">⚠ ' + esc(p.error || 'failed') + '</div>';
+    }
+    return '<div class="pending-card ' + esc(status) + '" id="pending-' + esc(p.id) + '">' +
+        '<div class="pending-meta">' +
+            '<span class="pending-actor">' + esc(actor.name || actor.role || 'member') + ' proposes</span>' +
+            '<span class="pending-verb">' + esc(p.app) + '.' + esc(p.method) + '</span>' +
+            '<span class="pending-status ' + esc(status) + '">' + esc(status) + '</span>' +
+        '</div>' +
+        '<pre class="pending-args">' + esc(argsStr) + '</pre>' +
+        actions +
+    '</div>';
+}
+
+function renderRun(run) {
+    var root = document.getElementById('view-root');
+    var responses = run.responses || [];
+    var pending = run.pending || [];
+    var digest = run.digest || {};
+    var bannerScenario = run.scenario || 'scenario';
+    var bannerMode = run.mode === 'in-room' ? 'live in a room' : 'headless fan-out';
+
+    var bannerHtml =
+        '<div class="scenario-banner">' +
+            '<span class="e">' + (run.scenario === 'critique' ? '🔍' : run.scenario === 'workshop' ? '🛠' : '🎤') + '</span>' +
+            '<span><strong>' + esc(bannerScenario) + '</strong> — ' + esc(bannerMode) + ' · ' + esc((run.started || '').slice(0, 16).replace('T', ' ')) + '</span>' +
+        '</div>';
+
+    var promptHtml =
+        '<div class="company-hero"><p><span class="label">Prompt</span>' + esc(run.prompt || '') + '</p></div>';
+
+    var digestHtml = '';
+    if (digest.text) {
+        digestHtml = '<div class="digest-card">' +
+            '<h4>Digest ' + (renderProv(digest.provenance) || '') + '</h4>' +
+            '<div class="digest-body">' + esc(digest.text) + '</div>' +
+            (run.tally ? '<div class="tally">' +
+                '<span class="tally-chip">support: ' + esc(run.tally.support || 0) + '</span>' +
+                '<span class="tally-chip">against: ' + esc(run.tally.against || 0) + '</span>' +
+                '<span class="tally-chip">abstain: ' + esc(run.tally.abstain || 0) + '</span>' +
+            '</div>' : '') +
+        '</div>';
+    }
+
+    var fallbackHtml = '';
+    if (run.in_room_fallback) {
+        fallbackHtml = '<div class="scenario-banner" style="border-color:var(--warning)">⚠ ' + esc(run.in_room_fallback) + '</div>';
+    }
+
+    var roomHtml = '';
+    if (run.mode === 'in-room' && run.room && run.room.id) {
+        roomHtml = '<div class="scenario-banner"><span class="e">💬</span><span>Running live in <a href="/rooms/#/' + esc(run.room.id) + '" style="color:var(--accent)">a room</a></span></div>';
+    }
+
+    var responsesHtml = responses.length
+        ? '<div class="section"><div class="section-head"><h3>Member Responses</h3></div>' + responses.map(renderResponse).join('') + '</div>'
+        : (run.mode === 'in-room' ? '' : '<div class="empty">No responses recorded.</div>');
+
+    var pendingHtml = '';
+    if (run.scenario === 'workshop' && pending.length) {
+        pendingHtml = '<div class="section"><div class="section-head"><h3>Proposed Actions (review-gate)</h3></div>' +
+            pending.map(renderPending).join('') +
+        '</div>';
+    }
+
+    root.innerHTML = bannerHtml + fallbackHtml + roomHtml + promptHtml + digestHtml + responsesHtml + pendingHtml;
+}
+
+// ── New-org (AI form-fill) ───────────────────────────────────────
+function openNewOrg() {
+    var ORG_SCHEMA = [
+        {key: 'name', label: 'Name', type: 'text', required: true, placeholder: 'e.g. Enerven Substations Team'},
+        {key: 'kind', label: 'Kind', type: 'select', options: ['team','household','side-business','community','employer','vendor','other']},
+        {key: 'reality', label: 'Reality', type: 'select', options: ['real','virtual']},
+        {key: 'scope', label: 'Scope', type: 'select', options: ['member','external']},
+        {key: 'vision', label: 'Vision', type: 'textarea', placeholder: 'Where this org is going'},
+        {key: 'mission', label: 'Mission', type: 'textarea', placeholder: 'What this org does'},
+        {key: 'values', label: 'Values (comma-separated)', type: 'text'},
+        {key: 'culture', label: 'Culture', type: 'textarea'},
+        {key: 'roles', label: 'Roles (comma-separated)', type: 'text', placeholder: 'e.g. Engineering Manager, Senior Engineer'},
+    ];
+    var submit = async function(vals) {
+        if (!vals.name) { toast('Name required', false); return; }
+        if (!vals.kind) vals.kind = 'team';
+        if (!vals.reality) vals.reality = 'real';
+        if (!vals.scope) vals.scope = 'member';
+        var res = await fetchJSON('/orgs/api/orgs', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(vals),
+        });
+        if (res.error) { toast(res.error, false); throw new Error(res.error); }
+        toast('Org created');
+        navTo('org/' + res.id);
+    };
+    EOS_UI.aiFormFill({
+        title: '+ New Org',
+        intro: "Tell me about the org — name, kind (team / household / side-business / community / employer / vendor), whether it's real or virtual, whether you're in it (member) or just tracking it (external), and what it does. I'll fill the form as you describe it.",
+        schema: ORG_SCHEMA,
+        submitLabel: 'Create Org',
+        onSubmit: submit,
+        onManual: function(prefill) {
+            EOS_UI.formModal('+ New Org (manual)', ORG_SCHEMA.map(function(f) {
+                return Object.assign({}, f, {value: prefill[f.key] || (
+                    f.key === 'kind' ? 'team' :
+                    f.key === 'reality' ? 'real' :
+                    f.key === 'scope' ? 'member' : ''
+                )});
+            }), submit);
+        },
+    });
+}
+
+// ── Add member: human (people picker) ────────────────────────────
+function openAddHuman() {
+    var org = STATE.currentOrg;
+    if (!org) return;
+    var fieldStyle = 'width:100%;padding:8px 10px;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:8px;font-size:14px';
+    var labelStyle = 'display:block;font-size:12px;color:var(--text-muted);margin-bottom:4px';
+    var roleOptions = (org.roles || []).map(function(r) {
+        return '<option value="' + esc(r) + '">' + esc(r) + '</option>';
+    }).join('');
+    var roleField = roleOptions
+        ? '<select id="member-role" style="' + fieldStyle + '"><option value="">(no specific role)</option>' + roleOptions + '</select>'
+        : '<input type="text" id="member-role" placeholder="e.g. Engineering Manager" style="' + fieldStyle + '">';
+    var body =
+        '<div style="margin-bottom:10px"><label style="' + labelStyle + '">Search people</label><input type="text" id="member-search" placeholder="Type a name…" style="' + fieldStyle + '" autofocus></div>' +
+        '<div id="member-search-results" style="max-height:240px;overflow-y:auto;margin-bottom:14px;background:var(--bg);border:1px solid var(--border);border-radius:8px;min-height:60px"></div>' +
+        '<input type="hidden" id="member-selected-id">' +
+        '<div style="margin-bottom:10px"><label style="' + labelStyle + '">Role in this org</label>' + roleField + '</div>' +
+        '<div style="margin-bottom:14px"><label style="' + labelStyle + '">Joined (YYYY-MM-DD, blank = today)</label><input type="text" id="member-joined" placeholder="" style="' + fieldStyle + '"></div>' +
+        '<div style="display:flex;justify-content:flex-end;gap:8px">' +
+            '<button class="btn" onclick="EOS_UI.closeModal()">Cancel</button>' +
+            '<button class="btn btn-primary" onclick="submitAddHuman()">Add Human</button>' +
+        '</div>';
+    var modal = EOS_UI.modal({
+        title: '+ Add Human to ' + (org.name || org.id),
+        body: body,
+        width: '520px',
+    });
+    var searchInput = modal.querySelector('#member-search');
+    var resultsBox = modal.querySelector('#member-search-results');
+    var selectedEl = modal.querySelector('#member-selected-id');
+    var debounceT = null;
+    async function runSearch() {
+        var q = (searchInput.value || '').trim();
+        var data;
+        try {
+            if (q) data = await fetchJSON('/people/api/search?q=' + encodeURIComponent(q));
+            else data = await fetchJSON('/people/api/list');
+        } catch (e) {
+            resultsBox.innerHTML = '<div style="padding:10px;color:var(--danger);font-size:12px">people app unavailable</div>';
+            return;
+        }
+        var rows = Array.isArray(data) ? data : (data.people || []);
+        if (!rows.length) {
+            resultsBox.innerHTML = '<div style="padding:10px;color:var(--text-muted);font-size:12px">No people match.</div>';
+            return;
+        }
+        resultsBox.innerHTML = rows.slice(0, 20).map(function(p) {
+            return '<div class="person-picker-result" data-id="' + esc(p.id) + '">' +
+                '<div style="font-size:13px;color:var(--text-heading)">' + esc(p.name || p.id) + '</div>' +
+                '<div style="font-size:11px;color:var(--text-muted)">' + esc(p.role || '') + (p.company ? ' · ' + esc(p.company) : '') + '</div>' +
+            '</div>';
+        }).join('');
+        resultsBox.querySelectorAll('.person-picker-result').forEach(function(el) {
+            el.onclick = function() {
+                resultsBox.querySelectorAll('.person-picker-result').forEach(function(x) { x.classList.remove('selected'); });
+                el.classList.add('selected');
+                selectedEl.value = el.getAttribute('data-id');
+            };
+        });
+    }
+    searchInput.oninput = function() {
+        clearTimeout(debounceT);
+        debounceT = setTimeout(runSearch, 200);
+    };
+    runSearch();
+}
+
+async function submitAddHuman() {
+    var org = STATE.currentOrg;
+    if (!org) return;
+    var pid = (document.getElementById('member-selected-id').value || '').trim();
+    var role = (document.getElementById('member-role').value || '').trim();
+    var joined = (document.getElementById('member-joined').value || '').trim();
+    if (!pid) { toast('Pick a person first', false); return; }
+    var res = await fetchJSON('/orgs/api/members', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({org_id: org.id, mode: 'human', person_id: pid, role: role, joined: joined}),
+    });
+    if (res.error) { toast(res.error, false); return; }
+    toast('Member added');
+    EOS_UI.closeModal();
+    showOrg(org.id);
+}
+
+// ── Add member: AI (form for system prompt) ──────────────────────
+function openAddAI() {
+    var org = STATE.currentOrg;
+    if (!org) return;
+    var schema = [
+        {key: 'name', label: 'Name', type: 'text', required: true, placeholder: 'e.g. Maya'},
+        {key: 'role', label: 'Role', type: 'text', placeholder: 'e.g. Head of Engineering'},
+        {key: 'emoji', label: 'Emoji', type: 'text'},
+        {key: 'dept', label: 'Department', type: 'text'},
+        {key: 'reports_to', label: 'Reports To (id)', type: 'text'},
+        {key: 'model', label: 'Model Override', type: 'text', placeholder: 'optional'},
+        {key: 'system_prompt', label: 'System Prompt', type: 'textarea', placeholder: 'Leave blank to auto-generate from name + role'},
+    ];
+    var submit = async function(vals) {
+        if (!vals.name) { toast('Name required', false); return; }
+        var res = await fetchJSON('/orgs/api/members', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(Object.assign({org_id: org.id, mode: 'ai'}, vals)),
+        });
+        if (res.error) { toast(res.error, false); throw new Error(res.error); }
+        toast('AI member added');
+        showOrg(org.id);
+    };
+    EOS_UI.aiFormFill({
+        title: '+ Add AI Member to ' + (org.name || org.id),
+        intro: "Describe the AI persona — name, what role they play, what they're like. I'll fill the form and auto-generate a system prompt if you don't provide one.",
+        schema: schema,
+        submitLabel: 'Add AI Member',
+        onSubmit: submit,
+        onManual: function(prefill) {
+            EOS_UI.formModal('+ Add AI Member (manual)', schema.map(function(f) {
+                return Object.assign({}, f, {value: prefill[f.key] || ''});
+            }), submit);
+        },
+    });
+}
+
+function openEditMember(member_id) {
+    var org = STATE.currentOrg;
+    if (!org) return;
+    var m = (org.members || []).find(function(x) { return x.id === member_id; });
+    if (!m) { toast('Member not found', false); return; }
+    var mode = m.mode || 'human';
+    // Roles picker — show the org's roles as options when present, else free text.
+    var rolesList = org.roles || [];
+    var roleField;
+    if (rolesList.length) {
+        var roleOpts = [{value: '', label: '(no role)'}].concat(rolesList.map(function(r) {
+            return {value: r, label: r};
+        }));
+        // If member's current role isn't in the picker, include it as a freeform option.
+        var currentRoleSlug = (m.role || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+        var matched = rolesList.some(function(r) {
+            return r.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') === currentRoleSlug;
+        });
+        if (m.role && !matched) {
+            roleOpts.push({value: m.role, label: m.role + ' (custom)'});
+        }
+        roleField = {key: 'role', label: 'Role (org chart)', type: 'select', options: roleOpts, value: m.role || ''};
+    } else {
+        roleField = {key: 'role', label: 'Role', type: 'text', value: m.role || ''};
+    }
+
+    var fields = [roleField];
+    if (mode === 'ai') {
+        fields.push({key: 'emoji', label: 'Emoji', type: 'text', value: m.emoji || ''});
+        fields.push({key: 'model', label: 'Model (blank = default chain)', type: 'text', value: m.model || ''});
+        fields.push({key: 'system_prompt', label: 'System prompt', type: 'textarea', value: m.system_prompt || ''});
+    }
+    fields.push({key: 'dept', label: 'Department (optional)', type: 'text', value: m.dept || ''});
+    fields.push({key: 'reports_to', label: 'Reports to (member id, optional)', type: 'text', value: m.reports_to || ''});
+
+    var title = mode === 'ai' ? ('Edit AI member: ' + (m.name || m.id)) : ('Edit member: ' + (m.person_id || m.id));
+    EOS_UI.formModal(title, fields, async function(vals) {
+        if (!vals) return;
+        // Only POST fields the user actually changed — minimise vault writes.
+        var changed = 0;
+        for (var k in vals) {
+            var newVal = vals[k];
+            var oldVal = m[k] || '';
+            if (String(newVal) === String(oldVal)) continue;
+            var res = await fetchJSON('/orgs/api/set-field', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({id: m.id, field: k, value: newVal}),
+            });
+            if (res.error) { toast(k + ': ' + res.error, false); return; }
+            changed++;
+        }
+        if (changed) {
+            toast('Saved ' + changed + ' change' + (changed === 1 ? '' : 's'));
+            showOrg(org.id);
+        } else {
+            toast('No changes');
+        }
+    });
+}
+
+async function removeMember(member_id, label) {
+    var ok = await EOS_UI.confirmDelete({
+        label: label,
+        message: 'Remove this member? The vault note is preserved (marked archived).',
+        action: 'Remove',
+    });
+    if (!ok) return;
+    var res = await fetchJSON('/orgs/api/members/' + encodeURIComponent(member_id), {method: 'DELETE'});
+    if (res.error) { toast(res.error, false); return; }
+    toast('Removed');
+    if (STATE.currentOrg) showOrg(STATE.currentOrg.id);
+}
+
+// ── Scenario runner ──────────────────────────────────────────────
+async function runScenario() {
+    var org = STATE.currentOrg;
+    if (!org) return;
+    var scenario_type = document.getElementById('scenario-select').value;
+    var mode = document.getElementById('scenario-mode').value;
+    var prompt = document.getElementById('scenario-prompt').value.trim();
+    if (!prompt) { toast('Prompt required', false); return; }
+    var aiCount = (org.members || []).filter(function(m) { return (m.mode || 'human') === 'ai'; }).length;
+    if (!aiCount) { toast('Add at least one AI member to run scenarios', false); return; }
+    var btn = event && event.target;
+    if (btn) { btn.disabled = true; btn.textContent = 'Running…'; }
+    var res = await fetchJSON('/orgs/api/scenario/run', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({org_id: org.id, scenario_type: scenario_type, prompt: prompt, mode: mode}),
+    });
+    if (btn) { btn.disabled = false; btn.textContent = 'Run'; }
+    if (res.error) { toast(res.error, false); return; }
+    toast('Scenario complete');
+    if (res.id) navTo('run/' + res.id);
+}
+
+// ── Pending action handlers ──────────────────────────────────────
+async function applyPending(action_id) {
+    var res = await fetchJSON('/orgs/api/pending/' + encodeURIComponent(action_id) + '/apply', {method: 'POST'});
+    if (res.error) { toast(res.error, false); return; }
+    toast('Applied');
+    if (STATE.currentRun) showRun(STATE.currentRun.id);
+}
+
+async function rejectPending(action_id) {
+    var res = await fetchJSON('/orgs/api/pending/' + encodeURIComponent(action_id) + '/reject', {method: 'POST'});
+    if (res.error) { toast(res.error, false); return; }
+    toast('Rejected');
+    if (STATE.currentRun) showRun(STATE.currentRun.id);
+}
+
+// ── Settings panel ───────────────────────────────────────────────
+var _appSettings = null;
+function ensureSettingsPanel() {
+    if (_appSettings || !window.EOS_UI || !EOS_UI.settingsPanel) return;
+    _appSettings = EOS_UI.settingsPanel({
+        id: 'orgs-settings-panel',
+        title: 'Orgs Settings',
+        fields: [
+            {key: 'company.default_model', label: 'Default AI Member Model', type: 'text', default: '', hint: 'Leave blank to route via the standard think provider chain'},
+            {key: 'company.parallel_fanout', label: 'Parallel Fan-Out', type: 'boolean', default: true},
+            {key: 'company.scenario_timeout_s', label: 'Per-Member Timeout (s)', type: 'number', default: 120},
+            {key: 'company.digest_enabled', label: 'Generate Digest', type: 'boolean', default: true},
+        ],
+    });
+}
+function openAppSettings() {
+    ensureSettingsPanel();
+    if (_appSettings) _appSettings.open();
+}
+
+// ── Boot ─────────────────────────────────────────────────────────
+(async function init() {
+    await loadScenarios();
+    route.init();
+})();
+</script>
+
+</body>
+</html>

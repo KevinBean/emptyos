@@ -42,6 +42,27 @@ class TestExploreAPI:
         assert "items" in body
         assert isinstance(body["items"], list)
 
+    def test_graph_shape(self, http_client):
+        """`/explore/api/graph` returns {nodes, edges, stats}."""
+        r = http_client.get("/explore/api/graph?limit=50")
+        assert r.status_code == 200
+        body = r.json()
+        assert "nodes" in body
+        assert "edges" in body
+        assert isinstance(body["nodes"], list)
+        assert isinstance(body["edges"], list)
+
+    def test_graph_limit_capped(self, http_client):
+        """Limit caps at 1500."""
+        body = http_client.get("/explore/api/graph?limit=99999").json()
+        assert len(body.get("nodes", [])) <= 1500
+
+    def test_graph_page_loads(self, http_client):
+        """The graph.html static page is served."""
+        r = http_client.get("/explore/pages/graph.html")
+        assert r.status_code == 200
+        assert "vis-network" in r.text
+
     def test_symbols_list(self, http_client):
         r = http_client.get("/explore/api/symbols")
         assert r.status_code == 200

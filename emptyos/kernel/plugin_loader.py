@@ -49,6 +49,13 @@ class PluginManifest:
         )
 
 
+# Always-on plugins — loaded regardless of the store's installed set.
+# Without `health`, capability probes return unknown and `/system` shows
+# everything as offline. Keep this list minimal — every essential is one
+# the user can't recover from disabling without editing JSON by hand.
+ESSENTIAL_PLUGINS: frozenset[str] = frozenset({"health"})
+
+
 class PluginLoader:
     """Discovers and manages plugins."""
 
@@ -56,6 +63,46 @@ class PluginLoader:
         self.kernel = kernel
         self.manifests: dict[str, PluginManifest] = {}
         self.instances: dict[str, Any] = {}
+
+    def essential_ids(self) -> frozenset[str]:
+        """Plugin ids the store cannot disable/uninstall. Public surface."""
+        return ESSENTIAL_PLUGINS
+
+    def installed_ids(self) -> set[str]:
+        """Plugin ids marked installed in `data/store/installed-plugins.json`.
+
+        Pure read — see `AppLoader.installed_ids` for the rationale. Does
+        not subtract disabled or union essentials. Demo mode bypasses.
+        """
+        from emptyos.runtime import store_state
+
+        if self.kernel.config.demo_enabled:
+            return set(self.manifests.keys())
+
+        data_dir = self.kernel.config.data_dir
+        store_state.seed_if_missing(
+            data_dir,
+            "plugins",
+            ((m.id, m.version) for m in self.manifests.values()),
+        )
+        return store_state.installed_ids(data_dir, "plugins")
+
+    def disabled_ids(self) -> set[str]:
+        from emptyos.runtime import store_state
+
+        if self.kernel.config.demo_enabled:
+            return set()
+        return store_state.disabled_ids(self.kernel.config.data_dir, "plugins") - ESSENTIAL_PLUGINS
+
+    def enabled_ids(self) -> set[str]:
+        """What the kernel should load. `installed - disabled ∪ essentials`."""
+        if self.kernel.config.demo_enabled:
+            return set(self.manifests.keys()) | ESSENTIAL_PLUGINS
+        return (self.installed_ids() - self.disabled_ids()) | ESSENTIAL_PLUGINS
+
+    def enabled_manifests(self) -> dict[str, PluginManifest]:
+        enabled = self.enabled_ids()
+        return {pid: m for pid, m in self.manifests.items() if pid in enabled}
 
     def discover(self) -> list[PluginManifest]:
         """Scan plugins directory for manifest.toml files."""
@@ -78,8 +125,14 @@ class PluginLoader:
         return list(self.manifests.values())
 
     async def load_all(self):
-        """Load all discovered plugins, connect them, and register as services."""
-        for plugin_id, manifest in self.manifests.items():
+        """Load enabled plugins, connect them, register as services.
+
+        "Enabled" = installed AND not disabled (∪ essentials). Disabled and
+        uninstalled plugins both stay in `self.manifests` for the catalog
+        API but never load — no service registration, no provider injection.
+        Restart-required toggling.
+        """
+        for plugin_id, manifest in self.enabled_manifests().items():
             try:
                 module_file = manifest.path / f"{manifest.entry_module}.py"
                 instance = load_module(

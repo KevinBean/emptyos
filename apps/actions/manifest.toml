@@ -1,0 +1,24 @@
+[app]
+id = "actions"
+name = "Actions"
+version = "0.1.0"
+description = "Run named templates over selected vault items. Plain or LLM-backed; workflows chain multiple actions."
+store_category = "productivity"
+
+[app.entry]
+module = "app"
+class = "ActionsApp"
+
+[requires]
+capabilities = ["think", "read", "write"]
+apps = []
+services = []
+
+[provides.cli]
+commands = ["actions"]
+
+[provides.web]
+prefix = "/actions"
+
+[provides.events]
+emits = ["actions:run", "actions:completed", "actions:failed", "actions:workflow_completed"]

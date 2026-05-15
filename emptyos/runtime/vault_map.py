@@ -141,6 +141,12 @@ DEFAULT_PATHS = {
         "exports_dir": ["30_Resources/EmptyOS/geo-cad/_exports"],
         "imports_dir": ["30_Resources/EmptyOS/geo-cad/_imports"],
     },
+    "actions": {
+        "workflows_dir": ["30_Resources/EmptyOS/workflows"],
+    },
+    "forge": {
+        "vault_dir": ["30_Resources/EmptyOS/forge"],
+    },
 }
 
 

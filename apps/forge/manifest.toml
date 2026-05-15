@@ -1,0 +1,38 @@
+[app]
+id = "forge"
+name = "Forge"
+version = "0.1.0"
+description = "Scaffold and track native apps. EmptyOS as a workbench for projects whose code lives outside the daemon."
+dimensions = ["occupational", "intellectual"]
+store_category = "dev"
+
+[app.entry]
+module = "app"
+class = "ForgeApp"
+
+[provides.web]
+prefix = "/forge"
+
+[provides.events]
+emits = [
+    "forge:scaffolded",
+    "forge:dev_started",
+    "forge:dev_stopped",
+    "forge:built",
+    "forge:released",
+    "forge:deleted",
+]
+
+[requires]
+capabilities = ["read", "write"]
+apps = []
+services = ["agent-runtime"]
+events = []
+
+[[contributes.hub.panel]]
+id = "forge.projects"
+method = "panel_projects"
+renderer = "stat-tile"
+group = "dashboard"
+title = "Native projects"
+priority = 220

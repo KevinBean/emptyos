@@ -621,12 +621,13 @@ Platform ships 20 renderers. Pick the one whose data shape matches your intent.
 | `deadline-row` | Days-until + name + date row | `[{days, name, date, href}]` |
 | `compare-tile` | Curr vs prev + delta (use with `group="month-compare"`) | `{name, curr, prev, delta, unit, inverse?}` |
 | `media-card` | Emoji + title + subtitle card | `{emoji, title, subtitle, href}` |
+| `entity-card` | Titled card with subtitle + label/value field rows | `{title, subtitle?, fields?: [{label, value}], link?}` |
 | `checklist` | Toggleable checklist rows | `[{text, done, toggle_index?, toggle_endpoint?}]` |
 | `text-card` | Small summary text block | `{title, body, href}` |
 | `quote` | Footer quote (consumed by chrome) | `{text, author}` |
 | `activity-list` | Icon + title + when log | `[{icon, title, sub, when}]` |
 
-**Need a new shape?** Add a renderer to `apps/personal/hub/pages/index.html` with a documented data contract, then use it. New visual = platform change. New instance of existing visual = app manifest change.
+**Need a new shape?** Add a renderer to `apps/hub/pages/index.html` with a documented data contract, then use it. New visual = platform change. New instance of existing visual = app manifest change.
 
 ### Group rendering
 
@@ -804,7 +805,7 @@ If an app is borderline — "most of the UI works offline, but a few features ne
 - `apps/task/app.py` — `panel_pulse_stats` (tiles-row) + `panel_todays_tasks` (task-list)
 - `apps/projects/app.py` — `panel_upcoming_deadlines` (deadline-row) + `panel_projects_pipeline` (stat-tile in dashboard group)
 - `apps/personal/briefing/extended.py` — `panel_morning_routine` (checklist with toggle endpoint)
-- `apps/personal/hub/app.py` — hub's own panels for priority-alert, score-ring, slot panels, ai-insights (lazy)
+- `apps/hub/app.py` — hub's own panels for priority-alert, score-ring, slot panels, ai-insights (lazy)
 
 See `.claude/rules/hub-panels.md` for the companion rule when editing apps.
 

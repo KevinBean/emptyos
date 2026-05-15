@@ -29,6 +29,14 @@ jobs:
         # Fails the build if an unknown mark slipped in.
         run: pytest tests/ --ignore=tests/personal --collect-only -W error::pytest.PytestUnknownMarkWarning -q
 
+      - name: iOS safe-area scanner
+        # Catches the 5 iOS bug families documented at the top of
+        # scripts/check-ios-safe-area.py: notch overlap, home-indicator overlap,
+        # hardcoded notch padding, 100vh viewport collapse, and
+        # div-onclick-without-cursor:pointer (iOS Safari silently drops those).
+        # Static-only — no daemon, runs in <1s. Sister to test_sys_ios_layout.py.
+        run: python scripts/check-ios-safe-area.py
+
       - name: Lint — real bugs only (F821 + F811 + E9)
         # F821 = undefined name (will crash on the path), F811 = redefined-
         # while-unused (silently shadows earlier defs), E9 = SyntaxError.

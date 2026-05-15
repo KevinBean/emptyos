@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>Reader</title>
 <link rel="stylesheet" href="/static/theme.css">
 <link rel="stylesheet" href="/static/eos-components.css">
@@ -15,7 +15,7 @@
   .book-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; }
   .book-list .eos-entity-card { margin-bottom: 0; }
 
-  .reading-pane { display: flex; flex-direction: column; height: calc(100vh - 100px); }
+  .reading-pane { display: flex; flex-direction: column; height: calc(100dvh - 100px); }
   .reading-pane h2 { margin: 0 0 4px; }
   .reading-pane .crumbs { font-size: 12px; opacity: 0.6; margin-bottom: 16px; }
   #paras { flex: 1; overflow-y: auto; padding-right: 12px; }
@@ -31,7 +31,7 @@
   .paragraph.reading { background: var(--eos-accent-soft, rgba(90,169,255,0.14)); }
   .paragraph.reading::after { content: '🔊'; position: absolute; right: 8px; bottom: 6px; font-size: 11px; opacity: 0.7; }
 
-  .side-rail { position: sticky; top: 16px; align-self: start; display: flex; flex-direction: column; gap: 12px; max-height: calc(100vh - 32px); overflow-y: auto; }
+  .side-rail { position: sticky; top: 16px; align-self: start; display: flex; flex-direction: column; gap: 12px; max-height: calc(100dvh - 32px); overflow-y: auto; }
   .side-card { border: 1px solid var(--eos-border, rgba(255,255,255,0.08)); border-radius: 10px; padding: 12px; background: var(--eos-surface, rgba(255,255,255,0.02)); }
   .side-card h4 { margin: 0 0 8px; font-size: 13px; text-transform: uppercase; letter-spacing: 0.05em; opacity: 0.7; }
   .scene-img { width: 100%; border-radius: 6px; display: block; }

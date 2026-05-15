@@ -75,10 +75,19 @@ def _assistant_commands(app_dir: Path):
 
 
 def _py_methods(app_dir: Path) -> set[str]:
-    ap = app_dir / "app.py"
-    if not ap.exists():
-        return set()
-    return set(_METHOD_RE.findall(ap.read_text(encoding="utf-8")))
+    """Methods defined anywhere in the app package — apps frequently extract
+    mixins into sibling modules (e.g. apps/personal/speaking/speaking_sessions.py)
+    which the app.py class then inherits from. Scanning only app.py would
+    flag mixin methods as missing."""
+    methods: set[str] = set()
+    for py in app_dir.rglob("*.py"):
+        if "__pycache__" in py.parts:
+            continue
+        try:
+            methods.update(_METHOD_RE.findall(py.read_text(encoding="utf-8")))
+        except OSError:
+            continue
+    return methods
 
 
 def _web_route_methods(app_dir: Path) -> set[str]:
