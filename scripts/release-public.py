@@ -156,6 +156,27 @@ def run_scans(target_dir: Path | None = None) -> None:
     print(f"    OK: {label} scans clean")
 
 
+def run_clickable_audit() -> None:
+    """Run scripts/check-clickable.py against the local daemon.
+
+    Requires the user's :9000 daemon to be running with the full app set
+    installed. If unreachable (exit 2), prints a warning and continues — we
+    don't block releases on a daemon that isn't running. If real intercepts
+    are found (exit 1), the release aborts.
+    """
+    step("Click-target audit (primary CTAs not intercepted by FAB / overlays)")
+    path = ROOT / "scripts" / "check-clickable.py"
+    import subprocess
+    proc = subprocess.run(["python", str(path)], cwd=ROOT)
+    if proc.returncode == 2:
+        print("    WARNING: daemon at :9000 unreachable — click audit skipped.")
+        print("    Start the daemon and re-run release-public.py to enforce.")
+    elif proc.returncode != 0:
+        raise SystemExit("Click-target audit failed — fix the intercepts above and try again.")
+    else:
+        print("    OK: no primary-CTA intercepts")
+
+
 def check_no_private_apps(cwd: Path) -> None:
     """Refuse the release if any tracked app under apps/ declares `[app] private = true`.
 
@@ -261,7 +282,8 @@ def filter_to_tiers(temp_dir: Path, tier_names: tuple[str, ...]) -> None:
 
     Source of truth is `release.toml` in the snapshot. Anything not declared in
     a public tier — dev tooling, uncategorized work-in-progress, scaffolding —
-    stays in the private repo only.
+    stays in the private repo only. Tests in `tests/` that hard-bind to dropped
+    apps are dropped alongside, so the public test suite collects clean.
     """
     release_toml = temp_dir / "release.toml"
     if not release_toml.is_file():
@@ -300,6 +322,60 @@ def filter_to_tiers(temp_dir: Path, tier_names: tuple[str, ...]) -> None:
         print(f"    dropped plugins: {', '.join(dropped_plugins)}")
     if not dropped_apps and not dropped_plugins:
         print("    nothing to drop")
+
+    _drop_tests_bound_to(temp_dir, allowed_apps)
+
+
+# Regexes for spotting hard-bindings to specific apps in test source.
+# Conservative — must not false-positive on tests that only use kept apps.
+_APP_IMPORT_RE = re.compile(r"\b(?:from|import)\s+apps\.([a-z][a-z0-9_-]*)\b")
+_PERSONAL_IMPORT_RE = re.compile(r"\bapps\.personal\b")
+# Path-load patterns the test suite uses to grab non-package files
+# (e.g. apps/model-bench/agent_bench.py). Quoted forms only — avoids hits
+# from comments mentioning a dir.
+_PATH_LOAD_RE = re.compile(r"['\"]apps/([a-z][a-z0-9_-]*)/[a-z_]+\.py['\"]")
+# Sibling-module shim used by dogfood-agent tests: `import behavior as B`
+# resolves via a sys.path insert of `apps/dogfood-agent/` at the top of the
+# test. If dogfood-agent is dropped, the bare-name import 404s.
+_SIBLING_BEHAVIOR_RE = re.compile(r"^\s*import\s+behavior\b", re.MULTILINE)
+
+
+def _drop_tests_bound_to(temp_dir: Path, allowed_apps: set[str]) -> None:
+    """Drop tests/test_*.py files that import from apps NOT in `allowed_apps`.
+
+    Catches three failure shapes the public CI surfaced in v0.4.1:
+      - `from apps.<id>` / `import apps.<id>` where <id> is dropped
+      - `apps.personal.<id>` (always dropped via gitignore)
+      - `apps/<id>/<file>.py` quoted as a path in path-loaders
+      - bare `import behavior as B` (dogfood-agent sibling shim)
+    """
+    tests_dir = temp_dir / "tests"
+    if not tests_dir.is_dir():
+        return
+    dropped: list[str] = []
+    for f in sorted(tests_dir.glob("test_*.py")):
+        try:
+            src = f.read_text(encoding="utf-8")
+        except Exception:
+            continue
+        reasons: set[str] = set()
+        if _PERSONAL_IMPORT_RE.search(src):
+            reasons.add("apps.personal")
+        if _SIBLING_BEHAVIOR_RE.search(src) and "dogfood-agent" not in allowed_apps:
+            reasons.add("behavior (dogfood-agent shim)")
+        for m in _APP_IMPORT_RE.finditer(src):
+            if m.group(1) not in allowed_apps:
+                reasons.add(f"apps.{m.group(1)}")
+        for m in _PATH_LOAD_RE.finditer(src):
+            if m.group(1) not in allowed_apps:
+                reasons.add(f"apps/{m.group(1)}/...")
+        if reasons:
+            f.unlink()
+            dropped.append(f"{f.name} ({', '.join(sorted(reasons))})")
+    if dropped:
+        step(f"Drop tests bound to dropped apps: {len(dropped)}")
+        for d in dropped:
+            print(f"    {d}")
 
 
 def sweep_cruft(temp_dir: Path) -> None:
@@ -494,6 +570,7 @@ def main() -> None:
 
     verify_clean_tree()
     run_scans()  # working tree
+    run_clickable_audit()  # only against live daemon — skipped if unreachable
 
     with tempfile.TemporaryDirectory(prefix="eos-snap-") as tmp:
         temp_dir = Path(tmp)

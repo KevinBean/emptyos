@@ -10,16 +10,26 @@ Usage:
     python scripts/check-personal.py --install-hook   # write .git/hooks/pre-commit
 """
 
+import importlib.util
 import sys
 from pathlib import Path
 
-# Make `emptyos.sdk` importable when the script is run from the repo root,
-# even before `pip install -e .`. Pre-commit hooks and the release snapshot
-# scanner both invoke this script from a checkout that has `emptyos/` on
-# disk but may not have it installed in the active venv.
+# Make `_check_base` (sibling script) importable, and load `personal_patterns`
+# DIRECTLY from its file rather than via `from emptyos.sdk.personal_patterns
+# import load`. The package-style import triggers `emptyos/sdk/__init__.py`,
+# which transitively imports `starlette` — fine when the project is
+# `pip install -e .`-ed, fatal in a bare CI checkout that runs this script
+# without project deps (GHA Release Safe). See v0.4.1 CI failure.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from emptyos.sdk.personal_patterns import load as _load_personal_patterns
+_PP_PATH = (
+    Path(__file__).resolve().parent.parent / "emptyos" / "sdk" / "personal_patterns.py"
+)
+_pp_spec = importlib.util.spec_from_file_location("personal_patterns", _PP_PATH)
+_pp_mod = importlib.util.module_from_spec(_pp_spec)
+_pp_spec.loader.exec_module(_pp_mod)
+_load_personal_patterns = _pp_mod.load
+
 from _check_base import (
     REPO_ROOT,
     git_staged,

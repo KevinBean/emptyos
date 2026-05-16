@@ -4,7 +4,7 @@
 # Usage: python scripts/package-release.py <tier> [--check] [--platform=<name>]
 
 [release]
-version = "0.4.1"
+version = "0.4.2"
 
 # ── Platforms ─────────────────────────────────────────────────
 # Named deployment profiles. Plugins declare compatibility in
