@@ -121,6 +121,70 @@ body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-se
   }
   #sidebar.hidden { margin-left:0; transform:translateX(-100%) }
 }
+.pending-images { display:flex; flex-wrap:wrap; gap:6px; padding:6px 8px 0; }
+.pending-image {
+  position:relative; width:64px; height:64px; border-radius:var(--radius-sm); overflow:hidden;
+  border:1px solid var(--border); background:var(--bg-surface);
+}
+.pending-image img { width:100%; height:100%; object-fit:cover; display:block; }
+.pending-image-x {
+  position:absolute; top:2px; right:2px; width:18px; height:18px;
+  border:none; border-radius:50%; background:var(--text-heading); color:var(--bg-card);
+  font-size:13px; line-height:1; cursor:pointer; padding:0;
+  display:flex; align-items:center; justify-content:center; opacity:0.7;
+}
+.pending-image-x:hover { opacity:1; }
+.msg-images { display:flex; flex-wrap:wrap; gap:8px; margin:4px 0 8px; }
+.msg-images img {
+  max-width:240px; max-height:240px; border-radius:var(--radius); display:block;
+  border:1px solid var(--border); object-fit:contain;
+  background:var(--bg-surface);
+}
+.pending-files { display:flex; flex-wrap:wrap; gap:6px; padding:6px 8px 0; }
+.pending-file {
+  display:inline-flex; align-items:center; gap:6px;
+  background:var(--bg-surface); border:1px solid var(--border);
+  border-radius:var(--radius-pill); padding:4px 10px 4px 8px;
+  font-size:var(--fs-mono); max-width:260px;
+}
+.pending-file-name { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.pending-file-x {
+  border:none; background:transparent; cursor:pointer; padding:0 0 0 4px;
+  font-size:var(--fs-small); line-height:1; color:var(--text-muted);
+}
+.pending-file-x:hover { color:var(--text); }
+.pinned-project {
+  display:flex; align-items:center; gap:8px;
+  padding:6px 10px; margin:6px 8px 0;
+  background:var(--accent-bg);
+  border:1px solid var(--accent);
+  border-radius:var(--radius-sm); font-size:var(--fs-mono);
+}
+.pinned-project .pp-icon { font-size:var(--fs-body); }
+.pinned-project .pp-id { font-weight:var(--fw-label); flex:1; overflow:hidden; text-overflow:ellipsis; }
+.pinned-project .pp-x {
+  border:none; background:transparent; cursor:pointer; padding:0 4px;
+  font-size:var(--fs-prose); line-height:1; color:var(--text-muted);
+}
+.pinned-project .pp-x:hover { color:var(--text); }
+.research-citations {
+  display:flex; flex-wrap:wrap; gap:6px; margin-top:14px;
+  padding-top:10px; border-top:1px dashed var(--border);
+}
+.research-citations .rc-label {
+  width:100%; font-size:var(--fs-meta); font-weight:var(--fw-label); color:var(--text-muted);
+  text-transform:uppercase; letter-spacing:var(--tracking-meta); margin-bottom:2px;
+}
+.research-citations .rc-chip {
+  display:inline-flex; align-items:center; gap:6px;
+  padding:4px 10px; border-radius:var(--radius-pill);
+  background:var(--bg-surface); border:1px solid var(--border);
+  color:var(--text); text-decoration:none;
+  font-size:var(--fs-mono); max-width:280px;
+}
+.research-citations .rc-chip:hover { background:var(--accent-bg); }
+.research-citations .rc-n { font-weight:var(--fw-label); color:var(--accent); }
+.research-citations .rc-title { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 </style>
 </head>
 <body>
@@ -177,9 +241,13 @@ body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-se
   </div>
 
   <div id="input-area" class="eos-chat-input-area">
+    <div id="pinned-project" class="pinned-project" style="display:none"></div>
+    <div id="pending-images" class="pending-images" style="display:none"></div>
+    <div id="pending-files" class="pending-files" style="display:none"></div>
     <div id="input-row">
       <button class="input-btn" id="btn-mic" onclick="toggleMic()" title="Voice input">&#127908;</button>
       <button class="input-btn" id="btn-attach" onclick="openAttach()" title="Attach a vault note or upload a file">&#128206;</button>
+      <button class="input-btn" id="btn-pin" onclick="pinProject()" title="Pin a project — its docs become persistent context">&#128204;</button>
       <button class="input-btn" id="btn-tools" onclick="toggleTools()" title="Tools: web search, vault query, file read (grounded answers, slower)">&#128295;</button>
       <textarea id="input" class="eos-chat-input" rows="1" placeholder="Ask anything or type /help..." onkeydown="handleKey(event)" oninput="autoResize(this);checkSlash(this)"></textarea>
       <button id="btn-send" class="eos-chat-send" onclick="send()">Send</button>
@@ -258,6 +326,8 @@ async function deleteSession(sid) {
 
 async function activateSession(sid) {
   activeSession = sid;
+  _pendingImages = []; renderPendingImages();
+  _pendingFiles  = []; renderPendingFiles();
   renderSessions();
   try {
     var s = await EOS.api('/assistant/api/sessions/' + sid);
@@ -270,9 +340,66 @@ async function activateSession(sid) {
       console.warn('[assistant] session', sid, 'expected', expected, 'messages but got 0 — data-layer bug?');
     }
     renderMessages(s.messages || []);
+    renderPinnedProject(s.project_id || '');
     connectWS(sid);
   } catch(e) {}
   if (window.innerWidth <= 700) closeSidebar();
+}
+
+// ── Project Pinning ───────────────────────────────────
+
+function renderPinnedProject(projectId) {
+  var el = document.getElementById('pinned-project');
+  if (!el) return;
+  if (!projectId) { el.innerHTML = ''; el.style.display = 'none'; return; }
+  el.style.display = '';
+  el.innerHTML = '<span class="pp-icon">&#128204;</span>' +
+                 '<span class="pp-id">' + EOS_UI.esc(projectId) + '</span>' +
+                 '<button class="pp-x" onclick="unpinProject()" title="Unpin project">&times;</button>';
+}
+
+async function pinProject() {
+  if (!activeSession) return;
+  var projects = [];
+  try { projects = await EOS.api('/projects/api/list'); } catch(e) { projects = []; }
+  if (!projects.length) { EOS.toast && EOS.toast('No projects found'); return; }
+  var rows = projects.slice(0, 100).map(function(p) {
+    var id = p.id || p.name || '';
+    var name = p.name || id;
+    var dl = p.deadline ? ' · due ' + p.deadline : '';
+    return '<div class="eos-att-row" data-id="' + EOS_UI.esc(id) + '">' +
+             '<div class="eos-att-row-main"><span class="eos-att-name">' + EOS_UI.esc(name) + '</span></div>' +
+             '<div class="eos-att-row-tags">' + EOS_UI.esc(id) + dl + '</div>' +
+           '</div>';
+  }).join('');
+  EOS_UI.modal({
+    title: 'Pin a project to this chat',
+    body: '<div class="eos-att-list" style="max-height:60vh;overflow-y:auto">' + rows + '</div>',
+    width: '520px',
+  });
+  setTimeout(function() {
+    Array.from(document.querySelectorAll('.eos-att-row')).forEach(function(row) {
+      row.onclick = async function() {
+        var id = row.dataset.id;
+        EOS_UI.closeModal();
+        try {
+          await EOS.post('/assistant/api/sessions/' + activeSession + '/pin-project', {project_id: id});
+          renderPinnedProject(id);
+          if (EOS.toast) EOS.toast('Pinned ' + id + ' — context will be injected on every reply');
+        } catch(e) {
+          if (EOS.toast) EOS.toast('Pin failed: ' + e.message);
+        }
+      };
+    });
+  }, 50);
+}
+
+async function unpinProject() {
+  if (!activeSession) return;
+  try {
+    await EOS.api('/assistant/api/sessions/' + activeSession + '/pin-project', {method: 'DELETE'});
+    renderPinnedProject('');
+  } catch(e) {}
 }
 
 async function renameSession(name) {
@@ -480,6 +607,8 @@ function handleWS(d) {
     streaming=false; var b2=document.getElementById('btn-send'); b2.textContent='Send'; b2.onclick=send;
     if(streamEl) streamEl.classList.remove('eos-ai-streaming');
     streamEl=null;
+  } else if (d.type==='research-citations') {
+    appendResearchCitations(d.sources || []);
   } else if (d.type==='session-renamed') {
     var s=sessions.find(function(x){return x.id===activeSession});
     if(s){s.name=d.name;renderSessions()}
@@ -488,6 +617,28 @@ function handleWS(d) {
 }
 
 function removeThinking(){var el=document.getElementById('thinking');if(el)el.remove()}
+
+function appendResearchCitations(sources) {
+  if (!sources || !sources.length) return;
+  // Append into the current streaming bubble so citations sit with the report.
+  var target = streamEl;
+  if (!target) {
+    var msgs = document.querySelectorAll('#messages .eos-chat-turn.assistant');
+    target = msgs.length ? msgs[msgs.length - 1] : null;
+  }
+  if (!target) return;
+  var box = document.createElement('div');
+  box.className = 'research-citations';
+  box.innerHTML = '<div class="rc-label">Sources</div>' + sources.map(function(s) {
+    var label = s.title || s.url;
+    return '<a class="rc-chip" target="_blank" rel="noopener" href="' + EOS_UI.esc(s.url) + '">' +
+             '<span class="rc-n">[' + s.n + ']</span>' +
+             '<span class="rc-title">' + EOS_UI.esc(label) + '</span>' +
+           '</a>';
+  }).join('');
+  target.appendChild(box);
+  scrollBottom();
+}
 
 // ── Messages ──────────────────────────────────────────
 
@@ -503,7 +654,7 @@ function renderMessages(messages) {
 //   - system role ('system') for error notices
 //   - .provider-<agent> modifier for per-provider role-label tint
 //   - .msg-actions TTS overlay on assistant messages
-function addMsg(type,text,agent) {
+function addMsg(type,text,agent,images) {
   var el=document.getElementById('messages'); var empty=document.getElementById('empty'); if(empty)empty.style.display='none';
   // type: 'user' | 'ai' | 'system' → role class used by shared shell
   var roleClass = type==='user' ? 'user' : (type==='system' ? 'system' : 'assistant');
@@ -518,6 +669,15 @@ function addMsg(type,text,agent) {
   } else if (type==='user') {
     var ul=document.createElement('div'); ul.className='eos-chat-role-label user'; ul.textContent='You';
     div.appendChild(ul);
+  }
+  if (type==='user' && images && images.length) {
+    var imgWrap = document.createElement('div');
+    imgWrap.className = 'msg-images';
+    imgWrap.innerHTML = images.map(function(p){
+      var src = '/assistant/api/image?path=' + encodeURIComponent(p);
+      return '<img src="' + src + '" alt="">';
+    }).join('');
+    div.appendChild(imgWrap);
   }
   var content=document.createElement('div');
   content.className = 'eos-chat-turn-content' + (type==='ai' ? ' markdown' : '');
@@ -561,7 +721,9 @@ function scrollBottom(){var el=document.getElementById('messages');setTimeout(fu
 
 function send() {
   var input=document.getElementById('input'); var text=input.value.trim();
-  if(!text||streaming)return;
+  var images = _pendingImages.slice();
+  var files = _pendingFiles.slice();
+  if((!text && !images.length && !files.length) || streaming) return;
   if(text==='/new'){input.value='';newSession();return}
   input.value=''; autoResize(input);
 
@@ -570,11 +732,23 @@ function send() {
     return;
   }
 
-  addMsg('user',text); scrollBottom();
+  // Surface attached file names in the user bubble so they have visible
+  // context after send (file blocks themselves aren't echoed inline).
+  var displayText = text;
+  if (files.length) {
+    var fileLine = '📎 ' + files.map(function(f){ return f.name || f.path; }).join(', ');
+    displayText = fileLine + (text ? '\n\n' + text : '');
+  }
+  addMsg('user', displayText, undefined, images.map(function(i){ return i.path; })); scrollBottom();
+  _pendingImages = []; renderPendingImages();
+  _pendingFiles  = []; renderPendingFiles();
   streaming=true;
   var btn=document.getElementById('btn-send'); btn.textContent='Stop'; btn.disabled=false;
   btn.onclick=function(){if(streaming&&ws&&ws.readyState===1){ws.send(JSON.stringify({type:'cancel'}));streaming=false;btn.textContent='Send';btn.onclick=send}};
-  if(ws&&ws.readyState===1) ws.send(JSON.stringify({type:'message',text:text,use_tools:useTools}));
+  var payload = {type:'message', text:text, use_tools:useTools};
+  if (images.length) payload.images = images.map(function(i){ return i.path; });
+  if (files.length)  payload.files  = files.map(function(i){ return i.path; });
+  if(ws&&ws.readyState===1) ws.send(JSON.stringify(payload));
   else fallbackChat(text);
 }
 
@@ -598,8 +772,42 @@ function openAttach() {
   EOS_UI.attachmentPicker({onPick: insertAttachment});
 }
 
+var _pendingImages = [];   // [{path, name}] — image bytes go to vision model
+var _pendingFiles  = [];   // [{path, name}] — PDF/docx/txt extracted server-side
+var _imageExtRe = /\.(png|jpe?g|gif|webp|bmp)$/i;
+var _extractExtRe = /\.(pdf|docx|txt)$/i;
+
+function _isImageItem(item) {
+  if (!item) return false;
+  if (item.mime && /^image\//i.test(item.mime)) return true;
+  var name = item.name || item.path || '';
+  return _imageExtRe.test(name);
+}
+
+function _isExtractableItem(item) {
+  if (!item) return false;
+  var name = item.name || item.path || '';
+  return _extractExtRe.test(name);
+}
+
 function insertAttachment(item) {
   if (!item || !item.path) return;
+  if (_isImageItem(item)) {
+    if (!_pendingImages.some(function(p){ return p.path === item.path; })) {
+      _pendingImages.push({path: item.path, name: item.name || item.path});
+      renderPendingImages();
+    }
+    if (window.EOS && EOS.toast) EOS.toast('Image attached — will be sent to the vision model');
+    return;
+  }
+  if (_isExtractableItem(item)) {
+    if (!_pendingFiles.some(function(p){ return p.path === item.path; })) {
+      _pendingFiles.push({path: item.path, name: item.name || item.path});
+      renderPendingFiles();
+    }
+    if (window.EOS && EOS.toast) EOS.toast('Attached: ' + (item.name || item.path) + ' — extracted text will be sent with your next message');
+    return;
+  }
   var ta = document.getElementById('input');
   if (!ta) return;
   var snippet = '[[' + item.path + ']]';
@@ -614,6 +822,45 @@ function insertAttachment(item) {
   ta.setSelectionRange(newPos, newPos);
   if (typeof autoResize === 'function') autoResize(ta);
   if (window.EOS && EOS.toast) EOS.toast('Attached: ' + (item.name || item.path));
+}
+
+function renderPendingImages() {
+  var strip = document.getElementById('pending-images');
+  if (!strip) return;
+  if (!_pendingImages.length) { strip.innerHTML = ''; strip.style.display = 'none'; return; }
+  strip.style.display = '';
+  strip.innerHTML = _pendingImages.map(function(p, i) {
+    var src = '/assistant/api/image?path=' + encodeURIComponent(p.path);
+    return '<div class="pending-image" title="' + EOS_UI.esc(p.name) + '">' +
+             '<img src="' + src + '" alt="">' +
+             '<button class="pending-image-x" onclick="removePendingImage(' + i + ')" title="Remove">&times;</button>' +
+           '</div>';
+  }).join('');
+}
+
+function removePendingImage(i) {
+  _pendingImages.splice(i, 1);
+  renderPendingImages();
+}
+
+function renderPendingFiles() {
+  var strip = document.getElementById('pending-files');
+  if (!strip) return;
+  if (!_pendingFiles.length) { strip.innerHTML = ''; strip.style.display = 'none'; return; }
+  strip.style.display = '';
+  strip.innerHTML = _pendingFiles.map(function(p, i) {
+    var name = p.name || p.path;
+    return '<div class="pending-file" title="' + EOS_UI.esc(p.path) + '">' +
+             '<span class="pending-file-icon">📄</span>' +
+             '<span class="pending-file-name">' + EOS_UI.esc(name) + '</span>' +
+             '<button class="pending-file-x" onclick="removePendingFile(' + i + ')" title="Remove">&times;</button>' +
+           '</div>';
+  }).join('');
+}
+
+function removePendingFile(i) {
+  _pendingFiles.splice(i, 1);
+  renderPendingFiles();
 }
 
 function initAttach() {

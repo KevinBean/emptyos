@@ -27,12 +27,41 @@ if TYPE_CHECKING:
     from .app import RoomsApp  # noqa: F401 — for type hints only
 
 
+# Verbs that ALWAYS route through the review-gate, regardless of agent
+# gate_mode or allowlist. Destructive code-writes belong here — the diff
+# preview IS the value of the gate; auto-executing them defeats the
+# "with you, not for you" stance. Per .claude/rules/autopilot-grants.md
+# these verbs are also never autopilot-grant-eligible.
+ALWAYS_GATE_VERBS: set[tuple[str, str]] = {
+    ("repo", "edit"),
+    ("repo", "write"),
+    ("repo", "exec"),
+    ("rooms", "write_note"),  # already gated by sandbox-prep, listed for clarity
+}
+
+_QUICK_DO_RE = re.compile(r'\[DO:([\w-]+)\.(\w+)\(')
+
+
+def _has_always_gate_token(response: str) -> bool:
+    """Cheap scan — does the response contain any token whose verb is in
+    ALWAYS_GATE_VERBS? Used to force-route the whole turn through the
+    review gate when even one destructive verb is present."""
+    return any(
+        (m.group(1), m.group(2)) in ALWAYS_GATE_VERBS
+        for m in _QUICK_DO_RE.finditer(response)
+    )
+
+
 # ─── Bind to RoomsApp class as ───────────────────────────────
 #   _actions_log_path          = _pending._actions_log_path
 #   _pending_dir               = _pending._pending_dir
 #   _pending_path              = _pending._pending_path
 #   _sandbox_root              = _pending._sandbox_root
 #   _prepare_write_note        = _pending._prepare_write_note
+#   _prepare_repo_edit         = _pending._prepare_repo_edit
+#   _prepare_repo_write        = _pending._prepare_repo_write
+#   _prepare_repo_exec         = _pending._prepare_repo_exec
+#   _repo_root                 = _pending._repo_root
 #   _save_pending              = _pending._save_pending
 #   _load_pending              = _pending._load_pending
 #   _lookup_inverse            = _pending._lookup_inverse
@@ -114,6 +143,157 @@ def _prepare_write_note(self, action: dict) -> None:
     }]
 
 
+def _repo_root(self) -> Path:
+    """Same convention apps/repo uses — the directory containing
+    emptyos.toml. Kept in sync here so the prep helpers don't need to
+    call_app into repo (which would couple pending.py to a specific
+    app's lifecycle)."""
+    return Path(self.kernel.config.path).resolve().parent
+
+
+def _prepare_repo_edit(self, action: dict) -> None:
+    """For `[DO:repo.edit({path, old, new})]` tokens: read the current
+    file, compute the post-replace content, sandbox it for diff preview."""
+    args = action.get("args") or {}
+    rel_path = (args.get("path") or "").strip()
+    old = args.get("old")
+    new = args.get("new")
+    if not rel_path:
+        action["error"] = "repo.edit requires 'path' arg"
+        return
+    if not isinstance(old, str) or not old:
+        action["error"] = "repo.edit requires non-empty 'old' arg"
+        return
+    if not isinstance(new, str):
+        action["error"] = "repo.edit requires string 'new' arg"
+        return
+    repo_root = self._repo_root()
+    target = (repo_root / rel_path).resolve()
+    try:
+        target.relative_to(repo_root)
+    except ValueError:
+        action["error"] = f"path escapes repo root: {rel_path!r}"
+        return
+    if not target.exists():
+        action["error"] = f"not found: {rel_path!r}"
+        return
+    if target.is_dir():
+        action["error"] = f"is a directory: {rel_path!r}"
+        return
+    try:
+        current = target.read_text(encoding="utf-8")
+    except OSError as e:
+        action["error"] = f"read failed: {e!s:.200}"
+        return
+    count = current.count(old)
+    if count == 0:
+        action["error"] = "`old` not found in file"
+        return
+    if count > 1:
+        action["error"] = (
+            f"`old` matches {count} times — agent must regenerate with "
+            "surrounding context for uniqueness"
+        )
+        return
+    proposed = current.replace(old, new, 1)
+    try:
+        sw = SandboxedWrite(
+            action_id=action["id"],
+            vault_root=repo_root,
+            rel_path=rel_path,
+            content=proposed,
+            sandbox_root=self._sandbox_root(),
+        )
+        sw.capture()
+    except ValueError as e:
+        action["error"] = str(e)[:200]
+        return
+    except Exception as e:
+        action["error"] = f"sandbox capture failed: {e!s:.200}"
+        return
+    action["proposed_changes"] = [{
+        "path": rel_path,
+        "sandbox_id": action["id"],
+        "diff_lines": sw.diff_lines(),
+    }]
+
+
+def _prepare_repo_write(self, action: dict) -> None:
+    """For `[DO:repo.write({path, content})]` tokens: sandbox the proposed
+    full-file write. New files render as all-adds in the diff."""
+    args = action.get("args") or {}
+    rel_path = (args.get("path") or "").strip()
+    content = args.get("content")
+    if not rel_path:
+        action["error"] = "repo.write requires 'path' arg"
+        return
+    if not isinstance(content, str):
+        action["error"] = "repo.write requires string 'content' arg"
+        return
+    repo_root = self._repo_root()
+    target = (repo_root / rel_path).resolve()
+    try:
+        target.relative_to(repo_root)
+    except ValueError:
+        action["error"] = f"path escapes repo root: {rel_path!r}"
+        return
+    if target.exists() and target.is_dir():
+        action["error"] = f"is a directory: {rel_path!r}"
+        return
+    try:
+        sw = SandboxedWrite(
+            action_id=action["id"],
+            vault_root=repo_root,
+            rel_path=rel_path,
+            content=content,
+            sandbox_root=self._sandbox_root(),
+        )
+        sw.capture()
+    except ValueError as e:
+        action["error"] = str(e)[:200]
+        return
+    except Exception as e:
+        action["error"] = f"sandbox capture failed: {e!s:.200}"
+        return
+    action["proposed_changes"] = [{
+        "path": rel_path,
+        "sandbox_id": action["id"],
+        "diff_lines": sw.diff_lines(),
+    }]
+
+
+def _prepare_repo_exec(self, action: dict) -> None:
+    """For `[DO:repo.exec({cmd, timeout?, cwd?, shell?})]` tokens: validate
+    args + attach a `proposed_command` preview block. No sandbox dir —
+    exec has no before/after state; the preview IS the command itself.
+
+    Apply re-dispatches via call_app("repo", "exec", **args) — the work
+    happens at apply time, not capture."""
+    args = action.get("args") or {}
+    cmd = args.get("cmd")
+    if not isinstance(cmd, str) or not cmd.strip():
+        action["error"] = "repo.exec requires non-empty 'cmd' arg"
+        return
+    timeout = args.get("timeout")
+    if timeout is not None:
+        try:
+            timeout = int(timeout)
+            if timeout <= 0 or timeout > 600:
+                action["error"] = "'timeout' must be 1..600 seconds"
+                return
+        except (TypeError, ValueError):
+            action["error"] = "'timeout' must be an integer (seconds)"
+            return
+    cwd = args.get("cwd")
+    shell = args.get("shell") or ""
+    action["proposed_command"] = {
+        "cmd": cmd,
+        "cwd": cwd or "(repo root)",
+        "timeout": timeout or 30,
+        "shell": shell or "(default)",
+    }
+
+
 def _save_pending(self, action: dict) -> None:
     self._pending_path(action["id"]).write_text(
         json.dumps(action, indent=2, ensure_ascii=False), encoding="utf-8",
@@ -164,7 +344,8 @@ def _method_signature(self, app_id: str, method: str) -> str:
         return "()"
 
 
-async def _execute_server_actions(self, response: str, agent: dict) -> tuple[str, list[dict]]:
+async def _execute_server_actions(self, response: str, agent: dict, *,
+                                  room_id: str = "") -> tuple[str, list[dict]]:
     """Parse [DO:app.method(json_args)] from response, execute, return cleaned text + results.
 
     `[BUTTON:label|DO:app.method({...})]` wrappers are click-to-execute and
@@ -172,7 +353,27 @@ async def _execute_server_actions(self, response: str, agent: dict) -> tuple[str
     renders them as buttons and POSTs /api/do when the user clicks.
     Without masking, this auto-exec parser would fire the inner [DO:]
     immediately and the user would see a "done" before clicking anything.
+
+    When `agent.gate_mode == "gate"`, tokens land in the rooms pending
+    queue instead of auto-executing — same review-gate machinery the
+    CLI participant path uses. `room_id` must be provided for storage.
     """
+    if agent.get("gate_mode") == "gate" and room_id:
+        source_actor = {"type": "agent", "id": agent.get("id", "")}
+        return await self._gate_server_actions(
+            response, room_id=room_id, source_actor=source_actor,
+        )
+
+    # Force-gate any response containing an ALWAYS_GATE verb (repo.edit,
+    # repo.write, repo.exec). Destructive code-writes never auto-execute —
+    # the whole turn goes to the review gate so reads in the same turn
+    # wait alongside the edits the user is reviewing.
+    if room_id and _has_always_gate_token(response):
+        source_actor = {"type": "agent", "id": agent.get("id", "")}
+        return await self._gate_server_actions(
+            response, room_id=room_id, source_actor=source_actor,
+        )
+
     server_actions = agent.get("server_actions", {})
     if not server_actions:
         return response, []
@@ -275,6 +476,12 @@ async def _gate_server_actions(
         # explicit user click. No vault file changes until then.
         if action["app"] == "rooms" and action["method"] == "write_note":
             self._prepare_write_note(action)
+        elif action["app"] == "repo" and action["method"] == "edit":
+            self._prepare_repo_edit(action)
+        elif action["app"] == "repo" and action["method"] == "write":
+            self._prepare_repo_write(action)
+        elif action["app"] == "repo" and action["method"] == "exec":
+            self._prepare_repo_exec(action)
         self._save_pending(action)
     return cleaned, pending
 

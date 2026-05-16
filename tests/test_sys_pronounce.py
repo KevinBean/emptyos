@@ -154,3 +154,77 @@ class TestShadowingDegradation:
         # this stays an import-only smoke test. Full integration is covered
         # by the existing test_sys_shadowing.py once the plugin is loaded.
         assert ShadowingApp.__name__ == "ShadowingApp"
+
+
+# ── Layer 4: KB-backed pronunciation-guide round-trip ───────────────────────
+
+
+class TestKbPronounceRoundTrip:
+    """KB now owns the persistence layer for pronunciation guides. The
+    contract: render a KB body via shadowing helpers, push it through
+    kb.upsert_note → kb.get_note, and the parsed payload should round-trip
+    the same fields the modal expects.
+
+    These tests are *pure-Python* — they exercise only the parsing helpers
+    on ShadowingApp without booting a kernel or hitting KB. The live KB
+    round-trip is verified manually after restart per the plan's verification
+    section."""
+
+    def _shadowing_class(self):
+        from apps.personal.shadowing.app import ShadowingApp
+        return ShadowingApp
+
+    def test_slug_shapes(self):
+        S = self._shadowing_class()
+        assert S._pair_slug("DH", "S", "sub") == "pair-dh-s"
+        assert S._pair_slug("K", "", "del") == "phone-k"
+        assert S._pair_slug("", "AH", "ins") == "avoid-ah"
+
+    def test_render_kb_body_then_reparse(self):
+        S = self._shadowing_class()
+        gen = {
+            "how_to_make": "Place your tongue between your teeth and turn voice on.",
+            "target_examples": ["this", "breathe", "weather", "mother"],
+            "confusable_examples": ["sip", "busy", "kiss", "boss"],
+            "minimal_pairs": [["this", "sis"], ["they", "say"], ["breathe", "breeze"]],
+            "common_mistake": "Speakers from S-default languages swap /ð/ for /s/.",
+        }
+        # Render a pair body, then re-parse via the modal projector.
+        # Use a bare instance without invoking __init__ since we only need
+        # the bound methods, not kernel state.
+        inst = S.__new__(S)
+        body = inst._render_kb_body("DH", "S", "sub", gen)
+        fake_note = {
+            "body": body,
+            "properties": {"title": "Pronouncing DH vs S"},
+            "slug": "pair-dh-s",
+            "path": "30_Resources/EmptyOS/kb/sources/pair-dh-s.md",
+        }
+        payload = inst._note_to_modal_payload(fake_note, "DH", "S", "sub")
+        assert payload["how_to_make"].startswith("Place your tongue")
+        assert payload["target_examples"] == ["this", "breathe", "weather", "mother"]
+        assert payload["confusable_examples"] == ["sip", "busy", "kiss", "boss"]
+        assert payload["minimal_pairs"] == [["this", "sis"], ["they", "say"], ["breathe", "breeze"]]
+        assert "swap /ð/" in payload["common_mistake"]
+        # See-also wikilinks parsed out of the body
+        slugs = {w["slug"] for w in payload["wikilinks"]}
+        assert "phone-dh" in slugs
+        assert "phone-s" in slugs
+        # The tutorials URL is built from ref/hyp/op, not from the note body
+        assert "DH" in payload["tutorials_url"] and "S" in payload["tutorials_url"]
+
+    def test_extra_sections_preserved(self):
+        """If the user adds a custom `## My notes` section to the vault file,
+        the modal payload surfaces it under extra_sections — the projector
+        doesn't silently drop user content."""
+        S = self._shadowing_class()
+        inst = S.__new__(S)
+        body = (
+            "# Pronouncing DH vs S\n\n"
+            "## How to make it\nTongue between teeth.\n\n"
+            "## My notes\nI keep forgetting the voicing.\n"
+        )
+        fake_note = {"body": body, "properties": {}, "slug": "pair-dh-s", "path": ""}
+        payload = inst._note_to_modal_payload(fake_note, "DH", "S", "sub")
+        assert "My notes" in payload["extra_sections"]
+        assert "voicing" in payload["extra_sections"]["My notes"]

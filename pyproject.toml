@@ -21,6 +21,8 @@ dependencies = [
     "anthropic>=0.40",
     "markdown>=3.4",
     "python-docx>=1.1",
+    "pypdf>=4.0",
+    "ddgs>=8.0",
     "pyyaml>=6",
     "prompt_toolkit>=3.0",
 ]

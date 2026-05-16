@@ -344,14 +344,17 @@ input{width:100%;box-sizing:border-box;padding:8px 10px;background:#0d1117;borde
 button{width:100%;margin-top:12px;padding:8px;background:#238636;border:0;border-radius:6px;color:#fff;font-weight:600;cursor:pointer}
 button:hover{background:#2ea043}
 .err{color:#f85149;font-size:12px;margin-top:8px}
+.demo-hint{background:#1f2937;border:1px solid #30363d;border-radius:6px;padding:10px 12px;font-size:12px;color:#8b949e;margin-bottom:14px;line-height:1.5}
+.demo-hint code{background:#0d1117;border:1px solid #30363d;border-radius:4px;padding:1px 6px;color:#e6edf3;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
 .foot{margin-top:24px;font-size:12px;color:#6e7681;text-align:center;line-height:1.6}
 .foot a{color:#8b949e;text-decoration:none;border-bottom:1px dotted #30363d}
 .foot a:hover{color:#e6edf3;border-bottom-color:#8b949e}
 .foot .sep{margin:0 6px;color:#30363d}
 </style></head><body>
 <form class="box" method="post" action="/login">
-<h1>EmptyOS</h1><p>Sign in with your password or access token.</p>
-<input type="password" name="token" placeholder="Password or token" autofocus required>
+<h1>EmptyOS</h1><p>__SUBTITLE__</p>
+__DEMO_HINT__
+<input type="password" name="token" placeholder="__PLACEHOLDER__" autofocus required>
 <input type="hidden" name="next" value="__NEXT__">
 <button type="submit">Sign in</button>
 __ERR__
@@ -380,7 +383,31 @@ EmptyOS — a mind companion. Think and create with you, not for you.<br>
             next_url = _html.escape(raw_next, quote=True)
             err = _html.escape(request.query_params.get("err", "") or "", quote=True)
             err_html = f'<div class="err">{err}</div>' if err else ""
-            page = _LOGIN_HTML.replace("__NEXT__", next_url).replace("__ERR__", err_html)
+
+            # On a public demo, show the password inline so first-time
+            # visitors don't need a token-bearing link to get in. Length cap
+            # guards against accidentally displaying a long auth_token if an
+            # operator misconfigured the demo without a separate password.
+            demo_hint_html = ""
+            subtitle = "Sign in with your password or access token."
+            placeholder = "Password or token"
+            if kernel.config.demo_enabled and _login_password and len(_login_password) <= 32:
+                pw_safe = _html.escape(_login_password, quote=True)
+                demo_hint_html = (
+                    f'<div class="demo-hint"><strong>Public demo.</strong> '
+                    f'Password: <code>{pw_safe}</code></div>'
+                )
+                subtitle = "EmptyOS — public demo. Sign in with the password below."
+                placeholder = "Password"
+
+            page = (
+                _LOGIN_HTML
+                .replace("__NEXT__", next_url)
+                .replace("__ERR__", err_html)
+                .replace("__DEMO_HINT__", demo_hint_html)
+                .replace("__SUBTITLE__", subtitle)
+                .replace("__PLACEHOLDER__", placeholder)
+            )
             return HTMLResponse(page)
 
         @server.post("/login")

@@ -30,8 +30,14 @@ class LocalPronounceProvider(Provider):
         self.host = plugin._host() if hasattr(plugin, "_host") else "http://127.0.0.1:8603"
 
     async def available(self) -> bool:
+        """The service being reachable is enough — the model loads lazily on
+        the first /score call, and the worst case is that the first call waits
+        for warmup (~10-30s). Only report unavailable when the service itself
+        is down or the model entered an irrecoverable error state."""
         health = await self.plugin.health()
-        return bool(health) and bool(health.get("ready"))
+        if not health:
+            return False
+        return health.get("model_state") != "error"
 
     async def health(self) -> dict:
         h = await self.plugin.health()
@@ -46,20 +52,6 @@ class LocalPronounceProvider(Provider):
                 },
             }
         state = h.get("model_state", "idle")
-        if state in ("downloading", "loading"):
-            return {
-                "available": False,
-                "reason": (
-                    f"pronunciation model is {state}"
-                    + (f" — {h.get('model_detail')}" if h.get("model_detail") else "")
-                ),
-                "recovery": {
-                    "kind": "service",
-                    "id": "pronounce",
-                    "url": self.host,
-                    "hint": "Wait for the first-run model download to complete (~1.2 GB).",
-                },
-            }
         if state == "error":
             return {
                 "available": False,
@@ -71,10 +63,17 @@ class LocalPronounceProvider(Provider):
                     "hint": "Check the service log; the model files may be missing or torch is misconfigured.",
                 },
             }
-        if not h.get("ready"):
+        # idle / downloading / loading / ready — all surface as available.
+        # The /system inspector still shows the model state as a hint, but
+        # the user-facing capability chip stays green so the app affordance
+        # doesn't disappear during the first-run warmup.
+        if state in ("downloading", "loading"):
             return {
-                "available": False,
-                "reason": "pronunciation model not ready yet",
+                "available": True,
+                "reason": (
+                    f"warming up ({state})"
+                    + (f" — {h.get('model_detail')}" if h.get("model_detail") else "")
+                ),
                 "recovery": None,
             }
         return {"available": True, "reason": None, "recovery": None}

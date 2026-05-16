@@ -23,6 +23,8 @@ commands = ["company"]
 prefix = "/orgs"
 
 [provides.events]
+# Real-org lifecycle — creating/archiving an org or adding a member is
+# news the reactor should journal. Kept in `emits` for cross-app listeners.
 emits = [
     "orgs:org_created",
     "orgs:org_updated",
@@ -30,8 +32,11 @@ emits = [
     "orgs:member_added",
     "orgs:member_updated",
     "orgs:member_removed",
-    # Scenario lifecycle — names retained from the persona-sim era for
-    # back-compat with reactor handlers and the run-record schema.
+]
+# Scenario-sim run lifecycle — drives the persona-sim UI's run records
+# and review-gate cards. Names retained from the persona-sim era for
+# back-compat with the run-record schema. Internal-only by design.
+internal = [
     "company:run_started",
     "company:run_complete",
     "company:action_applied",

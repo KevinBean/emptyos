@@ -40,6 +40,7 @@ class SessionsMixin:
                 name TEXT NOT NULL DEFAULT 'New chat',
                 backend TEXT NOT NULL DEFAULT 'auto',
                 system_prompt TEXT NOT NULL DEFAULT '',
+                project_id TEXT NOT NULL DEFAULT '',
                 created TEXT NOT NULL
             );
             CREATE TABLE IF NOT EXISTS messages (
@@ -52,6 +53,12 @@ class SessionsMixin:
             );
             CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session_id);
         """)
+        # In-place migration for DBs created before project_id landed.
+        cols = {r[1] for r in self.db.execute("PRAGMA table_info(sessions)").fetchall()}
+        if "project_id" not in cols:
+            self.db.execute(
+                "ALTER TABLE sessions ADD COLUMN project_id TEXT NOT NULL DEFAULT ''"
+            )
         self.db.commit()
         json_path = self.data_dir / "sessions.json"
         if (
@@ -107,6 +114,7 @@ class SessionsMixin:
             "name": row["name"],
             "backend": row["backend"],
             "system_prompt": row["system_prompt"],
+            "project_id": row["project_id"] if "project_id" in row.keys() else "",
             "messages": messages,
             "created": row["created"],
         }

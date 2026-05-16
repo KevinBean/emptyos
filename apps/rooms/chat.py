@@ -43,6 +43,62 @@ if TYPE_CHECKING:
 # ─────────────────────────────────────────────────────────────────────
 
 
+_SLASH_RE = re.compile(r"^(/[A-Za-z][A-Za-z0-9_-]*)\b(.*)$", re.DOTALL)
+
+
+async def _maybe_apply_skill_overlay(app, text: str, responder: dict):
+    """Detect `/<slash> ...` prefix, look up the skill via call_app, return
+    (stripped_text, overlaid_responder). Falls through silently when:
+      - text has no leading slash
+      - skill app isn't loaded
+      - slash doesn't match a registered skill
+
+    The overlay layers the skill body BELOW the room's existing prompt
+    (room persona stays primary) and unions server_actions per app.
+    """
+    if not text.startswith("/"):
+        return text, responder
+    m = _SLASH_RE.match(text)
+    if not m:
+        return text, responder
+    slash, rest = m.group(1), m.group(2).lstrip()
+    try:
+        skill = await app.call_app("skill", "by_slash", slash=slash)
+    except Exception:
+        return text, responder
+    if not skill or not isinstance(skill, dict):
+        return text, responder
+
+    # Layer: room prompt first (persona wins ties), skill body second.
+    base_prompt = responder.get("system_prompt") or ""
+    skill_body = (skill.get("body") or "").strip()
+    merged_prompt = (
+        f"{base_prompt}\n\n---\n\n{skill_body}" if base_prompt else skill_body
+    )
+
+    # Union server_actions: keep all of the room's, add any new ones from
+    # the skill. Per-app methods deduped, order preserved (room-first so
+    # the LLM sees room's verbs ranked higher when it picks tools).
+    base_actions = dict(responder.get("server_actions") or {})
+    for app_id, methods in (skill.get("server_actions") or {}).items():
+        existing = list(base_actions.get(app_id) or [])
+        for meth in methods:
+            if meth not in existing:
+                existing.append(meth)
+        base_actions[app_id] = existing
+
+    overlaid = dict(responder)
+    overlaid["system_prompt"] = merged_prompt
+    overlaid["server_actions"] = base_actions
+    # Skills don't persist — this is a per-turn synthesized record.
+
+    await app.emit(
+        "skill:invoked",
+        {"name": skill.get("name"), "slash": slash, "room_id": responder.get("id")},
+    )
+    return rest or text, overlaid
+
+
 async def chat(self, agent_id: str, text: str, context: str = "",
                client_actions: list[dict] | None = None) -> dict:
     """Send a chat turn to an agent and return the response dict.
@@ -215,6 +271,12 @@ async def _chat(self, agent_id: str, text: str,
         # 1:1 fallback — the room record IS the agent persona.
         responder = room
 
+    # Skill overlay — if the user typed `/<slash> ...` and `<slash>` is a
+    # registered skill, layer the skill's system-prompt body onto the
+    # responder and merge its server_actions allowlist for this turn only.
+    # The room's base persona stays intact; the skill is additive scaffolding.
+    text, responder = await _maybe_apply_skill_overlay(self, text, responder)
+
     history = self._load_history(agent_id)
     system = self._build_system(responder, client_actions)
     # Phase 11 — resolve [[wikilink]] vault refs in the user message.
@@ -237,7 +299,9 @@ async def _chat(self, agent_id: str, text: str,
     response = await self.think(prompt, **kwargs)
 
     # Execute server actions from LLM output
-    response, server_results = await self._execute_server_actions(response, responder)
+    response, server_results = await self._execute_server_actions(
+        response, responder, room_id=agent_id,
+    )
     if not response and server_results:
         response = self._summarize_server_actions(server_results)
 
@@ -543,7 +607,9 @@ async def api_chat_stream(self, request):
             full_text = f"Error: {e}"
 
         # Execute server actions + save history
-        cleaned, server_results = await app._execute_server_actions(full_text, responder)
+        cleaned, server_results = await app._execute_server_actions(
+            full_text, responder, room_id=agent_id,
+        )
         if not cleaned and server_results:
             cleaned = app._summarize_server_actions(server_results)
             yield {"text": cleaned, "done": False, "fallback": True}

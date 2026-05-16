@@ -66,6 +66,10 @@ services:
       - emptyos-demo-data:/app/data
     environment:
       - EOS_NETWORK_AUTH_TOKEN=${EOS_NETWORK_AUTH_TOKEN:?set EOS_NETWORK_AUTH_TOKEN in .env.demo}
+      # Visitor-facing password — shown on /login when demo.enabled is true.
+      # Override here to keep deploy-config layer authoritative; defaults to
+      # the literal "demo" baked into demo/emptyos.toml if unset.
+      - EOS_NETWORK_PASSWORD=${EOS_NETWORK_PASSWORD:-demo}
       - EOS_DEMO_ENABLED=true
       # Per-IP rate limit (requests per 10s window). 0 disables.
       - EOS_RATE_LIMIT_PER_10S=60

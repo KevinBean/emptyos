@@ -209,6 +209,7 @@ async def api_create_agent(self, request):
         "effort": data.get("effort", ""),
         "tools": data.get("tools", []),
         "server_actions": data.get("server_actions", {}),
+        "gate_mode": data.get("gate_mode", "auto"),
         "temperature": data.get("temperature"),
         "builtin": data.get("builtin", False),
         "created": datetime.now(timezone.utc).isoformat(),
@@ -226,7 +227,7 @@ async def api_update_agent(self, request):
     data = await request.json()
     updatable = ("name", "system_prompt", "knowledge_files", "knowledge_dir",
                  "knowledge_char_limit", "model", "effort", "tools",
-                 "temperature", "tier", "server_actions")
+                 "temperature", "tier", "server_actions", "gate_mode")
     for key in updatable:
         if key in data:
             agent[key] = data[key]

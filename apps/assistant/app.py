@@ -31,7 +31,39 @@ from .prompts import (
     TOOLS_READONLY,
     TOOLS_SYSTEM_PROMPT,
 )
+from .files import DEFAULT_MAX_CHARS as FILES_DEFAULT_MAX_CHARS
+from .files import extract_file, format_block
+from .research import (
+    DEFAULT_PER_PAGE_CHARS as RESEARCH_DEFAULT_PER_PAGE_CHARS,
+)
+from .research import (
+    DEFAULT_TOP_N as RESEARCH_DEFAULT_TOP_N,
+)
+from .research import run_research
 from .sessions import SessionsMixin
+from .vision import resolve_images
+
+# When images are attached but the user is on "auto" (or a non-vision tier),
+# pin to this provider so the request hits a vision-capable model. Override
+# via [apps.assistant] vision_provider = "openai".
+DEFAULT_VISION_PROVIDER = "openai-mini"
+
+
+def _research_status_label(ev: dict) -> str:
+    stage = ev.get("stage", "")
+    if stage == "searching":
+        return "Searching the web…"
+    if stage == "found":
+        return f"Found {ev.get('n', 0)} sources, reading them…"
+    if stage == "reading":
+        i, n = ev.get("i", 0), ev.get("n", 0)
+        title = ev.get("title") or ev.get("url") or ""
+        return f"Reading {i}/{n}: {title[:70]}"
+    if stage == "read-failed":
+        return f"Skipped: {ev.get('error', 'unreachable')}"
+    if stage == "synthesizing":
+        return "Synthesizing the report…"
+    return stage or "Working…"
 
 
 class AssistantApp(SessionsMixin, BaseApp):
@@ -262,6 +294,24 @@ class AssistantApp(SessionsMixin, BaseApp):
         if state:
             system += f"\n\nCurrent user state:\n{state}"
         if session:
+            project_id = session.get("project_id") or ""
+            if project_id:
+                max_chars = int(self.app_config("max_project_context_chars", 30_000))
+                try:
+                    project_ctx = await self.call_app(
+                        "projects",
+                        "load_project_context",
+                        project_id=project_id,
+                        max_chars=max_chars,
+                    )
+                except Exception:
+                    project_ctx = ""
+                if project_ctx:
+                    system += (
+                        "\n\nPinned project context — every reply in this session "
+                        f"should be informed by the following project documents "
+                        f"(project id: {project_id}):\n\n{project_ctx}"
+                    )
             custom = session.get("system_prompt", "")
             if custom:
                 system += f"\n\nCustom instructions: {custom}"
@@ -542,6 +592,106 @@ class AssistantApp(SessionsMixin, BaseApp):
 
         return final_text.strip(), provider.name, tool_log
 
+    # ── Research orchestration ─────────────────────────────────
+
+    async def _run_research_ws(self, websocket, session_id: str, query: str) -> None:
+        """Stream research events over the assistant WS and persist the report.
+
+        Detects WS-closed via send failures and tells ``run_research`` to bail
+        via the ``is_cancelled`` hook — keeps an orphaned tab from burning the
+        full 5-source + synthesis budget after the user has navigated away.
+        """
+        top_n = int(self.app_config("research_top_n", RESEARCH_DEFAULT_TOP_N))
+        per_page = int(
+            self.app_config("research_per_page_chars", RESEARCH_DEFAULT_PER_PAGE_CHARS)
+        )
+
+        ws_dead = False
+
+        async def safe_send(payload: dict) -> None:
+            nonlocal ws_dead
+            if ws_dead:
+                return
+            try:
+                await websocket.send_json(payload)
+            except Exception:
+                ws_dead = True
+
+        # Surface that work is happening so the UI flips to "thinking".
+        await safe_send({"type": "agent-thinking", "agent": "research"})
+        full_text = ""
+        sources: list[dict] = []
+        had_error = False
+        try:
+            async for ev in run_research(
+                self,
+                query,
+                top_n=top_n,
+                per_page_chars=per_page,
+                is_cancelled=lambda: ws_dead,
+            ):
+                if ws_dead:
+                    break
+                ev_type = ev.get("type")
+                if ev_type == "research-text":
+                    full_text += ev.get("text", "")
+                    await safe_send(
+                        {"type": "agent-stream", "agent": "research", "text": full_text}
+                    )
+                elif ev_type == "research-status":
+                    await safe_send(
+                        {
+                            "type": "agent-status",
+                            "agent": "research",
+                            "status": _research_status_label(ev),
+                            "research_stage": ev.get("stage"),
+                            "research_meta": ev,
+                        }
+                    )
+                elif ev_type == "research-citations":
+                    sources = ev.get("sources", []) or []
+                    await safe_send(
+                        {"type": "research-citations", "sources": sources}
+                    )
+                elif ev_type == "research-error":
+                    had_error = True
+                    await safe_send(
+                        {
+                            "type": "agent-reply",
+                            "agent": "system",
+                            "text": "⚠ " + ev.get("message", "research failed"),
+                        }
+                    )
+        except Exception as e:
+            had_error = True
+            await safe_send(
+                {
+                    "type": "agent-reply",
+                    "agent": "system",
+                    "text": f"⚠ Research failed: {type(e).__name__}: {e}",
+                }
+            )
+
+        # Persist even when the WS is dead — the user can reload and find the
+        # report in their session history.
+        if full_text and not ws_dead:
+            persisted = full_text
+            if sources:
+                persisted += "\n\n**Sources:**\n" + "\n".join(
+                    f"[{s['n']}] [{s.get('title') or s['url']}]({s['url']})" for s in sources
+                )
+            try:
+                async with self._sessions_lock:
+                    self._add_message(session_id, "assistant", persisted, agent="research")
+            except Exception:
+                pass
+            await safe_send(
+                {"type": "agent-reply", "agent": "research", "text": full_text}
+            )
+        await safe_send({"type": "agent-done"})
+        if not had_error and not ws_dead:
+            await self.emit("assistant:message", {"session": session_id, "provider": "research"})
+
     # ── WebSocket Chat ─────────────────────────────────────────
 
     @ws_route("/ws/{session_id}")
@@ -559,13 +709,91 @@ class AssistantApp(SessionsMixin, BaseApp):
                 msg_type = data.get("type", "message")
 
                 if msg_type == "message":
-                    text = data.get("text", "").strip()
-                    if not text:
+                    text = (data.get("text") or "").strip()
+                    image_paths = [
+                        p for p in (data.get("images") or []) if isinstance(p, str) and p
+                    ]
+                    file_paths = [
+                        p for p in (data.get("files") or []) if isinstance(p, str) and p
+                    ]
+                    if not text and not image_paths and not file_paths:
                         continue
+                    # Extract attached files (PDF/docx/txt/md). Persist the
+                    # user's typed text untouched; only the augmented version
+                    # (file content prepended) goes to the model so chat history
+                    # stays human-readable.
+                    file_extracts: list[str] = []
+                    if file_paths:
+                        vault_root = self.kernel.config.notes_path or ""
+                        max_chars = int(
+                            self.app_config("max_file_chars", FILES_DEFAULT_MAX_CHARS)
+                        )
+                        any_truncated = False
+                        any_errors: list[str] = []
+                        for fp in file_paths:
+                            ex = extract_file(vault_root, fp, max_chars=max_chars)
+                            file_extracts.append(format_block(ex))
+                            if ex.truncated:
+                                any_truncated = True
+                            if ex.error:
+                                any_errors.append(f"{ex.name}: {ex.error}")
+                        if any_truncated:
+                            await websocket.send_json(
+                                {
+                                    "type": "agent-reply",
+                                    "agent": "system",
+                                    "text": (
+                                        "⚠ Some attached files exceeded the per-file "
+                                        f"character cap ({max_chars:,}) and were truncated."
+                                    ),
+                                }
+                            )
+                        if any_errors:
+                            await websocket.send_json(
+                                {
+                                    "type": "agent-reply",
+                                    "agent": "system",
+                                    "text": "⚠ File extraction errors: " + "; ".join(any_errors),
+                                }
+                            )
+                    # Resolve vault image paths to data URLs once; if anything
+                    # dropped (missing/oversized), tell the user.
+                    image_urls: list[str] = []
+                    if image_paths:
+                        vault_root = self.kernel.config.notes_path or ""
+                        image_urls = resolve_images(vault_root, image_paths)
+                        dropped = len(image_paths) - len(image_urls)
+                        if dropped:
+                            await websocket.send_json(
+                                {
+                                    "type": "agent-reply",
+                                    "agent": "system",
+                                    "text": (
+                                        f"⚠ {dropped} image{'s' if dropped > 1 else ''} "
+                                        "could not be loaded (missing, empty, or larger than 12 MB)."
+                                    ),
+                                }
+                            )
 
                     # Save user message
                     async with self._sessions_lock:
                         self._add_message(session_id, "user", text)
+
+                    # Streaming /research is handled inline (the normal slash
+                    # dispatcher returns a single string and can't stream).
+                    if text.startswith("/research"):
+                        query = text[len("/research"):].strip()
+                        if not query:
+                            await websocket.send_json(
+                                {
+                                    "type": "agent-reply",
+                                    "agent": "system",
+                                    "text": "Usage: `/research <question>`",
+                                }
+                            )
+                            continue
+                        await self._run_research_ws(websocket, session_id, query)
+                        continue
 
                     # Check slash commands first
                     if text.startswith("/"):
@@ -646,6 +874,23 @@ class AssistantApp(SessionsMixin, BaseApp):
 
                     provider, explicit_backend = self._pick_provider_label(session)
 
+                    # When images are attached, the chosen provider must support
+                    # vision. "auto" and non-vision tiers are silently rerouted
+                    # to a configured vision-capable provider so the request
+                    # actually answers instead of falling through the chain.
+                    pinned_provider: str | None = None
+                    if image_urls:
+                        vision_pin = (
+                            self.app_config("vision_provider", DEFAULT_VISION_PROVIDER)
+                            or DEFAULT_VISION_PROVIDER
+                        )
+                        if provider in ("auto", "ollama", "claude-cli") or not provider:
+                            pinned_provider = vision_pin
+                            provider = vision_pin
+                            explicit_backend = False
+                        else:
+                            pinned_provider = provider
+
                     # Build prompt with context
                     await websocket.send_json({"type": "agent-thinking", "agent": provider})
 
@@ -654,15 +899,34 @@ class AssistantApp(SessionsMixin, BaseApp):
                     system = await self._build_system(session)
 
                     chat_messages = self._build_chat_messages(session, vault_context=context)
+                    if file_extracts and chat_messages and chat_messages[-1]["role"] == "user":
+                        # Prepend extracted file blocks to the final user turn
+                        # so the model sees attached PDF/docx/txt content
+                        # without polluting the persisted message.
+                        chat_messages[-1] = {
+                            "role": "user",
+                            "content": (
+                                "\n\n".join(file_extracts)
+                                + "\n\n"
+                                + chat_messages[-1]["content"]
+                            ),
+                        }
 
                     # Stream response with cancel support
                     full_text = ""
                     original_provider = provider
                     self._cancel_flags[session_id] = False
+                    think_kwargs: dict = {
+                        "messages": chat_messages,
+                        "system": system,
+                        "domain": "text",
+                    }
+                    if image_urls:
+                        think_kwargs["images"] = image_urls
+                    if pinned_provider:
+                        think_kwargs["provider"] = pinned_provider
                     try:
-                        async for chunk in self.think_stream(
-                            messages=chat_messages, system=system, domain="text"
-                        ):
+                        async for chunk in self.think_stream(**think_kwargs):
                             # Check cancel flag
                             if self._cancel_flags.get(session_id):
                                 self._cancel_flags.pop(session_id, None)
@@ -734,11 +998,16 @@ class AssistantApp(SessionsMixin, BaseApp):
                                 )
                             except Exception:
                                 pass
+                            fb_kwargs: dict = {
+                                "messages": chat_messages,
+                                "system": system,
+                                "domain": "text",
+                            }
+                            if image_urls:
+                                fb_kwargs["images"] = image_urls
                             try:
                                 full_text = await asyncio.wait_for(
-                                    self.think(
-                                        messages=chat_messages, system=system, domain="text"
-                                    ),
+                                    self.think(**fb_kwargs),
                                     timeout=FALLBACK_THINK_TIMEOUT,
                                 )
                             except TimeoutError:
@@ -838,7 +1107,7 @@ class AssistantApp(SessionsMixin, BaseApp):
             entries = [
                 e
                 for e in entries
-                if q in e.get("name", "").lower() or q in e.get("path", "").lower()
+                if q in (e.get("name") or "").lower() or q in (e.get("path") or "").lower()
             ]
         # Sort newest-first by modified mtime
         entries.sort(key=lambda e: e.get("modified", 0), reverse=True)
@@ -853,6 +1122,37 @@ class AssistantApp(SessionsMixin, BaseApp):
             for e in entries[:limit]
         ]
         return {"files": files, "total": len(entries)}
+
+    @web_route("GET", "/api/image")
+    async def api_image(self, request):
+        """Serve a vault-resident image as raw bytes for in-chat thumbnails.
+
+        Accepts ``?path=<vault-relative>``. Refuses non-images and any path
+        that escapes the configured vault root — keeps this endpoint from
+        being a generic file-read backdoor.
+        """
+        from starlette.responses import FileResponse, JSONResponse
+
+        rel = (request.query_params.get("path") or "").strip()
+        if not rel:
+            return JSONResponse({"error": "path required"}, status_code=400)
+        vault_root = self.kernel.config.notes_path
+        if not vault_root:
+            return JSONResponse({"error": "no vault configured"}, status_code=500)
+        try:
+            full = (Path(vault_root) / rel).resolve()
+            vroot = Path(vault_root).resolve()
+            full.relative_to(vroot)  # raises if `full` escapes the vault
+        except (ValueError, OSError):
+            return JSONResponse({"error": "path outside vault"}, status_code=400)
+        if not full.is_file():
+            return JSONResponse({"error": "not found"}, status_code=404)
+        import mimetypes as _mt
+
+        mime, _ = _mt.guess_type(str(full))
+        if not mime or not mime.startswith("image/"):
+            return JSONResponse({"error": "not an image"}, status_code=415)
+        return FileResponse(str(full), media_type=mime)
 
     @web_route("POST", "/api/upload")
     async def api_upload(self, request):
@@ -953,7 +1253,7 @@ class AssistantApp(SessionsMixin, BaseApp):
             row = self.db.execute("SELECT id FROM sessions WHERE id = ?", (sid,)).fetchone()
             if not row:
                 return {"error": "not found"}
-            _ALLOWED_COLS = {"name", "backend", "system_prompt"}
+            _ALLOWED_COLS = {"name", "backend", "system_prompt", "project_id"}
             for key in _ALLOWED_COLS:
                 if key in data:
                     self.db.execute(
@@ -961,6 +1261,36 @@ class AssistantApp(SessionsMixin, BaseApp):
                     )
             self.db.commit()
         return self._get_session(sid)
+
+    @web_route("POST", "/api/sessions/{sid}/pin-project")
+    async def api_pin_project(self, request):
+        """Bind a session to a project so its docs become persistent context."""
+        sid = request.path_params["sid"]
+        data = await request.json()
+        project_id = (data.get("project_id") or "").strip()
+        if not project_id:
+            return {"error": "project_id required"}
+        async with self._sessions_lock:
+            row = self.db.execute("SELECT id FROM sessions WHERE id = ?", (sid,)).fetchone()
+            if not row:
+                return {"error": "session not found"}
+            self.db.execute(
+                "UPDATE sessions SET project_id = ? WHERE id = ?", (project_id, sid)
+            )
+            self.db.commit()
+        return {"ok": True, "session_id": sid, "project_id": project_id}
+
+    @web_route("DELETE", "/api/sessions/{sid}/pin-project")
+    async def api_unpin_project(self, request):
+        """Clear a session's project binding."""
+        sid = request.path_params["sid"]
+        async with self._sessions_lock:
+            row = self.db.execute("SELECT id FROM sessions WHERE id = ?", (sid,)).fetchone()
+            if not row:
+                return {"error": "session not found"}
+            self.db.execute("UPDATE sessions SET project_id = '' WHERE id = ?", (sid,))
+            self.db.commit()
+        return {"ok": True, "session_id": sid}
 
     @web_route("DELETE", "/api/sessions/{sid}")
     async def api_delete_session(self, request):
@@ -1095,6 +1425,13 @@ class AssistantApp(SessionsMixin, BaseApp):
         ]
         cmds.append({"command": "/help", "app": "assistant", "method": "help"})
         cmds.append({"command": "/new", "app": "assistant", "method": "new session"})
+        cmds.append(
+            {
+                "command": "/research",
+                "app": "assistant",
+                "method": "browse top results + synthesize cited report",
+            }
+        )
         return cmds
 
     # ── Compare Mode ──────────────────────────────────────────

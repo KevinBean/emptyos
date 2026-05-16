@@ -461,6 +461,46 @@ class ProjectsApp(BaseApp):
             content = ""
         return {"id": project_id, "path": str(f), "content": content}
 
+    async def load_project_context(
+        self,
+        project_id: str,
+        *,
+        max_chars: int = 30_000,
+        max_files: int = 10,
+    ) -> str:
+        """Concatenated context bundle for chat-pinned projects.
+
+        Returns the project's main note followed by up to ``max_files``
+        markdown files from its ``docs/`` folder, each with a header showing
+        the file name. Returned text is capped at ``max_chars`` overall — a
+        ``…[truncated]`` marker tells the model what it didn't see. Returns
+        an empty string when the project doesn't resolve so callers can
+        no-op without branching.
+        """
+        if not project_id:
+            return ""
+        parts: list[str] = []
+        main = await self.get_project_content(project_id)
+        if main.get("content"):
+            parts.append(f"# Project: {project_id}\n\n{main['content']}")
+
+        proj_dir = self._find_project_dir(project_id)
+        if proj_dir:
+            docs_dir = proj_dir / "docs"
+            if docs_dir.is_dir():
+                doc_files = sorted(docs_dir.glob("*.md"))[:max_files]
+                for f in doc_files:
+                    try:
+                        body = await self.read(str(f))
+                    except Exception:
+                        continue
+                    parts.append(f"# docs/{f.name}\n\n{body}")
+
+        bundle = "\n\n---\n\n".join(p for p in parts if p)
+        if len(bundle) > max_chars:
+            bundle = bundle[:max_chars] + "\n\n…[truncated]"
+        return bundle
+
     async def list_projects(self, status_filter: str = "") -> list[dict]:
         seen_ids: set = set()
         # 1. Active projects from 10_Projects/

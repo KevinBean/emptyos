@@ -24,6 +24,7 @@ from emptyos.sdk import (
     scheduled,
     web_route,
 )
+from emptyos.sdk.text_guards import assert_single_line
 
 from . import panels as _panels
 from .parser import MOOD_EMOJI, MOOD_SCORE, extract_section, parse_entries, replace_section
@@ -990,11 +991,9 @@ class JournalApp(BaseApp):
         # Guards against a prior bug where the UI dumped the full rendered
         # section back into the textarea and autosave POSTed it as a new
         # entry's text, cascading into multi-MB journals.
-        # TODO(extract): when a second "append one line to a markdown section"
-        # app needs this (likely capture.add, task.add, or reactor ripples),
-        # lift to BaseApp.assert_single_line(text) in emptyos/sdk/base_app.py.
-        if "\n" in text or text.startswith("- **"):
-            raise ValueError("entry text must be a single plain line (no markdown entry prefix)")
+        assert_single_line(text, label="entry text")
+        if text.startswith("- **"):
+            raise ValueError("entry text must not start with markdown entry prefix")
         async with self._daily_lock(d):
             content = await self._ensure_daily(d)
             now = datetime.now(UTC).strftime("%H:%M")

@@ -9,7 +9,7 @@ module = "app"
 class = "AssistantApp"
 
 [requires]
-capabilities = ["think", "read", "write", "search", "speak", "listen"]
+capabilities = ["think", "read", "write", "search", "speak", "listen", "browse"]
 apps = ["search", "quick-action", "projects", "journal"]
 
 [provides.cli]

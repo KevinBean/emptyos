@@ -283,6 +283,19 @@ async def _fire_room_schedule(self, room_id: str) -> None:
         text = await self.think(prompt, **kwargs)
     except Exception as e:
         text = f"(scheduled check-in failed: {e!s:.200s})"
+    # Route [DO:] tokens through the action pipeline so gate_mode applies.
+    # In "gate" mode they land as pending cards; in "auto" they execute
+    # against the agent's allowlist; absent both, the call is a no-op
+    # that just returns the cleaned text.
+    server_results: list[dict] = []
+    try:
+        text, server_results = await self._execute_server_actions(
+            text or "", responder, room_id=room_id,
+        )
+    except Exception:
+        # Never let an action-processing failure swallow the scheduled
+        # fire — the message itself still goes to history.
+        pass
     history = self._load_history(room_id)
     now = datetime.now(timezone.utc).isoformat()
     msg: dict = {
@@ -291,6 +304,8 @@ async def _fire_room_schedule(self, room_id: str) -> None:
         "ts": now,
         "scheduled": True,
     }
+    if server_results:
+        msg["server_results"] = server_results
     if kind == "group":
         msg["actor"] = {"type": "agent", "id": responder["id"]}
     history.append(msg)

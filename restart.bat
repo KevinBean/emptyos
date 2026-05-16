@@ -48,6 +48,21 @@ if %errorlevel%==0 (
     timeout /t 3 /nobreak >nul
 )
 
+REM Check Pronounce API (port 8603) — phoneme-scoring service. Model is lazy-
+REM loaded on first /score, so booting here just gets the listener ready; the
+REM plugin re-spawns if missing on daemon boot. Fingerprint on the model id.
+curl -s http://localhost:8603/health 2>nul | findstr /C:"wav2vec2-xlsr" >nul 2>nul
+if %errorlevel%==0 (
+    echo   Pronounce API: OK
+) else (
+    echo   Pronounce API: Starting on 8603...
+    pushd "%~dp0services\pronounce"
+    set PRONOUNCE_API_PORT=8603
+    start /b "" python server.py >nul 2>nul
+    popd
+    timeout /t 3 /nobreak >nul
+)
+
 echo.
 echo [3/3] Starting EmptyOS...
 REM %~dp0 is the directory of this .bat file (with trailing backslash) — keeps

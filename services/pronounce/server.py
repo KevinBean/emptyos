@@ -277,7 +277,7 @@ ARPABET_TO_IPA: dict[str, str] = {
 ARPABET_IPA_ALIASES: dict[str, set[str]] = {
     "AA": {"ɑ", "ɑː", "a"},
     "AE": {"æ", "a"},
-    "AH": {"ʌ", "ə"},  # ARPABET AH covers both stressed ʌ and unstressed ə
+    "AH": {"ʌ", "ə", "ɐ"},  # ARPABET AH covers stressed ʌ, unstressed ə, and the near-open central vowel ɐ that eSpeak commonly emits for the same sound
     "AO": {"ɔ", "ɔː", "oː"},
     "AW": {"aʊ", "aw"},
     "AY": {"aɪ", "ai"},
@@ -544,6 +544,26 @@ def _summarize(alignment: list[dict], reference_words: list[dict]) -> dict:
 
 
 # --- Endpoints ---------------------------------------------------------------
+
+
+@app.post("/warmup")
+async def warmup():
+    """Kick off model load in the background. Returns immediately with the
+    current state so the plugin can probe progress via /health.
+
+    Calling /warmup repeatedly is harmless — `ensure_model` is idempotent
+    once the model is loaded, and the inner asyncio.Lock serialises concurrent
+    callers so a second /warmup during download just waits for the first.
+    """
+    async def _run():
+        try:
+            await ensure_model()
+        except Exception:
+            # ensure_model already mutated _MODEL_STATE to "error"; nothing
+            # more to do here.
+            pass
+    asyncio.create_task(_run())
+    return {"started": True, "state": _MODEL_STATE["status"], "detail": _MODEL_STATE["detail"]}
 
 
 @app.get("/health")

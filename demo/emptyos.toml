@@ -16,14 +16,20 @@ path = "/vault"
 watch = true
 
 # --- Deployment: public mode ---
-# auth_token is injected via env (EOS_NETWORK_AUTH_TOKEN) at deploy time so it
-# doesn't live in the repo. The token is *public* for a demo — it's how
-# visitors prove "I read your README first" and deters anonymous bot scraping,
-# not a real secret. Pre-fill it in your landing-page link:
-#   https://demo.<yourdomain>/?token=<EOS_NETWORK_AUTH_TOKEN>
+# Visitors hit /login and see the demo password inline on the page (rendered
+# server-side when demo.enabled is true). No ?token=... in the URL, no
+# pre-shared credential — first-time visitors copy/type "demo" and they're in.
+# The visible password is rate-limited like any other login (5 fails/60s →
+# 30s cooldown per IP) and gates only this demo's sample state, which is
+# wiped on every container restart.
+#
+# auth_token is still injected via env (EOS_NETWORK_AUTH_TOKEN) for operator
+# access via `Authorization: Bearer ...` — that's how redeploy-demo.sh's
+# health check and any CLI tooling get in without typing the password.
 [network]
 mode = "public"
 port = 9000
+password = "demo"
 
 # --- Demo mode ---
 # Banner, GPU capabilities disabled, BYOK panel surfaced in Settings.

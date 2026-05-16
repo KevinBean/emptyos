@@ -34,19 +34,92 @@ def _cached_tokens(usage: dict) -> int:
         return 0
 
 
-def _chat_messages(prompt: str, system: str, messages: list[dict] | None) -> list[dict]:
+def _chat_messages(
+    prompt: str,
+    system: str,
+    messages: list[dict] | None,
+    images: list[str] | None = None,
+) -> list[dict]:
     """Build an OpenAI-style messages list from either `messages` or `prompt`,
-    prepending `system` when present and not already the first turn."""
+    prepending `system` when present and not already the first turn.
+
+    When `images` is non-empty, the final user turn is rewritten as a
+    multimodal content array with one text part + one image_url part per
+    image. URLs may be http(s) or pre-encoded `data:` URLs — the provider
+    sends them through verbatim.
+    """
     if messages:
         msgs = list(messages)
         if system and not (msgs and msgs[0].get("role") == "system"):
             msgs = [{"role": "system", "content": system}] + msgs
-        return msgs
-    msgs = []
-    if system:
-        msgs.append({"role": "system", "content": system})
-    msgs.append({"role": "user", "content": prompt})
+    else:
+        msgs = []
+        if system:
+            msgs.append({"role": "system", "content": system})
+        msgs.append({"role": "user", "content": prompt})
+
+    if images:
+        # Rewrite the LAST user turn to multimodal content.
+        for i in range(len(msgs) - 1, -1, -1):
+            if msgs[i].get("role") == "user":
+                text = msgs[i].get("content") or ""
+                parts: list[dict] = []
+                if isinstance(text, str) and text:
+                    parts.append({"type": "text", "text": text})
+                elif isinstance(text, list):
+                    # Already multimodal — preserve existing parts
+                    parts.extend(text)
+                for url in images:
+                    if url:
+                        parts.append({"type": "image_url", "image_url": {"url": url}})
+                msgs[i] = {"role": "user", "content": parts}
+                break
     return msgs
+
+
+# Model-name patterns whose host accepts OpenAI-style image_url parts (cloud
+# OpenAI 4o/4.1/5.x + Ollama vision tags). Used so the provider chain can
+# fall through to a vision-capable peer when the current model is text-only.
+_VISION_MODEL_PATTERNS = (
+    "gpt-4o", "gpt-4.1", "gpt-5", "o3", "o4",  # OpenAI
+    "llava", "bakllava", "vision", "qwen2.5vl", "qwen2-vl",
+    "llama3.2-vision", "llama-3.2-vision", "minicpm-v", "moondream",
+)
+
+
+def _model_supports_vision(model: str) -> bool:
+    m = (model or "").lower()
+    return any(pat in m for pat in _VISION_MODEL_PATTERNS)
+
+
+def _attach_ollama_images(msgs: list[dict], images: list[str] | None) -> None:
+    """Add the bare base64 of each data URL to the final user turn's ``images`` field.
+
+    Ollama's native ``/api/chat`` does not accept multimodal `content` arrays;
+    instead each message carries an optional ``images: ["<base64>", ...]``
+    sibling field. http/https URLs are skipped — Ollama only reads the
+    bytes you hand it. Mutates ``msgs`` in place.
+    """
+    if not images:
+        return
+    bare: list[str] = []
+    for url in images:
+        if not url:
+            continue
+        if url.startswith("data:") and "base64," in url:
+            bare.append(url.split("base64,", 1)[1])
+        elif url.startswith("http://") or url.startswith("https://"):
+            # Ollama cannot fetch URLs — skip.
+            continue
+        else:
+            bare.append(url)
+    if not bare:
+        return
+    for i in range(len(msgs) - 1, -1, -1):
+        if msgs[i].get("role") == "user":
+            msgs[i] = dict(msgs[i])
+            msgs[i]["images"] = bare
+            break
 
 
 class OpenAICompatThinkProvider(ToolCapableProvider):
@@ -169,16 +242,33 @@ class OpenAICompatThinkProvider(ToolCapableProvider):
         else:
             payload["max_tokens"] = limit
 
+    def supports_vision(self) -> bool:
+        """True when this provider's current model accepts image_url message parts."""
+        return _model_supports_vision(self.model)
+
     def _build_request(
-        self, prompt: str, system: str = "", *, messages: list[dict] | None = None, **kwargs
+        self,
+        prompt: str,
+        system: str = "",
+        *,
+        messages: list[dict] | None = None,
+        images: list[str] | None = None,
+        **kwargs,
     ) -> tuple[dict, dict]:
         """Build messages, headers, and payload for a chat completion request.
 
         If `messages` is supplied, it's used as-is (with system prepended when
         not already present). Otherwise a single-user-turn message is built from
-        `prompt`.
+        `prompt`. When `images` is non-empty, the final user turn is rewritten
+        as multimodal content — provider must support vision or the upstream
+        API will reject the request.
         """
-        msgs = _chat_messages(prompt, system, messages)
+        if images and not self.supports_vision():
+            raise RuntimeError(
+                f"{self.name} model '{self.model}' does not support vision; "
+                "fall through to a vision-capable provider"
+            )
+        msgs = _chat_messages(prompt, system, messages, images=images)
 
         headers = {"Content-Type": "application/json"}
         api_key = self._api_key()
@@ -199,13 +289,23 @@ class OpenAICompatThinkProvider(ToolCapableProvider):
     last_usage: dict | None = None
 
     async def execute(
-        self, *, prompt: str = "", system: str = "", messages: list[dict] | None = None, **kwargs
+        self,
+        *,
+        prompt: str = "",
+        system: str = "",
+        messages: list[dict] | None = None,
+        images: list[str] | None = None,
+        **kwargs,
     ) -> str:
         # Ollama: use native API with think:false for qwen3 models
         if self._is_ollama and "qwen3" in self.model.lower():
-            return await self._execute_ollama_native(prompt, system, messages=messages, **kwargs)
+            return await self._execute_ollama_native(
+                prompt, system, messages=messages, images=images, **kwargs
+            )
 
-        headers, payload = self._build_request(prompt, system, messages=messages, **kwargs)
+        headers, payload = self._build_request(
+            prompt, system, messages=messages, images=images, **kwargs
+        )
 
         async with aiohttp.ClientSession() as session:
             async with session.post(
@@ -239,10 +339,22 @@ class OpenAICompatThinkProvider(ToolCapableProvider):
                 return data["choices"][0]["message"]["content"]
 
     async def _execute_ollama_native(
-        self, prompt: str, system: str = "", *, messages: list[dict] | None = None, **kwargs
+        self,
+        prompt: str,
+        system: str = "",
+        *,
+        messages: list[dict] | None = None,
+        images: list[str] | None = None,
+        **kwargs,
     ) -> str:
         """Use Ollama native API with think:false to disable reasoning mode."""
+        if images and not self.supports_vision():
+            raise RuntimeError(
+                f"{self.name} model '{self.model}' does not support vision; "
+                "fall through to a vision-capable provider"
+            )
         msgs = _chat_messages(prompt, system, messages)
+        _attach_ollama_images(msgs, images)
 
         payload = {
             "model": self.model,
@@ -266,7 +378,13 @@ class OpenAICompatThinkProvider(ToolCapableProvider):
                 return data["message"]["content"]
 
     async def _stream_ollama_native(
-        self, prompt: str, system: str = "", *, messages: list[dict] | None = None, **kwargs
+        self,
+        prompt: str,
+        system: str = "",
+        *,
+        messages: list[dict] | None = None,
+        images: list[str] | None = None,
+        **kwargs,
     ):
         """Streaming version of _execute_ollama_native — yields content chunks.
 
@@ -274,7 +392,13 @@ class OpenAICompatThinkProvider(ToolCapableProvider):
         qwen3-family models don't waste the token budget on reasoning tokens
         that the openai-compat endpoint drops.
         """
+        if images and not self.supports_vision():
+            raise RuntimeError(
+                f"{self.name} model '{self.model}' does not support vision; "
+                "fall through to a vision-capable provider"
+            )
         msgs = _chat_messages(prompt, system, messages)
+        _attach_ollama_images(msgs, images)
 
         payload = {
             "model": self.model,
@@ -403,7 +527,13 @@ class OpenAICompatThinkProvider(ToolCapableProvider):
     }
 
     async def execute_stream(
-        self, *, prompt: str = "", system: str = "", messages: list[dict] | None = None, **kwargs
+        self,
+        *,
+        prompt: str = "",
+        system: str = "",
+        messages: list[dict] | None = None,
+        images: list[str] | None = None,
+        **kwargs,
     ):
         """Stream chat completion chunks.
 
@@ -416,12 +546,14 @@ class OpenAICompatThinkProvider(ToolCapableProvider):
         # often emits zero content via the openai-compat endpoint.
         if self._is_ollama and "qwen3" in self.model.lower():
             async for chunk in self._stream_ollama_native(
-                prompt, system, messages=messages, **kwargs
+                prompt, system, messages=messages, images=images, **kwargs
             ):
                 yield chunk
             return
 
-        headers, payload = self._build_request(prompt, system, messages=messages, **kwargs)
+        headers, payload = self._build_request(
+            prompt, system, messages=messages, images=images, **kwargs
+        )
         payload["stream"] = True
         payload["stream_options"] = {"include_usage": True}
 

@@ -1,6 +1,6 @@
 # Plugins — Inventory + Patterns
 
-19 plugins. **Service plugins** expose named services — apps access via `self.require("name")`. **Enhancer plugins** inject providers into capabilities at startup (`priority=0`); capability falls back to next provider if plugin is absent/offline. No app code changes — "Graceful Enhancement" pattern. See `docs/DESIGN.md`.
+20 plugins. **Service plugins** expose named services — apps access via `self.require("name")`. **Enhancer plugins** inject providers into capabilities at startup (`priority=0`); capability falls back to next provider if plugin is absent/offline. No app code changes — "Graceful Enhancement" pattern. See `docs/DESIGN.md`.
 
 | Plugin | Type | Purpose |
 |---|---|---|

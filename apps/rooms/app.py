@@ -111,6 +111,10 @@ class RoomsApp(BaseApp):
     _pending_path             = _pending._pending_path
     _sandbox_root             = _pending._sandbox_root
     _prepare_write_note       = _pending._prepare_write_note
+    _prepare_repo_edit        = _pending._prepare_repo_edit
+    _prepare_repo_write       = _pending._prepare_repo_write
+    _prepare_repo_exec        = _pending._prepare_repo_exec
+    _repo_root                = _pending._repo_root
     _save_pending             = _pending._save_pending
     _load_pending             = _pending._load_pending
     _lookup_inverse           = _pending._lookup_inverse
