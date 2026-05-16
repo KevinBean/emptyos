@@ -334,6 +334,10 @@ _PERSONAL_IMPORT_RE = re.compile(r"\bapps\.personal\b")
 # (e.g. apps/model-bench/agent_bench.py). Quoted forms only — avoids hits
 # from comments mentioning a dir.
 _PATH_LOAD_RE = re.compile(r"['\"]apps/([a-z][a-z0-9_-]*)/[a-z_]+\.py['\"]")
+# Pathlib-concatenation pattern: `_REPO_ROOT / "apps" / "model-bench"` style
+# (test_sys_agent_bench.py uses this — wasn't caught by the slash-form regex
+# above because the path components are separate string literals).
+_PATHLIB_APPS_RE = re.compile(r"""['"]apps['"]\s*/\s*['"]([a-z][a-z0-9_-]*)['"]""")
 # Sibling-module shim used by dogfood-agent tests: `import behavior as B`
 # resolves via a sys.path insert of `apps/dogfood-agent/` at the top of the
 # test. If dogfood-agent is dropped, the bare-name import 404s.
@@ -369,6 +373,9 @@ def _drop_tests_bound_to(temp_dir: Path, allowed_apps: set[str]) -> None:
         for m in _PATH_LOAD_RE.finditer(src):
             if m.group(1) not in allowed_apps:
                 reasons.add(f"apps/{m.group(1)}/...")
+        for m in _PATHLIB_APPS_RE.finditer(src):
+            if m.group(1) not in allowed_apps:
+                reasons.add(f'"apps" / "{m.group(1)}"')
         if reasons:
             f.unlink()
             dropped.append(f"{f.name} ({', '.join(sorted(reasons))})")

@@ -13,7 +13,7 @@ import re
 import sys
 from pathlib import Path
 
-from _check_base import REPO_ROOT, git_staged, git_tracked
+from check_base import REPO_ROOT, git_staged, git_tracked
 
 PATTERNS_FILE = ".eos-branding"
 

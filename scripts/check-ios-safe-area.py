@@ -32,7 +32,7 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-from _check_base import REPO_ROOT as ROOT, git_staged, git_tracked, install_pre_commit_hook
+from check_base import REPO_ROOT as ROOT, git_staged, git_tracked, install_pre_commit_hook
 
 SCAN_EXTS = {".html", ".css", ".js"}
 SKIP_FRAGMENTS = (

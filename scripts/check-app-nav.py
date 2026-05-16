@@ -34,7 +34,7 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-from _check_base import REPO_ROOT as ROOT, git_staged, git_tracked, install_pre_commit_hook
+from check_base import REPO_ROOT as ROOT, git_staged, git_tracked, install_pre_commit_hook
 
 # Only HTML pages under apps/<id>/pages/ (community + personal) are scanned.
 # Match both `apps/<id>/pages/*.html` and `apps/personal/<id>/pages/*.html`.

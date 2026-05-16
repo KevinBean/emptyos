@@ -14,7 +14,7 @@ import importlib.util
 import sys
 from pathlib import Path
 
-# Make `_check_base` (sibling script) importable, and load `personal_patterns`
+# Make `check_base` (sibling script) importable, and load `personal_patterns`
 # DIRECTLY from its file rather than via `from emptyos.sdk.personal_patterns
 # import load`. The package-style import triggers `emptyos/sdk/__init__.py`,
 # which transitively imports `starlette` — fine when the project is
@@ -30,7 +30,7 @@ _pp_mod = importlib.util.module_from_spec(_pp_spec)
 _pp_spec.loader.exec_module(_pp_mod)
 _load_personal_patterns = _pp_mod.load
 
-from _check_base import (
+from check_base import (
     REPO_ROOT,
     git_staged,
     git_tracked,
