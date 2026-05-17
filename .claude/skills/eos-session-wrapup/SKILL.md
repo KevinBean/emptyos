@@ -170,14 +170,14 @@ Skill: vault-info-ripple
 Args: <one-line-per-fact summary of what changed>
 ```
 
-Example: if today's session included "stopped Enerven salary push, now actively pursuing external roles", the ripple skill might surface every vault note that says "negotiating with Enerven" and propose updates.
+Example: if today's session included "stopped internal salary push at current employer, now actively pursuing external roles", the ripple skill might surface every vault note that says "negotiating with current employer" and propose updates.
 
 #### Report
 
 ```
 Vault Ripple:
   Facts surfaced: 2
-    - Enerven salary push → halted (2026-05-13)
+    - Internal salary push → halted (2026-05-13)
     - Job focus → external roles in energy
   Vault notes updated: 5 (audited 14 stale references)
   Journal entry: 50_Journal/2026/2026-05-13.md (decision logged)

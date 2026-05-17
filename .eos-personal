@@ -3,8 +3,15 @@
 # One regex per line. Lines starting with # are comments. Empty lines ignored.
 # Add patterns here when you find personal data leaking into code.
 
-# Personal identity
-Kevin\s+Bian
+# Personal identity — case-insensitive, allow comma form ("BIAN, Bin") + extra whitespace
+(?i)Kevin[,\s]+Bian
+(?i)Bian[,\s]+Kevin
+(?i)Bian[,\s]+Bin
+bianbin@
+bianbin\+
+
+# Current employer — never legitimate in EmptyOS code (Kevin's job is not the product)
+\bEnerven\b
 
 # Personal paths
 D:\\\\Main Vault

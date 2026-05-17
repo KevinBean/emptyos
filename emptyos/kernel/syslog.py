@@ -9,9 +9,57 @@ Levels: debug, info, warn, error
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
 import time
 from pathlib import Path
+
+
+# Personal-pattern scrubber for log writes.
+# Capability handlers sometimes log `f"think failed for prompt: {prompt}"` or
+# similar — raw prompt fragments persisting in `data/syslog.db` is exactly the
+# leak class .eos-personal is meant to catch. Load patterns once at module
+# import; fail-open if the load fails (syslog must keep working).
+_SCRUB_PATTERNS: list[re.Pattern] | None = None
+
+
+def _load_scrub_patterns() -> list[re.Pattern]:
+    global _SCRUB_PATTERNS
+    if _SCRUB_PATTERNS is not None:
+        return _SCRUB_PATTERNS
+    try:
+        from emptyos.sdk.personal_patterns import load as _load
+        # Walk up from this file looking for the .eos-personal alongside it.
+        here = Path(__file__).resolve()
+        for parent in here.parents:
+            f = parent / ".eos-personal"
+            if f.exists():
+                _SCRUB_PATTERNS = _load(f)
+                return _SCRUB_PATTERNS
+    except Exception:
+        pass
+    _SCRUB_PATTERNS = []
+    return _SCRUB_PATTERNS
+
+
+def _scrub(value):
+    """Recursively replace personal-pattern matches with `***`.
+
+    Operates on strings; descends into dicts/lists; other types pass through.
+    """
+    pats = _load_scrub_patterns()
+    if not pats:
+        return value
+    if isinstance(value, str):
+        out = value
+        for pat in pats:
+            out = pat.sub("***", out)
+        return out
+    if isinstance(value, dict):
+        return {k: _scrub(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_scrub(x) for x in value]
+    return value
 
 
 class SystemLog:
@@ -42,20 +90,28 @@ class SystemLog:
     def log(
         self, level: str, source: str, message: str, data: dict | None = None, job_id: str = ""
     ):
-        """Write a log entry. WAL mode means commits are cheap but we still batch."""
+        """Write a log entry. WAL mode means commits are cheap but we still batch.
+
+        Personal-pattern scrubbing applies to `message` + every string inside
+        `data` before insert (and before console print). See `_scrub` at the
+        top of this module.
+        """
+        safe_message = _scrub(message) if isinstance(message, str) else message
+        safe_data = _scrub(data) if data else (data or {})
         self._conn.execute(
             "INSERT INTO syslog (ts, level, source, message, data, job_id) VALUES (?, ?, ?, ?, ?, ?)",
-            (time.time(), level, source, message, json.dumps(data or {}, default=str), job_id),
+            (time.time(), level, source, safe_message, json.dumps(safe_data, default=str), job_id),
         )
         self._pending += 1
         if self._pending >= 10 or level in ("error", "warn"):
             self._conn.commit()
             self._pending = 0
-        # Console output
+        # Console output (scrubbed — stdout gets captured to log files by the
+        # launcher; let's not undo the DB scrub at the print boundary)
         tag = f"[{source}]" if source else ""
         lvl = level.upper() if level != "info" else ""
         prefix = f"{lvl} {tag}" if lvl else tag
-        print(f"{prefix} {message}")
+        print(f"{prefix} {safe_message}")
 
     def flush(self):
         """Flush pending writes."""

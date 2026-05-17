@@ -156,6 +156,54 @@ def run_scans(target_dir: Path | None = None) -> None:
     print(f"    OK: {label} scans clean")
 
 
+def scan_demo_vault(temp_dir: Path) -> None:
+    """Second-pass scan over `demo/vault/**` using the outbound_scan engine.
+
+    check-personal.py already scans demo/vault content for `.eos-personal`
+    matches, but outbound_scan adds the high-confidence SECRET patterns
+    (OpenAI/AWS/GH/JWT/Bearer tokens, private-key blocks) on top. Together
+    they close the "someone accidentally pasted a real key into a seed note"
+    risk.
+
+    Aborts the release on any finding — same shape as check-personal.
+    """
+    vault_dir = temp_dir / "demo" / "vault"
+    if not vault_dir.is_dir():
+        return
+    step("Scan demo/vault/ with outbound_scan (secrets + personal patterns)")
+    import sys as _sys
+    _sys.path.insert(0, str(ROOT))
+    try:
+        from emptyos.capabilities.outbound_scan import scan_outbound
+    except Exception as e:
+        # outbound_scan must always be importable from the snapshot tree;
+        # if it isn't, treat that as a hard error rather than silently skipping.
+        fail(f"could not import outbound_scan: {e}")
+    findings: list[tuple[str, str, str]] = []
+    file_count = 0
+    for f in vault_dir.rglob("*"):
+        if not f.is_file():
+            continue
+        if f.suffix.lower() in {".png", ".jpg", ".jpeg", ".gif", ".pdf", ".mp3", ".mp4", ".wav"}:
+            continue
+        try:
+            text = f.read_text(encoding="utf-8", errors="ignore")
+        except OSError:
+            continue
+        file_count += 1
+        for hit in scan_outbound(text):
+            rel = f.relative_to(temp_dir).as_posix()
+            findings.append((rel, hit.pattern_name, hit.preview))
+    if findings:
+        print(f"    FAIL: {len(findings)} finding(s) in demo/vault/:")
+        for rel, pat, preview in findings[:25]:
+            print(f"      {rel} :: {pat} :: {preview}")
+        if len(findings) > 25:
+            print(f"      ... and {len(findings) - 25} more")
+        fail("demo/vault contains personal / secret patterns — fix before release")
+    print(f"    OK: {file_count} demo/vault files clean")
+
+
 def run_clickable_audit() -> None:
     """Run scripts/check-clickable.py against the local daemon.
 
@@ -586,6 +634,7 @@ def main() -> None:
         if not args.all:
             filter_to_tiers(temp_dir, PUBLIC_TIERS)
         run_scans(temp_dir)  # snapshot
+        scan_demo_vault(temp_dir)
         message = args.message or default_message(args.version)
         commit_and_push(temp_dir, args.version, message, args.dry_run)
 

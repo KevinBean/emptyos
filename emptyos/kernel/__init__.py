@@ -81,6 +81,12 @@ class Kernel:
         # In demo mode, pre-approve cloud providers (users opt in via BYOK)
         if self.config.demo_enabled:
             self.cloud_consent.set_policy("always")
+            # Defense-in-depth: turn on the response scrubber by default so
+            # any personal-pattern leak gets masked at the HTTP boundary.
+            # Operators can still explicitly disable via `presentation.enabled =
+            # false` if they have a reason — only auto-enable when unset.
+            if self.settings.get("presentation.enabled") is None:
+                self.settings.set("presentation.enabled", True)
         self.capabilities.set_consent_manager(self.cloud_consent)
 
         # Tool consent manager — permission gate for agent tool calls

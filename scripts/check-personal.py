@@ -44,6 +44,8 @@ ALLOWLIST = {
     "scripts/check-personal.py",  # this script
     "data/personal-defaults.json",
     ".claude/settings.local.json",  # machine-specific auto-approve rules
+    "tests/test_privacy_patterns.py",  # tests assert the patterns match their examples
+    "docs/PRIVACY.md",  # documents the threat model with illustrative examples
 }
 # Binary extensions to skip
 BINARY_EXT = {

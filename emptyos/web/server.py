@@ -57,6 +57,23 @@ def create_server(kernel: Kernel) -> FastAPI:
             return {k: _scrub_value(x, patterns) for k, x in v.items()}
         return v
 
+    # 2 MB ceiling on HTML scrubbing — defends against latency hit on large
+    # SPA bundles or generated reports. Above this, pass through unchanged
+    # and log a warning so an operator can investigate.
+    _PRESENT_HTML_MAX_BYTES = 2 * 1024 * 1024
+
+    def _scrub_html_bytes(body: bytes, patterns) -> bytes:
+        """Run every personal-pattern regex over the HTML body as text.
+
+        Operates on the full string (incl. inline <script>/<style>); a
+        personal string in JS is still a leak. UTF-8 decode is errors='ignore'
+        to handle pages with mixed encoding without raising.
+        """
+        text = body.decode("utf-8", errors="ignore")
+        for pat in patterns:
+            text = pat.sub("***", text)
+        return text.encode("utf-8")
+
     class PresentationMiddleware(_BHM):
         async def dispatch(self, request, call_next):
             response = await call_next(request)
@@ -70,7 +87,9 @@ def create_server(kernel: Kernel) -> FastAPI:
             if any(path.startswith(p) for p in _PRESENT_PATH_EXEMPT):
                 return response
             ctype = (response.headers.get("content-type") or "").lower()
-            if "application/json" not in ctype:
+            is_json = "application/json" in ctype
+            is_html = "text/html" in ctype
+            if not (is_json or is_html):
                 return response
             patterns = _present_patterns()
             if not patterns:
@@ -88,13 +107,26 @@ def create_server(kernel: Kernel) -> FastAPI:
                     media_type="application/json",
                 )
             new_body = body
+            new_media_type = "application/json" if is_json else "text/html"
             try:
-                if body:
+                if body and is_json:
                     data = _json.loads(body.decode("utf-8"))
                     scrubbed = _scrub_value(data, patterns)
                     new_body = _json.dumps(scrubbed, default=str).encode("utf-8")
+                elif body and is_html:
+                    if len(body) > _PRESENT_HTML_MAX_BYTES:
+                        # Pass through unchanged; warn so operator notices.
+                        try:
+                            kernel.syslog.warn(
+                                "presentation",
+                                f"skipped HTML scrub: {path} ({len(body)} bytes > 2MB)",
+                            )
+                        except Exception:
+                            pass
+                    else:
+                        new_body = _scrub_html_bytes(body, patterns)
             except Exception:
-                # Non-JSON body (or parse error) — pass through unchanged.
+                # Parse error on JSON — pass through unchanged.
                 new_body = body
             headers = dict(response.headers)
             headers.pop("content-length", None)
@@ -102,7 +134,7 @@ def create_server(kernel: Kernel) -> FastAPI:
                 content=new_body,
                 status_code=response.status_code,
                 headers=headers,
-                media_type="application/json",
+                media_type=new_media_type,
             )
 
     server.add_middleware(PresentationMiddleware)
@@ -1537,6 +1569,37 @@ EmptyOS — a mind companion. Think and create with you, not for you.<br>
         except Exception as e:
             return JSONResponse({"error": str(e)}, status_code=500)
 
+    @server.get("/api/vault/file")
+    async def vault_file(path: str):
+        """Serve a vault file as bytes with content-type by extension.
+
+        For `<img src>` / `<object>` / `<video>` embeds of vault attachments
+        (PNG, SVG, JPG, MP4, PDF, …). Vault-rooted only — refuses paths that
+        escape the vault root via `..`.
+        """
+        vault = kernel.config.notes_path
+        if not vault:
+            return JSONResponse({"error": "No vault configured"}, status_code=500)
+        candidate = Path(path) if Path(path).is_absolute() else (vault / path)
+        try:
+            full = candidate.resolve()
+            vault_resolved = Path(vault).resolve()
+            full.relative_to(vault_resolved)  # raises if escape attempt
+        except (ValueError, OSError):
+            return JSONResponse({"error": "Path outside vault"}, status_code=403)
+        if not full.exists() or not full.is_file():
+            return JSONResponse({"error": f"File not found: {path}"}, status_code=404)
+        ext = full.suffix.lower().lstrip(".")
+        media_types = {
+            "svg": "image/svg+xml", "png": "image/png", "jpg": "image/jpeg",
+            "jpeg": "image/jpeg", "gif": "image/gif", "webp": "image/webp",
+            "avif": "image/avif", "bmp": "image/bmp", "ico": "image/x-icon",
+            "mp4": "video/mp4", "webm": "video/webm", "mov": "video/quicktime",
+            "mp3": "audio/mpeg", "wav": "audio/wav", "ogg": "audio/ogg",
+            "pdf": "application/pdf",
+        }
+        return FileResponse(str(full), media_type=media_types.get(ext, "application/octet-stream"))
+
     @server.post("/api/vault/write")
     async def vault_write(request: Request):
         """Write/update a vault file."""
@@ -2032,6 +2095,54 @@ EmptyOS — a mind companion. Think and create with you, not for you.<br>
     return server
 
 
+_THEME_BOOTSTRAP_TAG = (
+    "<script>try{document.documentElement.classList.add('theme-'+"
+    "(localStorage.getItem('eos-theme')||'eos'));}"
+    "catch(e){document.documentElement.classList.add('theme-eos');}</script>"
+)
+
+
+def _inject_theme_bootstrap(html: str) -> str:
+    """Ensure the theme class is set on <html> before CSS resolves.
+
+    Apps that forget the inline `theme-X` className applier end up with every
+    `var(--bg-card)` / `var(--border)` / `var(--accent)` resolving to nothing
+    (see `feedback_app_page_theme_bootstrap` in operator memory). Inject the
+    bootstrap script right after the opening `<head>` if the page doesn't
+    already contain `eos-theme` (idempotent — doubled-script-tag pages don't
+    grow further).
+    """
+    if not html or "eos-theme" in html:
+        return html
+    # Match the opening <head> tag (with optional attrs); insert immediately after.
+    import re as _re
+    m = _re.search(r"<head(\s[^>]*)?>", html, _re.IGNORECASE)
+    if not m:
+        return html  # malformed page; leave alone
+    insert_at = m.end()
+    return html[:insert_at] + _THEME_BOOTSTRAP_TAG + html[insert_at:]
+
+
+def _inject_full_screen_marker(html: str) -> str:
+    """Mark <html> with `eos-full-screen` so eos.js can opt out of injecting
+    the FAB dock + capability dots for apps that declare `[app] full_screen
+    = true` in their manifest (focus timers, voice assistant, tour, etc.)."""
+    import re as _re
+    m = _re.search(r"<html(\s[^>]*)?>", html, _re.IGNORECASE)
+    if not m:
+        return html
+    attrs = m.group(1) or ""
+    # If existing class= attribute is present, append to it; else add fresh.
+    cls_m = _re.search(r'class=(["\'])([^"\']*)\1', attrs, _re.IGNORECASE)
+    if cls_m:
+        if "eos-full-screen" in cls_m.group(2):
+            return html  # already marked
+        new_attrs = attrs[:cls_m.start()] + 'class=' + cls_m.group(1) + cls_m.group(2) + ' eos-full-screen' + cls_m.group(1) + attrs[cls_m.end():]
+    else:
+        new_attrs = attrs + ' class="eos-full-screen"'
+    return html[:m.start()] + "<html" + new_attrs + ">" + html[m.end():]
+
+
 def _route_specificity(path: str) -> tuple:
     """Sort key for route registration order. Lower tuple = registered first.
     Fewer {params} win; among equal param count, more segments win.
@@ -2099,8 +2210,13 @@ def _mount_single_app_routes(server: FastAPI, kernel, app_id: str):
             _page_path = index_file
             _catchall_path = index_file
 
-            async def _custom_page(p=_page_path):
-                return HTMLResponse(p.read_text(encoding="utf-8"))
+            _full_screen = bool(manifest.raw.get("app", {}).get("full_screen", False))
+
+            async def _custom_page(p=_page_path, full_screen=_full_screen):
+                html = _inject_theme_bootstrap(p.read_text(encoding="utf-8"))
+                if full_screen:
+                    html = _inject_full_screen_marker(html)
+                return HTMLResponse(html)
 
             _custom_page.__name__ = f"{app_id}_custom_page"
             server.get(f"{prefix}/")(_custom_page)
