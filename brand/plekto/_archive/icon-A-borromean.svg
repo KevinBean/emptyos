@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
+  <title>Plekto — concept A: Borromean rings</title>
+  <desc>Three interlocking rings — Borromean configuration. Removing any single ring frees the other two; only all three together are inseparable. Direct metaphor for memory + project + agents woven together. Renders cleanly at any size, monochrome-safe.</desc>
+
+  <!-- Ring geometry: three circles arranged in equilateral configuration,
+       radii chosen so the rings intersect at 120° angles. Coordinates are
+       centred around (64, 64) for the 128px canvas. -->
+  <g fill="none" stroke="currentColor" stroke-width="6" stroke-linejoin="round">
+    <!-- Top ring -->
+    <circle cx="64" cy="48" r="26"/>
+    <!-- Bottom-left ring -->
+    <circle cx="50" cy="72" r="26"/>
+    <!-- Bottom-right ring -->
+    <circle cx="78" cy="72" r="26"/>
+  </g>
+</svg>

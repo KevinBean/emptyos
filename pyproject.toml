@@ -1,0 +1,108 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "emptyos"
+version = "0.1.0"
+description = "A mind companion. Think and create with you, not for you. A personal AI-powered operating system — empty by default, infinite by design."
+license = "AGPL-3.0-or-later"
+license-files = ["LICENSE"]
+classifiers = [
+    "License :: OSI Approved :: GNU Affero General Public License v3 or later (AGPLv3+)",
+]
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn>=0.30",
+    "python-multipart>=0.0.9",
+    "edge-tts>=6.1",
+    "typer>=0.12",
+    "rich>=13",
+    "watchfiles>=0.21",
+    "aiohttp>=3.9",
+    "apscheduler>=3.10",
+    "pyzmq>=26",
+    "anthropic>=0.40",
+    "markdown>=3.4",
+    "python-docx>=1.1",
+    "pypdf>=4.0",
+    "ddgs>=8.0",
+    "pyyaml>=6",
+    "prompt_toolkit>=3.0",
+    "psutil>=5.9",
+    "defusedxml>=0.7",
+]
+
+[project.optional-dependencies]
+dev = ["pytest", "pytest-asyncio", "pytest-playwright", "ruff", "httpx", "duckdb>=1.1"]
+semantic = ["faiss-cpu", "numpy"]
+camera = ["opencv-python>=4.8"]
+fem = ["gmsh>=4.11", "scipy>=1.10", "numpy>=1.24"]
+dxf = ["ezdxf>=1.3"]
+geo = ["pyproj>=3.6"]   # reproject a known-EPSG CAD survey grid → WGS84 (geo-cad import-cad / cad geo-anchor)
+cables = ["openpyxl>=3.1"]
+desktop = ["pystray>=0.19", "Pillow>=10"]   # system-tray icon for the desktop daily driver
+devices = ["qrcode>=7.4", "Pillow>=10"]     # e-ink panel rasterizer + scan-to-act QR (paper dashboard)
+data = ["duckdb>=1.1"]                      # ephemeral in-memory SQL over rows/CSV + read-only sqlite ATTACH (sdk/tabular.py)
+power = ["pandapower>=2.14,<4"]             # optional Power Study parity wrapper (load-flow + IEC 60909 short-circuit)
+
+[project.scripts]
+eos = "emptyos.cli.main:app"
+eos-sandbox = "emptyos.cli.sandbox_entry:main"
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+extend-exclude = ["data", "apps/personal", "engines/personal"]
+
+[tool.ruff.lint]
+select = [
+    "E", "W",   # pycodestyle
+    "F",        # pyflakes
+    "I",        # isort
+    "B",        # bugbear
+    "UP",       # pyupgrade
+    "ASYNC",    # async-specific lints
+]
+ignore = [
+    "E501",      # line length — formatter handles wrapping
+    "ASYNC240",  # Path methods in async — local FS, sub-ms stalls; rewrite cost > benefit
+    "ASYNC109",  # `timeout=` kwarg on async def — usually passed through to httpx/aiohttp
+]
+
+[tool.ruff.lint.flake8-bugbear]
+# Framework idioms that look like B008 (call-in-default) but are required
+# by the framework's dependency-injection / arg-parsing model.
+extend-immutable-calls = [
+    "typer.Argument",
+    "typer.Option",
+    "fastapi.File",
+    "fastapi.Form",
+    "fastapi.Depends",
+    "fastapi.Query",
+    "fastapi.Body",
+    "fastapi.Path",
+    "fastapi.Header",
+]
+
+[tool.ruff.format]
+quote-style = "double"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "smoke: tier 1 — page load smoke tests",
+    "unit: tier 0 — pure-function tests, no daemon required",
+    "api: tier 2 — API endpoint health tests",
+    "interactive: tier 3 — UI interaction & CRUD tests",
+    "crossapp: tier 4 — cross-app event chain tests",
+    "comprehensive: app-specific 10+ use case tests (system + personal)",
+    "llm: layer 3 — live LLM smoke tests (slow, requires running LLM provider)",
+    "slow: long-running tests (release checks, full test suite)",
+    "dogfood: day-in-the-life narrative — uses EmptyOS like a real user",
+    "skill_eval: layer 5 — prompt regression evals (requires EOS_SKILL_EVAL=1 + OPENAI_API_KEY, costs $)",
+]
+filterwarnings = [
+    "ignore::DeprecationWarning",
+]

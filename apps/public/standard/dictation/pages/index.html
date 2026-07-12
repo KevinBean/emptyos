@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dictation — EmptyOS</title>
+<link rel="stylesheet" href="/static/theme.css">
+<link rel="stylesheet" href="/static/eos-components.css">
+<!-- Theme bootstrap (feedback_app_page_theme_bootstrap) -->
+<script>
+(function () {
+  try {
+    var t = localStorage.getItem('eos-theme') || 'eos'; if(['eos','digital-garden','soft-light','warm-dark','void-dark','nord'].indexOf(t)<0)t='eos';
+    document.documentElement.className = 'theme-' + t;
+  } catch (e) { document.documentElement.className = 'theme-eos'; }
+})();
+</script>
+<style>
+body { margin: 0; font-family: system-ui, -apple-system, sans-serif;
+       background: var(--bg); color: var(--text); }
+.dx-wrap { max-width: 720px; margin: 0 auto; padding: 16px 16px 40px; }
+.dx-head { display: flex; align-items: center; gap: 12px; margin-bottom: 4px; }
+.dx-head h1 { font-size: 19px; font-weight: 700; margin: 0; flex: 1;
+              display: flex; align-items: center; gap: 8px; }
+.dx-sub { font-size: 12px; color: var(--text-muted); margin: 0 0 16px; }
+.dx-card { background: var(--bg-card); border: 1px solid var(--border);
+           border-radius: var(--radius-lg, 14px); padding: 16px; margin-bottom: 16px; }
+.dx-gate { text-align: center; padding: 40px 24px; }
+.dx-gate code, .dx-kbd { background: var(--bg); padding: 2px 8px; border-radius: 4px;
+            font-family: ui-monospace, monospace; font-size: 12px; border: 1px solid var(--border); }
+.dx-hint { font-size: 12px; color: var(--text-muted); margin: 6px 0 0; }
+.dx-steps { font-size: 13px; line-height: 1.7; padding-left: 20px; margin: 8px 0 0; }
+textarea.dx-ta, .dx-rte { width: 100%; box-sizing: border-box; min-height: 110px; resize: vertical;
+                 background: var(--bg); color: var(--text); border: 1px solid var(--border);
+                 border-radius: 8px; padding: 12px; font: inherit; font-size: 14px; }
+.dx-rte { min-height: 80px; }
+.dx-rte:empty::before { content: attr(data-placeholder); color: var(--text-muted); }
+.dx-label { font-size: 12px; color: var(--text-muted); margin: 14px 0 6px; font-weight: 600; }
+.hidden { display: none !important; }
+</style>
+</head>
+<body>
+<div class="dx-wrap">
+  <div class="dx-head">
+    <h1>🎙 Dictation</h1>
+    <button class="eos-btn-sm eos-btn-secondary" onclick="openAppSettings()">&#9881; Settings</button>
+  </div>
+  <p class="dx-sub">Click into <strong>any</strong> EmptyOS text field and a 🎤 button appears — click it and
+     speak. Your words are transcribed, lightly polished (punctuation, casing, your custom terms kept), and
+     inserted at the caret. Speak to create, type to refine — it never takes the keyboard away from you.</p>
+
+  <!-- Dark-default gate -->
+  <div id="gate" class="dx-card dx-gate hidden">
+    <h2 style="margin-top:0">Dictation is off</h2>
+    <p class="dx-hint">Turn on <strong>Enable Dictation</strong> in the ⚙ settings panel
+       (takes effect immediately), or set <code>feature.enabled = true</code> under
+       <code>[apps.dictation]</code> in <code>emptyos.toml</code>.</p>
+    <button class="eos-btn" style="margin-top:12px" onclick="openAppSettings()">Open Settings</button>
+  </div>
+
+  <!-- Active surface -->
+  <div id="app" class="hidden">
+    <div class="dx-card">
+      <h3 style="margin-top:0">Active everywhere</h3>
+      <p class="dx-hint" style="margin-top:0">Dictation works on every EmptyOS page. To use it:</p>
+      <ol class="dx-steps">
+        <li>Click into any text field, textarea, or editor — a 🎤 button appears at its corner.</li>
+        <li>Click 🎤 (it turns red) and speak — the words appear live in the field as you talk.</li>
+        <li>Click 🎤 again to stop; the text is then polished in place (punctuation, casing, your terms kept).</li>
+      </ol>
+      <p class="dx-hint">Prefer keys? A push-to-talk hotkey also works — hold
+         <span class="dx-kbd" id="hk-label">ctrl+shift+d</span> while in a field. (Set it in ⚙ Settings;
+         pick a combo your OS/browser doesn't already use.)</p>
+      <p class="dx-hint">Engine: <span id="engine-label">in-browser (Web Speech)</span> ·
+         language <span id="lang-label">en-US</span> ·
+         <span id="ai-label"></span></p>
+    </div>
+
+    <div class="dx-card">
+      <h3 style="margin-top:0">Try it here</h3>
+      <div class="dx-label">Plain field</div>
+      <textarea class="dx-ta" placeholder="Click here — then click the 🎤 button that appears and speak…"></textarea>
+      <div class="dx-label">Rich editor (contenteditable)</div>
+      <div class="dx-rte" contenteditable="true" data-placeholder="…and try a rich field too."></div>
+      <p class="dx-hint">The same insertion works in writing-editor, note bodies, capture, search — any focused field.</p>
+    </div>
+  </div>
+</div>
+
+<script src="/static/eos.js"></script>
+<script src="/static/eos-components.js"></script>
+<script>
+async function init() {
+  var cfg = await EOS.api('/dictation/api/config') || {};
+  document.getElementById('gate').classList.toggle('hidden', !!cfg.enabled);
+  document.getElementById('app').classList.toggle('hidden', !cfg.enabled);
+  if (cfg.enabled) {
+    document.getElementById('hk-label').textContent = cfg.hotkey || 'ctrl+shift+d';
+    document.getElementById('lang-label').textContent = cfg.mic_language || 'en-US';
+    document.getElementById('engine-label').textContent =
+      (cfg.stt_provider === 'server') ? 'local Whisper (voice-api)' : 'in-browser (Web Speech)';
+    document.getElementById('ai-label').textContent =
+      'AI polish above ' + (cfg.cleanup_threshold_words || 6) + ' words';
+  }
+}
+
+var _appSettings = EOS_UI.settingsPanel({
+  id: 'dictation-settings',
+  title: 'Dictation Settings',
+  fields: [
+    {key: 'dictation.feature.enabled', label: 'Enable Dictation', type: 'boolean', default: false,
+     hint: 'Takes effect immediately — no restart needed.'},
+    {key: 'dictation.hotkey', label: 'Push-to-talk hotkey (hold)', type: 'text', default: 'ctrl+shift+d',
+     hint: 'Combo of ctrl / shift / alt / meta + a key, e.g. ctrl+shift+d. Hold to talk, release to insert.'},
+    {key: 'dictation.cleanup_threshold_words', label: 'Polish with AI above N words', type: 'number', default: 6,
+     hint: 'Short utterances are inserted verbatim; longer ones get punctuation / casing cleanup.'},
+    {key: 'dictation.stt_provider', label: 'Speech engine', type: 'select', default: 'web-speech',
+     options: ['web-speech', 'server'],
+     hint: 'web-speech = in-browser, live streaming (best for English). server = records audio and transcribes via the local Whisper service (better for Chinese; needs voice-api running).'},
+    {key: 'dictation.mic_language', label: 'Microphone language', type: 'text', default: 'en-US',
+     hint: 'BCP-47 tag, e.g. en-US, en-GB, zh-CN. Used by both engines (server mode reduces it to en / zh for Whisper).'},
+    {key: 'dictation.vocabulary', label: 'Custom terms to preserve', type: 'textarea', default: '',
+     hint: 'Names, project codes (e.g. CAB-700502), acronyms — comma or newline separated. Kept verbatim, never sent elsewhere.'},
+  ],
+  onSave: function(){ init(); if (window.EOS && EOS.dictate && EOS.dictate.reload) EOS.dictate.reload(); },
+});
+function openAppSettings() { _appSettings.open(); }
+
+init();
+</script>
+</body>
+</html>

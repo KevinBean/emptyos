@@ -1,0 +1,20 @@
+[app]
+id = "hello-eos"
+name = "Hello EmptyOS"
+version = "1.0.0"
+description = "The smallest thing the marketplace can install — a one-route app with a tiny page. Copy this folder as the starting point for your own EmptyOS app."
+store_category = "other"
+user_intent = ["show me a marketplace example", "hello world app"]
+
+[app.entry]
+module = "app"
+class = "HelloEosApp"
+
+[requires]
+capabilities = ["read"]
+
+[provides.web]
+prefix = "/hello-eos"
+
+[provides.events]
+emits = ["hello-eos:greeted"]

@@ -1,0 +1,209 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Proactive</title>
+<link rel="stylesheet" href="/static/theme.css">
+<link rel="stylesheet" href="/static/eos-components.css">
+<script>
+// Theme bootstrap — apply saved theme class before paint so tokens resolve.
+(function(){try{var t=localStorage.getItem('eos-theme')||'eos';if(['eos','digital-garden','soft-light','warm-dark','void-dark','nord'].indexOf(t)<0)t='eos';document.documentElement.className='theme-'+t;}catch(e){}})();
+</script>
+<style>
+  .pro-shell { max-width: 860px; margin: 0 auto; padding: 24px 16px 80px; }
+  .pro-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 8px; flex-wrap: wrap; }
+  .pro-header h1 { font-size: 22px; margin: 0; }
+  .pro-header .right { display: flex; align-items: center; gap: 8px; }
+  .pro-sub { color: var(--text-muted); font-size: 13px; line-height: 1.5; margin: 0 0 16px; }
+  .pro-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 14px; padding: 16px 18px; margin-bottom: 16px; }
+  .pro-card h3 { font-size: 13px; text-transform: uppercase; letter-spacing: .05em; color: var(--text-muted); margin: 0 0 14px; }
+  .pro-master { display: flex; align-items: center; gap: 12px; padding: 14px 18px; border-radius: 14px; border: 1px solid var(--border); margin-bottom: 16px; background: var(--bg-card); }
+  .pro-master.on { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, var(--bg-card)); }
+  .pro-master .lbl { font-weight: 600; }
+  .pro-master .desc { color: var(--text-muted); font-size: 13px; }
+  .pro-master .grow { flex: 1; }
+  .pro-row { display: flex; align-items: center; gap: 12px; margin: 10px 0; flex-wrap: wrap; }
+  .pro-row label { font-size: 13px; min-width: 130px; color: var(--text); }
+  .pro-row input[type=text], .pro-row input[type=number] { padding: 7px 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg); color: var(--text); font: inherit; width: 110px; }
+  .pro-kinds { display: flex; flex-direction: column; gap: 8px; }
+  .pro-kind { display: flex; align-items: center; gap: 10px; font-size: 14px; }
+  .pro-kind input { width: 16px; height: 16px; }
+  .pro-log { display: flex; flex-direction: column; gap: 0; }
+  .pro-log-row { display: flex; align-items: baseline; gap: 10px; padding: 9px 0; border-bottom: 1px solid var(--border); font-size: 14px; }
+  .pro-log-row:last-child { border-bottom: none; }
+  .pro-log-row .when { color: var(--text-muted); font-size: 12px; white-space: nowrap; font-variant-numeric: tabular-nums; min-width: 92px; }
+  .pro-log-row .txt { flex: 1; }
+  .pro-log-row .reason { font-size: 11px; color: var(--text-muted); }
+  .pro-pill { font-size: 11px; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--border); white-space: nowrap; }
+  .pro-pill.ok { color: var(--success); border-color: color-mix(in srgb, var(--success) 50%, var(--border)); }
+  .pro-pill.no { color: var(--text-muted); }
+  .pro-empty { color: var(--text-muted); font-size: 14px; line-height: 1.6; }
+  .pro-switch { position: relative; width: 44px; height: 24px; flex: none; }
+  .pro-switch input { opacity: 0; width: 0; height: 0; }
+  .pro-slider { position: absolute; inset: 0; background: var(--border); border-radius: 999px; cursor: pointer; transition: background .15s; }
+  .pro-slider:before { content: ''; position: absolute; height: 18px; width: 18px; left: 3px; top: 3px; background: var(--bg-card); border-radius: 50%; transition: transform .15s; }
+  .pro-switch input:checked + .pro-slider { background: var(--accent); }
+  .pro-switch input:checked + .pro-slider:before { transform: translateX(20px); }
+</style>
+</head>
+<body>
+<div class="pro-shell">
+  <div class="pro-header">
+    <h1>🗣 Proactive</h1>
+    <div class="right">
+      <button class="eos-btn eos-btn-sm" onclick="runScan()">Scan now</button>
+      <button class="eos-btn eos-btn-sm" onclick="sendTest()">Send test nudge</button>
+    </div>
+  </div>
+  <p class="pro-sub">EmptyOS speaks first — but only when it's worth your attention. Every nudge passes a gate (quiet hours, a daily cap, a minimum gap, dedup) before reaching you. Voice nudges are spoken by the hands-free overlay when it's running; all nudges leave a record below.</p>
+
+  <div id="master" class="pro-master">
+    <div class="pro-switch"><input type="checkbox" id="enabled" onchange="saveMaster()"><span class="pro-slider" onclick="document.getElementById('enabled').click()"></span></div>
+    <div class="grow">
+      <div class="lbl" id="master-lbl">Off</div>
+      <div class="desc" id="master-desc">Dark by default. Nothing is delivered until you turn this on.</div>
+    </div>
+  </div>
+
+  <div class="pro-card">
+    <h3>Gate</h3>
+    <div class="pro-row"><label>Quiet hours</label>
+      <input type="text" id="quiet_start" placeholder="22:00" onchange="savePolicy()"> to
+      <input type="text" id="quiet_end" placeholder="07:00" onchange="savePolicy()">
+      <span class="pro-empty">(HH:MM, local; no nudges in this window)</span>
+    </div>
+    <div class="pro-row"><label>Max per day</label>
+      <input type="number" id="daily_cap" min="0" max="100" onchange="savePolicy()">
+    </div>
+    <div class="pro-row"><label>Min gap (minutes)</label>
+      <input type="number" id="min_gap_min" min="0" max="1440" onchange="savePolicy()">
+      <span class="pro-empty">(anti-burst — minimum spacing between any two nudges)</span>
+    </div>
+  </div>
+
+  <div class="pro-card">
+    <h3>What gets surfaced</h3>
+    <div class="pro-kinds" id="kinds"></div>
+  </div>
+
+  <div class="pro-card">
+    <h3>Recent nudges</h3>
+    <div class="pro-log" id="log"><div class="pro-empty">Loading…</div></div>
+  </div>
+</div>
+
+<script src="/static/eos.js"></script>
+<script src="/static/eos-components.js"></script>
+<script>
+var POLICY = null;
+var BASE = (window.EOS && EOS.base) || '';
+
+function api(path, opts) {
+  return fetch(BASE + '/proactive' + path, opts).then(function(r){ return r.json(); });
+}
+
+function loadPolicy() {
+  return api('/api/policy').then(function(p) {
+    POLICY = p;
+    var on = !!p.enabled;
+    document.getElementById('enabled').checked = on;
+    document.getElementById('master').classList.toggle('on', on);
+    document.getElementById('master-lbl').textContent = on ? 'On — EmptyOS will reach out' : 'Off';
+    document.getElementById('master-desc').textContent = on
+      ? 'Reversible, inbound-to-you nudges run on their own. Mute any kind below; turn this off to silence everything.'
+      : 'Dark by default. Nothing is delivered until you turn this on.';
+    document.getElementById('quiet_start').value = p.quiet_start || '';
+    document.getElementById('quiet_end').value = p.quiet_end || '';
+    document.getElementById('daily_cap').value = (p.daily_cap != null ? p.daily_cap : '');
+    document.getElementById('min_gap_min').value = (p.min_gap_sec != null ? Math.round(p.min_gap_sec / 60) : '');
+    renderKinds(p);
+  });
+}
+
+function renderKinds(p) {
+  var cat = p._kinds_catalog || {};
+  var kinds = p.kinds || {};
+  var el = document.getElementById('kinds');
+  var keys = Object.keys(cat);
+  if (!keys.length) { el.innerHTML = '<div class="pro-empty">No nudge kinds registered.</div>'; return; }
+  el.innerHTML = keys.map(function(k) {
+    var muted = !!(kinds[k] && kinds[k].mute);
+    return '<label class="pro-kind"><input type="checkbox" data-kind="' + escAttr(k) + '"' +
+           (muted ? '' : ' checked') + ' onchange="toggleKind(this)"> ' + esc(cat[k]) + '</label>';
+  }).join('');
+}
+
+function toggleKind(cb) {
+  var kind = cb.getAttribute('data-kind');
+  var mute = !cb.checked;  // checked = surfaced = not muted
+  api('/api/mute', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({kind: kind, mute: mute})})
+    .then(function(){ EOS && EOS.toast && EOS.toast(mute ? 'Muted' : 'Enabled'); });
+}
+
+function saveMaster() {
+  var on = document.getElementById('enabled').checked;
+  api('/api/policy', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({enabled: on})})
+    .then(function(){ loadPolicy(); EOS && EOS.toast && EOS.toast(on ? 'Proactive on' : 'Proactive off'); });
+}
+
+function savePolicy() {
+  var cap = parseInt(document.getElementById('daily_cap').value, 10);
+  var gapMin = parseInt(document.getElementById('min_gap_min').value, 10);
+  var body = {
+    quiet_start: document.getElementById('quiet_start').value.trim(),
+    quiet_end: document.getElementById('quiet_end').value.trim(),
+    daily_cap: isNaN(cap) ? null : cap,
+    min_gap_sec: isNaN(gapMin) ? null : gapMin * 60,
+  };
+  api('/api/policy', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)})
+    .then(function(){ EOS && EOS.toast && EOS.toast('Saved'); });
+}
+
+function fmtWhen(iso) {
+  if (!iso) return '';
+  try {
+    var d = new Date(iso);
+    return d.toLocaleString(undefined, {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit'});
+  } catch(e) { return iso; }
+}
+
+function loadLog() {
+  return api('/api/log?limit=60').then(function(d) {
+    var rows = (d && d.log) || [];
+    var el = document.getElementById('log');
+    if (!rows.length) {
+      el.innerHTML = '<div class="pro-empty">No nudges yet. Turn the master on, then "Scan now" or "Send test nudge".</div>';
+      return;
+    }
+    el.innerHTML = rows.map(function(r) {
+      var ok = !!r.delivered;
+      var pill = ok ? '<span class="pro-pill ok">' + (r.channels || []).join(' · ') + '</span>'
+                    : '<span class="pro-pill no">' + esc(r.reason || 'suppressed') + '</span>';
+      return '<div class="pro-log-row"><span class="when">' + esc(fmtWhen(r.iso)) + '</span>' +
+             '<span class="txt">' + esc(r.text || '') +
+             ' <span class="reason">· ' + esc(r.kind || '') + '</span></span>' + pill + '</div>';
+    }).join('');
+  });
+}
+
+function runScan() {
+  api('/api/scan', {method:'POST'}).then(function(d) {
+    EOS && EOS.toast && EOS.toast('Scan: ' + (d.delivered||0) + ' delivered / ' + (d.generated||0) + ' found');
+    loadLog();
+  });
+}
+
+function sendTest() {
+  api('/api/test', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({text: 'This is a test nudge from EmptyOS.'})})
+    .then(function(d) {
+      EOS && EOS.toast && EOS.toast(d.delivered ? 'Delivered (' + (d.channels||[]).join(', ') + ')' : 'Suppressed: ' + d.reason);
+      loadLog();
+    });
+}
+
+loadPolicy();
+loadLog();
+</script>
+</body>
+</html>

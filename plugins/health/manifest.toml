@@ -1,0 +1,14 @@
+[plugin]
+id = "health"
+name = "Health"
+version = "1.0.0"
+description = "System health checks — capabilities, connectors, apps"
+default = true
+
+[plugin.entry]
+module = "plugin"
+class = "HealthPlugin"
+
+[provides]
+services = ["health"]
+tags = ["system", "monitoring"]

@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Viz — Auto-refine loop</title>
+<script>try{var _t=localStorage.getItem('eos-theme')||'eos';if(['eos','digital-garden','soft-light','warm-dark','void-dark','nord'].indexOf(_t)<0){_t='eos';localStorage.setItem('eos-theme','eos');}document.documentElement.classList.add('theme-'+_t);}catch(e){document.documentElement.classList.add('theme-eos');}</script>
+<link rel="stylesheet" href="/static/theme.css">
+<link rel="stylesheet" href="/static/eos-components.css">
+<style>
+  .wrap { max-width: 1200px; margin: 0 auto; padding: 24px; }
+  .head { display:flex; align-items:baseline; gap:12px; margin-bottom:16px; }
+  .head h1 { margin:0; font-size:21px; }
+  .head .sub { color: var(--text-muted); font-size:13px; }
+  .grid { display:grid; grid-template-columns: 320px 1fr; gap:16px; align-items:start; }
+  .card { background: var(--surface); border:1px solid var(--border); border-radius:14px; padding:16px; margin-bottom:16px; }
+  .card h3 { margin:0 0 12px; font-size:12px; text-transform:uppercase; letter-spacing:.04em; color: var(--text-muted); }
+  label { display:block; font-size:12px; color: var(--text-muted); margin:12px 0 4px; }
+  textarea, input, select { width:100%; box-sizing:border-box; background: var(--bg); color: var(--text);
+    border:1px solid var(--border); border-radius:8px; padding:8px; font-size:13px; font-family:inherit; }
+  .row { display:flex; gap:8px; } .row>div { flex:1; } .eos-btn-ghost { background:transparent; color:var(--text); border:1px solid var(--border); }
+  .zbtn { width:26px; height:24px; border:1px solid var(--border); background:var(--bg); color:var(--text); border-radius:6px; cursor:pointer; font-size:14px; padding:0; }
+  #canvas { width:100%; height:240px; border:1px solid var(--border); border-radius:14px; background:var(--bg); touch-action:none; }
+  .gate { border:1px solid var(--accent); }
+  iframe.preview { width:100%; height:340px; border:1px solid var(--border); border-radius:8px; background:#fff; }
+  .log { font-size:12px; color: var(--text-muted); max-height:150px; overflow:auto; }
+  .pill { display:inline-block; font-size:11px; padding:2px 8px; border-radius:8px; background:var(--bg); border:1px solid var(--border); }
+  .runs a { display:block; padding:8px 0; font-size:12px; color:var(--text); text-decoration:none; border-bottom:1px solid var(--border); }
+  .muted { color: var(--text-muted); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="head">
+    <h1>Auto-refine loop</h1>
+    <span class="sub">generate → critique → refine until ship-ready · a DecisionGraph driving the viz Pipeline · <a href="/viz/">← classic viz</a></span>
+  </div>
+  <div class="grid">
+    <div>
+      <div class="card">
+        <h3>Brief</h3>
+        <label>What do you want to see?</label>
+        <textarea id="f-prompt" rows="4" placeholder="e.g. A rotating solar system with labelled planets and orbit trails."></textarea>
+        <div class="row">
+          <div><label>Shape</label><select id="f-shape"></select></div>
+          <div><label>Ship ≥</label><input id="f-thresh" type="number" value="0.8" min="0" max="1" step="0.05"></div>
+        </div>
+        <div style="margin-top:14px"><button class="eos-btn eos-btn-primary" id="run-btn" onclick="startRun()">Run refine loop</button></div>
+        <div id="form-err" class="muted" style="margin-top:8px;color:#c0392b"></div>
+      </div>
+      <div class="card"><h3>Recent runs</h3><div class="runs" id="runs">—</div></div>
+    </div>
+    <div>
+      <div class="card">
+        <h3>Loop <span style="float:right;display:flex;gap:6px;align-items:center">
+          <span id="status-pill" class="pill"></span>
+          <button class="zbtn" onclick="EOS_GRAPH.zoomBy(SVG(),0.83)">&minus;</button>
+          <button class="zbtn" onclick="EOS_GRAPH.zoomBy(SVG(),1.2)">+</button>
+          <button class="zbtn" onclick="EOS_GRAPH.fit(SVG())">&#9633;</button>
+        </span></h3>
+        <svg id="canvas" viewBox="0 0 860 250" preserveAspectRatio="xMidYMid meet"></svg>
+        <div class="muted" id="vars" style="margin-top:10px"></div>
+      </div>
+      <div class="card gate" id="gate-card" style="display:none">
+        <h3>Human review — see it, then decide</h3>
+        <div id="gate-summary" class="muted" style="margin-bottom:8px"></div>
+        <iframe class="preview" id="gate-preview"></iframe>
+        <div style="margin-top:12px;display:flex;gap:10px">
+          <button class="eos-btn eos-btn-primary" onclick="decide('ship')">✓ Ship it</button>
+          <button class="eos-btn eos-btn-ghost" onclick="decide('reject')">✗ Reject → refine</button>
+        </div>
+        <label style="margin-top:10px">What to change (on reject)</label>
+        <input id="gate-note" placeholder="e.g. make the orbits more visible">
+      </div>
+      <div class="card" id="done-card" style="display:none"><h3>Result</h3><div id="done-body"></div></div>
+      <div class="card"><h3>Step trail</h3><div class="log" id="log">No active run.</div></div>
+    </div>
+  </div>
+</div>
+<script src="/static/eos.js"></script>
+<script src="/static/eos-components.js"></script>
+<script src="/static/eos-graph.js"></script>
+<script>
+var GRAPH=null, RUN_ID=null, POLL=null;
+function SVG(){ return document.getElementById('canvas'); }
+
+async function loadShapes(){
+  try {
+    var d = await fetch('/viz/api/shapes').then(r=>r.json());
+    var shapes = d.shapes || d || [];
+    var sel = document.getElementById('f-shape');
+    sel.innerHTML = shapes.map(function(s){
+      var id = (typeof s === 'string') ? s : (s.id || s.shape || s.name);
+      return '<option value="'+escAttr(id)+'">'+esc(id)+'</option>';
+    }).join('') || '<option value="3d-scene">3d-scene</option>';
+  } catch(e){ document.getElementById('f-shape').innerHTML='<option value="3d-scene">3d-scene</option>'; }
+}
+async function loadGraph(){
+  GRAPH = await fetch('/viz/api/refine/graph').then(r=>r.json());
+  EOS_GRAPH.render(SVG(), GRAPH, {});
+  EOS_GRAPH.wireZoom(SVG());
+}
+async function startRun(){
+  var prompt=document.getElementById('f-prompt').value.trim();
+  var err=document.getElementById('form-err'); err.textContent='';
+  if(!prompt){ err.textContent='Describe what you want first.'; return; }
+  document.getElementById('run-btn').disabled=true;
+  var res=await fetch('/viz/api/refine/runs',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({prompt:prompt, shape:document.getElementById('f-shape').value, threshold:+document.getElementById('f-thresh').value})}).then(r=>r.json());
+  document.getElementById('run-btn').disabled=false;
+  if(res.error){ err.textContent=res.error; return; }
+  RUN_ID=res.run_id; hideGate(); document.getElementById('done-card').style.display='none'; poll();
+}
+function poll(){ if(POLL)clearInterval(POLL); tick(); POLL=setInterval(tick,1800); }
+async function tick(){
+  if(!RUN_ID)return;
+  var st=await fetch('/viz/api/refine/runs/'+encodeURIComponent(RUN_ID)).then(r=>r.json());
+  if(st.error)return;
+  document.getElementById('status-pill').textContent=st.status||'';
+  EOS_GRAPH.render(SVG(), GRAPH, st);
+  renderVars(st.vars||{}); renderLog(st.log||[]);
+  if(st.status==='human'){ clearInterval(POLL); showGate(st); }
+  else if(st.status==='ended'){ clearInterval(POLL); showDone(st); }
+  else if(st.status==='error'){ clearInterval(POLL); document.getElementById('log').innerHTML+='<div style="color:#c0392b">error: '+esc(st.error||'')+'</div>'; }
+  loadRuns();
+}
+function renderVars(v){
+  var b=[];
+  if('round' in v)b.push('round <b>'+esc(''+v.round)+'</b>');
+  if('score' in v)b.push('score <b>'+esc(''+(v.score!=null?v.score:'—'))+'</b>');
+  if('passed' in v)b.push(v.passed?'<b>ship-ready</b>':'refining');
+  document.getElementById('vars').innerHTML=b.join(' · ');
+}
+function renderLog(log){
+  var box=document.getElementById('log');
+  if(!log.length){ box.textContent='No steps yet.'; return; }
+  box.innerHTML=log.slice(-30).map(function(s){
+    var d=s.detail?'<div style="margin:0 0 6px 16px;opacity:.7">'+esc(s.detail)+'</div>':'';
+    return '<div style="color:var(--text)">'+(s.kind==='human'?'⏸':'▸')+' '+esc(s.label||s.node)+'</div>'+d;
+  }).join('');
+  box.scrollTop=box.scrollHeight;
+}
+function showGate(st){
+  var r=st.last_result||{}; var rid=(st.vars&&st.vars.rid)||r.rid;
+  document.getElementById('gate-card').style.display='block';
+  document.getElementById('gate-summary').textContent=r.summary||'Review the artifact and decide.';
+  if(rid) document.getElementById('gate-preview').src='/viz/api/html/'+encodeURIComponent(rid);
+}
+function hideGate(){ document.getElementById('gate-card').style.display='none'; }
+async function decide(decision){
+  if(!RUN_ID)return;
+  var note=document.getElementById('gate-note').value; hideGate();
+  await fetch('/viz/api/refine/runs/'+encodeURIComponent(RUN_ID)+'/decision',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({decision:decision,note:note})});
+  poll();
+}
+function showDone(st){
+  var card=document.getElementById('done-card'); card.style.display='block';
+  var rid=(st.vars&&st.vars.rid)||'';
+  if(st.current==='done' && rid){
+    card.innerHTML='<h3>Shipped ✓</h3><div>Artifact <b>'+esc(rid)+'</b> (score '+esc(''+((st.vars||{}).score))+').</div>'+
+      '<div style="margin-top:8px"><a class="pill" href="/viz/api/html/'+encodeURIComponent(rid)+'" target="_blank">Open artifact</a> <a class="pill" href="/viz/#'+encodeURIComponent(rid)+'">Edit in viz</a></div>'+
+      '<iframe class="preview" src="/viz/api/html/'+encodeURIComponent(rid)+'" style="margin-top:10px"></iframe>';
+  } else {
+    card.innerHTML='<h3>Result</h3><div>⚠️ Hit the round cap without reaching ship-ready — escalated for your attention.</div>';
+  }
+}
+async function loadRuns(){
+  var d=await fetch('/viz/api/refine/runs').then(r=>r.json());
+  var box=document.getElementById('runs');
+  if(!d.runs||!d.runs.length){ box.textContent='None yet.'; return; }
+  box.innerHTML=d.runs.map(function(r){ return '<a href="#" onclick="openRun(\''+escAttr(r.run_id)+'\');return false;"><span class="pill">'+esc(r.status||'')+'</span> '+esc(r.title||r.run_id)+'</a>'; }).join('');
+}
+function openRun(id){ RUN_ID=id; document.getElementById('done-card').style.display='none'; hideGate(); poll(); }
+
+loadShapes(); loadGraph(); loadRuns();
+</script>
+</body>
+</html>

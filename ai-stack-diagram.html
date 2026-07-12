@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LLM · Agent · Tool/Skill · MCP · Harness — corrected map</title>
+<style>
+  :root{
+    --bg:#0f1115; --panel:#171a21; --line:#2a2f3a; --ink:#e8eaed; --muted:#9aa3b2;
+    --llm:#6aa3ff; --agent:#34c759; --tool:#14b8c4; --skill:#f0a23b; --mcp:#b98bff; --harness:#8b5cf6;
+    --warn:#ff6b6b;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+       font-family:"Segoe UI",system-ui,sans-serif;padding:28px 20px 48px;line-height:1.5}
+  h1{font-size:24px;margin:0 0 4px;font-weight:700;letter-spacing:.3px}
+  .sub{color:var(--muted);font-size:13px;margin-bottom:24px}
+  .wrap{max-width:1040px;margin:0 auto}
+
+  /* Harness outer frame */
+  .harness{border:2px dashed var(--harness);border-radius:18px;padding:14px 16px 20px;position:relative;
+           background:linear-gradient(180deg,rgba(139,92,246,.06),transparent 60%)}
+  .harness-tag{position:absolute;top:-13px;left:18px;background:var(--bg);padding:0 10px;
+               color:#c4b5fd;font-weight:700;font-size:13px}
+  .harness-items{display:flex;flex-wrap:wrap;gap:6px;margin:4px 2px 16px;color:var(--muted);font-size:12px}
+  .harness-items span{background:var(--panel);border:1px solid var(--line);border-radius:999px;padding:3px 10px}
+
+  .stage{display:grid;grid-template-columns:1.05fr 1.25fr;gap:16px;align-items:stretch}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px 16px}
+  .card h2{font-size:15px;margin:0 0 2px;display:flex;align-items:center;gap:8px}
+  .dot{width:10px;height:10px;border-radius:3px;display:inline-block}
+  .role{color:var(--muted);font-size:12px;margin-bottom:8px}
+  .ex{font-size:12px;color:#c3cad6}
+  .ex code{background:#0c0e12;border:1px solid var(--line);border-radius:5px;padding:1px 6px;color:#dfe6f0}
+
+  /* Agent loop */
+  .agent{border-color:rgba(52,199,89,.5)}
+  .loop{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+  .loop b{background:rgba(52,199,89,.12);border:1px solid rgba(52,199,89,.4);color:#7ee2a0;
+          border-radius:8px;padding:4px 9px;font-size:12px;font-weight:600}
+  .loop i{color:var(--agent);font-style:normal;align-self:center}
+
+  .acts{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:14px}
+  .tool{border-color:rgba(20,184,196,.45)}
+  .skill{border-color:rgba(240,162,59,.45)}
+
+  .llm{border-color:rgba(106,163,255,.5);margin-top:14px;text-align:center}
+  .llm h2{justify-content:center}
+
+  /* MCP side pipe */
+  .mcp-row{display:flex;align-items:center;gap:12px;margin-top:14px}
+  .mcp{flex:1;border-color:rgba(185,139,255,.5);
+       background:linear-gradient(90deg,rgba(185,139,255,.08),transparent)}
+  .pipe{color:var(--mcp);font-size:22px;font-weight:700}
+  .opt{display:inline-block;background:rgba(255,107,107,.14);border:1px solid rgba(255,107,107,.5);
+       color:#ff9b9b;border-radius:999px;padding:1px 9px;font-size:11px;font-weight:700;margin-left:8px}
+
+  .fix{margin-top:26px;background:#12161d;border:1px solid var(--line);border-left:3px solid var(--warn);
+       border-radius:10px;padding:14px 16px}
+  .fix h3{margin:0 0 8px;font-size:14px;color:#ffb4b4}
+  .fix ul{margin:0;padding-left:18px;font-size:13px;color:#cdd4df}
+  .fix li{margin:5px 0}
+  .fix b{color:var(--ink)}
+
+  .legend{margin-top:18px;font-size:12px;color:var(--muted);text-align:center}
+  .arrow{text-align:center;color:var(--muted);font-size:13px;margin:6px 0}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>LLM · Agent · Tool/Skill · MCP · Harness</h1>
+  <div class="sub">A corrected relationship map — it is <b>not</b> a clean bottom-up stack. Agent drives the LLM; tools/skills are how it acts; MCP is an <b>optional</b> pipe; Harness wraps everything.</div>
+
+  <div class="harness">
+    <div class="harness-tag">⬡ Harness · engineering assurance (cross-cutting, wraps all)</div>
+    <div class="harness-items">
+      <span>eval</span><span>deploy</span><span>observability</span>
+      <span>versioning</span><span>safety &amp; governance</span>
+      <span>memory / RAG</span><span>guardrails</span>
+    </div>
+
+    <div class="stage">
+      <!-- Agent loop -->
+      <div class="card agent">
+        <h2><span class="dot" style="background:var(--agent)"></span>Agent · the executor (the loop)</h2>
+        <div class="role">Drives the LLM's reasoning, decides which tool/skill to call, iterates until done</div>
+        <div class="loop">
+          <b>Plan</b><i>→</i><b>Act</b><i>→</i><b>Observe</b><i>→</i><b>Reflect</b><i>↺</i>
+        </div>
+      </div>
+
+      <!-- LLM + actions -->
+      <div>
+        <div class="card llm">
+          <h2><span class="dot" style="background:var(--llm)"></span>LLM · the brain (reasoning core)</h2>
+          <div class="role">Understands intent · reasons &amp; decides · generates content — <b>cannot</b> touch the outside world by itself</div>
+        </div>
+
+        <div class="acts">
+          <div class="card tool">
+            <h2><span class="dot" style="background:var(--tool)"></span>Tool</h2>
+            <div class="role">A single function-call interface</div>
+            <div class="ex">search · calculate · <code>API call</code> · file I/O · query a DB</div>
+          </div>
+          <div class="card skill">
+            <h2><span class="dot" style="background:var(--skill)"></span>Skill</h2>
+            <div class="role">A packaged "way of doing a task"<br>(a SKILL.md + scripts)</div>
+            <div class="ex">may use <b>several Tools inside</b> — bundled expertise, <b>≠</b> a single tool</div>
+          </div>
+        </div>
+
+        <div class="mcp-row">
+          <div class="pipe">⇠</div>
+          <div class="card mcp">
+            <h2><span class="dot" style="background:var(--mcp)"></span>MCP · a connection pipe <span class="opt">OPTIONAL</span></h2>
+            <div class="role">One standard protocol for plugging in <b>external / cross-process / cross-vendor</b> tools &amp; data</div>
+            <div class="ex">Most tools use native function-calling and <b>never go through MCP</b>. It's one transport, not the base layer.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="arrow">Typical flow: user input → LLM reads intent → Agent plans → calls Tool/Skill (some via MCP) → observe / reflect → (loop) → return result</div>
+
+  <div class="fix">
+    <h3>What was corrected from the original</h3>
+    <ul>
+      <li><b>MCP is not a mandatory "standard layer."</b> The original drew it as the foundation under Skill. In reality it's an <b>optional transport for external tools</b> — most tools call directly via function-calling and never touch MCP.</li>
+      <li><b>Skill ≠ Tool.</b> The original labeled "search / calculate / API call" as Skills — those are <b>Tools</b> (single calls). A <b>Skill</b> is a packaged method that may invoke several Tools.</li>
+      <li><b>It isn't a clean bottom-up stack.</b> Real shape: the Agent (loop) drives the LLM (brain), acts through Tools/Skills, some of which arrive via MCP, with the Harness cutting across and wrapping all of it.</li>
+    </ul>
+  </div>
+
+  <div class="legend">In one line: LLM = brain · Agent = the loop that executes · Tool/Skill = hands and feet (Skill is a packaged method) · MCP = optional transport · Harness = engineering assurance</div>
+</div>
+</body>
+</html>

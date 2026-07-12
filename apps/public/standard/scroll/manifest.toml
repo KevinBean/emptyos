@@ -1,0 +1,63 @@
+[app]
+id = "scroll"
+store_category = "creative"
+name = "Scroll"
+version = "1.0.0"
+description = "Vertical AI-generated short-clip feed driven by user-curated personas"
+dimensions = ["intellectual"]
+
+[app.entry]
+module = "app"
+class = "ScrollApp"
+
+[provides.cli]
+commands = ["scroll"]
+
+[provides.web]
+prefix = "/scroll"
+
+# ✨ AI field-suggest — vault-grounded clip topic ideas (see .claude/rules/field-suggest.md)
+[[provides.field_suggest]]
+field = "topic_hint"
+instruction = "Propose short, punchy topic hints for a short-form video clip, riffing on the subjects of the user's knowledge-base notes. Each is a few words — a hook, not a script."
+vault_tags = ["kb"]
+title_only = true
+count = 5
+mode = "fill"
+
+[provides.events]
+emits = [
+    "scroll:persona_added",
+    "scroll:clip_drafted",
+    "scroll:clip_published",
+    "scroll:clip_liked",
+    "scroll:clip_skipped",
+    "scroll:mood_changed",
+]
+# In-app UI workflow signals. Published/liked/skipped are the cross-app
+# moments (reactor consumes them); persona/draft/mood are pre-publish
+# state changes only this app cares about.
+internal = [
+    "scroll:persona_added",
+    "scroll:clip_drafted",
+    "scroll:mood_changed",
+]
+
+[requires]
+capabilities = ["read", "write", "think", "speak", "draw"]
+apps = ["rooms"]
+services = []
+events = []
+
+[provides.settings]
+schema = [
+    {key = "scroll.draft_review", label = "Review drafts before publishing", type = "boolean", default = true},
+    {key = "scroll.autoplay", label = "Autoplay next clip in feed", type = "boolean", default = true},
+]
+
+[[contributes.hub.panel]]
+id = "scroll-today"
+method = "panel_today"
+renderer = "stat-tile"
+group = "dashboard"
+priority = 220

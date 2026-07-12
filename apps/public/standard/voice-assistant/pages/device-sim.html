@@ -1,0 +1,333 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Voice Satellite — Device Simulator</title>
+<!-- eos-nav: skip — voice-satellite hardware device mockup, immersive canvas + device frame, no global chrome -->
+<style>
+  /* Standalone device mockup — this page never loads theme.css, so its :root
+     palette IS the whole document rather than an override of the active theme. */
+  /* text-tokens: ignore — standalone page, no theme.css to override */
+  :root{ --bg:#0d0f14; --panel:#161a22; --line:#262c38; --txt:#e7ecf5; --mut:#8a93a6; --accent:#36c; }
+  *{ box-sizing:border-box; }
+  body{ margin:0; background:var(--bg); color:var(--txt); font:14px/1.5 -apple-system,Segoe UI,Roboto,sans-serif; }
+  .wrap{ max-width:920px; margin:0 auto; padding:24px; }
+  h1{ font-size:18px; margin:0 0 4px; } .sub{ color:var(--mut); margin:0 0 20px; font-size:13px; }
+  .row{ display:flex; gap:24px; flex-wrap:wrap; align-items:flex-start; }
+  .device{ background:#05070b; border:10px solid #1c2230; border-radius:26px; padding:14px; box-shadow:0 10px 40px #0008; }
+  canvas{ display:block; background:#000; border-radius:8px; image-rendering:pixelated; }
+  .pad{ flex:1; min-width:300px; }
+  .gestures{ display:grid; grid-template-columns:1fr 1fr; gap:10px; margin:14px 0; }
+  button.g{ background:var(--panel); border:1px solid var(--line); color:var(--txt); border-radius:10px; padding:14px; font-size:14px; cursor:pointer; }
+  button.g:hover{ border-color:var(--accent); } button.g:active{ transform:translateY(1px); }
+  button.g small{ display:block; color:var(--mut); font-size:11px; margin-top:3px; }
+  .mic{ width:100%; padding:12px; border-radius:10px; border:1px solid var(--line); background:#1d2533; color:#cfe; cursor:pointer; margin-bottom:10px; }
+  .mic.on{ background:#123; border-color:#2a6; color:#7fd; }
+  .trace{ background:#0a0c11; border:1px solid var(--line); border-radius:10px; padding:10px; height:240px; overflow:auto; font:12px/1.5 ui-monospace,Menlo,monospace; color:#9fb; white-space:pre-wrap; }
+  .trace .s{ color:#fc6; } .trace .e{ color:#8cf; } .trace .x{ color:#f88; }
+  .hint{ color:var(--mut); font-size:12px; margin:8px 0 0; }
+  .pill{ display:inline-block; padding:2px 8px; border-radius:20px; background:#1d2533; border:1px solid var(--line); font-size:12px; color:var(--mut); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Voice Satellite — Device Simulator</h1>
+  <p class="sub">The AtomS3R interaction model, running against the real <code>/voice-assistant/api/device_turn</code>. Design here, port to firmware. <span class="pill" id="autopilot-pill">hands-off: off</span> <span class="pill" id="fast-pill" style="cursor:pointer">⚡ fast: on</span></p>
+  <div class="row">
+    <div class="device"><canvas id="screen" width="128" height="128" style="width:300px;height:300px"></canvas></div>
+    <div class="pad">
+      <button class="mic" id="micbtn">🎤 Enable microphone</button>
+      <div class="gestures">
+        <button class="g" data-g="tap">Tap<small>start turn · approve · stop+send</small></button>
+        <button class="g" data-g="long">Long-press<small>freehand · reject · cancel</small></button>
+        <button class="g" data-g="double">Double-tap<small>barge-in · hands-off</small></button>
+        <button class="g" data-g="shake">Shake<small>cancel → idle (universal)</small></button>
+      </div>
+      <div class="trace" id="trace"></div>
+      <p class="hint">Walk every state × gesture; the trace shows state transitions + which endpoint each hit. Gestures are state-sensitive (see the firmware mirror in <code>SM</code>).</p>
+    </div>
+  </div>
+</div>
+<script>
+// ─────────────────────────────────────────────────────────────────────────────
+// Interaction state machine — authored to MIRROR the firmware (one `state` + a
+// gesture(g) dispatch). Port this table straight into voice_satellite.ino.
+// ─────────────────────────────────────────────────────────────────────────────
+const C = {  // state -> orb hue (mirrors firmware color states)
+  idle:'#3a8', listening:'#3d6', thinking:'#da3', speaking:'#39d',
+  pending:'#e83', confirm:'#a6e', error:'#e44', freehand:'#2bd'
+};
+let state = 'idle';
+let session = { messages: [], companion: null };
+let pending = null;        // {action_id, verb, description}
+let confirm = null;        // {verb, args, description}
+let autopilot = false, fastMode = true;   // device default = fast (low latency)
+let micStream = null, ac = null, analyser = null, levelData = null;
+let recorder = null, chunks = [], recording = false;
+let freehand = false, audioEl = new Audio();
+let micLevel = 0, spkLevel = 0;
+// VAD tuning (dial these in the sim, then port to firmware). Hysteresis: louder
+// `onset` to start, quieter `silence` to end, so soft/trailing words keep the
+// turn alive; `hangoverMs` is how long a pause may last before the turn ends.
+const VAD = { onset: 0.055, silence: 0.03, hangoverMs: 1500, maxMs: 15000, noSpeechMs: 6000 };
+// Screen sleep: blank the display after idle (saves the panel; on the AtomS3R this
+// is backlight-off via M5.Display.setBrightness(0), NOT deep-sleep — Wi-Fi/listening
+// stay alive since the puck is usually USB-powered). Any gesture wakes it.
+const SLEEP_MS = 30000;
+let lastAct = performance.now();
+function touch(){ lastAct = performance.now(); }
+
+const $ = s => document.querySelector(s);
+function log(msg, cls){ const t=$('#trace'); const span=document.createElement('div'); if(cls)span.className=cls; span.textContent=msg; t.appendChild(span); t.scrollTop=t.scrollHeight; }
+function setState(s, note){ state=s; touch(); log('» '+s+(note?'  '+note:'')); }
+
+// ── Gesture dispatch (THE model — keep in sync with firmware) ────────────────
+function gesture(g){
+  touch();   // any gesture wakes the screen
+  log('· gesture: '+g+'  (state '+state+')');
+  if (g==='shake'){ cancelToIdle('shake'); return; }
+  switch(state){
+    case 'idle':
+      if (g==='tap') startTurn();
+      else if (g==='long') enterFreehand();
+      else if (g==='double') toggleAutopilot();
+      break;
+    case 'listening':
+      if (g==='tap') stopAndSend();
+      else if (g==='long') cancelToIdle('long');
+      break;
+    case 'speaking':
+      if (g==='double'){ stopPlayback(); startTurn(); }   // barge-in
+      else if (g==='long') cancelToIdle('long');
+      break;
+    case 'pending':
+      if (g==='tap') approvePending();
+      else if (g==='long') rejectPending();
+      break;
+    case 'confirm':
+      if (g==='tap') confirmIntent();
+      else if (g==='long') cancelToIdle('long');
+      break;
+    case 'freehand':
+      if (g==='tap' || g==='long') exitFreehand();
+      else if (g==='double') stopPlayback();
+      break;
+  }
+}
+
+// ── Turn lifecycle ───────────────────────────────────────────────────────────
+let abort=false;
+async function startTurn(){
+  if (!micStream){ log('enable the microphone first', 'x'); return; }
+  setState('listening');
+  const blob = await recordUtterance();        // awaits the full utterance
+  if (blob) await doTurn(blob);
+  if (state!=='pending' && state!=='confirm' && state!=='error') setState('idle');
+}
+function stopAndSend(){ if (recording) stopRecording(); }   // tap while listening = end now
+
+// Resolves with the recorded Blob when capture completes (or null if aborted /
+// too short). The key fix: freehand can `await` one full utterance per loop.
+function recordUtterance(){
+  return new Promise(resolve => {
+    if (!micStream){ resolve(null); return; }
+    chunks=[]; recording=true; abort=false;
+    recorder = new MediaRecorder(micStream);
+    recorder.ondataavailable = e => { if (e.data.size) chunks.push(e.data); };
+    recorder.onstop = () => {
+      if (abort){ abort=false; resolve(null); return; }
+      const blob = new Blob(chunks, {type:'audio/webm'});
+      resolve(blob.size > 1200 ? blob : null);
+    };
+    recorder.start();
+    vadTick(performance.now(), false, 0);
+  });
+}
+function vadTick(t0, onset, silenceStart){
+  if (!recording) return;
+  const lvl = micLevel, now = performance.now();
+  if (lvl > VAD.onset){ onset=true; silenceStart=0; }                 // clearly speaking → reset pause
+  else if (onset && lvl < VAD.silence){                               // truly quiet → count the pause
+    if(!silenceStart) silenceStart=now;
+    else if (now-silenceStart > VAD.hangoverMs) return stopRecording();
+  } else if (onset){ silenceStart=0; }                               // soft speech between thresholds → keep alive
+  if (now-t0 > VAD.maxMs) return stopRecording();                     // hard cap
+  if (!onset && now-t0 > VAD.noSpeechMs) return stopRecording();      // never started → give up
+  requestAnimationFrame(()=>vadTick(t0, onset, silenceStart));
+}
+function stopRecording(){ if (recording && recorder && recorder.state!=='inactive'){ recording=false; recorder.stop(); } }
+
+async function doTurn(blob){
+  setState('thinking');
+  try{
+    const fd = new FormData();
+    fd.append('audio', blob, 'a.webm');
+    fd.append('messages', JSON.stringify(session.messages));
+    fd.append('companion', session.companion || '');
+    fd.append('fast', fastMode ? '1' : '0');   // explicit, so the toggle can force quality
+    fd.append('device_id', 'sim-voice-01'); fd.append('device_board', 'simulator');  // register in /devices
+    log('→ POST /api/device_turn  ('+blob.size+'b'+(fastMode?' · fast':' · quality')+')', 's');
+    const r = await fetch('/voice-assistant/api/device_turn', { method:'POST', body:fd });
+    const d = await r.json();
+    if (d.error){ flashError(d.error); return; }
+    session = d.session || session;
+    window._lastTranscript = d.transcript||''; window._lastReply = d.reply_text||'';
+    log('  transcript: '+JSON.stringify(d.transcript));
+    log('  reply: '+JSON.stringify(d.reply_text));
+    await playReply(d.audio_urls||[]);
+    const gated = (d.actions||[]).find(a => a.status==='pending' || a.status==='confirm_required');
+    if (gated) enterGate(gated);
+  }catch(err){ flashError(String(err)); }
+}
+
+async function playReply(urls){
+  if (!urls.length) return;
+  setState('speaking');
+  for (const u of urls){
+    await new Promise(res=>{ audioEl = new Audio(u); hookSpeakAnalyser(audioEl); audioEl.onended=res; audioEl.onerror=res; audioEl.play().catch(res); });
+  }
+}
+function stopPlayback(){ try{ audioEl.pause(); }catch(e){} spkLevel=0; }
+
+// ── Action gate ──────────────────────────────────────────────────────────────
+function enterGate(a){
+  if (a.status==='pending'){ pending=a; setState('pending', a.verb); log('  ⚑ pending: '+(a.description||a.verb)+'  (Tap=approve · Long=reject)'); }
+  else { confirm={verb:a.verb, args:a.args||{}, description:a.description}; setState('confirm', a.verb); log('  ⚑ confirm: '+(a.description||a.verb)); }
+}
+async function approvePending(){
+  if(!pending) return; const id=pending.action_id;
+  log('→ POST /api/pending/'+id+'/apply', 's');
+  try{ const r=await fetch('/voice-assistant/api/pending/'+encodeURIComponent(id)+'/apply',{method:'POST'}); log('  '+JSON.stringify(await r.json()),'e'); }catch(e){ log('  '+e,'x'); }
+  pending=null; idleOrFreehand();
+}
+async function rejectPending(){
+  if(!pending) return; const id=pending.action_id;
+  log('→ POST /api/pending/'+id+'/reject', 's');
+  try{ const r=await fetch('/voice-assistant/api/pending/'+encodeURIComponent(id)+'/reject',{method:'POST'}); log('  '+JSON.stringify(await r.json()),'e'); }catch(e){ log('  '+e,'x'); }
+  pending=null; idleOrFreehand();
+}
+async function confirmIntent(){
+  if(!confirm) return;
+  log('→ POST /api/confirm-intent  '+confirm.verb, 's');
+  try{ const r=await fetch('/voice-assistant/api/confirm-intent',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({verb:confirm.verb,args:confirm.args})}); log('  '+JSON.stringify(await r.json()),'e'); }catch(e){ log('  '+e,'x'); }
+  confirm=null; idleOrFreehand();
+}
+
+// ── Hands-off (autopilot session) ────────────────────────────────────────────
+async function toggleAutopilot(){
+  autopilot = !autopilot;
+  log('→ POST /api/autopilot/session  '+(autopilot?'on':'off'), 's');
+  try{
+    const r=await fetch('/voice-assistant/api/autopilot/session',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({enabled:autopilot, ttl_s:3600})});
+    log('  '+JSON.stringify(await r.json()),'e');
+  }catch(e){ log('  '+e,'x'); }
+  $('#autopilot-pill').textContent = 'hands-off: '+(autopilot?'on':'off');
+}
+
+// ── Freehand ─────────────────────────────────────────────────────────────────
+function enterFreehand(){
+  if (!micStream){ log('enable the microphone first', 'x'); return; }
+  if (freehand) return;
+  freehand=true; log('« FREEHAND on — talk freely, long-press to exit »');
+  freehandLoop();
+}
+function exitFreehand(){ freehand=false; abort=true; stopRecording(); cancelToIdle('exit freehand'); }
+async function freehandLoop(){
+  while (freehand){
+    setState('listening');     // green + mic-reactive while waiting/capturing (the ∞ badge marks freehand)
+    const blob = await recordUtterance();        // one full utterance per loop
+    if (!freehand) break;
+    if (blob){
+      await doTurn(blob);      // -> thinking (amber spinner) -> speaking (blue wave)
+      if (state==='pending' || state==='confirm'){ freehand=false; break; }   // pause for a gate
+    } else {
+      await new Promise(r=>setTimeout(r,200));    // no speech — settle, then re-arm
+    }
+  }
+  freehand=false;
+  if (state!=='pending' && state!=='confirm') setState('idle');
+}
+function idleOrFreehand(){ if (!freehand) setState('idle'); }
+function cancelToIdle(why){ freehand=false; abort=true; stopRecording(); stopPlayback(); pending=null; confirm=null; setState('idle', why?('('+why+')'):''); }
+function flashError(msg){ setState('error', msg); log('  ✗ '+msg,'x'); setTimeout(()=>{ if(state==='error') idleOrFreehand(); }, 1200); }
+
+// ── Mic + analysers ──────────────────────────────────────────────────────────
+$('#micbtn').onclick = async () => {
+  try{
+    micStream = await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true}});
+    ac = new (window.AudioContext||window.webkitAudioContext)();
+    analyser = ac.createAnalyser(); analyser.fftSize=512; levelData=new Uint8Array(analyser.fftSize);
+    ac.createMediaStreamSource(micStream).connect(analyser);
+    $('#micbtn').classList.add('on'); $('#micbtn').textContent='🎤 Microphone on';
+    log('microphone enabled');
+  }catch(e){ log('mic error: '+e,'x'); }
+};
+let spkAnalyser=null, spkData=null;
+function hookSpeakAnalyser(el){ try{ if(!ac) return; const s=ac.createMediaElementSource(el); spkAnalyser=ac.createAnalyser(); spkAnalyser.fftSize=256; spkData=new Uint8Array(spkAnalyser.fftSize); s.connect(spkAnalyser); spkAnalyser.connect(ac.destination); }catch(e){} }
+function rms(arr){ let s=0; for(let i=0;i<arr.length;i++){ const v=(arr[i]-128)/128; s+=v*v; } return Math.sqrt(s/arr.length); }
+
+// ── Render loop — the audio-reactive visual language (port to M5GFX) ─────────
+const cv=$('#screen'), ctx=cv.getContext('2d'); let t=0;
+function draw(){
+  t+=0.05;
+  // sleep: blank the screen after idle (a faint slow-breathing dot), wake on gesture.
+  if (state==='idle' && !freehand && performance.now()-lastAct > SLEEP_MS){
+    ctx.fillStyle='#000'; ctx.fillRect(0,0,128,128);
+    ctx.globalAlpha = 0.18 + 0.14*Math.sin(t*0.4); ctx.fillStyle='#2a3a55';
+    ctx.beginPath(); ctx.arc(64,64,4,0,7); ctx.fill(); ctx.globalAlpha = 1;
+    requestAnimationFrame(draw); return;
+  }
+  if (analyser){ analyser.getByteTimeDomainData(levelData); micLevel = rms(levelData); }
+  if (spkAnalyser){ spkAnalyser.getByteTimeDomainData(spkData); spkLevel = rms(spkData); }
+  ctx.fillStyle='#000'; ctx.fillRect(0,0,128,128);
+  const hue=C[state]||'#3a8'; const cx=64, cy=58;
+  // orb
+  let r=18;
+  if (state==='idle'||state==='freehand') r = 18 + Math.sin(t)*3;
+  else if (state==='listening') r = 16 + micLevel*70;
+  else if (state==='speaking') r = 16 + spkLevel*60 + Math.sin(t*3)*2;
+  else if (state==='thinking') r = 18;
+  else if (state==='pending'||state==='confirm'||state==='error') r = 18 + Math.sin(t*2)*4;
+  // ripple rings when listening
+  if (state==='listening' && micLevel>0.06){ for(let k=1;k<=2;k++){ ctx.globalAlpha=0.25/k; ctx.beginPath(); ctx.arc(cx,cy,r+k*8,0,7); ctx.strokeStyle=hue; ctx.stroke(); } ctx.globalAlpha=1; }
+  // thinking spinner arc
+  if (state==='thinking'){ ctx.beginPath(); ctx.arc(cx,cy,24,t%6.28,(t%6.28)+1.8); ctx.strokeStyle=hue; ctx.lineWidth=3; ctx.stroke(); ctx.lineWidth=1; }
+  // speaking waveform strip
+  if (state==='speaking' && spkData){ ctx.strokeStyle=hue; ctx.beginPath(); for(let x=0;x<128;x++){ const v=spkData[x%spkData.length]/255-0.5; ctx.lineTo(x, cy + v*40); } ctx.stroke(); }
+  // orb body
+  const g=ctx.createRadialGradient(cx,cy,2,cx,cy,r); g.addColorStop(0,hue); g.addColorStop(1,'#0008');
+  ctx.fillStyle=g; ctx.beginPath(); ctx.arc(cx,cy,r,0,7); ctx.fill();
+  // freehand indicator — subtle edge glow + a top-right ∞ badge only, so the real
+  // state label and the transcript/reply text stay fully visible (non-blocking).
+  if (freehand){
+    ctx.globalAlpha = 0.28 + 0.28*Math.sin(t*2); ctx.strokeStyle='#2bd'; ctx.lineWidth=2;
+    ctx.strokeRect(1,1,126,126); ctx.lineWidth=1; ctx.globalAlpha=1;
+    ctx.fillStyle='#2bd'; ctx.beginPath(); ctx.arc(119,9,6,0,7); ctx.fill();
+    ctx.fillStyle='#011'; ctx.font='bold 9px sans-serif'; ctx.textAlign='center'; ctx.fillText('∞',119,12);
+  }
+  // state label — always the REAL state (listening / thinking / speaking / …)
+  ctx.fillStyle='#fff'; ctx.font='10px sans-serif'; ctx.textAlign='center';
+  ctx.fillText(state.toUpperCase(), 64, 12);
+  // text
+  ctx.font='8px sans-serif'; ctx.fillStyle='#9cf';
+  wrapText((window._lastTranscript||''), 64, 96, 120, 9);
+  ctx.fillStyle='#fff';
+  if (state==='pending'&&pending) wrapText('▸ '+(pending.description||pending.verb)+'  Tap=OK Hold=No', 64, 110, 122, 9);
+  else if (state==='confirm'&&confirm) wrapText('? '+(confirm.description||confirm.verb)+'  Tap=confirm', 64, 110, 122, 9);
+  else wrapText((window._lastReply||''), 64, 110, 122, 9);
+  // status row
+  ctx.fillStyle='#456'; ctx.font='7px sans-serif'; ctx.fillText((autopilot?'hands-off':'gated')+(freehand?' · freehand':''), 64, 124);
+  requestAnimationFrame(draw);
+}
+function wrapText(txt,x,y,maxw,lh){ if(!txt)return; const words=txt.split(' '); let line='',yy=y,lines=0; for(const w of words){ const test=line+w+' '; if(ctx.measureText(test).width>maxw && line){ ctx.fillText(line,x,yy); line=w+' '; yy+=lh; if(++lines>1)return; } else line=test; } ctx.fillText(line,x,yy); }
+draw();
+
+// ── Gesture buttons + keyboard ───────────────────────────────────────────────
+document.querySelectorAll('button.g').forEach(b => b.onclick = () => gesture(b.dataset.g));
+$('#fast-pill').onclick = () => { fastMode=!fastMode; $('#fast-pill').textContent='⚡ fast: '+(fastMode?'on':'off'); log('fast mode '+(fastMode?'ON — quick model':'OFF — full thinking')); };
+window.addEventListener('keydown', e => { const m={' ':'tap', l:'long', d:'double', s:'shake'}; if(m[e.key]){ e.preventDefault(); gesture(m[e.key]); }});
+log('ready · enable mic, then Tap to talk. (keys: space=tap l=long d=double s=shake)');
+</script>
+</body>
+</html>

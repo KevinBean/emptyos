@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Replay</title>
+  <link rel="stylesheet" href="/static/theme.css">
+  <link rel="stylesheet" href="/static/eos-components.css">
+  <script src="/static/eos.js"></script>
+  <script src="/static/eos-components.js"></script>
+  <style>
+    .wrap { max-width: 900px; margin: 0 auto; padding: 24px 16px 80px; }
+    .topbar { display: flex; align-items: center; gap: 12px; margin-bottom: 18px; }
+    .topbar h1 { margin: 0; font-size: 1.4rem; }
+    .topbar .spacer { flex: 1; }
+    .recipe-card { border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px;
+      margin-bottom: 10px; cursor: pointer; background: var(--surface); transition: border-color .15s; }
+    .recipe-card:hover { border-color: var(--accent); }
+    .recipe-card h3 { margin: 0 0 4px; font-size: 1.05rem; }
+    .recipe-card .meta { color: var(--text-muted); font-size: .82rem; }
+    .step-row { display: flex; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--border); }
+    .step-n { color: var(--text-muted); min-width: 22px; }
+    .step-why { color: var(--text-muted); font-size: .88rem; }
+    .hidden { display: none; }
+    .disabled-note { border: 1px dashed var(--border); border-radius: 12px; padding: 24px; text-align: center; }
+    code.verb { color: var(--accent); }
+    .back { cursor: pointer; color: var(--accent); margin-bottom: 12px; display: inline-block; }
+    .plan-row { display:flex; gap:10px; align-items:center; padding:6px 0; border-bottom:1px solid var(--border); font-size:.9rem; }
+    .disp { font-size:.72rem; padding:2px 8px; border-radius:10px; border:1px solid var(--border); white-space:nowrap; }
+    .disp.auto { color:var(--success); border-color:var(--success); }
+    .disp.review { color:var(--warning); border-color:var(--warning); }
+    .disp.blocked { color:var(--danger); border-color:var(--danger); }
+    .disp.run { color:var(--accent); border-color:var(--accent); }
+    .field-row { margin-bottom:8px; }
+    .field-row label { display:block; font-size:.8rem; color:var(--text-muted); margin-bottom:2px; }
+    .field-row input { width:100%; padding:6px 8px; border:1px solid var(--border); border-radius:6px; background:var(--surface); color:var(--text); }
+    .status-banner { padding:10px 12px; border-radius:8px; border:1px solid var(--border); }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="topbar">
+      <h1>⏺ Replay</h1>
+      <span class="spacer"></span>
+      <span id="model-pill"></span>
+      <button class="eos-btn-sm" onclick="openAppSettings()">&#9881; Settings</button>
+    </div>
+
+    <div id="disabled" class="disabled-note hidden">
+      <p><strong>Replay is off.</strong> Turn on <code>Enable Replay</code> in Settings
+         (takes effect immediately), or set <code>feature.enabled = true</code> under
+         <code>[apps.replay]</code> in <code>emptyos.toml</code>.</p>
+      <button class="eos-btn" style="margin-top:12px" onclick="openAppSettings()">Open Settings</button>
+    </div>
+
+    <div id="app" class="hidden">
+      <!-- List view -->
+      <div id="list-view">
+        <p class="meta" style="color:var(--text-muted)">
+          Replays are distilled from a finished agent session — open a session in
+          <a href="/agent/">the agent</a> and click <em>Make reusable</em>.
+        </p>
+        <div id="recipe-list"></div>
+        <div id="empty" class="hidden"><p class="eos-empty">No replays yet.</p></div>
+      </div>
+
+      <!-- Detail view -->
+      <div id="detail-view" class="hidden">
+        <span class="back" onclick="closeDetail()">&larr; All replays</span>
+        <h2 id="d-name"></h2>
+        <p id="d-goal" class="meta"></p>
+        <p id="d-when" class="meta"></p>
+        <div id="d-inputs"></div>
+        <h3>Steps</h3>
+        <div id="d-steps"></div>
+        <div id="d-verify"></div>
+
+        <div id="d-replay" style="margin-top:20px; border-top:1px solid var(--border); padding-top:16px;">
+          <h3>▶ Replay</h3>
+          <div id="replay-inputs"></div>
+          <div style="display:flex; gap:8px; margin-top:10px;">
+            <button class="eos-btn-sm" onclick="previewPlan()">Preview plan</button>
+            <button class="eos-btn" onclick="runRecipe()">Run</button>
+          </div>
+          <div id="replay-plan" style="margin-top:12px;"></div>
+          <div id="replay-status" style="margin-top:12px;"></div>
+        </div>
+
+        <p class="meta" id="d-source" style="margin-top:16px"></p>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    var _settings = EOS_UI.settingsPanel({
+      id: 'replay-settings-panel',
+      title: 'Replay Settings',
+      fields: [
+        {key: 'replay.feature.enabled', label: 'Enable Replay', type: 'boolean', default: false,
+         hint: 'Takes effect immediately — no restart needed.'},
+        {key: 'replay.feature.auto_resume', label: 'Auto-resume on gated-step apply', type: 'boolean', default: false},
+      ],
+    });
+    function openAppSettings() { _settings.open(); }
+
+    var _route = EOS_UI.hashRoute({ onShow: showDetail, onHide: closeDetailDom });
+    var _current = null;     // currently-open recipe
+    var _pollTimer = null;
+
+    async function boot() {
+      var cfg = await fetch('/replay/api/config').then(r => r.json());
+      if (!cfg.enabled) {
+        document.getElementById('disabled').classList.remove('hidden');
+        return;
+      }
+      document.getElementById('app').classList.remove('hidden');
+      try { EOS_UI.modelPill({ app: 'replay', mount: '#model-pill', domain: 'text' }); } catch (e) {}
+      await loadList();
+      _route.init();
+    }
+
+    async function loadList() {
+      var data = await fetch('/replay/api/recipes').then(r => r.json());
+      var list = document.getElementById('recipe-list');
+      var empty = document.getElementById('empty');
+      var rs = data.recipes || [];
+      if (!rs.length) { list.innerHTML = ''; empty.classList.remove('hidden'); return; }
+      empty.classList.add('hidden');
+      list.innerHTML = rs.map(function (r) {
+        return '<div class="recipe-card" onclick="openDetail(' + escAttr(JSON.stringify(r.id)) + ')">'
+          + '<h3>' + esc(r.name || r.id) + '</h3>'
+          + '<div class="meta">' + esc(r.goal || '') + '</div>'
+          + '<div class="meta">' + (r.steps || 0) + ' steps · '
+          + '<span class="eos-badge eos-badge-status-' + escAttr(r.status || 'draft') + '">' + esc(r.status || 'draft') + '</span></div>'
+          + '</div>';
+      }).join('');
+    }
+
+    function openDetail(id) { _route.set(id); }
+    function closeDetail() { _route.clear(); }
+
+    async function showDetail(id) {
+      var data = await fetch('/replay/api/recipes/' + encodeURIComponent(id)).then(r => r.json());
+      var r = data.recipe;
+      if (!r) return;
+      document.getElementById('list-view').classList.add('hidden');
+      var dv = document.getElementById('detail-view');
+      dv.classList.remove('hidden');
+      document.getElementById('d-name').textContent = r.name || r.id;
+      document.getElementById('d-goal').textContent = r.goal ? ('Goal — ' + r.goal) : '';
+      document.getElementById('d-when').textContent = r.when_to_use ? ('When to use — ' + r.when_to_use) : '';
+
+      var inputs = r.inputs || [];
+      document.getElementById('d-inputs').innerHTML = inputs.length
+        ? '<h3>Inputs</h3>' + inputs.map(function (i) {
+            return '<div class="meta">· <code>' + esc(i.name) + '</code> — ' + esc(i.label || i.name)
+              + (i.required ? ' <em>(required)</em>' : '') + '</div>';
+          }).join('')
+        : '';
+
+      document.getElementById('d-steps').innerHTML = (r.steps || []).map(function (s) {
+        var head = s.kind === 'verb'
+          ? '<code class="verb">' + esc(s.verb) + '</code>'
+          : 'think <span class="meta">(' + esc(s.domain || 'text') + ')</span>';
+        return '<div class="step-row"><span class="step-n">' + s.n + '</span><div>' + head
+          + (s.why ? '<div class="step-why">' + esc(s.why) + '</div>' : '') + '</div></div>';
+      }).join('');
+
+      var verify = r.verify || [];
+      document.getElementById('d-verify').innerHTML = verify.length
+        ? '<h3>Verification</h3>' + verify.map(function (v) { return '<div class="meta">☐ ' + esc(v) + '</div>'; }).join('')
+        : '';
+
+      document.getElementById('d-source').textContent = r.source_session
+        ? ('Distilled from session ' + r.source_session) : '';
+
+      // Replay panel
+      _current = r;
+      if (_pollTimer) { clearInterval(_pollTimer); _pollTimer = null; }
+      document.getElementById('replay-plan').innerHTML = '';
+      document.getElementById('replay-status').innerHTML = '';
+      document.getElementById('replay-inputs').innerHTML = (inputs.length
+        ? inputs.map(function (i) {
+            return '<div class="field-row"><label>' + esc(i.label || i.name)
+              + (i.required ? ' *' : '') + '</label>'
+              + '<input data-input="' + escAttr(i.name) + '" value="' + escAttr(i.default || '') + '"></div>';
+          }).join('')
+        : '<p class="meta">No inputs — runs as-is.</p>');
+    }
+
+    function gatherInputs() {
+      var out = {};
+      document.querySelectorAll('#replay-inputs input[data-input]').forEach(function (el) {
+        out[el.getAttribute('data-input')] = el.value;
+      });
+      return out;
+    }
+
+    var DISP_LABEL = { auto: 'auto-run', review: 'review gate', blocked: 'blocked', run: 'runs' };
+
+    async function previewPlan() {
+      if (!_current) return;
+      var data = await fetch('/replay/api/recipes/' + encodeURIComponent(_current.id) + '/dry-run', {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ inputs: gatherInputs() }),
+      }).then(function (r) { return r.json(); });
+      if (!data.ok) { EOS_UI.toast(data.error || 'preview failed', 'error'); return; }
+      document.getElementById('replay-plan').innerHTML = '<h4>Plan</h4>' + data.plan.map(function (p) {
+        var head = p.kind === 'verb' ? '<code class="verb">' + esc(p.verb) + '</code>' : 'think';
+        var disp = p.disposition;
+        return '<div class="plan-row"><span class="step-n">' + p.n + '</span><div style="flex:1">' + head
+          + (p.why ? ' <span class="step-why">— ' + esc(p.why) + '</span>' : '')
+          + '</div><span class="disp ' + disp + '">' + (DISP_LABEL[disp] || disp) + '</span></div>';
+      }).join('') + (data.blocked
+        ? '<p class="meta" style="color:var(--danger)">A step is blocked (a never-auto verb) — the run will stop there for you to do it by hand.</p>'
+        : '');
+    }
+
+    async function runRecipe() {
+      if (!_current) return;
+      EOS_UI.toast('Starting replay…', 'info');
+      var data = await fetch('/replay/api/recipes/' + encodeURIComponent(_current.id) + '/run', {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ inputs: gatherInputs() }),
+      }).then(function (r) { return r.json(); });
+      if (!data.ok) { EOS_UI.toast(data.error || 'run failed', 'error'); return; }
+      renderStatus(data);
+    }
+
+    async function resumeRun(runId) {
+      EOS_UI.toast('Resuming…', 'info');
+      var data = await fetch('/replay/api/runs/' + encodeURIComponent(runId) + '/resume', { method: 'POST' })
+        .then(function (r) { return r.json(); });
+      if (!data.ok) { EOS_UI.toast(data.error || 'resume failed', 'error'); return; }
+      renderStatus(data);
+    }
+
+    function renderStatus(s) {
+      var el = document.getElementById('replay-status');
+      var rs = s.replay_status;
+      var done = (s.completed || []).length;
+      var html = '';
+      if (rs === 'complete') {
+        html = '<div class="status-banner" style="border-color:var(--success);color:var(--success)">✓ Completed — ' + done + ' steps ran.</div>';
+      } else if (rs === 'awaiting-gate') {
+        html = '<div class="status-banner" style="border-color:var(--warning);color:var(--warning)">⏳ Paused at ' + esc(s.gate_step || 'a step')
+          + ' — review it in the <a href="/rooms/">pending queue</a>, then resume.'
+          + ' <button class="eos-btn-sm" onclick="resumeRun(' + escAttr(JSON.stringify(s.run_id)) + ')">Resume</button></div>';
+      } else if (rs === 'blocked') {
+        html = '<div class="status-banner" style="border-color:var(--danger);color:var(--danger)">⛔ Blocked: '
+          + esc(s.error || 'a never-auto step') + ' Do it by hand, then '
+          + '<button class="eos-btn-sm" onclick="resumeRun(' + escAttr(JSON.stringify(s.run_id)) + ')">Resume</button></div>';
+      } else if (rs === 'error') {
+        html = '<div class="status-banner" style="border-color:var(--danger);color:var(--danger)">✗ ' + esc(s.error || 'error') + '</div>';
+      } else {
+        html = '<div class="status-banner">Running… (' + done + ' steps done)</div>';
+        if (s.run_id) { _pollTimer = setTimeout(function () { pollRun(s.run_id); }, 1500); }
+      }
+      el.innerHTML = html;
+    }
+
+    async function pollRun(runId) {
+      var data = await fetch('/replay/api/runs/' + encodeURIComponent(runId)).then(function (r) { return r.json(); });
+      if (data.ok) renderStatus(data);
+    }
+
+    function closeDetailDom() {
+      if (_pollTimer) { clearInterval(_pollTimer); clearTimeout(_pollTimer); _pollTimer = null; }
+      _current = null;
+      document.getElementById('detail-view').classList.add('hidden');
+      document.getElementById('list-view').classList.remove('hidden');
+    }
+
+    boot();
+  </script>
+</body>
+</html>

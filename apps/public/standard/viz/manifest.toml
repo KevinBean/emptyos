@@ -1,0 +1,91 @@
+[app]
+id = "viz"
+store_category = "creative"
+name = "Viz"
+version = "1.0.0"
+description = "LLM-driven single-file HTML artifact builder. Generates standalone Three.js scenes / SVG diagrams / charts / animated explainers from plain-language briefs. Deliberate counter to robot-modeller's regulated output — no SDK, no compile gate, visual correctness is judged in the eye."
+dimensions = ["intellectual"]
+
+[app.entry]
+module = "app"
+class = "VizApp"
+
+[requires]
+capabilities = ["think", "read", "write"]
+apps = ["kb"]
+# agent-runtime is OPTIONAL, not required: iterate prefers it (claude-cli with
+# Read+Edit tools, surgical edits — see _iterate_stream_events) but falls back
+# to a `think`-based whole-file rewrite when it's absent (cloud/demo). Declaring
+# it required only printed a misleading "unmet deps" warning where iterate works
+# fine. The plugin is still discovered + used wherever it loads.
+services = []
+events = []
+
+[provides.cli]
+commands = ["viz"]
+
+[provides.web]
+prefix = "/viz"
+
+# ✨ AI field-suggest — vault-grounded prompt ideas (see .claude/rules/field-suggest.md)
+[[provides.field_suggest]]
+field = "prompt"
+instruction = "Propose vivid one-line visualization briefs riffing on the moods and subjects of the user's knowledge-base topics — each a ready-to-generate prompt (a 3D scene, diagram, chart, or schematic)."
+vault_tags = ["kb"]
+title_only = true
+count = 5
+mode = "fill"
+
+[provides.events]
+emits = [
+    "viz:created",
+    "viz:updated",
+    "viz:rendered",
+    "viz:recorded",
+    "viz:embed_resynced",
+    "viz:refine_paused",
+    "viz:refine_done",
+]
+listens = []
+# Generator internal: artifact CRUD + render are per-app, not life signals.
+internal = [
+    "viz:created",
+    "viz:updated",
+    "viz:rendered",
+    "viz:recorded",
+    "viz:embed_resynced",
+    "viz:refine_paused",
+    "viz:refine_done",
+]
+
+[provides.timeline]
+entity_source = "artifact_path"
+
+[provides.settings]
+schema = [
+    {key = "viz.default_shape", label = "Default shape preset", type = "select", default = "3d-scene", options = ["3d-scene", "immersive-scene", "svg-diagram", "schematic", "network-graph", "chart", "anim-explainer", "slide-deck", "math-explainer", "mermaid"], hint = "Which artifact shape the LLM defaults to when the prompt doesn't specify."},
+    {key = "viz.think_domain", label = "Think domain", type = "select", default = "code", options = ["code", "text", "reason"], hint = "Routing hint passed to the think capability — `code` favours providers tuned for code output (LLM writes HTML/JS)."},
+    {key = "viz.max_html_kb", label = "Max HTML size (KB)", type = "number", default = 256, hint = "Refuse to save artifacts larger than this. Guards against runaway generation."},
+]
+
+[provides.welcome]
+title = "AI Diagram & Chart Generator"
+tagline = "Describe a concept; get a standalone interactive diagram, chart, schematic, or equation."
+href = "/viz/"
+order = 20
+
+[[contributes.work.deliverable]]
+id = "slide-deck"
+label = "Slide deck"
+icon = "🎞"
+description = "A presentation deck generated as a standalone HTML artifact."
+method = "deliver_work"
+iterate = "iterate"
+
+[[contributes.work.deliverable]]
+id = "infographic"
+label = "Infographic"
+icon = "📊"
+description = "A single-page interactive SVG infographic poster — one explorable diagram with click-to-highlight, good for explaining a concept, flow, or system at a glance."
+method = "deliver_work_infographic"
+iterate = "iterate"

@@ -1,0 +1,74 @@
+[app]
+id = "search"
+store_category = "core"
+name = "Search"
+version = "1.0.0"
+description = "Vault search with AI-powered answers"
+icon = "🔍"
+user_intent = [
+    "find a note about X",
+    "search my vault for Y",
+    "I wrote something about this — where",
+    "找一下我之前写的那个东西",
+    "what notes mention this person",
+    "answer this question from my own notes",
+]
+
+[app.entry]
+module = "app"
+class = "SearchApp"
+
+[requires]
+capabilities = ["read", "search", "think"]
+apps = []
+# bookmarks + quickref are optional integrations — _search_app_sources() pulls
+# extra results from both. (The AI-answer Pin button writes to quickref from the
+# frontend via the shared EOS_UI.pinButton helper, feature-detected client-side.)
+# All backend calls are guarded; search works on vault contents alone when
+# neither is installed.
+optional_apps = ["quickref", "bookmarks"]
+services = []
+connectors = []
+
+# Storage domains this app touches (docs/CLOUD-ARCHITECTURE.md; advisory)
+[storage]
+private = "vault"      # searches the vault corpus
+derived = "index"      # reads the in-memory VaultIndex / embeddings (rebuildable)
+
+[provides.cli]
+commands = ["search"]
+
+[provides.web]
+prefix = "/search"
+
+[provides.events]
+emits = ["search:query"]
+
+[provides.settings]
+schema = [
+    {key = "search.ai_timeout", label = "AI Answer Timeout (seconds)", type = "number", default = 30},
+    {key = "search.ai_providers", label = "AI Provider Order (comma-separated)", type = "text", default = "ollama,claude-cli,openai"},
+    {key = "search.semantic", label = "Semantic Search (LLM keyword expansion)", type = "toggle", default = true},
+]
+
+# Single verb, four surfaces. Read-only → eligibility "stable". The canonical
+# method (_search) serves assistant/agent/MCP; voice overrides with a spoken
+# wrapper. Replaces the legacy [provides.assistant] block (verb-registry Phase 4).
+[[provides.verbs]]
+verb = "search.find"
+method = "_search"
+summary = "Search the vault for notes matching a query"
+args = { query = "string", top = "number?" }
+eligibility = "stable"
+surfaces = ["assistant", "agent", "mcp", "voice"]
+voice = { method = "voice_search", example = "search my vault for cable ratings", description = "Find notes in the vault matching a query. Speaks the hit count + top note names.", card = "task-list" }
+assistant = { slash = "/search", method = "_search", arg = "query" }
+
+[[contributes.tour.step]]
+id = "search.try"
+group = "core"
+priority = 350
+route = "/hub/"
+spotlight = ".eos-search-input"
+title = "Everything is connected"
+body = "Type into the bar above. Results split into <strong>Apps</strong> + <strong>Notes</strong> + <strong>Other</strong>. The apps and the vault aren't separate worlds — they share one search, one capability layer, one event bus. Try <code>arvo</code> or <code>kingfisher</code>."

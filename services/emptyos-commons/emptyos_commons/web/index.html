@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="data:,">
+<title>Commons</title>
+<style>
+  :root { --bg:#0f1115; --surface:#181b22; --border:#2a2f3a; --text:#e7e9ee; --muted:#9aa3b2; --accent:#7c5cff; --accent2:#1f6f43; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font:15px/1.5 system-ui,-apple-system,Segoe UI,Roboto,sans-serif; }
+  .wrap { max-width:720px; margin:0 auto; padding:1.2rem 1rem 4rem; }
+  header { display:flex; align-items:baseline; gap:.6rem; margin-bottom:1.2rem; flex-wrap:wrap; }
+  header h1 { margin:0; font-size:1.5rem; }
+  header .tag { color:var(--muted); flex:1; }
+  header .who { color:var(--muted); font-size:.85rem; }
+  button { font:inherit; cursor:pointer; border:1px solid var(--border); background:var(--surface); color:var(--text); border-radius:8px; padding:.45rem .8rem; }
+  button.primary { background:var(--accent); border-color:var(--accent); color:#fff; }
+  button.link { background:none; border:none; color:var(--accent); padding:.2rem; }
+  input, textarea, select { width:100%; font:inherit; background:var(--bg); color:var(--text); border:1px solid var(--border); border-radius:8px; padding:.5rem .6rem; margin:.25rem 0 .6rem; }
+  textarea { min-height:5rem; resize:vertical; }
+  .card { background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:1rem 1.1rem; margin-bottom:.9rem; }
+  .auth-tabs { display:flex; gap:.5rem; margin-bottom:.8rem; }
+  .auth-tabs button.active { background:var(--accent); border-color:var(--accent); color:#fff; }
+  .note h3 { margin:0 0 .3rem; font-size:1.08rem; }
+  .byline { color:var(--muted); font-size:.82rem; display:flex; gap:.5rem; align-items:center; flex-wrap:wrap; }
+  .badge { font-size:.72rem; padding:.1rem .5rem; border-radius:999px; color:#fff; }
+  .v-public { background:var(--accent2); } .v-private { background:#555c6b; } .v-shared { background:var(--accent); }
+  .body { white-space:pre-wrap; margin:.55rem 0 0; }
+  .actions { margin-top:.6rem; display:flex; gap:.4rem; }
+  .err { color:#ff8585; min-height:1.2em; font-size:.88rem; }
+  .muted { color:var(--muted); }
+  [hidden] { display:none !important; }
+  .row { display:flex; gap:.6rem; } .row > * { flex:1; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1 id="brand">Commons</h1>
+    <span class="tag" id="tagline"></span>
+    <span class="who" id="who"></span>
+    <button id="logout" hidden onclick="logout()">Sign out</button>
+  </header>
+
+  <!-- Signed-out: login + register -->
+  <div id="auth" hidden>
+    <div class="card" style="max-width:420px;">
+      <div class="auth-tabs">
+        <button id="tab-login" class="active" onclick="showTab('login')">Sign in</button>
+        <button id="tab-register" onclick="showTab('register')">Create account</button>
+      </div>
+      <div id="form-login">
+        <input id="li-email" type="email" placeholder="email" autocomplete="username">
+        <input id="li-pw" type="password" placeholder="password" autocomplete="current-password">
+        <button class="primary" onclick="login()">Sign in</button>
+        <div class="err" id="li-err"></div>
+      </div>
+      <div id="form-register" hidden>
+        <input id="rg-email" type="email" placeholder="email" autocomplete="username">
+        <input id="rg-pw" type="password" placeholder="password (min 8 chars)" autocomplete="new-password">
+        <input id="rg-secret" type="text" placeholder="invite secret" hidden>
+        <button class="primary" onclick="register()">Create account</button>
+        <div class="err" id="rg-err"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Signed-in: compose + feed -->
+  <div id="app" hidden>
+    <details class="card">
+      <summary style="cursor:pointer; font-weight:600;">+ Post a note to the commons</summary>
+      <div style="margin-top:.7rem;">
+        <input id="c-title" placeholder="title">
+        <textarea id="c-body" placeholder="write something…"></textarea>
+        <div class="row">
+          <select id="c-vis">
+            <option value="public">Public — everyone</option>
+            <option value="shared">Shared — specific people</option>
+            <option value="private">Private — only me</option>
+          </select>
+          <input id="c-share" placeholder="share with (emails, comma-sep)">
+        </div>
+        <button class="primary" onclick="publish()">Post</button>
+        <div class="err" id="c-err"></div>
+      </div>
+    </details>
+    <details class="card">
+      <summary style="cursor:pointer; font-weight:600;">🔗 Connect a daemon</summary>
+      <div style="margin-top:.7rem;">
+        <p class="muted" style="margin:.2rem 0 .5rem;">Mint a durable token so your EmptyOS daemon can publish notes here. It never expires; shown once — copy it now.</p>
+        <div class="row">
+          <input id="tk-label" placeholder="label (e.g. laptop)">
+          <button class="primary" onclick="mintToken()" style="flex:0 0 auto;">Mint token</button>
+        </div>
+        <div id="tk-new" style="color:var(--accent); word-break:break-all; min-height:1.2em; font-size:.85rem;"></div>
+        <div id="tk-list"></div>
+      </div>
+    </details>
+    <input id="q" placeholder="Search the commons…" oninput="debouncedFeed()">
+    <div id="feed"></div>
+  </div>
+</div>
+
+<script>
+var CFG = {};
+function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); }
+async function api(path, opts){
+  opts = opts || {};
+  if (opts.body && typeof opts.body !== 'string'){ opts.headers = Object.assign({'Content-Type':'application/json'}, opts.headers||{}); opts.body = JSON.stringify(opts.body); }
+  var r = await fetch(path, Object.assign({credentials:'same-origin'}, opts));
+  var data; try { data = await r.json(); } catch(e){ data = {}; }
+  return { ok:r.ok, status:r.status, data:data };
+}
+
+function showTab(which){
+  document.getElementById('tab-login').classList.toggle('active', which==='login');
+  document.getElementById('tab-register').classList.toggle('active', which==='register');
+  document.getElementById('form-login').hidden = which!=='login';
+  document.getElementById('form-register').hidden = which!=='register';
+}
+
+async function boot(){
+  var c = await api('/auth/config'); CFG = c.data || {};
+  document.getElementById('brand').textContent = CFG.productName || 'Commons';
+  document.getElementById('tagline').textContent = CFG.productTagline || '';
+  document.title = CFG.productName || 'Commons';
+  if (CFG.requiresRegistrationSecret) document.getElementById('rg-secret').hidden = false;
+  await refresh();
+}
+
+async function refresh(){
+  var me = await api('/api/me');
+  var signedIn = me.ok;
+  document.getElementById('auth').hidden = signedIn;
+  document.getElementById('app').hidden = !signedIn;
+  document.getElementById('logout').hidden = !signedIn;
+  document.getElementById('who').textContent = signedIn ? (me.data.email || me.data.subject || '') : '';
+  // Never let one user's one-time token reveal linger into the next session.
+  document.getElementById('tk-new').textContent = '';
+  if (signedIn) { loadFeed(); loadTokens(); }
+}
+
+async function loadTokens(){
+  var r = await api('/api/tokens'); if (!r.ok) return;
+  var toks = (r.data.tokens||[]).filter(function(t){ return !t.revoked; });
+  document.getElementById('tk-list').innerHTML = toks.length
+    ? toks.map(function(t){ return '<div class="byline" style="margin-top:.35rem;">'+esc(t.label||'token')+' · '+esc(t.created||'')+' <button class="link" onclick="revokeToken(\''+esc(t.id)+'\')">revoke</button></div>'; }).join('')
+    : '<div class="muted" style="margin-top:.35rem;">No active tokens.</div>';
+}
+async function mintToken(){
+  var label = document.getElementById('tk-label').value.trim() || 'daemon';
+  var r = await api('/api/tokens', {method:'POST', body:{label:label}});
+  if (!r.ok){ document.getElementById('tk-new').textContent = r.data.detail||'failed'; return; }
+  document.getElementById('tk-new').textContent = 'Copy now (shown once): '+r.data.token;
+  document.getElementById('tk-label').value='';
+  loadTokens();
+}
+async function revokeToken(id){
+  if (!confirm('Revoke this token? Any daemon using it loses access.')) return;
+  await api('/api/tokens/'+encodeURIComponent(id), {method:'DELETE'});
+  loadTokens();
+}
+
+async function login(){
+  var e = document.getElementById('li-err'); e.textContent='';
+  var r = await api('/auth/session', {method:'POST', body:{email:document.getElementById('li-email').value.trim(), password:document.getElementById('li-pw').value}});
+  if (!r.ok){ e.textContent = (r.data.detail||'sign in failed'); return; }
+  refresh();
+}
+
+async function register(){
+  var e = document.getElementById('rg-err'); e.textContent='';
+  var body = {email:document.getElementById('rg-email').value.trim(), password:document.getElementById('rg-pw').value};
+  if (!document.getElementById('rg-secret').hidden) body.secret = document.getElementById('rg-secret').value.trim();
+  var r = await api('/auth/register', {method:'POST', body:body});
+  if (!r.ok){ e.textContent = (r.data.detail||'registration failed'); return; }
+  // auto sign-in
+  var r2 = await api('/auth/session', {method:'POST', body:{email:body.email, password:body.password}});
+  if (!r2.ok){ e.textContent='registered — now sign in'; showTab('login'); return; }
+  refresh();
+}
+
+async function logout(){ await api('/auth/logout', {method:'POST'}); refresh(); }
+
+function visBadge(v){ var cls = v==='public'?'v-public':(v==='shared'?'v-shared':'v-private'); return '<span class="badge '+cls+'">'+esc(v)+'</span>'; }
+
+function renderNote(n){
+  var tags = (n.tags||[]).map(function(t){return '#'+esc(t);}).join(' ');
+  var owner = n.is_owner
+    ? '<button class="link" onclick="share(\''+esc(n.id)+'\')">Share</button>'
+      + '<button class="link" onclick="withdraw(\''+esc(n.id)+'\')">Withdraw</button>'
+    : '';
+  return '<div class="card note">'
+    + '<h3>'+esc(n.title||n.slug)+'</h3>'
+    + '<div class="byline">'+visBadge(n.visibility)
+    + (n.is_owner?'<span>yours</span>':'')
+    + (n.domain?'<span>· '+esc(n.domain)+'</span>':'')
+    + (tags?'<span>· '+tags+'</span>':'')
+    + '</div>'
+    + '<div class="body">'+esc((n.body||'').slice(0,600))+'</div>'
+    + '<div class="actions">'+owner+'</div>'
+    + '</div>';
+}
+
+async function loadFeed(){
+  var q = document.getElementById('q').value.trim();
+  var feed = document.getElementById('feed');
+  var r = await api('/api/notes');
+  if (!r.ok){ feed.innerHTML = '<p class="muted">Could not load the feed.</p>'; return; }
+  var notes = r.data.notes || [];
+  if (q){ var ql=q.toLowerCase(); notes = notes.filter(function(n){ return (n.title||'').toLowerCase().includes(ql) || (n.tags||[]).join(' ').toLowerCase().includes(ql); }); }
+  var empty = q ? ('No notes match “'+esc(q)+'”.') : 'Nothing shared yet — post the first note.';
+  feed.innerHTML = notes.length ? notes.map(renderNote).join('') : '<p class="muted">'+empty+'</p>';
+}
+var _t; function debouncedFeed(){ clearTimeout(_t); _t=setTimeout(loadFeed,200); }
+
+async function publish(){
+  var e = document.getElementById('c-err'); e.textContent='';
+  var title = document.getElementById('c-title').value.trim();
+  var slug = title.toLowerCase().replace(/[^\w\s-]/g,'').replace(/[\s_]+/g,'-').replace(/^-+|-+$/g,'') || ('note-'+Date.now());
+  var body = {slug:slug, title:title, body:document.getElementById('c-body').value, visibility:document.getElementById('c-vis').value};
+  var sw = document.getElementById('c-share').value.trim();
+  if (sw) body.share_with = sw.split(',').map(function(s){return s.trim();}).filter(Boolean);
+  var r = await api('/api/notes', {method:'POST', body:body});
+  if (!r.ok){ e.textContent = (r.data.detail||'post failed'); return; }
+  document.getElementById('c-title').value=''; document.getElementById('c-body').value=''; document.getElementById('c-share').value='';
+  loadFeed();
+}
+
+async function share(id){
+  var email = prompt('Share with which email?'); if (!email) return;
+  var r = await api('/api/notes/'+encodeURIComponent(id)+'/share', {method:'POST', body:{principal:email.trim()}});
+  alert(r.ok ? 'Shared.' : (r.data.detail||'share failed'));
+  loadFeed();
+}
+async function withdraw(id){
+  if (!confirm('Withdraw this note from the commons?')) return;
+  var r = await api('/api/notes/'+encodeURIComponent(id), {method:'DELETE'});
+  if (r.ok) loadFeed(); else alert(r.data.detail||'withdraw failed');
+}
+
+boot();
+</script>
+</body>
+</html>

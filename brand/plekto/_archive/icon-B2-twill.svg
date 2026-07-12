@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
+  <title>Plekto — B2: proper twill weave</title>
+  <desc>Real 3x3 twill — every strand alternates over/under at each intersection like actual fabric. Richer, more "woven" than the original B which had only the centre strand on top. Slightly more visually busy but the weave reads instantly.
+
+Pattern (O=over, U=under):
+  H1:  O V1 · U V2 · O V3
+  H2:  U V1 · O V2 · U V3
+  H3:  O V1 · U V2 · O V3
+
+Implementation: each strand is split into the segments where it is visible
+(on top). Where the strand is "under" another, no segment is drawn there.</desc>
+
+  <g fill="none" stroke-width="9" stroke-linecap="round" stroke-linejoin="round" stroke="currentColor">
+
+    <!-- ─── H1 (top horizontal): O U O ─────────────────────── -->
+    <!-- Visible from left edge through V1 (over), then GAP at V2 (under), then over V3 to right edge -->
+    <path d="M 16 44 L 60 44"/>      <!-- left tail + over V1 -->
+    <path d="M 68 44 L 112 44"/>     <!-- after V2 gap, over V3 and right tail -->
+
+    <!-- ─── H2 (middle): U O U ─────────────────────────────── -->
+    <!-- Hidden at V1, visible across V2, hidden at V3 -->
+    <path d="M 48 64 L 80 64"/>      <!-- only the centre segment (over V2) -->
+
+    <!-- ─── H3 (bottom): O U O ─────────────────────────────── -->
+    <path d="M 16 84 L 60 84"/>
+    <path d="M 68 84 L 112 84"/>
+
+    <!-- ─── V1 (left): U O U ───────────────────────────────── -->
+    <!-- Hidden at H1, visible across H2, hidden at H3 -->
+    <path d="M 44 48 L 44 80"/>      <!-- only the middle segment (over H2) -->
+
+    <!-- ─── V2 (centre): O U O ─────────────────────────────── -->
+    <path d="M 64 16 L 64 40"/>      <!-- top + over H1 -->
+    <path d="M 64 68 L 64 112"/>     <!-- over H3 + bottom -->
+
+    <!-- ─── V3 (right): U O U ──────────────────────────────── -->
+    <path d="M 84 48 L 84 80"/>
+
+  </g>
+</svg>

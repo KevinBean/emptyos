@@ -1,0 +1,8 @@
+fastapi>=0.110
+uvicorn[standard]>=0.27
+torch>=2.0
+transformers>=4.40
+librosa>=0.10
+soundfile>=0.12
+cmudict>=1.0
+huggingface_hub>=0.20

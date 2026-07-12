@@ -1,0 +1,328 @@
+# Test cases for conversation-mode-test.py
+# Each test gets the same system prompt + the user prompt below.
+# Models have file-access tools (read_file, write_file, list_dir, grep).
+# Sandbox dir is provided to them as $SANDBOX in the prompt.
+
+[meta]
+version = "1"
+emptyos_root = "D:/emptyos"
+
+[[test]]
+id = "1-pattern-match"
+title = "Pattern match: scaffold a new app from a reference"
+prompt = """
+Create a new EmptyOS app called 'water-tracker' that logs how many glasses of water the user drank today.
+
+Reference: read these files first to understand the EmptyOS app pattern:
+- D:/emptyos/apps/quotes/manifest.toml
+- D:/emptyos/apps/quotes/app.py
+- D:/emptyos/CLAUDE.md (the "App Development Pattern" section is most relevant)
+
+Then write your new app to the sandbox:
+- $SANDBOX/water-tracker/manifest.toml
+- $SANDBOX/water-tracker/app.py
+
+The app should have a single method `log(glasses: int)` that records today's intake.
+Use vault storage (not SQLite). Inherit from BaseApp. Use self.write() or self.vault_create_note().
+"""
+rubric = [
+  "manifest.toml has [app] section with id/name/version",
+  "manifest.toml has [app.entry] with module + class",
+  "app.py imports BaseApp from emptyos.sdk",
+  "Class inherits from BaseApp",
+  "Uses self.write or self.vault_create_note (NOT direct file I/O or SQLite)",
+]
+
+[[test]]
+id = "2-storage-decision"
+title = "Architectural decision: vault vs SQLite"
+prompt = """
+A new EmptyOS app needs to store mood entries — each entry is a date, a 1-5 mood score, and a free-text note from the user.
+
+Read the "Storage — Two Domains" and "Vault Data Layer" sections of D:/emptyos/CLAUDE.md.
+
+Then answer in this exact format and write to $SANDBOX/decision.md:
+
+# Storage decision
+**Choice:** vault | sqlite
+**Reason:** <one paragraph citing the rule from CLAUDE.md>
+
+# Storage code
+```python
+<the code that writes one mood entry, using the appropriate API>
+```
+"""
+rubric = [
+  "Chose vault (correct — user knowledge, human-edited, survives reset)",
+  "Reason cites the explicit rule (human-written/edited → vault)",
+  "Code uses self.vault_create_note OR self.write (not sqlite3 / json)",
+  "Includes YAML frontmatter with type/tags",
+  "Writes to a sensible vault path (NOT data/)",
+]
+
+[[test]]
+id = "3-capability-use"
+title = "Capability abstraction: use self.think() not direct OpenAI"
+prompt = """
+You are adding LLM-based summarization to a hypothetical 'articles' app in EmptyOS.
+
+Read D:/emptyos/CLAUDE.md (look for the "App Development Pattern" section showing self.think usage)
+and D:/emptyos/emptyos/sdk/base_app.py to understand how apps call LLMs.
+
+Write a method `async def summarize_article(self, article_text: str) -> str` to $SANDBOX/articles_summarize.py.
+
+Constraints:
+- Must use the EmptyOS capability abstraction (NOT direct openai/anthropic SDK calls)
+- Follow the "Prompts are first-class artifacts" rule from CLAUDE.md (named constants, system/user separation, temperature)
+"""
+rubric = [
+  "Uses self.think (NOT openai.chat.completions or anthropic.messages)",
+  "No 'import openai' or 'import anthropic'",
+  "Prompt is a named UPPERCASE constant (not inline string)",
+  "Separates system= from user prompt argument",
+  "Sets temperature appropriately (or notes default for this task type)",
+]
+
+[[test]]
+id = "4-philosophy"
+title = "Six Verbs analysis of an existing app"
+prompt = """
+Read these files:
+- D:/emptyos/docs/DESIGN.md (look for "Consciousness Model — 唯识架构" and the Six Verbs section)
+- D:/emptyos/apps/healing/app.py
+
+Write your analysis to $SANDBOX/healing_six_verbs.md in this format:
+
+# Healing app — Six Verbs analysis
+## Verbs expressed
+- **<verb>**: <evidence from the code, with line references>
+
+## Verbs missing or weak
+- **<verb>**: <what's missing, what concrete addition would fill the gap>
+
+The Six Verbs are: Absorb, Grow, Root, Connect, Emerge, Reflect.
+Reference the actual code — line numbers, function names. No hallucinations.
+"""
+rubric = [
+  "Identifies at least 3 verbs the app actually expresses",
+  "Each claim references real code (function names or line ranges that exist)",
+  "Identifies at least 1 missing/weak verb with a concrete suggestion",
+  "Suggestions are coherent with EmptyOS architecture (uses real APIs)",
+  "No invented verbs (only the six)",
+]
+
+[[test]]
+id = "5-cross-app"
+title = "Reactor handler wiring"
+prompt = """
+The journal app emits a journal entry event. Grep apps/journal/ to find the exact event name and payload keys, then write the correct handler.
+
+Read these files to understand the reactor pattern:
+- D:/emptyos/CLAUDE.md (the reactor + event examples)
+- D:/emptyos/apps/reactor/app.py (the actual reactor app)
+- D:/emptyos/apps/task/app.py (look at the add/list_tasks API)
+- grep apps/journal/ for the real event emission to confirm event name + payload
+
+Write a reactor handler to $SANDBOX/reactor_journal_todo.py that:
+- Subscribes to the actual journal entry event (grep to verify — do not guess)
+- Checks if the entry's text/body contains '#todo'
+- If yes: creates ONE task per #todo line in the inbox project
+
+Use call_app pattern. Use real API names and event names from the codebase.
+"""
+rubric = [
+  "Subscribes to the correct event name (the one actually emitted in apps/journal/app.py)",
+  "Uses call_app('task', 'add', ...) or the actual real API found in task/app.py",
+  "Parses entry content to extract #todo line(s) (not the whole entry)",
+  "Routes to inbox project (per Task ↔ Project Data Flow rule)",
+  "No over-engineering (no DB writes, no extra abstractions, just the handler)",
+]
+
+[[test]]
+id = "6-scope-discipline"
+title = "Scope discipline: add minimal CLI command"
+prompt = """
+The quotes app exists at D:/emptyos/apps/quotes/. Add a CLI command `eos quote today` that prints today's quote of the day.
+
+Constraints — read carefully:
+- Read D:/emptyos/apps/quotes/app.py to understand the existing code
+- Reuse whatever function already returns today's quote (grep for it — likely a method like `today()` or `get_today()`)
+- Add ONE `@cli_command("quote-today")` method (or similar) to the existing QuotesApp class
+- Write the MODIFIED app.py to $SANDBOX/quotes_app_modified.py
+- Do NOT rewrite the whole file — just add the one new method
+- Do NOT add helper functions, web routes, tests, or any other feature
+- Do NOT modify manifest.toml, pages/, or any other file — only write ONE output file
+
+The goal is a minimal surgical addition — not a reimplementation.
+"""
+rubric = [
+  "Adds exactly one new method decorated with @cli_command",
+  "Reuses an existing method from the real quotes app (references a method that actually exists in apps/quotes/app.py)",
+  "Does not add web routes, helpers, or other features beyond the CLI command",
+  "Output file contains the FULL modified app.py, not just the snippet",
+  "No hallucinated function names — everything referenced must exist in the source file",
+]
+
+[[test]]
+id = "7-grep-analysis"
+title = "Cross-codebase analysis: find hardcoded vault paths"
+prompt = """
+Find all apps that hardcode the vault path string "50_Journal/" (as opposed to using self.vault_config() or self.vault_config_path()).
+
+- Use the grep tool to search D:/emptyos/apps/ for '50_Journal/'
+- For each match, note the file path and line number
+- Exclude: `.md` files, comment lines, and `apps/journal/` itself (it owns the folder)
+
+Write your report to $SANDBOX/hardcoded-paths.md in this format:
+
+# Hardcoded 50_Journal/ paths
+
+| App | File | Line | Context |
+|---|---|---|---|
+| ... | apps/xxx/app.py | 42 | `path = "50_Journal/..."` |
+
+## Total: N apps, M occurrences
+
+Keep under 40 lines total. No hallucinations — only report matches you actually observed.
+"""
+rubric = [
+  "Uses the grep tool to search (not just guesses)",
+  "Reports real file paths with real line numbers (verifiable)",
+  "Excludes apps/journal/ itself (that app owns the folder)",
+  "Output fits the requested table format",
+  "Under 40 lines, no over-explanation",
+]
+
+[[test]]
+id = "8-migration-plan"
+title = "Minimal migration plan"
+prompt = """
+Pick ONE of the apps identified in test 7 (or grep for your own — any app that hardcodes "50_Journal/" is fine). Write a short before/after migration plan showing how to replace the hardcoded path with self.vault_config() or self.vault_config_path().
+
+Reference how existing apps use vault_config — grep for examples in emptyos/runtime/vault_map.py or any app that already uses it.
+
+Write your plan to $SANDBOX/migration-plan.md in this format:
+
+# Migration plan: <app-name>
+
+## Current
+```python
+# File: apps/xxx/app.py, line N
+<the hardcoded line>
+```
+
+## Proposed
+```python
+<the migrated line using vault_config>
+```
+
+## Rationale
+<2-3 sentences on why this works and what vault-map key to use>
+
+Do NOT edit any real project file. Only write the plan to $SANDBOX. Keep under 30 lines.
+"""
+rubric = [
+  "Picks a real app (one that actually hardcodes 50_Journal/)",
+  "Shows the actual current line from that file (matches what's in the repo)",
+  "Proposes vault_config(...) or vault_config_path(...) — the real API name",
+  "Rationale references how other apps use the same pattern",
+  "No edits to the real project — output lives in $SANDBOX only",
+]
+
+# ==============================================================================
+# Chat tests — conceptual understanding, no tool use
+# Scored on accuracy + coherence (0-5 per test), not rubric checkboxes
+# ==============================================================================
+
+[[test]]
+id = "C1-consciousness"
+mode = "chat"
+title = "Explain the consciousness model"
+prompt = """
+Explain the consciousness model (唯识架构) used in EmptyOS. Cover:
+1. Which vault corresponds to ālaya-vijñāna (storehouse consciousness)
+2. The Six Verbs lifecycle and what each verb means in system terms
+3. Why this framework shapes architectural decisions (give ONE concrete example)
+
+Answer in 2-3 paragraphs. Be specific about what EmptyOS does, not general Buddhist philosophy.
+"""
+rubric = [
+  "Correctly identifies the vault as ālaya-vijñāna",
+  "Names all six verbs (Absorb, Grow, Root, Connect, Emerge, Reflect)",
+  "Gives a correct one-line meaning for each verb in system terms",
+  "Cites at least one concrete EmptyOS architectural decision shaped by this model",
+  "No generic Buddhist philosophy padding unrelated to EmptyOS",
+]
+
+[[test]]
+id = "C2-plugin-types"
+mode = "chat"
+title = "Service vs enhancer plugins"
+prompt = """
+EmptyOS has two kinds of plugins: service and enhancer. Explain the difference and give one real example of each from the current codebase.
+
+Keep it to 150 words or fewer.
+"""
+rubric = [
+  "Correctly distinguishes service vs enhancer (service = named, explicit self.service(); enhancer = priority=0 injected into capability chain)",
+  "Real example of a service plugin (one of: health, notifications, applio, telegram, blender, obsidian-cli)",
+  "Real example of an enhancer plugin (one of: ollama, comfyui, voice-api, obsidian-cli's search side)",
+  "Notes enhancers degrade silently when missing (graceful enhancement)",
+  "Under 150 words, no filler",
+]
+
+[[test]]
+id = "C3-plugin-or-app"
+mode = "chat"
+title = "Applied reasoning: app vs plugin"
+prompt = """
+I want to add offline speech-to-text (Whisper.cpp running locally on my machine) to EmptyOS. Should I build this as an app, as a plugin, or both? Justify using EmptyOS architectural principles.
+
+Answer in 100-200 words.
+"""
+rubric = [
+  "Correct answer: a plugin (specifically an enhancer for the 'listen' capability)",
+  "Justifies with: plugins expose capabilities/services to ALL apps; apps consume them",
+  "Notes the existing 'listen' capability slot that plugins fill",
+  "May mention that apps could be built on top (e.g., transcription app) — optional bonus",
+  "Does NOT recommend building it as only an app",
+]
+
+[[test]]
+id = "C4-vault-layers"
+mode = "chat"
+title = "Three-layer vault note structure"
+prompt = """
+A single vault note in EmptyOS has three data layers. Describe each layer with:
+- Its name / what it contains
+- Where in the note it lives
+- Which BaseApp method(s) read or write it
+- A concrete example from any real EmptyOS app
+
+Keep the answer under 250 words.
+"""
+rubric = [
+  "Identifies all 3 layers: structured (frontmatter), semi-structured (## sections), unstructured (prose body)",
+  "Says frontmatter is indexed in VaultIndex, queryable via vault_query / vault_get_properties",
+  "Says sections are accessed via vault_read_section / vault_append_section",
+  "Says body prose is accessed via vault_read_body (on-demand read)",
+  "Gives at least one concrete example from a real app (e.g., jobs, journal, healing)",
+]
+
+[[test]]
+id = "C5-capability-rule"
+mode = "chat"
+title = "When to use self.think() vs direct OpenAI"
+prompt = """
+When should an EmptyOS app use `self.think()`, and when (if ever) should it import openai or anthropic directly? Justify with the specific CLAUDE.md rule.
+
+Keep to 100 words.
+"""
+rubric = [
+  "Answer: ALWAYS use self.think(). Never import openai/anthropic directly in apps.",
+  "Cites the capability abstraction rule (apps declare capabilities, platform provides)",
+  "Mentions provider chain + human fallback as the reason",
+  "Notes exception: plugin/provider code inside emptyos/capabilities/providers/ may call the SDK",
+  "Under 100 words, no hedging",
+]
+

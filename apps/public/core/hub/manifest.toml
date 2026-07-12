@@ -1,0 +1,86 @@
+[app]
+id = "hub"
+store_category = "core"
+name = "Home"
+version = "1.0.0"
+description = "Generic home dashboard — aggregates panel contributions from any installed app. Zero hard dependencies."
+icon = "🏠"
+
+[app.entry]
+module = "app"
+class = "HubApp"
+
+[requires]
+capabilities = ["think"]
+apps = []
+# Soft digest sources for the command-surface (/api/digest) + smart-bar route
+# targets (/api/route). Absence is tolerated — _safe_call swallows a missing
+# app, and the route degrade chain falls back (produce→ask→find) — so they
+# stay optional and the hub keeps its zero-hard-dependency guarantee.
+optional_apps = ["task", "journal", "calendar", "quick-action", "assistant", "search", "work"]
+connectors = []
+
+[provides.cli]
+commands = ["hub"]
+
+[provides.web]
+prefix = "/hub"
+
+[provides.events]
+# hub:routed — fired per smart-bar route: {shape, source, rule}. Telemetry for
+# tuning the heuristic tier; no current listener.
+emits = ["hub:refreshed", "hub:routed"]
+# Nav telemetry — no cross-app listener by design.
+internal = [
+    "hub:routed",
+]
+# Feeling Lucky emits nothing today — the recommender is a request/response surface.
+# If a future "user accepted recommendation N" signal is wired for learning,
+# declare it here.
+
+[provides.settings]
+schema = [
+    {key = "hub.show_welcome", label = "Show welcome card when no panels", type = "toggle", default = true},
+    {key = "hub.smart_route", label = "Smart-route the command bar (Enter classifies intent)", type = "toggle", default = true},
+]
+
+# Hub's own panels — minimal: a welcome card when no other app has contributed anything,
+# and an apps launcher chips row so the page is never empty.
+
+[[contributes.hub.panel]]
+id = "hub-welcome"
+method = "panel_welcome"
+renderer = "accent-card"
+priority = 25
+
+[[contributes.hub.panel]]
+id = "hub-launcher"
+title = "Apps"
+method = "panel_launcher"
+renderer = "app-grid"
+priority = 35
+
+# Memory fidelity dial (Attested Memory, docs/MEMORY.md §8). Ambient band.
+# Dark by default — panel_memory_fidelity returns None unless
+# [apps.hub] feature.memory-fidelity.enabled is set. Lazy: memory_audit scans
+# the machine-touched memory set.
+[[contributes.hub.panel]]
+id = "memory-fidelity"
+title = "Memory fidelity"
+method = "panel_memory_fidelity"
+renderer = "bar"
+priority = 175
+lazy = true
+
+# Tailnet reachability tile — "you can reach EmptyOS at <MagicDNS> from your
+# other devices". Reaches the read-only `tailscale` *service* (not an app);
+# panel_tailnet returns None (drops silently) when the plugin/CLI/tailnet is
+# absent, so it only appears when there's a live tailnet. Cognitive band
+# (<150) so it renders; joins the stat-tile dashboard grid.
+[[contributes.hub.panel]]
+id = "tailnet-reach"
+title = "Tailnet"
+method = "panel_tailnet"
+renderer = "stat-tile"
+priority = 140
+group = "dashboard"

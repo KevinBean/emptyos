@@ -1,0 +1,25 @@
+# .eos-branding — third-party product names that should not appear in user-facing code
+# Used by: scripts/check-branding.py
+# One regex per line. Lines starting with # are comments. Empty lines ignored.
+#
+# Context: EmptyOS may integrate with third-party services via plugins/connectors,
+# but app-level UIs, descriptions, prompts, and error messages should use generic terms.
+# Plugin code (plugins/*) is exempt — it necessarily references the service it wraps.
+
+# Vault apps — use "markdown vault", "vault app", "Open external" instead
+(?i)\bObsidian\b
+(?i)\bLogseq\b
+(?i)\bRoam Research\b
+
+# Music services — use "source URL", "source" instead
+(?i)\bSuno\b
+
+# Reading services — use "highlights", "import" instead
+(?i)\bReadwise\b
+(?i)\bKindle\b
+
+# Hosting — use "static hosting", "deploy site" instead
+(?i)\bGitHub Pages\b
+
+# AI products — OK in provider selectors, not in descriptions/prompts
+(?i)\bChatGPT\b

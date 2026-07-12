@@ -1,0 +1,104 @@
+name: Dogfood
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  dogfood:
+    name: Dogfood (non-LLM)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install EmptyOS + test deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .
+          pip install pytest pytest-asyncio pytest-playwright httpx
+
+      - name: Set up throwaway vault
+        run: |
+          mkdir -p ./ci-vault/50_Journal/2026
+          mkdir -p ./ci-vault/10_Projects
+          mkdir -p ./ci-vault/30_Resources/Items
+          mkdir -p ./ci-vault/30_Resources/Places
+          mkdir -p ./ci-vault/30_Resources/Recipes
+          mkdir -p ./ci-vault/00_Inbox
+
+      - name: Write CI emptyos.toml
+        run: |
+          cat > emptyos.toml <<'EOF'
+          [os]
+          name = "EmptyOS CI"
+          data_dir = "./data"
+          log_level = "WARNING"
+
+          [notes]
+          path = "./ci-vault"
+          watch = true
+
+          [network]
+          mode = "local"
+          port = 9000
+
+          [scheduler]
+          enabled = true
+          timezone = "UTC"
+
+          [apps]
+          path = "./apps"
+          autostart = []
+
+          [plugins]
+          path = "./plugins"
+          EOF
+
+      - name: Boot EmptyOS daemon
+        # Background the daemon; capture its PID + logs so we can tear down
+        # cleanly and surface failure output to the build.
+        run: |
+          python -m emptyos start > eos.log 2>&1 &
+          echo $! > eos.pid
+
+      - name: Wait for daemon health
+        run: |
+          for i in $(seq 1 60); do
+            if curl -sf http://localhost:9000/api/health > /dev/null; then
+              echo "Daemon healthy after ${i}s"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "Daemon never became healthy. Tail of log:"
+          tail -80 eos.log
+          exit 1
+
+      - name: Run dogfood (non-LLM)
+        # Fresh clones include only core apps (apps/), not apps/personal/*.
+        # Dogfood files for personal apps (recipes, items, places, media,
+        # jobs, fiction-engine) skip themselves via the _app_required
+        # fixture when their routes return 404. CI exercises the 4 core
+        # apps (projects, reports, music-studio, publish) end-to-end.
+        run: pytest -m "dogfood and not llm" -v --tb=short
+
+      - name: Shut down daemon
+        if: always()
+        run: |
+          if [ -f eos.pid ]; then
+            kill $(cat eos.pid) 2>/dev/null || true
+          fi
+
+      - name: Upload daemon log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: eos-daemon-log
+          path: eos.log
+          retention-days: 7

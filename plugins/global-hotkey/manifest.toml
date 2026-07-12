@@ -1,0 +1,13 @@
+[plugin]
+id = "global-hotkey"
+name = "Global Hotkey"
+version = "1.0.0"
+description = "Listens for global OS keyboard shortcuts and emits them to the EventBus"
+
+[plugin.entry]
+module = "plugin"
+class = "GlobalHotkeyPlugin"
+
+[provides]
+services = ["global-hotkey"]
+tags = ["desktop", "input"]

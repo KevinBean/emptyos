@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Vault Graph — Explore</title>
+<link rel="stylesheet" href="/static/theme.css">
+<link rel="stylesheet" href="/static/eos-components.css">
+<style>
+* { margin:0; padding:0; box-sizing:border-box }
+body { font-family:var(--font); background:var(--bg); color:var(--text); min-height:100dvh; -webkit-font-smoothing:antialiased }
+.toolbar { display:flex; gap:8px; flex-wrap:wrap; align-items:center; padding:12px 16px; border-bottom:1px solid var(--border); background:var(--bg-card); position:sticky; top:0; z-index:10 }
+.toolbar h1 { font-size:15px; font-weight:600; color:var(--text-heading); margin-right:8px }
+.toolbar select, .toolbar input { padding:6px 10px; background:var(--bg); border:1px solid var(--border); border-radius:8px; color:var(--text); font-size:13px; font-family:inherit }
+.toolbar label { font-size:12px; color:var(--text-secondary); display:flex; align-items:center; gap:6px }
+.toolbar .stat { font-size:12px; color:var(--text-muted); margin-left:auto }
+.toolbar .back { padding:6px 12px; background:transparent; border:1px solid var(--border); border-radius:8px; color:var(--text-secondary); cursor:pointer; font-size:13px; text-decoration:none }
+.toolbar .back:hover { border-color:var(--accent); color:var(--accent) }
+#graph { width:100vw; height:calc(100dvh - 56px) }
+.status { position:fixed; bottom:calc(env(safe-area-inset-bottom, 0px) + 16px); left:50%; transform:translateX(-50%); padding:8px 16px; background:var(--bg-card); border:1px solid var(--border); border-radius:999px; font-size:13px; color:var(--text-muted); box-shadow:0 4px 16px var(--shadow) }
+</style>
+</head>
+<body>
+<div class="toolbar">
+  <a class="back" href="/explore/">← Explore</a>
+  <h1>Vault Graph</h1>
+  <select id="kinds-filter">
+    <option value="">All kinds</option>
+    <option value="kb">KB only</option>
+    <option value="note">Notes only</option>
+    <option value="guideline">Guidelines</option>
+    <option value="explore">Explored topics</option>
+  </select>
+  <label><input type="checkbox" id="tag-edges"> Tag-shared edges</label>
+  <input type="search" id="filter-q" placeholder="Filter labels…" style="width:160px">
+  <span class="stat" id="stat-line"></span>
+</div>
+<div id="graph"></div>
+<div class="status" id="status">Loading vis-network…</div>
+
+<script src="/static/eos.js"></script>
+<script src="/static/eos-components.js"></script>
+<script>
+EOS.nav('explore');
+
+var STATE = { network: null, nodesDS: null, edgesDS: null, raw: { nodes: [], edges: [] } };
+
+// Resolve theme-token swatches once so node colors track the active theme
+// (dark/light/sunset/eos) rather than being hardcoded.
+var THEME = (function() {
+  var cs = getComputedStyle(document.documentElement);
+  var read = function(name, fallback) { return (cs.getPropertyValue(name) || '').trim() || fallback; };
+  return {
+    accent: read('--accent', '#6c5ce7'),
+    success: read('--success', '#27ae76'),
+    warning: read('--warning', '#d4a017'),
+    danger: read('--danger', '#d44040'),
+    muted: read('--text-muted', '#888'),
+  };
+})();
+
+function kindColor(k) {
+  // Accepts either a node tag (e.g. 'kb', 'note') or a KB note kind (concept/
+  // formula/reference/clause/case/lesson/doc/moc). After the KB Notes+Blocks
+  // unification, kb-block / kb-doc tags no longer exist — the legacy keys are
+  // kept as fall-throughs so old indexes don't render invisible blobs.
+  switch ((k || '').toLowerCase()) {
+    case 'kb': return THEME.accent;
+    case 'formula': return THEME.accent;
+    case 'concept': return THEME.secondary || THEME.muted;
+    case 'reference': return THEME.warning;
+    case 'clause': return THEME.muted;
+    case 'case': return THEME.success;
+    case 'lesson': return THEME.danger;
+    case 'doc': case 'kb-doc': return THEME.accent;
+    case 'moc': return THEME.accent;
+    case 'note': return THEME.success;
+    case 'guideline': return THEME.warning;
+    case 'explore': return THEME.accent;
+    default: return THEME.muted;
+  }
+}
+
+function loadVisNetwork() {
+  return new Promise(function(resolve, reject) {
+    if (window.vis && window.vis.Network) return resolve();
+    var s = document.createElement('script');
+    s.src = 'https://unpkg.com/vis-network@9.1.9/standalone/umd/vis-network.min.js';
+    s.onload = resolve;
+    s.onerror = function() { reject(new Error('Failed to load vis-network from CDN')); };
+    document.head.appendChild(s);
+  });
+}
+
+async function fetchGraph() {
+  var status = document.getElementById('status');
+  status.textContent = 'Fetching graph…';
+  var kinds = document.getElementById('kinds-filter').value;
+  var tagEdges = document.getElementById('tag-edges').checked;
+  var url = '/explore/api/graph?limit=400' +
+            (kinds ? '&kinds=' + encodeURIComponent(kinds) : '') +
+            (tagEdges ? '&shared_tags=1' : '');
+  try {
+    var r = await fetch(url);
+    var data = await r.json();
+    STATE.raw = data;
+    document.getElementById('stat-line').textContent =
+      (data.stats ? data.stats.in_slice + ' notes · ' + data.stats.wikilink_edges + ' links' : '');
+    return data;
+  } catch (e) {
+    status.textContent = 'Failed to fetch graph: ' + e.message;
+    throw e;
+  }
+}
+
+function applyFilter() {
+  var q = (document.getElementById('filter-q').value || '').toLowerCase().trim();
+  if (!STATE.nodesDS) return;
+  STATE.nodesDS.forEach(function(n) {
+    var hidden = q && !(n.label || '').toLowerCase().includes(q);
+    STATE.nodesDS.update({ id: n.id, hidden: !!hidden });
+  });
+}
+
+function render(data) {
+  var nodes = data.nodes.map(function(n) {
+    return {
+      id: n.id,
+      label: n.label || '(untitled)',
+      color: { background: kindColor(n.kind), border: kindColor(n.kind) },
+      font: { color: getComputedStyle(document.documentElement).getPropertyValue('--text').trim() || '#fff', size: 12 },
+      shape: 'dot',
+      size: 10,
+      _kind: n.kind,
+    };
+  });
+  var edges = data.edges.map(function(e) {
+    return {
+      from: e.from,
+      to: e.to,
+      arrows: e.kind === 'wikilink' ? 'to' : '',
+      dashes: e.kind === 'tag',
+      color: { color: e.kind === 'wikilink' ? THEME.muted : THEME.muted, opacity: 0.5 },
+      width: 1,
+    };
+  });
+  STATE.nodesDS = new vis.DataSet(nodes);
+  STATE.edgesDS = new vis.DataSet(edges);
+  var container = document.getElementById('graph');
+  STATE.network = new vis.Network(container, { nodes: STATE.nodesDS, edges: STATE.edgesDS }, {
+    physics: { stabilization: { iterations: 120 }, barnesHut: { gravitationalConstant: -3000 } },
+    interaction: { hover: true, tooltipDelay: 200 },
+    nodes: { borderWidth: 1 },
+  });
+  STATE.network.on('click', function(params) {
+    if (params.nodes && params.nodes.length) {
+      var path = params.nodes[0];
+      if (window.EOS && EOS.viewNote) EOS.viewNote(path);
+    }
+  });
+  document.getElementById('status').style.display = 'none';
+}
+
+async function init() {
+  try {
+    await loadVisNetwork();
+  } catch (e) {
+    document.getElementById('status').textContent = e.message;
+    return;
+  }
+  var data = await fetchGraph();
+  render(data);
+}
+
+document.getElementById('kinds-filter').addEventListener('change', async function() {
+  document.getElementById('status').style.display = '';
+  var data = await fetchGraph();
+  render(data);
+});
+document.getElementById('tag-edges').addEventListener('change', async function() {
+  document.getElementById('status').style.display = '';
+  var data = await fetchGraph();
+  render(data);
+});
+document.getElementById('filter-q').addEventListener('input', applyFilter);
+
+init();
+</script>
+</body>
+</html>

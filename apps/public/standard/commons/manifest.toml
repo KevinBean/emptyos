@@ -1,0 +1,99 @@
+[app]
+id = "commons"
+name = "Commons"
+version = "0.1.0"
+description = "Publish vault notes to a shared commons with visibility control — public, private, or shared with specific people. Outbound is consent-gated and leak-scanned; nothing leaves the vault without an explicit publish."
+store_category = "productivity"
+
+[app.entry]
+module = "app"
+class = "CommonsApp"
+
+[requires]
+capabilities = ["read", "write"]
+
+# Storage domains this app touches (docs/CLOUD-ARCHITECTURE.md; advisory)
+[storage]
+private = "vault"      # the `commons:` frontmatter label (hint only)
+shared = "commons"     # published copies + ACLs — the source of truth
+
+[provides.web]
+prefix = "/commons"
+
+[provides.settings]
+schema = [
+    { key = "commons.server_url", label = "Commons server URL", type = "text", hint = "e.g. https://commons.example.com — also used as the Origin header" },
+    { key = "commons.api_token", label = "Daemon API token", type = "password", hint = "Durable token from the commons web UI (Connect a daemon). Preferred — never expires." },
+    { key = "commons.session_cookie", label = "Session token (fallback)", type = "password", hint = "A commons session cookie value; expires in ~24h. Prefer the API token." },
+    { key = "commons.dev_login", label = "Dev login (subject:email)", type = "text", hint = "Local/dev only — auto-logs-in against a dev-auth commons. Never use in production." },
+    { key = "commons.mark_published", label = "Label published notes in the vault", type = "boolean", default = true, hint = "After publishing, write a `commons:` frontmatter label on the note (a local hint — the commons stays the source of truth). Cleared on withdraw." },
+]
+
+[provides.events]
+emits = [
+    "commons:published", "commons:revoked",
+    "commons:shared", "commons:unshared", "commons:visibility_changed", "commons:synced",
+]
+# ACL changes — the commons service is the audit surface — no cross-app listener by design.
+internal = [
+    "commons:published",
+    "commons:revoked",
+    "commons:shared",
+    "commons:unshared",
+    "commons:visibility_changed",
+    "commons:synced",
+]
+
+[[provides.verbs]]
+verb = "commons.publish"
+method = "publish"
+summary = "Publish a vault note to the shared commons"
+eligibility = "gated"
+surfaces = ["agent"]
+
+[[provides.verbs]]
+verb = "commons.revoke"
+method = "revoke"
+summary = "Withdraw a published note from the commons"
+eligibility = "gated"
+surfaces = ["agent"]
+
+[[provides.verbs]]
+verb = "commons.share"
+method = "share"
+summary = "Grant a commons user access to a published note"
+args = { path = "string", principal = "string", level = "string?" }
+eligibility = "never"
+surfaces = ["agent"]
+
+[[provides.verbs]]
+verb = "commons.unshare"
+method = "unshare"
+summary = "Remove a commons user's access to a published note"
+args = { path = "string", principal = "string" }
+eligibility = "gated"
+surfaces = ["agent"]
+
+[[provides.verbs]]
+verb = "commons.set_visibility"
+method = "set_visibility"
+summary = "Change a published note's visibility (public/private/shared)"
+args = { path = "string", visibility = "string" }
+eligibility = "never"
+surfaces = ["agent"]
+
+[[provides.verbs]]
+verb = "commons.sync"
+method = "sync"
+summary = "Push the vault note's current content onto its published copy"
+args = { path = "string" }
+eligibility = "gated"
+surfaces = ["agent"]
+
+[[provides.verbs]]
+verb = "commons.acl"
+method = "acl"
+summary = "View who a published note is shared with (read-only)"
+args = { path = "string" }
+eligibility = "gated"
+surfaces = ["agent"]

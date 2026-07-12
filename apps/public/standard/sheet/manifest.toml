@@ -1,0 +1,38 @@
+[app]
+id = "sheet"
+name = "Sheet"
+version = "0.1.0"
+description = "Light calc sheet — a grid of cells with per-cell formulas (=SUM, =IF, =TODAY), stored as a markdown table in a vault note"
+store_category = "productivity"
+dimensions = ["occupational"]
+user_intent = [
+    "I want a quick spreadsheet",
+    "calculate a budget",
+    "add up some numbers in a grid",
+    "make a small calc sheet",
+    "记账表格",
+    "做个小表格算一下",
+]
+
+[app.entry]
+module = "app"
+class = "SheetApp"
+
+[requires]
+capabilities = ["read", "write"]
+apps = []
+services = []
+
+[provides.web]
+prefix = "/sheet"
+
+[provides.events]
+emits = ["sheet:created", "sheet:cell_changed", "sheet:deleted"]
+# Sheet CRUD observability — UI-only, no cross-app listener by design.
+internal = ["sheet:created", "sheet:cell_changed", "sheet:deleted"]
+
+[provides.settings]
+fields = [
+    {key = "sheet.default_rows", label = "Default rows for a new sheet", type = "number", default = 12},
+    {key = "sheet.default_cols", label = "Default columns for a new sheet", type = "number", default = 8},
+]

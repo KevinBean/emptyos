@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>写作台 WriteDesk</title>
+<style>
+  :root { color-scheme: light; }
+  body { margin: 0; min-height: 100vh; display: flex; flex-direction: column;
+         align-items: center; justify-content: center; gap: 28px;
+         background: #faf7f2; color: #2b2b2b;
+         font-family: 'Microsoft YaHei', 'Noto Sans SC', sans-serif; }
+  h1 { font-size: 34px; margin: 0; }
+  .sub { color: #777; font-size: 16px; margin-top: -16px; }
+  .row { display: flex; gap: 28px; flex-wrap: wrap; justify-content: center; }
+  a.tile { display: flex; flex-direction: column; align-items: center; gap: 14px;
+           width: 240px; padding: 38px 20px; border-radius: 20px;
+           background: #fff; border: 2px solid #e3ddd2; text-decoration: none;
+           color: inherit; transition: all 0.15s; }
+  a.tile:hover { border-color: #7c5cd6; transform: translateY(-2px);
+                 box-shadow: 0 6px 18px rgba(0,0,0,0.07); }
+  .icon { font-size: 64px; }
+  .label { font-size: 26px; font-weight: 700; }
+  .hint { font-size: 14px; color: #999; }
+</style>
+</head>
+<body>
+  <h1>写作台</h1>
+  <div class="sub">想写什么，点下面的按钮</div>
+  <div class="row">
+    <a class="tile" href="/writing-editor/">
+      <div class="icon">✍️</div>
+      <div class="label">写文章</div>
+      <div class="hint">可以用麦克风口述</div>
+    </a>
+    <a class="tile" href="/jianpu/">
+      <div class="icon">🎼</div>
+      <div class="label">写简谱</div>
+      <div class="hint">点按钮就能记谱</div>
+    </a>
+  </div>
+</body>
+</html>

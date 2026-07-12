@@ -1,0 +1,197 @@
+[app]
+id = "task"
+store_category = "core"
+name = "Task Manager"
+version = "1.0.0"
+description = "Add, complete, and query tasks across notes"
+icon = "📋"
+dimensions = ["occupational"]
+user_intent = [
+    "I want to track my todos",
+    "what do I have to do today",
+    "我今天要做什么",
+    "see overdue tasks",
+    "remind me to follow up on this",
+    "capture a quick task",
+]
+
+[app.entry]
+module = "app"
+class = "TaskApp"
+
+[provides.cli]
+commands = ["task"]
+
+[provides.web]
+prefix = "/task"
+
+[provides.events]
+emits = ["task:added", "task:completed", "task:reopened", "task:snoozed", "task:updated", "task:archived", "task:triaged", "task:recurred"]
+# Bulk triage/archive — too noisy for journal ripple; completed/added already ripple — no cross-app listener by design.
+internal = [
+    "task:archived",
+    "task:triaged",
+    "task:recurred",
+]
+
+# ── Unified verb registry (single source of truth) ──────────────────────────
+# One declaration per invokable verb; the voice/assistant/mcp/agent surfaces
+# and the autopilot eligibility floor are views over this. See
+# .claude/rules/verb-registry.md. `method` is the canonical call_app handler
+# (what agent [DO:] / MCP dispatch); a surface sub-table may override `method`
+# with its own handler (voice wrappers return {say, card}). `eligibility`
+# feeds the autopilot floor: stable = grant-eligible, gated = always reviewed,
+# never = ungrantable. While the verb-registry feature flag is dark, these are
+# read only by the drift sweep — no surface consumes them yet, so the legacy
+# blocks above/below stay authoritative.
+
+[[provides.verbs]]
+verb = "task.add"
+method = "add"
+summary = "Capture a quick task"
+args = { text = "string", due = "string?" }
+eligibility = "stable"
+surfaces = ["voice", "assistant", "mcp", "agent"]
+voice = { method = "voice_add_task", example = "add a task to call mom tomorrow", description = "Capture a quick task. Pass due as YYYY-MM-DD, 'today', or 'tomorrow' when the user states a deadline.", always = true, narrate = "narrate_after_add" }
+assistant = { slash = "/add", method = "add", arg = "text" }
+
+[[provides.verbs]]
+verb = "task.list_today"
+method = "voice_list_today"
+summary = "Show today's most urgent tasks (overdue + due-today, top 5)"
+args = {}
+eligibility = "stable"
+surfaces = ["voice"]
+voice = { example = "what are my tasks today", description = "Show today's most urgent tasks (overdue + due-today, top 5)", always = true, card = "task-list" }
+
+[[provides.verbs]]
+verb = "task.list_due"
+method = "voice_list_due"
+summary = "List tasks due in a given bucket"
+args = { when = "string" }
+eligibility = "stable"
+surfaces = ["voice"]
+voice = { example = "what's on for tomorrow", description = "List tasks due in a given bucket. when ∈ today | tomorrow | this_week | overdue | later | undated.", always = true, card = "task-list" }
+
+[[provides.verbs]]
+verb = "task.list_recent"
+method = "voice_list_recent"
+summary = "Show tasks added in this session, newest first"
+args = {}
+eligibility = "stable"
+surfaces = ["voice"]
+voice = { example = "show the tasks I just added", description = "Show tasks added in this session, newest first — use this to verify a recent add.", always = true, card = "task-list" }
+
+# Assistant slash commands (Phase 4 — assistant reads the registry). These are
+# read/write verbs invoked via /slash; gated (not autopilot-floor-eligible).
+[[provides.verbs]]
+verb = "task.list_tasks"
+method = "list_tasks"
+summary = "List tasks"
+args = {}
+eligibility = "gated"
+surfaces = ["assistant"]
+assistant = { slash = "/tasks", method = "list_tasks" }
+
+[[provides.verbs]]
+verb = "task.complete"
+method = "complete"
+summary = "Mark a task complete (fuzzy query)"
+args = { query = "string" }
+eligibility = "gated"
+surfaces = ["assistant"]
+assistant = { slash = "/done", method = "complete", arg = "query", inverse = "reopen" }
+
+[[provides.verbs]]
+verb = "task.reopen"
+method = "reopen"
+summary = "Reopen a completed task (fuzzy query)"
+args = { query = "string" }
+eligibility = "gated"
+surfaces = ["assistant"]
+assistant = { slash = "/reopen", method = "reopen", arg = "query" }
+
+[[provides.verbs]]
+verb = "task.snooze"
+method = "snooze"
+summary = "Snooze a task (fuzzy query)"
+args = { query = "string" }
+eligibility = "gated"
+surfaces = ["assistant"]
+assistant = { slash = "/snooze", method = "snooze", arg = "query" }
+
+[[provides.verbs]]
+verb = "task.note"
+method = "note"
+summary = "Attach a note to a task found by fuzzy text match — completes it if still open, or just adds the note if already done"
+args = { query = "string", note = "string" }
+eligibility = "gated"
+surfaces = ["voice", "mcp", "agent"]
+voice = { example = "note on the call mom task that I left a voicemail", description = "Attach a note to a task found by fuzzy text match. Completes the task if it was still open; if already done, just appends the note.", always = true }
+
+[provides.export]
+enabled = true
+mode = "standalone"
+fallbacks = ["vault:indexeddb", "events:local-bus", "call_app:bundled", "viewer:none"]
+
+[requires]
+optional_apps = ["journal"]
+capabilities = ["read", "write", "think"]
+# projects is an optional task source — indexer.py merges its tasks if present,
+# otherwise just shows tasks from notes in the vault (call_app under try/except).
+apps = ["projects"]
+services = []
+events = []
+
+# Storage domains this app touches (docs/CLOUD-ARCHITECTURE.md; advisory)
+[storage]
+private = "vault"      # tasks live as `- [ ]` lines in vault notes
+
+[provides.settings]
+schema = [
+    {key = "task.zombie_days", label = "Zombie Threshold (days)", type = "number", default = 90},
+    {key = "task.focus_top_n", label = "Focus Suggestions", type = "number", default = 3},
+    {key = "task.feature.ai-triage.enabled", label = "AI triage (someday)", type = "boolean", default = false, hint = "Use a local model to suggest promote/keep/archive for someday tasks, in confirmed batches. Sends only one-line task text."},
+    {key = "task.feature.recurrence.enabled", label = "Recurring task regeneration", type = "boolean", default = false, hint = "When a 🔁 recurring task is completed, spawn its next dated occurrence automatically."},
+    {key = "task.feature.nl-quickadd.enabled", label = "Natural-language quick-add", type = "boolean", default = false, hint = "Parse the add box for a due date + priority, e.g. 'call mom tomorrow p1'. #tags are kept."},
+    {key = "task.feature.task-reminders-push.enabled", label = "Push daily due-task summary", type = "boolean", default = false, hint = "Dark by default. Runs at 08:05 local time and routes one bounded due/overdue summary through the proactive notification gate."},
+]
+
+# [provides.assistant] slash commands now live in [[provides.verbs]] above
+# (Phase 4 — assistant reads the unified registry). One declaration site.
+
+[[contributes.hub.needs_attention]]
+id = "overdue-tasks"
+method = "slot_needs_attention"
+limit = 5
+priority = 10
+
+[[contributes.hub.today]]
+id = "tasks-due-today"
+method = "slot_today"
+limit = 5
+priority = 10
+
+# ── Legacy-parity panels ──
+
+[[contributes.hub.panel]]
+id = "pulse-stats"
+method = "panel_pulse_stats"
+renderer = "tiles-row"
+priority = 30
+
+[[contributes.hub.panel]]
+id = "todays-tasks"
+title = "📋 Today's Tasks"
+method = "panel_todays_tasks"
+renderer = "task-list"
+priority = 100
+
+[[contributes.voice-assistant.context]]
+id = "open-tasks"
+method = "assistant_context"
+priority = 30
+
+# Voice intents + narration for task.* now live in [[provides.verbs]] above
+# (Phase 3 — voice-assistant reads the unified registry). Removed here to keep
+# one declaration site. See .claude/rules/verb-registry.md.

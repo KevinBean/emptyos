@@ -1,0 +1,16 @@
+[plugin]
+id = "email-smtp"
+name = "Email (SMTP)"
+version = "1.0.0"
+description = "Injects an SMTP provider into the `send` capability — outbound email via your own mail server"
+
+[plugin.entry]
+module = "plugin"
+class = "EmailSmtpPlugin"
+
+[provides]
+services = []
+tags = ["send", "email", "outbound", "connector"]
+
+[platforms]
+supports = ["laptop", "vps-cpu", "vps-gpu", "docker"]

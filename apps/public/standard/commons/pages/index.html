@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Commons</title>
+<link rel="stylesheet" href="/static/theme.css">
+<link rel="stylesheet" href="/static/eos-components.css">
+<style>
+  .commons-wrap { max-width: 820px; margin: 0 auto; padding: 1rem; }
+  .commons-head { display:flex; align-items:center; gap:.75rem; margin-bottom:1rem; }
+  .commons-head h1 { margin:0; flex:1; font-size:1.4rem; }
+  .feed-note { border:1px solid var(--border); border-radius:12px; padding:.85rem 1rem; margin-bottom:.7rem; background:var(--surface); }
+  .feed-note h3 { margin:0 0 .25rem; font-size:1.05rem; }
+  .feed-byline { color:var(--text-muted); font-size:.82rem; display:flex; gap:.5rem; align-items:center; flex-wrap:wrap; }
+  .feed-body { margin:.5rem 0 0; color:var(--text); white-space:pre-wrap; font-size:.9rem; max-height:7rem; overflow:hidden; }
+  .feed-actions { margin-top:.5rem; display:flex; gap:.4rem; }
+  .vis-public  { background:var(--success); color: var(--ink-on-vivid); }
+  .vis-private { background:var(--text-muted); color:#fff; }
+  .vis-shared  { background:var(--accent); color:var(--accent-ink); }
+</style>
+</head>
+<body>
+<div class="commons-wrap">
+  <div class="commons-head">
+    <h1>🌐 Commons</h1>
+    <button class="eos-btn" onclick="openPublish()">+ Publish a note</button>
+    <button class="btn-settings eos-btn" onclick="appSettings.open()">&#9881;</button>
+  </div>
+  <div style="margin-bottom:.8rem;">
+    <input id="q" class="eos-input" placeholder="Search the commons…" oninput="debouncedLoad()" style="width:100%;">
+  </div>
+  <div id="feed"></div>
+</div>
+
+<script src="/static/eos.js"></script>
+<script src="/static/eos-components.js"></script>
+<script>
+var appSettings = EOS_UI.settingsPanel({
+  id: 'commons-settings-panel',
+  title: 'Commons settings',
+  fields: [
+    {key: 'commons.server_url', label: 'Commons server URL', type: 'text', hint: 'e.g. https://commons.example.com'},
+    {key: 'commons.session_cookie', label: 'Session token', type: 'password', hint: 'Your __Host-commons_session value from a logged-in browser'},
+    {key: 'commons.dev_login', label: 'Dev login (subject:email)', type: 'text', hint: 'Local/dev only — auto-login against a dev-auth commons'},
+  ],
+});
+
+function visBadge(v) {
+  var cls = v === 'public' ? 'vis-public' : (v === 'shared' ? 'vis-shared' : 'vis-private');
+  return '<span class="eos-badge ' + cls + '">' + EOS.esc(v) + '</span>';
+}
+
+function renderNote(n) {
+  var tags = (n.tags || []).map(function(t){ return '#' + EOS.esc(t); }).join(' ');
+  var slugArg = escAttr(JSON.stringify(n.slug));
+  var owner = n.is_owner
+    ? '<button class="eos-btn-sm" onclick="openShare(' + slugArg + ')">Share…</button>'
+      + '<button class="eos-btn-sm" onclick="openVisibility(' + slugArg + ')">Visibility…</button>'
+      + '<button class="eos-btn-sm" onclick="showAcl(' + slugArg + ')">Who?</button>'
+      + '<button class="eos-btn-sm" onclick="openSync(' + slugArg + ')">Sync…</button>'
+      + '<button class="eos-btn-sm" onclick="revoke(' + slugArg + ')">Withdraw</button>'
+    : '';
+  return '<div class="feed-note">'
+    + '<h3>' + EOS.esc(n.title || n.slug) + '</h3>'
+    + '<div class="feed-byline">' + visBadge(n.visibility)
+    + (n.kind ? '<span>' + EOS.esc(n.kind) + '</span>' : '')
+    + (n.domain ? '<span>· ' + EOS.esc(n.domain) + '</span>' : '')
+    + (n.is_owner ? '<span>· yours</span>' : '')
+    + (tags ? '<span>· ' + tags + '</span>' : '')
+    + '</div>'
+    + '<div class="feed-body">' + EOS.esc((n.body || '').slice(0, 400)) + '</div>'
+    + '<div class="feed-actions">' + owner + '</div>'
+    + '</div>';
+}
+
+async function load() {
+  var q = document.getElementById('q').value.trim();
+  var feed = document.getElementById('feed');
+  try {
+    var res = await EOS.api('/commons/api/feed' + (q ? '?q=' + encodeURIComponent(q) : ''));
+    if (res.error) {
+      feed.innerHTML = EOS_UI.errorState
+        ? EOS_UI.errorState(res.error + ' — open ⚙ settings to configure the commons server.')
+        : '<p>' + EOS.esc(res.error) + '</p>';
+      return;
+    }
+    var notes = res.notes || [];
+    if (!notes.length) {
+      var title = q ? 'No matches' : 'Nothing shared yet';
+      var body = q ? ('No commons notes match “' + EOS.esc(q) + '”.') : 'Publish a vault note to start the commons.';
+      feed.innerHTML = EOS_UI.emptyState
+        ? EOS_UI.emptyState({title: title, body: body})
+        : '<p>' + EOS.esc(body) + '</p>';
+      return;
+    }
+    feed.innerHTML = notes.map(renderNote).join('');
+  } catch (e) {
+    feed.innerHTML = '<p>Failed to load the commons feed.</p>';
+  }
+}
+
+var _t;
+function debouncedLoad() { clearTimeout(_t); _t = setTimeout(load, 250); }
+
+function openPublish() {
+  EOS_UI.formModal({
+    title: 'Publish a note to the commons',
+    fields: [
+      {key: 'path', label: 'Vault note path', type: 'text', required: true, hint: 'e.g. 30_Resources/EmptyOS/kb/sources/ohms-law.md'},
+      {key: 'visibility', label: 'Visibility', type: 'select', options: [
+        {value: 'public', label: 'Public — everyone in the commons'},
+        {value: 'shared', label: 'Shared — only specific people'},
+        {value: 'private', label: 'Private — parked, only me'},
+      ], default: 'public'},
+      {key: 'share_with', label: 'Share with (emails, comma-separated)', type: 'text', hint: 'Only used for Shared'},
+    ],
+    onSubmit: async function(v) {
+      var payload = {path: v.path, visibility: v.visibility};
+      if (v.share_with) payload.share_with = v.share_with.split(',').map(function(s){return s.trim();}).filter(Boolean);
+      var res = await EOS.api('/commons/api/publish', {method: 'POST', body: payload});
+      if (res.error) { EOS_UI.toast(res.error, 'error'); return; }
+      EOS_UI.toast('Published: ' + (res.note ? res.note.slug : v.path), 'success');
+      load();
+    },
+  });
+}
+
+function openShare(slug) {
+  EOS_UI.formModal({
+    title: 'Share "' + slug + '"',
+    fields: [
+      {key: 'principal', label: 'Commons user (email or subject)', type: 'text', required: true},
+      {key: 'level', label: 'Access level', type: 'select', options: [
+        {value: 'read', label: 'Read — view only'},
+        {value: 'comment', label: 'Comment — view + annotate'},
+        {value: 'write', label: 'Write — view + edit'},
+      ], default: 'read'},
+    ],
+    onSubmit: async function(v) {
+      var res = await EOS.api('/commons/api/share', {method: 'POST',
+        body: {path: slug, principal: v.principal, level: v.level}});
+      if (res.error) { EOS_UI.toast(res.error, 'error'); return; }
+      EOS_UI.toast('Shared with ' + v.principal, 'success');
+      load();
+    },
+  });
+}
+
+function openVisibility(slug) {
+  EOS_UI.formModal({
+    title: 'Visibility of "' + slug + '"',
+    fields: [
+      {key: 'visibility', label: 'Visibility', type: 'select', options: [
+        {value: 'public', label: 'Public — everyone in the commons'},
+        {value: 'shared', label: 'Shared — only granted people'},
+        {value: 'private', label: 'Private — parked, only me'},
+      ], default: 'public'},
+    ],
+    onSubmit: async function(v) {
+      var res = await EOS.api('/commons/api/visibility', {method: 'POST',
+        body: {path: slug, visibility: v.visibility}});
+      if (res.error) { EOS_UI.toast(res.error, 'error'); return; }
+      EOS_UI.toast('Now ' + v.visibility, 'success');
+      load();
+    },
+  });
+}
+
+async function showAcl(slug) {
+  var res = await EOS.api('/commons/api/acl?path=' + encodeURIComponent(slug));
+  if (res.error) { EOS_UI.toast(res.error, 'error'); return; }
+  var rows = (res.grants || []).map(function(g) {
+    return '<tr><td>' + EOS.esc(g.principal || g.handle || '?') + '</td>'
+      + '<td>' + EOS.esc(g.level) + '</td>'
+      + '<td><button class="eos-btn-sm" onclick="unshare('
+      + escAttr(JSON.stringify(slug)) + ',' + escAttr(JSON.stringify(g.principal)) + ')">Remove</button></td></tr>';
+  }).join('');
+  var body = '<p>Visibility: ' + EOS.esc(res.visibility || '?') + '</p>'
+    + (rows
+        ? '<table class="obs-table"><tr><th>Person</th><th>Level</th><th></th></tr>' + rows + '</table>'
+        : '<p>Not shared with anyone individually.</p>');
+  EOS_UI.modal({title: 'Access to "' + EOS.esc(slug) + '"', body: body});
+}
+
+async function unshare(slug, principal) {
+  if (!(await EOS_UI.confirm('Remove ' + principal + "'s access to \"" + slug + '"?'))) return;
+  var res = await EOS.api('/commons/api/unshare', {method: 'POST',
+    body: {path: slug, principal: principal}});
+  if (res.error) { EOS_UI.toast(res.error, 'error'); return; }
+  EOS_UI.toast('Access removed', 'success');
+  load();
+}
+
+function openSync(slug) {
+  EOS_UI.formModal({
+    title: 'Sync "' + slug + '" from the vault',
+    fields: [
+      {key: 'path', label: 'Vault note path', type: 'text', required: true,
+       hint: 'Vault-relative path of the local note, e.g. 30_Resources/EmptyOS/kb/sources/' + slug + '.md — its current title/body/tags replace the published copy'},
+    ],
+    onSubmit: async function(v) {
+      var res = await EOS.api('/commons/api/sync', {method: 'POST', body: {path: v.path}});
+      if (res.error) { EOS_UI.toast(res.error, 'error'); return; }
+      EOS_UI.toast('Published copy updated', 'success');
+      load();
+    },
+  });
+}
+
+async function revoke(slug) {
+  if (!(await EOS_UI.confirm('Withdraw "' + slug + '" from the commons?'))) return;
+  var res = await EOS.api('/commons/api/revoke', {method: 'POST', body: {path: slug}});
+  if (res.error) { EOS_UI.toast(res.error, 'error'); return; }
+  EOS_UI.toast('Withdrawn', 'success');
+  load();
+}
+
+load();
+</script>
+</body>
+</html>

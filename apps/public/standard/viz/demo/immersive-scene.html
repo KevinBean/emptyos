@@ -1,0 +1,255 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Immersive scene — bloom + GLSL</title>
+<style>
+  :root { --accent: #7df9ff; --muted: #8a97a7; }
+  * { margin: 0; box-sizing: border-box; }
+  html, body { height: 100%; overflow: hidden; background: #04060d; }
+  #app { position: fixed; inset: 0; }
+  canvas { display: block; }
+  .hud {
+    position: fixed; left: 18px; bottom: 16px; z-index: 2;
+    font: 12px/1.5 "IBM Plex Mono", ui-monospace, monospace;
+    color: var(--muted); letter-spacing: .02em; pointer-events: none;
+  }
+  .hud b { color: var(--accent); font-weight: 600; }
+  .title {
+    position: fixed; left: 18px; top: 16px; z-index: 2;
+    font: 600 15px/1.2 "Archivo", system-ui, sans-serif;
+    color: #e6edf3; letter-spacing: .04em; text-transform: uppercase;
+  }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div class="title">Immersive scene</div>
+<div class="hud">Three.js r160 · PBR + <b>RoomEnvironment</b> · GLSL · <b>UnrealBloom</b> · drag to orbit</div>
+
+<!--
+  Modern Three.js stack — single file, no build step.
+  ES modules via importmap; everything loaded from a public CORS CDN.
+  Pinned to three@0.160.0 (never @latest — addons must match the core).
+
+  Optional extensions this scaffold is designed to grow into (left out to keep
+  the demo focused; add when the brief calls for them):
+    - glTF assets:  import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+                    new GLTFLoader().load('https://<absolute-public-cdn>/model.glb', ...)
+                    — absolute URL only; the artifact is served from a static
+                    location, relative asset paths will 404.
+    - Scroll motion (narrative pages only): GSAP + Lenis via jsdelivr +esm,
+      driven by scroll progress. Skip for a fixed hero scene like this one.
+-->
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+
+const mount = document.getElementById('app');
+
+// ── Renderer ─────────────────────────────────────────────────────────────
+// ACESFilmic tone mapping + the default SRGB output colour space give the
+// filmic, slightly-desaturated look the modern stack is known for. OutputPass
+// (added r156) applies the tone mapping at the end of the post chain, so the
+// renderer just declares the mode.
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.05;
+mount.appendChild(renderer.domElement);
+
+// ── Scene + camera ───────────────────────────────────────────────────────
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x04060d);
+scene.fog = new THREE.FogExp2(0x04060d, 0.035);
+
+const camera = new THREE.PerspectiveCamera(
+  50, window.innerWidth / window.innerHeight, 0.1, 100);
+camera.position.set(0, 1.4, 7);
+
+// ── Image-based lighting from RoomEnvironment ──────────────────────────────
+// No external HDR fetch: PMREMGenerator bakes a procedural room into an env
+// map, so PBR materials get believable reflections for free.
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+
+// A key light adds direction on top of the flat IBL.
+const key = new THREE.DirectionalLight(0xffffff, 2.2);
+key.position.set(4, 6, 3);
+scene.add(key);
+
+// ── Hero geometry: a GLSL-displaced core ───────────────────────────────────
+// Custom ShaderMaterial with a uTime uniform → the surface breathes. This is
+// the "one strong effect done well" the immersive shape is about: a real GLSL
+// shader, not a stock material.
+const uniforms = {
+  uTime:    { value: 0 },
+  uColorA:  { value: new THREE.Color(0x1b3a6b) },
+  uColorB:  { value: new THREE.Color(0x7df9ff) },
+};
+
+const coreGeo = new THREE.IcosahedronGeometry(1.5, 64);
+const coreMat = new THREE.ShaderMaterial({
+  uniforms,
+  vertexShader: /* glsl */ `
+    precision highp float;
+    uniform float uTime;
+    varying float vDisp;
+    varying vec3  vNormal;
+
+    // Cheap value-noise — enough to ripple the surface without a texture.
+    vec3 hash3(vec3 p){
+      p = vec3(dot(p, vec3(127.1, 311.7, 74.7)),
+               dot(p, vec3(269.5, 183.3, 246.1)),
+               dot(p, vec3(113.5, 271.9, 124.6)));
+      return -1.0 + 2.0 * fract(sin(p) * 43758.5453123);
+    }
+    float noise(vec3 p){
+      vec3 i = floor(p); vec3 f = fract(p);
+      vec3 u = f * f * (3.0 - 2.0 * f);
+      return mix(mix(mix(dot(hash3(i + vec3(0,0,0)), f - vec3(0,0,0)),
+                         dot(hash3(i + vec3(1,0,0)), f - vec3(1,0,0)), u.x),
+                     mix(dot(hash3(i + vec3(0,1,0)), f - vec3(0,1,0)),
+                         dot(hash3(i + vec3(1,1,0)), f - vec3(1,1,0)), u.x), u.y),
+                 mix(mix(dot(hash3(i + vec3(0,0,1)), f - vec3(0,0,1)),
+                         dot(hash3(i + vec3(1,0,1)), f - vec3(1,0,1)), u.x),
+                     mix(dot(hash3(i + vec3(0,1,1)), f - vec3(0,1,1)),
+                         dot(hash3(i + vec3(1,1,1)), f - vec3(1,1,1)), u.x), u.y), u.z);
+    }
+
+    void main(){
+      vNormal = normal;
+      float n = noise(normal * 2.2 + uTime * 0.35);
+      vDisp = n;
+      vec3 displaced = position + normal * n * 0.35;
+      gl_Position = projectionMatrix * modelViewMatrix * vec4(displaced, 1.0);
+    }
+  `,
+  fragmentShader: /* glsl */ `
+    precision highp float;
+    uniform vec3  uColorA;
+    uniform vec3  uColorB;
+    uniform float uTime;
+    varying float vDisp;
+    varying vec3  vNormal;
+
+    void main(){
+      // Fresnel-ish rim from the view-space normal z.
+      float rim = pow(1.0 - abs(vNormal.z), 2.0);
+      vec3 base = mix(uColorA, uColorB, smoothstep(-0.3, 0.5, vDisp));
+      vec3 col  = base + uColorB * rim * 1.4;
+      gl_FragColor = vec4(col, 1.0);
+    }
+  `,
+});
+const core = new THREE.Mesh(coreGeo, coreMat);
+scene.add(core);
+
+// ── Orbiting PBR spheres (let the env map do the work) ─────────────────────
+const orbiters = new THREE.Group();
+const sphereGeo = new THREE.SphereGeometry(0.28, 48, 48);
+for (let i = 0; i < 7; i++) {
+  const mat = new THREE.MeshPhysicalMaterial({
+    color: new THREE.Color().setHSL(0.55 + i * 0.03, 0.6, 0.55),
+    metalness: 1.0, roughness: 0.12 + i * 0.05,
+    clearcoat: 1.0, clearcoatRoughness: 0.1,
+  });
+  const m = new THREE.Mesh(sphereGeo, mat);
+  const a = (i / 7) * Math.PI * 2;
+  m.userData.angle = a;
+  m.userData.radius = 3.0 + (i % 3) * 0.5;
+  m.userData.speed = 0.25 + i * 0.03;
+  orbiters.add(m);
+}
+scene.add(orbiters);
+
+// ── Starfield backdrop (gives bloom something to catch) ────────────────────
+const starGeo = new THREE.BufferGeometry();
+const starCount = 1200;
+const starPos = new Float32Array(starCount * 3);
+for (let i = 0; i < starCount; i++) {
+  const r = 18 + Math.random() * 22;
+  const t = Math.random() * Math.PI * 2;
+  const p = Math.acos(2 * Math.random() - 1);
+  starPos[i * 3]     = r * Math.sin(p) * Math.cos(t);
+  starPos[i * 3 + 1] = r * Math.cos(p);
+  starPos[i * 3 + 2] = r * Math.sin(p) * Math.sin(t);
+}
+starGeo.setAttribute('position', new THREE.BufferAttribute(starPos, 3));
+const stars = new THREE.Points(starGeo,
+  new THREE.PointsMaterial({ color: 0x9fb4d0, size: 0.06, sizeAttenuation: true }));
+scene.add(stars);
+
+// ── Controls ───────────────────────────────────────────────────────────────
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.05;
+controls.autoRotate = true;
+controls.autoRotateSpeed = 0.6;
+controls.minDistance = 4;
+controls.maxDistance = 14;
+
+// ── Post-processing: the signature bloom pass ───────────────────────────────
+// Canonical modern chain: RenderPass → UnrealBloomPass → OutputPass.
+// OutputPass applies tone mapping + colour-space conversion at the very end.
+const composer = new EffectComposer(renderer);
+composer.addPass(new RenderPass(scene, camera));
+const bloom = new UnrealBloomPass(
+  new THREE.Vector2(window.innerWidth, window.innerHeight),
+  0.85,   // strength
+  0.5,    // radius
+  0.18);  // threshold — only the brightest parts bloom
+composer.addPass(bloom);
+composer.addPass(new OutputPass());
+composer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+composer.setSize(window.innerWidth, window.innerHeight);
+
+// ── Resize ───────────────────────────────────────────────────────────────
+addEventListener('resize', () => {
+  const w = window.innerWidth, h = window.innerHeight;
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+  renderer.setSize(w, h);
+  composer.setSize(w, h);
+});
+
+// ── One clock-driven render loop. Render via composer.render(), NOT
+//    renderer.render() — otherwise the bloom pass never runs and the scene
+//    looks flat (or black if the loop is forgotten entirely). ─────────────
+const clock = new THREE.Clock();
+function animate() {
+  requestAnimationFrame(animate);
+  const t = clock.getElapsedTime();
+  uniforms.uTime.value = t;
+  core.rotation.y = t * 0.15;
+  orbiters.children.forEach((m) => {
+    const a = m.userData.angle + t * m.userData.speed;
+    m.position.set(
+      Math.cos(a) * m.userData.radius,
+      Math.sin(a * 1.3) * 0.8,
+      Math.sin(a) * m.userData.radius);
+  });
+  stars.rotation.y = t * 0.01;
+  controls.update();
+  composer.render();
+}
+animate();
+</script>
+</body>
+</html>

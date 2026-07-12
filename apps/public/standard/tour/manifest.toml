@@ -1,0 +1,54 @@
+[app]
+id = "tour"
+store_category = "meta"
+name = "Product Tour"
+version = "1.0.0"
+description = "Walks the user through real EmptyOS surfaces. Apps contribute steps via [[contributes.tour.step]]; the tour orchestrator drives EOS.navigate + spotlight."
+dimensions = ["intellectual"]
+
+[app.entry]
+module = "app"
+class = "TourApp"
+
+[provides.web]
+prefix = "/tour"
+
+[requires]
+capabilities = []
+# Tour spotlights /hub/ surfaces (#smartBar, .r-app-grid) and /system. Without
+# hub the welcome step lands nowhere — declare the dependency so the topology
+# graph reflects reality.
+apps = ["hub"]
+
+[provides.events]
+emits = ["tour:completed", "tour:step_advanced"]
+# Walkthrough state — the tour orchestrator UI is the only consumer.
+internal = ["tour:completed", "tour:step_advanced"]
+
+# Tour seeds its own first step so a fresh clone with no other apps still has
+# something to show. App-specific steps live in each app's own manifest.
+[[contributes.tour.step]]
+id = "home.welcome"
+group = "core"
+priority = 50
+route = "/hub/"
+spotlight = "#smartBar"
+title = "Welcome"
+body = "EmptyOS is a mind companion — it thinks and creates with you, not for you. The home page starts from the <strong>outcome</strong>: describe what should exist, and the system plans it; apps are how it gets done. This bar is your shortcut: type <code>/</code> to jump to any app, <code>+</code> to capture, or <code>?</code> to search notes. We'll take a quick walk now."
+[[contributes.tour.step]]
+id = "tour.explore"
+group = "core"
+priority = 950
+route = "/hub/"
+spotlight = ".r-app-grid"
+title = "Now go explore"
+body = "Here's every app this install has loaded — browse, click any card to try it. Each card is its own page with its own UI; the one thing they share is the capability layer (think / read / write / search / speak / listen / see / draw / animate). Have fun."
+
+[[contributes.tour.step]]
+id = "system.inspect"
+group = "core"
+priority = 800
+route = "/system"
+spotlight = ".cap-card"
+title = "Nine capabilities, swappable providers"
+body = "Every app calls capabilities — <code>think / read / write / search / speak / listen / see / draw / animate</code> — never a specific provider. The chain falls through automatically: cloud LLM unavailable → local model → typed input. <strong>Human is the final fallback.</strong> Apps don't break when a provider goes away; they degrade."

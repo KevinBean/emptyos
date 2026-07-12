@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Vlog - EmptyOS</title>
+<link rel="stylesheet" href="/static/theme.css">
+<link rel="stylesheet" href="/static/eos-components.css">
+<style>
+* { margin:0; padding:0; box-sizing:border-box }
+body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif; background:var(--bg); color:var(--text); min-height:100dvh; padding:env(safe-area-inset-top) 16px calc(env(safe-area-inset-bottom) + 80px); -webkit-font-smoothing:antialiased }
+.wrap { max-width:920px; margin:0 auto }
+header { display:flex; align-items:center; gap:12px; padding:16px 0 16px; flex-wrap:wrap }
+header h1 { font-size:20px; font-weight:700 }
+header .grow { flex:1 }
+.bar { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:16px }
+.eos-btn-accent { background:var(--accent); color:var(--accent-ink); border-color:transparent }
+.eos-btn-rec { background:var(--danger); color: var(--ink-on-vivid); border-color:transparent }
+.date-input { padding:8px 12px; border-radius:8px; border:1px solid var(--border); background:var(--bg-card); color:var(--text); font-size:13px }
+.card { background:var(--bg-card); border:1px solid var(--border); border-radius:14px; padding:16px; margin-bottom:16px }
+.heatmap-wrap { background:var(--bg-card); border:1px solid var(--border); border-radius:14px; padding:16px; margin-bottom:16px }
+.grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:12px }
+.day { background:var(--bg-card); border:1px solid var(--border); border-radius:14px; overflow:hidden; cursor:pointer; transition:transform .12s,border-color .12s }
+.day:active { transform:scale(.97) }
+.day:hover { border-color:var(--accent) }
+.day .thumb { width:100%; aspect-ratio:16/9; object-fit:cover; background:#0008; display:block }
+.day .meta { padding:8px 12px }
+.day .d { font-size:13px; font-weight:600 }
+.day .sub { font-size:11px; color:var(--text-muted); margin-top:2px }
+.dropzone { border:2px dashed var(--border); border-radius:14px; padding:24px; text-align:center; color:var(--text-secondary); font-size:13px; margin-bottom:16px; transition:border-color .15s,background .15s }
+.dropzone.drag { border-color:var(--accent); background:color-mix(in srgb,var(--accent) 8%,var(--bg-card)) }
+/* Detail */
+#detail { display:none }
+#detail.on { display:block }
+.detail-head { display:flex; align-items:center; gap:12px; margin-bottom:12px }
+.detail-head h2 { font-size:17px }
+.player { width:100%; max-height:60vh; background:#000; border-radius:14px; margin-bottom:12px }
+.clip-tabs { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px }
+.clip-tab { padding:4px 12px; border-radius:8px; font-size:12px; border:1px solid var(--border); background:var(--bg-card); cursor:pointer }
+.clip-tab.on { background:var(--accent); color:var(--accent-ink); border-color:transparent }
+.moods { display:flex; gap:8px; margin:12px 0 }
+.mood-btn { width:38px; height:38px; border-radius:50%; border:2px solid var(--border); background:var(--bg-card); cursor:pointer; font-size:17px }
+.mood-btn.on { border-color:var(--accent); background:color-mix(in srgb,var(--accent) 12%,var(--bg-card)) }
+.transcript { font-size:14px; line-height:1.6; color:var(--text-secondary); white-space:pre-wrap; margin-top:8px }
+/* Record modal */
+#recModal { position:fixed; inset:0; background:#000c; display:none; align-items:center; justify-content:center; z-index:50; padding:16px }
+#recModal.on { display:flex }
+.rec-box { background:var(--bg-card); border:1px solid var(--border); border-radius:14px; padding:16px; max-width:640px; width:100% }
+#recPreview { width:100%; aspect-ratio:16/9; background:#000; border-radius:14px; margin-bottom:12px }
+.rec-row { display:flex; align-items:center; gap:12px }
+.rec-dot { width:12px; height:12px; border-radius:50%; background:var(--danger); display:none }
+.rec-dot.on { display:inline-block; animation:pulse 1s infinite }
+@keyframes pulse { 50% { opacity:.3 } }
+.muted { color:var(--text-muted); font-size:12px }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>📹 Vlog</h1>
+    <div class="grow"></div>
+    <span id="model-pill"></span>
+  </header>
+
+  <!-- Capture bar -->
+  <div class="bar">
+    <input type="date" id="cap-date" class="date-input" title="Date for this clip">
+    <button class="eos-btn btn-rec" id="record-btn" onclick="openRecorder()">● Record</button>
+    <button class="eos-btn" onclick="document.getElementById('file-input').click()">⬆ Import clip</button>
+    <input type="file" id="file-input" accept="video/*" style="display:none" onchange="onPick(event)">
+    <div class="grow"></div>
+    <select id="compile-period" class="date-input">
+      <option value="week">This week</option>
+      <option value="month">This month</option>
+      <option value="year">This year</option>
+      <option value="all" selected>All time</option>
+    </select>
+    <button class="eos-btn btn-accent" id="compile-btn" onclick="compile()">🎬 Compile montage</button>
+  </div>
+
+  <div class="bar">
+    <input type="search" id="search" class="date-input" style="flex:1;min-width:160px" placeholder="🔎 Search transcripts…" oninput="onSearch(this.value)">
+    <span id="search-info" class="muted"></span>
+  </div>
+
+  <div class="dropzone" id="dropzone">Drag &amp; drop a video clip here to add it to the selected day</div>
+
+  <!-- Detail (hash-routed) -->
+  <div class="card" id="detail">
+    <div class="detail-head">
+      <button class="eos-btn" onclick="closeDetail()">← Back</button>
+      <h2 id="detail-title"></h2>
+    </div>
+    <div id="detail-body" data-entity-path="">
+      <video class="player" id="player" controls playsinline></video>
+      <div class="clip-tabs" id="clip-tabs"></div>
+      <div class="moods" id="moods"></div>
+      <div class="transcript" id="transcript"></div>
+    </div>
+  </div>
+
+  <!-- Calendar -->
+  <div id="calendar">
+    <div class="heatmap-wrap"><div id="heatmap"></div></div>
+    <div class="grid" id="grid"></div>
+    <div id="empty" class="muted" style="display:none;padding:8px">No clips yet — record or import your first one.</div>
+  </div>
+</div>
+
+<!-- Recorder modal -->
+<div id="recModal">
+  <div class="rec-box">
+    <video id="recPreview" autoplay muted playsinline></video>
+    <div class="rec-row">
+      <span class="rec-dot" id="rec-dot"></span>
+      <span class="muted" id="rec-time">00:00</span>
+      <div class="grow" style="flex:1"></div>
+      <button class="eos-btn" onclick="closeRecorder()">Cancel</button>
+      <button class="eos-btn btn-rec" id="rec-toggle" onclick="toggleRec()">● Start</button>
+    </div>
+  </div>
+</div>
+
+<script src="/static/eos.js"></script>
+<script src="/static/eos-components.js"></script>
+<script>
+var STATE = { days:[], heatmap:{}, detail:null, clipIdx:0 };
+var MOODS = [['great','😄'],['good','🙂'],['okay','😐'],['low','😕'],['bad','😞']];
+var REC = { stream:null, rec:null, chunks:[], t0:0, timer:null };
+
+function todayISO(){ return new Date().toISOString().slice(0,10); }
+
+var _route = EOS_UI.hashRoute({
+  onShow: function(id){ if (/^\d{4}-\d{2}-\d{2}$/.test(id)) openDay(id); },
+  onHide: function(){ closeDetailDom(); },
+});
+
+async function init(){
+  document.getElementById('cap-date').value = todayISO();
+  try { EOS_UI.modelPill({ app:'vlog', mount:'#model-pill', domain:'text' }); } catch(e){}
+  wireDrop();
+  await loadDays();
+  _route.init();
+}
+
+async function loadDays(){
+  try {
+    var data = await EOS.api('/vlog/api/days');
+    STATE.days = data.days || [];
+    STATE.heatmap = data.heatmap || {};
+  } catch(e){ STATE.days = []; STATE.heatmap = {}; }
+  renderHeatmap();
+  renderGrid();
+}
+
+function renderHeatmap(){
+  try {
+    EOS_UI.yearHeatmap({
+      mount:'#heatmap', data:STATE.heatmap, months:12, showStats:true, showMonthLabels:false,
+      intensity: function(c){ return c===0?0:c<=1?1:c<=2?2:c<=4?3:4; },
+      tooltipFor: function(d,c){ return d+': '+c+' clip'+(c===1?'':'s'); },
+      onCellClick: function(d){ if (STATE.heatmap[d]) openDay(d); },
+    });
+  } catch(e){ document.getElementById('heatmap').innerHTML = '<div class="muted">Could not load heatmap</div>'; }
+}
+
+function renderGrid(days){
+  days = days || STATE.days;
+  var grid = document.getElementById('grid');
+  document.getElementById('empty').style.display = days.length ? 'none' : 'block';
+  grid.innerHTML = days.map(function(d){
+    var sub = d.clip_count + ' clip' + (d.clip_count===1?'':'s') + (d.mood?(' · '+esc(d.mood)):'');
+    return '<div class="day" onclick="openDay('+escAttr(JSON.stringify(d.date))+')">'
+      + '<img class="thumb" src="'+escAttr(d.thumb)+'" loading="lazy" onerror="this.style.visibility=\'hidden\'">'
+      + '<div class="meta"><div class="d">'+esc(d.date)+'</div><div class="sub">'+sub+'</div></div></div>';
+  }).join('');
+}
+
+// ── Search (transcript) ──
+var _searchT = null;
+function onSearch(q){
+  clearTimeout(_searchT);
+  _searchT = setTimeout(function(){ runSearch(q.trim()); }, 300);
+}
+async function runSearch(q){
+  var info = document.getElementById('search-info');
+  if (!q){ info.textContent=''; renderGrid(); return; }
+  try {
+    var r = await EOS.api('/vlog/api/search?q=' + encodeURIComponent(q));
+    var hits = {};
+    (r.results||[]).forEach(function(x){ hits[x.date]=true; });
+    var matched = STATE.days.filter(function(d){ return hits[d.date]; });
+    info.textContent = matched.length + ' match' + (matched.length===1?'':'es');
+    renderGrid(matched);
+  } catch(e){ info.textContent='search unavailable'; }
+}
+
+// ── Detail ──
+async function openDay(date){
+  _route.set(date);
+  var p;
+  try { p = await EOS.api('/vlog/api/day/'+encodeURIComponent(date)); }
+  catch(e){ EOS_UI.toast('Could not load '+date); return; }
+  STATE.detail = p; STATE.clipIdx = 0;
+  document.getElementById('calendar').style.display='none';
+  document.getElementById('detail').classList.add('on');
+  document.getElementById('detail-title').textContent = date;
+  document.getElementById('detail-body').setAttribute('data-entity-path', p._vault_path || '');
+  renderClipTabs();
+  renderMoods();
+  document.getElementById('transcript').textContent = p.transcript || '(no transcript yet)';
+  showClip(0);
+}
+function renderClipTabs(){
+  var p = STATE.detail || {clips:[]};
+  var t = document.getElementById('clip-tabs');
+  if ((p.clips||[]).length <= 1){ t.innerHTML=''; return; }
+  t.innerHTML = p.clips.map(function(c,i){
+    return '<div class="clip-tab'+(i===STATE.clipIdx?' on':'')+'" onclick="showClip('+i+')">Clip '+(i+1)+'</div>';
+  }).join('');
+}
+function showClip(i){
+  var p = STATE.detail; if (!p || !(p.clips||[]).length){ document.getElementById('player').removeAttribute('src'); return; }
+  STATE.clipIdx = i;
+  var pl = document.getElementById('player');
+  pl.src = p.clips[i].url; pl.load();
+  renderClipTabs();
+}
+function renderMoods(){
+  var cur = (STATE.detail||{}).mood || '';
+  document.getElementById('moods').innerHTML = MOODS.map(function(m){
+    return '<button class="mood-btn'+(m[0]===cur?' on':'')+'" title="'+m[0]+'" onclick="setMood(\''+m[0]+'\')">'+m[1]+'</button>';
+  }).join('');
+}
+async function setMood(mood){
+  var date = (STATE.detail||{}).date; if (!date) return;
+  if ((STATE.detail||{}).mood === mood) mood = '';
+  STATE.detail.mood = mood; renderMoods();
+  try { await EOS.post('/vlog/api/day/'+encodeURIComponent(date), {mood:mood}); }
+  catch(e){ EOS_UI.toast('Could not save mood'); }
+}
+function closeDetail(){ _route.clear(); closeDetailDom(); }
+function closeDetailDom(){
+  document.getElementById('detail').classList.remove('on');
+  document.getElementById('calendar').style.display='';
+  var pl=document.getElementById('player'); pl.pause(); pl.removeAttribute('src');
+}
+
+// ── Import / drop ──
+function wireDrop(){
+  var dz = document.getElementById('dropzone');
+  ['dragenter','dragover'].forEach(function(ev){ dz.addEventListener(ev, function(e){ e.preventDefault(); dz.classList.add('drag'); }); });
+  ['dragleave','drop'].forEach(function(ev){ dz.addEventListener(ev, function(e){ e.preventDefault(); dz.classList.remove('drag'); }); });
+  dz.addEventListener('drop', function(e){ var f=(e.dataTransfer.files||[])[0]; if (f) uploadClip(f, f.name); });
+}
+function onPick(e){ var f=(e.target.files||[])[0]; if (f) uploadClip(f, f.name); e.target.value=''; }
+
+async function uploadClip(blob, filename){
+  var date = document.getElementById('cap-date').value || todayISO();
+  var fd = new FormData();
+  fd.append('clip', blob, filename || 'clip.webm');
+  fd.append('date', date);
+  EOS_UI.toast('Uploading…');
+  try {
+    var res = await fetch('/vlog/api/capture', { method:'POST', body:fd });
+    var j = await res.json();
+    if (j.error){ EOS_UI.toast('Error: '+j.error); return; }
+    EOS_UI.toast('Saved — transcribing…');
+    // Give the background transcribe a moment, then refresh.
+    setTimeout(function(){ loadDays(); if ((STATE.detail||{}).date===date) openDay(date); }, 2500);
+    setTimeout(loadDays, 8000);
+  } catch(e){ EOS_UI.toast('Upload failed'); }
+}
+
+// ── Recorder ──
+async function openRecorder(){
+  var modal = document.getElementById('recModal');
+  try {
+    REC.stream = await navigator.mediaDevices.getUserMedia({ video:{width:1280,height:720}, audio:true });
+  } catch(e){ EOS_UI.toast('Camera unavailable: '+e.message); return; }
+  document.getElementById('recPreview').srcObject = REC.stream;
+  modal.classList.add('on');
+}
+function toggleRec(){
+  if (REC.rec && REC.rec.state==='recording'){ stopRec(); return; }
+  REC.chunks = [];
+  try { REC.rec = new MediaRecorder(REC.stream); }
+  catch(e){ EOS_UI.toast('Recording unsupported'); return; }
+  REC.rec.ondataavailable = function(e){ if (e.data && e.data.size) REC.chunks.push(e.data); };
+  REC.rec.onstop = function(){ var blob=new Blob(REC.chunks,{type:'video/webm'}); closeRecorder(); uploadClip(blob,'recording.webm'); };
+  REC.rec.start();
+  REC.t0 = Date.now();
+  REC.timer = setInterval(tick, 500);
+  document.getElementById('rec-dot').classList.add('on');
+  document.getElementById('rec-toggle').textContent = '■ Stop';
+}
+function stopRec(){ try { REC.rec.stop(); } catch(e){} clearInterval(REC.timer); }
+function tick(){
+  var s = Math.floor((Date.now()-REC.t0)/1000);
+  document.getElementById('rec-time').textContent =
+    String(Math.floor(s/60)).padStart(2,'0')+':'+String(s%60).padStart(2,'0');
+}
+function closeRecorder(){
+  clearInterval(REC.timer);
+  document.getElementById('rec-dot').classList.remove('on');
+  document.getElementById('rec-toggle').textContent='● Start';
+  document.getElementById('rec-time').textContent='00:00';
+  if (REC.stream){ REC.stream.getTracks().forEach(function(t){ t.stop(); }); REC.stream=null; }
+  document.getElementById('recModal').classList.remove('on');
+  REC.rec=null;
+}
+
+// ── Montage ──
+async function compile(){
+  var period = document.getElementById('compile-period').value;
+  var btn = document.getElementById('compile-btn');
+  btn.disabled = true; btn.textContent = '🎬 Compiling…';
+  try {
+    var j = await EOS.post('/vlog/api/compile', {period:period});
+    if (j.error){ EOS_UI.toast(j.error); resetCompile(); return; }
+    EOS_UI.toast('Compiling '+j.count+' clips…');
+    pollMontage(j.run_id);
+  } catch(e){ EOS_UI.toast('Compile failed'); resetCompile(); }
+}
+function resetCompile(){ var b=document.getElementById('compile-btn'); b.disabled=false; b.textContent='🎬 Compile montage'; }
+async function pollMontage(runId){
+  var tries = 0;
+  var iv = setInterval(async function(){
+    tries++;
+    var s;
+    try { s = await EOS.api('/vlog/api/compile/'+runId); } catch(e){ return; }
+    if (s.status==='done'){ clearInterval(iv); resetCompile(); showMontage(runId); }
+    else if (s.status==='error' || tries>120){ clearInterval(iv); resetCompile(); EOS_UI.toast('Montage failed: '+(s.error||'timeout')); }
+  }, 2000);
+}
+function showMontage(runId){
+  EOS_UI.modal({
+    title:'🎬 Your montage',
+    body:'<video class="player" controls autoplay playsinline src="/vlog/api/montage/'+runId+'"></video>'
+       + '<p class="muted" style="margin-top:8px"><a href="/vlog/api/montage/'+runId+'" download>Download</a></p>',
+  });
+}
+
+init();
+</script>
+</body>
+</html>

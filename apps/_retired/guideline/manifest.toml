@@ -1,0 +1,90 @@
+[app]
+id = "guideline"
+name = "Guideline"
+version = "0.1.0"
+description = "Organize prescriptive guidelines (rules, principles, conventions) by category"
+dimensions = ["intellectual"]
+store_category = "productivity"
+
+[app.entry]
+module = "app"
+class = "GuidelineApp"
+
+[requires]
+capabilities = ["read", "write"]
+apps = []
+services = []
+
+[provides.cli]
+commands = ["guideline"]
+
+[provides.web]
+prefix = "/guideline"
+
+# ✨ AI field-suggest (see .claude/rules/field-suggest.md)
+[[provides.field_suggest]]
+field = "body"
+instruction = "Propose crisp guidelines or principles riffing on the lessons and patterns in the user's knowledge base — each a single actionable 'when X, do Y' statement."
+vault_tags = ["lesson"]
+title_only = true
+count = 5
+mode = "fill"
+
+[provides.events]
+emits = [
+    "guideline:added",
+    "guideline:updated",
+    "guideline:deprecated",
+    "guideline:removed",
+    "guideline:clause_added",
+    "guideline:clause_updated",
+    "guideline:clause_removed",
+]
+
+# CRUD lifecycle — guideline/clause edits are tracked in the vault,
+# no separate journal entry needed.
+internal = [
+    "guideline:added",
+    "guideline:clause_added",
+    "guideline:clause_removed",
+    "guideline:clause_updated",
+    "guideline:deprecated",
+    "guideline:removed",
+    "guideline:updated",
+]
+
+[provides.settings]
+schema = [
+    {key = "guideline.default_category", label = "Default category for new guidelines", type = "text", default = "general"},
+    {key = "guideline.hub_panel_enabled", label = "Show daily guideline on hub", type = "boolean", default = true},
+]
+
+[[contributes.hub.panel]]
+id = "guideline-daily"
+method = "panel_daily"
+renderer = "entity-card"
+group = ""
+priority = 320
+title = "Guideline of the day"
+lazy = false
+
+# ── Unified verb registry (see .claude/rules/verb-registry.md) ──
+# Both verbs are autopilot-eligible. Voice-only; method IS the voice handler.
+# Voice surface now sourced here (Phase 3 done — legacy intents removed).
+[[provides.verbs]]
+verb = "guideline.show"
+method = "voice_show"
+summary = "List active guidelines in a category"
+args = { category = "string" }
+eligibility = "stable"
+surfaces = ["voice"]
+voice = { example = "show me guidelines for testing", description = "List active guidelines in a category", card = "task-list" }
+
+[[provides.verbs]]
+verb = "guideline.random"
+method = "voice_random"
+summary = "Speak a random active guideline"
+args = {}
+eligibility = "stable"
+surfaces = ["voice"]
+voice = { example = "remind me of a guideline", description = "Speak a random active guideline" }

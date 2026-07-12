@@ -1,0 +1,6 @@
+dist/
+build/
+.venv/
+*.app/
+__pycache__/
+AppIcon.icns

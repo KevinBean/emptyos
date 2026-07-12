@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>BookMe - EmptyOS</title>
+<link rel="stylesheet" href="/static/theme.css">
+<link rel="stylesheet" href="/static/eos-components.css">
+<style>
+.bm-wrap { max-width:680px; margin:0 auto; padding:24px 16px 64px }
+.bm-hero { padding:24px 0 8px }
+.bm-hero h1 { font-size:28px; font-weight:700; color:var(--text-heading); margin-bottom:4px }
+.bm-hero .desc { font-size:14px; color:var(--text-secondary) }
+.bm-card { background:var(--bg-card); border:1px solid var(--border); border-radius:14px; padding:16px; margin-bottom:16px }
+.bm-card h3 { font-size:15px; font-weight:600; color:var(--text-heading); margin-bottom:12px }
+.bm-row { display:flex; gap:8px; margin-bottom:12px; flex-wrap:wrap }
+.bm-row label { font-size:12px; color:var(--text-secondary); display:block; margin-bottom:4px }
+.bm-row .col { flex:1; min-width:120px }
+input, select, textarea { width:100%; padding:12px 12px; background:var(--bg); border:1px solid var(--border); border-radius:8px; font-size:14px; color:var(--text); font-family:inherit; outline:none; box-sizing:border-box }
+input:focus, select:focus, textarea:focus { border-color:color-mix(in srgb,var(--accent) 60%,transparent) }
+textarea { min-height:80px; resize:vertical }
+.bm-slots { display:flex; gap:8px; flex-wrap:wrap; margin-top:8px }
+.bm-slot { padding:8px 16px; background:var(--bg); border:1px solid var(--border); border-radius:8px; cursor:pointer; font-size:13px; color:var(--text) }
+.bm-slot:hover, .bm-slot.sel { border-color:var(--accent); background:color-mix(in srgb,var(--accent) 12%,transparent) }
+.bm-tabs { display:flex; gap:8px; margin:16px 0 }
+.bm-tab { padding:8px 16px; border-radius:8px; font-size:13px; cursor:pointer; border:1px solid var(--border); background:var(--bg); color:var(--text-secondary) }
+.bm-tab.active { background:var(--accent); color:var(--accent-ink); border-color:var(--accent); font-weight:600 }
+.bm-muted { color:var(--text-muted); font-size:13px }
+.bm-status { font-size:13px; min-height:18px; margin-top:8px }
+.bm-ok { color:var(--success) }
+.bm-err { color:var(--danger) }
+.bm-link { font-family:var(--mono); font-size:12px; color:var(--accent); word-break:break-all }
+.bm-et { border:1px solid var(--border); border-radius:8px; padding:12px; margin-bottom:12px }
+.bm-day { display:flex; align-items:center; gap:8px; margin-bottom:8px }
+.bm-day .name { width:42px; font-size:13px; color:var(--text-secondary); text-transform:capitalize }
+.bm-booking { border:1px solid var(--border); border-radius:8px; padding:12px; margin-bottom:8px; display:flex; justify-content:space-between; gap:12px; align-items:flex-start }
+.bm-booking.cancelled { opacity:0.5 }
+.bm-success { text-align:center; padding:8px 0 24px }
+.bm-success-icon { width:56px; height:56px; border-radius:50%; background:var(--success); color: var(--ink-on-vivid); display:flex; align-items:center; justify-content:center; font-size:28px; margin:0 auto 16px; box-shadow:0 8px 24px color-mix(in srgb, var(--success) 25%, transparent) }
+.bm-success h1 { font-size:22px; margin-bottom:8px; color:var(--text-heading) }
+.bm-success .when { font-size:15px; color:var(--text-secondary); margin-bottom:4px }
+.bm-success .tz { font-size:13px; color:var(--text-muted) }
+/* Anchor adapter for .eos-btn so the .ics download keeps real anchor
+   semantics (right-click → Save As, middle-click → new tab) while looking
+   like the platform's primary button. eos-components.css styles a <button>
+   element; anchors need display+text-decoration overrides. */
+a.eos-btn { display:inline-flex; align-items:center; gap:8px; text-decoration:none; line-height:1.2 }
+a.eos-btn:visited { color:var(--accent-ink) }
+a.eos-btn .ico { font-size:16px }
+.bm-aux { font-size:13px; color:var(--text-secondary); margin-top:16px }
+.bm-emails { display:flex; flex-direction:column; gap:16px }
+.bm-emails .tmpl { border:1px solid var(--border); border-radius:8px; padding:16px }
+.bm-emails .tmpl h4 { font-size:14px; font-weight:600; color:var(--text-heading); margin-bottom:8px }
+.bm-emails .tmpl label { font-size:12px; color:var(--text-secondary); display:block; margin-bottom:4px; margin-top:8px }
+.bm-emails textarea { min-height:130px; font-family:var(--mono, monospace); font-size:13px }
+.bm-vars { font-size:12px; color:var(--text-muted); padding:8px 12px; background:var(--bg); border:1px dashed var(--border); border-radius:6px; margin-bottom:8px; font-family:var(--mono, monospace) }
+.bm-vars code { background:color-mix(in srgb, var(--accent) 14%, transparent); padding:2px 4px; border-radius:4px; color:var(--text) }
+</style>
+</head>
+<body>
+<script src="/static/eos.js"></script>
+<script src="/static/eos-components.js"></script>
+<div class="bm-wrap" id="root"></div>
+
+<script>
+// Public when the server marked us the anonymous public face, OR the path is the
+// public booking route (/bookme/b or /bookme/b/<event>). Anything else = owner.
+var PUBLIC = !!window.EOS_PUBLIC_FACE || /\/bookme\/b(\/|$)/.test(location.pathname);
+var root = document.getElementById('root');
+function esc2(s){ return (window.esc ? esc(String(s==null?'':s)) : String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];})); }
+function api(method, path, body){
+  return fetch(path, {method:method, headers: body?{'Content-Type':'application/json'}:{}, body: body?JSON.stringify(body):undefined})
+    .then(function(r){ return r.json(); });
+}
+function todayStr(){ return new Date().toISOString().slice(0,10); }
+
+/* ════════════════ PUBLIC BOOKING MODE ════════════════ */
+if (PUBLIC) {
+  var TYPE = decodeURIComponent(location.pathname.split('/bookme/b/')[1] || '').replace(/\/$/,'');
+  var EV = null, SEL_DATE = '', SEL_TIME = '';
+
+  function renderPublic(){
+    if (!EV) { root.innerHTML = '<div class="bm-card">Loading…</div>'; return; }
+    if (EV.error) { root.innerHTML = '<div class="bm-card bm-err">This booking link is not available.</div>'; return; }
+    root.innerHTML =
+      '<div class="bm-hero"><h1>'+esc2(EV.name)+'</h1>'+
+      '<div class="desc">'+esc2(EV.duration_min)+' min'+(EV.owner_name?(' with '+esc2(EV.owner_name)):'')+
+      ' · times in '+esc2(EV.timezone)+'</div></div>'+
+      (EV.description?('<div class="bm-card bm-muted">'+esc2(EV.description)+'</div>'):'')+
+      '<div class="bm-card"><h3>1 · Pick a date</h3>'+
+      '<input type="date" id="date" min="'+todayStr()+'" value="'+esc2(SEL_DATE)+'">'+
+      '<div class="bm-muted" style="margin-top:8px">Then pick a time below to fill in your details.</div>'+
+      '<div class="bm-slots" id="slots"></div></div>'+
+      '<div id="form"></div>';
+    var d = document.getElementById('date');
+    d.addEventListener('change', function(){ SEL_DATE=d.value; SEL_TIME=''; loadSlots(); });
+    if (SEL_DATE) loadSlots();
+  }
+  function loadSlots(){
+    var box = document.getElementById('slots');
+    box.innerHTML = '<span class="bm-muted">Loading slots…</span>';
+    api('GET', '/bookme/api/public/slots/'+encodeURIComponent(TYPE)+'?date='+encodeURIComponent(SEL_DATE))
+      .then(function(r){
+        var slots = (r && r.slots) || [];
+        if (!slots.length) { box.innerHTML = '<span class="bm-muted">No open times on this day — try another date.</span>'; document.getElementById('form').innerHTML=''; return; }
+        box.innerHTML = slots.map(function(t){ return '<div class="bm-slot'+(t===SEL_TIME?' sel':'')+'" data-t="'+esc2(t)+'">'+esc2(t)+'</div>'; }).join('');
+        Array.prototype.forEach.call(box.querySelectorAll('.bm-slot'), function(el){
+          el.addEventListener('click', function(){ SEL_TIME = el.getAttribute('data-t'); renderPublic(); showForm(); });
+        });
+      });
+  }
+  function showForm(){
+    var f = document.getElementById('form');
+    if (!SEL_TIME) { f.innerHTML=''; return; }
+    f.innerHTML =
+      '<div class="bm-card"><h3>2 · Your details — '+esc2(SEL_DATE)+' at '+esc2(SEL_TIME)+'</h3>'+
+      '<div class="bm-row"><div class="col"><label>Name</label><input id="nm"></div>'+
+      '<div class="col"><label>Email</label><input id="em" type="email"></div></div>'+
+      '<div class="bm-row"><div class="col"><label>Anything to share? (optional)</label><textarea id="nt"></textarea></div></div>'+
+      '<button class="eos-btn eos-btn-primary" id="confirm">Confirm booking</button>'+
+      '<div class="bm-status" id="st"></div></div>';
+    document.getElementById('confirm').addEventListener('click', submitBooking);
+  }
+  function submitBooking(){
+    var st = document.getElementById('st');
+    var payload = {
+      type: TYPE, date: SEL_DATE, time: SEL_TIME,
+      name: document.getElementById('nm').value.trim(),
+      email: document.getElementById('em').value.trim(),
+      note: document.getElementById('nt').value.trim()
+    };
+    if (!payload.name || !payload.email) { st.className='bm-status bm-err'; st.textContent='Name and email are required.'; return; }
+    document.getElementById('confirm').disabled = true;
+    st.className='bm-status'; st.textContent='Booking…';
+    api('POST', '/bookme/api/public/book', payload).then(function(r){
+      if (r && r.ok) {
+        var whenHuman = (r.start_pretty || r.start || '').replace('T',' at ');
+        root.innerHTML =
+          '<div class="bm-card bm-success">'+
+            '<div class="bm-success-icon">✓</div>'+
+            '<h1>You\'re booked</h1>'+
+            '<div class="when">'+esc2(EV.name)+' · '+esc2(whenHuman)+'</div>'+
+            '<div class="tz">Times shown in '+esc2(r.timezone||'UTC')+'</div>'+
+            '<div style="margin-top:22px">'+
+              '<a class="eos-btn eos-btn-primary" href="'+esc2(r.ics_url)+'"><span class="ico">📅</span> Add to calendar</a>'+
+            '</div>'+
+            '<div class="bm-aux">A confirmation has been sent to your email.</div>'+
+          '</div>';
+      } else {
+        document.getElementById('confirm').disabled = false;
+        st.className='bm-status bm-err'; st.textContent = (r && r.error) || 'Booking failed.';
+        if (r && r.error && r.error.indexOf('no longer') !== -1) loadSlots();
+      }
+    });
+  }
+  if (!TYPE) {
+    // Bare /bookme/b with no event — a public visitor without a specific link.
+    // Show a friendly note instead of the owner dashboard (or an empty fetch).
+    root.innerHTML = '<div class="bm-hero"><h1>BookMe</h1>'
+      + '<div class="desc">This is a scheduling page. Open a specific booking link '
+      + '(<code>…/bookme/b/&lt;event&gt;</code>) to pick a time.</div></div>';
+  } else {
+    api('GET', '/bookme/api/public/event/'+encodeURIComponent(TYPE)).then(function(r){
+      EV = r;
+      if (!SEL_DATE && r && !r.error) SEL_DATE = todayStr();  // auto-pick today so slots show on landing
+      renderPublic();
+    });
+  }
+}
+
+/* ════════════════ OWNER DASHBOARD MODE ════════════════ */
+else {
+  if (window.EOS && EOS.nav) EOS.nav('bookme');
+  var CFG = null, TAB = 'types';
+
+  function load(){ api('GET','/bookme/api/config').then(function(c){ CFG=c; render(); }); }
+
+  function render(){
+    root.innerHTML =
+      '<div class="bm-hero"><h1>BookMe</h1><div class="desc">Your scheduling page — share a link, let people book open slots.</div></div>'+
+      '<div class="bm-tabs">'+
+        tab('types','Event types')+tab('avail','Availability')+tab('emails','Emails')+tab('bookings','Bookings')+
+      '</div><div id="tabbody"></div>';
+    Array.prototype.forEach.call(root.querySelectorAll('.bm-tab'), function(el){
+      el.addEventListener('click', function(){ TAB = el.getAttribute('data-tab'); render(); });
+    });
+    if (TAB==='types') renderTypes();
+    else if (TAB==='avail') renderAvail();
+    else if (TAB==='emails') renderEmails();
+    else renderBookings();
+  }
+  function tab(id,label){ return '<div class="bm-tab'+(TAB===id?' active':'')+'" data-tab="'+id+'">'+label+'</div>'; }
+
+  function renderTypes(){
+    var body = document.getElementById('tabbody');
+    var origin = location.origin;
+    body.innerHTML =
+      (CFG.event_types||[]).map(function(et,i){
+        return '<div class="bm-et">'+
+          '<div class="bm-row"><div class="col"><label>Name</label><input data-i="'+i+'" data-k="name" value="'+esc2(et.name)+'"></div>'+
+          '<div class="col"><label>Duration (min)</label><input data-i="'+i+'" data-k="duration_min" type="number" value="'+esc2(et.duration_min)+'"></div>'+
+          '<div class="col"><label>Buffer (min)</label><input data-i="'+i+'" data-k="buffer_min" type="number" value="'+esc2(et.buffer_min||0)+'"></div></div>'+
+          '<div class="bm-row"><div class="col"><label>Description</label><input data-i="'+i+'" data-k="description" value="'+esc2(et.description||'')+'"></div></div>'+
+          '<div class="bm-row" style="align-items:center"><label style="margin:0"><input type="checkbox" style="width:auto;margin-right:6px" data-i="'+i+'" data-k="active" '+(et.active!==false?'checked':'')+'>Active</label>'+
+          '<span style="flex:1"></span><button class="eos-btn eos-btn-danger" data-del="'+i+'">Remove</button></div>'+
+          '<div class="bm-muted">Link: <span class="bm-link">'+esc2(origin)+'/bookme/b/'+esc2(et.id)+'</span></div>'+
+        '</div>';
+      }).join('') +
+      '<button class="eos-btn eos-btn-ghost" id="addet">+ Add event type</button> '+
+      '<button class="eos-btn eos-btn-primary" id="savet">Save</button>'+
+      '<div class="bm-status" id="st"></div>';
+    body.querySelector('#addet').addEventListener('click', function(){
+      var id = 'event-'+Math.random().toString(36).slice(2,7);
+      CFG.event_types.push({id:id,name:'New event',duration_min:30,buffer_min:10,description:'',active:true});
+      render();
+    });
+    Array.prototype.forEach.call(body.querySelectorAll('[data-del]'), function(el){
+      el.addEventListener('click', function(){ CFG.event_types.splice(+el.getAttribute('data-del'),1); render(); });
+    });
+    body.querySelector('#savet').addEventListener('click', function(){
+      Array.prototype.forEach.call(body.querySelectorAll('[data-i]'), function(el){
+        var et = CFG.event_types[+el.getAttribute('data-i')]; var k = el.getAttribute('data-k');
+        if (el.type==='checkbox') et[k]=el.checked;
+        else if (k==='duration_min'||k==='buffer_min') et[k]=parseInt(el.value||'0',10);
+        else et[k]=el.value;
+      });
+      save('#st');
+    });
+  }
+
+  function renderAvail(){
+    var body = document.getElementById('tabbody');
+    var days = ['mon','tue','wed','thu','fri','sat','sun'];
+    body.innerHTML =
+      '<div class="bm-card"><div class="bm-row"><div class="col"><label>Your name</label><input id="owner" value="'+esc2(CFG.owner_name||'')+'"></div>'+
+      '<div class="col"><label>Timezone (IANA, e.g. Australia/Adelaide)</label><input id="tz" value="'+esc2(CFG.timezone||'UTC')+'"></div></div></div>'+
+      '<div class="bm-card"><h3>Weekly hours</h3>'+
+      days.map(function(d){
+        var wins = (CFG.availability&&CFG.availability[d])||[];
+        var val = wins.map(function(w){return w[0]+'-'+w[1];}).join(', ');
+        return '<div class="bm-day"><span class="name">'+d+'</span>'+
+          '<input data-day="'+d+'" value="'+esc2(val)+'" placeholder="09:00-17:00, 18:00-20:00"></div>';
+      }).join('')+
+      '<div class="bm-muted">Comma-separated ranges per day. Leave blank for unavailable.</div>'+
+      '<div style="margin-top:12px"><button class="eos-btn eos-btn-primary" id="savea">Save</button></div>'+
+      '<div class="bm-status" id="st"></div></div>';
+    body.querySelector('#savea').addEventListener('click', function(){
+      CFG.owner_name = body.querySelector('#owner').value.trim();
+      CFG.timezone = body.querySelector('#tz').value.trim() || 'UTC';
+      var avail = {};
+      Array.prototype.forEach.call(body.querySelectorAll('[data-day]'), function(el){
+        var wins = [];
+        el.value.split(',').forEach(function(part){
+          part = part.trim(); if(!part) return;
+          var m = part.split('-');
+          if (m.length===2 && /^\d{1,2}:\d{2}$/.test(m[0].trim()) && /^\d{1,2}:\d{2}$/.test(m[1].trim()))
+            wins.push([m[0].trim(), m[1].trim()]);
+        });
+        avail[el.getAttribute('data-day')] = wins;
+      });
+      CFG.availability = avail;
+      save('#st');
+    });
+  }
+
+  function renderEmails(){
+    var body = document.getElementById('tabbody');
+    body.innerHTML = '<div class="bm-muted">Loading templates…</div>';
+    api('GET','/bookme/api/email-defaults').then(function(r){
+      var DEF = (r && r.defaults) || {confirmed:{subject:'',body:''}, cancelled:{subject:'',body:''}};
+      var t = CFG.email_templates || {};
+      var c = t.confirmed || {subject:'', body:''};
+      var x = t.cancelled || {subject:'', body:''};
+
+      // Pre-fill empty fields with the default so the user has concrete content to edit.
+      function pick(cur, def) { return (cur && cur.trim()) ? cur : def; }
+
+      var vars = '<div class="bm-vars">Variables: <code>{name}</code> <code>{event_name}</code> <code>{when}</code> <code>{tz}</code> <code>{owner_name}</code> <code>{sign_off}</code> <code>{date}</code> <code>{time}</code> <code>{duration_min}</code> — clear a field to restore the default.</div>';
+      function tmplBlock(kind, label, cur, def){
+        return '<div class="tmpl" data-kind="'+kind+'"><div style="display:flex;justify-content:space-between;align-items:center">'+
+          '<h4 style="margin:0">'+label+'</h4>'+
+          '<button class="eos-btn eos-btn-ghost" data-reset="'+kind+'" style="font-size:12px;padding:4px 10px">Reset to default</button></div>'+
+          '<label>Subject</label><input data-field="'+kind+'_subject" value="'+esc2(pick(cur.subject, def.subject))+'">'+
+          '<label>Body</label><textarea data-field="'+kind+'_body">'+esc2(pick(cur.body, def.body))+'</textarea>'+
+        '</div>';
+      }
+      body.innerHTML =
+        '<div class="bm-emails">'+
+          vars +
+          tmplBlock('confirmed','Confirmation email', c, DEF.confirmed) +
+          tmplBlock('cancelled','Cancellation email', x, DEF.cancelled) +
+          '<div><button class="eos-btn eos-btn-primary" id="save_emails">Save</button> <span class="bm-status" id="st"></span></div>'+
+        '</div>';
+      Array.prototype.forEach.call(body.querySelectorAll('[data-reset]'), function(btn){
+        btn.addEventListener('click', function(){
+          var kind = btn.getAttribute('data-reset');
+          var def = DEF[kind] || {subject:'', body:''};
+          body.querySelector('[data-field="'+kind+'_subject"]').value = def.subject || '';
+          body.querySelector('[data-field="'+kind+'_body"]').value = def.body || '';
+        });
+      });
+      body.querySelector('#save_emails').addEventListener('click', function(){
+        // If the field matches the default exactly, save empty — keeps the
+        // default-tracking alive so future template improvements flow through.
+        function save_or_blank(val, def) { return (val||'').trim() === (def||'').trim() ? '' : val; }
+        CFG.email_templates = {
+          confirmed: {
+            subject: save_or_blank(body.querySelector('[data-field="confirmed_subject"]').value, DEF.confirmed.subject),
+            body:    save_or_blank(body.querySelector('[data-field="confirmed_body"]').value,    DEF.confirmed.body),
+          },
+          cancelled: {
+            subject: save_or_blank(body.querySelector('[data-field="cancelled_subject"]').value, DEF.cancelled.subject),
+            body:    save_or_blank(body.querySelector('[data-field="cancelled_body"]').value,    DEF.cancelled.body),
+          }
+        };
+        save('#st');
+      });
+    });
+  }
+
+  function renderBookings(){
+    var body = document.getElementById('tabbody');
+    body.innerHTML = '<div class="bm-muted">Loading…</div>';
+    api('GET','/bookme/api/bookings').then(function(r){
+      var rows = (r && r.bookings) || [];
+      if (!rows.length) { body.innerHTML = '<div class="bm-card bm-muted">No bookings yet.</div>'; return; }
+      body.innerHTML = rows.map(function(b){
+        var cancelled = (b.status==='cancelled');
+        return '<div class="bm-booking'+(cancelled?' cancelled':'')+'">'+
+          '<div><strong>'+esc2(b.event_name||'Meeting')+'</strong> — '+esc2(b.name||'')+
+          '<div class="bm-muted">'+esc2((b.start||'').replace('T',' '))+' · '+esc2(b.email||'')+
+          (cancelled?' · cancelled':'')+'</div></div>'+
+          (cancelled?'':'<button class="eos-btn eos-btn-danger" data-cancel="'+esc2(b.id)+'">Cancel</button>')+
+        '</div>';
+      }).join('');
+      Array.prototype.forEach.call(body.querySelectorAll('[data-cancel]'), function(el){
+        el.addEventListener('click', function(){
+          api('POST','/bookme/api/bookings/'+encodeURIComponent(el.getAttribute('data-cancel'))+'/cancel').then(renderBookings);
+        });
+      });
+    });
+  }
+
+  function save(stSel){
+    var st = document.querySelector(stSel);
+    st.className='bm-status'; st.textContent='Saving…';
+    api('POST','/bookme/api/config', {owner_name:CFG.owner_name, timezone:CFG.timezone, event_types:CFG.event_types, availability:CFG.availability, email_templates:CFG.email_templates})
+      .then(function(r){
+        if (r && r.ok) { st.className='bm-status bm-ok'; st.textContent='Saved.'; CFG=r.config; }
+        else { st.className='bm-status bm-err'; st.textContent=(r&&r.error)||'Save failed.'; }
+      });
+  }
+
+  load();
+}
+</script>
+</body>
+</html>

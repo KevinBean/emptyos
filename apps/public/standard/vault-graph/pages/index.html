@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Vault Topology — EmptyOS</title>
+<link rel="stylesheet" href="/static/theme.css">
+<link rel="stylesheet" href="/static/eos-components.css">
+<style>
+* { margin:0; padding:0; box-sizing:border-box }
+body { font-family:var(--font); background:var(--bg); color:var(--text); min-height:100dvh; -webkit-font-smoothing:antialiased }
+.toolbar { display:flex; gap:8px; flex-wrap:wrap; align-items:center; padding:12px 16px; border-bottom:1px solid var(--border); background:var(--bg-card); position:sticky; top:0; z-index:10 }
+.toolbar h1 { font-size:15px; font-weight:600; color:var(--text-heading); margin-right:8px }
+.toolbar select, .toolbar input { padding:8px 12px; background:var(--bg); border:1px solid var(--border); border-radius:8px; color:var(--text); font-size:13px; font-family:inherit }
+.toolbar label { font-size:12px; color:var(--text-secondary); display:flex; align-items:center; gap:8px }
+.toolbar .stat { font-size:12px; color:var(--text-muted); margin-left:auto }
+.toolbar .back { padding:8px 12px; background:transparent; border:1px solid var(--border); border-radius:8px; color:var(--text-secondary); cursor:pointer; font-size:13px; text-decoration:none }
+.toolbar .back:hover { border-color:var(--accent); color:var(--accent) }
+.toolbar .legend { display:flex; gap:12px; align-items:center; font-size:11px; color:var(--text-muted); flex-wrap:wrap }
+.toolbar .legend .sw { display:inline-block; width:10px; height:10px; border-radius:50%; margin-right:4px; vertical-align:middle }
+.toolbar .legend span.lg-item { display:inline-flex; align-items:center; gap:4px }
+#vault-graph-canvas { width:100vw; height:calc(100dvh - 86px) }
+.status { position:fixed; bottom:calc(env(safe-area-inset-bottom, 0px) + 16px); left:50%; transform:translateX(-50%); padding:8px 16px; background:var(--bg-card); border:1px solid var(--border); border-radius:999px; font-size:13px; color:var(--text-muted); box-shadow:0 4px 16px var(--shadow) }
+.toolbar2 { display:flex; gap:12px; flex-wrap:wrap; align-items:center; padding:8px 16px; border-bottom:1px solid var(--border); background:var(--bg-card); font-size:11px; color:var(--text-muted) }
+</style>
+</head>
+<body>
+<div class="toolbar">
+  <a class="back" href="/">← Home</a>
+  <h1>Vault Topology</h1>
+  <select id="kinds-filter">
+    <option value="">All kinds</option>
+    <option value="kb">KB only</option>
+    <option value="job-application">Job applications</option>
+    <option value="person">People</option>
+    <option value="project">Projects</option>
+  </select>
+  <input type="search" id="filter-q" placeholder="Filter labels…" style="width:180px">
+  <span class="stat" id="stat-line"></span>
+</div>
+<div class="toolbar2">
+  <label><input type="checkbox" id="edge-wikilink" checked> wikilinks</label>
+  <label><input type="checkbox" id="edge-frontmatter" checked> frontmatter refs</label>
+  <label><input type="checkbox" id="edge-kb" checked> KB clauses</label>
+  <label><input type="checkbox" id="edge-tag"> tag-shared</label>
+  <label><input type="checkbox" id="edge-folder"> folder containment</label>
+  <span class="legend" style="margin-left:auto">
+    <span class="lg-item"><span class="sw" style="background:var(--accent)"></span>kb</span>
+    <span class="lg-item"><span class="sw" style="background:var(--success)"></span>note</span>
+    <span class="lg-item"><span class="sw" style="background:var(--warning)"></span>guideline</span>
+    <span class="lg-item"><span class="sw" style="background:var(--danger)"></span>lesson</span>
+    <span class="lg-item"><span class="sw" style="background:var(--text-muted)"></span>other</span>
+  </span>
+</div>
+<div id="vault-graph-canvas"></div>
+<div class="status" id="status">Loading vis-network…</div>
+
+<script src="/static/eos.js"></script>
+<script src="/static/eos-components.js"></script>
+<script>
+EOS.nav('vault-graph');
+
+var STATE = { network: null, nodesDS: null, edgesDS: null, raw: { nodes: [], edges: [] } };
+
+// Resolve theme-token swatches once so node colors track the active theme
+// (light/dark/sunset/nord/summer). No hex fallbacks here — they'd hardcode
+// one theme's palette and mis-render the others. If a CSS var is missing,
+// vis-network's own defaults are a cleaner degradation than the wrong hex.
+var THEME = (function() {
+  var cs = getComputedStyle(document.documentElement);
+  var read = function(name) { return (cs.getPropertyValue(name) || '').trim(); };
+  return {
+    accent:  read('--accent'),
+    success: read('--success'),
+    warning: read('--warning'),
+    danger:  read('--danger'),
+    muted:   read('--text-muted'),
+    text:    read('--text'),
+  };
+})();
+
+function kindColor(k) {
+  switch ((k || '').toLowerCase()) {
+    case 'kb': case 'formula': case 'doc': case 'moc': return THEME.accent;
+    case 'concept': return THEME.muted;
+    case 'reference': case 'guideline': return THEME.warning;
+    case 'clause': return THEME.muted;
+    case 'case': case 'note': return THEME.success;
+    case 'lesson': return THEME.danger;
+    case 'project': return THEME.accent;
+    case 'person': return THEME.success;
+    case 'job-application': return THEME.warning;
+    case 'folder': return THEME.muted;
+    default: return THEME.muted;
+  }
+}
+
+function edgeStyle(kind) {
+  switch (kind) {
+    case 'wikilink':       return { color: THEME.accent,  dashes: false, arrows: 'to', width: 1 };
+    case 'frontmatter_ref':return { color: THEME.warning, dashes: false, arrows: 'to', width: 1 };
+    case 'kb_clause':      return { color: THEME.success, dashes: false, arrows: 'to', width: 1 };
+    case 'tag_shared':     return { color: THEME.muted,   dashes: true,  arrows: '',   width: 1 };
+    case 'folder':         return { color: THEME.muted,   dashes: true,  arrows: 'to', width: 0.5 };
+    default:               return { color: THEME.muted,   dashes: false, arrows: '',   width: 1 };
+  }
+}
+
+function loadVisNetwork() {
+  return new Promise(function(resolve, reject) {
+    if (window.vis && window.vis.Network) return resolve();
+    var s = document.createElement('script');
+    s.src = 'https://unpkg.com/vis-network@9.1.9/standalone/umd/vis-network.min.js';
+    s.onload = resolve;
+    s.onerror = function() { reject(new Error('Failed to load vis-network from CDN')); };
+    document.head.appendChild(s);
+  });
+}
+
+function activeEdgeKinds() {
+  var kinds = [];
+  if (document.getElementById('edge-wikilink').checked)    kinds.push('wikilink');
+  if (document.getElementById('edge-frontmatter').checked) kinds.push('frontmatter_ref');
+  if (document.getElementById('edge-kb').checked)          kinds.push('kb_clause');
+  if (document.getElementById('edge-tag').checked)         kinds.push('tag_shared');
+  if (document.getElementById('edge-folder').checked)      kinds.push('folder');
+  return kinds;
+}
+
+async function fetchGraph() {
+  var status = document.getElementById('status');
+  status.style.display = '';
+  status.textContent = 'Fetching graph…';
+  var kinds = document.getElementById('kinds-filter').value;
+  var tagEdges = document.getElementById('edge-tag').checked;
+  var folderEdges = document.getElementById('edge-folder').checked;
+  var url = '/vault-graph/api/graph?limit=800' +
+            (kinds ? '&kinds=' + encodeURIComponent(kinds) : '') +
+            (tagEdges ? '&shared_tags=1' : '') +
+            (folderEdges ? '&folder_edges=1' : '');
+  try {
+    var r = await fetch(url);
+    var data = await r.json();
+    STATE.raw = data;
+    var s = data.stats || {};
+    document.getElementById('stat-line').textContent =
+      (s.in_slice || 0) + ' nodes · ' +
+      (s.wikilink_edges || 0) + ' wikilinks · ' +
+      (s.frontmatter_edges || 0) + ' frontmatter · ' +
+      (s.kb_clause_edges || 0) + ' kb';
+    return data;
+  } catch (e) {
+    status.textContent = 'Failed to fetch graph: ' + e.message;
+    document.getElementById('vault-graph-canvas').innerHTML = EOS_UI.errorState({
+      message: 'Could not load the vault graph: ' + e.message,
+      onRetry: 'location.reload()',
+    });
+    throw e;
+  }
+}
+
+function applyFilter() {
+  var q = (document.getElementById('filter-q').value || '').toLowerCase().trim();
+  if (!STATE.nodesDS) return;
+  STATE.nodesDS.forEach(function(n) {
+    var hidden = q && !(n.label || '').toLowerCase().includes(q);
+    STATE.nodesDS.update({ id: n.id, hidden: !!hidden });
+  });
+}
+
+function render(data) {
+  var container = document.getElementById('vault-graph-canvas');
+  if (!data || !data.nodes || data.nodes.length === 0) {
+    container.innerHTML = EOS_UI.emptyState({
+      icon: '◌',
+      message: 'No nodes match this filter. Try enabling more edge kinds, or check that your vault has notes with wikilinks or frontmatter references.',
+    });
+    return;
+  }
+  var activeKinds = activeEdgeKinds();
+  var nodes = data.nodes.map(function(n) {
+    return {
+      id: n.id,
+      label: n.label || '(untitled)',
+      color: { background: kindColor(n.kind), border: kindColor(n.kind) },
+      font: { color: THEME.text, size: 12 },
+      shape: n.kind === 'folder' ? 'square' : 'dot',
+      size: n.kind === 'folder' ? 14 : 10,
+      _kind: n.kind,
+      _folder: n.folder,
+    };
+  });
+  var edges = data.edges
+    .filter(function(e) { return activeKinds.indexOf(e.kind) !== -1; })
+    .map(function(e) {
+      var s = edgeStyle(e.kind);
+      return {
+        from: e.from,
+        to: e.to,
+        arrows: s.arrows,
+        dashes: s.dashes,
+        color: { color: s.color, opacity: 0.55 },
+        width: s.width,
+        title: e.kind + (e.tag ? ' · ' + e.tag : '') + (e.field ? ' · ' + e.field : ''),
+      };
+    });
+  STATE.nodesDS = new vis.DataSet(nodes);
+  STATE.edgesDS = new vis.DataSet(edges);
+  container.innerHTML = '';   // clear any prior empty/error state before vis.js mounts
+  STATE.network = new vis.Network(container, { nodes: STATE.nodesDS, edges: STATE.edgesDS }, {
+    physics: { stabilization: { iterations: 120 }, barnesHut: { gravitationalConstant: -3000 } },
+    interaction: { hover: true, tooltipDelay: 200 },
+    nodes: { borderWidth: 1 },
+  });
+  STATE.network.on('click', function(params) {
+    if (params.nodes && params.nodes.length) {
+      var path = params.nodes[0];
+      // Folder pseudo-nodes — don't open a timeline
+      if (path.indexOf('folder::') === 0) return;
+      if (window.EOS_UI && EOS_UI.timeline4D) {
+        EOS_UI.timeline4D(path, { title: 'Timeline' });
+      }
+    }
+  });
+  document.getElementById('status').style.display = 'none';
+}
+
+async function init() {
+  try {
+    await loadVisNetwork();
+  } catch (e) {
+    document.getElementById('status').textContent = e.message;
+    return;
+  }
+  var data = await fetchGraph();
+  render(data);
+}
+
+document.getElementById('kinds-filter').addEventListener('change', async function() {
+  var data = await fetchGraph();
+  render(data);
+});
+['edge-wikilink','edge-frontmatter','edge-kb','edge-tag','edge-folder'].forEach(function(id) {
+  document.getElementById(id).addEventListener('change', async function() {
+    // tag + folder require new server fetch (they're opt-in server-side); others are client filter
+    if (id === 'edge-tag' || id === 'edge-folder') {
+      var data = await fetchGraph();
+      render(data);
+    } else {
+      render(STATE.raw);
+    }
+  });
+});
+document.getElementById('filter-q').addEventListener('input', applyFilter);
+
+init();
+</script>
+</body>
+</html>

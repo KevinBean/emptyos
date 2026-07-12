@@ -1,0 +1,27 @@
+# Plugin Blacklist — IDs that must never be loaded, even if a manifest reappears.
+#
+# Read by `emptyos/kernel/plugin_loader.py` during `discover()`. Any plugin
+# whose `manifest.toml` declares an id listed here is dropped on the floor
+# with a syslog warning, before `enabled_ids()` is even consulted. This is
+# the strongest layer of the disable contract:
+#
+#     manifest.toml exists           → discoverable
+#     + id NOT in this blacklist     → in catalog
+#     + id in Store `installed[]`    → in install set
+#     + id NOT in Store `disabled[]` → enabled
+#     + plugin's own connect() runs  → wired
+#
+# Blacklist is the gate that runs first. A blacklisted plugin can be
+# physically present on disk and still be invisible to the system.
+#
+# Use this for plugins retired permanently after causing damage — not for
+# "I don't want this loaded today" (use the Store gate for that).
+#
+# To un-blacklist: remove the entry. There is no `force_load` escape hatch
+# here on purpose — un-blacklisting is intentional.
+
+[[blacklisted]]
+id = "headroom"
+reason = "Wedged the daemon three times in three days (2026-05-24 sync-in-loop on event loop, 2026-05-26 _detect_content runaway with no timeout, 2026-05-26 plan_actions middleware hang). No wall-clock timeout, no passthrough fallback — any future hang silently parks the entire `think` capability chain. Claimed ~40% cloud-token compression is not worth a middleware that can stop the whole capability layer."
+since = "2026-05-26"
+last_incident = "2026-05-26"

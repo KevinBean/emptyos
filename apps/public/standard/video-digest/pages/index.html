@@ -1,0 +1,644 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Video Digest</title>
+<link rel="stylesheet" href="/static/theme.css">
+<link rel="stylesheet" href="/static/eos-components.css">
+<script src="/static/eos.js" defer></script>
+<script src="/static/eos-components.js" defer></script>
+<script src="/video-digest/pages/listen.js" defer></script>
+<style>
+  .vd-page { max-width: 960px; margin: 0 auto; padding: 16px 24px 80px; }
+  .vd-header { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
+  .vd-header h1 { margin: 0; font-size: 22px; }
+  .vd-add { display: flex; gap: 8px; margin: 12px 0 24px; }
+  .vd-add input { flex: 1; }
+  .vd-section { margin: 24px 0; }
+  .vd-section h2 { font-size: 16px; margin: 0 0 8px; color: var(--text-muted); font-weight: 500; }
+  .vd-row {
+    display: grid;
+    grid-template-columns: 1fr auto auto;
+    gap: 12px;
+    align-items: center;
+    padding: 12px 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    margin-bottom: 8px;
+    background: var(--bg-card);
+  }
+  .vd-row .vd-main { min-width: 0; }
+  .vd-row .vd-title { font-weight: 500; }
+  .vd-row .vd-meta { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+  .vd-row .vd-url { font-size: 12px; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .vd-status { font-size: 12px; padding: 2px 8px; border-radius: 8px; }
+  .vd-status-queued { background: var(--bg-subtle); color: var(--text-muted); }
+  .vd-status-running { background: color-mix(in srgb, var(--accent) 18%, transparent); color: var(--accent); }
+  .vd-status-done { background: color-mix(in srgb, var(--success) 18%, transparent); color: var(--success); }
+  .vd-status-failed { background: color-mix(in srgb, var(--danger) 18%, transparent); color: var(--danger); }
+  .vd-error { font-size: 12px; color: var(--danger); margin-top: 4px; }
+  .vd-actions { display: flex; gap: 8px; }
+  .vd-empty { padding: 16px; text-align: center; color: var(--text-muted); font-size: 14px; }
+  .vd-prov { font-size: 11px; padding: 2px 8px; border-radius: 8px; margin-left: 8px; vertical-align: middle; }
+  .vd-prov-app { background: color-mix(in srgb, var(--accent) 18%, transparent); color: var(--accent); }
+  .vd-prov-skill { background: var(--bg-subtle); color: var(--text-muted); }
+  .vd-prov-app-orphan { background: color-mix(in srgb, var(--warning) 18%, transparent); color: var(--warning); }
+  .vd-count { color: var(--text-muted); font-weight: 400; margin-left: 8px; }
+  .vd-digest-head { display: flex; align-items: center; gap: 12px; margin: 0 0 8px; }
+  .vd-digest-head h2 { margin: 0; flex: 1; font-size: 16px; color: var(--text-muted); font-weight: 500; }
+  .vd-chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 12px; }
+  .vd-chip {
+    font-size: 12px; padding: 4px 12px; border-radius: 14px;
+    border: 1px solid var(--border); background: var(--bg-card);
+    cursor: pointer; user-select: none; color: var(--text-muted);
+  }
+  .vd-chip:hover { border-color: var(--accent); color: var(--text); }
+  .vd-chip-active { background: var(--accent); border-color: var(--accent); color: var(--accent-ink, #fff); }
+  .vd-chip-count { margin-left: 4px; font-variant-numeric: tabular-nums; }
+  .vd-domain {
+    font-size: 11px; padding: 2px 8px; border-radius: 8px; margin-left: 8px;
+    background: color-mix(in srgb, var(--purple) 18%, transparent); color: var(--purple);
+    vertical-align: middle;
+  }
+  .vd-domain-empty { background: var(--bg-subtle); color: var(--text-muted); }
+
+  /* Listen mode (Step 5 — active listening) */
+  .vd-listen-btn {
+    font-size: 12px; padding: 4px 12px; border-radius: 6px;
+    background: color-mix(in srgb, var(--accent) 18%, transparent);
+    color: var(--accent); border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
+    cursor: pointer; text-decoration: none;
+  }
+  .vd-listen-btn:hover { background: var(--accent); color: var(--accent-ink); }
+
+  /* Listen page (replaces .vd-page content when active) */
+  #vd-listen-root { display: none; }
+  body.vd-listen-active #vd-listen-root { display: block; }
+  body.vd-listen-active .vd-page > .vd-section,
+  body.vd-listen-active .vd-page > .vd-add,
+  body.vd-listen-active .vd-page > .vd-header { display: none; }
+
+  .vl-header { display: flex; align-items: center; gap: 12px; padding: 16px 24px; border-bottom: 1px solid var(--border); }
+  .vl-header h2 { margin: 0; font-size: 16px; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .vl-header .vl-back { background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 14px; padding: 4px 8px; }
+  .vl-header .vl-back:hover { color: var(--accent); }
+
+  .vl-body { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: 16px; padding: 16px 24px 80px; max-width: 1200px; margin: 0 auto; align-items: start; }
+  @media (max-width: 880px) { .vl-body { grid-template-columns: 1fr; } }
+
+  /* Sticky player: when the transcript flow pushes the page down (especially
+     in single-column mode at ≤880px), keep the video pinned to the top of
+     the viewport so the user can still see what's playing while reading
+     captions. `align-items: start` on the grid lets each column manage its
+     own height; without it, sticky would have nothing taller to stick within.
+     Cap player height so the transcript area has room to breathe — without
+     this, the iframe + controls + hint row eat ~70% of the viewport and the
+     transcript window is too small to "center" the current line meaningfully. */
+  .vl-player-col { display: flex; flex-direction: column; gap: 12px; position: sticky; top: 8px; max-height: calc(100dvh - 16px); align-self: start; }
+  @media (max-width: 880px) {
+    .vl-player-col { top: 0; max-height: 50vh; background: var(--bg); padding-top: 4px; z-index: 5; }
+    #vl-iframe-wrap { max-height: 34vh; aspect-ratio: auto; }
+    #vl-iframe-wrap iframe { max-height: 34vh; }
+  }
+  #vl-iframe-wrap { position: relative; aspect-ratio: 16 / 9; background: #000; border-radius: 8px; overflow: hidden; }
+  #vl-iframe-wrap iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
+  .vl-controls { display: flex; flex-wrap: wrap; gap: 8px; }
+  .vl-controls button {
+    font-size: 12px; padding: 8px 12px; border-radius: 6px;
+    background: var(--bg-card); color: var(--text); border: 1px solid var(--border); cursor: pointer;
+  }
+  .vl-controls button:hover { border-color: var(--accent); color: var(--accent); }
+  .vl-controls .vl-end-btn { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); margin-left: auto; font-weight: 600; }
+  .vl-status { font-size: 12px; color: var(--text-muted); }
+
+  .vl-transcript-col { display: flex; flex-direction: column; gap: 12px; min-height: 360px; }
+  .vl-transcript {
+    flex: 1; max-height: calc(100dvh - 220px); overflow-y: auto;
+    background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px;
+    padding: 12px 16px; line-height: 1.55; font-size: 14px;
+  }
+  @media (max-width: 880px) {
+    /* Below the player breakpoint the player consumes ~50vh; give the
+       transcript the rest so the "center current line" scroll has a real
+       window to center within. */
+    .vl-transcript { max-height: calc(50vh - 40px); min-height: 240px; }
+  }
+  .vl-transcript-line { padding: 4px 0; cursor: pointer; border-radius: 4px; transition: background 0.15s; }
+  .vl-transcript-line:hover { background: color-mix(in srgb, var(--accent) 8%, transparent); }
+  .vl-transcript-line.current { background: color-mix(in srgb, var(--accent) 18%, transparent); }
+  .vl-transcript-line .vl-word { padding: 0 2px; border-radius: 4px; }
+  .vl-transcript-line .vl-word:hover { background: var(--accent); color: var(--accent-ink); }
+  .vl-transcript-line .vl-time { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 11px; color: var(--text-muted); margin-right: 8px; opacity: 0.7; }
+  .vl-transcript.captions-off .vl-word { background: color-mix(in srgb, var(--text-muted) 30%, transparent); color: transparent; cursor: pointer; }
+  .vl-transcript.captions-off .vl-word:hover { background: var(--accent); color: var(--accent-ink); }
+  .vl-transcript.captions-off .vl-time { color: var(--text-muted); }
+
+  .vl-words-panel {
+    position: fixed; bottom: 16px; right: 16px; z-index: 50;
+    max-width: 320px; background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px;
+    padding: 8px 12px; box-shadow: 0 4px 16px rgba(0,0,0,0.15);
+    display: none;
+  }
+  .vl-words-panel.has-words { display: block; }
+  .vl-words-panel .vl-words-label { font-size: 11px; color: var(--text-muted); margin-bottom: 4px; }
+  .vl-words-panel .vl-words-list { display: flex; flex-wrap: wrap; gap: 4px; max-height: 120px; overflow-y: auto; }
+  .vl-words-panel .vl-word-pill {
+    font-size: 12px; padding: 2px 8px; border-radius: 8px;
+    background: color-mix(in srgb, var(--accent) 18%, transparent); color: var(--accent); border: none; cursor: pointer;
+  }
+  .vl-words-panel .vl-word-pill:hover { background: var(--accent); color: var(--accent-ink); }
+
+  .vl-popover {
+    position: fixed; z-index: 100;
+    max-width: 360px; min-width: 240px;
+    background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px;
+    padding: 12px 16px; box-shadow: 0 8px 24px rgba(0,0,0,0.2);
+    font-size: 13px;
+  }
+  .vl-popover .vl-pop-word { font-size: 15px; font-weight: 600; color: var(--text-heading); margin-bottom: 2px; }
+  .vl-popover .vl-pop-phonetic { font-size: 12px; color: var(--text-muted); margin-bottom: 8px; font-family: ui-monospace, monospace; }
+  .vl-popover .vl-pop-def { line-height: 1.5; margin-bottom: 8px; }
+  .vl-popover .vl-pop-actions { display: flex; gap: 8px; }
+  .vl-popover .vl-pop-actions button {
+    font-size: 12px; padding: 4px 12px; border-radius: 6px;
+    background: var(--bg); color: var(--text); border: 1px solid var(--border); cursor: pointer;
+  }
+  .vl-popover .vl-pop-actions .vl-pop-primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+
+  .vl-hotkey-hint { font-size: 11px; color: var(--text-muted); padding: 8px 0; }
+  .vl-hotkey-hint kbd { background: var(--bg-card); border: 1px solid var(--border); border-radius: 4px; padding: 2px 4px; font-family: ui-monospace, monospace; font-size: 11px; }
+</style>
+</head>
+<body>
+<div class="vd-page">
+  <div class="vd-header">
+    <h1>Video Digest</h1>
+    <span style="flex:1"></span>
+    <button class="eos-btn-sm" onclick="drainQueue()">Process queue</button>
+    <button class="btn-settings eos-btn-sm" onclick="openAppSettings()" title="Settings">&#9881;</button>
+  </div>
+
+  <div class="vd-add">
+    <input id="vd-url" type="text" placeholder="Paste a YouTube URL (https://www.youtube.com/watch?v=...)">
+    <button class="eos-btn-primary" onclick="queueUrl()">Queue</button>
+    <button class="eos-btn-sm" onclick="openPasteModal()" title="Use when YouTube rate-limits transcript fetching on this IP">+ paste transcript</button>
+  </div>
+
+  <div class="vd-section">
+    <h2>Queue</h2>
+    <div id="vd-queue"></div>
+  </div>
+
+  <div class="vd-section">
+    <div class="vd-digest-head">
+      <h2>Digests<span class="vd-count" id="vd-digests-count"></span></h2>
+      <button id="vd-categorize-btn" class="eos-btn-sm" onclick="categorizeAll()">Categorize all</button>
+    </div>
+    <div class="vd-chips" id="vd-chips"></div>
+    <div id="vd-digests"></div>
+  </div>
+</div>
+
+<div id="vd-listen-root"></div>
+
+<script>
+var STATE = { queue: [], digests: [], domains: null, activeDomain: '' };
+
+var _appSettings = null;
+function openAppSettings() {
+  if (!_appSettings) {
+    _appSettings = EOS_UI.settingsPanel({
+      id: 'video-digest-settings-panel',
+      title: 'Video Digest Settings',
+      fields: [
+        {key: 'video-digest.auto_run', label: 'Auto-process queue on schedule', type: 'boolean', default: false,
+         hint: 'When on, the queue drains every 5 min via the scheduler.'},
+        {key: 'video-digest.max_concurrent', label: 'Max concurrent digests', type: 'number', default: 1,
+         hint: 'Keep at 1 — yt-dlp parallelism risks rate-limiting.'},
+        {key: 'video-digest.summary_words', label: 'Target summary length (words)', type: 'number', default: 600},
+        {key: 'video-digest.domains', label: 'Category vocabulary (comma-separated)', type: 'textarea', default: '',
+         hint: 'Override the default domain list. Blank = built-in vocabulary. `other` is always appended.'},
+      ],
+    });
+  }
+  _appSettings.open();
+}
+
+async function loadAll() {
+  try {
+    var [qres, dres, doms] = await Promise.all([
+      fetch('/video-digest/api/queue').then(r => r.json()),
+      fetch('/video-digest/api/digests').then(r => r.json()),
+      fetch('/video-digest/api/domains').then(r => r.json()).catch(() => null),
+    ]);
+    STATE.queue = qres.items || [];
+    STATE.digests = dres.digests || [];
+    STATE.domains = doms || null;
+    render();
+  } catch (e) {
+    console.error('load failed', e);
+  }
+}
+
+function render() {
+  renderQueue();
+  renderChips();
+  renderDigests();
+}
+
+function renderChips() {
+  var el = document.getElementById('vd-chips');
+  if (!STATE.domains || !STATE.digests.length) {
+    el.innerHTML = '';
+    return;
+  }
+  var counts = STATE.domains.counts || {};
+  var uncategorized = STATE.domains.uncategorized || 0;
+  var total = STATE.digests.length;
+  var chips = [
+    { key: '', label: 'All', count: total },
+  ];
+  (STATE.domains.vocabulary || []).forEach(function(d) {
+    if ((counts[d] || 0) > 0) chips.push({ key: d, label: d, count: counts[d] });
+  });
+  if (uncategorized > 0) {
+    chips.push({ key: '__none__', label: 'uncategorized', count: uncategorized });
+  }
+  el.innerHTML = chips.map(function(c, i) {
+    var active = STATE.activeDomain === c.key ? ' vd-chip-active' : '';
+    return '<span class="vd-chip' + active + '" data-key="' + escAttr(c.key) + '" data-idx="' + i + '">'
+      + esc(c.label) + '<span class="vd-chip-count">' + c.count + '</span></span>';
+  }).join('');
+  // Delegated click — avoids the JSON.stringify-in-attribute escaping trap
+  // (empty-string keys produced "" which terminated the onclick attribute).
+  Array.prototype.forEach.call(el.querySelectorAll('.vd-chip'), function(node) {
+    node.addEventListener('click', function() {
+      setDomain(node.getAttribute('data-key') || '');
+    });
+  });
+}
+
+function setDomain(key) {
+  STATE.activeDomain = key;
+  render();
+}
+
+function renderQueue() {
+  var el = document.getElementById('vd-queue');
+  if (!STATE.queue.length) {
+    el.innerHTML = '<div class="vd-empty">No items queued. Paste a URL above to get started.</div>';
+    return;
+  }
+  el.innerHTML = STATE.queue.map(function(it) {
+    var statusCls = 'vd-status-' + (it.status || 'queued');
+    var title = it.title || it.url;
+    var meta = [it.channel, it.duration_s ? fmtDur(it.duration_s) : null].filter(Boolean).join(' · ');
+    var errLine = it.error ? '<div class="vd-error">' + esc(it.error) + '</div>' : '';
+    var actions = '';
+    if (it.status !== 'running') {
+      var transcriptFailed = it.status === 'failed' && /transcript/i.test(it.error || '');
+      if (transcriptFailed) {
+        actions += '<button class="eos-btn-sm" onclick="openPasteModal(' + JSON.stringify(it.id) + ',' + JSON.stringify(it.url) + ')" title="Paste transcript manually">+ transcript</button>';
+      }
+      actions += '<button class="eos-btn-sm" onclick="runOne(\'' + it.id + '\')">'
+              + (it.status === 'failed' ? 'Retry' : it.status === 'done' ? 'Re-run' : 'Process')
+              + '</button>';
+      actions += '<button class="eos-btn-sm" onclick="removeOne(\'' + it.id + '\')">×</button>';
+    }
+    return '<div class="vd-row">'
+      + '<div class="vd-main">'
+      +   '<div class="vd-title">' + esc(title) + '</div>'
+      +   (meta ? '<div class="vd-meta">' + esc(meta) + '</div>' : '')
+      +   '<div class="vd-url">' + esc(it.url) + '</div>'
+      +   errLine
+      + '</div>'
+      + '<span class="vd-status ' + statusCls + '">' + esc(it.status || 'queued') + '</span>'
+      + '<div class="vd-actions">' + actions + '</div>'
+      + '</div>';
+  }).join('');
+}
+
+function renderDigests() {
+  var el = document.getElementById('vd-digests');
+  var countEl = document.getElementById('vd-digests-count');
+  countEl.textContent = STATE.digests.length ? '(' + STATE.digests.length + ')' : '';
+  if (!STATE.digests.length) {
+    el.innerHTML = '<div class="vd-empty">No digests yet. Process a queued URL above.</div>';
+    return;
+  }
+  var active = STATE.activeDomain;
+  var filtered = STATE.digests.filter(function(d) {
+    if (!active) return true;
+    var dom = (d.domain || '').trim();
+    if (active === '__none__') return !dom;
+    return dom === active;
+  });
+  if (!filtered.length) {
+    el.innerHTML = '<div class="vd-empty">No digests in this category. <a href="#" onclick="setDomain(\'\'); return false;">Show all</a></div>';
+    return;
+  }
+  el.innerHTML = filtered.map(function(d) {
+    var meta = [d.clipped, d.channel, d.duration_s ? fmtDur(d.duration_s) : null].filter(Boolean).join(' · ');
+    var noteLink = (window.EOS && EOS.noteActions) ? EOS.noteActions(d.digest_path) : esc(d.digest_path);
+    var prov = d.provenance || 'skill';
+    var provClass = 'vd-prov vd-prov-' + prov;
+    var provLabel = prov === 'app' ? 'app' : prov === 'app-orphan' ? 'app (note moved)' : 'skill';
+    var dom = (d.domain || '').trim();
+    var domBadge = dom
+      ? '<span class="vd-domain">' + esc(dom) + '</span>'
+      : '<span class="vd-domain vd-domain-empty" title="No domain assigned yet — click \'Categorize all\'">—</span>';
+    var digestPathAttr = esc(d.digest_path || '').replace(/'/g, '&#39;');
+    var listenBtn = (d.digest_path && prov !== 'app-orphan')
+      ? '<button class="vd-listen-btn" onclick="openListen(\'' + digestPathAttr + '\')" title="Open in Listen mode (Step 5 — active listening)">▶ Listen</button>'
+      : '';
+    return '<div class="vd-row">'
+      + '<div class="vd-main">'
+      +   '<div class="vd-title">' + esc(d.title || 'Untitled') + domBadge
+      +     '<span class="' + provClass + '" title="' + (prov === 'app' ? 'Processed by this app' : prov === 'app-orphan' ? 'App queue references a note path that no longer exists' : 'Pre-existing yt-digest skill output') + '">' + esc(provLabel) + '</span>'
+      +   '</div>'
+      +   (meta ? '<div class="vd-meta">' + esc(meta) + '</div>' : '')
+      +   '<div class="vd-url">' + noteLink + '</div>'
+      + '</div>'
+      + '<span class="vd-status vd-status-done">done</span>'
+      + '<div class="vd-actions">'
+      +   listenBtn
+      +   '<a class="eos-btn-sm" href="' + escAttr(d.url || '#') + '" target="_blank" rel="noopener">↗ source</a>'
+      + '</div>'
+      + '</div>';
+  }).join('');
+}
+
+async function categorizeAll() {
+  var btn = document.getElementById('vd-categorize-btn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Categorizing...'; }
+  if (window.EOS && EOS.toast) EOS.toast('Categorizing — sequential LLM calls, can take a few minutes', 'info');
+  var job = EOS_UI.jobProgress({id: 'vd-cat'});
+  job.update({stage: 'Categorizing digests', detail: 'sequential LLM — may take minutes'});
+  try {
+    var res = await fetch('/video-digest/api/categorize-all', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: '{}',
+    }).then(r => r.json());
+    if (window.EOS && EOS.toast) {
+      EOS.toast('Categorized ' + (res.ok_count || 0) + ' digest(s)', res.ok ? 'ok' : 'error');
+    }
+    job.done({stage: 'Categorized', detail: (res.ok_count || 0) + ' digest(s)'});
+  } catch (e) {
+    if (window.EOS && EOS.toast) EOS.toast(String(e), 'error');
+    job.hide();
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = 'Categorize all'; }
+    loadAll();
+  }
+}
+
+function esc(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+function fmtDur(s) {
+  s = Number(s) || 0;
+  var m = Math.floor(s / 60), r = s % 60;
+  if (m < 60) return m + 'm' + (r ? ' ' + r + 's' : '');
+  var h = Math.floor(m / 60); m = m % 60;
+  return h + 'h' + (m ? ' ' + m + 'm' : '');
+}
+
+async function queueUrl() {
+  var input = document.getElementById('vd-url');
+  var url = (input.value || '').trim();
+  if (!url) return;
+  try {
+    var res = await fetch('/video-digest/api/queue', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url: url }),
+    }).then(r => r.json());
+    if (!res.ok) {
+      if (window.EOS && EOS.toast) EOS.toast(res.error || 'queue failed', 'error');
+      return;
+    }
+    input.value = '';
+    if (window.EOS && EOS.toast) EOS.toast('Queued', 'ok');
+    loadAll();
+  } catch (e) {
+    if (window.EOS && EOS.toast) EOS.toast(String(e), 'error');
+  }
+}
+
+// ── Paste-transcript modal ────────────────────────────────────────────
+// For when YouTube rate-limits transcript fetching on this IP. User copies
+// the transcript from the browser's "Show transcript" panel and pastes here.
+function openPasteModal(existingItemId, existingUrl) {
+  if (typeof EOS_UI === 'undefined' || !EOS_UI.modal) {
+    if (window.EOS && EOS.toast) EOS.toast('UI components not ready — reload the page', 'error');
+    return;
+  }
+  var prefilledUrl = existingUrl || (document.getElementById('vd-url').value || '').trim();
+  var isRecover = !!existingItemId;
+  var itemId = existingItemId || null;
+
+  var hint = isRecover
+    ? 'Attach a transcript to recover this failed item.'
+    : 'Use this when YouTube rate-limits transcript fetching on your IP. Open the video in a browser, click <b>Show transcript</b>, copy, and paste below.';
+  var urlAttr = isRecover ? 'disabled' : '';
+  var primaryLabel = isRecover ? 'Attach and retry' : 'Queue and process';
+
+  var bodyHtml =
+    '<div style="display:flex;flex-direction:column;gap:10px;">' +
+      '<div style="font-size:12px;color:var(--text-muted);">' + hint + '</div>' +
+      '<label style="font-size:12px;color:var(--text-muted);">YouTube URL</label>' +
+      '<input data-vd-field="url" type="text" value="' + escAttr(prefilledUrl) + '" placeholder="https://www.youtube.com/watch?v=..." ' + urlAttr + ' class="eos-form-input">' +
+      '<label style="font-size:12px;color:var(--text-muted);">Transcript text (required)</label>' +
+      '<textarea data-vd-field="transcript" rows="14" placeholder="Paste the full transcript here..." class="eos-form-input" style="font-family:inherit;resize:vertical;min-height:200px;"></textarea>' +
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">' +
+        '<div style="display:flex;flex-direction:column;gap:4px;">' +
+          '<label style="font-size:12px;color:var(--text-muted);">Title (optional)</label>' +
+          '<input data-vd-field="title" type="text" placeholder="Auto-detect if blank" class="eos-form-input">' +
+        '</div>' +
+        '<div style="display:flex;flex-direction:column;gap:4px;">' +
+          '<label style="font-size:12px;color:var(--text-muted);">Channel / speaker (optional)</label>' +
+          '<input data-vd-field="channel" type="text" placeholder="Auto-detect if blank" class="eos-form-input">' +
+        '</div>' +
+      '</div>' +
+      '<div style="font-size:11px;color:var(--text-muted);">Title and channel are only needed if YouTube also blocks the metadata fetch.</div>' +
+      '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:6px;">' +
+        '<button class="eos-btn-sm" data-vd-action="cancel">Cancel</button>' +
+        '<button class="eos-btn-primary" data-vd-action="submit">' + primaryLabel + '</button>' +
+      '</div>' +
+    '</div>';
+
+  var modal = EOS_UI.modal({
+    title: isRecover ? 'Attach transcript' : 'Paste transcript',
+    body: bodyHtml,
+    width: '640px',
+  });
+  var getField = function(name) {
+    var el = modal.querySelector('[data-vd-field="' + name + '"]');
+    return el ? (el.value || '').trim() : '';
+  };
+  var cancelBtn = modal.querySelector('[data-vd-action="cancel"]');
+  var submitBtn = modal.querySelector('[data-vd-action="submit"]');
+  if (cancelBtn) cancelBtn.addEventListener('click', function () { EOS_UI.closeModal(); });
+  if (submitBtn) submitBtn.addEventListener('click', function () {
+    submitPasteModal({ isRecover: isRecover, itemId: itemId, getField: getField });
+  });
+  var ta = modal.querySelector('[data-vd-field="transcript"]');
+  if (ta) setTimeout(function() { ta.focus(); }, 60);
+}
+
+async function submitPasteModal(ctx) {
+  var transcript = ctx.getField('transcript');
+  if (!transcript) {
+    if (window.EOS && EOS.toast) EOS.toast('Transcript is required', 'error');
+    return;
+  }
+  var title = ctx.getField('title');
+  var channel = ctx.getField('channel');
+  try {
+    if (ctx.isRecover) {
+      var res = await fetch('/video-digest/api/queue/' + encodeURIComponent(ctx.itemId) + '/attach-transcript', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ transcript: transcript, title: title, channel: channel }),
+      }).then(r => r.json());
+      if (!res.ok) {
+        if (window.EOS && EOS.toast) EOS.toast(res.error || 'attach failed', 'error');
+        return;
+      }
+      EOS_UI.closeModal();
+      if (window.EOS && EOS.toast) EOS.toast('Transcript attached — processing', 'ok');
+      runOne(ctx.itemId);
+    } else {
+      var url = ctx.getField('url');
+      if (!url) {
+        if (window.EOS && EOS.toast) EOS.toast('URL is required', 'error');
+        return;
+      }
+      var qres = await fetch('/video-digest/api/queue', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: url, transcript: transcript, title: title, channel: channel }),
+      }).then(r => r.json());
+      if (!qres.ok) {
+        if (window.EOS && EOS.toast) EOS.toast(qres.error || 'queue failed', 'error');
+        return;
+      }
+      document.getElementById('vd-url').value = '';
+      EOS_UI.closeModal();
+      if (window.EOS && EOS.toast) EOS.toast('Queued with transcript — processing', 'ok');
+      runOne(qres.item.id);
+    }
+    loadAll();
+  } catch (e) {
+    if (window.EOS && EOS.toast) EOS.toast(String(e), 'error');
+  }
+}
+
+async function runOne(id) {
+  if (window.EOS && EOS.toast) EOS.toast('Processing — this can take 30-90s', 'info');
+  try {
+    var res = await fetch('/video-digest/api/run/' + encodeURIComponent(id), { method: 'POST' }).then(r => r.json());
+    if (!res.ok && res.error) {
+      if (window.EOS && EOS.toast) EOS.toast(res.error, 'error');
+    }
+  } catch (e) {
+    if (window.EOS && EOS.toast) EOS.toast(String(e), 'error');
+  }
+  loadAll();
+}
+
+async function removeOne(id) {
+  try {
+    await fetch('/video-digest/api/queue/' + encodeURIComponent(id), { method: 'DELETE' });
+    loadAll();
+  } catch (e) {}
+}
+
+async function drainQueue() {
+  try {
+    var res = await fetch('/video-digest/api/drain', { method: 'POST' });
+    var data = await res.json();
+    if (window.EOS && EOS.toast) {
+      if (!data.pending) EOS.toast('Nothing to drain', 'info');
+      else if (data.started) EOS.toast('Draining ' + data.pending + ' item(s) in background', 'info');
+      else EOS.toast('Already draining ' + data.pending + ' item(s)', 'info');
+    }
+  } catch (e) {
+    if (window.EOS && EOS.toast) EOS.toast(String(e), 'error');
+  }
+  loadAll();
+}
+
+document.addEventListener('DOMContentLoaded', loadAll);
+setInterval(loadAll, 5000);
+
+// ── Listen mode hash routing (Step 5) ──────────────────────────────
+// The Listen UI itself is owned by `pages/listen.js` (window.VL); this
+// block wires URL state via the shared EOS_UI.hashRoute helper so back /
+// forward / refresh / direct-link to a digest all open Listen consistently.
+//
+// `EOS_UI` ships from eos-components.js, loaded with defer. Inline scripts
+// run at parse time, BEFORE defer scripts execute — so we have to defer the
+// hashRoute() call to DOMContentLoaded. Otherwise the var is initialized
+// against `undefined` and every Listen click throws "Cannot read 'set'".
+
+var _vlRoute = null;
+
+function _vlMount(digestPath) {
+  if (window.VL && typeof window.VL.open === 'function') {
+    window.VL.open(digestPath);
+  } else {
+    // listen.js loads with `defer`, so this branch only fires on a very
+    // early route fire (e.g. `_vlRoute.init()` with a stale hash before
+    // listen.js finished parsing). Poll briefly then bail.
+    var tries = 0;
+    var iv = setInterval(function() {
+      tries++;
+      if (window.VL && typeof window.VL.open === 'function') {
+        clearInterval(iv);
+        window.VL.open(digestPath);
+      } else if (tries > 40) {
+        clearInterval(iv);
+        if (window.EOS && EOS.toast) EOS.toast('Listen mode failed to load', 'error');
+      }
+    }, 50);
+  }
+}
+
+function _vlUnmount() {
+  if (window.VL && typeof window.VL.close === 'function') {
+    window.VL.close();
+  }
+}
+
+// Click-entry points used by the row button + VL's internal "← Back" button.
+// Both defer to the route; the route's onShow/onHide do the real work.
+function openListen(digestPath) {
+  if (!_vlRoute) {
+    if (window.EOS && EOS.toast) EOS.toast('Listen mode still initialising — try again in a moment', 'info');
+    return;
+  }
+  _vlRoute.set(digestPath);
+}
+function closeListen() {
+  if (_vlRoute) _vlRoute.clear();
+}
+
+// Initialise the hash route AFTER eos-components.js (defer) has loaded.
+document.addEventListener('DOMContentLoaded', function() {
+  if (typeof EOS_UI === 'undefined' || !EOS_UI.hashRoute) {
+    return;  // Listen mode unavailable — page still works, button shows toast.
+  }
+  _vlRoute = EOS_UI.hashRoute({
+    onShow: function(digestPath) { _vlMount(digestPath); },
+    onHide: function() { _vlUnmount(); },
+  });
+  _vlRoute.init();
+});
+</script>
+</body>
+</html>

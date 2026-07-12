@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Plekto — persistent memory + multi-agent rooms for Claude Code</title>
+  <meta name="description" content="Give Claude Code a memory, a project, and a team. Local-first AI workspace built on AGPL-3.0 EmptyOS.">
+
+  <!-- Open Graph / social cards -->
+  <meta property="og:title" content="Plekto — give Claude Code a memory, a project, and a team">
+  <meta property="og:description" content="Local-first AI workspace with persistent memory, project context, and multi-agent rooms. Free + open source.">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://plekto.dev/">
+  <meta property="og:image" content="https://plekto.dev/og-image.png">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:site" content="@Plekto_dev">
+
+  <!-- Favicons -->
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <link rel="icon" type="image/png" sizes="32x32" href="/icon_32px.png">
+  <link rel="apple-touch-icon" sizes="256x256" href="/icon_256px.png">
+
+  <!-- Typography -->
+  <link rel="preconnect" href="https://rsms.me">
+  <link rel="stylesheet" href="https://rsms.me/inter/inter.css">
+
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+
+  <main>
+
+    <!-- ─── Hero ─────────────────────────────────────────────── -->
+    <header class="hero">
+      <img class="hero-icon" src="/icon.svg" alt="" width="96" height="96">
+      <h1>Give Claude Code a memory, a project, and a team.</h1>
+      <p class="hero-lede">
+        Plekto is a local-first AI workspace that wraps Claude Code with
+        the three things it forgets between sessions: persistent memory,
+        project context, and multi-agent coordination.
+      </p>
+
+      <form class="signup" action="/signup" method="POST">
+        <input type="email" name="email" placeholder="you@example.com" required autocomplete="email" aria-label="Email address">
+        <button type="submit">Notify me when v0.1 ships</button>
+      </form>
+      <p class="signup-note" id="signup-note">
+        Coming soon. No spam, just a single email when the first download
+        is ready. Free + open source under AGPL-3.0.
+      </p>
+      <script>
+        // Show inline error message if /signup redirected back with ?error=
+        (function() {
+          var err = new URLSearchParams(location.search).get("error");
+          if (!err) return;
+          var note = document.getElementById("signup-note");
+          if (err === "invalid") {
+            note.textContent = "That doesn't look like a valid email — try again?";
+          } else if (err === "server") {
+            note.textContent = "Something went wrong on our end. Please try again in a minute.";
+          }
+          note.style.color = "var(--amber)";
+        })();
+      </script>
+
+      <p class="hero-stats">
+        60-second install <span class="dot">·</span> No account <span class="dot">·</span> Your hardware <span class="dot">·</span> AGPL source
+      </p>
+
+      <p class="hero-meta">
+        <a href="https://github.com/plekto-dev">Source on GitHub</a>
+        <span class="dot">·</span>
+        <a href="#how">How it works</a>
+        <span class="dot">·</span>
+        <a href="#built-on">Built on EmptyOS</a>
+      </p>
+    </header>
+
+    <!-- ─── 3 feature sections ─────────────────────────────────── -->
+    <section id="how" class="features">
+
+      <article class="feature">
+        <div class="feature-glyph" aria-hidden="true">⟂</div>
+        <h2>Persistent memory</h2>
+        <p>
+          Claude Code is brilliant inside a single session. Between sessions,
+          it forgets your decisions, your patterns, your project history.
+          Plekto remembers — across days, projects, and machines.
+        </p>
+      </article>
+
+      <article class="feature">
+        <div class="feature-glyph" aria-hidden="true">▥</div>
+        <h2>Project workspaces</h2>
+        <p>
+          Switch between projects without losing context. Each one carries
+          its own knowledge base, task list, file tree, and conversation
+          history. Pick up a project from last month exactly where you
+          left it.
+        </p>
+      </article>
+
+      <article class="feature">
+        <div class="feature-glyph" aria-hidden="true">⌥</div>
+        <h2>Multi-agent rooms</h2>
+        <p>
+          Run multiple agents in one room — Claude Code, Codex, Gemini —
+          and review every action before it executes. The pending-action
+          gate means agents propose; you decide.
+        </p>
+      </article>
+
+    </section>
+
+    <!-- ─── Built-on EmptyOS strip ─────────────────────────────── -->
+    <section id="built-on" class="built-on">
+      <p>
+        Plekto is one curated distribution of
+        <a href="https://github.com/KevinBean/emptyos">EmptyOS</a> — a local-first
+        AI operating system you <em>own</em>, not an agent you rent. Consent-gated,
+        AGPL-3.0, your data in plain markdown that outlives the app. The source is
+        open and yours to fork.
+      </p>
+    </section>
+
+    <!-- ─── Footer ─────────────────────────────────────────────── -->
+    <footer>
+      <p class="footer-tag">
+        Built by <a href="https://x.com/Plekto_dev">@Plekto_dev</a> in Adelaide.
+        No VC, no SaaS lock-in. Local data, your hardware.
+      </p>
+      <p class="footer-links">
+        <a href="https://github.com/plekto-dev">GitHub</a>
+        <span class="dot">·</span>
+        <a href="https://x.com/Plekto_dev">X / Twitter</a>
+        <span class="dot">·</span>
+        <a href="mailto:hello@plekto.dev">hello@plekto.dev</a>
+        <span class="dot">·</span>
+        <a href="https://github.com/sponsors/KevinBean">Sponsor</a>
+      </p>
+    </footer>
+
+  </main>
+
+</body>
+</html>

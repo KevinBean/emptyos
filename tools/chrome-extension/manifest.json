@@ -1,0 +1,31 @@
+{
+  "manifest_version": 3,
+  "name": "EmptyOS",
+  "version": "0.8.0",
+  "description": "Browser bridge to EmptyOS — streaming chat, slash commands, [DO:] review-gate cards, LinkedIn/Seek job capture + evaluate-vs-CV score card, YouTube digest, KB-clause proposals, in-page dictionary card with reading-context capture, 'already captured' badge.",
+  "permissions": ["activeTab", "contextMenus", "storage", "scripting", "sidePanel", "tabs"],
+  "host_permissions": [
+    "http://localhost:9000/*",
+    "http://127.0.0.1:9000/*",
+    "https://*/*"
+  ],
+  "action": {
+    "default_title": "Open EmptyOS panel"
+  },
+  "side_panel": {
+    "default_path": "sidepanel.html"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "options_page": "options.html",
+  "commands": {
+    "_execute_action": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+E",
+        "mac": "Command+Shift+E"
+      },
+      "description": "Open EmptyOS side panel"
+    }
+  }
+}

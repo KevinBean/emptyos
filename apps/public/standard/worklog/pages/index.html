@@ -1,0 +1,611 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Work Log - EmptyOS</title>
+<link rel="stylesheet" href="/static/theme.css">
+<link rel="stylesheet" href="/static/eos-components.css">
+<style>
+* { margin:0; padding:0; box-sizing:border-box }
+body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif; background:var(--bg); color:var(--text); min-height:100dvh; padding:env(safe-area-inset-top) 16px calc(env(safe-area-inset-bottom) + 80px); -webkit-font-smoothing:antialiased }
+.wrap { max-width:760px; margin:0 auto }
+.topbar { display:flex; align-items:center; gap:10px; padding:14px 0 10px; flex-wrap:wrap }
+.topbar h1 { font-size:20px; font-weight:700 }
+.topbar .right { margin-left:auto; display:flex; gap:8px; align-items:center }
+select, input, textarea { font-family:inherit }
+.sel { background:var(--bg-card); border:1px solid var(--border); color:var(--text); border-radius:8px; padding:7px 10px; font-size:13px; cursor:pointer }
+.btn { background:var(--accent); color:var(--accent-ink); border:none; border-radius:8px; padding:8px 14px; font-size:13px; font-weight:600; cursor:pointer; transition:transform .1s }
+.btn:active { transform:scale(.96) }
+.btn-ghost { background:var(--bg-card); border:1px solid var(--border); color:var(--text-secondary) }
+.tabs { display:flex; gap:6px; margin:6px 0 16px; flex-wrap:wrap }
+.tab { padding:8px 14px; border-radius:8px; font-size:13px; font-weight:600; background:var(--bg-card); border:1px solid var(--border); color:var(--text-secondary); cursor:pointer }
+.tab.active { background:color-mix(in srgb,var(--accent) 14%,var(--bg-card)); border-color:var(--accent); color:var(--accent) }
+.card { background:var(--bg-card); border:1px solid var(--border); border-radius:14px; padding:14px 16px; margin-bottom:12px }
+.day-card { cursor:pointer; transition:border-color .15s }
+.day-card:hover { border-color:var(--accent) }
+.day-head { display:flex; align-items:center; gap:8px; margin-bottom:6px }
+.day-date { font-weight:700; font-size:14px }
+.day-week { color:var(--text-muted); font-size:12px }
+.emp-chip { font-size:11px; padding:2px 8px; border-radius:10px; background:color-mix(in srgb,var(--accent) 12%,transparent); color:var(--accent); font-weight:600 }
+.proj-badges { display:flex; gap:6px; flex-wrap:wrap; margin-top:4px }
+.proj-badge { font-size:11px; padding:3px 9px; border-radius:10px; background:var(--bg); border:1px solid var(--border); color:var(--text-secondary) }
+.pills { display:flex; gap:8px; margin-left:auto; font-size:12px; color:var(--text-muted) }
+.muted { color:var(--text-muted); font-size:13px }
+.item { display:flex; gap:8px; align-items:flex-start; padding:6px 4px; border-radius:8px; cursor:pointer }
+.item:hover { background:var(--bg) }
+.item .em { font-size:14px; width:20px; flex:0 0 20px; text-align:center }
+.item .tx { font-size:14px; line-height:1.45 }
+.grp-title { font-weight:700; font-size:14px; margin:12px 0 2px }
+.form-row { display:flex; gap:8px; flex-wrap:wrap; align-items:center }
+.form-row input.tx-in { flex:1; min-width:160px; background:var(--bg); border:1px solid var(--border); color:var(--text); border-radius:8px; padding:9px 11px; font-size:14px; outline:none }
+.form-row input.proj-in { width:160px; background:var(--bg); border:1px solid var(--border); color:var(--text); border-radius:8px; padding:9px 11px; font-size:14px; outline:none }
+textarea.prose { width:100%; min-height:70px; background:var(--bg); border:1px solid var(--border); color:var(--text); border-radius:10px; padding:10px; font-size:14px; line-height:1.5; outline:none; resize:vertical }
+.back { background:none; border:none; color:var(--accent); font-size:14px; cursor:pointer; padding:6px 0; margin-bottom:6px }
+.section-label { font-size:11px; text-transform:uppercase; letter-spacing:.05em; color:var(--text-muted); margin:14px 0 4px; font-weight:700 }
+.hidden { display:none }
+.heat-wrap, .rollup { background:var(--bg-card); border:1px solid var(--border); border-radius:14px; padding:16px; margin-bottom:14px }
+.wl-stats { display:grid; grid-template-columns:repeat(4,1fr); gap:8px; margin-bottom:12px }
+@media (max-width:640px) { .wl-stats { grid-template-columns:repeat(2,1fr) } }
+.prose-view { background:var(--bg); border:1px solid var(--border); border-radius:10px; padding:11px 13px; font-size:14px; line-height:1.55; color:var(--text) }
+.prose-view p { margin:0 0 8px } .prose-view p:last-child { margin-bottom:0 }
+.prose-view a { color:var(--accent); text-decoration:none } .prose-view a:hover { text-decoration:underline }
+.ps-edit { background:none; border:none; color:var(--text-muted); cursor:pointer; font-size:12px; padding:0 4px }
+.ps-edit:hover { color:var(--accent) }
+.ps-add { background:none; border:1px dashed var(--border); color:var(--text-muted); border-radius:8px; padding:7px 11px; font-size:13px; cursor:pointer }
+.ps-add:hover { border-color:var(--accent); color:var(--accent) }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="topbar">
+    <h1>🗂️ Work Log</h1>
+    <div class="right">
+      <select id="emp-filter" class="sel" onchange="onEmployerChange()"><option value="">All employers</option></select>
+      <button class="btn btn-ghost" onclick="openRollup()" title="AI summary of the last 7 days, grouped by project">✨ Rollup</button>
+      <button class="btn btn-ghost" onclick="exportTimesheet()" title="Download a 7-day timesheet PDF">PDF</button>
+      <button class="btn btn-ghost" onclick="openAppSettings()">⚙</button>
+    </div>
+  </div>
+
+  <div class="tabs" id="tabs">
+    <div class="tab active" data-view="timeline" onclick="switchTab('timeline')">Timeline</div>
+    <div class="tab" data-view="calendar" onclick="switchTab('calendar')">Calendar</div>
+    <div class="tab" data-view="project" onclick="switchTab('project')">By project</div>
+    <div class="tab" data-view="heatmap" onclick="switchTab('heatmap')">Heatmap</div>
+  </div>
+
+  <!-- TIMELINE -->
+  <div id="view-timeline">
+    <div class="wl-stats" id="wl-stats"></div>
+    <div class="card">
+      <div class="section-label">Log work</div>
+      <div class="form-row" style="margin-bottom:8px">
+        <input id="wl-proj" class="proj-in" list="proj-list" placeholder="Project">
+        <datalist id="proj-list"></datalist>
+        <input id="wl-add-text" class="tx-in" placeholder="What did you do?  (✨ parses project/status/date)" onkeydown="if(event.key==='Enter')submitLog()">
+        <button class="btn btn-ghost" onclick="smartParse(this)" title="AI-fill project / status / date from the sentence — you still press Log">✨</button>
+        <select id="wl-status" class="sel">
+          <option value="in-progress">🔄 In progress</option>
+          <option value="complete">✅ Complete</option>
+          <option value="todo">⬜ Todo</option>
+          <option value="next">⏭️ Next</option>
+          <option value="waiting">⏳ Waiting</option>
+          <option value="review">👀 Review</option>
+          <option value="blocked">⛔ Blocked</option>
+        </select>
+        <input id="wl-date" type="date" class="sel">
+        <button class="btn" onclick="submitLog()">Log</button>
+      </div>
+    </div>
+    <div id="carryover-banner"></div>
+    <div id="timeline-list"></div>
+  </div>
+
+  <!-- DETAIL -->
+  <div id="view-detail" class="hidden">
+    <button class="back" onclick="closeDetail()">← Back</button>
+    <div id="detail-body"></div>
+  </div>
+
+  <!-- CALENDAR -->
+  <div id="view-calendar" class="hidden">
+    <div id="cal-grid" class="card"></div>
+  </div>
+
+  <!-- BY PROJECT -->
+  <div id="view-project" class="hidden">
+    <div class="card">
+      <div class="form-row">
+        <select id="proj-pick" class="sel" style="flex:1" onchange="loadByProject()"><option value="">Pick a project…</option></select>
+      </div>
+    </div>
+    <div id="project-rollup"></div>
+  </div>
+
+  <!-- HEATMAP -->
+  <div id="view-heatmap" class="hidden">
+    <div class="heat-wrap"><div id="heatmap"></div></div>
+    <div class="rollup" id="status-rollup"></div>
+  </div>
+</div>
+
+<script src="/static/eos.js"></script>
+<script src="/static/eos-components.js"></script>
+<script>
+var API = '/worklog/api';
+var STATUS_EMOJI = {complete:'✅','in-progress':'🔄',todo:'⬜',next:'⏭️',waiting:'⏳',review:'👀',blocked:'⛔'};
+var CYCLE = ['todo','in-progress','review','complete','blocked','waiting','next',''];
+var STATE = { employer:'', view:'timeline', detailDate:null, day:null };
+var _grid = null;
+
+function esc(s){ return (s==null?'':String(s)).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); }
+function emp(){ return STATE.employer ? '&employer='+encodeURIComponent(STATE.employer) : ''; }
+function api(path){ return fetch(API+path).then(function(r){return r.json();}); }
+function post(path, body){ return fetch(API+path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}).then(function(r){return r.json();}); }
+
+// ── routing: shared hash-route helper (deep-linkable #YYYY-MM-DD detail) ──
+var _route = EOS_UI.hashRoute({
+  onShow: function(id){ if(/^\d{4}-\d{2}-\d{2}$/.test(id)) showDetail(id); else showTabView(STATE.view); },
+  onHide: function(){ showTabView(STATE.view); },
+});
+
+// ── tabs ──
+function showTabView(v){
+  ['timeline','calendar','project','heatmap'].forEach(function(x){
+    document.getElementById('view-'+x).classList.toggle('hidden', x!==v);
+  });
+  document.getElementById('view-detail').classList.add('hidden');
+  document.querySelectorAll('.tab').forEach(function(t){ t.classList.toggle('active', t.dataset.view===v); });
+}
+function loadView(v){
+  if(v==='calendar') loadCalendar();
+  else if(v==='project') loadProjectPicker();
+  else if(v==='heatmap') loadHeatmap();
+  else loadTimeline();
+}
+function switchTab(v){
+  STATE.view = v;
+  if(_route.current()) _route.clear();   // leave an open detail (fires onHide)
+  showTabView(v);
+  loadView(v);
+}
+
+// ── employer filter ──
+function onEmployerChange(){ STATE.employer = document.getElementById('emp-filter').value; switchTab(STATE.view); }
+async function loadEmployers(){
+  var d = await api('/employers');
+  var sel = document.getElementById('emp-filter');
+  (d.employers||[]).forEach(function(e){
+    var o = document.createElement('option'); o.value = e.name==='—'?'':e.name;
+    o.textContent = e.name+' ('+e.days+')'; sel.appendChild(o);
+  });
+}
+
+// ── timeline stats (client-side, from the recent payload) ──
+// Streak = consecutive logged workdays; weekends never break it, and an
+// unlogged *today* doesn't either (the day isn't over yet).
+function calcStreak(dates){
+  var set = {}; dates.forEach(function(x){ set[x] = true; });
+  var cur = new Date(); cur.setHours(0,0,0,0);
+  if(!set[cur.toISOString().slice(0,10)]) cur.setDate(cur.getDate()-1);
+  var streak = 0;
+  for(var guard = 0; guard < 400; guard++){
+    var iso = cur.toISOString().slice(0,10);
+    var dow = cur.getDay();
+    if(set[iso]) streak++;
+    else if(dow !== 0 && dow !== 6) break;
+    cur.setDate(cur.getDate()-1);
+  }
+  return streak;
+}
+function renderWlStats(days){
+  var thisMonth = new Date().toISOString().slice(0,7);
+  var weekAgo = new Date(Date.now() - 7*86400000).toISOString().slice(0,10);
+  var monthDays = 0, weekItems = 0, weekBlocked = 0;
+  (days||[]).forEach(function(s){
+    if(s.date.slice(0,7) === thisMonth) monthDays++;
+    if(s.date >= weekAgo){
+      Object.keys(s.status_counts||{}).forEach(function(k){
+        weekItems += s.status_counts[k];
+        if(k === 'blocked') weekBlocked += s.status_counts[k];
+      });
+    }
+  });
+  var streak = calcStreak((days||[]).map(function(s){ return s.date; }));
+  EOS_UI.statCards('wl-stats', [
+    {value: monthDays,   label: 'Days this month', variant: 'accent'},
+    {value: weekItems,   label: 'Items this week', variant: 'accent'},
+    {value: weekBlocked, label: 'Blocked (7d)',    variant: weekBlocked ? 'danger' : 'success'},
+    {value: streak + (streak >= 5 ? ' 🔥' : ''), label: 'Workday streak', variant: 'success'},
+  ]);
+}
+
+// ── AI rollup + timesheet export + smart parse + carry-over ──
+var _rollupText = '';
+async function openRollup(){
+  EOS_UI.modal({ title:'✨ Weekly rollup (7 days)', body:'<div id="rollup-out" class="muted">Thinking…</div>', width:'640px' });
+  try{
+    var d = await api('/rollup?days=7'+emp());
+    var out = document.getElementById('rollup-out');
+    if(!out) return;
+    if(d.error){ out.textContent = d.error; return; }
+    _rollupText = d.rollup || '';
+    out.className = '';
+    out.innerHTML = '<div class="prose-view" style="white-space:pre-wrap">'+esc(d.rollup)+'</div>'
+      + '<div style="display:flex;gap:8px;margin-top:10px;align-items:center;flex-wrap:wrap">'
+      + '<button class="btn btn-ghost" onclick="copyRollup()">Copy</button>'
+      + '<span class="muted" style="font-size:12px">'+d.items+' items'
+      + (d.saved ? ' · saved to vault' : '')+'</span></div>';
+  }catch(e){ var o=document.getElementById('rollup-out'); if(o) o.textContent='Rollup failed.'; }
+}
+function copyRollup(){
+  if(navigator.clipboard && _rollupText){
+    navigator.clipboard.writeText(_rollupText).then(function(){ EOS.toast&&EOS.toast('Copied'); });
+  }
+}
+function exportTimesheet(){ window.open(API+'/timesheet.pdf?days=7'+emp(), '_blank', 'noopener'); }
+
+async function smartParse(btn){
+  var text = document.getElementById('wl-add-text').value.trim();
+  if(!text){ EOS.toast&&EOS.toast('Type a sentence first'); return; }
+  if(btn){ btn.disabled=true; btn.textContent='…'; }
+  try{
+    var d = await post('/smart-parse', {text:text, employer:STATE.employer});
+    if(d.error){ EOS.toast&&EOS.toast(d.error); return; }
+    document.getElementById('wl-proj').value = d.project||'';
+    document.getElementById('wl-add-text').value = d.text||text;
+    if(d.status) document.getElementById('wl-status').value = d.status;
+    if(d.date) document.getElementById('wl-date').value = d.date;
+    EOS.toast&&EOS.toast('Parsed — review and press Log');
+  }catch(e){ EOS.toast&&EOS.toast('Parse failed'); }
+  finally{ if(btn){ btn.disabled=false; btn.textContent='✨'; } }
+}
+
+var _carryover = null;
+async function maybeCarryover(days){
+  var host = document.getElementById('carryover-banner');
+  if(!host) return;
+  var todayIso = new Date().toISOString().slice(0,10);
+  var todayLogged = days.length && days[0].date === todayIso && days[0].item_count > 0;
+  if(todayLogged){ host.innerHTML=''; return; }
+  try{
+    var d = await api('/carryover'+(STATE.employer?'?employer='+encodeURIComponent(STATE.employer):''));
+    if(!d.items || !d.items.length){ host.innerHTML=''; return; }
+    _carryover = d;
+    host.innerHTML = '<div class="card" style="border-left:3px solid var(--warning)">'
+      + '<b>'+d.items.length+' open item'+(d.items.length>1?'s':'')+'</b> from '+esc(d.weekday||'')+' '+esc(d.from)
+      + ' <button class="btn btn-ghost" style="margin-left:8px" onclick="applyCarryover(this)">Carry over to today</button>'
+      + '<div class="muted" style="font-size:12px;margin-top:6px">'
+      + d.items.slice(0,5).map(function(it){ return (STATUS_EMOJI[it.status]||'·')+' '+esc(it.project)+': '+esc(it.text); }).join('<br>')
+      + (d.items.length>5?'<br>… +'+(d.items.length-5)+' more':'')
+      + '</div></div>';
+  }catch(e){ host.innerHTML=''; }
+}
+async function applyCarryover(btn){
+  if(!_carryover) return;
+  if(btn) btn.disabled=true;
+  try{
+    for(var i=0;i<_carryover.items.length;i++){
+      var it=_carryover.items[i];
+      await post('/log', {date:'', project:it.project, text:it.text,
+        status:it.status||'in-progress', employer:STATE.employer});
+    }
+    EOS.toast&&EOS.toast('Carried over '+_carryover.items.length+' item(s)');
+    _carryover=null; loadTimeline();
+  }catch(e){ EOS.toast&&EOS.toast('Carry-over failed'); if(btn) btn.disabled=false; }
+}
+
+// ── timeline ──
+async function loadTimeline(){
+  var d = await api('/recent?days=120'+emp());
+  var el = document.getElementById('timeline-list');
+  renderWlStats(d.days||[]);
+  maybeCarryover(d.days||[]);
+  if(!d.days || !d.days.length){ el.innerHTML = '<div class="muted card">No work logged yet. Use the form above to log your first item.</div>'; return; }
+  el.innerHTML = d.days.map(function(s){
+    var pills = Object.keys(s.status_counts||{}).map(function(k){ return STATUS_EMOJI[k]+' '+s.status_counts[k]; }).join(' · ');
+    var badges = (s.projects||[]).slice(0,5).map(function(p){ return '<span class="proj-badge">'+esc(p)+'</span>'; }).join('');
+    return '<div class="card day-card" onclick="openDetail(\''+s.date+'\')">'
+      + '<div class="day-head"><span class="day-date">'+s.date+'</span><span class="day-week">'+esc(s.weekday)+'</span>'
+      + (s.employer?'<span class="emp-chip">'+esc(s.employer)+'</span>':'')
+      + '<span class="pills">'+pills+'</span></div>'
+      + '<div class="proj-badges">'+badges+'</div></div>';
+  }).join('');
+}
+
+// ── detail ──
+function openDetail(dateS){ _route.set(dateS); }   // → onShow → showDetail
+function closeDetail(){ _route.clear(); }           // → onHide → restore tab view
+async function showDetail(dateS){
+  STATE.detailDate = dateS;
+  ['timeline','calendar','project','heatmap'].forEach(function(x){ document.getElementById('view-'+x).classList.add('hidden'); });
+  document.getElementById('view-detail').classList.remove('hidden');
+  var d = await api('/day?date='+encodeURIComponent(dateS));
+  renderDetail(d);
+}
+function renderDetail(d){
+  STATE.day = d;   // cache focus day for the companion sidebar (context + fuzzy match)
+  var h = '<div class="day-head"><span class="day-date">'+d.date+'</span><span class="day-week">'+esc(d.weekday)+'</span>'
+    + (d.employer?'<span class="emp-chip">'+esc(d.employer)+'</span>':'')+'</div>';
+  h += proseSection('Plan', d.plan||'', 'plan');
+  h += '<div class="section-label">Work</div>';
+  (d.projects||[]).forEach(function(g){
+    if(!g.items||!g.items.length) return;
+    h += '<div class="grp-title">'+esc(g.project)+'</div>';
+    g.items.forEach(function(it){
+      var em = STATUS_EMOJI[it.status]||'·';
+      h += '<div class="item" onclick="cycleStatus(' + escAttr(JSON.stringify(g.project)) + ',this)" data-text="'+escAttr(it.text)+'">'
+        + '<span class="em">'+em+'</span><span class="tx">'+esc(it.text)+'</span></div>';
+    });
+  });
+  h += proseSection('Update', d.update||'', 'update');
+  // add-item to this day
+  h += '<div class="section-label">Add to this day</div>';
+  h += '<div class="form-row"><input id="dt-proj" class="proj-in" list="proj-list" placeholder="Project">'
+    + '<input id="dt-text" class="tx-in" placeholder="Work item" onkeydown="if(event.key===\'Enter\')addToDay()">'
+    + '<select id="dt-status" class="sel">'
+    + Object.keys(STATUS_EMOJI).map(function(k){return '<option value="'+k+'">'+STATUS_EMOJI[k]+' '+k+'</option>';}).join('')
+    + '</select><button class="btn" onclick="addToDay()">Add</button></div>';
+  if(d.timesheet && d.timesheet.length){
+    h += '<div class="section-label">Timesheet</div>';
+    h += d.timesheet.map(function(t){return '<div class="muted">'+esc(t.project)+': '+t.hours+'h '+(t.note?'— '+esc(t.note):'')+'</div>';}).join('');
+  }
+  if(d.notes && d.notes.length){
+    h += '<div class="section-label">Notes</div>';
+    h += d.notes.map(function(n){return '<div class="muted">• '+esc(n)+'</div>';}).join('');
+  }
+  document.getElementById('detail-body').innerHTML = '<div class="card">'+h+'</div>';
+}
+async function cycleStatus(project, el){
+  var text = el.getAttribute('data-text');
+  var cur = el.querySelector('.em').textContent;
+  var curStatus = Object.keys(STATUS_EMOJI).find(function(k){return STATUS_EMOJI[k]===cur;}) || '';
+  var next = CYCLE[(CYCLE.indexOf(curStatus)+1) % CYCLE.length];
+  await post('/status', {date:STATE.detailDate, project:project, item:text, status:next});
+  el.querySelector('.em').textContent = STATUS_EMOJI[next]||'·';
+}
+// ── prose sections (Plan / Update): render-with-links + edit toggle ──
+function renderProse(text){
+  if(!(text||'').trim()) return '<div class="muted">—</div>';
+  var html = esc(text);
+  // [[target|alias]] / [[target]] → clickable KB link (/kb/#slug)
+  html = html.replace(/\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g, function(_, tgt, alias){
+    var slug = tgt.trim().split('#')[0];
+    var label = (alias||tgt).trim();
+    return '<a href="/kb/#'+encodeURIComponent(slug)+'" target="_blank" rel="noopener">'+esc(label)+'</a>';
+  });
+  html = html.replace(/\n\n+/g, '</p><p>').replace(/\n/g, '<br>');
+  return '<p>'+html+'</p>';
+}
+function proseSection(label, text, field){
+  var has = !!(text||'').trim();
+  var id = 'ps-'+field;
+  var head = '<div class="section-label">'+label
+    + (has ? ' <button class="ps-edit" onclick="editProse(\''+field+'\')" title="Edit '+label+'">✎</button>' : '')
+    + '</div>';
+  var view = '<div id="'+id+'-view" class="prose-view'+(has?'':' hidden')+'">'+renderProse(text)+'</div>';
+  var add  = '<button id="'+id+'-add" class="ps-add'+(has?' hidden':'')+'" onclick="editProse(\''+field+'\')">＋ Add '+label.toLowerCase()+'</button>';
+  var edit = '<div id="'+id+'-edit" class="hidden">'
+    + '<textarea class="prose" id="'+id+'-ta" placeholder="'+label+'…">'+esc(text||'')+'</textarea>'
+    + '<div style="text-align:right;margin-top:6px">'
+    +   '<button class="btn btn-ghost" onclick="cancelProse(\''+field+'\')">Cancel</button> '
+    +   '<button class="btn" onclick="saveProse(\''+field+'\')">Save</button></div>'
+    + '</div>';
+  return head + view + add + edit;
+}
+function editProse(field){
+  var id = 'ps-'+field;
+  ['-view','-add'].forEach(function(s){ var e=document.getElementById(id+s); if(e) e.classList.add('hidden'); });
+  document.getElementById(id+'-edit').classList.remove('hidden');
+  var ta = document.getElementById(id+'-ta'); if(ta) ta.focus();
+}
+function cancelProse(field){ refreshDetail(); }
+async function saveProse(field){
+  await post('/'+field, {date:STATE.detailDate, text:document.getElementById('ps-'+field+'-ta').value});
+  EOS.toast && EOS.toast((field==='plan'?'Plan':'Update')+' saved');
+  refreshDetail();
+}
+async function refreshDetail(){
+  var d = await api('/day?date='+encodeURIComponent(STATE.detailDate));
+  renderDetail(d);
+}
+async function addToDay(){
+  var text = document.getElementById('dt-text').value.trim(); if(!text) return;
+  await post('/log', {date:STATE.detailDate, project:document.getElementById('dt-proj').value||'General',
+    text:text, status:document.getElementById('dt-status').value, employer:STATE.employer});
+  var d = await api('/day?date='+encodeURIComponent(STATE.detailDate)); renderDetail(d);
+}
+
+// ── add from timeline form ──
+async function submitLog(){
+  var text = document.getElementById('wl-add-text').value.trim(); if(!text) return;
+  var r = await post('/log', {date:document.getElementById('wl-date').value||'',
+    project:document.getElementById('wl-proj').value||'General', text:text,
+    status:document.getElementById('wl-status').value, employer:STATE.employer});
+  if(r.error){ EOS.toast && EOS.toast(r.error); return; }
+  document.getElementById('wl-add-text').value='';
+  EOS.toast && EOS.toast('Logged');
+  loadProjects(); loadTimeline();
+}
+async function loadProjects(){
+  var d = await api('/projects'+emp());
+  var dl = document.getElementById('proj-list'); dl.innerHTML = '';
+  (d.projects||[]).forEach(function(p){ var o=document.createElement('option'); o.value=p.name; dl.appendChild(o); });
+}
+
+// ── calendar ──
+async function loadCalendar(){
+  var ym = (STATE.detailDate||new Date().toISOString().slice(0,10)).slice(0,7);
+  if(!_grid){
+    _grid = EOS_UI.monthGrid({ mount:'#cal-grid', month:ym, cells:[],
+      onDayClick:function(date){ openDetail(date); },
+      onMonthChange:function(newYm){ loadMonthCells(newYm); } });
+  }
+  await loadMonthCells(ym);
+}
+async function loadMonthCells(ym){
+  var d = await api('/month?month='+ym+emp());
+  if(_grid) _grid.refresh(d.cells||[]);
+}
+
+// ── by project ──
+async function loadProjectPicker(){
+  var d = await api('/projects'+emp());
+  var sel = document.getElementById('proj-pick');
+  sel.innerHTML = '<option value="">Pick a project…</option>' + (d.projects||[]).map(function(p){
+    return '<option value="'+escAttr(p.name)+'">'+esc(p.name)+' ('+p.items+')</option>'; }).join('');
+}
+async function loadByProject(){
+  var name = document.getElementById('proj-pick').value;
+  var el = document.getElementById('project-rollup');
+  if(!name){ el.innerHTML=''; return; }
+  var d = await api('/by-project?name='+encodeURIComponent(name)+emp());
+  if(!d.days || !d.days.length){ el.innerHTML='<div class="muted card">No entries.</div>'; return; }
+  el.innerHTML = '<div class="muted" style="margin-bottom:8px">'+d.days.length+' days · '+esc(name)+'</div>' +
+    d.days.map(function(day){
+      var items = day.items.map(function(it){ return '<div class="item"><span class="em">'+(STATUS_EMOJI[it.status]||'·')+'</span><span class="tx">'+esc(it.text)+'</span></div>'; }).join('');
+      return '<div class="card"><div class="day-head"><span class="day-date" style="cursor:pointer" onclick="openDetail(\''+day.date+'\')">'+day.date+'</span><span class="day-week">'+esc(day.weekday)+'</span>'+(day.employer?'<span class="emp-chip">'+esc(day.employer)+'</span>':'')+'</div>'+items+'</div>';
+    }).join('');
+}
+
+// ── heatmap + rollup ──
+async function loadHeatmap(){
+  try{
+    var d = await api('/heatmap'+emp());
+    EOS_UI.yearHeatmap({ mount:'#heatmap', data:d.data||{}, months:14, showStats:true, showMonthLabels:true,
+      intensity:function(c){ return c===0?0:c<=2?1:c<=5?2:c<=10?3:4; },
+      tooltipFor:function(date,count){ return date+': '+count+' items'; },
+      onCellClick:function(date,count){ if(count) openDetail(date); } });
+  }catch(e){ document.getElementById('heatmap').innerHTML='<div class="muted">Could not load heatmap</div>'; }
+  var r = await api('/status-rollup?days=21'+emp());
+  var el = document.getElementById('status-rollup');
+  var totals = Object.keys(r.totals||{}).map(function(k){ return STATUS_EMOJI[k]+' '+k+': '+r.totals[k]; }).join(' &nbsp; ');
+  var h = '<div class="section-label">Last 21 days</div><div class="muted" style="margin-bottom:10px">'+(totals||'No items')+'</div>';
+  if((r.blocked||[]).length){ h += '<div class="section-label">⛔ Blocked</div>'+r.blocked.map(function(b){return '<div class="item" onclick="openDetail(\''+b.date+'\')"><span class="tx">'+esc(b.project)+' — '+esc(b.text)+' <span class="day-week">'+b.date+'</span></span></div>';}).join(''); }
+  if((r.review||[]).length){ h += '<div class="section-label">👀 In review</div>'+r.review.map(function(b){return '<div class="item" onclick="openDetail(\''+b.date+'\')"><span class="tx">'+esc(b.project)+' — '+esc(b.text)+' <span class="day-week">'+b.date+'</span></span></div>';}).join(''); }
+  el.innerHTML = h;
+}
+
+// ── settings ──
+var _appSettings = EOS_UI.settingsPanel({
+  id:'worklog-settings', title:'Work Log Settings',
+  fields:[
+    {key:'worklog.default_employer', label:'Default employer', type:'text', default:'', hint:'Stamped on new day notes (e.g. your current employer).'},
+    {key:'worklog.default_status', label:'Default status', type:'select', options:['in-progress','todo','next','waiting','review','complete','blocked'], default:'in-progress'},
+  ],
+});
+function openAppSettings(){ _appSettings.open(); }
+
+// ── companion sidebar (page-assistant.js): drive the page by chat ──
+function _focusDate(){ return STATE.detailDate || (STATE.day && STATE.day.date) || new Date().toISOString().slice(0,10); }
+async function _ensureDay(){
+  if(STATE.day && STATE.day.date===_focusDate()) return STATE.day;
+  STATE.day = await api('/day?date='+encodeURIComponent(_focusDate())); return STATE.day;
+}
+function _showAfterWrite(dt){ if(STATE.detailDate!==dt) openDetail(dt); else refreshDetail(); }
+// page context for the model — page-assistant concatenates this as a STRING
+EOS.getPageMetrics = function(){
+  var d = STATE.day; if(!d) return 'No day loaded yet.';
+  var lines = ['Date: '+d.date+(d.employer?' ('+d.employer+')':'')];
+  var any=false;
+  (d.projects||[]).forEach(function(g){ (g.items||[]).forEach(function(it){
+    any=true; lines.push('- ['+(it.status||'note')+'] '+g.project+': '+it.text); }); });
+  if(!any) lines.push('(no work items logged yet)');
+  if((d.plan||'').trim()) lines.push('Plan: '+d.plan.trim());
+  if((d.update||'').trim()) lines.push('Update: '+d.update.trim());
+  return lines.join('\n');
+};
+// extract the model's DRAFTED prose from a fenced ``` block in a recent reply
+function _extractDraft(){
+  var msgs=document.querySelectorAll('.pa-msg.assistant');
+  for(var i=msgs.length-1; i>=0 && i>=msgs.length-3; i--){
+    var t=(msgs[i].innerHTML||'').replace(/<br\s*\/?>/gi,'\n').replace(/<[^>]+>/g,'');
+    var ta=document.createElement('textarea'); ta.innerHTML=t; t=ta.value;
+    var m=t.match(/```[^\n]*\n([\s\S]*?)```/g);
+    if(m&&m.length) return m[m.length-1].replace(/^```[^\n]*\n/,'').replace(/```\s*$/,'').trim();
+    var inl=t.match(/```([^`]+)```/g);
+    if(inl&&inl.length) return inl[inl.length-1].replace(/```/g,'').trim();
+  }
+  return '';
+}
+// client action: mark a work item by fuzzy text + status  (auto-applies)
+async function wlSetStatus(param){
+  var parts=String(param||'').split('|');
+  var query=(parts[0]||'').trim().toLowerCase();
+  var status=(parts[1]||'complete').trim().toLowerCase();
+  if(!query){ EOS.toast&&EOS.toast('No item specified'); return; }
+  var d=await _ensureDay(); var hit=null;
+  (d.projects||[]).forEach(function(g){ (g.items||[]).forEach(function(it){
+    if(!hit && it.text.toLowerCase().indexOf(query)>=0) hit={project:g.project,text:it.text}; }); });
+  if(!hit){ EOS.toast&&EOS.toast('No item matching “'+query+'”'); return; }
+  await post('/status', {date:d.date, project:hit.project, item:hit.text, status:status});
+  EOS.toast&&EOS.toast('Marked '+status+': '+hit.text.slice(0,40));
+  _showAfterWrite(d.date);
+}
+// client action: save the model's drafted Plan/Update prose  (confirm via button)
+async function applyProse(field){
+  field=(field==='update')?'update':'plan';
+  var text=_extractDraft();
+  if(!text){
+    var dt=_focusDate();
+    if(STATE.detailDate===dt) editProse(field);
+    else { openDetail(dt); setTimeout(function(){ try{ editProse(field); }catch(e){} }, 350); }
+    EOS.toast&&EOS.toast('No draft found — opening the '+field+' editor');
+    return;
+  }
+  var dt=_focusDate(); await post('/'+field, {date:dt, text:text});
+  EOS.toast&&EOS.toast((field==='plan'?'Plan':'Update')+' saved');
+  _showAfterWrite(dt);
+}
+// client action: log a new item from the model's drafted text  (confirm via button)
+async function wlLogFromDraft(project){
+  var text=_extractDraft();
+  if(!text){ EOS.toast&&EOS.toast('No draft item found'); return; }
+  var dt=_focusDate(); await post('/log', {date:dt, project:(project||'General'),
+    text:text, status:'in-progress', employer:STATE.employer});
+  EOS.toast&&EOS.toast('Logged: '+text.slice(0,40));
+  _showAfterWrite(dt);
+}
+function wlSwitchTab(view){ if(['timeline','calendar','project','heatmap'].indexOf(view)>=0) switchTab(view); }
+function wlOpenDay(dateS){ if(/^\d{4}-\d{2}-\d{2}$/.test(String(dateS||'').trim())) openDetail(dateS.trim()); }
+
+if(window.EOS && EOS.registerActions){
+  EOS.registerActions(
+    {
+      wlSetStatus:  function(p){ wlSetStatus(p); },
+      applyProse:   function(f){ applyProse(f); },
+      wlLogFromDraft:function(p){ wlLogFromDraft(p); },
+      wlSwitchTab:  function(v){ wlSwitchTab(v); },
+      wlOpenDay:    function(d){ wlOpenDay(d); },
+    },
+    [
+      {name:'wlSetStatus', description:'Mark a work item by status (applies immediately). Param is "query|status" where query is a few distinctive words from the item text and status is one of: complete, blocked, in-progress, review, waiting, todo, next. Example: [ACTION:wlSetStatus(incomer|complete)]', params:['query|status']},
+      {name:'applyProse', description:'Save DRAFTED Plan or Update prose. STEP 1: write the prose inside a fenced ``` code block ```. STEP 2: emit the button EXACTLY as [BUTTON:Save as today\'s plan|applyProse(plan)] (or applyProse(update) for the Update) — the action name goes directly after the | with NO action(...) wrapper. The page reads your fenced draft and saves it.', params:['plan|update']},
+      {name:'wlLogFromDraft', description:'Log a new work item from a draft. STEP 1: write the item text inside a fenced ``` code block ```. STEP 2: emit EXACTLY [BUTTON:Add to <Project>|wlLogFromDraft(<Project>)] — action name directly after the |, no action(...) wrapper. Param is the project name.', params:['project']},
+      {name:'wlSwitchTab', description:'Switch the worklog view tab', params:['timeline|calendar|project|heatmap']},
+      {name:'wlOpenDay', description:'Open a specific day in detail (YYYY-MM-DD)', params:['date']},
+    ],
+    {
+      description:'Your professional work log. Items are grouped by project and tagged with a status (🔄 in-progress, ✅ complete, ⛔ blocked, 👀 review, ⏳ waiting). You can mark items, log new items, and draft today\'s Plan/Update. Use the live_data in context to see today\'s items before acting.',
+      quickActions:[
+        {label:'What\'s open today?', msg:'Which work items are still open today? List them by project.'},
+        {label:'Summarise today', msg:'Summarise what I did today based on the work items.'},
+        {label:'Draft today\'s plan', msg:'Draft a short Plan for today from my open items. Put the plan in a fenced code block and give me a button to save it.'},
+      ],
+    }
+  );
+}
+
+// ── boot ──
+(async function(){
+  document.getElementById('wl-date').value = new Date().toISOString().slice(0,10);
+  await loadEmployers();
+  await loadProjects();
+  loadTimeline();                 // populate timeline (behind detail if deep-linked)
+  if(_route.current()) _route.init();   // deep link → onShow → showDetail
+  else { try{ STATE.day = await api('/day?date='+new Date().toISOString().slice(0,10)); }catch(e){} }  // prime companion context
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,67 @@
+# Keep images small — exclude everything that isn't code or packaged assets.
+
+# VCS + editor
+.git/
+.gitignore
+.github/
+.vscode/
+.idea/
+.claude/
+
+# Local env + config
+.env
+.env.*
+emptyos.toml
+vault-connection.json
+.eos-personal
+.eos-branding
+
+# Tests + dev tooling
+tests/
+pytest_cache/
+.pytest_cache/
+.ruff_cache/
+coverage/
+.coverage
+htmlcov/
+
+# Runtime state — never bake into the image
+data/
+logs/
+*.log
+*.db
+*.db-journal
+
+# Personal apps/engines (gitignored; not shipped)
+apps/personal/
+engines/personal/
+
+# Caches + build artifacts
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+dist/
+build/
+.mypy_cache/
+
+# Python venvs
+venv/
+.venv/
+env/
+
+# OS + metadata
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Node / browser build output if any
+node_modules/
+.nuxt/
+.next/
+
+# Docker itself
+Dockerfile
+docker-compose*.yml
+.dockerignore

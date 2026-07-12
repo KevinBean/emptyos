@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
+  <title>Plekto — B1-amber: same as B1 but with amber accent</title>
+  <desc>Identical geometry to B1, but the accent spine is amber (#d97706) instead of teal (#0f766e). Warm-craft palette vs cool-craft palette. Reads more "wood / leather / artisan" than the teal "indigo dye / textile" feel.</desc>
+
+  <g fill="none" stroke-width="9" stroke-linecap="round" stroke-linejoin="round">
+
+    <!-- Neutral weave (slate) -->
+    <g stroke="#475569">
+      <path d="M 16 44 L 112 44"/>
+      <path d="M 16 64 L 112 64"/>
+      <path d="M 16 84 L 112 84"/>
+      <path d="M 44 16 L 44 40"/>
+      <path d="M 44 48 L 44 60"/>
+      <path d="M 44 68 L 44 80"/>
+      <path d="M 44 88 L 44 112"/>
+      <path d="M 84 16 L 84 40"/>
+      <path d="M 84 48 L 84 60"/>
+      <path d="M 84 68 L 84 80"/>
+      <path d="M 84 88 L 84 112"/>
+    </g>
+
+    <!-- Accent spine (amber) -->
+    <g stroke="#d97706">
+      <path d="M 64 16 L 64 112"/>
+    </g>
+
+  </g>
+</svg>

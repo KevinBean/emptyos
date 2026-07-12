@@ -1,0 +1,76 @@
+[app]
+id = "quick-action"
+store_category = "core"
+name = "Quick Action"
+version = "1.1.0"
+description = "One input, agent figures out what to do — capture, route, act"
+aliases = ["capture"]
+
+[app.entry]
+module = "app"
+class = "QuickActionApp"
+
+[provides.cli]
+commands = ["quick-action", "capture"]
+
+[provides.web]
+prefix = "/quick-action"
+
+[provides.events]
+emits = ["capture:saved", "capture:archived"]
+
+[provides.export]
+enabled = true
+mode = "standalone"
+fallbacks = ["vault:indexeddb", "think:byok-openai", "events:local-bus", "call_app:bundled", "viewer:none"]
+
+[requires]
+capabilities = ["read", "write", "think"]
+# task / projects / journal / canvas are optional routing targets — quick-action
+# falls through to plain capture when any are absent (call_app inside try/except).
+# Declared so dependency graph + manifest-deps lint reflect reality; loader logs
+# but doesn't refuse on missing optional deps.
+apps = ["task", "projects", "journal", "canvas"]
+# Plan & Run soft deps: voice-assistant owns the action-shaped verb planner;
+# work owns deliverable-shaped production. Both reached via call_app inside
+# try/except — quick-action degrades to a clear error / action-only when
+# either is absent. The work hand-off is gated by the dark flag
+# `[apps.quick-action] feature.work-handoff.enabled` (default off).
+# reminders (a personal app) is the target of the reminder tag route, gated by
+# `[apps.quick-action] feature.reminder-route.enabled` (default off); the route
+# call is in try/except and falls back to an inbox note when it's absent.
+optional_apps = ["voice-assistant", "work", "reminders"]
+services = []
+events = []
+
+[provides.settings]
+schema = [{key = "quick-action.auto_classify", label = "AI Auto-classify", type = "toggle", default = true}]
+
+# [provides.assistant] /inbox now lives in capture.add's [[provides.verbs]]
+# assistant sub-table (Phase 4 — assistant reads the unified registry).
+
+# ── Unified verb registry (see .claude/rules/verb-registry.md) ──
+# capture.add is multi-surface: canonical `add` for assistant/mcp/agent, the
+# voice_capture wrapper for voice. "capture" is an alias of this app (above).
+# The mcp surface is now sourced from here (Phase 2 done — legacy
+# [provides.mcp_foundry] removed). The legacy voice intent + assistant command
+# stay authoritative until Phases 3-4.
+[[provides.verbs]]
+verb = "capture.add"
+method = "add"
+summary = "Save a one-line capture to the inbox (AI-tagged)"
+args = { text = "string" }
+eligibility = "stable"
+surfaces = ["voice", "assistant", "mcp", "agent"]
+voice = { method = "voice_capture", example = "remember to look into hetzner pricing later", description = "Save a one-line capture to the inbox (AI-tagged)", always = true }
+assistant = { slash = "/inbox", method = "add", arg = "text" }
+
+[[contributes.tour.step]]
+id = "capture.plan"
+group = "core"
+priority = 150
+route = "/quick-action/"
+spotlight = "#plan-btn"
+title = "Let the agent plan it"
+body = "Type something more ambitious — \"draft an email to the landlord about the leak and add a follow-up task for Friday\" — then hit <strong>Plan & Run</strong>. The agent reads your input, picks the right apps, and shows you the plan before executing. You confirm; it runs."
+requires = ["think"]

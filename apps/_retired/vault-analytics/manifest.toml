@@ -1,0 +1,23 @@
+[app]
+id = "vault-analytics"
+name = "Vault Analytics"
+version = "1.0.0"
+description = "Vault health — file counts, folder sizes, link stats"
+dimensions = ["occupational"]
+
+[app.entry]
+module = "app"
+class = "VaultAnalyticsApp"
+
+[requires]
+capabilities = ["search"]
+apps = ["link"]
+
+[provides.cli]
+commands = ["vault"]
+
+[provides.web]
+prefix = "/vault-analytics"
+
+[provides.events]
+emits = []

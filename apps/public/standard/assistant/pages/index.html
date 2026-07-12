@@ -1,0 +1,1211 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>Assistant - EmptyOS</title>
+<link rel="stylesheet" href="/static/theme.css">
+<link rel="stylesheet" href="/static/eos-components.css">
+<link rel="stylesheet" href="/static/eos-chat-shell.css">
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release/build/styles/github-dark.min.css">
+<script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release/build/highlight.min.js"></script>
+<style>
+* { margin:0; padding:0; box-sizing:border-box }
+body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif; background:var(--bg); color:var(--text); height:100dvh; display:flex; flex-direction:column; overflow:hidden }
+.chat-container { flex:1; display:flex; overflow:hidden; min-height:0 }
+
+/* Sidebar styling comes from eos-chat-shell.css (.eos-chat-sidebar etc.).
+   Only the on-load hide toggle is app-local. */
+#sidebar.hidden { margin-left:-260px; transition:margin-left 0.2s }
+
+/* Main */
+#main { flex:1; display:flex; flex-direction:column; min-width:0 }
+
+/* Topbar */
+#topbar { padding:8px 16px; background:var(--bg-card); border-bottom:1px solid var(--border); display:flex; justify-content:space-between; align-items:center; flex-shrink:0; gap:8px }
+.tb-left { display:flex; align-items:center; gap:12px }
+#btn-menu { background:none; border:none; color:var(--text-secondary); font-size:18px; cursor:pointer; padding:2px 4px; min-width:36px; min-height:36px; display:inline-flex; align-items:center; justify-content:center }
+#btn-menu:hover { color:var(--text) }
+#session-title { font-size:15px; font-weight:600; color:var(--text-heading); background:none; border:none; border-bottom:1px solid transparent; font-family:inherit; outline:none; max-width:200px }
+#session-title:focus { border-bottom-color:var(--accent); color:var(--accent) }
+.tb-right { display:flex; align-items:center; gap:8px }
+.tb-btn { background:none; border:1px solid var(--border); color:var(--text-secondary); padding:4px 12px; border-radius:6px; font-size:13px; cursor:pointer; font-family:inherit; white-space:nowrap }
+.tb-btn:hover { border-color:var(--accent); color:var(--accent) }
+.tb-btn.active { border-color:var(--accent); color:var(--accent); background:color-mix(in srgb,var(--accent) 10%,transparent) }
+#status-dot { width:8px; height:8px; border-radius:50%; background:var(--text-muted); transition:background 0.3s }
+#status-dot.connected { background:var(--green) }
+
+/* Messages — bubble base comes from eos-chat-shell.css (.eos-chat-turn).
+   Assistant adds: per-provider role-label tint, system notices, transient
+   placeholders, usage-badge, image previews. */
+#messages { -webkit-overflow-scrolling:touch } /* base styling from .eos-chat-transcript */
+.eos-chat-role-label.provider-claude-cli { color:#da7756 }
+.eos-chat-role-label.provider-ollama     { color:#a8d080 }
+.eos-chat-role-label.provider-openai     { color:#10a37f }
+.eos-chat-role-label.provider-system     { color:var(--text-muted) }
+.eos-chat-turn.system .eos-chat-turn-content { color:var(--text-muted); font-style:italic; font-size:14px }
+.thinking { color:var(--text-muted); font-size:14px; padding:4px 0 4px 16px; border-left:2px solid var(--text-muted) }
+@keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.3} }
+.thinking::after { content:' ...'; animation:blink 1s infinite }
+.tool-status { font-size:13px; color:var(--text-muted); padding:2px 0 2px 16px; border-left:2px solid var(--accent); opacity:0.7 }
+.usage-badge { display:inline-block; font-size:11px; color:var(--text-muted); background:var(--border); padding:2px 8px; border-radius:4px; margin-top:4px }
+.switched-badge { font-size:11px; color:var(--text-muted); padding:4px 0 2px; opacity:0.8; font-style:italic }
+.chat-img { max-width:100%; max-height:400px; border-radius:8px; margin-top:8px; cursor:pointer; display:block; border:1px solid var(--border) }
+.chat-img:hover { opacity:0.9 }
+
+/* Msg actions (TTS) */
+.msg-actions { display:flex; gap:4px; margin-top:4px; opacity:0; transition:opacity 0.15s }
+.eos-chat-turn:hover .msg-actions, .compare-card:hover .msg-actions,
+.eos-chat-turn:focus-within .msg-actions, .compare-card:focus-within .msg-actions { opacity:1 }
+@media (hover: none) { .msg-actions { opacity:1 } } /* touch: always visible */
+.msg-action-btn { background:none; border:1px solid var(--border); color:var(--text-muted); padding:2px 8px; border-radius:4px; font-size:12px; cursor:pointer }
+.msg-action-btn:hover { border-color:var(--accent); color:var(--accent) }
+.msg-action-btn.speaking { border-color:var(--green); color:var(--green) }
+
+/* Compare view */
+.compare-container { display:flex; gap:12px; padding:8px 0; flex-wrap:wrap }
+.compare-card { flex:1; min-width:250px; background:var(--bg-card); border:1px solid var(--border); border-radius:8px; padding:12px; overflow:hidden }
+.compare-card .provider-name { font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:8px; display:flex; justify-content:space-between; align-items:center }
+.compare-card .provider-name.claude-cli { color:#da7756 } .compare-card .provider-name.ollama { color:#a8d080 } .compare-card .provider-name.openai { color:#10a37f }
+.compare-card .latency { font-weight:400; font-size:11px; color:var(--text-muted) }
+.compare-card .compare-body { font-size:14px; line-height:1.6 }
+.compare-card .compare-body p { margin:0.3em 0 }
+.compare-card .compare-body code { background:var(--border); padding:2px 4px; border-radius:4px; font-size:12px }
+.compare-card .compare-body pre { background:var(--bg); border:1px solid var(--border); border-radius:4px; padding:8px; margin:4px 0; overflow-x:auto; font-size:12px }
+
+/* Markdown inside assistant turns */
+.eos-chat-turn-content.markdown p { margin:0.3em 0 }
+.eos-chat-turn-content.markdown ul,.eos-chat-turn-content.markdown ol { margin:0.3em 0; padding-left:1.5em }
+.eos-chat-turn-content.markdown li { margin:0.15em 0 }
+.eos-chat-turn-content.markdown h1,.eos-chat-turn-content.markdown h2,.eos-chat-turn-content.markdown h3 { margin:0.5em 0 0.2em; font-size:1em; color:var(--accent) }
+.eos-chat-turn-content.markdown strong { color:var(--text-heading) }
+.eos-chat-turn-content.markdown code { background:var(--border); padding:2px 8px; border-radius:4px; font-size:13px }
+.eos-chat-turn-content.markdown pre { background:color-mix(in srgb,var(--border) 50%,var(--bg)); border:1px solid var(--border); border-radius:6px; padding:12px; margin:0.4em 0; overflow-x:auto }
+.eos-chat-turn-content.markdown pre code { background:none; padding:0; font-size:13px }
+.eos-chat-turn-content.markdown blockquote { border-left:3px solid var(--accent); padding:4px 12px; margin:8px 0; color:var(--text-secondary) }
+.eos-chat-turn-content.markdown table { border-collapse:collapse; margin:8px 0; font-size:13px }
+.eos-chat-turn-content.markdown th,.eos-chat-turn-content.markdown td { border:1px solid var(--border); padding:4px 8px }
+
+/* Input-area frame + textarea + send button come from eos-chat-shell.css.
+   Assistant stacks a slash-hint below the input row, so override flex direction. */
+#input-area.eos-chat-input-area { flex-direction: column; align-items: stretch }
+#input-row { display: flex; gap: 8px; align-items: flex-end }
+.input-btn { padding:12px; background:none; border:1px solid var(--border); color:var(--text-secondary); border-radius:8px; font-size:16px; cursor:pointer; min-width:40px; height:40px; display:flex; align-items:center; justify-content:center }
+.input-btn:hover { border-color:var(--accent); color:var(--accent) }
+.input-btn.active { border-color:var(--red); color:var(--red); background:color-mix(in srgb,var(--red) 8%,transparent) }
+#slash-hint { font-size:12px; color:var(--text-muted); margin-top:4px; display:none }
+#slash-hint.show { display:block }
+
+/* Empty state */
+.empty-state { flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; color:var(--text-muted); gap:8px }
+.empty-icon { font-size:48px } .empty-text { font-size:16px } .empty-sub { font-size:13px }
+
+/* Sidebar overlay + mobile drawer behaviour come from eos-chat-shell.css. */
+#sidebar-overlay.show { display:block }
+
+@media(max-width:700px) {
+  #session-title { max-width:120px }
+  .compare-card { min-width:100% }
+  /* Proper mobile drawer: sidebar overlays main instead of eating 260px of viewport.
+     Without this, a 390px iPhone screen splits 260/130 between sidebar and chat,
+     and the chat panel is barely usable. */
+  #sidebar {
+    position:fixed; top:0; bottom:0; left:0;
+    width:min(82vw,320px); height:100dvh;
+    z-index:50; margin-left:0;
+    transform:translateX(0); transition:transform 0.2s;
+    box-shadow:2px 0 18px rgba(0,0,0,0.25);
+    padding-top:env(safe-area-inset-top);
+    padding-bottom:env(safe-area-inset-bottom);
+  }
+  #sidebar.hidden { margin-left:0; transform:translateX(-100%) }
+}
+.pending-images { display:flex; flex-wrap:wrap; gap:8px; padding:8px 8px 0; }
+.pending-image {
+  position:relative; width:64px; height:64px; border-radius:var(--radius-sm); overflow:hidden;
+  border:1px solid var(--border); background:var(--bg-surface);
+}
+.pending-image img { width:100%; height:100%; object-fit:cover; display:block; }
+.pending-image-x {
+  position:absolute; top:2px; right:2px; width:18px; height:18px;
+  border:none; border-radius:50%; background:var(--text-heading); color:var(--bg-card);
+  font-size:13px; line-height:1; cursor:pointer; padding:0;
+  display:flex; align-items:center; justify-content:center; opacity:0.7;
+}
+.pending-image-x:hover { opacity:1; }
+.msg-images { display:flex; flex-wrap:wrap; gap:8px; margin:4px 0 8px; }
+.msg-images img {
+  max-width:240px; max-height:240px; border-radius:var(--radius); display:block;
+  border:1px solid var(--border); object-fit:contain;
+  background:var(--bg-surface);
+}
+.pending-files { display:flex; flex-wrap:wrap; gap:8px; padding:8px 8px 0; }
+.pending-file {
+  display:inline-flex; align-items:center; gap:8px;
+  background:var(--bg-surface); border:1px solid var(--border);
+  border-radius:var(--radius-pill); padding:4px 12px 4px 8px;
+  font-size:var(--fs-mono); max-width:260px;
+}
+.pending-file-name { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.pending-file-x {
+  border:none; background:transparent; cursor:pointer; padding:0 0 0 4px;
+  font-size:var(--fs-small); line-height:1; color:var(--text-muted);
+}
+.pending-file-x:hover { color:var(--text); }
+.pinned-project {
+  display:flex; align-items:center; gap:8px;
+  padding:8px 12px; margin:8px 8px 0;
+  background:var(--accent-bg);
+  border:1px solid var(--accent);
+  border-radius:var(--radius-sm); font-size:var(--fs-mono);
+}
+.pinned-project .pp-icon { font-size:var(--fs-body); }
+.pinned-project .pp-id { font-weight:var(--fw-label); flex:1; overflow:hidden; text-overflow:ellipsis; }
+.pinned-project .pp-x {
+  border:none; background:transparent; cursor:pointer; padding:0 4px;
+  font-size:var(--fs-prose); line-height:1; color:var(--text-muted);
+}
+.pinned-project .pp-x:hover { color:var(--text); }
+.research-citations {
+  display:flex; flex-wrap:wrap; gap:8px; margin-top:16px;
+  padding-top:12px; border-top:1px dashed var(--border);
+}
+.research-citations .rc-label {
+  width:100%; font-size:var(--fs-meta); font-weight:var(--fw-label); color:var(--text-muted);
+  text-transform:uppercase; letter-spacing:var(--tracking-meta); margin-bottom:2px;
+}
+.research-citations .rc-chip {
+  display:inline-flex; align-items:center; gap:8px;
+  padding:4px 12px; border-radius:var(--radius-pill);
+  background:var(--bg-surface); border:1px solid var(--border);
+  color:var(--text); text-decoration:none;
+  font-size:var(--fs-mono); max-width:280px;
+}
+.research-citations .rc-chip:hover { background:var(--accent-bg); }
+.research-citations .rc-n { font-weight:var(--fw-label); color:var(--accent); }
+.research-citations .rc-title { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+
+/* Two-phase companion: whole-vault consistency chip + correction card */
+.verify-chip {
+  display:inline-flex; align-items:center; gap:6px; margin-top:8px;
+  padding:2px 10px; border-radius:var(--radius-pill);
+  font-size:var(--fs-meta); border:1px solid var(--border); background:var(--bg-surface);
+}
+.verify-chip.verify-checking { color:var(--text-muted); }
+.verify-chip.verify-ok { color:var(--success); border-color:var(--success); }
+.verify-chip.verify-corrected { color:var(--warning); border-color:var(--warning); }
+.verify-chip.verify-conflict { color:var(--danger); border-color:var(--danger); }
+.verify-correction {
+  margin-top:8px; padding:10px 12px; border-radius:var(--radius);
+  border:1px solid var(--warning); background:color-mix(in srgb, var(--warning) 8%, transparent);
+}
+.verify-correction .vc-label, .verify-conflict-card .vc-label {
+  font-size:var(--fs-meta); font-weight:var(--fw-label); color:var(--warning);
+  text-transform:uppercase; letter-spacing:var(--tracking-meta); margin-bottom:4px;
+}
+.verify-conflict-card {
+  margin-top:8px; padding:10px 12px; border-radius:var(--radius);
+  border:1px solid var(--danger); background:color-mix(in srgb, var(--danger) 7%, transparent);
+}
+.verify-conflict-card .vc-label { color:var(--danger); }
+.verify-conflict-card .vc-side { margin-top:8px; padding-top:8px; border-top:1px dashed var(--border); }
+.verify-conflict-card .vc-side b { font-size:var(--fs-meta); color:var(--text-muted); }
+.vc-src { font-size:var(--fs-meta); color:var(--text-muted); margin:2px 0; opacity:0.9; line-height:1.7; }
+.vc-src .vc-date { color:var(--text-muted); opacity:0.8; }
+.vc-actions { margin-top:8px; }
+.vc-difflabel { font-size:var(--fs-meta); color:var(--text-muted); margin-bottom:4px; }
+.vc-diff {
+  font-family:var(--font-mono,monospace); font-size:var(--fs-mono); line-height:1.45;
+  background:var(--bg-surface); border:1px solid var(--border); border-radius:var(--radius);
+  padding:8px; margin:4px 0 8px; overflow-x:auto; white-space:pre;
+}
+.vc-diff .d-add { color:var(--success); display:block; }
+.vc-diff .d-del { color:var(--danger); display:block; }
+.vc-diff .d-hunk { color:var(--text-muted); display:block; }
+.vc-diff .d-ctx { color:var(--text); display:block; }
+.vc-done { font-size:var(--fs-meta); color:var(--text-muted); }
+</style>
+</head>
+<body>
+<script src="/static/realtime.js"></script>
+<script src="/static/eos.js"></script>
+<script src="/static/eos-components.js"></script>
+
+<script>EOS.nav('assistant');</script>
+
+<!-- Chat container (below nav) -->
+<div class="chat-container">
+
+<!-- Sidebar -->
+<div id="sidebar-overlay" class="eos-chat-scrim" onclick="closeSidebar()"></div>
+<aside id="sidebar" class="eos-chat-sidebar">
+  <div class="eos-chat-sidebar-header">
+    <h2>Conversations</h2>
+    <span class="eos-chat-sidebar-actions">
+      <button class="btn-settings" onclick="openAppSettings()" title="Settings">&#9881;</button>
+    </span>
+  </div>
+  <button class="eos-chat-new-btn" onclick="newSession()">+ New chat</button>
+  <div id="session-list" class="eos-chat-session-list"></div>
+</aside>
+<script>
+  // Collapse to drawer on narrow viewports; visible by default on desktop.
+  (function(){
+    var sb = document.getElementById('sidebar');
+    if (sb && window.innerWidth <= 700) sb.classList.add('hidden');
+  })();
+</script>
+
+<!-- Main -->
+<div id="main">
+  <div id="topbar">
+    <div class="tb-left">
+      <button id="btn-menu" onclick="toggleSidebar()">&#9776;</button>
+      <input id="session-title" value="New chat" onchange="renameSession(this.value)">
+    </div>
+    <div class="tb-right">
+      <button class="tb-btn" onclick="exportSession()" title="Export to vault">&#x1F4BE;</button>
+      <button class="tb-btn" id="btn-compare" onclick="toggleCompare()" title="Compare all providers">&#x2194;</button>
+      <span id="model-pill" title="App default model — persists. Use the tier picker for per-session."></span>
+      <button class="tb-btn" id="btn-backend" onclick="openTierPicker()" title="Model tier (this session)">auto</button>
+      <span id="status-dot"></span>
+    </div>
+  </div>
+
+  <div id="messages" class="eos-chat-transcript">
+    <div class="empty-state" id="empty">
+      <div class="empty-icon">&#129302;</div>
+      <div class="empty-text">EmptyOS Assistant</div>
+      <div class="empty-sub">Ask anything, type / for commands, or hold the mic</div>
+    </div>
+  </div>
+
+  <div id="input-area" class="eos-chat-input-area">
+    <div id="pinned-project" class="pinned-project" style="display:none"></div>
+    <div id="pending-images" class="pending-images" style="display:none"></div>
+    <div id="pending-files" class="pending-files" style="display:none"></div>
+    <div id="input-row">
+      <button class="input-btn" id="btn-mic" onclick="toggleMic()" title="Voice input">&#127908;</button>
+      <button class="input-btn" id="btn-attach" onclick="openAttach()" title="Attach a vault note or upload a file">&#128206;</button>
+      <button class="input-btn" id="btn-pin" onclick="pinProject()" title="Pin a project — its docs become persistent context">&#128204;</button>
+      <button class="input-btn" id="btn-tools" onclick="toggleTools()" title="Tools: web search, vault query, file read (grounded answers, slower)">&#128295;</button>
+      <textarea id="input" class="eos-chat-input" rows="1" placeholder="Ask anything or type /help..." onkeydown="handleKey(event)" oninput="autoResize(this);checkSlash(this)"></textarea>
+      <button id="btn-send" class="eos-chat-send" onclick="send()">Send</button>
+    </div>
+    <div id="slash-hint"></div>
+  </div>
+</div>
+
+</div><!-- /chat-container -->
+
+<script>
+var WS_BASE = 'ws://' + location.host;
+var sessions = [];
+var activeSession = null;
+var ws = null;
+var streaming = false;
+var streamEl = null;
+var backends = ['auto','openai-nano','openai-mini','openai'];  // tier mapping: auto · fast · standard · pro
+
+function backendLabel(bk) {
+  var t = (window.EOS_UI && EOS_UI.tierFromProvider) ? EOS_UI.tierFromProvider(bk) : null;
+  if (t && EOS_UI.TIERS[t]) return EOS_UI.TIERS[t].label;
+  return bk || 'auto';
+}
+var slashCmds = [];
+var compareMode = false;
+var recognition = null;
+var isListening = false;
+var currentUtterance = null;
+
+async function init() {
+  if (window.EOS_UI && EOS_UI.modelPill) {
+    EOS_UI.modelPill({app: 'assistant', mount: '#model-pill'});
+  }
+  try { slashCmds = await EOS.api('/assistant/api/slash-commands'); } catch(e) {}
+  await loadSessions();
+  // ?q= handoff (hub smart bar "ask" route): fresh session so a routed
+  // question never pollutes an existing thread; strip the param so a refresh
+  // doesn't re-send.
+  var routedQ = new URLSearchParams(window.location.search).get('q');
+  if (routedQ && routedQ.trim() && routedQ.length <= 500) {
+    history.replaceState(null, '', window.location.pathname);
+    await newSession();
+    var inp = document.getElementById('input');
+    inp.value = routedQ.trim();
+    autoResize(inp);
+    _autoSendWhenReady();
+  } else if (sessions.length === 0) await newSession();
+  else activateSession(sessions[0].id);
+  initSpeechRecognition();
+}
+
+// Poll briefly for the WebSocket to come up, then send(); on timeout send()
+// anyway — it falls back to fallbackChat when the socket isn't ready.
+function _autoSendWhenReady(tries) {
+  tries = tries || 0;
+  if (ws && ws.readyState === 1) { send(); return; }
+  if (tries >= 20) { send(); return; }
+  setTimeout(function(){ _autoSendWhenReady(tries + 1); }, 100);
+}
+
+// ── Sessions ──────────────────────────────────────────
+
+async function loadSessions() {
+  try { sessions = await EOS.api('/assistant/api/sessions'); renderSessions(); } catch(e) { sessions = []; }
+}
+
+function renderSessions() {
+  var el = document.getElementById('session-list');
+  el.innerHTML = sessions.map(function(s) {
+    var cls = activeSession === s.id ? ' active' : '';
+    return '<div class="eos-chat-session-item' + cls + '" onclick="activateSession(\'' + s.id + '\')">'
+      + '<span class="s-name">' + esc(s.name) + '</span>'
+      + '<span class="sess-actions">'
+      +   '<button class="del" onclick="event.stopPropagation();deleteSession(\'' + s.id + '\')">&times;</button>'
+      + '</span>'
+      + '</div>';
+  }).join('');
+}
+
+async function newSession() {
+  try {
+    var s = await EOS.post('/assistant/api/sessions', {name: '', backend: 'auto'});
+    sessions.unshift({id: s.id, name: s.name, backend: s.backend, message_count: 0});
+    renderSessions();
+    activateSession(s.id);
+  } catch(e) { EOS_UI.toast('Could not create session: ' + e.message, false); }
+}
+
+async function deleteSession(sid) {
+  if (!await EOS_UI.confirm({message: 'Delete this session?', action: 'Delete', danger: true})) return;
+  try {
+    await EOS.api('/assistant/api/sessions/' + sid, {method: 'DELETE'});
+    sessions = sessions.filter(function(s) { return s.id !== sid; });
+    renderSessions();
+    if (activeSession === sid) { if (sessions.length) activateSession(sessions[0].id); else await newSession(); }
+  } catch(e) { EOS_UI.toast('Delete failed: ' + e.message, false); }
+}
+
+async function activateSession(sid) {
+  activeSession = sid;
+  _pendingImages = []; renderPendingImages();
+  _pendingFiles  = []; renderPendingFiles();
+  renderSessions();
+  try {
+    var s = await EOS.api('/assistant/api/sessions/' + sid);
+    document.getElementById('session-title').value = s.name || 'New chat';
+    document.getElementById('btn-backend').textContent = backendLabel(s.backend || 'auto');
+    document.getElementById('btn-backend').dataset.backend = s.backend || 'auto';
+    var expected = (sessions.find(function(x){return x.id===sid}) || {}).message_count || 0;
+    var got = (s.messages || []).length;
+    if (expected > 0 && got === 0) {
+      console.warn('[assistant] session', sid, 'expected', expected, 'messages but got 0 — data-layer bug?');
+    }
+    renderMessages(s.messages || []);
+    renderPinnedProject(s.project_id || '');
+    connectWS(sid);
+  } catch(e) { EOS_UI.toast('Could not load session: ' + e.message, false); }
+  if (window.innerWidth <= 700) closeSidebar();
+}
+
+// ── Project Pinning ───────────────────────────────────
+
+function renderPinnedProject(projectId) {
+  var el = document.getElementById('pinned-project');
+  if (!el) return;
+  if (!projectId) { el.innerHTML = ''; el.style.display = 'none'; return; }
+  el.style.display = '';
+  el.innerHTML = '<span class="pp-icon">&#128204;</span>' +
+                 '<span class="pp-id">' + EOS_UI.esc(projectId) + '</span>' +
+                 '<button class="pp-x" onclick="unpinProject()" title="Unpin project">&times;</button>';
+}
+
+async function pinProject() {
+  if (!activeSession) return;
+  var projects = [];
+  try { projects = await EOS.api('/projects/api/list'); } catch(e) { projects = []; }
+  if (!projects.length) { EOS.toast && EOS.toast('No projects found'); return; }
+  var rows = projects.slice(0, 100).map(function(p) {
+    var id = p.id || p.name || '';
+    var name = p.name || id;
+    var dl = p.deadline ? ' · due ' + p.deadline : '';
+    return '<div class="eos-att-row" data-id="' + EOS_UI.escAttr(id) + '">' +
+             '<div class="eos-att-row-main"><span class="eos-att-name">' + EOS_UI.esc(name) + '</span></div>' +
+             '<div class="eos-att-row-tags">' + EOS_UI.esc(id) + dl + '</div>' +
+           '</div>';
+  }).join('');
+  EOS_UI.modal({
+    title: 'Pin a project to this chat',
+    body: '<div class="eos-att-list" style="max-height:60vh;overflow-y:auto">' + rows + '</div>',
+    width: '520px',
+  });
+  setTimeout(function() {
+    Array.from(document.querySelectorAll('.eos-att-row')).forEach(function(row) {
+      row.onclick = async function() {
+        var id = row.dataset.id;
+        EOS_UI.closeModal();
+        try {
+          await EOS.post('/assistant/api/sessions/' + activeSession + '/pin-project', {project_id: id});
+          renderPinnedProject(id);
+          if (EOS.toast) EOS.toast('Pinned ' + id + ' — context will be injected on every reply');
+        } catch(e) {
+          if (EOS.toast) EOS.toast('Pin failed: ' + e.message);
+        }
+      };
+    });
+  }, 50);
+}
+
+async function unpinProject() {
+  if (!activeSession) return;
+  try {
+    await EOS.api('/assistant/api/sessions/' + activeSession + '/pin-project', {method: 'DELETE'});
+    renderPinnedProject('');
+  } catch(e) {}
+}
+
+async function renameSession(name) {
+  if (!activeSession || !name.trim()) return;
+  try {
+    await EOS.api('/assistant/api/sessions/' + activeSession, {method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify({name:name.trim()})});
+    var s = sessions.find(function(x){return x.id===activeSession});
+    if(s) s.name=name.trim();
+    renderSessions();
+  } catch(e) { EOS_UI.toast('Rename failed: ' + e.message, false); }
+}
+
+async function exportSession() {
+  if (!activeSession) return;
+  try {
+    var r = await EOS.post('/assistant/api/sessions/' + activeSession + '/export', {});
+    if (r.ok) EOS_UI.toast('Exported: ' + r.filename);
+    else EOS_UI.toast(r.error || 'Export failed', false);
+  } catch(e) { EOS_UI.toast('Export failed', false); }
+}
+
+function openTierPicker() {
+  var btn = document.getElementById('btn-backend');
+  var current = btn.dataset.backend || 'auto';
+  EOS_UI.tierPicker({
+    current: current,
+    title: 'Model tier',
+    onSelect: function(choice) {
+      btn.dataset.backend = choice.provider;
+      btn.textContent = backendLabel(choice.provider);
+      if (ws && ws.readyState === 1) {
+        ws.send(JSON.stringify({type: 'set-backend', backend: choice.provider}));
+      }
+      EOS_UI.toast(EOS_UI.TIERS[choice.tier].label + ' selected');
+    },
+  });
+}
+
+// ── Compare Mode ─────────────────────────────────────
+
+function toggleCompare() {
+  compareMode = !compareMode;
+  var btn = document.getElementById('btn-compare');
+  btn.classList.toggle('active', compareMode);
+  btn.title = compareMode ? 'Compare mode ON' : 'Compare all providers';
+}
+
+async function sendCompare(text) {
+  addMsg('user', text);
+  scrollBottom();
+  streaming = true;
+  var btn = document.getElementById('btn-send');
+  btn.textContent = '...';
+  btn.disabled = true;
+
+  // Show thinking
+  var msgs = document.getElementById('messages');
+  var thinkEl = document.createElement('div');
+  thinkEl.className = 'thinking';
+  thinkEl.id = 'thinking';
+  thinkEl.textContent = 'Comparing all providers';
+  msgs.appendChild(thinkEl);
+  scrollBottom();
+
+  try {
+    var data = await EOS.post('/assistant/api/compare', {message: text, session_id: activeSession});
+    removeThinking();
+
+    if (data.results && data.results.length > 0) {
+      var container = document.createElement('div');
+      container.className = 'compare-container';
+
+      data.results.forEach(function(r) {
+        var card = document.createElement('div');
+        card.className = 'compare-card';
+
+        var header = document.createElement('div');
+        header.className = 'provider-name ' + r.provider;
+        header.innerHTML = r.provider + '<span class="latency">' + r.latency_ms + 'ms</span>';
+        card.appendChild(header);
+
+        var body = document.createElement('div');
+        body.className = 'compare-body';
+        if (r.error) {
+          body.innerHTML = '<em style="color:var(--red)">' + esc(r.error) + '</em>';
+        } else {
+          body.innerHTML = linkifyAttachments(renderMD(r.text || ''));
+        }
+        card.appendChild(body);
+
+        // TTS button
+        var actions = document.createElement('div');
+        actions.className = 'msg-actions';
+        actions.style.opacity = '1';
+        var ttsBtn = document.createElement('button');
+        ttsBtn.className = 'msg-action-btn';
+        ttsBtn.textContent = '\u{1F50A}';
+        ttsBtn.onclick = function() { speakText(r.text || '', ttsBtn); };
+        actions.appendChild(ttsBtn);
+        card.appendChild(actions);
+
+        container.appendChild(card);
+      });
+
+      msgs.appendChild(container);
+      scrollBottom();
+    } else {
+      addMsg('system', 'No providers returned results', 'system');
+    }
+  } catch(e) {
+    removeThinking();
+    addMsg('system', 'Compare failed: ' + e.message, 'system');
+  }
+
+  streaming = false;
+  btn.textContent = 'Send';
+  btn.disabled = false;
+  btn.onclick = send;
+  autoName();
+}
+
+// ── WebSocket Chat ────────────────────────────────────
+
+function connectWS(sid) {
+  if (ws) try{ws.close()}catch(e){}
+  var dot = document.getElementById('status-dot');
+  ws = new WebSocket(WS_BASE + '/assistant/ws/' + sid);
+  ws.onopen = function(){dot.className='connected'};
+  ws.onclose = function(){dot.className=''};
+  ws.onerror = function(){dot.className=''};
+  ws.onmessage = function(ev){try{handleWS(JSON.parse(ev.data))}catch(e){}};
+}
+
+function handleWS(d) {
+  var msgs = document.getElementById('messages');
+  if (d.type==='agent-thinking') {
+    removeThinking();
+    var known = d.agent && d.agent !== 'auto';
+    var el=document.createElement('div');
+    el.className='thinking' + (known ? ' agent-'+d.agent : '');
+    el.id='thinking';
+    el.textContent = known ? (d.agent + ' thinking') : 'thinking\u2026';
+    msgs.appendChild(el); scrollBottom();
+  } else if (d.type==='agent-status') {
+    removeThinking();
+    var el=document.createElement('div'); el.className='tool-status'; el.textContent=d.status;
+    document.getElementById('messages').appendChild(el); scrollBottom();
+  } else if (d.type==='agent-usage') {
+    var badge=document.createElement('div'); badge.className='usage-badge';
+    badge.textContent=(d.model||'')+' | '+d.prompt_tokens+'+'+d.completion_tokens+'='+(d.total_tokens||d.prompt_tokens+d.completion_tokens)+' tokens | $'+(d.cost!=null?d.cost:'?');
+    var lastAi=document.querySelectorAll('.eos-chat-turn.assistant'); var target=lastAi.length?lastAi[lastAi.length-1]:null;
+    if(target) target.appendChild(badge); else document.getElementById('messages').appendChild(badge);
+  } else if (d.type==='provider-resolved') {
+    // Capability layer told us which provider will actually answer. If the user
+    // explicitly picked a different backend (was_switch=true), render a badge
+    // explaining the swap. Either way, relabel the streaming bubble to the real
+    // provider so the agent-color matches who's answering.
+    removeThinking();
+    if(!streamEl) streamEl=addMsg('ai','',d.to);
+    else {
+      streamEl.className='eos-chat-turn assistant provider-'+d.to;
+      var lbl=streamEl.querySelector('.eos-chat-role-label');
+      if(lbl){lbl.className='eos-chat-role-label assistant provider-'+d.to; lbl.textContent=d.to}
+      else {
+        var newLbl=document.createElement('div');
+        newLbl.className='eos-chat-role-label assistant provider-'+d.to;
+        newLbl.textContent=d.to;
+        streamEl.insertBefore(newLbl, streamEl.firstChild);
+      }
+    }
+    if (d.was_switch) {
+      var note=document.createElement('div'); note.className='switched-badge';
+      note.textContent='\u21AA '+d.from+' unavailable, using '+d.to;
+      var c0=streamEl.querySelector('.eos-chat-turn-content');
+      if(c0) streamEl.insertBefore(note, c0); else streamEl.appendChild(note);
+    }
+    scrollBottom();
+  } else if (d.type==='agent-stream') {
+    removeThinking();
+    if(!streamEl) {
+      // If agent is still "auto", don't bake in a misleading label — wait for
+      // provider-resolved to set it. Passing "" skips the role-label span.
+      var a = (d.agent && d.agent !== 'auto') ? d.agent : '';
+      streamEl=addMsg('ai','',a);
+    }
+    streamEl.classList.add('eos-ai-streaming');
+    var c=streamEl.querySelector('.eos-chat-turn-content'); if(c) c.innerHTML=linkifyAttachments(renderMD(d.text));
+    scrollBottom();
+  } else if (d.type==='agent-reply') {
+    removeThinking();
+    var replyText=d.text||'';
+    var imgHtml=extractImages(replyText);
+    if(streamEl){
+      var c=streamEl.querySelector('.eos-chat-turn-content');if(c){c.innerHTML=linkifyAttachments(renderMD(replyText));if(imgHtml)c.innerHTML+=imgHtml}
+      streamEl.classList.remove('eos-ai-streaming');
+      streamEl=null;
+    } else if(!streaming) {
+      var agent2 = (d.agent && d.agent !== 'auto') ? d.agent : '';
+      var msgEl=addMsg('ai',replyText,agent2);
+      if(imgHtml){var c2=msgEl.querySelector('.eos-chat-turn-content');if(c2)c2.innerHTML+=imgHtml}
+    }
+    streaming=false; var b=document.getElementById('btn-send'); b.textContent='Send'; b.onclick=send;
+    scrollBottom(); autoName();
+  } else if (d.type==='agent-done') {
+    streaming=false; var b2=document.getElementById('btn-send'); b2.textContent='Send'; b2.onclick=send;
+    if(streamEl) streamEl.classList.remove('eos-ai-streaming');
+    streamEl=null;
+    if(pendingVerify){ pendingVerify=false; setVerify('checking'); }
+  } else if (d.type==='verify-checking') {
+    pendingVerify=true;   // bubble may not exist yet; render the chip on agent-done
+  } else if (d.type==='verify-ok') {
+    pendingVerify=false; setVerify(d.confirmed ? 'confirmed' : 'ok', d);
+  } else if (d.type==='verify-correction') {
+    pendingVerify=false; setVerify('correction', d);
+  } else if (d.type==='verify-conflict') {
+    pendingVerify=false; setVerify('conflict', d);
+  } else if (d.type==='research-citations') {
+    appendResearchCitations(d.sources || []);
+  } else if (d.type==='session-renamed') {
+    var s=sessions.find(function(x){return x.id===activeSession});
+    if(s){s.name=d.name;renderSessions()}
+    document.getElementById('session-title').value=d.name;
+  } else if (d.type==='error') { addMsg('system','Error: '+d.message,'system'); }
+}
+
+function removeThinking(){var el=document.getElementById('thinking');if(el)el.remove()}
+
+// Two-phase companion: the fast answer came from a scoped slice; a chip under it
+// shows the always-on whole-vault consistency check, resolved BY SOURCE RECENCY.
+// verified / confirmed → fast answer stands; corrected → newer note supersedes;
+// conflict → both notes disagree and recency is ambiguous (surface both, pick neither).
+var pendingVerify=false;
+function _srcList(items){
+  // structured [{name,date,path}] → clickable note links (view/edit/open) + date,
+  // so "open the notes to decide" is actionable. Tolerates a legacy string.
+  if(!items) return '';
+  if(typeof items === 'string'){ return '<div class="vc-src">'+esc(items)+'</div>'; }
+  if(!items.length) return '';
+  return '<div class="vc-src">'+items.map(function(it){
+    return (typeof EOS!=='undefined' && EOS.noteActions ? EOS.noteActions(it.path, it.name) : esc(it.name))
+      + ' <span class="vc-date">('+esc(it.date||'no date')+')</span>';
+  }).join('<br>')+'</div>';
+}
+function setVerify(state, d){
+  d = d || {};
+  var msgs=document.querySelectorAll('#messages .eos-chat-turn.assistant');
+  var turn=msgs.length?msgs[msgs.length-1]:null;
+  if(!turn) return;
+  var chip=turn.querySelector('.verify-chip');
+  if(!chip){ chip=document.createElement('div'); chip.className='verify-chip'; turn.appendChild(chip); }
+  if(state==='checking'){ chip.className='verify-chip verify-checking'; chip.textContent='⟳ checking against full vault…'; return; }
+  if(state==='ok'){ chip.className='verify-chip verify-ok'; chip.textContent='✓ verified against full vault'; scrollBottom(); return; }
+  if(state==='confirmed'){ chip.className='verify-chip verify-ok'; chip.textContent='✓ fast answer confirmed as current (newest note)'; scrollBottom(); return; }
+  if(state==='correction'){
+    chip.className='verify-chip verify-corrected'; chip.textContent='✎ corrected — a newer note supersedes';
+    if(!turn.querySelector('.verify-correction') && (d.text||'')){
+      var card=document.createElement('div'); card.className='verify-correction';
+      card.innerHTML='<div class="vc-label">Full-vault correction</div>'+
+        '<div class="eos-chat-turn-content">'+linkifyAttachments(renderMD(d.text))+'</div>'+
+        _srcList(d.sources)+
+        _reconcileBtn(turn, (d.stale_paths||[])[0], d.text, (d.source_paths||[])[0]);
+      turn.appendChild(card);
+    }
+  } else if(state==='conflict'){
+    chip.className='verify-chip verify-conflict'; chip.textContent='⚖ these notes disagree — can’t tell which is current';
+    if(!turn.querySelector('.verify-conflict-card')){
+      var c2=document.createElement('div'); c2.className='verify-conflict-card';
+      c2.innerHTML='<div class="vc-label">Unresolved conflict — open the notes to decide</div>'+
+        '<div class="vc-side"><b>Scoped answer</b>'+_srcList(d.scoped_sources)+
+          '<div class="eos-chat-turn-content">'+linkifyAttachments(renderMD(d.scoped||''))+'</div></div>'+
+        '<div class="vc-side"><b>Whole-vault answer</b>'+_srcList(d.full_sources)+
+          '<div class="eos-chat-turn-content">'+linkifyAttachments(renderMD(d.full||''))+'</div></div>';
+      turn.appendChild(c2);
+    }
+  }
+  scrollBottom();
+}
+
+// Durable ripple: propose a vault edit that records the correction in the stale
+// note, gated by a diff the user Applies/Rejects (never auto-written).
+function _reconcileBtn(turn, stalePath, fact, sourcePath){
+  if(!stalePath || !fact) return '';
+  var id='rec-'+Math.random().toString(36).slice(2,8);
+  setTimeout(function(){
+    var b=document.getElementById(id);
+    if(b) b.onclick=function(){ proposeReconcile(b, stalePath, fact, sourcePath); };
+  },0);
+  return '<div class="vc-actions"><button id="'+id+'" class="eos-btn-sm">Reconcile in vault →</button></div>';
+}
+async function proposeReconcile(btn, stalePath, fact, sourcePath){
+  btn.disabled=true; btn.textContent='Preparing diff…';
+  try{
+    var r=await EOS.api('/assistant/api/reconcile/propose-fix',{method:'POST',
+      body:JSON.stringify({stale_path:stalePath, fact:fact, source_path:sourcePath, mode:'timeline'})});
+    if(!r.ok){ btn.textContent='Reconcile failed: '+(r.error||'?'); btn.disabled=false; return; }
+    var host=btn.closest('.vc-actions');
+    host.innerHTML='<div class="vc-difflabel">Propose adding to <b>'+esc(stalePath.split('/').pop())+'</b> · ## Timeline</div>'+
+      '<pre class="vc-diff">'+(r.diff||[]).map(function(l){
+        var cls=l.kind==='add'?'d-add':l.kind==='del'?'d-del':l.kind==='hunk'?'d-hunk':'d-ctx';
+        return '<span class="'+cls+'">'+esc(l.text)+'</span>';
+      }).join('')+'</pre>'+
+      '<button class="eos-btn-sm" id="ap-'+r.action_id+'">Apply</button> '+
+      '<button class="eos-btn-sm" id="rj-'+r.action_id+'">Reject</button>';
+    document.getElementById('ap-'+r.action_id).onclick=function(){ applyReconcile(host, r.action_id, true); };
+    document.getElementById('rj-'+r.action_id).onclick=function(){ applyReconcile(host, r.action_id, false); };
+  }catch(e){ btn.textContent='Reconcile error'; btn.disabled=false; }
+}
+async function applyReconcile(host, actionId, apply){
+  var ep=apply?'/assistant/api/reconcile/apply-fix':'/assistant/api/reconcile/reject-fix';
+  var r=await EOS.api(ep,{method:'POST',body:JSON.stringify({action_id:actionId})});
+  if(!apply){ host.innerHTML='<span class="vc-done">Rejected</span>'; return; }
+  host.innerHTML = r.ok ? '<span class="vc-done">✓ Applied to '+esc((r.path||'').split('/').pop())+'</span>'
+                        : '<span class="vc-done">'+(r.error==='stale'?'Note changed since preview — re-run':'Apply failed')+'</span>';
+}
+
+function appendResearchCitations(sources) {
+  if (!sources || !sources.length) return;
+  // Append into the current streaming bubble so citations sit with the report.
+  var target = streamEl;
+  if (!target) {
+    var msgs = document.querySelectorAll('#messages .eos-chat-turn.assistant');
+    target = msgs.length ? msgs[msgs.length - 1] : null;
+  }
+  if (!target) return;
+  var box = document.createElement('div');
+  box.className = 'research-citations';
+  box.innerHTML = '<div class="rc-label">Sources</div>' + sources.map(function(s) {
+    var label = s.title || s.url;
+    return '<a class="rc-chip" target="_blank" rel="noopener" href="' + EOS_UI.escAttr(s.url) + '">' +
+             '<span class="rc-n">[' + s.n + ']</span>' +
+             '<span class="rc-title">' + EOS_UI.esc(label) + '</span>' +
+           '</a>';
+  }).join('');
+  target.appendChild(box);
+  scrollBottom();
+}
+
+// ── Messages ──────────────────────────────────────────
+
+function renderMessages(messages) {
+  var el=document.getElementById('messages'); var empty=document.getElementById('empty');
+  // Clear prior message nodes but PRESERVE the #empty placeholder. It lives inside
+  // #messages, so el.innerHTML='' would destroy it — after which every later
+  // session load throws ("appendChild null" / "null.style") because getElementById
+  // returns null. Remove only non-#empty children instead.
+  Array.prototype.slice.call(el.children).forEach(function(c){ if(c.id!=='empty') el.removeChild(c); });
+  if(!messages.length){ if(empty) empty.style.display='flex'; return; }
+  if(empty) empty.style.display='none';
+  var lastUser='';
+  messages.forEach(function(m){
+    if(m.role==='user'){lastUser=m.text||'';addMsg('user',m.text,m.agent||'');}
+    else{addMsg('ai',m.text,m.agent||'',null,lastUser);}
+  });
+  scrollBottom();
+}
+
+// Emits shared .eos-chat-turn markup (see eos-chat-shell.css). Extras kept:
+//   - system role ('system') for error notices
+//   - .provider-<agent> modifier for per-provider role-label tint
+//   - .msg-actions TTS overlay on assistant messages
+function addMsg(type,text,agent,images,question) {
+  var el=document.getElementById('messages'); var empty=document.getElementById('empty'); if(empty)empty.style.display='none';
+  // type: 'user' | 'ai' | 'system' → role class used by shared shell
+  var roleClass = type==='user' ? 'user' : (type==='system' ? 'system' : 'assistant');
+  var providerMod = (type==='ai' && agent) ? (' provider-'+agent) : '';
+  var div=document.createElement('div');
+  div.className='eos-chat-turn '+roleClass+providerMod;
+  if(type==='ai' && agent) {
+    var label=document.createElement('div');
+    label.className='eos-chat-role-label assistant provider-'+agent;
+    label.textContent=agent;
+    div.appendChild(label);
+  } else if (type==='user') {
+    var ul=document.createElement('div'); ul.className='eos-chat-role-label user'; ul.textContent='You';
+    div.appendChild(ul);
+  }
+  if (type==='user' && images && images.length) {
+    var imgWrap = document.createElement('div');
+    imgWrap.className = 'msg-images';
+    imgWrap.innerHTML = images.map(function(p){
+      var src = '/assistant/api/image?path=' + encodeURIComponent(p);
+      return '<img src="' + src + '" alt="">';
+    }).join('');
+    div.appendChild(imgWrap);
+  }
+  var content=document.createElement('div');
+  content.className = 'eos-chat-turn-content' + (type==='ai' ? ' markdown' : '');
+  if(type==='user') content.innerHTML=linkifyText(text);
+  else if(type==='system') content.textContent=text;
+  else content.innerHTML=linkifyAttachments(renderMD(text));
+  div.appendChild(content);
+  if(type==='ai' && text) {
+    var actions=document.createElement('div');actions.className='msg-actions';
+    var ttsBtn=document.createElement('button');ttsBtn.className='msg-action-btn';ttsBtn.textContent='\u{1F50A}';
+    ttsBtn.onclick=function(){speakText(text,ttsBtn)};
+    actions.appendChild(ttsBtn);div.appendChild(actions);
+    // Pin this answer to the home "Pinned references" panel (shared helper;
+    // renders only when the optional quickref app is installed). Title = the
+    // question that prompted it; fall back to the answer's first line.
+    if(window.EOS_UI&&EOS_UI.pinButton){
+      var pinTitle=(question||'').trim()||text.split('\n')[0].slice(0,80);
+      EOS_UI.pinButton({mount:actions,title:pinTitle,body:text,source:'assistant',
+        tags:['ai-answer','pinned'],label:''});
+    }
+  }
+  el.appendChild(div); return div;
+}
+
+function linkifyAttachments(html) {
+  if (!html) return '';
+  return html.replace(/\[\[([^\]\n|]+?)(?:\|([^\]\n]+?))?\]\]/g, function(_, target, display) {
+    var label = display || target.split('/').pop().replace(/\.md$/, '').replace(/-/g, ' ');
+    var safe = (target || '').replace(/'/g, '%27');
+    return '<a href="#" class="obs-link note-ref" onclick="EOS.viewNote(\'' + safe + '\');return false" title="' + EOS_UI.escAttr(target) + '">📎 ' + EOS_UI.esc(label) + '</a>';
+  });
+}
+
+function linkifyText(text) {
+  if (!text) return '';
+  // Escape first, then linkify over the escaped text so brackets survive.
+  return linkifyAttachments(EOS_UI.esc(text)).replace(/\n/g, '<br>');
+}
+
+function renderMD(text) {
+  if(!text)return'';
+  try{marked.setOptions({highlight:function(code,lang){if(lang&&hljs.getLanguage(lang))return hljs.highlight(code,{language:lang}).value;return hljs.highlightAuto(code).value}});return marked.parse(text)}
+  catch(e){return'<p>'+esc(text)+'</p>'}
+}
+
+function scrollBottom(){var el=document.getElementById('messages');setTimeout(function(){el.scrollTop=el.scrollHeight},50)}
+
+// ── Send ──────────────────────────────────────────────
+
+function send() {
+  var input=document.getElementById('input'); var text=input.value.trim();
+  var images = _pendingImages.slice();
+  var files = _pendingFiles.slice();
+  if((!text && !images.length && !files.length) || streaming) return;
+  if(text==='/new'){input.value='';newSession();return}
+  input.value=''; autoResize(input);
+
+  if (compareMode) {
+    sendCompare(text);
+    return;
+  }
+
+  // Surface attached file names in the user bubble so they have visible
+  // context after send (file blocks themselves aren't echoed inline).
+  var displayText = text;
+  if (files.length) {
+    var fileLine = '📎 ' + files.map(function(f){ return f.name || f.path; }).join(', ');
+    displayText = fileLine + (text ? '\n\n' + text : '');
+  }
+  addMsg('user', displayText, undefined, images.map(function(i){ return i.path; })); scrollBottom();
+  _pendingImages = []; renderPendingImages();
+  _pendingFiles  = []; renderPendingFiles();
+  streaming=true;
+  var btn=document.getElementById('btn-send'); btn.textContent='Stop'; btn.disabled=false;
+  btn.onclick=function(){if(streaming&&ws&&ws.readyState===1){ws.send(JSON.stringify({type:'cancel'}));streaming=false;btn.textContent='Send';btn.onclick=send}};
+  var payload = {type:'message', text:text, use_tools:useTools};
+  if (images.length) payload.images = images.map(function(i){ return i.path; });
+  if (files.length)  payload.files  = files.map(function(i){ return i.path; });
+  if(ws&&ws.readyState===1) ws.send(JSON.stringify(payload));
+  else fallbackChat(text);
+}
+
+var useTools = (function(){ try { return localStorage.getItem('assistant.use_tools')==='1'; } catch(_) { return false; } })();
+function toggleTools() {
+  useTools = !useTools;
+  try { localStorage.setItem('assistant.use_tools', useTools ? '1' : '0'); } catch(_) {}
+  var btn = document.getElementById('btn-tools');
+  if (btn) { btn.style.background = useTools ? 'var(--accent)' : ''; btn.style.color = useTools ? '#fff' : ''; btn.title = useTools ? 'Tools ON — Read/Grep/Glob (slower, grounded)' : 'Read-only tool retrieval (slower, grounded)'; }
+  if (window.EOS && EOS.toast) EOS.toast(useTools ? 'Tools ON: model will Read/Grep your vault' : 'Tools OFF: classic chat');
+}
+document.addEventListener('DOMContentLoaded', function(){
+  var btn = document.getElementById('btn-tools');
+  if (btn && useTools) { btn.style.background = 'var(--accent)'; btn.style.color = '#fff'; }
+  initAttach();
+});
+
+// ── Attachments ───────────────────────────────────────
+function openAttach() {
+  if (!window.EOS_UI || !EOS_UI.attachmentPicker) return;
+  EOS_UI.attachmentPicker({onPick: insertAttachment});
+}
+
+var _pendingImages = [];   // [{path, name}] — image bytes go to vision model
+var _pendingFiles  = [];   // [{path, name}] — PDF/docx/txt extracted server-side
+var _imageExtRe = /\.(png|jpe?g|gif|webp|bmp)$/i;
+var _extractExtRe = /\.(pdf|docx|txt)$/i;
+
+function _isImageItem(item) {
+  if (!item) return false;
+  if (item.mime && /^image\//i.test(item.mime)) return true;
+  var name = item.name || item.path || '';
+  return _imageExtRe.test(name);
+}
+
+function _isExtractableItem(item) {
+  if (!item) return false;
+  var name = item.name || item.path || '';
+  return _extractExtRe.test(name);
+}
+
+function insertAttachment(item) {
+  if (!item || !item.path) return;
+  if (_isImageItem(item)) {
+    if (!_pendingImages.some(function(p){ return p.path === item.path; })) {
+      _pendingImages.push({path: item.path, name: item.name || item.path});
+      renderPendingImages();
+    }
+    if (window.EOS && EOS.toast) EOS.toast('Image attached — will be sent to the vision model');
+    return;
+  }
+  if (_isExtractableItem(item)) {
+    if (!_pendingFiles.some(function(p){ return p.path === item.path; })) {
+      _pendingFiles.push({path: item.path, name: item.name || item.path});
+      renderPendingFiles();
+    }
+    if (window.EOS && EOS.toast) EOS.toast('Attached: ' + (item.name || item.path) + ' — extracted text will be sent with your next message');
+    return;
+  }
+  var ta = document.getElementById('input');
+  if (!ta) return;
+  var snippet = '[[' + item.path + ']]';
+  var start = ta.selectionStart || 0;
+  var end = ta.selectionEnd || 0;
+  var prefix = ta.value.slice(0, start);
+  var suffix = ta.value.slice(end);
+  var pad = (prefix && !prefix.endsWith(' ') && !prefix.endsWith('\n')) ? ' ' : '';
+  ta.value = prefix + pad + snippet + ' ' + suffix;
+  var newPos = (prefix + pad + snippet + ' ').length;
+  ta.focus();
+  ta.setSelectionRange(newPos, newPos);
+  if (typeof autoResize === 'function') autoResize(ta);
+  if (window.EOS && EOS.toast) EOS.toast('Attached: ' + (item.name || item.path));
+}
+
+function renderPendingImages() {
+  var strip = document.getElementById('pending-images');
+  if (!strip) return;
+  if (!_pendingImages.length) { strip.innerHTML = ''; strip.style.display = 'none'; return; }
+  strip.style.display = '';
+  strip.innerHTML = _pendingImages.map(function(p, i) {
+    var src = '/assistant/api/image?path=' + encodeURIComponent(p.path);
+    return '<div class="pending-image" title="' + EOS_UI.escAttr(p.name) + '">' +
+             '<img src="' + src + '" alt="">' +
+             '<button class="pending-image-x" onclick="removePendingImage(' + i + ')" title="Remove">&times;</button>' +
+           '</div>';
+  }).join('');
+}
+
+function removePendingImage(i) {
+  _pendingImages.splice(i, 1);
+  renderPendingImages();
+}
+
+function renderPendingFiles() {
+  var strip = document.getElementById('pending-files');
+  if (!strip) return;
+  if (!_pendingFiles.length) { strip.innerHTML = ''; strip.style.display = 'none'; return; }
+  strip.style.display = '';
+  strip.innerHTML = _pendingFiles.map(function(p, i) {
+    var name = p.name || p.path;
+    return '<div class="pending-file" title="' + EOS_UI.escAttr(p.path) + '">' +
+             '<span class="pending-file-icon">📄</span>' +
+             '<span class="pending-file-name">' + EOS_UI.esc(name) + '</span>' +
+             '<button class="pending-file-x" onclick="removePendingFile(' + i + ')" title="Remove">&times;</button>' +
+           '</div>';
+  }).join('');
+}
+
+function removePendingFile(i) {
+  _pendingFiles.splice(i, 1);
+  renderPendingFiles();
+}
+
+function initAttach() {
+  // Global drop on chat container — drop anywhere to upload.
+  var zone = document.querySelector('.chat-container') || document.body;
+  if (!zone || zone._attBound) return;
+  zone._attBound = true;
+  ['dragenter','dragover'].forEach(function(ev) {
+    zone.addEventListener(ev, function(e) {
+      if (!e.dataTransfer || !Array.from(e.dataTransfer.types || []).includes('Files')) return;
+      e.preventDefault(); zone.classList.add('drop-active');
+    });
+  });
+  ['dragleave','drop'].forEach(function(ev) {
+    zone.addEventListener(ev, function() { zone.classList.remove('drop-active'); });
+  });
+  zone.addEventListener('drop', function(e) {
+    var files = Array.from((e.dataTransfer && e.dataTransfer.files) || []);
+    if (!files.length) return;
+    e.preventDefault();
+    EOS_UI.attachmentPicker({onPick: insertAttachment, initialFiles: files});
+  });
+}
+
+async function fallbackChat(text) {
+  try{var d=await EOS.post('/assistant/api/chat',{message:text,session_id:activeSession,use_tools:useTools});addMsg('ai',d.response,d.provider||'default')}
+  catch(e){addMsg('system','Error: '+e.message,'system')}
+  streaming=false;document.getElementById('btn-send').disabled=false;document.getElementById('btn-send').textContent='Send';autoName();
+}
+
+function autoName() { /* Server handles auto-naming via LLM */ }
+
+// ── Voice I/O ─────────────────────────────────────────
+
+function initSpeechRecognition() {
+  var SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SR) return;
+  recognition = new SR();
+  recognition.continuous = false;
+  recognition.interimResults = true;
+  recognition.lang = 'en-US';
+  recognition.onresult = function(e) {
+    var transcript = '';
+    for (var i = e.resultIndex; i < e.results.length; i++) {
+      transcript += e.results[i][0].transcript;
+    }
+    document.getElementById('input').value = transcript;
+    autoResize(document.getElementById('input'));
+    if (e.results[e.results.length - 1].isFinal) {
+      stopMic();
+      // Auto-send after voice
+      setTimeout(send, 300);
+    }
+  };
+  recognition.onend = function() { stopMic(); };
+  recognition.onerror = function() { stopMic(); };
+}
+
+function toggleMic() {
+  if (isListening) { stopMic(); return; }
+  if (!recognition) {
+    EOS_UI.toast('Speech recognition not supported in this browser', 'warn');
+    return;
+  }
+  isListening = true;
+  document.getElementById('btn-mic').classList.add('active');
+  document.getElementById('input').placeholder = 'Listening...';
+  try { recognition.start(); } catch(e) { stopMic(); }
+}
+
+function stopMic() {
+  isListening = false;
+  document.getElementById('btn-mic').classList.remove('active');
+  document.getElementById('input').placeholder = 'Ask anything or type /help...';
+  try { if(recognition) recognition.stop(); } catch(e) {}
+}
+
+function speakText(text, btn) {
+  // Stop any current speech
+  if (currentUtterance) {
+    window.speechSynthesis.cancel();
+    currentUtterance = null;
+    if (btn) btn.classList.remove('speaking');
+    return;
+  }
+  var clean = EOS_UI.stripMarkdownForTts(text);
+  if (!clean) return;
+
+  var utterance = new SpeechSynthesisUtterance(clean.substring(0, 3000));
+  utterance.rate = 1.1;
+  currentUtterance = utterance;
+  if (btn) btn.classList.add('speaking');
+
+  utterance.onend = function() { currentUtterance = null; if(btn) btn.classList.remove('speaking'); };
+  utterance.onerror = function() { currentUtterance = null; if(btn) btn.classList.remove('speaking'); };
+  window.speechSynthesis.speak(utterance);
+}
+
+// ── Helpers ───────────────────────────────────────────
+
+function handleKey(e){if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();send()}}
+function autoResize(el){el.style.height='auto';el.style.height=Math.min(el.scrollHeight,150)+'px'}
+function checkSlash(el) {
+  var hint=document.getElementById('slash-hint'); var val=el.value;
+  if(val.startsWith('/')&&!val.includes(' ')){
+    var matches=slashCmds.filter(function(c){return c.command.startsWith(val)});
+    if(matches.length&&val.length>1){hint.innerHTML=matches.slice(0,5).map(function(c){return'<span style="margin-right:12px"><b>'+c.command+'</b> <span style="opacity:0.5">'+c.app+'</span></span>'}).join('');hint.className='show'}
+    else hint.className='';
+  } else hint.className='';
+}
+function toggleSidebar(){
+  var sb=document.getElementById('sidebar'),ov=document.getElementById('sidebar-overlay');
+  sb.classList.toggle('hidden');
+  if(window.innerWidth<=700) ov.classList.toggle('show',!sb.classList.contains('hidden'));
+}
+function closeSidebar(){
+  document.getElementById('sidebar').classList.add('hidden');
+  document.getElementById('sidebar-overlay').classList.remove('show');
+}
+
+function extractImages(text) {
+  if(!text) return '';
+  var imgs = [];
+  try {
+    var parsed = JSON.parse(text);
+    if(parsed.image_url) imgs.push(parsed.image_url);
+    if(parsed.filename) imgs.push('/studio/api/images/' + parsed.filename);
+    if(parsed.images && Array.isArray(parsed.images)) parsed.images.forEach(function(u){imgs.push(u)});
+  } catch(e) {
+    var urlRe = /(?:https?:\/\/[^\s"']+\.(?:png|jpg|jpeg|gif|webp))/gi;
+    var m; while((m=urlRe.exec(text))!==null) imgs.push(m[0]);
+    var fnRe = /(?:image_url|filename)["'\s:]+["']?([^\s"',}]+\.(?:png|jpg|jpeg|gif|webp))/gi;
+    while((m=fnRe.exec(text))!==null) imgs.push(m[1].startsWith('http')?m[1]:'/studio/api/images/'+m[1]);
+  }
+  if(!imgs.length) return '';
+  return imgs.map(function(src){return '<img class="chat-img" src="'+escAttr(src)+'" alt="Generated image" onclick="window.open(this.src,\'_blank\')">'}).join('');
+}
+
+// --- App Settings slide-out (shared helper) ---
+// Dark feature flag is managed from global Settings, not this compact panel:
+// settings-panel-drift: ignore assistant.feature.assistant-cross-session-memory.enabled
+var _appSettings = EOS_UI.settingsPanel({
+    id: 'app-settings-panel',
+    title: 'Assistant Settings',
+    fields: [
+        {key: 'assistant.default_backend', label: 'Default Backend', type: 'select',
+         options: ['auto', 'ollama', 'claude-cli', 'openai'], default: 'auto',
+         hint: 'Backend used for new messages when none is forced.'},
+        {key: 'assistant.vault_context', label: 'Inject Vault Context', type: 'boolean', default: true,
+         hint: 'Adds retrieved vault snippets to the system prompt.'},
+        {key: 'assistant.use_tools', label: 'Use Read-Only Tools for Retrieval', type: 'boolean', default: false,
+         hint: 'Model drives Read/Grep/Glob itself instead of keyword-search injection. Higher quality, ~3x slower. Per-message toggle: 🔧 button next to mic.'},
+        {key: 'assistant.max_history', label: 'Max Messages per Session', type: 'number', default: 200, min: 10,
+         hint: 'Older messages are trimmed beyond this count.'},
+    ],
+});
+function openAppSettings() { _appSettings.open(); }
+
+init();
+
+// Hands-Free gesture override — Victory on the assistant page starts voice input
+// for the chat box. Hands-free listening straight into the assistant loop.
+if (EOS.handsFree) {
+    EOS.handsFree.registerGesture('Victory', function() {
+        if (typeof toggleMic === 'function') toggleMic();
+    }, 'Start voice input');
+}
+</script>
+</body>
+</html>

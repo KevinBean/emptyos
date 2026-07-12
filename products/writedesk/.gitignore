@@ -1,0 +1,9 @@
+assets/
+build/
+dist/
+*.spec
+settings.json
+i18n-*.json
+browser-profile/
+writedesk.log
+config.toml

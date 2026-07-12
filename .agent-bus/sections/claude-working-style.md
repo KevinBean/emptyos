@@ -1,0 +1,4 @@
+
+
+- **Long output goes to a file, not the chat.** Audits, reports, generated content, and full file dumps are written to a file under the relevant dir (e.g. an HTML report, a vault note, a `docs/` file) and referenced by path — never printed inline. This keeps responses under the output-token cap (blown caps silently lose whole sessions) and leaves a re-readable artifact. Scope the discipline to *generated artifacts and file contents* — analysis, tradeoffs, and reasoning still belong in the reply.
+- **Front-load naming + keybinding decisions.** Before renaming anything or assigning a keyboard shortcut, list the proposed names/bindings, check for conflicts (existing app/method names, `GET /api/shortcuts`, the shortcuts in `.claude/rules/shared-frontend.md`), and wait for approval. Picking names or bindings unilaterally and reverting later is the friction this avoids. See `[[feedback_front_load_naming_keybinding]]`.

@@ -1,0 +1,53 @@
+[app]
+id = "replay"
+name = "Replay"
+version = "0.1.0"
+description = "Record & Replay for your own work — turn a finished agent session into a reusable, parameterized Replay (a saved workflow), then run it again later with every state-changing step routed through the review gate. Demonstrate once, replay safely."
+icon = "⏺"
+store_category = "ai"
+dimensions = ["occupational", "intellectual"]
+user_intent = [
+    "turn what I just did into something reusable",
+    "make this session a replay",
+    "save this workflow so I can run it again",
+    "replay the thing I did last time",
+    "把我刚才做的流程变成可复用的",
+]
+
+[app.entry]
+module = "app"
+class = "ReplayApp"
+
+[provides.web]
+prefix = "/replay"
+
+[provides.settings]
+schema = [
+    {key = "replay.feature.enabled", label = "Enable Replay", type = "boolean", default = false, hint = "Takes effect immediately — no restart needed."},
+    {key = "replay.feature.auto_resume", label = "Auto-resume a run when its gated step is applied", type = "boolean", default = false},
+]
+
+[provides.events]
+emits = [
+    "replay:distilled",
+    "replay:run_started",
+    "replay:run_paused",
+    "replay:run_completed",
+    "replay:run_blocked",
+]
+# Run lifecycle observability — UI-only, no cross-app listener by design.
+internal = [
+    "replay:distilled", "replay:run_started", "replay:run_paused",
+    "replay:run_completed", "replay:run_blocked",
+]
+
+[requires]
+capabilities = ["think", "read", "write"]
+# rooms is the only hard dependency — distill proposes the recipe note + every
+# replay step routes through its review gate (propose_action → call_app("rooms")).
+apps = ["rooms"]
+# agent = the session source (distill_from_session); repo = the SKILL.md target
+# (extension/, absent on a fresh public clone — guarded). Tolerated if absent.
+optional_apps = ["agent", "repo"]
+services = []
+events = []

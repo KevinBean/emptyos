@@ -1,0 +1,17 @@
+[plugin]
+id = "notifications"
+name = "Notifications"
+version = "1.0.0"
+description = "Proactive notifications — vault file by default, Telegram when configured"
+default = true
+
+[plugin.entry]
+module = "plugin"
+class = "NotificationsPlugin"
+
+[provides]
+services = ["notifications"]
+tags = ["system", "messaging"]
+
+[platforms]
+supports = ["laptop", "vps-cpu", "vps-gpu", "docker"]

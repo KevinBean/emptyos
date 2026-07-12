@@ -1,0 +1,1003 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Viz — EmptyOS</title>
+<link rel="stylesheet" href="/static/theme.css">
+<link rel="stylesheet" href="/static/eos-components.css">
+<link rel="stylesheet" href="/static/eos-keys.css">
+<style>
+  body { margin: 0; }
+  .viz-shell {
+    display: grid;
+    grid-template-columns: 360px 1fr;
+    grid-template-rows: auto 1fr;
+    height: 100dvh;
+    background: var(--bg);
+    color: var(--text);
+  }
+  .viz-header {
+    grid-column: 1 / -1;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px 24px;
+    border-bottom: 1px solid var(--border);
+  }
+  .viz-header h1 { font-size: 18px; margin: 0; font-weight: 600; letter-spacing: .02em; }
+  .viz-header .right { display: flex; gap: 8px; align-items: center; }
+  .viz-side {
+    border-right: 1px solid var(--border);
+    overflow-y: auto;
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+  .viz-main {
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+  .viz-preview {
+    flex: 1;
+    background: #0d1117;
+    border: 0;
+    width: 100%;
+    height: 100%;
+  }
+  .viz-empty {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--muted);
+    font-size: 13px;
+    padding: 24px;
+    text-align: center;
+  }
+  /* Stream pane styling lives in eos-components.css (.eos-stream-*).
+     This wrapper just makes the host fill the available viz-main space. */
+  #stream-pane-host { flex: 1; display: flex; min-height: 0; }
+  #stream-pane-host .eos-stream-pane { flex: 1; }
+  .field { display: flex; flex-direction: column; gap: 4px; }
+  .field label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .08em; }
+  .field textarea {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 8px 12px;
+    border-radius: 4px;
+    font-family: inherit;
+    font-size: 13px;
+    resize: vertical;
+    min-height: 90px;
+  }
+  .field select {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 8px 8px;
+    border-radius: 4px;
+    font-family: inherit;
+    font-size: 13px;
+  }
+  .row-list { display: flex; flex-direction: column; gap: 8px; }
+  .row-item {
+    padding: 8px 12px;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    background: var(--bg-card);
+    cursor: pointer;
+    font-size: 12px;
+    line-height: 1.35;
+    transition: border-color .15s;
+  }
+  .row-item:hover { border-color: var(--accent); }
+  .row-item.active { border-color: var(--accent); }
+  .row-item .meta { color: var(--muted); font-size: 10.5px; margin-top: 4px; display: flex; justify-content: space-between; }
+  .working { color: var(--accent); font-size: 12px; }
+  .shape-intro {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 8px 12px;
+    font-size: 12px;
+    line-height: 1.45;
+    color: var(--text);
+  }
+  .shape-intro .intro-title { font-weight: 600; margin-bottom: 4px; }
+  .shape-intro .intro-desc { color: var(--muted); margin-bottom: 8px; }
+  .shape-intro .intro-example {
+    border-top: 1px dashed var(--border);
+    padding-top: 8px;
+    margin-top: 8px;
+    color: var(--text);
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11px;
+    cursor: pointer;
+  }
+  .shape-intro .intro-example:hover { color: var(--accent); }
+  .shape-intro .intro-example-label { color: var(--muted); text-transform: uppercase; letter-spacing: .08em; font-size: 10px; margin-bottom: 2px; font-family: inherit; }
+
+  /* ── Element-edit loop (mirrors designer) ── */
+  .btn-edit-on { background: var(--accent); color: var(--accent-ink, #fff); border-color: var(--accent); }
+  .edit-panel {
+    position: fixed; right: 18px; bottom: 18px; width: 340px; max-height: 76vh;
+    overflow-y: auto; z-index: 9000; display: none;
+    background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px;
+    box-shadow: 0 10px 40px rgba(0,0,0,.28); padding: 16px; font-size: 13px;
+  }
+  .edit-panel.open { display: block; }
+  .edit-panel h3 { margin: 0 0 4px; font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+  .edit-panel .picked { font-size: 12px; color: var(--text); margin-bottom: 12px; word-break: break-word; }
+  .edit-panel .picked code { color: var(--accent); }
+  .edit-panel textarea {
+    width: 100%; box-sizing: border-box; background: var(--bg); border: 1px solid var(--border);
+    color: var(--text); border-radius: 6px; padding: 8px; font-family: inherit; font-size: 13px;
+    resize: vertical; min-height: 64px;
+  }
+  .knob-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 12px 0; }
+  .knob { display: flex; flex-direction: column; gap: 4px; }
+  .knob label { font-size: 10px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+  .knob input[type=color] { width: 100%; height: 28px; padding: 0; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); cursor: pointer; }
+  .knob select { background: var(--bg); border: 1px solid var(--border); color: var(--text); border-radius: 6px; padding: 4px; font-size: 12px; }
+  .align-row { display: flex; gap: 4px; }
+  .align-row button { flex: 1; padding: 4px; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; color: var(--text); cursor: pointer; font-size: 12px; }
+  .align-row button:hover { border-color: var(--accent); }
+  .edit-actions { display: flex; gap: 8px; margin-top: 12px; }
+  .edit-actions .eos-btn, .edit-actions .eos-btn-sm { flex: 1; }
+  /* Diff box is the shared .eos-diff component (eos-components.css). */
+  #edit-diff { margin: 12px 0; }
+</style>
+</head>
+<body>
+<div class="viz-shell">
+  <div class="viz-header">
+    <h1>Viz <span style="color: var(--muted); font-weight: 400; margin-left: 8px;">— single-file HTML artifacts</span></h1>
+    <div class="right">
+      <span id="working" class="working" style="display:none">generating…</span>
+      <span id="stream-stats" style="display:none; font-family:'IBM Plex Mono',monospace; font-size:11px; color:var(--muted);"></span>
+      <span id="model-pill" title="Pins viz's Generate provider (this app only). Iterate uses claude-cli when agent-runtime is available; otherwise it falls back to this provider for a full rewrite."></span>
+      <a class="eos-btn-sm" href="/viz/pages/refine.html" title="Auto-generate → critique → refine until ship-ready" style="text-decoration:none">✨ Auto-refine</a>
+      <button id="edit-toggle" class="eos-btn-sm" onclick="toggleEditMode()" style="display:none"
+              title="Click elements in the preview to edit them">✎ Edit elements</button>
+      <button id="record-mp4" class="eos-btn-sm" onclick="exportMp4()" style="display:none"
+              title="Record this animation to an MP4 (local, no GPU)">🎬 Export MP4</button>
+      <button id="send-to-note" class="eos-btn-sm" onclick="openSendToNote()" style="display:none"
+              title="Embed this artifact into a note (snapshot copy, or a live reference)">📌 Send to note</button>
+      <button class="eos-btn-sm" onclick="reloadPreview()" title="Force-refresh the preview iframe">↻ Reload</button>
+      <button class="btn-settings eos-btn-sm" onclick="openAppSettings()">⚙ Settings</button>
+    </div>
+  </div>
+
+  <aside class="viz-side">
+    <div class="field">
+      <label for="shape">Shape</label>
+      <select id="shape">
+        <option value="3d-scene">3D scene (Three.js)</option>
+        <option value="immersive-scene">Immersive 3D scene (bloom + GLSL)</option>
+        <option value="svg-diagram">SVG diagram</option>
+        <option value="schematic">Schematic (electrical SVG)</option>
+        <option value="network-graph">Network graph (vis-network)</option>
+        <option value="chart">Chart (Chart.js)</option>
+        <option value="anim-explainer">Animated explainer</option>
+        <option value="slide-deck">Slide deck (reveal.js)</option>
+        <option value="math-explainer">Math explainer (KaTeX)</option>
+        <option value="mermaid">Mermaid diagram</option>
+        <option value="game-2d">2D game (Kaboom.js)</option>
+      </select>
+    </div>
+
+    <div id="shape-intro" class="shape-intro"></div>
+    <div id="ability-gate" style="margin:8px 0;"></div>
+
+    <div class="field">
+      <label for="examples">KB pattern examples <span id="ex-count" style="color:var(--muted); font-size:11px"></span></label>
+      <select id="examples" multiple size="4" style="width:100%; font-size:12px;" ondblclick="previewExample()"></select>
+      <div style="display:flex; gap:6px; margin-top:4px; align-items:center;">
+        <button type="button" class="eos-btn-sm" onclick="previewExample()" title="Preview the focused / selected pattern's body">👁 Preview</button>
+        <span style="color:var(--muted); font-size:11px;">Ctrl/Cmd-click for multi · double-click or 👁 to preview · ignored on Iterate</span>
+      </div>
+    </div>
+
+    <div class="field">
+      <label for="prompt"><span id="prompt-label">Brief — describe what to draw</span></label>
+      <textarea id="prompt" data-suggest-app="viz" data-suggest-field="prompt" placeholder="3D scene of the solar system — sun at centre, inner four planets orbiting at scaled distances, labelled."></textarea>
+      <div style="display:flex; gap:6px;">
+        <button id="gen-btn" class="eos-btn" onclick="generate()" style="flex:1">Generate</button>
+        <button id="iter-btn" class="eos-btn" onclick="iterate()" style="flex:1; display:none">Iterate</button>
+        <button id="cancel-iter" class="eos-btn-sm" onclick="cancelIterate()" style="display:none">+ New</button>
+      </div>
+    </div>
+
+    <div class="field">
+      <label>Recent artifacts</label>
+      <div id="list" class="row-list"></div>
+    </div>
+  </aside>
+
+  <main class="viz-main">
+    <div id="empty" class="viz-empty">
+      No artifact loaded. Type a brief on the left and click Generate, or pick a recent one.
+    </div>
+    <div id="stream-pane-host" style="display:none"></div>
+    <iframe id="preview" class="viz-preview" style="display:none" sandbox="allow-scripts"></iframe>
+  </main>
+</div>
+
+<div id="edit-panel" class="edit-panel">
+  <h3>Edit element</h3>
+  <div class="picked" id="edit-picked"></div>
+  <div id="edit-form">
+    <textarea id="edit-instruction" placeholder="make this larger and use the accent colour"></textarea>
+    <div class="knob-grid">
+      <div class="knob"><label>Text colour</label><input type="color" id="knob-color" onchange="proposeKnob('color', this.value)"></div>
+      <div class="knob"><label>Background</label><input type="color" id="knob-bg" onchange="proposeKnob('background', this.value)"></div>
+      <div class="knob"><label>Font size</label>
+        <select id="knob-size" onchange="if(this.value)proposeKnob('font-size', this.value)">
+          <option value="">—</option>
+          <option>12px</option><option>14px</option><option>16px</option>
+          <option>20px</option><option>24px</option><option>32px</option><option>48px</option>
+        </select>
+      </div>
+      <div class="knob"><label>Padding</label>
+        <select id="knob-pad" onchange="if(this.value)proposeKnob('padding', this.value)">
+          <option value="">—</option>
+          <option value="0px">none</option><option value="8px">S</option>
+          <option value="16px">M</option><option value="24px">L</option>
+        </select>
+      </div>
+    </div>
+    <div class="knob"><label>Align</label>
+      <div class="align-row">
+        <button onclick="proposeKnob('text-align','left')">Left</button>
+        <button onclick="proposeKnob('text-align','center')">Center</button>
+        <button onclick="proposeKnob('text-align','right')">Right</button>
+      </div>
+    </div>
+    <div class="edit-actions">
+      <button class="eos-btn" onclick="proposeInstruction()">Propose change</button>
+      <button class="eos-btn-sm" onclick="closeEditPanel()">Close</button>
+    </div>
+  </div>
+  <div id="edit-preview" style="display:none">
+    <div id="edit-diff"></div>
+    <div class="edit-actions">
+      <button class="eos-btn" onclick="applyEdit()">Apply</button>
+      <button class="eos-btn-sm" onclick="rejectEdit()">Reject</button>
+    </div>
+  </div>
+  <div class="working" id="edit-working" style="display:none">proposing…</div>
+</div>
+
+<script src="/static/eos.js"></script>
+<script src="/static/eos-components.js"></script>
+<script src="/static/eos-keys.js"></script>
+<script>
+// ── State ─────────────────────────────────────────────────────────
+var STATE = { items: [], currentId: null, currentShape: '', editMode: false, pickedEl: null, editToken: null };
+var _edit = { enabled: false, supports: {} };  // filled by applyAbilityGate
+var _record = { enabled: false, supports: {} };  // html→mp4 export (filled by applyAbilityGate)
+var _embed = { enabled: false };  // send-to-note artifact embed (filled by applyAbilityGate)
+
+// ── Shape intros — what each preset is + one starter brief ────────
+var SHAPE_INTROS = {
+    '3d-scene': {
+        title: '3D scene (Three.js)',
+        desc: 'Interactive 3D geometry rendered in WebGL. Best for spatial objects, room layouts, product mockups — anything the eye reads better in three dimensions.',
+        example: '3D scene of the solar system: sun at the centre, the inner four planets orbiting at scaled distances, soft starfield background. Label each planet.',
+    },
+    'immersive-scene': {
+        title: 'Immersive 3D scene (bloom + GLSL)',
+        desc: 'Cinematic WebGL with the modern stack — PBR + environment lighting, bloom post-processing, custom GLSL shaders. Best for hero scenes, mood pieces, and motion-rich visuals (not measured diagrams).',
+        example: 'Immersive scene: a slowly rotating crystalline core with a glowing, breathing surface, ringed by metallic spheres orbiting against a deep starfield. Soft bloom on the bright edges, cinematic colour.',
+    },
+    'svg-diagram': {
+        title: 'SVG diagram',
+        desc: 'Crisp vector diagrams — block diagrams, cross-sections, flow layouts. Sharp at any zoom; great for embedding in docs.',
+        example: 'Block diagram of how a web request flows: browser → DNS → load balancer → web server → database, with a cache off to the side. Label each arrow.',
+    },
+    'schematic': {
+        title: 'Schematic (SVG)',
+        desc: 'Technical schematics drawn as SVG with conventional symbols — circuits, plumbing, mechanical assemblies.',
+        example: 'Simple LED circuit schematic: 9 V battery → switch → 330 Ω resistor → red LED → back to battery. Label each component with its value.',
+    },
+    'network-graph': {
+        title: 'Network graph (vis-network)',
+        desc: 'Force-directed node/edge graphs with interactive panning + selection. Best for relationships, dependency maps, knowledge graphs.',
+        example: 'Knowledge graph of major JavaScript frameworks: React, Vue, Svelte, Angular as nodes; edges showing "inspired by" and "shares concept with" relationships. Colour by release year.',
+    },
+    'chart': {
+        title: 'Chart (Chart.js)',
+        desc: 'Quantitative plots — line, bar, scatter, mixed. Best when numbers tell the story.',
+        example: 'Line chart of average global temperature anomaly 1900–2020, with a secondary bar series showing atmospheric CO₂ concentration. Annotate the 1970 inflection point.',
+    },
+    'anim-explainer': {
+        title: 'Animated explainer',
+        desc: 'CSS / JS-animated walkthroughs — concepts that need motion to land. Step-paced, with a play/pause control.',
+        example: 'Animate how a binary search works on a sorted array of 16 numbers: highlight the middle element, compare to the target, narrow to the correct half, repeat until found. Step controls.',
+    },
+    'slide-deck': {
+        title: 'Slide deck (reveal.js)',
+        desc: 'Keyboard-navigable slide deck (←/→/space). Best for short presentations you want to share as a single HTML link.',
+        example: '5-slide intro to compound interest: (1) what it is, (2) the formula, (3) why time matters more than rate, (4) one worked example, (5) the takeaway.',
+    },
+    'math-explainer': {
+        title: 'Math explainer (KaTeX)',
+        desc: 'Typeset equations + prose explanation. Best for deriving / explaining formulas with proper math rendering.',
+        example: 'Walk through the Pythagorean theorem: state a² + b² = c², show a labelled right triangle, prove it visually by rearranging four copies of the triangle inside a square. Define each symbol.',
+    },
+    'mermaid': {
+        title: 'Mermaid diagram',
+        desc: 'Diagrams from text — flowcharts, sequence diagrams, state machines, Gantt. Best for process / state shapes.',
+        example: 'Flowchart of a typical pull-request lifecycle: open → review requested → changes requested ↺ → approved → merged or closed. Show the loop back on "changes requested".',
+    },
+    'game-2d': {
+        title: '2D game (Kaboom.js)',
+        desc: 'A playable top-down game in one shot — tile map, a movable character, wall collision, a goal. Click the game to focus it, then move with Arrows / WASD. Best for prototypes, interactive learning, and tiny adventures.',
+        example: 'Top-down lighthouse keeper game: you (a 🧍 emoji) start at the dock, walk through a stone maze avoiding the water tiles, reach the 🗼 lighthouse to win. Walls are dark granite, floor is sand. Show the objective in the corner.',
+    },
+};
+
+function renderShapeIntro() {
+    var shape = document.getElementById('shape').value;
+    var info = SHAPE_INTROS[shape];
+    var el = document.getElementById('shape-intro');
+    if (!info || !el) { if (el) el.style.display = 'none'; return; }
+    el.style.display = '';
+    el.innerHTML =
+        '<div class="intro-title">' + escapeHtml(info.title) + '</div>' +
+        '<div class="intro-desc">' + escapeHtml(info.desc) + '</div>' +
+        '<div class="intro-example-label">Try this brief ↓</div>' +
+        '<div class="intro-example" onclick="useShapeExample()" title="Click to copy into the brief field">' +
+            escapeHtml(info.example) +
+        '</div>';
+}
+
+function useShapeExample() {
+    var shape = document.getElementById('shape').value;
+    var info = SHAPE_INTROS[shape];
+    if (!info) return;
+    var ta = document.getElementById('prompt');
+    ta.value = info.example;
+    ta.focus();
+    EOS_UI.toast && EOS_UI.toast('Example brief loaded — edit or hit Generate', 'ok');
+}
+
+// ── Settings panel ────────────────────────────────────────────────
+var _appSettings = EOS_UI.settingsPanel({
+    id: 'viz-settings-panel',
+    title: 'Viz Settings',
+    fields: [
+        {key: 'viz.default_shape', label: 'Default shape preset', type: 'select',
+         options: [
+            {value: '3d-scene', label: '3D scene'},
+            {value: 'immersive-scene', label: 'Immersive 3D scene'},
+            {value: 'svg-diagram', label: 'SVG diagram'},
+            {value: 'chart', label: 'Chart'},
+            {value: 'anim-explainer', label: 'Animated explainer'},
+         ],
+         default: '3d-scene',
+         hint: 'Used when the prompt does not specify a shape.'},
+        {key: 'viz.think_domain', label: 'Think domain', type: 'select',
+         options: [
+            {value: 'code', label: 'code (preferred for HTML/JS)'},
+            {value: 'text', label: 'text'},
+            {value: 'reason', label: 'reason'},
+         ],
+         default: 'code'},
+        {key: 'viz.max_html_kb', label: 'Max HTML size (KB)', type: 'number',
+         default: 256,
+         hint: 'Refuse to save artifacts larger than this.'},
+    ],
+});
+function openAppSettings() { _appSettings.open(); }
+
+// ── Hash routing ──────────────────────────────────────────────────
+var _route = EOS_UI.hashRoute({
+    onShow: function(id) { showArtifact(id); },
+    onHide: function() { /* keep current view; no global hide */ },
+});
+
+// ── Rendering ─────────────────────────────────────────────────────
+function escapeHtml(s) {
+    if (typeof esc === 'function') return esc(String(s == null ? '' : s));
+    return String(s == null ? '' : s)
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+function renderList() {
+    var el = document.getElementById('list');
+    if (!STATE.items.length) {
+        el.innerHTML = '<div style="color:var(--muted); font-size:12px;">No artifacts yet.</div>';
+        return;
+    }
+    el.innerHTML = STATE.items.map(function(r) {
+        var active = r.id === STATE.currentId ? ' active' : '';
+        var when = (r.updated || r.created || '').slice(0, 10);
+        return '<div class="row-item' + active + '" onclick="_route.set(\'' + r.id + '\')">' +
+            '<div>' + escapeHtml(r.prompt.slice(0, 80)) + (r.prompt.length > 80 ? '…' : '') + '</div>' +
+            '<div class="meta"><span>' + escapeHtml(r.shape) + '</span><span>' + when + ' · ' + r.size_kb + ' KB</span></div>' +
+        '</div>';
+    }).join('');
+}
+
+function showArtifact(id) {
+    // EOS_UI.hashRoute may pass id with leading slash from the URL fragment;
+    // strip so encodeURIComponent doesn't turn it into %2F (FastAPI 404s).
+    id = String(id || '').replace(/^\/+/, '');
+    STATE.currentId = id;
+    var item = (STATE.items || []).filter(function(r){ return r.id === id; })[0];
+    STATE.currentShape = item ? item.shape : '';
+    var iframe = document.getElementById('preview');
+    var empty = document.getElementById('empty');
+    var streamPane = document.getElementById('stream-pane-host');
+    // Cache-busting query so a re-iterate forces fresh fetch. ?edit=1 in edit mode
+    // injects the element-edit shim so clicks become edit picks.
+    var editParam = STATE.editMode ? '&edit=1' : '';
+    iframe.src = '/viz/api/html/' + encodeURIComponent(id) + '?t=' + Date.now() + editParam;
+    iframe.style.display = 'block';
+    empty.style.display = 'none';
+    if (streamPane) streamPane.style.display = 'none';
+    var statsChip = document.getElementById('stream-stats');
+    if (statsChip) statsChip.style.display = 'none';
+    iframe.onload = function() {
+        fetch('/viz/api/rendered', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({id: id}),
+        }).catch(function(){});
+    };
+    // Switch button mode: iterate against this artifact.
+    document.getElementById('gen-btn').style.display = 'none';
+    document.getElementById('iter-btn').style.display = '';
+    document.getElementById('cancel-iter').style.display = '';
+    document.getElementById('prompt-label').textContent = 'Change request — say what to tweak';
+    document.getElementById('prompt').placeholder = 'move the camera closer and add an orbit indicator on Earth';
+    document.getElementById('prompt').value = '';
+    renderList();
+    refreshEditToggle();
+    refreshRecordToggle();
+    refreshEmbedToggle();
+}
+
+function cancelIterate() {
+    STATE.currentId = null;
+    STATE.currentShape = '';
+    STATE.editMode = false;
+    closeEditPanel();
+    document.getElementById('gen-btn').style.display = '';
+    document.getElementById('iter-btn').style.display = 'none';
+    document.getElementById('cancel-iter').style.display = 'none';
+    document.getElementById('prompt-label').textContent = 'Brief — describe what to draw';
+    document.getElementById('prompt').placeholder = '3D scene of the solar system — sun + inner four planets, labelled…';
+    _route.clear();
+    renderList();
+    refreshEditToggle();
+    refreshRecordToggle();
+    refreshEmbedToggle();
+}
+
+function reloadPreview() {
+    if (!STATE.currentId) return;
+    showArtifact(STATE.currentId);
+}
+
+// ── API actions ───────────────────────────────────────────────────
+function setWorking(on) {
+    document.getElementById('working').style.display = on ? '' : 'none';
+    document.getElementById('gen-btn').disabled = on;
+    document.getElementById('iter-btn').disabled = on;
+}
+
+function selectedExamples() {
+    var sel = document.getElementById('examples');
+    if (!sel) return [];
+    return Array.from(sel.selectedOptions).map(function(o){ return o.value; });
+}
+
+async function previewExample() {
+    var sel = document.getElementById('examples');
+    if (!sel) return;
+    // Prefer the currently-selected items; fall back to the focused option
+    // (lets the user single-click + 👁 without checking the option first).
+    var picks = Array.from(sel.selectedOptions).map(function(o){ return {slug: o.value, label: o.textContent}; });
+    if (!picks.length && sel.options.length) {
+        var idx = sel.selectedIndex >= 0 ? sel.selectedIndex : 0;
+        picks = [{slug: sel.options[idx].value, label: sel.options[idx].textContent}];
+    }
+    if (!picks.length) { EOS_UI.toast && EOS_UI.toast('No pattern to preview', 'warn'); return; }
+
+    var sections = [];
+    for (var i = 0; i < picks.length; i++) {
+        var p = picks[i];
+        try {
+            var res = await fetch('/kb/api/notes/' + encodeURIComponent(p.slug));
+            var data = await res.json();
+            var body = (data && data.body) || '*(empty body)*';
+            var props = (data && data.properties) || {};
+            var meta = '<div style="font-size:11px; color:var(--muted); margin-bottom:8px;">' +
+                'kind: ' + escapeHtml(props.kind || '?') +
+                ' · domain: ' + escapeHtml(props.domain || '?') +
+                ' · topic: ' + escapeHtml(props.topic || '?') +
+                ' · <a href="/kb/?slug=' + encodeURIComponent(p.slug) + '" target="_blank">open in KB ↗</a></div>';
+            sections.push(
+                '<h3 style="margin:0 0 4px 0; font-size:14px;">' + escapeHtml(p.label) + '</h3>' +
+                meta +
+                '<div class="markdown-body" style="font-size:12px; line-height:1.5;">' +
+                  (EOS_UI.renderMarkdown ? EOS_UI.renderMarkdown(body) : '<pre>' + escapeHtml(body) + '</pre>') +
+                '</div>'
+            );
+        } catch (e) {
+            sections.push('<div>Failed to load <code>' + escapeHtml(p.slug) + '</code>: ' + escapeHtml(e.message) + '</div>');
+        }
+    }
+    EOS_UI.modal({
+        title: picks.length > 1 ? 'Pattern previews (' + picks.length + ')' : 'Pattern preview',
+        width: '780px',
+        body: '<div style="max-height:70vh; overflow:auto;">' + sections.join('<hr style="margin:16px 0; border:0; border-top:1px solid var(--border);">') + '</div>',
+    });
+}
+
+async function loadExamples() {
+    var sel = document.getElementById('examples');
+    var counter = document.getElementById('ex-count');
+    if (!sel) return;
+    try {
+        var res = await fetch('/viz/api/examples');
+        var data = await res.json();
+        var items = (data && data.items) || [];
+        sel.innerHTML = items.map(function(it){
+            var label = (it.domain ? '[' + it.domain + '] ' : '') + it.title;
+            return '<option value="' + escapeHtml(it.slug) + '">' + escapeHtml(label) + '</option>';
+        }).join('');
+        if (counter) counter.textContent = items.length ? '(' + items.length + ' available)' : '(none — tag a KB note with kind: pattern)';
+    } catch (e) { if (counter) counter.textContent = '(load failed)'; }
+}
+
+// Shared stream pane, created on first open(). Reused across generate / iterate.
+var _streamPane = null;
+function openStreamPane() {
+    document.getElementById('empty').style.display = 'none';
+    document.getElementById('preview').style.display = 'none';
+    var host = document.getElementById('stream-pane-host');
+    host.style.display = 'flex';
+    if (!_streamPane) _streamPane = EOS_UI.streamPane(host);
+    _streamPane.open('Waiting for first token…');
+    _streamPane.setCounter('0 KB · 0s');
+    var stats = document.getElementById('stream-stats');
+    stats.style.display = '';
+    stats.textContent = '';
+    return _streamPane;
+}
+function closeStreamPane() {
+    document.getElementById('stream-pane-host').style.display = 'none';
+    document.getElementById('stream-stats').style.display = 'none';
+}
+
+async function generate() {
+    var prompt = document.getElementById('prompt').value.trim();
+    var shape = document.getElementById('shape').value;
+    var examples = selectedExamples();
+    if (!prompt) { EOS_UI.toast && EOS_UI.toast('Brief is empty', 'warn'); return; }
+    setWorking(true);
+    var pane = openStreamPane();
+    var statsChip = document.getElementById('stream-stats');
+    var failed = false;
+    try {
+        var res = await fetch('/viz/api/generate-stream', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({prompt: prompt, shape: shape, examples: examples}),
+        });
+        if (!res.ok) {
+            EOS_UI.toast && EOS_UI.toast('Stream open failed: HTTP ' + res.status, 'err');
+            failed = true;
+            return;
+        }
+        var newId = null;
+        await pane.consumeNdjson(res, {
+            onStarted: function(ev) {
+                pane.setPhase('Streaming ' + ev.shape + (ev.examples_used ? ' · ' + ev.examples_used + ' example' + (ev.examples_used>1?'s':'') : ''));
+            },
+            onChunk: function(ev) {
+                pane.appendText(ev.text || '');
+                var stat = EOS_UI.fmtBytes(ev.bytes) + ' · ' + EOS_UI.fmtElapsed(ev.elapsed_ms);
+                pane.setCounter(stat);
+                statsChip.textContent = stat;
+            },
+            onDone: function(ev) {
+                pane.setDone('✓ Done', (ev.size_kb || 0) + ' KB · ' + EOS_UI.fmtElapsed(ev.elapsed_ms || 0));
+                newId = ev.id;
+            },
+            onError: function(ev) {
+                pane.setError(ev.error);
+                EOS_UI.toast && EOS_UI.toast('Generate failed: ' + ev.error, 'err');
+                failed = true;
+            },
+        });
+        if (newId) {
+            await loadList();
+            _route.set(newId);   // swaps stream-pane out, iframe in (showArtifact closes us)
+            closeStreamPane();
+        }
+    } catch (e) {
+        EOS_UI.toast && EOS_UI.toast('Generate error: ' + e.message, 'err');
+        failed = true;
+    } finally {
+        setWorking(false);
+        // On failure keep the pane visible so the user sees partial output + error.
+    }
+}
+
+async function iterate() {
+    var prompt = document.getElementById('prompt').value.trim();
+    if (!prompt || !STATE.currentId) return;
+    setWorking(true);
+    var pane = openStreamPane();
+    var statsChip = document.getElementById('stream-stats');
+    var doneId = null;
+    var toolCount = 0;
+    var isAgent = true;
+    try {
+        var res = await fetch('/viz/api/iterate-stream', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({id: STATE.currentId, prompt: prompt}),
+        });
+        if (!res.ok) {
+            EOS_UI.toast && EOS_UI.toast('Stream open failed: HTTP ' + res.status, 'err');
+            return;
+        }
+        await pane.consumeNdjson(res, {
+            onStarted: function(ev) {
+                isAgent = ev.agent !== false;
+                if (ev.agent === false) {
+                    pane.setPhase('Rewriting ' + ev.shape + ' via model…');
+                    pane.appendBlock('<div class="eos-stream-prose" style="color:var(--text-muted);">No agentic CLI here — regenerating the full artifact with the configured model.</div>');
+                } else {
+                    pane.setPhase('Editing ' + ev.shape + ' via agent…');
+                    pane.appendBlock('<div class="eos-stream-prose" style="color:var(--text-muted);">Agent reading the file then making surgical edits. Tool calls below.</div>');
+                }
+            },
+            onChunk: function(ev) {
+                pane.appendProse(ev.text || '');
+                var stat = EOS_UI.fmtElapsed(ev.elapsed_ms);
+                pane.setCounter(stat);
+                statsChip.textContent = stat;
+            },
+            onToolUse: function(ev) {
+                toolCount += 1;
+                pane.appendTool(ev.tool, EOS_UI.summarizeToolInput(ev.tool, ev.input));
+                var stat = toolCount + ' op' + (toolCount > 1 ? 's' : '') + ' · ' + EOS_UI.fmtElapsed(ev.elapsed_ms);
+                pane.setCounter(stat);
+                statsChip.textContent = stat;
+            },
+            onToolResult: function(ev) {
+                pane.appendResult(ev.preview);
+            },
+            onDone: function(ev) {
+                var label = isAgent
+                    ? ('✓ Done — ' + toolCount + ' edit op' + (toolCount === 1 ? '' : 's'))
+                    : '✓ Done — full rewrite';
+                pane.setDone(label, (ev.size_kb || 0) + ' KB · ' + EOS_UI.fmtElapsed(ev.elapsed_ms || 0));
+                doneId = ev.id;
+            },
+            onError: function(ev) {
+                pane.setError(ev.error);
+                EOS_UI.toast && EOS_UI.toast('Iterate failed: ' + ev.error, 'err');
+            },
+        });
+        if (doneId) {
+            await loadList();
+            showArtifact(doneId);
+        }
+    } catch (e) {
+        EOS_UI.toast && EOS_UI.toast('Iterate error: ' + e.message, 'err');
+    } finally { setWorking(false); }
+}
+
+async function loadList() {
+    var res = await fetch('/viz/api/list');
+    STATE.items = await res.json();
+    renderList();
+}
+
+// ── Model-ability gating (see .claude/rules/model-ability.md) ──────
+var _ability = {active: 'standard', provider: '', model: '', map: {}};
+
+async function applyAbilityGate() {
+    var sel = document.getElementById('shape');
+    try {
+        var d = await fetch('/viz/api/shapes').then(function(r){ return r.json(); });
+        _ability.active = d.active_ability || 'standard';
+        _ability.provider = d.provider || '';
+        _ability.model = d.model || '';
+        _ability.map = {};
+        _edit.enabled = !!d.edit_enabled;
+        _edit.supports = {};
+        _record.enabled = !!d.record_enabled;
+        _record.supports = {};
+        _embed.enabled = !!d.embed_enabled;
+        (d.shapes || []).forEach(function(s){
+            _ability.map[s.shape] = s.min_ability;
+            _edit.supports[s.shape] = !!s.supports_edit;
+            _record.supports[s.shape] = !!s.supports_record;
+        });
+        Array.prototype.forEach.call(sel.options, function(opt){
+            var min = _ability.map[opt.value];
+            var ok = EOS_UI.abilityMeets(_ability.active, min);
+            opt.disabled = !ok;
+            opt.text = opt.text.replace(/\s+·\s+needs .*$/, '');
+            if (!ok) opt.text += ' · needs ' + (EOS_UI.ABILITY_LABELS[min] || min) + ' model';
+        });
+        // If the current pick just became gated, fall back to the first allowed shape.
+        if (sel.selectedOptions[0] && sel.selectedOptions[0].disabled) {
+            var firstOk = Array.prototype.filter.call(sel.options, function(o){ return !o.disabled; })[0];
+            if (firstOk) { sel.value = firstOk.value; renderShapeIntro(); }
+        }
+        renderAbilityBanner();
+    } catch (e) { /* on error, leave everything enabled */ }
+}
+
+function renderAbilityBanner() {
+    var gateEl = document.getElementById('ability-gate');
+    var sel = document.getElementById('shape');
+    var min = _ability.map[sel.value];
+    if (EOS_UI.abilityMeets(_ability.active, min)) { gateEl.innerHTML = ''; return; }
+    gateEl.innerHTML = EOS_UI.abilityBannerHtml({
+        minAbility: min, ability: _ability.active,
+        model: _ability.model, provider: _ability.provider,
+    });
+}
+
+// ── Element-anchored edit loop (shared core: html_element_edit) ────
+function refreshEditToggle() {
+    var btn = document.getElementById('edit-toggle');
+    if (!btn) return;
+    // Visible only when the flag is on, an artifact is loaded, and its shape is
+    // DOM-structured (canvas shapes have no element to highlight).
+    var ok = _edit.enabled && STATE.currentId && !!_edit.supports[STATE.currentShape];
+    btn.style.display = ok ? '' : 'none';
+    if (!ok && STATE.editMode) { STATE.editMode = false; closeEditPanel(); }
+}
+
+// ── HTML→MP4 export (html-video borrow: emptyos.sdk.media.html_record) ──
+function refreshRecordToggle() {
+    var btn = document.getElementById('record-mp4');
+    if (!btn) return;
+    // Visible only when the flag is on, an artifact is loaded, and its shape is
+    // recordable (anim-explainer — CSS-keyframe pages the recorder can seek).
+    var ok = _record.enabled && STATE.currentId && !!_record.supports[STATE.currentShape];
+    btn.style.display = ok ? '' : 'none';
+}
+
+// ── Send-to-note (durable artifact embed: snapshot + reference) ──
+function refreshEmbedToggle() {
+    var btn = document.getElementById('send-to-note');
+    if (!btn) return;
+    btn.style.display = (_embed.enabled && STATE.currentId) ? '' : 'none';
+}
+
+async function openSendToNote() {
+    if (!STATE.currentId) return;
+    var notes;
+    try { notes = await fetch('/kb/api/notes').then(function(r){ return r.json(); }); }
+    catch (e) { EOS_UI.toast('Could not reach the KB app', false); return; }
+    var rows = (notes.notes || notes || []);
+    if (!rows.length) {
+        EOS_UI.modal({ title: 'Send to note',
+            body: '<div style="color:var(--muted)">No KB notes yet. Create one in <a href="/kb/" target="_blank">the KB</a> first.</div>',
+            width: 480 });
+        return;
+    }
+    var opts = rows.map(function(n){
+        var label = escapeHtml(n.title || n.slug || '');
+        return '<option value="' + escapeHtml(n.slug || '') + '">' + label + '</option>';
+    }).join('');
+    var body = '<div style="display:flex;flex-direction:column;gap:10px">'
+        + '<label style="font-size:13px">Target KB note'
+        + '<select id="stn-note" style="width:100%;margin-top:4px;padding:6px;border:1px solid var(--border);border-radius:7px;background:var(--panel);color:var(--text)">'
+        + opts + '</select></label>'
+        + '<div style="display:flex;flex-direction:column;gap:6px">'
+        + '<label style="font-size:13px"><input type="radio" name="stn-mode" value="snapshot" checked> '
+        + 'Snapshot <span style="color:var(--muted)">— frozen copy; this artifact stays freely deletable</span></label>'
+        + '<label style="font-size:13px"><input type="radio" name="stn-mode" value="reference"> '
+        + 'Live reference <span style="color:var(--muted)">— updates with this artifact; its deletion is gated</span></label>'
+        + '</div>'
+        + '<div style="text-align:right"><button onclick="submitSendToNote()" '
+        + 'style="padding:6px 16px;border-radius:8px;border:1px solid var(--accent);background:var(--accent);color: var(--accent-ink, #fff);cursor:pointer">Embed</button></div>'
+        + '</div>';
+    EOS_UI.modal({ title: '📌 Send to note', body: body, width: 520 });
+}
+
+async function submitSendToNote() {
+    var sel = document.getElementById('stn-note');
+    var slug = sel ? sel.value : '';
+    if (!slug) { EOS_UI.toast('Pick a note', false); return; }
+    var modeEl = document.querySelector('input[name="stn-mode"]:checked');
+    var mode = modeEl ? modeEl.value : 'snapshot';
+    var res;
+    try {
+        res = await fetch('/kb/api/embed', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ slug: slug, viz_id: STATE.currentId, mode: mode }),
+        }).then(function(r){ return r.json(); });
+    } catch (e) { EOS_UI.toast('Embed failed', false); return; }
+    if (!res || !res.ok) { EOS_UI.toast((res && res.error) || 'Embed failed', false); return; }
+    EOS_UI.closeModal();
+    EOS_UI.toast('Embedded into ' + slug, true);
+}
+
+async function exportMp4() {
+    if (!STATE.currentId) return;
+    var btn = document.getElementById('record-mp4');
+    var prev = btn ? btn.textContent : '';
+    if (btn) { btn.disabled = true; btn.textContent = '🎬 Recording…'; }
+    try {
+        var res = await fetch('/viz/api/export-mp4', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ id: STATE.currentId }),
+        }).then(function(r){ return r.json(); });
+        if (!res.ok) {
+            EOS_UI.toast(res.error || 'export failed', false);
+            return;
+        }
+        EOS_UI.toast('Recorded ' + res.frames + ' frames → MP4', true);
+        window.open(res.video_url, '_blank', 'noopener');
+    } catch (e) {
+        EOS_UI.toast('export failed: ' + e, false);
+    } finally {
+        if (btn) { btn.disabled = false; btn.textContent = prev || '🎬 Export MP4'; }
+    }
+}
+
+function toggleEditMode() {
+    STATE.editMode = !STATE.editMode;
+    var btn = document.getElementById('edit-toggle');
+    if (btn) {
+        btn.classList.toggle('btn-edit-on', STATE.editMode);
+        btn.textContent = STATE.editMode ? '✎ Editing — click an element' : '✎ Edit elements';
+    }
+    if (!STATE.editMode) closeEditPanel();
+    if (STATE.currentId) showArtifact(STATE.currentId);  // reload with/without ?edit=1
+}
+
+function onEditMessage(e) {
+    var iframe = document.getElementById('preview');
+    if (!iframe || e.source !== iframe.contentWindow) return;  // identity, not origin ("null")
+    var d = e.data;
+    if (!d || d.type !== 'eos-edit-pick') return;
+    if (typeof d.el !== 'string' || !/^e\d+$/.test(d.el)) return;
+    openEditPanel(d.el, String(d.tag || ''), String(d.text || '').slice(0, 120));
+}
+
+function openEditPanel(el, tag, text) {
+    STATE.pickedEl = el;
+    STATE.editToken = null;
+    var label = '<code>&lt;' + escapeHtml(tag || '?') + '&gt;</code>';
+    if (text) label += ' — ' + escapeHtml(text) + (text.length >= 120 ? '…' : '');
+    document.getElementById('edit-picked').innerHTML = label;
+    document.getElementById('edit-instruction').value = '';
+    document.getElementById('edit-form').style.display = '';
+    document.getElementById('edit-preview').style.display = 'none';
+    ['knob-size', 'knob-pad'].forEach(function (id) { var s = document.getElementById(id); if (s) s.value = ''; });
+    document.getElementById('edit-panel').classList.add('open');
+}
+
+function closeEditPanel() {
+    var panel = document.getElementById('edit-panel');
+    if (panel) panel.classList.remove('open');
+    STATE.pickedEl = null;
+    STATE.editToken = null;
+    var iframe = document.getElementById('preview');
+    if (iframe && iframe.contentWindow) {
+        try { iframe.contentWindow.postMessage({ type: 'eos-edit-clear' }, '*'); } catch (_) {}
+    }
+}
+
+function setEditWorking(on) {
+    document.getElementById('edit-working').style.display = on ? '' : 'none';
+}
+
+function proposeInstruction() {
+    var instr = document.getElementById('edit-instruction').value.trim();
+    if (!instr) { EOS_UI.toast && EOS_UI.toast('Describe the change first', 'warn'); return; }
+    _propose({ instruction: instr });
+}
+
+function proposeKnob(prop, value) {
+    if (!value) return;
+    _propose({ knob: { prop: prop, value: value } });
+}
+
+async function _propose(payload) {
+    if (!STATE.currentId || !STATE.pickedEl) return;
+    setEditWorking(true);
+    try {
+        var body = Object.assign({ id: STATE.currentId, el: STATE.pickedEl }, payload);
+        var res = await fetch('/viz/api/edit/propose', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+        });
+        var data = await res.json();
+        if (!data.ok) {
+            if (data.fallback === 'iterate') {
+                EOS_UI.toast && EOS_UI.toast("Can't isolate that element — use whole-artifact Iterate instead", 'warn');
+                closeEditPanel();
+                var p = document.getElementById('prompt');
+                if (p && payload.instruction) { p.value = payload.instruction; p.focus(); }
+            } else {
+                EOS_UI.toast && EOS_UI.toast('Propose failed: ' + (data.error || 'unknown'), 'err');
+            }
+            return;
+        }
+        STATE.editToken = data.token;
+        document.getElementById('edit-diff').innerHTML = EOS_UI.diffLinesHtml(data.diff_lines || []);
+        document.getElementById('edit-form').style.display = 'none';
+        document.getElementById('edit-preview').style.display = '';
+    } catch (e) {
+        EOS_UI.toast && EOS_UI.toast('Propose error: ' + e.message, 'err');
+    } finally { setEditWorking(false); }
+}
+
+async function applyEdit() {
+    if (!STATE.currentId || !STATE.editToken) return;
+    setEditWorking(true);
+    try {
+        var res = await fetch('/viz/api/edit/apply', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ id: STATE.currentId, token: STATE.editToken }),
+        });
+        var data = await res.json();
+        if (!data.ok) {
+            EOS_UI.toast && EOS_UI.toast(data.message || data.error || 'Apply failed', 'err');
+            closeEditPanel();
+            if (data.error === 'stale') reloadPreview();
+            return;
+        }
+        EOS_UI.toast && EOS_UI.toast('Applied', 'ok');
+        closeEditPanel();
+        await loadList();
+        showArtifact(STATE.currentId);  // reload (keeps ?edit=1 while in edit mode)
+    } catch (e) {
+        EOS_UI.toast && EOS_UI.toast('Apply error: ' + e.message, 'err');
+    } finally { setEditWorking(false); }
+}
+
+async function rejectEdit() {
+    var token = STATE.editToken;
+    closeEditPanel();
+    if (!token) return;
+    try {
+        await fetch('/viz/api/edit/reject', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ token: token }),
+        });
+    } catch (_) {}
+}
+
+// ── Boot ──────────────────────────────────────────────────────────
+async function boot() {
+    EOS_UI.modelPill({app: 'viz', mount: '#model-pill', domain: 'code',
+                      onSwitch: function(){ applyAbilityGate(); }});
+    window.addEventListener('message', onEditMessage);
+    document.getElementById('shape').addEventListener('change', function(){
+        renderShapeIntro();
+        renderAbilityBanner();
+    });
+    renderShapeIntro();
+    await Promise.all([loadList(), loadExamples(), applyAbilityGate()]);
+    _route.init();
+    refreshEditToggle();
+    refreshRecordToggle();
+    refreshEmbedToggle();
+}
+boot();
+</script>
+</body>
+</html>

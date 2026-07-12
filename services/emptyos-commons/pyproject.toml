@@ -1,0 +1,26 @@
+[project]
+name = "emptyos-commons"
+version = "0.1.0"
+description = "Multi-tenant shared-knowledge service for collaborative EmptyOS — public commons, private content, selective sharing"
+requires-python = ">=3.12"
+# Core: SQLite (stdlib) + FastAPI. No database driver — the trusted-team default
+# needs no Postgres. Postgres is an opt-in extra (its repo lazy-imports psycopg).
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.32",
+]
+
+[project.optional-dependencies]
+postgres = ["psycopg[binary]>=3.2"]
+firebase = ["firebase-admin>=6.6"]
+dev = ["pytest>=8.0", "httpx>=0.27"]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["emptyos_commons"]
+
+[tool.setuptools.package-data]
+emptyos_commons = ["web/*.html"]

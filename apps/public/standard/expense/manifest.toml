@@ -1,0 +1,96 @@
+[app]
+id = "expense"
+store_category = "productivity"
+name = "Expense"
+version = "1.0.0"
+description = "Expense tracking — add, summarize, analyze spending"
+dimensions = ["financial"]
+user_intent = [
+    "I want to track my spending",
+    "记账",
+    "where did my money go this month",
+    "compare this month vs last month",
+    "see what category I spend most on",
+    "我这个月花了多少钱",
+]
+
+[app.entry]
+module = "app"
+class = "ExpenseApp"
+
+[requires]
+capabilities = ["think"]
+services = []
+connectors = []
+
+[provides.cli]
+commands = ["expense"]
+
+[provides.web]
+prefix = "/expense"
+
+[provides.events]
+emits = ["expense:added", "expense:income-added", "expense:report-saved"]
+
+[provides.settings]
+schema = [
+    {key = "expense.budget", label = "Monthly Budget ($)", type = "number", default = 3000},
+    {key = "expense.default_category", label = "Default Category", type = "select", options = ["Dining", "Groceries", "Transport", "Shopping", "Bills", "Health", "Entertainment", "Other"], default = "Other"},
+    {key = "expense.alert_threshold", label = "Budget Alert at %", type = "number", default = 80},
+]
+
+# ── Verb registry — single source of truth for invokable verbs. The two
+# assistant slashes migrated here from [provides.assistant] (all-or-nothing
+# per app+surface, .claude/rules/verb-registry.md).
+
+[[provides.verbs]]
+verb = "expense.add"
+method = "add"
+summary = "Log an expense"
+args = { amount = "number", description = "string", category = "string?" }
+eligibility = "stable"
+surfaces = ["voice", "agent", "mcp"]
+voice = { method = "voice_add_expense", example = "I spent 40 dollars on groceries today", description = "Log an expense the user just mentioned spending. amount = the number spent, description = what it was for; category optional (auto-detected from the description when omitted).", always = true }
+
+[[provides.verbs]]
+verb = "expense.summary"
+method = "summary"
+summary = "Monthly spend summary by category"
+args = { month = "string?" }
+eligibility = "gated"
+surfaces = ["voice", "assistant", "agent", "mcp"]
+voice = { method = "voice_month_summary", example = "how much did I spend on food this month", description = "Spoken monthly spend total + a per-category breakdown card. month = YYYY-MM; defaults to the current month.", card = "entity-card" }
+assistant = { slash = "/expenses", method = "summary" }
+
+[[provides.verbs]]
+verb = "expense.list_expenses"
+method = "list_expenses"
+summary = "List raw expense entries for a month"
+args = { month = "string?" }
+eligibility = "gated"
+surfaces = ["assistant"]
+assistant = { slash = "/expense-list", method = "list_expenses" }
+
+# ── Hub panels ──
+# Keep priorities < 150: the hub drops the ambient band (>=150) entirely, so
+# the old 150/220 values left both data panels invisible on /hub/.
+
+[[contributes.hub.panel]]
+id = "expense-quick-add"
+method = "panel_quick_add"
+renderer = "quick-add"
+priority = 140
+
+[[contributes.hub.panel]]
+id = "expense-month"
+method = "panel_month_spend"
+renderer = "stat-tile"
+group = "dashboard"
+priority = 141
+
+[[contributes.hub.panel]]
+id = "expense-month-compare"
+method = "panel_month_compare"
+renderer = "compare-tile"
+group = "month-compare"
+priority = 148

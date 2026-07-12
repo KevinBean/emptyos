@@ -1,0 +1,99 @@
+[app]
+id = "reader"
+store_category = "creative"
+name = "Reader"
+version = "0.1.0"
+description = "Read books with AI scene visualization, concept map, and dictionary lookup"
+dimensions = ["intellectual"]
+
+[app.entry]
+module = "app"
+class = "ReaderApp"
+
+[requires]
+capabilities = ["read", "write", "think", "search", "speak", "draw"]
+apps = ["dictionary"]
+optional_apps = ["viz", "media"]  # story → game bridge (story_to_game); graceful if absent
+services = []
+events = []
+
+[provides.cli]
+commands = ["reader"]
+
+[provides.web]
+prefix = "/reader"
+
+[provides.events]
+emits = [
+    "reader:opened",
+    "reader:book_imported",
+    "reader:progress",
+    "reader:highlighted",
+    "reader:scene_generated",
+    "reader:story_started",
+    "reader:story_ended",
+    "reader:story_to_game",
+    "reader:note_created",
+    "reader:production_edited",
+    "reader:production_section_built",
+]
+# Per-paragraph reading position — fired on every scroll, UI bookmark sync only.
+internal = [
+    "reader:progress",
+    # Story/production lifecycle — UI-only; reading life-signal already ripples
+    # via reader:session_logged / highlight events.
+    "reader:story_started", "reader:story_ended", "reader:story_to_game",
+    "reader:production_edited", "reader:production_section_built",
+]
+
+[provides.settings]
+schema = [
+    {key = "reader.font_size", label = "Font size (px)", type = "number", default = 18},
+    {key = "reader.line_height", label = "Line height", type = "number", default = 1.7},
+    {key = "reader.concept_map", label = "Auto-build concept map", type = "boolean", default = true},
+    {key = "reader.scene_preset", label = "Scene visual preset (FLUX style)", type = "select", default = "illustration", options = ["illustration", "cinematic", "comic", "dream", "photo", "minimalist", ""]},
+    {key = "reader.scene_style", label = "Extra style hints (appended to prompt)", type = "text", default = "atmospheric, soft light, no text"},
+    {key = "reader.tts_provider", label = "TTS provider", type = "select", default = "kokoro", options = ["kokoro", "xtts", "edge-tts", "openai-tts"], hint = "Kokoro (default): local, high quality, free, your reading stays on your machine. XTTS: local voice cloning. Edge-TTS: local but robotic. OpenAI: cloud — sends paragraph text to OpenAI, NOT recommended for private reading."},
+    {key = "reader.story.default_lang", label = "Story default language", type = "text", default = "English", hint = "Default target language for woven interactive stories (story mode)."},
+    {key = "reader.story.default_cefr", label = "Story default CEFR level", type = "select", default = "C1", options = ["A2", "B1", "B2", "C1", "C2"], hint = "Graded-language level woven stories aim for."},
+]
+
+[[contributes.hub.panel]]
+id = "reader.currently-reading"
+method = "panel_currently_reading"
+renderer = "plain-list"
+title = "Currently reading"
+priority = 320
+group = ""
+limit = 3
+
+[[contributes.hub.panel]]
+id = "reader.story-in-progress"
+method = "panel_story_in_progress"
+renderer = "plain-list"
+title = "Continue your story"
+priority = 322
+group = ""
+limit = 3
+
+# ── Unified verb registry (see .claude/rules/verb-registry.md) ──
+# Voice surface now sourced here (Phase 3 done — legacy intents removed).
+# reader.open is autopilot-eligible (floor); reader.read_aloud is gated.
+# Voice-only verbs; method IS the voice handler.
+[[provides.verbs]]
+verb = "reader.open"
+method = "voice_open"
+summary = "Open a book by title or slug"
+args = { query = "string" }
+eligibility = "stable"
+surfaces = ["voice"]
+voice = { example = "open the machine stops", description = "Open a book by title or slug" }
+
+[[provides.verbs]]
+verb = "reader.read_aloud"
+method = "voice_read_aloud"
+summary = "Read the current paragraph aloud"
+args = {}
+eligibility = "gated"
+surfaces = ["voice"]
+voice = { example = "read this paragraph aloud", description = "Read the current paragraph aloud" }

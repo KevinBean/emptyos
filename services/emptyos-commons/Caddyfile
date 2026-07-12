@@ -1,0 +1,6 @@
+# Automatic HTTPS (Let's Encrypt) + reverse proxy to the commons app.
+# COMMONS_DOMAIN is injected from the environment by docker-compose.
+{$COMMONS_DOMAIN} {
+	encode gzip
+	reverse_proxy commons:9300
+}

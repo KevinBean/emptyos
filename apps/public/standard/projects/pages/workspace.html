@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Project Workspace - EmptyOS</title>
+<!-- This page is served via a raw HTMLResponse (/projects/workspace/<id>), so the
+     server's theme-bootstrap auto-injection (which only runs on pages/index.html)
+     does NOT fire here. Self-inject it, mirroring _THEME_BOOTSTRAP_TAG in
+     emptyos/web/server.py (the 'eos-theme' marker keeps it idempotent). Without it
+     every var(--bg-card)/--border/--accent collapses to bare :root and the UI
+     renders unstyled (feedback_app_page_theme_bootstrap). -->
+<script>try{var _t=localStorage.getItem('eos-theme')||'eos';if(['eos','digital-garden','soft-light','warm-dark','void-dark','nord'].indexOf(_t)<0){_t='eos';localStorage.setItem('eos-theme','eos');}document.documentElement.classList.add('theme-'+_t);}catch(e){document.documentElement.classList.add('theme-eos');}</script>
+<script src="/static/eos-i18n.js" defer></script>
+<!-- Absolute asset paths required — this page lives one level below /projects/. -->
+<link rel="stylesheet" href="/static/theme.css">
+<link rel="stylesheet" href="/static/eos-components.css">
+<link rel="stylesheet" href="/projects/pages/workspace.css">
+</head>
+<body>
+<script src="/static/realtime.js"></script>
+<script src="/static/eos.js"></script>
+<script src="/static/eos-components.js"></script>
+<script>EOS.nav('projects');</script>
+
+<div class="page ws-page">
+    <div class="ws-topbar">
+        <a class="ws-back" href="/projects/">← All Projects</a>
+        <span class="ws-brand">Project workspace</span>
+    </div>
+
+    <!-- workspace-page.js renderWorkspaceLayout() builds the multi-pane surface here. -->
+    <div id="detail-view"><div class="eos-empty">Loading…</div></div>
+</div>
+
+<!-- Add Task Modal (dialogs.js openAddTask/submitTask) -->
+<div class="eos-modal-bg" id="task-modal" onclick="if(event.target===this)EOS_UI.closeModal('task-modal')">
+    <div class="eos-modal">
+        <div class="eos-modal-handle"></div>
+        <h3>Add Task</h3>
+        <input type="text" id="task-text" placeholder="Task description" onkeydown="if(event.key==='Enter')submitTask()">
+        <input type="date" id="task-due">
+        <input type="hidden" id="task-project-id">
+        <div class="eos-modal-actions">
+            <button onclick="EOS_UI.closeModal('task-modal')" style="background:var(--bg);color:var(--text-secondary);border:1px solid var(--border)">Cancel</button>
+            <button onclick="submitTask()" style="background:var(--accent);color:var(--accent-ink)">Add</button>
+        </div>
+    </div>
+</div>
+
+<!-- Log Work Modal (dialogs.js openProjectWorklog/submitProjectWorklog) -->
+<div class="eos-modal-bg" id="worklog-modal" onclick="if(event.target===this)EOS_UI.closeModal('worklog-modal')">
+    <div class="eos-modal">
+        <div class="eos-modal-handle"></div>
+        <h3>Log project work</h3>
+        <textarea id="worklog-text" rows="4" placeholder="What did you do?" onkeydown="if(event.key==='Enter'&&(event.ctrlKey||event.metaKey))submitProjectWorklog()"></textarea>
+        <select id="worklog-status">
+            <option value="in-progress">In progress</option>
+            <option value="complete">Complete</option>
+            <option value="review">In review</option>
+            <option value="blocked">Blocked</option>
+            <option value="waiting">Waiting</option>
+            <option value="next">Next</option>
+            <option value="todo">Todo</option>
+        </select>
+        <input type="date" id="worklog-date">
+        <label for="worklog-employer" style="font-size:12px;color:var(--text-secondary)">Company / employer</label>
+        <input type="text" id="worklog-employer" placeholder="Uses Worklog default when blank">
+        <div class="sf-hint">This controls the company digest for the entry.</div>
+        <input type="hidden" id="worklog-project-id">
+        <div class="eos-modal-actions">
+            <button onclick="EOS_UI.closeModal('worklog-modal')" style="background:var(--bg);color:var(--text-secondary);border:1px solid var(--border)">Cancel</button>
+            <button onclick="submitProjectWorklog()" style="background:var(--accent);color:var(--accent-ink)">Log work</button>
+        </div>
+    </div>
+</div>
+
+<!-- New Doc Modal (dialogs.js openNewDoc/submitDoc) -->
+<div class="eos-modal-bg" id="doc-modal" onclick="if(event.target===this)EOS_UI.closeModal('doc-modal')">
+    <div class="eos-modal">
+        <div class="eos-modal-handle"></div>
+        <h3>New Document</h3>
+        <input type="text" id="doc-title" placeholder="Document title" onkeydown="if(event.key==='Enter')submitDoc()">
+        <select id="doc-template">
+            <option value="blank">Blank</option>
+            <option value="meeting">Meeting Note</option>
+            <option value="spec">Spec / Design</option>
+            <option value="research">Research Note</option>
+        </select>
+        <input type="hidden" id="doc-project-id">
+        <div class="eos-modal-actions">
+            <button onclick="EOS_UI.closeModal('doc-modal')" style="background:var(--bg);color:var(--text-secondary);border:1px solid var(--border)">Cancel</button>
+            <button onclick="submitDoc()" style="background:var(--accent);color:var(--accent-ink)">Create</button>
+        </div>
+    </div>
+</div>
+
+<!-- AI Health Modal (dialogs.js showHealth) -->
+<div class="eos-modal-bg" id="health-modal" onclick="if(event.target===this)EOS_UI.closeModal('health-modal')">
+    <div class="eos-modal">
+        <div class="eos-modal-handle"></div>
+        <h3>Project Health Assessment</h3>
+        <div id="health-content" style="font-size:14px;line-height:1.6;white-space:pre-wrap">Loading...</div>
+        <div class="eos-modal-actions" style="margin-top:16px">
+            <button onclick="EOS_UI.closeModal('health-modal')" style="background:var(--accent);color:var(--accent-ink)">Close</button>
+        </div>
+    </div>
+</div>
+
+<!-- Project Settings slide-out (dialogs.js openProjectSettings/saveProjectSettings) -->
+<div class="eos-settings-panel" id="project-settings-panel">
+    <div class="sp-head">
+        <h3 id="ps-title">Project Settings</h3>
+        <button class="eos-btn-sm eos-btn-ghost" onclick="closeProjectSettings()">Close</button>
+    </div>
+    <div class="sp-body">
+        <div class="sf-group">
+            <label class="sf-label">Status</label>
+            <select class="sf-select" id="ps-status"></select>
+        </div>
+        <div class="sf-group">
+            <label class="sf-label">Stage</label>
+            <select class="sf-select" id="ps-stage"></select>
+            <div class="sf-hint" id="ps-stage-hint"></div>
+        </div>
+        <div class="sf-group">
+            <label class="sf-label">Deadline</label>
+            <input type="date" class="sf-input" id="ps-deadline">
+        </div>
+        <div class="sf-group">
+            <label class="sf-label">Company / employer</label>
+            <input type="text" class="sf-input" id="ps-employer" placeholder="Used by Worklog digests">
+            <div class="sf-hint">Work logged from this project is categorized here.</div>
+        </div>
+        <div class="sf-group">
+            <label class="sf-label">Tags</label>
+            <input type="text" class="sf-input" id="ps-tags" placeholder="project, emptyos, dev">
+            <div class="sf-hint">Comma-separated. Used for category filtering.</div>
+        </div>
+        <div class="sf-section">Features</div>
+        <div id="ps-features"></div>
+    </div>
+    <div class="sp-foot">
+        <button class="eos-btn-sm eos-btn-ghost" onclick="closeProjectSettings()">Cancel</button>
+        <button class="eos-btn-sm" onclick="saveProjectSettings()" style="background:var(--accent);color:var(--accent-ink)">Save</button>
+    </div>
+</div>
+
+<!-- Shared renderer + tab loaders + dialogs (same modules as the list page),
+     then workspace-page.js (the multi-pane work surface, standalone-only). -->
+<script src="/projects/pages/workspace.js"></script>
+<script src="/projects/pages/tabs.js"></script>
+<script src="/projects/pages/dialogs.js"></script>
+<script src="/projects/pages/workspace-page.js"></script>
+<script>
+// ── Standalone workspace boot ──
+// This page does NOT load app.js (the list page). It supplies the globals the
+// renderer + tab loaders + dialogs expect (typeConfig / toolsByType /
+// featureRegistry). Mutations re-render via openProjectWorkspace (shared).
+var typeConfig = {}, toolsByType = {}, featureRegistry = {};
+
+var WORKSPACE_ID = decodeURIComponent(
+    (location.pathname.split('/projects/workspace/')[1] || '').replace(/\/+$/, '')
+);
+
+// saveProjectSettings calls load() to refresh the list — there's no list here,
+// so it's a no-op (openProjectWorkspace does the re-render).
+function load() {}
+
+(async function boot() {
+    var dv = document.getElementById('detail-view');
+    if (!WORKSPACE_ID) {
+        dv.innerHTML = '<div class="eos-empty">No project specified. <a href="/projects/">Back to projects</a></div>';
+        return;
+    }
+    try {
+        var tc = await EOS.api('/projects/api/type-config');
+        typeConfig = tc.types || {};
+        toolsByType = tc.tools || {};
+        featureRegistry = tc.features || {};
+    } catch (e) { /* renderWorkspaceLayout tolerates empty config */ }
+
+    await openProjectWorkspace(WORKSPACE_ID);
+
+    if (_detailProject && _detailProject.name) {
+        document.title = _detailProject.name + ' — Projects';
+    }
+})();
+</script>
+</body>
+</html>

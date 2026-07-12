@@ -1,0 +1,47 @@
+# EmptyOS Commons — single-VPS deploy. App (SQLite, no DB server) + Caddy (TLS).
+#
+#   cp .env.example .env   # set COMMONS_DOMAIN, COMMONS_PUBLIC_ORIGIN,
+#                          #     COMMONS_SESSION_HASH_SECRET, COMMONS_REGISTRATION_SECRET
+#   docker compose up -d --build
+#
+# Point COMMONS_DOMAIN's DNS A record at this host; Caddy auto-provisions a
+# Let's Encrypt cert. COMMONS_PUBLIC_ORIGIN must equal https://$COMMONS_DOMAIN.
+
+services:
+  commons:
+    build: .
+    environment:
+      COMMONS_DATABASE_URL: sqlite:///data/commons.db
+      COMMONS_AUTH_PROVIDER: password
+      COMMONS_SESSION_SECURE: "true"
+      COMMONS_PUBLIC_ORIGIN: ${COMMONS_PUBLIC_ORIGIN}
+      COMMONS_SESSION_HASH_SECRET: ${COMMONS_SESSION_HASH_SECRET}
+      COMMONS_REGISTRATION_SECRET: ${COMMONS_REGISTRATION_SECRET:-}
+      COMMONS_MIN_PASSWORD_LEN: ${COMMONS_MIN_PASSWORD_LEN:-8}
+      COMMONS_PRODUCT_NAME: ${COMMONS_PRODUCT_NAME:-EmptyOS Commons}
+      COMMONS_PRODUCT_TAGLINE: ${COMMONS_PRODUCT_TAGLINE:-A shared knowledge space — public, private, and shared on purpose.}
+    volumes:
+      - commons-data:/app/data        # the sqlite file persists here
+    expose:
+      - "9300"
+    restart: unless-stopped
+
+  caddy:
+    image: caddy:2
+    depends_on:
+      - commons
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      COMMONS_DOMAIN: ${COMMONS_DOMAIN}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data            # certs persist (don't re-issue on restart)
+      - caddy-config:/config
+    restart: unless-stopped
+
+volumes:
+  commons-data:
+  caddy-data:
+  caddy-config:

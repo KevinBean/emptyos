@@ -1,0 +1,81 @@
+[app]
+id = "worklog-capture"
+name = "Worklog Capture"
+version = "0.1.0"
+description = "Friction-free work capture — screenshot or hotkey in the moment, then batch-review AI-drafted entries into your worklog. Cross-checks screenshots with your AI-session and browser trail. Triggered, never ambient; local-first."
+icon = "📸"
+store_category = "productivity"
+dimensions = ["occupational"]
+user_intent = [
+    "capture this for my worklog",
+    "log what's on my screen right now",
+    "review my captured screenshots",
+    "turn my screenshots into worklog entries",
+    "把屏幕上的东西记到工作日志",
+]
+
+[app.entry]
+module = "app"
+class = "WorklogCaptureApp"
+
+[requires]
+capabilities = ["read", "write", "think"]
+# worklog is the write endpoint — Apply routes every draft through its
+# log_work(); the app is a capture SOURCE, not a second worklog store.
+apps = ["worklog"]
+# calendar is a soft evidence source (get_agenda) — absent degrades clean.
+optional_apps = ["calendar"]
+
+[provides.web]
+prefix = "/worklog-capture"
+
+[provides.prompts]
+module = "prompts"
+
+[provides.settings]
+schema = [
+    {key = "worklog-capture.watch_dir", label = "Screenshot inbox folder", type = "text", default = "~/Pictures/WorklogCaptures"},
+    {key = "worklog-capture.group_window_min", label = "Group captures within (min)", type = "number", default = 10},
+    {key = "worklog-capture.retention_days", label = "Keep processed captures (days)", type = "number", default = 30},
+    {key = "worklog-capture.include_browser", label = "Capture browser URL/title on live scrape", type = "boolean", default = true},
+    {key = "worklog-capture.include_selection", label = "Capture selected text (simulates Cmd+C)", type = "boolean", default = false},
+    {key = "worklog-capture.source_sessions", label = "Cross-check with AI-session trail (Claude/Codex)", type = "boolean", default = true},
+    {key = "worklog-capture.source_browser", label = "Cross-check with browser history (Chrome)", type = "boolean", default = true},
+    {key = "worklog-capture.source_calendar", label = "Cross-check with calendar events", type = "boolean", default = true},
+]
+
+[provides.events]
+emits = [
+    "worklog-capture:captured",
+    "worklog-capture:digested",
+    "worklog-capture:applied",
+    "worklog-capture:dismissed",
+]
+# Queue lifecycle observability — UI-only. The Apply path emits worklog:logged
+# via worklog.log_work(), which already ripples into the journal.
+internal = [
+    "worklog-capture:captured",
+    "worklog-capture:digested",
+    "worklog-capture:applied",
+    "worklog-capture:dismissed",
+]
+
+# ── Unified verb registry ───────────────────────────────────────────────────
+# A silent one-shot screen+context grab into the review queue. Reversible
+# (queued, never auto-applied to the vault) → stable/autopilot-eligible.
+[[provides.verbs]]
+verb = "worklog-capture.capture_now"
+method = "voice_capture_now"
+summary = "Silently capture the screen + context into the worklog review queue"
+args = { note = "string?" }
+eligibility = "stable"
+surfaces = ["voice"]
+voice = { example = "capture this for my worklog", description = "Silently grab the current screen + app/window context into the worklog review queue. Use when the user says 'capture this', 'log what I'm doing', or 'grab this for my worklog'.", always = true }
+
+[[contributes.hub.panel]]
+id = "worklog-capture-pending"
+title = "📸 Captures awaiting review"
+method = "panel_pending"
+renderer = "plain-list"
+priority = 142
+lazy = true

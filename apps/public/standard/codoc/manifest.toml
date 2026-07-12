@@ -1,0 +1,30 @@
+[app]
+id = "codoc"
+name = "Co-doc"
+description = "Bridge to the live co-doc collaboration service — persist a live doc snapshot into the vault."
+version = "1.0.0"
+store_category = "productivity"
+dimensions = ["social", "occupational"]
+
+[app.entry]
+module = "app"
+class = "CodocApp"
+
+[requires]
+capabilities = ["write", "read"]
+
+# Storage domains this app touches (docs/CLOUD-ARCHITECTURE.md; advisory)
+[storage]
+private = "vault"      # saved snapshots land as author:both notes
+live = "live"          # the CRDT session state on the codoc service
+
+[provides.web]
+prefix = "/codoc"
+
+[provides.events]
+emits = ["codoc:saved", "codoc:agent_edited"]
+# Doc-edit observability — no cross-app listener by design.
+internal = [
+    "codoc:saved",
+    "codoc:agent_edited",
+]

@@ -1,0 +1,13 @@
+[plugin]
+id = "telegram"
+name = "Telegram"
+version = "1.0.0"
+description = "Push notifications via Telegram + a dark-flagged two-way rooms bridge (feature.telegram-two-way.enabled)"
+
+[plugin.entry]
+module = "plugin"
+class = "TelegramPlugin"
+
+[provides]
+services = ["telegram"]
+tags = ["messaging", "mobile", "notifications", "connector"]

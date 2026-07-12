@@ -1,0 +1,338 @@
+# EmptyOS Release Manifest
+# Defines distribution tiers and packaging rules.
+#
+# Usage: python scripts/package-release.py <tier> [--check] [--platform=<name>]
+
+[release]
+version = "0.5.5"
+
+# ── Platforms ─────────────────────────────────────────────────
+# Named deployment profiles. Plugins declare compatibility in
+# their manifest [platforms].supports = [...] array. Tiers with
+# target_platform auto-filter incompatible plugins at package
+# time. CLI --platform=<name> overrides the tier's target.
+
+[platforms.laptop]
+description = "Local dev machine — GPU, camera, mic, desktop apps"
+caps = ["gpu", "camera", "mic", "desktop"]
+
+[platforms.vps-cpu]
+description = "Cloud VPS, CPU only (Hetzner CX23, DO $6 droplet)"
+caps = []
+
+[platforms.vps-gpu]
+description = "Cloud GPU droplet (DO GPU, RunPod, Lambda)"
+caps = ["gpu"]
+
+[platforms.docker]
+description = "Container, no hardware assumptions"
+caps = []
+
+# ── Tiers ─────────────────────────────────────────────────────
+
+# Vocabulary:
+# - core and standard are platform tiers.
+# - everything else is a packaged distribution/profile for a concrete audience
+#   or operating context. Distribution tiers may be private and branded without
+#   changing runtime semantics; all apps are still equal once loaded.
+
+[tiers.core]
+kind = "platform"
+display_name = "EmptyOS Core"
+audience = "Kernel-level EmptyOS install"
+description = "Minimum OS — vault basics, task management, search, generic home"
+apps = [
+    "hub",
+    "link",
+    "note",
+    "providers",
+    "quick-action",
+    "run",
+    "search",
+    "settings",
+    "store",
+    "system-log",
+    "task",
+    "vault-backup",
+    "weather",
+]
+plugins = [
+    "health",
+    "notifications",
+]
+skills = []
+# Engines are NOT tier-filtered by default (they ship wholesale like emptyos/).
+# This allowlist is the public-engine set: scripts/release-public.py drops every
+# engines/<X> NOT listed here. It is an allowlist precisely so a new engine leaks
+# nothing by default — a held engine simply never gets added.
+# Keep it to generic, non-engineering engines; the power/cable engineering engines
+# are held private and must NOT be added.
+# NOTE: this file SHIPS in the public snapshot, so do not enumerate the held
+# engines by name here. The allowlist below is the entire rule.
+engines = [
+    "sheet",        # public sheet app
+    "articulated",  # robot/3D modeller (cadquery plugin + texture scripts)
+]
+
+# Packaging/documentation tier only; the kernel never reads tiers at runtime.
+[tiers.demo]
+kind = "operational"
+display_name = "Demo"
+audience = "Public VPS showcase"
+description = "VPS showcase — core + narrative apps, cloud LLM only"
+extends = "core"
+target_platform = "vps-cpu"
+apps = [
+    "assistant",
+    "boards",
+    "focus",
+    "journal",
+    "kb",
+    "music-library",
+    "people",
+    "ppt",
+    "projects",
+    "publish",
+    "quotes",
+    "radio",
+    "reactor",
+    "rooms",
+    "tour",
+    "vault-graph",
+    "voice-assistant",
+]
+plugins = [
+    "ollama",
+]
+skills = []
+
+[tiers.standard]
+kind = "platform"
+display_name = "EmptyOS Standard"
+audience = "Default public/community install"
+description = "Full community OS — productivity, AI, creative (end-user value)"
+extends = "core"
+apps = [
+    "agent",
+    "app-analytics",
+    "assistant",
+    "billing",
+    "boards",
+    "bookme",
+    "braindump",
+    "calendar",
+    "codoc",
+    "commons",
+    "company",
+    "daily-brief",
+    "designer",
+    "dictation",
+    "expense",
+    "focus",
+    "forge",
+    "garden",
+    "geocode",
+    "git",
+    "github-connector",
+    "hands-free",
+    "journal",
+    "kb",
+    "learn",
+    "music-library",
+    "people",
+    "portal",
+    "ppt",
+    "proactive",
+    "projects",
+    "publish",
+    "quotes",
+    "reactor",
+    "reader",
+    "replay",
+    "reports",
+    "rooms",
+    "routing",
+    "runbook",
+    "scroll",
+    "sheet",
+    "tour",
+    "vault-graph",
+    "video-digest",
+    "viz",
+    "vlog",
+    "voice-assistant",
+    "worklog",
+    "worklog-capture",
+    "workspaces",
+    "writing-editor",
+]
+plugins = [
+    "applio",
+    "blender",
+    "comfyui",
+    "dogfood-demo",
+    "edge-tts",
+    "email-smtp",
+    "global-hotkey",
+    "obsidian",
+    "ollama",
+    "openai-image",
+    "playwright",
+    "system-tray",
+    "telegram",
+    "voice-api",
+    "webcam",
+]
+skills = [
+    "vault-cleanup-studio",
+    "vault-journal-planner",
+    "vault-knowledge-synthesis",
+    "vault-link-index",
+    "vault-moc-manager",
+    "vault-note-factory",
+    "vault-obsidian-format",
+    "vault-semantic-search",
+    "vault-task-aggregator",
+    "dev-app-optimizer",
+    "dev-new-app",
+    "dev-project-builder",
+    "tool-pdf-reader",
+    "tool-word-document",
+    "tool-google-maps",
+    "tool-comfyui-image",
+]
+
+# Packaging/documentation tier only; the kernel never reads tiers at runtime.
+[tiers.labs]
+kind = "operational"
+display_name = "Labs"
+audience = "Experimental app staging"
+description = "Experimental / pre-1.0 apps — visible in dev environments, never in public OSS release."
+extends = "core"
+apps = [
+    "canvas",         # moderate (2/4 aff, 1/4 emit) — brainstorm board, validate before public
+    "gesture",        # 1/2 aff, 0/1 emit — research/demo surface, no clear user use case yet
+    "jianpu",         # numbered-notation composer — not ready for standard (2026-07-10)
+    "feedback",       # PM feedback loop — intake/dedupe/votes/roadmap/changelog; validate public-write posture before standard
+    "model-serving",  # local model-serving surface — labs-track public app, validate before public
+    "synth",          # LLM data-synthesiser closed loop (graph_pipeline driver demo) — validate before public
+    "workflows",      # generic graph-over-verbs builder (eligibility-gated) — validate before public
+    "work",           # outcome-first deliverable production (work-surface pivot centerpiece) — validate before public
+    "engagements",    # v0.1 FDE-portfolio view-layer — generic mechanism, niche framing; prove (real measured rows) before public/standard
+    "business-case",  # value-proof ROI one-pager (deterministic calc + PDF) — engineering-pilot monetization tool; validate before public
+]
+plugins = []
+skills = []
+
+[tiers.dev]
+kind = "operational"
+display_name = "Developer"
+audience = "EmptyOS builders"
+description = "Meta / developer tooling — extends standard with app-gen, benchmarks, release tooling"
+extends = "standard"
+apps = [
+    "app-builder",
+    "app-gen",
+    "architecture-map",
+    "dogfood-agent",
+    "eink-bridge",
+    "feature-pipeline",
+    "fix-agent",
+    "grill",
+    "kb-butler",
+    "kb-gap-miner",
+    "memory-fidelity",
+    "model-bench",
+    "pattern-harvester",
+    "pocket",
+    "progress",
+    "promote",
+    "prompts",
+    "rag-eval",
+    "release",
+    "repo",
+    "run-center",
+    "sandbox",
+    "skill",
+    "tests",
+    "tiers",
+    "tmpl",
+    "trace-miner",
+    "web-analytics",
+]
+plugins = ["agent-runtime", "cadquery", "sandbox-pool"]
+skills = []
+
+# ── Release targets ───────────────────────────────────────────
+# Declarative bindings consumed by `scripts/release.py <target>`. Each target
+# pairs a tier with a destination repo + the gates/transform to apply. This is
+# the single source of truth for "where does each daemon deployment come from".
+#
+#   tier            — which release.toml tier defines the app/plugin set
+#   repo            — destination git repo (owner/name)
+#   visibility      — public | private  (informational + safety intent)
+#   strip_personal  — run check-personal.py, ABORT on any match (public only)
+#   strip_branding  — run check-branding.py, ABORT on any match
+#   include         — "code" | "code+portfolio" (bundle the portfolio/ dir)
+#   snapshot        — "head" (git archive HEAD, tracked only)
+#                   | "worktree" (copy working tree — captures untracked/WIP)
+#   deploy          — how the VPS goes live (documentation; see docs/PUBLISHING.md)
+
+[targets.public]
+tier = "standard"
+repo = "KevinBean/emptyos"
+visibility = "public"
+strip_personal = true
+strip_branding = true
+include = "code"
+snapshot = "head"
+deploy = "vps:git-reset+rebuild (demo.binbian.net)"
+
+# ── Always included (platform layer) ─────────────────────────
+
+[include]
+paths = [
+    "emptyos/",
+    "engines/",  # pure compute libs many engineering apps depend on (engines/personal/ excluded below)
+    "emptyos.example.toml",
+    "englishos-cloud/",
+    "pyproject.toml",
+    "release.toml",
+    ".eos-personal",
+    ".eos-branding",
+    ".gitignore",
+    ".github/",
+    "scripts/check-personal.py",
+    "scripts/check-branding.py",
+    "restart.bat",
+    "service.bat",
+    "tests/",
+    "docs/DESIGN.md",
+    "docs/APPS.md",
+    "docs/TIERS.md",
+    "docs/DOC-SYSTEM.md",
+    "docs/README.md",
+    "docs/GETTING-STARTED.md",
+    "docs/APP-DEVELOPMENT.md",
+    "CLAUDE.md",
+    "README.md",
+    "LICENSE",
+]
+
+# ── Never included ────────────────────────────────────────────
+
+[exclude]
+patterns = [
+    "apps/personal/",
+    "engines/personal/",
+    "data/",
+    "emptyos.toml",
+    ".claude/vault-connection.json",
+    ".claude/settings.local.json",
+    "boot.vbs",
+    "registry.json",
+    "emptyos_test.log",
+    "*.pyc",
+    "__pycache__/",
+    ".claude/skills/",
+]

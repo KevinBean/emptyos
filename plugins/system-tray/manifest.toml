@@ -1,0 +1,13 @@
+[plugin]
+id = "system-tray"
+name = "System Tray"
+version = "1.0.0"
+description = "Adds EmptyOS to the native Windows/macOS system tray"
+
+[plugin.entry]
+module = "plugin"
+class = "SystemTrayPlugin"
+
+[provides]
+services = ["system-tray"]
+tags = ["desktop", "ui"]

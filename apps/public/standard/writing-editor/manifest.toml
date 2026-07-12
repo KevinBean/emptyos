@@ -1,0 +1,65 @@
+[app]
+id = "writing-editor"
+name = "Writing Editor"
+version = "0.1.0"
+description = "Writing editor — large-print documents with voice dictation and PDF export, plus draft revision with audience + tone awareness"
+store_category = "productivity"
+dimensions = ["occupational", "intellectual"]
+user_intent = [
+    "I want to improve my writing for office communication",
+    "edit this email before I send it",
+    "make this Slack message clearer",
+    "把这封邮件改一下",
+    "这封消息听起来太硬了",
+    "tighten my draft",
+    "soften this message without being mealy",
+    "help me draft a professional email",
+    "write a networking message",
+    "draft a cold outreach to a hiring manager",
+    "how do I ask someone for an intro",
+    "帮我写一封职场邮件",
+    "I want to write an article",
+    "write down my story",
+    "我想写文章",
+    "把我说的话记下来",
+]
+
+[app.entry]
+module = "app"
+class = "WritingEditorApp"
+
+[requires]
+capabilities = ["think", "read", "write", "listen"]
+apps = []
+services = []
+
+[provides.web]
+prefix = "/writing-editor"
+
+# Glanceable: drafts in progress → resume from the hub. Cognitive band
+# (priority < 150) so it renders in /hub/ Explore; drops when no drafts.
+[[contributes.hub.panel]]
+id = "writing-drafts"
+method = "panel_drafts_in_progress"
+renderer = "plain-list"
+title = "Drafts in progress"
+priority = 140
+group = ""
+limit = 5
+
+[provides.cli]
+commands = ["compose"]
+
+[provides.events]
+emits = ["writing-editor:revised", "writing-editor:linted", "writing-editor:article_saved", "writing-editor:article_exported"]
+# Editing lifecycle observability — UI-only, no cross-app listener by design.
+internal = ["writing-editor:revised", "writing-editor:linted", "writing-editor:article_saved", "writing-editor:article_exported"]
+
+[provides.settings]
+fields = [
+    {key = "writing-editor.default_audience", label = "Default audience", type = "select", default = "peer", options = ["peer", "manager", "external", "report"]},
+    {key = "writing-editor.default_tone", label = "Default tone", type = "select", default = "default", options = ["default", "direct", "diplomatic", "shorter"]},
+    {key = "writing-editor.font_size", label = "Document font size (px)", type = "number", default = 26},
+    {key = "writing-editor.dictation_language", label = "Dictation language code", type = "text", default = "zh"},
+    {key = "writing-editor.pdf_theme", label = "PDF theme", type = "select", default = "default", options = ["default", "slate", "mono", "forest"]},
+]

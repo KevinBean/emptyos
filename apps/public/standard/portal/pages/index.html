@@ -1,0 +1,680 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Portal &mdash; EmptyOS</title>
+<link rel="stylesheet" href="/static/theme.css">
+<link rel="stylesheet" href="/static/eos-chat-shell.css">
+<link rel="stylesheet" href="/static/eos-components.css">
+<script src="/static/eos.js"></script>
+<script src="/static/eos-components.js"></script>
+<script src="/static/eos-conversation.js"></script>
+<style>
+/* ── Main panel: two states (hero / chat) ───────────────────────── */
+
+.portal-main {
+    display: flex; flex-direction: column;
+    min-width: 0; min-height: 0;
+    background: var(--bg);
+    position: relative;
+}
+
+/* ── Hero state ─────────────────────────────────────────────────── */
+
+.portal-hero {
+    flex: 1; overflow-y: auto;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    padding: 40px 24px;
+}
+.portal-hero-inner {
+    max-width: 720px; width: 100%;
+    display: flex; flex-direction: column; gap: 32px;
+}
+.portal-title {
+    font-size: 36px; font-weight: 400;
+    color: var(--text-heading); text-align: center;
+    letter-spacing: -0.02em; margin: 0;
+    display: flex; gap: 16px; align-items: center; justify-content: center;
+    line-height: 1.2;
+}
+.portal-title .glyph { color: var(--accent); }
+
+/* ── Composer (shared between hero and chat states) ─────────────── */
+
+.portal-composer {
+    background: var(--bg-surface, var(--bg-card, var(--bg)));
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 16px 16px 12px;
+    display: flex; flex-direction: column; gap: 8px;
+    box-shadow: 0 1px 0 rgba(0,0,0,0.02), 0 8px 24px -12px rgba(0,0,0,0.08);
+    transition: border-color 0.15s, box-shadow 0.15s;
+}
+.portal-composer:focus-within {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 1px var(--accent), 0 8px 24px -12px rgba(0,0,0,0.12);
+}
+.portal-input {
+    width: 100%; min-height: 44px; max-height: 240px;
+    border: none; outline: none; resize: none;
+    background: transparent; color: var(--text);
+    font-family: inherit; font-size: 14.5px; line-height: 1.55;
+    padding: 4px 0;
+}
+.portal-input::placeholder { color: var(--text-secondary); opacity: 0.7; }
+.portal-composer-actions {
+    display: flex; justify-content: space-between; align-items: center;
+    gap: 8px; padding-top: 4px;
+}
+.portal-attach {
+    background: none; border: 1px solid var(--border);
+    width: 30px; height: 30px; border-radius: 50%;
+    color: var(--text-secondary); font-size: 16px;
+    display: inline-flex; align-items: center; justify-content: center;
+    cursor: not-allowed; opacity: 0.5;
+}
+.portal-send-row { display: flex; gap: 12px; align-items: center; }
+.portal-model {
+    font-size: 12px; color: var(--text-muted);
+    letter-spacing: 0.01em;
+}
+.portal-send {
+    padding: 8px 16px; border-radius: 8px; border: 1px solid var(--border);
+    background: var(--bg-card); color: var(--text-muted);
+    font-size: 13px; font-weight: 500; cursor: pointer;
+    transition: background 0.15s, color 0.15s;
+}
+.portal-send.ready { background: var(--accent); color: var(--accent-ink, #fff); border-color: var(--accent); }
+.portal-send:disabled { cursor: not-allowed; opacity: 0.45; }
+
+/* ── Mode chips (hero only) ─────────────────────────────────────── */
+
+.portal-chips {
+    display: flex; flex-wrap: wrap; gap: 8px; justify-content: center;
+}
+.portal-chip {
+    padding: 8px 16px; border-radius: 999px;
+    background: var(--bg-surface, var(--bg-card, var(--bg)));
+    border: 1px solid var(--border);
+    color: var(--text); font-size: 13px;
+    cursor: pointer; transition: all 0.15s;
+    display: inline-flex; align-items: center; gap: 8px;
+    font-family: inherit;
+}
+.portal-chip:hover:not(.disabled) {
+    border-color: var(--accent);
+    background: color-mix(in srgb, var(--accent) 6%, transparent);
+}
+.portal-chip.active {
+    border-color: var(--accent);
+    background: color-mix(in srgb, var(--accent) 12%, transparent);
+    color: var(--text-heading);
+}
+.portal-chip.disabled { opacity: 0.45; cursor: not-allowed; }
+.portal-chip .ico {
+    font-size: 13px; opacity: 0.85;
+    font-family: var(--font-mono, ui-monospace, monospace);
+}
+
+/* ── Chat state ─────────────────────────────────────────────────── */
+
+.portal-chat {
+    flex: 1; display: none; flex-direction: column;
+    min-height: 0;
+}
+.portal-chat.open { display: flex; }
+.portal-chat-header {
+    padding: 12px 24px; border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; gap: 12px;
+    background: var(--bg-surface, var(--bg-card, var(--bg)));
+}
+.portal-chat-name {
+    flex: 1; font-size: 13.5px; font-weight: 500;
+    color: var(--text-heading);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.portal-chat-mode {
+    font-size: 11px; color: var(--text-secondary); opacity: 0.7;
+    padding: 2px 8px; border: 1px solid var(--border); border-radius: 999px;
+}
+.portal-chat-model {
+    font-size: 11px;
+    padding: 2px 8px; border-radius: 999px;
+    background: color-mix(in srgb, var(--accent) 12%, transparent);
+    border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
+    color: var(--text);
+    font-family: var(--font-mono, ui-monospace, monospace);
+    letter-spacing: 0.01em;
+}
+.portal-chat-close {
+    background: none; border: none; color: var(--text-secondary);
+    font-size: 18px; cursor: pointer; padding: 4px 8px; border-radius: 6px;
+    opacity: 0.6;
+}
+.portal-chat-close:hover { opacity: 1; background: color-mix(in srgb, var(--accent) 8%, transparent); }
+
+.portal-messages {
+    flex: 1; overflow-y: auto;
+    padding: 24px 0;
+    background: var(--bg);
+}
+.portal-messages-inner {
+    max-width: 760px; margin: 0 auto;
+    padding: 0 24px;
+    display: flex; flex-direction: column; gap: 24px;
+}
+.portal-turn {
+    display: flex; flex-direction: column; gap: 8px;
+    font-size: 14px; line-height: 1.65;
+}
+.portal-turn .role {
+    font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.1em;
+    color: var(--text-muted, var(--text-secondary));
+    font-weight: 600;
+}
+.portal-turn.user .role { color: var(--accent); }
+.portal-turn.assistant .role { color: color-mix(in srgb, var(--accent) 70%, var(--text)); }
+.portal-turn.user .body {
+    padding: 12px 16px; border-radius: 8px;
+    background: color-mix(in srgb, var(--accent) 8%, transparent);
+    border: 1px solid color-mix(in srgb, var(--accent) 18%, transparent);
+    white-space: pre-wrap; align-self: flex-start;
+    max-width: 100%;
+}
+.portal-turn.assistant .body {
+    color: var(--text);
+    word-wrap: break-word; overflow-wrap: break-word;
+}
+.portal-turn.assistant .body.streaming { white-space: pre-wrap; }
+.portal-turn.assistant .body p:first-child { margin-top: 0; }
+.portal-turn.assistant .body p:last-child { margin-bottom: 0; }
+.portal-turn.assistant .body code {
+    background: var(--bg-surface, var(--bg-card)); padding: 2px 4px;
+    border-radius: 4px; font-size: 12.5px;
+    font-family: var(--font-mono, ui-monospace, monospace);
+}
+.portal-turn.assistant .body pre {
+    background: var(--bg-surface, var(--bg-card)); padding: 12px 16px;
+    border-radius: 8px; overflow-x: auto;
+    border: 1px solid var(--border);
+}
+/* Day + session dividers — visual anchors + scroll targets for the
+   "Jump to" picker. Topic-level segmentation (semantic breaks) is a
+   V3 LLM job; today's picker shows day boundaries + ~90min activity
+   gaps only. */
+.portal-day-divider {
+    display: flex; align-items: center; gap: 12px;
+    margin: 8px 0 -2px;
+    font-size: 11px; color: var(--text-muted); text-transform: uppercase;
+    letter-spacing: 0.1em; font-weight: 600;
+    scroll-margin-top: 16px;
+}
+.portal-day-divider::before, .portal-day-divider::after {
+    content: ""; flex: 1; height: 1px; background: var(--border);
+}
+.portal-day-divider span {
+    padding: 2px 12px; border-radius: 999px;
+    background: var(--bg); border: 1px solid var(--border);
+}
+.portal-session-divider {
+    text-align: center; margin: 4px 0 -4px;
+    font-size: 10.5px; color: var(--text-muted); font-style: italic;
+    opacity: 0.75;
+    scroll-margin-top: 16px;
+}
+.portal-jump-btn {
+    background: none; border: 1px solid var(--border);
+    color: var(--text-secondary); font-size: 12px;
+    padding: 4px 12px; border-radius: 999px;
+    cursor: pointer; display: inline-flex; align-items: center; gap: 8px;
+}
+.portal-jump-btn:hover {
+    border-color: var(--accent); color: var(--text);
+}
+.portal-typing {
+    display: inline-flex; gap: 4px; padding: 4px 0;
+}
+.portal-typing span {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: var(--text-secondary); opacity: 0.55;
+    animation: portal-dot 1.2s infinite ease-in-out;
+}
+.portal-typing span:nth-child(2) { animation-delay: 0.15s; }
+.portal-typing span:nth-child(3) { animation-delay: 0.3s; }
+@keyframes portal-dot {
+    0%, 60%, 100% { opacity: 0.25; transform: translateY(0); }
+    30% { opacity: 0.9; transform: translateY(-2px); }
+}
+
+.portal-chat-composer-wrap {
+    padding: 12px 24px 24px;
+    border-top: 1px solid var(--border);
+    background: var(--bg);
+}
+.portal-chat-composer-wrap .portal-composer {
+    max-width: 760px; margin: 0 auto;
+}
+
+/* ── Sidebar bits ────────────────────────────────────────────────── */
+
+.portal-side-section { margin-top: 16px; }
+.portal-side-section h3 {
+    font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em;
+    color: var(--text-secondary); margin: 0 0 8px;
+    padding: 0 12px; opacity: 0.7; font-weight: 600;
+}
+.portal-side-link {
+    padding: 8px 12px; border-radius: 6px;
+    cursor: pointer; font-size: 13px;
+    color: var(--text-secondary);
+    display: flex; align-items: center; gap: 8px;
+    text-decoration: none;
+}
+.portal-side-link:hover {
+    background: color-mix(in srgb, var(--accent) 8%, transparent);
+    color: var(--text);
+}
+.portal-side-link .ico {
+    width: 18px; text-align: center; opacity: 0.7;
+}
+.portal-side-search { padding: 0 4px; }
+.portal-rooms-list { display: flex; flex-direction: column; gap: 2px; }
+.portal-room {
+    padding: 8px 12px; border-radius: 6px;
+    cursor: pointer; font-size: 12.5px;
+    color: var(--text-secondary);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    text-decoration: none;
+    display: flex; align-items: center; gap: 8px;
+    position: relative;
+}
+.portal-room:hover {
+    background: color-mix(in srgb, var(--accent) 8%, transparent);
+    color: var(--text);
+}
+.portal-room.active {
+    background: color-mix(in srgb, var(--accent) 14%, transparent);
+    color: var(--text-heading);
+}
+.portal-room .r-name {
+    flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.portal-room .r-menu, .portal-room .r-pin {
+    display: none; background: none; border: none; color: var(--text-muted);
+    font-size: 14px; line-height: 1; cursor: pointer; padding: 2px 4px;
+    border-radius: 4px;
+}
+.portal-room:hover .r-menu, .portal-room:hover .r-pin { display: inline-flex; }
+/* Pinned threads keep their star visible at rest so the state is obvious. */
+.portal-room .r-pin.pinned { display: inline-flex; color: var(--accent); }
+.portal-room .r-menu:hover, .portal-room .r-pin:hover {
+    background: color-mix(in srgb, var(--accent) 18%, transparent);
+    color: var(--accent);
+}
+.portal-room.nested { padding-left: 24px; font-size: 12px; }
+.portal-empty {
+    padding: 12px 12px; font-size: 11px;
+    color: var(--text-secondary); opacity: 0.6;
+}
+
+/* Folder (= Room in UI) rows */
+.portal-folder {
+    padding: 8px 12px; border-radius: 6px;
+    cursor: pointer; font-size: 13px;
+    color: var(--text);
+    display: flex; align-items: center; gap: 4px;
+    user-select: none;
+}
+.portal-folder:hover {
+    background: color-mix(in srgb, var(--accent) 8%, transparent);
+}
+.portal-folder .chev {
+    display: inline-block; width: 14px; text-align: center;
+    color: var(--text-muted); font-size: 10px;
+    transition: transform 0.12s;
+}
+.portal-folder.open .chev { transform: rotate(90deg); }
+.portal-folder .f-name {
+    flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    font-weight: 500;
+}
+.portal-folder .f-count {
+    font-size: 11px; color: var(--text-muted); opacity: 0.75;
+}
+.portal-folder .f-menu {
+    display: none; background: none; border: none; color: var(--text-muted);
+    font-size: 14px; line-height: 1; cursor: pointer; padding: 2px 4px;
+    border-radius: 4px;
+}
+.portal-folder:hover .f-menu { display: inline-flex; }
+.portal-folder .f-menu:hover {
+    background: color-mix(in srgb, var(--accent) 18%, transparent);
+    color: var(--accent);
+}
+
+.portal-section-header {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 0 12px;
+}
+.portal-section-header h3 { margin: 0; }
+.portal-section-add {
+    background: none; border: none; color: var(--text-secondary);
+    font-size: 16px; line-height: 1; cursor: pointer;
+    padding: 2px 8px; border-radius: 4px; opacity: 0.6;
+}
+.portal-section-add:hover {
+    opacity: 1; background: color-mix(in srgb, var(--accent) 12%, transparent);
+    color: var(--accent);
+}
+
+/* Folder body affordances + hero folder-context pill */
+.portal-folder-newthread {
+    margin: 4px 0 8px 24px;
+    background: none; border: 1px dashed var(--border);
+    color: var(--text-secondary); font-family: inherit; font-size: 11.5px;
+    padding: 4px 12px; border-radius: 6px; cursor: pointer;
+    display: flex; align-items: center; gap: 8px; width: calc(100% - 28px);
+}
+.portal-folder-newthread:hover {
+    border-color: var(--accent); color: var(--accent);
+    background: color-mix(in srgb, var(--accent) 6%, transparent);
+}
+.hero-folder-pill {
+    align-self: center;
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 8px 12px; border-radius: 999px;
+    background: color-mix(in srgb, var(--accent) 10%, transparent);
+    border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
+    font-size: 12.5px; color: var(--text);
+}
+.hero-folder-pill .pill-label { opacity: 0.7; }
+.hero-folder-pill strong { color: var(--text-heading); }
+.hero-folder-pill .pill-clear {
+    background: none; border: none; color: var(--text-secondary);
+    font-size: 14px; line-height: 1; cursor: pointer;
+    padding: 0 2px; border-radius: 4px;
+}
+.hero-folder-pill .pill-clear:hover {
+    color: var(--accent);
+}
+
+/* ── Iframe state (embedded app in right pane) ───────────────────── */
+
+.portal-iframe-pane {
+    flex: 1; display: none; flex-direction: column; min-height: 0;
+}
+.portal-iframe-pane.open { display: flex; }
+.portal-iframe-pane iframe {
+    flex: 1; border: none; width: 100%; background: var(--bg);
+}
+
+/* ── Find-results state ─────────────────────────────────────────── */
+
+.portal-find {
+    flex: 1; display: none; flex-direction: column; min-height: 0;
+}
+.portal-find.open { display: flex; }
+.portal-find-body {
+    flex: 1; overflow-y: auto;
+    padding: 24px;
+    background: var(--bg);
+}
+.portal-find-results {
+    max-width: 920px; margin: 0 auto;
+    display: flex; flex-direction: column; gap: 24px;
+}
+.portal-find-group h3 {
+    margin: 0 0 12px;
+    font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em;
+    color: var(--text-secondary); opacity: 0.75; font-weight: 600;
+}
+.portal-find-stack {
+    display: grid; gap: 8px;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+}
+.portal-find-card {
+    padding: 12px 16px; border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--bg-surface, var(--bg-card, var(--bg)));
+    cursor: pointer; transition: all 0.15s;
+    display: flex; flex-direction: column; gap: 4px;
+    text-decoration: none; color: inherit;
+}
+.portal-find-card:hover {
+    border-color: var(--accent);
+    background: color-mix(in srgb, var(--accent) 6%, transparent);
+}
+.portal-find-card .fc-title {
+    font-size: 13.5px; font-weight: 500; color: var(--text-heading);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.portal-find-card .fc-path {
+    font-size: 11.5px; color: var(--text-secondary); opacity: 0.7;
+    font-family: var(--font-mono, ui-monospace, monospace);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.portal-find-card .fc-meta {
+    font-size: 11px; color: var(--text-muted); opacity: 0.6;
+    display: flex; gap: 12px;
+}
+.portal-find-empty {
+    padding: 40px 24px; text-align: center;
+    color: var(--text-secondary); opacity: 0.7;
+    font-size: 13px;
+}
+
+/* Belt-and-suspenders: even if eos.js's auto-mount nav check is bypassed
+   (cached old script, race condition), this CSS hides any kernel-injected
+   <nav.nav> on the portal page. The page provides its own sidebar; the
+   kernel nav would just be redundant chrome. */
+body[data-no-nav] > nav.nav,
+body[data-no-nav] > nav.eos-nav { display: none !important; }
+
+/* Sidebar toggle (☰) — visible always; on mobile it opens the drawer,
+   on desktop it collapses to zero-width. eos-chat-shell.css already
+   handles the .sidebar-hidden / .sidebar-open state classes. */
+.eos-chat-toggle {
+    top: 12px !important;
+    opacity: 0.95 !important;
+    width: 38px !important;
+    height: 38px !important;
+    font-size: 18px !important;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.12);
+    z-index: 9999 !important;
+}
+.eos-chat-toggle:hover { opacity: 1 !important; }
+.portal-mobile-close {
+    display: none; background: none; border: none;
+    color: var(--text-secondary); font-size: 22px;
+    cursor: pointer; padding: 4px 12px; border-radius: 6px;
+    line-height: 1; min-width: 36px; min-height: 36px;
+}
+.portal-mobile-close:hover {
+    color: var(--accent);
+    background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+@media (max-width: 720px) {
+    .portal-hero { padding: 24px 16px; }
+    .portal-title { font-size: 28px; }
+    .portal-chat-header { padding: 12px 16px 12px 58px; } /* clear toggle button */
+    .portal-messages-inner { padding: 0 16px; }
+    .portal-chat-composer-wrap { padding: 12px 16px 16px; }
+    .portal-mobile-close { display: inline-flex; align-items: center; justify-content: center; }
+    /* Make the toggle very obvious on small screens — it's the only way
+       into the sidebar drawer. Accent border + larger tap target. */
+    .eos-chat-toggle {
+        top: 10px !important; left: 10px !important;
+        width: 42px !important; height: 42px !important;
+        border-color: var(--accent) !important;
+        background: var(--bg-surface, var(--bg-card, var(--bg))) !important;
+        box-shadow: 0 3px 12px rgba(0,0,0,0.18);
+    }
+    /* Hide the floating toggle while the drawer is open — the in-sidebar
+       × button takes over. Scrim covers the rest. */
+    .eos-chat-shell.sidebar-open .eos-chat-toggle { display: none; }
+    /* Make sure the sidebar's safe-area top padding doesn't push the close
+       button below the header. */
+    .eos-chat-shell .eos-chat-sidebar-header {
+        position: sticky; top: 0; background: var(--bg-surface, var(--bg-card, var(--bg)));
+        padding: 8px 0; z-index: 1;
+    }
+}
+</style>
+</head>
+<body data-no-nav>
+<div class="eos-chat-shell" id="portal-shell">
+
+<button class="eos-chat-toggle" id="portal-sidebar-toggle"
+        onclick="toggleSidebar()" title="Toggle sidebar (Ctrl+B)"
+        aria-label="Toggle sidebar">&#9776;</button>
+<div class="eos-chat-scrim" id="portal-sidebar-scrim" onclick="closeSidebar()"></div>
+
+<aside class="eos-chat-sidebar">
+    <div class="eos-chat-sidebar-header">
+        <h1>EmptyOS</h1>
+        <div class="eos-chat-sidebar-actions">
+            <a href="/hub/" title="Hub (dashboard)">&#x2302;</a>
+            <button class="portal-mobile-close" onclick="closeSidebar()" title="Close sidebar" aria-label="Close sidebar">&times;</button>
+        </div>
+    </div>
+    <button class="eos-chat-new-btn" onclick="newThread()">+ New thread</button>
+
+    <div class="portal-side-section">
+        <div class="portal-side-search" id="portal-search"></div>
+    </div>
+
+    <div class="portal-side-section">
+        <h3>Shortcuts</h3>
+        <a class="portal-side-link" id="side-link-projects" href="#app:projects"
+            onclick="event.preventDefault();_navToApp('projects');"><span class="ico">&#x25A4;</span>Projects</a>
+        <a class="portal-side-link" id="side-link-settings" href="#app:settings"
+            onclick="event.preventDefault();_navToApp('settings');"><span class="ico">&#x2699;</span>Customize</a>
+        <a class="portal-side-link" href="#" onclick="event.preventDefault();_openAppsDrawer();"
+            title="Browse every installed app"><span class="ico">&#x229E;</span>Browse all apps&hellip;</a>
+    </div>
+
+    <div class="portal-side-section" id="portal-pinned-section" style="display:none">
+        <h3>Pinned</h3>
+        <div class="portal-rooms-list" id="portal-pinned-list"></div>
+    </div>
+
+    <div class="portal-side-section" style="flex:1; min-height:0; display:flex; flex-direction:column;">
+        <div class="portal-section-header">
+            <h3>Rooms</h3>
+            <button class="portal-section-add" onclick="createFolder()" title="New room">+</button>
+        </div>
+        <div class="portal-rooms-list" id="portal-rooms" style="flex:1; overflow-y:auto;">
+            <div class="portal-empty">Loading&hellip;</div>
+        </div>
+    </div>
+</aside>
+
+<main class="portal-main">
+
+    <!-- HERO STATE: shown when no thread is open -->
+    <div class="portal-hero" id="portal-hero">
+        <div class="portal-hero-inner">
+            <h2 class="portal-title">
+                <span class="glyph">&#x2726;</span>
+                <span>What shall we think through?</span>
+            </h2>
+
+            <div class="hero-folder-pill" id="hero-folder-pill" style="display:none">
+                <span class="pill-label">Creating in</span>
+                <strong id="hero-folder-name"></strong>
+                <button class="pill-clear" onclick="_clearFolderContext()" title="Top-level instead">&times;</button>
+            </div>
+
+            <div class="portal-composer">
+                <textarea
+                    id="hero-input"
+                    class="portal-input"
+                    placeholder="How can I help you today?"
+                    rows="1"></textarea>
+                <div class="portal-composer-actions">
+                    <button class="portal-attach" title="Attach (coming soon)" disabled>+</button>
+                    <div class="portal-send-row">
+                        <span class="portal-model" id="hero-mode-label">Think</span>
+                        <button class="portal-send" id="hero-send" onclick="submitFromHero()">Send</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="portal-chips" id="portal-chips">
+                <button class="portal-chip active" data-verb="think" title="Chat in a new thread"><span class="ico">&#x1F4AD;</span>Think</button>
+                <button class="portal-chip" data-verb="capture" title="Save as capture, task, journal entry, or KB note"><span class="ico">&#x270D;</span>Capture</button>
+                <button class="portal-chip" data-verb="find" title="Search across vault, threads, and apps"><span class="ico">&#x1F50D;</span>Find</button>
+                <button class="portal-chip" data-verb="learn" title="Process as video digest or KB note"><span class="ico">&#x1F4DA;</span>Learn</button>
+                <button class="portal-chip disabled" data-verb="adaptive" aria-disabled="true"
+                    title="Coming soon &mdash; will route to the right verb based on what you type">
+                    <span class="ico">&#x2726;</span>Adaptive
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- FIND STATE: vault search results in the right pane -->
+    <div class="portal-find" id="portal-find">
+        <div class="portal-chat-header">
+            <span class="portal-chat-name">Find</span>
+            <span class="portal-chat-mode" id="portal-find-query"></span>
+            <button class="portal-chat-close" onclick="newThread()" title="Back to home">&times;</button>
+        </div>
+        <div class="portal-find-body" id="portal-find-body">
+            <div class="portal-find-results" id="portal-find-results"></div>
+        </div>
+    </div>
+
+    <!-- IFRAME STATE: embedded app in the right pane (sidebar persists) -->
+    <div class="portal-iframe-pane" id="portal-iframe-pane">
+        <div class="portal-chat-header">
+            <span class="portal-chat-name" id="portal-iframe-name"></span>
+            <a class="portal-chat-mode" id="portal-iframe-open" href="#" target="_blank"
+                rel="noopener" title="Open in new tab">&#x2197;</a>
+            <button class="portal-chat-close" onclick="newThread()" title="Back to home">&times;</button>
+        </div>
+        <iframe id="portal-iframe-frame" src="about:blank"
+            sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-modals allow-downloads"></iframe>
+    </div>
+
+    <!-- CHAT STATE: shown when a thread is open -->
+    <div class="portal-chat" id="portal-chat">
+        <div class="portal-chat-header">
+            <span class="portal-chat-name" id="portal-chat-name"></span>
+            <span class="portal-chat-mode" id="portal-chat-mode" style="display:none"></span>
+            <span class="portal-chat-model" id="portal-chat-model" style="display:none" title="Active model for this thread"></span>
+            <button class="portal-jump-btn" id="portal-jump-btn"
+                onclick="openJumpToSegment()" title="Jump to a day or session in this thread"
+                style="display:none">&#x1F4C5; <span id="portal-jump-label"></span></button>
+            <button class="portal-chat-close" onclick="newThread()" title="Back to home">&times;</button>
+        </div>
+        <div class="portal-messages" id="portal-messages">
+            <div class="portal-messages-inner" id="portal-messages-inner"></div>
+        </div>
+        <div class="portal-chat-composer-wrap">
+            <div class="portal-composer">
+                <textarea
+                    id="chat-input"
+                    class="portal-input"
+                    placeholder="Reply&hellip;"
+                    rows="1"></textarea>
+                <div class="portal-composer-actions">
+                    <button class="portal-attach" title="Attach (coming soon)" disabled>+</button>
+                    <div class="portal-send-row">
+                        <button class="portal-send" id="chat-send" onclick="sendInThread()">Send</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+</main>
+
+</div>
+
+<script src="/portal/pages/portal.js"></script>
+</body>
+</html>

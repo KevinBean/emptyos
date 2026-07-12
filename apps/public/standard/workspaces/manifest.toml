@@ -1,0 +1,57 @@
+[app]
+id = "workspaces"
+name = "Workspaces"
+version = "0.1.0"
+description = "Curated, navigable groupings of apps around a goal — Spaces"
+dimensions = ["intellectual"]
+store_category = "core"
+user_intent = [
+    "show me my workspaces",
+    "open the english academy",
+    "group my apps by goal",
+    "where is everything for learning English",
+]
+
+[app.entry]
+module = "app"
+class = "WorkspacesApp"
+
+[requires]
+# think powers the Space-scoped Ask; retrieval uses the vault index directly.
+capabilities = ["think"]
+apps = []
+# Soft: a space's hero_app is called via call_app(hero_app, "dashboard"), gated
+# by enabled-check. The built-in english-academy space names `academy`; absence
+# is tolerated (public clones without it just render a heroless grid).
+optional_apps = ["academy"]
+connectors = []
+
+[provides.cli]
+commands = ["workspaces"]
+
+[provides.web]
+prefix = "/workspaces"
+
+[provides.events]
+emits = ["workspaces:asked"]
+# Q&A observability — no cross-app listener by design.
+internal = [
+    "workspaces:asked",
+]
+
+[[contributes.hub.panel]]
+id = "spaces"
+method = "panel_spaces"
+renderer = "plain-list"
+title = "Spaces"
+priority = 175
+limit = 6
+
+[[contributes.tour.step]]
+id = "workspaces.browse"
+group = "core"
+priority = 120
+route = "/workspaces/"
+spotlight = "#spaces-grid"
+title = "Browse your Spaces"
+body = "Spaces group related apps around a goal — like English Academy. Open one to find everything for that goal in one place."

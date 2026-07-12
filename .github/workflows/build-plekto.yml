@@ -1,0 +1,119 @@
+# Build Plekto desktop installer for macOS + Windows on tag push or
+# manual dispatch. Output artifacts (Plekto-macOS-arm64.dmg /
+# Plekto-Windows-x64.zip) appear on the workflow run page.
+#
+# Trigger:
+#   git tag v0.1.0-plekto && git push origin v0.1.0-plekto
+#   (or run manually via Actions → Build Plekto → Run workflow)
+#
+# When the build is stable, add a job to upload these to a GitHub Release.
+
+name: Build Plekto
+
+on:
+  push:
+    tags:
+      - "v*-plekto"
+  workflow_dispatch:
+    inputs:
+      tier:
+        description: "Tier to package (default: plekto)"
+        required: false
+        default: "plekto"
+
+jobs:
+  build:
+    name: Build (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-14         # Apple Silicon runner
+            artifact: Plekto-macOS-arm64
+            python: "3.12"
+          - os: windows-latest
+            artifact: Plekto-Windows-x64
+            python: "3.12"
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Setup Python ${{ matrix.python }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+
+      - name: Install dependencies + PyInstaller
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e .
+          python -m pip install pyinstaller>=6.0 pillow
+
+      # Package the Plekto tier into dist/emptyos-plekto-<ver>/. The spec
+      # file picks up this directory as the bundle's data tree.
+      - name: Build Plekto tier release
+        run: |
+          python scripts/package-release.py ${{ github.event.inputs.tier || 'plekto' }} --platform=laptop
+
+      # Generate platform-specific icons from the existing PNG suite.
+      # The spec file references brand/plekto/icon.{icns,ico}.
+      - name: Generate icon (macOS .icns)
+        if: runner.os == 'macOS'
+        run: |
+          ICONSET="brand/plekto/icon.iconset"
+          mkdir -p "$ICONSET"
+          cp brand/plekto/icon_16px.png   "$ICONSET/icon_16x16.png"
+          cp brand/plekto/icon_32px.png   "$ICONSET/icon_16x16@2x.png"
+          cp brand/plekto/icon_32px.png   "$ICONSET/icon_32x32.png"
+          cp brand/plekto/icon_64px.png   "$ICONSET/icon_32x32@2x.png"
+          cp brand/plekto/icon_128px.png  "$ICONSET/icon_128x128.png"
+          cp brand/plekto/icon_256px.png  "$ICONSET/icon_128x128@2x.png"
+          cp brand/plekto/icon_256px.png  "$ICONSET/icon_256x256.png"
+          cp brand/plekto/icon_512px.png  "$ICONSET/icon_256x256@2x.png"
+          cp brand/plekto/icon_512px.png  "$ICONSET/icon_512x512.png"
+          cp brand/plekto/icon_1024px.png "$ICONSET/icon_512x512@2x.png"
+          iconutil -c icns "$ICONSET" -o brand/plekto/icon.icns
+
+      - name: Generate icon (Windows .ico)
+        if: runner.os == 'Windows'
+        run: python scripts/make-windows-icon.py
+
+      - name: Build PyInstaller bundle
+        run: |
+          pyinstaller scripts/plekto.spec --noconfirm
+
+      # macOS: wrap dist/Plekto.app into a DMG via hdiutil
+      - name: Wrap .app into DMG (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          mkdir -p dist/dmg-staging
+          cp -R dist/Plekto.app dist/dmg-staging/
+          ln -s /Applications dist/dmg-staging/Applications
+          hdiutil create -volname "Plekto" \
+            -srcfolder dist/dmg-staging \
+            -ov -format UDZO \
+            "dist/${{ matrix.artifact }}.dmg"
+          ls -lh "dist/${{ matrix.artifact }}.dmg"
+
+      # Windows: zip dist/Plekto/ (one-dir bundle)
+      - name: Zip bundle (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Compress-Archive -Path dist/Plekto/* `
+            -DestinationPath "dist/${{ matrix.artifact }}.zip" `
+            -CompressionLevel Optimal
+          Get-Item "dist/${{ matrix.artifact }}.zip" | Format-List Length,FullName
+
+      - name: Upload installer artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: |
+            dist/${{ matrix.artifact }}.dmg
+            dist/${{ matrix.artifact }}.zip
+          if-no-files-found: warn
+          retention-days: 14

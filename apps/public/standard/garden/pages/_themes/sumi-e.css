@@ -1,0 +1,29 @@
+/* Garden theme — sumi-e · 水墨留白
+ * Page-level chrome only. Plant + filter colors come from themes.py inline SVG.
+ */
+.eos-garden[data-theme="sumi-e"] {
+  --g-bg: #f1ebe0;
+  --g-text: #1a1a1a;
+  --g-muted: #5c5650;
+  --g-border: transparent;
+  --g-accent: #b13a2e;
+  font-family: "Songti SC", "Source Han Serif", "Noto Serif CJK SC", Georgia, serif;
+}
+.eos-garden[data-theme="sumi-e"] .eos-g-card {
+  background: transparent;
+  border: none;
+  padding: 28px 24px;
+}
+.eos-garden[data-theme="sumi-e"] .eos-g-label {
+  color: var(--g-muted);
+  font-size: 11px;
+  letter-spacing: 1.5px;
+  text-transform: lowercase;
+  opacity: 0.5;
+}
+.eos-garden[data-theme="sumi-e"] .eos-g-annot {
+  color: var(--g-muted);
+  font-size: 11px;
+  font-style: italic;
+  opacity: 0.55;
+}

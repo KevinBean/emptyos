@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Projects - EmptyOS</title>
+<link rel="stylesheet" href="/static/theme.css">
+<link rel="stylesheet" href="/static/eos-components.css">
+<!-- Detail/list styles extracted to workspace.css (shared with the standalone
+     /projects/workspace/<id> page). -->
+<link rel="stylesheet" href="/projects/pages/workspace.css">
+</head>
+<body>
+<script src="/static/realtime.js"></script>
+<script src="/static/eos.js"></script>
+<script src="/static/eos-components.js"></script>
+<script>EOS.nav('projects');</script>
+<script>
+if(window.EOS&&EOS.registerActions){EOS.registerActions({filter:function(q){filterProjects(q)},set_view:function(v){setView(v)},open_project:function(id){if(id)openProject(id)}},[{name:"filter",description:"Filter projects",params:["query"]},{name:"set_view",description:"View: grid or list",params:["view"]},{name:"open_project",description:"Open a project's workspace by ID",params:["project_id"]}],{description:"Projects — status, tasks, health assessment, kanban view.",quickActions:[{label:"Stale projects",msg:"Which projects have no recent activity?"}]});}
+</script>
+
+<div class="page">
+    <!-- Header -->
+    <div class="eos-header">
+        <div>
+            <h1>Projects</h1>
+            <div style="font-size:13px;color:var(--text-secondary)" id="subtitle">Loading...</div>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center">
+            <div class="view-toggle">
+                <div class="view-btn active" id="btn-kanban" onclick="setView('kanban')">Kanban</div>
+                <div class="view-btn" id="btn-list" onclick="setView('list')">List</div>
+                <div class="view-btn" id="btn-timeline" onclick="setView('timeline')">Timeline</div>
+                <div class="view-btn" id="btn-calendar" onclick="setView('calendar')">Calendar</div>
+            </div>
+            <button class="eos-btn-sm eos-btn-ghost" id="btn-archive" onclick="toggleArchived()" style="font-size:11px">Show Archived</button>
+            <button class="eos-btn-sm eos-btn-ghost" onclick="openAsBoard()" title="Open in Boards (kanban / table / timeline / chart)" style="font-size:11px">Open as Board</button>
+            <button class="eos-btn eos-btn-sm eos-btn-ghost" onclick="openAppSettings()" title="App Settings">&#9881; Settings</button>
+            <button class="eos-btn-sm eos-btn-ghost" onclick="openCreateAI()" title="Describe in plain English; AI fills the form">✨ AI</button>
+            <button class="eos-btn-sm" onclick="openCreate()">+ New</button>
+        </div>
+    </div>
+
+    <!-- Stats -->
+    <div class="eos-hero" id="stats-row"></div>
+
+    <!-- Search -->
+    <div style="margin-bottom:12px">
+        <input type="text" id="search" placeholder="Search projects..." oninput="filterProjects()" style="border-radius:14px;padding:12px 16px">
+    </div>
+
+    <!-- Category chips (tag-based filter) -->
+    <div id="category-bar" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px"></div>
+
+    <!-- Main content -->
+    <div id="main-view"></div>
+
+</div>
+
+<!-- Create Modal -->
+<div class="eos-modal-bg" id="create-modal" onclick="if(event.target===this)EOS_UI.closeModal('create-modal')">
+    <div class="eos-modal">
+        <div class="eos-modal-handle"></div>
+        <h3>New Project</h3>
+        <input type="text" id="new-name" placeholder="Project name">
+        <textarea id="new-goal" rows="2" placeholder="Goal / purpose" style="font-family:var(--font)"></textarea>
+        <div style="display:flex;gap:8px">
+            <select id="new-type" onchange="onTypeChange()" style="flex:1">
+                <option value="personal">Personal</option>
+                <option value="engineering">Engineering</option>
+                <option value="development">Development</option>
+            </select>
+            <select id="new-status" style="flex:1">
+                <option value="idea">Idea</option>
+                <option value="active">Active</option>
+            </select>
+        </div>
+        <input type="date" id="new-deadline">
+        <input type="text" id="new-employer" placeholder="Company / employer (for Worklog)">
+        <div class="type-fields hidden" id="dev-fields">
+            <input type="text" id="new-repo" placeholder="Repository path (e.g. D:/emptyos)">
+        </div>
+        <div id="template-picker" style="margin-top:8px"></div>
+        <div class="eos-modal-actions">
+            <button onclick="EOS_UI.closeModal('create-modal')" style="background:var(--bg);color:var(--text-secondary);border:1px solid var(--border)">Cancel</button>
+            <button onclick="submitCreate()" style="background:var(--accent);color:var(--accent-ink)">Create</button>
+        </div>
+    </div>
+</div>
+
+<!-- Add Task Modal -->
+<div class="eos-modal-bg" id="task-modal" onclick="if(event.target===this)EOS_UI.closeModal('task-modal')">
+    <div class="eos-modal">
+        <div class="eos-modal-handle"></div>
+        <h3>Add Task</h3>
+        <input type="text" id="task-text" placeholder="Task description" onkeydown="if(event.key==='Enter')submitTask()">
+        <input type="date" id="task-due">
+        <input type="hidden" id="task-project-id">
+        <div class="eos-modal-actions">
+            <button onclick="EOS_UI.closeModal('task-modal')" style="background:var(--bg);color:var(--text-secondary);border:1px solid var(--border)">Cancel</button>
+            <button onclick="submitTask()" style="background:var(--accent);color:var(--accent-ink)">Add</button>
+        </div>
+    </div>
+</div>
+
+<!-- AI Health Modal -->
+<div class="eos-modal-bg" id="health-modal" onclick="if(event.target===this)EOS_UI.closeModal('health-modal')">
+    <div class="eos-modal">
+        <div class="eos-modal-handle"></div>
+        <h3>Project Health Assessment</h3>
+        <div id="health-content" style="font-size:14px;line-height:1.6;white-space:pre-wrap">Loading...</div>
+        <div class="eos-modal-actions" style="margin-top:16px">
+            <button onclick="EOS_UI.closeModal('health-modal')" style="background:var(--accent);color:var(--accent-ink)">Close</button>
+        </div>
+    </div>
+</div>
+
+<!-- New Doc Modal -->
+<div class="eos-modal-bg" id="doc-modal" onclick="if(event.target===this)EOS_UI.closeModal('doc-modal')">
+    <div class="eos-modal">
+        <div class="eos-modal-handle"></div>
+        <h3>New Document</h3>
+        <input type="text" id="doc-title" placeholder="Document title" onkeydown="if(event.key==='Enter')submitDoc()">
+        <select id="doc-template">
+            <option value="blank">Blank</option>
+            <option value="meeting">Meeting Note</option>
+            <option value="spec">Spec / Design</option>
+            <option value="research">Research Note</option>
+        </select>
+        <input type="hidden" id="doc-project-id">
+        <div class="eos-modal-actions">
+            <button onclick="EOS_UI.closeModal('doc-modal')" style="background:var(--bg);color:var(--text-secondary);border:1px solid var(--border)">Cancel</button>
+            <button onclick="submitDoc()" style="background:var(--accent);color:var(--accent-ink)">Create</button>
+        </div>
+    </div>
+</div>
+
+<!-- Project Settings slide-out (per-project frontmatter editor) -->
+<div class="eos-settings-panel" id="project-settings-panel">
+    <div class="sp-head">
+        <h3 id="ps-title">Project Settings</h3>
+        <button class="eos-btn-sm eos-btn-ghost" onclick="closeProjectSettings()">Close</button>
+    </div>
+    <div class="sp-body">
+        <div class="sf-group">
+            <label class="sf-label">Status</label>
+            <select class="sf-select" id="ps-status"></select>
+        </div>
+        <div class="sf-group">
+            <label class="sf-label">Stage</label>
+            <select class="sf-select" id="ps-stage"></select>
+            <div class="sf-hint" id="ps-stage-hint"></div>
+        </div>
+        <div class="sf-group">
+            <label class="sf-label">Deadline</label>
+            <input type="date" class="sf-input" id="ps-deadline">
+        </div>
+        <div class="sf-group">
+            <label class="sf-label">Company / employer</label>
+            <input type="text" class="sf-input" id="ps-employer" placeholder="Used by Worklog digests">
+            <div class="sf-hint">Work logged from this project is categorized here.</div>
+        </div>
+        <div class="sf-group">
+            <label class="sf-label">Tags</label>
+            <input type="text" class="sf-input" id="ps-tags" placeholder="project, emptyos, dev">
+            <div class="sf-hint">Comma-separated. Used for category filtering.</div>
+        </div>
+        <div class="sf-section">Features</div>
+        <div id="ps-features"></div>
+    </div>
+    <div class="sp-foot">
+        <button class="eos-btn-sm eos-btn-ghost" onclick="closeProjectSettings()">Cancel</button>
+        <button class="eos-btn-sm" onclick="saveProjectSettings()" style="background:var(--accent);color:var(--accent-ink)">Save</button>
+    </div>
+</div>
+
+<!-- Full app-prefixed paths (not relative "pages/…") — the repo convention:
+     relative refs are eaten by the SPA catch-all on some routes AND dangle in
+     export bundles, where pages/* files are copied flat next to index.html. -->
+<script src="/projects/pages/workspace.js"></script>
+<script src="/projects/pages/tabs.js"></script>
+<script src="/projects/pages/dialogs.js"></script>
+<script src="/projects/pages/app.js"></script>
+<!-- Former inline code moved to pages/{workspace,app,tabs,dialogs}.js — see each file's header.
+     workspace.js holds the shared project detail renderer (also used standalone by
+     /projects/workspace/<id>); it must load before app.js so the list view can use it. -->
+</body>
+</html>

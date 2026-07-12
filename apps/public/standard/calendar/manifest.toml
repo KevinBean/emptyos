@@ -1,0 +1,52 @@
+[app]
+id = "calendar"
+store_category = "productivity"
+name = "Calendar"
+version = "0.1.0"
+description = "A unified view of your schedule, aggregating tasks, journal entries, and external events."
+
+[app.entry]
+module = "app"
+class = "CalendarApp"
+
+[requires]
+optional_apps = ["reminders", "worklog"]
+capabilities = ["think"]
+apps = ["task", "bookme"]
+
+[provides.web]
+prefix = "/calendar"
+
+[provides.settings]
+schema = [
+    {key = "calendar.show_tasks", label = "Show tasks", type = "boolean", default = true},
+    {key = "calendar.show_done_tasks", label = "Show completed tasks", type = "boolean", default = true},
+    {key = "calendar.show_reminders", label = "Show reminders", type = "boolean", default = true},
+    {key = "calendar.show_bookings", label = "Show bookings", type = "boolean", default = true},
+    {key = "calendar.show_worklog", label = "Show work log days", type = "boolean", default = true},
+    {key = "calendar.show_ics", label = "Show subscribed calendars", type = "boolean", default = true},
+    {key = "calendar.feature.calendar-ics-import.enabled", label = "Import subscribed calendars", type = "boolean", default = false, hint = "Dark by default. Fetches configured public iCalendar feeds into a local cache; imported events are read-only."},
+    {key = "calendar.ics_feed_urls", label = "iCalendar feed URLs", type = "textarea", default = "", hint = "One per line. Optional label format: Work | https://example.com/calendar.ics. Subscription URLs stay in local settings."},
+]
+
+[[contributes.hub.panel]]
+id = "calendar-agenda"
+method = "panel_agenda"
+renderer = "task-list"
+priority = 90
+
+[[contributes.voice-assistant.context]]
+id = "todays-agenda"
+method = "assistant_context"
+priority = 70
+
+# ── Verb registry — voice surface only (calendar is a read-only aggregator;
+# creating items belongs to the source apps, e.g. reminders.add / task.add).
+[[provides.verbs]]
+verb = "calendar.today"
+method = "voice_today_agenda"
+summary = "Today's agenda (tasks, reminders, bookings)"
+args = { day = "string?" }
+eligibility = "stable"
+surfaces = ["voice"]
+voice = { method = "voice_today_agenda", example = "what's on my calendar today", description = "Speak the count of today's agenda items and show them as a list. day = an ISO date (YYYY-MM-DD); defaults to today.", card = "task-list" }

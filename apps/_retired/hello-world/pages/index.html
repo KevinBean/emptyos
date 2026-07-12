@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Hello World - EmptyOS</title>
+<link rel="stylesheet" href="/static/theme.css">
+<link rel="stylesheet" href="/static/eos-components.css">
+<style>
+* { margin:0; padding:0; box-sizing:border-box }
+body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif; background:var(--bg); color:var(--text); min-height:100dvh; padding:16px; -webkit-font-smoothing:antialiased }
+
+.hw-card { max-width:560px; margin:40px auto 0; background:var(--bg-card); border:1px solid var(--border); border-radius:16px; padding:28px }
+.hw-title { font-size:22px; font-weight:700; margin-bottom:6px }
+.hw-sub { font-size:13px; color:var(--text-muted); margin-bottom:22px; line-height:1.55 }
+.hw-row { display:flex; gap:8px; margin-bottom:16px }
+.hw-input { flex:1; padding:12px 14px; background:var(--bg); border:1px solid var(--border); border-radius:10px; font-size:15px; color:var(--text); outline:none; font-family:inherit }
+.hw-input:focus { border-color:color-mix(in srgb,var(--accent) 60%,transparent); box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 10%,transparent) }
+.hw-btn { padding:12px 20px; background:var(--accent); color:#fff; border:none; border-radius:10px; font-size:14px; font-weight:600; cursor:pointer; transition:opacity 0.15s }
+.hw-btn:disabled { opacity:0.5; cursor:wait }
+.hw-output { margin-top:18px; padding:14px 16px; border-radius:10px; background:color-mix(in srgb,var(--accent) 8%,var(--bg)); border:1px solid color-mix(in srgb,var(--accent) 22%,var(--border)); font-size:15px; line-height:1.55; color:var(--text); min-height:20px; display:none }
+.hw-output.show { display:block; animation:fadeDown 0.3s }
+.hw-meta { margin-top:10px; font-size:11px; font-family:var(--mono); color:var(--text-muted) }
+
+.hw-section { max-width:560px; margin:20px auto 0 }
+.hw-label { font-size:11px; font-weight:600; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.05em; margin-bottom:8px }
+.hw-kv { background:var(--bg-card); border:1px solid var(--border); border-radius:12px; padding:14px 16px; font-family:var(--mono); font-size:12px; color:var(--text-secondary); line-height:1.7 }
+.hw-kv .k { color:var(--text-muted) }
+.hw-kv .v { color:var(--text) }
+</style>
+</head>
+<body>
+<script src="/static/eos.js"></script>
+<script src="/static/eos-components.js"></script>
+<script>EOS.nav && EOS.nav('hello-world');</script>
+
+<div class="hw-card">
+    <div class="hw-title">Hello, world</div>
+    <div class="hw-sub">Minimal reference app. Submits your name to <code>POST /hello-world/api/greet</code>, which routes through the <code>think</code> capability and emits <code>hello-world:greeted</code>.</div>
+
+    <div class="hw-row">
+        <input class="hw-input" id="name" placeholder="Your name" autofocus>
+        <button class="hw-btn" id="btn" onclick="greet()">Greet</button>
+    </div>
+
+    <div class="hw-output" id="out"></div>
+    <div class="hw-meta" id="meta"></div>
+</div>
+
+<div class="hw-section">
+    <div class="hw-label">What this app demonstrates</div>
+    <div class="hw-kv">
+        <div><span class="k">manifest.toml</span> → <span class="v">id, capability requirement, web prefix, emitted events</span></div>
+        <div><span class="k">BaseApp</span> → <span class="v">@cli_command, @web_route, self.think, self.emit</span></div>
+        <div><span class="k">pages/index.html</span> → <span class="v">theme.css + eos-components, EOS.post, EOS_UI.toast</span></div>
+    </div>
+</div>
+
+<script>
+async function greet() {
+    var name = document.getElementById('name').value.trim();
+    if (!name) { EOS_UI.toast('Enter a name first', false); return; }
+    var btn = document.getElementById('btn');
+    var out = document.getElementById('out');
+    var meta = document.getElementById('meta');
+    btn.disabled = true;
+    btn.textContent = 'Thinking...';
+    out.classList.remove('show');
+    meta.textContent = '';
+    var t0 = performance.now();
+    try {
+        var res = await EOS.post('/hello-world/api/greet', {name: name});
+        out.textContent = res.greeting;
+        out.classList.add('show');
+        meta.textContent = 'event: hello-world:greeted · ' + Math.round(performance.now() - t0) + 'ms';
+    } catch (err) {
+        EOS_UI.toast('Greet failed: ' + err.message, false);
+    } finally {
+        btn.disabled = false;
+        btn.textContent = 'Greet';
+    }
+}
+document.getElementById('name').addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') greet();
+});
+</script>
+</body>
+</html>

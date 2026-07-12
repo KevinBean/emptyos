@@ -1,0 +1,39 @@
+/* Garden theme — scroll · 古植物图鉴 (本草纲目 / 宋花鸟册页)
+ * Page-level chrome only. Plant + wash colors come from themes.py inline SVG.
+ */
+.eos-garden[data-theme="scroll"] {
+  --g-bg: #e8dcc0;
+  --g-text: #2b1d10;
+  --g-muted: #735634;
+  --g-border: #c2a878;
+  --g-accent: #a23a2a;
+  font-family: "Songti SC", "STSong", "FangSong", "Source Han Serif",
+               "Noto Serif CJK SC", serif;
+}
+.eos-garden[data-theme="scroll"] .eos-g-card {
+  background: #ede2c8;
+  border: 1px solid var(--g-border);
+  border-radius: 0;
+  padding: 16px;
+  position: relative;
+}
+.eos-garden[data-theme="scroll"] .eos-g-card::before {
+  content: "";
+  position: absolute;
+  inset: 4px;
+  border: 1px solid var(--g-border);
+  opacity: 0.4;
+  pointer-events: none;
+}
+.eos-garden[data-theme="scroll"] .eos-g-label {
+  color: var(--g-muted);
+  font-size: 12px;
+  letter-spacing: 2px;
+}
+.eos-garden[data-theme="scroll"] .eos-g-annot {
+  writing-mode: vertical-rl;
+  color: var(--g-muted);
+  font-size: 11px;
+  letter-spacing: 4px;
+  opacity: 0.55;
+}

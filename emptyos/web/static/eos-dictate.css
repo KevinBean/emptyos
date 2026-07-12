@@ -1,0 +1,90 @@
+/* EmptyOS Dictation HUD — transient push-to-talk status pill.
+   Loaded by eos.js alongside eos-dictate.js when the `dictation` app is enabled. */
+
+.eos-dictate-hud {
+    position: fixed;
+    left: 50%;
+    bottom: 24px;
+    transform: translateX(-50%) translateY(8px);
+    z-index: 99999;
+    max-width: min(560px, 90vw);
+    display: none;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 16px;
+    border-radius: 999px;
+    background: var(--bg-card, #1a1a2e);
+    color: var(--text, #e6edf3);
+    border: 1px solid var(--border, #2a2a3e);
+    box-shadow: 0 8px 28px rgba(0, 0, 0, 0.35);
+    font: 13px system-ui, -apple-system, sans-serif;
+    opacity: 0;
+    transition: opacity .14s ease, transform .14s ease;
+    pointer-events: none;
+}
+
+.eos-dictate-hud.on {
+    display: inline-flex;
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+}
+
+.eos-dictate-txt {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 440px;
+}
+
+.eos-dictate-dot {
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    background: var(--danger, #e5484d);
+    flex-shrink: 0;
+    animation: eos-dictate-pulse 1.2s infinite;
+}
+
+.eos-dictate-hud[data-state="polishing"] .eos-dictate-txt::after {
+    content: ' …';
+    animation: eos-dictate-ell 1.2s steps(4, end) infinite;
+}
+
+.eos-dictate-hud[data-state="done"] { color: var(--accent, #6c8cff); }
+
+@keyframes eos-dictate-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .3; } }
+@keyframes eos-dictate-ell { 0% { content: ' .'; } 33% { content: ' ..'; } 66% { content: ' ...'; } }
+
+/* Floating click-to-dictate mic — anchored to the bottom-right of the focused field. */
+.eos-dictate-mic {
+    position: fixed;
+    z-index: 99998;
+    width: 30px;
+    height: 30px;
+    padding: 0;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    border: 1px solid var(--border, #2a2a3e);
+    background: var(--bg-card, #1a1a2e);
+    color: var(--text, #e6edf3);
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.28);
+    cursor: pointer;
+    font-size: 15px;
+    line-height: 1;
+    opacity: .55;
+    transition: opacity .12s ease, transform .12s ease, box-shadow .12s ease;
+}
+
+.eos-dictate-mic.on { display: inline-flex; }
+.eos-dictate-mic:hover { opacity: 1; transform: scale(1.08); }
+
+.eos-dictate-mic.recording {
+    opacity: 1;
+    border-color: var(--danger, #e5484d);
+    box-shadow: 0 0 0 3px rgba(229, 72, 77, 0.25);
+    animation: eos-dictate-pulse 1.2s infinite;
+}
+
+.eos-dictate-mic-icon { pointer-events: none; }

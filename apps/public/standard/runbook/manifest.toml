@@ -1,0 +1,50 @@
+[app]
+id = "runbook"
+name = "Runbook"
+version = "1.0.0"
+description = "Vault-canonical executable documents — typed block pipelines you can run, schedule, and publish."
+dimensions = ["intellectual"]
+store_category = "productivity"
+
+[app.entry]
+module = "app"
+class = "RunbookApp"
+
+[provides.cli]
+commands = ["runbook"]
+
+[provides.web]
+prefix = "/runbook"
+
+[provides.events]
+emits = ["runbook:created", "runbook:block_ran", "runbook:run_finished", "runbook:scheduled"]
+# Run lifecycle observability — UI-only, no cross-app listener by design.
+internal = ["runbook:created", "runbook:block_ran", "runbook:run_finished", "runbook:scheduled"]
+
+[requires]
+capabilities = ["read", "write", "think"]
+apps = []
+optional_apps = ["viz", "rooms", "assistant"]
+services = ["notifications"]
+events = []
+
+# Gate-dispatched verb proposed by notify blocks (rooms review gate in
+# interactive mode; autopilot grant check in scheduled mode). Gated, never
+# stable: it sends an outbound notification (vault inbox + optional Telegram).
+[[provides.verbs]]
+verb = "runbook.send_notification"
+method = "send_notification"
+summary = "Send a runbook notify-block message through the notifications service"
+args = { text = "string", priority = "string?", scheduled = "boolean?" }
+eligibility = "gated"
+
+[provides.timeline]
+custom_handler = "runbook_timeline"
+
+[[contributes.hub.panel]]
+id = "runbook-status"
+method = "panel_runbook_status"
+renderer = "plain-list"
+title = "Runbooks"
+priority = 220
+limit = 5

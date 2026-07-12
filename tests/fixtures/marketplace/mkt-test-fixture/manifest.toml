@@ -1,0 +1,18 @@
+[app]
+id = "mkt-test-fixture"
+name = "Marketplace Test Fixture"
+version = "1.2.3"
+description = "A tiny app used by the marketplace install tests."
+
+[app.entry]
+module = "app"
+class = "MktTestFixtureApp"
+
+[requires]
+capabilities = ["read", "write"]
+
+[provides.web]
+prefix = "/mkt-test-fixture"
+
+[provides.events]
+emits = ["mkt-test-fixture:ping"]

@@ -1,0 +1,75 @@
+[app]
+id = "learn"
+name = "Learn"
+version = "0.1.0"
+description = "Coursera-style structured learning over KB notes — courses, lessons, AI-generated quizzes, progress tracking"
+dimensions = ["intellectual"]
+store_category = "productivity"
+user_intent = [
+    "I want to learn this standard properly",
+    "structured learning from a technical document",
+    "take a course on X",
+    "study mode for engineering standards",
+    "quiz me on what I just read",
+]
+
+[app.entry]
+module = "app"
+class = "LearnApp"
+
+[requires]
+capabilities = ["think", "read", "write"]
+apps = ["kb"]
+# Unified review queue aggregates their SRS decks; absence is tolerated.
+optional_apps = ["dictionary", "media"]
+
+[provides.cli]
+commands = ["learn"]
+
+[provides.web]
+prefix = "/learn"
+
+[provides.events]
+emits = [
+    "learn:lesson_completed",
+    "learn:course_started",
+    "learn:course_completed",
+    "learn:quiz_taken",
+    "learn:srs_scheduled",
+    "learn:note_saved",
+    "learn:course_saved",
+    "learn:tutorial_verified",
+    "learn:diagnostic_taken",
+    "learn:course_personalized",
+]
+# Learn-tool internal study lifecycle — course/quiz/srs events are per-app
+# progression observability. (`lesson_completed` is cross-app: the reactor
+# journal-ripples it as a learning milestone — wired 2026-07-02.)
+internal = [
+    "learn:course_started",
+    "learn:course_completed",
+    "learn:quiz_taken",
+    "learn:srs_scheduled",
+    "learn:diagnostic_taken",
+    "learn:course_personalized",
+    "learn:note_saved",
+    "learn:course_saved",
+    "learn:tutorial_verified",
+]
+
+[[contributes.hub.panel]]
+id = "learn-review-due"
+method = "panel_review_due"
+renderer = "stat-tile"
+group = "dashboard"
+title = "Review queue"
+priority = 120
+
+[[contributes.voice-assistant.intent]]
+verb = "learn.start_review"
+method = "voice_start_review"
+example = "start my reviews"
+description = "Open today's spaced-repetition review queue. Use when the user wants to study what's due."
+args = {}
+always = false
+card = "stat-tile"

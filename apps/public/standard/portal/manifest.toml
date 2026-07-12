@@ -1,0 +1,38 @@
+[app]
+id = "portal"
+store_category = "meta"
+name = "Portal"
+version = "1.0.0"
+description = "Universal entry surface — hero composer dispatches capability verbs (Think / Capture / Find / Learn) across apps, sidebar organises threads into Rooms with shared instructions, pinned threads, day + session navigation."
+user_intent = [
+    "start a new chat",
+    "open a thread",
+    "what shall we think through",
+    "where do I begin",
+    "start a conversation",
+    "find a past thread",
+]
+
+[app.entry]
+module = "app"
+class = "PortalApp"
+
+[requires]
+capabilities = []
+# Hard dep: rooms (Think chip creates threads, opens history). Soft deps are
+# listed too so the manifest is honest about Portal's verb surface — chips
+# fail with a toast (not a crash) if any is missing, but a fresh-clone
+# install set should pull these in for the full Capture/Find/Learn flow.
+apps = ["rooms", "quick-action", "journal", "kb", "search", "video-digest"]
+connectors = []
+
+[provides.web]
+prefix = "/portal"
+
+[provides.events]
+emits = ["portal:folder_created", "portal:folder_deleted"]
+# Folder CRUD observability — no cross-app listener by design.
+internal = [
+    "portal:folder_created",
+    "portal:folder_deleted",
+]

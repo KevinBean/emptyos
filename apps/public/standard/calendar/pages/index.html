@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Calendar — EmptyOS</title>
+<link rel="stylesheet" href="/static/theme.css">
+<link rel="stylesheet" href="/static/eos-components.css">
+<style>
+body { padding:env(safe-area-inset-top) 16px calc(env(safe-area-inset-bottom) + 80px) }
+
+.cal-stats { display:grid; grid-template-columns:repeat(4,1fr); gap:8px; margin-top:16px; animation:fadeDown 0.4s ease }
+@media (max-width:640px) { .cal-stats { grid-template-columns:repeat(2,1fr) } }
+
+.cal-layout { display:grid; grid-template-columns:1fr; gap:16px; margin-top:16px; animation:cardIn 0.35s ease 0.1s both }
+@media (min-width:880px) { .cal-layout { grid-template-columns:1fr 320px } }
+
+.cal-side { display:flex; flex-direction:column; gap:12px }
+.cal-side h2 { font-size:12px; font-weight:600; color:var(--text-secondary); text-transform:uppercase; letter-spacing:0.5px; margin:0 0 4px }
+.cal-empty { text-align:center; padding:24px 16px; color:var(--text-muted); font-size:13px; background:var(--bg-card); border:1px solid var(--border); border-radius:14px }
+.cal-day-items { display:flex; flex-direction:column; gap:8px }
+.cal-day-item { background:var(--bg-card); border:1px solid var(--border); border-radius:8px; padding:12px 12px; display:flex; align-items:center; gap:8px; font-size:13px; transition:border-color 0.15s, background 0.15s; color:inherit }
+.cal-day-item.is-link { cursor:pointer; text-decoration:none }
+.cal-day-item.is-link:hover { border-color:var(--accent); background:color-mix(in srgb,var(--accent) 4%,var(--bg-card)) }
+.cal-day-item .ci-check { width:22px; height:22px; border-radius:50%; border:2px solid var(--border); cursor:pointer; flex-shrink:0; display:inline-flex; align-items:center; justify-content:center; transition:all 0.15s; background:transparent }
+.cal-day-item .ci-check:hover { border-color:var(--accent); background:color-mix(in srgb,var(--accent) 10%,transparent) }
+.cal-day-item .ci-check.done { background:var(--success); border-color:var(--success) }
+.cal-day-item .ci-check.done::after { content:"\2713"; color:var(--accent-ink); font-size:12px; font-weight:700 }
+.cal-day-item.is-done .ci-title { text-decoration:line-through; color:var(--text-muted) }
+.cal-day-item .ci-time { font-size:11px; color:var(--text-muted); font-family:var(--mono); min-width:48px }
+.cal-day-item .ci-title { flex:1; color:var(--text); cursor:pointer }
+.cal-day-item .ci-tag { font-size:10px; padding:2px 8px; border-radius:6px; background:var(--bg); color:var(--text-secondary); text-transform:uppercase }
+.cal-day-item.tone-overdue { border-left:3px solid var(--danger) }
+.cal-day-item.tone-today { border-left:3px solid var(--warning) }
+#cal-brief { background:var(--bg-card); border:1px solid var(--border); border-left:3px solid var(--accent); border-radius:10px; padding:10px 14px; font-size:13px; line-height:1.5; margin-top:12px }
+</style>
+</head>
+<body>
+<script src="/static/eos.js"></script>
+<script src="/static/eos-components.js"></script>
+<script>EOS.nav('calendar');</script>
+
+<div class="page">
+  <div id="cal-header-mount"></div>
+
+  <div class="cal-stats" id="cal-stats"></div>
+  <div id="cal-brief" style="display:none"></div>
+
+  <div class="cal-layout">
+    <div id="cal-grid"></div>
+    <div class="cal-side">
+      <h2 id="cal-side-title">Today</h2>
+      <div id="cal-day"><div class="cal-empty">Loading…</div></div>
+    </div>
+  </div>
+</div>
+
+<script>
+var monthCells = {};   // {YYYY-MM-DD: [items]}
+var selectedDate = null;
+var grid = null;
+
+function fmtTitle(ds) {
+    var d = new Date(ds);
+    var today = new Date(); today.setHours(0,0,0,0);
+    var iso = d.toISOString().slice(0, 10);
+    var todayIso = today.toISOString().slice(0, 10);
+    if (iso === todayIso) return 'Today';
+    var tomorrow = new Date(today); tomorrow.setDate(today.getDate() + 1);
+    if (iso === tomorrow.toISOString().slice(0, 10)) return 'Tomorrow';
+    return d.toLocaleDateString(undefined, {weekday:'short', month:'short', day:'numeric'});
+}
+
+var _itemSeq = 0;
+var _items = {};   // keyed by stable item-id → original item dict (for toggle)
+
+function _renderItem(it) {
+    _itemSeq++;
+    var key = 'it' + _itemSeq;
+    _items[key] = it;
+    var tone = it.tone ? ' tone-' + it.tone : '';
+    var doneCls = it.done ? ' is-done' : '';
+    var canToggle = (it.type === 'task' && it.file && it.line != null) ||
+                    (it.type === 'reminder' && it.id);
+    var check = canToggle
+        ? '<span class="ci-check' + (it.done ? ' done' : '') + '" data-it="' + key + '" data-action="toggle"></span>'
+        : '';
+    var rowClasses = ['cal-day-item' + tone + doneCls];
+    var dataAttrs = ' data-it="' + key + '"';
+    if ((it.file && EOS && EOS.viewNote) || it.href) {
+        rowClasses.push('is-link');
+        dataAttrs += ' data-action="open"';
+    }
+    return '<div class="' + rowClasses.join(' ') + '"' + dataAttrs + '>' +
+        check +
+        '<span class="ci-time">' + esc(it.time || 'All day') + '</span>' +
+        '<span class="ci-title">' + esc(it.title || '') + '</span>' +
+        '<span class="ci-tag">' + esc(it.type || '') + '</span>' +
+    '</div>';
+}
+
+function renderSide(date, items) {
+    document.getElementById('cal-side-title').textContent = fmtTitle(date);
+    var el = document.getElementById('cal-day');
+    if (!items || !items.length) {
+        el.innerHTML = '<div class="cal-empty">Nothing scheduled.</div>';
+        return;
+    }
+    _items = {}; _itemSeq = 0;
+    el.innerHTML = '<div class="cal-day-items">' + items.map(_renderItem).join('') + '</div>';
+}
+
+// Delegated click handler — reads data-it + data-action; payload values never
+// hit an HTML attribute, eliminating JS-string injection risk regardless of
+// what the backend puts in file paths or hrefs.
+document.addEventListener('click', function(ev) {
+    var target = ev.target;
+    // Walk up to find the nearest element carrying data-action
+    while (target && target !== document) {
+        var action = target.getAttribute && target.getAttribute('data-action');
+        if (action) break;
+        target = target.parentNode;
+    }
+    if (!target || target === document) return;
+    var key = target.getAttribute('data-it');
+    var it = _items[key];
+    if (!it) return;
+    var action = target.getAttribute('data-action');
+    if (action === 'toggle') {
+        ev.stopPropagation();
+        ev.preventDefault();
+        toggleItem(key);
+    } else if (action === 'open') {
+        if (it.file && EOS && EOS.viewNote) {
+            EOS.viewNote(it.file);
+        } else if (it.href) {
+            location.href = it.href;
+        }
+    }
+});
+
+// Right-click a task's checkbox to complete it with a note (+ optional
+// [[link]] to a vault note) instead of the plain instant toggle above.
+document.addEventListener('contextmenu', function(ev) {
+    var target = ev.target;
+    while (target && target !== document) {
+        if (target.getAttribute && target.getAttribute('data-action') === 'toggle') break;
+        target = target.parentNode;
+    }
+    if (!target || target === document) return;
+    var it = _items[target.getAttribute('data-it')];
+    if (!it || it.type !== 'task' || !it.file || it.line == null) return;
+    ev.preventDefault();
+    EOS_UI.completeTaskWithNote({ file: it.file, line: it.line, text: it.title || '' }, {
+        onSuccess: function() {
+            target.classList.add('done');
+            var row = target.closest('.cal-day-item');
+            if (row) row.classList.add('is-done');
+            it.done = true;
+            if (grid) loadMonth(grid.month());
+        },
+    });
+});
+
+async function toggleItem(key) {
+    var it = _items[key];
+    if (!it) return;
+    var btn = document.querySelector('.ci-check[data-it="' + key + '"]');
+    if (!btn) return;
+    var nowDone = !it.done;
+    // Optimistic UI flip
+    btn.classList.toggle('done', nowDone);
+    var row = btn.closest('.cal-day-item');
+    if (row) row.classList.toggle('is-done', nowDone);
+    it.done = nowDone;
+    try {
+        if (it.type === 'task') {
+            var r = await fetch('/task/api/toggle', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({file: it.file, line: it.line, text: it.title || ''}),
+            });
+            var rd = await r.json();
+            if (rd && rd.error) throw new Error(rd.error);
+        } else if (it.type === 'reminder' && it.id) {
+            if (nowDone) {
+                await fetch('/reminders/api/reminders/' + encodeURIComponent(it.id) + '/complete', {method: 'POST'});
+            } else {
+                // Re-activate
+                await fetch('/reminders/api/reminders/' + encodeURIComponent(it.id), {
+                    method: 'PUT',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({status: 'active'}),
+                });
+            }
+        }
+        // Reload month data so the dot counts on other cells reflect the change.
+        if (grid) await loadMonth(grid.month());
+    } catch (e) {
+        // Revert on failure
+        btn.classList.toggle('done', !nowDone);
+        if (row) row.classList.toggle('is-done', !nowDone);
+        it.done = !nowDone;
+        if (window.EOS_UI && EOS_UI.toast) {
+            EOS_UI.toast('Failed to toggle' + (e && e.message ? ': ' + e.message : ''), false);
+        }
+    }
+}
+
+// ----- Month stat strip (client-side, from the already-fetched cells) -----
+function updateStats(cells) {
+    var counts = { due: 0, done: 0, reminder: 0, booking: 0 };
+    (cells || []).forEach(function(c) {
+        (c.items || []).forEach(function(it) {
+            if (it.type === 'task') { if (it.done) counts.done++; else counts.due++; }
+            else if (it.type === 'reminder') counts.reminder++;
+            else if (it.type === 'booking') counts.booking++;
+        });
+    });
+    EOS_UI.statCards('cal-stats', [
+        {value: counts.due,      label: 'Due this month', variant: 'warning'},
+        {value: counts.done,     label: 'Done',           variant: 'success'},
+        {value: counts.reminder, label: 'Reminders',      variant: 'accent'},
+        {value: counts.booking,  label: 'Bookings',       variant: 'accent'},
+    ]);
+}
+
+async function loadMonth(ym) {
+    try {
+        var res = await EOS.api('/calendar/api/month?month=' + encodeURIComponent(ym));
+        monthCells = {};
+        (res.cells || []).forEach(function(c) { monthCells[c.date] = c.items; });
+        updateStats(res.cells);
+        var gridCells = (res.cells || []).map(function(c) {
+            return {
+                date: c.date,
+                items: (c.items || []).map(function(it) {
+                    return { id: it.title, label: it.title, tone: it.tone || null };
+                })
+            };
+        });
+        if (grid) grid.refresh(gridCells);
+        return gridCells;
+    } catch (e) {
+        return [];
+    }
+}
+
+async function loadDay(date) {
+    selectedDate = date;
+    // Optimistic render from monthCells if we already have it.
+    if (monthCells[date]) {
+        renderSide(date, monthCells[date]);
+        return;
+    }
+    try {
+        var res = await EOS.api('/calendar/api/day?date=' + encodeURIComponent(date));
+        renderSide(date, res.items || []);
+    } catch (e) {
+        renderSide(date, []);
+    }
+}
+
+function esc(s) { var d = document.createElement('div'); d.textContent = s == null ? '' : s; return d.innerHTML; }
+
+// Deep links: #YYYY-MM-DD opens that day (jumping months if needed);
+// #YYYY-MM opens that month. Set from day clicks + month nav, so
+// back/forward and shared /calendar/#2026-07-03 URLs both work.
+var _route = null;
+
+function _todayIso() { return new Date().toISOString().slice(0, 10); }
+
+async function _showHash(id) {
+    if (/^\d{4}-\d{2}-\d{2}$/.test(id)) {
+        var ym = id.slice(0, 7);
+        if (grid && grid.month() !== ym) { grid.setMonth(ym); await loadMonth(ym); }
+        loadDay(id);
+    } else if (/^\d{4}-\d{2}$/.test(id)) {
+        if (grid && grid.month() !== id) grid.setMonth(id);
+        loadMonth(id);
+    }
+}
+
+// ----- AI morning brief -----
+async function loadBrief(btn) {
+    var el = document.getElementById('cal-brief');
+    if (btn) { btn.disabled = true; }
+    el.style.display = 'block';
+    el.textContent = '✨ Thinking…';
+    try {
+        var d = await EOS.api('/calendar/api/brief');
+        el.textContent = '✨ ' + (d.brief || 'No brief available.');
+    } catch (e) {
+        el.textContent = 'Brief failed.';
+    } finally {
+        if (btn) btn.disabled = false;
+    }
+}
+
+// ----- App settings (source toggles) -----
+// Dark import flag + subscription URLs are managed from global Settings:
+// settings-panel-drift: ignore calendar.feature.calendar-ics-import.enabled
+// settings-panel-drift: ignore calendar.ics_feed_urls
+var _appSettings = EOS_UI.settingsPanel({
+    id: 'calendar-settings',
+    title: 'Calendar Settings',
+    fields: [
+        {key: 'calendar.show_tasks', label: 'Show tasks', type: 'boolean', default: true},
+        {key: 'calendar.show_done_tasks', label: 'Show completed tasks', type: 'boolean', default: true},
+        {key: 'calendar.show_reminders', label: 'Show reminders', type: 'boolean', default: true},
+        {key: 'calendar.show_bookings', label: 'Show bookings', type: 'boolean', default: true},
+        {key: 'calendar.show_worklog', label: 'Show work log days', type: 'boolean', default: true},
+        {key: 'calendar.show_ics', label: 'Show subscribed calendars', type: 'boolean', default: true},
+    ],
+});
+function openAppSettings() { _appSettings.open(); }
+
+function goToday() {
+    var todayIso = _todayIso();
+    var ym = todayIso.slice(0, 7);
+    if (_route && _route.current() !== todayIso) {
+        _route.set(todayIso);
+    } else {
+        if (grid && grid.month() !== ym) { grid.setMonth(ym); loadMonth(ym); }
+        loadDay(todayIso);
+    }
+}
+
+window.addEventListener('load', async function() {
+    EOS_UI.pageHeader({
+        mount: 'cal-header-mount',
+        title: 'Calendar',
+        subtitle: 'Unified view of tasks, reminders, bookings, subscribed calendars, and work log.',
+        actions: '<button class="eos-btn eos-btn-sm eos-btn-ghost" onclick="loadBrief(this)" title="AI morning brief over today + tomorrow">&#10024; Brief</button>'
+            + '<button class="eos-btn eos-btn-sm eos-btn-ghost" onclick="goToday()" title="Jump back to today">Today</button>'
+            + '<a class="eos-btn eos-btn-sm eos-btn-ghost" href="/calendar/api/export.ics" title="Download / subscribe as an iCalendar feed">.ics</a>'
+            + '<button class="btn-settings eos-btn eos-btn-sm eos-btn-ghost" onclick="openAppSettings()" title="Settings">&#9881;</button>',
+    });
+    var todayIso = _todayIso();
+    var ym = todayIso.slice(0, 7);
+
+    grid = EOS_UI.monthGrid({
+        mount: '#cal-grid',
+        month: ym,
+        cells: [],
+        onDayClick: function(date, items) { _route ? _route.set(date) : loadDay(date); },
+        onMonthChange: function(newYm) { _route ? _route.set(newYm) : loadMonth(newYm); },
+    });
+
+    _route = EOS_UI.hashRoute({
+        onShow: _showHash,
+        onHide: function() { goToday(); },
+    });
+
+    if (location.hash) {
+        _route.init();
+    } else {
+        await loadMonth(ym);
+        loadDay(todayIso);
+    }
+});
+</script>
+</body>
+</html>

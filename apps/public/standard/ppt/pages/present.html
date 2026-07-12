@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Present</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- eos-nav: skip — fullscreen presenter view, deck only -->
+<link rel="stylesheet" href="/static/theme.css">
+<style>
+  html, body { margin: 0; height: 100%; background: var(--bg); overflow: hidden; }
+  body { display: flex; align-items: center; justify-content: center; color: var(--text); font-family: var(--font); }
+  #deck { width: min(96vw, 1600px); max-height: 96vh; }
+  .err {
+    max-width: 520px; padding: 16px 24px; border: 1px solid var(--danger);
+    border-radius: var(--radius); background: color-mix(in srgb, var(--danger) 8%, var(--bg-surface));
+    color: var(--danger); font-size: 14px; line-height: 1.5;
+  }
+  .present-hint {
+    position: fixed; top: 14px; right: 14px; z-index: 10;
+    padding: 8px 12px; border: 1px solid var(--border); border-radius: var(--radius);
+    background: color-mix(in srgb, var(--bg-surface) 84%, transparent);
+    color: var(--text-muted); font: 500 12px/1.2 var(--mono);
+    transition: opacity 0.6s ease;
+  }
+</style>
+</head>
+<body class="theme-void-dark">
+<div id="deck"></div>
+<div id="err" class="err" hidden></div>
+<script src="/static/eos-deck.js"></script>
+<script>
+(async function() {
+    var params = new URLSearchParams(location.search);
+    var id = params.get('id');
+    var startIdx = parseInt(params.get('start') || '0', 10) || 0;
+    if (!id) {
+        document.getElementById('err').hidden = false;
+        document.getElementById('err').textContent = 'No deck id (?id=...)';
+        return;
+    }
+    var r = await fetch('/ppt/api/decks/' + encodeURIComponent(id));
+    var deck = await r.json();
+    if (deck.error) {
+        document.getElementById('err').hidden = false;
+        document.getElementById('err').textContent = deck.error;
+        return;
+    }
+    var inst = EOS_DECK.create(document.getElementById('deck'), {
+        mode: 'manual',
+        slides: deck.slides.map(function(s){ return {html:s.html, notes:s.notes, audio_url:s.audio_url}; }),
+        theme: deck.theme,
+        aspect: deck.aspect,
+        visualStyle: deck.visual_style,
+        startIndex: startIdx,
+    });
+    window._eosDeck = inst;  // exposed for the screenshot skill / debugging
+    // Auto-fullscreen on first interaction (browsers block automatic fs).
+    setTimeout(function() {
+        var hint = document.createElement('div');
+        hint.className = 'present-hint';
+        hint.textContent = 'Press F to fullscreen · ←/→ to navigate · S for notes';
+        document.body.appendChild(hint);
+        setTimeout(function(){ hint.style.opacity='0'; }, 4000);
+    }, 50);
+})();
+</script>
+</body>
+</html>

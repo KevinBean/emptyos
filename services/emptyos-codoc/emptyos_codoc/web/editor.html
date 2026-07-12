@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>EmptyOS · co-doc</title>
+<style>
+  :root { color-scheme: light dark; }
+  body { margin: 0; font: 14px/1.5 system-ui, sans-serif; }
+  header { padding: 8px 14px; border-bottom: 1px solid #8884; display: flex; gap: 12px; align-items: center; }
+  #status { font-size: 12px; opacity: .7; }
+  #peers { font-size: 12px; opacity: .7; margin-left: auto; }
+  #save { font-size: 12px; padding: 2px 10px; border-radius: 6px; border: 1px solid #8886; background: transparent; color: inherit; cursor: pointer; }
+  #save:disabled { opacity: .5; cursor: default; }
+  .cm-editor { height: calc(100vh - 42px); font-family: ui-monospace, monospace; }
+</style>
+</head>
+<body>
+<header>
+  <strong>co-doc</strong>
+  <span id="status">connecting…</span>
+  <button id="save" title="Persist the current text into the vault as an author:both note">Save to vault</button>
+  <span id="peers"></span>
+</header>
+<div id="editor"></div>
+
+<!--
+  Browser editor for the emptyos-codoc live service. Standard Yjs + CodeMirror 6
+  stack (esm.sh), with a small custom WebSocket provider that speaks THIS
+  service's protocol exactly: the server sends the merged full Y.Doc state on
+  join and relays raw updates; the client applies inbound updates and sends its
+  own local updates. Principal via ?as=<id> (dev) — production injects the
+  X-EOS-Principal header at the proxy and this query is ignored server-side.
+  The ?principal= dev fallback is gated: the service only honours it when
+  CODOC_DEV_WS_AUTH=1 (off by default — a raw client principal is otherwise an
+  identity-spoof and the socket closes). Set that env when serving locally.
+
+  Save to vault: the header button POSTs {markdown, slug} to the DAEMON's
+  /codoc/api/save (apps/public/standard/codoc), which persists an author:both
+  vault note. Endpoint resolution: ?save=<same-origin path> query param
+  (relative paths only — absolute/protocol-relative URLs are ignored so a
+  crafted link can't exfiltrate the doc text to a third party), else the
+  default /codoc/api/save — which works when this editor is reached through
+  a proxy that routes /codoc/ to the daemon (the deploy shape), and reports a
+  clear error on the bare service origin (no such route here).
+
+  NOT browser-verified from the build environment (no browser). Serve it (with
+  CODOC_DEV_WS_AUTH=1) + open /editor/<doc-id>?as=<principal> to verify.
+-->
+<script type="module">
+import * as Y from 'https://esm.sh/yjs@13'
+import { basicSetup } from 'https://esm.sh/codemirror@6.0.1'
+import { EditorView } from 'https://esm.sh/@codemirror/view@6'
+import { markdown } from 'https://esm.sh/@codemirror/lang-markdown@6'
+import { yCollab } from 'https://esm.sh/y-codemirror.next@0.3'
+import { Awareness, encodeAwarenessUpdate, applyAwarenessUpdate } from 'https://esm.sh/y-protocols@1/awareness'
+
+// Wire protocol — must match emptyos_codoc/protocol.py.
+const DOC = 0, AWARENESS = 1
+
+const segs = location.pathname.split('/').filter(Boolean)
+const docId = segs[segs.indexOf('editor') + 1]
+const principal = new URLSearchParams(location.search).get('as') || 'anon'
+
+const statusEl = document.getElementById('status')
+const peersEl = document.getElementById('peers')
+
+const ydoc = new Y.Doc()
+const ytext = ydoc.getText('t')
+const awareness = new Awareness(ydoc)
+awareness.setLocalStateField('user', { name: principal })
+awareness.on('change', () => {
+  const names = [...awareness.getStates().values()].map(s => s.user && s.user.name).filter(Boolean)
+  peersEl.textContent = names.length ? `${names.length} editing: ${names.join(', ')}` : ''
+})
+
+const proto = location.protocol === 'https:' ? 'wss' : 'ws'
+const ws = new WebSocket(`${proto}://${location.host}/api/docs/${docId}/sync?principal=${encodeURIComponent(principal)}`)
+ws.binaryType = 'arraybuffer'
+ws.onopen = () => { statusEl.textContent = `connected as ${principal}` }
+ws.onclose = () => { statusEl.textContent = 'disconnected — not a member of this doc?' }
+
+// Prefix every frame with its type byte (DOC update vs awareness/presence).
+function send(kind, payload) {
+  if (ws.readyState !== WebSocket.OPEN) return
+  const msg = new Uint8Array(payload.length + 1)
+  msg[0] = kind
+  msg.set(payload, 1)
+  ws.send(msg)
+}
+
+ws.onmessage = (e) => {
+  const data = new Uint8Array(e.data)
+  const payload = data.subarray(1)
+  if (data[0] === DOC) Y.applyUpdate(ydoc, payload, 'remote')
+  else if (data[0] === AWARENESS) applyAwarenessUpdate(awareness, payload, 'remote')
+}
+
+// Relay local doc edits + local presence; never echo what we received ('remote').
+ydoc.on('update', (update, origin) => {
+  if (origin !== 'remote') send(DOC, update)
+})
+awareness.on('update', ({ added, updated, removed }, origin) => {
+  if (origin === 'remote') return
+  const clients = [...added, ...updated, ...removed]
+  send(AWARENESS, encodeAwarenessUpdate(awareness, clients))
+})
+
+new EditorView({
+  doc: ytext.toString(),
+  extensions: [basicSetup, markdown(), yCollab(ytext, awareness)],
+  parent: document.getElementById('editor'),
+})
+
+// Save-to-vault: snapshot the live text into a vault note via the daemon's
+// codoc bridge app. The doc id doubles as the note slug (the daemon slugifies
+// + traversal-guards it server-side).
+const saveEl = document.getElementById('save')
+// ?save= is constrained to a SAME-ORIGIN relative path. An absolute or
+// protocol-relative URL here would let a crafted editor link exfiltrate the
+// live doc text to a third-party host the moment someone clicks Save.
+// Cross-origin daemon setups must proxy /codoc/ instead of overriding this.
+const rawSave = new URLSearchParams(location.search).get('save') || ''
+const saveUrl = (rawSave.startsWith('/') && !rawSave.startsWith('//')) ? rawSave : '/codoc/api/save'
+saveEl.onclick = async () => {
+  saveEl.disabled = true
+  const prev = statusEl.textContent
+  statusEl.textContent = 'saving…'
+  try {
+    const r = await fetch(saveUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ markdown: ytext.toString(), slug: docId }),
+    })
+    const data = await r.json().catch(() => ({}))
+    statusEl.textContent = (r.ok && data.ok)
+      ? `saved → ${data.path}`
+      : `save failed (${r.status}): ${data.error || data.detail || 'is /codoc/api/save routed to the daemon?'}`
+  } catch (err) {
+    statusEl.textContent = `save failed — daemon not reachable at ${saveUrl}`
+  } finally {
+    saveEl.disabled = false
+    setTimeout(() => { if (statusEl.textContent.startsWith('saved')) statusEl.textContent = prev }, 4000)
+  }
+}
+</script>
+</body>
+</html>

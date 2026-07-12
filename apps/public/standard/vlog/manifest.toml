@@ -1,0 +1,57 @@
+[app]
+id = "vlog"
+name = "Vlog"
+version = "0.1.0"
+description = "Daily video diary — record or import a clip a day, auto-transcribed and laid out on a calendar, with an optional compile-to-montage."
+icon = "📹"
+store_category = "personal"
+dimensions = ["emotional", "social"]
+user_intent = [
+    "record a video of my day",
+    "daily video diary",
+    "keep a vlog",
+    "今天的视频日记",
+    "compile my year into a movie",
+    "turn my daily clips into a montage",
+]
+
+[app.entry]
+module = "app"
+class = "VlogApp"
+
+# `see` is intentionally absent — webcam capture is browser-side getUserMedia,
+# not a backend self.see() call, so the app must not hard-depend on a webcam
+# provider being present.
+[requires]
+capabilities = ["read", "write", "listen"]
+apps = []
+# journal is a soft ripple target (vlog:saved → reactor → journal breadcrumb).
+optional_apps = ["journal"]
+services = []
+
+[provides.web]
+prefix = "/vlog"
+
+[provides.events]
+emits = ["vlog:saved", "vlog:montage_ready"]
+
+[provides.timeline]
+entity_source = "day_path"
+
+[[contributes.hub.panel]]
+id = "vlog-today"
+title = "📹 Vlog"
+method = "panel_vlog_today"
+renderer = "stat-tile"
+group = "dashboard"
+priority = 165
+
+[[contributes.tour.step]]
+id = "vlog.record"
+group = "core"
+priority = 360
+route = "/vlog/"
+spotlight = "#record-btn"
+title = "Record a moment of your day"
+body = "Record straight from your webcam or drop in a clip from your phone. It's transcribed automatically and lands on a calendar — and you can compile a week, month, or year into one montage."
+requires = ["listen"]

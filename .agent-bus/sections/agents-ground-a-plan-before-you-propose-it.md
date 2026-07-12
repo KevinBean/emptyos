@@ -1,0 +1,9 @@
+
+
+Plans from non-Claude agents have repeatedly asserted file-level claims that a 30-second read refutes — a streak counter called an "orchestration loop", a "2+ consumers" threshold where the consumers were four different shapes, a "could be simplified" where the change would silently drop features. Run this pass before writing any plan (it is the non-Claude form of CLAUDE.md § Repo Evaluation + `.claude/rules/deep-research.md`):
+
+1. **Closed-verdict check (borrows).** Before proposing to borrow from any external repo/library, run `python scripts/check_borrow_verdict.py <repo-or-library-name>` (greps `docs/OPEN-SOURCE-BORROWING-PLAN.md` + `docs/DEFERRED-WORK.md`; **exit 1 = a verdict already exists, STOP and read it**; exit 0 = clear to evaluate). Do not re-derive a closed verdict. (Two revisions of the same Prefect plan were re-derived against a verdict that already existed.)
+2. **Read the file you cite — don't grep-and-assume.** Every "X is a consumer of pattern Y", "X already exists / doesn't exist", and "X could be simplified" claim requires **opening X and confirming it**. A `grep` hit is a lead, not a fact — `while True` is not "an orchestration loop".
+3. **State what's lost.** A "could be simplified / replaced by Z" claim is invalid until you name what the current code does that Z drops (per-stage `weight`, `stop_after` preview, `RunBudget`, cross-stage state, …). If you can't name it, you haven't read it.
+4. **Anti-abstraction gate.** Before proposing a new `sdk/` module or decorator layer, read CLAUDE.md rule 9 + the relevant `.claude/rules/*.md` (e.g. `staged-pipeline.md`). A second API over an existing primitive is drift, not reuse. The floor is **two real, same-shape consumers, proven by reading them** — not asserted.
+5. **Grade your claims.** Mark each load-bearing claim in the plan `read-verified` or `unverified`. An `unverified` claim is a question for the user, not a finding to act on.

@@ -1,0 +1,438 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Brain Dump — EmptyOS</title>
+<link rel="stylesheet" href="/static/theme.css">
+<link rel="stylesheet" href="/static/eos-components.css">
+<!-- Theme bootstrap: without this --bg-card/--border/--accent collapse on a
+     standalone app page (feedback_app_page_theme_bootstrap). -->
+<script>
+(function () {
+  try {
+    var t = localStorage.getItem('eos-theme') || 'eos'; if(['eos','digital-garden','soft-light','warm-dark','void-dark','nord'].indexOf(t)<0)t='eos';
+    document.documentElement.className = 'theme-' + t;
+  } catch (e) { document.documentElement.className = 'theme-eos'; }
+})();
+</script>
+<style>
+body { margin: 0; font-family: system-ui, -apple-system, sans-serif;
+       background: var(--bg); color: var(--text); }
+.cs-wrap { max-width: 760px; margin: 0 auto; padding: 16px 16px 40px; }
+.cs-head { display: flex; align-items: center; gap: 12px; margin-bottom: 4px; }
+.cs-head h1 { font-size: 19px; font-weight: 700; margin: 0; flex: 1;
+              display: flex; align-items: center; gap: 8px; }
+.cs-sub { font-size: 12px; color: var(--text-muted); margin: 0 0 16px; }
+.cs-card { background: var(--bg-card); border: 1px solid var(--border);
+           border-radius: var(--radius-lg, 14px); padding: 16px; margin-bottom: 16px; }
+.cs-modes { display: inline-flex; gap: 4px; background: var(--bg);
+            border: 1px solid var(--border); border-radius: 999px; padding: 4px; margin-bottom: 12px; }
+.cs-mode { border: 0; background: transparent; color: var(--text-muted);
+           padding: 8px 16px; border-radius: 999px; cursor: pointer; font-size: 13px; }
+.cs-mode.on { background: var(--accent); color: var(--accent-ink, #fff); }
+textarea.cs-ta { width: 100%; box-sizing: border-box; min-height: 120px; resize: vertical;
+                 background: var(--bg); color: var(--text); border: 1px solid var(--border);
+                 border-radius: 8px; padding: 12px; font: inherit; font-size: 14px; }
+.cs-row { display: flex; gap: 8px; align-items: center; margin-top: 12px; flex-wrap: wrap; }
+.cs-rec { display: flex; align-items: center; gap: 12px; }
+.cs-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--text-muted); }
+.cs-dot.on { background: var(--danger); animation: cs-pulse 1.2s infinite; }
+@keyframes cs-pulse { 0%,100%{opacity:1} 50%{opacity:.35} }
+.cs-hint { font-size: 12px; color: var(--text-muted); margin: 4px 0 0; }
+.cs-busy { font-size: 13px; color: var(--accent); margin: 8px 0 0; display: none; }
+.cs-busy.on { display: block; }
+.cs-busy::after { content: ' …'; animation: cs-ell 1.2s steps(4,end) infinite; }
+@keyframes cs-ell { 0%{content:' .'} 33%{content:' ..'} 66%{content:' ...'} }
+.cs-proposed-card { background: var(--bg); border: 1px solid var(--border);
+                    border-radius: 8px; padding: 12px 16px; margin-bottom: 12px; }
+.cs-proposed-card.resolved { opacity: .55; }
+.cs-pc-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; font-size: 12px; }
+.cs-pc-verb { color: var(--text-muted); font-family: ui-monospace, monospace; }
+.cs-pc-body { font-size: 14px; line-height: 1.4; margin-bottom: 12px; }
+.cs-pc-actions { display: flex; gap: 8px; }
+.cs-gate { text-align: center; padding: 40px 24px; }
+.cs-gate code { background: var(--bg); padding: 2px 8px; border-radius: 4px; }
+.hidden { display: none !important; }
+</style>
+</head>
+<body>
+<div class="cs-wrap">
+  <div class="cs-head">
+    <h1>🧠 Brain Dump</h1>
+    <button class="eos-btn-sm eos-btn-secondary" onclick="openAppSettings()">&#9881; Settings</button>
+  </div>
+  <p class="cs-sub">Dump a pile of mixed thoughts — by voice or text. I summarize it,
+     split it into tasks / journal / notes, and propose each for your review before
+     anything is saved. <strong>Triggered, never always-on.</strong></p>
+
+  <!-- Dark-default gate -->
+  <div id="gate" class="cs-card cs-gate hidden">
+    <h2 style="margin-top:0">Brain Dump is off</h2>
+    <p class="cs-hint">Turn on <strong>Enable Brain Dump</strong> in the ⚙ settings panel
+       (takes effect immediately), or set <code>feature.enabled = true</code> under
+       <code>[apps.braindump]</code> in <code>emptyos.toml</code>.</p>
+    <button class="eos-btn" style="margin-top:12px" onclick="openAppSettings()">Open Settings</button>
+  </div>
+
+  <!-- Main surface -->
+  <div id="app" class="hidden">
+    <!-- Stage 1: input -->
+    <div id="stage-input" class="cs-card">
+      <div class="cs-modes">
+        <button class="cs-mode on" data-mode="text" onclick="setMode('text')">⌨ Text</button>
+        <button class="cs-mode" data-mode="audio" onclick="setMode('audio')">🎙 Audio</button>
+        <button class="cs-mode hidden" id="mode-meeting" data-mode="meeting" onclick="setMode('meeting')">🔴 Meeting</button>
+      </div>
+
+      <div id="pane-text">
+        <textarea id="cs-text" class="cs-ta"
+          placeholder="Type or paste everything on your mind… I'll summarize it and split it into tasks / notes you review."></textarea>
+        <div class="cs-row">
+          <button id="start-capture" class="eos-btn" onclick="startText()">Process →</button>
+        </div>
+      </div>
+
+      <div id="pane-audio" class="hidden">
+        <div class="cs-rec">
+          <span id="rec-dot" class="cs-dot"></span>
+          <button id="rec-btn" class="eos-btn" onclick="toggleRec()">● Record</button>
+          <span id="rec-time" class="cs-hint">0:00</span>
+        </div>
+        <p id="live-preview" class="cs-hint"></p>
+        <div class="cs-row">
+          <label class="cs-hint" style="cursor:pointer">… or upload a voice memo /
+            audio file
+            <input id="cs-file" type="file" accept="audio/*" style="display:none" onchange="uploadAudioFile()">
+            <button type="button" class="eos-btn-sm eos-btn-secondary"
+              onclick="document.getElementById('cs-file').click()">Choose file</button>
+          </label>
+          <span id="cs-file-name" class="cs-hint"></span>
+        </div>
+        <p class="cs-hint">Recorded or uploaded audio is transcribed in one pass after it arrives — not streamed. Nothing is stored until you keep it.</p>
+      </div>
+
+      <div id="pane-meeting" class="hidden">
+        <div class="cs-rec">
+          <span id="mtg-dot" class="cs-dot"></span>
+          <button id="mtg-btn" class="eos-btn" onclick="toggleMeeting()">● Start recording</button>
+          <span id="mtg-time" class="cs-hint">0:00</span>
+        </div>
+        <p id="mtg-sources" class="cs-hint"></p>
+        <p class="cs-hint">Captures <strong>system audio</strong> (everyone on the call) + your mic, mixed to one track and transcribed after you stop — not streamed. Nothing is stored until you keep it. <strong>Recording others may require their consent.</strong></p>
+      </div>
+      <p id="busy-input" class="cs-busy">Transcribing + summarizing</p>
+    </div>
+
+    <!-- Stage 2: summary review (the pause point) -->
+    <div id="stage-summary" class="cs-card hidden">
+      <h3 style="margin-top:0">Summary <span class="cs-hint">— edit before extracting items</span></h3>
+      <textarea id="cs-summary" class="cs-ta"></textarea>
+      <label class="cs-row" style="font-size:13px">
+        <input type="checkbox" id="cs-keep"> Also keep this summary as a vault note (proposed for review)
+      </label>
+      <div class="cs-row">
+        <button id="continue-btn" class="eos-btn" onclick="continueRun()">✓ Continue → extract items</button>
+        <button class="eos-btn eos-btn-secondary" onclick="discardRun()">✕ Discard</button>
+      </div>
+      <p id="busy-summary" class="cs-busy">Extracting action items</p>
+    </div>
+
+    <!-- Stage 3: proposed items -->
+    <div id="stage-proposed" class="cs-card hidden">
+      <h3 style="margin-top:0">Proposed items <span class="cs-hint">— review each; nothing is applied until you click Apply</span></h3>
+      <div id="proposed-list"></div>
+      <div class="cs-row">
+        <a class="eos-btn-sm eos-btn-secondary" href="/rooms/" target="_blank">Open ⏳ pending dashboard</a>
+        <button class="eos-btn-sm" onclick="resetSession()">＋ New dump</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="/static/eos.js"></script>
+<script src="/static/eos-components.js"></script>
+<script>
+var STATE = { mode: 'text', run_id: null, summary: '', proposed: [],
+              rec: null, chunks: [], recTimer: null, recStart: 0,
+              mtgRecording: false, mtgTimer: null, mtgStart: 0 };
+var TIMEOUT_MS = 60000;
+
+// esc() is the global escaper from /static/eos.js (window.esc).
+
+function busy(id, on) { var e = document.getElementById(id); if (e) e.classList.toggle('on', on); }
+function disable(id, on) { var e = document.getElementById(id); if (e) e.disabled = on; }
+
+// fetch with a timeout so a stalled provider can't hang the page forever.
+async function fetchT(url, opts) {
+  var ctl = new AbortController();
+  var t = setTimeout(function(){ ctl.abort(); }, TIMEOUT_MS);
+  try { return await fetch(url, Object.assign({}, opts, { signal: ctl.signal })); }
+  finally { clearTimeout(t); }
+}
+
+async function init() {
+  var cfg = await EOS.api('/braindump/api/config') || {};
+  document.getElementById('gate').classList.toggle('hidden', !!cfg.enabled);
+  document.getElementById('app').classList.toggle('hidden', !cfg.enabled);
+  if (cfg.enabled) initMeeting();
+}
+
+// ── Meeting capture (system-audio loopback + mic via the meeting-capture plugin) ──
+async function initMeeting() {
+  var cap = await EOS.api('/braindump/api/meeting/capabilities') || {};
+  var tab = document.getElementById('mode-meeting');
+  if (cap.enabled && cap.available && (cap.sources || []).length) {
+    tab.classList.remove('hidden');
+    document.getElementById('mtg-sources').textContent =
+      'Sources: ' + cap.sources.map(function(s){ return s.label; }).join('  +  ');
+  } else {
+    tab.classList.add('hidden');
+  }
+}
+async function toggleMeeting() {
+  if (STATE.mtgRecording) { await stopMeeting(); return; }
+  var res = await EOS.post('/braindump/api/meeting/start', {});
+  if (!res || !res.ok) { EOS_UI.toast('Could not start: ' + ((res && res.error) || 'error')); return; }
+  STATE.mtgRecording = true; STATE.mtgStart = Date.now();
+  STATE.mtgTimer = setInterval(tickMeeting, 500);
+  document.getElementById('mtg-dot').classList.add('on');
+  document.getElementById('mtg-btn').textContent = '■ Stop & process';
+}
+async function stopMeeting() {
+  clearInterval(STATE.mtgTimer);
+  STATE.mtgRecording = false;
+  document.getElementById('mtg-dot').classList.remove('on');
+  document.getElementById('mtg-btn').textContent = '● Start recording';
+  disable('mtg-btn', true); busy('busy-input', true);
+  try {
+    var res = await fetchT('/braindump/api/meeting/stop',
+      { method: 'POST', headers: {'Content-Type': 'application/json'}, body: '{}' });
+    var data = await res.json();
+    if (data.error) { EOS_UI.toast('Error: ' + data.error); return; }
+    // A long meeting can take minutes to transcribe — poll well past the 60s default.
+    var done = await pollRun(data.run_id, ['paused'], 600000);
+    STATE.run_id = done.run_id; STATE.summary = done.summary || '';
+    showSummary();
+  } catch (e) {
+    EOS_UI.toast(e.name === 'AbortError' ? 'Timed out transcribing' : ('Failed: ' + e.message));
+  } finally {
+    busy('busy-input', false); disable('mtg-btn', false);
+  }
+}
+function tickMeeting() {
+  var s = Math.floor((Date.now() - STATE.mtgStart) / 1000);
+  document.getElementById('mtg-time').textContent =
+    Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
+}
+
+function setMode(m) {
+  STATE.mode = m;
+  document.querySelectorAll('.cs-mode').forEach(function(b){
+    b.classList.toggle('on', b.dataset.mode === m); });
+  document.getElementById('pane-text').classList.toggle('hidden', m !== 'text');
+  document.getElementById('pane-audio').classList.toggle('hidden', m !== 'audio');
+  document.getElementById('pane-meeting').classList.toggle('hidden', m !== 'meeting');
+}
+
+// ── Start (text) ──
+async function startText() {
+  var text = document.getElementById('cs-text').value.trim();
+  if (!text) { EOS_UI.toast('Type something first'); return; }
+  var fd = new FormData();
+  fd.append('mode', 'text'); fd.append('text', text);
+  await postStart(fd);
+}
+
+// Poll a run's status until it reaches one of `until` (or times out / errors).
+// The pipeline work runs server-side in the background, so the request that
+// started it returns instantly and this drives the wait.
+async function pollRun(runId, until, timeoutMs) {
+  var deadline = Date.now() + (timeoutMs || TIMEOUT_MS);
+  while (Date.now() < deadline) {
+    var d = await EOS.api('/braindump/api/runs/' + encodeURIComponent(runId));
+    if (!d || d.error) throw new Error((d && d.error) || 'lost the run');
+    if (d.status === 'error') throw new Error(d.error || 'the model failed');
+    if (until.indexOf(d.status) !== -1) return d;
+    await new Promise(function(r){ setTimeout(r, 1200); });
+  }
+  throw new Error('Timed out — the model took too long');
+}
+
+async function postStart(formData) {
+  busy('busy-input', true); disable('start-capture', true); disable('rec-btn', true);
+  try {
+    var res = await fetchT('/braindump/api/start', { method: 'POST', body: formData });
+    var data = await res.json();
+    if (data.error) { EOS_UI.toast('Error: ' + data.error); return; }
+    var done = await pollRun(data.run_id, ['paused']);
+    STATE.run_id = done.run_id;
+    STATE.summary = done.summary || '';
+    showSummary();
+  } catch (e) {
+    EOS_UI.toast(e.name === 'AbortError' ? 'Timed out — the model took too long' : ('Failed: ' + e.message));
+  } finally {
+    busy('busy-input', false); disable('start-capture', false); disable('rec-btn', false);
+  }
+}
+
+function showSummary() {
+  document.getElementById('cs-summary').value = STATE.summary;
+  document.getElementById('cs-keep').checked = false;
+  document.getElementById('stage-input').classList.add('hidden');
+  document.getElementById('stage-summary').classList.remove('hidden');
+  document.getElementById('stage-proposed').classList.add('hidden');
+}
+
+// ── Continue ──
+async function continueRun() {
+  var edited = document.getElementById('cs-summary').value.trim();
+  var keep = document.getElementById('cs-keep').checked;
+  busy('busy-summary', true); disable('continue-btn', true);
+  try {
+    var res = await fetchT('/braindump/api/runs/' + encodeURIComponent(STATE.run_id) + '/continue',
+      { method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ summary_override: edited }) });
+    var data = await res.json();
+    if (data.error) { EOS_UI.toast('Error: ' + data.error); return; }
+    var done = await pollRun(STATE.run_id, ['complete']);
+    STATE.proposed = done.proposed || [];
+    if (keep) {
+      await EOS.post('/braindump/api/runs/' + encodeURIComponent(STATE.run_id) +
+                     '/keep-summary', { summary: edited });
+      EOS_UI.toast('Summary note proposed for review');
+    }
+    document.getElementById('stage-summary').classList.add('hidden');
+    document.getElementById('stage-proposed').classList.remove('hidden');
+    render();
+  } catch (e) {
+    EOS_UI.toast(e.name === 'AbortError' ? 'Timed out — the model took too long' : ('Failed: ' + e.message));
+  } finally {
+    busy('busy-summary', false); disable('continue-btn', false);
+  }
+}
+
+async function discardRun() {
+  if (STATE.run_id) {
+    await EOS.post('/braindump/api/runs/' + encodeURIComponent(STATE.run_id) + '/discard', {});
+  }
+  EOS_UI.toast('Discarded');
+  resetSession();
+}
+
+// ── Proposed cards (render from STATE) ──
+function render() {
+  var el = document.getElementById('proposed-list');
+  if (!STATE.proposed.length) {
+    el.innerHTML = EOS_UI.emptyState
+      ? EOS_UI.emptyState({ title: 'No action items', sub: 'Nothing actionable in this dump.' })
+      : '<p class="cs-hint">No action items extracted.</p>';
+    return;
+  }
+  el.innerHTML = STATE.proposed.map(function(p) {
+    var icon = ({task:'✅', journal:'📓', kb:'📚'})[p.type] || '•';
+    return '<div class="cs-proposed-card" data-action="' + escAttr(p.action_id) + '">' +
+      '<div class="cs-pc-head"><span>' + icon + '</span>' +
+      '<span class="eos-badge">' + esc(p.type) + '</span>' +
+      '<span class="cs-pc-verb">' + esc(p.verb) + '</span></div>' +
+      '<div class="cs-pc-body">' + esc(p.summary) + '</div>' +
+      '<div class="cs-pc-actions">' +
+        '<button class="eos-btn-sm" onclick="applyItem(' + escAttr(JSON.stringify(p.action_id)) + ')">Apply</button>' +
+        '<button class="eos-btn-sm eos-btn-secondary" onclick="rejectItem(' + escAttr(JSON.stringify(p.action_id)) + ')">Reject</button>' +
+      '</div></div>';
+  }).join('');
+}
+
+async function applyItem(id) {
+  var r = await EOS.post('/rooms/api/pending/' + encodeURIComponent(id) + '/apply', {});
+  markResolved(id, r && !r.error ? 'Applied' : ('Failed: ' + (r && r.error)));
+}
+async function rejectItem(id) {
+  await EOS.post('/rooms/api/pending/' + encodeURIComponent(id) + '/reject', {});
+  markResolved(id, 'Rejected');
+}
+function markResolved(id, label) {
+  var card = document.querySelector('.cs-proposed-card[data-action="' + id + '"]');
+  if (!card) return;
+  card.classList.add('resolved');
+  card.querySelector('.cs-pc-actions').innerHTML = '<span class="cs-hint">' + esc(label) + '</span>';
+  EOS_UI.toast(label);
+}
+
+function resetSession() {
+  STATE.run_id = null; STATE.summary = ''; STATE.proposed = [];
+  document.getElementById('cs-text').value = '';
+  document.getElementById('live-preview').textContent = '';
+  document.getElementById('stage-summary').classList.add('hidden');
+  document.getElementById('stage-proposed').classList.add('hidden');
+  document.getElementById('stage-input').classList.remove('hidden');
+}
+
+// ── Audio (MediaRecorder; transcribed server-side after stop) ──
+async function toggleRec() {
+  if (STATE.rec && STATE.rec.state === 'recording') { stopRec(); return; }
+  try {
+    var stream = await navigator.mediaDevices.getUserMedia({
+      audio: { echoCancellation: true, noiseSuppression: true } });
+    STATE.chunks = [];
+    STATE.rec = new MediaRecorder(stream);
+    STATE.rec.ondataavailable = function(e){ if (e.data.size) STATE.chunks.push(e.data); };
+    STATE.rec.onstop = function(){ stream.getTracks().forEach(function(t){ t.stop(); }); sendAudio(); };
+    STATE.rec.start();
+    STATE.recStart = Date.now();
+    STATE.recTimer = setInterval(tickTime, 500);
+    document.getElementById('rec-dot').classList.add('on');
+    document.getElementById('rec-btn').textContent = '■ Stop';
+  } catch (e) { EOS_UI.toast('Mic unavailable: ' + e.message); }
+}
+function stopRec() {
+  if (STATE.rec && STATE.rec.state === 'recording') STATE.rec.stop();
+  clearInterval(STATE.recTimer);
+  document.getElementById('rec-dot').classList.remove('on');
+  document.getElementById('rec-btn').textContent = '● Record';
+}
+function tickTime() {
+  var s = Math.floor((Date.now() - STATE.recStart) / 1000);
+  document.getElementById('rec-time').textContent =
+    Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
+}
+async function sendAudio() {
+  if (!STATE.chunks.length) return;
+  var blob = new Blob(STATE.chunks, { type: 'audio/webm' });
+  var fd = new FormData();
+  fd.append('mode', 'audio'); fd.append('audio', blob, 'braindump.webm');
+  await postStart(fd);
+}
+
+// Upload an existing audio file (phone voice memo etc.) — same pipeline.
+async function uploadAudioFile() {
+  var inp = document.getElementById('cs-file');
+  var f = inp.files && inp.files[0];
+  if (!f) return;
+  document.getElementById('cs-file-name').textContent = f.name;
+  var fd = new FormData();
+  fd.append('mode', 'audio'); fd.append('audio', f, f.name);
+  await postStart(fd);
+  inp.value = '';  // allow re-picking the same file
+}
+
+// ── Settings ──
+var _appSettings = EOS_UI.settingsPanel({
+  id: 'braindump-settings',
+  title: 'Brain Dump Settings',
+  fields: [
+    {key: 'braindump.feature.enabled', label: 'Enable Brain Dump', type: 'boolean', default: false,
+     hint: 'Takes effect immediately — no restart needed.'},
+    {key: 'braindump.capture_hotkey', label: 'Start hotkey (blank = off)', type: 'text', default: '',
+     hint: 'Matches the global-hotkey plugin key, e.g. ctrl+shift+c.'},
+    {key: 'braindump.max_actions', label: 'Max proposed items', type: 'number', default: 6},
+    {key: 'braindump.keep_summary_default', label: 'Offer to keep summary note by default', type: 'boolean', default: true},
+  ],
+  onSave: function(){ init(); },
+});
+function openAppSettings() { _appSettings.open(); }
+
+init();
+</script>
+</body>
+</html>
