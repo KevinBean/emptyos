@@ -1,19 +1,69 @@
 // Background service worker — context menus, badge poller, badge-update fan-in.
 
+importScripts("reading-config.js", "daemon-client.js", "browser-session.js");
+const { getConfig, authHeaders } = globalThis.EOS_DAEMON;
+
+globalThis.EOS_BROWSER_SESSION.init().catch(error => {
+  globalThis.__EOS_BROWSER_INIT_ERROR__ = error?.message || String(error);
+  console.warn("browser session init", error);
+});
+
 // ── Config + auth ───────────────────────────────────────────────
 
-async function getConfig() {
-  const { host, token } = await chrome.storage.sync.get({
-    host: "http://localhost:9000",
-    token: "",
-  });
-  return { host: host.replace(/\/$/, ""), token };
+// ── Reading settings: the DAEMON owns them, not the browser ───────
+// The extension stores only host + token. Every reading preference (mode,
+// display, languages, providers, per-site pauses) lives in the dictionary app,
+// so /dictionary and the browser can never drift into two different opinions.
+// This is a short-lived mirror of that one source, not a second store.
+const READING_DEFAULTS = globalThis.EOS_READING_DEFAULTS;
+const SETTINGS_TTL_MS = 15000;
+let _settingsCache = null;
+let _settingsAt = 0;
+
+async function getReadingSettings(force) {
+  if (!force && _settingsCache && Date.now() - _settingsAt < SETTINGS_TTL_MS) {
+    return _settingsCache;
+  }
+  try {
+    const { host, token } = await getConfig();
+    const r = await fetch(host + "/dictionary/api/reading/settings", { headers: authHeaders(token) });
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    const data = await r.json();
+    _settingsCache = { ...READING_DEFAULTS, ...(data.settings || {}) };
+  } catch (e) {
+    // Daemon unreachable → stay dormant. Failing closed is the only safe default
+    // for a layer that would otherwise send page text somewhere.
+    _settingsCache = { ...READING_DEFAULTS };
+  }
+  _settingsAt = Date.now();
+  return _settingsCache;
 }
 
-function authHeaders(token) {
-  const h = { "Content-Type": "application/json" };
-  if (token) h["Authorization"] = "Bearer " + token;
-  return h;
+function invalidateReadingSettings() {
+  _settingsCache = null;
+  _settingsAt = 0;
+}
+
+function readingHostListed(list, host) {
+  return (list || []).some(value => {
+    const item = String(value || "").toLowerCase();
+    return item && (host === item || host.endsWith("." + item));
+  });
+}
+
+function readingModeForUrl(settings, url) {
+  if (!url || !/^https?:/.test(url)) return "off";
+  let host = "";
+  try { host = new URL(url).hostname.toLowerCase(); } catch (e) { return "off"; }
+  if (readingHostListed(settings.excluded_hosts, host)) return "off";
+  // Mail, money, health, messaging: off unless the reader named this host. The
+  // page's own gate repeats this check — one of the two failing open would mean
+  // reading an inbox and sending it to a model, so neither trusts the other.
+  if (globalThis.EOS_READING_IS_PRIVATE_HOST(host)
+      && !readingHostListed(settings.allowed_private_hosts, host)) {
+    return "off";
+  }
+  return settings.mode;
 }
 
 // ── Side panel + context menu init ──────────────────────────────
@@ -106,7 +156,30 @@ async function badge(tabId, text, color) {
 
 function flashBadge(ok) {
   badge(undefined, ok ? "OK" : "ERR", ok ? "#4a7" : "#d66");
-  setTimeout(() => chrome.action.setBadgeText({ text: "" }), 1500);
+  setTimeout(async () => {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (tab) refreshBadge(tab);
+    else chrome.action.setBadgeText({ text: "" });
+  }, 1500);
+}
+
+async function applyReadingBadge(tab, captured = false) {
+  if (!tab?.id) return;
+  const settings = await getReadingSettings();
+  const mode = readingModeForUrl(settings, tab.url);
+  if (mode === "flow") {
+    await badge(tab.id, "F", "#596fc4");
+    await chrome.action.setTitle({ tabId: tab.id, title: "EmptyOS reading: Flow" + (captured ? " · page captured" : "") });
+  } else if (mode === "ask") {
+    await badge(tab.id, "A", "#4a7");
+    await chrome.action.setTitle({ tabId: tab.id, title: "EmptyOS reading: Ask" + (captured ? " · page captured" : "") });
+  } else if (captured) {
+    await badge(tab.id, "✓", "#4a7");
+    await chrome.action.setTitle({ tabId: tab.id, title: "Open EmptyOS panel · page captured" });
+  } else {
+    await badge(tab.id, "");
+    await chrome.action.setTitle({ tabId: tab.id, title: "Open EmptyOS panel" });
+  }
 }
 
 // ── Inject content.js into a tab (idempotent) ────────────────────
@@ -224,6 +297,147 @@ async function showResultCard(tabId, payload) {
     });
   } catch (e) { console.warn("showResultCard:", e.message); }
 }
+
+// ── Adaptive reading bridge ───────────────────────────────────────────────
+
+// An MV3 service worker is torn down after ~30 seconds idle, and a pending fetch
+// does NOT count as activity. A model that thinks for longer than that — claude-cli
+// takes ~33s on a full page, a cold local model longer — therefore answers into a
+// worker that no longer exists: the daemon does the work, caches the words, and the
+// page waits forever on a reply that can never arrive. Only the fastest provider
+// appeared to "work", which is what made this look like a model problem.
+//
+// Any extension API call resets the idle timer. Ticking one while a request is in
+// flight is the documented way to survive a slow model.
+let _keepAliveTimer = null;
+let _readingInFlight = 0;
+
+function keepAliveStart() {
+  _readingInFlight += 1;
+  if (_keepAliveTimer) return;
+  _keepAliveTimer = setInterval(() => {
+    chrome.runtime.getPlatformInfo().catch(() => {});
+  }, 20000);
+}
+
+function keepAliveStop() {
+  _readingInFlight = Math.max(0, _readingInFlight - 1);
+  if (_readingInFlight === 0 && _keepAliveTimer) {
+    clearInterval(_keepAliveTimer);
+    _keepAliveTimer = null;
+  }
+}
+
+async function readingFetch(path, body) {
+  keepAliveStart();
+  try {
+    const { host, token } = await getConfig();
+    const response = await fetch(host + path, {
+      method: "POST",
+      headers: authHeaders(token),
+      body: JSON.stringify(body || {}),
+    });
+    let data = {};
+    try { data = await response.json(); }
+    catch (e) { data = { error: "EmptyOS returned an unreadable response." }; }
+    if (!response.ok && !data.error) data.error = "EmptyOS returned HTTP " + response.status;
+    return data;
+  } finally {
+    keepAliveStop();
+  }
+}
+
+// Fetch TTS audio with auth and hand it to the page as a data: URL. An <audio
+// src> cannot carry an Authorization header, so the bytes have to come through
+// here — the page never learns the token.
+async function readingPronounce(word) {
+  try {
+    const { host, token } = await getConfig();
+    const r = await fetch(host + "/dictionary/api/pronounce/" + encodeURIComponent(word),
+                          { headers: authHeaders(token) });
+    if (!r.ok) return { error: "Pronunciation unavailable (HTTP " + r.status + ")" };
+    const meta = await r.json();
+    if (!meta.audio_url) return { error: meta.error || "No speak provider available." };
+    const audio = await fetch(host + meta.audio_url, { headers: authHeaders(token) });
+    if (!audio.ok) return { error: "Audio fetch failed (HTTP " + audio.status + ")" };
+    const buf = await audio.arrayBuffer();
+    let binary = "";
+    const bytes = new Uint8Array(buf);
+    for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+    const mime = audio.headers.get("Content-Type") || "audio/mpeg";
+    return { ok: true, dataUrl: "data:" + mime + ";base64," + btoa(binary) };
+  } catch (e) {
+    return { error: e?.message || "Pronunciation failed" };
+  }
+}
+
+async function handleReadingMessage(message, sender) {
+  if (message.type === "EOS_READING_SETTINGS") {
+    const settings = await getReadingSettings(Boolean(message.force));
+    const url = message.url || sender?.tab?.url || "";
+    return { ok: true, settings, mode: readingModeForUrl(settings, url) };
+  }
+  if (message.type === "EOS_READING_KNOWN") {
+    // No model, no provider, no cost — the reader's own words, matched in the page.
+    return readingFetch("/dictionary/api/reading/known", {
+      text: String(message.text || "").slice(0, 8000),
+    });
+  }
+  if (message.type === "EOS_READING_ANALYZE") {
+    const s = await getReadingSettings();
+    return readingFetch("/dictionary/api/reading/analyze", {
+      text: String(message.text || "").slice(0, 8000),
+      url: String(message.url || "").slice(0, 1000),
+      title: String(message.title || "").slice(0, 300),
+      provider: s.flow_provider,
+      native: s.native_language,
+      target: s.target_language,
+    });
+  }
+  if (message.type === "EOS_READING_LOOKUP") {
+    const s = await getReadingSettings();
+    return readingFetch("/dictionary/api/reading/lookup", {
+      word: String(message.word || "").slice(0, 64),
+      context: String(message.context || "").slice(0, 420),
+      provider: s.local_provider,
+      native: s.native_language,
+      target: s.target_language,
+    });
+  }
+  if (message.type === "EOS_READING_FEEDBACK") {
+    // The item rides along: "I know this" and "Still hard" are both judgements the
+    // reader wants recorded in their vocabulary, and the daemon cannot write a note
+    // from a bare word.
+    return readingFetch("/dictionary/api/reading/feedback", {
+      word: String(message.word || "").slice(0, 64),
+      action: String(message.action || "").slice(0, 24),
+      item: message.item || null,
+      source_url: String(message.sourceUrl || sender?.tab?.url || "").slice(0, 1000),
+    });
+  }
+  if (message.type === "EOS_READING_PRONOUNCE") {
+    return readingPronounce(String(message.word || "").slice(0, 64));
+  }
+  if (message.type === "EOS_READING_SAVE") {
+    // Goes through the reading layer's own save, which ENRICHES with a strong model
+    // first: the card is thin by design (it has to be fast), but a saved note is
+    // read months later and deserves IPA, inflections, every sense, collocations.
+    const result = await readingFetch("/dictionary/api/reading/save", {
+      item: message.item || {},
+      source_url: String(message.sourceUrl || sender?.tab?.url || "").slice(0, 1000),
+    });
+    return result.error ? result : { ...result, ok: true };
+  }
+  return { error: "Unknown reading action" };
+}
+
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (!message || !String(message.type || "").startsWith("EOS_READING_")) return false;
+  handleReadingMessage(message, sender)
+    .then(sendResponse)
+    .catch(error => sendResponse({ error: error?.message || "Reading request failed" }));
+  return true;
+});
 
 // ── Job evaluation (POST /jobs/api/discover/evaluate → score card) ──
 
@@ -435,19 +649,15 @@ async function refreshBadge(tab) {
     const r = await fetch(host + "/quick-action/api/has?url=" + encodeURIComponent(tab.url), {
       headers: authHeaders(token),
     });
-    if (!r.ok) { badge(tab.id, ""); return; }
+    if (!r.ok) { applyReadingBadge(tab); return; }
     const data = await r.json();
     // Re-verify the tab still exists before writing the badge — the user
     // may have closed it during the round-trip. chrome.tabs.get throws
     // when the tab is gone; we swallow that case.
     try { await chrome.tabs.get(tab.id); } catch (e) { return; }
-    if (data.has) {
-      badge(tab.id, "✓", "#4a7");
-    } else {
-      badge(tab.id, "");
-    }
+    applyReadingBadge(tab, Boolean(data.has));
   } catch (e) {
-    badge(tab.id, "");
+    applyReadingBadge(tab);
   }
 }
 
@@ -470,4 +680,25 @@ chrome.tabs.onActivated.addListener(async ({ tabId }) => {
     const tab = await chrome.tabs.get(tabId);
     scheduleBadge(tab);
   } catch (e) { /* tab gone */ }
+});
+
+// The side panel writes settings to the daemon, then pings us. We re-read the one
+// source of truth and push it to every open tab — there is no second store to sync.
+async function broadcastReadingSettings() {
+  const settings = await getReadingSettings(true);
+  const tabs = await chrome.tabs.query({});
+  for (const tab of tabs) {
+    if (!/^https?:/.test(tab.url || "")) continue;
+    chrome.tabs.sendMessage(tab.id, { type: "EOS_READING_REFRESH", settings }).catch(() => {});
+    applyReadingBadge(tab);
+  }
+}
+
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message?.type !== "EOS_READING_SETTINGS_CHANGED") return false;
+  invalidateReadingSettings();
+  broadcastReadingSettings()
+    .then(() => sendResponse({ ok: true }))
+    .catch(e => sendResponse({ error: e?.message || "broadcast failed" }));
+  return true;
 });

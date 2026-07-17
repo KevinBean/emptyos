@@ -123,6 +123,7 @@ PUBLIC_DOC_DROP = [
     "docs/ENGINEERING-APP-WORKFLOW.md",
     "docs/ENGINEERING-WORK-LOOP.md",
     "docs/KB-APP-ALIGNMENT-AUDIT.md",
+    "docs/ENGINEERING-APPS-AUDIT-2026-07-17.md",
     # Internal planning / strategy / roadmap docs — not contributor/user docs, and
     # they reference held engineering apps as examples. Public OSS cloners don't
     # need EmptyOS's private backlog or borrow-verdict log.
@@ -677,6 +678,9 @@ HELD_REF_CODE_ALLOWLIST = {
     "emptyos/sdk/clustering.py",
     "emptyos/sdk/conformance.py",
     "emptyos/sdk/deep_loop.py",
+    # Names design-package in its docstring because the module IS the
+    # [[contributes.design-package.section]] roster-discovery contract.
+    "emptyos/sdk/discipline_roster.py",
     "emptyos/sdk/dxf_read.py",
     "emptyos/sdk/external_service.py",
     "emptyos/sdk/georef.py",
@@ -685,6 +689,9 @@ HELD_REF_CODE_ALLOWLIST = {
     "emptyos/sdk/json_library.py",
     "emptyos/sdk/kb_refs.py",
     "emptyos/sdk/model_note.py",
+    # Names cable-network in a comment — it IS the release filter and must know
+    # the held apps it prunes.
+    "emptyos/sdk/release_filter.py",
     "emptyos/sdk/utils.py",
     "emptyos/web/routes_auth.py",
     "emptyos/web/static/eos-cable-section.js",

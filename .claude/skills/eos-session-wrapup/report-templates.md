@@ -68,6 +68,8 @@ date: YYYY-MM-DD
 type: dev-session
 tags: [emptyos, dev-log, <affected-apps>]
 skills_used: [eos-session-wrapup, ...]   # every /<skill> invoked this session
+tracks:
+  - <track-slug>   # the track(s) this session advanced — same slug(s) as Step 6
 ---
 
 # YYYY-MM-DD — <Session Title>

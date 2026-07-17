@@ -11,6 +11,15 @@ calculators. Graduated from a session scratchpad per .claude/rules/self-audit-lo
 
 8 dimensions: backend · frontend · ai · collab · vault · innov · data · ux.
 
+Signals match BOTH receivers (`self.think(` and `app.think(`) and read nested `*.py`,
+because a multi-module app (.claude/rules/multi-module-apps.md) puts its handlers in
+module-level functions taking `app`. Grepping only `self.` at the top level scored
+those apps zero on dims they actually fill, and `zeros` is the primary sort key of the
+worst-balanced list — so the phantom zeros sorted straight to the top of the one output
+a human is meant to act on. Discovery goes through emptyos/sdk/app_layout.py (loaded
+by path, no package import) — the same walker the kernel loader uses — with test
+fixtures (FIXTURE_IDS) excluded.
+
 Modes:
     python scripts/app_optimizer_scan.py          # score + write dated snapshot
                                                   #   + scorecard-latest.json to the vault
@@ -39,19 +48,32 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from check_base import REPO_ROOT  # noqa: E402
+from check_common import load_by_path  # noqa: E402
 from kb_paths import vault_root  # noqa: E402
 
-EXCLUDE = ("_retired", "_example", "_catalog")
+# Test fixtures, not real apps — they exist to exercise the loader/wiring and are
+# thin by design, so scoring them just floods the worst-balanced list with rows a
+# human has to re-triage every pass. Excluded at discovery.
+FIXTURE_IDS = {"test-app", "test-app-wiring"}
 DIMS = ["backend", "frontend", "ai", "collab", "vault", "innov", "data", "ux"]
+
+# Apps decomposed per .claude/rules/multi-module-apps.md put their handlers in
+# module-level functions taking `app` (bound onto the class in app.py), so a helper
+# calls `app.think(...)` where the spine would call `self.think(...)`. Grepping only
+# `self.` scores those apps zero on dims they genuinely fill — a phantom zero, which
+# then sorts them to the top of the worst-balanced list. Match both receivers.
+# The \b keeps `myapp.think(` / `webapp.emit(` from counting as receiver calls.
+RECV = r"\b(?:self|app)\."
 
 
 def app_dirs() -> list[Path]:
-    out = []
-    for mf in REPO_ROOT.glob("apps/**/manifest.toml"):
-        if any(x in mf.parts for x in EXCLUDE):
-            continue
-        out.append(mf.parent)
-    return out
+    """Discover apps via the shared track-tree walker (the same rule the kernel
+    loader and every sibling scanner use), so this scorer can't drift on what an
+    "app" is. It skips _retired/_example/_catalog and stops descent at each app
+    root — a manifest nested *inside* an app is not a second app."""
+    al = load_by_path("app_layout_optimizer", "emptyos/sdk/app_layout.py")
+    return [d for aid, d in al.iter_app_dirs(REPO_ROOT / "apps", include_personal=True)
+            if aid not in FIXTURE_IDS]
 
 
 def _read(p: Path) -> str:
@@ -107,38 +129,40 @@ def score_app(d: Path) -> dict:
     hub_panel = bool(contributes.get("hub", {}).get("panel"))
     voice_intent = bool(contributes.get("voice-assistant", {}).get("intent"))
 
-    code = "\n".join(_read(f) for f in d.glob("*.py"))
+    # rglob, not glob: a decomposed app may nest its helper modules in a subpackage,
+    # and top-level-only reads score those handlers as if they did not exist.
+    code = "\n".join(_read(f) for f in sorted(d.rglob("*.py")))
     loc = code.count("\n") + 1 if code else 0
     routes = _count(r"@web_route\(", code)
     ws = _count(r"@ws_route\(", code)
     think_any = (
-        _count(r"self\.think\(", code)
-        + _count(r"self\.think_stream\(", code)
-        + _count(r"self\.think_compare\(", code)
+        _count(RECV + r"think\(", code)
+        + _count(RECV + r"think_stream\(", code)
+        + _count(RECV + r"think_compare\(", code)
     )
-    think_stream = _count(r"self\.think_stream\(", code)
-    call_app = _count(r"self\.call_app\(", code)
-    emit = _count(r"self\.emit\(", code)
+    think_stream = _count(RECV + r"think_stream\(", code)
+    call_app = _count(RECV + r"call_app\(", code)
+    emit = _count(RECV + r"emit\(", code)
     listen = _count(r"@on_event\(", code)
-    vault = _count(r"self\.vault_\w+\(", code)
+    vault = _count(RECV + r"vault_\w+\(", code)
     # save_calculation/list_calculations are SDK-abstracted vault persistence —
-    # credit them as real vault+data (a raw self.vault_* count would miss them).
-    calc_persist = _count(r"self\.save_calculation\(|self\.list_calculations\(", code)
+    # credit them as real vault+data (a raw vault_* count would miss them).
+    calc_persist = _count(RECV + r"save_calculation\(|" + RECV + r"list_calculations\(", code)
     vault += calc_persist * 2
     vault_write = _count(
-        r"self\.vault_write\(|self\.vault_create_note\(|self\.vault_append"
-        r"|self\.vault_set_section\(|self\.vault_update\(",
+        RECV + r"vault_write\(|" + RECV + r"vault_create_note\(|" + RECV + r"vault_append"
+        r"|" + RECV + r"vault_set_section\(|" + RECV + r"vault_update\(",
         code,
     )
-    if _count(r"self\.save_calculation\(", code):
+    if _count(RECV + r"save_calculation\(", code):
         vault_write += 1
     multimodal = sum(
         1 for c in ("draw", "speak", "listen", "see", "browse", "animate", "model")
-        if re.search(r"self\.%s\(" % c, code)
+        if re.search(RECV + r"%s\(" % c, code)
     )
     slash = "SLASH_COMMANDS" in code
     log_activity = "log_activity" in code or ".jsonl" in code
-    data_dir = "self.data_dir" in code or "json.dump" in code or "_save_json" in code
+    data_dir = bool(re.search(RECV + r"data_dir", code)) or "json.dump" in code or "_save_json" in code
     export_route = bool(re.search(r"/api/export|/export", code)) or "[provides.export]" in _read(d / "manifest.toml")
     field_suggest_code = "suggest_field" in code
 

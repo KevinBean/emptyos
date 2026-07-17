@@ -1,18 +1,18 @@
 # EmptyOS Commons — Next Steps (MVP → trusted-team deploy)
 
-**Where we are:** the core multi-user ability is built + proven (15 service tests
-+ 4 bridge tests + a live daemon↔commons e2e on a sandbox). It runs on dev
-scaffolding — in-memory store, dev auth, local uvicorn. This plan turns it into
-something a real teammate logs into. Scope = **trusted-team** (a handful of
-mutually-trusting people sharing a knowledge commons, e.g. an engineering KB).
-Public-scale (open signup, moderation, per-user daemons) is explicitly **out of
-scope** here — the schema already leaves that door open.
+**Where we are:** the trusted-team stack is built and locally proven: persistent
+SQLite, password auth, browser feed/share management, machine API tokens, the
+daemon bridge, and a real HTTP smoke over throwaway SQLite. Postgres + restrictive
+read RLS is implemented with an opt-in e2e. Deploy artifacts exist; the remaining
+operator step is an actual host/domain deployment. Public-scale concerns (open
+signup, moderation, per-user daemon provisioning) remain explicitly out of scope.
 
-Ordering: **A → (B+C together) → D**, with **E** in parallel and **Step 0** first.
+Remaining order: complete the real **C** host/domain deployment, then take only
+the **E** polish that real use exposes. Postgres/public-scale work stays trigger-gated.
 
 ---
 
-## Step 0 — Commit the baseline (do first)
+## Step 0 — Commit the baseline — DONE
 
 Get the proven MVP into git before hardening, so there's a clean rollback point.
 
@@ -25,7 +25,7 @@ Get the proven MVP into git before hardening, so there's a clean rollback point.
 
 ---
 
-## Milestone A — Persistent store: SQLite-first (Postgres = scale option) ⭐
+## Milestone A — Persistent store: SQLite-first (Postgres = scale option) — DONE
 
 The MVP ran on the in-memory store (loses data on restart). For a **trusted team**
 the right persistent backend is **SQLite** — stdlib, one file, zero new infra,

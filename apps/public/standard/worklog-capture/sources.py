@@ -11,8 +11,11 @@ in ``scripts/footprint_common.py`` (same run-grouping the footprint skill uses,
 so hour spans stay consistent) rather than duplicating them.
 
 Privacy: these are the most sensitive local data in the system. They are read
-transiently per digest run, distilled into short cluster summaries, never copied
-wholesale into the queue, and only ever fed to the local think provider.
+transiently per digest run, distilled into short cluster summaries, and never
+copied wholesale into the queue. Drafting pins ``strict_provider`` to a local
+model while ``local_only`` is on (the default) — see ``digest._draft_cluster``.
+Turning that setting off routes the same summaries down the normal (cloud-first)
+chain, so the promise this paragraph makes lives in that flag, not in prose.
 """
 from __future__ import annotations
 
@@ -171,28 +174,44 @@ def read_browser_sqlite(db_path: str | Path, window_start: datetime,
     return rows
 
 
-def _aggregate_visits(rows: list[dict], tz: timezone) -> list[Evidence]:
-    """Group visits by domain into one Evidence span each."""
-    by_domain: dict[str, dict] = {}
+_VISIT_GAP = timedelta(minutes=30)
+
+
+def _aggregate_visits(rows: list[dict], tz: timezone,
+                      *, gap: timedelta = _VISIT_GAP) -> list[Evidence]:
+    """Group visits into one Evidence span per domain per *sitting*.
+
+    Splitting on a ``gap`` of silence is load-bearing, not cosmetic. Spanning a
+    domain from its first to its last visit in the window turns two visits eight
+    hours apart into one eight-hour span — and since ``correlate`` attaches any
+    overlapping evidence, that span then attaches to every cluster in the day.
+    One over-long span poisons every draft, not just its own.
+    """
+    by_domain: dict[str, list[dict]] = {}
     for r in rows:
         dom = (urlparse(r["url"]).netloc or "").replace("www.", "")
         if not dom:
             continue
-        ts = r["ts"].astimezone(tz)
-        g = by_domain.setdefault(dom, {"count": 0, "first": ts, "last": ts, "titles": set()})
-        g["count"] += 1
-        g["first"] = min(g["first"], ts)
-        g["last"] = max(g["last"], ts)
-        if r["title"]:
-            g["titles"].add(r["title"][:60])
+        by_domain.setdefault(dom, []).append(
+            {"ts": r["ts"].astimezone(tz), "title": (r.get("title") or "")[:60]})
+
     out: list[Evidence] = []
-    for dom, g in by_domain.items():
-        title = sorted(g["titles"])[0] if g["titles"] else dom
-        out.append(Evidence(
-            start=g["first"], end=g["last"], source="browser", kind="visit",
-            summary=f"{g['count']} visit(s) to {dom} — {title}",
-            ref={"domain": dom, "count": g["count"], "titles": sorted(g["titles"])[:5]},
-        ))
+    for dom, visits in by_domain.items():
+        visits.sort(key=lambda v: v["ts"])
+        sittings: list[list[dict]] = []
+        for v in visits:
+            if sittings and v["ts"] - sittings[-1][-1]["ts"] <= gap:
+                sittings[-1].append(v)
+            else:
+                sittings.append([v])
+        for s in sittings:
+            titles = sorted({v["title"] for v in s if v["title"]})
+            out.append(Evidence(
+                start=s[0]["ts"], end=s[-1]["ts"], source="browser", kind="visit",
+                summary=f"{len(s)} visit(s) to {dom} — {titles[0] if titles else dom}",
+                ref={"domain": dom, "count": len(s), "titles": titles[:5]},
+            ))
+    out.sort(key=lambda e: e.start)
     return out
 
 
@@ -237,7 +256,8 @@ def build_calendar_evidence(days: dict, tz: timezone, *,
 
 
 def source_browser_history(window_start: datetime, window_end: datetime, *,
-                           history_path: str | Path | None = None) -> list[Evidence]:
+                           history_path: str | Path | None = None,
+                           gap: timedelta = _VISIT_GAP) -> list[Evidence]:
     src = Path(history_path) if history_path else _DEFAULT_CHROME_HISTORY
     if not src.exists():
         return []
@@ -250,7 +270,7 @@ def source_browser_history(window_start: datetime, window_end: datetime, *,
         os.close(fd)
         shutil.copy2(src, tmp)
         rows = read_browser_sqlite(tmp, window_start, window_end)
-        return _aggregate_visits(rows, tz)
+        return _aggregate_visits(rows, tz, gap=gap)
     except Exception:
         return []
     finally:

@@ -99,8 +99,66 @@ class Ledger:
                 );
                 CREATE INDEX IF NOT EXISTS idx_qa_site_status ON qa_log(site_id, status);
                 CREATE INDEX IF NOT EXISTS idx_qa_ts ON qa_log(ts DESC);
+
+                CREATE TABLE IF NOT EXISTS commerce_events (
+                    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                    site_id     TEXT NOT NULL,
+                    event_type  TEXT NOT NULL,
+                    item_id     TEXT,
+                    ts          REAL NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_commerce_site_ts ON commerce_events(site_id, ts);
+
+                CREATE TABLE IF NOT EXISTS action_results (
+                    site_id         TEXT NOT NULL,
+                    idempotency_key TEXT NOT NULL,
+                    action          TEXT NOT NULL,
+                    result_json     TEXT NOT NULL,
+                    ts              REAL NOT NULL,
+                    PRIMARY KEY (site_id, idempotency_key)
+                );
+
+                -- Lead capture: content-site visitors leaving contact details.
+                -- Always stored here first; delivery to the site's
+                -- helpdesk_endpoint (when configured) is best-effort and its
+                -- outcome is recorded on the row — a lead is never lost.
+                CREATE TABLE IF NOT EXISTS leads (
+                    id        INTEGER PRIMARY KEY AUTOINCREMENT,
+                    site_id   TEXT NOT NULL,
+                    name      TEXT NOT NULL DEFAULT '',
+                    email     TEXT NOT NULL,
+                    message   TEXT NOT NULL,
+                    page_url  TEXT NOT NULL DEFAULT '',
+                    delivery  TEXT NOT NULL DEFAULT 'stored',
+                    status    TEXT NOT NULL DEFAULT 'new',
+                    ts        REAL NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_leads_site_ts ON leads(site_id, ts);
+
+                -- Session cart mirror: every successful cart.add through
+                -- /commerce/action is mirrored here per (site, session) so the
+                -- chat can answer "check my cart" deterministically. The site's
+                -- own cart stays the source of truth at checkout — this is the
+                -- digest layer owning state the external site can't be queried
+                -- for (see README § Architecture).
+                CREATE TABLE IF NOT EXISTS cart_items (
+                    site_id     TEXT NOT NULL,
+                    session_id  TEXT NOT NULL,
+                    product_id  TEXT NOT NULL,
+                    quantity    INTEGER NOT NULL,
+                    updated_ts  REAL NOT NULL,
+                    PRIMARY KEY (site_id, session_id, product_id)
+                );
+                CREATE INDEX IF NOT EXISTS idx_cart_site_session ON cart_items(site_id, session_id);
                 """
             )
+            # Migration: `intent` tags every chat request with the branch that
+            # served it (faq/cached/commerce.*/lead/low-confidence/model) so
+            # per-branch evaluation is a plain GROUP BY. Nullable — legacy rows
+            # fall back to the overloaded `model` source tag on read.
+            cols = {row[1] for row in c.execute("PRAGMA table_info(requests)")}
+            if "intent" not in cols:
+                c.execute("ALTER TABLE requests ADD COLUMN intent TEXT")
 
     # ── Reads ────────────────────────────────────────────────────────
 
@@ -127,6 +185,43 @@ class Ledger:
                 (_utc_day_key(),),
             ).fetchone()
             return float(row[0]) if row else 0.0
+
+    # Deterministic branch tags a request may carry (in `intent`, or in the
+    # legacy overloaded `model` column). Anything else is an LLM model id.
+    _KNOWN_INTENTS = {
+        "faq", "cached", "low-confidence", "lead", "commerce",
+        "commerce.search", "commerce.order", "commerce.return", "commerce.handoff",
+    }
+
+    def analytics(self, site_id: str) -> dict:
+        day = _utc_day_key()
+        with self._conn() as c:
+            request_row = c.execute(
+                "SELECT requests, cost_usd FROM daily_site WHERE day_key = ? AND site_id = ?",
+                (day, site_id),
+            ).fetchone()
+            event_rows = c.execute(
+                "SELECT event_type, COUNT(*) FROM commerce_events WHERE site_id = ? AND ts >= ? GROUP BY event_type",
+                (site_id, time.time() - 30 * 86400),
+            ).fetchall()
+            intent_rows = c.execute(
+                "SELECT COALESCE(NULLIF(intent, ''), model, '') AS branch, COUNT(*) "
+                "FROM requests WHERE site_id = ? AND ts >= ? GROUP BY branch",
+                (site_id, time.time() - 30 * 86400),
+            ).fetchall()
+        # Per-branch conversation counts — the ELEK-style evaluation table.
+        # Legacy rows carry the branch in `model`; real model ids fold to "model".
+        intents: dict[str, int] = {}
+        for branch, count in intent_rows:
+            key = str(branch) if str(branch) in self._KNOWN_INTENTS else "model"
+            intents[key] = intents.get(key, 0) + int(count)
+        return {
+            "day": day,
+            "requests_today": int(request_row[0]) if request_row else 0,
+            "cost_today_usd": float(request_row[1]) if request_row else 0.0,
+            "events_30d": {str(row[0]): int(row[1]) for row in event_rows},
+            "intents_30d": intents,
+        }
 
     # ── Rate-limit gate (read-only check, no mutation) ───────────────
 
@@ -176,14 +271,15 @@ class Ledger:
         tokens_out: int,
         cost_usd: float,
         model: str,
+        intent: str | None = None,
     ) -> None:
         now = time.time()
         day = _utc_day_key(now)
         with self._conn() as c:
             c.execute(
-                "INSERT INTO requests (site_id, ip_hash, session_id, tokens_in, tokens_out, cost_usd, model, ts) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                (site_id, ip_hash, session_id, tokens_in, tokens_out, cost_usd, model, now),
+                "INSERT INTO requests (site_id, ip_hash, session_id, tokens_in, tokens_out, cost_usd, model, intent, ts) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (site_id, ip_hash, session_id, tokens_in, tokens_out, cost_usd, model, intent, now),
             )
             c.execute(
                 "INSERT INTO daily_site (day_key, site_id, cost_usd, requests) VALUES (?, ?, ?, 1) "
@@ -191,6 +287,91 @@ class Ledger:
                 "cost_usd = cost_usd + excluded.cost_usd, requests = requests + 1",
                 (day, site_id, cost_usd),
             )
+
+    def record_event(self, *, site_id: str, event_type: str, item_id: str = "") -> None:
+        with self._conn() as c:
+            c.execute(
+                "INSERT INTO commerce_events (site_id, event_type, item_id, ts) VALUES (?, ?, ?, ?)",
+                (site_id, event_type, item_id[:200], time.time()),
+            )
+
+    def action_result(self, site_id: str, idempotency_key: str) -> dict | None:
+        import json as _json
+        with self._conn() as c:
+            row = c.execute(
+                "SELECT result_json FROM action_results WHERE site_id = ? AND idempotency_key = ?",
+                (site_id, idempotency_key),
+            ).fetchone()
+        return _json.loads(row[0]) if row else None
+
+    def store_action_result(self, site_id: str, idempotency_key: str, action: str, result: dict) -> None:
+        import json as _json
+        with self._conn() as c:
+            c.execute(
+                "INSERT OR IGNORE INTO action_results (site_id, idempotency_key, action, result_json, ts) VALUES (?, ?, ?, ?, ?)",
+                (site_id, idempotency_key, action, _json.dumps(result), time.time()),
+            )
+
+    # ── Session cart mirror ──────────────────────────────────────────
+
+    def cart_add(self, *, site_id: str, session_id: str, product_id: str, quantity: int = 1) -> None:
+        """Mirror one cart.add into the per-session cart. Quantity accumulates
+        across adds of the same product and is clamped to 1..10 per row, the
+        same bound the demo connector applies."""
+        with self._conn() as c:
+            c.execute(
+                "INSERT INTO cart_items (site_id, session_id, product_id, quantity, updated_ts) "
+                "VALUES (?, ?, ?, ?, ?) "
+                "ON CONFLICT(site_id, session_id, product_id) DO UPDATE SET "
+                "quantity = MIN(10, cart_items.quantity + excluded.quantity), updated_ts = excluded.updated_ts",
+                (site_id, session_id[:128], product_id[:200], max(1, min(10, quantity)), time.time()),
+            )
+
+    def cart_items(self, *, site_id: str, session_id: str) -> list[dict]:
+        """Rows for one session's chat cart, oldest add first."""
+        with self._conn() as c:
+            rows = c.execute(
+                "SELECT product_id, quantity, updated_ts FROM cart_items "
+                "WHERE site_id = ? AND session_id = ? ORDER BY updated_ts",
+                (site_id, session_id[:128]),
+            ).fetchall()
+        return [{"product_id": r[0], "quantity": r[1], "updated_ts": r[2]} for r in rows]
+
+    # ── Leads ────────────────────────────────────────────────────────
+
+    def add_lead(
+        self,
+        *,
+        site_id: str,
+        name: str,
+        email: str,
+        message: str,
+        page_url: str = "",
+        delivery: str = "stored",
+    ) -> int:
+        """Insert a lead row, return its id. Stored BEFORE any outbound
+        delivery attempt so a failed helpdesk POST never loses the lead."""
+        with self._conn() as c:
+            cur = c.execute(
+                "INSERT INTO leads (site_id, name, email, message, page_url, delivery, status, ts) "
+                "VALUES (?, ?, ?, ?, ?, ?, 'new', ?)",
+                (site_id, name[:200], email[:320], message[:2000], page_url[:500], delivery, time.time()),
+            )
+            return int(cur.lastrowid)
+
+    def set_lead_delivery(self, lead_id: int, delivery: str) -> None:
+        with self._conn() as c:
+            c.execute("UPDATE leads SET delivery = ? WHERE id = ?", (delivery, lead_id))
+
+    def list_leads(self, *, site_id: str, limit: int = 100, offset: int = 0) -> list[dict]:
+        with self._conn() as c:
+            rows = c.execute(
+                "SELECT id, site_id, name, email, message, page_url, delivery, status, ts "
+                "FROM leads WHERE site_id = ? ORDER BY ts DESC LIMIT ? OFFSET ?",
+                (site_id, limit, offset),
+            ).fetchall()
+        keys = ("id", "site_id", "name", "email", "message", "page_url", "delivery", "status", "ts")
+        return [dict(zip(keys, r)) for r in rows]
 
     # ── Q&A log ──────────────────────────────────────────────────────
 

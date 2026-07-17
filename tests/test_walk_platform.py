@@ -112,13 +112,18 @@ class TestPlatformUI:
     def test_system_page_loads(self, app_page, page_errors):
         """6.2 — /system/ renders capability inspector without JS errors."""
         page = app_page("system")
-        page.wait_for_selector("text=/capability|provider|think/i", timeout=6000)
+        # Capability cards render client-side once /api/capabilities/full resolves.
+        # Target the rendered card, not a `text=/regex/i` selector — a regex text
+        # selector matches every nested ancestor that CONTAINS the word, so
+        # wait_for_selector never settles on a single actionable element.
+        page.wait_for_selector(".cap-card", timeout=8000)
         js_errors = [e for e in page_errors if "favicon" not in str(e).lower()]
         assert not js_errors, f"JS errors on /system/: {js_errors}"
 
     def test_system_think_provider_listed(self, app_page):
         """6.2 — think capability visible on /system/ page."""
         page = app_page("system")
-        page.wait_for_selector("text=/think/i", timeout=5000)
-        count = page.locator("text=/think/i").count()
-        assert count >= 1, "think capability must appear on /system/ page"
+        page.wait_for_selector(".cap-card", timeout=8000)
+        # The think capability renders as <span class="cap-name">think</span>.
+        think = page.locator(".cap-name", has_text="think")
+        assert think.count() >= 1, "think capability must appear on /system/ page"

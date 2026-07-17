@@ -90,6 +90,31 @@ Another Claude session or the user can stage files into `git` while a session is
 
 This rule exists because several sessions burned hours on commit splits or history rewrites after parallel auto-adds bundled 23 files into what should have been a focused commit.
 
+### When a parallel session has touched the same file, or parked the tree on its branch
+
+Two sharper cases seen repeatedly in one long session (2026-07-15):
+
+- **The parallel session edited the *same file* you did** (e.g. both add to one manifest). `git add <file>` would stage their uncommitted hunks too. Stage only your hunks with a filtered patch to the index — the working tree stays untouched, their changes stay unstaged:
+
+  ```bash
+  git diff HEAD -- <file> > /tmp/full.patch
+  # keep only YOUR hunks (drop hunks containing the other session's markers), then:
+  git apply --cached /tmp/mine.patch
+  git commit -m "…"   # commits only your staged hunks
+  ```
+
+  `git add -p` / `git reset -p` are interactive and blocked in this harness — the filtered-patch route is the non-interactive equivalent. Split cleanly because your hunks and theirs are in different `@@` regions.
+
+- **A parallel session switched the working tree onto its feature branch**, so your commit lands there instead of `main`. Don't `git checkout main` (it would carry or fight their dirty tree). Get your commit to `main` through a throwaway worktree that touches neither their branch nor their working tree:
+
+  ```bash
+  git worktree add "$SCRATCH/mwt" main
+  ( cd "$SCRATCH/mwt" && git cherry-pick <your-commit> )
+  git worktree prune                       # if `worktree remove` hits a file lock, prune clears the registry
+  ```
+
+  The commit exists on both branches (identical content) until the feature branch merges — a clean no-op merge. Verify with `git merge-base --is-ancestor <commit> main`. On Windows the temp worktree dir may stay locked; `worktree prune` is enough — the leftover dir is harmless scratch.
+
 ## When to invoke
 
 - `/preflight` — start-of-session safety check (git + daemons + env)

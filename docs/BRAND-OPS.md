@@ -85,6 +85,18 @@ that finds no human on hand stages everything and posts nothing.
 Dev-community posts stay manual-approve **and** manual-post: community norms and
 judgment make full automation a reputational risk, not a time saver.
 
+### The tryable artifact (the one non-post channel)
+
+Every channel above ships *words*. One slot ships a **thing**: a single standalone,
+no-install, useful-in-60-seconds artifact, launched once and then linked from every
+post forever. It is not a channel and not a product — it is the permanent asset that
+converts strangers who will never read 2,000 words. Rationale (an artifact out-travels
+the framework it advertises), the selection rules, and the current candidate live in
+the private strategy layer; the deferred row + trigger are in `docs/DEFERRED-WORK.md`,
+and the verdict that produced them in `docs/OPEN-SOURCE-BORROWING-PLAN.md` § PocketFlow
+(2026-07-15). Hard rule: the artifact must be **on-thesis** — a generic AI dev-tool
+dilutes the positioning and is explicitly refused, however easy it would be to ship.
+
 ## Voice discipline
 
 Carried verbatim from `brand/MESSAGING.md` § Voice & rules — builder-to-builder,

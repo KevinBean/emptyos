@@ -345,6 +345,27 @@ async def api_dispatch(self, request):
     return payload
 
 
+@web_route("POST", "/api/browser-session/snapshots")
+async def api_browser_session_snapshots(self, request):
+    """Read selected armed tabs via directed Chrome commands without logging bodies."""
+    data = await request.json()
+    raw_ids = data.get("tab_ids") or []
+    if not isinstance(raw_ids, list) or len(raw_ids) > 10:
+        return {"ok": False, "error": "tab_ids must contain at most 10 tabs"}
+    try:
+        tab_ids = [int(value) for value in raw_ids]
+    except (TypeError, ValueError):
+        return {"ok": False, "error": "invalid tab_id"}
+    snapshots = []
+    for tab_id in tab_ids:
+        try:
+            snap = await self.browse("snapshot", target="user-chrome", tab_id=tab_id, timeout_s=20)
+            snapshots.append({"tab_id": tab_id, "ok": True, "snapshot": snap})
+        except Exception as error:
+            snapshots.append({"tab_id": tab_id, "ok": False, "error": str(error)[:200]})
+    return {"ok": True, "snapshots": snapshots}
+
+
 @web_route("POST", "/api/propose-kb-note")
 async def api_propose_kb_note(self, request):
     """Propose a KB note for user-reviewed creation.

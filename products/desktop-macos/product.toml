@@ -1,0 +1,22 @@
+# EmptyOS Desktop (macOS) — the from-source .app wrapper.
+#
+# Unlike products/desktop-windows/ this product is NOT a frozen tier bundle: the
+# .app execs the launcher against the real repo, so `tier` here is descriptive
+# only (nothing packages it). Everything else is read at runtime by the shared
+# launcher core.
+
+[product]
+id = "emptyos-desktop-macos"
+display_name = "EmptyOS"
+exe_name = "EmptyOS"
+tier = "standard"
+start_url = "/"
+
+# Keep this exactly "EmptyOS": it names the existing
+# ~/Library/Application Support/EmptyOS/ directory, so changing it would strand
+# every current install's config and data.
+appdata_name = "EmptyOS"
+
+[product.window]
+width = 1280
+height = 860

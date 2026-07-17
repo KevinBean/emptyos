@@ -63,7 +63,7 @@ Last verified: 2026-07-10 (`eos code` unified with the agent CLI; rooms code pre
 | `eos chat` | Terminal REPL | `apps/agent` | `@cli_command("chat")` in `apps/agent/repl.py` |
 | `eos code` | Terminal REPL | `apps/agent` | Alias registered by `@cli_command("code")`; seeds the session-scoped Code persona when agent modes are enabled |
 | `eos rooms` | Terminal REPL | `apps/rooms` | `app.command("rooms")` in `emptyos/cli/main.py` → `emptyos/cli/chat.py`; `--code` bootstraps the review-gated `cli-code` preset |
-| `/code/` | Web page | `apps/agent` (via WebSocket + sessions) | `apps/code/` — code-IDE-shaped frontend over apps/agent. File tree (left) + preview/diff (center) + terminal (bottom) + chat (right). Drives the agent loop with code-aware affordances the generic `/agent/` doesn't have. |
+| `/code/` | Responsive web page | `apps/agent` (via WebSocket + sessions) | `apps/code/` — desktop code workspace (tree + preview/diff + terminal + chat) that reflows into a phone-friendly remote (Agent + Review + Files + Output). Same agent loop and consent manager; mobile approvals are one-action only. Mobile guardrails (one-action approval, output-only terminal, secret files kept out of the workspace) are UX/exposure-reduction, **not** a sandbox — single-user token has full access via `/repo`, `/settings`, or the agent (docs/AUTH.md). |
 | `eos staff` | Terminal CLI (not REPL) | `apps/personal/staff` | `@cli_command("staff")` in `apps/personal/staff/app.py` |
 
 **Observations from the matrix:**
@@ -170,6 +170,8 @@ Same operations, two consumers, two gate philosophies. Not duplication — paral
 
 ## Cross-references
 
+- `services/chatbot/README.md` § Architecture — the **external-site sibling** of this stack. Deliberately *not* one of the 5 backends above: it's a Lane 1 service (no vault, no kernel), so it can't reach data or verbs directly. Same shape with a **digest layer** substituted in the middle (`external site → emptyos digest → chat`): crawled corpus + catalogue feed stand in for `vault_query`, `sites.toml` `allowed_actions` for the verb registry, `commerce_reply()` for `[INTENT:]` routing, `secure_action_form` for the review gate, and the embeddable widget for the companion rail. Read it before adding a chat surface for a site EmptyOS doesn't own; patterns port there, code never does.
+- `docs/AGENT-FRAMEWORK.md` — the auto-agent **assembly manual**: this doc maps the conversational *surfaces*; that one maps the *primitives* (schedule/persona/verbs/gates/budgets/memory/comms/UI) you compose into an autonomous agent. Config, not code.
 - `apps/agent/manifest.toml` — the autonomous tool-loop backend.
 - `apps/rooms/manifest.toml` — the chat-shape multi-participant backend.
 - `.claude/rules/room-review-gate.md` — `[DO:]` token grammar + Apply/Reject mechanics.

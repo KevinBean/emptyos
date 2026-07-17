@@ -62,9 +62,6 @@ class ScrollApp(BaseApp):
         self.relationships = RelationshipStore(self.data_dir / "relationships.json")
         self.memories = MemoryStore(self.data_dir / "memories")
 
-    async def on_start(self):
-        log.info("scroll started")
-
     # ── Hub panel ───────────────────────────────────────────────
 
     async def panel_today(self) -> dict | None:

@@ -59,14 +59,14 @@ two). The advisory scanner `scripts/check_storage_decl.py` (registered in
 flags invalid declarations (unknown domain, `control`, non-string values). See
 also the manifest reference in `docs/APP-DEVELOPMENT.md` § Manifest.
 
-## Current-state map (honest status, 2026-07-04)
+## Current-state map (honest status, 2026-07-15)
 
 | Layer | Implements | Status + gaps |
 |---|---|---|
 | Commons service | `services/emptyos-commons` — notes, ACL, visibility, API tokens; SQLite/Postgres; RLS backstop | **Built.** Full management surface (share, visibility change, revoke) lives on the service |
 | Commons daemon bridge | `apps/public/standard/commons/app.py` — exactly `api_publish`, `api_revoke`, `api_feed`, `api_suggest` | **Built, deliberately thin.** Gap (Phase 4): no post-publish share management, visibility change, body update, or remote-ACL view from the daemon side |
 | Codoc service | `services/emptyos-codoc` — pycrdt server merge, ACL-gated WS, `X-EOS-Principal` injected by the trusted control-plane hop | **Built + browser-verified.** Lane-1 artifacts (Dockerfile/compose/service.toml) built, unrun |
-| Codoc daemon app | `apps/public/standard/codoc/` — `POST /codoc/api/save` (snapshot → `author: both` vault note), `POST /codoc/api/agent-edit` (agent joins the CRDT session) | **Built + live-verified on a sandbox member.** Remaining per `docs/DEFERRED-WORK.md`: write-side row ("Co-doc snapshot write-side") → store-install on the main daemon + an editor save button; deploy row ("Co-doc deploy") → control-plane routing-key entry + a real `docker compose build` |
+| Codoc daemon app | `apps/public/standard/codoc/` — `POST /codoc/api/save` (snapshot → `author: both` vault note), `POST /codoc/api/agent-edit` (agent joins the CRDT session) | **Built + live-verified.** Snapshot write-side is installed on `:9000`; the editor save button is wired but browser-unverified after that wiring. Remaining work is deployment/routing, not another bridge implementation |
 | Control plane | `services/englishos-control-plane` — auth, provisioning, proxy, plans (`plans.py::plan_apps`), lifecycle backup | **Built + product-proven, EnglishOS-named** (`ENGLISHOS_*` env, `englishos_*` tables). Its README's "One mechanism, many products" already covers rebranding with zero code change |
 | Derived index | `emptyos/runtime/vault_index.py` — in-memory, rescan on boot | **By design.** Persistence is trigger-gated (Phase 6), not a gap |
 | Backup | `lifecycle.py` AES-GCM per-learner vault+data archive (keygen/backup/restore/export/delete via `learner_lifecycle.py`); commons `commons-data` volume | **Built.** Not greenfield — Phase 8 extends, not creates |
@@ -95,10 +95,11 @@ registry rows rather than scheduled work — that is deliberate
   verbs (share list/update, visibility change, remote-ACL view) as thin calls
   to the service's existing endpoints. The frontmatter-label posture is
   unchanged: the commons DB stays the source of truth.
-- **Phase 5 — codoc deploy + route.** Re-scoped from "wire it" (it is wired and
-  live-verified) to: control-plane routing-key entry, `docker compose build`,
-  store-install on the main daemon, editor save button — per the two
-  DEFERRED-WORK codoc rows named in the table above.
+- **Phase 5 — codoc deploy + route.** Re-scoped from "wire it" (the daemon bridge
+  is installed and live-verified) to the remaining operator path: add the
+  control-plane routing key, run the real compose build/deploy, and browser-verify
+  the already-wired save button through that deployed route. The trigger remains
+  the first real multi-user deployment wanting live co-edit.
 - **Phase 6 — persistent derived index: trigger-gated.** Registered in
   `docs/DEFERRED-WORK.md` (the FTS5/BM25 lexical-index row, extended with the
   per-daemon persistence angle). Trigger = a felt recall gap or measured

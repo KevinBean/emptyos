@@ -152,3 +152,48 @@ class BrowserSeeProvider(Provider):
         if response.get("error"):
             raise RuntimeError(f"browser-webcam: {response['error']}")
         return response.get("image") or ""
+
+
+class ChromeExtensionBrowseProvider(Provider):
+    """Explicitly armed user-Chrome provider over the realtime bridge."""
+
+    name = "chrome-extension"
+    is_cloud = False
+
+    def __init__(self, kernel: Kernel):
+        self.kernel = kernel
+
+    def _blocked_reason(self) -> str:
+        rt = getattr(self.kernel, "realtime", None)
+        if rt is None or not rt.browser_session_enabled():
+            return "browser session disabled"
+        if rt.active_browser_session() is None:
+            return "browser session is not armed"
+        return ""
+
+    async def available(self) -> bool:
+        # MUST be a bool: the chain gates on `if not await provider.available()`,
+        # and a {"available": False, ...} dict is truthy — so returning the
+        # structured shape here advertised this provider as usable with the
+        # feature dark and nothing armed. The dict belongs in health().
+        return not self._blocked_reason()
+
+    async def health(self) -> dict:
+        reason = self._blocked_reason()
+        return {
+            "available": not reason,
+            "reason": reason or None,
+            "recovery": "Arm a Browser Session from the extension side panel" if reason else None,
+        }
+
+    async def execute(
+        self, *, action: str, context_id: str = "", session_id: str = "",
+        tab_id: int = 0, timeout_s: float = 30.0, **kwargs,
+    ):
+        rt = getattr(self.kernel, "realtime", None)
+        if rt is None:
+            raise RuntimeError("browser_session_unavailable")
+        return await rt.request_browser_action(
+            action, session_id=session_id or context_id, tab_id=int(tab_id or 0),
+            timeout=timeout_s, **kwargs,
+        )

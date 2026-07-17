@@ -24,6 +24,13 @@ Keep CLAUDE.md focused on EmptyOS-architectural rules. Generic Python/web/integr
 - **Staff agents** — global Claude lock → sequential execution; output to `system-log` (system feed), NOT `capture` (user inbox)
 - **Saved staff agents** in `data/apps/staff/agents.json` override `DEFAULT_STAFF` (defined in `apps/personal/staff/agents.py`) — edit both when changing agent configs
 
+## Chrome extension (MV3)
+
+- **The service worker is torn down after ~30s idle, and a pending `fetch` does NOT count as activity.** A model call that takes longer answers into a worker that no longer exists: the daemon does the work and caches it, and the page waits on a `chrome.runtime.sendMessage` promise that never settles *and never rejects*. Symptom that names it: **"only the fastest provider works"** (openai-mini 5s fine, claude-cli 33s hangs, a cold local model hangs). Fix: tick any extension API (`chrome.runtime.getPlatformInfo()`) every 20s while a request is in flight — see `keepAliveStart` in `tools/chrome-extension/background.js`. Bound the page's wait too, so a reply that never comes becomes a stated failure rather than a silent forever.
+- **Playwright keeps the service worker alive** (it attaches a debugger), so a browser walk **cannot reproduce worker teardown**. A 40s-call test passed there while a real browser hung, and the green was used to argue against the user's own evidence. Any extension timing bug must be verified in a real browser, not in the walk. See `[[feedback_harness_that_cannot_reproduce_lies]]`.
+- **A content script lives in an isolated world**, so a global it sets is invisible from the *page* console — which is exactly where someone will look for it. Expose debug state over a message (`chrome.tabs.sendMessage(tabId, {type: 'EOS_READING_STATE'})`, read from the extension's own service-worker console), not as `window.__X`.
+- **Ordering matters and fails silently**: a content script that reads a global another script sets must be listed *after* it in BOTH `registerContentScripts` and the `executeScript` fallback (`browser-session.js`). Miss one and the layer goes dormant with no error at all.
+
 ## Media — slideshow + video generation
 
 These bit the podcast → slideshow/MP4 path (2026-07); they apply to **any**

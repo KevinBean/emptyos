@@ -1,12 +1,23 @@
 {
   "manifest_version": 3,
+  "minimum_chrome_version": "116",
   "name": "EmptyOS",
-  "version": "0.8.0",
-  "description": "Browser bridge to EmptyOS — streaming chat, slash commands, [DO:] review-gate cards, LinkedIn/Seek job capture + evaluate-vs-CV score card, YouTube digest, KB-clause proposals, in-page dictionary card with reading-context capture, 'already captured' badge.",
-  "permissions": ["activeTab", "contextMenus", "storage", "scripting", "sidePanel", "tabs"],
+  "version": "0.11.0",
+  "description": "Thin bridge to EmptyOS for Browser Sessions, Aura chat, capture, reading, dictionary, jobs, voice, cards, and streaming.",
+  "permissions": [
+    "activeTab",
+    "contextMenus",
+    "storage",
+    "scripting",
+    "sidePanel",
+    "tabs"
+  ],
   "host_permissions": [
     "http://localhost:9000/*",
-    "http://127.0.0.1:9000/*",
+    "http://127.0.0.1:9000/*"
+  ],
+  "optional_host_permissions": [
+    "http://*/*",
     "https://*/*"
   ],
   "action": {

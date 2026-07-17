@@ -44,6 +44,7 @@ if TYPE_CHECKING:
 
 # ─── Bind to PublishApp class as ─────────────────────────────────────
 #   deploy                        = _deploy.deploy
+#   _new_posts_since_deploy       = _deploy._new_posts_since_deploy
 #   _chatbot_refresh_after_deploy = _deploy._chatbot_refresh_after_deploy
 #   _run_git                      = _deploy._run_git
 #   _resolve_static_source        = _deploy._resolve_static_source
@@ -56,6 +57,50 @@ if TYPE_CHECKING:
 #   api_deploy_firebase           = _deploy.api_deploy_firebase
 # Adding a new method here? Add a matching binding line in app.py.
 # ────────────────────────────────────────────────────────────────────
+
+
+def _diff_new_slugs(prev: list[str], current: list[dict]) -> list[dict]:
+    """Return the current post items whose slug wasn't in the prior snapshot.
+
+    Pure — unit-testable without a daemon. `prev` is the last deploy's list of
+    published slugs; `current` is scan()'s post items (each carries `slug`).
+    """
+    seen = set(prev or [])
+    return [it for it in (current or []) if it.get("slug") and it["slug"] not in seen]
+
+
+def _new_posts_since_deploy(self, site: dict) -> list[dict]:
+    """Posts newly published since the last deploy of this site.
+
+    Diffs the current published-post slugs against the `published_slugs`
+    snapshot in site state, then records a fresh snapshot. Powers the
+    `new_posts` field on `publish:deployed` (promote's distribution trigger).
+
+    First-deploy seeding: if this site has never recorded a snapshot, save the
+    current slugs and return [] — so enabling the engine can't draft the whole
+    back catalogue at once. Fail-soft: any error returns [] (the deploy itself
+    must never fail because the diff did).
+    """
+    try:
+        items = [it for it in self.scan(site) if it.get("type") == "post"]
+        current_slugs = [it["slug"] for it in items if it.get("slug")]
+        state = self._site_state(site)
+        seeded = "published_slugs" in state
+        new_items = _diff_new_slugs(state.get("published_slugs", []), items) if seeded else []
+        self._save_state({"published_slugs": current_slugs}, site)
+        return [
+            {
+                "slug": it["slug"],
+                "title": it.get("title", ""),
+                "relative": it.get("relative", ""),
+                "tags": it.get("tags", []),
+                "date": it.get("date", ""),
+                "type": it.get("type", "post"),
+            }
+            for it in new_items
+        ]
+    except Exception:
+        return []
 
 
 def _date_only_commit_env(today: str) -> dict[str, str]:
@@ -132,6 +177,7 @@ async def deploy(self, site: dict | None = None) -> dict:
             "target": "github",
             "time": datetime.now().strftime("%Y-%m-%d %H:%M"),
             "site": s["id"],
+            "new_posts": self._new_posts_since_deploy(s),
         },
     )
     # Auto-refresh chatbot corpus cache so the new content is live without
@@ -399,6 +445,7 @@ async def _deploy_static_mirror(self, site: dict) -> dict:
             "site": site["id"],
             "mode": "static-mirror",
             "branch": branch,
+            "new_posts": [],
         },
     )
 
@@ -490,6 +537,7 @@ async def deploy_firebase(self, site: dict | None = None) -> dict:
             "project": project_id,
             "time": datetime.now().strftime("%Y-%m-%d %H:%M"),
             "site": s["id"],
+            "new_posts": self._new_posts_since_deploy(s),
         },
     )
     await self._chatbot_refresh_after_deploy(s)

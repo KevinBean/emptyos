@@ -186,6 +186,7 @@ async def think(
     min_ability: str | None = None,
     messages: list[dict] | None = None,
     provider: str | None = None,
+    strict_provider: str | None = None,
     cache: bool = False,
     cache_ttl_hours: int | None = None,
     with_confidence: bool = False,
@@ -207,6 +208,11 @@ async def think(
       think.app.<id>.providers — provider fallback order (comma-separated)
       think.app.<id>.timeout   — per-provider timeout in seconds
       think.domain.<domain>    — domain-level provider override
+
+    ``strict_provider=`` selects exactly one provider while still using the
+    capability chain's availability, cloud-consent, outbound-scan, middleware,
+    provenance, and billing paths. Unlike the legacy ``provider=`` pin, it
+    never falls through to another provider and never bypasses cloud consent.
 
     If agent= is provided, the agent's system prompt, knowledge, and
     defaults are merged into the call before routing.
@@ -244,6 +250,8 @@ async def think(
         kwargs["messages"] = messages
     if not prompt and not messages:
         raise ValueError("think() requires either prompt= or messages=")
+    if provider and strict_provider:
+        raise ValueError("provider and strict_provider are mutually exclusive")
 
     # with_confidence: append a structured-output envelope to the
     # system prompt and parse the response as JSON. Inspired by
@@ -291,6 +299,9 @@ async def think(
             max_tokens=kwargs.get("max_tokens"),
             agent=agent,
             domain=domain,
+            # Either pin narrows which provider answers, so both must key the
+            # cache — otherwise a pinned call reads back another provider's answer.
+            provider=strict_provider or provider,
         )
         _hit = _tc.get(_cache_db, _cache_id)
         if _hit is not None:
@@ -344,7 +355,7 @@ async def think(
                 threshold=confidence_threshold,
             )
 
-    if settings:
+    if settings and not strict_provider:
         # App-level single provider override (highest priority)
         app_provider = settings.get(f"think.app.{app_id}")
         if app_provider and "," not in str(app_provider):
@@ -402,6 +413,7 @@ async def think(
         task_shape=task_shape,
         bucket=bucket,
         min_ability=min_ability,
+        only_provider=strict_provider,
         **kwargs,
     )
     latency = round((time.monotonic() - t0) * 1000)
@@ -501,7 +513,7 @@ async def model_ability(self, domain: str = "text") -> dict:
                     name = str(chain).split(",")[0].strip()
                 elif domain and settings.get(f"think.domain.{domain}"):
                     name = str(settings.get(f"think.domain.{domain}"))
-        providers = think_cap._get_providers(domain=domain or None)
+        providers = think_cap.providers_for(domain=domain or None)
         chosen = None
         for p in providers:
             if name and getattr(p, "name", "") == name:

@@ -54,9 +54,41 @@ class TestWorklogCaptureAPI:
 
 @pytest.mark.interactive
 class TestWorklogCaptureUI:
-    def test_page_loads(self, page, base_url, http_client):
+    def test_page_loads(self, page, page_errors, base_url, http_client):
         if not _installed(http_client):
             pytest.skip("worklog-capture not installed")
         page.goto(base_url + PREFIX + "/", wait_until="domcontentloaded")
         page.wait_for_selector("#queue", timeout=8000)
-        assert_no_js_errors(page)
+        assert_no_js_errors(page_errors)
+
+    def test_cards_render(self, page, page_errors, base_url, http_client):
+        """Render a card from injected STATE.
+
+        An empty queue never calls card(), so a page-loads check passes while the
+        review UI is dead — that is exactly how a missing `escAttr` global (from
+        an unloaded /static/eos.js) shipped. Drive render() with real card shapes
+        so the surface the user actually reviews on is the thing under test.
+        """
+        if not _installed(http_client):
+            pytest.skip("worklog-capture not installed")
+        page.goto(base_url + PREFIX + "/", wait_until="domcontentloaded")
+        page.wait_for_selector("#queue", timeout=8000)
+        page.evaluate("""() => {
+            const draft = {text: 'wrote the thing', project: 'General',
+                           status: 'in-progress', date: '2026-01-01',
+                           employer: '', confidence: 'high'};
+            STATE.flagged = [{id: 'cap-test-1', source: 'ui', created: '2026-01-01T09:00:00',
+                              app_name: 'Editor', has_image: false, member_count: 0,
+                              evidence: [{summary: '3 visit(s) to example.com'}],
+                              ocr_excerpt: 'on-screen text', draft: draft}];
+            STATE.unflagged = [{id: 'cap-test-2', source: 'trail', created: '2026-01-01T10:00:00',
+                                evidence_only: true, has_image: false, member_count: 0,
+                                evidence: [], ocr_excerpt: '', draft: draft}];
+            STATE.failed = [{id: 'cap-test-3', source: 'folder', created: '2026-01-01T11:00:00',
+                             has_image: false, evidence: [], ocr_excerpt: '',
+                             draft: {}, error: 'model unreachable', attempts: 1}];
+            render();
+        }""")
+        assert page.locator('.wc-card[data-id="cap-test-1"]').count() == 1
+        assert page.locator('.wc-card[data-id="cap-test-3"]').count() == 1, "failed captures must stay visible"
+        assert_no_js_errors(page_errors)

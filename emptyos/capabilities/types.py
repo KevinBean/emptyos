@@ -182,7 +182,7 @@ class SendCapability(Capability):
 
 
 class BrowseCapability(Capability):
-    """Drive a headless browser. `action` is the verb; provider interprets kwargs.
+    """Drive a browser provider. `action` is the verb; provider interprets kwargs.
 
     Verbs (provider contract):
         navigate(url, wait=...)            → {"url": str, "title": str}

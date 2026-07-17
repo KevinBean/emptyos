@@ -70,6 +70,7 @@ CHECKS: list[dict] = [
     {"script": "check-design-md.py",       "scope": ["ui"],            "gate": True},
     {"script": "check-absolute.py",        "scope": ["ui"],            "gate": False},
     {"script": "check-attr-escaper.py",    "scope": ["ui", "security"],"gate": False},
+    {"script": "check-esc-phantom.py",     "scope": ["ui", "security"],"gate": True},
     {"script": "check-app-nav.py",         "scope": ["ui"],            "gate": False},
     {"script": "check-ios-safe-area.py",   "scope": ["ui"],            "gate": False},
     {"script": "check-button-tips.py",     "scope": ["ui"],            "gate": False, "args": ["--strict"]},

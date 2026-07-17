@@ -1,10 +1,12 @@
 # Plugins — Inventory + Patterns
 
-32 plugins. **Service plugins** expose named services — apps access via `self.require("name")`. **Enhancer plugins** inject providers into capabilities at startup (`priority=0`); capability falls back to next provider if plugin is absent/offline. No app code changes — "Graceful Enhancement" pattern. See `docs/DESIGN.md`.
+35 plugins. **Service plugins** expose named services — apps access via `self.require("name")`. **Enhancer plugins** inject providers into capabilities at startup (`priority=0`); capability falls back to next provider if plugin is absent/offline. No app code changes — "Graceful Enhancement" pattern. See `docs/DESIGN.md`.
 
 | Plugin | Type | Purpose |
 |---|---|---|
 | health | service | Heartbeat, capability probes, GPU VRAM monitoring |
+| screen-capture | service | Read-only screen grab + foreground-window context (proc/title/**rect**) + a `pynput` global input-event recorder that timestamp-correlates each frame with the click/hotkey/typed-run that caused it. Registers service `screen-capture` (`grab`/`foreground`/`start_recording`/`stop_recording`/`recording_status`). Observation only — **never injects input** (actuation is the separate `desktop-control` plugin). Windows backend uses `mss` (fast) → PowerShell System.Drawing (zero-dep fallback); extracted from the `worklog-capture` screen-grab seam (Rule 9, 2nd consumer). 100% local — no host, no cloud, so no consent gate at the capture layer (the gate is the `operate` app's dark flag + explicit start/stop). `available()` False until `pynput` present. First consumer: `apps/public/labs/operate/` (the demonstration recorder). |
+| desktop-control | service | Desktop UI Automation for the operate **executor** — deliberately SEPARATE from `screen-capture` so acting + observing disable independently. READ side (`snapshot`): a `pywinauto` UIA tree of the foreground window → ref/role/name/state/rect (the desktop analogue of the Chrome page-bridge snapshot the executor binds actions to). ACT side (`act(spec)`): `pyautogui` click/type/press/hotkey by concrete op, with `FAILSAFE` (mouse to any screen corner = instant abort) + a `PAUSE` between actions. `available()` (read) gates on `pywinauto`; `actuation_available()` gates on `pyautogui`; both absent by default so the whole surface is dormant. The executor gates actuation additionally on operate's `feature.executor.enabled` dark flag. 100% local. First consumer: `apps/public/labs/operate/` (dry-run snapshot + auto-run). |
 | agent-runtime | service | Ephemeral CLI subprocess driver (claude-cli/codex/gemini); one-shot per turn with stdout/stderr drain + tick callback + timeout kill |
 | notifications | service | Vault + Telegram push |
 | ollama | enhancer (think) | Local LLM |

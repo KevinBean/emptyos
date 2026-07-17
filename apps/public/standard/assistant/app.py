@@ -145,6 +145,7 @@ class AssistantApp(SessionsMixin, BaseApp):
     api_slash_commands = _api_chat.api_slash_commands
     api_compare        = _api_chat.api_compare
     api_dispatch       = _api_chat.api_dispatch
+    api_browser_session_snapshots = _api_chat.api_browser_session_snapshots
     api_propose_kb_note = _api_chat.api_propose_kb_note
 
     # ── Durable ripple (extracted to reconcile.py) ───────────────────

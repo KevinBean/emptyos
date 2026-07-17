@@ -141,6 +141,7 @@ release path, so doc drift fails loudly — same pattern as the `check-*.py` sca
 | `docs/CONTEXT-PACKING.md` | Builder | Token-compression domain |
 | `docs/SYSTEM-INTERNALS.md` | Contributor | Kernel boot, loaders, event bus internals |
 | `docs/APP-SPECS.md` | Builder | Per-app spec sheets |
+| `docs/EOS-MARKDOWN-PROFILE.md` | Builder | Vault Markdown storage + rendering contract |
 | `docs/SOFT-SCHEMA.md` | Builder | VaultModel soft-typed frontmatter |
 | `docs/FRONTEND-DESIGN-LANGUAGE.md` | Builder | Visual + interaction DNA (read before touching a page) |
 | `docs/ENGINEERING-APP-WORKFLOW.md` | Builder | Algorithm-doc → KB → engine → calculator pipeline |

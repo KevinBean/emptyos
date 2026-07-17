@@ -23,7 +23,7 @@ from dataclasses import dataclass, field
 
 import httpx
 
-from embed import cosine
+from .embed import cosine
 
 # Hard cap on how many chars of corpus we'll stuff into the system prompt.
 # At ~4 chars/token, 32k chars ≈ 8k tokens — safe for prompt caching and

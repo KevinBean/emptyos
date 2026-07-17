@@ -41,6 +41,10 @@ def sniff(raw: bytes) -> str:
         return "ole"
     if raw[:5] == b"%PDF-":
         return "pdf"
+    # CNKI 知网 proprietary reader format (.caj). Common signatures: "CAJ", "HN",
+    # "KDH", "%PD" (a PDF-wrapped variant is caught by the %PDF- test above).
+    if raw[:3] in (b"CAJ", b"KDH") or raw[:2] == b"HN":
+        return "caj"
     return "text"
 
 
@@ -269,6 +273,9 @@ def extract(path: Path) -> tuple[str, str]:
         return kind, clean(from_ole(path, raw))
     if kind == "pdf":
         return kind, clean(from_pdf(path))
+    if kind == "caj":
+        sys.exit("CNKI .caj not supported — open in CAJViewer and 'export/print to "
+                 "PDF', then re-run on the PDF (or OCR the PDF via the ocr plugin)")
     for enc in ("utf-8", "gbk", "utf-16"):
         try:
             return "text", clean(raw.decode(enc))

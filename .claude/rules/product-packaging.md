@@ -83,18 +83,71 @@ the bundle ships all its JS.
 - **Secret tier is cross-platform for free** — the service runs server-side;
   the thinnest client is the browser itself.
 
+## The shared pipeline (`products/_shared/`) — built 2026-07-15 at product #2
+
+The graduation fired. A product is now **a `product.toml`**, not a codebase:
+
+```toml
+[product]
+id = "emptyos-desktop"
+tier = "standard"            # any release.toml tier — this is what makes it tier-agnostic
+exe_name = "EmptyOS"
+start_url = "/hub/"
+welcome_url = "/settings/pages/welcome.html"
+appdata_name = "EmptyOS"
+brand_dir = "brand/emptyos"
+[update]
+feed = "https://github.com/KevinBean/emptyos/releases/latest/download/latest-emptyos-desktop.json"
+```
+
+| Piece | Does |
+|---|---|
+| `launcher_core.py` | first-run config, daemon-as-subprocess, restart loop, window, log |
+| `tray.py` | tray in the **launcher** process, so it survives daemon restarts |
+| `updater.py` | versioned installs, checksummed download, `.ok` marker, prune |
+| `stub.py` / `stub.spec` | the exe the shortcut points at; picks the newest complete version |
+| `product.spec` | generic PyInstaller spec (any tier, any brand) |
+| `build_release.py` | zip + `latest.json` + `.sha256` |
+| `smoke.py` / `smoke_update.py` | boot the real artifact; drive a real update |
+
+`products/desktop-windows/` is the reference (full daemon, `standard` tier);
+`products/desktop-macos/` is its second consumer (runs from source, native
+webview). Reviving **Plekto** is now a `product.toml`, not a project.
+
+## Hard-won: a product only exists once you have run the artifact
+
+Every bug in the 2026-07-15 build was invisible to unit tests, `node --check`,
+and a green `pytest` — because none of them exist until the code is *frozen*:
+
+- **numpy/scipy extension DLLs deadlock** under the frozen loader lock once the
+  process has threads. The daemon hung forever inside `import numpy`, printing
+  nothing, exiting nothing. Only a py-spy dump of the wedged process showed it.
+  Fix: pin the BLAS thread pools (`OPENBLAS_NUM_THREADS=1`) *and* warm-import the
+  native stack single-threaded before the kernel starts (`WARM_IMPORTS`).
+- **`collect_submodules("emptyos")` → a 5.73 GB bundle** (torch 3.8 GB): it
+  imports *every* module, including optional ones, dragging their deps behind
+  them. Never collect the app package; it ships as source in the tier tree.
+- **stdin EOF is not a shutdown signal.** EOF is the normal state of a process
+  with no stdin, so a daemon that treats it as "stop" kills itself at boot.
+- **A PyInstaller `excludes` entry can break an engine** (`unittest` — inherited
+  from plekto.spec, where those engines weren't in the tier so it never showed).
+
+So: `smoke.py` runs in CI before any release. A build that boots is the only
+evidence that matters.
+
 ## Graduation triggers (rule 9 discipline)
 
-- **Product #2 wanted** → extract the shared plumbing (`launcher.py`, page
-  patcher, heartbeat, PyInstaller invocation) into `products/_shared/` or an
-  `eos product build <name>` command. Until then WriteDesk is the template to
-  copy.
 - **Product #3 with the same mini-server shape** → consider generating the
   server from the apps' `@web_route` surface (converges with
   `[provides.export]` machinery). Hand-written until then — two data points
   aren't a pattern.
 - **First sellable product** → that's when the Secret tier's licensing story
-  (keys, expiry, machine binding) gets designed. Not speculatively.
+  (keys, expiry, machine binding) gets designed. Not speculatively. The *seam*
+  exists today: a `product.license_key` setting the About panel writes, which a
+  secret verb would send to a Lane-1 service as a bearer token.
+- **Signing** → unsigned today; every release ships a `.sha256` and the docs tell
+  the user to check it. Azure Trusted Signing (~$10/mo, CI-friendly) when
+  distribution outgrows "verify the checksum".
 
 ## When NOT to make a product
 

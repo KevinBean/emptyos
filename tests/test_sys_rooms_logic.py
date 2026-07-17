@@ -565,6 +565,15 @@ class TestSuggestAgents:
 # ── _gate_server_actions (Phase 5) — needs filesystem + fake emit ──────
 
 
+class TestAlwaysGateVerbs:
+    def test_promote_apply_is_always_gated(self, RoomsApp):
+        # Applying a promote proposal can fire an outbound webhook, so it must
+        # always render a review card regardless of allowlist / grant.
+        from apps.rooms.pending import ALWAYS_GATE_VERBS
+
+        assert ("promote", "apply_proposal") in ALWAYS_GATE_VERBS
+
+
 class TestGateServerActions:
     @pytest.fixture
     def app(self, RoomsApp, tmp_path):

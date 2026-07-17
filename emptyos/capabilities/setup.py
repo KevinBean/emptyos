@@ -254,6 +254,10 @@ def build_capabilities(config: Config, settings=None, kernel=None) -> Capability
     # `click("#submit")` call in any meaningful way, so the capability simply
     # raises when no provider is wired — the app should detect that and skip.
     browse = BrowseCapability()
+    if kernel is not None:
+        from emptyos.capabilities.providers.browser import ChromeExtensionBrowseProvider
+
+        browse.add_provider(ChromeExtensionBrowseProvider(kernel), priority=50)
     registry.register("browse", browse)
 
     # --- Send (outbound message to a recipient) — channel providers added by

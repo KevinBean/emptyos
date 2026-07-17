@@ -3,8 +3,11 @@
 Two in-the-moment triggers (a watched screenshot folder; a hotkey/tray "live
 scrape" that grabs the screen + app/window/browser context) plus two passive
 evidence sources (AI-session trail, browser history) are correlated and drafted
-LOCALLY into worklog entries for batch review. Nothing touches the vault until
-Apply, which routes through ``worklog.log_work`` (propose→preview→confirm).
+into worklog entries for batch review. Drafting is pinned to a LOCAL model while
+the ``local_only`` setting is on (the default) — the payload is OCR of the screen
+plus a browser trail, so the cloud-first default chain is opt-in, never implicit.
+Nothing touches the vault until Apply, which routes through ``worklog.log_work``
+(propose→preview→confirm).
 
 macOS-first: OS primitives live in ``capture_mac.py`` (future plugin boundary).
 Queue + pipeline: ``store.py`` / ``digest.py`` / ``sources.py``. See INTENT.md.
@@ -123,9 +126,16 @@ class WorklogCaptureApp(BaseApp):
         drafted = [m for m in metas if m.get("status") == store.STATUS_DRAFTED]
         flagged = [self._card(m) for m in drafted if not m.get("evidence_only")]
         unflagged = [self._card(m) for m in drafted if m.get("evidence_only")]
+        # Failures are surfaced, not swallowed: an entry the model couldn't draft
+        # is still a capture the user took, and it must stay reachable (retry on
+        # the next digest, or dismiss) instead of vanishing from every view.
+        failed = [{**self._card(m), "error": m.get("error", ""),
+                   "attempts": m.get("attempts", 0)}
+                  for m in metas if m.get("status") == store.STATUS_ERROR]
         return {
             "flagged": flagged,
             "unflagged": unflagged,
+            "failed": failed,
             "counts": counts,
             "new": counts.get(store.STATUS_NEW, 0),
             "last_digest": digest._read_last_digest(self).isoformat()
@@ -226,11 +236,15 @@ class WorklogCaptureApp(BaseApp):
             ocr_backend = "ocr-plugin" if self.kernel.services.get_optional("ocr") else "none"
         from . import capture as cap
         last = digest._read_last_digest(self)
+        local_only = bool(self.cfg("local_only", True))
         return {
             "watch_dir": str(watch) if watch else "",
             "watch_dir_exists": bool(watch and watch.exists()),
             "ocr_backend": ocr_backend,
             "capture_backend": cap.BACKEND_NAME,
+            "local_only": local_only,
+            "think_backend": (str(self.cfg("local_provider", "ollama") or "ollama")
+                              if local_only else "default chain (may be cloud)"),
             "include_browser": bool(self.cfg("include_browser", True)),
             "include_selection": bool(self.cfg("include_selection", False)),
             "source_sessions": bool(self.cfg("source_sessions", True)),

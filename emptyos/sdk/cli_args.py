@@ -8,7 +8,61 @@ binding rules in one place so terminal and daemon dispatch behave the same.
 from __future__ import annotations
 
 import inspect
-from typing import Any
+import json
+from typing import Any, Iterable
+
+
+def resolve_cli_method(
+    cli_methods: Iterable[tuple[dict, Any]],
+    cmd_name: str,
+    args: list[str] | None,
+) -> tuple[Any | None, list[str]]:
+    """Resolve an ``eos <app> [sub] [args…]`` invocation to (method, remaining_args).
+
+    App CLI commands register the manifest command name as the top-level `eos`
+    subcommand, but a method may be decorated ``@cli_command("<sub>")`` with a
+    different name (the author's intended sub-verb, e.g. ``eos <cmd>
+    <sub>``). Resolution order:
+
+    1. **Default command** — a method whose name equals ``cmd_name`` (the
+       common case; the app has one command matching its manifest entry).
+    2. **Subcommand** — otherwise, if ``args[0]`` names a method, treat it as a
+       sub-verb and consume it, passing the rest as that method's args.
+    3. **Single-method fallback** — otherwise, if the app has exactly one CLI
+       method, use it (the author named the method differently, e.g.
+       ``cli_status``, but there is only one command it could mean). All args
+       pass through as that method's args.
+
+    Returns ``(None, args)`` when nothing matches (caller reports not-found).
+    """
+    pairs = [(meta["name"], m) for meta, m in cli_methods]
+    by_name = dict(pairs)
+    rest = list(args or [])
+    if cmd_name in by_name:
+        return by_name[cmd_name], rest
+    if rest and rest[0] in by_name:
+        return by_name[rest[0]], rest[1:]
+    if len(pairs) == 1:
+        return pairs[0][1], rest
+    return None, rest
+
+
+def render_cli_return(value: Any) -> str | None:
+    """Render a CLI command's *return value* for display, or None to show nothing.
+
+    The CLI harness captures printed stdout; a command that ``return``s a value
+    instead of printing would otherwise show nothing. Render it: ``str`` as-is,
+    ``dict``/``list`` as pretty JSON, ``None`` as nothing, anything else via
+    ``str()``. A command that already printed (non-empty stdout) keeps its own
+    output — the caller only renders the return when nothing was printed.
+    """
+    if value is None:
+        return None
+    if isinstance(value, str):
+        return value
+    if isinstance(value, (dict, list)):
+        return json.dumps(value, indent=2, ensure_ascii=False, default=str)
+    return str(value)
 
 
 def _annotation_name(annotation: Any) -> str:
@@ -25,6 +79,8 @@ def _coerce(value: Any, param: inspect.Parameter) -> Any:
     ann = _annotation_name(param.annotation)
     if ann in ("int", "builtins.int"):
         return int(value)
+    if ann in ("float", "builtins.float"):
+        return float(value)
     if ann in ("bool", "builtins.bool"):
         return value.lower() in ("true", "1", "yes", "on")
     return value

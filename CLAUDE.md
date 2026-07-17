@@ -174,7 +174,10 @@ D:\emptyos\
 │   ├── extension/          #   engineering/ … dev/ others/ labs/ — tracked, never public
 │   └── personal/           #   user apps + labs/ (gitignored)
 ├── plugins/                # auto-discovered, loaded before apps
-├── products/               # standalone exe builds sliced from apps (see .claude/rules/product-packaging.md)
+├── products/               # double-clickable builds: a slice of apps (writedesk) OR the whole
+│                           #   daemon (desktop-windows). One product = one product.toml naming a
+│                           #   release.toml tier; shared pipeline in products/_shared/.
+│                           #   See .claude/rules/product-packaging.md + docs/DESKTOP.md
 ├── engines/personal/       # User engines (gitignored)
 ├── data/                   # Runtime state
 ├── emptyos.toml            # Machine config (.gitignored)
@@ -372,7 +375,9 @@ Tags in frontmatter identify note types (`job-application`, `person`, `daily`, `
 
 Two access patterns coexist: **VaultIndex** (target — `vault_query`, `vault_update`) and **vault_config + file I/O** (legacy — `vault_config()` → `Path.glob()` → parse). Apps migrate when touched. Safe migration rule: only migrate an app when its notes have queryable frontmatter. Otherwise add tags first via a vault script — never silently return empty data.
 
-For vault operations and connection state, see `.claude/rules/vault-operator.md`.
+For the persisted syntax and renderer boundary, see
+`docs/EOS-MARKDOWN-PROFILE.md`. For vault operations and connection state, see
+`.claude/rules/vault-operator.md`.
 
 ## Deployment
 
@@ -560,6 +565,7 @@ For recent work, use `git log` and `10_Projects/emptyos/log/`. Don't maintain ch
 - `docs/FRONTEND-DESIGN-LANGUAGE.md` — visual + interaction DNA for every page
 - `docs/GETTING-STARTED.md` — public onboarding
 - `docs/DEFERRED-WORK.md` — registry of deferred features (build/deploy when X, with triggers + reference repos); add a row when deferring a substantive feature, grep it when a need arises
+- `docs/AGENT-FRAMEWORK.md` — the auto-agent assembly manual: a new autonomous agent (scheduled/event-driven/chat) is *config, not code* — pick one primitive per row (schedule/persona/verbs/gates/budgets/memory/comms/UI). The brand distribution engine is the worked example. Register every loop in `emptyos/sdk/loops.py`
 - `AGENTS.md` — non-Claude-Code AI self-config
 - `apps/public/standard/forge/FORGE.md` — Forge growth charter (read before adding a Target / Skill / Protocol method)
 - `emptyos.toml` — machine config (gitignored)

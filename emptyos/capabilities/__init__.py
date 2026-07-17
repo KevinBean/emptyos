@@ -233,6 +233,22 @@ class Capability:
             uniq.append(p)
         return uniq
 
+    def providers_for(
+        self,
+        domain: str | None = None,
+        task_shape: str | None = None,
+        bucket: str | None = None,
+    ) -> list[Provider]:
+        """Public: the resolved provider chain, in order, without probing health.
+
+        Use this to *inspect* which providers a call would try (e.g. to pick a
+        local-vs-cloud one). ``status()`` is the health-checked sibling — it
+        probes every provider across every domain, so it is the wrong tool on a
+        hot path. Neither replaces ``execute()``, which owns the actual routing,
+        consent, and middleware.
+        """
+        return self._get_providers(domain, task_shape, bucket)
+
     def _get_providers(
         self,
         domain: str | None = None,
@@ -448,6 +464,7 @@ class Capability:
         bucket: str | None = None,
         min_ability: str | None = None,
         prefer_provider: list[str] | str | None = None,
+        only_provider: str | None = None,
         **kwargs,
     ) -> Result:
         """Try each provider in order.
@@ -460,6 +477,10 @@ class Capability:
         meeting the bar are tried first (see ``_reorder_by_ability``). If the
         provider that ends up fulfilling the call is below the bar, the returned
         ``Result.under_powered`` is True so callers can flag degraded output.
+
+        ``only_provider`` is a hard boundary: exactly that named provider is
+        tried through the normal availability, consent, scan, and middleware
+        path. No other provider is used when it is absent, denied, or fails.
         """
         if self._simulate_offline():
             raise RuntimeError(
@@ -470,8 +491,11 @@ class Capability:
         providers = self._reorder_by_ability(
             self._get_providers(domain, task_shape, bucket), min_ability
         )
+        if only_provider:
+            providers = [p for p in providers if p.name == only_provider]
         if prefer_provider:
             providers = self._reorder_by_preference(providers, prefer_provider)
+        last_error: Exception | None = None
         for pass_num in (1, 2):
             for provider in providers:
                 if pass_num == 1 and provider.at_capacity:
@@ -501,14 +525,26 @@ class Capability:
                         under_powered=bool(min_ability)
                         and not meets(getattr(provider, "ability", "standard"), min_ability),
                     )
-                except Exception:
+                except Exception as exc:
+                    # Fall through to the next provider — but REMEMBER why this
+                    # one failed. Without this the terminal error below reports a
+                    # provider that ran and raised as a provider that never
+                    # existed, which sends the caller after the wrong fix
+                    # (e.g. "install playwright" when a live Chrome session
+                    # actually refused a screenshot for want of a permission).
+                    last_error = exc
                     continue
                 finally:
                     provider._current_load -= 1
 
-        chain_label = (
+        chain_label = only_provider or (
             bucket or (f"{domain}/{task_shape}" if domain and task_shape else domain) or "default"
         )
+        if last_error is not None:
+            raise RuntimeError(
+                f"Capability '{self.name}' failed (chain={chain_label}): "
+                f"{type(last_error).__name__}: {last_error}"
+            ) from last_error
         raise RuntimeError(
             f"No available provider for capability '{self.name}' (chain={chain_label})"
         )

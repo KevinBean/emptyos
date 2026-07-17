@@ -66,8 +66,8 @@ EXIT_FAIL = 1
 EXIT_CANNOT_RUN = 2
 
 # Never smoke-boot onto a port a real daemon may hold: :9000 main, :9001
-# dogfood sidecar, :9002+ sandbox-pool members.
-RESERVED_PORTS = frozenset(range(9000, 9010))
+# dogfood sidecar, :9002+ sandbox-pool members, :9100 external-lab host.
+RESERVED_PORTS = frozenset(range(9000, 9010)) | {9100}
 
 # Directories that never contain shippable source. Used by the snapshot walk;
 # in a working tree `git ls-files` already excludes them. `results/` holds
@@ -118,6 +118,10 @@ enabled = false
 
 # ...nor the dogfood :9001 sidecar — nested daemons fight for the port.
 [plugins.dogfood-demo]
+enabled = false
+
+# ...nor the :9100 external-lab host — a nested daemon must not spawn it.
+[plugins.external-lab-host]
 enabled = false
 
 # OS-level user-facing surfaces have no place in a headless throwaway daemon:

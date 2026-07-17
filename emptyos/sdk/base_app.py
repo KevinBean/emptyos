@@ -1103,12 +1103,13 @@ class BaseApp:
         return result.value
 
     async def browse(self, action: str, **kwargs) -> Any:
-        """Drive a headless browser. Returns provider-shaped dict per verb.
+        """Drive a browser. Returns provider-shaped dict per verb.
 
-        Verbs: navigate, click, fill, screenshot, snapshot, eval, wait_for,
-        close. Pass `context_id="..."` across calls to keep cookies + the
-        same page open between actions; omit for a one-shot using the
-        default context.
+        Common verbs include tab listing/navigation, click, fill, press,
+        select, scroll, screenshot, snapshot, wait_for, and close. The headless
+        provider also supports eval. Pass `context_id="..."` across headless
+        calls to keep cookies + the same page open between actions; use
+        `target="user-chrome"` only for an explicitly armed Browser Session.
 
         Examples:
             await self.browse("navigate", url="http://127.0.0.1:9001/")
@@ -1120,6 +1121,11 @@ class BaseApp:
         Raises RuntimeError if no `browse` provider is available — apps that
         treat browser automation as optional should catch and degrade.
         """
+        target = kwargs.pop("target", "")
+        if target:
+            if target != "user-chrome":
+                raise ValueError(f"unknown browse target: {target}")
+            kwargs["only_provider"] = "chrome-extension"
         result = await self.kernel.capability("browse").execute(action=action, **kwargs)
         return result.value
 
@@ -1458,6 +1464,50 @@ class BaseApp:
             return await BaseApp.read_json(request)
         except Exception:
             return {}
+
+    async def http_request(
+        self,
+        method: str,
+        url: str,
+        *,
+        headers: dict | None = None,
+        json_body: Any = None,
+        timeout: float = 15,
+    ) -> tuple[int, Any, str | None]:
+        """Low-level async HTTP for talking to a local sidecar / service / webhook.
+
+        Returns ``(status, body, error)`` and NEVER raises:
+          - ``status`` — the HTTP status, or ``0`` when the request itself failed
+            (connection refused, timeout, DNS).
+          - ``body`` — the response parsed as JSON when it parses, else the raw
+            text; ``None`` on a request-level failure.
+          - ``error`` — a short message when the request failed, else ``None``.
+
+        This owns only the aiohttp session + timeout + never-raise boilerplate that
+        several apps (chatbot-studio, promote, site-lab) were each hand-rolling.
+        Callers keep their own return contract (parse ``body``, build their shape).
+        Not a capability — this is plain HTTP to an operator-configured host, not a
+        modelled verb; for LLM/vault/search work use ``think``/``read``/``search``.
+        """
+        import aiohttp
+
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.request(
+                    method.upper(),
+                    url,
+                    json=json_body,
+                    headers=headers,
+                    timeout=aiohttp.ClientTimeout(total=timeout),
+                ) as resp:
+                    text = await resp.text()
+                    try:
+                        body: Any = json.loads(text) if text else None
+                    except (ValueError, TypeError):
+                        body = text
+                    return resp.status, body, None
+        except Exception as exc:
+            return 0, None, str(exc)[:200]
 
     async def search(self, query: str, **kwargs) -> list:
         """Ask the OS to search. Human remembers, or grep/search-engine finds.

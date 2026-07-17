@@ -56,6 +56,14 @@ export function findObject(doc, oid) {
   return null;
 }
 
+export function objectOwningFeature(doc, featureId) {
+  if (typeof featureId !== 'string' || !featureId) return null;
+  for (const obj of iterObjects(doc)) {
+    if (obj.feature_ids.includes(featureId)) return obj;
+  }
+  return null;
+}
+
 // ── The store ──
 
 export function createCadStore(initialDoc) {
@@ -99,6 +107,7 @@ export function createCadStore(initialDoc) {
     get viewport() { return state.viewport; },
     get dirty() { return state.dirty; },
     objectByOid(oid) { return findObject(state.doc, oid); },
+    objectOwningFeature(featureId) { return objectOwningFeature(state.doc, featureId); },
     objectsOfKind(kind) { return objectsOfKind(state.doc, kind); },
     iterObjects(opts) { return iterObjects(state.doc, opts); },
 

@@ -19,10 +19,18 @@ commands = ["settings"]
 prefix = "/settings"
 
 [provides.events]
-emits = ["settings:changed", "settings:network_changed", "system:restart_requested"]
+emits = [
+    "settings:changed",
+    "settings:network_changed",
+    "settings:vault_changed",
+    "system:restart_requested",
+]
 # Operator-action signals — restart is performed by the user, not a listener — no cross-app listener by design.
+# vault_changed is the same shape: the kernel reads the vault path at boot, so the
+# only thing that can act on it is the restart that follows.
 internal = [
     "settings:network_changed",
+    "settings:vault_changed",
     "system:restart_requested",
 ]
 

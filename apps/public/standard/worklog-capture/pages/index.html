@@ -54,6 +54,7 @@ body { margin: 0; font-family: system-ui, -apple-system, sans-serif;
 .wc-conf.high { color: var(--success, #3a3); }
 .wc-ocr { font-size: 11px; color: var(--text-muted); white-space: pre-wrap; max-height: 60px;
           overflow: hidden; border-left: 2px solid var(--border); padding-left: 8px; margin: 6px 0; }
+.wc-ocr.err { color: var(--danger); border-left-color: var(--danger); }
 .wc-actions { display: flex; gap: 6px; }
 .wc-empty { text-align: center; color: var(--text-muted); padding: 40px 12px; font-size: 13px; }
 @media (max-width: 640px) { .wc-fields { grid-template-columns: 1fr; } .wc-thumb { width: 96px; min-width: 96px; height: 64px; } }
@@ -63,6 +64,8 @@ body { margin: 0; font-family: system-ui, -apple-system, sans-serif;
 <div class="wc-wrap">
   <div class="wc-head">
     <h1>📸 Worklog Capture</h1>
+    <span id="model-pill"></span>
+    <button class="wc-btn" onclick="openAppSettings()" title="Settings">&#9881;</button>
   </div>
   <p class="wc-sub">Screenshot or hotkey now — review AI drafts into your worklog later. Cross-checked with your AI-session &amp; browser trail. Nothing is logged until you Apply.</p>
 
@@ -78,9 +81,10 @@ body { margin: 0; font-family: system-ui, -apple-system, sans-serif;
   <div id="queue"></div>
 </div>
 
+<script src="/static/eos.js"></script>
 <script src="/static/eos-components.js"></script>
 <script>
-var STATE = { flagged: [], unflagged: [], config: null };
+var STATE = { flagged: [], unflagged: [], failed: [], config: null };
 function esc(s){ return (s==null?'':String(s)).replace(/[&<>"]/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]; }); }
 function toast(m){ if(window.EOS_UI&&EOS_UI.toast) EOS_UI.toast(m); else console.log(m); }
 
@@ -96,9 +100,10 @@ async function load(){
   renderSetup(cfg);
   try { var pj = await jget('/worklog/api/projects'); PROJECTS = (pj.projects||[]).map(function(p){return p.name;}); } catch(e){ PROJECTS=[]; }
   var q = await jget('/worklog-capture/api/queue');
-  STATE.flagged = q.flagged||[]; STATE.unflagged = q.unflagged||[];
+  STATE.flagged = q.flagged||[]; STATE.unflagged = q.unflagged||[]; STATE.failed = q.failed||[];
   document.getElementById('status').textContent =
     (q.new? q.new+' new · ':'') + (STATE.flagged.length+STATE.unflagged.length)+' awaiting review'
+    + (STATE.failed.length? ' · '+STATE.failed.length+' failed':'')
     + (q.last_digest? ' · last '+q.last_digest.slice(11,16):'');
   render();
 }
@@ -117,16 +122,22 @@ function renderSetup(c){
   if(c.source_sessions) src.push('AI-session trail');
   if(c.source_browser) src.push('browser history');
   if(c.source_calendar) src.push('calendar');
-  el.innerHTML = wd + ' &nbsp;·&nbsp; ' + ocr + capb
+  var think = c.local_only
+    ? ' &nbsp;·&nbsp; <b>drafts on:</b> '+esc(c.think_backend)+' (local only)'
+    : ' &nbsp;·&nbsp; <b style="color:var(--danger)">local-only OFF</b> — screen OCR + browser trail may go to a cloud model';
+  el.innerHTML = wd + ' &nbsp;·&nbsp; ' + ocr + capb + think
     + (src.length? ' &nbsp;·&nbsp; <b>cross-check:</b> '+src.join(', ') : '')
     + (c.include_selection? ' &nbsp;·&nbsp; selection-capture ON':'');
 }
 
-function card(c, dim){
-  var d = c.draft||{};
-  var thumb = c.has_image
+function thumb(c){
+  return c.has_image
     ? '<img class="wc-thumb" src="/worklog-capture/api/thumb/'+escAttr(c.id)+'" onclick="zoom(' + escAttr(JSON.stringify(c.id)) + ')" alt="capture">'
     : '<div class="wc-thumb none">'+(c.evidence_only?'🧭':'—')+'</div>';
+}
+
+function card(c, dim){
+  var d = c.draft||{};
   var metaBits = [];
   if(c.app_name) metaBits.push(esc(c.app_name));
   if(c.window_title) metaBits.push(esc(c.window_title));
@@ -140,7 +151,7 @@ function card(c, dim){
   var statOpts = STATUSES.map(function(s){ return '<option'+(s===d.status?' selected':'')+'>'+s+'</option>'; }).join('');
   var ocr = c.ocr_excerpt? '<div class="wc-ocr">'+esc(c.ocr_excerpt)+'</div>' : '';
   return '<div class="wc-card'+(dim?' dim':'')+'" data-id="'+escAttr(c.id)+'">'
-    + thumb
+    + thumb(c)
     + '<div class="wc-body">'
     +   '<div class="wc-meta">'+metaBits.join(' · ')+'</div>'
     +   (chips? '<div class="wc-chips">'+chips+'</div>':'')
@@ -160,13 +171,30 @@ function card(c, dim){
     + '</div></div>';
 }
 
+function failedCard(c){
+  return '<div class="wc-card dim" data-id="'+escAttr(c.id)+'">'
+    + thumb(c)
+    + '<div class="wc-body">'
+    +   '<div class="wc-meta">'+esc(c.app_name||c.source||'capture')+' · '+esc((c.created||'').slice(11,16))+'</div>'
+    +   '<div class="wc-ocr err">Drafting failed ('+esc(c.attempts||0)+'×): '+esc(c.error||'unknown')+'</div>'
+    +   '<div class="wc-actions">'
+    +     '<button class="wc-btn" onclick="processNow()">Retry on next process</button>'
+    +     '<button class="wc-btn" onclick="dismiss(' + escAttr(JSON.stringify(c.id)) + ')">Dismiss</button>'
+    +   '</div>'
+    + '</div></div>';
+}
+
 function render(){
   var q = document.getElementById('queue');
-  if(!STATE.flagged.length && !STATE.unflagged.length){
+  if(!STATE.flagged.length && !STATE.unflagged.length && !STATE.failed.length){
     q.innerHTML = '<div class="wc-empty">Nothing to review. Take a screenshot into your inbox folder (or hit <b>Capture now</b>), then <b>Process now</b>.</div>';
     return;
   }
   var html = '';
+  if(STATE.failed.length){
+    html += '<div class="wc-sec-h">Drafting failed <span class="n">'+STATE.failed.length+' · retried automatically on the next process</span></div>';
+    html += STATE.failed.map(failedCard).join('');
+  }
   if(STATE.flagged.length){
     html += '<div class="wc-sec-h">Flagged captures <span class="n">'+STATE.flagged.length+'</span>'
          + ' <button class="wc-btn" style="margin-left:auto" onclick="applyAll()">Apply all flagged</button></div>';
@@ -216,6 +244,18 @@ function zoom(id){
   if(window.EOS_UI&&EOS_UI.modal) EOS_UI.modal({title:'Capture', body:'<img src="/worklog-capture/api/thumb/'+escAttr(id)+'" style="max-width:100%;border-radius:8px">'});
   else window.open('/worklog-capture/api/thumb/'+encodeURIComponent(id),'_blank');
 }
+
+// Drafting spends `think` on the user's own screen contents — the pill is how
+// they see (and pin) which model that is before hitting Process.
+if (window.EOS_UI && EOS_UI.modelPill) {
+  EOS_UI.modelPill({ app: 'worklog-capture', mount: '#model-pill', domain: 'text' });
+}
+var _appSettings = EOS_UI.settingsPanel({
+  id: 'wc-settings-panel',
+  title: 'Worklog Capture Settings',
+  app: 'worklog-capture',
+});
+function openAppSettings(){ _appSettings.open(); }
 
 load();
 </script>

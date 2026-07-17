@@ -4,7 +4,7 @@
 # Usage: python scripts/package-release.py <tier> [--check] [--platform=<name>]
 
 [release]
-version = "0.5.5"
+version = "0.5.6"
 
 # ── Platforms ─────────────────────────────────────────────────
 # Named deployment profiles. Plugins declare compatibility in
@@ -197,6 +197,8 @@ skills = [
     "dev-new-app",
     "dev-project-builder",
     "tool-pdf-reader",
+    "tool-chm-reader",
+    "tool-mdb-reader",
     "tool-word-document",
     "tool-google-maps",
     "tool-comfyui-image",
@@ -232,8 +234,10 @@ description = "Meta / developer tooling — extends standard with app-gen, bench
 extends = "standard"
 apps = [
     "app-builder",
+    "chatbot-studio",
     "app-gen",
     "architecture-map",
+    "devboard",
     "dogfood-agent",
     "eink-bridge",
     "feature-pipeline",
@@ -253,6 +257,7 @@ apps = [
     "repo",
     "run-center",
     "sandbox",
+    "site-lab",
     "skill",
     "tests",
     "tiers",
@@ -260,7 +265,7 @@ apps = [
     "trace-miner",
     "web-analytics",
 ]
-plugins = ["agent-runtime", "cadquery", "sandbox-pool"]
+plugins = ["agent-runtime", "cadquery", "sandbox-pool", "external-lab-host"]
 skills = []
 
 # ── Release targets ───────────────────────────────────────────
@@ -287,6 +292,23 @@ strip_branding = true
 include = "code"
 snapshot = "head"
 deploy = "vps:git-reset+rebuild (demo.binbian.net)"
+
+# EmptyOS Desktop — the double-clickable Windows program (products/desktop-windows/).
+# Not a repo snapshot like the targets above: the tier tree is frozen by
+# PyInstaller into an exe and shipped as a zip on GitHub Releases.
+#
+# Releases must land on the PUBLIC repo. Assets on a private repo are not
+# anonymously downloadable, and a pilot user has no token — so the update feed
+# would 404 for exactly the people it exists for.
+[targets.desktop]
+tier = "standard"
+repo = "KevinBean/emptyos"
+visibility = "public"
+strip_personal = true
+strip_branding = true
+include = "code"
+snapshot = "head"
+deploy = "github-releases (zip + latest-emptyos-desktop.json)"
 
 # ── Always included (platform layer) ─────────────────────────
 

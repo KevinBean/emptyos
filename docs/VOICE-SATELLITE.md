@@ -136,10 +136,14 @@ you confirm it).
 ## Firmware
 
 A complete, flashable **Arduino + M5Unified** sketch ships at
-`firmware/voice-satellite/` (`voice_satellite.ino` + `README.md` with the exact flash steps).
+`firmware/voice_satellite/` (`voice_satellite.ino` + `README.md` with the exact flash steps).
 It implements the contract above: Wi-Fi → button push-to-talk capture → WAV → POST
-`device_turn` (Bearer auth) → play `audio_urls` → persist `session`. The only board-specific
-caveat is the Echo Base **ES8311 codec** init — flagged in both files.
+`device_turn` (Bearer auth) → play `audio_urls` → persist `session`. The board-specific
+caveat is the AtomS3R + Echo Base **ES8311 codec** init — flagged in both files.
+
+The StickS3 variant lives at `firmware/stick_s3_voice/`. It uses the same daemon contract,
+but relies on M5Unified's native `M5.Mic` / `M5.Speaker` path for the StickS3's built-in
+ES8311 codec, MEMS mic, speaker, LCD, IMU, and battery instead of the Atomic Echo Base.
 
 Pseudocode of the same flow (for an ESP-IDF or alternate port):
 

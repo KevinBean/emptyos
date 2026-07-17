@@ -1,0 +1,156 @@
+# Build and release a desktop product (products/<id>/product.toml).
+#
+#   git tag v0.5.6-desktop && git push origin v0.5.6-desktop
+#   (or Actions -> Build product -> Run workflow)
+#
+# Releases are published to the **public** repo, not this one. Assets on a private
+# repo are not anonymously downloadable, and a pilot user has no token — the
+# update feed would 404 for exactly the people it exists for. That needs a
+# repo-scoped PAT in this repo's secrets as PUBLIC_REPO_TOKEN.
+#
+# The tag must match release.toml [release].version. That is the single source of
+# truth for the version — package-release.py stamps it into every artifact's
+# MANIFEST.json, and the product's About panel reads it back — so a tag that
+# disagrees with it would ship a build that misreports its own version and could
+# never be updated past.
+
+name: Build product
+
+on:
+  push:
+    tags:
+      - "v*-desktop"
+  workflow_dispatch:
+    inputs:
+      product:
+        description: "Product directory under products/"
+        required: false
+        default: "desktop-windows"
+      publish:
+        description: "Publish a GitHub Release (otherwise just build the artifact)"
+        type: boolean
+        required: false
+        default: false
+
+env:
+  PRODUCT: ${{ github.event.inputs.product || 'desktop-windows' }}
+  PUBLIC_REPO: KevinBean/emptyos
+
+jobs:
+  build:
+    name: Build ${{ github.event.inputs.product || 'desktop-windows' }}
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e .
+          python -m pip install "pyinstaller>=6.0" pillow pystray
+
+      - name: Read version + check it matches the tag
+        id: version
+        shell: bash
+        run: |
+          VERSION=$(python -c "import tomllib;print(tomllib.load(open('release.toml','rb'))['release']['version'])")
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=v$VERSION-desktop" >> "$GITHUB_OUTPUT"
+          if [ "${{ github.ref_type }}" = "tag" ]; then
+            EXPECTED="v$VERSION-desktop"
+            if [ "${{ github.ref_name }}" != "$EXPECTED" ]; then
+              echo "::error::tag ${{ github.ref_name }} does not match release.toml version ($EXPECTED). Bump release.toml, or retag."
+              exit 1
+            fi
+          fi
+          echo "building $VERSION"
+
+      # Resolves the product's tier and copies it to dist/emptyos-<tier>-<ver>/.
+      # Its check-personal / check-branding gates and the .gitignore filter are
+      # what keep a private working tree out of a public artifact.
+      - name: Package the tier
+        shell: bash
+        run: |
+          TIER=$(python -c "
+          import sys, tomllib
+          sys.path.insert(0, 'products')
+          from _shared.product_config import load_product
+          print(load_product('products/${{ env.PRODUCT }}/product.toml').tier)")
+          echo "tier=$TIER"
+          python scripts/package-release.py "$TIER" --platform=laptop
+
+      - name: Generate the Windows icon
+        shell: bash
+        run: |
+          BRAND=$(python -c "
+          import sys
+          sys.path.insert(0, 'products')
+          from _shared.product_config import load_product
+          print(load_product('products/${{ env.PRODUCT }}/product.toml').brand_dir)")
+          [ -n "$BRAND" ] && python scripts/make-windows-icon.py "$BRAND" || echo "no brand dir"
+
+      - name: Build the app
+        env:
+          EOS_PRODUCT: ${{ env.PRODUCT }}
+        run: pyinstaller products/_shared/product.spec --noconfirm --distpath dist/product --workpath build/product
+
+      - name: Build the stub
+        env:
+          EOS_PRODUCT: ${{ env.PRODUCT }}
+        run: pyinstaller products/_shared/stub.spec --noconfirm --distpath dist/stub --workpath build/stub
+
+      # Boots the artifact a user actually receives and asserts it serves. Every
+      # bug this has caught (a boot deadlock in numpy's DLL init, a daemon that
+      # killed itself at startup, two engines silently failing to load) was
+      # invisible to the unit tests, because none of them exist until it's frozen.
+      - name: Smoke-test the build
+        run: python products/_shared/smoke.py --product ${{ env.PRODUCT }}
+
+      - name: Assemble the release zip + latest.json
+        shell: bash
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          TAG="${{ steps.version.outputs.tag }}"
+          NAME=$(python -c "
+          import sys
+          sys.path.insert(0, 'products')
+          from _shared.product_config import load_product
+          print(load_product('products/${{ env.PRODUCT }}/product.toml').display_name.replace(' ', '-'))")
+          ZIP="$NAME-windows-x64-$VERSION.zip"
+          python products/_shared/build_release.py \
+            --product "${{ env.PRODUCT }}" \
+            --url "https://github.com/${{ env.PUBLIC_REPO }}/releases/download/$TAG/$ZIP" \
+            --notes-url "https://github.com/${{ env.PUBLIC_REPO }}/releases/tag/$TAG"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.PRODUCT }}-${{ steps.version.outputs.version }}
+          path: dist/release/*
+          if-no-files-found: error
+          retention-days: 14
+
+      # The zip and the feed go up together, or a user's update check finds a
+      # manifest pointing at a download that isn't there yet.
+      - name: Publish the GitHub Release (public repo)
+        if: github.ref_type == 'tag' || github.event.inputs.publish == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.PUBLIC_REPO_TOKEN }}
+        shell: bash
+        run: |
+          if [ -z "$GH_TOKEN" ]; then
+            echo "::error::PUBLIC_REPO_TOKEN is not set. Releases must go to the public repo — private-repo assets are not anonymously downloadable, so the update feed would 404 for every user."
+            exit 1
+          fi
+          TAG="${{ steps.version.outputs.tag }}"
+          gh release create "$TAG" \
+            --repo "${{ env.PUBLIC_REPO }}" \
+            --title "EmptyOS Desktop ${{ steps.version.outputs.version }}" \
+            --notes "Download the zip, unzip it anywhere, and run EmptyOS.exe. No installer, no admin rights. Verify with the .sha256 file; see docs/DESKTOP.md for the SmartScreen prompt." \
+            dist/release/*.zip \
+            dist/release/*.sha256 \
+            dist/release/latest-*.json

@@ -39,6 +39,10 @@ const STYLES = `
   .cadv-se .xyz { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 5px; }
   .cadv-se .row { display: flex; gap: 6px; margin-top: 10px; }
   .cadv-se .row .eos-tool-btn { flex: 1; }
+  .cadv-se .check-row { padding: 4px 6px; margin: 3px 0; border-left: 3px solid var(--border); background: var(--panel); }
+  .cadv-se .check-row.pass { border-left-color: var(--success, #3fb950); }
+  .cadv-se .check-row.fail { border-left-color: var(--danger, #f85149); }
+  .cadv-se .check-row.review { border-left-color: var(--warning, #d29922); }
 `;
 
 const FORMATIONS = ['auto', 'trefoil', 'flat', 'flat_spaced', 'bundle', 'triplex'];
@@ -56,7 +60,9 @@ const MARKUP = `<div class="cadv-se">
   <div class="sec">Placed <span data-se-count class="muted"></span></div><div data-se-roster></div>
   <div class="sec">Selected</div><div data-se-insp></div>
   <div data-se-ai></div>
-  <div class="sec">Cables</div><div data-se-cableform></div><div data-se-cablelist></div>
+  <div class="sec">Engineering inputs</div><div data-se-enginputs></div>
+  <div class="sec">Connections</div><div data-se-cableform></div><div data-se-cablelist></div>
+  <div class="sec">Checks & deliverables</div><div data-se-checks></div>
 </div>`;
 
 function vColor(kv) {
@@ -207,29 +213,65 @@ function renderCables(vctx, st) {
   const optC = Object.keys(st.cableTypes).map((k) => '<option value="' + escAttr(k) + '">' + esc(st.cableTypes[k].label || k) + '</option>').join('');
   const optF = FORMATIONS.map((f) => '<option value="' + f + '">' + f + '</option>').join('');
   form.innerHTML = insts.length < 2
-    ? '<div class="muted">Add ≥2 equipment items to route a cable.</div>'
+    ? '<div class="muted">Add at least two equipment items to make a connection.</div>'
     : '<label>From</label><select class="eos-tool-field" data-se-cfrom>' + optI + '</select>'
       + '<label>To</label><select class="eos-tool-field" data-se-cto>' + optI + '</select>'
+      + '<label>Kind</label><select class="eos-tool-field" data-se-ckind><option value="cable">Cable</option><option value="rigid_busbar">Rigid busbar</option><option value="flexible_conductor">Flexible conductor</option></select>'
       + '<label>Cable type</label><select class="eos-tool-field" data-se-ctype>' + optC + '</select>'
       + '<label>Formation</label><select class="eos-tool-field" data-se-cfmt>' + optF + '</select>'
-      + '<div class="row"><button class="eos-tool-btn" data-se-caddbtn title="Add cable">+ Cable</button></div>';
+      + '<div class="xyz"><div><label>Voltage kV</label><input class="eos-tool-field" data-se-ckv value="132"></div><div><label>Spacing m</label><input class="eos-tool-field" data-se-cspacing value="2.5"></div><div><label>Elevation m</label><input class="eos-tool-field" data-se-celev value="4"></div></div>'
+      + '<label>Manual Isc kA (blank = linked Power Study)</label><input class="eos-tool-field" data-se-cisc value="">'
+      + '<div class="row"><button class="eos-tool-btn" data-se-caddbtn title="Add connection">+ Connection</button></div>';
   const addBtn = form.querySelector('[data-se-caddbtn]');
   if (addBtn) addBtn.addEventListener('click', () => addCable(vctx, st));
-  const cables = (st.scene && st.scene.cables) || [];
+  const cables = (st.scene && st.scene.connections) || ((st.scene && st.scene.cables) || []).map((c) => ({ ...c, kind:'cable' }));
   list.innerHTML = '';
   cables.forEach((c) => {
     const row = document.createElement('div'); row.className = 'eq-row';
     const lbl = document.createElement('span'); lbl.className = 'nm';
-    lbl.textContent = c.from_instance + ' → ' + c.to_instance + '  · ' + cableLen(st, c) + ' m';
-    const del = document.createElement('button'); del.className = 'se-del eos-tool-icon-btn'; del.textContent = '✕'; del.title = 'Delete cable';
+    lbl.textContent = (c.kind || 'cable').replaceAll('_', ' ') + ': ' + c.from_instance + ' to ' + c.to_instance + ' / ' + cableLen(st, c) + ' m';
+    const del = document.createElement('button'); del.className = 'se-del eos-tool-icon-btn'; del.textContent = 'x'; del.title = 'Delete connection';
     del.addEventListener('click', () => deleteCable(vctx, st, c.id));
     row.append(lbl, del);
     list.appendChild(row);
   });
 }
 
+function renderEngineeringInputs(vctx, st) {
+  const el = vctx.pane.querySelector('[data-se-enginputs]'); if (!el) return;
+  const scene = st.scene || {}, settings = scene.settings || {};
+  const scenario = (settings.fire_scenarios || [])[0] || {};
+  const sources = (scene.instances || []).filter((i) => i.type === 'transformer' || i.type === 'station_service_transformer');
+  const options = sources.map((i) => '<option value="' + escAttr(i.id) + '"' + (i.id === scenario.source_instance ? ' selected' : '') + '>' + esc(i.label || i.id) + '</option>').join('');
+  el.innerHTML = sources.length ? '<label>Oil-fire source</label><select class="eos-tool-field" data-se-fsource>' + options + '</select>'
+    + '<div class="xyz"><div><label>HRR MW</label><input class="eos-tool-field" data-se-fhrr value="' + escAttr((scenario.hrr_kw || 10000) / 1000) + '"></div><div><label>Fire area m2</label><input class="eos-tool-field" data-se-farea value="' + escAttr(scenario.fire_area_m2 || 4) + '"></div><div><label>Altitude m</label><input class="eos-tool-field" data-se-alt value="' + escAttr(settings.altitude_m || 0) + '"></div></div>'
+    + '<div class="row"><button class="eos-tool-btn" data-se-engapply>Apply inputs</button></div>'
+    : '<div class="muted">Add a transformer to configure a heat-flux scenario.</div>';
+  const apply = el.querySelector('[data-se-engapply]'); if (apply) apply.addEventListener('click', () => applyEngineeringInputs(vctx, st));
+}
+
+function renderChecks(vctx, st) {
+  const el = vctx.pane.querySelector('[data-se-checks]'); if (!el) return;
+  const checks = (st.scene && st.scene.checks) || { status:'not-run', results:[] };
+  const drawingOn = !!(st.features && st.features.drawing_generation);
+  el.innerHTML = '<div class="muted">Status: ' + esc(checks.status || 'not-run') + (checks.input_hash ? ' / ' + esc(checks.input_hash) : '') + '</div>'
+    + '<div class="row"><button class="eos-tool-btn" data-se-runchecks>Run all checks</button><button class="eos-tool-btn" data-se-drawing' + (drawingOn ? '' : ' disabled') + ' title="' + (drawingOn ? 'Generate coordinated plan/elevation' : 'Dark feature: enable drawing generation in app config') + '">Drawing</button></div>'
+    + '<div class="row"><button class="eos-tool-btn" data-se-deliverables' + (drawingOn ? '' : ' disabled') + '>PDF + DXF report</button></div><div data-se-checkrows></div>';
+  el.querySelector('[data-se-runchecks]').addEventListener('click', () => runChecks(vctx, st));
+  const drawing = el.querySelector('[data-se-drawing]'); if (drawing && drawingOn) drawing.addEventListener('click', () => generateDrawing(vctx, st, false));
+  const deliverables = el.querySelector('[data-se-deliverables]'); if (deliverables && drawingOn) deliverables.addEventListener('click', () => generateDeliverables(vctx, st, false));
+  const rows = el.querySelector('[data-se-checkrows]');
+  (checks.results || []).slice(0, 20).forEach((r) => {
+    const div = document.createElement('div');
+    const verdict = r.passes === true ? 'pass' : (r.passes === false ? 'fail' : 'review');
+    div.className = 'check-row ' + verdict;
+    div.textContent = verdict.toUpperCase() + ' ' + (r.family || 'check') + ': ' + (r.connection || r.target || r.a || r.error || '');
+    rows.appendChild(div);
+  });
+}
+
 function renderAll(vctx, st) {
-  renderPalette(vctx, st); renderRoster(vctx, st); renderInspector(vctx, st); renderCables(vctx, st);
+  renderPalette(vctx, st); renderRoster(vctx, st); renderInspector(vctx, st); renderEngineeringInputs(vctx, st); renderCables(vctx, st); renderChecks(vctx, st);
   if (st.aiPanel) st.aiPanel.refresh();
 }
 
@@ -288,20 +330,68 @@ async function addCable(vctx, st) {
   const id = sceneId();
   const fr = vctx.pane.querySelector('[data-se-cfrom]').value, to = vctx.pane.querySelector('[data-se-cto]').value;
   if (fr === to) { if (vctx.setStatus) vctx.setStatus('Pick two different items', true); return; }
-  const r = await api('POST', PREFIX + '/scenes/' + encodeURIComponent(id) + '/cables', {
-    from_instance: fr, to_instance: to,
+  const kind = vctx.pane.querySelector('[data-se-ckind]').value;
+  const isc = parseFloat(vctx.pane.querySelector('[data-se-cisc]').value);
+  const payload = { kind, from_instance: fr, to_instance: to,
     cable_type: vctx.pane.querySelector('[data-se-ctype]').value,
-    formation: vctx.pane.querySelector('[data-se-cfmt]').value });
-  if (!r || !r.ok) { if (vctx.setStatus) vctx.setStatus('Add cable failed: ' + ((r && r.error) || '?'), true); return; }
+    formation: vctx.pane.querySelector('[data-se-cfmt]').value,
+    voltage_kv: parseFloat(vctx.pane.querySelector('[data-se-ckv]').value),
+    phase_spacing_m: parseFloat(vctx.pane.querySelector('[data-se-cspacing]').value),
+    elevation_m: parseFloat(vctx.pane.querySelector('[data-se-celev]').value) };
+  if (!isNaN(isc) && isc > 0) payload.fault_override = { isc_3ph_ka: isc };
+  const r = await api('POST', PREFIX + '/scenes/' + encodeURIComponent(id) + '/connections', payload);
+  if (!r || !r.ok) { if (vctx.setStatus) vctx.setStatus('Add connection failed: ' + ((r && r.error) || '?'), true); return; }
   st.scene = r.scene; await reloadCaddoc(vctx, st); renderAll(vctx, st);
-  if (vctx.setStatus) vctx.setStatus('Cable added (' + ((r.cable && r.cable.length_m) || '?') + ' m)');
+  if (vctx.setStatus) vctx.setStatus('Connection added');
 }
 
 async function deleteCable(vctx, st, cid) {
   const id = sceneId();
-  const r = await api('DELETE', PREFIX + '/scenes/' + encodeURIComponent(id) + '/cables/' + encodeURIComponent(cid));
-  if (!r || !r.ok) { if (vctx.setStatus) vctx.setStatus('Delete cable failed', true); return; }
+  const r = await api('DELETE', PREFIX + '/scenes/' + encodeURIComponent(id) + '/connections/' + encodeURIComponent(cid));
+  if (!r || !r.ok) { if (vctx.setStatus) vctx.setStatus('Delete connection failed', true); return; }
   st.scene = r.scene; await reloadCaddoc(vctx, st); renderAll(vctx, st);
+}
+
+async function applyEngineeringInputs(vctx, st) {
+  if (!st.scene) return;
+  const source = vctx.pane.querySelector('[data-se-fsource]').value;
+  const hrrMw = parseFloat(vctx.pane.querySelector('[data-se-fhrr]').value);
+  const area = parseFloat(vctx.pane.querySelector('[data-se-farea]').value);
+  const altitude = parseFloat(vctx.pane.querySelector('[data-se-alt]').value);
+  if (!(hrrMw > 0) || !(area > 0) || isNaN(altitude)) { if (vctx.setStatus) vctx.setStatus('Engineering inputs must be numeric and positive', true); return; }
+  st.scene.settings = { ...(st.scene.settings || {}), altitude_m: altitude,
+    fire_scenarios: [{ source_instance: source, hrr_kw: hrrMw * 1000, fire_area_m2: area }] };
+  const r = await api('PUT', PREFIX + '/scenes/' + encodeURIComponent(sceneId()), { scene: st.scene });
+  if (!r || !r.ok) { if (vctx.setStatus) vctx.setStatus('Save inputs failed', true); return; }
+  st.scene = r.scene; await reloadCaddoc(vctx, st); renderAll(vctx, st);
+  if (vctx.setStatus) vctx.setStatus('Engineering inputs saved; checks are stale');
+}
+
+async function runChecks(vctx, st) {
+  const r = await api('POST', PREFIX + '/scenes/' + encodeURIComponent(sceneId()) + '/checks/run', {});
+  if (!r || !r.ok) { if (vctx.setStatus) vctx.setStatus('Checks failed: ' + ((r && r.error) || '?'), true); return; }
+  st.scene.checks = r.checks; await reloadCaddoc(vctx, st); renderAll(vctx, st);
+  if (vctx.setStatus) vctx.setStatus('Checks complete: ' + r.checks.status);
+}
+
+async function generateDrawing(vctx, st, confirm) {
+  const r = await api('POST', PREFIX + '/scenes/' + encodeURIComponent(sceneId()) + '/drawing/generate', { confirm_regenerate: !!confirm });
+  if (r && r.regeneration_required && !confirm && window.EOS_UI && EOS_UI.confirm) {
+    const yes = await EOS_UI.confirm({ message:'Regenerate and replace the existing coordinated drawing?', action:'Regenerate', danger:true });
+    if (yes) return generateDrawing(vctx, st, true);
+  }
+  if (!r || !r.ok) { if (vctx.setStatus) vctx.setStatus('Drawing failed: ' + ((r && r.error) || '?'), true); return; }
+  if (vctx.setStatus) vctx.setStatus('Drawing generated: ' + r.draft_id);
+}
+
+async function generateDeliverables(vctx, st, confirm) {
+  const r = await api('POST', PREFIX + '/scenes/' + encodeURIComponent(sceneId()) + '/deliverables', { confirm_regenerate: !!confirm });
+  if (r && r.regeneration_required && !confirm && window.EOS_UI && EOS_UI.confirm) {
+    const yes = await EOS_UI.confirm({ message:'Regenerate the drawing before creating PDF and DXF?', action:'Generate', danger:true });
+    if (yes) return generateDeliverables(vctx, st, true);
+  }
+  if (!r || !r.ok) { if (vctx.setStatus) vctx.setStatus('Report failed: ' + ((r && r.error) || '?'), true); return; }
+  if (vctx.setStatus) vctx.setStatus('Deliverables created: PDF + DXF');
 }
 
 async function addEquipment(vctx, st, type) {
@@ -371,14 +461,16 @@ async function importNetwork(vctx, st) {
 
 async function boot(vctx, st) {
   const id = sceneId();
-  const [tpl, ct, nd] = await Promise.all([
+  const [tpl, ct, nd, ft] = await Promise.all([
     api('GET', PREFIX + '/templates').catch(() => ({})),
     api('GET', PREFIX + '/cable-types').catch(() => ({})),
     api('GET', PREFIX + '/electrical-nodes').catch(() => ({})),
+    api('GET', PREFIX + '/features').catch(() => ({})),
   ]);
   st.templates = (tpl && tpl.templates) || {};
   st.cableTypes = (ct && ct.cable_types) || {};
   st.nodes = (nd && nd.studies) || [];
+  st.features = (ft && ft.features) || {};
   if (id) {
     try { const sc = await api('GET', PREFIX + '/scenes/' + encodeURIComponent(id)); st.scene = (sc && sc.scene) || null; } catch (e) { st.scene = null; }
   }
@@ -396,7 +488,7 @@ const _v = defineView({
   id: 'scene-editor', styles: STYLES, markup: MARKUP,
   events: ['select'],
   mount(vctx) {
-    vctx._seState = { templates: {}, cableTypes: {}, nodes: [], scene: null, selected: null, aiPanel: null };
+    vctx._seState = { templates: {}, cableTypes: {}, nodes: [], features: {}, scene: null, selected: null, aiPanel: null };
     mountAiPanel(vctx, vctx._seState);
     boot(vctx, vctx._seState);
     // mirror viewport selection into the roster

@@ -147,6 +147,61 @@ Also opportunistically catch the cheap breakage classes while you're there: a
 visible JS error, a button that 404s, a dead dropdown (route returns nothing) —
 log those as `fail` with the detail.
 
+### Step 3.5 — Failure context bundle: replay GIF + console + network for `fail` / `confusing` steps
+
+A still can't show *how* a flow went wrong — the click that did nothing, the
+state that flashed and vanished, the result that never arrived. And a finding
+without its console/network context makes the fixer re-reproduce what the walk
+already saw. So when a step lands `fail` or `confusing` (and it reproduces —
+triage first, Step 4), attach the same context bundle a good bug-report tool
+(jam.dev shape) auto-collects: **replay clip + console errors + failed
+requests**, all fields the report renders inline.
+
+**Console + network (do this for every `fail` — it's two free tool calls):**
+
+- `browser_console_messages` (filter to errors/warnings — use the `pattern`
+  param or pick out `error` lines) → steplog `"console": ["..."]`.
+- `browser_network_requests` → keep only failed/4xx/5xx entries →
+  `"network": ["GET /task/api/list -> 500"]`.
+- Both render as collapsible blocks under the step note, so the person (or
+  fix-agent) reading the report starts from the error, not from scratch.
+
+**Timing (evidence for `slow`):** when a verdict is `slow`, put the measured
+wait in the steplog as `"ms": 4200` (from your `browser_wait_for` bound or the
+gap you observed) — the report shows it as a chip. A `slow` with a number is a
+perf thread; a `slow` without one is a vibe.
+
+**Replay GIF (for flows where motion is the evidence):**
+
+- **Claude-in-Chrome backend** — use the native `gif_creator` tool: capture
+  extra frames before/after each action while re-driving the flow, save with a
+  meaningful filename (`uc1-fail.gif`) into the run folder.
+- **Playwright MCP backend** (no gif tool) — re-drive the failing flow taking a
+  **frame burst**: one `browser_take_screenshot` after each action, ordered
+  filenames `uc1-f01.png`, `uc1-f02.png`, …. Then stitch:
+
+  ```bash
+  python scripts/ui_walk_gif.py --out data/ui-walk/usecases/<run>/uc1-fail.gif \
+    data/ui-walk/usecases/<run>/uc1-f01.png data/ui-walk/usecases/<run>/uc1-f02.png ...
+  ```
+
+  (Downscales to ≤800px wide, ~0.9s/frame, holds the end state; caps at 12
+  frames. Fail-soft — if Pillow is missing it says so and the still remains
+  the evidence.)
+
+Add the clip to that step's `steplog.jsonl` record as `"gif": "<path>"` — the
+report renders it under the still with a ▶ replay label, autoplaying.
+
+**Discipline (CI-style retain-on-failure):** capture the bundle ONLY for
+`fail` / `confusing` verdicts — a healthy walk records zero clips and zero
+context blocks. Keep a clip to one flow (≤12 frames), not the whole walk.
+Don't blanket-record video: recording is cheap, but artifacts nobody reviews
+are pure litter, and the stills remain the skim layer the report is built on.
+If the friction is *timing* (a `slow` step), a GIF adds nothing — the `ms`
+chip + note is the evidence. Heavier replay media (rrweb DOM-event replay,
+Playwright traces) are deliberately deferred — see `docs/DEFERRED-WORK.md` —
+because they belong to the scripted pytest layer, not this hand-walk.
+
 ## Step 4 — Triage (false-positive discipline — `.claude/rules/audits.md`)
 
 Before calling anything a `fail`:
@@ -171,10 +226,11 @@ python scripts/ui_walk_report.py \
   --title "EmptyOS UI walk — <date>" --persona Kevin
 ```
 
-It groups by use case (worst-first), base64-embeds every screenshot into one
-self-contained file, badges each step, and rolls up pass/slow/confusing/fail
-counts. Output is under `data/` (gitignored) — an artifact to **show the user**,
-not committed. A missing screenshot renders a placeholder, never a crash.
+It groups by use case (worst-first), base64-embeds every screenshot **and any
+`gif` replay clips** into one self-contained file, badges each step, and rolls
+up pass/slow/confusing/fail counts. Output is under `data/` (gitignored) — an
+artifact to **show the user**, not committed. A missing screenshot or GIF
+renders a placeholder, never a crash.
 
 ## Step 6 — Fix only a clear, root-caused bug (optional)
 
@@ -215,6 +271,7 @@ Otherwise the next iteration rotates to fresh use cases.
 ## Cross-references
 
 - `scripts/ui_walk_report.py` — the use-case step-log → HTML renderer (this skill's artifact half).
+- `scripts/ui_walk_gif.py` — frame-burst → replay-GIF assembler for the GIF-on-failure step (Playwright backend; claude-in-chrome uses its native `gif_creator`).
 - `scripts/_eos_browser.py` — auth/token + base-URL resolution shared by the walkers.
 - `scripts/check-js-errors.py` / `scripts/check-clickable.py` — the optional crude-breakage pre-pass.
 - `scripts/ui_walk_audit.py` — the older *per-app* screenshot walk (one shot per app); complementary, not this.

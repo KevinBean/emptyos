@@ -18,6 +18,7 @@ Anti-abuse layers (in order):
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import hashlib
 import json
 import logging
@@ -25,8 +26,16 @@ import os
 from pathlib import Path
 from typing import Any
 
-from config import SYNCED_FIELDS, Config, load_config, write_config_atomic
-from corpus import (
+from .config import STUDIO_FIELDS, SYNCED_FIELDS, Config, SiteConfig, load_config, write_config_atomic
+from .commerce import (
+    cart_summary_reply,
+    commerce_reply,
+    demo_printer_products,
+    ensure_catalog_feed,
+    load_catalog,
+    save_catalog,
+)
+from .corpus import (
     CorpusCache,
     match_curated,
     match_curated_by_embedding,
@@ -35,18 +44,21 @@ from corpus import (
     select_chunks_by_embedding,
     stuff_corpus,
 )
-from embed import (
+from .crawler import build_corpus, invalidate_corpus
+from .embed import (
     BM25,
     Embedder,
     _tokens as _bm25_tokens,
     build_retrieval_query,
     chunk_text_for_embedding,
 )
-from fastapi import FastAPI, Header, HTTPException, Request
-from fastapi.responses import JSONResponse, StreamingResponse
-from ledger import Ledger, hash_ip
-from providers import get_provider
+from fastapi import FastAPI, Header, HTTPException, Request, Response
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, StreamingResponse
+from .ledger import Ledger, hash_ip
+from .providers import get_provider
 from pydantic import BaseModel, Field
+from .security import validate_public_url
+from .site_secrets import SiteSecrets
 
 log = logging.getLogger("chatbot")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
@@ -72,17 +84,25 @@ class ChatReply(BaseModel):
     tokens_used: int
     cost_usd: float
     remaining_today_usd: float
-    source: str  # "faq" | "model" | "cached"
+    source: str  # "faq" | "model" | "cached" | "commerce" | "lead" | "low-confidence"
+    blocks: list[dict] = Field(default_factory=list)
+
+
+class CommerceActionBody(BaseModel):
+    site_id: str
+    session_id: str = ""
+    action: str
+    idempotency_key: str
+    args: dict = Field(default_factory=dict)
 
 
 # ── App + globals ──────────────────────────────────────────────────
-
-app = FastAPI(title="EmptyOS Chatbot Service", version="0.1.0")
 
 CONFIG: Config | None = None
 CORPUS: CorpusCache | None = None
 LEDGER: Ledger | None = None
 EMBEDDER: Embedder | None = None
+SECRETS: SiteSecrets | None = None
 ADMIN_TOKEN = os.environ.get("CHATBOT_ADMIN_TOKEN", "")
 
 # Per-site retrieval cache. Rebuilt lazily on first use after corpus refresh,
@@ -91,21 +111,48 @@ ADMIN_TOKEN = os.environ.get("CHATBOT_ADMIN_TOKEN", "")
 _RETRIEVAL: dict[str, dict] = {}
 
 
-@app.on_event("startup")
-async def _startup() -> None:
-    global CONFIG, CORPUS, LEDGER, EMBEDDER
+async def chatbot_init() -> None:
+    """Load config, corpus cache, ledger, embedder, secrets into module globals.
+
+    Exported so a host that MOUNTS this app (the External Lab Host) can drive the
+    startup explicitly — Starlette does not propagate lifespan to mounted sub-apps.
+    Idempotent: safe to call twice (re-reads config).
+    """
+    global CONFIG, CORPUS, LEDGER, EMBEDDER, SECRETS
     CONFIG = load_config()
     CORPUS = CorpusCache(ttl_seconds=CONFIG.defaults.corpus_ttl_seconds)
     LEDGER = Ledger()
     # Embedding cache lives next to the SQLite ledger so Docker volume covers both.
     cache_path = Path(os.environ.get("CHATBOT_DATA_DIR", "./data")) / "embeddings.json"
     EMBEDDER = Embedder(cache_path=cache_path)
+    SECRETS = SiteSecrets()
     log.info(
         "loaded %d sites: %s | embeddings: %s",
         len(CONFIG.sites),
         list(CONFIG.sites.keys()),
         "on" if EMBEDDER.available else "off (no OPENAI_API_KEY — falling back to BM25)",
     )
+
+
+async def chatbot_shutdown() -> None:
+    """Tear down module globals. Ledger opens SQLite per-op (nothing long-lived to
+    close), so this just drops references; kept explicit + exported for symmetry so
+    a mounting host can drive shutdown."""
+    global CONFIG, CORPUS, LEDGER, EMBEDDER, SECRETS, _RETRIEVAL
+    CONFIG = CORPUS = LEDGER = EMBEDDER = SECRETS = None
+    _RETRIEVAL = {}
+
+
+@contextlib.asynccontextmanager
+async def lifespan(_app: FastAPI):
+    await chatbot_init()
+    try:
+        yield
+    finally:
+        await chatbot_shutdown()
+
+
+app = FastAPI(title="EmptyOS Chatbot Service", version="0.1.0", lifespan=lifespan)
 
 
 # ── Helpers ────────────────────────────────────────────────────────
@@ -133,11 +180,24 @@ CONTEXT:
 {corpus}
 """
 
+# Appended to the persona when a site declares avoid_topics — the prompt half
+# of the two-lever deprecation contract (the other is `corpus: false`).
+AVOID_TOPICS_CLAUSE = (
+    "\n\nThe following products or pages are retired or unavailable — never "
+    "recommend them; if asked, say they are no longer offered: {topics}"
+)
+
 
 def _build_system_prompt(
     site, corpus_payload: dict, selected_chunks: list[dict] | None = None
 ) -> str:
     persona = site.persona.strip() or f"You are a helpful guide to {site.name}."
+    # Second deprecation lever (pairs with `corpus: false` in publish): a
+    # retired page may stay live for SEO and still be crawlable, so the prompt
+    # must exclude it too. Empty list = byte-identical prompt.
+    avoid = [t.strip() for t in getattr(site, "avoid_topics", []) or [] if t.strip()]
+    if avoid:
+        persona += AVOID_TOPICS_CLAUSE.format(topics="; ".join(avoid))
     corpus_text = stuff_corpus(corpus_payload, selected_chunks=selected_chunks)
     return SYSTEM_TEMPLATE.format(
         persona=persona,
@@ -145,6 +205,52 @@ def _build_system_prompt(
         marker=SOURCES_MARKER,
         corpus=corpus_text or "(no published content yet)",
     )
+
+
+# ── Lead capture (content sites) ────────────────────────────────────
+# The unattended equivalent of human handover: collect name/email/enquiry via
+# a typed form (details go to the team, never the model) and answer by email
+# later. Deterministic, free, and the business-critical outcome is never left
+# to generation. Commerce sites keep their own handoff.create branch, which
+# runs first.
+
+LEAD_INTENT_TERMS = (
+    "talk to a human", "speak to a human", "talk to someone", "speak to someone",
+    "real person", "human", "helpdesk", "customer support", "support team",
+    "sales team", "get in touch", "contact you", "contact the team", "reach out",
+    "leave my details", "leave a message", "email me back", "call me back",
+)
+
+
+def _lead_form_reply(site) -> dict:
+    return {
+        "reply": (
+            f"I can pass your details to the {site.name} team and they'll get back "
+            "to you by email. Your contact details go directly to the team, not "
+            "the language model."
+        ),
+        "blocks": [
+            {
+                "type": "secure_action_form",
+                "action": "lead.create",
+                "title": "Leave your details",
+                "fields": [
+                    {"name": "name", "label": "Name", "type": "text"},
+                    {"name": "email", "label": "Email", "type": "email"},
+                    {"name": "message", "label": "What would you like to ask?", "type": "text"},
+                ],
+            }
+        ],
+    }
+
+
+def _match_lead_intent(site, message: str) -> dict | None:
+    if not getattr(site, "lead_capture_enabled", False):
+        return None
+    q = message.lower()
+    if any(term in q for term in LEAD_INTENT_TERMS):
+        return _lead_form_reply(site)
+    return None
 
 
 # ── Retrieval pipeline ──────────────────────────────────────────────
@@ -416,6 +522,8 @@ def _gate_request(req_origin: str, body: ChatRequest, cfg: Config) -> tuple[Any,
     site = cfg.sites.get(body.site_id)
     if not site:
         raise HTTPException(status_code=404, detail=f"unknown site: {body.site_id}")
+    if not site.enabled:
+        raise HTTPException(status_code=503, detail="assistant is disabled")
 
     # 1. Origin lock — must match an entry in allowed_origins.
     if req_origin not in site.allowed_origins:
@@ -453,7 +561,52 @@ def _check_rate_limits(site, ip: str, cfg: Config) -> None:
         )
 
 
+async def _site_corpus(site: SiteConfig) -> dict:
+    if site.corpus_url:
+        return await CORPUS.get(site.id, site.corpus_url)
+    if site.knowledge_sources:
+        return await build_corpus(
+            site.id,
+            site.knowledge_sources,
+            ttl_seconds=CONFIG.defaults.corpus_ttl_seconds,
+        )
+    return {"chunks": [], "faqs": []}
+
+
+async def _refresh_catalog_feed(site: SiteConfig) -> None:
+    if not site.catalog_url:
+        return
+    try:
+        await ensure_catalog_feed(
+            site.id,
+            site.catalog_url,
+            stale_seconds=site.catalog_stale_seconds,
+        )
+    except Exception as exc:
+        # Keep serving the last valid local snapshot; never replace it with a
+        # partial/invalid remote response.
+        log.warning("catalog refresh failed for %s: %s", site.id, exc)
+
+
 # ── Routes ─────────────────────────────────────────────────────────
+
+
+@app.get("/")
+async def root(request: Request) -> dict:
+    """Friendly landing so a bare visit isn't a raw 404. Prefix-aware, so it works
+    at the service root (production) and under a mount (/chatbot/)."""
+    base = request.scope.get("root_path", "") or ""
+    return {
+        "service": "emptyos-chatbot",
+        "version": app.version,
+        "status": "ok",
+        "sites": list(CONFIG.sites.keys()) if CONFIG else [],
+        "endpoints": {
+            "health": f"{base}/health",
+            "demo": f"{base}/demo-store/",
+            "widget": f"{base}/widget/chatbot-widget.js",
+        },
+    }
 
 
 @app.get("/health")
@@ -461,15 +614,59 @@ async def health() -> dict:
     return {"status": "ok", "sites": list(CONFIG.sites.keys()) if CONFIG else []}
 
 
+@app.get("/widget/chatbot-widget.js")
+async def widget_script():
+    candidates = [
+        Path(__file__).parent / "widget" / "chatbot-widget.js",
+        Path(__file__).parents[1] / "apps" / "public" / "standard" / "publish" / "static" / "chatbot-widget.js",
+        Path(__file__).parents[2] / "apps" / "public" / "standard" / "publish" / "static" / "chatbot-widget.js",
+    ]
+    path = next((candidate for candidate in candidates if candidate.exists()), None)
+    if not path:
+        raise HTTPException(404, "widget not installed")
+    return FileResponse(path, media_type="application/javascript", headers={"Cache-Control": "public, max-age=300"})
+
+
+@app.get("/demo-store")
+@app.get("/demo-store/")
+async def demo_store(request: Request):
+    if os.environ.get("CHATBOT_DEMO_ENABLED") != "1":
+        raise HTTPException(404, "demo store is disabled")
+    path = Path(__file__).parent / "demo-store" / "index.html"
+    if not path.exists():
+        raise HTTPException(404, "demo store is not installed")
+    # Prefix-aware: when this app is mounted under /chatbot, root_path is set and the
+    # page's own asset URLs (catalog.json, widget, endpoint) must carry the prefix.
+    base = request.scope.get("root_path", "") or ""
+    html = path.read_text(encoding="utf-8").replace("{{BASE}}", base)
+    return HTMLResponse(html)
+
+
+@app.get("/demo-store/catalog.json")
+async def demo_store_catalog():
+    if os.environ.get("CHATBOT_DEMO_ENABLED") != "1":
+        raise HTTPException(404, "demo store is disabled")
+    return load_catalog("printer-pilot")
+
+
 @app.get("/sites/{site_id}/meta")
-async def site_meta(site_id: str) -> dict:
+async def site_meta(site_id: str, response: Response) -> dict:
     if not CONFIG or site_id not in CONFIG.sites:
         raise HTTPException(404, "unknown site")
     s = CONFIG.sites[site_id]
+    # The widget fetches this once per pageview on every embedding site, so it
+    # caches for the same 300s as the widget script itself — the two are read
+    # together and there is no point revalidating one and not the other. The
+    # cost is that a Studio config edit takes up to 5 minutes to reach visitors,
+    # which already matched the widget's own propagation delay.
+    response.headers["Cache-Control"] = "public, max-age=300"
     return {
         "id": s.id,
         "name": s.name,
         "starter_questions": s.starter_questions,
+        "welcome_message": s.welcome_message,
+        "brand_color": s.brand_color,
+        "commerce_enabled": s.commerce_enabled,
     }
 
 
@@ -485,6 +682,281 @@ async def admin_refresh(site_id: str, x_admin_token: str = Header(default="")) -
 
 
 # ── /admin/sites/{id} — sync mutable fields from publish app ────────
+
+
+class SiteAdminBody(BaseModel):
+    id: str | None = None
+    name: str | None = None
+    allowed_origins: list[str] | None = None
+    corpus_url: str | None = None
+    knowledge_sources: list[str] | None = None
+    catalog_url: str | None = None
+    catalog_stale_seconds: int | None = None
+    commerce_enabled: bool | None = None
+    allowed_actions: list[str] | None = None
+    action_endpoint: str | None = None
+    helpdesk_endpoint: str | None = None
+    model: str | None = None
+    persona: str | None = None
+    daily_cap_usd: float | None = None
+    starter_questions: list[str] | None = None
+    enabled: bool | None = None
+    brand_color: str | None = None
+    welcome_message: str | None = None
+    avoid_topics: list[str] | None = None
+    lead_capture_enabled: bool | None = None
+    connector_token: str | None = None
+
+
+def _site_payload(site: SiteConfig) -> dict:
+    data = {key: getattr(site, key) for key in STUDIO_FIELDS if hasattr(site, key)}
+    data.update({"id": site.id, "managed_by": site.managed_by})
+    data["connector_configured"] = bool(SECRETS and SECRETS.configured(site.id))
+    catalog = load_catalog(site.id)
+    data["catalog_products"] = len(catalog.get("products", []))
+    data["catalog_generated_at"] = catalog.get("generated_at")
+    return data
+
+
+def _validate_site_payload(payload: dict, *, creating: bool = False) -> None:
+    if creating:
+        site_id = str(payload.get("id") or "")
+        allowed = "abcdefghijklmnopqrstuvwxyz0123456789-_"
+        if not site_id or any(ch not in allowed for ch in site_id):
+            raise HTTPException(400, "id must contain only lowercase letters, numbers, hyphens, or underscores")
+    origins = payload.get("allowed_origins")
+    if origins is not None and (not origins or not all(isinstance(value, str) and value.startswith(("http://", "https://")) for value in origins)):
+        raise HTTPException(400, "allowed_origins must contain HTTP(S) origins")
+    allow_local = os.environ.get("CHATBOT_ALLOW_LOCAL_SOURCES") == "1"
+    for key in ("corpus_url", "catalog_url", "action_endpoint", "helpdesk_endpoint"):
+        value = str(payload.get(key) or "").strip()
+        if value and not value.startswith("demo://"):
+            try:
+                validate_public_url(value, allow_local=allow_local)
+            except ValueError as exc:
+                raise HTTPException(400, f"{key}: {exc}") from exc
+    for source in payload.get("knowledge_sources") or []:
+        try:
+            validate_public_url(str(source), allow_local=allow_local)
+        except ValueError as exc:
+            raise HTTPException(400, f"knowledge_sources: {exc}") from exc
+    cap = payload.get("daily_cap_usd")
+    if cap is not None and not 0 <= float(cap) <= 1000:
+        raise HTTPException(400, "daily_cap_usd must be 0..1000")
+
+
+def _apply_studio_fields(site: SiteConfig, payload: dict) -> list[str]:
+    applied = []
+    for key in STUDIO_FIELDS:
+        if key in payload and payload[key] is not None:
+            setattr(site, key, payload[key])
+            applied.append(key)
+    return sorted(applied)
+
+
+@app.get("/admin/sites")
+async def admin_sites(x_admin_token: str = Header(default="")) -> dict:
+    _require_admin(x_admin_token)
+    return {"sites": [_site_payload(site) for site in CONFIG.sites.values()]}
+
+
+@app.post("/admin/sites/validate")
+async def admin_site_validate(body: SiteAdminBody, x_admin_token: str = Header(default="")) -> dict:
+    _require_admin(x_admin_token)
+    payload = body.model_dump(exclude_none=True)
+    _validate_site_payload(payload, creating=bool(payload.get("id")))
+    return {"ok": True, "validated": sorted(payload)}
+
+
+@app.post("/admin/sites")
+async def admin_site_create(body: SiteAdminBody, x_admin_token: str = Header(default="")) -> dict:
+    _require_admin(x_admin_token)
+    payload = body.model_dump(exclude_none=True)
+    _validate_site_payload(payload, creating=True)
+    site_id = payload.pop("id")
+    if site_id in CONFIG.sites:
+        raise HTTPException(409, "site already exists")
+    required = [key for key in ("name", "allowed_origins") if not payload.get(key)]
+    if required:
+        raise HTTPException(400, f"missing required fields: {', '.join(required)}")
+    site = SiteConfig(
+        id=site_id,
+        name=payload.get("name", site_id),
+        allowed_origins=payload.get("allowed_origins", []),
+        corpus_url=payload.get("corpus_url", ""),
+        daily_cap_usd=float(payload.get("daily_cap_usd", CONFIG.defaults.daily_cap_usd)),
+        model=payload.get("model", CONFIG.defaults.model),
+        persona=payload.get("persona", ""),
+        managed_by="studio",
+    )
+    _apply_studio_fields(site, payload)
+    CONFIG.sites[site_id] = site
+    token = payload.get("connector_token")
+    if token and SECRETS:
+        SECRETS.set_bearer(site_id, token)
+    try:
+        await asyncio.to_thread(write_config_atomic, CONFIG)
+    except Exception:
+        CONFIG.sites.pop(site_id, None)
+        raise
+    return {"ok": True, "site": _site_payload(site)}
+
+
+@app.post("/admin/demo/printer-store")
+async def admin_demo_printer_store(x_admin_token: str = Header(default="")) -> dict:
+    _require_admin(x_admin_token)
+    if os.environ.get("CHATBOT_DEMO_ENABLED") != "1":
+        raise HTTPException(403, "set CHATBOT_DEMO_ENABLED=1 to create the controlled pilot")
+    site_id = "printer-pilot"
+    site = CONFIG.sites.get(site_id)
+    if site and site.managed_by != "studio":
+        raise HTTPException(409, "printer-pilot id is owned by another manager")
+    if not site:
+        public_origin = os.environ.get("CHATBOT_PUBLIC_ORIGIN", "http://127.0.0.1:8000").rstrip("/")
+        site = SiteConfig(
+            id=site_id,
+            name="Northstar Office Printer Store",
+            allowed_origins=[public_origin],
+            corpus_url="",
+            daily_cap_usd=CONFIG.defaults.daily_cap_usd,
+            model=CONFIG.defaults.model,
+            persona="Help customers choose office printers and supplies. Never invent price, stock, or compatibility.",
+            managed_by="studio",
+            enabled=True,
+            commerce_enabled=True,
+            allowed_actions=["inventory.lookup", "cart.add", "order.lookup", "return.check", "handoff.create"],
+            action_endpoint="demo://printer-store",
+            starter_questions=["Which Wi-Fi printer is under $300?", "Compare colour laser printers", "Where is my order?"],
+            welcome_message="Find the right printer for your home or small office. Tip: include the printer model or feature you care about.",
+        )
+        CONFIG.sites[site_id] = site
+    catalog = await asyncio.to_thread(save_catalog, site_id, demo_printer_products())
+    await asyncio.to_thread(write_config_atomic, CONFIG)
+    return {"ok": True, "site": _site_payload(site), "products": len(catalog["products"]), "demo_url": "/demo-store/"}
+
+
+@app.get("/admin/sites/{site_id}")
+async def admin_site_get(site_id: str, x_admin_token: str = Header(default="")) -> dict:
+    _require_admin(x_admin_token)
+    site = CONFIG.sites.get(site_id)
+    if not site:
+        raise HTTPException(404, "unknown site")
+    return {"site": _site_payload(site)}
+
+
+@app.put("/admin/sites/{site_id}")
+async def admin_site_put(site_id: str, body: SiteAdminBody, x_admin_token: str = Header(default="")) -> dict:
+    _require_admin(x_admin_token)
+    site = CONFIG.sites.get(site_id)
+    if not site:
+        raise HTTPException(404, "unknown site")
+    if site.managed_by != "studio":
+        raise HTTPException(409, "site is managed by Publish and is read-only in Chatbot Studio")
+    payload = body.model_dump(exclude_none=True, exclude={"id"})
+    _validate_site_payload(payload)
+    applied = _apply_studio_fields(site, payload)
+    if "connector_token" in payload and SECRETS:
+        SECRETS.set_bearer(site_id, payload["connector_token"])
+        applied.append("connector_token")
+    await asyncio.to_thread(write_config_atomic, CONFIG)
+    CORPUS.invalidate(site_id)
+    await asyncio.to_thread(invalidate_corpus, site_id)
+    _RETRIEVAL.pop(site_id, None)
+    return {"ok": True, "applied": sorted(applied), "site": _site_payload(site)}
+
+
+async def _set_site_enabled(site_id: str, enabled: bool, token: str) -> dict:
+    _require_admin(token)
+    site = CONFIG.sites.get(site_id)
+    if not site:
+        raise HTTPException(404, "unknown site")
+    if site.managed_by != "studio":
+        raise HTTPException(409, "site is managed by Publish")
+    site.enabled = enabled
+    await asyncio.to_thread(write_config_atomic, CONFIG)
+    return {"ok": True, "site": site_id, "enabled": enabled}
+
+
+@app.post("/admin/sites/{site_id}/enable")
+async def admin_site_enable(site_id: str, x_admin_token: str = Header(default="")) -> dict:
+    return await _set_site_enabled(site_id, True, x_admin_token)
+
+
+@app.post("/admin/sites/{site_id}/disable")
+async def admin_site_disable(site_id: str, x_admin_token: str = Header(default="")) -> dict:
+    return await _set_site_enabled(site_id, False, x_admin_token)
+
+
+class CatalogBody(BaseModel):
+    products: list[dict]
+
+
+@app.post("/admin/sites/{site_id}/catalog")
+async def admin_catalog(site_id: str, body: CatalogBody, x_admin_token: str = Header(default="")) -> dict:
+    _require_admin(x_admin_token)
+    site = CONFIG.sites.get(site_id)
+    if not site:
+        raise HTTPException(404, "unknown site")
+    if site.managed_by != "studio":
+        raise HTTPException(409, "site is managed by Publish")
+    try:
+        payload = await asyncio.to_thread(save_catalog, site_id, body.products)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return {"ok": True, "site": site_id, "products": len(payload["products"]), "generated_at": payload["generated_at"]}
+
+
+@app.post("/admin/sites/{site_id}/refresh")
+async def admin_site_refresh(site_id: str, x_admin_token: str = Header(default="")) -> dict:
+    return await admin_refresh(site_id, x_admin_token)
+
+
+@app.get("/admin/sites/{site_id}/leads")
+async def admin_site_leads(
+    site_id: str,
+    x_admin_token: str = Header(default=""),
+    limit: int = 100,
+    offset: int = 0,
+) -> dict:
+    _require_admin(x_admin_token)
+    if not CONFIG or site_id not in CONFIG.sites:
+        raise HTTPException(404, "unknown site")
+    leads = await asyncio.to_thread(
+        LEDGER.list_leads, site_id=site_id, limit=max(1, min(500, limit)), offset=max(0, offset)
+    )
+    return {"site": site_id, "leads": leads}
+
+
+@app.get("/admin/sites/{site_id}/health")
+async def admin_site_health(site_id: str, x_admin_token: str = Header(default="")) -> dict:
+    _require_admin(x_admin_token)
+    site = CONFIG.sites.get(site_id)
+    if not site:
+        raise HTTPException(404, "unknown site")
+    catalog = load_catalog(site_id)
+    return {"site_id": site_id, "enabled": site.enabled, "commerce_enabled": site.commerce_enabled, "catalog_products": len(catalog.get("products", [])), "catalog_generated_at": catalog.get("generated_at"), "connector_configured": bool(SECRETS and SECRETS.configured(site_id))}
+
+
+@app.get("/admin/sites/{site_id}/analytics")
+async def admin_site_analytics(site_id: str, x_admin_token: str = Header(default="")) -> dict:
+    _require_admin(x_admin_token)
+    if site_id not in CONFIG.sites:
+        raise HTTPException(404, "unknown site")
+    return {"site_id": site_id, **await asyncio.to_thread(LEDGER.analytics, site_id)}
+
+
+class SiteTestBody(BaseModel):
+    message: str = "What products do you recommend?"
+
+
+@app.post("/admin/sites/{site_id}/test")
+async def admin_site_test(site_id: str, body: SiteTestBody, x_admin_token: str = Header(default="")) -> dict:
+    _require_admin(x_admin_token)
+    site = CONFIG.sites.get(site_id)
+    if not site:
+        raise HTTPException(404, "unknown site")
+    answer = commerce_reply(site_id, body.message) if site.commerce_enabled else None
+    return {"ok": True, "site_id": site_id, **(answer or {"reply": "The content assistant is configured; use the website widget for a full model-backed test.", "blocks": []})}
 
 
 class SiteSyncBody(BaseModel):
@@ -653,6 +1125,205 @@ async def admin_qa_promote(
     }
 
 
+def _origin_site(site_id: str, origin: str, *, require_commerce: bool = True) -> SiteConfig:
+    site = CONFIG.sites.get(site_id) if CONFIG else None
+    if not site:
+        raise HTTPException(404, "unknown site")
+    if not site.enabled:
+        raise HTTPException(403, "assistant is disabled")
+    if require_commerce and not site.commerce_enabled:
+        raise HTTPException(403, "commerce is disabled")
+    if origin not in site.allowed_origins:
+        raise HTTPException(401, "origin not allowed")
+    return site
+
+
+async def _post_connector(site: SiteConfig, url: str, payload: dict, idempotency_key: str) -> dict:
+    """Mechanical connector POST shared by the commerce action path and the
+    lead helpdesk delivery: SSRF-validate the endpoint, attach the site bearer
+    + idempotency header, POST, return the parsed JSON. Error SEMANTICS stay
+    at the call site (commerce raises 502; lead marks delivery failed)."""
+    validate_public_url(url, allow_local=os.environ.get("CHATBOT_ALLOW_LOCAL_SOURCES") == "1")
+    import httpx
+
+    headers = {"Content-Type": "application/json", "Idempotency-Key": idempotency_key}
+    bearer = SECRETS.get_bearer(site.id) if SECRETS else ""
+    if bearer:
+        headers["Authorization"] = f"Bearer {bearer}"
+    async with httpx.AsyncClient(timeout=10.0, follow_redirects=False) as client:
+        response = await client.post(url, json=payload, headers=headers)
+        response.raise_for_status()
+        try:
+            return response.json()
+        except ValueError:
+            return {}
+
+
+async def _handle_lead(site: SiteConfig, body: CommerceActionBody) -> dict:
+    """Store the lead first, then best-effort deliver to helpdesk_endpoint.
+    The row is written before any network call so a lead is never lost."""
+    name = str(body.args.get("name") or "").strip()
+    email = str(body.args.get("email") or "").strip()
+    message = str(body.args.get("message") or "").strip()
+    if not email or "@" not in email or len(email) > 320:
+        raise HTTPException(400, "a valid email is required")
+    if not message:
+        raise HTTPException(400, "message is required")
+    lead_id = await asyncio.to_thread(
+        LEDGER.add_lead,
+        site_id=site.id,
+        name=name,
+        email=email,
+        message=message,
+        page_url=str(body.args.get("page_url") or ""),
+    )
+    if site.helpdesk_endpoint:
+        try:
+            await _post_connector(
+                site,
+                site.helpdesk_endpoint,
+                {"site_id": site.id, "name": name, "email": email, "message": message},
+                body.idempotency_key,
+            )
+            await asyncio.to_thread(LEDGER.set_lead_delivery, lead_id, "delivered")
+        except Exception:
+            log.exception("helpdesk delivery failed site=%s lead=%s", site.id, lead_id)
+            await asyncio.to_thread(LEDGER.set_lead_delivery, lead_id, "failed")
+    return {
+        "ok": True,
+        "action": "lead.create",
+        "lead_id": lead_id,
+        "message": "Thanks — the team has your details and will get back to you by email.",
+    }
+
+
+def _demo_action(site: SiteConfig, body: CommerceActionBody) -> dict:
+    if os.environ.get("CHATBOT_DEMO_ENABLED") != "1":
+        raise HTTPException(403, "demo connector is disabled")
+    products = load_catalog(site.id).get("products", [])
+    product_id = str(body.args.get("product_id") or "")
+    product = next((p for p in products if p.get("id") == product_id), None)
+    if body.action == "inventory.lookup":
+        if not product:
+            raise HTTPException(404, "product not found")
+        return {"ok": True, "action": body.action, "product_id": product_id, "availability": product.get("availability", "unknown")}
+    if body.action == "cart.add":
+        if not product:
+            raise HTTPException(404, "product not found")
+        return {"ok": True, "action": body.action, "product_id": product_id, "quantity": max(1, min(10, int(body.args.get("quantity") or 1)))}
+    if body.action == "order.lookup":
+        if not body.args.get("order_number") or not body.args.get("email"):
+            raise HTTPException(400, "order number and email are required")
+        return {"ok": True, "action": body.action, "status": "Ready for collection", "updated": "Today"}
+    if body.action == "return.check":
+        if not body.args.get("order_number"):
+            raise HTTPException(400, "order number is required")
+        return {"ok": True, "action": body.action, "eligible": True, "next_step": "A team member must approve and create the return."}
+    if body.action == "handoff.create":
+        ticket = hashlib.sha1(f"{site.id}:{body.idempotency_key}".encode()).hexdigest()[:8].upper()
+        return {"ok": True, "action": body.action, "ticket_id": ticket, "message": "A team member will follow up."}
+    raise HTTPException(400, "unsupported demo action")
+
+
+@app.post("/commerce/action")
+async def commerce_action(body: CommerceActionBody, request: Request) -> dict:
+    # lead.create is gated by lead_capture_enabled, not by commerce/allowed_actions —
+    # it rides this route because the widget posts every secure_action_form here.
+    is_lead = body.action == "lead.create"
+    site = _origin_site(body.site_id, request.headers.get("origin", ""), require_commerce=not is_lead)
+    if is_lead and not site.lead_capture_enabled:
+        raise HTTPException(403, "lead capture is disabled")
+    if not is_lead and body.action not in site.allowed_actions:
+        raise HTTPException(403, "action is not allowed for this site")
+    if not 8 <= len(body.idempotency_key) <= 128:
+        raise HTTPException(400, "idempotency_key must be 8..128 characters")
+    cached = await asyncio.to_thread(LEDGER.action_result, site.id, body.idempotency_key)
+    if cached is not None:
+        return {**cached, "idempotent_replay": True}
+    if is_lead:
+        result = await _handle_lead(site, body)
+        await asyncio.to_thread(LEDGER.store_action_result, site.id, body.idempotency_key, body.action, result)
+        await asyncio.to_thread(LEDGER.record_event, site_id=site.id, event_type="lead.create")
+        return result
+    if site.action_endpoint.startswith("demo://"):
+        # Reads the catalogue file — keep it off the event loop.
+        result = await asyncio.to_thread(_demo_action, site, body)
+    else:
+        if not site.action_endpoint:
+            raise HTTPException(503, "commerce connector is not configured")
+        try:
+            result = await _post_connector(
+                site,
+                site.action_endpoint,
+                {"action": body.action, "args": body.args},
+                body.idempotency_key,
+            )
+        except Exception:
+            log.exception("commerce connector failed site=%s action=%s", site.id, body.action)
+            raise HTTPException(502, "commerce connector unavailable") from None
+    await asyncio.to_thread(LEDGER.store_action_result, site.id, body.idempotency_key, body.action, result)
+    await asyncio.to_thread(LEDGER.record_event, site_id=site.id, event_type=body.action, item_id=str(body.args.get("product_id") or ""))
+    # Mirror the add into the session cart so chat can answer "check my cart".
+    # Runs for the demo AND real connectors — the mirror is what this chat added,
+    # never a claim about the site's authoritative cart. The idempotent-replay
+    # guard above returns before here, so a repeated key can't double a quantity.
+    product_id = str(body.args.get("product_id") or "")
+    if body.action == "cart.add" and body.session_id and product_id:
+        try:
+            await asyncio.to_thread(
+                LEDGER.cart_add,
+                site_id=site.id,
+                session_id=body.session_id,
+                product_id=product_id,
+                quantity=int(body.args.get("quantity") or 1),
+            )
+        except Exception:
+            # A mirror failure must never fail the customer's add.
+            log.exception("cart mirror failed site=%s product=%s", site.id, product_id)
+    return result
+
+
+async def _commerce_chat_reply(site: SiteConfig, last_msg: str, session_id: str) -> dict | None:
+    """Deterministic commerce lane for both /chat and /chat/stream.
+
+    `commerce_reply` is pure and ledger-free, so the cart intent comes back as a
+    marker; this resolves it against the session-cart mirror + catalogue and
+    composes the final reply. Returns None to fall through to lead/FAQ/model."""
+    await _refresh_catalog_feed(site)
+    # commerce_reply + load_catalog read the catalogue file (feeds are capped at
+    # 5 MB), so they run off the event loop — a blocking read here would stall
+    # every other in-flight request on this worker.
+    commerce = await asyncio.to_thread(commerce_reply, site.id, last_msg)
+    if not commerce:
+        return None
+    if commerce.get("intent") != "commerce.cart":
+        return commerce
+    # The site declared cart.add — without it there is no cart to speak of, so
+    # let the question fall through rather than answer for a cart-less site.
+    if "cart.add" not in site.allowed_actions:
+        return None
+    if not session_id:
+        return cart_summary_reply([])
+    rows = await asyncio.to_thread(LEDGER.cart_items, site_id=site.id, session_id=session_id)
+    catalog = await asyncio.to_thread(load_catalog, site.id)
+    products = {p["id"]: p for p in catalog.get("products", [])}
+    items = []
+    for row in rows:
+        product = products.get(row["product_id"])
+        if not product:
+            continue  # dropped from the feed since it was added
+        price = product.get("price", {})
+        items.append({
+            "product_id": row["product_id"],
+            "title": product.get("title") or "",
+            "quantity": row["quantity"],
+            "amount": price.get("amount"),
+            "currency": price.get("currency", "AUD"),
+            "url": product.get("url") or "",
+        })
+    return cart_summary_reply(items)
+
+
 @app.post("/chat", response_model=ChatReply)
 async def chat(body: ChatRequest, request: Request) -> ChatReply:
     origin = request.headers.get("origin", "")
@@ -660,9 +1331,59 @@ async def chat(body: ChatRequest, request: Request) -> ChatReply:
     ip = _client_ip(request)
     _check_rate_limits(site, ip, CONFIG)
 
+    if site.commerce_enabled:
+        commerce = await _commerce_chat_reply(site, last_msg, body.session_id)
+        if commerce:
+            await asyncio.to_thread(
+                LEDGER.record,
+                site_id=site.id,
+                ip_hash=hash_ip(ip),
+                session_id=body.session_id,
+                tokens_in=0,
+                tokens_out=0,
+                cost_usd=0.0,
+                model="commerce",
+                intent=commerce.get("intent", "commerce.search"),
+            )
+            await asyncio.to_thread(LEDGER.record_event, site_id=site.id, event_type="product_search")
+            return ChatReply(
+                reply=commerce["reply"],
+                blocks=commerce["blocks"],
+                sources=[],
+                tokens_used=0,
+                cost_usd=0.0,
+                remaining_today_usd=max(0.0, site.daily_cap_usd - LEDGER.site_today_cost(site.id)),
+                source="commerce",
+            )
+
+    # Lead capture — deterministic, free, before any retrieval. Commerce sites'
+    # handoff.create branch above takes precedence when both are enabled.
+    lead = _match_lead_intent(site, last_msg)
+    if lead:
+        await asyncio.to_thread(
+            LEDGER.record,
+            site_id=site.id,
+            ip_hash=hash_ip(ip),
+            session_id=body.session_id,
+            tokens_in=0,
+            tokens_out=0,
+            cost_usd=0.0,
+            model="lead",
+            intent="lead",
+        )
+        return ChatReply(
+            reply=lead["reply"],
+            blocks=lead["blocks"],
+            sources=[],
+            tokens_used=0,
+            cost_usd=0.0,
+            remaining_today_usd=max(0.0, site.daily_cap_usd - LEDGER.site_today_cost(site.id)),
+            source="lead",
+        )
+
     # 3. Fetch corpus + try FAQ pre-bake.
     try:
-        corpus_payload = await CORPUS.get(site.id, site.corpus_url)
+        corpus_payload = await _site_corpus(site)
     except Exception as e:
         log.warning("corpus fetch failed for %s: %s", site.id, e)
         corpus_payload = {"chunks": [], "faqs": []}
@@ -680,6 +1401,7 @@ async def chat(body: ChatRequest, request: Request) -> ChatReply:
             tokens_out=0,
             cost_usd=0.0,
             model="faq",
+            intent="faq",
         )
         faq_sources: list[dict] = []
         if faq_hit.get("url"):
@@ -711,6 +1433,7 @@ async def chat(body: ChatRequest, request: Request) -> ChatReply:
             tokens_out=0,
             cost_usd=0.0,
             model="cached",
+            intent="cached",
         )
         return ChatReply(
             reply=curated_hit["reply"],
@@ -743,6 +1466,7 @@ async def chat(body: ChatRequest, request: Request) -> ChatReply:
             tokens_out=0,
             cost_usd=0.0,
             model="low-confidence",
+            intent="low-confidence",
         )
         await asyncio.to_thread(
             LEDGER.log_qa_pending,
@@ -787,6 +1511,7 @@ async def chat(body: ChatRequest, request: Request) -> ChatReply:
         tokens_out=result.tokens_out,
         cost_usd=result.cost_usd,
         model=result.model,
+        intent="model",
     )
     await asyncio.to_thread(
         LEDGER.log_qa_pending,
@@ -813,8 +1538,52 @@ async def chat_stream(body: ChatRequest, request: Request):
     ip = _client_ip(request)
     _check_rate_limits(site, ip, CONFIG)
 
+    if site.commerce_enabled:
+        commerce = await _commerce_chat_reply(site, last_msg, body.session_id)
+        if commerce:
+            await asyncio.to_thread(
+                LEDGER.record,
+                site_id=site.id,
+                ip_hash=hash_ip(ip),
+                session_id=body.session_id,
+                tokens_in=0,
+                tokens_out=0,
+                cost_usd=0.0,
+                model="commerce",
+                intent=commerce.get("intent", "commerce.search"),
+            )
+            await asyncio.to_thread(LEDGER.record_event, site_id=site.id, event_type="product_search")
+
+            async def commerce_stream():
+                yield f"data: {json.dumps({'delta': commerce['reply']})}\n\n"
+                done = {"done": True, "source": "commerce", "clean_reply": commerce["reply"], "sources": [], "blocks": commerce["blocks"]}
+                yield f"data: {json.dumps(done)}\n\n"
+
+            return StreamingResponse(commerce_stream(), media_type="text/event-stream")
+
+    lead = _match_lead_intent(site, last_msg)
+    if lead:
+        await asyncio.to_thread(
+            LEDGER.record,
+            site_id=site.id,
+            ip_hash=hash_ip(ip),
+            session_id=body.session_id,
+            tokens_in=0,
+            tokens_out=0,
+            cost_usd=0.0,
+            model="lead",
+            intent="lead",
+        )
+
+        async def lead_stream():
+            yield f"data: {json.dumps({'delta': lead['reply']})}\n\n"
+            done = {"done": True, "source": "lead", "clean_reply": lead["reply"], "sources": [], "blocks": lead["blocks"]}
+            yield f"data: {json.dumps(done)}\n\n"
+
+        return StreamingResponse(lead_stream(), media_type="text/event-stream")
+
     try:
-        corpus_payload = await CORPUS.get(site.id, site.corpus_url)
+        corpus_payload = await _site_corpus(site)
     except Exception as e:
         log.warning("corpus fetch failed for %s: %s", site.id, e)
         corpus_payload = {"chunks": [], "faqs": []}
@@ -832,6 +1601,7 @@ async def chat_stream(body: ChatRequest, request: Request):
             tokens_out=0,
             cost_usd=0.0,
             model="faq",
+            intent="faq",
         )
         faq_sources: list[dict] = []
         if faq_hit.get("url"):
@@ -861,6 +1631,7 @@ async def chat_stream(body: ChatRequest, request: Request):
             tokens_out=0,
             cost_usd=0.0,
             model="cached",
+            intent="cached",
         )
         cached_reply = curated_hit["reply"]
         cached_sources = curated_hit.get("sources") or []
@@ -892,6 +1663,7 @@ async def chat_stream(body: ChatRequest, request: Request):
             tokens_out=0,
             cost_usd=0.0,
             model="low-confidence",
+            intent="low-confidence",
         )
         await asyncio.to_thread(
             LEDGER.log_qa_pending,
@@ -978,6 +1750,7 @@ async def chat_stream(body: ChatRequest, request: Request):
             tokens_out=tokens_out_est,
             cost_usd=cost,
             model=site.model,
+            intent="model",
         )
         await asyncio.to_thread(
             LEDGER.log_qa_pending,

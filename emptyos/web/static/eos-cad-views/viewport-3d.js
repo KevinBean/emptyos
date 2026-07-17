@@ -9,6 +9,17 @@
 import { defineView } from '/static/eos-cad-view.js';
 import { CadViewport } from '/static/eos-cad-viewport.js';
 
+function selectedFeatureId(store) {
+  const selected = store.selection;
+  if (selected == null) return null;
+  const object = store.objectByOid ? store.objectByOid(selected) : null;
+  if (!object) return selected;
+  const owned = new Set(object.feature_ids || []);
+  const features = (store.doc && store.doc.features) || [];
+  const result = features.find((feature) => owned.has(feature.id) && feature.op === 'subtract');
+  return result ? result.id : ((object.feature_ids || []).at(-1) || null);
+}
+
 const STYLES = `
   .cadv-3d-host { position: absolute; inset: 0; overflow: hidden; }
   .cadv-3d-viewbar {
@@ -219,10 +230,20 @@ const _v = defineView({
       const opts = (vctx.config && vctx.config.opts) || {};
       vp = new CadViewport(host, {
         gridSize: opts.gridSize || 400,
-        onSelect: (id) => store.select(id),
+        onSelect: (id) => {
+          const owner = store.objectOwningFeature ? store.objectOwningFeature(id) : null;
+          store.select(owner ? owner.oid : id);
+        },
         onCursorMove: (c) => store.setCursor(c.x, c.y, c.z),
         onTransformCommit: (id, t) => {
           // Gizmo drop → write the transform back into the feature source + broadcast.
+          const owner = store.objectOwningFeature ? store.objectOwningFeature(id) : null;
+          if (owner) {
+            if (vctx.setStatus) vctx.setStatus('Generated geometry is read-only. Edit the source object.', true);
+            vp.setDocument(store.doc);
+            vp.rebuild();
+            return;
+          }
           const doc = store.doc;
           const f = (doc.features || []).find((ff) => ff.id === id);
           if (f) { if (store.pushUndo) store.pushUndo(); f.at = t.at; f.rotate = t.rotate; store.notifyDoc(); }
@@ -236,7 +257,8 @@ const _v = defineView({
     }
     vp.setDocument(store.doc);
     vp.rebuild();
-    if (store.selection != null && vp.selectedId !== store.selection) vp.select(store.selection);
+    const selectedId = selectedFeatureId(store);
+    if (vp.selectedId !== selectedId) vp.select(selectedId);
     wireViewbar(vctx, vp);
   },
 
@@ -249,7 +271,8 @@ const _v = defineView({
       vp.rebuild();
       refreshScaleReadout(vctx, vp);
     } else if (evt.type === 'select') {
-      if (vp.selectedId !== vctx.store.selection) vp.select(vctx.store.selection);
+      const selectedId = selectedFeatureId(vctx.store);
+      if (vp.selectedId !== selectedId) vp.select(selectedId);
     }
   },
 

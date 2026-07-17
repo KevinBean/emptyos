@@ -65,6 +65,93 @@
   .model-pill.cost-local { color: var(--accent); }
   .model-pill.cost-paid { color: var(--warn); }
 
+  /* Reading layer — a compact control strip, not a second app. */
+  /* padding/background/border now come from .eos-section */
+  .reading-head, .reading-detail {
+    display: flex; align-items: center; gap: 7px;
+  }
+  .reading-head { margin-bottom: 7px; }
+  .reading-title {
+    font: 650 11px ui-monospace, "SFMono-Regular", Consolas, monospace;
+    letter-spacing: .05em; text-transform: uppercase; color: var(--muted);
+  }
+  .reading-site {
+    margin-left: auto; padding: 2px 6px; border: 0; border-radius: 5px;
+    background: transparent; color: var(--muted); font: inherit; font-size: 10px;
+    cursor: pointer;
+  }
+  .reading-site:hover { background: var(--border); color: var(--text); }
+  .reading-modes {
+    display: grid; grid-template-columns: repeat(3, 1fr);
+    padding: 2px; border: 1px solid var(--border); border-radius: 8px;
+    background: var(--bg);
+  }
+  .reading-mode {
+    padding: 5px 8px; border: 0; border-radius: 6px; cursor: pointer;
+    background: transparent; color: var(--muted); font: 600 11px system-ui, sans-serif;
+  }
+  .reading-mode.active { background: var(--text); color: var(--bg); }
+  .reading-detail { margin-top: 7px; }
+  .reading-detail label { color: var(--muted); font-size: 10px; white-space: nowrap; }
+  /* One label column, one control column. The old layout packed two label+select
+     pairs onto each row, so nothing lined up and every control was cramped into a
+     third of a narrow panel. */
+  .reading-grid {
+    display: grid; grid-template-columns: 74px 1fr;
+    align-items: center; gap: 6px 8px; margin-top: 9px;
+  }
+  .reading-grid > label {
+    color: var(--muted); font-size: 11px; white-space: nowrap;
+  }
+  .reading-grid select {
+    width: 100%; min-width: 0; padding: 4px 6px; border: 1px solid var(--border);
+    border-radius: 6px; background: var(--bg); color: var(--text); font: inherit;
+    font-size: 11px;
+  }
+  .reading-grid select:disabled { opacity: .55; }
+  .reading-model { display: flex; align-items: center; gap: 6px; min-width: 0; }
+  .reading-warm {
+    flex: 0 0 auto; padding: 4px 8px; border: 1px solid var(--border);
+    border-radius: 6px; background: var(--bg); color: var(--text);
+    font: inherit; font-size: 11px; cursor: pointer; white-space: nowrap;
+  }
+  .reading-warm:hover:not(:disabled) { background: var(--border); }
+  .reading-warm:disabled { opacity: .6; cursor: default; }
+  .reading-toggles {
+    display: flex; align-items: center; gap: 14px;
+    margin-top: 9px; padding-left: 82px;
+  }
+  .reading-status {
+    margin-top: 7px; color: var(--muted); font-size: 10px; line-height: 1.35;
+  }
+  .reading-status .warm { color: var(--ok, var(--muted)); }
+  .reading-status .cold { color: var(--warn); }
+  .reading-toggle {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 11px;
+    color: var(--muted);
+    white-space: nowrap;
+    cursor: pointer;
+  }
+  .reading-toggle input { margin: 0; }
+  .reading-note { margin-top: 6px; color: var(--muted); font-size: 10px; line-height: 1.35; }
+  .reading-note.reading-error { color: var(--err); }
+  #reading-consent {
+    margin: 8px 10px 0; padding: 9px 10px; border: 1px solid var(--warn);
+    border-radius: 8px; background: color-mix(in srgb, var(--warn) 10%, var(--bg));
+    font-size: 11px; line-height: 1.35;
+  }
+  #reading-consent strong { display: block; margin-bottom: 3px; }
+  #reading-consent-summary { max-height: 110px; overflow: auto; white-space: pre-wrap; color: var(--muted); }
+  #reading-consent .consent-actions { display: flex; gap: 6px; margin-top: 7px; }
+  #reading-consent button {
+    padding: 4px 8px; border: 1px solid var(--border); border-radius: 5px;
+    background: var(--bg); color: var(--text); cursor: pointer; font: inherit; font-size: 10px;
+  }
+  #reading-consent .allow { background: var(--accent); border-color: var(--accent); color: white; }
+
   /* ── Messages ───────────────────────────────── */
   #messages {
     flex: 1; overflow-y: auto; padding: 14px 12px;
@@ -269,20 +356,139 @@
   .status { font-size: 11px; color: var(--muted); padding: 2px 12px; min-height: 14px; }
   .status.err { color: var(--err); }
   .status.ok { color: var(--ok); }
+  /* Reading layer, Browser session and Conversation are peers — three things the
+     panel controls. They were three different visual languages (a light card, a dark
+     slab, and a strip of header chrome), which made them read as unrelated. One
+     section style, stated the same way. */
+  .eos-section {
+    padding: 9px 12px 10px;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg-soft);
+  }
+  .eos-section .section-head {
+    display: flex; align-items: center; gap: 8px; margin-bottom: 8px;
+  }
+  .eos-section .section-title {
+    font: 650 11px ui-monospace, "SFMono-Regular", Consolas, monospace;
+    letter-spacing: .05em; text-transform: uppercase; color: var(--muted);
+  }
+  .eos-section .row { display: flex; gap: 6px; align-items: center; }
+  .eos-section .row > select { flex: 1; min-width: 0; }
+  .eos-section button {
+    border: 1px solid var(--border); background: var(--bg); color: var(--text);
+    border-radius: 7px; padding: 5px 9px; cursor: pointer; font: inherit; font-size: 11px;
+  }
+  .eos-section button:hover:not(:disabled) { background: var(--border); }
+  .eos-section button.primary { background: var(--accent); color: #fff; border-color: transparent; }
+  .eos-section button:disabled { opacity: .45; cursor: default; }
+  #browser-session-state { margin-left: auto; color: var(--muted); font-size: 11px; }
+  #chat-control #model-pill-mount { margin-left: auto; }
+  #chat-control select {
+    padding: 4px 6px; border: 1px solid var(--border); border-radius: 6px;
+    background: var(--bg); color: var(--text); font: inherit; font-size: 11px;
+  }
 </style>
 </head>
 <body>
 
 <header>
   <div class="title">EmptyOS</div>
-  <select id="session-select" title="Sessions"><option value="">Loading…</option></select>
-  <span id="model-pill-mount"></span>
   <span class="spacer"></span>
-  <button id="voice-btn" title="Voice mode (mic + TTS)" style="font-size: 13px;">🔈</button>
-  <button id="capture-btn" title="Capture current page">Capture</button>
-  <button id="new-btn" title="New chat">New</button>
   <button id="opts-btn" title="Settings">&#9881;</button>
 </header>
+
+<section id="reading-control" class="eos-section" aria-label="Reading assistance">
+  <div class="section-head">
+    <span class="section-title">Reading layer</span>
+    <button class="reading-site" id="reading-site" type="button">Pause this site</button>
+  </div>
+  <div class="reading-modes" role="group" aria-label="Reading assistance mode">
+    <button class="reading-mode" data-mode="off" type="button">Off</button>
+    <button class="reading-mode" data-mode="ask" type="button">Ask</button>
+    <button class="reading-mode" data-mode="flow" type="button">Flow</button>
+  </div>
+  <div class="reading-grid">
+    <label for="reading-flow-provider">Flow model</label>
+    <div class="reading-model">
+      <select id="reading-flow-provider" title="The model that reads each screen"></select>
+      <button class="reading-warm" id="reading-warm" type="button" hidden>Warm up</button>
+    </div>
+
+    <label for="reading-local-provider">Ask model</label>
+    <select id="reading-local-provider" title="Local model, used on demand"></select>
+
+    <label for="reading-level">Flag above</label>
+    <select id="reading-level" title="The bar a word must clear to be worth interrupting you for">
+      <option value="auto">Auto — from my judgements</option>
+      <option value="A1">A1 — beginner</option>
+      <option value="A2">A2 — elementary</option>
+      <option value="B1">B1 — intermediate</option>
+      <option value="B2">B2 — upper-intermediate</option>
+      <option value="C1">C1 — advanced</option>
+      <option value="C2">C2 — proficient</option>
+    </select>
+
+    <label for="reading-target-language">Reading</label>
+    <select id="reading-target-language" title="The language you are reading and learning"></select>
+
+    <label for="reading-native-language">Explain in</label>
+    <select id="reading-native-language" title="Your own language — glosses are written in this"></select>
+
+    <label for="reading-display">Placement</label>
+    <select id="reading-display" title="Explanation placement">
+      <option value="auto">Auto</option>
+      <option value="margin">Margin</option>
+      <option value="corner">Corner</option>
+      <option value="ink">Ink</option>
+    </select>
+  </div>
+  <div class="reading-toggles">
+    <label for="reading-rail" class="reading-toggle">
+      <input type="checkbox" id="reading-rail"> Word list
+    </label>
+    <label for="reading-pronounce" class="reading-toggle">
+      <input type="checkbox" id="reading-pronounce"> Speak
+    </label>
+  </div>
+  <div class="reading-status" id="reading-model-note"></div>
+  <div class="reading-note" id="reading-note">Off means no page analysis. Ask: double-click a word. Flow: paid, cache-first prompts.</div>
+</section>
+
+<div id="reading-consent" hidden>
+  <strong id="reading-consent-title">Allow this reading prompt?</strong>
+  <div id="reading-consent-summary"></div>
+  <div class="consent-actions">
+    <button id="reading-consent-deny" type="button">Deny</button>
+    <button id="reading-consent-allow" class="allow" type="button">Allow this session</button>
+  </div>
+</div>
+
+<section id="browser-session" class="eos-section" aria-label="Browser Session">
+  <div class="section-head">
+    <span class="section-title">Browser session</span>
+    <span id="browser-session-state">Disarmed</span>
+  </div>
+  <div class="row">
+    <button id="browser-arm" class="primary" type="button">Arm</button>
+    <button id="browser-extend" type="button" disabled>Extend</button>
+    <button id="browser-disarm" type="button" disabled>Disarm</button>
+    <button id="browser-evaluate-jobs" type="button">Evaluate shared jobs</button>
+    <button id="browser-allow-origin" type="button" hidden>Allow origin</button>
+  </div>
+</section>
+
+<section id="chat-control" class="eos-section" aria-label="Conversation">
+  <div class="section-head">
+    <span class="section-title">Conversation</span>
+    <span id="model-pill-mount"></span>
+  </div>
+  <div class="row">
+    <select id="session-select" title="Sessions"><option value="">Loading…</option></select>
+    <button id="voice-btn" title="Voice mode (mic + TTS)">&#128264;</button>
+    <button id="capture-btn" title="Capture current page">Capture</button>
+    <button id="new-btn" title="New chat">New</button>
+  </div>
+</section>
 
 <div id="messages">
   <div class="greeting" id="greeting">
@@ -327,6 +533,8 @@
 </div>
 
 <script src="content.js"></script>
+<script src="reading-config.js"></script>
+<script src="daemon-client.js"></script>
 <script src="sidepanel.js"></script>
 </body>
 </html>

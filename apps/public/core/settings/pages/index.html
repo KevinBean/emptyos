@@ -365,6 +365,9 @@ function renderControl(s) {
     if (s.type === 'number') {
         return '<input class="s-input" type="number" id="' + id + '" value="' + (val || '') + '" step="any" onchange="saveSetting(\'' + s.key + '\', parseFloat(this.value) || 0)">';
     }
+    if (s.type === 'password') {
+        return '<input class="s-input" type="password" autocomplete="new-password" id="' + id + '" value="' + escAttr(String(val || '')) + '" onchange="saveSetting(\'' + s.key + '\', this.value)">';
+    }
     // text
     return '<input class="s-input" type="text" id="' + id + '" value="' + escAttr(String(val || '')) + '" onchange="saveSetting(\'' + s.key + '\', this.value)">';
 }
@@ -438,12 +441,104 @@ async function loadSettings() {
             '<div class="section"><div class="section-hdr"><span class="section-icon">📂</span><span class="section-name">Vault</span></div><div class="setting-group"><div class="setting-row"><div class="setting-label">' + esc(sys.vault_path || '') + '</div></div></div></div>';
 
         loadNetwork();
+        loadProduct();
         applyDeepLink();
 
     } catch(e) {
         console.error('Settings load error:', e);
         document.getElementById('settings-content').innerHTML = '<div class="eos-empty">Error loading settings: ' + (e.message || e) + '</div>';
     }
+}
+
+// --- Product panel (packaged builds only) ---
+// Renders nothing when EmptyOS runs from source: the API returns
+// {enabled:false} unless the product launcher set EOS_PRODUCT. This is the
+// user's only view of which version they have and where their files live —
+// they have no terminal and no repo to look at.
+async function loadProduct() {
+    var p;
+    try {
+        p = await EOS.api('/settings/api/product');
+    } catch (e) { return; }
+    if (!p || !p.enabled) return;
+
+    function row(label, value) {
+        return '<div class="setting-row"><div><div class="setting-label">' + esc(label) + '</div></div>' +
+               '<div style="font-size:12px;color:var(--text-secondary);word-break:break-all">' +
+               esc(value || '—') + '</div></div>';
+    }
+
+    // An update is *staged*, never applied behind the user's back: the launcher
+    // downloads it into its own folder and it only becomes live on restart.
+    var upd = {};
+    try { upd = await EOS.api('/settings/api/product/update'); } catch (e) { upd = {}; }
+    var updateRow = upd.update_ready
+        ? '<div class="setting-row"><div><div class="setting-label">Update ready: ' +
+          esc(upd.staged) + '</div>' +
+          '<div class="setting-desc">Downloaded and verified. Restart to switch to it.</div></div>' +
+          '<button class="eos-btn eos-btn-sm eos-btn-primary" onclick="applyUpdate()">' +
+          'Restart &amp; update</button></div>'
+        : '';
+
+    var html =
+        '<div class="section"><div class="section-hdr"><span class="section-icon">📦</span>' +
+        '<span class="section-name">This installation</span></div><div class="setting-group">' +
+        updateRow +
+        row('Version', p.version + (p.tier ? ' · ' + p.tier : '')) +
+        row('Your notes', p.vault_path) +
+        row('Settings + data', p.data_dir) +
+        row('Installed in', p.install_root) +
+        '<div class="setting-row"><div><div class="setting-label">Licence key</div>' +
+        '<div class="setting-desc">For features that run on a licensed EmptyOS service.</div></div>' +
+        '<div style="display:flex;gap:8px">' +
+        '<input type="text" id="product-license" value="' + escAttr(p.license_key || '') + '" ' +
+        'placeholder="not set" style="width:220px">' +
+        '<button class="eos-btn eos-btn-sm" onclick="saveLicense()">Save</button></div></div>' +
+        '<div class="setting-row"><div><div class="setting-label">Restart EmptyOS</div>' +
+        '<div class="setting-desc">Applies changes that only take effect at startup.</div></div>' +
+        '<button class="eos-btn eos-btn-sm" onclick="restartProduct()">Restart</button></div>' +
+        '</div></div>';
+
+    document.getElementById('system-content').insertAdjacentHTML('afterbegin', html);
+}
+
+async function applyUpdate() {
+    EOS_UI.toast('Restarting into the new version…');
+    // The daemon exits 43, the launcher hands off to the stub, and the stub
+    // starts the newer version — so this request dies under us by design.
+    fetch('/settings/api/product/update/apply', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ confirm: true })
+    }).catch(function () { });
+    setTimeout(function () { location.reload(); }, 12000);
+}
+
+async function saveLicense() {
+    var value = document.getElementById('product-license').value.trim();
+    await EOS.api('/settings/api/set', {
+        method: 'POST',
+        body: JSON.stringify({ key: 'product.license_key', value: value })
+    });
+    EOS_UI.toast('Licence key saved');
+}
+
+async function restartProduct() {
+    var ok = await EOS_UI.confirm({
+        title: 'Restart EmptyOS?',
+        body: 'The window will reconnect once it is back up.',
+        confirmText: 'Restart'
+    });
+    if (!ok) return;
+    EOS_UI.toast('Restarting…');
+    // The daemon exits 42 and its launcher respawns it, so this request dies
+    // under us — a failure here is the success path.
+    fetch('/settings/api/product/restart', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ confirm: true })
+    }).catch(function () { });
+    setTimeout(function () { location.reload(); }, 8000);
 }
 
 // Deep-link: /settings/?tab=apps&app=<id> (used by the Store "⚙ Configure"

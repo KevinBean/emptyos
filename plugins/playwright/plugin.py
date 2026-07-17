@@ -203,6 +203,47 @@ class PlaywrightPlugin(BasePlugin):
         await page.fill(selector, value, timeout=timeout_ms)
         return {"ok": True}
 
+    async def press(self, selector: str, key: str = "Enter", *, context_id: str | None = None) -> dict:
+        page = await self._get_page(context_id)
+        await page.press(selector, key)
+        return {"ok": True}
+
+    async def select(self, selector: str, value: str, *, context_id: str | None = None) -> dict:
+        page = await self._get_page(context_id)
+        await page.select_option(selector, value)
+        return {"ok": True}
+
+    async def scroll(self, delta_x: int = 0, delta_y: int = 0, *, context_id: str | None = None) -> dict:
+        page = await self._get_page(context_id)
+        await page.mouse.wheel(delta_x, delta_y)
+        return {"ok": True}
+
+    async def reload(self, *, context_id: str | None = None) -> dict:
+        page = await self._get_page(context_id)
+        await page.reload()
+        return {"url": page.url, "title": await page.title()}
+
+    async def back(self, *, context_id: str | None = None) -> dict:
+        page = await self._get_page(context_id)
+        await page.go_back()
+        return {"url": page.url, "title": await page.title()}
+
+    async def forward(self, *, context_id: str | None = None) -> dict:
+        page = await self._get_page(context_id)
+        await page.go_forward()
+        return {"url": page.url, "title": await page.title()}
+
+    async def list_tabs(self, *, context_id: str | None = None) -> dict:
+        page = await self._get_page(context_id)
+        return {"tabs": [{"tab_id": 1, "url": page.url, "title": await page.title()}]}
+
+    async def open_tab(self, url: str, *, context_id: str | None = None) -> dict:
+        return await self.navigate(url, context_id=context_id)
+
+    async def focus_tab(self, *, context_id: str | None = None, **_kwargs) -> dict:
+        await self._get_page(context_id)
+        return {"ok": True}
+
     async def screenshot(
         self,
         *,
@@ -265,9 +306,18 @@ class PlaywrightPlugin(BasePlugin):
 # Dispatch table — verb name → method on the plugin. Keeps the provider
 # trivial and makes adding a verb a one-line registration.
 _ACTIONS = {
+    "list_tabs": "list_tabs",
+    "open_tab": "open_tab",
+    "focus_tab": "focus_tab",
     "navigate": "navigate",
+    "back": "back",
+    "forward": "forward",
+    "reload": "reload",
     "click": "click",
     "fill": "fill",
+    "press": "press",
+    "select": "select",
+    "scroll": "scroll",
     "screenshot": "screenshot",
     "snapshot": "snapshot",
     "eval": "eval",

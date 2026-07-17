@@ -590,6 +590,14 @@ speak:  edge-tts -> openai-tts -> kokoro -> xtts
 translate: nllb-200 (local) -> llm-translate
 ```
 
+`browse` has one intentional explicit-target exception. Playwright remains the
+default headless provider. When the Chrome extension has a user-armed Browser
+Session, callers may set `target="user-chrome"`, which hard-selects the
+`chrome-extension` provider over the authenticated realtime service. That
+provider is scoped to selected tabs and approved origins; it never silently
+redirects an existing Playwright call into the user's signed-in profile. See
+`.claude/rules/browser-extension-bridge.md` for the protocol and safety gates.
+
 ### Streaming
 
 ```python

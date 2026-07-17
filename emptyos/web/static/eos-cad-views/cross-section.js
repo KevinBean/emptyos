@@ -6,6 +6,7 @@
 // the shared chainage. The "drawing the trench cross-section" the tool couldn't do.
 
 import { defineView } from '/static/eos-cad-view.js';
+import { createSvgViewport } from '/static/eos-cad-svg-view.js';
 import {
   svg, runSpans, sectionAtChainage, interpDepth, arrangementOffsets, selectedRun,
   bFieldUt, fieldCablesForSection, superposedRiseC, thermalCablesForSection,
@@ -156,8 +157,8 @@ function renderSvg(vctx) {
     root.appendChild(svg('circle', { cx: px, cy: py, r: Math.max(2, coreR * scale), fill: run.props.color || '#d62728', stroke: '#0d1117' }));
     if (scale > 30) root.appendChild(svg('text', { x: px, y: py - Math.max(2, coreR * scale) - 2, fill: 'var(--muted)', 'font-size': 8, 'text-anchor': 'middle' }, [t(label)]));
   });
-  host.innerHTML = '';
-  host.appendChild(root);
+  if (vctx._svgViewport) vctx._svgViewport.mount(root, `0 0 ${W} ${H}`);
+  else { host.innerHTML = ''; host.appendChild(root); }
 }
 
 function t(s) { return document.createTextNode(s); }
@@ -186,12 +187,16 @@ const _v = defineView({
   markup: `<div class="cadv-xs">
     <div class="hd"><span class="ttl">Cross-section</span><span class="mbr" data-xs-mbr></span><span class="fld" data-xs-field></span>
       <input type="range" min="0" max="100" value="0" data-xs-slider aria-label="chainage">
-      <span class="ch" data-xs-ch></span></div>
+      <span class="ch" data-xs-ch></span><button type="button" class="eos-tool-btn" data-xs-fit title="Fit drawing">Fit</button></div>
     <div class="body"><div data-xs style="position:absolute;inset:0;"></div></div></div>`,
   events: ['doc', 'object', 'select', 'chainage'],
   mount(vctx) {
     const slider = vctx.pane.querySelector('[data-xs-slider]');
     if (slider) slider.addEventListener('input', () => vctx.store.setChainage(+slider.value));
+    const drawing = vctx.pane.querySelector('[data-xs]');
+    if (drawing) vctx._svgViewport = createSvgViewport(drawing);
+    const fit = vctx.pane.querySelector('[data-xs-fit]');
+    if (fit) fit.addEventListener('click', () => vctx._svgViewport && vctx._svgViewport.fit());
     render(vctx);
     vctx._onResize = () => renderSvg(vctx);
     window.addEventListener('resize', vctx._onResize);
@@ -204,7 +209,10 @@ const _v = defineView({
     }
     render(vctx);
   },
-  teardown(vctx) { if (vctx._onResize) window.removeEventListener('resize', vctx._onResize); },
+  teardown(vctx) {
+    if (vctx._onResize) window.removeEventListener('resize', vctx._onResize);
+    if (vctx._svgViewport) vctx._svgViewport.destroy();
+  },
 });
 
 export const mount = _v.mount;

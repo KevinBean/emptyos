@@ -11,12 +11,23 @@ from pathlib import Path
 
 from emptyos.sdk import BaseApp, cli_command, web_route
 
+from . import product as _product
 
-def _write_network_config(toml_path: Path, updates: dict[str, str]) -> tuple[bool, str]:
-    """Surgically update `[network]` keys in emptyos.toml, preserving comments.
 
-    `updates` maps key → value. All keys are written as quoted strings (caller's
-    responsibility to reject quotes in values). Returns (ok, error_message).
+def _write_toml_section(
+    toml_path: Path, section: str, updates: dict[str, str]
+) -> tuple[bool, str]:
+    """Surgically update keys in one `[section]` of emptyos.toml, preserving comments.
+
+    Every value is written as a quoted string; the caller must reject quotes and
+    newlines in values. Atomic (tmp + replace). Returns (ok, error_message).
+
+    Kept as a hand-rolled edit rather than a parse-and-dump because emptyos.toml is
+    a file the *user* also hand-edits — round-tripping it through a TOML writer
+    would silently eat their comments and reflow their layout.
+
+    Generalized from `[network]` when the product wizard needed the same treatment
+    for `[notes] path` (CLAUDE.md rule 9: extract on the second consumer).
     """
     if not updates:
         return True, ""
@@ -34,17 +45,17 @@ def _write_network_config(toml_path: Path, updates: dict[str, str]) -> tuple[boo
             section_text += "\n"
         return section_text + replacement + "\n"
 
-    header_match = re.search(r"(?m)^\[network\]\s*$", text)
+    header_match = re.search(rf"(?m)^\[{re.escape(section)}\]\s*$", text)
     if header_match:
         section_start = header_match.end()
         next_header = re.search(r"(?m)^\[", text[section_start:])
         section_end = section_start + next_header.start() if next_header else len(text)
-        section = text[section_start:section_end]
+        body = text[section_start:section_end]
         for key, value in updates.items():
-            section = _set_key_in(section, key, value)
-        new_text = text[:section_start] + section + text[section_end:]
+            body = _set_key_in(body, key, value)
+        new_text = text[:section_start] + body + text[section_end:]
     else:
-        trailer = "\n\n[network]\n"
+        trailer = f"\n\n[{section}]\n"
         for key, value in updates.items():
             trailer += f'{key} = "{value}"\n'
         new_text = text.rstrip() + trailer
@@ -58,11 +69,33 @@ def _write_network_config(toml_path: Path, updates: dict[str, str]) -> tuple[boo
     return True, ""
 
 
+def _write_network_config(toml_path: Path, updates: dict[str, str]) -> tuple[bool, str]:
+    """Back-compat shim — `[network]` is one section like any other now."""
+    return _write_toml_section(toml_path, "network", updates)
+
+
 # Mode → default host. Mirrors emptyos/kernel/config.py _MODE_DEFAULTS.
 _MODE_HOSTS = {"local": "127.0.0.1", "private": "0.0.0.0", "public": "0.0.0.0"}
 
 
 class SettingsApp(BaseApp):
+    # ── Product surfaces (extracted to product.py) ──
+    # Dark unless the launcher set EOS_PRODUCT, so a dev daemon never grows them.
+    _product_enabled          = _product._product_enabled
+    _bundle_root              = _product._bundle_root
+    _updater                  = _product._updater
+    _staged_version           = _product._staged_version
+    _current_version          = _product._current_version
+    product_info              = _product.product_info
+    api_product               = _product.api_product
+    api_product_vault         = _product.api_product_vault
+    api_product_restart       = _product.api_product_restart
+    api_product_update_status = _product.api_product_update_status
+    api_product_update_apply  = _product.api_product_update_apply
+
+    # Shared with product.py: the surgical, comment-preserving emptyos.toml editor.
+    _write_toml_section = staticmethod(_write_toml_section)
+
     def _settings(self):
         return self.require("settings")
 

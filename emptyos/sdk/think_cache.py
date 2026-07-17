@@ -67,21 +67,23 @@ def make_key(
     max_tokens: Any = None,
     agent: str | None = None,
     domain: str | None = None,
+    provider: str | None = None,
 ) -> str:
     """16-char SHA-256 prefix of all inputs that affect the response."""
-    payload = json.dumps(
-        {
-            "prompt": prompt,
-            "system": system or "",
-            "model": model or "",
-            "temperature": temperature,
-            "max_tokens": max_tokens,
-            "agent": agent,
-            "domain": domain,
-        },
-        sort_keys=True,
-        default=str,
-    )
+    inputs = {
+        "prompt": prompt,
+        "system": system or "",
+        "model": model or "",
+        "temperature": temperature,
+        "max_tokens": max_tokens,
+        "agent": agent,
+        "domain": domain,
+    }
+    # Preserve all pre-existing keys while making strict-provider calls safe
+    # to cache: the same prompt sent to two exact providers is not one answer.
+    if provider is not None:
+        inputs["provider"] = provider
+    payload = json.dumps(inputs, sort_keys=True, default=str)
     return hashlib.sha256(payload.encode()).hexdigest()[:16]
 
 

@@ -569,7 +569,9 @@ class PublishApp(BaseApp):
         if not slug:
             return {"error": "slug is required"}
 
-        all_items = self.scan()
+        # Drafts included: preview exists to review a post *before* it goes live,
+        # so it must see publish:false. Same draft-blindness the cover workflow had.
+        all_items = self.scan(include_drafts=True)
         item = next((p for p in all_items if p["slug"] == slug), None)
         if not item:
             return {"error": f"Post '{slug}' not found"}
@@ -693,6 +695,7 @@ class PublishApp(BaseApp):
 
     # --- Deploy: git push, static-mirror, Firebase (see deploy.py) ---
     deploy = _deploy.deploy
+    _new_posts_since_deploy = _deploy._new_posts_since_deploy
     _chatbot_refresh_after_deploy = _deploy._chatbot_refresh_after_deploy
     _run_git = _deploy._run_git
     _resolve_static_source = _deploy._resolve_static_source
@@ -722,6 +725,7 @@ class PublishApp(BaseApp):
 
     # --- Writer API: ai-write, topics, draft load/save, toggle (see writer.py) ---
     api_ai_write = _writer.api_ai_write
+    adapt_post = _writer.adapt_post
     api_toggle_publish = _writer.api_toggle_publish
     save_draft = _writer.save_draft
     api_save_draft = _writer.api_save_draft

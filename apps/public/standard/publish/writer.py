@@ -18,6 +18,7 @@ which would cycle).
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -31,12 +32,25 @@ from emptyos.sdk.utils import (
 
 from .prompts import PROMPTS
 
+# Markdown image / Obsidian embed syntax. Stripped from an essay before it's
+# adapted for social so a figure reference can't leak into the post text (the
+# social platforms carry no such image; the alt/caption is not the argument).
+_IMG_MARKDOWN = re.compile(r"!\[\[[^\]]*\]\]|!\[[^\]]*\]\([^)]*\)")
+
+
+def _strip_media(text: str) -> str:
+    """Drop image embeds and collapse the blank lines they leave behind."""
+    out = _IMG_MARKDOWN.sub("", text or "")
+    # Collapse 3+ newlines (left where an image sat on its own line) to 2.
+    return re.sub(r"\n{3,}", "\n\n", out).strip()
+
 if TYPE_CHECKING:
     from .app import PublishApp  # noqa: F401 — for type hints only
 
 
 # ─── Bind to PublishApp class as ─────────────────────────────────────
 #   api_ai_write        = _writer.api_ai_write
+#   adapt_post          = _writer.adapt_post
 #   api_toggle_publish  = _writer.api_toggle_publish
 #   save_draft          = _writer.save_draft
 #   api_save_draft      = _writer.api_save_draft
@@ -46,6 +60,58 @@ if TYPE_CHECKING:
 #   api_voice_status    = _writer.api_voice_status
 # Adding a new method here? Add a matching binding line in app.py.
 # ────────────────────────────────────────────────────────────────────
+
+# platform → the registered voice-aware adaptation prompt. adapt_post is the
+# single cross-app entry point (promote's distribution engine consumes it via
+# call_app); api_ai_write's adapt_* actions delegate here so the recipe lives
+# in exactly one place.
+_ADAPT_PROMPTS = {
+    "linkedin": "adapt_linkedin_prompt",
+    "x": "adapt_x_prompt",
+    "reddit": "adapt_reddit_prompt",
+}
+
+
+async def adapt_post(self, platform: str = "", text: str = "", parent: str = "") -> dict:
+    """Adapt a finished blog post into a per-platform social draft.
+
+    Public cross-app method (call_app target) — promote's distribution engine
+    passes the essay body + platform and stages the returned draft as a review
+    card. Injects the active site's voice guide (`_voice_block`) so an X thread
+    or Reddit post carries the same voice as the LinkedIn recipe.
+
+    Returns ``{ok, text, platform, provenance}`` or ``{error}`` — never raises,
+    so a single platform's failure doesn't abort a multi-platform run.
+    """
+    platform = (platform or "").strip().lower()
+    text = (text or "").strip()
+    prompt_key = _ADAPT_PROMPTS.get(platform)
+    if not prompt_key:
+        return {"error": f"Unknown platform: {platform or '(none)'}"}
+    if not text:
+        return {"error": "No text provided"}
+    try:
+        voice = await self._voice_block()
+        parent = (parent or "").strip()
+        user_msg = ""
+        if parent:
+            user_msg += f"Parent post file (for the parent_post frontmatter field): {parent}\n\n"
+        # Strip image embeds so a figure reference can't ride into the social copy.
+        user_msg += "Article:\n\n" + _strip_media(text)
+        result = await self.think(
+            user_msg,
+            domain="text",
+            system=getattr(PROMPTS, prompt_key) + voice,
+            temperature=0.5,
+        )
+    except Exception as e:
+        return {"error": f"adapt failed: {e}"}
+    return {
+        "ok": True,
+        "text": result,
+        "platform": platform,
+        "provenance": self.last_provenance(),
+    }
 
 
 async def _voice_block(self) -> str:
@@ -121,19 +187,15 @@ async def api_ai_write(self, request):
         )
         return {"review": result, "action": "review", "provenance": self.last_provenance()}
 
-    if action == "adapt_linkedin":
-        parent = (data.get("parent") or "").strip()
-        user_msg = ""
-        if parent:
-            user_msg += f"Parent post file (for the parent_post frontmatter field): {parent}\n\n"
-        user_msg += "Article:\n\n" + text
-        result = await self.think(
-            user_msg,
-            domain="text",
-            system=PROMPTS.adapt_linkedin_prompt + voice,
-            temperature=0.5,
-        )
-        return {"text": result, "action": "adapt_linkedin", "provenance": self.last_provenance()}
+    # Social adaptations (linkedin / x / reddit) all delegate to adapt_post so
+    # the recipe lives in one place; the response shape here stays as the
+    # writer panel expects ({text, action, provenance}).
+    if action.startswith("adapt_"):
+        platform = action[len("adapt_"):]
+        res = await self.adapt_post(platform=platform, text=text, parent=data.get("parent", ""))
+        if res.get("error"):
+            return {"error": res["error"]}
+        return {"text": res["text"], "action": action, "provenance": res.get("provenance")}
 
     prompts = {
         "polish": PROMPTS.polish_prompt + text,

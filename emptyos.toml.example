@@ -58,6 +58,12 @@ model = "llama3.1"
 #
 # [capabilities.think.domains.reason]
 # providers = ["claude"]
+#
+# --- Vision (local-first) — used by the `operate` app's distiller/executor ---
+# Pull a vision model first:  ollama pull qwen2.5vl:7b
+# [capabilities.think.domains.vision]
+# providers = ["ollama"]
+# model = "qwen2.5vl:7b"
 
 [scheduler]
 enabled = true
@@ -174,6 +180,12 @@ model = "llama3.1"                    # default model for generate
 # ollama_host = ""                    # auto-reads from plugins.ollama.host
 # comfyui_host = ""                   # auto-reads from plugins.comfyui.host
 
+# --- Screen capture (read-only screen grab + input recorder) ---
+# Backs the `operate` app's demonstration recorder. 100% local, no host.
+# Needs: pip install pynput mss   (pynput = input recording; mss = fast grabs,
+# PowerShell is the zero-dep fallback on Windows). No config keys.
+# [plugins.screen-capture]
+
 # ═══════════════════════════════════════════════════════
 # APPS
 # ═══════════════════════════════════════════════════════
@@ -186,6 +198,12 @@ autostart = []              # app IDs to start on boot (empty = start all)
 #   eos settings set think.app.shadowing "ollama"
 #   eos settings set think.app.shadowing.providers "ollama,openai"
 #   eos settings set think.app.shadowing.timeout 60
+
+# ── Operate app: learn-by-demonstration software operation (dark-default) ──
+# All off by default. Prefer the Settings ⚙ toggles (live, no restart).
+# [apps.operate]
+# feature.enabled = false            # master switch — record + browse demos
+# feature.executor.enabled = false   # live mouse/keyboard actuation (Phase 4)
 
 # ── Store app: marketplace registry ──
 # The Store's Marketplace tab browses an "official registry" — a list of

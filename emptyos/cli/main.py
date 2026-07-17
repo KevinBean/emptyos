@@ -258,8 +258,16 @@ def _run_via_daemon(
         result = json.loads(resp.read().decode())
         if result.get("output"):
             print(result["output"])
-        elif result.get("error"):
+        if result.get("error"):
             console.print(f"[red]{result['error']}[/red]")
+        # A daemon-side command failure (ok:false, or a bare error with no
+        # output) must surface as a non-zero exit — mirror the local path
+        # (_run_locally) so an agent/script branching on $? sees the failure
+        # instead of a false success (.claude/rules/agent-cli.md).
+        if result.get("ok") is False or (
+            result.get("error") and not result.get("output")
+        ):
+            raise typer.Exit(1)
     except urllib.error.HTTPError as e:
         body = ""
         try:
@@ -271,10 +279,11 @@ def _run_via_daemon(
                 f"[red]Daemon rejected '{cmd_name}' (HTTP {e.code}).[/red] "
                 "Check that `network.auth_token` in emptyos.toml matches the running daemon."
             )
-            return
+            raise typer.Exit(1) from e
         console.print(f"[red]Daemon CLI request failed (HTTP {e.code}).[/red]")
         if body:
             console.print(f"[dim]{body}[/dim]")
+        raise typer.Exit(1) from e
     except (urllib.error.URLError, OSError):
         if daemon_required:
             console.print(
@@ -299,22 +308,41 @@ def _run_locally(app_id: str, cmd_name: str, cfg_path: str, args: list[str] | No
         k.apps.discover()
         instance = await k.apps.load(app_id)
 
-        method = None
-        for meta, m in instance.get_cli_methods():
-            if meta["name"] == cmd_name:
-                method = m
-                break
+        from emptyos.sdk.cli_args import (
+            bind_cli_kwargs,
+            render_cli_return,
+            resolve_cli_method,
+        )
+
+        # Subcommand-aware resolution, matching the daemon /api/cli path.
+        method, cmd_args = resolve_cli_method(
+            instance.get_cli_methods(), cmd_name, args
+        )
         if not method:
             console.print(f"[red]Command '{cmd_name}' not found in app '{app_id}'[/red]")
             raise typer.Exit(1)
 
-        from emptyos.sdk.cli_args import bind_cli_kwargs
+        kwargs = bind_cli_kwargs(method, cmd_args)
 
-        kwargs = bind_cli_kwargs(method, list(args) if args else [])
+        # Wrap the call so a raising command prints a clean error + exits
+        # non-zero, mirroring the daemon /api/cli path (which returns
+        # {ok:false, error}). Without this the local-fallback path dumps a
+        # raw traceback. typer.Exit (e.g. command-not-found above) passes through.
+        try:
+            result = method(**kwargs)
+            if inspect.isawaitable(result):
+                result = await result
+        except typer.Exit:
+            raise
+        except Exception as e:  # noqa: BLE001 — surface any command failure cleanly
+            console.print(f"[red]{cmd_name} failed:[/red] {e}")
+            raise typer.Exit(1) from e
 
-        result = method(**kwargs)
-        if inspect.isawaitable(result):
-            await result
+        # A command that returns a value instead of printing still shows it.
+        # (The method's own prints already streamed to the terminal live.)
+        rendered = render_cli_return(result)
+        if rendered is not None:
+            print(rendered)
 
     asyncio.run(_run())
 

@@ -96,10 +96,48 @@ Recipe:
 - **First person, sincere, not sold.** No engagement bait ("Let that sink in", "Agree?"), no emoji spam, no hype words (revolutionary, game-changing, 10x, unlock, transform, leverage), no "excited to announce".
 - **End with a CTA to the full article** — one line, plain: "Full write-up with the numbers/method: <link>". If the parent post's URL isn't derivable, leave the placeholder `{article_url}`.
 - **At most 3 hashtags**, on the final line, specific not generic (e.g. #PowerSystems #AIEngineering — never #motivation #success).
+- **No images.** Never emit image markdown (`![...](...)`), figure references, or alt-text — the platform carries no figures; write the point in prose.
 
 Output format — return ONLY a complete markdown document:
 - Frontmatter: `type: social-draft`, `target: linkedin`, and `parent_post: <parent file name>` when a parent file is given (omit the field otherwise). Tags, if any, in block style.
 - Then the post body per the recipe.
+No commentary outside the document.
+
+"""
+
+ADAPT_X_PROMPT = """You adapt a finished blog post into an X (Twitter) thread. The recipe below is codified from how the author distributes long-form writing — follow it exactly; do not invent a different social style.
+
+Recipe:
+- **Thread of 3-6 tweets.** Each tweet stands alone but the thread builds one argument. Fewer is better — never pad to hit a count.
+- **Tweet 1 is the hook** — the post's sharpest concrete finding or the tension it resolves, in one scroll-stopping line. No "🧵", no "a thread on…", no throat-clearing.
+- **Each tweet ≤ 270 characters** (hard limit — leave room; do not fill to the brim). One idea per tweet.
+- **Keep the real numbers.** Measured figures from the post carry the argument — keep them exact. NEVER invent, round, or add metrics the post doesn't contain.
+- **Plain and sincere, not sold.** No engagement bait ("Let that sink in", "Here's why 👇 that matters"), no emoji spam, no hype words (revolutionary, game-changing, 10x, unlock, transform, leverage), no "excited to share".
+- **The final tweet links the full article** — one line: "Full write-up: <link>". If the parent post's URL isn't derivable, use the placeholder `{article_url}`.
+- **No images.** Never emit image markdown (`![...](...)`), figure references, or alt-text.
+
+Output format — return ONLY a complete markdown document:
+- Frontmatter: `type: social-draft`, `target: x`, and `parent_post: <parent file name>` when a parent file is given (omit the field otherwise).
+- Then the thread as a numbered markdown list, one list item per tweet (`1.`, `2.`, …), text only — the number is the tweet position, not part of the tweet.
+No commentary outside the document.
+
+"""
+
+ADAPT_REDDIT_PROMPT = """You adapt a finished blog post into a Reddit self-post (text post). The recipe below is codified for a technical subreddit audience — follow it exactly; do not write marketing copy.
+
+Recipe:
+- **A title line, then a selftext body.** The title is a plain, specific, curiosity-driven statement of the post's finding — NOT clickbait, NOT a question unless the post genuinely asks one. Under 300 chars.
+- **Lead the body with the technical substance**, not with who you are or that you wrote something. Redditors downvote self-promotion; earn the read by being useful in the first two sentences.
+- **Invite critique.** End with a genuine question or an explicit "tell me where this is wrong" — the subreddit norm is discussion, not broadcast.
+- **Keep the real numbers exact.** NEVER invent or round metrics the post doesn't contain.
+- **Ban the marketing register entirely**: no "excited to share", no "I built a tool that…", no hype words, no emoji. Write the way a knowledgeable peer posts.
+- **Link the full article once**, near the end, framed as "more detail / the full write-up": `<link>` or the placeholder `{article_url}` if not derivable.
+- **Do NOT name a subreddit** — the author picks that; write body text that would read well in a serious technical sub.
+- **No images.** Never emit image markdown (`![...](...)`), figure references, or alt-text — Reddit selftext carries no figures.
+
+Output format — return ONLY a complete markdown document:
+- Frontmatter: `type: social-draft`, `target: reddit`, and `parent_post: <parent file name>` when a parent file is given (omit the field otherwise).
+- Then a `# ` heading line holding the post title, then the selftext body.
 No commentary outside the document.
 
 """
@@ -175,6 +213,8 @@ PROMPTS = declare_prompts(
     compress_prompt=COMPRESS_PROMPT,
     translate_prompt=TRANSLATE_PROMPT,
     adapt_linkedin_prompt=ADAPT_LINKEDIN_PROMPT,
+    adapt_x_prompt=ADAPT_X_PROMPT,
+    adapt_reddit_prompt=ADAPT_REDDIT_PROMPT,
     outline_prompt=OUTLINE_PROMPT,
     cover_summarizer_system=COVER_SUMMARIZER_SYSTEM,
     cover_art_director_system=COVER_ART_DIRECTOR_SYSTEM,

@@ -4,7 +4,10 @@ build-backend = "hatchling.build"
 
 [project]
 name = "emptyos"
-version = "0.1.0"
+# Keep in step with release.toml [release].version — that is the single source of
+# truth (package-release.py stamps it into every artifact's MANIFEST.json, and the
+# product's About panel reads it back). Pinned by tests/test_unit_package_release.py.
+version = "0.5.6"
 description = "A mind companion. Think and create with you, not for you. A personal AI-powered operating system — empty by default, infinite by design."
 license = "AGPL-3.0-or-later"
 license-files = ["LICENSE"]
@@ -45,6 +48,7 @@ cables = ["openpyxl>=3.1"]
 desktop = ["pystray>=0.19", "Pillow>=10"]   # system-tray icon for the desktop daily driver
 devices = ["qrcode>=7.4", "Pillow>=10"]     # e-ink panel rasterizer + scan-to-act QR (paper dashboard)
 data = ["duckdb>=1.1"]                      # ephemeral in-memory SQL over rows/CSV + read-only sqlite ATTACH (sdk/tabular.py)
+english = ["wordfreq>=3.1"]                 # the reading layer's difficulty bar — frequency, not model opinion (dictionary/word_bar.py)
 power = ["pandapower>=2.14,<4"]             # optional Power Study parity wrapper (load-flow + IEC 60909 short-circuit)
 
 [project.scripts]

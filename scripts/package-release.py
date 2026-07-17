@@ -120,6 +120,59 @@ def run_safety_checks() -> bool:
     return ok
 
 
+# Secret-shaped filenames. Belt-and-braces behind the .gitignore filter below:
+# a key that .gitignore has never been told about must still not ship.
+SECRET_GLOBS = (
+    ".env", ".env.*", "*.pem", "*.key", "*.p12", "*.pfx",
+    "id_rsa", "id_ed25519", "credentials.json", "*-token.json", "*-client.json",
+)
+
+
+def gitignored(paths: list[Path]) -> set[Path]:
+    """The subset of ``paths`` that git ignores.
+
+    This collector copies from the **working tree**, not from a git snapshot, so
+    without this filter every gitignored file inside an included directory ships.
+    That is not hypothetical: before this existed, a `standard` artifact carried
+    129 of them — ``tests/personal/`` (gitignored precisely because it is
+    personal), ``tests/_dogfood-phone/*.png`` (screenshots of a real vault),
+    ``emptyos/.obsidian/``, and a live ``skills/*/.env`` API key.
+
+    .gitignore is already the repo's declaration of "per-machine, secret, or
+    generated". Honouring it here cannot over-exclude: a tracked file is never
+    ignored, and everything meant to ship is tracked.
+    """
+    if not paths:
+        return set()
+    rels = [p.relative_to(ROOT).as_posix() for p in paths]
+    # NUL-separated bytes, not text=True: on Windows text mode rewrites "\n" to
+    # "\r\n" on the way *in*, so git sees filenames ending in a carriage return
+    # and C-quotes them back ("tests/x.png\r"), which then match nothing.
+    payload = b"\0".join(r.encode("utf-8") for r in rels)
+    try:
+        r = subprocess.run(
+            ["git", "check-ignore", "-z", "--stdin"], cwd=str(ROOT),
+            input=payload, capture_output=True,
+        )
+    except FileNotFoundError:
+        print("  Warning: git not on PATH — cannot honour .gitignore; "
+              "relying on secret-name denylist only")
+        return set()
+    # 0 = some ignored, 1 = none ignored. Anything else is a real git failure.
+    if r.returncode not in (0, 1):
+        raise SystemExit(f"git check-ignore failed: {r.stderr.decode(errors='replace').strip()}")
+    return {(ROOT / part.decode("utf-8")).resolve()
+            for part in r.stdout.split(b"\0") if part}
+
+
+def is_secret_name(path: Path) -> bool:
+    # A template carries no secret and is worth shipping — `.env.example` is
+    # documentation, not a credential.
+    if path.suffix in (".example", ".sample", ".template"):
+        return False
+    return any(path.match(g) for g in SECRET_GLOBS)
+
+
 def collect_files(release: dict, tier: dict) -> list[tuple[Path, Path]]:
     """Collect (source, relative_dest) pairs for the release.
 
@@ -188,7 +241,54 @@ def collect_files(release: dict, tier: dict) -> list[tuple[Path, Path]]:
         else:
             print(f"  Warning: skill '{skill_id}' not found at {skill_dir}")
 
-    return files
+    # Drop anything git already knows we must not ship. Last step, so it applies
+    # uniformly to platform paths, apps, plugins and skills alike.
+    ignored = gitignored([src for src, _ in files])
+    kept, dropped = [], []
+    for src, rel in files:
+        if src.resolve() in ignored or is_secret_name(src):
+            dropped.append(rel.as_posix())
+        else:
+            kept.append((src, rel))
+    if dropped:
+        secrets = [d for d in dropped if is_secret_name(Path(d))]
+        print(f"  Excluded {len(dropped)} gitignored/secret file(s) from the release")
+        for s in secrets:
+            print(f"    secret withheld: {s}")
+    return kept
+
+
+def audit_output(out_dir: Path) -> None:
+    """Refuse to hand back an artifact that carries something git told us to hide.
+
+    The collector already filters, so this can only fire on a regression — a new
+    include path, a copy that bypasses ``collect_files``, or a secret shape the
+    denylist gained after the filter ran. It is cheap and it is the last gate
+    before the tree is frozen into an exe and handed to a stranger.
+    """
+    copied = [p for p in out_dir.rglob("*") if p.is_file()]
+    secrets = [p for p in copied if is_secret_name(p)]
+
+    # Re-ask git, this time about the *source* paths the artifact mirrors.
+    sources = []
+    for p in copied:
+        src = ROOT / p.relative_to(out_dir)
+        if src.exists():
+            sources.append(src)
+    leaked = gitignored(sources)
+
+    problems = sorted(
+        {p.relative_to(out_dir).as_posix() for p in secrets}
+        | {s.relative_to(ROOT).as_posix() for s in leaked}
+    )
+    if problems:
+        print(f"\nABORTED: {len(problems)} file(s) in the artifact must not ship:")
+        for p in problems[:20]:
+            print(f"  {p}")
+        if len(problems) > 20:
+            print(f"  ... and {len(problems) - 20} more")
+        shutil.rmtree(out_dir, ignore_errors=True)
+        sys.exit(1)
 
 
 def package(tier_name: str, dry_run: bool = False, platform_override: str | None = None):
@@ -261,6 +361,8 @@ def package(tier_name: str, dry_run: bool = False, platform_override: str | None
         dest = out_dir / rel
         dest.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(src, dest)
+
+    audit_output(out_dir)
 
     # Write manifest
     manifest = {

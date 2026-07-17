@@ -1023,11 +1023,17 @@ def create_server(kernel: Kernel) -> FastAPI:
                 "error": f"App '{app_id}' not found",
             }
 
-        method = None
-        for meta, m in instance.get_cli_methods():
-            if meta["name"] == cmd_name:
-                method = m
-                break
+        from emptyos.sdk.cli_args import (
+            bind_cli_kwargs,
+            render_cli_return,
+            resolve_cli_method,
+        )
+
+        # Subcommand-aware resolution: `eos <app> <sub> …` finds a
+        # @cli_command("<sub>") method and consumes the sub-verb from args.
+        method, cmd_args = resolve_cli_method(
+            instance.get_cli_methods(), cmd_name, args
+        )
         if not method:
             return {
                 "ok": False,
@@ -1039,18 +1045,22 @@ def create_server(kernel: Kernel) -> FastAPI:
         import contextlib
         import io
 
-        from emptyos.sdk.cli_args import bind_cli_kwargs
-
         buf = io.StringIO()
         try:
             with contextlib.redirect_stdout(buf):
-                kwargs = bind_cli_kwargs(method, list(args) if args else [])
+                kwargs = bind_cli_kwargs(method, cmd_args)
 
                 result = method(**kwargs)
                 if inspect.isawaitable(result):
-                    await result
+                    result = await result
 
-            return {"ok": True, "output": buf.getvalue(), "error": None}
+            # A command that returns a value instead of printing still shows it.
+            output = buf.getvalue()
+            if not output:
+                rendered = render_cli_return(result)
+                if rendered is not None:
+                    output = rendered
+            return {"ok": True, "output": output, "error": None}
         except Exception as e:
             return {
                 "ok": False,

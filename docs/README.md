@@ -14,6 +14,7 @@ The map of the docs. Find the doc for what you're trying to do. Each entry is ta
 |---|---|
 | [../README.md](../README.md) | What EmptyOS is, why, quick start, architecture · `[authored] [shipped]` |
 | [GETTING-STARTED.md](GETTING-STARTED.md) | Install, configure providers, first boot · `[authored] [shipped]` |
+| [DESKTOP.md](DESKTOP.md) | EmptyOS Desktop — the double-clickable Windows build: install, updates, uninstall · `[authored] [shipped]` |
 | [APPS.md](APPS.md) | The app catalog — every app, what it does, its capabilities · `[generated] [shipped]` |
 | [PRIVACY.md](PRIVACY.md) | What stays local, what cloud consent means · `[authored] [internal]` |
 
@@ -26,6 +27,7 @@ The map of the docs. Find the doc for what you're trying to do. Each entry is ta
 | [FRONTEND-DESIGN-LANGUAGE.md](FRONTEND-DESIGN-LANGUAGE.md) | Visual + interaction DNA — read before touching a page · `[authored] [internal]` |
 | [CONVERSATION-STACK.md](CONVERSATION-STACK.md) | The 5 chat backends × 8 frontends, and when to use which · `[authored] [internal]` |
 | [CONTEXT-PACKING.md](CONTEXT-PACKING.md) | Token-compression domain · `[authored] [internal]` |
+| [EOS-MARKDOWN-PROFILE.md](EOS-MARKDOWN-PROFILE.md) | Vault Markdown storage + rendering contract · `[authored] [internal]` |
 | [SOFT-SCHEMA.md](SOFT-SCHEMA.md) | VaultModel soft-typed frontmatter · `[authored] [internal]` |
 | [ENGINEERING-APP-WORKFLOW.md](ENGINEERING-APP-WORKFLOW.md) | Build an engineering calculator end-to-end · `[authored] [internal]` |
 | [ROOMS-V3.md](ROOMS-V3.md) · [app-builder.md](app-builder.md) | Rooms review gate · in-app app generation · `[authored] [internal]` |

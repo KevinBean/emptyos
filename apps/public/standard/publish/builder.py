@@ -573,6 +573,11 @@ class SiteBuilder:
                 "cover": fm_str(fm, "cover"),
                 "draft": not is_published,
                 "publish_at": fm_str(fm, "publish_at"),
+                # corpus: false → the note still builds + deploys (stays live for
+                # SEO/links) but is dropped from corpus.json, so the chatbot never
+                # retrieves it. First deprecation lever; pair it with the site's
+                # avoid_topics prompt exclusion in the chatbot service.
+                "corpus": str(fm.get("corpus", "true")).lower() not in ("false", "no"),
             }
 
             if item_type == "page":
@@ -1458,6 +1463,8 @@ class SiteBuilder:
         chunks: list[dict] = []
 
         for post in posts or []:
+            if not post.get("corpus", True):
+                continue
             try:
                 content = Path(post["path"]).read_text(encoding="utf-8")
             except Exception:
@@ -1479,6 +1486,8 @@ class SiteBuilder:
                 )
 
         for pg in pages or []:
+            if not pg.get("corpus", True):
+                continue
             try:
                 content = Path(pg["path"]).read_text(encoding="utf-8")
             except Exception:
@@ -1499,7 +1508,7 @@ class SiteBuilder:
                     }
                 )
 
-        if landing:
+        if landing and landing.get("corpus", True):
             try:
                 content = Path(landing["path"]).read_text(encoding="utf-8")
                 body_md = strip_frontmatter(content).strip()

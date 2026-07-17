@@ -201,6 +201,38 @@ _PATHLIB_APPS_RE = re.compile(
 )
 # Sibling-module shim used by dogfood-agent tests after a sys.path insert.
 _SIBLING_BEHAVIOR_RE = re.compile(r"^\s*import\s+behavior\b", re.MULTILINE)
+
+# A system test binds to an app through its HTTP ROUTE, not a Python import:
+# test_sys_grill.py never imports the app, it just GETs /grill/api/*. Every regex
+# above is import-shaped, so those tests sailed into the public snapshot and could
+# never pass there (v0.5.5 shipped test_sys_{grill,explore,bess_analyser}.py against
+# apps that do not exist in the public tree).
+#
+# Deliberately narrow to stay false-positive-free: the prefix must be followed by
+# `api/` or immediately closed. That matches "/grill/" and "/bess-analyser/api/runs"
+# but NOT a filesystem path like "/tmp/foo" or a URL like "https://x/y/".
+_HTTP_ROUTE_RE = re.compile(r"""['"]/([a-z][a-z0-9-]*)/(?:api/|['"])""")
+
+# Platform routes served by the kernel, not by any app — never a binding signal.
+_PLATFORM_ROUTE_PREFIXES = frozenset(
+    {"api", "static", "ws", "docs", "system", "topology", "debug", "pages"}
+)
+
+# test_sys_* files that test the PLATFORM, not an app. They reference app routes
+# incidentally (auth drives a public-face route; snapshot_boot boots a synthetic
+# app tree), so the app-scoped heuristic below would drop them. Each entry is a
+# measured false positive, not a guess.
+_PLATFORM_TEST_STEMS = frozenset(
+    {
+        "test_sys_auth",
+        "test_sys_snapshot_boot",
+        "test_sys_mobile",
+        "test_sys_pwa",
+        "test_sys_readability",
+        "test_sys_app_nav",
+        "test_sys_ui_affordance",
+    }
+)
 # Engine imports: `from engines.<id>...` / `import engines.<id>`.
 _ENGINE_IMPORT_RE = re.compile(
     r"\b(?:from|import)\s+engines\.([a-z][a-z0-9_]*)"
@@ -251,6 +283,40 @@ def drop_tests_bound_to(
         for match in _PATHLIB_APPS_RE.finditer(source):
             if match.group(1) not in app_allowlist:
                 reasons.add(f'"apps" / "{match.group(1)}"')
+        # A route reference alone is NOT binding — test_journeys.py and
+        # test_edge_cases.py legitimately touch many apps (the latter pokes
+        # /zzz-no-such-app/ on purpose), and dropping them would delete real public
+        # coverage. Measured: the bare-route signal drops 113 files and takes
+        # test_sys_kb.py — a PUBLIC app — with it.
+        #
+        # Bound means the absent app is the test's own SUBJECT, which its filename
+        # declares: test_sys_grill.py ↔ /grill/, test_dogfood_jobs.py ↔ /jobs/.
+        # Require both, and the signal is exact.
+        stem = test_file.stem  # e.g. test_sys_bess_analyser, test_sys_cable_rating_report
+        # An app-scoped test (test_sys_*) that never names a SHIPPED app in its
+        # filename is a test for an app that does not ship — whatever routes it
+        # happens to call. test_sys_cable_rating_report.py hits /cable-network/,
+        # so a filename↔route match alone would have missed it.
+        # test_sys_* usually means "system test FOR an app", but a few test the
+        # PLATFORM and merely poke an app's route while doing so (auth exercises a
+        # public-face route; snapshot_boot boots a synthetic tree). Measured as real
+        # false positives — they must not be treated as app-bound.
+        app_scoped = (
+            stem.startswith("test_sys_") and stem not in _PLATFORM_TEST_STEMS
+        )
+        names_public_app = any(
+            ("_" + app.replace("-", "_")) in stem for app in app_allowlist
+        )
+        for match in _HTTP_ROUTE_RE.finditer(source):
+            prefix = match.group(1)
+            if prefix in _PLATFORM_ROUTE_PREFIXES or prefix in app_allowlist:
+                continue
+            # Containment, not endswith: test_sys_cable_rating_report.py IS a
+            # cable-rating test — the suffix names the aspect, not another subject.
+            bound_by_name = ("_" + prefix.replace("-", "_")) in stem
+            if bound_by_name or (app_scoped and not names_public_app):
+                reasons.add(f"/{prefix}/ (route of an absent app)")
+
         if engine_allowlist is not None:
             for match in _ENGINE_IMPORT_RE.finditer(source):
                 if match.group(1) not in engine_allowlist:

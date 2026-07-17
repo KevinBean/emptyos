@@ -202,7 +202,9 @@ async def api_cover_status(self, request):
     if not media_dir.exists():
         return {"covers": {}}
 
-    posts_by_slug = {p["slug"]: p["path"] for p in self.scan()}
+    # Drafts included: a cover is authored *before* the post goes live, so the
+    # whole cover workflow (status/generate/approve/reject) must see publish:false.
+    posts_by_slug = {p["slug"]: p["path"] for p in self.scan(include_drafts=True)}
 
     covers = {}
     for f in media_dir.iterdir():
@@ -238,7 +240,7 @@ async def api_generate_cover(self, request):
     if not slug:
         return {"error": "slug is required"}
 
-    all_items = self.scan()
+    all_items = self.scan(include_drafts=True)
     post = next((p for p in all_items if p["slug"] == slug), None)
     if not post:
         return {"error": f"Post '{slug}' not found"}
@@ -345,7 +347,7 @@ async def api_approve_cover(self, request):
     if not slug:
         return {"error": "slug is required"}
 
-    all_items = self.scan()
+    all_items = self.scan(include_drafts=True)
     post = next((p for p in all_items if p["slug"] == slug), None)
     if not post:
         return {"error": f"Post '{slug}' not found"}
@@ -380,7 +382,7 @@ async def api_reject_cover(self, request):
             return {"error": f"Failed to delete cover: {e}"}
 
     stripped = False
-    all_items = self.scan()
+    all_items = self.scan(include_drafts=True)
     post = next((p for p in all_items if p["slug"] == slug), None)
     if post:
         try:
@@ -512,7 +514,9 @@ async def api_generate_podcast(self, request):
     if not slug:
         return {"error": "slug is required"}
 
-    all_items = self.scan()
+    # Drafts included: a podcast is prepared for a post before it goes live, same
+    # pre-publish shape as cover generation. Build/translate stay published-only.
+    all_items = self.scan(include_drafts=True)
     post = next((p for p in all_items if p["slug"] == slug), None)
     if not post:
         return {"error": f"Post '{slug}' not found"}

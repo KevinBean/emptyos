@@ -39,6 +39,8 @@ schema = [
     {key = "worklog-capture.retention_days", label = "Keep processed captures (days)", type = "number", default = 30},
     {key = "worklog-capture.include_browser", label = "Capture browser URL/title on live scrape", type = "boolean", default = true},
     {key = "worklog-capture.include_selection", label = "Capture selected text (simulates Cmd+C)", type = "boolean", default = false},
+    {key = "worklog-capture.local_only", label = "Draft with a local model only (screen OCR + browser trail never leave the machine)", type = "boolean", default = true},
+    {key = "worklog-capture.local_provider", label = "Local think provider", type = "text", default = "ollama"},
     {key = "worklog-capture.source_sessions", label = "Cross-check with AI-session trail (Claude/Codex)", type = "boolean", default = true},
     {key = "worklog-capture.source_browser", label = "Cross-check with browser history (Chrome)", type = "boolean", default = true},
     {key = "worklog-capture.source_calendar", label = "Cross-check with calendar events", type = "boolean", default = true},

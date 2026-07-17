@@ -1,0 +1,195 @@
+<!--
+  First-run wizard — the first thing a packaged-product user ever sees.
+
+  The launcher opens this instead of the start URL when it just created the
+  config (products/_shared/launcher_core.startup_url). It is a page in the
+  settings app rather than a native dialog in the launcher, because every field
+  it writes already has a settings API behind it — a native wizard would be a
+  second way to write the same four values.
+
+  Nothing here requires a terminal. `eos init` remains the CLI path.
+-->
+<link rel="stylesheet" href="/static/theme.css">
+<link rel="stylesheet" href="/static/eos-components.css">
+<script>
+  // Theme bootstrap — without it the tokens below collapse to their defaults
+  // and the page renders unstyled for a beat. Must run before first paint.
+  (function () {
+    var t = localStorage.getItem('eos-theme') || 'theme-eos';
+    document.documentElement.className = t;
+  })();
+</script>
+
+<style>
+    body { margin: 0; background: var(--bg); color: var(--text); font-family: var(--font); }
+    .wiz { max-width: 620px; margin: 0 auto; padding: 48px 24px 64px; }
+    .wiz-hero { text-align: center; margin-bottom: 40px; }
+    .wiz-hero h1 { font-size: 2rem; margin: 0 0 8px; }
+    .wiz-hero p { color: var(--text-muted); margin: 0; }
+    .wiz-step {
+        background: var(--surface); border: 1px solid var(--border);
+        border-radius: var(--radius); padding: 20px; margin-bottom: 16px;
+    }
+    .wiz-step h2 { font-size: 1rem; margin: 0 0 4px; }
+    .wiz-step .hint { color: var(--text-muted); font-size: .875rem; margin: 0 0 12px; }
+    .wiz-step input[type=text] {
+        width: 100%; box-sizing: border-box; padding: 10px 12px;
+        background: var(--bg); color: var(--text);
+        border: 1px solid var(--border); border-radius: var(--radius-sm);
+        font-family: var(--font); font-size: .9375rem;
+    }
+    .wiz-note { font-size: .8125rem; margin-top: 8px; min-height: 1.2em; }
+    .wiz-note.ok { color: var(--green); }
+    .wiz-note.err { color: var(--red); }
+    .wiz-actions { display: flex; gap: 12px; align-items: center; margin-top: 24px; }
+    .wiz-skip { color: var(--text-muted); font-size: .875rem; text-decoration: none; }
+    .wiz-skip:hover { color: var(--text); }
+    .wiz-version { text-align: center; color: var(--text-muted); font-size: .75rem; margin-top: 32px; }
+</style>
+
+<div class="wiz">
+    <div class="wiz-hero">
+        <h1 id="wiz-title">Welcome to EmptyOS</h1>
+        <p>Three things and you're in. You can change any of them later in Settings.</p>
+    </div>
+
+    <div class="wiz-step">
+        <h2>What should it call you?</h2>
+        <p class="hint">Used in your journal, briefings and greetings.</p>
+        <input type="text" id="wiz-name" placeholder="Your name" autocomplete="off">
+    </div>
+
+    <div class="wiz-step">
+        <h2>Where should your notes live?</h2>
+        <p class="hint">
+            A plain folder of markdown files — yours, readable without EmptyOS, and
+            safe to point at a vault you already have.
+        </p>
+        <input type="text" id="wiz-vault" placeholder="C:/Users/you/Documents/EmptyOSVault" autocomplete="off">
+        <div class="wiz-note" id="wiz-vault-note"></div>
+    </div>
+
+    <div class="wiz-step">
+        <h2>AI key <span style="color:var(--text-muted);font-weight:400">(optional)</span></h2>
+        <p class="hint">
+            EmptyOS works without one. Add an OpenAI key and the AI features switch
+            on — your key, your bill, stored only on this machine.
+        </p>
+        <input type="text" id="wiz-key" placeholder="sk-..." autocomplete="off">
+    </div>
+
+    <div class="wiz-actions">
+        <button class="eos-btn eos-btn-primary" id="wiz-go" onclick="finish()">Get started</button>
+        <a class="wiz-skip" href="#" onclick="skip(); return false;">Skip for now</a>
+        <span class="wiz-note" id="wiz-status"></span>
+    </div>
+
+    <div class="wiz-version" id="wiz-version"></div>
+</div>
+
+<script>
+var INFO = {};
+
+function note(el, msg, cls) {
+    var n = document.getElementById(el);
+    n.textContent = msg || '';
+    n.className = 'wiz-note' + (cls ? ' ' + cls : '');
+}
+
+async function load() {
+    try {
+        INFO = await fetch('/settings/api/product').then(function (r) { return r.json(); });
+    } catch (e) { INFO = {}; }
+
+    if (INFO.vault_path) {
+        document.getElementById('wiz-vault').value = INFO.vault_path;
+    }
+    if (INFO.version) {
+        document.getElementById('wiz-version').textContent =
+            'EmptyOS ' + INFO.version + (INFO.tier ? ' · ' + INFO.tier : '');
+    }
+    // Running from source (no EOS_PRODUCT) — the wizard has nothing to configure.
+    if (!INFO.enabled) {
+        note('wiz-status', 'Not running as a packaged product — nothing to set up here.', 'err');
+        document.getElementById('wiz-go').disabled = true;
+    }
+}
+
+async function saveVault() {
+    var path = document.getElementById('wiz-vault').value.trim();
+    if (!path || path === INFO.vault_path) return true;   // unchanged: no restart needed
+
+    var res = await fetch('/settings/api/product/vault', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path: path })
+    }).then(function (r) { return r.json(); });
+
+    if (res.error) { note('wiz-vault-note', res.error, 'err'); return false; }
+    note('wiz-vault-note',
+         res.adopted_existing ? 'Found notes already there — EmptyOS will adopt them.'
+                              : 'Created.', 'ok');
+    return 'restart';
+}
+
+async function saveSettings() {
+    var payload = {};
+    var name = document.getElementById('wiz-name').value.trim();
+    var key = document.getElementById('wiz-key').value.trim();
+    if (name) payload['user.name'] = name;
+    if (key) payload['byok.openai_key'] = key;
+    if (!Object.keys(payload).length) return;
+    await fetch('/settings/api/set-bulk', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+    });
+}
+
+function skip() { window.location.href = '/hub/'; }
+
+async function finish() {
+    var btn = document.getElementById('wiz-go');
+    btn.disabled = true;
+    note('wiz-status', 'Saving…');
+
+    var vault = await saveVault();
+    if (vault === false) { btn.disabled = false; note('wiz-status', ''); return; }
+    await saveSettings();
+
+    // The kernel reads the vault path at boot, so a change only lands on the next
+    // start. The launcher is waiting on our exit code and will respawn us.
+    if (vault === 'restart') {
+        note('wiz-status', 'Restarting to open your vault…');
+        await fetch('/settings/api/product/restart', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ confirm: true })
+        }).catch(function () { });
+        waitForRestart();
+        return;
+    }
+    window.location.href = '/hub/';
+}
+
+function waitForRestart() {
+    // Poll until the new daemon answers, then go. The connection dies under us
+    // mid-restart, so every failure here is expected.
+    var tries = 0;
+    var timer = setInterval(function () {
+        tries++;
+        fetch('/api/health', { cache: 'no-store' })
+            .then(function (r) {
+                if (r.ok) { clearInterval(timer); window.location.href = '/hub/'; }
+            })
+            .catch(function () { /* still down — keep waiting */ });
+        if (tries > 120) {   // 4 minutes: a frozen first boot is slow
+            clearInterval(timer);
+            note('wiz-status', 'Still starting… open http://127.0.0.1:' +
+                 window.location.port + '/hub/ in a moment.', 'err');
+        }
+    }, 2000);
+}
+
+load();
+</script>

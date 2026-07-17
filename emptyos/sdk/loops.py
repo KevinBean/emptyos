@@ -338,6 +338,45 @@ LOOPS: list[Loop] = [
         components=("apps/extension/dev/kb-gap-miner/",),
         family="engineering",
     ),
+    # --- Family: learning (adaptive reading feedback) ---
+    Loop(
+        id="adaptive-reading",
+        name="Adaptive reading assistance",
+        summary="Visible page text surfaces likely hard words; the reader can "
+        "open, mark known/hard, or save them. Cloud consent and explicit modes "
+        "gate action; feedback and a bounded derived-response cache tune later "
+        "suggestions. Off/site-pause reverses the overlay, while text, item, "
+        "scan-rate, and cache caps stop unbounded work.",
+        stages=(FRICTION, ACT, GATE, REVERT, MEMORY, BOUND),
+        status=LIVE,
+        components=(
+            "apps/extension/english-learning/dictionary/reading.py",
+            "tools/chrome-extension/reading-assist.js",
+            "tools/chrome-extension/sidepanel.js",
+        ),
+        family="learning",
+    ),
+    # --- Family: brand (the distribution engine) ---
+    Loop(
+        id="brand-distribution",
+        name="Brand distribution engine",
+        summary="A hand-written essay deploys → publish:deployed carries the "
+        "newly-published slugs → promote auto-drafts LinkedIn/X/Reddit "
+        "adaptations (publish adapt_* recipes, voice-aware) into pending review "
+        "cards + a per-essay distribution tracker + a Telegram ping. The human "
+        "Applies every outbound; the weekly devlog drafter covers shipped work. "
+        "Bounded to the new posts per deploy, seeded on first deploy so it can't "
+        "draft the back catalogue.",
+        stages=(FRICTION, ACT, GATE, MEMORY, BOUND),
+        status=DARK,
+        flag="promote.distribution-engine.enabled",
+        components=(
+            "apps/extension/dev/promote/distribution.py",
+            "apps/public/standard/publish/deploy.py",
+            "apps/public/standard/publish/writer.py",
+        ),
+        family="brand",
+    ),
 ]
 
 

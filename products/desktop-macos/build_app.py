@@ -38,7 +38,19 @@ APP = DIST / "EmptyOS.app"
 VENV = Path.home() / "Library" / "Application Support" / "EmptyOS" / "venv"
 
 BUNDLE_ID = "net.binbian.emptyos"
-VERSION = "0.1.0"
+
+
+def _version() -> str:
+    """release.toml is the single source of truth for the version — it is what
+    package-release.py stamps into every artifact's MANIFEST.json. This used to
+    be a hardcoded "0.1.0" that no build ever bumped."""
+    import tomllib
+
+    with open(REPO / "release.toml", "rb") as f:
+        return str(tomllib.load(f)["release"]["version"])
+
+
+VERSION = _version()
 
 
 def make_venv() -> Path:

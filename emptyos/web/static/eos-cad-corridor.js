@@ -236,7 +236,11 @@ export async function regenerateObject(store, oid, opts) {
   try {
     res = await fetch(apiBase + '/cad/object/' + encodeURIComponent(obj.kind), {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ oid, props: obj.props }),
+      // Send the document's units: kinds author their geometry in different units
+      // (corridor kinds in metres, the spacer in millimetres) and nothing scales
+      // between them, so the backend refuses a mismatch instead of emitting
+      // geometry 1000x out of scale.
+      body: JSON.stringify({ oid, props: obj.props, units: (store.doc && store.doc.units) || 'm' }),
     }).then(r => r.json());
   } catch (e) { return; }
   if (!res || !res.ok) return;

@@ -14,6 +14,11 @@ content) so they get noticed without taxing every turn:
 Stdlib only, every read time-boxed by being tiny, always exits 0. Degrades
 silently (prints nothing extra) when a file is missing — e.g. a fresh clone
 with no vault mounted. Resolves the project root from CLAUDE_PROJECT_DIR.
+
+The canonical (richer) parsers for these two tables live in
+``emptyos/sdk/dev_tracks.py`` (used by apps/extension/dev/devboard/). This
+hook keeps its own freestanding copy by design — it must run on a fresh clone
+before ``pip install -e .`` — so format changes must be mirrored there.
 """
 
 from __future__ import annotations

@@ -72,8 +72,16 @@ DEFAULT_DIMENSIONS: list[str] = [
 
 
 def _framework_enabled(self) -> bool:
-    """Dark flag — evaluator off by default (endpoints inert when off)."""
-    return bool(self.app_config("feature.framework-eval.enabled", False))
+    """Dark flag — evaluator off by default (endpoints inert when off).
+
+    Honours the runtime Settings store as well as ``emptyos.toml`` so the
+    evaluator can be armed from the UI without a daemon restart. Either source
+    turning it on is enough; toml stays authoritative for a machine that wants
+    it on at boot.
+    """
+    if bool(self.app_config("feature.framework-eval.enabled", False)):
+        return True
+    return bool(self.setting("publish.feature.framework-eval.enabled", False))
 
 
 def _framework_note_path(self, site: dict | None) -> Path | None:
@@ -207,7 +215,10 @@ def _validate_scorecard(raw: object, dimensions: list[str], det: dict, site_id: 
             }
         )
 
-    guardrails = _guardrail_hits_from_det(det)
+    # Deterministic hits come from a real scanner and are ground truth. Model hits
+    # are the model's *opinion* that something is a violation — surfaced (they're
+    # often useful) but tagged, because only the deterministic ones may gate.
+    guardrails = [{**g, "source": "deterministic"} for g in _guardrail_hits_from_det(det)]
     for g in obj.get("guardrail_hits", []) or []:
         if isinstance(g, dict) and g.get("detail"):
             guardrails.append(
@@ -215,21 +226,37 @@ def _validate_scorecard(raw: object, dimensions: list[str], det: dict, site_id: 
                     "kind": str(g.get("kind", "brand"))[:40],
                     "severity": str(g.get("severity", "medium"))[:10],
                     "detail": str(g["detail"]).strip()[:400],
+                    "source": "model",
                 }
             )
 
-    overall = _clamp(obj.get("overall"))
-    if overall is None:
-        scored = [d["score"] for d in dims_out if d["score"] is not None]
-        overall = int(round(sum(scored) / len(scored))) if scored else None
-
-    verdict = str(obj.get("verdict", "")).strip().lower()
-    # A deterministic high-severity guardrail hit (a real leak) is ground truth —
-    # it forces off-brand no matter what the model claimed.
-    if any(g["severity"] == "high" for g in guardrails):
+    # Both `overall` and `verdict` are DERIVED from the clamped per-axis scores,
+    # never taken from the model's own top-level numbers. Those two fields are the
+    # ones nothing validates, and the model contradicts its own axis scores with
+    # them in both directions: a draft scoring 4/5/4/5/4/3/5 (mean 4.3) came back
+    # overall=2 verdict="off-brand", and nothing would have stopped an overall=5
+    # "ready" asserted over a row of 1s. The per-axis scores are the rubric the
+    # model had to defend; grade on those, ignore the headline it just asserted.
+    #
+    # Only a DETERMINISTIC high-severity hit (a real scanner found a real leak) may
+    # gate. A model-asserted "high" is just the model's opinion wearing a severity
+    # label, and it is non-deterministic: the same footer link was flagged high on
+    # one run and not the next, flipping the verdict on identical text with
+    # identical scores. That is the same bug as trusting the model's `verdict`
+    # field — an assertion treated as ground truth. Model hits stay in the output
+    # (they're often right, and a human should read them) but never decide.
+    scored = [d["score"] for d in dims_out if d["score"] is not None]
+    overall = int(round(sum(scored) / len(scored))) if scored else None
+    if any(g["severity"] == "high" and g.get("source") == "deterministic" for g in guardrails):
         verdict = "off-brand"
-    elif verdict not in {"ready", "needs-polish", "off-brand"}:
-        verdict = "ready" if (overall is not None and overall >= 4) else "needs-polish"
+    elif any(s <= 2 for s in scored):
+        # A hard failure on any single rubric axis is off-brand regardless of
+        # how well the other axes carried the average.
+        verdict = "off-brand"
+    elif overall is not None and overall >= 4:
+        verdict = "ready"
+    else:
+        verdict = "needs-polish"
 
     fixes = [str(f).strip()[:300] for f in (obj.get("fixes") or []) if str(f).strip()][:6]
 

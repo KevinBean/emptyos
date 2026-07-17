@@ -1,6 +1,8 @@
 services:
   chatbot:
-    build: .
+    build:
+      context: ../..
+      dockerfile: services/chatbot/Dockerfile
     container_name: emptyos-chatbot
     restart: unless-stopped
     ports:

@@ -18,10 +18,17 @@ Step-log format — one JSON object per line:
    "status": "pass",                                       # pass|slow|confusing|fail|missing|skipped|info
    "note": "Loads <1s; Today shows 3 tasks",              # human judgment / friction
    "shot": "D:/emptyos/data/ui-walk/usecases/uc1-s1.png", # screenshot path (any abs/rel path), optional
+   "gif": "D:/emptyos/data/ui-walk/usecases/uc1-fail.gif",# optional replay GIF (fail/confusing steps)
+   "ms": 4200,                                             # optional measured duration (evidence for `slow`)
+   "console": ["TypeError: x is undefined (hub.js:120)"],  # optional console errors (fail-context bundle)
+   "network": ["GET /task/api/list -> 500"],              # optional failed requests (fail-context bundle)
    "url": "http://127.0.0.1:9000/hub/"}                    # optional, shown as a chip
 
-`shot` is resolved relative to --shots-base when not absolute; a missing file
-renders a placeholder rather than failing the whole report.
+`shot` and `gif` are resolved relative to --shots-base when not absolute; a
+missing file renders a placeholder rather than failing the whole report. The
+`gif` field carries the GIF-on-failure replay clip (assembled by
+ui_walk_gif.py, or captured natively by claude-in-chrome's gif_creator) and is
+rendered below the still, autoplaying.
 
 Usage:
   python scripts/ui_walk_report.py --steplog data/ui-walk/usecases/steplog.jsonl \
@@ -163,6 +170,17 @@ h1 {{ font-size:24px; margin:0 0 4px; }}
 .shot .missing {{ width:320px; max-width:42vw; height:120px; border-radius:8px;
                  border:1px dashed #3a3d44; display:flex; align-items:center;
                  justify-content:center; color:#6b7077; font-size:12px; }}
+.shot .replay {{ margin-top:8px; }}
+.shot .replay-label {{ color:#9aa0a6; font-size:11px; letter-spacing:.04em;
+                      text-transform:uppercase; margin:0 0 3px; }}
+.ms {{ color:#f5d90a; font-size:12px; font-variant-numeric:tabular-nums; }}
+.ctx {{ margin:8px 0 0; }}
+.ctx summary {{ cursor:pointer; color:#9aa0a6; font-size:12px; letter-spacing:.03em;
+               text-transform:uppercase; user-select:none; }}
+.ctx pre {{ margin:6px 0 0; padding:10px 12px; background:#101216; border:1px solid #2a2d33;
+           border-radius:8px; font:12px/1.5 ui-monospace,Consolas,monospace;
+           color:#e8a2a6; white-space:pre-wrap; word-break:break-all; }}
+.ctx.net pre {{ color:#9fb6e8; }}
 @media (max-width:680px) {{ .step {{ flex-direction:column; }} .shot img,.shot .missing {{ width:100%; max-width:100%; }} }}
 </style></head><body><div class="wrap">""")
 
@@ -193,11 +211,23 @@ h1 {{ font-size:24px; margin:0 0 4px; }}
             url = s.get("url")
             uri = _embed_shot(s.get("shot"), shots_base)
             parts.append('<div class="step"><div class="step-body">')
+            ms = s.get("ms")
+            ms_chip = (f'<span class="ms">{int(ms):,} ms</span>'
+                       if isinstance(ms, (int, float)) and not isinstance(ms, bool) and ms > 0 else "")
             parts.append('<div class="step-meta">'
-                         f'{_badge(st)}<span class="step-n">step {html.escape(str(n))}</span></div>')
+                         f'{_badge(st)}<span class="step-n">step {html.escape(str(n))}</span>{ms_chip}</div>')
             parts.append(f'<p class="step-action">{action}</p>')
             if note:
                 parts.append(f'<p class="step-note">{note}</p>')
+            for key, cls, label in (("console", "ctx", "console errors"), ("network", "ctx net", "failed requests")):
+                lines = s.get(key)
+                if isinstance(lines, list) and lines:
+                    shown = [str(x) for x in lines[:20]]
+                    if len(lines) > 20:  # surface the cap — a silent truncation reads as "everything"
+                        shown.append(f"... +{len(lines) - 20} more (see steplog.jsonl)")
+                    body = html.escape("\n".join(shown))
+                    parts.append(f'<details class="{cls}"><summary>{label} ({len(lines)})</summary>'
+                                 f'<pre>{body}</pre></details>')
             if url:
                 u = html.escape(str(url))
                 parts.append(f'<a class="url" href="{u}" target="_blank" rel="noopener">{u}</a>')
@@ -208,6 +238,13 @@ h1 {{ font-size:24px; margin:0 0 4px; }}
                              f'onclick="window.open(this.src)" alt="screenshot">')
             elif s.get("shot"):
                 parts.append('<div class="missing">screenshot not found</div>')
+            gif_uri = _embed_shot(s.get("gif"), shots_base)
+            if gif_uri:
+                parts.append('<div class="replay"><p class="replay-label">&#9654; replay</p>'
+                             f'<img src="{gif_uri}" loading="lazy" '
+                             f'onclick="window.open(this.src)" alt="replay gif"></div>')
+            elif s.get("gif"):
+                parts.append('<div class="missing">replay gif not found</div>')
             parts.append("</div></div>")
         parts.append("</section>")
 

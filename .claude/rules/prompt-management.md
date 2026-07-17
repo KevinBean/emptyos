@@ -15,7 +15,11 @@ review, and greppability) in favor of a thin **override layer**.
 `tests/test_sdk_prompt_registry.py`). **Surface:** `apps/extension/dev/prompts/`
 (`/prompts/` — browse, edit, sweep; personas listed read-only).
 **Store:** `data/prompts/overrides.json` (per-machine, gitignored).
-**Reference adopters:** `apps/public/standard/{agent,publish,voice-assistant}/prompts.py`.
+**Reference adopters:** `apps/public/standard/{agent,publish,voice-assistant}/prompts.py`
+· `apps/extension/english-learning/dictionary/prompts.py` (the reading layer — its
+header shows the shape worth copying: an override that reintroduces a
+`{"k": str}` pseudo-schema instead of a valid JSON example silently broke the free
+local tier, 0/8 vs 8/8, so the *why* travels with the prompt).
 
 ## Adopting an app (3 moves)
 

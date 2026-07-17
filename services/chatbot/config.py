@@ -21,7 +21,13 @@ except ImportError:
 # Fields that the publish app may overwrite via /admin/sites/{id}.
 # Keeping this small + explicit prevents the API from mutating security-
 # sensitive fields like allowed_origins or the corpus URL.
-SYNCED_FIELDS = {"model", "persona", "daily_cap_usd", "starter_questions"}
+SYNCED_FIELDS = {"model", "persona", "daily_cap_usd", "starter_questions", "avoid_topics"}
+STUDIO_FIELDS = {
+    "name", "allowed_origins", "corpus_url", "knowledge_sources", "catalog_url",
+    "catalog_stale_seconds", "commerce_enabled", "allowed_actions", "action_endpoint",
+    "helpdesk_endpoint", "model", "persona", "daily_cap_usd", "starter_questions",
+    "enabled", "brand_color", "welcome_message", "avoid_topics", "lead_capture_enabled",
+}
 
 
 @dataclass
@@ -34,6 +40,24 @@ class SiteConfig:
     model: str
     persona: str
     starter_questions: list[str] = field(default_factory=list)
+    managed_by: str = "publish"
+    enabled: bool = True
+    knowledge_sources: list[str] = field(default_factory=list)
+    catalog_url: str = ""
+    catalog_stale_seconds: int = 3600
+    commerce_enabled: bool = False
+    allowed_actions: list[str] = field(default_factory=list)
+    action_endpoint: str = ""
+    helpdesk_endpoint: str = ""
+    brand_color: str = "#7c5cff"
+    welcome_message: str = "How can I help?"
+    # Retired/unavailable products or pages the model must never recommend.
+    # Second deprecation lever — pairs with removing the page from the corpus
+    # (`corpus: false` frontmatter in publish). Empty = prompt unchanged.
+    avoid_topics: list[str] = field(default_factory=list)
+    # Content-site lead capture ("leave your details" form). Off by default;
+    # commerce sites already have handoff.create.
+    lead_capture_enabled: bool = False
 
 
 @dataclass
@@ -88,6 +112,19 @@ def load_config(path: str | None = None) -> Config:
             model=str(sd.get("model", defaults.model)),
             persona=str(sd.get("persona", "")),
             starter_questions=list(sd.get("starter_questions", [])),
+            managed_by=str(sd.get("managed_by", "publish")),
+            enabled=bool(sd.get("enabled", True)),
+            knowledge_sources=list(sd.get("knowledge_sources", [])),
+            catalog_url=str(sd.get("catalog_url", "")),
+            catalog_stale_seconds=int(sd.get("catalog_stale_seconds", 3600)),
+            commerce_enabled=bool(sd.get("commerce_enabled", False)),
+            allowed_actions=list(sd.get("allowed_actions", [])),
+            action_endpoint=str(sd.get("action_endpoint", "")),
+            helpdesk_endpoint=str(sd.get("helpdesk_endpoint", "")),
+            brand_color=str(sd.get("brand_color", "#7c5cff")),
+            welcome_message=str(sd.get("welcome_message", "How can I help?")),
+            avoid_topics=list(sd.get("avoid_topics", [])),
+            lead_capture_enabled=bool(sd.get("lead_capture_enabled", False)),
         )
 
     return Config(defaults=defaults, sites=sites)
@@ -170,6 +207,26 @@ def render_config_toml(cfg: Config) -> str:
         lines.append(f"name = {_toml_escape_basic(s.name)}")
         lines.append(f"allowed_origins = {_render_list(s.allowed_origins)}")
         lines.append(f"corpus_url = {_toml_escape_basic(s.corpus_url)}")
+        lines.append(f"managed_by = {_toml_escape_basic(s.managed_by)}")
+        lines.append(f"enabled = {'true' if s.enabled else 'false'}")
+        if s.knowledge_sources:
+            lines.append(f"knowledge_sources = {_render_list(s.knowledge_sources)}")
+        if s.catalog_url:
+            lines.append(f"catalog_url = {_toml_escape_basic(s.catalog_url)}")
+        lines.append(f"catalog_stale_seconds = {s.catalog_stale_seconds}")
+        lines.append(f"commerce_enabled = {'true' if s.commerce_enabled else 'false'}")
+        if s.allowed_actions:
+            lines.append(f"allowed_actions = {_render_list(s.allowed_actions)}")
+        if s.action_endpoint:
+            lines.append(f"action_endpoint = {_toml_escape_basic(s.action_endpoint)}")
+        if s.helpdesk_endpoint:
+            lines.append(f"helpdesk_endpoint = {_toml_escape_basic(s.helpdesk_endpoint)}")
+        if s.lead_capture_enabled:
+            lines.append("lead_capture_enabled = true")
+        if s.avoid_topics:
+            lines.append(f"avoid_topics = {_render_list(s.avoid_topics)}")
+        lines.append(f"brand_color = {_toml_escape_basic(s.brand_color)}")
+        lines.append(f"welcome_message = {_toml_escape_basic(s.welcome_message)}")
         lines.append(f"daily_cap_usd = {s.daily_cap_usd}")
         lines.append(f"model = {_toml_escape_basic(s.model)}")
         if s.persona:

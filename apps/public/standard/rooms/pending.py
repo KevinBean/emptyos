@@ -37,6 +37,7 @@ ALWAYS_GATE_VERBS: set[tuple[str, str]] = {
     ("repo", "write"),
     ("repo", "exec"),
     ("rooms", "write_note"),  # already gated by sandbox-prep, listed for clarity
+    ("promote", "apply_proposal"),  # applying a draft can fire an outbound webhook
 }
 
 _QUICK_DO_RE = re.compile(r'\[DO:([\w-]+)\.(\w+)\(')

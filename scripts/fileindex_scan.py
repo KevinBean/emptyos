@@ -325,14 +325,11 @@ def cmd_report(con, cfg) -> None:
 
 
 def cmd_dups(con, args) -> None:
-    q = """SELECT LOWER(REPLACE(REPLACE(path,'\\','/'),RTRIM(path,REPLACE(path,'/','')),'')) AS base
-           FROM files"""
-    # simpler in python:
     rows = con.execute(
-        "SELECT path, size FROM files" + (" WHERE corpus=?" if args.corpus else ""),
+        "SELECT path FROM files" + (" WHERE corpus=?" if args.corpus else ""),
         ((args.corpus,) if args.corpus else ())).fetchall()
     clusters: dict[str, list] = {}
-    for p, s in rows:
+    for (p,) in rows:
         base = re.sub(r"[ _\-]*(副本|copy|Copy)?[ _\-]*\d*\.", ".", os.path.basename(p), count=1)
         clusters.setdefault(base.lower(), []).append(p)
     dup = sorted(((k, v) for k, v in clusters.items() if len(v) > 1),
@@ -352,19 +349,33 @@ def ledger_path() -> Path:
     return v / "10_Projects" / "file-indexing" / "ledger.jsonl"
 
 
+# The ledger format is the durable recovery contract ("rescan + import-ledger
+# == full state") and has TWO producers: this CLI and the fileindex app's
+# `_export_ledger`. Both call a pure ledger_lines(); tests/personal/
+# test_fileindex_ledger.py runs both against one fixture DB and asserts the
+# output is byte-identical, so a change here can't silently orphan the app's.
+LEDGER_SELECT = (
+    "SELECT path, status, note, vault_ref, updated FROM files "
+    "WHERE status != '未索引' OR note != '' OR vault_ref != '' "
+    "ORDER BY path"
+)
+
+
+def ledger_lines(con) -> list[str]:
+    """Serialise every judgment to JSONL. Pure — no I/O, no config."""
+    return [
+        json.dumps({"path": p, "status": st, "note": note,
+                    "vault_ref": vr, "updated": up}, ensure_ascii=False)
+        for p, st, note, vr, up in con.execute(LEDGER_SELECT)
+    ]
+
+
 def cmd_export(con) -> None:
     lp = ledger_path()
     lp.parent.mkdir(parents=True, exist_ok=True)
-    rows = con.execute(
-        """SELECT path,status,note,vault_ref,updated FROM files
-           WHERE status != '未索引' OR note != '' OR vault_ref != ''
-           ORDER BY path""").fetchall()
-    with open(lp, "w", encoding="utf-8") as f:
-        for p, st, note, vr, up in rows:
-            f.write(json.dumps({"path": p, "status": st, "note": note,
-                                "vault_ref": vr, "updated": up},
-                               ensure_ascii=False) + "\n")
-    print(f"exported {len(rows)} judgment(s) → {lp}")
+    lines = ledger_lines(con)
+    lp.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    print(f"exported {len(lines)} judgment(s) → {lp}")
 
 
 def cmd_import(con) -> None:

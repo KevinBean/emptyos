@@ -104,9 +104,11 @@ python -m pytest tests/ -v
 - `test_commons_api.py` — the same rule through the real endpoints, across two
   distinct human users, on the in-memory repo + dev auth.
 
-A live-Postgres e2e (asserting the RLS backstop) mirrors
-`services/englishos-control-plane/tests/test_e2e_docker.py` and is the next test to
-add when a database is wired.
+A live-Postgres e2e asserting the restrictive read-policy backstop exists at
+`tests/test_e2e_postgres.py`. It is deliberately opt-in because it drops and
+recreates the configured test schema: set `COMMONS_TEST_DATABASE_URL` to a
+throwaway Postgres database before running it. The default suite still needs no
+database.
 
 ## Identity providers (`COMMONS_AUTH_PROVIDER`)
 

@@ -42,6 +42,40 @@ starter_questions = [
     "How does it differ from a normal note app?",
     "Can I run it locally?",
 ]
+# Welcome copy should TEACH the visitor how to ask — one hint line here saves
+# a whole disambiguation turn (e.g. "mention the app or feature name").
+welcome_message = "Ask me anything about EmptyOS — mentioning the feature or app name gets the best answers."
+managed_by = "publish"
+enabled = true
+commerce_enabled = false
+
+# Optional: content-site lead capture. When true, "talk to a human" /
+# "get in touch"-style messages return a name/email/message form; submissions
+# are stored in the service ledger and (when helpdesk_endpoint is set) also
+# POSTed there. Contact details go to the team, never the language model.
+# lead_capture_enabled = true
+# helpdesk_endpoint = "https://example.com/api/leads"
+
+# Optional: retired/unavailable products or pages the model must never
+# recommend. Pair with `corpus: false` frontmatter on the page itself —
+# deprecation needs BOTH levers (prompt + corpus) or stale answers leak back.
+# avoid_topics = ["Cable Pro PC (retired desktop product)"]
+
+# Studio-managed commerce example (normally created through Chatbot Studio):
+# [sites.office-shop]
+# name = "Northstar Office"
+# managed_by = "studio"
+# enabled = false
+# allowed_origins = ["https://shop.example.com"]
+# corpus_url = ""
+# knowledge_sources = ["https://shop.example.com/sitemap.xml"]
+# catalog_url = "https://shop.example.com/products.json"
+# catalog_stale_seconds = 3600
+# commerce_enabled = true
+# allowed_actions = ["inventory.lookup", "cart.add", "order.lookup", "return.check", "handoff.create"]
+# action_endpoint = "https://shop.example.com/api/chatbot-actions"
+# model = "gpt-5-nano"
+# daily_cap_usd = 2.0
 
 # ─── Example: portfolio site ───
 # [sites.portfolio]

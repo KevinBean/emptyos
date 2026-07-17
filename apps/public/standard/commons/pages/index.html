@@ -48,11 +48,11 @@ var appSettings = EOS_UI.settingsPanel({
 
 function visBadge(v) {
   var cls = v === 'public' ? 'vis-public' : (v === 'shared' ? 'vis-shared' : 'vis-private');
-  return '<span class="eos-badge ' + cls + '">' + EOS.esc(v) + '</span>';
+  return '<span class="eos-badge ' + cls + '">' + esc(v) + '</span>';
 }
 
 function renderNote(n) {
-  var tags = (n.tags || []).map(function(t){ return '#' + EOS.esc(t); }).join(' ');
+  var tags = (n.tags || []).map(function(t){ return '#' + esc(t); }).join(' ');
   var slugArg = escAttr(JSON.stringify(n.slug));
   var owner = n.is_owner
     ? '<button class="eos-btn-sm" onclick="openShare(' + slugArg + ')">Share…</button>'
@@ -62,14 +62,14 @@ function renderNote(n) {
       + '<button class="eos-btn-sm" onclick="revoke(' + slugArg + ')">Withdraw</button>'
     : '';
   return '<div class="feed-note">'
-    + '<h3>' + EOS.esc(n.title || n.slug) + '</h3>'
+    + '<h3>' + esc(n.title || n.slug) + '</h3>'
     + '<div class="feed-byline">' + visBadge(n.visibility)
-    + (n.kind ? '<span>' + EOS.esc(n.kind) + '</span>' : '')
-    + (n.domain ? '<span>· ' + EOS.esc(n.domain) + '</span>' : '')
+    + (n.kind ? '<span>' + esc(n.kind) + '</span>' : '')
+    + (n.domain ? '<span>· ' + esc(n.domain) + '</span>' : '')
     + (n.is_owner ? '<span>· yours</span>' : '')
     + (tags ? '<span>· ' + tags + '</span>' : '')
     + '</div>'
-    + '<div class="feed-body">' + EOS.esc((n.body || '').slice(0, 400)) + '</div>'
+    + '<div class="feed-body">' + esc((n.body || '').slice(0, 400)) + '</div>'
     + '<div class="feed-actions">' + owner + '</div>'
     + '</div>';
 }
@@ -82,16 +82,16 @@ async function load() {
     if (res.error) {
       feed.innerHTML = EOS_UI.errorState
         ? EOS_UI.errorState(res.error + ' — open ⚙ settings to configure the commons server.')
-        : '<p>' + EOS.esc(res.error) + '</p>';
+        : '<p>' + esc(res.error) + '</p>';
       return;
     }
     var notes = res.notes || [];
     if (!notes.length) {
       var title = q ? 'No matches' : 'Nothing shared yet';
-      var body = q ? ('No commons notes match “' + EOS.esc(q) + '”.') : 'Publish a vault note to start the commons.';
+      var body = q ? ('No commons notes match “' + esc(q) + '”.') : 'Publish a vault note to start the commons.';
       feed.innerHTML = EOS_UI.emptyState
         ? EOS_UI.emptyState({title: title, body: body})
-        : '<p>' + EOS.esc(body) + '</p>';
+        : '<p>' + esc(body) + '</p>';
       return;
     }
     feed.innerHTML = notes.map(renderNote).join('');
@@ -171,16 +171,16 @@ async function showAcl(slug) {
   var res = await EOS.api('/commons/api/acl?path=' + encodeURIComponent(slug));
   if (res.error) { EOS_UI.toast(res.error, 'error'); return; }
   var rows = (res.grants || []).map(function(g) {
-    return '<tr><td>' + EOS.esc(g.principal || g.handle || '?') + '</td>'
-      + '<td>' + EOS.esc(g.level) + '</td>'
+    return '<tr><td>' + esc(g.principal || g.handle || '?') + '</td>'
+      + '<td>' + esc(g.level) + '</td>'
       + '<td><button class="eos-btn-sm" onclick="unshare('
       + escAttr(JSON.stringify(slug)) + ',' + escAttr(JSON.stringify(g.principal)) + ')">Remove</button></td></tr>';
   }).join('');
-  var body = '<p>Visibility: ' + EOS.esc(res.visibility || '?') + '</p>'
+  var body = '<p>Visibility: ' + esc(res.visibility || '?') + '</p>'
     + (rows
         ? '<table class="obs-table"><tr><th>Person</th><th>Level</th><th></th></tr>' + rows + '</table>'
         : '<p>Not shared with anyone individually.</p>');
-  EOS_UI.modal({title: 'Access to "' + EOS.esc(slug) + '"', body: body});
+  EOS_UI.modal({title: 'Access to "' + esc(slug) + '"', body: body});
 }
 
 async function unshare(slug, principal) {

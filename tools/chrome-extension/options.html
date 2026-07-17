@@ -27,12 +27,14 @@
 
 <label for="token">Auth token</label>
 <input type="password" id="token" placeholder="emptyos.toml [network] auth_token">
-<div class="hint">Required when network.mode is "private" or "public". Leave blank for local mode.</div>
+<div class="hint">Kept for this browser session by default. It is never synced through Chrome.</div>
+<label style="text-transform:none;letter-spacing:0"><input type="checkbox" id="remember" style="width:auto"> Remember on this device</label>
 
 <button id="save">Save</button>
 <button id="test" style="background: #2a2a2a; color: #eee;">Test connection</button>
 <div class="status" id="status"></div>
 
+<script src="daemon-client.js"></script>
 <script src="options.js"></script>
 </body>
 </html>

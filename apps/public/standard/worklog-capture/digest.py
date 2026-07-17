@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import shutil
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -29,6 +30,7 @@ _IMAGE_EXTS = {".png", ".jpg", ".jpeg"}
 _OCR_BUDGET = 4000          # chars of OCR text handed to the model per cluster
 _WINDOW_CAP = timedelta(hours=48)
 _DEFAULT_LOOKBACK = timedelta(hours=2)
+_MAX_DRAFT_ATTEMPTS = 3     # a transient LLM failure must not bury a capture forever
 
 
 # ── OCR seam (local-first, no cloud) ──────────────────────────────────────────
@@ -71,12 +73,23 @@ def _ingest_folder_sync(watch: Path, queue: Path) -> list[str]:
         if not f.is_file() or f.suffix.lower() not in _IMAGE_EXTS or f.name.startswith("."):
             continue
         try:
-            meta = store.create_entry(queue, "folder", has_image=True, note="")
-            dest = store.shot_path(queue, meta["id"])
-            f.replace(dest)  # move — keep the inbox a true inbox
-            new_ids.append(meta["id"])
-        except Exception:
+            # The screenshot's mtime is when the work happened; the digest may run
+            # an hour later. Stamp the entry with the former, or every folder
+            # capture correlates against the wrong hour's evidence.
+            shot_at = datetime.fromtimestamp(f.stat().st_mtime).astimezone()
+        except OSError:
             continue
+        meta = store.create_entry(queue, "folder", now=shot_at, has_image=True, note="")
+        try:
+            # shutil.move, NOT Path.replace: the inbox (~/Pictures) and the queue
+            # (data/) routinely live on different volumes, where os.replace raises
+            # WinError 17 / EXDEV. A failed move must take its entry with it —
+            # a surviving one drafts a phantom image-less worklog line.
+            shutil.move(str(f), str(store.shot_path(queue, meta["id"])))
+        except Exception:
+            shutil.rmtree(store.entry_dir(queue, meta["id"]), ignore_errors=True)
+            continue
+        new_ids.append(meta["id"])
     return new_ids
 
 
@@ -221,8 +234,16 @@ async def _draft_cluster(app, cluster: dict, projects: list[str],
                          employers: list[str], today: str) -> dict:
     from .prompts import PROMPTS  # lazy: keeps pure functions path-loadable
     context = build_context(cluster, projects, employers, today)
+    # The context is OCR of the user's screen + their browser trail — the most
+    # sensitive payload in the system. `strict_provider` pins exactly one
+    # provider with no fall-through, so `local_only` (default) can never quietly
+    # land on the cloud-first default chain. A missing local provider RAISES,
+    # which marks the cluster `error` (retryable) rather than leaking it.
+    pin = {}
+    if app.cfg("local_only", True):
+        pin["strict_provider"] = str(app.cfg("local_provider", "ollama") or "ollama")
     raw = await app.think(context, system=PROMPTS.capture_draft_system,
-                          domain="text", temperature=0.1)
+                          domain="text", temperature=0.1, **pin)
     parsed = parse_llm_json(raw, fallback={}) or {}
     caps = cluster.get("captures", [])
     fallback = (caps[0].get("app_name") if caps else "") or "Activity"
@@ -254,6 +275,19 @@ def _write_last_digest(app, when: datetime) -> None:
 
 
 # ── orchestrator ──────────────────────────────────────────────────────────────
+def _pending(m: dict) -> bool:
+    """Is this entry still owed a draft? ``new``, or a retryable ``error``."""
+    st = m.get("status")
+    if st == store.STATUS_NEW:
+        return True
+    if st == store.STATUS_ERROR:
+        try:
+            return int(m.get("attempts", 0)) < _MAX_DRAFT_ATTEMPTS
+        except (TypeError, ValueError):
+            return True
+    return False
+
+
 async def run_digest(app, *, draft: bool = True, now: datetime | None = None) -> dict:
     """Full digest pass. ``draft=False`` stops after correlate (test seam)."""
     now = now or datetime.now().astimezone()
@@ -261,8 +295,10 @@ async def run_digest(app, *, draft: bool = True, now: datetime | None = None) ->
 
     ingested = await ingest_folder(app)
 
-    # OCR every capture that hasn't been OCR'd yet.
-    metas = [m for m in store.iter_metas(queue) if m.get("status") == store.STATUS_NEW]
+    # OCR every capture that hasn't been OCR'd yet. `error` entries are retried
+    # (a drafting failure is usually transient — the local model was down) up to
+    # _MAX_DRAFT_ATTEMPTS, or one hiccup would bury a capture with no way back.
+    metas = [m for m in store.iter_metas(queue) if _pending(m)]
     cap_dicts: list[dict] = []
     for m in metas:
         cid = m["id"]
@@ -328,7 +364,12 @@ async def run_digest(app, *, draft: bool = True, now: datetime | None = None) ->
         except Exception as e:
             if cl["kind"] == "capture":
                 m = store.read_meta(queue, cl["leader"]) or {}
+                try:
+                    attempts = int(m.get("attempts", 0)) + 1
+                except (TypeError, ValueError):
+                    attempts = 1
                 m["status"] = store.STATUS_ERROR
+                m["attempts"] = attempts
                 m["error"] = str(e)[:300]
                 store.write_meta(queue, cl["leader"], m)
                 result["errors"] += 1
@@ -350,7 +391,8 @@ def _persist_cluster(app, queue: Path, cluster: dict, draft: dict, now: datetime
         members = [c["id"] for c in cluster["captures"][1:]]
         m = store.read_meta(queue, leader) or {}
         m.update({"status": store.STATUS_DRAFTED, "draft": draft,
-                  "members": members, "evidence": ev_dicts, "group_leader": None})
+                  "members": members, "evidence": ev_dicts, "group_leader": None,
+                  "error": "", "attempts": 0})  # a retry that lands clears the failure
         store.write_meta(queue, leader, m)
         for mid in members:  # fold members under the leader
             mm = store.read_meta(queue, mid) or {}

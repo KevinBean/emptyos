@@ -205,7 +205,9 @@
         }
     }).catch(function(){});
 
-    EOS.api = async function(path, options) {
+    // Shared request builder for EOS.api / EOS.apiSafe — BYOK headers +
+    // offline-write queueing happen here so the two wrappers can't drift.
+    function _apiFetch(path, options) {
         var requestOptions = _injectByokHeaders(options);
         var method = String((requestOptions && requestOptions.method) || 'GET').toUpperCase();
         if (EOS.offlineWrites.enabled && method === 'POST' && EOS.offlineWrites.matches(path)) {
@@ -215,13 +217,42 @@
                 'X-EOS-Offline-Write-ID': EOS.offlineWrites.id()
             });
         }
-        var resp = await fetch(base + path, requestOptions);
-        if (!resp.ok) throw new Error('API error: ' + resp.status);
-        var payload = await resp.json();
+        return fetch(base + path, requestOptions);
+    }
+
+    function _toastOfflineQueued(resp) {
         if (resp.headers.get('X-EOS-Offline-Queued') === '1' && window.EOS_UI && EOS_UI.toast) {
             EOS_UI.toast('Saved offline — it will sync when the connection returns.', true);
         }
+    }
+
+    EOS.api = async function(path, options) {
+        var resp = await _apiFetch(path, options);
+        if (!resp.ok) throw new Error('API error: ' + resp.status);
+        var payload = await resp.json();
+        _toastOfflineQueued(resp);
         return payload;
+    };
+
+    // Like EOS.api but NEVER throws — network failures and non-OK responses
+    // normalise to the {error} object most app pages already branch on,
+    // preserving the server's JSON error detail when the body carries one.
+    // Use this where a failed call should degrade to an inline message
+    // instead of an uncaught rejection that silently blanks the view.
+    EOS.apiSafe = async function(path, options) {
+        var resp;
+        try {
+            resp = await _apiFetch(path, options);
+        } catch (e) {
+            return {error: String((e && e.message) || e)};
+        }
+        var payload = null;
+        try { payload = await resp.json(); } catch (e) { /* non-JSON body */ }
+        if (!resp.ok) {
+            return {error: (payload && payload.error) || ('HTTP ' + resp.status)};
+        }
+        _toastOfflineQueued(resp);
+        return (payload === null || payload === undefined) ? {} : payload;
     };
 
     EOS.post = async function(path, data) {

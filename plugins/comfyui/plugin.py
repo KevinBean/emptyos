@@ -823,8 +823,12 @@ class ComfyUIPlugin(BasePlugin):
                 f"Queuing image: {prompt[:80]}...",
                 data={"width": w, "height": h, "style": style},
             )
+            # 120 polls x 1.5s = 180s, which a FLUX cover on a busy GPU overruns —
+            # ComfyUI finishes and the caller has already given up, so the image is
+            # rendered, paid for, and thrown away. Video/audio already override the
+            # default for the same reason; image was the one path still on it.
             item = await self._submit_and_poll(
-                workflow, output_keys=("images",), post_timeout=300, max_polls=120,
+                workflow, output_keys=("images",), post_timeout=300, max_polls=400,
             )
             return item.get("filename", "") if item else ""
         except Exception as e:
