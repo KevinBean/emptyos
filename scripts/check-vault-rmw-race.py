@@ -45,6 +45,18 @@ WRITE_METHODS = {"write", "vault_write", "vault_set_section", "vault_append_sect
 LOCK_METHODS = {"write_lock", "note_lock"}
 
 
+def _is_lock_method(name: str) -> bool:
+    """True for the platform locks AND for an app's own lock-returning helper.
+
+    Apps that need one canonical key across several writers wrap it in a helper
+    that RETURNS a write_lock — ``task._file_lock`` (borrows the projects lock),
+    ``publish._post_lock`` (resolved post path). Matching only the literal
+    platform names reported both as unlocked, which is precisely the cry-wolf
+    that teaches people to ignore the check.
+    """
+    return name in LOCK_METHODS or name.endswith("_lock")
+
+
 def _self_method(call: ast.Call) -> str | None:
     f = call.func
     if isinstance(f, ast.Attribute) and isinstance(f.value, ast.Name) and f.value.id == "self":
@@ -70,7 +82,7 @@ def _scan_func(fnode, path: Path) -> list[dict]:
     for n in ast.walk(fnode):
         if isinstance(n, ast.Call):
             m = _self_method(n)
-            if m in LOCK_METHODS:
+            if m and _is_lock_method(m):
                 has_lock = True
             elif m in READ_METHODS:
                 k = _path_key(n)

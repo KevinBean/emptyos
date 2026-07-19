@@ -311,7 +311,7 @@ async function showList() {
             subtitle: o.mission || '',
             badges: badges,
             meta: '<span style="color:var(--text-muted);font-size:12px">' + esc(bits.join(' · ')) + '</span>',
-            onClick: "navTo('org/" + esc(o.id) + "')",
+            onClick: "navTo(" + JSON.stringify('org/' + o.id) + ")",
         });
     });
     root.innerHTML = filterBar + '<div class="grid">' + cards.join('') + '</div>';

@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Life - EmptyOS</title>
+<link rel="stylesheet" href="/static/theme.css">
+<link rel="stylesheet" href="/static/eos-components.css">
+<style>
+* { margin:0; padding:0; box-sizing:border-box }
+body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif; background:var(--bg); color:var(--text); min-height:100dvh; padding:env(safe-area-inset-top) 16px calc(env(safe-area-inset-bottom) + 80px); -webkit-font-smoothing:antialiased }
+.wrap { max-width:720px; margin:0 auto }
+.topbar { display:flex; align-items:center; gap:10px; padding:14px 0 4px; flex-wrap:wrap }
+.topbar h1 { font-size:20px; font-weight:700 }
+.topbar .sub { color:var(--text-muted); font-size:12px }
+.topbar .right { margin-left:auto; display:flex; gap:6px; align-items:center }
+.tab { padding:7px 13px; border-radius:8px; font-size:13px; font-weight:600; background:var(--bg-card); border:1px solid var(--border); color:var(--text-secondary); cursor:pointer }
+.tab.active { background:color-mix(in srgb,var(--accent) 14%,var(--bg-card)); border-color:var(--accent); color:var(--accent) }
+.sources { color:var(--text-muted); font-size:12px; margin:8px 0 14px }
+.day { margin-bottom:18px }
+.day-head { font-weight:700; font-size:12px; color:var(--text-secondary); text-transform:uppercase; letter-spacing:.06em; margin-bottom:8px }
+.item { display:flex; gap:10px; align-items:baseline; background:var(--bg-card); border:1px solid var(--border); border-radius:10px; padding:9px 12px; margin-bottom:6px; cursor:pointer; transition:border-color .15s }
+.item:hover { border-color:var(--accent) }
+.item .time { font-size:11px; color:var(--text-muted); min-width:38px; font-variant-numeric:tabular-nums }
+.item .title { font-size:13px; flex:1; min-width:0 }
+.item .extra { font-size:11px; color:var(--text-muted) }
+.kind { font-size:10px; font-weight:700; padding:2px 7px; border-radius:8px; white-space:nowrap }
+.kind-journal { background:color-mix(in srgb,var(--accent) 14%,transparent); color:var(--accent) }
+.kind-journal-auto { background:color-mix(in srgb,var(--purple) 14%,transparent); color:var(--purple) }
+.kind-worklog { background:color-mix(in srgb,var(--blue) 14%,transparent); color:var(--blue) }
+.kind-expense { background:color-mix(in srgb,var(--amber) 18%,transparent); color:var(--amber) }
+.kind-other { background:var(--bg-elevated,var(--bg-card)); color:var(--text-secondary); border:1px solid var(--border) }
+.note { background:var(--bg-card); border:1px solid var(--border); border-radius:12px; padding:18px; color:var(--text-secondary); font-size:13px; line-height:1.6; margin-top:20px }
+.note code { background:color-mix(in srgb,var(--accent) 10%,transparent); padding:1px 5px; border-radius:5px; font-size:12px }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="topbar">
+    <h1>Life</h1>
+    <span class="sub">one timeline of your days</span>
+    <div class="right" id="range-tabs">
+      <button class="tab active" data-days="1" onclick="setRange(1)">Today</button>
+      <button class="tab" data-days="7" onclick="setRange(7)">7 days</button>
+      <button class="tab" data-days="30" onclick="setRange(30)">30 days</button>
+    </div>
+  </div>
+  <div class="sources" id="sources"></div>
+  <div id="timeline"></div>
+</div>
+
+<script src="/static/eos.js"></script>
+<script src="/static/eos-components.js"></script>
+<script src="/life/pages/life.js"></script>
+</body>
+</html>

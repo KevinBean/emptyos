@@ -82,6 +82,11 @@ renderer = "stat-tile"
 group = "dashboard"
 priority = 150
 
+# Life-suite day timeline (suite contract: docs/suites/life-cohesion.md)
+[[contributes.life.timeline]]
+id = "journal-timeline"
+method = "timeline_items"
+
 [[contributes.voice-assistant.context]]
 id = "todays-journal"
 method = "assistant_context"

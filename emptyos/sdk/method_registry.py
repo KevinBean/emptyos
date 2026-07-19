@@ -184,13 +184,24 @@ class MethodRegistry:
         items = self.list(endpoint)
         return items[0] if items else None
 
-    def resolve(self, endpoint: str, method_id: str | None) -> MethodSpec | None:
+    def resolve(
+        self, endpoint: str, method_id: str | None, *, strict: bool = False
+    ) -> MethodSpec | None:
         """Pick a method by id (or fall back to default). Returns None if
-        neither resolves. Caller decides what to do with None."""
+        neither resolves. Caller decides what to do with None.
+
+        ``strict`` returns None for an unrecognised *explicit* id rather than
+        substituting the default — the caller asked for a specific method and
+        silently answering with a different one is a wrong number, not a
+        fallback. A None/empty ``method_id`` still takes the default in both
+        modes ("no preference" is not the same as "this one").
+        """
         if method_id:
             spec = self.get(endpoint, method_id)
             if spec is not None:
                 return spec
+            if strict:
+                return None
         return self.default(endpoint)
 
     def to_listing(self, app: BaseApp, endpoint: str) -> list[dict]:

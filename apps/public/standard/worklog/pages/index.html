@@ -15,9 +15,6 @@ body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-se
 .topbar .right { margin-left:auto; display:flex; gap:8px; align-items:center }
 select, input, textarea { font-family:inherit }
 .sel { background:var(--bg-card); border:1px solid var(--border); color:var(--text); border-radius:8px; padding:7px 10px; font-size:13px; cursor:pointer }
-.btn { background:var(--accent); color:var(--accent-ink); border:none; border-radius:8px; padding:8px 14px; font-size:13px; font-weight:600; cursor:pointer; transition:transform .1s }
-.btn:active { transform:scale(.96) }
-.btn-ghost { background:var(--bg-card); border:1px solid var(--border); color:var(--text-secondary) }
 .tabs { display:flex; gap:6px; margin:6px 0 16px; flex-wrap:wrap }
 .tab { padding:8px 14px; border-radius:8px; font-size:13px; font-weight:600; background:var(--bg-card); border:1px solid var(--border); color:var(--text-secondary); cursor:pointer }
 .tab.active { background:color-mix(in srgb,var(--accent) 14%,var(--bg-card)); border-color:var(--accent); color:var(--accent) }
@@ -62,9 +59,9 @@ textarea.prose { width:100%; min-height:70px; background:var(--bg); border:1px s
     <h1>🗂️ Work Log</h1>
     <div class="right">
       <select id="emp-filter" class="sel" onchange="onEmployerChange()"><option value="">All employers</option></select>
-      <button class="btn btn-ghost" onclick="openRollup()" title="AI summary of the last 7 days, grouped by project">✨ Rollup</button>
-      <button class="btn btn-ghost" onclick="exportTimesheet()" title="Download a 7-day timesheet PDF">PDF</button>
-      <button class="btn btn-ghost" onclick="openAppSettings()">⚙</button>
+      <button class="eos-btn eos-btn-sm eos-btn-secondary" onclick="openRollup()" title="AI summary of the last 7 days, grouped by project">✨ Rollup</button>
+      <button class="eos-btn eos-btn-sm eos-btn-secondary" onclick="exportTimesheet()" title="Download a 7-day timesheet PDF">PDF</button>
+      <button class="eos-btn eos-btn-sm eos-btn-secondary" onclick="openAppSettings()">⚙</button>
     </div>
   </div>
 
@@ -84,7 +81,7 @@ textarea.prose { width:100%; min-height:70px; background:var(--bg); border:1px s
         <input id="wl-proj" class="proj-in" list="proj-list" placeholder="Project">
         <datalist id="proj-list"></datalist>
         <input id="wl-add-text" class="tx-in" placeholder="What did you do?  (✨ parses project/status/date)" onkeydown="if(event.key==='Enter')submitLog()">
-        <button class="btn btn-ghost" onclick="smartParse(this)" title="AI-fill project / status / date from the sentence — you still press Log">✨</button>
+        <button class="eos-btn eos-btn-sm eos-btn-secondary" onclick="smartParse(this)" title="AI-fill project / status / date from the sentence — you still press Log">✨</button>
         <select id="wl-status" class="sel">
           <option value="in-progress">🔄 In progress</option>
           <option value="complete">✅ Complete</option>
@@ -95,7 +92,7 @@ textarea.prose { width:100%; min-height:70px; background:var(--bg); border:1px s
           <option value="blocked">⛔ Blocked</option>
         </select>
         <input id="wl-date" type="date" class="sel">
-        <button class="btn" onclick="submitLog()">Log</button>
+        <button class="eos-btn eos-btn-sm eos-btn-primary" onclick="submitLog()">Log</button>
       </div>
     </div>
     <div id="carryover-banner"></div>
@@ -234,7 +231,7 @@ async function openRollup(){
     out.className = '';
     out.innerHTML = '<div class="prose-view" style="white-space:pre-wrap">'+esc(d.rollup)+'</div>'
       + '<div style="display:flex;gap:8px;margin-top:10px;align-items:center;flex-wrap:wrap">'
-      + '<button class="btn btn-ghost" onclick="copyRollup()">Copy</button>'
+      + '<button class="eos-btn eos-btn-sm eos-btn-secondary" onclick="copyRollup()">Copy</button>'
       + '<span class="muted" style="font-size:12px">'+d.items+' items'
       + (d.saved ? ' · saved to vault' : '')+'</span></div>';
   }catch(e){ var o=document.getElementById('rollup-out'); if(o) o.textContent='Rollup failed.'; }
@@ -275,7 +272,7 @@ async function maybeCarryover(days){
     _carryover = d;
     host.innerHTML = '<div class="card" style="border-left:3px solid var(--warning)">'
       + '<b>'+d.items.length+' open item'+(d.items.length>1?'s':'')+'</b> from '+esc(d.weekday||'')+' '+esc(d.from)
-      + ' <button class="btn btn-ghost" style="margin-left:8px" onclick="applyCarryover(this)">Carry over to today</button>'
+      + ' <button class="eos-btn eos-btn-sm eos-btn-secondary" style="margin-left:8px" onclick="applyCarryover(this)">Carry over to today</button>'
       + '<div class="muted" style="font-size:12px;margin-top:6px">'
       + d.items.slice(0,5).map(function(it){ return (STATUS_EMOJI[it.status]||'·')+' '+esc(it.project)+': '+esc(it.text); }).join('<br>')
       + (d.items.length>5?'<br>… +'+(d.items.length-5)+' more':'')
@@ -346,7 +343,7 @@ function renderDetail(d){
     + '<input id="dt-text" class="tx-in" placeholder="Work item" onkeydown="if(event.key===\'Enter\')addToDay()">'
     + '<select id="dt-status" class="sel">'
     + Object.keys(STATUS_EMOJI).map(function(k){return '<option value="'+k+'">'+STATUS_EMOJI[k]+' '+k+'</option>';}).join('')
-    + '</select><button class="btn" onclick="addToDay()">Add</button></div>';
+    + '</select><button class="eos-btn eos-btn-sm eos-btn-primary" onclick="addToDay()">Add</button></div>';
   if(d.timesheet && d.timesheet.length){
     h += '<div class="section-label">Timesheet</div>';
     h += d.timesheet.map(function(t){return '<div class="muted">'+esc(t.project)+': '+t.hours+'h '+(t.note?'— '+esc(t.note):'')+'</div>';}).join('');
@@ -389,8 +386,8 @@ function proseSection(label, text, field){
   var edit = '<div id="'+id+'-edit" class="hidden">'
     + '<textarea class="prose" id="'+id+'-ta" placeholder="'+label+'…">'+esc(text||'')+'</textarea>'
     + '<div style="text-align:right;margin-top:6px">'
-    +   '<button class="btn btn-ghost" onclick="cancelProse(\''+field+'\')">Cancel</button> '
-    +   '<button class="btn" onclick="saveProse(\''+field+'\')">Save</button></div>'
+    +   '<button class="eos-btn eos-btn-sm eos-btn-secondary" onclick="cancelProse(\''+field+'\')">Cancel</button> '
+    +   '<button class="eos-btn eos-btn-sm eos-btn-primary" onclick="saveProse(\''+field+'\')">Save</button></div>'
     + '</div>';
   return head + view + add + edit;
 }

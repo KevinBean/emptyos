@@ -72,7 +72,7 @@ async def _release_due_for_site(self, site: dict) -> dict:
     for item in due:
         path = Path(item["path"])
         try:
-            async with self.write_lock(f"publish-scheduled:{path.resolve()}"):
+            async with self.note_lock(path):
                 content = await self.read(str(path))
                 updated = set_frontmatter_field(content, "publish", "true")
                 if updated != content:

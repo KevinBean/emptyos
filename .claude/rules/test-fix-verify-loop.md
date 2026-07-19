@@ -58,7 +58,20 @@ without re-querying the source:
 The `## What surfaced this` block is the **load-bearing contract** — the fix-agent
 parses `persona / scenario / last_run_id / friction_kind / friction_text` via
 `_parse_prompt_meta`. Without them, verify can't anchor. New friction sources
-must emit this block.
+must emit this block. (On disk the locked quote heading is `## What the persona
+reported` — `emptyos/sdk/fix_queue.py::FRICTION_HEADING`; build prompts via that
+module's helpers rather than restating the format.)
+
+**Optional trace-identity frontmatter** (`usecase_id / milestone_id / step_id /
+walk_id / evidence`) rides the same contract for manual-UI-walk-promoted
+prompts (`source: ui-walk`, written by `scripts/ui_walk_promote.py`).
+`_parse_prompt_meta` plucks them into `verify_context`, so runs, verify runs,
+and loop receipts inherit the originating use case verbatim. ui-walk prompts
+verify by **human re-walk attestation** (`POST /fix-agent/api/runs/{id}/attest`)
+— a third verify shape next to active-scenario and passive-syslog — and the
+autonomous drain skips them at selection. Every close (any source) appends a
+disposition row to `fix-prompts/done/_ledger.jsonl`. Full contract:
+`.claude/rules/loop-traceability.md`.
 
 ### Fix-driver lifecycle (today: `apps/fix-agent/api_run`)
 

@@ -33,7 +33,7 @@
 
   .side-rail { position: sticky; top: 16px; align-self: start; display: flex; flex-direction: column; gap: 12px; max-height: calc(100dvh - 32px); overflow-y: auto; }
   .side-card { border: 1px solid var(--border); border-radius: 8px; padding: 12px; background: var(--bg-card); }
-  .side-card h4 { margin: 0 0 8px; font-size: 13px; text-transform: uppercase; letter-spacing: 0.05em; opacity: 0.7; }
+  .side-card h4 { margin: 0 0 8px; font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; opacity: 0.7; }
   .scene-img { width: 100%; border-radius: 6px; display: block; }
   .scene-empty { font-size: 13px; opacity: 0.6; }
 
@@ -220,7 +220,7 @@ function renderLibrary(booksDir) {
             return EOS_UI.entityCard({
                 title: b.title,
                 meta: ch,
-                onClick: "window.location.hash='#" + escAttr(b.slug) + "'",
+                onClick: "window.location.hash=" + JSON.stringify('#' + b.slug),
             });
         }).join('') + '</div>';
     if (window.renderStoryLibrary) renderStoryLibrary();
@@ -696,7 +696,7 @@ async function showBookMap() {
     var body = '<div style="font-size:13px;opacity:0.7;margin-bottom:12px;">From <strong>' + seen + '</strong> paragraph' + (seen===1?'':'s') + ' you\'ve viewed. ' +
         'Heavier nodes/edges recur more across the book.</div>' +
         '<div class="concept-graph" style="margin-bottom:16px;line-height:2;">' + (nodesHtml || '<em>No concepts yet.</em>') + '</div>' +
-        (edgesHtml ? '<h4 style="margin:16px 0 8px;font-size:13px;text-transform:uppercase;letter-spacing:0.05em;opacity:0.7;">Relations</h4>' +
+        (edgesHtml ? '<h4 style="margin:16px 0 8px;font-size:12px;text-transform:uppercase;letter-spacing:0.06em;opacity:0.7;">Relations</h4>' +
         '<div style="max-height:380px;overflow-y:auto;">' + edgesHtml + '</div>' : '');
     if (window.EOS_UI && EOS_UI.modal) {
         EOS_UI.modal({title: 'Map: ' + esc(res.title), body: body, width: 720});

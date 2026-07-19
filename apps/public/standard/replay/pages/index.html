@@ -13,11 +13,11 @@
     .topbar { display: flex; align-items: center; gap: 12px; margin-bottom: 18px; }
     .topbar h1 { margin: 0; font-size: 1.4rem; }
     .topbar .spacer { flex: 1; }
-    .recipe-card { border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px;
-      margin-bottom: 10px; cursor: pointer; background: var(--surface); transition: border-color .15s; }
-    .recipe-card:hover { border-color: var(--accent); }
-    .recipe-card h3 { margin: 0 0 4px; font-size: 1.05rem; }
-    .recipe-card .meta { color: var(--text-muted); font-size: .82rem; }
+    /* Recipe rows render via EOS_UI.entityCard; .recipe-card is an app-local
+       modifier composing on .eos-entity-card. The h3/.meta child rules went away
+       with the migration — .eec-title/.eec-sub/.eec-meta replace them. */
+    .recipe-card { border-radius: 12px; padding: 14px 16px; margin-bottom: 10px;
+      background: var(--surface); }
     .step-row { display: flex; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--border); }
     .step-n { color: var(--text-muted); min-width: 22px; }
     .step-why { color: var(--text-muted); font-size: .88rem; }
@@ -127,12 +127,17 @@
       if (!rs.length) { list.innerHTML = ''; empty.classList.remove('hidden'); return; }
       empty.classList.add('hidden');
       list.innerHTML = rs.map(function (r) {
-        return '<div class="recipe-card" onclick="openDetail(' + escAttr(JSON.stringify(r.id)) + ')">'
-          + '<h3>' + esc(r.name || r.id) + '</h3>'
-          + '<div class="meta">' + esc(r.goal || '') + '</div>'
-          + '<div class="meta">' + (r.steps || 0) + ' steps · '
-          + '<span class="eos-badge eos-badge-status-' + escAttr(r.status || 'draft') + '">' + esc(r.status || 'draft') + '</span></div>'
-          + '</div>';
+        var st = r.status || 'draft';
+        var variant = EOS_UI.statusVariant(st);
+        // title/subtitle are escaped by entityCard — pass raw or they double-escape.
+        return EOS_UI.entityCard({
+          title: r.name || r.id,
+          subtitle: r.goal || '',
+          badges: [{label: st, variant: variant}],
+          meta: (r.steps || 0) + ' steps',
+          onClick: 'openDetail(' + JSON.stringify(r.id) + ')',
+          className: 'recipe-card',
+        });
       }).join('');
     }
 

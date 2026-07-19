@@ -20,7 +20,7 @@ from typing import AsyncIterator, TYPE_CHECKING
 
 from emptyos.sdk import web_route
 from emptyos.sdk.do_token import extract_do_tokens
-from emptyos.sdk.utils import parse_llm_json
+from emptyos.sdk.utils import path_segment_error
 
 if TYPE_CHECKING:
     from .app import RoomsApp  # noqa: F401 — for type hints only
@@ -487,6 +487,8 @@ async def unregister_persona(self, *, id: str, source: str = "") -> dict:
     if existing_source != source:
         return {"error": f"agent '{id}' belongs to '{existing_source or 'user'}'"}
     path = self._agent_path(id)
+    if path is None:
+        return {"error": path_segment_error(id, "agent id")}
     try:
         path.unlink()
         self.kernel.agents.invalidate(id)

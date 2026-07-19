@@ -41,7 +41,7 @@ python scripts/generate_animated_mv.py --audio song.mp3 --cover cover.png --titl
 - Background: Animated cover (full screen, looping)
 
 **Prerequisites**:
-- ComfyUI running (localhost on Home PC, or `100.91.167.57:8188` via Tailscale)
+- ComfyUI running (`$COMFYUI_HOST`, default `localhost:8188`; or your ComfyUI host's Tailscale address if remote)
 - AnimateDiff installed in ComfyUI
 - ffmpeg in PATH
 - `pip install requests mutagen`

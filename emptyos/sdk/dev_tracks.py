@@ -79,6 +79,7 @@ class TrackBrief:
     threads_cleared: int
     threads_added: int
     threads_carried: int
+    purpose: str = ""  # what the track is FOR (stable across sessions)
     sections: dict[str, str] = field(default_factory=dict)
     open_threads: list[dict] = field(default_factory=list)  # {text, blocked_human}
     blocked_human: bool = False
@@ -182,6 +183,7 @@ def parse_track_brief(frontmatter: dict, body: str) -> TrackBrief:
         threads_cleared=_int("threads_cleared"),
         threads_added=_int("threads_added"),
         threads_carried=_int("threads_carried"),
+        purpose=str(frontmatter.get("purpose", "") or "").strip(),
         sections=sections,
         open_threads=open_threads,
         blocked_human=any(t["blocked_human"] for t in open_threads),
@@ -314,26 +316,35 @@ _DEVLOG_DATE_RE = re.compile(r"^(\d{4}-\d{2}-\d{2})(?:-(.+))?$")
 
 
 def parse_devlog_meta(frontmatter: dict, filename: str) -> dict | None:
-    """Meta for one dated devlog: {date, title, tracks}.
+    """Meta for one dated devlog: {date, title, tracks, tags}.
 
     ``filename`` is the stem (no .md). Non-dated filenames (``_index``,
     ``_themes``, prose notes) return None. ``tracks`` comes from the
-    frontmatter list the wrapup skill stamps (absent on legacy devlogs → []).
+    frontmatter list the wrapup skill stamps (absent on legacy devlogs → []);
+    ``tags`` is the raw tag list — callers may intersect it with the known
+    track-slug set as an attribution fallback for legacy devlogs.
     """
     m = _DEVLOG_DATE_RE.match((filename or "").strip())
     if not m:
         return None
-    tracks_raw = frontmatter.get("tracks")
-    if isinstance(tracks_raw, str):
-        tracks = [s for s in re.split(r"[,\s]+", tracks_raw) if s]
-    elif isinstance(tracks_raw, list):
-        tracks = [str(s) for s in tracks_raw if s]
-    else:
-        tracks = []
+
+    def _strlist(key: str) -> list[str]:
+        raw = frontmatter.get(key)
+        if isinstance(raw, str):
+            return [s for s in re.split(r"[,\s]+", raw) if s]
+        if isinstance(raw, list):
+            return [str(s) for s in raw if s]
+        return []
+
     title = str(frontmatter.get("title") or "").strip()
     if not title and m.group(2):
         title = m.group(2).replace("-", " ")
-    return {"date": m.group(1), "title": title, "tracks": tracks}
+    return {
+        "date": m.group(1),
+        "title": title,
+        "tracks": _strlist("tracks"),
+        "tags": _strlist("tags"),
+    }
 
 
 # ── Cross-linking ────────────────────────────────────────────────────────────

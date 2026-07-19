@@ -50,12 +50,12 @@ class GardenApp(BaseApp):
 
     # ── Settings helpers ───────────────────────────────────────────
     def _theme(self) -> str:
-        t = str(self.app_config("garden.theme", themes.DEFAULT_THEME) or themes.DEFAULT_THEME).lower()
+        t = str(self.setting_or_config("garden.theme", themes.DEFAULT_THEME) or themes.DEFAULT_THEME).lower()
         return t if t in themes.THEMES else themes.DEFAULT_THEME
 
     def _window_days(self) -> int:
         try:
-            return max(1, min(365, int(self.app_config("garden.window_days", 30) or 30)))
+            return max(1, min(365, int(self.setting_or_config("garden.window_days", 30) or 30)))
         except Exception:
             return 30
 

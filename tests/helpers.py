@@ -1,6 +1,8 @@
 """Shared constants and utilities for EmptyOS E2E tests."""
+import importlib.util
 import os
 import sys
+import types
 from pathlib import Path
 
 TEST_PREFIX = "PLAYWRIGHT-TEST-"
@@ -24,6 +26,46 @@ def app_path(app_id: str) -> Path:
     if d is None:
         raise FileNotFoundError(f"app '{app_id}' not found under apps/")
     return d
+
+
+def load_app_module(app_id: str, module: str, *, preload: tuple[str, ...] = ()):
+    """Load ``<app_dir>/<module>.py`` as ``apps.<app_id>.<module>`` with the
+    parent packages registered in ``sys.modules``, so the app's relative
+    imports resolve without booting the kernel (the standard unit-test shape
+    from ``.claude/rules/multi-module-apps.md`` § Test fixtures).
+
+    ``preload`` names sibling modules the target imports relatively (e.g.
+    ``("shared",)`` when it does ``from .shared import ...``). Already-loaded
+    modules are reused, so multiple test files share one exec per module.
+    """
+    if str(_REPO_ROOT) not in sys.path:
+        sys.path.insert(0, str(_REPO_ROOT))
+    app_dir = app_path(app_id)
+    if "apps" not in sys.modules:
+        apps_pkg = types.ModuleType("apps")
+        apps_pkg.__path__ = [str(_REPO_ROOT / "apps")]
+        sys.modules["apps"] = apps_pkg
+    pkg_name = f"apps.{app_id}"
+    if pkg_name not in sys.modules:
+        pkg = types.ModuleType(pkg_name)
+        pkg.__path__ = [str(app_dir)]
+        sys.modules[pkg_name] = pkg
+
+    def _load(name: str):
+        full = f"{pkg_name}.{name}"
+        if full in sys.modules:
+            return sys.modules[full]
+        spec = importlib.util.spec_from_file_location(full, app_dir / f"{name}.py")
+        mod = importlib.util.module_from_spec(spec)
+        sys.modules[full] = mod
+        spec.loader.exec_module(mod)
+        return mod
+
+    for name in preload:
+        _load(name)
+    return _load(module)
+
+
 # Allow override so tests can target a sandbox-pool member (`:9002+`) or the
 # dogfood daemon (`:9001`) without editing the file. Default is the main
 # user-owned daemon; CI uses the default.

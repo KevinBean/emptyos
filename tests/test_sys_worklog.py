@@ -8,6 +8,16 @@ from page_helpers import assert_no_js_errors, wait_briefly
 
 @pytest.mark.api
 class TestWorklogAPI:
+    def test_timeline_items_contract(self, http_client):
+        """Life-suite timeline contract (docs/suites/life-cohesion.md):
+        every item carries ts/title/kind/href, kind is 'worklog'."""
+        data = assert_dict_response(http_client.get("/worklog/api/timeline-items?days=7"))
+        items = data.get("items")
+        assert isinstance(items, list)
+        for it in items[:10]:
+            assert {"ts", "title", "kind", "href"} <= set(it), it
+            assert it["kind"] == "worklog"
+
     def test_recent_shape(self, http_client):
         data = assert_dict_response(http_client.get("/worklog/api/recent"))
         assert "days" in data and isinstance(data["days"], list)

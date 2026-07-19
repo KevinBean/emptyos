@@ -14,7 +14,7 @@ Three names the walkers rely on:
 
 BASE is environment-overridable so the same walkers can target a remote daemon
 (Tailscale / LAN) without code edits:
-  EOS_BASE / EOS_URL      full base URL    (e.g. http://100.91.167.57:9000)
+  EOS_BASE / EOS_URL      full base URL    (e.g. http://<tailnet-ip>:9000)
   EOS_HOST + EOS_PORT     host + port parts
 
 Token resolution order: EOS_AUTH_TOKEN env > emptyos.toml (network.auth_token,

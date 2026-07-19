@@ -53,6 +53,10 @@ CHECKS: list[dict] = [
     {"script": "check-vault-rmw-race.py",  "scope": ["always", "vault"],               "gate": False},
     {"script": "check_call_app_declared.py","scope": ["always", "release"],             "gate": True},
     {"script": "check_dark_flags.py",      "scope": ["always", "release"],             "gate": False},
+    # suites.toml (suite catalog) member ids must resolve to real manifests —
+    # deterministic (typo/retired-app drift only), so it gates. Unassigned
+    # public apps are an advisory inside the check, never a gate.
+    {"script": "check_suites.py",          "scope": ["always", "release"],             "gate": True},
     # A test hardcoding apps/<track>/<group>/<id> breaks on every promote/regroup
     # and surfaces as a pytest COLLECTION error — reddening the whole CI gate,
     # not one file. Deterministic (flags only paths that no longer resolve), so

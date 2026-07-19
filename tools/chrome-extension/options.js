@@ -34,6 +34,8 @@ document.getElementById("save").addEventListener("click", async () => {
       rememberToken: document.getElementById("remember").checked,
     });
     chrome.runtime.sendMessage({ type: "EOS_BROWSER_SYNC_READING" }).catch(() => {});
+    // A new daemon may serve a different app set — rebuild the context menus.
+    chrome.runtime.sendMessage({ type: "EOS_APPS_CHANGED" }).catch(() => {});
     setStatus("Saved. The token is not synced.", "ok");
   } catch (error) { setStatus(error.message, "err"); }
 });

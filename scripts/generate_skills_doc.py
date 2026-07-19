@@ -22,6 +22,7 @@ Usage:
 from __future__ import annotations
 
 import re
+import subprocess
 import sys
 from pathlib import Path
 
@@ -145,10 +146,42 @@ def _routes(desc: str, known: set[str]) -> str:
     return ", ".join(targets)
 
 
+def _gitignored(paths: list[Path]) -> set[Path]:
+    """Subset of ``paths`` that git is deliberately ignoring.
+
+    This doc is TRACKED and ships in a public release, but the generator walks
+    the filesystem — so a skill excluded on purpose via .gitignore would still
+    have its name and description written into it. Three such skills were
+    caught that way (.gitignore:75-77).
+
+    Fails OPEN: if git is unavailable the doc is generated as before rather
+    than silently losing rows.
+    """
+    if not paths:
+        return set()
+    try:
+        proc = subprocess.run(
+            ["git", "check-ignore", "--stdin"],
+            input="\n".join(str(p) for p in paths),
+            capture_output=True, text=True, cwd=str(ROOT), timeout=15,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return set()
+    # rc 0 = some ignored, 1 = none ignored, 128 = not a repo / error.
+    if proc.returncode not in (0, 1):
+        return set()
+    out = {Path(line.strip()) for line in proc.stdout.splitlines() if line.strip()}
+    return {p for p in paths if p in out or Path(str(p)) in out}
+
+
 def _skill_dirs(root: Path) -> list[Path]:
     if not root.is_dir():
         return []
-    return sorted(p for p in root.iterdir() if p.is_dir() and not p.name.startswith(("_", ".")))
+    dirs = sorted(
+        p for p in root.iterdir() if p.is_dir() and not p.name.startswith(("_", "."))
+    )
+    ignored = _gitignored(dirs)
+    return [p for p in dirs if p not in ignored]
 
 
 def _esc(s: str) -> str:

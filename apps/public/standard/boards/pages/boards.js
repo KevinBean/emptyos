@@ -2640,7 +2640,12 @@ async function runSmartAdd() {
         if (!data.ok) { EOS_UI.toast(data.error || 'Could not parse', false); return; }
         var fields = data.fields || {};
         var host = document.getElementById('add-item-fields');
-        host.innerHTML = (boardConfig.columns||[]).map(function(c) {
+        var pv = data.provenance
+            ? '<div class="muted" style="margin:4px 0 8px">' +
+              EOS_UI.provenance({mode: data.provenance.mode, provider: data.provenance.provider, model: data.provenance.model}) +
+              ' · review &amp; edit</div>'
+            : '';
+        host.innerHTML = pv + (boardConfig.columns||[]).map(function(c) {
             var v = (c.id in fields) ? fields[c.id] : '';
             return '<div class="form-group"><label>'+esc(c.label)+'</label>'+renderFormInput(c, v)+'</div>';
         }).join('');

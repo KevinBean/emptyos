@@ -57,6 +57,11 @@ title = "Blocked at work"
 priority = 145
 lazy = true
 
+# Life-suite day timeline (suite contract: docs/suites/life-cohesion.md)
+[[contributes.life.timeline]]
+id = "worklog-timeline"
+method = "timeline_items"
+
 # ── Unified verb registry (see .claude/rules/verb-registry.md) ──
 [[provides.verbs]]
 verb = "worklog.log_work"

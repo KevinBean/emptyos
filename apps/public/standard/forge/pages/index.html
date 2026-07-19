@@ -34,24 +34,13 @@
   /* Project grid */
   .grid-toolbar { display:flex; align-items:center; justify-content: space-between; gap:8px; margin-bottom: 12px; }
   .project-grid { display:grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 12px; }
-  .project-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 16px; display:flex; flex-direction:column; gap: 8px; cursor:pointer; }
-  .project-card:hover { border-color: color-mix(in srgb, var(--accent) 40%, var(--border)); }
-  .project-head { display:flex; justify-content:space-between; align-items:flex-start; gap: 8px; }
-  .project-title { font-weight: 600; font-size: 15px; line-height: 1.3; }
-  .project-id { font-size: 11px; color: var(--text-muted); font-family: var(--mono); margin-top: 2px; }
-  .project-meta { display:flex; flex-wrap:wrap; gap: 8px; font-size: 11px; color: var(--text-muted); }
+  /* Project cards render via EOS_UI.entityCard; .project-card is an app-local
+     modifier composing on .eos-entity-card (denser padding + a card ground, since
+     these sit in a grid rather than a list). Head/title/id/meta and the whole
+     .pill-status-* palette were deleted with the migration — the shared
+     .eec-* structure and .eos-badge-status-* variants replace them. */
+  .project-card { background: var(--bg-card); border-radius: var(--radius-lg); padding: 16px; display:flex; flex-direction:column; gap: 8px; margin-bottom: 0; }
   .project-actions { display:flex; gap: 8px; margin-top: 4px; flex-wrap: wrap; cursor:pointer; }
-  .pill { display:inline-block; padding: 2px 8px; border-radius: var(--radius-pill); font-size: 11px; font-weight: 500; }
-  .pill-status-scaffolding { background: color-mix(in srgb, var(--warning) 16%, transparent); color: var(--warning); }
-  .pill-status-scaffolded  { background: color-mix(in srgb, var(--text-muted) 16%, transparent); color: var(--text-secondary); }
-  .pill-status-stub        { background: color-mix(in srgb, var(--text-muted) 16%, transparent); color: var(--text-muted); }
-  .pill-status-dev         { background: color-mix(in srgb, var(--success) 16%, transparent); color: var(--success); }
-  .pill-status-built       { background: color-mix(in srgb, var(--accent) 16%, transparent); color: var(--accent); }
-  .pill-status-released    { background: color-mix(in srgb, var(--accent) 26%, transparent); color: var(--accent); font-weight: 600; }
-  .pill-status-building    { background: color-mix(in srgb, var(--warning) 16%, transparent); color: var(--warning); }
-  .pill-status-scaffold-failed { background: color-mix(in srgb, var(--danger) 16%, transparent); color: var(--danger); }
-  .pill-status-build-failed    { background: color-mix(in srgb, var(--danger) 16%, transparent); color: var(--danger); }
-  .pill-target { background: var(--bg); border: 1px solid var(--border); }
 
   .btn-mini { padding: 4px 12px; border-radius: var(--radius-sm); font-size: 12px; font-weight: 500; cursor: pointer; border: 1px solid var(--border); background: var(--bg-card); color: var(--text); }
   .btn-mini:hover:not(:disabled) { border-color: var(--text-muted); }
@@ -99,6 +88,21 @@
 
 <script src="/static/eos-components.js"></script>
 <script>
+// Forge's build states -> shared badge names. Nine build-specific names collapse to
+// the five states that actually differ to a reader: in progress, not started, done,
+// released, failed. EOS_UI.statusVariant adds the `status-` prefix and the fallback.
+var FORGE_STATUS_MAP = {
+  'scaffolding': 'active',
+  'building': 'active',
+  'dev': 'active',
+  'scaffolded': 'draft',
+  'stub': 'idea',
+  'built': 'completed',
+  'released': 'published',
+  'scaffold-failed': 'blocked',
+  'build-failed': 'blocked',
+};
+
 var STATE = {
   targets: [],
   projects: [],
@@ -152,34 +156,33 @@ function renderProjects() {
     return;
   }
   el.innerHTML = STATE.projects.map(p => {
-    var statusClass = `pill-status-${(p.status || 'scaffolded').replace(/[^a-z0-9-]/g, '-')}`;
-    return `
-      <div class="project-card" onclick="openDetail('${esc(p.id)}', event)">
-        <div class="project-head">
-          <div>
-            <div class="project-title">${esc(p.name)}</div>
-            <div class="project-id">${esc(p.id)}</div>
-          </div>
-          <div style="display:flex; flex-direction:column; gap:4px; align-items:flex-end;">
-            <span class="pill pill-target">${esc(p.target)}</span>
-            <span class="pill ${statusClass}">${esc(p.status)}</span>
-          </div>
-        </div>
-        <div class="project-meta">
-          <span>v${esc(p.version)}</span>
-          ${p.last_build ? `<span>· built ${esc(p.last_build)}</span>` : ''}
-          ${p.git_remote ? `<span>· git remote</span>` : ''}
-        </div>
-        <div style="font-size: 11px; color: var(--text-muted); font-family: var(--mono); word-break: break-all;">${esc(p.repo_path)}</div>
-        <div class="project-actions" onclick="event.stopPropagation()">
+    var variant = EOS_UI.statusVariant(p.status, FORGE_STATUS_MAP);
+    var meta = [
+      `<span>v${esc(p.version)}</span>`,
+      p.last_build ? `<span>· built ${esc(p.last_build)}</span>` : '',
+      p.git_remote ? `<span>· git remote</span>` : '',
+      `<div style="width:100%;font-family:var(--mono);word-break:break-all;margin-top:4px">${esc(p.repo_path)}</div>`,
+    ].join('');
+    // stopPropagation must sit on a wrapper inside the actions slot — the card
+    // itself carries the openDetail onclick, so button clicks would bubble into it.
+    var actions = `<div class="project-actions" onclick="event.stopPropagation()">
           ${p.running
             ? `<button class="btn-mini" onclick="stopDev('${esc(p.id)}')">⏹ Stop</button>`
             : `<button class="btn-mini" onclick="startDev('${esc(p.id)}')">▶ Dev</button>`}
           <button class="btn-mini" onclick="build('${esc(p.id)}')">⚙ Build</button>
           <button class="btn-mini" onclick="release('${esc(p.id)}', '${esc(p.version)}')">↑ Release</button>
           <button class="btn-mini danger" onclick="del('${esc(p.id)}')">Delete</button>
-        </div>
-      </div>`;
+        </div>`;
+    // title/subtitle are escaped by entityCard — pass them raw or they double-escape.
+    return EOS_UI.entityCard({
+      title: p.name,
+      subtitle: p.id,
+      badges: [{label: p.target, variant: 'neutral'}, {label: p.status, variant: variant}],
+      meta: meta,
+      actions: actions,
+      onClick: `openDetail('${esc(p.id)}', event)`,
+      className: 'project-card',
+    });
   }).join('');
 }
 

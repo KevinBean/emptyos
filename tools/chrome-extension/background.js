@@ -68,69 +68,59 @@ function readingModeForUrl(settings, url) {
 
 // ── Side panel + context menu init ──────────────────────────────
 
+// Each verb names the daemon app that answers it. Daemons differ — a public
+// release ships neither `dictionary` nor `jobs` — so registering all nine
+// unconditionally puts menu items in front of people that can only ever fail.
+// `app: ""` marks a verb backed by the runtime itself (always present).
+const JOB_SITE_PATTERNS = [
+  "https://*.linkedin.com/jobs/*",
+  "https://*.seek.com.au/job/*",
+];
+
+const MENU_SPECS = [
+  { app: "quick-action", spec: { id: "capture-page", title: "Capture page to EmptyOS", contexts: ["page"] } },
+  { app: "quick-action", spec: { id: "capture-selection", title: "Capture selection to EmptyOS", contexts: ["selection"] } },
+  { app: "quick-action", spec: { id: "capture-link", title: "Capture link to EmptyOS", contexts: ["link"] } },
+  { app: "assistant", spec: { id: "propose-kb", title: "Propose selection as KB clause", contexts: ["selection"] } },
+  { app: "dictionary", spec: { id: "dict-lookup", title: "Look up '%s' in EmptyOS dictionary", contexts: ["selection"] } },
+  { app: "jobs", spec: { id: "eval-job-sel", title: "Evaluate selection as a job (vs my CV)", contexts: ["selection"] } },
+  { app: "jobs", spec: { id: "eval-job-page", title: "Evaluate this job posting (vs my CV)", contexts: ["page"], documentUrlPatterns: JOB_SITE_PATTERNS } },
+  { app: "jobs", spec: { id: "capture-job", title: "Capture job posting (LinkedIn / Seek)", contexts: ["page"], documentUrlPatterns: JOB_SITE_PATTERNS } },
+  { app: "video-digest", spec: { id: "digest-video", title: "Digest this video", contexts: ["page"], documentUrlPatterns: ["https://*.youtube.com/watch*", "https://youtu.be/*"] } },
+];
+
+// Serialized: removeAll() racing a concurrent create() throws on duplicate ids.
+let _menuBuild = Promise.resolve();
+
+function refreshMenus() {
+  _menuBuild = _menuBuild
+    .then(_refreshMenus)
+    .catch(e => console.warn("contextMenus:", e));
+  return _menuBuild;
+}
+
+async function _refreshMenus() {
+  // null = unknown (daemon down / unconfigured / 401). Unknown is NOT absent:
+  // register everything, exactly as before this gating existed. A click on a
+  // verb whose app is missing still degrades to an ERR badge.
+  const available = await globalThis.EOS_DAEMON.getAvailableApps();
+  await chrome.contextMenus.removeAll();
+  for (const { app, spec } of MENU_SPECS) {
+    if (available && app && !available.has(app)) continue;
+    chrome.contextMenus.create(spec);
+  }
+}
+
 chrome.runtime.onInstalled.addListener(() => {
   chrome.sidePanel
     .setPanelBehavior({ openPanelOnActionClick: true })
     .catch(e => console.warn("sidePanel:", e));
-
-  chrome.contextMenus.create({
-    id: "capture-page",
-    title: "Capture page to EmptyOS",
-    contexts: ["page"],
-  });
-  chrome.contextMenus.create({
-    id: "capture-selection",
-    title: "Capture selection to EmptyOS",
-    contexts: ["selection"],
-  });
-  chrome.contextMenus.create({
-    id: "capture-link",
-    title: "Capture link to EmptyOS",
-    contexts: ["link"],
-  });
-  chrome.contextMenus.create({
-    id: "propose-kb",
-    title: "Propose selection as KB clause",
-    contexts: ["selection"],
-  });
-  chrome.contextMenus.create({
-    id: "dict-lookup",
-    title: "Look up '%s' in EmptyOS dictionary",
-    contexts: ["selection"],
-  });
-  chrome.contextMenus.create({
-    id: "eval-job-sel",
-    title: "Evaluate selection as a job (vs my CV)",
-    contexts: ["selection"],
-  });
-  chrome.contextMenus.create({
-    id: "eval-job-page",
-    title: "Evaluate this job posting (vs my CV)",
-    contexts: ["page"],
-    documentUrlPatterns: [
-      "https://*.linkedin.com/jobs/*",
-      "https://*.seek.com.au/job/*",
-    ],
-  });
-  chrome.contextMenus.create({
-    id: "capture-job",
-    title: "Capture job posting (LinkedIn / Seek)",
-    contexts: ["page"],
-    documentUrlPatterns: [
-      "https://*.linkedin.com/jobs/*",
-      "https://*.seek.com.au/job/*",
-    ],
-  });
-  chrome.contextMenus.create({
-    id: "digest-video",
-    title: "Digest this video",
-    contexts: ["page"],
-    documentUrlPatterns: [
-      "https://*.youtube.com/watch*",
-      "https://youtu.be/*",
-    ],
-  });
+  refreshMenus();
 });
+
+// Browser restart clears storage.session, so the cached probe is gone — re-probe
+// rather than falling back to "show everything" for the whole session.
+chrome.runtime.onStartup.addListener(() => { refreshMenus(); });
 
 // ── Badge feedback ───────────────────────────────────────────────
 
@@ -700,5 +690,16 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   broadcastReadingSettings()
     .then(() => sendResponse({ ok: true }))
     .catch(e => sendResponse({ error: e?.message || "broadcast failed" }));
+  return true;
+});
+
+// Pointing the extension at a different daemon changes which verbs can work.
+// Separate from the reading-sync ping so a failure in one can't take the other
+// down — they answer different questions about the same save.
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message?.type !== "EOS_APPS_CHANGED") return false;
+  refreshMenus()
+    .then(() => sendResponse({ ok: true }))
+    .catch(e => sendResponse({ error: e?.message || "menu refresh failed" }));
   return true;
 });

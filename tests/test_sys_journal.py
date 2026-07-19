@@ -13,6 +13,17 @@ from page_helpers import (
 
 @pytest.mark.api
 class TestJournalAPI:
+    def test_timeline_items_contract(self, http_client):
+        """Life-suite timeline contract (docs/suites/life-cohesion.md):
+        every item carries ts/title/kind/href; kind distinguishes human
+        entries ('journal') from AI/reactor breadcrumbs ('journal-auto')."""
+        data = assert_dict_response(http_client.get("/journal/api/timeline-items?days=7"))
+        items = data.get("items")
+        assert isinstance(items, list)
+        for it in items[:10]:
+            assert {"ts", "title", "kind", "href"} <= set(it), it
+            assert it["kind"] in ("journal", "journal-auto")
+
     def test_today_entries(self, http_client):
         data = assert_ok(http_client.get("/journal/api/today"))
         assert isinstance(data, (dict, list))

@@ -170,7 +170,7 @@ function renderNotes(notes) {
       title: '\uD83D\uDCC4 ' + title,
       subtitle: folder || undefined,
       actions: actions,
-      onClick: "EOS.viewNote('" + safe + "')",
+      onClick: "EOS.viewNote(" + JSON.stringify(safe) + ")",
     });
   }).join('');
 }

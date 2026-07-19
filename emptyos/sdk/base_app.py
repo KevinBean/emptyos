@@ -523,15 +523,33 @@ class BaseApp:
         """
         return self.method_registry.to_listing(self, endpoint)
 
-    def resolve_method(self, endpoint: str, method_id: str | None) -> Any:
+    def resolve_method(
+        self, endpoint: str, method_id: str | None, *, strict: bool = True
+    ) -> Any:
         """Resolve a method by id (or fall back to the endpoint default).
 
         Raises ValueError if neither id nor a default exists. The returned
         `MethodSpec` exposes `await spec.run(self, payload)` which records
         compute provenance automatically.
+
+        ``strict`` (the default) rejects an unrecognised *explicit* id instead
+        of quietly substituting the endpoint default. Every caller passes a
+        user-supplied ``body["method"]``, so the lenient behaviour meant a
+        typo'd `cigre601` returned the IEEE 738 number under a different
+        method label — a wrong answer presented confidently. The conformance
+        path (`conformance.py`) and `compare_methods` already treated an
+        unknown id as an error; only the request-facing dispatchers didn't.
+        Pass ``strict=False`` for a genuine best-effort lookup.
         """
-        spec = self.method_registry.resolve(endpoint, method_id)
+        spec = self.method_registry.resolve(endpoint, method_id, strict=strict)
         if spec is None:
+            if strict and method_id:
+                known = [s.id for s in self.method_registry.list(endpoint)]
+                if known:
+                    raise ValueError(
+                        f"unknown method {method_id!r} for endpoint "
+                        f"'{endpoint}' (available: {known})"
+                    )
             raise ValueError(
                 f"no method registered for endpoint '{endpoint}'"
                 + (f" (asked for '{method_id}')" if method_id else "")
@@ -1460,10 +1478,17 @@ class BaseApp:
         # be silently treated as no payload (most write endpoints where
         # individual fields are optional). Use read_json when invalid
         # JSON should surface as an error to the caller.
+        #
+        # A body of `[1,2]`, `"hi"`, `5` or `null` is VALID json but not a
+        # dict, so it used to sail past the decode guard and then 500 on the
+        # caller's `body.get(...)`. Every caller reads fields by key, so a
+        # non-object body is "no payload" by the same logic as a malformed
+        # one — coerce it rather than leaking an AttributeError.
         try:
-            return await BaseApp.read_json(request)
+            body = await BaseApp.read_json(request)
         except Exception:
             return {}
+        return body if isinstance(body, dict) else {}
 
     async def http_request(
         self,
@@ -1635,9 +1660,19 @@ class BaseApp:
         resolved = None
         try:
             if p.is_absolute() and p.is_file():
+                # An absolute stored path is legitimate here — the point is to
+                # locate a source file wherever the user put it.
                 resolved = str(p.resolve())
-            elif (self.vault_root / stored).is_file():
-                resolved = str((self.vault_root / stored).resolve())
+            else:
+                # A RELATIVE path must stay inside the vault. Without this,
+                # "../../emptyos.toml" reported the existence and absolute path
+                # of files outside it (contents were never exposed, and
+                # open-local already refuses the same path, so this was
+                # existence/path disclosure rather than read access).
+                cand = (self.vault_root / stored).resolve()
+                root = self.vault_root.resolve()
+                if cand.is_file() and cand.is_relative_to(root):
+                    resolved = str(cand)
         except (OSError, ValueError):
             resolved = None
         if resolved:
@@ -2486,6 +2521,48 @@ class BaseApp:
             return default
         val = svc.get(key, default)
         return default if val is None else val
+
+    def setting_or_config(
+        self, key: str, default: Any = None, *, config_key: str | None = None
+    ) -> Any:
+        """Read a UI-toggleable setting: Settings service first, then emptyos.toml.
+
+        Use this for anything declared in a manifest's ``[provides.settings]``
+        schema. Declaring a schema renders a live toggle in /settings and in the
+        app's own gear panel, and that toggle writes to the **Settings service**
+        (restart-free). ``app_config`` reads a *different* store (emptyos.toml,
+        loaded at boot). So an app that declares a schema key and reads it with
+        ``app_config`` alone ships a toggle that silently does nothing — it
+        writes a value the app never looks at. This composes the two so the
+        toggle works AND a per-machine TOML value still applies.
+
+        ``key`` is the schema key **verbatim** — the settings page writes
+        ``s.key`` with no app namespacing, so it must match what the manifest
+        declares. ``config_key`` is the ``app_config`` key, defaulting to
+        ``key``; pass it when the two stores use different conventions (e.g. a
+        dark flag whose TOML key must stay ``feature.x.enabled`` for
+        scripts/check_dark_flags.py while its schema key is namespaced
+        ``<app_id>.feature.x.enabled`` to avoid colliding in the global
+        settings store).
+
+        Precedence is settings → TOML → ``default``. A stored **null or empty
+        string** counts as *unset* and falls through: ``/settings/api/reset``
+        clears a key by writing an explicit null, and clearing a text input in
+        the panel writes ``""`` — neither should permanently shadow the TOML
+        value. (``False`` and ``0`` are real values and win, since neither
+        equals ``""``.) These are ``commons._cfg``'s semantics, which is the
+        only consumer that had this fully right before the extraction.
+
+        Extracted 2026-07-17 at the fourth consumer:
+        ``_auto_provenance_enabled`` (emptyos/web/server.py) had the shape,
+        ``commons._cfg`` had it with the empty-string rule, agent_fleet
+        re-rolled it, and garden / github-connector were shipping dead toggles
+        for want of it.
+        """
+        value = self.setting(key)
+        if value is None or value == "":
+            return self.app_config(config_key or key, default)
+        return value
 
     def app_config(self, key: str, default: Any = None) -> Any:
         """Get app-specific config from emptyos.toml [apps.<app_id>] section.

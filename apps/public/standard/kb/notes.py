@@ -15,6 +15,8 @@ import re
 from datetime import datetime
 from pathlib import Path
 from emptyos.sdk import extract_wikilinks, web_route
+from emptyos.sdk.utils import path_segment_error, require_path_segment
+from emptyos.sdk.utils import safe_path_segment
 from typing import TYPE_CHECKING
 
 from .shared import (
@@ -68,8 +70,21 @@ def _docs_dir(self) -> str:
     return self.app_config("docs_dir", DEFAULT_DOCS_DIR)
 
 
+def _safe_slug(slug: str) -> str:
+    """A KB slug that is safe to interpolate into a vault path.
+
+    Slugs arrive from a DELETE path param and from the create/upsert body,
+    and the result is both written and unlink()ed. A raw `..` walked out of
+    the notes dir; deep enough, it left the vault entirely. The platform
+    containment in VaultIndex now stops the ESCAPE, but only the app can
+    stop a write landing somewhere unintended INSIDE the vault -- so this
+    guard is not redundant with it.
+    """
+    return require_path_segment(slug, "slug")
+
+
 def _doc_path(self, slug: str) -> str:
-    return f"{self._docs_dir()}/{slug}.md"
+    return f"{self._docs_dir()}/{_safe_slug(slug)}.md"
 
 
 def _notes_dir(self) -> str:
@@ -77,7 +92,7 @@ def _notes_dir(self) -> str:
 
 
 def _note_path(self, slug: str) -> str:
-    return f"{self._notes_dir()}/{slug}.md"
+    return f"{self._notes_dir()}/{_safe_slug(slug)}.md"
 
 
 def _all_notes(self) -> list[dict]:
@@ -724,6 +739,8 @@ def _normalize_note_params(kind: str, title: str, slug: str):
     slug = (slug or _slugify(title)).strip().lower()
     if not slug:
         return None, {"error": "could not derive slug"}
+    if bad := path_segment_error(slug, "slug"):
+        return None, {"error": bad}
     return (kind, title, slug), None
 
 

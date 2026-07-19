@@ -4,7 +4,7 @@
 # Usage: python scripts/package-release.py <tier> [--check] [--platform=<name>]
 
 [release]
-version = "0.5.6"
+version = "0.5.7"
 
 # ── Platforms ─────────────────────────────────────────────────
 # Named deployment profiles. Plugins declare compatibility in
@@ -138,6 +138,7 @@ apps = [
     "journal",
     "kb",
     "learn",
+    "life",
     "music-library",
     "people",
     "portal",
@@ -256,6 +257,7 @@ apps = [
     "release",
     "repo",
     "run-center",
+    "agent_fleet",
     "sandbox",
     "site-lab",
     "skill",
@@ -320,6 +322,7 @@ paths = [
     "englishos-cloud/",
     "pyproject.toml",
     "release.toml",
+    "suites.toml",
     ".eos-personal",
     ".eos-branding",
     ".gitignore",

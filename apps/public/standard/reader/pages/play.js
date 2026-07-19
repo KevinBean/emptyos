@@ -77,7 +77,7 @@
       return EOS_UI.entityCard({
         title: s.title,
         meta: s.premise || 'Interactive story',
-        onClick: "STORY_MODE_open(" + escAttr(JSON.stringify(s.slug)) + ")",
+        onClick: "STORY_MODE_open(" + JSON.stringify(s.slug) + ")",
         extraHtml: meta,
       });
     }).join('');

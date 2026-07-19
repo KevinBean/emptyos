@@ -35,6 +35,29 @@ finding, which is how feature gaps get discovered (the discovery mode in
 `/eos-new-usecase`). Never rewrite a goal to fit what the system currently
 does.
 
+### Manual-walk scenario frontmatter (optional — a different file, same spirit)
+
+A **manual, need-first UI walk** (`eos-ui-walk`) writes its own `scenario.md`
+under `data/ui-walk/usecases/<walk>/` — NOT in the committed scenarios dir —
+describing a months-long user outcome. That file may carry a trace identity
+so findings keep their origin through promotion → fix → receipt
+(`.claude/rules/loop-traceability.md`):
+
+```yaml
+---
+usecase_id: riverside-bess-132kv   # slug for the real user need
+need: One line stating the outcome the user must accomplish
+milestones:
+  - id: month-0-design-basis      # slug per lifecycle checkpoint
+    title: "Month 0: establish the project design basis"
+---
+```
+
+Don't confuse the two: dogfood scenario frontmatter (above) drives the
+automated persona loop; manual-walk frontmatter is identity for the
+evidence/triage chain. Legacy manual walks without it still work — identities
+derive deterministically.
+
 Parser notes (`_scenario_meta` in `apps/extension/dev/dogfood-agent/app.py`):
 
 - **Unknown keys are ignored** — extensions are backward-compatible; legacy

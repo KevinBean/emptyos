@@ -2,7 +2,7 @@
 
 # EmptyOS Apps
 
-> 65 apps · 17 plugins · 16 capabilities · release v0.5.6.
+> 66 apps · 17 plugins · 16 capabilities · release v0.5.7.
 >
 > The apps that ship in a public EmptyOS release (`core` + `standard` tiers).
 
@@ -32,7 +32,7 @@ self-generated docs. This catalog is regenerated from manifests by
 
 ## Standard — full builder OS
 
-*52 apps.*
+*53 apps.*
 
 | App | What it does | Capabilities |
 |---|---|---|
@@ -61,6 +61,7 @@ self-generated docs. This catalog is regenerated from manifests by
 | **journal** | Capture journal entries, milestones, moods, and reflections over time | read, write, search, think |
 | **kb** | concepts, formulas, standards, cases, lessons, and prescriptive guidelines | read, write, think, draw, search |
 | **learn** | Turns your notes into structured courses with lessons, quizzes, and progress tracking | think, read, write |
+| **life** | one day timeline composed from journal, worklog, and expense. Owns no data; member apps contribute items via [[contributes.life.timeline]] | — |
 | **music-library** | Browse, play, and edit songs in your vault, and generate AI lyrics | read, write, search, think |
 | **people** | Manage people, relationships, workload, capacity, birthdays, and interaction history | read, write, search, think |
 | **portal** | Routes thinking, capture, search, and learning into organized rooms with shared context | — |

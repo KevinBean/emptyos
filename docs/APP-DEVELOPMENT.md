@@ -324,7 +324,7 @@ Use the platform's shared UI library instead of building from scratch:
 - **Toast notifications**: `EOS_UI.toast("Saved!", "success")`
 - **Modals**: `EOS_UI.modal("Title", "<p>Content</p>")`
 - **Form modals**: `EOS_UI.formModal("Add Item", fields, onSubmit)`
-- **Stat cards**: `EOS_UI.statCards(container, [{label, value}])`
+- **Stat cards**: `EOS_UI.statCards(container, [{label, value, variant?, onClick?}])` — `onClick` (a JS expression string) makes the tile a clickable, keyboard-accessible door
 - **Confirm dialogs**: `EOS_UI.confirm("Are you sure?", onYes)` (safe default — primary button). For destructive: `EOS_UI.confirm({message, action:'Delete', danger:true})` or `EOS_UI.confirmDelete({label})`.
 - **Loading states**: `EOS_UI.loading(container, true)`
 - **Vault paths**: `EOS.noteActions(path)` — renders clickable view/edit links

@@ -22,6 +22,7 @@ from datetime import datetime
 from pathlib import Path
 
 from emptyos.sdk import BaseApp, cli_command, slugify, web_route
+from emptyos.sdk.utils import safe_path_segment
 
 from . import srs as _srs
 from . import review_all as _review_all
@@ -661,12 +662,21 @@ class LearnApp(BaseApp):
             "topic": props.get("topic") or "",
         }
 
-    def _progress_path(self, course_id: str) -> Path:
+    def _progress_path(self, course_id: str) -> Path | None:
+        """Progress file for a course, or None if the id isn't a plain slug.
+
+        course_id comes from a path param and _save_progress OVERWRITES the
+        target -- the only overwrite among the traversal sinks found in the
+        2026-07-19 audit. _find_course runs AFTER the write, inside a
+        try/except for SRS scheduling, so it never gated it.
+        """
+        if not safe_path_segment(course_id):
+            return None
         return self._progress_dir / f"{course_id}.json"
 
     def _load_progress(self, course_id: str) -> dict:
         f = self._progress_path(course_id)
-        if not f.exists():
+        if f is None or not f.exists():
             return {}
         try:
             return json.loads(f.read_text(encoding="utf-8"))
@@ -675,6 +685,8 @@ class LearnApp(BaseApp):
 
     def _save_progress(self, course_id: str, progress: dict) -> None:
         f = self._progress_path(course_id)
+        if f is None:
+            return
         f.write_text(json.dumps(progress, ensure_ascii=False, indent=2), encoding="utf-8")
 
     def _update_progress(self, course_id: str, **fields) -> None:

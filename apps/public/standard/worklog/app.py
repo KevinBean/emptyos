@@ -22,7 +22,7 @@ from emptyos.sdk import (
     set_frontmatter_field,
     web_route,
 )
-from emptyos.sdk.utils import parse_llm_json
+from emptyos.sdk.utils import clamp_days, parse_llm_json
 
 from .parser import (
     STATUS_EMOJI,
@@ -293,6 +293,43 @@ class WorklogApp(BaseApp):
         p = day["parsed"]
         return {"date": day["date"], "weekday": day["weekday"], "exists": True,
                 "employer": day["employer"], "_vault_path": vault_rel, **p}
+
+    async def timeline_items(self, days: int = 1) -> list[dict]:
+        """Life-suite timeline contribution ([[contributes.life.timeline]]).
+
+        One item per work item over the last ``days`` days, most recent
+        first. Item shape (suite contract, docs/suites/life-cohesion.md):
+        {ts, title, kind, href} + status/employer extras. Day notes carry no
+        per-item times, so ts is the day at midnight.
+        """
+        n = clamp_days(days)
+        items: list[dict] = []
+        today = date.today()
+        for i in range(n):
+            d = today - timedelta(days=i)
+            day = await self._load_day(self._daily_path(d))
+            if not day:
+                continue
+            for g in day["parsed"]["projects"]:
+                proj = (g.get("project") or "").strip()
+                for it in g.get("items", []):
+                    text = (it.get("text") or "").strip()
+                    if not text:
+                        continue
+                    items.append({
+                        "ts": f"{day['date']}T00:00:00",
+                        "title": f"[{proj}] {text}" if proj else text,
+                        "kind": "worklog",
+                        "href": "/worklog/",
+                        "status": it.get("status", ""),
+                        "employer": day.get("employer", ""),
+                    })
+        items.sort(key=lambda x: x["ts"], reverse=True)
+        return items
+
+    @web_route("GET", "/api/timeline-items")
+    async def api_timeline_items(self, request):
+        return {"items": await self.timeline_items(days=request.query_params.get("days"))}
 
     @web_route("GET", "/api/recent")
     async def api_recent(self, request):

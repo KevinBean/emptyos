@@ -266,8 +266,13 @@ async def api_generate_cover(self, request):
             temperature=0.3,
         )
         if summary:
-            content = self._set_frontmatter_field(content, "summary", summary)
-            await self.write(post_path, content)
+            # Re-read INSIDE the lock: `content` above was read before the
+            # summarizer ran, so the scheduled release may have flipped
+            # `publish` since. The LLM call stays outside the lock.
+            async with self.note_lock(post_path):
+                content = await self.read(post_path)
+                content = self._set_frontmatter_field(content, "summary", summary)
+                await self.write(post_path, content)
 
     image_prompt = (fm.get("image_prompt") or "").strip()
     if rewrite_brief or not image_prompt:
@@ -287,9 +292,10 @@ async def api_generate_cover(self, request):
             temperature=0.7,
         )
         if image_prompt:
-            content = await self.read(post_path)
-            content = self._set_frontmatter_field(content, "image_prompt", image_prompt)
-            await self.write(post_path, content)
+            async with self.note_lock(post_path):
+                content = await self.read(post_path)
+                content = self._set_frontmatter_field(content, "image_prompt", image_prompt)
+                await self.write(post_path, content)
 
     if not image_prompt:
         image_prompt = f"An editorial illustration for an article titled '{post['title']}'."
@@ -388,22 +394,23 @@ async def api_reject_cover(self, request):
         try:
             import re as _re
 
-            content = await self.read(post["path"])
-            new_content = _re.sub(
-                r"<!-- eos-cover -->.*?<!-- /eos-cover -->\s*\n",
-                "",
-                content,
-                flags=_re.DOTALL,
-            )
-            new_content = _re.sub(
-                r"^cover\s*:.*\n",
-                "",
-                new_content,
-                flags=_re.MULTILINE,
-            )
-            if new_content != content:
-                await self.write(post["path"], new_content)
-                stripped = True
+            async with self.note_lock(post["path"]):
+                content = await self.read(post["path"])
+                new_content = _re.sub(
+                    r"<!-- eos-cover -->.*?<!-- /eos-cover -->\s*\n",
+                    "",
+                    content,
+                    flags=_re.DOTALL,
+                )
+                new_content = _re.sub(
+                    r"^cover\s*:.*\n",
+                    "",
+                    new_content,
+                    flags=_re.MULTILINE,
+                )
+                if new_content != content:
+                    await self.write(post["path"], new_content)
+                    stripped = True
         except Exception:
             pass
 
@@ -468,29 +475,30 @@ async def _insert_cover_marker(self, post_path: str, title: str, cover_name: str
     try:
         import re as _re
 
-        content = await self.read(str(post_path))
+        async with self.note_lock(post_path):
+            content = await self.read(str(post_path))
 
-        content = _re.sub(
-            r"<!-- eos-cover -->.*?<!-- /eos-cover -->\s*\n",
-            "",
-            content,
-            flags=_re.DOTALL,
-        )
+            content = _re.sub(
+                r"<!-- eos-cover -->.*?<!-- /eos-cover -->\s*\n",
+                "",
+                content,
+                flags=_re.DOTALL,
+            )
 
-        cover_block = (
-            f"<!-- eos-cover -->\n![{title} — cover](media/{cover_name})\n<!-- /eos-cover -->\n\n"
-        )
+            cover_block = (
+                f"<!-- eos-cover -->\n![{title} — cover](media/{cover_name})\n<!-- /eos-cover -->\n\n"
+            )
 
-        if content.startswith("---"):
-            content = set_frontmatter_field(content, "cover", f"media/{cover_name}")
-            close = content.find("---", 3)
-            fm_end = close + 3
-            body = content[fm_end:].lstrip("\n")
-            content = content[:fm_end] + "\n\n" + cover_block + body
-        else:
-            content = cover_block + content
+            if content.startswith("---"):
+                content = set_frontmatter_field(content, "cover", f"media/{cover_name}")
+                close = content.find("---", 3)
+                fm_end = close + 3
+                body = content[fm_end:].lstrip("\n")
+                content = content[:fm_end] + "\n\n" + cover_block + body
+            else:
+                content = cover_block + content
 
-        await self.write(str(post_path), content)
+            await self.write(str(post_path), content)
         return True
     except Exception:
         return False
@@ -644,17 +652,21 @@ async def api_generate_podcast(self, request):
 
         embed = self._podcast_embed_code(slug, local_audio, has_slideshow, scene_files, video_file)
         if embed:
-            post_content = await self.read(post["path"])
-            import re
+            # Audio/video generation above takes minutes — the scheduled release
+            # can easily land in that window, so take the lock and re-read here
+            # rather than writing back anything read before the render.
+            async with self.note_lock(post["path"]):
+                post_content = await self.read(post["path"])
+                import re
 
-            post_content = re.sub(
-                r"\n---\n\n## Listen to this post\n.*?AI-generated podcast discussion of this article</p>\n",
-                "",
-                post_content,
-                flags=re.DOTALL,
-            )
-            post_content = post_content.rstrip() + "\n" + embed
-            await self.write(post["path"], post_content)
+                post_content = re.sub(
+                    r"\n---\n\n## Listen to this post\n.*?AI-generated podcast discussion of this article</p>\n",
+                    "",
+                    post_content,
+                    flags=re.DOTALL,
+                )
+                post_content = post_content.rstrip() + "\n" + embed
+                await self.write(post["path"], post_content)
 
         return {
             "ok": True,

@@ -20,6 +20,11 @@ Commands:
   queue [-n 20] [--corpus X] [--ext e1,e2] [--json]
                                 highest-priority 未索引 files (the mining queue)
   status <substr> --set <状态> [--note N] [--vault-ref V] [--all]
+         [--corpus X] [--dry-run] [--cross-corpus] [--force]
+         NOTE: substring match is case-insensitive and spans ALL corpora.
+         ALWAYS --dry-run first; scope with --corpus; a short/common token
+         ("Model","图") will clobber thousands. Cross-corpus + 完全/排除
+         overwrites are REFUSED unless explicitly forced.
                                 judge file(s) matched by path substring
   report                        markdown dashboard (paste into vault note)
   export                        judgments → {vault}/.../ledger.jsonl
@@ -250,20 +255,101 @@ def cmd_status(con, args) -> None:
         sys.exit(f"status must be one of {STATUSES}")
     if args.set in NOTE_REQUIRED and not args.note:
         sys.exit(f"'{args.set}' requires --note (what was extracted / why excluded)")
+    # LIKE is case-insensitive for ASCII and matches ALL corpora — a short/common
+    # substring ("Model", "图") silently clobbers thousands of files across every
+    # corpus. Guard: preview by-corpus + by-current-status, warn on 完全/排除
+    # overwrites, refuse a cross-corpus write unless explicitly allowed.
     pat = f"%{args.substr}%"
-    rows = con.execute("SELECT path FROM files WHERE path LIKE ?", (pat,)).fetchall()
+    where = "path LIKE ?"
+    params: list = [pat]
+    if args.corpus:
+        where += " AND corpus=?"
+        params.append(args.corpus)
+    rows = con.execute(
+        f"SELECT path, corpus, status FROM files WHERE {where}", params).fetchall()
     if not rows:
-        sys.exit(f"no files match substring: {args.substr}")
+        sys.exit(f"no files match substring: {args.substr}"
+                 + (f" in corpus {args.corpus}" if args.corpus else ""))
+
+    from collections import Counter
+    by_corpus = Counter(r[1] for r in rows)
+    by_status = Counter(r[2] for r in rows)
+    overwrite_high = [r for r in rows if r[2] in ("完全索引", "排除")]
+
+    def _preview(prefix: str) -> None:
+        print(f"{prefix}: {len(rows)} file(s) match '{args.substr}'"
+              + (f" in {args.corpus}" if args.corpus else " across ALL corpora"))
+        print("  by corpus:  " + ", ".join(f"{c}={n}" for c, n in by_corpus.most_common()))
+        print("  currently:  " + ", ".join(f"{s}={n}" for s, n in by_status.most_common()))
+        if overwrite_high:
+            print(f"  ⚠ {len(overwrite_high)} already 完全索引/排除 would be OVERWRITTEN:")
+            for p, c, s in overwrite_high[:12]:
+                print(f"      [{s}] {p}")
+        for p, c, s in rows[:8]:
+            print("   sample:", p)
+
+    if args.dry_run:
+        _preview("DRY-RUN")
+        print("(no changes written)")
+        return
+
+    # Refuse an un-narrowed multi-file write unless --all
     if len(rows) > 1 and not args.all:
-        print(f"{len(rows)} files match — pass --all to update all, or narrow:")
-        for (p,) in rows[:15]:
-            print("  ", p)
+        _preview("MATCH")
+        print("pass --all to update all, or narrow the substring / add --corpus")
         sys.exit(1)
+
+    # Refuse a cross-corpus write unless the operator explicitly allows it
+    if len(by_corpus) > 1 and not args.corpus and not args.cross_corpus:
+        _preview("CROSS-CORPUS")
+        print("REFUSED: substring matches multiple corpora. Add --corpus <name> to scope,"
+              " or --cross-corpus to override (rarely correct).")
+        sys.exit(2)
+
+    # --only-unindexed: coverage-marking mode — mark ONLY 未索引 matches, leaving
+    # every existing judgment (部分/完全/排除) untouched. Safest blanket-cover: it
+    # can never clobber a specific note already written on a 部分索引 file.
+    if args.only_unindexed:
+        n_target = by_status.get("未索引", 0)
+        if n_target == 0:
+            print(f"nothing to do: none of the {len(rows)} matches are 未索引 (all already judged)")
+            return
+        where += " AND status='未索引'"
+        con.execute(
+            f"UPDATE files SET status=?, note=?, vault_ref=?, updated=? WHERE {where}",
+            [args.set, args.note or "", args.vault_ref or "", now()] + params)
+        con.commit()
+        already = len(rows) - n_target
+        print(f"updated {n_target} 未索引 file(s) → {args.set}"
+              + (f" in {args.corpus}" if args.corpus else "")
+              + (f" (left {already} already-judged untouched)" if already else ""))
+        return
+
+    # --skip-completed: coverage-marking mode — mark the unjudged/partial matches
+    # but never touch 完全索引/排除 (protects note-sources). This is the safe way
+    # to blanket-cover a project folder that has digested sources mixed in.
+    if args.skip_completed and overwrite_high:
+        where += " AND status NOT IN ('完全索引','排除')"
+        n_target = len(rows) - len(overwrite_high)
+        if n_target == 0:
+            print(f"nothing to do: all {len(rows)} matches are already 完全索引/排除 (skipped)")
+            return
+    else:
+        # Loud confirmation when overwriting completed/excluded judgments
+        if overwrite_high and not args.force:
+            _preview("OVERWRITE-GUARD")
+            print(f"REFUSED: would overwrite {len(overwrite_high)} 完全索引/排除 judgment(s)."
+                  " Re-run with --skip-completed to mark only the rest, or --force to overwrite.")
+            sys.exit(3)
+        n_target = len(rows)
+
     con.execute(
-        "UPDATE files SET status=?, note=?, vault_ref=?, updated=? WHERE path LIKE ?",
-        (args.set, args.note or "", args.vault_ref or "", now(), pat))
+        f"UPDATE files SET status=?, note=?, vault_ref=?, updated=? WHERE {where}",
+        [args.set, args.note or "", args.vault_ref or "", now()] + params)
     con.commit()
-    print(f"updated {len(rows)} file(s) → {args.set}")
+    skipped = f" (skipped {len(overwrite_high)} 完全索引/排除)" if (args.skip_completed and overwrite_high) else ""
+    print(f"updated {n_target} file(s) → {args.set}"
+          + (f" in {args.corpus}" if args.corpus else "") + skipped)
 
 
 def cmd_queue(con, args) -> None:
@@ -419,6 +505,12 @@ def main() -> None:
     st.add_argument("--note")
     st.add_argument("--vault-ref")
     st.add_argument("--all", action="store_true")
+    st.add_argument("--corpus", help="scope the substring match to one corpus (STRONGLY recommended)")
+    st.add_argument("--dry-run", action="store_true", help="preview matches (by corpus + current status) without writing")
+    st.add_argument("--cross-corpus", action="store_true", help="allow a write whose substring spans multiple corpora (rarely correct)")
+    st.add_argument("--force", action="store_true", help="allow overwriting existing 完全索引/排除 judgments")
+    st.add_argument("--skip-completed", action="store_true", help="coverage mode: mark only unjudged/partial matches, never touch 完全索引/排除 sources")
+    st.add_argument("--only-unindexed", action="store_true", help="coverage mode: mark ONLY 未索引 matches, leave all existing judgments (部分/完全/排除) untouched")
     sub.add_parser("report")
     sub.add_parser("export")
     sub.add_parser("import-ledger")

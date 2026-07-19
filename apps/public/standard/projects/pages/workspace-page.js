@@ -167,7 +167,7 @@ async function loadWsOverview(id) {
             '<div class="ws-panel-head">📊 Overview' +
                 '<button class="eos-btn-sm eos-btn-ghost" style="float:right;font-size:11px;padding:2px 8px" onclick="wsHealth(\'' + escAttr(id) + '\')">Health</button>' +
             '</div>' +
-            '<div class="ws-ov-row"><span>Status</span><span class="eos-badge eos-badge-status-' + o.status + '">' + o.status + '</span></div>' +
+            '<div class="ws-ov-row"><span>Status</span><span class="eos-badge eos-badge-' + EOS_UI.statusVariant(o.status) + '">' + esc(o.status) + '</span></div>' +
             employerHtml +
             deadlineHtml +
             '<div class="ws-ov-row"><span>Progress</span><span>' + o.progress + '%</span></div>' +

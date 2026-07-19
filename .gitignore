@@ -1,4 +1,5 @@
 emptyos.toml
+emptyos.toml.*bak
 !demo/emptyos.toml
 .claude/vault-connection.json
 .claude/settings.local.json

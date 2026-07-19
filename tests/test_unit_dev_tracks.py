@@ -133,6 +133,11 @@ class TestParseTrackBrief:
         b = parse_track_brief({"threads_carried": "n/a"}, "")
         assert b.threads_carried == 0
 
+    def test_purpose_field(self):
+        b = parse_track_brief({"purpose": "  what this track is FOR  "}, "")
+        assert b.purpose == "what this track is FOR"
+        assert parse_track_brief({}, "").purpose == ""
+
 
 class TestParseDeferredTable:
     def test_rows_and_struck_detection(self):
@@ -265,7 +270,12 @@ class TestThemes:
 class TestParseDevlogMeta:
     def test_dated_with_tracks(self):
         m = parse_devlog_meta({"tracks": ["alpha-track", "em-engines"]}, "2026-07-17")
-        assert m == {"date": "2026-07-17", "title": "", "tracks": ["alpha-track", "em-engines"]}
+        assert m == {
+            "date": "2026-07-17",
+            "title": "",
+            "tracks": ["alpha-track", "em-engines"],
+            "tags": [],
+        }
 
     def test_legacy_devlog_without_tracks(self):
         m = parse_devlog_meta({"type": "dev-session"}, "2026-06-27-harness-round3")
@@ -275,6 +285,13 @@ class TestParseDevlogMeta:
 
     def test_tracks_as_string_coerces(self):
         assert parse_devlog_meta({"tracks": "alpha-track"}, "2026-07-01")["tracks"] == ["alpha-track"]
+
+    def test_tags_surface_for_legacy_attribution(self):
+        m = parse_devlog_meta(
+            {"tags": ["emptyos", "dev-log", "devboard"]}, "2026-07-18"
+        )
+        assert m["tags"] == ["emptyos", "dev-log", "devboard"]
+        assert m["tracks"] == []
 
     def test_non_dated_filename_is_none(self):
         assert parse_devlog_meta({}, "_index") is None

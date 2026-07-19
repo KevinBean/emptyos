@@ -20,6 +20,7 @@ from emptyos.sdk import (
     web_route,
 )
 from emptyos.sdk.text_guards import assert_single_line
+from emptyos.sdk.utils import clamp_days
 
 from . import analytics as _analytics
 from . import milestones as _milestones
@@ -100,6 +101,42 @@ class JournalApp(BaseApp):
         if s.get("mood"):
             bits.append(f"mood: {s['mood']}")
         return "; ".join(bits) + "."
+
+    async def timeline_items(self, days: int = 1) -> list[dict]:
+        """Life-suite timeline contribution ([[contributes.life.timeline]]).
+
+        One item per journal entry over the last ``days`` days, most recent
+        first. Item shape (suite contract, docs/suites/life-cohesion.md):
+        {ts, title, kind, href} + mood/emoji extras. AI/reactor breadcrumbs
+        (the ``auto`` flag from parse_entries) surface as kind
+        "journal-auto" so consumers can style provenance.
+        """
+        n = clamp_days(days)
+        items: list[dict] = []
+        today = date.today()
+        for i in range(n):
+            d = today - timedelta(days=i)
+            try:
+                content = await self.read(str(self._daily_path(d)))
+            except Exception:
+                continue
+            for e in parse_entries(content):
+                t = (e.get("time") or "").strip()
+                ts = f"{d.isoformat()}T{t}:00" if len(t) == 5 else f"{d.isoformat()}T00:00:00"
+                items.append({
+                    "ts": ts,
+                    "title": e.get("text", ""),
+                    "kind": "journal-auto" if e.get("auto") else "journal",
+                    "href": "/journal/",
+                    "mood": e.get("mood", ""),
+                    "emoji": e.get("emoji", ""),
+                })
+        items.sort(key=lambda x: x["ts"], reverse=True)
+        return items
+
+    @web_route("GET", "/api/timeline-items")
+    async def api_timeline_items(self, request):
+        return {"items": await self.timeline_items(days=request.query_params.get("days"))}
 
     def _journal_dir(self) -> Path:
         # entries template: "50_Journal/{year}/{date}.md"

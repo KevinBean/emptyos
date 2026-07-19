@@ -1,0 +1,11 @@
+{
+  "_fixture_kind": "synthetic — replace with a captured Codex hook payload",
+  "source": "codex",
+  "session_id": "codex-synthetic-001",
+  "event": "PermissionRequest",
+  "ts": "2026-07-17T09:42:02Z",
+  "cwd": "D:/emptyos",
+  "turn_id": "turn-2",
+  "agent_id": "gpt-5-codex",
+  "tool_payload": {"must": "not survive normalization"}
+}

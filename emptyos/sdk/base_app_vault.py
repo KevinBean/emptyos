@@ -430,12 +430,21 @@ def vault_create_note(self, rel_path: str, frontmatter: dict, body: str = ""):
     if vi:
         vi.create_note(rel_path, frontmatter, body)
     else:
-        # Direct write fallback
+        # Direct write fallback — used when the vault_index service is absent.
+        # It needs its OWN containment check: the guard added to
+        # VaultIndex.create_note doesn't run on this branch, so without this
+        # a traversal would still escape whenever the index is unavailable.
         vault = self.kernel.config.notes_path
         if vault:
+            import os
+
             from emptyos.runtime.vault_index import _serialize_fm
 
-            abs_path = vault / rel_path
+            root = os.path.normpath(str(vault))
+            joined = os.path.normpath(os.path.join(root, str(rel_path)))
+            if joined != root and not joined.startswith(root + os.sep):
+                raise ValueError(f"path escapes the vault root: {rel_path!r}")
+            abs_path = Path(joined)
             abs_path.parent.mkdir(parents=True, exist_ok=True)
             abs_path.write_text(_serialize_fm(frontmatter) + "\n\n" + body, encoding="utf-8")
 

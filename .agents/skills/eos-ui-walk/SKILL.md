@@ -65,7 +65,47 @@ data/ui-walk/usecases/<YYYY-MM-DD-HHMM>/      # screenshots land here
 data/ui-walk/usecases/<YYYY-MM-DD-HHMM>/steplog.jsonl
 ```
 
+For a need-first walk, also write `scenario.md` in the run folder — the real
+user outcome, team/roles, and lifecycle milestones — with the trace identity
+in block-style YAML frontmatter (`.Codex/rules/loop-traceability.md`):
+
+```yaml
+---
+usecase_id: riverside-bess-132kv        # slug for the months-long user need
+need: One line stating the real outcome the user must accomplish
+milestones:
+  - id: month-0-design-basis            # slug per lifecycle checkpoint
+    title: "Month 0: establish the project design basis"
+---
+```
+
+Rows that carry `usecase_id`/`milestone_id` keep that identity through
+promotion → fix → verification → receipt. Legacy walks without frontmatter
+still work — identities derive deterministically from the free-text fields.
+
 ## Step 2 — Pick the use cases (act as Kevin)
+
+### Need-first, not feature-first
+
+Start from a real user outcome, not from the inventory of apps EmptyOS already
+has. Define the work as the user would: the project duration, roles, milestones,
+decisions, evidence, handoffs, reviews, revisions, and final deliverable. Then use
+the available apps wherever they genuinely help. Existing features are evidence,
+not the boundary of the test.
+
+For long-running work (for example, a design project spanning months), sample
+representative lifecycle checkpoints rather than reducing the walk to isolated
+calculator demos. At every checkpoint ask both:
+
+1. **Does the current flow work?** Judge the interaction as `pass`, `slow`,
+   `confusing`, or `fail`.
+2. **Can the user finish the real job?** Use `missing` (`GAP` in the report) when
+   a needed capability, handoff, traceability link, review state, change-impact
+   signal, or deliverable step is absent — even if every visible control
+   technically works. State the unmet need in `note`.
+
+Never reshape the user's need to fit what EmptyOS can already provide. The walk
+should reveal both product quality and product boundaries.
 
 Choose **5–8 real workflows** this iteration, weighted toward what Kevin actually
 does. Don't script rigidly — follow curiosity the way a real user would, and let
@@ -107,10 +147,14 @@ For each meaningful step:
 4. **Judge + log** — append one line to `steplog.jsonl`:
 
 ```json
-{"usecase":"Capture a task and see it in Today","step":2,"action":"Type 'call plumber' in capture, hit Enter","status":"slow","note":"toast confirmed but took ~2s; task appeared in Today only after manual reload","shot":"/abs/path/uc1-s2.png","url":"http://127.0.0.1:9000/hub/"}
+{"usecase":"Capture a task and see it in Today","step":2,"action":"Type 'call plumber' in capture, hit Enter","status":"slow","note":"toast confirmed but took ~2s; task appeared in Today only after manual reload","shot":"/abs/path/uc1-s2.png","url":"http://127.0.0.1:9000/hub/","usecase_id":"daily-capture-flow","milestone_id":"capture-to-today"}
 ```
 
-`status` ∈ `pass | slow | confusing | fail | skipped | info`. The `note` is the
+`usecase_id`/`milestone_id` are the optional trace identity (match the
+scenario.md frontmatter when you wrote one) — they let a promoted finding keep
+its origin all the way to the loop receipt.
+
+`status` ∈ `pass | slow | confusing | fail | missing | skipped | info`. The `note` is the
 point — write what a real user would mutter: "couldn't tell if it saved",
 "had to scroll to find the button", "empty and no hint what to do". Screenshot
 the **payoff** steps (the result of an action), not every navigation.
@@ -148,6 +192,33 @@ self-contained file, badges each step, and rolls up pass/slow/confusing/fail
 counts. Output is under `data/` (gitignored) — an artifact to **show the user**,
 not committed. A missing screenshot renders a placeholder, never a crash.
 
+**Rendering never mutates any queue.** The report is a terminal evidence
+artifact; findings enter the fix loop only through the explicit triage step
+below.
+
+## Step 5b — Triage: promote findings (deliberate, human-gated)
+
+The `fail | confusing | missing` rows are durable in the steplog + report, but
+they do NOT become issues by themselves. When the user wants findings acted
+on, bridge them one by one (`.Codex/rules/loop-traceability.md`):
+
+```bash
+python scripts/ui_walk_promote.py list --walk data/ui-walk/usecases/<run>
+python scripts/ui_walk_promote.py promote --walk <run-dir> --step-key <usecase>::<milestone>::sN
+python scripts/ui_walk_promote.py dismiss|defer|decline --walk <run-dir> --step-key <k> --reason "..."
+```
+
+- **Promote** writes a fix-prompt into the shared queue with the trace identity
+  + evidence (screenshot, URL, console, steplog path). Re-promoting the same
+  finding updates the same file — no duplicates. An already-closed finding is
+  refused unless `--force-regression`.
+- **`missing` findings are feature gaps**, not bugs — defer/decline them (or
+  promote then `close --disposition planned|deferred|declined`) without
+  pretending a code fix happened. `defer` prints a proposed
+  `docs/DEFERRED-WORK.md` row to paste.
+- Never promote in bulk without reading each row — the human judgment IS the
+  triage.
+
 ## Step 6 — Fix only a clear, root-caused bug (optional)
 
 Most iterations produce a report, not a code change. But if the walk surfaced a
@@ -178,6 +249,8 @@ Tell the user:
   ("adding a task works but doesn't show in Today without a reload").
 - **Anything fixed** (with commit hash) and anything **flagged-not-fixed** (the
   data-volume/perf/design class) and why.
+- **Triage summary** — which findings were promoted / dismissed / deferred /
+  declined (from `triage.jsonl`), and which await the user's call.
 
 If this pass walked its use cases and the remaining real workflows are already
 well-covered by prior iterations, say coverage is broad and **end the loop** —
@@ -187,6 +260,8 @@ Otherwise the next iteration rotates to fresh use cases.
 ## Cross-references
 
 - `scripts/ui_walk_report.py` — the use-case step-log → HTML renderer (this skill's artifact half).
+- `scripts/ui_walk_promote.py` — the Step 5b triage bridge (walk finding → fix-prompt queue / disposition).
+- `.Codex/rules/loop-traceability.md` — trace identity + gap lifecycle + learning outcomes.
 - `scripts/_eos_browser.py` — auth/token + base-URL resolution shared by the walkers.
 - `scripts/check-js-errors.py` / `scripts/check-clickable.py` — the optional crude-breakage pre-pass.
 - `scripts/ui_walk_audit.py` — the older *per-app* screenshot walk (one shot per app); complementary, not this.

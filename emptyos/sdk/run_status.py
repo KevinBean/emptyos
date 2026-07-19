@@ -30,6 +30,10 @@ Native vocabularies covered (2026-05-30):
                               interrupted verifying verified verify-failed
                               verify-timeout reverted discarded
     dogfood-agent           : running ok error interrupted
+    agent_fleet             : idle working blocked ended unknown
+                              ("unknown" is intentionally unmapped — see the
+                               note in _PHASE_BY_STATUS; it resolves via the
+                               `finished`-aware default, not a static entry.)
 """
 
 from __future__ import annotations
@@ -50,8 +54,11 @@ _PHASE_BY_STATUS: dict[str, str] = {
     "queued": "running",
     "running": "running",
     "verifying": "running",
+    "idle": "running",
+    "working": "running",
     # awaiting a human gate (the one state that wants your attention)
     "ready": "needs-review",
+    "blocked": "needs-review",
     # terminal — resolved / benign
     "merged": "done",
     "verified": "done",
@@ -59,6 +66,18 @@ _PHASE_BY_STATUS: dict[str, str] = {
     "ok": "done",
     "no-changes": "done",
     "discarded": "done",
+    "ended": "done",
+    # NB: agent_fleet's "unknown" is deliberately NOT mapped here. It must fall
+    # through to normalize_run_status's `finished`-aware default, because it
+    # means two different things depending on `finished`:
+    #   finished == ""  -> a LIVE session we haven't classified yet (the fleet
+    #                      meets every already-running session mid-stream the
+    #                      moment the feature flag is enabled) -> "running".
+    #   finished  set   -> the TTL reconciler's transient unknown->ended step
+    #                      -> "done".
+    # A static "unknown": "done" entry answers both with "done", which hides a
+    # live session from the very panel the fleet exists to populate. That is the
+    # exact case the default below was written to protect.
     # terminal — went wrong, or the change didn't survive
     "error": "failed",
     "timeout": "failed",

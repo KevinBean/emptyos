@@ -99,3 +99,47 @@ def test_regenerate_recurring_rolls_from_completion_when_no_due():
 
 def test_regenerate_recurring_non_recurring_returns_none():
     assert mt.regenerate_recurring("- [x] one-off task ✅ 2026-07-03", date(2026, 7, 3)) is None
+
+
+# ── set_due across both due syntaxes the parser reads ───────────────────────
+# Regression: set_due only knew the canonical 📅 form, so snoozing a task
+# written with the inline `due:` syntax APPENDED a 📅 instead of updating in
+# place, leaving two contradictory dates on one line — the human reads the
+# stale one, the app uses the new one.
+
+def test_set_due_replaces_inline_due_syntax_in_place():
+    out = mt.set_due("- [ ] pay rent due:2026-05-10", "2026-06-03")
+    assert out == "- [ ] pay rent due:2026-06-03"
+    assert "📅" not in out  # must not append a second, contradictory marker
+
+
+def test_set_due_replaces_inline_due_mid_text():
+    out = mt.set_due("- [ ] pay rent due:2026-05-10 before weekend", "2026-06-03")
+    assert out == "- [ ] pay rent due:2026-06-03 before weekend"
+
+
+def test_set_due_still_replaces_canonical_marker():
+    out = mt.set_due("- [ ] call depot 📅 2026-05-10", "2026-06-03")
+    assert out == "- [ ] call depot 📅 2026-06-03"
+
+
+def test_set_due_appends_canonical_marker_when_line_has_none():
+    assert mt.set_due("- [ ] no date", "2026-06-03") == "- [ ] no date 📅 2026-06-03"
+
+
+def test_set_due_empty_strips_both_syntaxes():
+    assert mt.set_due("- [ ] pay rent due:2026-05-10", "") == "- [ ] pay rent"
+    assert mt.set_due("- [ ] call depot 📅 2026-05-10", "") == "- [ ] call depot"
+
+
+def test_snooze_on_inline_due_does_not_duplicate_the_date():
+    out = mt.snooze("- [ ] pay rent due:2026-05-10", 24, date(2026, 5, 10))
+    assert out == "- [ ] pay rent due:2026-06-03"
+    # the stale date must be gone, not merely shadowed by a new marker
+    assert "2026-05-10" not in out
+
+
+def test_set_due_keeps_body_matchable_for_line_lookup():
+    """mutations locate the file line via substring match on the task text."""
+    line = "- [ ] pay rent due:2026-05-10"
+    assert mt.matches(mt.set_due(line, "2026-06-03"), "pay rent")

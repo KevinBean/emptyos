@@ -390,6 +390,9 @@ blockquote { border-left:3px solid var(--accent); padding:4px 12px; margin:8px 0
 .eos-stat-card--danger  .eos-stat-val { color:var(--danger,  #ef4444) }
 .eos-stat-card--accent  .eos-stat-val { color:var(--accent) }
 .eos-stat-card--muted   .eos-stat-val { color:var(--text-muted) }
+.eos-stat-card--click { cursor:pointer; transition:border-color 0.15s }
+.eos-stat-card--click:hover { border-color:var(--text-muted) }
+.eos-stat-card--click:focus-visible { outline:none; box-shadow:var(--focus-ring) }
 
 /* === Modal === */
 .eos-modal-overlay { position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.5); z-index:200; display:none; justify-content:center; align-items:center; padding:16px; backdrop-filter:blur(4px); cursor:pointer; -webkit-tap-highlight-color:transparent }

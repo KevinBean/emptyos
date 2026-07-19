@@ -25,6 +25,17 @@ def _find_entry(entries, description_substr):
 
 @pytest.mark.api
 class TestExpenseAPI:
+    def test_timeline_items_contract(self, http_client):
+        """Life-suite timeline contract (docs/suites/life-cohesion.md):
+        every item carries ts/title/kind/href + amount, kind is 'expense'."""
+        data = assert_dict_response(http_client.get("/expense/api/timeline-items?days=30"))
+        items = data.get("items")
+        assert isinstance(items, list)
+        for it in items[:10]:
+            assert {"ts", "title", "kind", "href"} <= set(it), it
+            assert it["kind"] == "expense"
+            assert isinstance(it.get("amount"), (int, float))
+
     def test_budget_endpoint_returns_number(self, http_client):
         """GET /expense/api/budget resolves settings-over-state to a float."""
         data = assert_dict_response(http_client.get("/expense/api/budget"))

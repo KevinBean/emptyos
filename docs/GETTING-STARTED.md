@@ -420,6 +420,10 @@ Both daemons share the same Python install and external services (Ollama / Comfy
 ## What's Next
 
 - **Explore apps** — visit `localhost:9000` and click through the app launcher
+- **Browser companion** — load `tools/chrome-extension/` as an unpacked Chrome
+  extension for a chat side panel, page capture, and right-click capture. It
+  adapts to whichever apps your daemon serves — see
+  [its README](../tools/chrome-extension/README.md)
 - **Build your own app** — see [App Development Guide](APP-DEVELOPMENT.md)
 - **Customize** — add personal apps in `apps/personal/` (gitignored)
 - **Read the design** — see [Architecture & Design](DESIGN.md) for the full philosophy

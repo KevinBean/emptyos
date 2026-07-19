@@ -49,7 +49,12 @@ BUNDLED = ROOT / "skills"
 SUBS: list[tuple[str, str]] = [
     ("D:\\Main Vault", "{vault}"),
     ("D:/Main Vault", "{vault}"),
+    # The macOS vault moved out of ~/Documents (iCloud-managed) in 2026-07; the
+    # legacy forms stay so older skill text still scrubs.
+    ("/Users/kb/Documents/Main Vault", "{vault}"),
     ("~/Documents/Main Vault", "{vault}"),
+    ("/Users/kb/Main Vault", "{vault}"),
+    ("~/Main Vault", "{vault}"),
     ("C:\\Users\\Kevin", "{home}"),
     ("C:/Users/Kevin", "{home}"),
 ]

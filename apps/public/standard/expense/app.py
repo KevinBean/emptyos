@@ -15,6 +15,7 @@ from datetime import date, timedelta
 from pathlib import Path
 
 from emptyos.sdk import BaseApp, cli_command, web_route
+from emptyos.sdk.utils import clamp_days
 
 from . import statements as _statements
 from .categories import (
@@ -45,10 +46,53 @@ Return exactly:
 
 
 
+_RECURRING_JOB = "expense-recurring"
+
+
 class ExpenseApp(BaseApp):
     # Statement import — column mapping + dedupe + preview/confirm gate.
     api_import_preview = _statements.api_import_preview
     api_import_confirm = _statements.api_import_confirm
+
+    # Bound on how many missed periods one rule may back-post in a single run.
+    MAX_CATCHUP_PERIODS = 60
+
+    async def setup(self):
+        await super().setup()
+        self._register_recurring_schedule()
+
+    async def teardown(self):
+        self.remove_cron_job(_RECURRING_JOB)
+        await super().teardown()
+
+    def _register_recurring_schedule(self):
+        """Daily cron for the recurring-expense check.
+
+        Before this, ``/api/recurring/check`` had exactly one caller: the expense
+        page's own JS. So auto-posting silently depended on the user *visiting
+        the app* — a recurring mechanism that only runs when observed. Rent went
+        unlogged from 2026-06-16 onward for that reason, and the gap was only
+        found by reconciling against net worth.
+        """
+        self.remove_cron_job(_RECURRING_JOB)
+        if not self.setting_or_config("expense.recurring.enabled", True):
+            return
+        cron = str(self.setting_or_config("expense.recurring.cron", "0 6 * * *")).strip()
+        ok = self.add_cron_job_logged(
+            _RECURRING_JOB, self._scheduled_recurring_check, cron=cron or "0 6 * * *",
+            crash_event="recurring_crash",
+        )
+        self.log_activity({"event": "recurring_schedule_registered" if ok
+                           else "recurring_schedule_failed", "cron": cron})
+
+    async def _scheduled_recurring_check(self):
+        await self._run_recurring_check(trigger="schedule")
+
+    @web_route("POST", "/api/recurring/reschedule")
+    async def api_recurring_reschedule(self, request):
+        """Re-read settings and re-register the cron job (call after editing them)."""
+        self._register_recurring_schedule()
+        return {"ok": True, "next_run": self.get_cron_job_next_fire(_RECURRING_JOB)}
 
     def _log_dir(self) -> Path:
         return self.vault_config_path("log_dir", "20_Areas/Finances") or Path(".")
@@ -130,6 +174,39 @@ class ExpenseApp(BaseApp):
                 k: round(v, 2) for k, v in sorted(by_category.items(), key=lambda x: -x[1])
             },
         }
+
+    async def timeline_items(self, days: int = 1) -> list[dict]:
+        """Life-suite timeline contribution ([[contributes.life.timeline]]).
+
+        One item per expense row over the last ``days`` days, most recent
+        first. Item shape (suite contract, docs/suites/life-cohesion.md):
+        {ts, title, kind, href} + amount/category extras. The expense log
+        carries no per-row times, so ts is the row's date at midnight.
+        """
+        n = clamp_days(days)
+        today = date.today()
+        cutoff = (today - timedelta(days=n - 1)).isoformat()
+        rows = await self.list_expenses()
+        if cutoff[:4] != str(today.year):
+            rows += await self.list_expenses(year=today.year - 1)
+        items: list[dict] = []
+        for e in rows:
+            if not e.get("date") or e["date"] < cutoff or e["date"] > today.isoformat():
+                continue
+            items.append({
+                "ts": f"{e['date']}T00:00:00",
+                "title": f"${e['amount']:g} {e['description']}".strip(),
+                "kind": "expense",
+                "href": "/expense/",
+                "amount": e["amount"],
+                "category": e.get("category", ""),
+            })
+        items.sort(key=lambda x: x["ts"], reverse=True)
+        return items
+
+    @web_route("GET", "/api/timeline-items")
+    async def api_timeline_items(self, request):
+        return {"items": await self.timeline_items(days=request.query_params.get("days"))}
 
     async def summary(self, month: str = "") -> dict:
         """Callable: monthly expense summary. Used by finance, tracker, dashboard."""
@@ -764,7 +841,13 @@ class ExpenseApp(BaseApp):
     async def api_add_recurring(self, request):
         """Add a recurring expense rule.
 
-        Body: {text, frequency: weekly|fortnightly|monthly|yearly, enabled?}
+        Body: {text, frequency: weekly|fortnightly|monthly|yearly, enabled?, next_due?}
+
+        ``next_due`` defaults to today (first post happens on the next check, no
+        backfill). Pass a past date to backfill from when the expense actually
+        started — e.g. rent that stopped being logged on 2026-06-16 takes
+        ``next_due: "2026-06-23"`` and back-posts every missed week on the next
+        check, each entry dated to its own period.
         """
         data = await request.json()
         text = data.get("text", "")
@@ -775,10 +858,16 @@ class ExpenseApp(BaseApp):
             return {"error": f"invalid frequency: {frequency}"}
 
         today = date.today()
+        next_due = str(data.get("next_due") or today.isoformat())
+        try:
+            date.fromisoformat(next_due)
+        except ValueError:
+            return {"error": f"invalid next_due (want YYYY-MM-DD): {next_due}"}
+
         rule = {
             "text": text,
             "frequency": frequency,
-            "next_due": today.isoformat(),
+            "next_due": next_due,
             "enabled": data.get("enabled", True),
             "last_logged": None,
             "created": today.isoformat(),
@@ -790,47 +879,95 @@ class ExpenseApp(BaseApp):
 
     @web_route("POST", "/api/recurring/check")
     async def api_recurring_check(self, request):
-        """Check and auto-log any due recurring expenses."""
+        """Check and auto-log any due recurring expenses (manual trigger)."""
+        return await self._run_recurring_check(trigger="manual")
+
+    async def _run_recurring_check(self, *, trigger: str = "manual") -> dict:
+        """Post every due occurrence of every enabled rule.
+
+        Called by the page (on open), by the daily cron job, and by tests. It
+        **catches up**: a rule 3 weeks overdue posts 3 entries in one pass, each
+        dated to the period it belongs to rather than all landing on today. That
+        matters because the previous behaviour advanced ``next_due`` by exactly
+        one period per call, so a rule only caught up if someone opened the page
+        once per period — which is precisely how rent stopped being logged after
+        2026-06-16 with nobody noticing.
+
+        MAX_CATCHUP_PERIODS bounds it so a stale rule (or a clock jump) can't
+        flood the log; anything beyond the cap is reported, never silently
+        dropped.
+        """
         today = date.today()
         state = self.load_state(self._default_state())
         rules = state.get("recurring", [])
-        logged = []
+        logged: list[dict] = []
+        capped: list[str] = []
 
         for rule in rules:
             if not rule.get("enabled"):
                 continue
-            next_due = date.fromisoformat(rule["next_due"])
-            if next_due > today:
-                continue
 
-            # Parse text into amount + description + category (same as HP: "700 rent weekly")
-            parts = rule["text"].strip().split(None, 1)
+            # "700 rent weekly" -> amount 700, description "rent"
+            parts = str(rule.get("text", "")).strip().split(None, 1)
             try:
                 amount = float(parts[0])
-                desc = parts[1] if len(parts) > 1 else "Recurring"
             except (ValueError, IndexError):
                 continue
-
+            desc = parts[1] if len(parts) > 1 else "Recurring"
             cat = _detect_category(desc)
-            entry = await self.add(amount, desc, "Recurring" if cat == "Other" else cat)
-            logged.append(entry)
-            rule["last_logged"] = today.isoformat()
+            cat = "Recurring" if cat == "Other" else cat
 
-            # Advance next_due
-            freq = rule["frequency"]
-            if freq == "weekly":
-                rule["next_due"] = (next_due + timedelta(days=7)).isoformat()
-            elif freq == "fortnightly":
-                rule["next_due"] = (next_due + timedelta(days=14)).isoformat()
-            elif freq == "monthly":
-                m = next_due.month % 12 + 1
-                y = next_due.year + (1 if next_due.month == 12 else 0)
-                rule["next_due"] = next_due.replace(year=y, month=m).isoformat()
-            elif freq == "yearly":
-                rule["next_due"] = next_due.replace(year=next_due.year + 1).isoformat()
+            try:
+                next_due = date.fromisoformat(rule["next_due"])
+            except (KeyError, ValueError):
+                continue
+
+            fired = 0
+            while next_due <= today and fired < self.MAX_CATCHUP_PERIODS:
+                # Date the entry to the period it covers, not to "today".
+                entry = await self.add(amount, desc, cat, entry_date=next_due.isoformat())
+                logged.append(entry)
+                rule["last_logged"] = next_due.isoformat()
+                next_due = self._advance_due(next_due, rule.get("frequency", "monthly"))
+                fired += 1
+
+            rule["next_due"] = next_due.isoformat()
+            if fired >= self.MAX_CATCHUP_PERIODS and next_due <= today:
+                capped.append(desc)
 
         self.save_state(state)
-        return {"logged": logged, "count": len(logged)}
+        if logged:
+            await self.emit("expense:recurring_posted",
+                            {"count": len(logged), "trigger": trigger})
+        result = {"logged": logged, "count": len(logged), "trigger": trigger}
+        if capped:
+            # Loud, never silent — a capped rule means entries are still missing.
+            result["capped"] = capped
+            self.log_activity({"event": "recurring_capped", "rules": capped})
+        return result
+
+    @staticmethod
+    def _advance_due(due: date, frequency: str) -> date:
+        """Next occurrence after ``due``. Month-end safe (31 Jan -> 28/29 Feb)."""
+        if frequency == "weekly":
+            return due + timedelta(days=7)
+        if frequency == "fortnightly":
+            return due + timedelta(days=14)
+        if frequency == "yearly":
+            try:
+                return due.replace(year=due.year + 1)
+            except ValueError:            # 29 Feb -> non-leap year
+                return due.replace(year=due.year + 1, day=28)
+        # monthly (default)
+        m = due.month % 12 + 1
+        y = due.year + (1 if due.month == 12 else 0)
+        day = due.day
+        while day > 0:                    # clamp 31 -> 30 -> 29 -> 28
+            try:
+                return due.replace(year=y, month=m, day=day)
+            except ValueError:
+                day -= 1
+        return due + timedelta(days=30)   # unreachable in practice
 
     # --- CSV export / import ---
 

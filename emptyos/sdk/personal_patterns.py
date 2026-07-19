@@ -30,6 +30,19 @@ def load(
     Returns an empty list if the file is missing — callers can decide whether
     that's an error (release-public.py) or a no-op (middleware with an
     unconfigured deployment).
+
+    Patterns are compiled **case-insensitively**. Personal data does not care about
+    casing — Windows paths are case-insensitive, so a mis-cased vault or home
+    directory is the *same* directory while being a *different* string. Two such
+    variants sat in tracked files precisely because the gate matched case-sensitively
+    (found 2026-07-17). Every consumer here is a protective filter — the commit gate,
+    syslog redaction, the outbound leak-scan — so widening only ever redacts or
+    refuses *more*, never less.
+
+    Measured before adopting: across 3,647 tracked files this yields exactly one
+    additional finding, and it is a true positive. Word-boundary and structural
+    controls (`renenerventure`, bare `Kevin`, `binbian.net`) are unaffected —
+    they discriminate on shape, not case (`tests/test_privacy_patterns.py`).
     """
     p = Path(path)
     if not p.exists():
@@ -40,7 +53,7 @@ def load(
         if not line or line.startswith("#"):
             continue
         try:
-            patterns.append(re.compile(line))
+            patterns.append(re.compile(line, re.IGNORECASE))
         except re.error as e:
             if on_error is not None:
                 on_error(line, e)

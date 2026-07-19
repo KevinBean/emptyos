@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from emptyos.sdk import web_route
+from emptyos.sdk.utils import path_segment_error, require_path_segment, safe_path_segment
 
 if TYPE_CHECKING:
     from .app import RoomsApp  # noqa: F401 — for type hints only
@@ -59,17 +60,27 @@ def _history_dir(self) -> Path:
     return self.data_subdir("history")
 
 
-def _agent_path(self, agent_id: str) -> Path:
+def _agent_path(self, agent_id: str) -> Path | None:
+    """Agent record path, or None when agent_id isn't a plain slug.
+
+    agent_id arrives from a DELETE path param and the result is unlink()ed
+    after only an .exists() check, so a raw `..` deleted an arbitrary .json.
+    """
+    if not safe_path_segment(agent_id):
+        return None
     return self._agents_dir() / f"{agent_id}.json"
 
 
-def _history_path(self, agent_id: str) -> Path:
+def _history_path(self, agent_id: str) -> Path | None:
+    """History path — same untrusted id, same unlink() sink."""
+    if not safe_path_segment(agent_id):
+        return None
     return self._history_dir() / f"{agent_id}.json"
 
 
 def _load_agent(self, agent_id: str) -> dict | None:
     p = self._agent_path(agent_id)
-    if not p.exists():
+    if p is None or not p.exists():
         return None
     try:
         return json.loads(p.read_text(encoding="utf-8"))
@@ -78,7 +89,10 @@ def _load_agent(self, agent_id: str) -> dict | None:
 
 
 def _save_agent(self, agent: dict):
-    self._agent_path(agent["id"]).write_text(
+    p = self._agent_path(agent["id"])
+    if p is None:
+        require_path_segment(agent["id"], "agent id")  # raises with the shared message
+    p.write_text(
         json.dumps(agent, indent=2, ensure_ascii=False), encoding="utf-8"
     )
     self.kernel.agents.invalidate(agent["id"])
@@ -156,7 +170,7 @@ def _load_history(self, agent_id: str) -> list[dict]:
     `_walk_to_head` with the room's `current_head_entry_id`.
     """
     p = self._history_path(agent_id)
-    if not p.exists():
+    if p is None or not p.exists():
         return []
     try:
         data = json.loads(p.read_text(encoding="utf-8"))
@@ -188,7 +202,10 @@ def _save_history(self, agent_id: str, messages: list[dict]):
     # before being appended, but a manual splice that drops them would
     # otherwise re-trigger migration on next load).
     _ensure_message_ids(messages)
-    self._history_path(agent_id).write_text(
+    hp = self._history_path(agent_id)
+    if hp is None:
+        require_path_segment(agent_id, "agent id")  # raises with the shared message
+    hp.write_text(
         json.dumps({"agent_id": agent_id, "messages": messages},
                    indent=2, ensure_ascii=False),
         encoding="utf-8",
@@ -343,6 +360,8 @@ async def api_delete_agent(self, request):
         return {"error": "Cannot delete builtin agent. You can edit it instead."}
     agent_path = self._agent_path(agent_id)
     history_path = self._history_path(agent_id)
+    if agent_path is None or history_path is None:
+        return {"error": path_segment_error(agent_id, "agent id")}
     agent_path.unlink()
     if history_path.exists():
         history_path.unlink()
@@ -363,6 +382,8 @@ def clear_room_history(self, agent_id: str) -> dict:
     Idempotent — clearing an empty room is a no-op that still returns ok.
     """
     p = self._history_path(agent_id)
+    if p is None:
+        return {"error": path_segment_error(agent_id, "agent id")}
     if p.exists():
         p.unlink()
     # Reset the branch head so the next turn doesn't dangle off a deleted entry.

@@ -1,0 +1,23 @@
+[app]
+id = "life"
+name = "Life"
+version = "0.1.0"
+description = "Life suite surface — one day timeline composed from journal, worklog, and expense. Owns no data; member apps contribute items via [[contributes.life.timeline]]."
+store_category = "productivity"
+user_intent = [
+    "show me my day",
+    "what happened today",
+    "my life timeline",
+    "今天都发生了什么",
+]
+
+[app.entry]
+module = "app"
+class = "LifeApp"
+
+[requires]
+capabilities = []
+apps = []
+
+[provides.web]
+prefix = "/life"

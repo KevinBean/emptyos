@@ -742,7 +742,7 @@ async def api_vault_export(self, request):
         lines.append("")
         # Recent history
         hp = self._history_path(agent["id"])
-        if hp.exists():
+        if hp is not None and hp.exists():
             history = json.loads(hp.read_text(encoding="utf-8"))
             recent = history[-5:]
             if recent:

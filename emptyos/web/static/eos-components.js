@@ -1669,7 +1669,16 @@ var EOS_UI = {
             // Prefer semantic variant; fall back to legacy inline color.
             var variantCls = s.variant ? ' eos-stat-card--' + s.variant : '';
             var colorAttr = (!s.variant && s.color) ? ' style="color:' + s.color + '"' : '';
-            return '<div class="eos-stat-card' + variantCls + '" style="animation-delay:' + (i * 0.05) + 's">' +
+            // Optional onClick: JS expression string — card becomes a door.
+            // escAttr, not esc: esc leaves " and ' alone, so a caller passing
+            // JSON.stringify(id) closed the attribute and everything after it
+            // became markup. escAttr makes the ATTRIBUTE safe; the HTML parser
+            // decodes entities before the JS runs, so it cannot make the JS
+            // STRING safe — callers must JSON.stringify anything interpolated.
+            var clickCls = s.onClick ? ' eos-stat-card--click' : '';
+            var clickAttr = s.onClick ? ' onclick="' + EOS_UI.escAttr(s.onClick) + '" role="button" tabindex="0"' +
+                ' onkeydown="if(event.key===\'Enter\'||event.key===\' \'){event.preventDefault();this.click()}"' : '';
+            return '<div class="eos-stat-card' + variantCls + clickCls + '" style="animation-delay:' + (i * 0.05) + 's"' + clickAttr + '>' +
                 '<div class="eos-stat-val"' + colorAttr + '>' + EOS_UI.esc(String(s.value)) + '</div>' +
                 '<div class="eos-stat-lbl">' + EOS_UI.esc(s.label) + '</div>' +
                 '</div>';
@@ -1687,9 +1696,31 @@ var EOS_UI = {
     //   body?: string,                       // optional body text (small paragraph between head and meta)
     //   actions?: string,                    // HTML for action buttons (rendered in eec-actions)
     //   onClick?: string,                    // onclick JS expression; wraps card as clickable
+    //                                        // JSON.stringify() every value you
+    //                                        // interpolate: the sink escapes the
+    //                                        // attribute, not your JS string.
     //   id?: string,                         // optional DOM id
     //   className?: string,                  // extra classes on the card root
     // }
+    // --- Status -> shared badge variant.
+    // Four apps (forge, replay, projects, reports) each mapped their own status
+    // vocabulary onto `.eos-badge-status-*`, and the naive form
+    // `'eos-badge-status-' + status` emits a class with no styling whenever the
+    // status is outside the shared set — a colourless badge, silent in review.
+    //
+    // statusVariant(status, map?) -> a variant safe to concatenate after
+    // 'eos-badge-'. `map` translates an app's vocabulary to shared names
+    // (bare, e.g. {'build-failed': 'blocked'}); without it a status that is
+    // already a shared name passes through. Anything unrecognised -> 'neutral'.
+    STATUS_VARIANTS: ['active', 'archived', 'blocked', 'completed', 'draft',
+                      'fail', 'idea', 'pass', 'published', 'running', 'shelved'],
+    statusVariant: function(status, map) {
+        var s = (status == null ? '' : String(status)).trim();
+        if (!s) return 'neutral';
+        if (map && Object.prototype.hasOwnProperty.call(map, s)) s = String(map[s] || '');
+        return EOS_UI.STATUS_VARIANTS.indexOf(s) >= 0 ? 'status-' + s : 'neutral';
+    },
+
     entityCard: function(opts) {
         var esc = EOS_UI.esc;
         var parts = [];
@@ -1714,7 +1745,9 @@ var EOS_UI = {
         if (!opts.onClick) cls += ' no-hover';
         var attrs = '';
         if (opts.id) attrs += ' id="' + escAttr(opts.id) + '"';
-        if (opts.onClick) attrs += ' onclick="' + opts.onClick.replace(/"/g, '&quot;') + '" role="button" tabindex="0"';
+        // Same contract as statCards above: escAttr makes the attribute safe,
+        // callers JSON.stringify anything they interpolate into the expression.
+        if (opts.onClick) attrs += ' onclick="' + EOS_UI.escAttr(opts.onClick) + '" role="button" tabindex="0"';
         return '<div class="' + cls + '"' + attrs + '>' + parts.join('') + '</div>';
     },
 

@@ -81,6 +81,8 @@ A Claude Code skill can read the queue and process items unattended:
 
 The fix-prompt body has YAML frontmatter (`kind`, `count`, `first_seen`, `last_seen`, `last_run_id`, `recent_runs`) so the skill can prioritize without re-parsing the body.
 
+**Second producer — manual UI-walk promotions.** `scripts/ui_walk_promote.py` writes queue items with `source: ui-walk` plus a trace identity (`usecase_id / milestone_id / step_id / walk_id`, evidence refs). These are queue-only (no Issues-view entry, like trace-miner's), the autonomous fix drain skips them (human-verified by re-walk attestation), and `missing`-kind ones are feature gaps that may close via a `planned | deferred | declined` disposition instead of a code fix. Every close — auto-verify, dismiss, done, or dispositioned — appends a row to `fix-prompts/done/_ledger.jsonl`, the bounded history loop receipts read. Contract: `.claude/rules/loop-traceability.md`.
+
 ## Hub panel
 
 Contributes a `dashboard`-group hub-panel: `Dogfood · N runs/24h · M to triage`. Visible on `/hub/`.

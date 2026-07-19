@@ -39,11 +39,7 @@
 var appSettings = EOS_UI.settingsPanel({
   id: 'commons-settings-panel',
   title: 'Commons settings',
-  fields: [
-    {key: 'commons.server_url', label: 'Commons server URL', type: 'text', hint: 'e.g. https://commons.example.com'},
-    {key: 'commons.session_cookie', label: 'Session token', type: 'password', hint: 'Your __Host-commons_session value from a logged-in browser'},
-    {key: 'commons.dev_login', label: 'Dev login (subject:email)', type: 'text', hint: 'Local/dev only — auto-login against a dev-auth commons'},
-  ],
+  app: 'commons',
 });
 
 function visBadge(v) {

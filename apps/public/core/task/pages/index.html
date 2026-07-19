@@ -52,7 +52,7 @@
     .triage-section code { background:var(--bg-card); padding:1px 5px; border-radius:4px; }
     .task-item { display:flex; align-items:flex-start; gap:12px; padding:12px 16px; border-radius:8px; margin-bottom:4px; transition:all 0.2s; position:relative; background:var(--bg-card); border-left:3px solid transparent; animation:cardIn 0.35s ease both }
     .task-item:hover{box-shadow:0 2px 8px var(--shadow)}
-    .task-item.completing{opacity:0;transform:translateX(40px) scale(0.95);transition:all 0.4s ease-out}
+    .task-item.completing{opacity:0;transform:translateX(40px) scale(0.95);transition:opacity 0.3s ease-out,transform 0.3s ease-out}
     .task-item.tier-fresh{border-left-color:var(--success)} .task-item.tier-aging{border-left-color:var(--warning)} .task-item.tier-stale{border-left-color:var(--danger)} .task-item.tier-zombie{border-left-color:var(--purple)}
     .task-item.tier-zombie .task-text{text-decoration:line-through;color:var(--text-muted)}
     .task-cb { width:32px; height:32px; border-radius:50%; border:2px solid var(--border-strong); cursor:pointer; flex-shrink:0; transition:all 0.2s; display:flex; align-items:center; justify-content:center }

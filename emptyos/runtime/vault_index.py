@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import stat as _stat
 import time
 from pathlib import Path
@@ -406,8 +407,8 @@ class VaultIndex:
     def index_file(self, rel_path: str):
         if not self._vault:
             return
-        abs_path = self._vault / rel_path
-        if abs_path.exists():
+        abs_path = self._contained(rel_path)
+        if abs_path is not None and abs_path.exists():
             self._index_one(rel_path, abs_path)
         else:
             self._remove(rel_path)
@@ -591,8 +592,8 @@ class VaultIndex:
         """Update frontmatter properties in a vault note and re-index."""
         if not self._vault:
             return
-        abs_path = self._vault / rel_path
-        if not abs_path.exists():
+        abs_path = self._contained(rel_path)
+        if abs_path is None or not abs_path.exists():
             return
         self._warn_if_note_locked(rel_path)
 
@@ -613,8 +614,8 @@ class VaultIndex:
         """Append text to a ## section in a vault note and re-index."""
         if not self._vault:
             return
-        abs_path = self._vault / rel_path
-        if not abs_path.exists():
+        abs_path = self._contained(rel_path)
+        if abs_path is None or not abs_path.exists():
             return
         self._warn_if_note_locked(rel_path)
 
@@ -648,8 +649,14 @@ class VaultIndex:
         """Create a new vault note with frontmatter and body, then index it."""
         if not self._vault:
             return
+        abs_path = self._contained(rel_path)
+        if abs_path is None:
+            # Raise rather than no-op: this call CREATES directories, so a
+            # silent skip would look like a successful write to the caller.
+            # Checked BEFORE the lock warning — no point reporting on a lock
+            # for a path we are about to refuse outright.
+            raise ValueError(f"path escapes the vault root: {rel_path!r}")
         self._warn_if_note_locked(rel_path)
-        abs_path = self._vault / rel_path
         abs_path.parent.mkdir(parents=True, exist_ok=True)
         abs_path.write_text(_serialize_fm(frontmatter) + "\n\n" + body, encoding="utf-8")
         self._index_one(rel_path, abs_path)
@@ -657,7 +664,30 @@ class VaultIndex:
     def abs_path(self, rel_path: str) -> Path | None:
         if not self._vault:
             return None
-        return self._vault / rel_path
+        return self._contained(rel_path)
+
+    def _contained(self, rel_path: str) -> Path | None:
+        """Join ``rel_path`` under the vault root, or None if it escapes.
+
+        Every write here takes a vault-RELATIVE path that apps build from ids
+        arriving on HTTP path params and request bodies. A raw ``..`` in one
+        of those escaped the vault entirely: a confirmed traversal wrote and
+        deleted files outside it. This is the platform choke-point — apps
+        should still reject bad ids at their own boundary (that gives the
+        user a decent error), but nothing gets to leave the vault by
+        forgetting to.
+
+        Uses normpath, NOT resolve(): the threat is a textual ``..``, and
+        resolve() would additionally follow symlinks, breaking the legitimate
+        case of a user symlinking a folder into their own vault.
+        """
+        if not self._vault:
+            return None
+        root = os.path.normpath(str(self._vault))
+        joined = os.path.normpath(os.path.join(root, str(rel_path)))
+        if joined != root and not joined.startswith(root + os.sep):
+            return None
+        return Path(joined)
 
     # ── Data Contracts ──
 
@@ -736,8 +766,8 @@ class VaultIndex:
         """
         if not self._vault:
             return False
-        abs_path = self._vault / rel_path
-        if not abs_path.exists():
+        abs_path = self._contained(rel_path)
+        if abs_path is None or not abs_path.exists():
             return False
         self._warn_if_note_locked(rel_path)
 

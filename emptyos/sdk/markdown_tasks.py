@@ -18,10 +18,13 @@ from __future__ import annotations
 import re
 from datetime import date, timedelta
 
-from emptyos.sdk.utils import DUE_PATTERN, TASK_RE
+from emptyos.sdk.utils import DUE_INLINE_PATTERN, DUE_PATTERN, TASK_RE
 
 _DONE_DATE_RE = re.compile(r"\s*✅\s*\d{4}-\d{2}-\d{2}")
 _DUE_DATE_RE = re.compile(r"\s*📅\s*\d{4}-\d{2}-\d{2}")
+# The inline `due:` form the parser also reads (see DUE_INLINE_PATTERN). Kept
+# separate so a strip/replace can reach it without touching the canonical 📅.
+_DUE_INLINE_DATE_RE = re.compile(r"\s*\bdue:\s*\d{4}-\d{2}-\d{2}")
 _BODY_RE = re.compile(r"^(\s*-\s*\[[ xX]\]\s*)(.*?)(\s*(?:📅|✅).*)?$")
 _ACTION_TAG_RE = re.compile(r"\s*#(?:next|someday|waiting)\b")
 _COMPLETION_NOTE_LABEL = "Completion note"
@@ -118,12 +121,22 @@ def toggle(line: str, today_str: str) -> tuple[str, str] | tuple[None, None]:
 
 
 def set_due(line: str, new_due: str) -> str:
-    """Replace or insert the 📅 marker. Empty ``new_due`` strips it."""
+    """Replace or insert the due marker. Empty ``new_due`` strips it.
+
+    Handles both syntaxes the parser reads — canonical ``📅 YYYY-MM-DD`` and
+    the inline ``due:YYYY-MM-DD`` real users type. Updating a ``due:`` line in
+    place is load-bearing: appending a 📅 instead leaves two contradictory
+    dates on one line, and the human reads the stale one while the app uses
+    the new one.
+    """
     if not new_due:
-        return _DUE_DATE_RE.sub("", line)
+        return _DUE_INLINE_DATE_RE.sub("", _DUE_DATE_RE.sub("", line))
     m = DUE_PATTERN.search(line)
     if m:
         return line[: m.start(1)] + new_due + line[m.end(1) :]
+    m2 = DUE_INLINE_PATTERN.search(line)
+    if m2:
+        return line[: m2.start(1)] + new_due + line[m2.end(1) :]
     return line.rstrip() + f" 📅 {new_due}"
 
 

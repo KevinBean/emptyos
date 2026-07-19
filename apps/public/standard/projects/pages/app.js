@@ -121,7 +121,7 @@ function projectCardHtml(p) {
         badges: badges,
         meta: metaBits.join(''),
         body: body || undefined,
-        onClick: "openProject('" + escAttr(p.id) + "')",
+        onClick: "openProject(" + JSON.stringify(p.id) + ")",
     });
 }
 
@@ -174,7 +174,7 @@ function renderList(projects) {
             badges: [{label: p.status, variant: 'status-' + p.status}],
             meta: metaBits.join(''),
             body: progressBar(p) || undefined,
-            onClick: "openProject('" + escAttr(p.id) + "')",
+            onClick: "openProject(" + JSON.stringify(p.id) + ")",
             className: 'list-card',
         });
     }).join('');

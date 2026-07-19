@@ -40,7 +40,9 @@ body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-se
    Assistant adds: per-provider role-label tint, system notices, transient
    placeholders, usage-badge, image previews. */
 #messages { -webkit-overflow-scrolling:touch } /* base styling from .eos-chat-transcript */
-.eos-chat-role-label.provider-claude-cli { color:#da7756 }
+/* Provider brand hues, blended toward --text so they stay recognisable but keep
+   contrast on light themes (raw #da7756 measured 2.33:1 on digital-garden). */
+.eos-chat-role-label.provider-claude-cli { color:color-mix(in srgb,#da7756 70%,var(--text)) }
 .eos-chat-role-label.provider-ollama     { color:#a8d080 }
 .eos-chat-role-label.provider-openai     { color:#10a37f }
 .eos-chat-role-label.provider-system     { color:var(--text-muted) }
@@ -67,7 +69,7 @@ body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-se
 .compare-container { display:flex; gap:12px; padding:8px 0; flex-wrap:wrap }
 .compare-card { flex:1; min-width:250px; background:var(--bg-card); border:1px solid var(--border); border-radius:8px; padding:12px; overflow:hidden }
 .compare-card .provider-name { font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:8px; display:flex; justify-content:space-between; align-items:center }
-.compare-card .provider-name.claude-cli { color:#da7756 } .compare-card .provider-name.ollama { color:#a8d080 } .compare-card .provider-name.openai { color:#10a37f }
+.compare-card .provider-name.claude-cli { color:color-mix(in srgb,#da7756 70%,var(--text)) } .compare-card .provider-name.ollama { color:color-mix(in srgb,#a8d080 70%,var(--text)) } .compare-card .provider-name.openai { color:color-mix(in srgb,#10a37f 70%,var(--text)) }
 .compare-card .latency { font-weight:400; font-size:11px; color:var(--text-muted) }
 .compare-card .compare-body { font-size:14px; line-height:1.6 }
 .compare-card .compare-body p { margin:0.3em 0 }

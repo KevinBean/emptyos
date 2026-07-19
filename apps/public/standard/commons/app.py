@@ -83,13 +83,15 @@ class CommonsApp(BaseApp):
 
     # ---- config helpers ----
     def _cfg(self, key: str, default: str = "") -> str:
-        """Read config preferring the live settings store (UI-configurable via
-        the ⚙ panel) over static emptyos.toml [apps.commons]. Settings panels
-        write to setting(); app_config() only sees toml — so check both."""
-        val = self.setting(key, None)
-        if val is None or val == "":
-            val = self.app_config(key, default)
-        return val or default
+        """Live settings store first, then emptyos.toml [apps.commons].
+
+        This app's own version of the rule was the reference for
+        ``BaseApp.setting_or_config`` (including treating an empty string as
+        unset), extracted 2026-07-17 once four apps wanted it. Kept as a thin
+        alias because every call site passes a string default and relies on
+        ``or default`` to collapse a falsy result.
+        """
+        return self.setting_or_config(key, default) or default
 
     def _server(self) -> str:
         return (self._cfg("commons.server_url", "") or "").rstrip("/")
@@ -190,7 +192,7 @@ class CommonsApp(BaseApp):
     def _mark_enabled(self) -> bool:
         v = self.setting("commons.mark_published", None)
         if v is None:
-            v = self.app_config("commons.mark_published", True)
+            v = self.setting_or_config("commons.mark_published", True)
         return str(v).strip().lower() not in ("false", "0", "no", "off")
 
     def _write_published_hint(self, path: str, visibility: str) -> None:

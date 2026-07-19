@@ -724,6 +724,59 @@ HELD_REF_CODE_ALLOWLIST = {
 }
 
 
+def filter_suites_toml(temp_dir: Path) -> None:
+    """Drop private suites from the shipped suites.toml.
+
+    Sibling of filter_release_toml, for the same reason: suites.toml ships, and
+    the Engineer suite is a plain list of every held engineering app id. Holding
+    the apps while shipping a catalog that names them is cosmetic — and it reads
+    as a menu of software the public snapshot cannot install.
+
+    Keyed on `private = true` rather than the suite id so a second held suite is
+    a one-line edit in suites.toml, not a change here.
+    """
+    path = temp_dir / "suites.toml"
+    if not path.is_file():
+        return
+    text = path.read_text(encoding="utf-8")
+    private_ids = {
+        s.get("id") for s in (tomllib.loads(text).get("suite") or []) if s.get("private")
+    }
+    private_ids.discard(None)
+    if not private_ids:
+        return
+
+    step("Filter suites.toml (drop private suites)")
+    out: list[str] = []
+    block: list[str] = []      # current [[suite]] block, flushed once we know its id
+    pending: list[str] = []    # comment/blank run — belongs to the NEXT block
+    block_id = None
+
+    def flush() -> None:
+        if block and block_id not in private_ids:
+            out.extend(pending)
+            out.extend(block)
+
+    for line in text.splitlines(keepends=True):
+        stripped = line.strip()
+        if stripped == "[[suite]]":
+            flush()
+            if not block:          # preamble before the first suite — always keep
+                out.extend(pending)
+            pending, block, block_id = [], [line], None
+            continue
+        if not block:
+            out.append(line)
+            continue
+        if block_id is None and stripped.startswith("id ="):
+            block_id = stripped.split("=", 1)[1].strip().strip('"').strip("'")
+        block.append(line)
+    flush()
+
+    path.write_text("".join(out), encoding="utf-8")
+    print(f"    dropped {len(private_ids)} private suite(s): {', '.join(sorted(private_ids))}")
+
+
 def filter_commercial_services(temp_dir: Path) -> None:
     """Drop commercial service implementations from the public snapshot.
 
@@ -785,9 +838,15 @@ def scrub_prose_held_refs(temp_dir: Path) -> None:
 
     Prose = the agent-facing rule/skill trees and tests. These are internal
     developer context; a public OSS cloner loses nothing operational.
+
+    `tools/` is deliberately NOT a prose root: it holds shipped product code (the
+    Chrome extension), and unlinking code ships a broken artifact rather than a
+    reduced disclosure. v0.5.x shipped a public extension with no sidepanel.js
+    because a comment used the words "short-circuit". Held tokens appearing in
+    tools/ are caught loudly by check_docs_no_held_refs instead — fix the source.
     """
     step("Scrub prose naming held engineering apps (dev rules / skills / tests)")
-    prose_roots = (".claude", ".agent-bus", ".agents", "skills", "tests", "tools")
+    prose_roots = (".claude", ".agent-bus", ".agents", "skills", "tests")
     dropped = 0
     for root in prose_roots:
         base = temp_dir / root
@@ -862,6 +921,36 @@ def check_docs_no_held_refs(temp_dir: Path) -> None:
     # accepted exposure. Claiming clean while carrying it is exactly the overstatement
     # that let docs/TIERS.md ship for three releases.
     print(f"    OK: no held-IP outside the allowlist ({len(accepted)} accepted exposure(s))")
+
+
+def check_extension_ships(temp_dir: Path) -> None:
+    """Gate: every tracked Chrome-extension file survives every filter.
+
+    The extension is shipped product code that no other gate can see — the boot
+    smoke never imports it, and a missing file breaks the artifact silently in
+    the user's browser, not in this script. v0.5.x shipped a public extension
+    with sidepanel.js unlinked by the prose scrub (a comment said "short-circuit")
+    and nothing noticed. This gate fails on ANY future filter that eats it.
+    """
+    step("Snapshot-consistency: chrome extension ships complete")
+    tracked = [
+        f for f in run(
+            ["git", "ls-files", "tools/chrome-extension"], cwd=ROOT, capture=True
+        ).splitlines() if f.strip()
+    ]
+    if not tracked:
+        fail("no tracked files under tools/chrome-extension — did the path move? "
+             "Update this gate or remove it deliberately; a silent pass here means "
+             "the extension is no longer verified to ship.")
+    missing = [f for f in tracked if not (temp_dir / f).is_file()]
+    if missing:
+        print("  ✗ extension files lost from the public snapshot:")
+        for rel in missing[:40]:
+            print(f"      {rel}")
+        fail(f"{len(missing)} of {len(tracked)} extension file(s) were removed by a "
+             "filter (prose scrub / cruft sweep / doc drop). The public extension "
+             "would be broken — fix the source file or narrow the filter.")
+    print(f"    OK: {len(tracked)} extension files present")
 
 
 def sweep_cruft(temp_dir: Path) -> None:
@@ -1158,6 +1247,10 @@ def main() -> None:
             # release.toml ships, and it is the SOURCE docs/TIERS.md is generated
             # from — so holding the doc while shipping the source is cosmetic.
             filter_release_toml(temp_dir)
+            # Same reasoning one level up: suites.toml catalogs the held
+            # engineering apps by id, so holding the apps while shipping the
+            # catalog that names them is cosmetic.
+            filter_suites_toml(temp_dir)
             # Held app NAMES are secret; drop the internal prose that names them.
             # Prose-only by necessity — the names are load-bearing in code (see
             # HELD_REF_CODE_ALLOWLIST). This reduces disclosure, not closes it.
@@ -1174,6 +1267,9 @@ def main() -> None:
         run_scans(temp_dir)  # snapshot
         if not args.all:
             check_docs_no_held_refs(temp_dir)  # prose-IP gate (after doc filter)
+        # Runs in --all too: the cruft sweep is unconditional, so the extension
+        # can be eaten on either path. No other gate can see a broken extension.
+        check_extension_ships(temp_dir)
         scan_demo_vault(temp_dir)
         # Last gate before the push: the static scans have all passed on a tree
         # nobody has ever run. Boot it. Runs on the final, tier-filtered tree so

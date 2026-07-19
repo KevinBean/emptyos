@@ -16,10 +16,10 @@ except ImportError:
 
 class GitHubConnectorApp(BaseApp):
     def _token(self) -> str:
-        return self.app_config("github.token", "")
+        return self.setting_or_config("github.token", "")
 
     def _default_repo(self) -> str:
-        return self.app_config("github.default_repo", "")
+        return self.setting_or_config("github.default_repo", "")
 
     def _headers(self) -> dict:
         token = self._token()

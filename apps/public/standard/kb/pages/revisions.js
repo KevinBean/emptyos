@@ -188,8 +188,8 @@ var KBRev = (function () {
   async function publish() {
     if (!_ctx) return;
     var r = await _post('/kb/api/revision-diff/publish', _ctx);
-    if (r.ok) EOS_UI.toast ? EOS_UI.toast('Saved change summary: ' + r.slug) : alert('Saved: ' + r.slug);
-    else alert(r.error || 'publish failed');
+    if (r.ok) EOS_UI.toast('Saved change summary: ' + r.slug);
+    else EOS_UI.toast(r.error || 'publish failed', false);
   }
 
   return { mountPanel: mountPanel, mountHeader: mountHeader, openCompare: openCompare, toggleDiff: toggleDiff, explain: explain, publish: publish };

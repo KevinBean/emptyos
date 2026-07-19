@@ -370,7 +370,9 @@ class PublishApp(BaseApp):
     async def api_create_site(self, request):
         """Create a new site profile."""
         data = await request.json()
-        name = data.get("name", "").strip()
+        # `or ""` not a get-default: a JSON null is *present*, so the default
+        # never fires and .strip() would raise instead of returning the error below.
+        name = (data.get("name") or "").strip()
         if not name:
             return {"error": "Site name is required"}
 

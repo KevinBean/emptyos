@@ -24,6 +24,7 @@ from pathlib import Path
 from typing import Any
 
 from emptyos.sdk import BaseApp, web_route
+from emptyos.sdk.utils import path_segment_error, safe_path_segment
 from emptyos.runtime import store_state
 from . import marketplace as _marketplace
 
@@ -454,6 +455,24 @@ class StoreApp(BaseApp):
             plugins_path = Path(self.kernel.config.path).parent / plugins_path
         return plugins_path.resolve()
 
+    @staticmethod
+    def _safe_child(root: Path, item_id: str) -> Path | None:
+        """``root / item_id`` when item_id is a plain slug, else None.
+
+        item_id arrives raw from ``/api/{install,uninstall}/{kind}/{item_id}``
+        and reaches shutil.rmtree plus a directory rename. The skills branch
+        returns BEFORE the catalog-membership check that incidentally
+        protects apps and plugins, so it had no validation at all:
+        ``..%5Crules`` resolved src to ``.claude/rules`` and would have
+        relocated the entire agent-bus rules tree out from under the repo.
+
+        safe_path_segment REJECTS rather than coercing, so a traversal fails
+        loudly instead of silently becoming some other valid directory.
+        """
+        if not safe_path_segment(item_id):
+            return None
+        return root / item_id
+
     def _move_dir(self, src: Path, dst: Path) -> str | None:
         """Rename src → dst with the safety guards every caller shares:
         src must exist, dst must NOT (no clobber), dst's parent is
@@ -475,8 +494,10 @@ class StoreApp(BaseApp):
 
     def _unpark_app(self, app_id: str) -> str | None:
         apps_root = self._apps_root()
-        src = apps_root / "_catalog" / app_id
-        dst = apps_root / app_id
+        src = self._safe_child(apps_root / "_catalog", app_id)
+        dst = self._safe_child(apps_root, app_id)
+        if src is None or dst is None:
+            return path_segment_error(app_id, "app id")
         err = self._move_dir(src, dst)
         if err:
             return err
@@ -489,8 +510,10 @@ class StoreApp(BaseApp):
 
     def _park_app(self, app_id: str) -> str | None:
         apps_root = self._apps_root()
-        src = apps_root / app_id
-        dst = apps_root / "_catalog" / app_id
+        src = self._safe_child(apps_root, app_id)
+        dst = self._safe_child(apps_root / "_catalog", app_id)
+        if src is None or dst is None:
+            return path_segment_error(app_id, "app id")
         err = self._move_dir(src, dst)
         if err:
             return err
@@ -545,8 +568,9 @@ class StoreApp(BaseApp):
 
     def _install_skill(self, skill_id: str) -> dict:
         live, archive = self._skill_dirs()
-        src = archive / skill_id
-        dst = live / skill_id
+        src, dst = self._safe_child(archive, skill_id), self._safe_child(live, skill_id)
+        if src is None or dst is None:
+            return {"error": path_segment_error(skill_id, "skill id")}
         if dst.exists():
             return {"ok": True, "restart_required": False, "message": f"Skill '{skill_id}' already installed."}
         if not src.exists():
@@ -559,8 +583,9 @@ class StoreApp(BaseApp):
 
     def _uninstall_skill(self, skill_id: str) -> dict:
         live, archive = self._skill_dirs()
-        src = live / skill_id
-        dst = archive / skill_id
+        src, dst = self._safe_child(live, skill_id), self._safe_child(archive, skill_id)
+        if src is None or dst is None:
+            return {"error": path_segment_error(skill_id, "skill id")}
         if not src.exists():
             return {"ok": True, "restart_required": False, "message": f"Skill '{skill_id}' was not installed."}
         # Stale archive entry from a prior install/uninstall cycle would

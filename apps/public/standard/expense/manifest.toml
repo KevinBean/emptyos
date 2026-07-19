@@ -30,13 +30,15 @@ commands = ["expense"]
 prefix = "/expense"
 
 [provides.events]
-emits = ["expense:added", "expense:income-added", "expense:report-saved"]
+emits = ["expense:added", "expense:income-added", "expense:report-saved", "expense:recurring_posted"]
 
 [provides.settings]
 schema = [
     {key = "expense.budget", label = "Monthly Budget ($)", type = "number", default = 3000},
     {key = "expense.default_category", label = "Default Category", type = "select", options = ["Dining", "Groceries", "Transport", "Shopping", "Bills", "Health", "Entertainment", "Other"], default = "Other"},
     {key = "expense.alert_threshold", label = "Budget Alert at %", type = "number", default = 80},
+    {key = "expense.recurring.enabled", label = "Auto-post recurring expenses", type = "boolean", default = true, hint = "Runs daily on a schedule. Off = only posts when you open the expense page (the old behaviour, which silently stopped logging rent for weeks)."},
+    {key = "expense.recurring.cron", label = "Recurring check time (cron)", type = "text", default = "0 6 * * *", hint = "Daily at 06:00 by default. Save then hit Reschedule for it to take effect."},
 ]
 
 # ── Verb registry — single source of truth for invokable verbs. The two
@@ -94,3 +96,8 @@ method = "panel_month_compare"
 renderer = "compare-tile"
 group = "month-compare"
 priority = 148
+
+# Life-suite day timeline (suite contract: docs/suites/life-cohesion.md)
+[[contributes.life.timeline]]
+id = "expense-timeline"
+method = "timeline_items"

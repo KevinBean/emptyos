@@ -22,7 +22,9 @@ Step-log format — one JSON object per line:
    "ms": 4200,                                             # optional measured duration (evidence for `slow`)
    "console": ["TypeError: x is undefined (hub.js:120)"],  # optional console errors (fail-context bundle)
    "network": ["GET /task/api/list -> 500"],              # optional failed requests (fail-context bundle)
-   "url": "http://127.0.0.1:9000/hub/"}                    # optional, shown as a chip
+   "url": "http://127.0.0.1:9000/hub/",                    # optional, shown as a chip
+   "usecase_id": "riverside-bess-132kv",                   # optional trace identity (loop-traceability)
+   "milestone_id": "month-0-design-basis"}                 # optional; rendered as a small chip
 
 `shot` and `gif` are resolved relative to --shots-base when not absolute; a
 missing file renders a placeholder rather than failing the whole report. The
@@ -174,6 +176,7 @@ h1 {{ font-size:24px; margin:0 0 4px; }}
 .shot .replay-label {{ color:#9aa0a6; font-size:11px; letter-spacing:.04em;
                       text-transform:uppercase; margin:0 0 3px; }}
 .ms {{ color:#f5d90a; font-size:12px; font-variant-numeric:tabular-nums; }}
+.trace {{ color:#6b7077; font-size:11px; font:11px/1.4 ui-monospace,Consolas,monospace; }}
 .ctx {{ margin:8px 0 0; }}
 .ctx summary {{ cursor:pointer; color:#9aa0a6; font-size:12px; letter-spacing:.03em;
                text-transform:uppercase; user-select:none; }}
@@ -214,8 +217,16 @@ h1 {{ font-size:24px; margin:0 0 4px; }}
             ms = s.get("ms")
             ms_chip = (f'<span class="ms">{int(ms):,} ms</span>'
                        if isinstance(ms, (int, float)) and not isinstance(ms, bool) and ms > 0 else "")
+            # optional trace-identity chip (loop-traceability rows carry
+            # usecase_id/milestone_id; legacy rows simply don't have them)
+            milestone = s.get("milestone_id")
+            trace_chip = ""
+            if milestone:
+                full = "::".join(str(s.get(k) or "") for k in ("usecase_id", "milestone_id")) + f"::s{n}"
+                trace_chip = (f'<span class="trace" title="{html.escape(full)}">'
+                              f'{html.escape(str(milestone))}/s{html.escape(str(n))}</span>')
             parts.append('<div class="step-meta">'
-                         f'{_badge(st)}<span class="step-n">step {html.escape(str(n))}</span>{ms_chip}</div>')
+                         f'{_badge(st)}<span class="step-n">step {html.escape(str(n))}</span>{ms_chip}{trace_chip}</div>')
             parts.append(f'<p class="step-action">{action}</p>')
             if note:
                 parts.append(f'<p class="step-note">{note}</p>')

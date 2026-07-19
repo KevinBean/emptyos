@@ -30,6 +30,13 @@ ignored.
 The editable surface is **`.eos-personal`** in the repo root — one regex per
 line. Add patterns when a leak class is found.
 
+Patterns are compiled **case-insensitively** (`emptyos/sdk/personal_patterns.py`),
+so write `Kevin`, not `[Kk]evin`. This is deliberate: Windows paths are
+case-insensitive, so a mis-cased vault or home directory is the *same* directory
+while being a *different* string — and case-sensitive matching let exactly that
+slip past the scan into tracked files (2026-07-17). Never rely on casing to keep
+something out of a pattern's reach; use a word boundary or a more specific shape.
+
 ## Layered defense model
 
 | Layer | Trigger | What it does | Where |

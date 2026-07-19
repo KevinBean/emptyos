@@ -21,8 +21,8 @@ def resolve_cli_method(
 
     App CLI commands register the manifest command name as the top-level `eos`
     subcommand, but a method may be decorated ``@cli_command("<sub>")`` with a
-    different name (the author's intended sub-verb, e.g. ``eos <cmd>
-    <sub>``). Resolution order:
+    different name (the author's intended sub-verb, e.g. ``eos journal
+    add``). Resolution order:
 
     1. **Default command** — a method whose name equals ``cmd_name`` (the
        common case; the app has one command matching its manifest entry).

@@ -602,6 +602,47 @@ def safe_path_segment(raw: str) -> str:
     return raw if _SAFE_PATH_SEG_RE.match(raw) else ""
 
 
+def require_path_segment(raw: str, label: str = "id") -> str:
+    """:func:`safe_path_segment`, but raises instead of returning ``""``.
+
+    The raising form is what a *path builder* wants: it is the single
+    choke-point every call site funnels through, so failing there means no
+    caller can forget the guard. ``label`` names the thing for the message
+    ("cable id", "run id", "scenario id").
+
+    Extracted at the eighth consumer (2026-07-19 traversal audit). Beyond
+    deduplication it makes the refusal message uniform — hand-written guards
+    had drifted, some naming the allowed characters and some not, so the same
+    class of mistake got a helpful error in one app and a bare one in another.
+
+    Use :func:`safe_path_segment` directly when the caller wants a soft miss
+    (a lookup that should return None rather than raise).
+    """
+    safe = safe_path_segment(raw)
+    if not safe:
+        raise ValueError(path_segment_error(raw, label))
+    return safe
+
+
+def path_segment_error(raw: str, label: str = "id") -> str | None:
+    """The refusal message for an unsafe path segment, or None if it's fine.
+
+    Same rule as :func:`require_path_segment`, but returned rather than
+    raised — for route handlers that answer with an in-band
+    ``{"error": ...}`` instead of letting an exception become a 500.
+
+    Exists so the two shapes cannot drift: a user who types a bad id should
+    get the same explanation whether the app guards at the route or at the
+    path builder.
+    """
+    if safe_path_segment(raw):
+        return None
+    return (
+        f"invalid {label} {raw!r} — must be letters, digits, "
+        "underscore or hyphen"
+    )
+
+
 def today_iso() -> str:
     """Local-timezone date today as ISO string (``"YYYY-MM-DD"``).
 
@@ -626,6 +667,21 @@ def now_iso() -> str:
     ``today_utc`` from ``time_series``.
     """
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+
+def clamp_days(value: Any, *, default: int = 1, lo: int = 1, hi: int = 90) -> int:
+    """Coerce a loose day-count (query param str, kwarg int, None) into [lo, hi].
+
+    Shared by the suite timeline contract (``timeline_items(days)`` +
+    ``GET /api/timeline-items?days=N`` on each contributing app — see
+    docs/suites/life-cohesion.md) so every member clamps identically and a
+    hostile/typo'd ``days`` can never widen a scan window.
+    """
+    try:
+        n = int(value)
+    except (TypeError, ValueError):
+        n = default
+    return max(lo, min(n, hi))
 
 
 def config_flag(config: Any, key: str, default: bool = False) -> bool:
@@ -701,14 +757,19 @@ class FakeRequest:
 
     `@web_route` handlers on the called app expect a Starlette-shaped request:
     `request.path_params["..."]` for path vars, `await request.json()` for the
-    body. When invoked via `call_app` instead of an HTTP round-trip, callers
-    construct one of these to satisfy that contract.
+    body, `request.query_params.get(...)` for query args. When invoked via
+    `call_app` instead of an HTTP round-trip, callers construct one of these to
+    satisfy that contract.
 
-    Either argument is optional — pass only what the target handler reads.
+    Every argument is optional — pass only what the target handler reads.
+    `query_params` defaults to an empty dict (a plain dict satisfies the
+    `.get(...)` reads handlers do on Starlette's QueryParams).
     """
 
-    def __init__(self, *, body: dict | None = None, path_params: dict | None = None):
+    def __init__(self, *, body: dict | None = None, path_params: dict | None = None,
+                 query_params: dict | None = None):
         self.path_params = path_params or {}
+        self.query_params = query_params or {}
         self._body = body or {}
 
     async def json(self):

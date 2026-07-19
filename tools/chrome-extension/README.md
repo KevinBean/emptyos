@@ -51,12 +51,31 @@ double-click a word. `Flow` sends a capped visible-text excerpt to the paid
 provider you select, after EmptyOS shows its cloud-consent gate. Raw page text
 is not kept; derived paid explanations are cached locally.
 
+## Optional features (they depend on your daemon's apps)
+
+Chat, capture, tab sharing, Browser Session, and the slash commands work on any
+EmptyOS daemon. Three surfaces are backed by apps not every daemon has — notably
+the public release, which ships neither `dictionary` nor `jobs`:
+
+| Needs this app | You get |
+|---|---|
+| `dictionary` | "Look up '…' in EmptyOS dictionary", and the whole Reading layer (`Off`/`Ask`/`Flow`, the rail, per-site pauses) |
+| `jobs` | "Evaluate selection / this job posting (vs my CV)", "Capture job posting", the **Capture as job** chip, **Evaluate shared jobs** |
+| `video-digest` | "Digest this video" and the YouTube chip |
+
+The extension asks the daemon which apps it serves (`GET /api/apps`) and registers
+only the menu items and panel sections that something can answer, so you never see
+a verb that can only fail. When it cannot ask — daemon down, no token yet — it
+shows everything and individual actions report the error as before. The check
+re-runs when you save the options page and when Chrome restarts, so pointing the
+extension at a different daemon adapts the menu.
+
 ## Install (unpacked)
 
 1. Open `chrome://extensions`
 2. Toggle **Developer mode** on (top right)
 3. Click **Load unpacked**
-4. Pick this folder: `D:/emptyos/tools/chrome-extension/`
+4. Pick this folder: `<your-emptyos-clone>/tools/chrome-extension/`
 5. Pin the extension to the toolbar (puzzle icon → pin)
 
 ## Configure
@@ -81,6 +100,7 @@ Hit **Test connection** to verify.
 | Ask Aura | `POST /assistant/api/chat` body `{message}` |
 | Armed-tab snapshots for panel workflows | `POST /assistant/api/browser-session/snapshots` |
 | Health check | `GET /api/health` |
+| Which apps this daemon serves (feature gating) | `GET /api/apps` |
 | Reading status | `GET /dictionary/api/reading/status` |
 | Proactive analysis | `POST /dictionary/api/reading/analyze` |
 | On-demand local lookup | `POST /dictionary/api/reading/lookup` |
@@ -131,7 +151,7 @@ will use a placeholder if it's missing.
 ## V0.4 features (Phase 2 — Browser-as-input)
 
 - **Site-hint chip** above the input — when you're on a LinkedIn/Seek job or a YouTube video, a one-click button appears:
-  - **Capture as job** → scrapes company, role, salary, location, JD text from DOM → `POST /personal/jobs/api/applications/add`. Lands as a real application note in your vault.
+  - **Capture as job** → scrapes company, role, salary, location, JD text from DOM → `POST /jobs/api/applications/add`. Lands as a real application note in your vault.
   - **Digest this video** → `POST /video-digest/api/queue`.
 - **"Already captured" badge** — `✓` on the toolbar icon when the current tab's URL is already in your inbox. Polls `/quick-action/api/has?url=...` on tab updates.
 - **Right-click "Propose selection as KB clause"** — grabs your selection + its paragraph context + page URL → `POST /assistant/api/propose-kb-note` (wraps `BaseApp.propose_kb_note`). Review/apply in `/rooms/` pending dashboard.
