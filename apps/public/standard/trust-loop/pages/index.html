@@ -1,0 +1,111 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Trust Loop</title>
+<link rel="stylesheet" href="/static/theme.css">
+<link rel="stylesheet" href="/static/eos-components.css">
+<link rel="stylesheet" href="/static/eos-keys.css">
+<style>
+.tl-shell { max-width: 1080px; margin: 0 auto; padding: var(--space-5) var(--space-4) var(--space-7); }
+.tl-header h1 { font-size: var(--fs-h1); color: var(--text-heading); margin: 0 0 var(--space-1); }
+.tl-sub { color: var(--text-secondary); font-size: var(--fs-body); max-width: 68ch; line-height: var(--lh-prose); }
+.tl-strip { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: var(--space-2); margin: var(--space-5) 0; }
+.tl-stage { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: var(--space-3); text-decoration: none; display: block; }
+.tl-stage:hover { border-color: var(--accent); }
+.tl-stage .n { font-family: var(--mono); font-size: var(--fs-mono); color: var(--accent); }
+.tl-stage .t { font-weight: var(--fw-label); font-size: var(--fs-small); color: var(--text-heading); margin: 2px 0; }
+.tl-stage .d { font-size: var(--fs-mono); color: var(--text-muted); line-height: var(--lh-ui); }
+.tl-cols { display: grid; grid-template-columns: minmax(280px, 380px) 1fr; gap: var(--space-5); align-items: start; }
+@media (max-width: 760px) { .tl-cols { grid-template-columns: 1fr; } }
+.tl-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: var(--space-4); }
+.tl-card h2 { font-size: var(--fs-h2); color: var(--text-heading); margin: 0 0 var(--space-3); }
+.tl-field { margin-bottom: var(--space-3); }
+.tl-field label { display: block; font-size: var(--fs-meta); font-weight: var(--fw-label); text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-secondary); margin-bottom: var(--space-1); }
+.tl-field input, .tl-field select { width: 100%; box-sizing: border-box; background: var(--bg-input); color: var(--text); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: var(--space-2) var(--space-3); font-family: var(--font); font-size: var(--fs-body); }
+.tl-field input:focus, .tl-field select:focus { outline: none; border-color: var(--accent); }
+.tl-hero { display: flex; gap: var(--space-5); flex-wrap: wrap; margin-bottom: var(--space-4); }
+.tl-hero .v { font-size: var(--fs-hero); font-weight: var(--fw-display); color: var(--text-heading); font-family: var(--mono); }
+.tl-hero .l { font-size: var(--fs-meta); text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); }
+.tl-work table { width: 100%; border-collapse: collapse; font-size: var(--fs-small); }
+.tl-work td { padding: var(--space-2) var(--space-2); border-top: 1px solid var(--border); }
+.tl-work td.sym { font-family: var(--mono); color: var(--text-secondary); white-space: nowrap; }
+.tl-work td.val { font-family: var(--mono); text-align: right; color: var(--text); white-space: nowrap; }
+.tl-prov { margin-top: var(--space-3); font-size: var(--fs-mono); font-family: var(--mono); color: var(--text-muted); }
+.tl-warn { margin-top: var(--space-2); font-size: var(--fs-small); color: var(--warning); }
+.tl-err { font-size: var(--fs-small); color: var(--danger); }
+.tl-note { font-size: var(--fs-small); color: var(--text-secondary); line-height: var(--lh-prose); max-width: 72ch; }
+.tl-section { margin-top: var(--space-6); }
+.tl-actions { display: flex; gap: var(--space-2); align-items: center; flex-wrap: wrap; margin-top: var(--space-2); }
+</style>
+</head>
+<body>
+<div class="tl-shell">
+  <header class="tl-header">
+    <h1>Trust Loop</h1>
+    <p class="tl-sub">How an engineering calculator earns trust — live. This page computes
+    IEEE&nbsp;Std&nbsp;80 tolerable touch and step voltages from a pure, deterministic engine,
+    shows its working line by line, and runs the standard's own published case as a
+    conformance gate. The interface computes nothing; every number comes from the engine.</p>
+  </header>
+
+  <nav class="tl-strip" id="loop-strip" aria-label="The seven stages"></nav>
+
+  <div class="tl-cols">
+    <section class="tl-card" id="calc" aria-label="Inputs">
+      <h2>Inputs</h2>
+      <div class="tl-field"><label for="rho">Soil resistivity &rho; (&ohm;&middot;m) <span data-kb-slot></span></label>
+        <input id="rho" type="number" min="1" step="10" value="100"></div>
+      <div class="tl-field"><label for="ts">Shock duration t (s)</label>
+        <input id="ts" type="number" min="0.03" max="3" step="0.05" value="0.5"></div>
+      <div class="tl-field"><label for="body">Body weight</label>
+        <select id="body"><option value="50" selected>50 kg</option><option value="70">70 kg</option></select></div>
+      <div class="tl-field"><label for="rhos">Surface layer &rho;&#8347; (&ohm;&middot;m) — optional</label>
+        <input id="rhos" type="number" min="0" step="100" placeholder="none"></div>
+      <div class="tl-field"><label for="hs">Surface layer thickness h&#8347; (m)</label>
+        <input id="hs" type="number" min="0" step="0.01" placeholder="0"></div>
+      <div class="tl-actions">
+        <button class="eos-btn eos-btn-primary" id="btn-anchor" type="button">Load the published case</button>
+        <span id="share-slot"></span>
+      </div>
+      <p class="tl-note" style="margin-top:var(--space-3)">The published case — &rho;=100&nbsp;&ohm;&middot;m,
+      t=0.5&nbsp;s, 50&nbsp;kg, no surface layer — resolves to 188.65&nbsp;V touch and
+      262.48&nbsp;V step in the standard itself. That pair of numbers is this
+      calculator's conformance anchor below.</p>
+    </section>
+
+    <section class="tl-card" id="working" aria-label="Result">
+      <h2>Result</h2>
+      <div class="tl-hero">
+        <div><div class="v" id="out-touch">—</div><div class="l">E_touch tolerable</div></div>
+        <div><div class="v" id="out-step">—</div><div class="l">E_step tolerable</div></div>
+      </div>
+      <div class="tl-work" id="out-work"></div>
+      <div class="tl-warn" id="out-warn" hidden></div>
+      <div class="tl-err" id="out-err" hidden></div>
+      <div class="tl-prov" id="out-prov"></div>
+    </section>
+  </div>
+
+  <section class="tl-section" id="conformance" aria-label="Conformance gate">
+    <div id="conf-panel"></div>
+    <p class="tl-note" style="margin-top:var(--space-2)">The gate re-runs the engine against the
+    standard's published numbers on demand. If the computed values drift outside &plusmn;0.5%,
+    the case fails — there is no argument to have with a gate.</p>
+  </section>
+
+  <section class="tl-section" aria-label="About">
+    <p class="tl-note"><strong>Where the AI sits:</strong> a model may draft an engine like this one,
+    but the draft carries no authority — it is a candidate until the gate passes it. At runtime
+    no model is on the compute path: the value is produced by the same pure function every
+    time, and the formula note cited on the inputs is the clause the code implements.</p>
+  </section>
+</div>
+
+<script src="/static/eos.js"></script>
+<script src="/static/eos-components.js"></script>
+<script src="/static/eos-keys.js"></script>
+<script src="/trust-loop/pages/trust-loop.js"></script>
+</body>
+</html>

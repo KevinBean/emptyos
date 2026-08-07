@@ -37,9 +37,24 @@ produced the agent's *"I will generate…"* text and then **nothing** — no app
 no generation, no credits spent, and **no error**. It is indistinguishable from a request
 still thinking.
 
-**Reloading the page starts a fresh session and the widget renders again.** So the
-working loop for a multi-clip run is: reload → request → approve → wait → verify →
-reload. **Budget one page reload per clip.**
+**A page reload is NOT sufficient** — this cost four wasted attempts. Reloading does
+produce a differently-named session, so it *looks* like a reset, but that session still
+never draws the widget. The agent replies *"I will generate…"* and then stops, every
+time.
+
+**The only reliable reset is the explicit control: ☰ (top-left of the session panel) →
+"Create a new session".** That gives an "Untitled session", and the widget renders on
+its first request. So the working loop for a multi-clip run is:
+
+> ☰ → Create a new session → request → **Approve** → wait → verify in `Videos`
+
+**Budget one explicit new session per credit-spending generation.** Approving with
+"Approve" (not *"Approve, do not ask again"*) keeps the gate for the next one.
+
+One more trap on top: **the session panel does not re-open by itself once closed.** If
+you dismiss it with ✕, later replies — including approvals — render into a panel you
+cannot see, which is indistinguishable from nothing happening. Re-open it with the
+expand control beside the create box.
 
 Because the failure is silent, **verify against the `Videos` list, not against the
 chat.** Counting clips is the only reliable signal that a generation actually happened —
