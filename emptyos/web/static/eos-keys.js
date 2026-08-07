@@ -34,6 +34,19 @@
         catch (_) { return false; }
     })();
 
+    // Next theme in the cycle, read from the live registry rather than a copy.
+    // The two call sites below each carried their own hardcoded list, both
+    // frozen at the pre-digital-garden set — so cycling *from* any theme added
+    // after them scored indexOf === -1 and silently snapped back to 'eos'
+    // instead of advancing. Deriving from EOS.THEMES means a new theme joins
+    // the cycle for free.
+    function _nextTheme() {
+        var themes = (window.EOS && EOS.THEMES) || ['eos'];
+        var current = localStorage.getItem('eos-theme') || 'eos';
+        var i = themes.indexOf(current);
+        return themes[(i + 1) % themes.length];   // unknown → i=-1 → themes[0]
+    }
+
     function launcherDismiss() {
         // Chrome --app= windows allow window.close() from script; this is the
         // dismiss path (press hotkey, type, Enter, gone).
@@ -303,10 +316,7 @@
         if (IS_LAUNCHER) {
             if (action.type === 'action') {
                 if (action.id === 'theme-toggle') {
-                    var themes = ['eos', 'void-dark', 'warm-dark', 'nord', 'soft-light'];
-                    var current = localStorage.getItem('eos-theme') || 'eos';
-                    var next = themes[(themes.indexOf(current) + 1) % themes.length];
-                    EOS.setTheme(next);
+                    EOS.setTheme(_nextTheme());
                     // theme-toggle is the one action that stays inside the launcher;
                     // user wants to flip and keep typing. Don't dismiss.
                     return;
@@ -326,10 +336,7 @@
 
         if (action.type === 'action') {
             if (action.id === 'theme-toggle') {
-                var themes2 = ['eos', 'void-dark', 'warm-dark', 'nord', 'soft-light'];
-                var current2 = localStorage.getItem('eos-theme') || 'eos';
-                var next2 = themes2[(themes2.indexOf(current2) + 1) % themes2.length];
-                EOS.setTheme(next2);
+                EOS.setTheme(_nextTheme());
             } else if (action.id === 'shortcuts') {
                 showHelp();
             } else if (action.id === 'reload') {

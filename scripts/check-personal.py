@@ -34,6 +34,7 @@ from check_base import (
     REPO_ROOT,
     git_staged,
     git_tracked,
+    git_untracked,
     install_pre_commit_hook,
 )
 
@@ -78,9 +79,11 @@ def load_patterns(path: str):
     )
 
 
-def get_files(staged_only: bool = False) -> list[str]:
+def get_files(staged_only: bool = False, include_untracked: bool = False) -> list[str]:
     """Repo-relative path strings (existing call sites read them as such)."""
     paths = git_staged() if staged_only else git_tracked()
+    if include_untracked:
+        paths = paths + git_untracked()
     return [p.relative_to(REPO_ROOT).as_posix() for p in paths]
 
 
@@ -94,11 +97,16 @@ def main():
             )
         )
     staged_only = "--staged" in sys.argv
+    # A file that has not been `git add`-ed is invisible to both scopes above,
+    # so a bare run can print OK while a violation sits in a new file. Opt-in
+    # rather than default: the pre-commit hook's `--staged` run is the gate, and
+    # widening the default would make the release scanners walk scratch output.
+    include_untracked = "--include-untracked" in sys.argv and not staged_only
     patterns = load_patterns(PATTERNS_FILE)
     if not patterns:
         sys.exit(0)
 
-    files = get_files(staged_only)
+    files = get_files(staged_only, include_untracked)
     violations = []
 
     for filepath in files:
@@ -129,7 +137,12 @@ def main():
         print("Move personal values to data/personal-defaults.json (git-ignored)\n")
         sys.exit(1)
     else:
-        mode = "staged files" if staged_only else "all tracked files"
+        if staged_only:
+            mode = "staged files"
+        elif include_untracked:
+            mode = "all tracked + untracked files"
+        else:
+            mode = "all tracked files"
         print(
             f"OK: No personal data found in {mode} ({len(files)} files, {len(patterns)} patterns)"
         )

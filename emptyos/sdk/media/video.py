@@ -13,6 +13,8 @@ from __future__ import annotations
 import asyncio
 from pathlib import Path
 
+from emptyos.sdk.media.encode import video_args_resolved
+
 
 async def probe_duration(path: str | Path) -> float:
     """Media duration in seconds via ffprobe (0.0 if unknown / no ffprobe).
@@ -67,6 +69,11 @@ async def extract_thumbnail(src: str | Path, out: str | Path, *, at: float = 1.0
     Retries at t=0 for clips shorter than ``at``. Returns True if a file landed."""
     src, out = Path(src), Path(out)
     out.parent.mkdir(parents=True, exist_ok=True)
+    # Same reason as extract_last_frame: a leftover file from an earlier attempt
+    # would make `out.exists()` report success for a frame this call never
+    # produced. Milder here (a stale thumbnail is cosmetic, not a continuity
+    # break) but it is the same lie.
+    out.unlink(missing_ok=True)
     vf = f"scale={width}:-1"
     rc, _ = await _run(["ffmpeg", "-y", "-ss", str(at), "-i", str(src),
                         "-vframes", "1", "-vf", vf, "-q:v", "4", str(out)])
@@ -74,6 +81,39 @@ async def extract_thumbnail(src: str | Path, out: str | Path, *, at: float = 1.0
         await _run(["ffmpeg", "-y", "-i", str(src),
                     "-vframes", "1", "-vf", vf, "-q:v", "4", str(out)])
     return out.exists()
+
+
+async def extract_last_frame(src: str | Path, out: str | Path) -> bool:
+    """Grab the FINAL frame of a clip as a PNG. Returns True if a file landed.
+
+    The handoff primitive for chained image-to-video: clip N's last frame
+    becomes clip N+1's start image, so a scene longer than the model's clip
+    ceiling is built from continuous generations instead of one short clip
+    time-stretched to fit (which costs frame rate — a 2.28x stretch measured
+    at ~11 unique fps against 24 generated).
+
+    Seeks with ``-sseof`` (relative to end) rather than decoding the whole
+    file, then falls back to a full decode for containers that cannot seek
+    from the end.
+    """
+    src, out = Path(src), Path(out)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    # Clear any previous attempt first. Callers write to a deterministic
+    # per-scene name, so if both ffmpeg invocations fail and an older file is
+    # still sitting there, `out.exists()` below is True and this returns success
+    # holding a frame from a DIFFERENT generation. In chained I2V that plate
+    # becomes the next clip's start image, so the failure surfaces as a scene
+    # that silently continues the wrong shot — the shape .claude/rules/
+    # dev-gotchas.md calls "a media path is not a media version".
+    out.unlink(missing_ok=True)
+    rc, _ = await _run(["ffmpeg", "-y", "-sseof", "-0.2", "-i", str(src),
+                        "-update", "1", "-q:v", "2", str(out)])
+    if rc != 0 or not out.exists() or out.stat().st_size == 0:
+        # No end-relative seek: decode through and keep overwriting, so the
+        # last frame written is the last frame of the clip.
+        await _run(["ffmpeg", "-y", "-i", str(src),
+                    "-update", "1", "-q:v", "2", str(out)])
+    return out.exists() and out.stat().st_size > 0
 
 
 async def extract_audio(src: str | Path, out: str | Path, *, bitrate: str = "128k") -> bool:
@@ -94,6 +134,7 @@ async def frames_to_mp4(
     start_number: int = 0,
     crf: int = 20,
     preset: str = "fast",
+    gpu: bool = False,
 ) -> bool:
     """Encode a numbered image sequence into an MP4 via the ffmpeg image2 demuxer.
 
@@ -103,16 +144,20 @@ async def frames_to_mp4(
     even (libx264 yuv420p requirement). This is the ffmpeg side of the HTML→MP4
     recorder (``emptyos.sdk.media.html_record``), reusable by any pipeline that
     captures frames itself. Returns True if the file landed. Never raises.
+
+    ``gpu=True`` requests NVENC and falls back to x264 when it isn't available.
     """
     out = Path(out)
     out.parent.mkdir(parents=True, exist_ok=True)
+    # pix_fmt=None: the filter chain below already pins format=yuv420p.
+    codec = await video_args_resolved(crf=crf, preset=preset, gpu=gpu, pix_fmt=None)
     rc, _ = await _run([
         "ffmpeg", "-y",
         "-framerate", str(fps),
         "-start_number", str(start_number),
         "-i", str(pattern),
         "-vf", "scale=trunc(iw/2)*2:trunc(ih/2)*2,format=yuv420p",
-        "-c:v", "libx264", "-preset", preset, "-crf", str(crf),
+        *codec,
         "-movflags", "+faststart", str(out),
     ])
     return out.exists() and out.stat().st_size > 0
@@ -123,6 +168,7 @@ async def concat_clips(
     out: str | Path,
     *,
     resolution: tuple[int, int] = (1280, 720),
+    gpu: bool = False,
 ) -> None:
     """Stitch ``clips`` (in order) into one MP4 via the ffmpeg concat filter.
 
@@ -170,8 +216,9 @@ async def concat_clips(
         parts.append(f"{concat_inputs}concat=n={n}:v=1:a=0[v]")
         maps = ["-map", "[v]"]
 
-    cmd += ["-filter_complex", ";".join(parts), *maps,
-            "-c:v", "libx264", "-preset", "fast", "-crf", "23"]
+    # pix_fmt=None: `vf` above already pins format=yuv420p on every input.
+    codec = await video_args_resolved(crf=23, preset="fast", gpu=gpu, pix_fmt=None)
+    cmd += ["-filter_complex", ";".join(parts), *maps, *codec]
     if with_audio:
         cmd += ["-c:a", "aac", "-b:a", "192k"]
     cmd += ["-movflags", "+faststart", str(out)]
@@ -206,6 +253,7 @@ async def assemble_video(
     output_path: str,
     resolution: tuple[int, int] = (1280, 720),
     pad_color: str = "black",
+    gpu: bool = False,
 ):
     """Assemble scene images + audio (+ optional subtitles) into MP4.
 
@@ -259,10 +307,12 @@ async def assemble_video(
     else:
         vmap = "[cat]"
 
+    # pix_fmt=None: _scene_fit_filter already pins format=yuv420p per scene.
+    codec = await video_args_resolved(crf=23, preset="fast", gpu=gpu, pix_fmt=None)
     cmd += [
         "-filter_complex", ";".join(fc),
         "-map", vmap, "-map", f"{n}:a",
-        "-c:v", "libx264", "-preset", "fast", "-crf", "23",
+        *codec,
         "-c:a", "aac", "-b:a", "192k",
         "-movflags", "+faststart", "-shortest",
         output_path,

@@ -4,7 +4,7 @@
 # Usage: python scripts/package-release.py <tier> [--check] [--platform=<name>]
 
 [release]
-version = "0.5.7"
+version = "0.6.0"
 
 # ── Platforms ─────────────────────────────────────────────────
 # Named deployment profiles. Plugins declare compatibility in
@@ -124,6 +124,8 @@ apps = [
     "codoc",
     "commons",
     "company",
+    "conversation-ingest",
+    "countdown",
     "daily-brief",
     "designer",
     "dictation",
@@ -151,6 +153,7 @@ apps = [
     "reader",
     "replay",
     "reports",
+    "requirements",
     "rooms",
     "routing",
     "runbook",
@@ -185,6 +188,7 @@ plugins = [
     "webcam",
 ]
 skills = [
+    "eos-ai-conversation-ingest",
     "vault-cleanup-studio",
     "vault-journal-planner",
     "vault-knowledge-synthesis",
@@ -269,6 +273,7 @@ apps = [
 ]
 plugins = ["agent-runtime", "cadquery", "sandbox-pool", "external-lab-host"]
 skills = []
+services = ["chatbot", "external_lab"]
 
 # ── Release targets ───────────────────────────────────────────
 # Declarative bindings consumed by `scripts/release.py <target>`. Each target
@@ -329,6 +334,7 @@ paths = [
     ".github/",
     "scripts/check-personal.py",
     "scripts/check-branding.py",
+    "scripts/restart_health_check.py",
     "restart.bat",
     "service.bat",
     "tests/",

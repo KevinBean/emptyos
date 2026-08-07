@@ -92,6 +92,44 @@ def click_first(page, *selectors, timeout=2000):
     return None
 
 
+def visible_search_input(page, timeout=3000):
+    """The app's OWN search box, skipping the global search overlay.
+
+    Every page carries the universal search overlay (`.eos-search-overlay`,
+    added 2026-06-01), whose input matches the obvious
+    `input[type='search'], input[placeholder*='earch' i]` selector and sorts
+    FIRST in DOM order. So a plain `.first` grabs a decoy that lives inside a
+    `display:none` subtree, and `fill()` waits out its timeout on a page whose
+    real search box was visible the whole time.
+
+    Returns a visible locator, or None when the app genuinely has no search
+    input (callers skip in that case).
+    """
+    loc = page.locator(
+        "input[type='search'], input[placeholder*='earch' i]"
+    ).locator("visible=true")
+    try:
+        loc.first.wait_for(state="visible", timeout=timeout)
+    except Exception:
+        return None
+    return loc.first if loc.count() else None
+
+
+def hash_contains(page, value):
+    """True when the page's URL fragment names `value`, encoded or not.
+
+    A slug with a space (`_cable-thermal MOC`) is written to `location.hash`
+    percent-encoded by the browser, so a raw `value in page.url` substring test
+    fails against a perfectly correct URL — and only for the slugs that happen
+    to contain one, which makes it look like a flake tied to whichever row
+    sorts first.
+    """
+    from urllib.parse import quote, unquote
+
+    url = page.url
+    return value in url or quote(value) in url or value in unquote(url)
+
+
 def open_command_palette(page):
     """Open the command palette, waiting for eos-keys.js to initialize.
 

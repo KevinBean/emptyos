@@ -62,6 +62,7 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
+from emptyos.mcp_protocol import PROTOCOL_VERSION
 from emptyos.sdk import autopilot
 
 # ── Connection + identity ────────────────────────────────────────────────
@@ -77,7 +78,6 @@ MCP_CLIENT_ID = os.environ.get("EMPTYOS_MCP_CLIENT_ID", "default") or "default"
 # read network.auth_token from emptyos.toml. Empty when auth isn't required.
 _auth_token_cache: str | None = None
 
-PROTOCOL_VERSION = "2024-11-05"
 SERVER_INFO = {"name": "emptyos-foundry", "version": "1.0.0"}
 
 # ── Flag (dark default) ──────────────────────────────────────────────────

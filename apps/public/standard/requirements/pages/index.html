@@ -1,0 +1,233 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Requirements</title>
+<link rel="stylesheet" href="/static/theme.css">
+<link rel="stylesheet" href="/static/eos-components.css">
+<link rel="stylesheet" href="/static/eos-keys.css">
+<style>
+  .req-toolbar { display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin:14px 0; }
+  .req-toolbar select { padding:6px 10px; border-radius:8px; border:1px solid var(--border);
+                        background:var(--surface); color:var(--text); }
+  .req-toolbar .spacer { flex:1; }
+  table.req-table { width:100%; border-collapse:collapse; }
+  table.req-table th, table.req-table td { text-align:left; padding:9px 12px;
+    border-bottom:1px solid var(--border); font-size:14px; }
+  table.req-table th { color:var(--text-muted); font-weight:600; font-size:12px;
+    text-transform:uppercase; letter-spacing:.03em; }
+  table.req-table tr.req-row { cursor:pointer; }
+  table.req-table tr.req-row:hover { background:var(--bg-card-hover); }
+  .req-id { font-family:var(--mono, monospace); color:var(--text-muted); white-space:nowrap; }
+  .req-detail-field { margin:14px 0; }
+  .req-detail-field .lbl { font-size:12px; text-transform:uppercase; letter-spacing:.03em;
+    color:var(--text-muted); margin-bottom:5px; }
+  .req-ref { display:inline-flex; gap:6px; align-items:center; margin:3px 6px 3px 0;
+    padding:4px 9px; border-radius:8px; border:1px solid var(--border); background:var(--surface); }
+  .req-ref.matched { border-color:var(--green); }
+  .req-ref a { color:var(--accent); text-decoration:none; }
+  .req-statement { white-space:pre-wrap; line-height:1.55; }
+</style>
+</head>
+<body>
+<div class="app-shell">
+  <header class="app-header">
+    <h1>📋 Requirements</h1>
+  </header>
+  <main id="main" class="app-main">
+    <div class="req-toolbar">
+      <label>Project
+        <select id="f-project" onchange="load()"><option value="">All</option></select>
+      </label>
+      <label>Status
+        <select id="f-status" onchange="load()"><option value="">All</option></select>
+      </label>
+      <div class="spacer"></div>
+      <button class="eos-btn eos-btn-primary" onclick="openAdd()">+ Requirement</button>
+    </div>
+    <div id="list"></div>
+  </main>
+</div>
+
+<script src="/static/eos.js"></script>
+<script src="/static/eos-components.js"></script>
+<script src="/static/eos-keys.js"></script>
+<script>
+var STATE = { items: [], projects: [], statuses: [], priorities: [], filtersReady: false };
+var STATUS_MAP = { proposed:'draft', approved:'active', verified:'pass', superseded:'archived' };
+
+function esc(s){ return EOS_UI.esc(s == null ? '' : String(s)); }
+
+function statusBadge(status){
+  var v = EOS_UI.statusVariant(status, STATUS_MAP);
+  return '<span class="eos-badge eos-badge-' + v + '">' + esc(status) + '</span>';
+}
+
+function fillFilters(){
+  if (STATE.filtersReady) return;
+  var ps = document.getElementById('f-project');
+  STATE.projects.forEach(function(p){
+    var o = document.createElement('option'); o.value = p; o.textContent = p; ps.appendChild(o);
+  });
+  var ss = document.getElementById('f-status');
+  STATE.statuses.forEach(function(s){
+    var o = document.createElement('option'); o.value = s; o.textContent = s; ss.appendChild(o);
+  });
+  STATE.filtersReady = true;
+}
+
+function render(){
+  var el = document.getElementById('list');
+  if (!STATE.items.length){
+    el.innerHTML = EOS_UI.emptyState({
+      icon: '📋', title: 'No requirements yet',
+      body: 'Capture the first requirement for a project.',
+    });
+    return;
+  }
+  var rows = STATE.items.map(function(r){
+    return '<tr class="req-row" data-rid="' + escAttr(r.id) + '">' +
+      '<td class="req-id">' + esc(r.req_id) + '</td>' +
+      '<td>' + esc(r.title) + '</td>' +
+      '<td>' + esc(r.project) + '</td>' +
+      '<td>' + statusBadge(r.status) + '</td>' +
+      '<td>' + esc(r.priority) + '</td>' +
+      '<td>' + esc(r.references) + '</td>' +
+    '</tr>';
+  }).join('');
+  el.innerHTML = '<table class="req-table"><thead><tr>' +
+    '<th>ID</th><th>Requirement</th><th>Project</th><th>Status</th>' +
+    '<th>Priority</th><th>Traces to</th></tr></thead><tbody>' + rows + '</tbody></table>';
+}
+
+// Delegated row click — the id lives in data-rid (read back as a plain string,
+// never re-evaluated as JS), so a project/id containing a quote can't inject.
+document.getElementById('list').addEventListener('click', function(ev){
+  var tr = ev.target.closest('tr.req-row');
+  if (tr && tr.dataset.rid) _route.set(tr.dataset.rid);
+});
+
+async function load(){
+  var project = document.getElementById('f-project').value || '';
+  var status = document.getElementById('f-status').value || '';
+  var qs = '?project=' + encodeURIComponent(project) + '&status=' + encodeURIComponent(status);
+  var data = await EOS.apiSafe('/requirements/api/items' + qs);
+  if (data && !data.error){
+    STATE.items = data.items || [];
+    STATE.projects = data.projects || [];
+    STATE.statuses = data.statuses || [];
+    STATE.priorities = data.priorities || [];
+    fillFilters();
+    render();
+  }
+}
+
+function openAdd(){
+  EOS_UI.formModal('New Requirement', [
+    { key:'statement', label:'Requirement statement', type:'textarea', placeholder:'The system shall…' },
+    { key:'project', label:'Project', type:'text', value:'inbox' },
+    { key:'priority', label:'Priority', type:'select', options:(STATE.priorities.length ? STATE.priorities : ['must','should','could']) },
+    { key:'references', label:'Traces to (standard clauses, comma-separated)', type:'text', placeholder:'IEC 60287-1-1 §2, AS/NZS 3008' },
+  ], async function(vals){
+    if (!vals.statement || !vals.statement.trim()){ EOS_UI.toast('Statement is required', 'warn'); return; }
+    var res = await EOS.apiSafe('/requirements/api/items', { method:'POST', body: JSON.stringify(vals) });
+    if (res && res.error){ EOS_UI.toast(res.error, 'error'); return; }
+    EOS_UI.toast('Requirement ' + (res.req_id || '') + ' created', 'success');
+    await load();
+    if (res && res.id) _route.set(res.id);
+  });
+}
+
+// ── detail (hash-routed) ──────────────────────────────────────────────
+var _route = EOS_UI.hashRoute({
+  onShow: function(id){ showDetail(id); },
+  onHide: function(){ EOS_UI.closeModal(); },
+});
+
+// The currently-open requirement. Detail-modal handlers read from this instead
+// of embedding ids/references into inline onclick strings — no user data ever
+// crosses into a JS-string context (XSS-safe).
+var _currentDetail = null;
+
+async function showDetail(id){
+  var d = await EOS.apiSafe('/requirements/api/requirements/' + encodeURIComponent(id));
+  if (!d || d.error){ EOS_UI.toast((d && d.error) || 'Not found', 'error'); _route.clear(); return; }
+  _currentDetail = d;
+
+  var refs = (d.resolved_references || []).map(function(r){
+    var inner = r.matched && r.slug
+      ? '<a href="/kb/?slug=' + escAttr(r.slug) + '" target="_blank" rel="noopener">' + esc(r.reference) + '</a>'
+      : esc(r.reference) + ' <span style="color:var(--text-muted)">(unresolved)</span>';
+    return '<span class="req-ref' + (r.matched ? ' matched' : '') + '">' + inner + '</span>';
+  }).join('') || '<span style="color:var(--text-muted)">— none —</span>';
+
+  var statusOpts = STATE.statuses.map(function(s){
+    return '<option value="' + escAttr(s) + '"' + (s === d.status ? ' selected' : '') + '>' + esc(s) + '</option>';
+  }).join('');
+
+  var body = '';
+  body += '<div class="req-detail-field"><div class="lbl">Statement</div>' +
+          '<div class="req-statement">' + esc(d.statement || d.title) + '</div></div>';
+  body += '<div class="req-detail-field"><div class="lbl">Status</div>' +
+          '<select id="d-status" onchange="setStatus()" ' +
+          'style="padding:6px 10px;border-radius:8px;border:1px solid var(--border);background:var(--surface);color:var(--text)">' +
+          statusOpts + '</select> &nbsp; ' + statusBadge(d.status) + '</div>';
+  body += '<div class="req-detail-field"><div class="lbl">Traces to (standards)</div>' + refs + '</div>';
+  body += '<div class="req-detail-field"><div class="lbl">Verification</div>' +
+          '<div>' + (d.verified_by ? esc(d.verified_by) : '<span style="color:var(--text-muted)">no evidence linked</span>') +
+          '</div>' + (d.last_verified ? '<div style="color:var(--text-muted);font-size:12px;margin-top:4px">last verified ' + esc(d.last_verified) + '</div>' : '') +
+          '<button class="eos-btn eos-btn-sm" style="margin-top:8px" onclick="verify()">Verify</button></div>';
+  if (d._vault_path){
+    body += '<div class="req-detail-field"><div class="lbl">Note</div>' + EOS.noteActions(d._vault_path) + '</div>';
+  }
+  body += '<div class="req-detail-field"><div class="lbl">Impact</div>' +
+          '<div id="impact-slot"><button class="eos-btn eos-btn-sm" onclick="loadImpact()">Show co-requirements per clause</button></div></div>';
+
+  EOS_UI.modal({
+    title: esc(d.req_id + ' · ' + d.project),
+    body: '<div data-entity-path="' + escAttr(d._vault_path || '') + '">' + body + '</div>',
+    onClose: function(){ _route.clear(); },
+  });
+}
+
+async function setStatus(){
+  var d = _currentDetail; if (!d) return;
+  var value = document.getElementById('d-status').value;
+  var res = await EOS.apiSafe('/requirements/api/requirements/' + encodeURIComponent(d.id) + '/field',
+    { method:'POST', body: JSON.stringify({ field:'status', value: value }) });
+  if (res && res.error){ EOS_UI.toast(res.error, 'error'); return; }
+  EOS_UI.toast('Status → ' + value, 'success');
+  await load();
+  showDetail(d.id);
+}
+
+async function verify(){
+  var d = _currentDetail; if (!d) return;
+  var res = await EOS.apiSafe('/requirements/api/requirements/' + encodeURIComponent(d.id) + '/verify',
+    { method:'POST', body: '{}' });
+  if (!res){ return; }
+  if (res.mode === 'manual'){ EOS_UI.toast(res.message, 'warn'); return; }
+  if (res.error){ EOS_UI.toast('Verify failed: ' + res.error, 'error'); return; }
+  EOS_UI.toast(res.passed ? 'Verified ✓ (' + res.case + ')' : 'Conformance FAILED (' + res.case + ')',
+               res.passed ? 'success' : 'error');
+  await load();
+  showDetail(d.id);
+}
+
+async function loadImpact(){
+  var d = _currentDetail; if (!d) return;
+  var first = (d.references || '').split(',')[0].trim();
+  if (!first){ EOS_UI.toast('This requirement traces to no clause', 'warn'); return; }
+  var data = await EOS.apiSafe('/requirements/api/impact?reference=' + encodeURIComponent(first));
+  var slot = document.getElementById('impact-slot');
+  if (!data || data.error || !data.requirements){ slot.innerHTML = '<span style="color:var(--text-muted)">no data</span>'; return; }
+  var list = data.requirements.map(function(r){
+    return '<div style="padding:4px 0">' + esc(r.req_id) + ' · ' + esc(r.project) + ' — ' + esc(r.title) + '</div>';
+  }).join('') || '<span style="color:var(--text-muted)">only this one</span>';
+  slot.innerHTML = '<div style="font-size:12px;color:var(--text-muted);margin-bottom:4px">Requirements tracing to <b>' + esc(first) + '</b>:</div>' + list;
+}
+
+load().then(function(){ _route && _route.init && _route.init(); });
+</script>
+</body>
+</html>

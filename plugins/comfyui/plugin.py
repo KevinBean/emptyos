@@ -1,7 +1,7 @@
-"""ComfyUI plugin — GPU image generation.
+"""ComfyUI plugin — local GPU media generation.
 
-Connects to ComfyUI server for image generation workflows.
-Also registers as a 'draw' capability provider.
+Connects to ComfyUI for image, video, depth, and audio workflows.
+Also registers ``draw`` and ``animate`` capability providers.
 
 Absorbed from AI Phone Agent's comfyui_api.py — supports FLUX, SDXL, SD1.5
 checkpoints, LoRA, style presets with per-style params, GPU memory freeing.
@@ -11,6 +11,9 @@ from __future__ import annotations
 
 import json
 import random
+import re
+import time
+from contextlib import asynccontextmanager
 
 import aiohttp
 
@@ -88,15 +91,51 @@ STYLE_PRESETS = {
         "prefix": "",
         "suffix": ", minimalist, clean, simple shapes, flat design, modern",
     },
+    # FLUX.2 Klein — the `is_flux2` marker routes _build_workflow down the
+    # UNETLoader graph (see _build_flux2_workflow). 4B is Apache-2.0 (commercial-
+    # safe); 9B is the FLUX Non-Commercial License (personal / best quality).
+    # Both are guidance-distilled → few steps, no negative channel. Encoders are
+    # NOT interchangeable: 4B pairs with qwen_3_4b, 9B with qwen_3_8b.
+    "klein-4b": {
+        "label": "Klein 4B (commercial)",
+        "is_flux2": True,
+        "unet": "flux-2-klein-4b-fp8.safetensors",
+        "clip": "qwen_3_4b.safetensors",
+        "sampler": "euler",
+        "steps": 6,
+    },
+    "klein-9b": {
+        "label": "Klein 9B (best, non-commercial)",
+        "is_flux2": True,
+        "unet": "flux-2-klein-9b-fp8.safetensors",
+        "clip": "qwen_3_8b_fp8mixed.safetensors",
+        "sampler": "euler",
+        "steps": 8,
+    },
 }
+
+# Appended to a FLUX.2 prompt when a text overlay is requested, so the model
+# leaves clean space for the real DrawText+ layer instead of baking in (usually
+# misspelled) letters — the distilled Klein models associate "brand"/"poster"
+# with text and hallucinate gibberish otherwise.
+FLUX2_TEXT_FREE_SUFFIX = (
+    ", clean composition, generous negative space, no text, no letters, no words"
+)
 
 
 class ComfyUIPlugin(BasePlugin):
     name = "comfyui"
 
+    # How long a failed reachability probe suppresses the next one. Short
+    # enough that a ComfyUI started after the daemon is picked up almost
+    # immediately; long enough that a batch render against a dead server does
+    # not pay a 3s timeout per image. See `available()`.
+    _UNAVAILABLE_TTL = 10.0
+
     def __init__(self, kernel, manifest):
         super().__init__(kernel, manifest)
         self._session = None
+        self._unavailable_until = 0.0
 
     def _host(self) -> str:
         return self.config("host", "http://localhost:8188")
@@ -104,11 +143,43 @@ class ComfyUIPlugin(BasePlugin):
     async def connect(self):
         self._session = aiohttp.ClientSession()
         self._draw_registered = False
+        # Register UNCONDITIONALLY. Registration only declares that this plugin
+        # *can* draw/animate; the capability chain calls `available()` before
+        # executing and skips a provider that says no
+        # (`emptyos/capabilities/__init__.py`), so an unreachable ComfyUI
+        # behaves exactly as before — the chain falls through.
+        #
+        # Gating registration on boot-time reachability instead made local GPU
+        # generation depend on a race: ComfyUI usually starts *after* EmptyOS,
+        # so the providers were never registered and every `self.draw()` went to
+        # the paid cloud fallback with the GPU idle. `ensure_available()` was
+        # the workaround, but only 4 of 10 draw-calling apps remembered it —
+        # app-gen, explore, kb, ppt, reader and scroll all silently billed
+        # OpenAI. Observed live on 2026-07-28 with ComfyUI up and healthy.
+        self._register_draw()
         if await self.available():
-            self._register_draw()
             print(f"[ComfyUI] Connected to {self._host()}")
         else:
-            print(f"[ComfyUI] Not reachable at {self._host()} (use ensure_available to auto-start)")
+            # NOT a fallback announcement. Since registration became
+            # unconditional (2026-07-28) the providers are in the chain either
+            # way and `available()` is re-checked per call, so a ComfyUI that
+            # finishes booting a minute later simply starts serving — no app
+            # action, no cloud spend. The old wording ("draw/animate fall
+            # through to the cloud until it answers") described the pre-fix
+            # behaviour and read as an active money leak long after it stopped
+            # being one; it ranked on the syslog board for a week on that basis.
+            #
+            # Info, not warn: ComfyUI normally starts *after* EmptyOS, so this
+            # is the expected boot ordering rather than a fault. A call that
+            # genuinely lands while it is still down falls through to a cloud
+            # provider, and that path has its own consent gate (CLAUDE.md
+            # rule 18) — which is where spend should be refused, not here.
+            msg = (
+                f"not up yet at {self._host()} — providers are registered and "
+                f"will serve as soon as it answers"
+            )
+            print(f"[ComfyUI] {msg}")
+            self.kernel.syslog.info("comfyui", msg)
 
     def _register_draw(self):
         if self._draw_registered:
@@ -119,6 +190,18 @@ class ComfyUIPlugin(BasePlugin):
 
         class ComfyUIDrawProvider(Provider):
             name = "comfyui"
+
+            # Without these, is_cloud read `bool("") and ...` -> always False,
+            # so a ComfyUI pointed at a rented/public box was silently treated
+            # as local and never hit the consent gate. Properties, not class
+            # attrs, so they track a config change instead of freezing at boot.
+            @property
+            def host(self) -> str:
+                return plugin._host()
+
+            @property
+            def trust(self) -> str:
+                return plugin.config("trust", "")
 
             async def available(self) -> bool:
                 return await plugin.available()
@@ -160,6 +243,14 @@ class ComfyUIPlugin(BasePlugin):
 
         class ComfyUIAnimateProvider(Provider):
             name = "comfyui-ltx"
+
+            @property
+            def host(self) -> str:
+                return plugin._host()
+
+            @property
+            def trust(self) -> str:
+                return plugin.config("trust", "")
 
             async def available(self) -> bool:
                 # ComfyUI uptime = animate is possible. Workflow availability
@@ -207,10 +298,23 @@ class ComfyUIPlugin(BasePlugin):
                     prompt=prompt,
                     image_filename=image,
                     num_frames=num_frames,
+                    seed=int(kwargs.get("seed", 0) or 0),
                     width=int(kwargs.get("width", 768)),
                     height=int(kwargs.get("height", 432)),
+                    negative_prompt=str(kwargs.get("negative_prompt", "")),
+                    workflow_snapshot_path=(
+                        str(Path(dest).with_suffix(".workflow-api.json"))
+                        if dest
+                        else ""
+                    ),
                 )
                 if not filename:
+                    plugin.kernel.syslog.error(
+                        "comfyui",
+                        f"animate({workflow}) got no filename back from "
+                        f"generate_from_workflow — the render may have "
+                        f"succeeded; check ComfyUI's output directory",
+                    )
                     return ""
                 if dest:
                     dest_path = Path(dest)
@@ -244,15 +348,31 @@ class ComfyUIPlugin(BasePlugin):
         # Read the bat to find the actual python command, run it directly (no extra window)
         python_exe = str(launcher_path.parent / "python_embeded" / "python.exe")
         main_py = str(launcher_path.parent / "ComfyUI" / "main.py")
+        # Not the per-prompt timings — ComfyUI logs those itself to
+        # ComfyUI/user/comfyui.log. What only exists here is whatever the process
+        # writes before that logger initialises, or as it dies: a bad custom node,
+        # a CUDA load failure, a traceback. DEVNULL discarded exactly the output
+        # that explains an unattended revival, which is the one launch nobody
+        # watched. Binary append — the handle is only ever a subprocess fd.
+        log_path = Path(launcher_dir) / "comfyui.log"
+        try:
+            log_handle = log_path.open("ab")
+        except OSError:
+            log_handle = None
         try:
             # Fire-and-forget headless launch — Popen returns immediately.
             subprocess.Popen(  # noqa: ASYNC220
                 [python_exe, "-s", main_py, "--windows-standalone-build"],
                 cwd=launcher_dir,
                 creationflags=subprocess.CREATE_NO_WINDOW,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
+                stdout=log_handle or subprocess.DEVNULL,
+                stderr=subprocess.STDOUT if log_handle else subprocess.DEVNULL,
             )
+            # The child holds its own inherited descriptor; keeping the parent's
+            # copy open would pin the file in the daemon for the whole 60s wait.
+            if log_handle is not None:
+                log_handle.close()
+                log_handle = None
             print("[ComfyUI] Starting...")
             for _ in range(30):  # wait up to 60s
                 await asyncio.sleep(2)
@@ -263,13 +383,28 @@ class ComfyUIPlugin(BasePlugin):
             print("[ComfyUI] Timed out waiting for startup")
         except Exception as e:
             print(f"[ComfyUI] Failed to start: {e}")
+        finally:
+            if log_handle is not None:
+                log_handle.close()
         return False
 
     async def ensure_available(self) -> bool:
-        """Check if ComfyUI is running, auto-start if not."""
+        """Check if ComfyUI is running, auto-start if not.
+
+        Re-registers **every** provider this plugin owns, not just ``draw``.
+        ComfyUI usually finishes booting after EmptyOS, and ``connect()`` only
+        registers providers it could reach at the time — so a lost race leaves
+        the capability empty. Healing ``draw`` alone meant an app guarding with
+        this call still hit "No available provider for capability 'animate'"
+        (measured 2026-07-25: a 20-scene MV render generated all its stills via
+        the plugin *service*, then failed the whole clips stage on the missing
+        *capability*). Both registrars are idempotent.
+        """
         if await self.available():
             if not self._draw_registered:
                 self._register_draw()
+            if not getattr(self, "_animate_registered", False):
+                self._register_animate()
             return True
         return await self.auto_start()
 
@@ -282,17 +417,109 @@ class ComfyUIPlugin(BasePlugin):
             self._session = None
 
     async def available(self) -> bool:
+        """Live reachability probe, with a short NEGATIVE cache.
+
+        The providers are now registered unconditionally at connect(), so this
+        runs on every draw/animate resolution rather than once at boot. When
+        ComfyUI is up the probe is milliseconds and the cache is irrelevant —
+        a True is never cached, so a server that dies mid-run is noticed on the
+        next call. When it is *down*, though, each call would otherwise wait out
+        the full 3s timeout before the chain falls through: 20 stills = a minute
+        of dead waiting. Caching only the False bounds that to one probe per
+        window while keeping recovery fast — a ComfyUI that comes up is picked
+        up within `_UNAVAILABLE_TTL` seconds.
+        """
+        now = time.monotonic()
+        cached = getattr(self, "_unavailable_until", 0.0)
+        if now < cached:
+            return False
         try:
             async with self._session.get(
                 f"{self._host()}/system_stats",
                 timeout=aiohttp.ClientTimeout(total=3),
             ) as resp:
-                return resp.status == 200
+                ok = resp.status == 200
         except Exception:
-            return False
+            ok = False
+        if not ok:
+            self._unavailable_until = now + self._UNAVAILABLE_TTL
+        return ok
 
     async def health_check(self) -> bool:
         return await self.available()
+
+    @staticmethod
+    def _version_tuple(value: object) -> tuple[int, ...]:
+        """Return a comparison tuple for ComfyUI's numeric release versions."""
+        parts = re.findall(r"\d+", str(value or ""))
+        return tuple(int(part) for part in parts[:3])
+
+    async def _ensure_runtime_compatible(self) -> None:
+        """Reject a reachable but half-migrated ComfyUI before queueing work.
+
+        Newer ComfyUI releases report each required companion package alongside
+        the version actually imported by the server. A core-only checkout can
+        still bind the port while loading stale or malformed packages; treating
+        that as healthy wastes an entire render before the incompatibility
+        surfaces. Older servers omit this telemetry, so package checking is
+        naturally backward-compatible unless ``minimum_version`` is configured.
+        """
+        if not self.config("feature.runtime-compatibility.enabled", True):
+            return
+        now = time.monotonic()
+        cached = getattr(self, "_runtime_compatibility_cache", None)
+        if cached and now - cached[0] < 30.0:
+            if cached[1]:
+                raise RuntimeError(cached[1])
+            return
+
+        problem = ""
+        try:
+            async with self._session.get(
+                f"{self._host()}/system_stats",
+                timeout=aiohttp.ClientTimeout(total=5),
+            ) as resp:
+                if resp.status != 200:
+                    return
+                payload = await resp.json()
+            system = payload.get("system") or {}
+            current = str(system.get("comfyui_version") or "")
+            minimum = str(self.config("minimum_version", "") or "")
+            if (
+                minimum
+                and self._version_tuple(current)
+                and self._version_tuple(current) < self._version_tuple(minimum)
+            ):
+                problem = (
+                    f"ComfyUI {current} is below configured minimum {minimum}"
+                )
+            mismatches = []
+            for item in system.get("comfy_package_versions") or []:
+                required = item.get("required")
+                installed = item.get("installed")
+                if required and installed != required:
+                    mismatches.append(
+                        f"{item.get('name', '?')}={installed!r} "
+                        f"(required {required})"
+                    )
+            if mismatches:
+                problem = (
+                    "ComfyUI runtime package mismatch: "
+                    + ", ".join(mismatches)
+                )
+        except RuntimeError:
+            raise
+        except Exception as exc:
+            # Reachability and prompt submission retain their existing failure
+            # behaviour. This gate only hard-fails facts the server did report.
+            self.kernel.syslog.warning(
+                "comfyui", f"runtime compatibility check skipped: {exc}",
+            )
+            return
+
+        self._runtime_compatibility_cache = (now, problem)
+        if problem:
+            raise RuntimeError(problem)
 
     async def get_models(self) -> list[str]:
         try:
@@ -309,8 +536,53 @@ class ComfyUIPlugin(BasePlugin):
         except Exception:
             return []
 
+    #: Outputs are saved into ``<prefix>/<YYYY-MM>/`` subfolders so ComfyUI's
+    #: output dir self-organizes by month instead of accumulating thousands of
+    #: files flat (it reached 6k files / 6.3 GiB before the 2026-07 cleanup).
+    #:
+    #: Uses ``%year%-%month%``, NOT the ``%date:yyyy-MM%`` form seen in some
+    #: ComfyUI docs/custom nodes: ``folder_paths.compute_vars`` in this build
+    #: only substitutes %year%/%month%/%day%/%hour%/%minute%/%second%/%width%/
+    #: %height%. An unrecognised token survives verbatim into the subfolder
+    #: name, and ``%date:...%`` contains a colon — illegal in a Windows path —
+    #: so it would fail every save rather than degrade. Verify against
+    #: ``ComfyUI/folder_paths.py`` before adding a token here.
+    @staticmethod
+    def _dated_prefix(stem: str) -> str:
+        return f"{stem}/%year%-%month%/{stem}"
+
+    @staticmethod
+    def _item_path(item: dict | None) -> str:
+        """Flatten a ComfyUI output item to one ``subfolder/filename`` string.
+
+        Callers (and every app consuming this plugin) pass that string straight
+        back into :meth:`download_image` / :meth:`get_image_url`, which split it
+        again — so the single-string return contract survives subfoldering.
+        """
+        if not item:
+            return ""
+        name = item.get("filename", "")
+        # ComfyUI reports the subfolder with the OS separator (``eos\2026-07`` on
+        # Windows); normalise so the returned string uses one separator and
+        # ``_view_params`` can split it unambiguously.
+        sub = (item.get("subfolder", "") or "").replace("\\", "/").strip("/")
+        return f"{sub}/{name}" if sub and name else name
+
+    @staticmethod
+    def _view_params(filename: str) -> dict:
+        """Split ``subfolder/name.png`` into ComfyUI /view query params.
+
+        ``/view`` matches on basename and takes ``subfolder`` separately; sending
+        the joined path as ``filename`` 404s, which would silently break every
+        download once outputs live in subfolders.
+        """
+        sub, _, name = filename.rpartition("/")
+        return {"filename": name, "subfolder": sub} if sub else {"filename": name}
+
     async def get_image_url(self, filename: str) -> str:
-        return f"{self._host()}/view?filename={filename}"
+        from urllib.parse import urlencode
+
+        return f"{self._host()}/view?{urlencode(self._view_params(filename))}"
 
     async def generate_video(
         self,
@@ -338,11 +610,15 @@ class ComfyUIPlugin(BasePlugin):
         post_timeout: int = 300,
         max_polls: int = 120,
         poll_interval: float = 1.5,
+        live_grace_polls: int = 0,
     ) -> dict | None:
         """Queue a workflow on ComfyUI (/prompt) and poll /history until an
         output under one of ``output_keys`` appears. Returns the first matching
         output item (a dict carrying filename/subfolder/type), or None on prompt
-        rejection / no-output / timeout.
+        rejection / no-output / timeout. After the nominal timeout, an optional
+        grace window continues only while ComfyUI still reports this exact
+        prompt as running or pending. This distinguishes a slow live diffusion
+        job from a dead request without extending every failure path.
 
         Exceptions PROPAGATE — each caller keeps its own try/except so it can
         choose raise-vs-return-"" on failure (image gen raises to trigger the
@@ -359,19 +635,104 @@ class ComfyUIPlugin(BasePlugin):
             data = await resp.json()
             prompt_id = data.get("prompt_id", "")
         if not prompt_id:
+            self.kernel.syslog.error(
+                "comfyui",
+                f"/prompt rejected the workflow (no prompt_id) — {str(data)[:200]}",
+            )
             return None
-        for _ in range(max_polls):
+        base_polls = max(1, int(max_polls))
+        grace_polls = max(0, int(live_grace_polls))
+        total_polls = base_polls + grace_polls
+        empty_finished = 0
+        for poll_index in range(total_polls):
             await asyncio.sleep(poll_interval)
             async with self._session.get(f"{self._host()}/history/{prompt_id}") as resp:
                 history = await resp.json()
             if prompt_id in history:
-                outputs = history[prompt_id].get("outputs", {})
+                entry = history[prompt_id] or {}
+                outputs = entry.get("outputs", {})
                 for _node_id, output in outputs.items():
                     for key in output_keys:
                         items = output.get(key) or []
                         if items:
                             return items[0]
-                return None  # history present, no matching output
+                # A history entry can exist a moment before its outputs are
+                # attached, so "present but empty" is not proof of failure —
+                # giving up here threw away three completed Wan renders on
+                # 2026-07-28 (09:31, 13:33, 21:30), each ~5 GPU-minutes, each
+                # exactly one second after ComfyUI reported execution_success
+                # with a valid ~1MB mp4 on disk. Only stop once the entry says
+                # it is finished; otherwise keep polling within the budget.
+                status = entry.get("status") or {}
+                finished = bool(status.get("completed")) or str(
+                    status.get("status_str") or "",
+                ).lower() in {"success", "error"}
+                if finished and outputs:
+                    self.kernel.syslog.error(
+                        "comfyui",
+                        f"prompt {prompt_id} finished with outputs "
+                        f"{ {k: list(v.keys()) for k, v in outputs.items()} } "
+                        f"but none under {output_keys}",
+                    )
+                    return None  # genuinely done, nothing we can use
+                if finished:
+                    empty_finished += 1
+                    if empty_finished > 20:
+                        self.kernel.syslog.error(
+                            "comfyui",
+                            f"prompt {prompt_id} reported finished but never "
+                            f"attached an output under {output_keys} — check "
+                            f"ComfyUI's output directory before assuming OOM",
+                        )
+                        return None
+                continue
+            if (
+                grace_polls
+                and poll_index + 1 >= base_polls
+                and (
+                    poll_index + 1 == base_polls
+                    or (poll_index + 1 - base_polls) % 10 == 0
+                )
+            ):
+                try:
+                    async with self._session.get(
+                        f"{self._host()}/queue",
+                        timeout=aiohttp.ClientTimeout(total=5),
+                    ) as resp:
+                        queue = await resp.json()
+                    entries = (
+                        list(queue.get("queue_running") or [])
+                        + list(queue.get("queue_pending") or [])
+                    )
+                    is_live = any(
+                        isinstance(entry, (list, tuple))
+                        and len(entry) > 1
+                        and entry[1] == prompt_id
+                        for entry in entries
+                    )
+                    if not is_live:
+                        self.kernel.syslog.error(
+                            "comfyui",
+                            f"prompt {prompt_id} left the queue without a "
+                            f"usable output under {output_keys} — check "
+                            f"ComfyUI's output directory before assuming OOM",
+                        )
+                        return None
+                    if poll_index + 1 == base_polls:
+                        self.kernel.syslog.info(
+                            "comfyui",
+                            f"prompt {prompt_id} exceeded nominal poll window; "
+                            "continuing while ComfyUI reports it live",
+                        )
+                except Exception:
+                    # Queue telemetry is advisory. A transient /queue failure
+                    # must not turn a healthy long render into a false timeout.
+                    pass
+        self.kernel.syslog.error(
+            "comfyui",
+            f"prompt {prompt_id} gave up after {total_polls} polls "
+            f"(~{total_polls * poll_interval:.0f}s) without a usable output",
+        )
         return None  # timed out
 
     async def generate_from_workflow(
@@ -383,17 +744,23 @@ class ComfyUIPlugin(BasePlugin):
         seed: int = 0,
         width: int = 768,
         height: int = 432,
+        negative_prompt: str = "",
         template_path: str = "",
+        workflow_snapshot_path: str = "",
+        substitutions: dict | None = None,
+        output_keys: tuple[str, ...] | None = None,
+        preflight_kind: str = "",
     ) -> str:
         """Run any ComfyUI workflow from a JSON template, with placeholder
         substitution. Used for image-to-video (LTX-2 / Wan / SVD), depth
-        parallax, and anything else that fits the "image in, mp4 out" shape.
+        parallax, and ACE-Step audio generation.
 
         Resolves the template path from ``[plugins.comfyui] {workflow_key}_workflow``
         unless ``template_path`` is given. Any string value in the JSON
         containing ``{prompt}`` / ``{image}`` / ``{seed}`` / ``{frames}`` is
-        substituted. Returns the first video/gif/image filename produced,
-        or "" on failure.
+        substituted. ``substitutions`` adds typed placeholders for workflow-
+        specific values such as ``{duration}`` and ``{style}``. Returns the
+        first matching output filename, or "" on failure.
         """
         import copy
         from pathlib import Path
@@ -401,6 +768,16 @@ class ComfyUIPlugin(BasePlugin):
         path_str = template_path or self.config(f"{workflow_key}_workflow", "")
         if not path_str:
             return ""
+
+        await self._ensure_runtime_compatible()
+
+        # Keep inference type explicit when a workflow is not visual. The
+        # fallback preserves the historical depth/video behaviour.
+        await self._preflight(
+            preflight_kind
+            or ("depth" if workflow_key == "depth" else "video")
+        )
+
         tmpl_path = Path(path_str)
         if not tmpl_path.is_absolute():
             tmpl_path = Path(self.kernel.config.path).parent / tmpl_path
@@ -421,37 +798,55 @@ class ComfyUIPlugin(BasePlugin):
         # treats every top-level entry as a node and rejects unknowns.
         workflow = {k: v for k, v in workflow.items() if not k.startswith("_")}
 
+        placeholders = {
+            "prompt": prompt,
+            "negative_prompt": negative_prompt,
+            "image": image_filename,
+            "seed": int(seed),
+            "frames": int(num_frames),
+            "width": int(width),
+            "height": int(height),
+        }
+        placeholders.update(substitutions or {})
+
         def _sub(node):
             if isinstance(node, dict):
                 return {k: _sub(v) for k, v in node.items()}
             if isinstance(node, list):
                 return [_sub(x) for x in node]
             if isinstance(node, str):
-                # Numeric placeholders ({seed}, {frames}) often appear as a
-                # JSON *string* — `"length": "{frames}"` — because raw JSON
-                # can't write a bare integer as a placeholder. If the entire
-                # string is one of those, return the int directly so ComfyUI
-                # gets the type it expects (LTX scheduler refuses string
-                # values where it wants ints).
-                if node == "{seed}":
-                    return int(seed)
-                if node == "{frames}":
-                    return int(num_frames)
-                if node == "{width}":
-                    return int(width)
-                if node == "{height}":
-                    return int(height)
-                return (
-                    node.replace("{prompt}", prompt)
-                    .replace("{image}", image_filename)
-                    .replace("{seed}", str(seed))
-                    .replace("{frames}", str(num_frames))
-                    .replace("{width}", str(width))
-                    .replace("{height}", str(height))
-                )
+                # A whole-value placeholder retains its JSON type. This is
+                # load-bearing for numeric ComfyUI inputs: `"duration":
+                # "{duration}"` must become a float, not the string "30.0".
+                if node.startswith("{") and node.endswith("}"):
+                    key = node[1:-1]
+                    if key in placeholders:
+                        return placeholders[key]
+                rendered = node
+                for key, value in placeholders.items():
+                    rendered = rendered.replace(
+                        "{" + key + "}", str(value),
+                    )
+                return rendered
             return node
 
         workflow = _sub(copy.deepcopy(workflow))
+        if workflow_snapshot_path:
+            snapshot = Path(workflow_snapshot_path)
+            try:
+                snapshot.parent.mkdir(parents=True, exist_ok=True)
+                snapshot.write_text(
+                    json.dumps(workflow, ensure_ascii=False, indent=2),
+                    encoding="utf-8",
+                )
+            except Exception as e:
+                # A missing diagnostic snapshot must not discard an expensive
+                # render. The video remains authoritative; syslog records the
+                # observability gap.
+                self.kernel.syslog.warning(
+                    "comfyui",
+                    f"workflow snapshot failed for {snapshot}: {e}",
+                )
 
         try:
             self.kernel.syslog.info(
@@ -460,13 +855,62 @@ class ComfyUIPlugin(BasePlugin):
                 data={"frames": num_frames, "image": image_filename},
             )
             item = await self._submit_and_poll(
-                workflow, output_keys=("videos", "gifs", "images"),
-                post_timeout=600, max_polls=400,
+                workflow,
+                output_keys=output_keys or ("videos", "gifs", "images"),
+                post_timeout=600, max_polls=400, live_grace_polls=800,
             )
-            return item.get("filename", "") if item else ""
+            return self._item_path(item)
         except Exception as e:
             self.kernel.syslog.error("comfyui", f"video generate failed: {e}")
             return ""
+
+    async def generate_music(
+        self,
+        prompt: str,
+        *,
+        style: str = "",
+        duration: float = 30.0,
+        lyrics: str = "",
+        language: str = "en",
+        bpm: int = 120,
+        seed: int = 0,
+        dest: str = "",
+    ) -> str:
+        """Generate ACE-Step 1.5 audio and optionally download it locally.
+
+        The exact API workflow lives in ``music_workflow`` rather than being
+        assembled ad hoc in Music Studio. A zero seed preserves the service's
+        historical random-by-default convention.
+        """
+        from pathlib import Path
+
+        duration = float(duration)
+        if not 1.0 <= duration <= 1000.0:
+            raise ValueError("ACE-Step duration must be between 1 and 1000 seconds")
+        bpm = max(10, min(300, int(bpm)))
+        if seed == 0:
+            seed = random.randint(1, 2**32 - 1)
+
+        filename = await self.generate_from_workflow(
+            workflow_key="music",
+            prompt=prompt,
+            seed=seed,
+            substitutions={
+                "style": style,
+                "duration": duration,
+                "lyrics": lyrics,
+                "language": language,
+                "bpm": bpm,
+            },
+            output_keys=("audio", "audios"),
+            preflight_kind="audio",
+        )
+        if not filename or not dest:
+            return filename
+        destination = Path(dest)
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        ok = await self.download_image(filename, destination)
+        return str(destination) if ok else ""
 
     async def generate_dialogue(
         self,
@@ -615,6 +1059,48 @@ class ComfyUIPlugin(BasePlugin):
             template_path=template_path,
         )
 
+    async def generate_guided_video(
+        self,
+        prompt: str,
+        depth_dir: str,
+        *,
+        num_frames: int = 49,
+        width: int = 832,
+        height: int = 480,
+        seed: int = 0,
+        negative_prompt: str = "",
+        template_path: str = "",
+    ) -> str:
+        """Render video whose CAMERA MOVE comes from a depth sequence, not a prompt.
+
+        ``depth_dir`` is an absolute path to a directory of lossless per-frame
+        depth PNGs (see ``scripts/blockout_depth_probe.py``). Geometry comes
+        from that sequence; appearance comes from ``prompt``. Validated
+        2026-07-28 — with the sequence attached the camera executes the move,
+        and without it the identical seed/prompt produces a static shot
+        (docs/GUIDED-GENERATION.md §11).
+
+        Returns the produced video filename, or "" on failure — the same
+        fail-soft contract as ``animate``/``generate_depth``, so a caller that
+        does not log an empty return will silently drop the scene.
+
+        Defaults match the validated envelope: Wan 2.1 1.3B is a 480p model, and
+        1024x576 hard-crashed ComfyUI on a 16GB card. Frames must sit on the
+        4n+1 grid and dimensions on the 32-grid; 49 / 832x480 satisfy both.
+        """
+        return await self.generate_from_workflow(
+            workflow_key="vace",
+            prompt=prompt,
+            num_frames=num_frames,
+            seed=seed,
+            width=width,
+            height=height,
+            negative_prompt=negative_prompt,
+            template_path=template_path,
+            substitutions={"depth_dir": str(depth_dir).replace("\\", "/")},
+            preflight_kind="video",
+        )
+
     async def upload_image(self, src_path, name: str = "") -> str:
         """Upload a local image into ComfyUI's input/ folder and return the
         server-side filename usable by LoadImage. Used when the image we
@@ -627,48 +1113,183 @@ class ComfyUIPlugin(BasePlugin):
             return ""
         name = name or p.name
         try:
-            data = aiohttp.FormData()
-            # Brief blocking open — aiohttp streams the file from here.
-            data.add_field(
-                "image",
-                p.open("rb"),  # noqa: ASYNC230
-                filename=name,
-                content_type="application/octet-stream",
-            )
-            data.add_field("overwrite", "true")
-            async with self._session.post(
-                f"{self._host()}/upload/image",
-                data=data,
-                timeout=aiohttp.ClientTimeout(total=30),
-            ) as resp:
-                if resp.status != 200:
-                    return ""
-                body = await resp.json()
-                return body.get("name") or name
+            # Own the stream lifetime explicitly. aiohttp consumes it during the
+            # request but does not guarantee prompt closure of a caller-opened
+            # file on Windows; the leaked handle aborted chained video hand-off.
+            with p.open("rb") as stream:  # noqa: ASYNC230
+                data = aiohttp.FormData()
+                data.add_field(
+                    "image",
+                    stream,
+                    filename=name,
+                    content_type="application/octet-stream",
+                )
+                data.add_field("overwrite", "true")
+                async with self._session.post(
+                    f"{self._host()}/upload/image",
+                    data=data,
+                    timeout=aiohttp.ClientTimeout(total=30),
+                ) as resp:
+                    if resp.status != 200:
+                        return ""
+                    body = await resp.json()
+                    return body.get("name") or name
         except Exception:
             return ""
 
-    async def download_image(self, filename: str, dest) -> bool:
-        """Fetch a generated file from ComfyUI and write it to dest (Path or str)."""
+    async def download_image(self, filename: str, dest, *, attempts: int = 3) -> bool:
+        """Fetch a generated file from ComfyUI and write it to dest (Path or str).
+
+        Retries, and records *why* a fetch failed. Both matter because this is
+        the last step of an already-paid render: on 2026-07-28 two separate
+        121-frame Wan generations (~5 GPU-minutes each) completed successfully
+        and wrote valid 1.08MB mp4s, and this method returned False one second
+        later — the bare ``except`` erased the reason, and the video caller
+        reports the loss as "likely OOM or a workflow node error", which sent
+        every investigation to the wrong place. ``/view`` served both files in
+        4ms when asked again, so the failure was transient and one retry would
+        have saved both renders.
+
+        Still returns a bool — callers decide raise-vs-"" — but a failure is
+        now always explained in syslog rather than silently swallowed.
+        """
+        import asyncio
         from pathlib import Path
 
         if not filename:
             return False
+        reason = "unknown"
+        for attempt in range(1, max(1, int(attempts)) + 1):
+            try:
+                async with self._session.get(
+                    f"{self._host()}/view",
+                    params=self._view_params(filename),
+                    timeout=aiohttp.ClientTimeout(total=60),
+                ) as resp:
+                    if resp.status != 200:
+                        reason = f"HTTP {resp.status}"
+                        data = None
+                    else:
+                        data = await resp.read()
+                if data is not None:
+                    dest_path = Path(dest)
+                    dest_path.parent.mkdir(parents=True, exist_ok=True)
+                    dest_path.write_bytes(data)
+                    if attempt > 1:
+                        self.kernel.syslog.info(
+                            "comfyui",
+                            f"/view fetch of {filename} succeeded on attempt "
+                            f"{attempt} (first failure: {reason})",
+                        )
+                    return True
+            except Exception as e:
+                reason = repr(e)
+            if attempt < max(1, int(attempts)):
+                await asyncio.sleep(1.0 * attempt)
+        self.kernel.syslog.error(
+            "comfyui",
+            f"/view fetch of {filename} failed after {attempts} attempts "
+            f"({reason}) — the render itself may have succeeded; check "
+            f"ComfyUI's output directory before assuming OOM",
+        )
+        return False
+
+    #: Rough VRAM cost per job kind, in GB. Estimates, deliberately: they are
+    #: overridable via ``[plugins.comfyui] vram_need_<key>`` and the check they
+    #: feed is advisory, so a wrong number costs at worst one unnecessary ollama
+    #: unload — never a refused render.
+    _NEED_GB = {"image": 12.0, "video": 18.0, "depth": 2.0, "audio": 8.0}
+
+    async def _preflight(self, kind: str) -> None:
+        """Advisory VRAM check before queueing. Fail-soft; returns None always.
+
+        Dark by default — set ``[plugins.comfyui] feature.gpu-arbiter.enabled``
+        to turn it on. When off, this is a single config read and a return, so
+        the queueing path is unchanged.
+
+        Deliberately does not block. The behaviour it improves on was to queue
+        blind and discover the problem as a ten-minute timeout; the win is
+        evicting a resident LLM first and leaving a syslog line that explains
+        the failure when it still happens.
+        """
         try:
-            async with self._session.get(
-                f"{self._host()}/view",
-                params={"filename": filename},
-                timeout=aiohttp.ClientTimeout(total=60),
-            ) as resp:
-                if resp.status != 200:
-                    return False
-                data = await resp.read()
-            dest_path = Path(dest)
-            dest_path.parent.mkdir(parents=True, exist_ok=True)
-            dest_path.write_bytes(data)
-            return True
+            if not self.config("feature.gpu-arbiter.enabled", False):
+                return
+            health = self.kernel.services.get("health") if self.kernel else None
+            if not health or not hasattr(health, "gpu_reserve"):
+                return
+            need = float(self.config(f"vram_need_{kind}", self._NEED_GB.get(kind, 0.0)))
+            if need <= 0:
+                return
+            verdict = await health.gpu_reserve(need)
+            self.kernel.syslog.info(
+                "comfyui",
+                f"gpu preflight {kind}: need={need}GB "
+                f"headroom={verdict.get('headroom_gb')}GB "
+                f"reason={verdict.get('reason')} "
+                f"freed={bool(verdict.get('freed'))}",
+            )
+        except Exception as e:  # never let the guard break a render
+            try:
+                self.kernel.syslog.warning("comfyui", f"gpu preflight skipped ({kind}): {e}")
+            except Exception:
+                pass
+
+    @asynccontextmanager
+    async def gpu_session(self, reason: str = ""):
+        """Keep ComfyUI's models resident for the duration of a block.
+
+        Without this, ``free_gpu()`` runs in the ``finally`` of *every* image
+        generation, so a storyboard of N scenes evicts and reloads the same
+        checkpoint N times. On a card with room to spare that is pure waste.
+
+        Scope this per **stage**, not per run. The MV pipeline's clip stage
+        genuinely needs the still-image model gone before the video model
+        loads, so one run-wide session would be actively wrong — wrap
+        ``stills`` and ``clips`` separately.
+
+        Nestable; frees once on exit from the outermost block, and does so even
+        if the body raises.
+        """
+        self._session_depth = getattr(self, "_session_depth", 0) + 1
+        try:
+            yield self
+        finally:
+            self._session_depth = max(0, getattr(self, "_session_depth", 1) - 1)
+            if self._session_depth == 0:
+                await self.free_gpu()
+
+    async def _maybe_free_gpu(self):
+        """Free VRAM unless we're inside a session with room to keep models.
+
+        Replaces the unconditional ``free_gpu()`` in the per-generation
+        ``finally`` blocks. Order matters:
+
+        1. Residency flag off  -> free (byte-for-byte today's behaviour).
+        2. Inside a session AND measured headroom clears the reserve -> skip.
+        3. Otherwise -> free.
+
+        Step 2 is expressed in **measured headroom**, not card size, which is
+        what makes this non-regressing on a 16 GB box: there the still->video
+        transition simply fails the headroom test and falls through to a free,
+        with no special-casing anywhere.
+        """
+        try:
+            if not self.config("feature.model-residency.enabled", False):
+                await self.free_gpu()
+                return
+            if getattr(self, "_session_depth", 0) <= 0:
+                await self.free_gpu()
+                return
+            health = self.kernel.services.get("health") if self.kernel else None
+            status = await health.gpu_status() if health else None
+            headroom = float((status or {}).get("headroom_gb", 0) or 0)
+            floor = float(self.config("residency_min_vram_gb", 8.0))
+            if headroom >= floor:
+                return  # room to spare — keep the model warm for the next scene
         except Exception:
-            return False
+            pass  # any doubt -> fall through and free, i.e. today's behaviour
+        await self.free_gpu()
 
     async def free_gpu(self):
         """Unload models + free VRAM after generation."""
@@ -694,14 +1315,28 @@ class ComfyUIPlugin(BasePlugin):
         lora: str = "",
         lora_strength: float = 0.8,
         negative_extra: str = "",
+        overlay_title: str = "",
+        overlay_subtitle: str = "",
+        overlay_font: str = "",
     ) -> dict:
-        """Build ComfyUI workflow. Handles FLUX, SDXL, SD1.5 + LoRA.
+        """Build ComfyUI workflow. Handles FLUX.1/SDXL/SD1.5 + LoRA, FLUX.2 Klein.
 
         ``negative_extra`` is appended to the style's negative prompt so callers
         can steer the *negative* channel (e.g. "text, logos, watermarks") instead
         of stuffing negation phrases into the positive prompt — where CLIP handles
         them poorly and they eat the 77-token CLIP-L budget.
+
+        ``overlay_title`` / ``overlay_subtitle`` composite crisp text onto the
+        final image via a ``DrawText+`` node — the reliable way to put legible
+        text on a generated cover instead of trusting the model to render it
+        (see _append_text_overlay). Opt-in; empty = no overlay.
         """
+        if style.get("is_flux2"):
+            return self._build_flux2_workflow(
+                prompt, width, height, seed, style,
+                overlay_title, overlay_subtitle, overlay_font,
+            )
+
         ckpt = style.get("checkpoint", "flux1-dev-fp8.safetensors")
         is_flux = "flux" in ckpt.lower()
 
@@ -722,7 +1357,7 @@ class ComfyUIPlugin(BasePlugin):
             "8": {"class_type": "VAEDecode", "inputs": {"samples": ["3", 0], "vae": ["4", 2]}},
             "9": {
                 "class_type": "SaveImage",
-                "inputs": {"filename_prefix": "eos", "images": ["8", 0]},
+                "inputs": {"filename_prefix": self._dated_prefix("eos"), "images": ["8", 0]},
             },
         }
 
@@ -770,7 +1405,193 @@ class ComfyUIPlugin(BasePlugin):
                 "steps": steps,
             },
         }
+        # Optional text overlay (no-op unless a title/subtitle was passed).
+        workflow["9"]["inputs"]["images"] = self._append_text_overlay(
+            workflow, ["8", 0], overlay_title, overlay_subtitle, overlay_font,
+        )
         return workflow
+
+    def _build_flux2_workflow(
+        self,
+        prompt: str,
+        width: int,
+        height: int,
+        seed: int,
+        style: dict,
+        overlay_title: str = "",
+        overlay_subtitle: str = "",
+        overlay_font: str = "",
+    ) -> dict:
+        """FLUX.2 Klein graph — UNETLoader + flux2 CLIP + flux2 VAE + guidance-
+        distilled sampler (no negative channel). Encoder pairing is carried by
+        the preset (``clip``); do not swap it — 4B needs qwen_3_4b, 9B qwen_3_8b.
+
+        When an overlay is requested the positive prompt is nudged toward clean,
+        text-free art so the model stops baking in (usually misspelled) text and
+        leaves room for the real DrawText+ layer.
+        """
+        unet = style.get("unet", "flux-2-klein-4b-fp8.safetensors")
+        clip = style.get("clip", "qwen_3_4b.safetensors")
+        vae = style.get("vae", "flux2-vae.safetensors")
+        steps = style.get("steps", 6)
+        sampler = style.get("sampler", "euler")
+
+        text = prompt
+        if overlay_title or overlay_subtitle:
+            text = f"{prompt}{FLUX2_TEXT_FREE_SUFFIX}"
+
+        workflow = {
+            "1": {"class_type": "UNETLoader", "inputs": {"unet_name": unet, "weight_dtype": "default"}},
+            "2": {"class_type": "CLIPLoader", "inputs": {"clip_name": clip, "type": "flux2", "device": "default"}},
+            "3": {"class_type": "VAELoader", "inputs": {"vae_name": vae}},
+            "4": {"class_type": "CLIPTextEncode", "inputs": {"clip": ["2", 0], "text": text}},
+            "5": {"class_type": "EmptyFlux2LatentImage", "inputs": {"width": width, "height": height, "batch_size": 1}},
+        }
+        decoded = self._flux2_sample_tail(
+            workflow, model_ref=["1", 0], cond_ref=["4", 0], canvas_ref=["5", 0],
+            vae_ref=["3", 0], steps=steps, sampler=sampler,
+            width=width, height=height, seed=seed,
+        )
+        img_ref = self._append_text_overlay(
+            workflow, decoded, overlay_title, overlay_subtitle, overlay_font,
+        )
+        workflow["20"] = {"class_type": "SaveImage", "inputs": {"filename_prefix": self._dated_prefix("eos"), "images": img_ref}}
+        return workflow
+
+    def _flux2_sample_tail(
+        self,
+        wf: dict,
+        *,
+        model_ref: list,
+        cond_ref: list,
+        canvas_ref: list,
+        vae_ref: list,
+        steps: int,
+        sampler: str,
+        width: int,
+        height: int,
+        seed: int,
+    ) -> list:
+        """Append the shared FLUX.2 sampling tail — Flux2Scheduler → KSamplerSelect
+        → RandomNoise → BasicGuider → SamplerCustomAdvanced → VAEDecode — onto
+        ``wf`` and return the decoded IMAGE ref. Both the text-to-image and the
+        reference-edit builders end this way; keeping it in one place means a
+        sampler fix can't drift between them. ``cond_ref`` carries the (already
+        reference-augmented, for edits) conditioning; ``canvas_ref`` is the
+        latent to sample (empty canvas for t2i/compose, the encoded reference for
+        an in-place edit).
+        """
+        wf["sch"] = {"class_type": "Flux2Scheduler", "inputs": {"steps": steps, "width": width, "height": height}}
+        wf["sel"] = {"class_type": "KSamplerSelect", "inputs": {"sampler_name": sampler}}
+        wf["noise"] = {"class_type": "RandomNoise", "inputs": {"noise_seed": seed}}
+        wf["guider"] = {"class_type": "BasicGuider", "inputs": {"model": model_ref, "conditioning": cond_ref}}
+        wf["samp"] = {"class_type": "SamplerCustomAdvanced", "inputs": {
+            "noise": ["noise", 0], "guider": ["guider", 0], "sampler": ["sel", 0],
+            "sigmas": ["sch", 0], "latent_image": canvas_ref}}
+        wf["dec"] = {"class_type": "VAEDecode", "inputs": {"samples": ["samp", 0], "vae": vae_ref}}
+        return ["dec", 0]
+
+    def _append_text_overlay(
+        self,
+        workflow: dict,
+        image_ref: list,
+        title: str = "",
+        subtitle: str = "",
+        font: str = "",
+    ) -> list:
+        """Composite crisp text onto ``image_ref`` via ``DrawText+`` (from the
+        comfyui_essentials custom node) and return the new image output ref.
+
+        No-op (returns ``image_ref`` unchanged) when neither title nor subtitle
+        is given, so it's safe to call on every build. This is the reliable
+        text-on-cover path — real font, perfect kerning, zero spelling risk —
+        vs. asking a diffusion model to render letters. Default font ships with
+        comfyui_essentials; pass ``font`` to use another (drop the .ttf/.otf in
+        the node's fonts/ dir first).
+        """
+        title = (title or "").strip()
+        subtitle = (subtitle or "").strip()
+        if not title and not subtitle:
+            return image_ref
+        font = font or "ShareTechMono-Regular.ttf"
+        ref = image_ref
+        if title:
+            workflow["t_title"] = {"class_type": "DrawText+", "inputs": {
+                "img_composite": ref, "text": title, "font": font, "size": 150,
+                "color": "#12202b", "background_color": "#00000000",
+                "shadow_distance": 3, "shadow_blur": 8, "shadow_color": "#66ffffff",
+                "horizontal_align": "center", "vertical_align": "center",
+                "offset_x": 0, "offset_y": -45}}
+            ref = ["t_title", 0]
+        if subtitle:
+            workflow["t_sub"] = {"class_type": "DrawText+", "inputs": {
+                "img_composite": ref, "text": subtitle, "font": font, "size": 44,
+                "color": "#37454f", "background_color": "#00000000",
+                "shadow_distance": 0, "shadow_blur": 0, "shadow_color": "#000000",
+                "horizontal_align": "center", "vertical_align": "center",
+                "offset_x": 0, "offset_y": 85}}
+            ref = ["t_sub", 0]
+        return ref
+
+    def _build_flux2_edit_workflow(
+        self,
+        instruction: str,
+        width: int,
+        height: int,
+        seed: int,
+        style: dict,
+        ref_names: list,
+        overlay_title: str = "",
+        overlay_subtitle: str = "",
+        overlay_font: str = "",
+    ) -> dict:
+        """FLUX.2 Klein reference-conditioned edit / compose graph.
+
+        Each reference image is scaled → VAE-encoded → attached to the text
+        conditioning via a chained ``ReferenceLatent`` (Kontext-style: the image
+        rides along as conditioning while the instruction drives the change).
+
+        - **One** ref → instruction edit / restyle; the ref latent IS the
+          sampling canvas, so composition + size are preserved.
+        - **Two+** refs → multi-reference compose onto a fresh canvas (combine
+          subjects from several inputs into one new scene).
+        """
+        unet = style.get("unet", "flux-2-klein-9b-fp8.safetensors")
+        clip = style.get("clip", "qwen_3_8b_fp8mixed.safetensors")
+        vae = style.get("vae", "flux2-vae.safetensors")
+        steps = style.get("steps", 8)
+        sampler = style.get("sampler", "euler")
+
+        wf = {
+            "u": {"class_type": "UNETLoader", "inputs": {"unet_name": unet, "weight_dtype": "default"}},
+            "c": {"class_type": "CLIPLoader", "inputs": {"clip_name": clip, "type": "flux2", "device": "default"}},
+            "v": {"class_type": "VAELoader", "inputs": {"vae_name": vae}},
+            "txt": {"class_type": "CLIPTextEncode", "inputs": {"clip": ["c", 0], "text": instruction}},
+        }
+        cond = ["txt", 0]
+        ref_latents = []
+        for i, name in enumerate(ref_names):
+            wf[f"ld{i}"] = {"class_type": "LoadImage", "inputs": {"image": name}}
+            wf[f"sc{i}"] = {"class_type": "FluxKontextImageScale", "inputs": {"image": [f"ld{i}", 0]}}
+            wf[f"en{i}"] = {"class_type": "VAEEncode", "inputs": {"pixels": [f"sc{i}", 0], "vae": ["v", 0]}}
+            wf[f"rl{i}"] = {"class_type": "ReferenceLatent", "inputs": {"conditioning": cond, "latent": [f"en{i}", 0]}}
+            cond = [f"rl{i}", 0]
+            ref_latents.append([f"en{i}", 0])
+
+        if len(ref_latents) == 1:
+            canvas = ref_latents[0]  # edit in place → preserve structure + dims
+        else:
+            wf["empty"] = {"class_type": "EmptyFlux2LatentImage", "inputs": {"width": width, "height": height, "batch_size": 1}}
+            canvas = ["empty", 0]
+
+        decoded = self._flux2_sample_tail(
+            wf, model_ref=["u", 0], cond_ref=cond, canvas_ref=canvas,
+            vae_ref=["v", 0], steps=steps, sampler=sampler,
+            width=width, height=height, seed=seed,
+        )
+        img_ref = self._append_text_overlay(wf, decoded, overlay_title, overlay_subtitle, overlay_font)
+        wf["save"] = {"class_type": "SaveImage", "inputs": {"filename_prefix": self._dated_prefix("eos-edit"), "images": img_ref}}
+        return wf
 
     # --- Generate ---
 
@@ -786,14 +1607,43 @@ class ComfyUIPlugin(BasePlugin):
         lora: str = "",
         lora_strength: float = 0.8,
         negative: str = "",
+        overlay_title: str = "",
+        overlay_subtitle: str = "",
+        overlay_font: str = "",
+        image: str = "",
+        seed: int = 0,
         **_kwargs,
     ) -> str:
         """Generate image. Returns filename.
 
         If style is given, applies preset (checkpoint, sampler, cfg, prefix/suffix, LoRA).
         ``negative`` steers the negative prompt channel (appended to the style's).
+        ``overlay_title`` / ``overlay_subtitle`` composite legible text onto the
+        result (e.g. a commercial cover with Klein 4B) — reliable text without
+        trusting the model to spell. Needs the comfyui_essentials custom node.
+        ``image`` (the ``draw`` capability's input-image slot) routes to
+        ``edit_image`` — the prompt becomes the edit instruction, ``style`` picks
+        the Klein model (default klein-9b). Use ``edit_image`` directly for
+        multi-reference.
+
+        ``seed`` of 0 (the default) keeps the historical per-call randomness, so
+        existing callers are unaffected. Pass a value to make a still
+        reproducible — e.g. an MV render walking ``base_seed + index * 1000``
+        so a re-run regenerates the same frames.
         """
-        seed = random.randint(0, 2**32 - 1)
+        if image:
+            return await self.edit_image(
+                image, prompt, model=(style or "klein-9b"),
+                width=width, height=height,
+                overlay_title=overlay_title, overlay_subtitle=overlay_subtitle,
+                overlay_font=overlay_font,
+            )
+
+        await self._ensure_runtime_compatible()
+        await self._preflight("image")
+
+        if not seed:
+            seed = random.randint(0, 2**32 - 1)
         style_preset = STYLE_PRESETS.get(style, {})
 
         # Apply style prefix/suffix
@@ -815,6 +1665,9 @@ class ComfyUIPlugin(BasePlugin):
             lora=lora,
             lora_strength=lora_strength,
             negative_extra=negative,
+            overlay_title=overlay_title,
+            overlay_subtitle=overlay_subtitle,
+            overlay_font=overlay_font,
         )
 
         try:
@@ -830,8 +1683,78 @@ class ComfyUIPlugin(BasePlugin):
             item = await self._submit_and_poll(
                 workflow, output_keys=("images",), post_timeout=300, max_polls=400,
             )
-            return item.get("filename", "") if item else ""
+            return self._item_path(item)
         except Exception as e:
             raise RuntimeError(f"ComfyUI generation failed: {e}") from e
         finally:
-            await self.free_gpu()
+            await self._maybe_free_gpu()
+
+    async def edit_image(
+        self,
+        src,
+        instruction: str,
+        *,
+        model: str = "klein-9b",
+        refs: list | None = None,
+        width: int = 1024,
+        height: int = 1024,
+        overlay_title: str = "",
+        overlay_subtitle: str = "",
+        overlay_font: str = "",
+        seed: int | None = None,
+    ) -> str:
+        """Reference-conditioned image edit / restyle / multi-reference compose
+        via FLUX.2 Klein. Returns the output filename, or "" on failure.
+
+        ``src`` (and each entry of ``refs``) may be a **local path** — uploaded
+        to ComfyUI's input/ first — or a filename **already** in that input dir.
+        One image → instruction edit / restyle (composition preserved). ``src``
+        plus one or more ``refs`` → multi-reference compose (combine subjects
+        into a new scene). ``instruction`` is the edit prompt. Editing needs a
+        FLUX.2 Klein ``model`` preset (klein-9b default — cleaner edits than 4B).
+        """
+        from pathlib import Path
+
+        style = STYLE_PRESETS.get(model, {})
+        if not style.get("is_flux2"):
+            raise ValueError(
+                f"edit_image needs a FLUX.2 Klein model (klein-4b/klein-9b); got '{model}'"
+            )
+
+        await self._ensure_runtime_compatible()
+        await self._preflight("image")
+
+        ref_names: list[str] = []
+        for s in [src, *(refs or [])]:
+            if not s:
+                continue
+            if Path(str(s)).exists():
+                name = await self.upload_image(s)
+                if not name:
+                    return ""
+                ref_names.append(name)
+            else:
+                ref_names.append(str(s))  # assume already in ComfyUI input/
+        if not ref_names:
+            return ""
+
+        seed = random.randint(0, 2**32 - 1) if seed is None else seed
+        workflow = self._build_flux2_edit_workflow(
+            instruction, width, height, seed, style, ref_names,
+            overlay_title=overlay_title, overlay_subtitle=overlay_subtitle,
+            overlay_font=overlay_font,
+        )
+        try:
+            self.kernel.syslog.info(
+                "comfyui",
+                f"Editing image ({len(ref_names)} ref): {instruction[:70]}...",
+                data={"model": model, "refs": len(ref_names)},
+            )
+            item = await self._submit_and_poll(
+                workflow, output_keys=("images",), post_timeout=300, max_polls=400,
+            )
+            return self._item_path(item)
+        except Exception as e:
+            raise RuntimeError(f"ComfyUI edit failed: {e}") from e
+        finally:
+            await self._maybe_free_gpu()

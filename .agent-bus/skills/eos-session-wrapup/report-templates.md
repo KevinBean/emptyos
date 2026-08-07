@@ -68,6 +68,8 @@ date: YYYY-MM-DD
 type: dev-session
 tags: [emptyos, dev-log, <affected-apps>]
 skills_used: [eos-session-wrapup, ...]   # every /<skill> invoked this session
+tracks:
+  - <track-slug>   # the track(s) this session advanced — same slug(s) as Step 6
 ---
 
 # YYYY-MM-DD — <Session Title>
@@ -141,6 +143,7 @@ depends on it). This is the body template.
 ---
 type: next-session-brief
 track: <track-slug>
+purpose: <one line — what this track is FOR, stable across sessions>
 written: <YYYY-MM-DD HH:MM>
 last_session: <YYYY-MM-DD>
 last_session_title: <Session Title>
@@ -175,6 +178,11 @@ threads_carried: <N>
 
 ### Sourcing rules
 
+- **`purpose`**: what the track is FOR — the goal-level "why does this thread
+  exist", NOT what the last session did. **Carry it forward verbatim** from the
+  previous brief; author it once when creating a new track. Only rewrite it if
+  the track's mission genuinely pivoted. Devboard's track detail renders it as
+  the answer to "what is this task for".
 - **Working-tree snapshot**: run `git status --short` and `git log --oneline -1`
   at wrapup time. Paste verbatim (no editing). The next resume's verification
   pass diffs this snapshot against current state to surface "the working tree

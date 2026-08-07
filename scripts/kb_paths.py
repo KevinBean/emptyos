@@ -4,15 +4,22 @@ Co-located scripts/ sibling (like md_frontmatter.py) — imported by
 kb_link_audit.py and kb_claim_audit.py so their --root semantics can't drift.
 """
 from __future__ import annotations
-import tomllib
 from pathlib import Path
+
+from vault_paths import require_vault_root
 
 REPO = Path(__file__).resolve().parents[1]
 
 
 def vault_root() -> Path:
-    cfg = tomllib.load(open(REPO / "emptyos.toml", "rb"))
-    return Path(cfg.get("notes", {}).get("path", ""))
+    """Delegates to the canonical resolver in vault_paths.
+
+    Was a local tomllib read returning `Path(cfg[...].get("path", ""))` — and
+    `Path("")` is `Path(".")`, so an absent or unreadable config silently pointed
+    the KB audits at the repo root instead of failing. Now it exits with an
+    actionable message, and picks up the `EOS_VAULT` override for free.
+    """
+    return require_vault_root()
 
 
 def resolve_kb_root(arg: str | None) -> Path:

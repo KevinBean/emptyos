@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import re
 from pathlib import Path
 
@@ -46,23 +47,38 @@ class LinkApp(BaseApp):
         results = await self.search(f"[[{title}]]", path=str(self._notes_dir()))
         return [r.get("path", r) if isinstance(r, dict) else r for r in results]
 
-    async def orphans(self) -> list[str]:
-        """Find notes with no incoming links."""
+    def _scan_links(self) -> tuple[dict[str, str], set[str], int]:
+        """One full-vault pass → (notes by stem, linked titles, total link count).
+
+        BLOCKING BY DESIGN — an rglob plus a read_text per note. Every caller
+        must hand this to ``asyncio.to_thread``: on a large vault it runs for
+        seconds to minutes, and neither ``read_text`` nor ``self.read()`` yields
+        (the filesystem read provider is an ``async def`` around a synchronous
+        read), so running it inline pins the event loop and the daemon stops
+        answering /api/health. Reading files directly rather than through the
+        ``read`` capability is deliberate here for the same reason the task
+        indexer does: this is one bulk scan, not N app-level reads.
+        """
         notes_dir = self._notes_dir()
         if not notes_dir.exists():
-            return []
+            return {}, set(), 0
 
         all_notes = {p.stem: str(p) for p in notes_dir.rglob("*.md") if not p.name.startswith(".")}
-        linked = set()
-
+        linked: set[str] = set()
+        total_links = 0
         for path in all_notes.values():
             try:
-                content = await self.read(path)
-                for link in WIKILINK.findall(content):
-                    linked.add(link)
+                content = Path(path).read_text(encoding="utf-8")
             except Exception:
                 continue
+            found = WIKILINK.findall(content)
+            total_links += len(found)
+            linked.update(found)
+        return all_notes, linked, total_links
 
+    async def orphans(self) -> list[str]:
+        """Find notes with no incoming links."""
+        all_notes, linked, _ = await asyncio.to_thread(self._scan_links)
         return sorted(path for stem, path in all_notes.items() if stem not in linked)
 
     @cli_command("link", help="Manage note links")
@@ -112,22 +128,13 @@ class LinkApp(BaseApp):
 
     @web_route("GET", "/api/stats")
     async def api_stats(self, request):
-        notes_dir = self._notes_dir()
-        if not notes_dir.exists():
-            return {"total_notes": 0, "total_links": 0, "orphan_count": 0}
-        all_notes = list(notes_dir.rglob("*.md"))
-        total_links = 0
-        for p in all_notes:
-            try:
-                content = p.read_text(encoding="utf-8")
-                total_links += len(WIKILINK.findall(content))
-            except Exception:
-                continue
-        orphan_list = await self.orphans()
+        # One scan, not two: this used to count links itself and then call
+        # orphans(), walking and re-reading the whole vault a second time.
+        all_notes, linked, total_links = await asyncio.to_thread(self._scan_links)
         result = {
             "total_notes": len(all_notes),
             "total_links": total_links,
-            "orphan_count": len(orphan_list),
+            "orphan_count": sum(1 for stem in all_notes if stem not in linked),
         }
         await self.emit("link:scan_completed", result)
         return result

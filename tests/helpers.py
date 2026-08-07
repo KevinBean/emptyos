@@ -7,6 +7,19 @@ from pathlib import Path
 
 TEST_PREFIX = "PLAYWRIGHT-TEST-"
 
+# Sentinel days for apps whose writes land in a *shared, real* vault note.
+# A worklog day note is one file per calendar day, and its Plan/Update sections
+# are REPLACED on write — so a test targeting date.today() silently destroys
+# whatever the user wrote that morning, and the leak-guard backstop cannot undo
+# it (it refuses to auto-edit prose, correctly). Pointing writes at a synthetic
+# past day makes the whole file a test artifact: deletable as a unit, and no
+# real note is ever opened. Cleanup lives in conftest's Worklog block.
+WORKLOG_TEST_DATE = "1990-01-02"
+# Separate day so the employer-conflict test owns a pristine employer slot
+# (employer is day-level state — the first writer wins for the whole file).
+WORKLOG_EMPLOYER_TEST_DATE = "1990-01-03"
+WORKLOG_TEST_DATES = (WORKLOG_TEST_DATE, WORKLOG_EMPLOYER_TEST_DATE)
+
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 
 
@@ -26,6 +39,38 @@ def app_path(app_id: str) -> Path:
     if d is None:
         raise FileNotFoundError(f"app '{app_id}' not found under apps/")
     return d
+
+
+def requires_app(app_id: str, *, file: str = ""):
+    """Module-level skip marker for a test that needs a possibly-absent app.
+
+    ``apps/personal/`` is gitignored, so those apps exist only on the authoring
+    machine. A tracked test that loads one **fails** in a fresh clone rather
+    than skipping, and a failing test reads as a regression — indistinguishable
+    from something actually broken. Measured 2026-08-01: 41 such failures plus
+    two collection errors that aborted the whole run.
+
+    Use at module level, not per loader::
+
+        pytestmark = requires_app("music-studio", file="source_quality.py")
+
+    Per-loader guards are what produced the partial ones — a file with three
+    loaders had a skip on one, so five tests failed while the rest skipped —
+    and they never cover a test whose dependency is a ``read_text()`` rather
+    than a fixture.
+
+    ``file`` narrows the check to one artifact inside the app (a module, a
+    page) for tests that read it directly.
+    """
+    import pytest
+
+    try:
+        app_dir = app_path(app_id)
+    except FileNotFoundError:
+        return pytest.mark.skipif(True, reason=f"app '{app_id}' is not installed")
+    present = (app_dir / file).exists() if file else True
+    what = f"{app_id}/{file}" if file else app_id
+    return pytest.mark.skipif(not present, reason=f"'{what}' is not installed")
 
 
 def load_app_module(app_id: str, module: str, *, preload: tuple[str, ...] = ()):
@@ -69,7 +114,12 @@ def load_app_module(app_id: str, module: str, *, preload: tuple[str, ...] = ()):
 # Allow override so tests can target a sandbox-pool member (`:9002+`) or the
 # dogfood daemon (`:9001`) without editing the file. Default is the main
 # user-owned daemon; CI uses the default.
-BASE_URL = os.environ.get("EOS_TEST_BASE_URL", "http://localhost:9000")
+# 127.0.0.1, never "localhost": the daemon binds IPv4 loopback only, while
+# localhost resolves to ::1 first on Windows. With the daemon UP that costs a
+# failed probe; with it DOWN nothing listens on ::1, so connect() BLOCKS instead
+# of refusing — which hangs the whole suite rather than skipping it.
+# See .claude/rules/environment.md.
+BASE_URL = os.environ.get("EOS_TEST_BASE_URL", "http://127.0.0.1:9000")
 
 # All app web prefixes (dynamically overridden by conftest if server is up)
 ALL_APP_PREFIXES = [

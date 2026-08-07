@@ -54,7 +54,10 @@ except ImportError:
 REPO = Path(__file__).resolve().parent.parent
 OUT_DIR = REPO / "data" / "readability"
 
-THEMES = ["eos", "digital-garden", "soft-light", "warm-dark", "void-dark", "nord"]
+THEMES = [
+    "eos", "digital-garden", "soft-light", "tatami",
+    "warm-dark", "void-dark", "nord", "forest", "deep-sea", "vino",
+]
 
 
 def main() -> int:

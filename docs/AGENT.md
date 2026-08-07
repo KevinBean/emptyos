@@ -198,7 +198,7 @@ pytest tests/test_sys_agent.py -v
    ```
 5. **What the client sees** — `resources/list` (the work graph, plus the two `eos://kb/...` templates when `kb_kinds_allow` is non-empty); `prompts/list` / `prompts/get` (KB pattern notes, when `"pattern"` is allowlisted); `tools/list` = the verbs that are advertised ∩ eligible ∩ granted-for-this-client. Resources + prompts are read-only and need no grant; every `tools/call` is recorded in the tamper-evident audit chain — inspect with `eos autopilot log` / verify with `eos autopilot verify`.
 
-**Inbound MCP (shipped, behind a flag)** — the EOS agent loop can *consume* an external MCP server's tools (the foundry above is outbound; this is the other direction). `emptyos/sdk/mcp_client.py` spawns a stdio MCP server, and `emptyos/sdk/agent_tools/mcp_proxy.py` wraps each remote tool as an `MCPProxyTool` (namespaced `mcp__<server>__<tool>`, `permission="ask"` — gated by the same `ToolConsentManager`; `readonly=False` so plan mode blocks it). Enable + configure in `emptyos.toml`, then restart:
+**Inbound MCP (shipped, behind a flag)** — the EOS agent loop can *consume* an external MCP server's tools (the foundry above is outbound; this is the other direction). `emptyos/sdk/mcp_client.py` connects over **either** transport, and `emptyos/sdk/agent_tools/mcp_proxy.py` wraps each remote tool as an `MCPProxyTool` (namespaced `mcp__<server>__<tool>`, `permission="ask"` — gated by the same `ToolConsentManager`; `readonly=False` so plan mode blocks it). Each row carries **either** a `command` (stdio — we spawn it) or a `url` (HTTP — it is already running); a row with both prefers stdio, since a spawned server is the one we control. Enable + configure in `emptyos.toml`, then restart:
 
 ```toml
 [apps.agent]
@@ -209,8 +209,15 @@ id = "filesystem"
 command = "npx"
 args = ["-y", "@modelcontextprotocol/server-filesystem", "/some/dir"]
 # env = { KEY = "value" }   # optional
+
+[[apps.agent.mcp_servers]]
+id = "velorn"                          # a desktop app that exposes MCP over HTTP
+url = "http://127.0.0.1:19790/mcp"
+# headers = { Authorization = "Bearer …" }   # optional
 ```
 
 Dark default: with the flag off (or no `mcp_servers` rows) the registry is byte-identical. A server that fails to start is dropped (boot never breaks). Servers stop on app teardown.
+
+An HTTP server is one we reach but never spawn, so it is simply **absent** when it is not running — the normal state for a desktop app, and deliberately silent rather than an error on every boot. Reaching the host is bounded separately from the call (`sock_connect`), because a URL, unlike a local `command`, can name a machine that swallows the connection rather than refusing it — and this runs inside the agent app's `setup()`.
 
 **Not yet built** — `agent:tool_pre`/`agent:tool_post` hooks with veto, JSON-fallback provider for small local models, A2A interoperability.

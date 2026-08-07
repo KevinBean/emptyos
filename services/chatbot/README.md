@@ -76,6 +76,14 @@ Keep it that way: a site's assistant must keep working when the daemon is down.
 
 ## Quick start (local)
 
+For the normal EmptyOS developer installation, install the root optional group
+once with `pip install -e ".[chatbot]"`. `restart.bat` then starts the managed
+External Lab Host on `http://127.0.0.1:9100`, mounts this service at `/chatbot`,
+and stores its generated config, token, catalogue, and logs under
+`data/external-lab/`. No service-local `.env` or `sites.toml` is required.
+
+To run this service independently instead:
+
 ```bash
 cd services/chatbot
 pip install -e .

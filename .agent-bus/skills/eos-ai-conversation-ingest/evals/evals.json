@@ -1,0 +1,24 @@
+{
+  "skill_name": "eos-ai-conversation-ingest",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Open my newest Claude chat, save the full original in Main Vault, then digest any useful engineering lessons. It may already have an older summary.",
+      "expected_output": "Deduplicates by provider ID, preserves or creates a verified source archive, reuses the existing digest when appropriate, fact-checks engineering claims, and updates the ledger.",
+      "files": []
+    },
+    {
+      "id": 2,
+      "prompt": "Go through this Gemini conversation about a relationship trigger and file it properly, but keep private details out of public notes.",
+      "expected_output": "Uses a private source-archive path, preserves the source, separates user-attested experience from factual claims, routes only a suitable emotional/journal delta, and keeps the ledger minimally identifying.",
+      "files": []
+    },
+    {
+      "id": 3,
+      "prompt": "Sort the old AI conversation notes in my vault and restore all missing originals.",
+      "expected_output": "Runs a read-only legacy audit, distinguishes transcript-like notes from digests, backfills only from available provider sources or exports, never fabricates originals, and produces a clear remaining queue.",
+      "files": []
+    }
+  ]
+}
+

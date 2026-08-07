@@ -26,12 +26,15 @@ several rows empty (a read-only status agent has no *act* and no *gate*).
 | **Gates** — what stops it acting unsupervised? | proposed-action pending stores · the rooms `[DO:]` review gate · staff HITL approvals (auto-decline risky-on-cron) · autopilot grants/holds · the `.eos-personal` leak-scan · the cloud consent gate | `.claude/rules/proposed-action.md`, `.claude/rules/room-review-gate.md`, `.claude/rules/autopilot-grants.md` |
 | **Budgets / bounds** — how does it stay cheap + terminate? | `emptyos/sdk/autopilot.py` monthly per-actor caps · `emptyos/sdk/run_budget.py` per-run ceiling · count/round caps · a convergence stop-streak | `.claude/rules/autopilot-grants.md`, `.claude/rules/staged-pipeline.md` |
 | **Memory** — does it compound? | `episodic.py` (`remember_episode` / `recall_episodes`) · an app ledger (JSON) · `miner_state.py` cross-run dedupe | `emptyos/sdk/episodic.py`, `.claude/rules/self-audit-loops.md` |
-| **Comms** — how does it reach the human / other agents? | the `notifications` service (Telegram) · `send_to_agent` / `agent_inbox` mailbox · `proactive_notify` (master-dark gate) | `plugins/telegram/`, `emptyos/sdk/agent_mailbox.py`, `emptyos/sdk/proactive.py` |
-| **UI** — where does the human see + steer it? | a hub panel (`[[contributes.hub.panel]]`) · a console page · the page-sidebar companion (`gpt:` override) · the Telegram bridge | `.claude/rules/hub-panels.md`, `.claude/rules/app-ui-patterns.md`, `.claude/rules/browser-extension-bridge.md` |
+| **Comms** — how does it reach the human / other agents? | the `notifications` service (Telegram) · `send_to_agent` / `agent_inbox` mailbox · `proactive_notify` (master-dark gate; `cockpit-attention-push` is the reference consumer — an idle agent session nudges the human) | `plugins/telegram/`, `emptyos/sdk/agent_mailbox.py`, `emptyos/sdk/proactive.py`, `apps/extension/dev/cockpit/tailer.py` |
+| **UI** — where does the human see + steer it? | a hub panel (`[[contributes.hub.panel]]`) · a console page · the page-sidebar companion (`gpt:` override) · the Telegram bridge · **cockpit** (`apps/extension/dev/cockpit/`) — the read-only observer that watches every agent session's live state/artifacts/browser, no steering (a session owns its own stdin) | `.claude/rules/hub-panels.md`, `.claude/rules/app-ui-patterns.md`, `.claude/rules/browser-extension-bridge.md`, `docs/CONVERSATION-STACK.md` § observer |
 
 Register every new loop in `emptyos/sdk/loops.py` (mandatory — a dark loop must
 name its flag) so `eos loops` can find it and the self-audit surfaces can score
-its stage coverage.
+its stage coverage. `scripts/check_loops.py` (preflight `--scope loops`) then
+reconciles the registry against reality — component paths must resolve, dark
+flags must appear in code — and reports which registered loops are actually
+live on this machine.
 
 ## Worked example — the brand distribution engine
 

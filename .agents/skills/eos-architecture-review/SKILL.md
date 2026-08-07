@@ -1,3 +1,7 @@
+---
+name: eos-architecture-review
+description: Architecture-level system review (check mode) or growth/repair (fix mode), driven by missing connections and underused capabilities rather than a checklist. Use when the user says "check", "audit", "review the system", or "system health" (check mode), or "fix", "grow", "improve", "what's next", "prune events", or "fix wiring" (fix mode). NOT for per-file code review (use eos-simplify), environment/daemon probing (use env-check / preflight), or KB note↔calculator/reference consistency (use eos-kb-audit).
+---
 # EmptyOS System Check & Fix
 
 Two modes: **check** (thorough step-by-step architecture review) and **fix** (identify issues and resolve them).

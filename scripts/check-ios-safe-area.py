@@ -82,7 +82,12 @@ TAG_CLASS_ATTR = re.compile(
     re.IGNORECASE,
 )
 CSS_CLASS_TOKEN = re.compile(r"\.([A-Za-z_][\w-]*)")
-CURSOR_POINTER = re.compile(r"cursor\s*:\s*pointer\b")
+CSS_ID_TOKEN = re.compile(r"#([A-Za-z_][\w-]*)")
+# Any cursor from the interactive family tells iOS the element is tappable —
+# `pointer` is the common one, but a lightbox backdrop legitimately uses
+# `zoom-out` and a draggable canvas `grab`. Accepting only `pointer` flagged
+# `#lightbox { cursor:zoom-out }` as a tap-fail when it is correctly marked up.
+CURSOR_POINTER = re.compile(r"cursor\s*:\s*(?:pointer|zoom-in|zoom-out|grab|grabbing)\b")
 DISPLAY_NONE = re.compile(r"display\s*:\s*none\b")
 POINTER_EVENTS_NONE = re.compile(r"pointer-events\s*:\s*none\b")
 # Backdrops/scrims are typically transparent overlays. We exempt rules
@@ -226,8 +231,15 @@ def _scan_css_rule(path: Path, line: int, sel: str, body: str) -> list[Finding]:
 
 
 def _collect_pointer_classes(files: list[Path]) -> set[str]:
-    """Return set of class names that appear in at least one rule with cursor:pointer.
-    Conservative: any class token in a cursor:pointer rule's selector counts."""
+    """Selector tokens that carry an interactive cursor in at least one rule.
+
+    Returns class names bare (`card`) and id names `#`-prefixed (`#lightbox`), so
+    a single set serves both lookups. Ids matter because a full-screen overlay is
+    usually addressed by id, never by class — collecting only classes reported
+    `#lightbox { cursor:zoom-out }` as a tap-fail.
+
+    Conservative: any token in an interactive-cursor rule's selector counts.
+    """
     out: set[str] = set()
     for p in files:
         if p.suffix not in {".css", ".html"}:
@@ -240,10 +252,13 @@ def _collect_pointer_classes(files: list[Path]) -> set[str]:
             if CURSOR_POINTER.search(body):
                 for cm in CSS_CLASS_TOKEN.finditer(sel):
                     out.add(cm.group(1))
+                for im in CSS_ID_TOKEN.finditer(sel):
+                    out.add("#" + im.group(1))
     return out
 
 
 INLINE_POINTER = re.compile(r"""\bstyle\s*=\s*["'][^"']*cursor\s*:\s*pointer""", re.IGNORECASE)
+TAG_ID_ATTR = re.compile(r"""\bid\s*=\s*["']([^"']+)["']""", re.IGNORECASE)
 
 
 def _scan_html_onclick(path: Path, text: str, pointer_classes: set[str]) -> list[Finding]:
@@ -251,14 +266,22 @@ def _scan_html_onclick(path: Path, text: str, pointer_classes: set[str]) -> list
     for m in DIV_ONCLICK_TAG.finditer(text):
         line = _line_of(text, m.start())
         tag = m.group(1).lower()
-        attrs = m.group(2)
+        # DIV_ONCLICK_TAG captures only what precedes `onclick=`, so attributes
+        # written AFTER it — the common ordering for a trailing `style=` — were
+        # invisible and the tag read as unaffordanced. Attribute order must not
+        # change the verdict, so extend the span to the end of the tag.
+        end = text.find(">", m.end())
+        attrs = m.group(2) + (text[m.end():end] if end != -1 else "")
         # Inline style="cursor:pointer" is sufficient on iOS too.
         if INLINE_POINTER.search(attrs):
             continue
         cm = TAG_CLASS_ATTR.search(attrs)
         classes = cm.group(1).split() if cm else []
         if classes and any(c in pointer_classes for c in classes):
-            continue  # at least one class has cursor:pointer somewhere
+            continue  # at least one class has an interactive cursor somewhere
+        im = TAG_ID_ATTR.search(attrs)
+        if im and ("#" + im.group(1).strip()) in pointer_classes:
+            continue  # addressed by id, and that id carries an interactive cursor
         cls_hint = f' class="{" ".join(classes)}"' if classes else " (no class)"
         out.append(
             Finding(

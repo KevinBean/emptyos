@@ -93,7 +93,7 @@ class DogfoodDemoPlugin(BasePlugin):
             return
         autostart = bool(self.config("autostart", True))
         if autostart:
-            asyncio.create_task(self.auto_start())
+            self.spawn_background(self.auto_start())
         else:
             print(f"[dogfood-demo] Not running at {self._host()} — run `eos service start dogfood-demo` to launch")
 

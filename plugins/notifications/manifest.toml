@@ -13,5 +13,10 @@ class = "NotificationsPlugin"
 services = ["notifications"]
 tags = ["system", "messaging"]
 
+# Fired after a notification is delivered on any channel. No listener today —
+# declared so delivery is visible in the topology graph.
+[provides.events]
+emits = ["notification:sent"]
+
 [platforms]
 supports = ["laptop", "vps-cpu", "vps-gpu", "docker"]

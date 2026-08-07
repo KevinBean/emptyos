@@ -68,7 +68,7 @@ class TestWorkspacesAPI:
         assert "academy" not in member_ids
         assert data.get("hero_app") == "academy"
         # the curated member set
-        assert {"learn", "dictionary", "speaking", "shadowing"} <= member_ids
+        assert {"learn", "reader", "dictionary", "speaking", "shadowing"} <= member_ids
 
     def test_engineering_space_has_no_hero_but_has_members(self, http_client):
         """Proves the generic shell works without a hero_app."""
@@ -87,6 +87,9 @@ class TestWorkspacesAPI:
         by_id = {m["id"]: m for m in data["members"]}
         if "learn" in by_id:
             assert by_id["learn"]["title"] == "Courses"
+        if "reader" in by_id:
+            assert by_id["reader"]["title"] == "Interactive stories"
+            assert by_id["reader"]["href"] == "/reader/"
 
     def test_member_entries_carry_href_and_available_flag(self, http_client):
         listing = assert_dict_response(http_client.get("/workspaces/api/spaces"))

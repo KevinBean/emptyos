@@ -257,7 +257,7 @@ class CliTarget:
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.STDOUT,
         )
-        asyncio.create_task(
+        asyncio.create_task(  # noqa: eos-bgtask  (plain target class — no app to reach; long-lived process drain)
             _drain_process(proc, log_path, on_log),
             name=f"forge-cli-dev-{proc.pid}",
         )

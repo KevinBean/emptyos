@@ -250,12 +250,22 @@ class SettingsApp(BaseApp):
     async def api_restart_daemon(self, request):
         """Trigger restart.bat as a detached process. Confirm-gated.
 
-        restart.bat does `taskkill /F /IM python.exe` — including this daemon. The
-        spawned cmd.exe must outlive the kill: detached, breakaway-from-job, no
-        inherited handles. The browser will lose its connection mid-response.
+        restart.bat does `taskkill /F /IM python.exe`, which is a whole-stack
+        restart on purpose: ComfyUI, voice-api, pronounce and sandbox members
+        come back with the daemon instead of being left in whatever state they
+        were in. Reviewed and kept 2026-07-28.
+
+        The reply still reports `owned_pid` — the PID this daemon actually is,
+        recorded at boot by emptyos.sdk.daemon_pidfile — because "which process
+        am I" is worth answering regardless of what this button chooses to kill.
+
+        The spawned cmd.exe must outlive the kill: detached, breakaway-from-job,
+        no inherited handles. The browser will lose its connection mid-response.
         """
         import os
         import subprocess
+
+        from emptyos.sdk.daemon_pidfile import verify_owner
 
         data = await self.safe_json(request)
         if not data.get("confirm"):
@@ -285,11 +295,23 @@ class SettingsApp(BaseApp):
         except Exception as e:
             return {"error": f"spawn failed: {e}"}
 
-        await self.emit("system:restart_requested", {"source": "settings"})
+        owned_pid = verify_owner(self.kernel.config.data_dir, port=self.kernel.config.port)
+        await self.emit(
+            "system:restart_requested", {"source": "settings", "owned_pid": owned_pid}
+        )
         return {
             "ok": True,
+            "owned_pid": owned_pid,
             "message": "restart.bat spawned detached. Daemon will die in ~2s and reboot. "
             "Refresh the page in 15-20s.",
+            "scope": (
+                "Restarts the whole local stack, by design: restart.bat kills every "
+                "python.exe, so ComfyUI, voice-api, pronounce and sandbox members "
+                "come back with the daemon rather than being left in whatever state "
+                "they were in. A targeted kill of this daemon alone is possible "
+                f"({'PID ' + str(owned_pid) if owned_pid else 'PID unverified'}) but "
+                "is deliberately not what this button does."
+            ),
         }
 
     # User-facing preference sections (rendered on the "Settings" tab).
@@ -317,7 +339,11 @@ class SettingsApp(BaseApp):
                     "key": "system.theme",
                     "label": "Theme",
                     "type": "select",
-                    "options": ["eos", "digital-garden", "void-dark", "warm-dark", "nord", "soft-light"],
+                    "options": [
+                        "eos", "digital-garden", "soft-light", "tatami",
+                        "void-dark", "warm-dark", "nord",
+                        "forest", "deep-sea", "vino",
+                    ],
                     "default": "eos",
                 },
                 {

@@ -55,15 +55,23 @@ _SLASH_PERSONAL = re.compile(r"(?<![\w./])apps/personal/([\w.-]+)")
 _SEGS = re.compile(r'"apps"\s*/\s*"(public|extension)"\s*/\s*"([\w.-]+)"\s*/\s*"([\w.-]+)"')
 _SEGS_PERSONAL = re.compile(r'"apps"\s*/\s*"personal"\s*/\s*"([\w.-]+)"')
 
-# Fixture ids that are *meant* not to exist. Purely cosmetic: it keeps them out
-# of the advisory note. Unlisted fixture ids are harmless — they never gate.
+# Fixture ids that are *meant* not to exist. Mostly cosmetic — it keeps them out
+# of the advisory note — with one case where listing is load-bearing: a fixture
+# id that COLLIDES with a real app id somewhere else in the tree is classified
+# `moved`, and `moved` gates. So "unlisted fixture ids never gate" holds only
+# while the id is unique. `demo` proved otherwise: a tmp_path fixture in
+# test_unit_check_field_authors.py builds `apps/public/standard/demo`, a real
+# `demo` lives under apps/personal/asset-register/, and the checker read the
+# pair as proof of a move — reddening a hard gate over a directory that is
+# created by the test itself and never read from the repo.
 SYNTHETIC_IDS = {
     "foo",           # test_sys_store.py, test_unit_codex_hooks.py — install fixtures
     "bar",           # test_sys_pattern_harvester.py — fixture id
     "plain",         # test_unit_check_settings_panel_drift.py — schema-less app fixture
     "held",          # test_unit_release_filter.py — held-path fixture
     "soft-client",   # test_app_builder_inspect.py — scaffolded into tmp_path
-    "cable-network", # test_sys_kb_butler.py — fabricated symbol reference string
+    "cable-network", # test_unit_kb_butler.py — fabricated symbol reference string
+    "demo",          # test_unit_check_field_authors.py — app tree built under tmp_path
 }
 
 # A file carrying this marker is skipped wholesale. The escape hatch exists for

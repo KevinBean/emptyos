@@ -162,3 +162,98 @@ def test_wait_for_port_free_frees_after_one_rekill(dw, monkeypatch):
     monkeypatch.setattr(dw.time, "sleep", lambda s: None)
     assert dw.wait_for_port_free(PORT, timeout=10.0) is True
     assert kills == [1234]  # one re-kill nudge before it freed
+
+
+# ─── boot-vs-crash discrimination (the restart-storm guard) ──────────────────
+# Regression pins for 2026-07-30: the watchdog respawned on top of a daemon that
+# was still booting, four stacked boots starved each other (28s -> 1006s), and
+# :9000 stayed down ~50 min. Both directions matter — waiting on a live boot AND
+# still recovering from a real crash.
+
+DEAD = lambda pid: False        # noqa: E731 - table-style stubs read better inline
+ALIVE = lambda pid: True        # noqa: E731
+
+
+def test_live_boot_is_not_a_crash(dw):
+    """A respawn that is alive but not yet serving must be waited on, not replaced."""
+    assert dw.boot_still_running(4242, elapsed=120.0, boot_timeout=900.0, alive=ALIVE) is True
+
+
+def test_dead_respawn_falls_through_to_recovery(dw):
+    """The crash path must still work — a gone process is a real failure."""
+    assert dw.boot_still_running(4242, elapsed=120.0, boot_timeout=900.0, alive=DEAD) is False
+
+
+def test_hung_boot_is_abandoned_at_boot_timeout(dw):
+    """Alive is not enough forever: past the ceiling a stuck boot gets killed+retried."""
+    assert dw.boot_still_running(4242, elapsed=900.0, boot_timeout=900.0, alive=ALIVE) is False
+    assert dw.boot_still_running(4242, elapsed=1500.0, boot_timeout=900.0, alive=ALIVE) is False
+
+
+def test_no_tracked_child_means_no_extension(dw):
+    """Fresh watchdog (never spawned anything) can't claim a boot is in flight."""
+    assert dw.boot_still_running(None, elapsed=10.0, boot_timeout=900.0, alive=ALIVE) is False
+
+
+def test_zero_boot_timeout_disables_the_extension(dw):
+    """Opt-out restores the strict reassess-at-grace behaviour."""
+    assert dw.boot_still_running(4242, elapsed=1.0, boot_timeout=0.0, alive=ALIVE) is False
+
+
+def test_clears_listener_only_when_no_orphan(dw):
+    assert dw.pids_to_clear(1234, None, alive=DEAD) == [1234]
+
+
+def test_clears_listener_and_live_orphan_listener_first(dw):
+    assert dw.pids_to_clear(1234, 5678, alive=ALIVE) == [1234, 5678]
+
+
+def test_dead_orphan_is_not_killed(dw):
+    assert dw.pids_to_clear(1234, 5678, alive=DEAD) == [1234]
+
+
+def test_live_orphan_cleared_even_with_no_listener(dw):
+    """THE storm case: port free because our own previous boot never bound it."""
+    assert dw.pids_to_clear(None, 5678, alive=ALIVE) == [5678]
+
+
+def test_same_pid_is_not_killed_twice(dw):
+    assert dw.pids_to_clear(1234, 1234, alive=ALIVE) == [1234]
+
+
+def test_nothing_to_clear_is_empty(dw):
+    assert dw.pids_to_clear(None, None, alive=ALIVE) == []
+
+
+# ─── evidence capture reaches the "dead" case ────────────────────────────────
+# py-spy used to be keyed off the LISTENING pid, so it was skipped exactly when
+# nothing was listening — all 218 snapshots of the 2026-07-30 outage carry no
+# stacks. find_daemon_pids answers "who is alive" independently of the port.
+
+def test_parse_pid_list_extracts_and_dedupes(dw):
+    assert dw.parse_pid_list("123\n456\n123\n") == [123, 456]
+
+
+def test_parse_pid_list_ignores_noise_and_blanks(dw):
+    noisy = "\nProcessId\n-----\n 4242 \nnot-a-pid\n\n"
+    assert dw.parse_pid_list(noisy) == [4242]
+
+
+def test_parse_pid_list_rejects_nonpositive(dw):
+    assert dw.parse_pid_list("0\n-1\n") == []
+
+
+def test_parse_pid_list_empty_input(dw):
+    assert dw.parse_pid_list("") == []
+    assert dw.parse_pid_list(None) == []
+
+
+def test_find_daemon_pids_honours_limit(dw, monkeypatch):
+    monkeypatch.setattr(dw, "run_cmd", lambda *a, **k: "1\n2\n3\n4\n5\n6\n")
+    assert dw.find_daemon_pids(limit=4) == [1, 2, 3, 4]
+
+
+def test_find_daemon_pids_survives_a_failed_probe(dw, monkeypatch):
+    """A broken/absent process lister must not break evidence capture."""
+    monkeypatch.setattr(dw, "run_cmd", lambda *a, **k: "--- exception: TimeoutExpired ---")
+    assert dw.find_daemon_pids() == []

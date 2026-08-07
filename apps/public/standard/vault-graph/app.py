@@ -66,7 +66,7 @@ class VaultGraphApp(BaseApp):
     async def setup(self):
         await super().setup()
         # Pre-warm a default cache entry (best-effort, non-blocking)
-        asyncio.create_task(self._build_graph())
+        self.spawn_background(self._build_graph())
 
     @on_event("vault:changed")
     async def _on_vault_change(self, event):

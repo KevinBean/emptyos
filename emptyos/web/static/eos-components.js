@@ -90,6 +90,11 @@ var EOS_UI = {
         el._timer = setTimeout(function() { el.classList.remove('show'); }, opts.timeout || (isErr ? 14000 : 7000));
     },
     _updateToastBell: function() {
+        // Embedded pages (?embed=1 — iframed by a host shell like portal) skip
+        // the bell: the host page already shows one. Mirrors eos.js's nav guard.
+        try {
+            if (new URLSearchParams(location.search).get('embed') === '1') return;
+        } catch (e) {}
         var bell = document.getElementById('eos-toast-bell');
         if (!bell) {
             bell = document.createElement('button');
@@ -1245,11 +1250,16 @@ var EOS_UI = {
 
         // Step 3: Extract code blocks before escaping (preserve content)
         var _codeBlocks = [];
+        var _olBlocks = [];
         body = body.replace(/```(\w*)\n([\s\S]*?)```/g, function(_, lang, code) {
             var id = '\x00CODE' + _codeBlocks.length + '\x00';
             _codeBlocks.push('<pre class="obs-code-block"><code class="lang-' + (lang || 'text') + '">' + EOS_UI.esc(code.trimEnd()) + '</code></pre>');
             return id;
         });
+
+        // Obsidian comments: paired %%...%% never renders (author-only notes).
+        // Runs AFTER code extraction so %% inside a fence is preserved.
+        body = body.replace(/%%[\s\S]*?%%/g, '');
 
         // Step 4: Escape HTML + markdown formatting
         var html = EOS_UI.esc(body)
@@ -1260,9 +1270,9 @@ var EOS_UI = {
             .replace(/^#{3} (.+)$/gm, '<h4>$1</h4>')
             .replace(/^#{2} (.+)$/gm, '<h3>$1</h3>')
             .replace(/^#{1} (.+)$/gm, '<h2>$1</h2>')
-            // Checkboxes
-            .replace(/^- \[x\] (.+)$/gm, '<li class="obs-done">✅ $1</li>')
-            .replace(/^- \[ \] (.+)$/gm, '<li class="obs-todo">⬜ $1</li>')
+            // Checkboxes (leading indent → visually nested)
+            .replace(/^(\s*)- \[x\] (.+)$/gm, function(_, ind, t) { return '<li class="obs-done' + (ind ? ' obs-li-nested' : '') + '">✅ ' + t + '</li>'; })
+            .replace(/^(\s*)- \[ \] (.+)$/gm, function(_, ind, t) { return '<li class="obs-todo' + (ind ? ' obs-li-nested' : '') + '">⬜ ' + t + '</li>'; })
             // Bold + italic. Bold spans may cross SINGLE newlines (vault prose is
             // often hard-wrapped mid-sentence) but never a blank line (paragraph
             // break) — `\n(?!\n)`. Italic stays single-line on purpose: a
@@ -1272,6 +1282,8 @@ var EOS_UI = {
             .replace(/\*(.+?)\*/g, '<em>$1</em>')
             // Strikethrough
             .replace(/~~(.+?)~~/g, '<del>$1</del>')
+            // Highlight: ==text== → <mark>
+            .replace(/==([^=\n](?:[^=\n]|=(?!=))*?)==/g, '<mark class="obs-mark">$1</mark>')
             // Inline code
             .replace(/`([^`]+)`/g, '<code>$1</code>')
             // Blockquote (including callouts)
@@ -1281,7 +1293,11 @@ var EOS_UI = {
             .replace(/((?:^\|.+\|$\n?)+)/gm, function(block) {
                 var rows = block.trim().split('\n').filter(function(r) { return r.trim(); });
                 if (rows.length < 2) return block;
-                var isAlignRow = /^\|[\s:-]+\|$/.test(rows[1]);
+                // Alignment row: |---|---| or |:---:|---| etc. The old
+                // /^\|[\s:-]+\|$/ form never matched multi-column separators
+                // (inner | not in the class), so every table rendered its
+                // header as a data row with a visible "---" row under it.
+                var isAlignRow = /^\|(?:\s*:?-{2,}:?\s*\|)+$/.test(rows[1].trim());
                 var startIdx = isAlignRow ? 2 : 0;
                 var headerRow = isAlignRow ? rows[0] : null;
                 var thead = '';
@@ -1295,10 +1311,18 @@ var EOS_UI = {
                 }).join('');
                 return '<table class="obs-table">' + thead + '<tbody>' + tbody + '</tbody></table>';
             })
-            // Unordered lists
+            // Unordered lists — indented bullets get a nested class, then top-level
+            .replace(/^\s{2,}[-*] (.+)$/gm, '<li class="obs-li-nested">$1</li>')
             .replace(/^[-*] (.+)$/gm, '<li>$1</li>')
-            // Numbered lists
-            .replace(/^\d+\. (.+)$/gm, '<li>$1</li>')
+            // Numbered lists — placeholder tag so ordered runs become a real <ol>
+            // (previously collapsed into <ul> and lost their numbering)
+            .replace(/^\d+\. (.+)$/gm, '<oli>$1</oli>')
+            .replace(/((?:<oli>.*<\/oli>\n?)+)/g, function(b) {
+                var h = '<ol>' + b.replace(/<(\/?)oli>/g, '<$1li>').replace(/\n/g, '') + '</ol>';
+                var id = '\x00OL' + _olBlocks.length + '\x00';
+                _olBlocks.push(h);
+                return id;
+            })
             // Horizontal rule
             .replace(/^---$/gm, '<hr>')
             // Wrap consecutive <li> in <ul>
@@ -1311,27 +1335,51 @@ var EOS_UI = {
             .replace(/^(.+)/, '<p>$1</p>')
             .replace(/<p>\s*<\/p>/g, '');
 
-        // Step 5: Restore code blocks
+        // Step 5: Restore code blocks + ordered lists
         _codeBlocks.forEach(function(block, i) {
             html = html.replace('\x00CODE' + i + '\x00', block);
         });
+        _olBlocks.forEach(function(block, i) {
+            html = html.replace('\x00OL' + i + '\x00', block);
+        });
 
-        // Step 6: Add frontmatter display
+        // Step 6: Add frontmatter display. Handles both inline values
+        // (`key: value`, `tags: [a, b]`) and block-style lists — the vault's
+        // mandated tag style (`tags:\n  - a`) — which the old line-by-line
+        // parser silently skipped.
         if (frontmatter) {
             var fmHtml = '<div class="obs-frontmatter"><div class="obs-fm-label">Properties</div>';
-            frontmatter.split('\n').forEach(function(line) {
-                var m = line.match(/^(\w[\w-]*)\s*:\s*(.+)/);
-                if (m) {
-                    var val = m[2].trim();
-                    // Render tags as pills
-                    if (m[1] === 'tags') {
-                        var tags = val.replace(/[\[\]]/g, '').split(',').map(function(t) { return t.trim(); }).filter(Boolean);
-                        val = tags.map(function(t) { return '<span class="obs-tag">#' + EOS_UI.esc(t) + '</span>'; }).join(' ');
-                    } else {
-                        val = EOS_UI.esc(val);
+            var fmLines = frontmatter.split('\n');
+            var fmRows = [];
+            for (var fi = 0; fi < fmLines.length; fi++) {
+                var fm2 = fmLines[fi].match(/^(\w[\w-]*)\s*:\s*(.*)$/);
+                if (!fm2) continue;
+                var fmKey = fm2[1];
+                var fmVal = (fm2[2] || '').trim();
+                if (!fmVal) {
+                    // Block-style list: collect the indented "- item" lines below
+                    var items = [];
+                    while (fi + 1 < fmLines.length) {
+                        var im = fmLines[fi + 1].match(/^\s+-\s+(.+)$/);
+                        if (!im) break;
+                        items.push(im[1].trim());
+                        fi++;
                     }
-                    fmHtml += '<div class="obs-fm-row"><span class="obs-fm-key">' + EOS_UI.esc(m[1]) + '</span><span class="obs-fm-val">' + val + '</span></div>';
+                    if (!items.length) continue;  // empty key: — nothing to show
+                    fmVal = items.join(', ');
                 }
+                fmRows.push([fmKey, fmVal]);
+            }
+            fmRows.forEach(function(kv) {
+                var val = kv[1];
+                // Render tags as pills
+                if (kv[0] === 'tags') {
+                    var tags = val.replace(/[\[\]"']/g, '').split(',').map(function(t) { return t.trim(); }).filter(Boolean);
+                    val = tags.map(function(t) { return '<span class="obs-tag">#' + EOS_UI.esc(t) + '</span>'; }).join(' ');
+                } else {
+                    val = EOS_UI.esc(val);
+                }
+                fmHtml += '<div class="obs-fm-row"><span class="obs-fm-key">' + EOS_UI.esc(kv[0]) + '</span><span class="obs-fm-val">' + val + '</span></div>';
             });
             fmHtml += '</div>';
             html = fmHtml + html;
@@ -1669,20 +1717,27 @@ var EOS_UI = {
             // Prefer semantic variant; fall back to legacy inline color.
             var variantCls = s.variant ? ' eos-stat-card--' + s.variant : '';
             var colorAttr = (!s.variant && s.color) ? ' style="color:' + s.color + '"' : '';
-            // Optional onClick: JS expression string — card becomes a door.
-            // escAttr, not esc: esc leaves " and ' alone, so a caller passing
-            // JSON.stringify(id) closed the attribute and everything after it
-            // became markup. escAttr makes the ATTRIBUTE safe; the HTML parser
-            // decodes entities before the JS runs, so it cannot make the JS
-            // STRING safe — callers must JSON.stringify anything interpolated.
-            var clickCls = s.onClick ? ' eos-stat-card--click' : '';
-            var clickAttr = s.onClick ? ' onclick="' + EOS_UI.escAttr(s.onClick) + '" role="button" tabindex="0"' +
-                ' onkeydown="if(event.key===\'Enter\'||event.key===\' \'){event.preventDefault();this.click()}"' : '';
+            // Optional onClick callback: card becomes a door without inline JS.
+            var clickable = typeof s.onClick === 'function';
+            var clickCls = clickable ? ' eos-stat-card--click' : '';
+            var clickAttr = clickable ? ' data-stat-index="' + i + '" role="button" tabindex="0"' : '';
             return '<div class="eos-stat-card' + variantCls + clickCls + '" style="animation-delay:' + (i * 0.05) + 's"' + clickAttr + '>' +
                 '<div class="eos-stat-val"' + colorAttr + '>' + EOS_UI.esc(String(s.value)) + '</div>' +
                 '<div class="eos-stat-lbl">' + EOS_UI.esc(s.label) + '</div>' +
                 '</div>';
         }).join('');
+        items.forEach(function(s, i) {
+            if (typeof s.onClick !== 'function') return;
+            var card = el.querySelector('[data-stat-index="' + i + '"]');
+            if (!card) return;
+            card.addEventListener('click', s.onClick);
+            card.addEventListener('keydown', function(event) {
+                if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault();
+                    card.click();
+                }
+            });
+        });
     },
 
     // --- Entity Card ---
@@ -1745,10 +1800,142 @@ var EOS_UI = {
         if (!opts.onClick) cls += ' no-hover';
         var attrs = '';
         if (opts.id) attrs += ' id="' + escAttr(opts.id) + '"';
-        // Same contract as statCards above: escAttr makes the attribute safe,
-        // callers JSON.stringify anything they interpolate into the expression.
+        // NOT the same contract as statCards, which now takes a function and
+        // emits no inline handler. Here onClick is still a JS expression string:
+        // escAttr makes the ATTRIBUTE safe, so callers must JSON.stringify
+        // anything they interpolate into the expression itself.
         if (opts.onClick) attrs += ' onclick="' + EOS_UI.escAttr(opts.onClick) + '" role="button" tabindex="0"';
         return '<div class="' + cls + '"' + attrs + '>' + parts.join('') + '</div>';
+    },
+
+    // --- Microphone recorder — mount a record button, get a Blob back.
+    //
+    // Extraction of duplication that already existed: shadowing, braindump,
+    // speaking, dictation, vlog and writing-editor each hand-roll the same
+    // getUserMedia + MediaRecorder + blob block. `EOS_DICTATE` is NOT reusable
+    // for this — it is a global overlay hardwired to POST to
+    // /dictation/api/transcribe and insert at a text caret.
+    //
+    // Two things copied deliberately from the better of those implementations,
+    // and one bug deliberately not copied:
+    //   • opus negotiation (shadowing) — Chrome defaults to a larger codec.
+    //   • releasing the mic tracks in onstop (braindump). shadowing does NOT,
+    //     so its tab keeps the recording indicator lit after a take. Bug; fixed
+    //     here so no future consumer inherits it.
+    //   • a size floor, because a stray click yields a ~200-byte blob that STT
+    //     happily turns into a confident hallucination.
+    //
+    // opts: {mount, onBlob(blob, meta), onStart?, onTick?(ms), onError?(msg),
+    //        maxMs? (default 120000), minBytes? (default 1200),
+    //        label? (default 'Record'), stopLabel? (default 'Stop')}
+    // -> {start, stop, isRecording, el} | null
+    recorder: function(opts) {
+        opts = opts || {};
+        var el = typeof opts.mount === 'string' ? document.querySelector(opts.mount) : opts.mount;
+        if (!el) { console.warn('EOS_UI.recorder: mount not found'); return null; }
+
+        var maxMs = opts.maxMs || 120000;
+        var minBytes = opts.minBytes || 1200;
+        var label = opts.label || 'Record';
+        var stopLabel = opts.stopLabel || 'Stop';
+
+        var rec = null, chunks = [], stream = null, t0 = 0, tick = null, capMs = 0;
+
+        var btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'eos-rec-btn';
+        btn.setAttribute('aria-label', label);
+        var timer = document.createElement('span');
+        timer.className = 'eos-rec-timer';
+        el.appendChild(btn);
+        el.appendChild(timer);
+
+        function paint(on) {
+            btn.classList.toggle('recording', !!on);
+            btn.innerHTML = (on ? '⏹ ' : '🎙 ') + EOS_UI.esc(on ? stopLabel : label);
+            btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+            if (!on) timer.textContent = '';
+        }
+
+        function cleanup() {
+            if (tick) { clearInterval(tick); tick = null; }
+            // Release the mic so the browser's recording indicator goes out.
+            if (stream) { stream.getTracks().forEach(function (t) { t.stop(); }); stream = null; }
+            paint(false);
+        }
+
+        function fail(msg) {
+            cleanup();
+            if (opts.onError) opts.onError(msg);
+            else if (EOS_UI.toast) EOS_UI.toast(msg);
+        }
+
+        async function start() {
+            if (rec) return;
+            if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || !window.MediaRecorder) {
+                fail('This browser has no microphone recording support.');
+                return;
+            }
+            try {
+                stream = await navigator.mediaDevices.getUserMedia({
+                    audio: { echoCancellation: true, noiseSuppression: true },
+                });
+            } catch (e) {
+                fail('Microphone unavailable — check the browser permission.');
+                return;
+            }
+            var mrOpts = {};
+            try {
+                if (window.MediaRecorder.isTypeSupported &&
+                    MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) {
+                    mrOpts = { mimeType: 'audio/webm;codecs=opus' };
+                }
+            } catch (e) { /* fall through to browser default */ }
+
+            try { rec = new MediaRecorder(stream, mrOpts); }
+            catch (e) { fail('Could not start the recorder.'); return; }
+
+            chunks = [];
+            rec.ondataavailable = function (e) { if (e.data && e.data.size) chunks.push(e.data); };
+            rec.onstop = function () {
+                var type = (chunks[0] && chunks[0].type) || 'audio/webm';
+                var blob = new Blob(chunks, { type: type });
+                var ms = capMs || (Date.now() - t0);
+                cleanup();
+                rec = null;
+                if (blob.size < minBytes) {
+                    if (opts.onError) opts.onError('That was too short — try again.');
+                    else if (EOS_UI.toast) EOS_UI.toast('That was too short — try again.');
+                    return;
+                }
+                // durationMs is a MEASURED wall-clock duration. Downstream
+                // words-per-minute is only meaningful when it comes from here
+                // rather than from a number the user typed.
+                if (opts.onBlob) opts.onBlob(blob, { durationMs: ms, mimeType: type, size: blob.size });
+            };
+
+            t0 = Date.now();
+            capMs = 0;
+            rec.start();
+            paint(true);
+            tick = setInterval(function () {
+                var ms = Date.now() - t0;
+                var s = Math.floor(ms / 1000);
+                timer.textContent = Math.floor(s / 60) + ':' + ('0' + (s % 60)).slice(-2);
+                if (opts.onTick) opts.onTick(ms);
+                if (ms >= maxMs) { capMs = maxMs; stop(); }
+            }, 250);
+            if (opts.onStart) opts.onStart();
+        }
+
+        function stop() {
+            if (!rec) return;
+            try { rec.stop(); } catch (e) { cleanup(); rec = null; }
+        }
+
+        btn.addEventListener('click', function () { rec ? stop() : start(); });
+        paint(false);
+        return { start: start, stop: stop, isRecording: function () { return !!rec; }, el: el };
     },
 
     // --- Provenance chip — required on AI-authored content.
@@ -2981,26 +3168,41 @@ var EOS_UI = {
     // Async form (safe):    if (!await EOS_UI.confirm('Are you sure?')) return;
     // Destructive:          EOS_UI.confirm({message: 'Delete X?', action: 'Delete', danger: true})
     // Custom non-destructive: EOS_UI.confirm({message: '...', action: 'Publish'})
+    // Aliases are honoured, not ignored. Six apps independently reached for
+    // {title, body, confirmText|confirmLabel|okText} — the vocabulary of every
+    // other dialog API — and silently got a bare "Are you sure?" behind a
+    // primary button on destructive actions (vault-backup restore among them).
+    // A dropped key on a confirm dialog is invisible in review and in every
+    // static check, so the component accepts the shape callers actually write.
     confirm: function(messageOrOpts, onYes) {
-        var message, action, danger;
+        var message, action, danger, title, cancel = 'Cancel';
         if (typeof messageOrOpts === 'object') {
-            message = messageOrOpts.message || 'Are you sure?';
-            action = messageOrOpts.action || 'Confirm';
-            danger = !!messageOrOpts.danger;
-            onYes = onYes || messageOrOpts.onYes;
+            var o = messageOrOpts;
+            message = o.message || o.body || 'Are you sure?';
+            // A caller that split title/body meant both to be read.
+            if (o.title && o.message && o.body) message = o.message + ' ' + o.body;
+            action = o.action || o.confirmText || o.confirmLabel ||
+                     o.okText || o.okLabel || 'Confirm';
+            danger = !!o.danger;
+            title = o.title || 'Confirm';
+            // onConfirm was dropped silently, which is worse than a wrong
+            // label: substation-project's delete button ran no callback at all.
+            onYes = onYes || o.onYes || o.onConfirm;
+            cancel = o.cancelLabel || o.cancelText || 'Cancel';
         } else {
             message = messageOrOpts || 'Are you sure?';
             action = 'Confirm';
             danger = false;
+            title = 'Confirm';
         }
         var btnClass = danger ? 'eos-btn eos-btn-danger' : 'eos-btn eos-btn-primary';
         var resolve;
         var promise = new Promise(function(res) { resolve = res; });
         EOS_UI.modal({
-            title: 'Confirm',
+            title: title,
             body: '<p style="margin:0 0 16px;font-size:15px;color:var(--text-secondary)">' + EOS_UI.esc(message) + '</p>' +
                 '<div class="eos-form-actions">' +
-                    '<button class="eos-btn" id="eos-confirm-no" title="Cancel — nothing will change">Cancel</button>' +
+                    '<button class="eos-btn" id="eos-confirm-no" title="Cancel — nothing will change">' + EOS_UI.esc(cancel) + '</button>' +
                     '<button class="' + btnClass + '" id="eos-confirm-yes" title="Confirm and proceed">' + EOS_UI.esc(action) + '</button>' +
                 '</div>',
         });
@@ -3259,7 +3461,9 @@ var EOS_UI = {
         return flds.map(function(f, i) {
             var inputId = id + '-f-' + i;
             var input;
-            if (f.type === 'boolean') {
+            // 'toggle' is a checkbox rendered as a switch on the standalone
+            // /settings page; here it's just a checkbox — same value shape.
+            if (f.type === 'boolean' || f.type === 'toggle') {
                 input = '<label class="sf-checkbox"><input type="checkbox" id="' + inputId + '"> <span>' + EOS_UI.esc(f.label) + '</span></label>';
                 return '<div class="sf-group">' + input + (f.hint ? '<div class="sf-hint">' + EOS_UI.esc(f.hint) + '</div>' : '') + '</div>';
             }
@@ -3336,13 +3540,13 @@ var EOS_UI = {
                 fields.forEach(function(f, i) {
                     var el = fieldEls[i];
                     var v = (s[f.key] != null) ? s[f.key] : f.default;
-                    if (f.type === 'boolean') el.checked = !!v;
+                    if (f.type === 'boolean' || f.type === 'toggle') el.checked = !!v;
                     else el.value = (v == null ? '' : v);
                 });
             } catch(e) {
                 fields.forEach(function(f, i) {
                     var el = fieldEls[i];
-                    if (f.type === 'boolean') el.checked = !!f.default;
+                    if (f.type === 'boolean' || f.type === 'toggle') el.checked = !!f.default;
                     else el.value = (f.default == null ? '' : f.default);
                 });
             }
@@ -3352,7 +3556,7 @@ var EOS_UI = {
             var payload = {};
             for (var i = 0; i < fields.length; i++) {
                 var f = fields[i], el = fieldEls[i];
-                if (f.type === 'boolean') {
+                if (f.type === 'boolean' || f.type === 'toggle') {
                     payload[f.key] = el.checked;
                 } else if (f.type === 'number') {
                     var n = parseFloat(el.value);
@@ -3456,11 +3660,11 @@ var EOS_UI = {
               '<div class="tp-summary"></div>' +
               '<div class="tp-actions" style="display:flex;gap:8px;align-items:center;margin:10px 0">' +
                 '<button class="tp-run-btn" title="Run this app\'s test suite" style="padding:6px 16px;border-radius:4px;background:var(--accent);color:#000;border:none;cursor:pointer;font-weight:600">Run Tests</button>' +
-                '<input class="tp-filter" placeholder="-k filter (optional)" style="flex:1;padding:5px 8px;border-radius:4px;border:1px solid var(--border);background:var(--bg-2);color:var(--text)">' +
-                '<span class="tp-status" style="font-size:12px;color:var(--text-dim)"></span>' +
+                '<input class="tp-filter" placeholder="-k filter (optional)" style="flex:1;padding:5px 8px;border-radius:4px;border:1px solid var(--border);background:var(--bg-input);color:var(--text)">' +
+                '<span class="tp-status" style="font-size:12px;color:var(--text-muted)"></span>' +
               '</div>' +
               '<div class="tp-test-list"></div>' +
-              '<details class="tp-output-wrap" style="margin-top:10px"><summary style="cursor:pointer;font-size:12px;color:var(--text-dim)">Raw output</summary><pre class="tp-output" style="max-height:300px;overflow:auto;font-size:11px;background:var(--bg-surface);color:var(--text);border:1px solid var(--border);padding:8px;border-radius:4px;white-space:pre-wrap"></pre></details>' +
+              '<details class="tp-output-wrap" style="margin-top:10px"><summary style="cursor:pointer;font-size:12px;color:var(--text-muted)">Raw output</summary><pre class="tp-output" style="max-height:300px;overflow:auto;font-size:11px;background:var(--bg-surface);color:var(--text);border:1px solid var(--border);padding:8px;border-radius:4px;white-space:pre-wrap"></pre></details>' +
             '</div>' +
             '<div class="sp-foot"><button class="tp-close-btn" title="Close the test panel" style="padding:6px 16px;border-radius:4px;border:1px solid var(--border);background:transparent;color:var(--text);cursor:pointer">Close</button></div>';
         document.body.appendChild(panel);
@@ -3479,16 +3683,16 @@ var EOS_UI = {
         function close() { panel.classList.remove('open'); }
 
         function renderSummary(summary) {
-            if (!summary) { summaryEl.innerHTML = '<div style="color:var(--text-dim);padding:8px 0">Never run</div>'; return; }
+            if (!summary) { summaryEl.innerHTML = '<div style="color:var(--text-muted);padding:8px 0">Never run</div>'; return; }
             var p = summary.passed || 0, f = summary.failed || 0, e = summary.errors || 0, s = summary.skipped || 0;
             var total = p + f + e + s;
             var allPass = f === 0 && e === 0;
             summaryEl.innerHTML =
                 '<div style="display:flex;gap:12px;align-items:center;padding:8px 0">' +
                   '<span style="font-size:24px;font-weight:700;color:' + (allPass ? 'var(--accent)' : '#f44') + '">' + (allPass ? p + ' PASS' : f + ' FAIL') + '</span>' +
-                  '<span style="color:var(--text-dim);font-size:13px">' + total + ' tests' + (s ? ', ' + s + ' skipped' : '') + '</span>' +
-                  (summary.wall_time ? '<span style="color:var(--text-dim);font-size:12px">' + summary.wall_time + 's</span>' : '') +
-                  (summary.timestamp ? '<span style="color:var(--text-dim);font-size:11px">' + summary.timestamp + '</span>' : '') +
+                  '<span style="color:var(--text-muted);font-size:13px">' + total + ' tests' + (s ? ', ' + s + ' skipped' : '') + '</span>' +
+                  (summary.wall_time ? '<span style="color:var(--text-muted);font-size:12px">' + summary.wall_time + 's</span>' : '') +
+                  (summary.timestamp ? '<span style="color:var(--text-muted);font-size:11px">' + summary.timestamp + '</span>' : '') +
                 '</div>';
         }
 
@@ -3503,7 +3707,7 @@ var EOS_UI = {
                 var testName = parts.length > 1 ? parts.slice(1).join('::') : t.name;
                 if (cls && cls !== currentClass) {
                     currentClass = cls;
-                    html += '<div style="font-size:11px;font-weight:600;color:var(--text-dim);margin:8px 0 2px;border-bottom:1px solid var(--border);padding-bottom:2px">' + EOS_UI.esc(cls) + '</div>';
+                    html += '<div style="font-size:11px;font-weight:600;color:var(--text-muted);margin:8px 0 2px;border-bottom:1px solid var(--border);padding-bottom:2px">' + EOS_UI.esc(cls) + '</div>';
                 }
                 var color = t.status === 'PASSED' ? '#0f8' : t.status === 'FAILED' ? '#f44' : '#888';
                 var dot = '<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:' + color + ';margin-right:6px"></span>';
@@ -3783,7 +3987,7 @@ var EOS_UI = {
             (summary ?
                 '<details' + (findings.length ? ' open' : '') + ' style="margin:0 0 16px">' +
                 '<summary style="cursor:pointer;font-size:12px;color:var(--text-secondary)">Preview data</summary>' +
-                '<pre style="margin:8px 0 0;padding:8px;background:var(--bg-secondary,#0d1117);border:1px solid var(--border,#30363d);border-radius:6px;font-size:12px;white-space:pre-wrap;max-height:320px;overflow:auto">' +
+                '<pre style="margin:8px 0 0;padding:8px;background:var(--bg-card,#0d1117);border:1px solid var(--border,#30363d);border-radius:6px;font-size:12px;white-space:pre-wrap;max-height:320px;overflow:auto">' +
                 summary + '</pre></details>'
                 : '') +
             '<label style="display:flex;align-items:center;gap:6px;margin:0 0 16px;font-size:13px;cursor:pointer">' +
@@ -3850,7 +4054,7 @@ var EOS_UI = {
             (inputJson ?
                 '<details style="margin:0 0 16px">' +
                 '<summary style="cursor:pointer;font-size:12px;color:var(--text-secondary)">Full input</summary>' +
-                '<pre style="margin:8px 0 0;padding:8px;background:var(--bg-secondary,#0d1117);border:1px solid var(--border,#30363d);border-radius:6px;font-size:12px;white-space:pre-wrap;max-height:240px;overflow:auto">' +
+                '<pre style="margin:8px 0 0;padding:8px;background:var(--bg-card,#0d1117);border:1px solid var(--border,#30363d);border-radius:6px;font-size:12px;white-space:pre-wrap;max-height:240px;overflow:auto">' +
                 EOS_UI.esc(inputJson) + '</pre></details>' : '') +
             '<label style="display:flex;align-items:center;gap:6px;margin:0 0 16px;font-size:13px;cursor:pointer">' +
                 '<input type="checkbox" id="eos-agent-perm-session"> ' +
@@ -4384,7 +4588,7 @@ var EOS_UI = {
                 var body = data.body || data.content || '';
                 var title = data.title || slug;
                 var head = '<div style="display:flex;justify-content:space-between;gap:8px;margin-bottom:8px;border-bottom:1px solid var(--border);padding-bottom:6px">'
-                    + '<strong style="font-size:11px;text-transform:uppercase;letter-spacing:0.5px;color:var(--text-dim)">'
+                    + '<strong style="font-size:11px;text-transform:uppercase;letter-spacing:0.5px;color:var(--text-muted)">'
                     + EOS_UI.esc(section ? title + ' › ' + section : title) + '</strong>'
                     + '<a href="/kb/#' + encodeURIComponent(slug) + '" target="_blank" '
                     + 'style="font-size:10px;color:var(--accent);text-decoration:none">open in KB →</a>'
@@ -5374,6 +5578,7 @@ EOS_UI.jobProgress = function(opts) {
                 '<span class="eos-spinner" style="width:14px;height:14px;border-width:2px"></span>' +
                 '<b class="eos-job-stage">Working…</b>' +
                 '<span class="eos-job-detail"></span>' +
+                '<a class="eos-job-link" style="display:none"></a>' +
                 '<button class="eos-btn eos-btn-sm eos-btn-ghost eos-job-cancel" style="margin-left:auto;display:none" title="Cancel this running job">Cancel</button>' +
             '</div>' +
             '<div class="eos-bar"><div class="eos-bar-fill eos-job-bar" style="width:0%"></div></div>';
@@ -5394,6 +5599,14 @@ EOS_UI.jobProgress = function(opts) {
         }
         var btn = box.querySelector('.eos-job-cancel');
         if (btn) btn.style.display = (opts.onCancel && state.cancellable !== false) ? '' : 'none';
+        var link = box.querySelector('.eos-job-link');
+        if (link && state.href != null) {
+            link.style.display = state.href ? '' : 'none';
+            if (state.href) {
+                link.href = String(state.href);
+                link.textContent = state.linkText || 'Open details';
+            }
+        }
     }
     function hide() {
         var box = document.getElementById(elId);

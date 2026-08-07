@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 from pathlib import Path
 
 
@@ -45,6 +46,29 @@ def save_state(path: Path, data: dict) -> None:
     )
 
 
-def recency_score(count: int, recent: int, *, boost: int = 5) -> int:
-    """The miner priority base: frequency with a heavy recency boost."""
-    return count + boost * recent
+def recency_score(
+    count: int, recent: int, *, boost: int = 5, days_idle: float = 0.0
+) -> int:
+    """The miner priority base: *damped* lifetime frequency + a live recency
+    term, decayed once a finding goes quiet.
+
+    Was ``count + boost * recent`` until 2026-08-05, which made lifetime count
+    unbounded and therefore dominant: a music-video render batch that ended
+    four days earlier held the top 15 syslog issues at 824 cumulative
+    occurrences and 0 in the last 24h, burying everything actually firing. Three
+    corrections, each aimed at one way that formula lied:
+
+    * **Lifetime frequency is logarithmic.** It should express "this recurs",
+      which is a rank signal, not a linear budget. 800 occurrences is not 80×
+      more interesting than 10.
+    * **Recency stays linear**, so it dominates as intended.
+    * **An idle finding decays** — halving weekly once quiet for over a day.
+      Nothing is deleted; a finding that resumes recovers immediately via its
+      ``recent`` term. ``days_idle`` defaults to 0, so a caller that does not
+      track last-seen keeps un-decayed behaviour.
+    """
+    freq = 10.0 * math.log2(1.0 + max(0, int(count)))
+    live = boost * max(0, int(recent))
+    if days_idle > 1.0 and recent <= 0:
+        freq *= 0.5 ** ((days_idle - 1.0) / 7.0)
+    return int(round(freq + live))

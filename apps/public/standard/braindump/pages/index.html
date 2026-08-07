@@ -11,7 +11,7 @@
 <script>
 (function () {
   try {
-    var t = localStorage.getItem('eos-theme') || 'eos'; if(['eos','digital-garden','soft-light','warm-dark','void-dark','nord'].indexOf(t)<0)t='eos';
+    var t = localStorage.getItem('eos-theme') || 'eos'; if(!/^[a-z][a-z0-9-]{0,31}$/.test(t))t='eos';
     document.documentElement.className = 'theme-' + t;
   } catch (e) { document.documentElement.className = 'theme-eos'; }
 })();

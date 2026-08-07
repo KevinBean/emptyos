@@ -1,3 +1,7 @@
+---
+name: eos-system-install
+description: Set up EmptyOS from scratch on a new machine, or verify/repair an existing install — dependencies, config, vault connection, external services, boot-on-login, first run. Use when the user says "install", "set up", "get started", "set up on this machine", "eos won't start", "missing dependencies", or "is my install ok?". NOT for connecting an already-installed daemon to a vault (use eos-external-vault-connector).
+---
 # EmptyOS System Install
 
 Set up EmptyOS from scratch on a new machine, or verify/repair an existing installation. Covers dependencies, config, vault connection, external services, boot-on-login, and first run.

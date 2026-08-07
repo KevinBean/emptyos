@@ -11,3 +11,9 @@ class = "TelegramPlugin"
 [provides]
 services = ["telegram"]
 tags = ["messaging", "mobile", "notifications", "connector"]
+
+# Two-way bridge signals: an inbound message routed into a room, and a
+# [DO:] card resolved from a Telegram tap. No listener today — declared so
+# the bridge's activity is visible in the topology graph rather than absent.
+[provides.events]
+emits = ["telegram:inbound", "telegram:action_resolved"]

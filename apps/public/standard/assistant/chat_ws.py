@@ -237,7 +237,7 @@ async def ws_chat(self, websocket):
                         "assistant:message", {"session": session_id, "provider": label}
                     )
                     if session.get("name", "").startswith("New chat"):
-                        asyncio.create_task(self._auto_name(session_id, text, websocket))
+                        self.spawn_background(self._auto_name(session_id, text, websocket))
                     continue
 
                 provider, explicit_backend = self._pick_provider_label(session)
@@ -503,7 +503,7 @@ async def ws_chat(self, websocket):
 
                 # Auto-name session after first exchange
                 if session.get("name", "").startswith("New chat"):
-                    asyncio.create_task(self._auto_name(session_id, text, websocket))
+                    self.spawn_background(self._auto_name(session_id, text, websocket))
 
             elif msg_type == "cancel":
                 self._cancel_flags[session_id] = True

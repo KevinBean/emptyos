@@ -100,6 +100,28 @@ def git_staged() -> list[Path]:
     return [REPO_ROOT / line for line in out.stdout.splitlines() if line]
 
 
+def git_untracked() -> list[Path]:
+    """Absolute paths of untracked, non-ignored files.
+
+    Neither ``git_tracked`` nor ``git_staged`` can see a file that has not been
+    ``git add``-ed yet, so a scanner run over either one reports a clean tree
+    while a violation sits in a brand-new file. That is not hypothetical: on
+    2026-07-28 ``check-personal.py`` printed "No personal data found in all
+    tracked files (3757 files)" while a hardcoded personal vault path sat in an
+    untracked test — and the green was read as clearance by two reviewers.
+
+    ``--exclude-standard`` honours .gitignore, so scratch dirs stay out.
+    """
+    out = subprocess.run(
+        ["git", "ls-files", "--others", "--exclude-standard"],
+        cwd=REPO_ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    return [REPO_ROOT / line for line in out.stdout.splitlines() if line]
+
+
 def install_pre_commit_hook(
     *,
     script: str,

@@ -32,6 +32,7 @@ from . import reading as _reading
 from .shared import (
     META_PREFIXES,
     PROJECT_FEATURES,
+    PROJECT_STATUSES,
     PROJECT_STRUCTURE,
     PROJECT_TYPES,
     _META_RE,
@@ -262,8 +263,8 @@ class ProjectsApp(BaseApp):
         project_id = request.path_params.get("id", "")
         data = await request.json()
         new_status = data.get("status", "")
-        if new_status not in ("idea", "active", "blocked", "shelved", "completed"):
-            return {"error": "Invalid status. Use: idea, active, blocked, shelved, completed"}
+        if new_status not in PROJECT_STATUSES:
+            return {"error": f"Invalid status. Use: {', '.join(PROJECT_STATUSES)}"}
 
         target = self._find_project_file(project_id)
         if not target:
@@ -337,6 +338,9 @@ class ProjectsApp(BaseApp):
                 "settable": sorted(self.SETTABLE_FIELDS),
             }
 
+        if field == "status" and value not in PROJECT_STATUSES:
+            return {"error": f"Invalid status. Use: {', '.join(PROJECT_STATUSES)}"}
+
         target = self._find_project_file(project_id)
         if not target:
             return {"error": "Project not found"}
@@ -344,6 +348,10 @@ class ProjectsApp(BaseApp):
         ok = await self._set_frontmatter_field(target, field, value)
         if ok:
             await self.emit("project:updated", {"id": project_id, "field": field, "value": value})
+            # Boards writes through this generic endpoint. Preserve the canonical
+            # lifecycle event so a board move to spec-ready reaches Reactor too.
+            if field == "status":
+                await self.emit("projects:status_changed", {"id": project_id, "status": value})
         return {"ok": ok}
 
     async def list_all(self) -> list[dict]:
@@ -636,7 +644,12 @@ class ProjectsApp(BaseApp):
         tools_by_type: dict[str, list[dict]] = {}
         for t in tools:
             tools_by_type.setdefault(t.get("type", ""), []).append(t)
-        return {"types": PROJECT_TYPES, "tools": tools_by_type, "features": PROJECT_FEATURES}
+        return {
+            "types": PROJECT_TYPES,
+            "tools": tools_by_type,
+            "features": PROJECT_FEATURES,
+            "statuses": PROJECT_STATUSES,
+        }
 
     def _discover_tools(self, project_type: str = "") -> list[dict]:
         """Find all apps that declare project-tools matching this type."""

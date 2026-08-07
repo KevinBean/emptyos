@@ -158,6 +158,10 @@ body.bulk-select-on .agent-item.bulk-selected::before { background:var(--accent)
 .pending-card { border:1px solid color-mix(in srgb,var(--accent) 50%,var(--border)); border-radius:8px; padding:12px 12px; margin-top:8px; background:color-mix(in srgb,var(--accent) 6%,var(--bg-card)); font-size:13px; display:flex; flex-direction:column; gap:8px }
 .pending-card.applied { border-color:var(--success); background:color-mix(in srgb,var(--success) 8%,var(--bg-card)) }
 .pending-card.rejected, .pending-card.failed { border-color:var(--danger); background:color-mix(in srgb,var(--danger) 6%,var(--bg-card)); opacity:0.75 }
+/* Started, then interrupted before an outcome was recorded — needs the user to
+   check and adjudicate. Warn, not danger: it may well have succeeded. Never
+   dimmed, unlike resolved states, because it still needs attention. */
+.pending-card.approving { border-color:var(--warning); background:color-mix(in srgb,var(--warning) 8%,var(--bg-card)) }
 .pending-card .pending-head { display:flex; align-items:center; gap:8px; font-weight:600 }
 .pending-card .pending-verb { color:var(--accent); font-family:var(--font-mono,monospace); font-size:12px }
 .pending-card .pending-args { font-family:var(--font-mono,monospace); font-size:11px; color:var(--text-muted); white-space:pre-wrap; max-height:120px; overflow-y:auto; padding:8px 8px; border-radius:4px; background:var(--bg) }

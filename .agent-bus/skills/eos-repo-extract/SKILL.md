@@ -1,6 +1,6 @@
 ---
 name: eos-repo-extract
-description: Study an external repo and extract its *discipline* into EmptyOS as the smallest honest abstraction over existing primitives (a reusable pattern, not a port), proven by >=2 real consumers plus a first-consumer implementation. Use when the user says "study/mine this repo", "borrow from <project>", "extract the pattern from <external codebase>", or pastes a foreign repo to learn from. Sibling of eos-sdk-extract (which dedupes *within* the codebase); NOT for porting a foreign app wholesale.
+description: Study an external repo and mine it on two axes — the *code axis* (extract its discipline as the smallest honest abstraction over existing primitives, proven by >=2 real consumers plus a first-consumer implementation) and the *workflow axis* (does its sequencing expose a stage OUR pipeline never emits?). Build-nothing is a first-class outcome and still lands a logged verdict + memory + a triggered deferred row. Use when the user says "study/mine this repo", "borrow from <project>", "repo review", "extract the pattern from <external codebase>", "is this worth borrowing", "check this" over a foreign project, or pastes a foreign repo to learn from — and equally when what they paste is a **technique claim** rather than a codebase — a trending post saying a model / LoRA / prompt trick / workflow "can do X". A capability claim is still a borrow decision, but its verdict needs an **experiment on our own stack**, not just a read. Sibling of eos-sdk-extract (which dedupes *within* the codebase); NOT for porting a foreign app wholesale.
 ---
 
 # EmptyOS Repo Extract
@@ -10,9 +10,11 @@ reusable pattern, not a port. The sibling of `eos-sdk-extract`: that one dedupes
 *within* the codebase; this one mines a *foreign* codebase for a workflow shape
 worth adopting and lands it as EmptyOS-native infrastructure.
 
-Goal: **turn "this external project does X well" into the smallest honest
-EmptyOS abstraction (built on existing primitives), proven by ≥2 real consumers
-and a first-consumer implementation — without rebuilding the external app.**
+Goal: **turn "this external project does X well" into either (a) the smallest
+honest EmptyOS abstraction, built on existing primitives, proven by ≥2 real
+consumers and a first-consumer implementation, or (b) a named gap in one of our
+own pipelines — without rebuilding the external app.** Most runs end in
+**build-nothing**; that is a success, and it still lands a verdict (step 8).
 
 Codifies the move made for MoneyPrinterTurbo → `emptyos/sdk/pipeline.py` +
 `footage` capability (2026-06-07). Triggered the second time the repo-mining
@@ -28,12 +30,30 @@ the third time isn't hand-walked.
 - You're about to read a foreign codebase to copy an idea — run this instead of
   free-handing it.
 
+- User pastes a repo blurb / trending post and asks "is this worth borrowing?" —
+  that's a **repo review**, and it runs this skill. It usually ends in
+  build-nothing, which is step 8, not a reason to skip the skill.
+- The external thing is a **technique, not a codebase** — a LoRA, a prompt trick,
+  a "it turns out model X can do Y" post. Same skill: it is still a borrow
+  decision with a verdict to log. The only difference is that step 1's digest
+  cannot settle it, so step 1b applies. Missed 2026-07-29 (Krea 2 markup trick)
+  because every trigger noun here was repo-shaped; a Reddit post about a LoRA
+  matched none of them and the whole pipeline — including step 0 — was
+  hand-walked out of order.
+
 **Not** for: rebuilding the external app feature-for-feature (that's a port, not
-an extraction); adopting a single function (just write it); pure research with
-no intended EmptyOS artifact (that's `deep-research` or a repo-review note —
-`reference_repo_review_log`).
+an extraction); adopting a single function (just write it); pure research with no
+EmptyOS decision attached (that's `deep-research` or a repo-review note —
+`reference_repo_review_log`). Note a *verdict* is a decision, so a build-nothing
+review belongs **here**, not in `deep-research`.
 
 ## The Pipeline
+
+### 0. Check for a closed verdict — *don't re-derive*
+
+`python scripts/check_borrow_verdict.py <repo-or-library-name>` (exit 1 = a verdict
+already exists in `docs/OPEN-SOURCE-BORROWING-PLAN.md` / `docs/DEFERRED-WORK.md`).
+Read it and stop. Also grep the memory archive — 20+ closed verdicts live there.
 
 ### 1. Study the external repo — *digest, not feature list*
 
@@ -45,15 +65,60 @@ discipline worth copying** + **the one thing NOT to copy verbatim**. Demand file
 paths and code-shape quotes, not prose. You're designing an abstraction from
 this, so vague is useless.
 
-### 2. Audit EmptyOS for ≥2 real consumers — *in parallel*
+### 1b. If the claim is a *capability*, falsify it on our own stack
 
-Fan out a **second** `Agent` (same message, parallel) to find every EmptyOS
-feature that already hand-rolls the same shape. For each: list the concrete
-stages/state/persistence with file:line, whether it'd benefit, and **whether the
-rule-9 threshold (2+ real consumers) is met**. Count *latent* consumers too, not
-just active ones (`feedback_sdk_audit_missing_helper_trap`). One consumer →
-**stop**; build it specific in that one app, don't extract (CLAUDE.md rule 9 /
-Forge anti-abstraction).
+Reading settles an architecture claim. It cannot settle "model X can do Y" —
+for that, the verdict is an experiment, and it is usually minutes of GPU against
+a week of adoption work. Grep for the code path we **already own** that would
+host the capability, and run the claim through *that*, not a fresh graph:
+
+- **Off/on at one fixed seed.** Vary only the thing under test. Everything else
+  — prompt, steps, resolution, sampler, first frame — held byte-identical.
+- **Add a permutation control** where the claim is about *placement or mapping*.
+  Object priors alone can fake a positive (a lantern goes up, a stool goes down);
+  permuting the inputs is what separates correlation from cause.
+- **Measure, don't eyeball.** A mean-abs pixel diff against the noise floor beats
+  "looks the same" — and it is what makes the verdict re-checkable later.
+- **Kill the obvious confound before concluding.** A null result can mean the
+  mechanism is absent *or* that the model obeyed the one clause it understood.
+  One more run is cheaper than a wrong verdict.
+- If you mirrored a builder rather than calling it, **diff your mirror against
+  the real preset** before trusting the word "our path" in the verdict.
+
+Then explain the outcome mechanically — which conditioning channel exists on our
+stack and which doesn't. "It didn't work" is not a verdict; "our encoder never
+sees the image, theirs does" is, and it tells the reader what adopting would cost.
+Sibling discipline: `eos-measure-claim` failure-mode 1 (*you measured a code path
+the system does not use*) applies here verbatim.
+
+### 2. Audit EmptyOS — *two axes, in parallel*
+
+Fan out a **second** `Agent` (same message, parallel). Ask **both** questions —
+they have different floors, and asking only the first is how a real finding gets
+thrown away as "build nothing":
+
+**Axis A — the code axis (abstraction).** Which EmptyOS features already
+hand-roll the same *shape*? For each: concrete stages/state/persistence with
+file:line, whether it'd benefit, and **whether the rule-9 threshold (2+ real
+consumers) is met**. Count *latent* consumers too, not just active ones
+(`feedback_sdk_audit_missing_helper_trap`). One consumer → **stop this axis**;
+build it specific in that one app, don't extract (CLAUDE.md rule 9 / Forge
+anti-abstraction).
+
+**Axis B — the workflow axis (missing stage).** Ignore their code entirely and
+look at how they **sequence** their work. Does that sequencing expose a *stage
+or artifact our own pipeline never emits*? Compare against `products/`,
+`sdk/pipeline.py` consumers (podcast, MV), the release scripts, the publish
+chain. **Rule 9 does NOT apply here** — a missing stage in one pipeline is a
+*feature*, not an abstraction, so "one consumer → stop" must not kill it.
+
+Axis B is the one that survives when we already own every mechanism they have.
+`ucsandman/marketing-studio` (2026-07-15) is the worked example: Axis A returned
+build-nothing on all six mechanisms (our `prose_lint` already beat their copy
+gate), while Axis B found that `products/` ships binaries with **no presentation
+artifacts** and that `products/_shared/smoke.py` already boots the frozen
+artifact — i.e. it is 80% of the capture rig, one step from
+`sdk/media/html_record.py`. Axis A alone would have discarded that.
 
 ### 3. Grep the SDK before reinventing — *build on, don't beside*
 
@@ -103,11 +168,36 @@ Add a one-line `project_*` memory (the design decision + the don't-re-research
 note), update any capability/plugin counts in CLAUDE.md + `.claude/rules/`, and
 run `/eos-simplify` before committing.
 
+### 8. Build-nothing is a first-class outcome — *land the verdict anyway*
+
+Most repo reviews end here, and a stop that leaves no artifact gets re-derived by
+the next session. Whenever steps 2–4 conclude **build nothing** (or **borrow-idea
+only**), the run is not over — land all of:
+
+- **`docs/OPEN-SOURCE-BORROWING-PLAN.md`** — the verdict entry, so
+  `check_borrow_verdict.py` finds it at step 0 next time. Say *what the repo
+  actually is* (blurbs and READMEs lie — `project_trending_2026_07_12_verdict`),
+  which mechanisms we already own **and where ours is stronger**, and the one
+  genuine gap if any.
+- **A `project_<name>_borrow_verdict` memory** + a line in `MEMORY.md`.
+- **A `docs/DEFERRED-WORK.md` row — with a firing trigger** — for any Axis-B
+  stage worth building later. A deferred row with no trigger is a wish; the
+  trigger is what makes it findable when the need arrives
+  (`reference_deferred_work_registry`).
+
+Cite the actual source for every claim. A verdict derived from a README rather
+than the code is worthless (`.claude/rules/deep-research.md`).
+
 ## Principles (the load-bearing ones)
 
 - **Extract the discipline, not the app.** "Don't rebuild MPT — lift its workflow
   discipline." The deliverable is an EmptyOS-native abstraction, not a clone.
-- **2+ consumers is the floor.** No consumers in hand → research note, not code.
+- **2+ consumers is the floor — for the code axis only.** No consumers in hand →
+  research note, not code. But never let that floor kill an Axis-B finding: a
+  missing *stage* in one pipeline is a feature, not an abstraction.
+- **Mine the sequencing, not just the source.** When we already own every
+  mechanism they have, the remaining value is in what they *do in what order* —
+  and it usually shows up as an artifact our pipeline never emits.
 - **Build on existing primitives.** Grep the SDK first; a layer on `RunRegistry`
   beats a parallel run-folder system that drifts.
 - **Dark-flag the first consumer.** Nothing regresses until the flag flips.

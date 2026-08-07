@@ -101,9 +101,18 @@ class Kernel:
 
         saved_tool_policy = self.settings.get("agent.tool_policy")
         tool_policy = saved_tool_policy if saved_tool_policy in ("ask", "auto", "deny") else "ask"
+        # How long a "approve for this session" grant lasts. None -> the
+        # manager's 1h default; a session grant with no expiry is
+        # indistinguishable from "always" on a long-lived daemon.
+        try:
+            saved_ttl = self.settings.get("agent.tool_session_ttl_s")
+            session_ttl = float(saved_ttl) if saved_ttl not in (None, "") else None
+        except (TypeError, ValueError):
+            session_ttl = None
         self.tool_consent = ToolConsentManager(
             policy=tool_policy,
             events=self.events,
+            session_ttl_s=session_ttl,
         )
 
         # Register kernel-level services
@@ -122,6 +131,53 @@ class Kernel:
     def capability(self, name: str):
         """Get a capability by name."""
         return self.capabilities.get(name)
+
+    def validate_verb_args(self, verb: str, args: dict) -> tuple[bool, str]:
+        """Gate 1 — shape-check a model-originated verb call before dispatch.
+
+        Returns ``(True, "")`` unless ``[verbs] arg_gate`` is on AND ``verb``
+        declares a non-empty ``[[provides.verbs]] args`` schema that ``args``
+        violates. Off (the dark default) it is a no-op, so every dispatch path
+        behaves byte-identically.
+
+        This is the platform-wide half of the two-gate discipline: the declared
+        ``args`` schema has been prompt decoration on every surface except voice
+        (see .claude/rules/verb-registry.md — "for the prompt + light
+        validation, not strict typing"). Turning the flag on makes the same
+        declaration a contract on the agent tool loop, both MCP bridges, and the
+        rooms ``[DO:]`` paths, using the one shape checker that already existed
+        (``emptyos.sdk.intents.validate_args``).
+
+        Scope, deliberately narrow — the gate only ever tightens a verb that
+        declared a schema:
+
+        * a verb with no registry entry passes (nothing was promised);
+        * a verb with ``args = {}`` passes (undeclared, not "accepts nothing");
+        * ordinary app-to-app ``call_app`` never reaches here — the gate belongs
+          around the *model's* call, not every function call.
+
+        Recomputed fresh each call and never cached, matching
+        ``autopilot_eligible_set`` — a manifest edit takes effect immediately.
+        Fails **open** on any internal error: a broken registry must not wedge
+        every action path, and the pre-existing ``TypeError`` handling at each
+        dispatch site is still there underneath as the backstop.
+        """
+        try:
+            flag = self.config.get("verbs.arg_gate", False)
+            if not (
+                flag is True
+                or (isinstance(flag, str) and flag.strip().lower() in ("true", "1", "yes", "on"))
+            ):
+                return True, ""
+            entry = self.apps.get_verbs().get(verb)
+            schema = (getattr(entry, "args", None) or {}) if entry else {}
+            if not schema:
+                return True, ""
+            from emptyos.sdk.intents import validate_args
+
+            return validate_args(schema, args, allow_unknown=False)
+        except Exception:
+            return True, ""
 
     def autopilot_eligible_set(self) -> set[str] | None:
         """The effective autopilot eligibility floor, or ``None`` for legacy.
@@ -248,6 +304,13 @@ class Kernel:
         """Boot the kernel: runtime services -> plugins -> apps."""
         if self._started:
             return
+
+        # Record which process this is, so a restart can aim at it. Without
+        # this the only way to stop the daemon was `taskkill /F /IM python.exe`
+        # — every Python on the machine, including ComfyUI mid-render.
+        from emptyos.sdk.daemon_pidfile import write_pidfile
+
+        write_pidfile(self.config.data_dir, port=self.config.port)
 
         # 1. Start platform runtime services
         from emptyos.kernel.workers import WorkerPool
@@ -470,6 +533,19 @@ class Kernel:
         """Graceful shutdown: apps -> plugins -> runtime."""
         if not self._started:
             return
+        # Announce the attempt before doing any of it. `kernel:stopped` fires at
+        # the very end, so a caller that gives up early — the tray's
+        # `fut.result(timeout=5)`, which 215 apps cannot finish inside — then
+        # `os._exit`s leaves no trace at all, and a deliberate shutdown becomes
+        # indistinguishable from an external kill. That ambiguity is what made
+        # 2026-07-30's daemon deaths undiagnosable.
+        await self.events.emit("kernel:stopping", {}, source="kernel")
+
+        # Drop the PID record next: from here on this process is on its way
+        # out, and a stale record is what makes a killer aim at the wrong tree.
+        from emptyos.sdk.daemon_pidfile import clear_pidfile
+
+        clear_pidfile(self.config.data_dir)
         if self._housekeeping_task:
             self._housekeeping_task.cancel()
             try:

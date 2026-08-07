@@ -12,3 +12,9 @@ class = "HealthPlugin"
 [provides]
 services = ["health"]
 tags = ["system", "monitoring"]
+
+# Periodic liveness beat. No listener today — kept as a forward-compatible
+# audit stream (the 2026-07-10 dead-emit decision), declared so the topology
+# graph reflects what the code actually emits.
+[provides.events]
+emits = ["health:heartbeat"]

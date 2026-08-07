@@ -153,3 +153,17 @@ class CreativeReactionsMixin:
     async def on_radio_liked(self, event):
         track = event.data.get("track") or event.data.get("title", "")
         self._log_action("radio:liked", f"{str(track)[:50]}")
+
+    # ── Shipped artifacts (wired 2026-07-30: were declared-but-unheard) ──
+
+    @on_event("music:release_uploaded")
+    async def on_release_uploaded(self, event):
+        """A track went out to the channel — a real release milestone."""
+        title = event.data.get("title") or event.data.get("song") or ""
+        self._log_action("music:release_uploaded", str(title)[:50])
+        await self._journal_ripple("🚀", f"Released a track: {str(title)[:60]}")
+
+    @on_event("vlog:montage_ready")
+    async def on_vlog_montage_ready(self, event):
+        title = event.data.get("title") or event.data.get("id", "")
+        self._log_action("vlog:montage_ready", str(title)[:50])

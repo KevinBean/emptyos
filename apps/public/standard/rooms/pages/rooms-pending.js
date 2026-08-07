@@ -40,11 +40,11 @@ async function openGlobalPending() {
         var rid = a.room_id || '(unknown)';
         (byRoom[rid] = byRoom[rid] || []).push(a);
     });
-    var pendingTotal = list.filter(function(a){ return a.status === 'pending'; }).length;
+    var pendingTotal = list.filter(isOpenAction).length;
     var roomIds = Object.keys(byRoom).sort(function(x, y) {
         // Pending-first room ordering: rooms with any pending sort to top.
-        var hx = byRoom[x].some(function(a){ return a.status === 'pending'; });
-        var hy = byRoom[y].some(function(a){ return a.status === 'pending'; });
+        var hx = byRoom[x].some(isOpenAction);
+        var hy = byRoom[y].some(isOpenAction);
         if (hx !== hy) return hx ? -1 : 1;
         return (agentNameById(x) || x).localeCompare(agentNameById(y) || y);
     });
@@ -54,10 +54,10 @@ async function openGlobalPending() {
     } else {
         sections = roomIds.map(function(rid) {
             var entries = byRoom[rid].slice().sort(function(a, b) {
-                if (a.status !== b.status) return a.status === 'pending' ? -1 : 1;
+                if (isOpenAction(a) !== isOpenAction(b)) return isOpenAction(a) ? -1 : 1;
                 return (a.ts || '').localeCompare(b.ts || '');
             });
-            var pendingForRoom = entries.filter(function(a){ return a.status === 'pending'; }).length;
+            var pendingForRoom = entries.filter(isOpenAction).length;
             var roomName = agentNameById(rid);
             var openLink = '<button class="eos-btn-sm eos-btn-ghost" style="margin-left:auto;font-size:11px" onclick="EOS_UI.closeModal();openChat(\'' + escAttr(rid) + '\')">Open room →</button>';
             return '<div style="margin-bottom:18px">' +
@@ -98,8 +98,17 @@ async function loadPendingForRoom(roomId) {
     updatePendingBadge();
 }
 
+// An action still needs the user in two shapes: `pending` (awaiting
+// Apply/Reject) and `approving` (claimed, then the process died mid-execution
+// — outcome unknown). Both must be counted and surfaced; only the first is
+// re-appliable. Filtering `status === 'pending'` exactly is what made an
+// interrupted action vanish from every count.
+function isOpenAction(a) {
+    return a.status === 'pending' || a.status === 'approving';
+}
+
 function updatePendingBadge() {
-    var pending = Object.values(_pendingMap).filter(function(a){ return a.status === 'pending'; });
+    var pending = Object.values(_pendingMap).filter(isOpenAction);
     // Hidden compatibility node — kept so other code paths reading
     // chat-pending-count don't break, but the visible counter is the
     // unified Activity badge.
@@ -117,7 +126,7 @@ function updatePendingBadge() {
 function updateActivityBadge() {
     var pill = document.getElementById('chat-activity-count');
     if (!pill) return;
-    var pending = Object.values(_pendingMap).filter(function(a){ return a.status === 'pending'; }).length;
+    var pending = Object.values(_pendingMap).filter(isOpenAction).length;
     var tasksOpen = parseInt(pill.dataset.tasksOpen || '0', 10) || 0;
     var total = pending + tasksOpen;
     pill.textContent = total ? '(' + total + ')' : '';
@@ -178,8 +187,8 @@ function renderActivityPendingTab() {
     var all = Object.values(_pendingMap).sort(function(a,b){
         return (a.ts || '').localeCompare(b.ts || '');
     });
-    var pending = all.filter(function(a){ return a.status === 'pending'; });
-    var resolved = all.filter(function(a){ return a.status !== 'pending'; });
+    var pending = all.filter(isOpenAction);
+    var resolved = all.filter(function(a){ return !isOpenAction(a); });
     var html = '';
     if (!pending.length && !resolved.length) {
         html = '<div style="color:var(--text-muted);font-size:13px;padding:20px;text-align:center">No pending actions yet. CLI participants emit [DO:] tags that show up here for review.</div>';
@@ -626,7 +635,7 @@ function renderPendingCard(action) {
     var cls = 'pending-card' + (st !== 'pending' ? ' ' + st : '');
     var argsStr = '';
     try { argsStr = JSON.stringify(action.args || {}, null, 2); } catch(e) { argsStr = String(action.args); }
-    var icons = {pending:'⏳', applied:'✓', rejected:'✗', failed:'✗'};
+    var icons = {pending:'⏳', approving:'⚠', applied:'✓', rejected:'✗', failed:'✗'};
     var icon = icons[st] || '⏳';
     var actor = action.source_actor || {};
     var actorName = actor.id === 'claude-cli' ? 'Claude Code CLI' : (actor.id || 'agent');
@@ -640,6 +649,17 @@ function renderPendingCard(action) {
         buttons = editBtn +
             '<button class="eos-btn-sm eos-btn-ghost" onclick="rejectAction(\'' + escAttr(action.id) + '\')">Reject</button>' +
             '<button class="eos-btn-sm" style="background:var(--accent);color:var(--accent-ink)" onclick="applyAction(\'' + escAttr(action.id) + '\')">Apply</button>';
+    } else if (st === 'approving') {
+        // Claimed, then the process died mid-execution. The effect may or may
+        // not have landed, so we never re-run it — the user checks and records
+        // what they found. Re-applying could double-execute, which is the exact
+        // bug the claim prevents.
+        buttons = '<span class="pending-status" title="Started, then interrupted before the outcome was recorded">started — outcome unknown</span>' +
+            // Both ghost, deliberately equal weight. The user has to go CHECK
+            // whether the effect landed; giving either outcome the primary
+            // treatment nudges them toward guessing instead of looking.
+            '<button class="eos-btn-sm eos-btn-ghost" onclick="resolveUnknown(\'' + escAttr(action.id) + '\', \'failed\')" title="It did not take effect">Mark failed</button>' +
+            '<button class="eos-btn-sm eos-btn-ghost" onclick="resolveUnknown(\'' + escAttr(action.id) + '\', \'applied\')" title="It did take effect">Mark done</button>';
     } else if (st === 'applied') {
         var resultPreview = action.result ? '<div style="font-size:11px;color:var(--text-muted);max-height:60px;overflow:hidden">' + esc(String(action.result).slice(0, 200)) + '</div>' : '';
         buttons = '<span class="pending-status">applied ' + (action.resolved_ts ? new Date(action.resolved_ts).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}) : '') + '</span>' +
@@ -717,6 +737,40 @@ async function undoLastAction(cardVerb) {
         }
     } catch (e) {
         EOS_UI.toast('Undo failed: ' + e, false);
+    }
+}
+
+async function resolveUnknown(actionId, outcome) {
+    // Adjudicate an interrupted action: the user checked whether the side
+    // effect actually landed and records what they found. Never re-runs it.
+    var verb = outcome === 'applied' ? 'done' : 'failed';
+    // Object form. EOS_UI.confirm's SECOND positional arg is an onYes CALLBACK,
+    // not a body string — passing text there gets it invoked as a function
+    // (`if(onYes) onYes()`, no typeof guard), which throws before closeModal()
+    // and leaves the dialog stuck open. The whole explanation goes in `message`.
+    var ok = await EOS_UI.confirm({
+        message: 'Mark this action as ' + verb + '? It was started but '
+            + 'interrupted before the outcome was recorded, so it may or may '
+            + 'not have taken effect. Check first — this only records what you '
+            + 'found, it does NOT run the action again.',
+        action: 'Mark ' + verb,
+    });
+    if (!ok) return;
+    var safe = actionId.replace(/[^A-Za-z0-9_-]/g, '');
+    document.querySelectorAll('#pending-card-' + safe).forEach(function(c){ c.style.opacity = '0.5'; });
+    try {
+        var res = await EOS.post('/rooms/api/pending/' + encodeURIComponent(actionId) + '/resolve',
+                                 {outcome: outcome});
+        if (res && res.id) _pendingMap[res.id] = res;
+        document.querySelectorAll('[id="pending-card-' + actionId + '"]').forEach(function(c) {
+            c.outerHTML = renderPendingCard(res);
+        });
+        if (res && res.error) EOS_UI.toast(res.error, false);
+        else EOS_UI.toast('Recorded as ' + verb);
+        updatePendingBadge();
+    } catch(e) {
+        EOS_UI.toast('Could not record outcome', false);
+        document.querySelectorAll('#pending-card-' + safe).forEach(function(c){ c.style.opacity = ''; });
     }
 }
 

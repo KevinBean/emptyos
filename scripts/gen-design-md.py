@@ -15,20 +15,12 @@ import re
 import sys
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent
-THEME_CSS = ROOT / "emptyos" / "web" / "static" / "theme.css"
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import theme_css  # noqa: E402 — sibling script, path set above
+
+ROOT = theme_css.REPO
+THEME_CSS = theme_css.THEME_CSS
 DESIGN_MD = ROOT / "DESIGN.md"
-
-TOKEN_RE = re.compile(r"--([\w-]+)\s*:\s*([^;]+);")
-
-
-def parse_block(css: str, selector: str) -> dict[str, str]:
-    """Return {var-name: value} for the first block matching `selector { ... }`."""
-    pattern = re.compile(re.escape(selector) + r"\s*\{([^}]*)\}", re.DOTALL)
-    m = pattern.search(css)
-    if not m:
-        raise SystemExit(f"theme.css missing block: {selector}")
-    return {name: val.strip() for name, val in TOKEN_RE.findall(m.group(1))}
 
 
 def yaml_str(v: str) -> str:
@@ -230,9 +222,11 @@ def render_frontmatter(root: dict[str, str], eos: dict[str, str]) -> str:
 def main() -> int:
     check_only = "--check" in sys.argv
 
-    css = THEME_CSS.read_text(encoding="utf-8")
-    root = parse_block(css, ":root")
-    eos = parse_block(css, ".theme-eos")
+    css = theme_css.load()
+    root = theme_css.parse_root(css)
+    eos = theme_css.parse_themes(css).get("eos")
+    if not root or not eos:
+        raise SystemExit(f"theme.css missing :root or .theme-eos block: {THEME_CSS}")
 
     new_frontmatter = render_frontmatter(root, eos)
 

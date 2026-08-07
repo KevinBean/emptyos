@@ -61,7 +61,7 @@ async def _device_prep(self, request):
     device_id = str(form.get("device_id") or "").strip()
     if device_id:
         import asyncio
-        asyncio.create_task(self.emit("device:seen", {
+        self.spawn_background(self.emit("device:seen", {
             "id": device_id, "category": "controller",
             "board": str(form.get("device_board") or ""),
         }))

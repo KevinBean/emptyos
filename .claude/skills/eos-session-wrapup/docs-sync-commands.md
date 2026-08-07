@@ -12,8 +12,10 @@ owns the exact commands and patch patterns.
 # Count all apps (core + personal)
 find apps/ apps/personal/ -name "manifest.toml" -not -path "*/_retired/*" 2>/dev/null | wc -l
 
-# Count plugins
-find plugins/ -name "manifest.toml" 2>/dev/null | wc -l
+# Count plugins — exclude _retired/ like the apps line above, or this reports a
+# phantom extra plugin every wrapup (plugins/_retired/obsidian-cli/manifest.toml)
+# and tempts the next session to "fix" a correct count in plugins.md.
+find plugins/ -maxdepth 2 -name "manifest.toml" -not -path "*/_retired/*" 2>/dev/null | wc -l
 
 # Count endpoints (web_route decorators)
 grep -r "@web_route" apps/ apps/personal/ plugins/ --include="*.py" 2>/dev/null | wc -l

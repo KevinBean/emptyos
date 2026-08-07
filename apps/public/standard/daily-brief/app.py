@@ -55,6 +55,7 @@ from .shared import (
     _ema_series,
     _macd_hist,
     _md_esc,
+    _notify_text,
     _rsi,
     _sma,
     _strip_html,
@@ -241,6 +242,7 @@ class DailyBriefApp(BaseApp):
             await self.emit("daily-brief:generated", {
                 "date": date, "item_count": len(items), "note_path": note_path,
             })
+            await self._deliver(record)
             self.log_activity({"event": "generated", "date": date, "trigger": trigger,
                                "items": len(items)})
             return record
@@ -252,6 +254,33 @@ class DailyBriefApp(BaseApp):
             await self.emit("daily-brief:failed", {"date": date, "error": record["error"]})
             self.log_activity({"event": "failed", "date": date, "error": record["error"]})
             return record
+
+    async def _deliver(self, record: dict) -> dict:
+        """Push the finished brief at the user instead of waiting to be visited.
+
+        A morning brief that only exists in a browser tab is a page, not a
+        brief — the app generated on a cron and filed a note, and nothing ever
+        told anyone. Routed through the shared proactive gate, so restraint
+        (master toggle, per-kind mute, quiet hours, daily cap, dedup) is the
+        engine's job and not re-implemented here; there is deliberately no
+        second app-level on/off switch to keep in sync with it.
+
+        Dedup is per date, so a manual re-run after the scheduled one doesn't
+        nudge twice. Fail-soft: delivery never breaks generation — the brief is
+        already written and recorded by the time we get here.
+        """
+        try:
+            return await self.proactive_notify(
+                "daily-brief",
+                _notify_text(record.get("brief_md", ""), int(record.get("item_count", 0) or 0),
+                             self._locale()),
+                urgency="normal",
+                dedup_key=f"daily-brief:{record.get('date', '')}",
+                link={"text": "Read the brief", "href": "/daily-brief/"},
+            )
+        except Exception as e:  # noqa: BLE001 — the brief is already saved
+            self.log_activity({"event": "deliver_failed", "error": str(e)[:200]})
+            return {"delivered": False, "reason": "error"}
 
     async def _distill(self, items: list[dict]) -> str:
         loc = self._locale()

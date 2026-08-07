@@ -407,6 +407,69 @@ class TestSafetyReflexes:
             f"expected loop-guard nudge in one of the tool_result bodies, got: {bodies!r}"
         )
 
+    @staticmethod
+    async def _guard_bodies(names: list[str], sess_id: str) -> list[str]:
+        """Run one turn of failing unknown-tool calls; return tool_result bodies.
+
+        Unknown-tool names are the cheapest way to control the guard's error
+        SHAPE from a test — the tag is derived from the tool name.
+        """
+        provider = ScriptedProvider([
+            AgentTurn(
+                assistant_blocks=[
+                    ToolUseBlock(id=f"g{i}", name=n, input={})
+                    for i, n in enumerate(names)
+                ],
+                tool_uses=[
+                    ToolUse(id=f"g{i}", name=n, input={})
+                    for i, n in enumerate(names)
+                ],
+                stop_reason="tool_use",
+            ),
+            AgentTurn(
+                assistant_blocks=[TextBlock(text="giving up.")],
+                tool_uses=[], stop_reason="end_turn",
+            ),
+        ])
+        sess = AgentSession(id=sess_id)
+        await run_turn(
+            session=sess, user_text="do it", provider=provider,
+            tools={}, tool_consent=ToolConsentManager(policy="auto"),
+            events=_Events(),
+        )
+        bodies: list[str] = []
+        for m in sess.messages:
+            c = m.get("content")
+            if isinstance(c, str):
+                bodies.append(c)
+            elif isinstance(c, list):
+                for b in c:
+                    inner = b.get("content") if isinstance(b, dict) else ""
+                    if isinstance(inner, str):
+                        bodies.append(inner)
+        return bodies
+
+    @pytest.mark.asyncio
+    async def test_loop_guard_names_the_shape_when_it_actually_repeats(self):
+        """The nudge has always said "stop retrying the same shape"; it may only
+        claim that when the failures really are the same one."""
+        bodies = await self._guard_bodies(["Ghost", "Ghost", "Ghost"], "loop-same")
+        nudges = [b for b in bodies if "[loop-guard]" in b]
+        assert nudges, f"expected a loop-guard nudge, got {bodies!r}"
+        assert any("the SAME failure" in b for b in nudges), nudges
+        assert any("unknown-tool:Ghost" in b for b in nudges), nudges
+
+    @pytest.mark.asyncio
+    async def test_loop_guard_does_not_claim_sameness_for_distinct_failures(self):
+        """Three DIFFERENT failures still nudge (the count is what fires it) but
+        must not assert they were the same one — that was the pre-2026-07-30 bug,
+        where the wording was identical either way."""
+        bodies = await self._guard_bodies(["GhostA", "GhostB", "GhostC"], "loop-diff")
+        nudges = [b for b in bodies if "[loop-guard]" in b]
+        assert nudges, f"expected a loop-guard nudge, got {bodies!r}"
+        assert all("the SAME failure" not in b for b in nudges), nudges
+        assert any("error #3 in a row" in b for b in nudges), nudges
+
     @pytest.mark.asyncio
     async def test_edit_loop_guard_blocks_sixth_edit(self, tmp_path):
         """Edits to the same file past EDIT_PATH_LIMIT are rejected with a

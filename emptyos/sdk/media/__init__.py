@@ -5,6 +5,7 @@ Available to any app via:
 """
 
 from emptyos.sdk.media.audio import change_tempo, clean_audio, stitch_audio
+from emptyos.sdk.media.encode import nvenc_available, video_args, video_args_resolved
 from emptyos.sdk.media.html_record import record_html_to_mp4
 from emptyos.sdk.media.image_redact import redact_image, resolve_box
 from emptyos.sdk.media.review import MediaVerdict, review_audio, review_video
@@ -35,4 +36,7 @@ __all__ = [
     "MediaVerdict",
     "redact_image",
     "resolve_box",
+    "video_args",
+    "video_args_resolved",
+    "nvenc_available",
 ]

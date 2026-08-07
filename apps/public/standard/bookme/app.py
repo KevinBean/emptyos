@@ -19,6 +19,12 @@ Storage split (CLAUDE.md § Storage):
 Outbound confirmation email goes through the `send` capability (email-smtp
 plugin); it degrades gracefully (on-screen confirmation + .ics) when no send
 provider is configured.
+
+Open slots are computed against **both** bookme's own confirmed bookings and
+the commitments `calendar` reports for that date (`_calendar_busy`). The second
+half matters: bookme contributes its bookings *to* the calendar agenda, so
+without reading back it could only ever see conflicts it had created itself and
+would happily offer a slot on top of an existing meeting.
 """
 
 from __future__ import annotations
@@ -61,6 +67,12 @@ DEFAULT_CONFIG = {
         "sat": [],
         "sun": [],
     },
+    # Assumed length, in minutes, of a subscribed-calendar event whose end time
+    # we can't determine (an all-day-adjacent entry, an unparseable DTEND, a
+    # cache written before end times were captured). 0 = skip those events
+    # rather than block a slot on a guess; raise it if your feeds are lossy and
+    # you'd rather over-block than risk a double booking.
+    "external_busy_default_min": 0,
     # Owner-editable email templates. Blank subject/body = use the built-in
     # default (see DEFAULT_EMAIL_TEMPLATES). Variables substituted with
     # str.format-style {name}, {event_name}, {when}, {tz}, {owner_name},
@@ -162,8 +174,33 @@ class BookMeApp(BaseApp):
                 continue
         return intervals
 
+    async def _calendar_busy(self, cfg: dict, date_str: str) -> list[tuple[_dt.datetime, _dt.datetime]]:
+        """Existing commitments on ``date_str``, read from the calendar app.
+
+        Without this a booking page offers slots you are already committed to —
+        bookme contributes its bookings *to* the calendar agenda but historically
+        never read back *from* it, so the only conflicts it could see were its
+        own. `calendar` is optional: absence, an error, or a malformed row all
+        degrade to "no external commitments", which is the pre-existing
+        behaviour rather than a failure.
+        """
+        default_min = int(cfg.get("external_busy_default_min", 0) or 0)
+        rows, _err = await self.try_call_app(
+            "calendar", "busy_intervals", date=date_str, default_min=default_min
+        )
+        out: list[tuple[_dt.datetime, _dt.datetime]] = []
+        for r in rows or []:
+            try:
+                start = _combine(_dt.date.fromisoformat(date_str), r.get("start", ""))
+                end = _combine(_dt.date.fromisoformat(date_str), r.get("end", ""))
+            except (ValueError, TypeError, AttributeError):
+                continue
+            if end > start:
+                out.append((start, end))
+        return out
+
     # ── slot computation ────────────────────────────────────────────────
-    def _slots_for(self, cfg: dict, et: dict, date_str: str) -> list[str]:
+    async def _slots_for(self, cfg: dict, et: dict, date_str: str) -> list[str]:
         try:
             date_obj = _dt.date.fromisoformat(date_str)
         except ValueError:
@@ -175,7 +212,7 @@ class BookMeApp(BaseApp):
         buffer = int(et.get("buffer_min", 0) or 0)
         step = duration  # grid stride = the slot length
         now_local = self._now_local(cfg)
-        taken = self._taken_intervals(date_str)
+        taken = self._taken_intervals(date_str) + await self._calendar_busy(cfg, date_str)
 
         slots: list[str] = []
         for win in windows:
@@ -207,7 +244,8 @@ class BookMeApp(BaseApp):
     async def api_save_config(self, request):
         body = await self.read_json(request)
         cfg = self._load_config()
-        for key in ("owner_name", "timezone", "event_types", "availability", "email_templates"):
+        for key in ("owner_name", "timezone", "event_types", "availability",
+                    "email_templates", "external_busy_default_min"):
             if key in body:
                 cfg[key] = body[key]
         self._save_config(cfg)
@@ -233,8 +271,8 @@ class BookMeApp(BaseApp):
                 self.vault_update(b["_vault_path"], {"status": "cancelled"})
                 cfg = self._load_config()
                 # Notify booker + emit event without blocking the owner's UI.
-                asyncio.create_task(self._send_booking_email(b, cfg, kind="cancelled"))
-                asyncio.create_task(
+                self.spawn_background(self._send_booking_email(b, cfg, kind="cancelled"))
+                self.spawn_background(
                     self.emit("bookme:cancelled", {"id": bid, "email": b.get("email", "")})
                 )
                 return {"ok": True}
@@ -277,7 +315,7 @@ class BookMeApp(BaseApp):
         if not et or not et.get("active", True):
             return {"error": "not found"}
         date_str = (request.query_params.get("date") or "").strip()
-        return {"date": date_str, "slots": self._slots_for(cfg, et, date_str)}
+        return {"date": date_str, "slots": await self._slots_for(cfg, et, date_str)}
 
     @web_route("POST", "/api/public/book")
     async def api_public_book(self, request):
@@ -312,7 +350,7 @@ class BookMeApp(BaseApp):
         # Re-validate availability inside the lock so two simultaneous bookers
         # can't grab the same slot (read-modify-write race, CLAUDE.md gotcha).
         async with self._book_lock:
-            if time_str not in self._slots_for(cfg, et, date_str):
+            if time_str not in await self._slots_for(cfg, et, date_str):
                 return {"error": "that slot is no longer available"}
             try:
                 start = _combine(_dt.date.fromisoformat(date_str), time_str)
@@ -355,7 +393,7 @@ class BookMeApp(BaseApp):
             "owner_name": cfg.get("owner_name", ""),
         }
         # Notify owner + email the booker without blocking the response.
-        asyncio.create_task(self._after_book(booking))
+        self.spawn_background(self._after_book(booking))
         return {
             "ok": True,
             "booking_id": bid,

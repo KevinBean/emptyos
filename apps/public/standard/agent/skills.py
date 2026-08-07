@@ -1,12 +1,13 @@
 """Skill discovery — Claude-Code-compatible SKILL.md loader.
 
 Skills are markdown playbooks stored as `<skills_dir>/<name>/SKILL.md` with
-YAML frontmatter (`name`, `description`). Three discovery roots are scanned
+YAML frontmatter (`name`, `description`). Four discovery roots are scanned
 in precedence order — later wins on name collision:
 
     1. bundled — `<repo>/skills/`              (ships with EmptyOS)
-    2. project — `<repo>/.claude/skills/`      (repo-scoped overrides)
-    3. user    — `~/.claude/skills/`           (user's own global skills)
+    2. project — `<repo>/.agents/skills/`       (Codex-compatible project skills)
+    3. project — `<repo>/.claude/skills/`       (Claude-compatible overrides)
+    4. user    — `~/.claude/skills/`            (user's own global skills)
 
 The agent uses progressive disclosure: names + descriptions go into the system
 prompt; the full SKILL.md is loaded on demand via the `Skill` tool.
@@ -16,6 +17,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+
+from emptyos.sdk.utils import first_prose_line
 
 
 @dataclass
@@ -34,6 +37,7 @@ class Skill:
 def _skill_dirs(repo_root: Path) -> list[tuple[str, Path]]:
     return [
         ("bundled", repo_root / "skills"),
+        ("project", repo_root / ".agents" / "skills"),
         ("project", repo_root / ".claude" / "skills"),
         ("user", Path.home() / ".claude" / "skills"),
     ]
@@ -106,20 +110,20 @@ def substitute_skill_params(body: str, params: dict[str, str]) -> str:
 
 def _first_meaningful_line(body: str) -> str:
     """Pluck the first non-empty, non-heading line — used as a description
-    fallback when a SKILL.md lacks frontmatter."""
-    for raw in body.splitlines():
-        line = raw.strip()
-        if not line or line.startswith("#"):
-            continue
-        # Strip common markdown emphasis wrappers so the preview is clean.
-        line = line.lstrip("*_").rstrip("*_").strip()
-        if line:
-            return line[:240]
-    return ""
+    fallback when a SKILL.md lacks frontmatter.
+
+    `allow_heading` stays off: a heading is a section name, not a description,
+    and an empty result correctly signals "this SKILL.md has nothing to say".
+    """
+    return first_prose_line(body)[:240]
 
 
 def discover_skills(repo_root: Path) -> dict[str, Skill]:
-    """Build the skill catalog. User skills override project override bundled."""
+    """Build the catalog.
+
+    User skills override project skills; within the project, ``.claude``
+    overrides ``.agents`` so established Claude workflows keep precedence.
+    """
     catalog: dict[str, Skill] = {}
     for source, root in _skill_dirs(repo_root):
         if not root.exists():

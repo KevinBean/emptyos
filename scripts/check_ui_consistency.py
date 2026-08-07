@@ -10,12 +10,14 @@ self-audit-loops.md. Reference-clean page: apps/extension/dev/promote/pages/inde
 
 Five signals (per page):
 
-  S1  broken theme bootstrap  — an inline `eos-theme` bootstrap that does NOT
-      carry the canonical 6-theme validation list (it can't self-heal an unknown
-      theme, so it renders the page with undefined tokens). 🔴 mis-render.
+  S1  broken theme bootstrap  — an inline `eos-theme` bootstrap with no safe boot
+      default, so the page renders with undefined tokens. 🔴 mis-render.
       Source of truth for the correct snippet: emptyos/web/server.py
-      ::_inject_theme_bootstrap (default 'eos', validate, self-heal).
-  S2  hardcoded hex fallback  — `var(--x, #hex)`; defeats theming. 🟠 if heavy.
+      ::_THEME_BOOTSTRAP_TAG (default 'eos', shape-validate, never write).
+  S2  dead hex fallback       — `var(--x, #hex)` where `--x` is defined nowhere,
+      so the hex always wins and the page never themes. 🟠 if heavy. A fallback
+      on a token that DOES resolve is house style (eos-components.css uses it
+      56×), reported as a note.
   S3  bespoke `.btn`          — re-implements `.eos-btn`. 🟡
   S4  bespoke `.badge`        — re-implements `.eos-badge`. 🟡
   S5  `system-ui` font        — instead of `var(--font)`. 🟡
@@ -74,20 +76,60 @@ HEX_HEAVY = 5  # hex-fallback count at/above which a page (no S1) is 🟠 not �
 #   broken  — applies a theme class but defaults to a non-canonical theme
 #             (||'dark' / 'default' / 'light'), or has no boot default at all
 #             (a setter-only page like settings): mis-renders on a clean load.
-#   fragile — has a real default (||'eos') but no validation list, so it can't
-#             self-heal a stale stored theme: renders today, breaks on bad state.
-#   ok      — carries the canonical 6-theme validation list (self-heals), or has
-#             no inline bootstrap at all (server injects the canonical one).
+#   fragile — has a real default (||'eos') but neither validation form below, so
+#             a junk stored id reaches the class name: renders today, odd on bad state.
+#   ok      — shape-validates the class suffix (the CURRENT canonical snippet), or
+#             carries the legacy 6-theme allowlist, or has no inline bootstrap at
+#             all (server injects the canonical one).
+#
+# Two `ok` forms exist because the platform deliberately RETIRED the per-page
+# allowlist (server.py::_THEME_BOOTSTRAP_TAG): duplicating the theme list into
+# every page meant adding a theme required editing 20+ files, and missing one was
+# silently destructive — that page's snippet rewrote localStorage to 'eos',
+# wiping the user's choice globally. The canonical snippet now only shape-validates
+# and never writes; eos.js::_setThemeClass owns the authoritative registry and
+# self-heals a few ms later. Requiring the allowlist here flagged 30 correct pages
+# (including this scanner's own declared reference page, `promote`) and would have
+# driven a mass re-introduction of the retired anti-pattern.
 CANONICAL_THEMES = {"eos", "digital-garden", "soft-light", "warm-dark", "void-dark", "nord"}
 RE_HAS_BOOTSTRAP = re.compile(r"eos-theme")
-RE_CANONICAL_LIST = re.compile(r"digital-garden")   # half the self-heal-array signature
+# Current canonical form: a syntactically-safe class-suffix shape check.
+RE_SHAPE_VALIDATION = re.compile(re.escape("[a-z0-9-]{0,31}"))
+RE_CANONICAL_LIST = re.compile(r"digital-garden")   # half the legacy self-heal-array signature
 RE_CANONICAL_LIST2 = re.compile(r"void-dark")       # other half
 # default theme captured from `getItem('eos-theme') || 'X'`
 RE_BOOTSTRAP_DEFAULT = re.compile(r"eos-theme['\"]\)?\s*\|\|\s*['\"]([a-z-]+)['\"]")
 # does the page apply a theme class at boot (`'theme-' + t`, className=, classList.add)?
 RE_APPLIES_THEME = re.compile(r"'theme-'\s*\+|className\s*=\s*['\"]theme-|classList\.add\(\s*['\"]theme-")
-# S2: var(--token, #hex)
-RE_HEX_FALLBACK = re.compile(r"var\(\s*--[a-z0-9-]+\s*,\s*#[0-9a-fA-F]{3,8}")
+# S2: var(--token, #hex).
+#
+# The bare form is NOT drift — it is EmptyOS house style, and eos-components.css
+# (the shared component library every app copies from) uses it 56 times, itself
+# included `var(--accent-ink, #fff)`. A fallback only "defeats theming" when the
+# token never resolves, because a defined token always wins over its fallback.
+# Counting every occurrence flagged 92/92 usages tree-wide — all resolving — so
+# severity is driven ONLY by fallbacks whose token is undefined in both the
+# platform CSS and the page itself. Resolved ones are reported as a note.
+RE_HEX_FALLBACK = re.compile(r"var\(\s*(--[a-z0-9-]+)\s*,\s*#[0-9a-fA-F]{3,8}")
+RE_TOKEN_DEF = re.compile(r"(--[a-z0-9-]+)\s*:")
+
+
+def _platform_tokens() -> set[str]:
+    """Every custom property defined by the shared stylesheets (cached)."""
+    global _PLATFORM_TOKENS
+    if _PLATFORM_TOKENS is None:
+        found: set[str] = set()
+        static = REPO_ROOT / "emptyos" / "web" / "static"
+        for css in sorted(static.glob("*.css")):
+            try:
+                found |= set(RE_TOKEN_DEF.findall(css.read_text(encoding="utf-8", errors="replace")))
+            except OSError:
+                continue
+        _PLATFORM_TOKENS = found
+    return _PLATFORM_TOKENS
+
+
+_PLATFORM_TOKENS: set[str] | None = None
 # S3 / S4: a bespoke `.btn` / `.badge` *redefinition* — a page re-styling the
 # shared theme.css `.btn` / `.badge` in its own <style>. We flag only the CSS
 # SELECTOR that opens a rule (`.btn {`, `.btn.primary {`, `.btn:hover {`, `.btn,`),
@@ -151,8 +193,10 @@ def scan_page(page: Path) -> dict:
     # S1 (bootstrap) runs on raw text — its markers never live in comments.
     if not RE_HAS_BOOTSTRAP.search(text):
         bootstrap = "ok"  # no inline bootstrap → server injects the canonical one
+    elif RE_SHAPE_VALIDATION.search(text):
+        bootstrap = "ok"  # current canonical form (server.py::_THEME_BOOTSTRAP_TAG)
     elif RE_CANONICAL_LIST.search(text) and RE_CANONICAL_LIST2.search(text):
-        bootstrap = "ok"  # carries the self-heal validation list
+        bootstrap = "ok"  # legacy self-heal validation list
     else:
         defaults = RE_BOOTSTRAP_DEFAULT.findall(text)
         bad = [d for d in defaults if d not in CANONICAL_THEMES]
@@ -166,7 +210,11 @@ def scan_page(page: Path) -> dict:
 
     # Component/hex/font signals run on comment-stripped text.
     body = strip_comments(text)
-    hex_n = len(RE_HEX_FALLBACK.findall(body))
+    # A fallback is only drift when its token resolves nowhere — see RE_HEX_FALLBACK.
+    known = _platform_tokens() | set(RE_TOKEN_DEF.findall(body))
+    fallback_tokens = RE_HEX_FALLBACK.findall(body)
+    hex_n = sum(1 for t in fallback_tokens if t not in known)
+    hex_resolved = len(fallback_tokens) - hex_n
     s3 = bool(RE_BESPOKE_BTN.search(body))
     s4 = bool(RE_BESPOKE_BADGE.search(body))
     s5 = bool(RE_SYSTEM_FONT.search(body))  # reported as a note, not a severity driver
@@ -197,6 +245,7 @@ def scan_page(page: Path) -> dict:
         "signals": {
             "bootstrap": bootstrap,
             "hex_fallbacks": hex_n,
+            "hex_fallbacks_resolved": hex_resolved,  # note only — house style, not drift
             "bespoke_btn": s3,
             "bespoke_badge": s4,
             "system_font": s5,

@@ -75,7 +75,7 @@ One-line: what the app is, in market terms.
 
 Contract rules:
 
-- **Frontmatter is flat, tags block-style** (CLAUDE.md gotchas). `score`/`grade` come from `scorecard-latest.json`; `open_gaps` = count of `open` + `planned` rows; `market` is a category slug, or `none` for apps with genuinely no external analogue.
+- **Frontmatter is flat, tags block-style** (CLAUDE.md gotchas). `score` comes from `scorecard-latest.json`; **`grade` is derived from `score`** by `check_gap_freshness.py` (`GRADE_BANDS`) — write your best guess and let `--write-index` normalise it, never hand-tune it to feel right; `open_gaps` = count of `open` + `planned` rows; `market` is a category slug, or `none` for apps with genuinely no external analogue.
 - **Gap IDs are stable slugs** (`<app>-<slug>`) — never renumber or rephrase an ID; re-runs and the ledger match on them.
 - **Status vocab:** `open / planned / deferred / shipped / declined / regressed`. `planned` = user said build it; `deferred` = has a DEFERRED-WORK row; `declined` = user or posture says no (keep the row — it prevents re-proposing).
 - **Every competitor claim carries a source URL** (`feedback_scan_results_with_links`). No URL → the claim is graded `inferred` and must say so.
@@ -128,6 +128,8 @@ Before proposing any gap whose fix smells like "adopt/borrow tool X": `python sc
 ```bash
 python scripts/insights_ledger.py record gap "<app>: <gap one-liner>" ...
 ```
+
+Record **every** `open` gap, not just the build-now shortlist — the note and the ledger must reconcile, and a silently-capped record reads as "that's all there is" on the next pass (`.claude/rules/audits.md` § no silent caps). Rank in the chat report instead.
 
 (or `--from <note>` if the note carries a `## Suggested next steps` section). Then regenerate the coverage index deterministically:
 

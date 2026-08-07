@@ -57,6 +57,19 @@ def stub_app(voice_module):
     return inst
 
 
+def _register(stub, verb: str, app: str, method: str, args: dict | None = None) -> None:
+    """Register a verb in the stub's intent registry.
+
+    ``execute_plan`` resolves every step against ``_intents`` and derives
+    app/method from the entry rather than trusting the plan dict, so a test
+    plan only runs for verbs registered here. Before that change these tests
+    passed with an empty registry — which was the bypass, not a feature.
+    """
+    stub._intents[verb] = {
+        "verb": verb, "_app_id": app, "method": method, "args": args or {},
+    }
+
+
 # ── _find_intents ─────────────────────────────────────────────────────────
 
 class TestFindIntents:
@@ -195,6 +208,8 @@ class TestExecutePlan:
         async def fake(**_):
             return {"say": "did it"}
         stub_app.call_app = lambda app, method, **kw: fake(**kw)
+        _register(stub_app, "a.b", "a", "m")
+        _register(stub_app, "c.d", "c", "m")
         plan = {"calls": [
             {"verb": "a.b", "args": {}, "app": "a", "method": "m", "error": None},
             {"verb": "c.d", "args": {}, "app": "c", "method": "m", "error": None},
@@ -212,6 +227,8 @@ class TestExecutePlan:
         async def fake_call_app(app, method, **kw):
             return await (fail(**kw) if app == "fails" else ok(**kw))
         stub_app.call_app = fake_call_app
+        _register(stub_app, "fails.x", "fails", "m")
+        _register(stub_app, "ok.x", "ok", "m")
         plan = {"calls": [
             {"verb": "fails.x", "args": {}, "app": "fails", "method": "m", "error": None},
             {"verb": "ok.x", "args": {}, "app": "ok", "method": "m", "error": None},
@@ -226,6 +243,8 @@ class TestExecutePlan:
         stub_app.call_app = fake_call_app
         # _persist_recent_apps writes to data_dir; stub it out.
         stub_app._persist_recent_apps = lambda: None
+        _register(stub_app, "a.x", "a", "m")
+        _register(stub_app, "b.x", "b", "m")
         plan = {"calls": [
             {"verb": "a.x", "args": {}, "app": "a", "method": "m", "error": None},
             {"verb": "b.x", "args": {}, "app": "b", "method": "m", "error": None},
@@ -238,8 +257,55 @@ class TestExecutePlan:
             return "raw string result"
         stub_app.call_app = fake_call_app
         stub_app._persist_recent_apps = lambda: None
+        _register(stub_app, "a.x", "a", "m")
         plan = {"calls": [
             {"verb": "a.x", "args": {}, "app": "a", "method": "m", "error": None},
         ]}
         results = asyncio.run(stub_app.execute_plan(plan))
         assert results[0]["result"] == {"value": "raw string result"}
+
+
+class TestExecutePlanTrustBoundary:
+    """The plan reaching execute_plan is caller-supplied (POST /api/execute-plan
+    and quick-action's forwarder both hand it straight through), so these pin
+    that it is treated as untrusted."""
+
+    def test_unknown_verb_is_refused(self, stub_app):
+        called = []
+        stub_app.call_app = lambda app, method, **kw: called.append((app, method))
+        plan = {"calls": [
+            {"verb": "evil.exfiltrate", "args": {}, "app": "evil", "method": "exfiltrate",
+             "error": None},
+        ]}
+        results = asyncio.run(stub_app.execute_plan(plan))
+        assert "unknown or out-of-scope" in results[0]["error"]
+        assert called == []
+
+    def test_app_and_method_come_from_registry_not_the_plan(self, stub_app):
+        # A step naming a benign verb must not be able to dispatch elsewhere.
+        seen = []
+
+        async def fake_call_app(app, method, **kw):
+            seen.append((app, method))
+            return {"ok": True}
+
+        stub_app.call_app = fake_call_app
+        stub_app._persist_recent_apps = lambda: None
+        _register(stub_app, "task.add", "task", "add")
+        plan = {"calls": [
+            {"verb": "task.add", "args": {}, "app": "repo", "method": "exec", "error": None},
+        ]}
+        asyncio.run(stub_app.execute_plan(plan))
+        assert seen == [("task", "add")]
+
+    def test_args_are_revalidated(self, stub_app):
+        called = []
+        stub_app.call_app = lambda app, method, **kw: called.append(kw)
+        _register(stub_app, "task.add", "task", "add", {"text": "string"})
+        plan = {"calls": [
+            {"verb": "task.add", "args": {"text": 42}, "app": "task", "method": "add",
+             "error": None},
+        ]}
+        results = asyncio.run(stub_app.execute_plan(plan))
+        assert "text" in results[0]["error"]
+        assert called == []

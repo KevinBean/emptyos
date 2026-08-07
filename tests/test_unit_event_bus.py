@@ -249,3 +249,22 @@ def test_slow_detection_does_not_cancel_the_handler(bus, monkeypatch):
     bus.on("test:slow", sluggish)
     asyncio.run(bus.emit("test:slow", {}))
     assert done == [True]
+
+
+def test_emit_survives_a_locked_events_db(bus):
+    """A transient 'database is locked' during persist must not crash emit().
+
+    Same incident class as the syslog.py regression (2026-08-01): _persist()
+    was the one write in this file that didn't honor the "never raises" rule
+    _check_slow already documents. A locked events.db right after a watchdog
+    respawn would otherwise take down whatever awaited emit() with it.
+
+    A closed connection raises sqlite3.ProgrammingError on execute() — a
+    real sqlite3.Error subclass, standing in for the OperationalError a
+    live lock would raise.
+    """
+    bus._db.close()
+    fired = []
+    bus.on("test:x", lambda event: fired.append(event.type))
+    asyncio.run(bus.emit("test:x", {}))  # must not raise
+    assert fired == ["test:x"]

@@ -53,9 +53,14 @@
     // Use classList — preserves other classes (e.g. `eos-full-screen` injected
     // by the kernel for apps with `[app] full_screen = true`). Strip any
     // existing `theme-*` first so swapping themes works idempotently.
-    // Mirrors EOS.THEMES (defined later in this file) — inlined here because
-    // _setThemeClass runs at load before EOS.THEMES exists. Keep both in sync.
-    var _KNOWN_THEMES = ['eos', 'digital-garden', 'soft-light', 'warm-dark', 'void-dark', 'nord'];
+    // THE theme registry. `EOS.THEMES` is assigned from this same array later
+    // in the file (not a copy), and the pre-paint bootstrap in server.py
+    // deliberately holds no list at all — so a new theme is added here, in
+    // EOS.THEME_LABELS, in theme.css, and in the settings schema. Nowhere else.
+    var _KNOWN_THEMES = [
+        'eos', 'digital-garden', 'soft-light', 'tatami',
+        'warm-dark', 'void-dark', 'nord', 'forest', 'deep-sea', 'vino',
+    ];
     function _setThemeClass(name) {
         // A stale/dropped theme id (e.g. one left in localStorage after a theme
         // was renamed/removed, like 'botanical-scroll') maps to an undefined
@@ -869,14 +874,18 @@
         };
     };
 
-    EOS.THEMES = ['eos', 'digital-garden', 'soft-light', 'warm-dark', 'void-dark', 'nord'];
+    EOS.THEMES = _KNOWN_THEMES;   // same array — never a second list to sync
     EOS.THEME_LABELS = {
         'eos': 'Warm light',
         'digital-garden': 'Digital Garden',
         'soft-light': 'Soft light',
+        'tatami': 'Tatami',
         'warm-dark': 'Amber dark',
         'void-dark': 'Void dark',
         'nord': 'Nord',
+        'forest': 'Forest',
+        'deep-sea': 'Deep sea',
+        'vino': 'Vino',
     };
 
     EOS.setTheme = function(name) {

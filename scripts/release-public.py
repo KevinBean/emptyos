@@ -124,6 +124,11 @@ PUBLIC_DOC_DROP = [
     "docs/ENGINEERING-WORK-LOOP.md",
     "docs/KB-APP-ALIGNMENT-AUDIT.md",
     "docs/ENGINEERING-APPS-AUDIT-2026-07-17.md",
+    "docs/POWERFACTORY-APP-OPTIMIZER-2026-07-15.md",
+    # Not a doc, but the same unlink applies: this CI workflow runs the held
+    # engineering engines' conformance suites, which the public snapshot drops —
+    # shipping it would break public CI and name a held engine path.
+    ".github/workflows/engine-conformance.yml",
     # Internal planning / strategy / roadmap docs — not contributor/user docs, and
     # they reference held engineering apps as examples. Public OSS cloners don't
     # need EmptyOS's private backlog or borrow-verdict log.
@@ -241,7 +246,7 @@ def run_scans(target_dir: Path | None = None) -> None:
         # Scripts live in ROOT/scripts/ — invoke with absolute path so they
         # can run inside the snapshot dir which has its own copy.
         path = ROOT / "scripts" / script
-        run(["python", str(path)], cwd=cwd)
+        run([sys.executable, str(path)], cwd=cwd)
     check_no_private_apps(cwd)
     if target_dir is None:
         # Static dispatch audit — working tree, public-source scope. Catches
@@ -253,18 +258,18 @@ def run_scans(target_dir: Path | None = None) -> None:
         # apps that actually ship; personal-app dispatch bugs don't block a
         # release. Exit code = HIGH count, so `run` aborts on any HIGH.
         ca = ROOT / "scripts" / "code_archaeology.py"
-        run(["python", str(ca), "--public-only", "--tier", "high"], cwd=ROOT)
+        run([sys.executable, str(ca), "--public-only", "--tier", "high"], cwd=ROOT)
         # Attribute-escaper audit — fails on any attribute-context esc() (the
         # wrong-escaper XSS class): plain-attribute sites AND inline event handlers
         # ("js-context"). Both are 0 after the --fix / --fix-js codemods; a new
         # one (or a js-context shape --fix-js can't auto-rewrite) blocks the release.
         ae = ROOT / "scripts" / "check-attr-escaper.py"
-        run(["python", str(ae)], cwd=ROOT)
+        run([sys.executable, str(ae)], cwd=ROOT)
         # Generated-doc drift gate — APPS.md / TIERS.md must match the live app
         # tree + release.toml (reproducible from the tracked docs/doc-summaries.json
         # cache). Run on the WORKING TREE so the generators see the full app set.
         for gen in ("generate_apps_doc.py", "generate_tiers_doc.py"):
-            run(["python", str(ROOT / "scripts" / gen), "--check"], cwd=ROOT)
+            run([sys.executable, str(ROOT / "scripts" / gen), "--check"], cwd=ROOT)
     print(f"    OK: {label} scans clean")
 
 
@@ -327,7 +332,7 @@ def run_clickable_audit() -> None:
     step("Click-target audit (primary CTAs not intercepted by FAB / overlays)")
     path = ROOT / "scripts" / "check-clickable.py"
     import subprocess
-    proc = subprocess.run(["python", str(path)], cwd=ROOT)
+    proc = subprocess.run([sys.executable, str(path)], cwd=ROOT)
     if proc.returncode == 2:
         print("    WARNING: daemon at :9000 unreachable — click audit skipped.")
         print("    Start the daemon and re-run release-public.py to enforce.")
@@ -349,7 +354,7 @@ def run_kb_alignment_audit() -> None:
     """
     step("KB/app alignment audit (implemented_in paths, app KB refs, slugs)")
     path = ROOT / "scripts" / "check-kb-alignment.py"
-    proc = subprocess.run(["python", str(path)], cwd=ROOT)
+    proc = subprocess.run([sys.executable, str(path)], cwd=ROOT)
     if proc.returncode == 2:
         print("    WARNING: vault not configured — KB alignment gate skipped.")
         print("    Mount the vault and re-run release-public.py to enforce.")
@@ -695,7 +700,16 @@ HELD_REF_CODE_ALLOWLIST = {
     "emptyos/sdk/utils.py",
     "emptyos/web/routes_auth.py",
     "emptyos/web/static/eos-cable-section.js",
+    # "short-circuit force" is the physical quantity the shipped check message
+    # names — domain vocabulary, not the held app id.
+    "emptyos/web/static/eos-cad-checks-core.js",
     "emptyos/web/static/eos-cad-corridor.js",
+    # The checks view dispatches to engineering-scene's live API by route
+    # prefix — same accepted app-id exposure as the other cad-views files.
+    "emptyos/web/static/eos-cad-views/checks.js",
+    # "short-circuit" is a domain keyword in the T2 queue classifier's
+    # vocabulary list — data, not a reference to the held app.
+    "scripts/ingest_build_t2_queue.py",
     "emptyos/web/static/eos-cad-viewport.js",
     "emptyos/web/static/eos-cad-views/corridor-inspector.js",
     "emptyos/web/static/eos-cad-views/cross-section.js",
@@ -747,31 +761,56 @@ def filter_suites_toml(temp_dir: Path) -> None:
         return
 
     step("Filter suites.toml (drop private suites)")
+    # Unlike release.toml, identity is not in the header — every block opens with
+    # a bare [[suite]] and names itself on an inner `id =`. So a block has to be
+    # buffered until its id appears, rather than decided at the header.
     out: list[str] = []
-    block: list[str] = []      # current [[suite]] block, flushed once we know its id
-    pending: list[str] = []    # comment/blank run — belongs to the NEXT block
-    block_id = None
+    block: list[str] = []      # current [[suite]] block, emitted once its id is known
+    pending: list[str] = []    # comment/blank run — belongs to whatever comes NEXT
+    block_id: str | None = None
+    started = False
+
+    def pending_starts_next_block() -> bool:
+        # A separated run (starts with a blank line) is suite-to-suite spacing or
+        # an intro comment for the NEXT suite. A comment immediately after a key
+        # belongs to the current suite and must ride with it.
+        return bool(pending and not pending[0].strip())
 
     def flush() -> None:
         if block and block_id not in private_ids:
-            out.extend(pending)
             out.extend(block)
 
     for line in text.splitlines(keepends=True):
-        stripped = line.strip()
-        if stripped == "[[suite]]":
+        s = line.strip()
+        if s == "[[suite]]":
+            if pending and not pending_starts_next_block():
+                block.extend(pending)
+                pending = []
             flush()
-            if not block:          # preamble before the first suite — always keep
-                out.extend(pending)
-            pending, block, block_id = [], [line], None
+            # The comment run above a suite introduces it, so it shares its fate.
+            # Emitting it separately would ship the held suite's rationale prose
+            # while dropping the suite — the exact leak this filter exists to stop.
+            block, pending, block_id, started = pending + [line], [], None, True
             continue
-        if not block:
+        if not started:            # preamble before the first suite — always keep
+            out.extend(pending)
+            pending = []
             out.append(line)
             continue
-        if block_id is None and stripped.startswith("id ="):
-            block_id = stripped.split("=", 1)[1].strip().strip('"').strip("'")
+        if not s or s.startswith("#"):
+            pending.append(line)   # hold it: may introduce the NEXT suite
+            continue
+        if block_id is None and s.startswith("id ="):
+            block_id = s.split("=", 1)[1].strip().strip('"').strip("'")
+        block.extend(pending)      # a key line proves the run belonged to THIS suite
+        pending = []
         block.append(line)
+    if pending and not pending_starts_next_block():
+        block.extend(pending)
+        pending = []
     flush()
+    if not started or block_id not in private_ids:
+        out.extend(pending)        # trailing run rides along only with a kept block
 
     path.write_text("".join(out), encoding="utf-8")
     print(f"    dropped {len(private_ids)} private suite(s): {', '.join(sorted(private_ids))}")
@@ -1263,7 +1302,7 @@ def main() -> None:
             # generator (its tree is already filtered) with --public-only so the
             # public APPS.md doesn't reference extension/labs apps absent here.
             step("Regenerate APPS.md (public-only) in snapshot")
-            run(["python", str(temp_dir / "scripts" / "generate_apps_doc.py"), "--public-only"], cwd=temp_dir)
+            run([sys.executable, str(temp_dir / "scripts" / "generate_apps_doc.py"), "--public-only"], cwd=temp_dir)
         run_scans(temp_dir)  # snapshot
         if not args.all:
             check_docs_no_held_refs(temp_dir)  # prose-IP gate (after doc filter)

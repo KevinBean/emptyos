@@ -139,6 +139,39 @@ If no changes detected → report "Site: up to date, no changes."
 
 ---
 
+### Step 5.5: Close the claimed plan task
+
+Skip entirely if this session didn't claim one (no plan was open at resume, or
+the work was unbounded track work). Contract: `.claude/rules/session-plans.md`.
+
+A conversation may have run **several claim cycles serially** (claim → close →
+claim the next). Close **every** task it claimed, each with its own disposition
+and the same `session` date. For each one, find its plan under
+`{vault}/10_Projects/emptyos/log/_plans/` and:
+
+1. Set that row's `status: done`, a `disposition`, and `session: <today>`.
+   Dispositions (from `fix_queue.DISPOSITIONS`): `shipped` (built + landed) ·
+   `deferred` (decided later — say where the trigger is recorded) · `declined`
+   (decided against — say why) · `dismissed` (turned out unnecessary) · `done`
+   (generic).
+2. Clear `active_task: ""`. **Do this even when the task didn't finish** — leave
+   `status: active` → `queued`, append what's left to the task cell, and clear
+   the claim so the next session can pick it up. A stale claim blocks the plan.
+3. **Close only the claimed task.** Work that turned out to be a different task
+   gets **appended as a new row**, never folded into this one. Silently widening
+   the claimed task is how the one-session-one-task constraint dies.
+4. If that was the last open task → move the whole file to `_plans/done/<slug>.md`.
+   The closed file **is** the record; there's no separate ledger. Say so in the
+   report so the user sees the plan finished.
+
+If a `blocked` row's blocker cleared this session, flip it to `queued` and drop
+the `[blocked-human]` / `[decision-Kevin]` tag.
+
+Report as: `Plan: <slug> · <id> → done (shipped) · N of M tasks closed` — or
+`Plan: none claimed`.
+
+---
+
 ### Step 6: Next Session Brief — Write a primer for the next conversation
 
 While the session's context is still fresh, write a concise primer the **next** Claude can read to skip the warmup. Briefs are stored **per work track** so parallel tracks (engines, career, publish, infra) can't clobber each other when their wrapups land back-to-back.

@@ -217,7 +217,7 @@ async def run_all(self, runbook_id: str, *, mode: str = "interactive") -> dict:
         record = {"mode": mode, "ok": not stopped,
                   "blocks": {k: v.get("status") for k, v in results.items()}}
         store.append_run(runbook_id, record)
-    asyncio.create_task(self.emit("runbook:run_finished",
+    self.spawn_background(self.emit("runbook:run_finished",
                                   {"id": runbook_id, "ok": record["ok"]}))
     return {"id": runbook_id, "results": results, "ok": record["ok"]}
 
@@ -248,7 +248,7 @@ async def run_from(self, runbook_id: str, block_id: str, *, mode: str = "interac
                 context["deferred"].add(b.output)
             if st.get("status") == "error" and not b.header.get("continue_on_error"):
                 stopped = True
-    asyncio.create_task(self.emit("runbook:block_ran",
+    self.spawn_background(self.emit("runbook:block_ran",
                                   {"id": runbook_id, "block": block_id}))
     return {"id": runbook_id, "from": block_id, "results": results}
 

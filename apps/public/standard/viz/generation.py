@@ -11,8 +11,21 @@ Do not import from ``.app`` (it imports us, which would cycle).
 from __future__ import annotations
 
 from pathlib import Path
-from .shared import VIZ_BASE_SYSTEM, VIZ_3D_SCENE_PRESET, PRESETS, _shape_min_ability, _shape_max_tokens, _extract_html, _looks_like_html, _looks_truncated, _now_iso, _new_id
 from typing import TYPE_CHECKING
+
+from .shared import (
+    PRESETS,
+    VIZ_3D_SCENE_PRESET,
+    VIZ_BASE_SYSTEM,
+    _extract_html,
+    _looks_like_html,
+    _looks_truncated,
+    _new_id,
+    _normalize_game_2d_html,
+    _now_iso,
+    _shape_max_tokens,
+    _shape_min_ability,
+)
 
 if TYPE_CHECKING:
     from .app import VizApp  # noqa: F401 — for type hints only
@@ -27,6 +40,8 @@ if TYPE_CHECKING:
 #   _think_html         = _generation._think_html
 #   _check_size         = _generation._check_size
 #   _reject_reason      = _generation._reject_reason
+#   _salvage_enabled    = _generation._salvage_enabled
+#   _truncation_salvage = _generation._truncation_salvage
 #   _persist            = _generation._persist
 #   _think_html_stream  = _generation._think_html_stream
 #   generate            = _generation.generate
@@ -112,8 +127,42 @@ def _reject_reason(self, html: str) -> str:
     return ""
 
 
+def _salvage_enabled(self) -> bool:
+    """Dark flag ``apps.viz.feature.truncation-salvage.enabled`` (default off).
+    Off → a truncated artifact is discarded exactly as before."""
+    return bool(self.app_config("feature.truncation-salvage.enabled", False))
+
+
+def _truncation_salvage(self, html: str) -> str | None:
+    """If salvage is on and `html` is a *truncated* artifact (not not-HTML, not
+    oversize), return a valid banner-wrapped document built from the partial;
+    else None. The output-token ceiling should degrade to 'save what completed +
+    say what was cut' (no silent cap), never silently discard the whole thing."""
+    if not self._salvage_enabled():
+        return None
+    if not _looks_like_html(html):
+        return None
+    truncated, why = _looks_truncated(html)
+    if not truncated:
+        return None
+    from emptyos.sdk.html_artifact import salvage_truncated_html
+    kb = max(1, round(len(html.encode("utf-8")) / 1024))
+    return salvage_truncated_html(
+        html,
+        banner_note=(f"This artifact was truncated at the model's output limit "
+                     f"(~{kb} KB generated) — {why}. It is incomplete; regenerate "
+                     f"with a shorter or simpler brief, or split it into parts."),
+    )
+
+
+# Standard note surfaced to the caller when a truncated artifact was salvaged.
+_SALVAGE_NOTE = "Saved a partial artifact — output was truncated at the model's limit; the page carries a banner saying so."
+
+
 async def _persist(self, rid: str, html: str, prompt: str, shape: str, *, is_update: bool) -> dict:
     """Write scene.html + record.md, return metadata dict."""
+    if shape == "game-2d":
+        html = _normalize_game_2d_html(html)
     record_dir = self._record_dir(rid)
     record_dir.mkdir(parents=True, exist_ok=True)
 
@@ -225,10 +274,16 @@ async def generate(
 
     html = await self._think_html(system, prompt, min_ability=_shape_min_ability(shape), max_tokens=_shape_max_tokens(shape))
     reason = self._reject_reason(html)
+    truncated = False
     if reason:
-        return {"ok": False, "error": reason}
+        salvaged = self._truncation_salvage(html)
+        if salvaged is None:
+            return {"ok": False, "error": reason}
+        html, truncated = salvaged, True
 
     rid = _new_id()
     meta = await self._persist(rid, html, prompt, shape, is_update=False)
     await self.emit("viz:created", {"id": rid, "shape": shape})
+    if truncated:
+        return {"ok": True, "truncated": True, "note": _SALVAGE_NOTE, **meta}
     return {"ok": True, **meta}

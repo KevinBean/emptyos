@@ -1,56 +1,33 @@
-"""Shared parse of `emptyos/web/static/theme.css` — one source of truth.
+"""Shared parse of `emptyos/web/static/theme.css` — re-export of the SDK module.
 
-Two checkers read the theme's token declarations and were doing it with their own
-near-identical regexes (`check-contrast.py` for the *values*, `check-text-tokens.py`
-for the *names*). Second consumer → extract, per CLAUDE.md rule 9. If theme.css's
-shape ever changes, exactly one parser needs updating.
+The implementation moved to `emptyos/sdk/theme_tokens.py` when the publish app
+(a runtime consumer, not a script) needed the same parse and could not import
+from `scripts/`. This shim keeps `check-contrast.py` / `check-text-tokens.py`
+importing `theme_css` unchanged.
 
-Deliberately regex, not a CSS parser: theme.css is a flat, hand-maintained file of
-`.theme-<name> { --tok: value; … }` blocks plus a `:root` block, and a dependency
-would buy nothing.
+Import from `emptyos.sdk.theme_tokens` in new code.
 """
+
 from __future__ import annotations
 
-import re
+import sys
 from pathlib import Path
 
-REPO = Path(__file__).resolve().parent.parent
-THEME_CSS = REPO / "emptyos" / "web" / "static" / "theme.css"
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-_COMMENT = re.compile(r"/\*.*?\*/", re.DOTALL)
-_THEME_BLOCK = re.compile(r"\.theme-([a-z0-9-]+)\s*\{([^{}]*)\}", re.IGNORECASE | re.DOTALL)
-_VAR = re.compile(r"--([\w-]+)\s*:\s*([^;]+);")
+from emptyos.sdk.theme_tokens import (  # noqa: E402,F401
+    REPO,
+    ROOT_BLOCK,
+    SITE_TOKENS,
+    THEME_CSS,
+    blank_comments,
+    load,
+    parse_root,
+    parse_themes,
+    theme_var_map,
+)
 
-#: Matches a `:root` / `html` / `body` declaration block. Public — callers scanning
-#: *other* stylesheets for token hijacks need the same notion of "global block".
-ROOT_BLOCK = re.compile(r"(?:^|[\s,{}])(?::root|html|body)\s*(?:,[^{]*)?\{([^{}]*)\}", re.MULTILINE)
-
-
-def blank_comments(src: str) -> str:
-    """Blank out `/* … */` bodies, preserving newlines so line numbers hold.
-
-    Prose in a comment ("mixed toward --text:") is not a declaration — quickref's
-    own explanatory comment tripped the token scan before this existed.
-    """
-    return _COMMENT.sub(lambda m: re.sub(r"[^\n]", " ", m.group(0)), src)
-
-
-def parse_themes(css: str) -> dict[str, dict[str, str]]:
-    """`.theme-<name>` blocks → {theme: {token: raw_value}}. Colour tokens only,
-    by construction — the shared non-colour scale lives in `:root`."""
-    return {
-        m.group(1): {v.group(1): v.group(2).strip() for v in _VAR.finditer(m.group(2))}
-        for m in _THEME_BLOCK.finditer(blank_comments(css))
-    }
-
-
-def parse_root(css: str) -> dict[str, str]:
-    """`:root` / `html` / `body` blocks → {token: raw_value} (merged)."""
-    out: dict[str, str] = {}
-    for m in ROOT_BLOCK.finditer(blank_comments(css)):
-        out.update({v.group(1): v.group(2).strip() for v in _VAR.finditer(m.group(1))})
-    return out
-
-
-def load(path: Path = THEME_CSS) -> str:
-    return path.read_text(encoding="utf-8") if path.exists() else ""
+__all__ = [
+    "ROOT_BLOCK", "SITE_TOKENS", "THEME_CSS", "REPO",
+    "blank_comments", "load", "parse_root", "parse_themes", "theme_var_map",
+]

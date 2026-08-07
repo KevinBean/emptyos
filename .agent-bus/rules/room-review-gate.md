@@ -94,7 +94,7 @@ Each saved pending entry has the shape:
   "app": "task",
   "method": "add",
   "args": {"text": "..."},
-  "status": "pending"   // pending → applied | rejected | failed
+  "status": "pending"   // pending → approving → applied | rejected | failed
 }
 ```
 
@@ -120,14 +120,36 @@ Card renders inline (yield from generator) + saved on the message
    ↓
 User clicks Apply or Reject
    ↓
+claim_pending (emptyos/sdk/pending_claim.py) — under a per-action lock,
+PERSIST status: "approving" before anything runs, then release the lock
+   ├── someone already claimed it → {"error": "already <status>"}, nothing runs
+   └── won the claim → continue, executing OUTSIDE the lock
+   ↓
 apply_pending → call_app(app, method, **args)
    ├── success → status: "applied", result captured
    ├── unknown app/method → status: "failed", error captured
    └── exception → status: "failed", error captured
-reject_pending → status: "rejected"
+reject_pending → claim_status "rejected" (same lock — so Apply and Reject
+   cannot both win, with the later write silently discarding the decision)
    ↓
 Card re-renders with new state; emit rooms:action_applied / _rejected
 ```
+
+### Stuck at the claim marker — `approving`
+
+The claim is persisted, so a process that dies mid-execution leaves the entry
+at `approving`: **we started the side effect and never recorded an outcome.**
+It may or may not have landed.
+
+- `list_pending(status="open")` selects `pending` + `approving`; the endpoints
+  and hub panel default to it, so a stuck entry stays visible instead of being
+  filtered out of every count.
+- The card renders "started — outcome unknown" with **Mark done / Mark failed**
+  (equal weight — the user has to go check, so neither outcome is nudged).
+- `resolve_unknown(action_id, outcome)` records that finding and **never
+  re-executes**: replaying a stuck claim could double-apply, the exact bug the
+  claim exists to prevent. A retry needs a fresh proposal and a fresh approval.
+- `apply_pending` refuses an `approving` entry for the same reason.
 
 Once resolved, an action stays in the pending dir but with non-pending
 status. The global pending dashboard's `?status=all` filter shows the
@@ -156,7 +178,7 @@ Audit trail: the first edit stashes `args_original`, every edit sets
 `edited: true` + `edited_ts`, and the card shows an `✎ edited` chip
 (persisting after apply). `apply_pending` is unchanged — it dispatches
 whatever `args` holds at click time. Tests:
-`tests/test_sys_rooms_logic.py::TestEditPending`.
+`tests/test_unit_rooms_logic.py::TestEditPending`.
 
 The voice-assistant pending surface deliberately does NOT have this yet —
 Aura's `say`-driven flow makes re-asking cheap; add it there only when a
@@ -232,7 +254,7 @@ every DOM instance by id and replace).
 
 ## Tests
 
-`tests/test_sys_rooms_logic.py::TestGateServerActions` covers token
+`tests/test_unit_rooms_logic.py::TestGateServerActions` covers token
 parsing, single + multi token runs, file persistence. End-to-end
 apply/reject is exercised through the manifested `rooms:action_applied`
 event landing in the reactor's journal breadcrumb.

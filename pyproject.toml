@@ -38,7 +38,8 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest", "pytest-asyncio", "pytest-playwright", "ruff", "httpx", "duckdb>=1.1"]
+dev = ["pytest", "pytest-asyncio", "pytest-playwright", "ruff", "httpx>=0.27", "openai>=1.50", "duckdb>=1.1"]
+chatbot = ["httpx>=0.27", "openai>=1.50"]
 semantic = ["faiss-cpu", "numpy"]
 camera = ["opencv-python>=4.8"]
 fem = ["gmsh>=4.11", "scipy>=1.10", "numpy>=1.24"]

@@ -48,10 +48,14 @@ Usage::
 from __future__ import annotations
 
 import argparse
+import ast
 import fnmatch
+import io
 import json
 import re
 import sys
+import token as _token
+import tokenize
 import tomllib
 from collections import defaultdict
 from pathlib import Path
@@ -70,26 +74,92 @@ PY_ROOTS = ["apps", "plugins", "emptyos", "engines"]
 # or by external processes:
 #   agent:*        the agent app re-broadcasts internal loop events whose
 #                  names are built dynamically per tool/phase
-#   wake-word:*    emitted by the voice pipeline from config-named models
+#
+# `wake-word:*` was dropped 2026-07-29: its only "listener" was a commented-out
+# `@on_event` sketch in braindump documenting a hook that v1 deliberately does
+# not wire. Token-based scanning stopped reading comments as listeners, so the
+# entry excused nothing and only widened the hole.
 ALLOW_ORPHAN_LISTENERS = [
     "agent:*",
-    "wake-word:*",
 ]
 
 # Event names are `<source>:<verb>` — requiring the colon keeps literals like
 # "..." or bare words out of the match set.
 _NAME = r"[a-z0-9_.\-*]+:[a-z0-9_:.\-*]+"
-EMIT_RE = re.compile(rf"""\.emit\(\s*["']({_NAME})["']""")
-# `.emit("a:x" if cond else "a:y", ...)` — the else-branch literal.
-EMIT_COND_RE = re.compile(
-    rf"""\.emit\(\s*["']{_NAME}["']\s+if\s+[^,]+?\s+else\s+["']({_NAME})["']"""
+_NAME_RE = re.compile(rf"^{_NAME}$")
+DYNAMIC_EMIT_RE = re.compile(r"\.emit\(\s*[a-zA-Z_][a-zA-Z0-9_.]*\s*[,)]")
+_ANY_NAME_LITERAL_RE = re.compile(rf"""["']({_NAME})["']""")
+
+# Call sites are found by TOKEN ADJACENCY, not by regex over raw source.
+# A regex cannot tell `self.emit("x:y")` apart from the same text quoted
+# inside a docstring or trailing a `#` — and both exist on purpose here: the
+# agent app ships an emit example inside a prompt template, and app-builder
+# documents its own matcher in a comment. Both were reported as undeclared
+# emits forever. Tokenising removes the whole class: a docstring is ONE
+# STRING token, so the `.` `emit` `(` sequence never appears inside it, and
+# COMMENT tokens are dropped before matching.
+#
+# Each entry is (trigger token sequence, bucket). Every event-name-shaped
+# string literal in the call's FIRST argument is recorded, which covers the
+# plain call, the `"a:x" if cond else "a:y"` conditional, and any other
+# literal-bearing expression without a rule per shape.
+_CALL_TRIGGERS: tuple[tuple[tuple[str, ...], str], ...] = (
+    ((".", "emit", "("), "emit"),
+    (("@", "on_event", "("), "listen"),
+    ((".", "events", ".", "on", "("), "listen"),
 )
 # SDK helpers (vault_project_create/update/delete, …) emit on the caller's
 # behalf via an `event_name="x:y"` kwarg — that call site IS the emit.
-EMIT_KWARG_RE = re.compile(rf"""event_name\s*=\s*["']({_NAME})["']""")
-DYNAMIC_EMIT_RE = re.compile(r"\.emit\(\s*[a-zA-Z_][a-zA-Z0-9_.]*\s*[,)]")
-LISTEN_DECORATOR_RE = re.compile(rf"""@on_event\(\s*["']({_NAME})["']""")
-LISTEN_ON_RE = re.compile(rf"""\.events\.on\(\s*["']({_NAME})["']""")
+_KWARG_TRIGGER: tuple[str, ...] = ("event_name", "=")
+
+
+def _significant_tokens(text: str) -> list[tokenize.TokenInfo]:
+    """Tokens with comments and layout removed; [] if the file won't tokenize."""
+    drop = {
+        _token.COMMENT, _token.NL, _token.NEWLINE, _token.INDENT,
+        _token.DEDENT, _token.ENCODING, _token.ENDMARKER,
+    }
+    try:
+        toks = list(tokenize.generate_tokens(io.StringIO(text).readline))
+    except (tokenize.TokenError, SyntaxError, IndentationError):
+        return []
+    return [t for t in toks if t.type not in drop]
+
+
+def _literal(tok: tokenize.TokenInfo) -> str | None:
+    """The value of a plain string token, or None (f-strings, bytes, junk)."""
+    if tok.type != _token.STRING:
+        return None
+    try:
+        v = ast.literal_eval(tok.string)
+    except (ValueError, SyntaxError, MemoryError, RecursionError):
+        return None
+    return v if isinstance(v, str) else None
+
+
+def _first_arg_literals(toks: list[tokenize.TokenInfo], i: int) -> list[str]:
+    """Event-name literals in the argument starting just after `toks[i]` = '('.
+
+    Stops at the top-level comma or the closing paren, so a second argument
+    (an event payload, which routinely contains colon-shaped strings) can
+    never be mistaken for the event name.
+    """
+    out: list[str] = []
+    depth = 1
+    for t in toks[i + 1:]:
+        if t.type == _token.OP:
+            if t.string in "([{":
+                depth += 1
+            elif t.string in ")]}":
+                depth -= 1
+                if depth == 0:
+                    break
+            elif t.string == "," and depth == 1:
+                break
+        val = _literal(t)
+        if val and _NAME_RE.match(val):
+            out.append(val)
+    return out
 
 
 def _iter_files(roots: list[str], suffixes: tuple[str, ...]) -> list[Path]:
@@ -129,18 +199,26 @@ def scan_python() -> tuple[dict[str, list[str]], dict[str, list[str]]]:
             text = f.read_text(encoding="utf-8")
         except OSError:
             continue
-        for regex, bucket in (
-            (EMIT_RE, emits),
-            (EMIT_COND_RE, emits),
-            (EMIT_KWARG_RE, emits),
-            (LISTEN_DECORATOR_RE, listens),
-            (LISTEN_ON_RE, listens),
-        ):
-            for m in regex.finditer(text):
-                line = text.count("\n", 0, m.start()) + 1
-                bucket[m.group(1)].append(f"{_rel(f)}:{line}")
+        toks = _significant_tokens(text)
+        for i, tok in enumerate(toks):
+            for trigger, kind in _CALL_TRIGGERS:
+                end = i + len(trigger)
+                if end > len(toks):
+                    continue
+                if all(toks[i + n].string == s for n, s in enumerate(trigger)):
+                    bucket = emits if kind == "emit" else listens
+                    for name in _first_arg_literals(toks, end - 1):
+                        bucket[name].append(f"{_rel(f)}:{tok.start[0]}")
+            if (
+                i + 2 < len(toks)
+                and tok.string == _KWARG_TRIGGER[0]
+                and toks[i + 1].string == _KWARG_TRIGGER[1]
+            ):
+                val = _literal(toks[i + 2])
+                if val and _NAME_RE.match(val):
+                    emits[val].append(f"{_rel(f)}:{tok.start[0]}")
         if DYNAMIC_EMIT_RE.search(text):
-            for m in re.finditer(rf"""["']({_NAME})["']""", text):
+            for m in _ANY_NAME_LITERAL_RE.finditer(text):
                 name = m.group(1)
                 if "*" not in name:
                     site = f"{_rel(f)}:{text.count(chr(10), 0, m.start()) + 1} (dynamic)"

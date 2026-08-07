@@ -165,6 +165,7 @@ def _parse_metrics_yaml(content: str) -> list:
 
 from emptyos.sdk.markdown_render import extract_images, render_markdown
 
+from .shared import post_url as canonical_post_url
 from .templates import (
     AI_NOTICE,
     AUTHOR_CARD,
@@ -467,6 +468,11 @@ class SiteBuilder:
         # every built page's <head> via extra_head.
         script = (config.get("analytics_script") or "").strip()
         self.analytics_head = f"<script>{script}</script>" if script else ""
+        # Google Analytics 4 gtag.js — independent of the self-hosted beacon
+        # above (a site may run either, both, or neither). Kept as its own
+        # head-injection field rather than folded into analytics_script since
+        # it needs its own <script src=...> tag, not an inline body.
+        self.ga_head = self._render_ga_head((config.get("ga_measurement_id") or "").strip())
         self.cross_site_html = self._render_cross_site_links(config.get("cross_site_links") or [])
         # Chatbot meta tags + widget script — empty string when disabled.
         # Uses {root} placeholder, resolved per-page like favicon.
@@ -489,6 +495,23 @@ class SiteBuilder:
             f'  <meta name="chatbot-site-id" content="{html_escape(site_id, quote=True)}">\n'
             f'  <meta name="chatbot-starters" content="{starters_attr}">\n'
             f'  <script src="{{root}}chatbot-widget.js" defer></script>'
+        )
+
+    @staticmethod
+    def _render_ga_head(ga_id: str) -> str:
+        if not ga_id:
+            return ""
+        # Measurement IDs are alphanumeric + hyphens (G-XXXXXXXXXX); escape
+        # defensively anyway since this lands unquoted in a URL and a JS string.
+        safe_id = html_escape(ga_id, quote=True)
+        return (
+            f'<script async src="https://www.googletagmanager.com/gtag/js?id={safe_id}"></script>\n'
+            "  <script>\n"
+            "    window.dataLayer = window.dataLayer || [];\n"
+            "    function gtag(){dataLayer.push(arguments);}\n"
+            "    gtag('js', new Date());\n"
+            f"    gtag('config', '{safe_id}');\n"
+            "  </script>"
         )
 
     @staticmethod
@@ -773,6 +796,8 @@ class SiteBuilder:
                 head_parts.append(f'<meta name="twitter:image" content="{og_safe}">')
             if self.analytics_head:
                 head_parts.append(self.analytics_head)
+            if self.ga_head:
+                head_parts.append(self.ga_head)
             if self.chatbot_head:
                 head_parts.append(self.chatbot_head.replace("{root}", root))
             extra_head = "\n  ".join(head_parts)
@@ -896,9 +921,8 @@ class SiteBuilder:
 
             # JSON-LD structured data (SEO) — BlogPosting. Valid in <body>; Google
             # accepts it. json.dumps handles all escaping.
-            post_url = (
-                site_url.rstrip("/") + f"/posts/{post['slug']}.html" if site_url else ""
-            )
+            # Aliased on import: there is a local named `post_url` right here.
+            post_url = canonical_post_url(self.config.get("domain", ""), post["slug"])
             ld: dict = {
                 "@context": "https://schema.org",
                 "@type": "BlogPosting",
@@ -1317,7 +1341,9 @@ class SiteBuilder:
                     continue  # landing renders as index.html (home url above)
                 sm_urls.append(f"{site_url}{pg['slug']}.html")
             for p in posts:
-                sm_urls.append(f"{site_url}posts/{p['slug']}.html")
+                sm_urls.append(
+                    canonical_post_url(self.config.get("domain", ""), p["slug"])
+                )
             if tag_map:
                 sm_urls.append(f"{site_url}tags.html")
                 for t in tag_map:
@@ -2016,6 +2042,16 @@ class SiteBuilder:
         # only light entry in THEME_VARS (apps/publish/templates.py).
         if self.config.get("theme", "void-dark") == "soft-light":
             html = html.replace('<html lang="en">', '<html lang="en" class="light">', 1)
+
+        # Analytics — portfolio_template.html carries no {EXTRA_HEAD}-style
+        # placeholder (unlike the blog builder's head_parts list), so inject
+        # directly before </head>. Composes both the self-hosted beacon and
+        # GA, same fields the blog builder uses — this was previously a gap:
+        # analytics.enabled=true on a portfolio-templated site silently did
+        # nothing because nothing here ever read analytics_head/ga_head.
+        extra_head = (self.analytics_head + self.ga_head).strip()
+        if extra_head:
+            html = html.replace("</head>", extra_head + "\n</head>", 1)
 
         # Write output
         (site / "index.html").write_text(html, encoding="utf-8")

@@ -1,6 +1,6 @@
 """Tier resolution helpers for ``release.toml``.
 
-A tier is a named bundle of apps + plugins + skills, optionally inheriting
+A tier is a named bundle of apps + plugins + skills + standalone services, optionally inheriting
 from another tier via ``extends = "..."``. Three callers need to resolve the
 same recursion (which apps end up in which tier after the extends chain is
 walked):

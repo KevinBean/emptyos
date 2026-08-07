@@ -43,7 +43,7 @@ class CalendarApp(BaseApp):
         await super().setup()
         # Warm an empty cache after explicit opt-in without delaying app boot.
         if self._ics_enabled() and self._ics_sources() and not self._ics_cache_path().exists():
-            asyncio.create_task(self.refresh_ics_feeds())
+            self.spawn_background(self.refresh_ics_feeds())
 
     def _show(self, key: str) -> bool:
         """Source-toggle from the ⚙ panel; defaults on. String-safe read."""
@@ -222,6 +222,73 @@ class CalendarApp(BaseApp):
             }
             for it in items
         ]
+
+    async def busy_intervals(self, date: str = "", default_min: int = 0) -> list[dict]:
+        """Time ranges on ``date`` where the owner is genuinely occupied.
+
+        Consumed by scheduling surfaces that must not offer a slot during an
+        existing commitment — `bookme` is the first caller. Deliberately narrow:
+
+        * **Only subscribed-calendar (ICS) events count.** They are the one
+          source that means "you are in something". Tasks and worklog entries
+          are all-day markers, not blocks; reminders are point-in-time nudges;
+          and `bookme` knows its own bookings exactly, so re-reading them here
+          would double-count against a guessed duration.
+        * Reads the local ICS cache directly rather than going through
+          ``_collect_month`` — that fans out across four apps and ~45 days of
+          ``bookme.list_day``, which a caller holding a booking lock must not
+          pay for on every public slot request.
+
+        ``default_min`` covers events whose length we cannot know (an older
+        cache entry, an unparseable DTEND); 0 skips them rather than inventing
+        a block. Returns ``[{start, end, title, source}]`` with ``HH:MM`` times.
+        """
+        day = (date or "")[:10]
+        if not day or not self._show("show_ics"):
+            return []
+        try:
+            target = datetime.date.fromisoformat(day)
+        except ValueError:
+            return []
+
+        out: list[dict] = []
+        skipped_no_end = 0
+        for event in self._cached_ics_events(target, target + datetime.timedelta(days=1)):
+            start = (event.get("time") or "").strip()
+            if not start:
+                continue  # all-day event — occupies the date, not a time range
+            end = (event.get("end") or "").strip()
+            if not end:
+                if default_min <= 0:
+                    skipped_no_end += 1
+                    continue
+                try:
+                    start_dt = datetime.datetime.strptime(f"{day} {start}", "%Y-%m-%d %H:%M")
+                except ValueError:
+                    continue
+                end_dt = start_dt + datetime.timedelta(minutes=default_min)
+                end = "23:59" if end_dt.date() > target else end_dt.strftime("%H:%M")
+            if end <= start:
+                continue
+            out.append({
+                "start": start,
+                "end": end,
+                "title": event.get("title") or "",
+                "source": event.get("source") or "Subscribed calendar",
+            })
+        if skipped_no_end:
+            # Never drop coverage silently — a scheduling surface that quietly
+            # ignores commitments looks identical to one with nothing to ignore,
+            # which is how the double-booking bug hid in the first place. This
+            # line is the evidence for whether `external_busy_default_min` is
+            # worth raising on this machine's feeds.
+            self.log(
+                f"busy_intervals({day}): ignored {skipped_no_end} timed event(s) "
+                f"with no end time — raise the caller's default duration to block them",
+                level="warning",
+                data={"date": day, "skipped_no_end": skipped_no_end},
+            )
+        return sorted(out, key=lambda r: r["start"])
 
     async def voice_today_agenda(self, day: str = "") -> dict:
         """Voice verb — speak today's agenda + a task-list card."""

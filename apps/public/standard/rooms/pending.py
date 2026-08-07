@@ -19,7 +19,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from emptyos.sdk import web_route
-from emptyos.sdk.do_token import extract_do_tokens
+from emptyos.sdk.do_token import DO_RE, extract_do_tokens
+from emptyos.sdk.pending_claim import CLAIMED, claim_pending, is_unknown_effect
 from emptyos.sdk.sandbox import SandboxedWrite, StaleSandbox, load_sandbox
 from emptyos.sdk.utils import config_flag, parse_llm_json
 
@@ -55,6 +56,7 @@ def _has_always_gate_token(response: str) -> bool:
 
 # ─── Bind to RoomsApp class as ───────────────────────────────
 #   _actions_log_path          = _pending._actions_log_path
+#   _arg_gate_error            = _pending._arg_gate_error
 #   _pending_dir               = _pending._pending_dir
 #   _pending_path              = _pending._pending_path
 #   _sandbox_root              = _pending._sandbox_root
@@ -72,6 +74,8 @@ def _has_always_gate_token(response: str) -> bool:
 #   save_pending_action        = _pending.save_pending_action
 #   list_pending               = _pending.list_pending
 #   apply_pending              = _pending.apply_pending
+#   resolve_unknown            = _pending.resolve_unknown
+#   api_resolve_unknown        = _pending.api_resolve_unknown
 #   reject_pending             = _pending.reject_pending
 #   edit_pending               = _pending.edit_pending
 #   api_undo                   = _pending.api_undo
@@ -368,6 +372,26 @@ def _registry_signature(self, app_id: str, method: str) -> str:
     return "()"
 
 
+def _arg_gate_error(self, app_id: str, method: str, args) -> str | None:
+    """Gate 1 for the rooms dispatch paths. ``None`` = proceed.
+
+    Thin wrapper over ``kernel.validate_verb_args`` so the three call sites in
+    this module (agent auto-exec, grant auto-apply, user Apply) share one shape.
+    No-op unless ``[verbs] arg_gate`` is on and the verb declared an ``args``
+    schema — see the kernel method for the full contract.
+
+    Applied to the user-clicked Apply path too, deliberately: the args were
+    written by a model, not the user, so a readable "unexpected arg 'txt' —
+    accepted: text" beats the deep ``TypeError`` they get today, and
+    ``edit_pending`` already exists for them to correct it and retry.
+    """
+    gate = getattr(getattr(self, "kernel", None), "validate_verb_args", None)
+    if not callable(gate):
+        return None
+    ok, why = gate(f"{app_id}.{method}", args if isinstance(args, dict) else {})
+    return None if ok else why
+
+
 async def _execute_server_actions(self, response: str, agent: dict, *,
                                   room_id: str = "") -> tuple[str, list[dict]]:
     """Parse [DO:app.method(json_args)] from response, execute, return cleaned text + results.
@@ -413,11 +437,10 @@ async def _execute_server_actions(self, response: str, agent: dict, *,
 
     masked = button_wrapped.sub(_stash, response)
 
-    pattern = re.compile(r'\[DO:([\w-]+)\.(\w+)\((\{.*?\})\)\]', re.DOTALL)
     results = []
     cleaned = masked
 
-    for match in pattern.finditer(masked):
+    for match in DO_RE.finditer(masked):
         app_id, method, args_str = match.group(1), match.group(2), match.group(3)
         # Validate against allowlist
         allowed_methods = server_actions.get(app_id, [])
@@ -426,6 +449,10 @@ async def _execute_server_actions(self, response: str, agent: dict, *,
             continue
         try:
             args = parse_llm_json(args_str, fallback={})
+            gate_err = self._arg_gate_error(app_id, method, args)
+            if gate_err:
+                results.append({"app": app_id, "method": method, "error": gate_err, "ok": False})
+                continue
             res = await self.call_app(app_id, method, **args)
             inverse = self._lookup_inverse(app_id, method)
             from emptyos.sdk.actions_log import record_action
@@ -456,7 +483,7 @@ async def _execute_server_actions(self, response: str, agent: dict, *,
 
     # Strip bare [DO:] tags from response text, then restore the
     # [BUTTON:|DO:] wrappers so the client renders them as buttons.
-    cleaned = pattern.sub("", cleaned)
+    cleaned = DO_RE.sub("", cleaned)
     for idx, original in enumerate(button_spans):
         cleaned = cleaned.replace(f"\x00BUTTON_DO_{idx}\x00", original)
     cleaned = cleaned.strip()
@@ -577,6 +604,19 @@ async def _gate_server_actions(
         # Auto-apply path. Capture into the same pending file so the global
         # dashboard / activity drawer can show the entry with its
         # resolved status; client-side UI is unchanged.
+        gate_err = self._arg_gate_error(
+            action["app"], action["method"], action.get("args") or {},
+        )
+        if gate_err:
+            # A grant says this verb may auto-run; it does not say a malformed
+            # call may. Drop back to the review queue rather than dispatching —
+            # the user sees the reason on the card and can fix it via Edit.
+            action["status"] = "pending"
+            action["error"] = gate_err
+            action["gate_reason"] = "bad-args"
+            self._save_pending(action)
+            continue
+
         try:
             result = await self.call_app(
                 action["app"], action["method"], **(action.get("args") or {}),
@@ -617,7 +657,7 @@ async def _gate_server_actions(
             )
         except Exception:
             pass
-        asyncio.create_task(self.emit("rooms:action_auto_applied", {
+        self.spawn_background(self.emit("rooms:action_auto_applied", {
             "action_id": action["id"], "room_id": room_id,
             "app": action["app"], "method": action["method"],
             "grant_id": grant_id, "reason": decision.get("reason"), "ok": ok,
@@ -668,7 +708,7 @@ async def save_pending_action(
     elif action["app"] == "repo" and action["method"] == "exec":
         self._prepare_repo_exec(action)
     self._save_pending(action)
-    asyncio.create_task(
+    self.spawn_background(
         self.emit(
             "rooms:action_proposed",
             {
@@ -685,7 +725,25 @@ async def save_pending_action(
 
 def list_pending(self, room_id: str = "", status: str = "pending") -> list[dict]:
     """List pending actions, optionally filtered by room and status.
-    Sorted by timestamp ascending."""
+
+    ``status="open"`` selects everything still waiting on the user: `pending`
+    (awaiting Apply/Reject) plus `approving` (claimed, then the process died
+    mid-execution — outcome unknown). Any other value is an exact match, and
+    "" means no filter, so existing callers are unaffected.
+
+    The `approving` case is why "open" exists: every surface used to filter
+    `status == "pending"` exactly, so an interrupted action vanished from every
+    count and list — while the card renderer's else-branch displayed it as
+    "failed", asserting failure about something that may have succeeded.
+
+    Sorted by timestamp ascending.
+    """
+    if status == "open":
+        want = {"pending", CLAIMED}
+    elif status:
+        want = {status}
+    else:
+        want = set()
     out: list[dict] = []
     for f in self._pending_dir().glob("act-*.json"):
         try:
@@ -694,7 +752,7 @@ def list_pending(self, room_id: str = "", status: str = "pending") -> list[dict]
             continue
         if room_id and a.get("room_id") != room_id:
             continue
-        if status and a.get("status") != status:
+        if want and a.get("status") not in want:
             continue
         out.append(a)
     out.sort(key=lambda x: x.get("ts", ""))
@@ -710,11 +768,17 @@ async def apply_pending(self, action_id: str) -> dict:
     vault file changed since the diff was shown) fail rather than
     clobber whatever moved underneath.
     """
-    action = self._load_pending(action_id)
-    if not action:
-        return {"error": "action not found"}
-    if action.get("status") != "pending":
-        return {"error": f"already {action.get('status')}"}
+    # Claim atomically BEFORE the side effect. Two concurrent Applies (HTTP
+    # route + Telegram callback) otherwise both pass a bare status check and
+    # both execute — measured, see TestApplyPendingConcurrency.
+    action, claim_err = await claim_pending(
+        self.write_lock(f"pending:{action_id}"),
+        self._load_pending,
+        self._save_pending,
+        action_id,
+    )
+    if claim_err:
+        return claim_err
     if action.get("error"):
         # Gate-time prep already failed (bad args, no vault, etc.).
         action["status"] = "failed"
@@ -764,6 +828,15 @@ async def apply_pending(self, action_id: str) -> dict:
             "app": action["app"], "method": action["method"],
         })
         return action
+    gate_err = self._arg_gate_error(action["app"], action["method"], action.get("args") or {})
+    if gate_err:
+        # Leave it pending, not failed — the args are fixable via edit_pending
+        # and the user should get another go rather than a dead card.
+        action["status"] = "pending"
+        action["error"] = gate_err
+        self._save_pending(action)
+        return {"error": gate_err, "action": action}
+
     try:
         result = await self.call_app(
             action["app"], action["method"], **(action.get("args") or {}),
@@ -790,18 +863,24 @@ async def reject_pending(self, action_id: str) -> dict:
     """Mark a pending action rejected without executing. Sandboxed
     actions also have their captured sandbox dir discarded so we don't
     accumulate orphans."""
-    action = self._load_pending(action_id)
-    if not action:
-        return {"error": "action not found"}
-    if action.get("status") != "pending":
-        return {"error": f"already {action.get('status')}"}
+    # Same lock as apply: a reject is a claim that needs no execution. Without
+    # it, Reject persists "rejected" while Apply is mid-await and Apply's later
+    # write silently discards the user's decision — and still executes.
+    action, claim_err = await claim_pending(
+        self.write_lock(f"pending:{action_id}"),
+        self._load_pending,
+        self._save_pending,
+        action_id,
+        claim_status="rejected",
+    )
+    if claim_err:
+        return claim_err
     for change in action.get("proposed_changes") or []:
         sw = load_sandbox(
             change.get("sandbox_id") or action_id, self._sandbox_root(),
         )
         if sw is not None:
             sw.discard()
-    action["status"] = "rejected"
     action["resolved_ts"] = datetime.now(timezone.utc).isoformat()
     self._save_pending(action)
     await self.emit("rooms:action_rejected", {
@@ -820,6 +899,20 @@ def edit_pending(self, action_id: str, args: dict) -> dict:
     of that gate — would no longer match. The original args are kept on the
     record (``args_original``) so the audit trail shows the human edit.
     """
+    # ── Why this needs no lock, unlike apply/reject ──────────────────────
+    # This function is SYNCHRONOUS: load -> check -> mutate -> save with no
+    # `await`. On the single-threaded event loop that makes the whole
+    # read-modify-write atomic with respect to other tasks — nothing can
+    # interleave between the status check and the save, so an edit can never
+    # resurrect an action that apply has already claimed.
+    #
+    # KEEP IT SYNCHRONOUS. Adding any `await` here silently reintroduces the
+    # TOCTOU that apply/reject were fixed for, in its worst form: an edit
+    # landing after apply's claim would write new args AND reset status to
+    # "pending", re-arming a mid-flight action for a second approval. If this
+    # ever needs to await, make it `async` and wrap the body in
+    # `async with self.write_lock(f"pending:{action_id}")` — the same key
+    # apply/reject use.
     action = self._load_pending(action_id)
     if not action:
         return {"error": "action not found"}
@@ -861,10 +954,11 @@ async def api_undo(self, request):
 
 @web_route("GET", "/api/rooms/{room_id}/pending")
 async def api_room_pending(self, request):
-    """Pending [DO:] actions for a room. Defaults to status=pending; pass
-    ?status=all to include applied/rejected/failed for an audit view."""
+    """[DO:] actions for a room needing the user. Defaults to status=open
+    (pending + interrupted `approving`); ?status=all includes resolved
+    entries, or pass an exact status."""
     room_id = request.path_params["room_id"]
-    status = request.query_params.get("status", "pending")
+    status = request.query_params.get("status", "open")
     if status == "all":
         status = ""
     return self.list_pending(room_id, status=status)
@@ -872,12 +966,58 @@ async def api_room_pending(self, request):
 
 @web_route("GET", "/api/pending")
 async def api_global_pending(self, request):
-    """All pending actions across every room. Used by the sidebar's
-    global pending dashboard. ?status=all includes resolved entries."""
-    status = request.query_params.get("status", "pending")
+    """All actions needing the user across every room. Used by the sidebar's
+    global pending dashboard. Defaults to status=open (pending + interrupted
+    `approving`); ?status=all includes resolved entries."""
+    status = request.query_params.get("status", "open")
     if status == "all":
         status = ""
     return self.list_pending(room_id="", status=status)
+
+
+async def resolve_unknown(self, action_id: str, outcome: str) -> dict:
+    """Adjudicate an interrupted action — record what the human found.
+
+    Only valid on an entry stuck at the claim marker (`approving`): we started
+    the side effect and never recorded an outcome. The user checks whether it
+    actually landed and records that here.
+
+    This NEVER re-executes. A stuck claim may already have taken effect, so
+    replaying it could double-apply — the exact bug the claim exists to prevent.
+    Re-running requires a fresh proposal and a fresh approval.
+    """
+    if outcome not in ("applied", "failed"):
+        return {"error": "outcome must be 'applied' or 'failed'"}
+    async with self.write_lock(f"pending:{action_id}"):
+        action = self._load_pending(action_id)
+        if not action:
+            return {"error": "action not found"}
+        if not is_unknown_effect(action):
+            return {"error": (
+                f"not an interrupted action (status "
+                f"{action.get('status')!r}) — nothing to adjudicate"
+            )}
+        action["status"] = outcome
+        action["adjudicated"] = True
+        action["resolved_ts"] = datetime.now(timezone.utc).isoformat()
+        if outcome == "failed" and not action.get("error"):
+            action["error"] = "interrupted mid-execution; marked failed by the user"
+        self._save_pending(action)
+    # Emit outside the lock — handlers may re-enter via call_app.
+    await self.emit("rooms:action_adjudicated", {
+        "action_id": action_id, "room_id": action.get("room_id"),
+        "app": action["app"], "method": action["method"], "outcome": outcome,
+    })
+    return action
+
+
+@web_route("POST", "/api/pending/{action_id}/resolve")
+async def api_resolve_unknown(self, request):
+    """Adjudicate an interrupted action. Body: ``{"outcome": "applied"|"failed"}``."""
+    body = await self.safe_json(request)
+    return await self.resolve_unknown(
+        request.path_params["action_id"], str((body or {}).get("outcome", "")),
+    )
 
 
 @web_route("POST", "/api/pending/{action_id}/apply")

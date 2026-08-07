@@ -59,6 +59,24 @@ def _norm_edition(e) -> str:
     return re.sub(r"\s+", " ", s).strip().lower()
 
 
+def _norm_standard(value) -> str:
+    """Normalize legacy ``standard:`` titles for reference-to-clause joins."""
+    text = str(value or "").upper().strip()
+    text = text.replace("‑", "-").replace("–", "-").replace("—", "-")
+    text = re.sub(r"\s+", " ", text)
+    return re.sub(r"([A-Z])(\d)", r"\1 \2", text)
+
+
+def _same_standard(fm: dict, standard_id: str, standard_name: str) -> bool:
+    """Accept canonical IDs or the KB's legacy normalized-title convention."""
+    clause_id = str(fm.get("standard_id") or "").strip().lower()
+    if clause_id and clause_id == str(standard_id or "").strip().lower():
+        return True
+    want_name = _norm_standard(standard_name)
+    clause_name = _norm_standard(fm.get("standard"))
+    return bool(want_name and clause_name and clause_name.startswith(want_name))
+
+
 def _clean(text: str) -> str:
     out = [ln for ln in text.splitlines()
            if ln.strip() != "Official" and not re.match(r"^\d+\s*\|[\s|_]*$", ln.strip())]
@@ -136,6 +154,7 @@ def main() -> int:
         return 1
     ref_fm = _read_frontmatter(ref_path.read_text(encoding="utf-8", errors="replace"))
     standard_id = ref_fm.get("standard_id", "")
+    standard_name = ref_fm.get("standard", "")
     edition = ref_fm.get("edition", "")
     archive_rel = ref_fm.get("local_text") or ref_fm.get("source_file") or ""
     if not (standard_id and archive_rel):
@@ -158,7 +177,7 @@ def main() -> int:
         head = f.read_text(encoding="utf-8", errors="replace")[:900]
         fm = _read_frontmatter(head + "\n---\n") if "---" in head else {}
         if (fm.get("kind") == "clause"
-                and str(fm.get("standard_id", "")) == str(standard_id)
+                and _same_standard(fm, standard_id, standard_name)
                 and _norm_edition(fm.get("edition", "")) == norm_ed):
             if fm.get("clause"):
                 existing.append(str(fm["clause"]))

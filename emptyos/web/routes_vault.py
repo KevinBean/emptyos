@@ -18,11 +18,19 @@ Do not import from ``emptyos.web.server`` (it imports us — that would cycle).
 
 from __future__ import annotations
 
+import asyncio
+import base64
+import binascii
+import hashlib
+import os
+import re
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse, JSONResponse
+
+from emptyos.runtime.atomic_io import atomic_write_bytes
 
 if TYPE_CHECKING:
     from emptyos.kernel import Kernel
@@ -118,6 +126,65 @@ def register_vault_query_routes(server: FastAPI, kernel: Kernel) -> None:
         return {"count": len(notes), "notes": notes}
 
 
+_FALLBACK_NOTE_LOCKS: dict[str, asyncio.Lock] = {}
+
+
+def _note_lock(kernel: Kernel, rel: str):
+    """Kernel-wide lock for one note. ``rel`` MUST be vault-relative.
+
+    That is the whole contract, and the only way this route and an app writing
+    the same note end up on the same lock object — which is the entire reason
+    for going through VaultIndex instead of a local dict. Passing an absolute
+    path here is not a formatting slip: it produces a *different, private* lock
+    that excludes nobody (it did, until 9728f122).
+
+    Callers do not pre-normalize. ``VaultIndex.note_lock`` already runs
+    ``_normalize_rel`` on whatever it is handed, and BaseApp.note_lock relies on
+    the same thing — a second normalisation at each call site is what let the
+    two drift apart in the first place. The fallback below mirrors that one
+    rule so the two branches cannot disagree either.
+
+    The relative path must be derived WITHOUT ``Path.resolve()``: on Windows
+    resolve() opens the file, so it would touch a path another writer may be
+    mid-``os.replace`` on — the very contention this lock exists to remove,
+    needed before the lock can be taken.
+    """
+    index = kernel.services.get_optional("vault_index")
+    if index is not None:
+        return index.note_lock(rel)
+    # No VaultIndex (unit tests, no-vault mode). Cross-app contention does not
+    # exist there, but apply the same normalisation so behaviour is identical.
+    key = str(rel).replace("\\", "/").lstrip("/")
+    lock = _FALLBACK_NOTE_LOCKS.get(key)
+    if lock is None:
+        lock = asyncio.Lock()
+        _FALLBACK_NOTE_LOCKS[key] = lock
+    return lock
+
+
+def _size_and_hash(full: Path) -> tuple[int, str]:
+    """Read a file and return (size, sha256). Blocking — call via to_thread.
+
+    Returns the size rather than the bytes so a 50 MB payload isn't held alive
+    past the comparison it was read for.
+    """
+    data = full.read_bytes()
+    return len(data), hashlib.sha256(data).hexdigest()
+
+
+def _write_bytes_atomic(full: Path, content: bytes) -> str:
+    """Write bytes atomically via a sibling temp file; return the readback hash.
+
+    Blocking, and *unboundedly* so: mkdir + write + fsync + rename + a full
+    re-read. An fsync of tens of megabytes is seconds of hard block, during
+    which nothing else on the event loop runs — not the event bus, not another
+    request, not a scheduled job. Callers must reach this through
+    ``asyncio.to_thread`` (`.claude/rules/debugging.md` § sync-call-in-async).
+    """
+    atomic_write_bytes(full, content)
+    return hashlib.sha256(full.read_bytes()).hexdigest()
+
+
 def register_vault_file_routes(server: FastAPI, kernel: Kernel) -> None:
     """/api/vault-map* + /api/vault/{read,file,write} (moved verbatim)."""
     # --- Vault Map API ---
@@ -145,20 +212,27 @@ def register_vault_file_routes(server: FastAPI, kernel: Kernel) -> None:
     # --- Vault file API (read/write any vault note) ---
     @server.get("/api/vault/read")
     async def vault_read(path: str):
-        """Read a vault file by relative or absolute path."""
+        """Read a vault file by relative or absolute path.
+
+        Vault-rooted only — refuses paths that escape the vault root via `..`
+        or an out-of-vault absolute path (mirrors /api/vault/file + /write).
+        """
         vault = kernel.config.notes_path
         if not vault:
             return JSONResponse({"error": "No vault configured"}, status_code=500)
-        full = Path(path) if Path(path).is_absolute() else vault / path
+        candidate = Path(path) if Path(path).is_absolute() else (vault / path)
+        try:
+            full = candidate.resolve()
+            full.relative_to(Path(vault).resolve())  # raises if escape attempt
+        except (ValueError, OSError):
+            return JSONResponse({"error": "Path outside vault"}, status_code=403)
         if not full.exists():
             return JSONResponse({"error": f"File not found: {path}"}, status_code=404)
         try:
             content = full.read_text(encoding="utf-8")
-            rel = (
-                str(full.relative_to(vault)).replace("\\", "/")
-                if str(full).startswith(str(vault))
-                else path.replace("\\", "/")
-            )
+            # full is resolved + validated inside the vault above, so this
+            # relative_to always succeeds (no startswith/casing fallback needed).
+            rel = str(full.relative_to(Path(vault).resolve())).replace("\\", "/")
             # Surface decoded viz_embeds so the universal note viewer can render
             # embedded artifacts (EOS_UI.renderMarkdownWithEmbeds). Best-effort —
             # absent / malformed → []. See viz/embeds.py + the artifact-embed plan.
@@ -241,6 +315,159 @@ def register_vault_file_routes(server: FastAPI, kernel: Kernel) -> None:
             return {"ok": True, "path": str(full)}
         except Exception as e:
             return JSONResponse({"error": str(e)}, status_code=500)
+
+    @server.post("/api/vault/write-bytes")
+    async def vault_write_bytes(request: Request):
+        """Write a binary Vault file with immutable-by-default hash checks.
+
+        JSON body:
+
+        - ``path``: vault-relative (or in-vault absolute) destination
+        - ``content_base64``: standard base64 payload
+        - ``content_sha256``: required SHA-256 of the decoded bytes
+        - ``overwrite``: optional, false by default
+
+        Existing identical bytes are reused. Existing different bytes return
+        409 unless overwrite is explicitly true. This is the binary peer of
+        ``/api/vault/write`` for evidence attachments and other Vault assets.
+        """
+        max_bytes = 50 * 1024 * 1024
+        # Refuse on the header, before reading. `await request.json()` buffers
+        # and parses the WHOLE body first, so checking len(content) afterwards
+        # has already cost raw body + parsed str + decoded bytes — roughly 185 MB
+        # of peak RSS for a 50 MB attachment, and unbounded for a body that
+        # never had to be honest about its size.
+        declared = request.headers.get("content-length")
+        if declared and declared.isdigit() and int(declared) > max_bytes * 2:
+            return JSONResponse(
+                {"error": "binary Vault write exceeds the 50 MB limit"},
+                status_code=413,
+            )
+        data = await request.json()
+        file_path = str(data.get("path") or "")
+        encoded = data.get("content_base64")
+        claimed_sha256 = str(data.get("content_sha256") or "").lower()
+        overwrite = data.get("overwrite") is True
+        if not file_path:
+            return JSONResponse({"error": "path is required"}, status_code=400)
+        if not isinstance(encoded, str):
+            return JSONResponse(
+                {"error": "content_base64 is required"}, status_code=400
+            )
+        if not re.fullmatch(r"[0-9a-f]{64}", claimed_sha256):
+            return JSONResponse(
+                {"error": "content_sha256 must be a lowercase SHA-256 hex digest"},
+                status_code=400,
+            )
+        try:
+            content = base64.b64decode(encoded, validate=True)
+        except (binascii.Error, ValueError):
+            return JSONResponse(
+                {"error": "content_base64 is not valid base64"}, status_code=400
+            )
+        if len(content) > max_bytes:
+            return JSONResponse(
+                {"error": "binary Vault write exceeds the 50 MB limit"},
+                status_code=413,
+            )
+        actual_sha256 = hashlib.sha256(content).hexdigest()
+        if actual_sha256 != claimed_sha256:
+            return JSONResponse(
+                {
+                    "error": "content_sha256 does not match decoded bytes",
+                    "actual_sha256": actual_sha256,
+                },
+                status_code=400,
+            )
+
+        vault = kernel.config.notes_path
+        if not vault:
+            return JSONResponse({"error": "No vault configured"}, status_code=500)
+        vault_root = Path(vault).resolve()
+        candidate = Path(file_path) if Path(file_path).is_absolute() else vault_root / file_path
+        # Lock key from pure string normalisation — no filesystem touch, so it
+        # is available before the contested path is safe to resolve.
+        # Vault-relative, and derived without resolve() — see _note_lock.
+        # Normalising the separators is left to VaultIndex, which does it to
+        # whatever it is handed; doing it here as well is how this and
+        # BaseApp.note_lock drifted onto separate locks once already.
+        try:
+            lock_key = os.path.relpath(os.path.normpath(str(candidate)), vault_root)
+        except ValueError:  # different drive — containment rejects it below
+            lock_key = os.path.normpath(str(candidate))
+        # Serialize the whole check-and-write on this note. Without it the
+        # immutable-by-default guarantee is a TOCTOU, not an invariant: exists()
+        # and os.replace are separated by a mkdir, a write and an fsync, so two
+        # concurrent posts of DIFFERENT bytes both see "not there", both write,
+        # and replace silently last-wins — no 409, no corruption, no contract.
+        # This is the kernel-wide per-note lock, so a concurrent writer in any
+        # app excludes this one too (CLAUDE.md, vault read-modify-write races).
+        # Cross-process is out of scope by design: one vault is one daemon.
+        async with _note_lock(kernel, lock_key):
+            # Resolve INSIDE the lock. On Windows resolve() opens the file, so
+            # doing it while another writer is mid-os.replace raises OSError —
+            # which this check would have reported as "Path outside vault", a
+            # security verdict for what was only a filesystem race. Separating
+            # the two exceptions is not enough on its own: the honest fix is to
+            # not resolve a path somebody else is replacing.
+            try:
+                full = candidate.resolve()
+            except OSError as exc:
+                return JSONResponse(
+                    {"error": f"Could not resolve destination: {exc}"},
+                    status_code=503,
+                )
+            try:
+                full.relative_to(vault_root)
+            except ValueError:
+                return JSONResponse({"error": "Path outside vault"}, status_code=403)
+
+            if full.exists():
+                if not full.is_file():
+                    return JSONResponse(
+                        {"error": f"Destination is not a file: {file_path}"},
+                        status_code=409,
+                    )
+                existing_size, existing_sha256 = await asyncio.to_thread(_size_and_hash, full)
+                if existing_sha256 == actual_sha256:
+                    rel = str(full.relative_to(vault_root)).replace("\\", "/")
+                    return {
+                        "ok": True,
+                        "status": "reused",
+                        "path": str(full),
+                        "relative": rel,
+                        "size": existing_size,
+                        "content_sha256": existing_sha256,
+                    }
+                if not overwrite:
+                    return JSONResponse(
+                        {
+                            "error": "Immutable binary conflict",
+                            "existing_sha256": existing_sha256,
+                        },
+                        status_code=409,
+                    )
+
+            try:
+                readback_sha256 = await asyncio.to_thread(_write_bytes_atomic, full, content)
+                if readback_sha256 != actual_sha256:
+                    return JSONResponse(
+                        {"error": "Binary Vault write readback failed"}, status_code=500
+                    )
+                await kernel.events.emit(
+                    "vault:edited", {"path": str(full)}, source="web"
+                )
+                rel = str(full.relative_to(vault_root)).replace("\\", "/")
+                return {
+                    "ok": True,
+                    "status": "overwritten" if overwrite else "written",
+                    "path": str(full),
+                    "relative": rel,
+                    "size": len(content),
+                    "content_sha256": readback_sha256,
+                }
+            except Exception as error:
+                return JSONResponse({"error": str(error)}, status_code=500)
 
 
 def _vault_query_restricted(tag_list: list[str], allow: list[str]) -> bool:

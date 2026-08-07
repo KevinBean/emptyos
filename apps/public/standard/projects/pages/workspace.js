@@ -18,7 +18,7 @@
 var _detailProject = null;
 var _detailTab = 'tasks';
 
-var ALL_STATUSES = ['idea', 'active', 'blocked', 'shelved', 'completed', 'archived'];
+var ALL_STATUSES = ['idea', 'active', 'spec-ready', 'blocked', 'shelved', 'completed', 'archived'];
 
 function progressBar(p) {
     if (p.total_tasks === 0) return '';

@@ -130,27 +130,14 @@ async def api_autopilot_session(self, request):
         return {"ok": True, "revoked": n, "active": False}
 
     ttl = int(body.get("ttl_s") or 3600)
-    eligible = _eligible_set(self)
-    namespaces = sorted({v.split(".", 1)[0] for v in eligible})
-    _autopilot.revoke_scope(root, scope)  # replace existing → clean toggle
-    issued = []
-    for atype in _ROOM_ACTOR_TYPES:
-        for ns in namespaces:
-            try:
-                g = _autopilot.save_grant(
-                    root,
-                    actor_type=atype,
-                    actor_id="",  # any participant of this type
-                    verb_pattern=f"{ns}.*",
-                    scope=scope,
-                    ttl_seconds=ttl,
-                    rationale="rooms auto-accept toggle",
-                    eligible=eligible,
-                )
-                issued.append(g)
-            except ValueError:
-                # Namespace wildcard matched no eligible verb — skip.
-                continue
+    issued = _autopilot.replace_namespace_grants(
+        root,
+        scope=scope,
+        actors=[(atype, "") for atype in _ROOM_ACTOR_TYPES],  # "" = any participant
+        eligible=_eligible_set(self),
+        ttl_seconds=ttl,
+        rationale="rooms auto-accept toggle",
+    )
     return {"ok": True, "active": True, "scope": scope, "grants": issued, "expires_in_s": ttl}
 
 

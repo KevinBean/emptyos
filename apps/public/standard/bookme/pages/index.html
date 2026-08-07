@@ -233,7 +233,11 @@ else {
     var days = ['mon','tue','wed','thu','fri','sat','sun'];
     body.innerHTML =
       '<div class="bm-card"><div class="bm-row"><div class="col"><label>Your name</label><input id="owner" value="'+esc2(CFG.owner_name||'')+'"></div>'+
-      '<div class="col"><label>Timezone (IANA, e.g. Australia/Adelaide)</label><input id="tz" value="'+esc2(CFG.timezone||'UTC')+'"></div></div></div>'+
+      '<div class="col"><label>Timezone (IANA, e.g. Australia/Adelaide)</label><input id="tz" value="'+esc2(CFG.timezone||'UTC')+'"></div></div>'+
+      '<div class="bm-row"><div class="col"><label>Assume untimed calendar events last (minutes)</label>'+
+      '<input id="extbusy" type="number" min="0" step="15" value="'+esc2(String(CFG.external_busy_default_min||0))+'">'+
+      '<div class="bm-muted">Open slots already avoid your calendar commitments. Some subscribed events don\'t say how long they run — 0 ignores those, a value blocks that long after their start.</div>'+
+      '</div><div class="col"></div></div></div>'+
       '<div class="bm-card"><h3>Weekly hours</h3>'+
       days.map(function(d){
         var wins = (CFG.availability&&CFG.availability[d])||[];
@@ -247,6 +251,7 @@ else {
     body.querySelector('#savea').addEventListener('click', function(){
       CFG.owner_name = body.querySelector('#owner').value.trim();
       CFG.timezone = body.querySelector('#tz').value.trim() || 'UTC';
+      CFG.external_busy_default_min = Math.max(0, parseInt(body.querySelector('#extbusy').value, 10) || 0);
       var avail = {};
       Array.prototype.forEach.call(body.querySelectorAll('[data-day]'), function(el){
         var wins = [];
@@ -344,7 +349,7 @@ else {
   function save(stSel){
     var st = document.querySelector(stSel);
     st.className='bm-status'; st.textContent='Saving…';
-    api('POST','/bookme/api/config', {owner_name:CFG.owner_name, timezone:CFG.timezone, event_types:CFG.event_types, availability:CFG.availability, email_templates:CFG.email_templates})
+    api('POST','/bookme/api/config', {owner_name:CFG.owner_name, timezone:CFG.timezone, event_types:CFG.event_types, availability:CFG.availability, email_templates:CFG.email_templates, external_busy_default_min:CFG.external_busy_default_min})
       .then(function(r){
         if (r && r.ok) { st.className='bm-status bm-ok'; st.textContent='Saved.'; CFG=r.config; }
         else { st.className='bm-status bm-err'; st.textContent=(r&&r.error)||'Save failed.'; }

@@ -61,6 +61,7 @@ hide_apps = [
                          # (host=attacker.com) to exfiltrate every prompt
                          # AND every BYOK key, OR delete the ollama provider
                          # to kill the demo's AI for everyone else.
+    "conversation-ingest", # exposes local import inventory and private note paths
 
     # --- Safety: dev/personal apps (not loaded anyway, but explicit) ---
     "staff",             # spawns long-running Claude CLI agents

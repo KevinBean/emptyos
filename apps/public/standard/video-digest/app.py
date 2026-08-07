@@ -88,7 +88,7 @@ class VideoDigestApp(BaseApp):
             items = await self._read_queue()
             items.append(item)
             await self._write_queue(items)
-        asyncio.create_task(self.emit("video-digest:queued", {"id": item["id"], "url": url}))
+        self.spawn_background(self.emit("video-digest:queued", {"id": item["id"], "url": url}))
         return {
             "say": "Queued for digest.",
             "link": {"text": "Open video-digest", "href": "/video-digest/"},

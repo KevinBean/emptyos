@@ -35,7 +35,13 @@ def t():
 
 @pytest.fixture(scope="module")
 def vault():
-    with open(_REPO / "emptyos.toml", "rb") as f:
+    # emptyos.toml is gitignored — a fresh clone has only emptyos.toml.example,
+    # so this raised FileNotFoundError at fixture setup and the tests ERRORED
+    # rather than skipping. A machine with no config simply has no vault.
+    cfg = _REPO / "emptyos.toml"
+    if not cfg.exists():
+        pytest.skip("emptyos.toml is absent; vault root unknown")
+    with open(cfg, "rb") as f:
         p = (tomllib.load(f).get("notes") or {}).get("path") or ""
     return Path(p) if p else None
 

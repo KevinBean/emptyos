@@ -107,7 +107,7 @@ async def api_meeting_stop(self, request):
     run_id = handle.run_id
     handle.write_artifact("raw.wav", audio_bytes)
     inputs = {"mode": "audio", "audio_artifact": "raw.wav"}
-    asyncio.create_task(self.emit("braindump:started", {"mode": "meeting"}))
-    asyncio.create_task(self._run_pipeline(inputs, run_id=run_id))
+    self.spawn_background(self.emit("braindump:started", {"mode": "meeting"}))
+    self.spawn_background(self._run_pipeline(inputs, run_id=run_id))
     return {"run_id": run_id, "status": "running",
             "duration_s": res.get("duration_s", 0), "sources": res.get("sources", [])}

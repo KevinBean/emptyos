@@ -38,6 +38,33 @@ class StubVA:
         self._last_pending: dict[str, str] = {}
         self.calls: list[tuple] = []
         self.events: list[tuple] = []
+        self._locks: dict[str, asyncio.Lock] = {}
+        self._bg_tasks: set = set()
+
+    def write_lock(self, key: str) -> asyncio.Lock:
+        """Mirror BaseApp.write_lock — a REAL per-key lock, not a no-op.
+
+        pending.py wraps its claim in `async with self.write_lock(...)` so an
+        apply and a reject cannot both win. Stubbing that as a null context
+        would keep these tests green while removing the serialisation they
+        exist to prove, so the double keeps the same per-key lazy-lock
+        semantics the real one has.
+        """
+        lock = self._locks.get(key)
+        if lock is None:
+            lock = self._locks[key] = asyncio.Lock()
+        return lock
+
+    def spawn_background(self, coro, *, label: str = ""):
+        """Mirror BaseApp.spawn_background using the REAL implementation.
+
+        pending.py detaches its post-apply work through this. Stubbing it as a
+        bare `create_task` would drop the strong reference the shared helper
+        exists to keep — the double would then be greener than production.
+        """
+        from emptyos.sdk.background import spawn_tracked
+
+        return spawn_tracked(coro, tasks=self._bg_tasks)
 
     def data_subdir(self, name: str) -> Path:
         p = self.data_dir / name

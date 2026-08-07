@@ -2197,6 +2197,8 @@ function calShiftMonth(delta) {
     calMonth = new Date(base.getFullYear(), base.getMonth() + delta, 1);
     renderCalendar();
 }
+function calPrevMonth() { calShiftMonth(-1); }
+function calNextMonth() { calShiftMonth(1); }
 function calToday() { calMonth = null; renderCalendar(); }
 
 function renderCalendar() {
@@ -2214,9 +2216,9 @@ function renderCalendar() {
 
     var days = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
     var html = '<div class="calendar-nav">' +
-        '<button class="btn btn-sm" onclick="calShiftMonth(-1)" title="Previous month">‹</button>' +
+        '<button class="btn btn-sm" onclick="calPrevMonth()" title="Previous month">‹</button>' +
         '<span class="calendar-month-label">'+esc(view.toLocaleDateString(undefined,{month:'long',year:'numeric'}))+'</span>' +
-        '<button class="btn btn-sm" onclick="calShiftMonth(1)" title="Next month">›</button>' +
+        '<button class="btn btn-sm" onclick="calNextMonth()" title="Next month">›</button>' +
         '<button class="btn btn-sm" onclick="calToday()">Today</button>' +
         (canAdd ? '<span class="calendar-hint">Click a day to add · drag to reschedule</span>' : '') +
         '</div>';

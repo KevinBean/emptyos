@@ -2,6 +2,8 @@
 
 Live inventory is authoritative — `eos app list`, or browse `apps/` + `apps/personal/`. Every app is self-documenting: `eos app info <id>` generates docs from manifest + code. Don't maintain an app catalog here — it drifts.
 
+**Suites (product chapters).** `suites.toml` (repo root) is the descriptive catalog grouping public apps into ~7 named suites (Tasks & Projects, Knowledge, Life, Companion, Studio, Automation + the Engineer line) — the middle layer between distributions (release tiers) and apps. Two app kinds by convention: **surface apps** (one per suite, compose members via `[[contributes.<suite>.<slot>]]` + `call_contributions`, own no data — pilot: `apps/public/standard/life/`, dark) and **atom apps** (own their data + verbs — everything else). Purely presentational: the kernel never reads it, tiers stay literal, all apps equal at runtime. Validated by `scripts/check_suites.py` (preflight, gates on unresolvable ids). Per-suite cohesion passes run via the `eos-suite-cohesion` skill; reference report `docs/suites/life-cohesion.md`.
+
 To scaffold a new app, invoke the `eos-new-app` skill (or `eos-new-plugin` for plugins). It generates manifest, `app.py`, `pages/`, and a `tests/test_sys_<id>.py` skeleton.
 
 To build an **engineering calculator** (algorithm doc → requirements → KB notes → pure engine → method-registry app → conformance → `basic-engineer` release bundle), follow `docs/ENGINEERING-APP-WORKFLOW.md` — the in-app pipeline (`/grill/` engineering-calculator recipe → `/app-builder/` → `/kb/` Digest doc → `engines/` → `[[provides.methods]]` → `[[provides.conformance]]` → `/release/`), optionally run autonomously via `feature-pipeline`'s conformance-gated loop.

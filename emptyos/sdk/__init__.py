@@ -1,5 +1,6 @@
 """EmptyOS App SDK."""
 
+from emptyos.runtime.atomic_io import atomic_write_bytes, atomic_write_text
 from emptyos.sdk import dimensions, formulas
 
 # Practice app shared modules
@@ -119,6 +120,7 @@ from emptyos.sdk.utils import (
     csv_to_rows,
     extract_wikilinks,
     fm_list,
+    fm_scalar,
     fm_str,
     format_markdown_table,
     load_json,
@@ -128,6 +130,7 @@ from emptyos.sdk.utils import (
     now_iso,
     parse_captures,
     parse_frontmatter,
+    parse_json_fence,
     parse_llm_json,
     parse_markdown_table,
     rows_to_csv,
@@ -135,6 +138,7 @@ from emptyos.sdk.utils import (
     set_frontmatter_field,
     slug_from_path,
     slugify,
+    first_prose_line,
     strip_frontmatter,
     strip_markdown,
     task_tier,
@@ -172,6 +176,7 @@ from emptyos.sdk.web_search import (
     is_public_web_url,
     openalex_search,
     read_web_source,
+    triage_hits,
     semantic_scholar_search,
     site_label,
     source_fencer,
@@ -244,6 +249,7 @@ __all__ = [
     "ensure_column",
     "fm_str",
     "fm_list",
+    "fm_scalar",
     "load_json",
     "new_id",
     "normalize_clock_time",
@@ -251,6 +257,7 @@ __all__ = [
     "save_json",
     "parse_captures",
     "parse_frontmatter",
+    "parse_json_fence",
     "parse_llm_json",
     "set_frontmatter_field",
     "slug_from_path",
@@ -269,6 +276,7 @@ __all__ = [
     "query_files",
     "query_mixed",
     "flatten_note_records",
+    "first_prose_line",
     "strip_markdown",
     "today_iso",
     "now_iso",
@@ -278,6 +286,8 @@ __all__ = [
     "compute_speech_metrics",
     "assess_pacing",
     "assess_fillers",
+    "atomic_write_bytes",
+    "atomic_write_text",
     "lcs_score",
     "word_accuracy",
     "practice_stats",
@@ -353,6 +363,7 @@ __all__ = [
     "is_public_web_url",
     "clean_page_text",
     "read_web_source",
+    "triage_hits",
     "UNTRUSTED_SOURCE_CLAUSE",
     "untrusted_block",
     "SourceFencer",

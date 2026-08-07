@@ -26,7 +26,7 @@ colors:
   border:         "#d6d2ca"
   border-strong:  "#c4c0b6"
 
-  accent:         "#6c5ce7"
+  accent:         "#6353da"
   accent-dim:     "#8b80f0"
   accent-ink:     "#ffffff"
 

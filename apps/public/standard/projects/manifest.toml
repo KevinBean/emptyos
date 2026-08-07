@@ -34,17 +34,14 @@ prefix = "/projects"
 emits = ["projects:refreshed", "projects:status_changed", "projects:task_toggled", "projects:task_added", "projects:created", "projects:doc_created", "projects:doc_saved", "projects:stage_changed", "projects:calc_attached", "projects:feature_toggled", "projects:sprint_created", "projects:sprint_closed", "projects:milestone_created", "projects:release_created", "projects:scene_visualized", "projects:dates_cascaded", "project:updated"]
 # UI-render observability — scene_visualized fires when the user opens a
 # visual scene; no cross-app consumer wants per-view notifications.
-internal = ["projects:scene_visualized"]
+# project:updated / projects:doc_saved are high-frequency save signals —
+# status/task events already ripple, so no cross-app listener by design
+# (marked 2026-07-02).
+internal = ["projects:scene_visualized", "project:updated", "projects:doc_saved", "projects:dates_cascaded"]
 
 [provides.settings]
 schema = [
     {key = "projects.stale_days", label = "Stale After (days)", type = "number", default = 90},
-    # High-frequency save signals — status/task events already ripple — no cross-app listener by design (marked 2026-07-02).
-    "project:updated",
-    "projects:doc_saved",
-    # High-frequency save signals — status/task events already ripple — no cross-app listener by design.
-    "project:updated",
-    "projects:doc_saved",
 ]
 
 [provides.timeline]

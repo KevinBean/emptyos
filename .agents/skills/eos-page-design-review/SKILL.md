@@ -1,6 +1,6 @@
 ---
 name: eos-page-design-review
-description: Review an EmptyOS app page from a frontend designer's perspective and propose fixes — bounded by the existing theme tokens, eos-components helpers, type/spacing/radius scales, and forbidden-pattern rules. Use when a page is technically compliant with the design language but feels flat / unbalanced / lifeless / hard to scan, or when the user says "review the design", "check the design", "make it look better", "this is too plain", "this feels off". DO NOT use this for: brand-island work (use frontend-design instead), full-system design-language compliance sweeps (use eos-design-system-audit), per-file code review (use eos-simplify), or generating new designs from scratch.
+description: Review an EmptyOS app page from a frontend designer's perspective and propose fixes — bounded by the existing theme tokens, eos-components helpers, type/spacing/radius scales, and forbidden-pattern rules. Use when a page is technically compliant with the design language but feels flat / unbalanced / lifeless / hard to scan, or when the user says "review the design", "check the design", "make it look better", "this is too plain", "this feels off". DO NOT use this for — brand-island work (use frontend-design instead), full-system design-language compliance sweeps (use eos-design-system-audit), per-file code review (use eos-simplify), or generating new designs from scratch.
 ---
 
 # EmptyOS Design Review

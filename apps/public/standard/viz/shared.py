@@ -8,6 +8,8 @@ Pure functions only — no `self`, no kernel access, no I/O.
 
 from __future__ import annotations
 
+import re
+
 from emptyos.sdk.html_artifact import (
     FENCE_RE as _FENCE_RE,
     extract_html as _extract_html,
@@ -513,6 +515,17 @@ Required structure (keep under ~250 lines of script):
   as a text overlay.
 - A small HUD: a fixed() corner text() with the objective + "Arrows / WASD to move".
 
+Kaboom v3000 compatibility (these are hard requirements):
+- `every()` does not exist. To enumerate tagged objects, use
+  `get(tag, { recursive: true }).forEach(...)`.
+- Objects created by `addLevel()` are nested under the level. Use
+  `level.get(tag)` or recursive global `get`; bare global `get(tag)` will miss them.
+- Tag every object in a modal/message overlay with the same overlay tag and clear
+  that whole tag before showing or dismissing a prompt. Never destroy only the
+  background rectangle while leaving its text behind.
+- Quiz key handlers must be registered once or be guarded by the exact active
+  quiz object/token. Old answer handlers must not fire during a later question.
+
 Honour the brief's theme — setting, the character's look (emoji/colour), the goal,
 hazards. If the brief is a language/learning premise, put the target words on signs
 or NPC dialogue.
@@ -521,6 +534,28 @@ Do NOT: load external sprite/audio assets; use body() gravity; build menus or
 multiple levels unless asked; exceed the line budget. Iteration happens by prompt.
 The player clicks the game once to give the canvas keyboard focus.
 """
+
+_GAME_2D_EVERY_RE = re.compile(r"(?<![\w.])every\(\s*([^,\n]+?)\s*,\s*")
+_GAME_2D_BARE_GET_RE = re.compile(r"(?<![\w.])get\(\s*([^,()\n]+?)\s*\)")
+
+
+def _normalize_game_2d_html(html: str) -> str:
+    """Repair two common Kaboom v3000 compatibility slips in generated code.
+
+    `every(tag, callback)` is a legacy/nonexistent helper, and bare global
+    `get(tag)` does not descend into objects owned by `addLevel()`. Recursive
+    `get` is valid for both root and nested objects, so normalizing at the
+    persistence seam keeps every generation/iteration path consistent.
+    """
+    html = _GAME_2D_EVERY_RE.sub(
+        lambda match: f"get({match.group(1)}, {{ recursive: true }}).forEach(",
+        html,
+    )
+    return _GAME_2D_BARE_GET_RE.sub(
+        lambda match: f"get({match.group(1)}, {{ recursive: true }})",
+        html,
+    )
+
 
 PRESETS = {
     "3d-scene": VIZ_3D_SCENE_PRESET,
@@ -621,6 +656,51 @@ The user now wants a CHANGE. Your job:
   5. Do NOT add prose explanations — every emitted character costs output budget. Just edit.
   6. When done, stop. Do not summarise.
 """
+
+
+# ── Multi-pass (skeleton → fill → assemble) for dense DOM shapes ──
+# A dense artifact routinely exceeds the one-shot output-token ceiling and gets
+# truncated. For the section-addressable DOM shapes we generate a small valid
+# SKELETON first, then have the truncation-immune agent read-then-Edit primitive
+# fill each section one small Edit at a time — so the per-call ceiling never
+# binds. Canvas shapes (3d-scene/game-2d/chart/network-graph) are excluded: they
+# have no addressable sections to fill.
+MULTIPASS_SHAPES = frozenset({"slide-deck", "schematic", "svg-diagram"})
+
+# Appended to the shape's normal system prompt for the SKELETON pass only.
+VIZ_SKELETON_SUFFIX = """\
+
+SKELETON MODE — output ONLY a structural skeleton, not the finished artifact:
+- Emit a COMPLETE, valid single-file HTML document: proper <!doctype html>, a
+  <head> carrying every library/style the finished piece needs, a <body>, and a
+  closing </body></html>. It MUST end with </html>.
+- Lay out the top-level structure the finished piece will have, with the real
+  sections EMPTY: for a slide deck, the reveal.js scaffold with one empty
+  <section> per intended slide; for an SVG diagram/schematic, the <svg> frame
+  with one empty placeholder group (<g data-fill="…">) per intended region.
+- Mark each empty section with a short HTML comment naming what belongs there:
+      <!-- FILL: <what this section should contain> -->
+- Do NOT write the real content yet. Keep the skeleton small and complete — it
+  is valid HTML on its own. The sections are filled in the next pass.
+"""
+
+
+def build_skeleton_user_msg(prompt: str) -> str:
+    return (
+        "Plan the structure for this brief as an EMPTY skeleton (see SKELETON "
+        f"MODE — sections empty, one FILL comment each):\n\n{prompt}"
+    )
+
+
+def build_fill_user_msg(prompt: str) -> str:
+    return (
+        "The file you are editing is a skeleton with `<!-- FILL: … -->` "
+        "placeholders. For EACH placeholder, populate its section with the real, "
+        "complete content per the original brief below, then remove that FILL "
+        "comment. Work ONE section at a time with the Edit tool — do NOT rewrite "
+        "the whole file. Keep every library import and the overall structure "
+        f"intact.\n\nORIGINAL BRIEF:\n{prompt}"
+    )
 
 # HTML extraction + validation helpers now live in the SDK (CLAUDE.md rule 9 —
 # designer became the second consumer). Aliased to the legacy private names so

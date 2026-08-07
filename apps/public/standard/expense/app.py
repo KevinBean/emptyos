@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import csv
 import io
-import json
 import re
 from datetime import date, timedelta
 from pathlib import Path
@@ -17,9 +16,13 @@ from pathlib import Path
 from emptyos.sdk import BaseApp, cli_command, web_route
 from emptyos.sdk.utils import clamp_days
 
+from . import analytics as _analytics
+from . import income as _income
+from . import recurring as _recurring
+from .shared import _RECURRING_JOB
+
 from . import statements as _statements
 from .categories import (
-    CATEGORY_KEYWORDS,
     detect_category as _detect_category,
     parse_aa_split as _parse_aa_split,
 )
@@ -28,30 +31,12 @@ TABLE_ROW = re.compile(
     r"^\|\s*(\d{4}-\d{2}-\d{2})\s*\|\s*\$?([\d,.]+)\s*\|\s*(.*?)\s*\|\s*(.*?)\s*\|\s*(.*?)\s*\|"
 )
 
-EXPENSE_INSIGHT_SYSTEM = """You are a sharp personal finance analyst. Given a month's expense data, provide actionable insights.
-
-## Structure
-Return exactly:
-1. **Pattern** (1 sentence): What's the dominant spending pattern this month?
-2. **Anomaly** (1 sentence): What's unusual compared to what you'd expect? (largest single category, unexpected ratio)
-3. **Blind spot** (1 sentence): What might be hiding in the data? (small daily purchases that compound, missing categories)
-4. **One action** (1 sentence): The single highest-leverage change to reduce spending.
-5. **Health score**: Rate 1-10 (1=crisis, 5=average, 10=excellent frugality).
-
-## DO NOT:
-- Say "consider tracking your expenses" — they already are.
-- Give generic advice ("cook at home more") without connecting to the actual category data.
-- Be judgmental about discretionary spending — note it, don't moralize.
-- Pad with filler. Every sentence must contain a specific number or category name."""
-
-
-
-_RECURRING_JOB = "expense-recurring"
-
 
 class ExpenseApp(BaseApp):
+
     # Statement import — column mapping + dedupe + preview/confirm gate.
     api_import_preview = _statements.api_import_preview
+
     api_import_confirm = _statements.api_import_confirm
 
     # Bound on how many missed periods one rule may back-post in a single run.
@@ -64,35 +49,6 @@ class ExpenseApp(BaseApp):
     async def teardown(self):
         self.remove_cron_job(_RECURRING_JOB)
         await super().teardown()
-
-    def _register_recurring_schedule(self):
-        """Daily cron for the recurring-expense check.
-
-        Before this, ``/api/recurring/check`` had exactly one caller: the expense
-        page's own JS. So auto-posting silently depended on the user *visiting
-        the app* — a recurring mechanism that only runs when observed. Rent went
-        unlogged from 2026-06-16 onward for that reason, and the gap was only
-        found by reconciling against net worth.
-        """
-        self.remove_cron_job(_RECURRING_JOB)
-        if not self.setting_or_config("expense.recurring.enabled", True):
-            return
-        cron = str(self.setting_or_config("expense.recurring.cron", "0 6 * * *")).strip()
-        ok = self.add_cron_job_logged(
-            _RECURRING_JOB, self._scheduled_recurring_check, cron=cron or "0 6 * * *",
-            crash_event="recurring_crash",
-        )
-        self.log_activity({"event": "recurring_schedule_registered" if ok
-                           else "recurring_schedule_failed", "cron": cron})
-
-    async def _scheduled_recurring_check(self):
-        await self._run_recurring_check(trigger="schedule")
-
-    @web_route("POST", "/api/recurring/reschedule")
-    async def api_recurring_reschedule(self, request):
-        """Re-read settings and re-register the cron job (call after editing them)."""
-        self._register_recurring_schedule()
-        return {"ok": True, "next_run": self.get_cron_job_next_fire(_RECURRING_JOB)}
 
     def _log_dir(self) -> Path:
         return self.vault_config_path("log_dir", "20_Areas/Finances") or Path(".")
@@ -215,8 +171,6 @@ class ExpenseApp(BaseApp):
         expenses = await self.list_expenses(month=month)
         return self._summarize(expenses)
 
-    # ── Aura voice intents (registry: [[provides.verbs]] in manifest) ──
-
     async def voice_add_expense(
         self, amount: float = 0, description: str = "", category: str = ""
     ) -> dict:
@@ -267,8 +221,6 @@ class ExpenseApp(BaseApp):
             },
             "link": {"text": "Open expenses", "href": "/expense/"},
         }
-
-    # ── Hub panel contributions ──
 
     async def panel_quick_add(self) -> dict:
         """Hub: inline quick-add form, posts to smart-add endpoint."""
@@ -546,8 +498,6 @@ class ExpenseApp(BaseApp):
         expenses = await self.list_expenses(month=month)
         return expenses[-limit:]
 
-    # --- Enhanced endpoints (HP parity) ---
-
     async def _delete_entry(self, target: dict) -> dict:
         """Delete an expense row matching date+amount from the vault log."""
         if not target.get("date") or not target.get("amount"):
@@ -621,355 +571,8 @@ class ExpenseApp(BaseApp):
         self.save_state(state)
         return {"count": len(state["presets"])}
 
-    @web_route("GET", "/api/forecast")
-    async def api_forecast(self, request):
-        """Spending forecast for current month."""
-        month = date.today().strftime("%Y-%m")
-        expenses = await self.list_expenses(month=month)
-        total = sum(e["amount"] for e in expenses)
-        days_elapsed = max(1, date.today().day)
-        days_in_month = (
-            (
-                date(date.today().year, date.today().month % 12 + 1, 1)
-                - date(date.today().year, date.today().month, 1)
-            ).days
-            if date.today().month < 12
-            else 31
-        )
-        daily_avg = total / days_elapsed
-        forecast = daily_avg * days_in_month
-        budget = self._budget_setting()
-        return {
-            "total": round(total, 2),
-            "daily_avg": round(daily_avg, 2),
-            "forecast": round(forecast, 2),
-            "budget": budget,
-            "budget_pct": round(total / budget * 100) if budget > 0 else 0,
-            "on_track": forecast <= budget,
-        }
-
-    @web_route("GET", "/api/heatmap")
-    async def api_heatmap(self, request):
-        """Daily spending heatmap for last N months."""
-        from datetime import timedelta
-
-        months = int(request.query_params.get("months", "6"))
-        start = date.today().replace(day=1)
-        for _ in range(months - 1):
-            start = (start - timedelta(days=1)).replace(day=1)
-
-        all_expenses = await self.list_expenses(year=date.today().year)
-        if start.year != date.today().year:
-            all_expenses = await self.list_expenses(year=start.year) + all_expenses
-
-        daily = {}
-        for e in all_expenses:
-            if e["date"] >= start.isoformat():
-                daily[e["date"]] = daily.get(e["date"], 0) + e["amount"]
-        return {"start": start.isoformat(), "data": {k: round(v, 2) for k, v in daily.items()}}
-
-    @web_route("GET", "/api/week-compare")
-    async def api_week_compare(self, request):
-        """Compare this week vs last week spending."""
-        from datetime import timedelta
-
-        today = date.today()
-        week_start = today - timedelta(days=today.weekday())
-        last_week_start = week_start - timedelta(days=7)
-
-        month = today.strftime("%Y-%m")
-        expenses = await self.list_expenses(month=month)
-        # Also get last month if week crosses boundary
-        if week_start.month != today.month:
-            expenses += await self.list_expenses(month=last_week_start.strftime("%Y-%m"))
-
-        this_week = sum(e["amount"] for e in expenses if e["date"] >= week_start.isoformat())
-        last_week = sum(
-            e["amount"]
-            for e in expenses
-            if last_week_start.isoformat() <= e["date"] < week_start.isoformat()
-        )
-        diff = this_week - last_week
-        return {
-            "this_week": round(this_week, 2),
-            "last_week": round(last_week, 2),
-            "diff": round(diff, 2),
-            "pct_change": round(diff / last_week * 100) if last_week > 0 else 0,
-        }
-
-    def _sql_breakdown(self, expenses: list[dict]) -> dict | None:
-        """SQL-shaped cuts of a month that are tedious in Python — via the
-        text-first tabular layer (`.claude/rules/text-first-data.md`).
-
-        Fail-soft: returns None when the dark flag is off, the `data` extra
-        is missing, or anything raises — the insight prompt is then exactly
-        what it was before this feature.
-        """
-        if not self.app_config("feature.sql-analytics.enabled", False):
-            return None
-        if not expenses:
-            return None
-        try:
-            weekpart = self.query(
-                "SELECT CASE WHEN dayofweek(CAST(date AS DATE)) IN (0, 6)"
-                " THEN 'weekend' ELSE 'weekday' END AS part,"
-                " ROUND(SUM(amount), 2) AS total, COUNT(*) AS n"
-                " FROM e GROUP BY part ORDER BY part DESC",
-                tables={"e": expenses},
-            )
-            top = self.query(
-                "SELECT description, ROUND(SUM(amount), 2) AS total, COUNT(*) AS n"
-                " FROM e GROUP BY description ORDER BY total DESC LIMIT 5",
-                tables={"e": expenses},
-            )
-            blind_spots = self.query(
-                "SELECT description, COUNT(*) AS n, ROUND(SUM(amount), 2) AS total"
-                " FROM e GROUP BY description"
-                " HAVING COUNT(*) >= 3 AND AVG(amount) < 15"
-                " ORDER BY total DESC LIMIT 5",
-                tables={"e": expenses},
-            )
-            for r in (weekpart, top, blind_spots):
-                if isinstance(r, dict) and r.get("error"):
-                    self.log_warn(f"sql breakdown unavailable: {r['error']}")
-                    return None
-            return {"weekday_vs_weekend": weekpart, "top_spends": top, "blind_spots": blind_spots}
-        except Exception as e:
-            self.log_warn(f"sql breakdown failed: {e}")
-            return None
-
-    @web_route("GET", "/api/ai-insight")
-    async def api_insight(self, request):
-        """AI analysis of spending patterns."""
-        month = request.query_params.get("month", date.today().strftime("%Y-%m"))
-        expenses = await self.list_expenses(month=month)
-        s = self._summarize(expenses)
-        user_msg = (
-            f"Month: {s['month']}\n"
-            f"Total: ${s['total']:.2f}, {s['count']} entries\n"
-            f"Categories: {json.dumps(s['by_category'])}"
-        )
-        breakdown = self._sql_breakdown(expenses)
-        if breakdown:
-            user_msg += (
-                f"\nWeekday vs weekend: {json.dumps(breakdown['weekday_vs_weekend'])}"
-                f"\nTop spends: {json.dumps(breakdown['top_spends'])}"
-                f"\nSmall repeat purchases (possible blind spots): {json.dumps(breakdown['blind_spots'])}"
-            )
-        result = await self.think(
-            user_msg, system=EXPENSE_INSIGHT_SYSTEM, domain="text", temperature=0.4
-        )
-        return {"insight": result, "month": s["month"], "total": s["total"], "provenance": self.last_provenance()}
-
-    @web_route("POST", "/api/report/monthly")
-    async def api_report_monthly(self, request):
-        """Write a monthly expense report into the vault (AI-authored snapshot).
-
-        Body ``{month?: "YYYY-MM"}`` — defaults to the current month. Lands
-        under the app's ``outputs/`` folder with ``author: ai`` +
-        ``lifecycle: snapshot`` per the authorship-boundary rule. Only
-        locally-computed aggregates reach the model (Rule 19).
-        """
-        data = await self.read_json(request)
-        month = (data.get("month") or "").strip() or date.today().strftime("%Y-%m")
-        try:
-            prev_first = date.fromisoformat(month + "-01")
-        except ValueError:
-            return {"error": f"bad month '{month}' — expected YYYY-MM"}
-        expenses = await self.list_expenses(month=month, year=int(month[:4]))
-        if not expenses:
-            return {"error": f"no expenses recorded in {month}"}
-        s = self._summarize(expenses)
-        prev_month = (prev_first - timedelta(days=1)).strftime("%Y-%m")
-        prev_expenses = await self.list_expenses(month=prev_month, year=int(prev_month[:4]))
-        prev = self._summarize(prev_expenses) if prev_expenses else {"total": 0, "by_category": {}}
-
-        prev_cats = prev.get("by_category", {})
-        cat_rows = ["| Category | This month | Last month | Δ |", "|---|---|---|---|"]
-        for cat, amt in s["by_category"].items():
-            p = prev_cats.get(cat, 0)
-            d = amt - p
-            cat_rows.append(
-                f"| {cat} | ${amt:,.2f} | ${p:,.2f} | {'+' if d >= 0 else '−'}${abs(d):,.2f} |"
-            )
-
-        try:
-            insight = await self.think(
-                f"Month: {s['month']}\nTotal: ${s['total']:.2f}, {s['count']} entries\n"
-                f"Last month total: ${prev.get('total', 0):.2f}\n"
-                f"Categories: {json.dumps(s['by_category'])}",
-                system=EXPENSE_INSIGHT_SYSTEM,
-                domain="text",
-                temperature=0.4,
-            )
-        except Exception:
-            insight = "_Insight unavailable — no think provider reachable._"
-
-        total_delta = s["total"] - (prev.get("total", 0) or 0)
-        body = (
-            f"## Summary\n\n"
-            f"- Total: **${s['total']:,.2f}** across {s['count']} entries\n"
-            f"- vs {prev_month}: ${prev.get('total', 0):,.2f} "
-            f"({'+' if total_delta >= 0 else '−'}${abs(total_delta):,.2f})\n\n"
-            f"## Categories\n\n" + "\n".join(cat_rows) + "\n\n"
-            f"## Insight\n\n{insight}\n"
-        )
-        rel = self.save_report_note(
-            f"{month}-expense-report.md",
-            title=f"Expense report {month}",
-            body=body,
-            tags=["expense", "report"],
-            extra={"month": month, "total": s["total"]},
-        )
-        await self.emit(
-            "expense:report-saved", {"month": month, "total": s["total"], "path": rel}
-        )
-        return {"ok": True, "path": rel, "month": month, "total": s["total"]}
-
-    # --- Recurring expenses ---
-
     def _default_state(self) -> dict:
         return {"budget": 3000, "presets": [], "recurring": [], "income": []}
-
-    @web_route("GET", "/api/recurring")
-    async def api_get_recurring(self, request):
-        """List all recurring expense rules."""
-        state = self.load_state(self._default_state())
-        return state.get("recurring", [])
-
-    @web_route("POST", "/api/recurring")
-    async def api_add_recurring(self, request):
-        """Add a recurring expense rule.
-
-        Body: {text, frequency: weekly|fortnightly|monthly|yearly, enabled?, next_due?}
-
-        ``next_due`` defaults to today (first post happens on the next check, no
-        backfill). Pass a past date to backfill from when the expense actually
-        started — e.g. rent that stopped being logged on 2026-06-16 takes
-        ``next_due: "2026-06-23"`` and back-posts every missed week on the next
-        check, each entry dated to its own period.
-        """
-        data = await request.json()
-        text = data.get("text", "")
-        frequency = data.get("frequency", "monthly")
-        if not text:
-            return {"error": "text required"}
-        if frequency not in ("weekly", "fortnightly", "monthly", "yearly"):
-            return {"error": f"invalid frequency: {frequency}"}
-
-        today = date.today()
-        next_due = str(data.get("next_due") or today.isoformat())
-        try:
-            date.fromisoformat(next_due)
-        except ValueError:
-            return {"error": f"invalid next_due (want YYYY-MM-DD): {next_due}"}
-
-        rule = {
-            "text": text,
-            "frequency": frequency,
-            "next_due": next_due,
-            "enabled": data.get("enabled", True),
-            "last_logged": None,
-            "created": today.isoformat(),
-        }
-        state = self.load_state(self._default_state())
-        state.setdefault("recurring", []).append(rule)
-        self.save_state(state)
-        return {"ok": True, "rule": rule, "count": len(state["recurring"])}
-
-    @web_route("POST", "/api/recurring/check")
-    async def api_recurring_check(self, request):
-        """Check and auto-log any due recurring expenses (manual trigger)."""
-        return await self._run_recurring_check(trigger="manual")
-
-    async def _run_recurring_check(self, *, trigger: str = "manual") -> dict:
-        """Post every due occurrence of every enabled rule.
-
-        Called by the page (on open), by the daily cron job, and by tests. It
-        **catches up**: a rule 3 weeks overdue posts 3 entries in one pass, each
-        dated to the period it belongs to rather than all landing on today. That
-        matters because the previous behaviour advanced ``next_due`` by exactly
-        one period per call, so a rule only caught up if someone opened the page
-        once per period — which is precisely how rent stopped being logged after
-        2026-06-16 with nobody noticing.
-
-        MAX_CATCHUP_PERIODS bounds it so a stale rule (or a clock jump) can't
-        flood the log; anything beyond the cap is reported, never silently
-        dropped.
-        """
-        today = date.today()
-        state = self.load_state(self._default_state())
-        rules = state.get("recurring", [])
-        logged: list[dict] = []
-        capped: list[str] = []
-
-        for rule in rules:
-            if not rule.get("enabled"):
-                continue
-
-            # "700 rent weekly" -> amount 700, description "rent"
-            parts = str(rule.get("text", "")).strip().split(None, 1)
-            try:
-                amount = float(parts[0])
-            except (ValueError, IndexError):
-                continue
-            desc = parts[1] if len(parts) > 1 else "Recurring"
-            cat = _detect_category(desc)
-            cat = "Recurring" if cat == "Other" else cat
-
-            try:
-                next_due = date.fromisoformat(rule["next_due"])
-            except (KeyError, ValueError):
-                continue
-
-            fired = 0
-            while next_due <= today and fired < self.MAX_CATCHUP_PERIODS:
-                # Date the entry to the period it covers, not to "today".
-                entry = await self.add(amount, desc, cat, entry_date=next_due.isoformat())
-                logged.append(entry)
-                rule["last_logged"] = next_due.isoformat()
-                next_due = self._advance_due(next_due, rule.get("frequency", "monthly"))
-                fired += 1
-
-            rule["next_due"] = next_due.isoformat()
-            if fired >= self.MAX_CATCHUP_PERIODS and next_due <= today:
-                capped.append(desc)
-
-        self.save_state(state)
-        if logged:
-            await self.emit("expense:recurring_posted",
-                            {"count": len(logged), "trigger": trigger})
-        result = {"logged": logged, "count": len(logged), "trigger": trigger}
-        if capped:
-            # Loud, never silent — a capped rule means entries are still missing.
-            result["capped"] = capped
-            self.log_activity({"event": "recurring_capped", "rules": capped})
-        return result
-
-    @staticmethod
-    def _advance_due(due: date, frequency: str) -> date:
-        """Next occurrence after ``due``. Month-end safe (31 Jan -> 28/29 Feb)."""
-        if frequency == "weekly":
-            return due + timedelta(days=7)
-        if frequency == "fortnightly":
-            return due + timedelta(days=14)
-        if frequency == "yearly":
-            try:
-                return due.replace(year=due.year + 1)
-            except ValueError:            # 29 Feb -> non-leap year
-                return due.replace(year=due.year + 1, day=28)
-        # monthly (default)
-        m = due.month % 12 + 1
-        y = due.year + (1 if due.month == 12 else 0)
-        day = due.day
-        while day > 0:                    # clamp 31 -> 30 -> 29 -> 28
-            try:
-                return due.replace(year=y, month=m, day=day)
-            except ValueError:
-                day -= 1
-        return due + timedelta(days=30)   # unreachable in practice
-
-    # --- CSV export / import ---
 
     @web_route("GET", "/api/export")
     async def api_export(self, request):
@@ -1017,190 +620,32 @@ class ExpenseApp(BaseApp):
             imported.append(entry)
         return {"ok": True, "imported": len(imported)}
 
-    # --- Category trend ---
+    # ── Analytics (extracted to analytics.py) ──
+    api_forecast         = _analytics.api_forecast
+    api_heatmap          = _analytics.api_heatmap
+    api_week_compare     = _analytics.api_week_compare
+    api_category_trend   = _analytics.api_category_trend
+    api_ytd              = _analytics.api_ytd
+    api_daily_avg        = _analytics.api_daily_avg
+    api_savings_goal     = _analytics.api_savings_goal
+    api_set_savings_goal = _analytics.api_set_savings_goal
+    _sql_breakdown       = _analytics._sql_breakdown
+    api_insight          = _analytics.api_insight
+    api_report_monthly   = _analytics.api_report_monthly
 
-    @web_route("GET", "/api/category-trend")
-    async def api_category_trend(self, request):
-        """Per-category spend this month vs last month."""
-        today = date.today()
-        this_month = today.strftime("%Y-%m")
-        first = today.replace(day=1)
-        last_month_end = first - timedelta(days=1)
-        last_month = last_month_end.strftime("%Y-%m")
+    # ── Income (extracted to income.py) ──
+    api_income_list    = _income.api_income_list
+    api_income_add     = _income.api_income_add
+    api_income_delete  = _income.api_income_delete
+    api_income_summary = _income.api_income_summary
+    income_summary     = _income.income_summary
 
-        this_expenses = await self.list_expenses(month=this_month)
-        last_expenses = await self.list_expenses(month=last_month)
-
-        this_cats: dict[str, float] = {}
-        for e in this_expenses:
-            this_cats[e["category"]] = this_cats.get(e["category"], 0) + e["amount"]
-
-        last_cats: dict[str, float] = {}
-        for e in last_expenses:
-            last_cats[e["category"]] = last_cats.get(e["category"], 0) + e["amount"]
-
-        all_cats = sorted(set(this_cats) | set(last_cats))
-        trends = []
-        for cat in all_cats:
-            t = round(this_cats.get(cat, 0), 2)
-            l = round(last_cats.get(cat, 0), 2)
-            trends.append(
-                {
-                    "category": cat,
-                    "this_month": t,
-                    "last_month": l,
-                    "diff": round(t - l, 2),
-                }
-            )
-        trends.sort(key=lambda x: -abs(x["diff"]))
-        return {"this_month": this_month, "last_month": last_month, "trends": trends}
-
-    @web_route("GET", "/api/ytd")
-    async def api_ytd(self, request):
-        """Year-to-date spending summary."""
-        year = request.query_params.get("year", str(date.today().year))
-        total = 0
-        by_month: dict[str, float] = {}
-        by_category: dict[str, float] = {}
-        count = 0
-        for m in range(1, 13):
-            month_str = f"{year}-{m:02d}"
-            expenses = await self.list_expenses(month=month_str)
-            month_total = sum(e["amount"] for e in expenses)
-            if month_total > 0:
-                by_month[month_str] = round(month_total, 2)
-                total += month_total
-                count += len(expenses)
-                for e in expenses:
-                    cat = e.get("category", "Other")
-                    by_category[cat] = by_category.get(cat, 0) + e["amount"]
-        months_with_data = len(by_month)
-        return {
-            "year": year,
-            "total": round(total, 2),
-            "count": count,
-            "monthly_avg": round(total / months_with_data, 2) if months_with_data else 0,
-            "by_month": by_month,
-            "by_category": {
-                k: round(v, 2) for k, v in sorted(by_category.items(), key=lambda x: -x[1])
-            },
-        }
-
-    @web_route("GET", "/api/savings-goal")
-    async def api_savings_goal(self, request):
-        """Savings goal progress."""
-        state = self.load_state({"savings_goal": 0, "savings_label": ""})
-        return state
-
-    @web_route("POST", "/api/savings-goal")
-    async def api_set_savings_goal(self, request):
-        """Set a savings goal."""
-        data = await request.json()
-        state = self.load_state({})
-        state["savings_goal"] = float(data.get("goal", 0))
-        state["savings_label"] = data.get("label", "Savings Target")
-        self.save_state(state)
-        return state
-
-    @web_route("GET", "/api/daily-avg")
-    async def api_daily_avg(self, request):
-        """Daily spending average for current month."""
-        today = date.today()
-        expenses = await self.list_expenses(month=today.strftime("%Y-%m"))
-        total = sum(e["amount"] for e in expenses)
-        days_elapsed = today.day
-        avg = round(total / days_elapsed, 2) if days_elapsed else 0
-        projected = round(avg * 30, 2)
-        return {
-            "daily_avg": avg,
-            "total_so_far": round(total, 2),
-            "days_elapsed": days_elapsed,
-            "projected_monthly": projected,
-        }
-
-    # ── Income tracking ─────────────────────────────────────
-
-    @web_route("GET", "/api/income")
-    async def api_income_list(self, request):
-        """List income entries, filter by ?month= or ?year=."""
-        state = self.load_state(self._default_state())
-        entries = state.get("income", [])
-        month = request.query_params.get("month")
-        year = request.query_params.get("year")
-        if month:
-            entries = [e for e in entries if e["date"].startswith(month)]
-        elif year:
-            entries = [e for e in entries if e["date"].startswith(year)]
-        entries.sort(key=lambda e: e["date"], reverse=True)
-        return {
-            "entries": entries,
-            "total_gross": sum(e.get("gross", 0) for e in entries),
-            "total_net": sum(e.get("net", e.get("gross", 0)) for e in entries),
-        }
-
-    @web_route("POST", "/api/income")
-    async def api_income_add(self, request):
-        """Record an income entry (salary, freelance, etc.)."""
-        data = await request.json()
-        gross = float(data.get("gross", 0))
-        if gross <= 0:
-            return {"error": "gross must be positive"}
-        tax = float(data.get("tax", 0))
-        entry = {
-            "date": data.get("date", date.today().isoformat()),
-            "gross": gross,
-            "tax": tax,
-            "super": float(data.get("super", 0)),
-            "net": float(data.get("net", 0)) or (gross - tax),
-            "source": data.get("source", ""),
-            "type": data.get("type", "salary"),
-            "note": data.get("note", ""),
-        }
-        state = self.load_state(self._default_state())
-        state.setdefault("income", []).append(entry)
-        self.save_state(state)
-        await self.emit(
-            "expense:income-added",
-            {
-                "date": entry["date"],
-                "gross": entry["gross"],
-                "net": entry["net"],
-                "type": entry["type"],
-            },
-        )
-        return {"ok": True, "entry": entry}
-
-    @web_route("DELETE", "/api/income")
-    async def api_income_delete(self, request):
-        """Delete an income entry by date + gross."""
-        data = await request.json()
-        target_date = data.get("date", "")
-        target_gross = float(data.get("gross", 0))
-        state = self.load_state(self._default_state())
-        before = len(state.get("income", []))
-        state["income"] = [
-            e
-            for e in state.get("income", [])
-            if not (e["date"] == target_date and abs(e.get("gross", 0) - target_gross) < 0.01)
-        ]
-        self.save_state(state)
-        return {"ok": True, "deleted": before - len(state["income"])}
-
-    @web_route("GET", "/api/income/summary")
-    async def api_income_summary(self, request):
-        """Monthly income totals."""
-        month = request.query_params.get("month", date.today().strftime("%Y-%m"))
-        return await self.income_summary(month=month)
-
-    async def income_summary(self, month: str = "") -> dict:
-        """Callable: monthly income summary for finance app."""
-        if not month:
-            month = date.today().strftime("%Y-%m")
-        state = self.load_state(self._default_state())
-        entries = [e for e in state.get("income", []) if e["date"].startswith(month)]
-        return {
-            "month": month,
-            "income_gross": round(sum(e.get("gross", 0) for e in entries), 2),
-            "income_net": round(sum(e.get("net", e.get("gross", 0)) for e in entries), 2),
-            "count": len(entries),
-        }
+    # ── Recurring (extracted to recurring.py) ──
+    _register_recurring_schedule = _recurring._register_recurring_schedule
+    _scheduled_recurring_check   = _recurring._scheduled_recurring_check
+    api_recurring_reschedule     = _recurring.api_recurring_reschedule
+    api_get_recurring            = _recurring.api_get_recurring
+    api_add_recurring            = _recurring.api_add_recurring
+    api_recurring_check          = _recurring.api_recurring_check
+    _run_recurring_check         = _recurring._run_recurring_check
+    _advance_due                 = _recurring._advance_due

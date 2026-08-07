@@ -33,7 +33,10 @@ class LearningReactionsMixin:
     async def on_shadowing_attempt(self, event):
         self._log_action("shadowing:attempt", f"score: {event.data.get('score', '?')}")
 
-    @on_event("learn:lesson_completed")
+    # Detached: measured at 16.7s on the live daemon for a single lesson
+    # completion, which pinned the serial bus for that whole time. Pure side
+    # effect (a log row + a journal ripple) — nothing reads its result.
+    @on_event("learn:lesson_completed", background=True)
     async def on_learn_lesson_completed(self, event):
         course = event.data.get("course_id", "")[:40]
         idx = event.data.get("lesson_index")
@@ -118,3 +121,10 @@ class LearningReactionsMixin:
     @on_event("kb:viewed")
     async def on_kb_viewed(self, event):
         self._log_action("kb:viewed", str(event.data.get("slug",""))[:50])
+
+    @on_event("reader:book_imported")
+    async def on_book_imported(self, event):
+        """A book joined the library — low-frequency, worth a breadcrumb."""
+        title = event.data.get("title") or event.data.get("slug", "")
+        self._log_action("reader:book_imported", str(title)[:50])
+        await self._journal_ripple("📖", f"Added to the library: {str(title)[:60]}", dim="intellectual")

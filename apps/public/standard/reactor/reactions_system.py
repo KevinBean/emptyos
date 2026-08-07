@@ -542,12 +542,12 @@ class SystemReactionsMixin:
         if new_status != "spec-ready":
             return
         self._log_action("projects:status_changed", f"{project_id} → spec-ready; firing app-builder drafter")
-        import asyncio as _asyncio
         from emptyos.sdk.utils import FakeRequest
 
         async def _fire_drafter():
-            # create_task swallows exceptions silently; wrap so app-builder
-            # being absent / failing leaves a breadcrumb instead of a void.
+            # The try/except stays even though spawn_background logs failures:
+            # this breadcrumb is app-specific (_log_action, visible in reactor's
+            # own activity feed), where the helper's is a generic syslog warn.
             try:
                 await self.call_app(
                     "app-builder", "api_draft_from_project",
@@ -556,7 +556,7 @@ class SystemReactionsMixin:
             except Exception as e:
                 self._log_action("projects:status_changed", f"drafter call failed for {project_id}: {e}")
 
-        _asyncio.create_task(_fire_drafter())
+        self.spawn_background(_fire_drafter(), label="app-builder drafter")
 
     @on_event("dogfood:verify_completed")
     async def on_dogfood_verify_completed(self, event):

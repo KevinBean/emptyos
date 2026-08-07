@@ -13,7 +13,7 @@ import re
 import sys
 from pathlib import Path
 
-from check_base import REPO_ROOT, git_staged, git_tracked
+from check_base import REPO_ROOT, git_staged, git_tracked, git_untracked
 
 PATTERNS_FILE = ".eos-branding"
 
@@ -101,8 +101,10 @@ def load_patterns(path: str) -> list[re.Pattern]:
     return patterns
 
 
-def get_files(staged_only: bool = False) -> list[str]:
+def get_files(staged_only: bool = False, include_untracked: bool = False) -> list[str]:
     paths = git_staged() if staged_only else git_tracked()
+    if include_untracked:
+        paths = paths + git_untracked()
     return [p.relative_to(REPO_ROOT).as_posix() for p in paths]
 
 
@@ -117,11 +119,14 @@ def is_false_positive(line: str) -> bool:
 
 def main():
     staged_only = "--staged" in sys.argv
+    # Untracked files are invisible to both scopes above — see the note on
+    # check_base.git_untracked. Opt-in, so default behaviour is unchanged.
+    include_untracked = "--include-untracked" in sys.argv and not staged_only
     patterns = load_patterns(PATTERNS_FILE)
     if not patterns:
         sys.exit(0)
 
-    files = get_files(staged_only)
+    files = get_files(staged_only, include_untracked)
     violations = []
 
     for filepath in files:
@@ -178,7 +183,12 @@ def main():
         print("Exempt: plugin code, docs, CLAUDE.md, provider selectors\n", file=sys.stderr)
         sys.exit(1)
     else:
-        mode = "staged files" if staged_only else "all tracked files"
+        if staged_only:
+            mode = "staged files"
+        elif include_untracked:
+            mode = "all tracked + untracked files"
+        else:
+            mode = "all tracked files"
         print(
             f"OK: No third-party branding found in {mode} ({len(files)} files, {len(patterns)} patterns)"
         )

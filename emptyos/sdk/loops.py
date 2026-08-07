@@ -54,7 +54,7 @@ See ``.claude/rules/test-fix-verify-loop.md``, ``.claude/rules/self-audit-loops.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 # ─── The five loop stages ────────────────────────────────────────────
 FRICTION = "friction"
@@ -133,23 +133,40 @@ LOOPS: list[Loop] = [
         id="dogfood-agent",
         name="Dogfood persona runs",
         summary="Persona uses the system, surfaces friction, and actively "
-        "re-runs the scenario to verify a fix took.",
-        stages=(FRICTION, GATE),
+        "re-runs the scenario to verify a fix took. Its `bound` is wall-clock, "
+        "and was under-declared here until 2026-08-01: `_RUN_TIMEOUT_S` "
+        "(15 min) plus an `idle_timeout_s` (180 s default) kill a persona "
+        "subprocess that stalls. Note what does NOT bound it: `budget_turns` in "
+        "every scenario's frontmatter is **inert** — parsed by `_scenario_meta`, "
+        "defaulted to 15, put in a dict, and read by nothing. 40+ scenarios "
+        "declare a turn budget (12/15/16/18) that has never capped a run. A "
+        "declared bound that does not bind is worse than none, because the "
+        "author believes the loop is bounded; see docs/DEFERRED-WORK.md.",
+        stages=(FRICTION, GATE, BOUND),
         status=LIVE,
         components=("apps/extension/dev/dogfood-agent/friction.py",
-                    "apps/extension/dev/dogfood-agent/runs.py"),
+                    "apps/extension/dev/dogfood-agent/runs.py",
+                    "apps/extension/dev/dogfood-agent/app.py"),
         family="self-improve",
     ),
     Loop(
         id="fix-agent",
         name="Fix-agent",
         summary="Turns a fix-prompt into a bounded patch in a worktree; "
-        "py_compile-gates the merge; reverts the merge commit on bad verify.",
-        stages=(ACT, GATE, REVERT),
+        "py_compile-gates the merge; reverts the merge commit on bad verify. "
+        "Its `bound` is wall-clock on BOTH halves and was under-declared here "
+        "until 2026-08-01: the CLI subprocess is killed at `_RUN_TIMEOUT_S` "
+        "(20 min, `shared.py`) → `status: timeout`, and the verify poll gives "
+        "up at a 25-minute deadline (`verify.py::_poll_verify`) → "
+        "`verify-timeout`, so a hung dogfood can never wedge it. Distinct from "
+        "fix-drain's bound, which counts *attempts across* prompts; this one "
+        "stops a single run that will not finish.",
+        stages=(ACT, GATE, REVERT, BOUND),
         status=LIVE,
         components=("apps/extension/dev/fix-agent/runner.py",
                     "apps/extension/dev/fix-agent/merge.py",
-                    "apps/extension/dev/fix-agent/verify.py"),
+                    "apps/extension/dev/fix-agent/verify.py",
+                    "apps/extension/dev/fix-agent/shared.py"),
         family="self-improve",
     ),
     Loop(
@@ -168,11 +185,16 @@ LOOPS: list[Loop] = [
         id="fix-drain",
         name="Fix-drain orchestrator",
         summary="Walks the pending fix-prompt queue, drives fix-agent per item "
-        "under attempt/timeout budgets, and auto-reverts on verify-failed.",
+        "under attempt/timeout budgets, and auto-reverts on verify-failed. "
+        "Its bound stage classifies rather than counts (2026-07-30): a prompt "
+        "that fails the same STAGE twice is blocked as repeated_defect, so the "
+        "blocked note says what kept breaking instead of just 'out of attempts'.",
         stages=(ACT, GATE, REVERT, BOUND),
         status=DARK,
         flag="apps.dogfood-agent.fix_agent_enabled",
-        components=("apps/extension/dev/dogfood-agent/drain.py",),
+        components=("apps/extension/dev/dogfood-agent/drain.py",
+                    "apps/extension/dev/dogfood-agent/shared.py",
+                    "emptyos/sdk/retry_policy.py"),
         family="self-improve",
     ),
     Loop(
@@ -205,11 +227,42 @@ LOOPS: list[Loop] = [
         summary="Agents recall their own past sessions; the reader that closes "
         "agent_loop's previously write-only compaction archive.",
         stages=(MEMORY,),
-        status=LIVE,
+        status=DARK,
+        flag="apps.agent.feature.episodic-memory.enabled",
         components=("emptyos/sdk/episodic.py",),
         family="agent",
     ),
+    Loop(
+        id="cockpit-attention-push",
+        name="Cockpit attention push",
+        summary="Cockpit watches every agent session's state; on a debounced "
+        "transition into waiting/stuck it nudges the human via proactive_notify "
+        "(dedup + the proactive gate) — the human is the actor that resumes the "
+        "session. Bounded by a one-sweep debounce + the proactive daily cap.",
+        stages=(FRICTION, ACT, BOUND),
+        status=DARK,
+        flag="apps.cockpit.feature.attention-push.enabled",
+        components=("apps/extension/dev/cockpit/tailer.py",),
+        family="agent",
+    ),
     # --- Family: primitive (reusable SDK loop machinery) ---
+    Loop(
+        id="session-plans",
+        name="Session plan claim/close",
+        summary="Bounded problem → ordered session-sized tasks; resume claims "
+        "exactly one (active_task mutual-exclusion marker written before work), "
+        "wrapup closes only that one with a disposition. Bounds by construction: "
+        "a finite task list finishes and leaves the index, which is what a track "
+        "(a work area) can never do.",
+        stages=(FRICTION, ACT, GATE, REVERT, MEMORY, BOUND),
+        status=LIVE,
+        components=(
+            ".claude/rules/session-plans.md",
+            ".claude/skills/eos-session-resume/SKILL.md",
+            ".claude/skills/eos-session-wrapup/SKILL.md",
+        ),
+        family="primitive",
+    ),
     Loop(
         id="deep-loop",
         name="Deep-loop (gap-driven deepening)",
@@ -283,6 +336,18 @@ LOOPS: list[Loop] = [
         components=("emptyos/sdk/conformance.py",),
         family="primitive",
     ),
+    Loop(
+        id="proactive-dispatch",
+        name="Proactive dispatch gate",
+        summary="The restraint machinery under every inbound nudge: master "
+        "enable, per-kind mute, quiet hours, daily cap, min-gap, and dedup — so "
+        "the system never trains the human to ignore it. The bound substrate the "
+        "attention-push and other proactive loops pass through.",
+        stages=(GATE, BOUND),
+        status=LIVE,
+        components=("emptyos/sdk/proactive.py",),
+        family="primitive",
+    ),
     # --- Family: self-audit (turn the tools on the system) ---
     Loop(
         id="preflight",
@@ -328,6 +393,22 @@ LOOPS: list[Loop] = [
         family="engineering",
     ),
     Loop(
+        id="model-probe",
+        name="Local model ability probes",
+        summary="Nightly deterministic probe suite over local think providers "
+        "(JSON strictness, instruction-following, num_ctx needle, consistency, "
+        "bilingual); scores → ability ledger → evidence-based tier overrides; "
+        "notifies only on a regression. Local-only, budget-bounded.",
+        stages=(GATE, MEMORY, BOUND),
+        status=DARK,
+        flag="apps.model-bench.feature.probe-autorun.enabled",
+        components=(
+            "apps/extension/dev/model-bench/probes.py",
+            "apps/extension/dev/model-bench/graders.py",
+        ),
+        family="engineering",
+    ),
+    Loop(
         id="kb-gap-miner",
         name="KB gap-miner",
         summary="Sweeps Q&A history for repeatedly-asked questions the KB "
@@ -336,6 +417,19 @@ LOOPS: list[Loop] = [
         status=DARK,
         flag="apps.kb-gap-miner.enabled",
         components=("apps/extension/dev/kb-gap-miner/",),
+        family="engineering",
+    ),
+    Loop(
+        id="kb-butler",
+        name="KB butler",
+        summary="Autonomous KB-maintenance loop (trace-miner-shaped): a "
+        "scheduled sweep of kb.health() surfaces findings, triages them, repairs "
+        "symmetric backlinks, drafts proposals into the review gate, and reflects "
+        "on corpus convergence. Bounded by the cron cadence + reflection schedule.",
+        stages=(FRICTION, ACT, GATE, MEMORY, BOUND),
+        status=DARK,
+        flag="apps.kb-butler.enabled",
+        components=("apps/extension/dev/kb-butler/",),
         family="engineering",
     ),
     # --- Family: learning (adaptive reading feedback) ---
@@ -356,7 +450,164 @@ LOOPS: list[Loop] = [
         ),
         family="learning",
     ),
-    # --- Family: brand (the distribution engine) ---
+    # --- Family: brand (content quality + distribution) ---
+    Loop(
+        id="mv-production",
+        name="MV production gates",
+        summary="The staged music-video pipeline's own gate/revert half: six "
+        "stages can stop a run (creative-basis, plan-review, art-review, "
+        "still-review, motion-proof, clips) ordered cheap-first, with "
+        "per-scene and per-segment checkpoints so a rejection rewinds one "
+        "scene rather than the film. Registered 2026-07-28 after an audit "
+        "found the most expensive human-in-the-loop process in the system was "
+        "the one never modelled as a loop. Its `bound` stage was rebuilt "
+        "2026-08-01: `motion-proof` used to raise on any partial pass, so a "
+        "run that had already paid the GPU to learn which scenes cannot be "
+        "animated threw that away and died — three of the four video runs on "
+        "disk stopped exactly there, and `motion-audition`, the one recovery "
+        "stage, sits downstream and was unreachable by the failure it "
+        "recovers from. A partial proof now persists the failing scenes and "
+        "pauses for a human; only a zero-pass proof is a failure.",
+        stages=(GATE, REVERT, BOUND),
+        status=LIVE,
+        components=("apps/personal/music-studio/visual.py",
+                    "docs/MV-GENERATION-WORKFLOW.md"),
+        family="brand",
+    ),
+    Loop(
+        id="mv-blockout-authoring",
+        name="MV blockout authoring retry",
+        summary="Author camera geometry -> render depth -> gate -> re-author "
+        "with the gate's own complaint. Registered 2026-07-30 when its bound "
+        "stage stopped being a flat 3-attempt ceiling: a defect the author "
+        "keeps reproducing now stops the loop as repeated_defect instead of "
+        "buying two more renders, while a shrinking defect set is allowed to "
+        "keep converging. ~10s CPU per cycle against ~4min GPU for the clip "
+        "it protects.",
+        stages=(FRICTION, ACT, GATE, BOUND),
+        status=DARK,
+        flag="apps.music-studio.feature.geometry-camera.enabled",
+        components=("apps/personal/music-studio/blockout.py",
+                    "scripts/check_depth_sequence.py",
+                    "emptyos/sdk/retry_policy.py"),
+        family="brand",
+    ),
+    Loop(
+        id="mv-stale-run-sweep",
+        name="MV stale-run sweep",
+        summary="A render that dies with the daemon leaves status=running on "
+        "disk forever — Pipeline._drive can only record an error from inside a "
+        "live except, and every Resume surface filters on paused|error, so the "
+        "orphan is unreachable while claiming to be live. A boot sweep marks "
+        "it interrupted (keyed off state-file mtime, skipping anything in the "
+        "in-memory active map) so the existing surfaces find it.",
+        stages=(FRICTION, REVERT),
+        status=LIVE,
+        components=("apps/personal/music-studio/app.py",
+                    "emptyos/sdk/run_registry.py"),
+        family="brand",
+    ),
+    Loop(
+        id="mv-reference-pack",
+        name="MV reference-pack gate",
+        summary="Validates the production input that decided the most and was "
+        "governed by nothing: identity anchor + manifest hashes + review "
+        "verdicts, plus consistency with the scene plan (an anchor against a "
+        "plan where no scene can show a face is a hard fail). Absent manifest "
+        "is legacy, not failure, so the existing catalogue still renders.",
+        stages=(GATE,),
+        status=DARK,
+        flag="apps.music-studio.feature.reference-pack-gate.enabled",
+        components=("apps/personal/music-studio/visual.py",),
+        family="brand",
+    ),
+    Loop(
+        id="mv-plan-review",
+        name="MV plan review (pre-GPU art gate)",
+        summary="One text-only model call comparing the storyboard with "
+        "art-direction.md before any image is generated — catches a scene that "
+        "contradicts its own contract for a fraction of a cent instead of a "
+        "full still pass. Fails open on a reviewer outage; violations feed the "
+        "art ledger.",
+        stages=(GATE,),
+        status=DARK,
+        flag="apps.music-studio.feature.plan-review.enabled",
+        components=("apps/personal/music-studio/visual.py",
+                    "apps/personal/music-studio/prompts.py"),
+        family="brand",
+    ),
+    Loop(
+        id="mv-final-art-review",
+        name="MV final-master art review",
+        summary="The loop that judges a finished master and sends it back: three "
+        "separate verdicts (technical / asset-finish / art), a shot-disposition "
+        "pass, and a director revision doc that names each rejected element and "
+        "its replacement. It is the only MV loop that has ever caught a "
+        "capability-reel result — v5 of Log Out passed every automated gate and "
+        "was rejected by hand the next day, producing v6. Registered as DOC "
+        "because the acting half is a human reading frames: the gates report, the "
+        "revision doc records, and nothing automates the judgement. Two real "
+        "weaknesses, both measured 2026-07-31: coverage is unenforced (the v6 "
+        "review sampled no frame across three of eight shots, so its verdict "
+        "covered 5/8 and did not say so), and the review reads the prohibition "
+        "documents without the intent documents — an audit that did exactly that "
+        "called an authored silhouette motif a stray proxy and blocked a correct "
+        "release. Pixel evidence settles existence, never legitimacy. A third, "
+        "measured on 梦幻泡影 the same day, is why this loop carries no `bound`: "
+        "it has no termination condition at all, and it shows. Scene 05 ran "
+        "blender-repair v1 through v8; `final-review.json` records three "
+        "director sessions, every one `request_changes`, and **no `approve` "
+        "verdict was ever reached** — the film shipped anyway, by another route, "
+        "while its run sat at `motion-proof` 52%. A human loop still needs a "
+        "stopping rule; exiting sideways is not convergence, and nothing here "
+        "distinguishes 'the director is still iterating' from 'this loop is "
+        "stuck'. `retry_policy.classify_retry` is the shape that would answer "
+        "it, but the per-attempt defect set it needs is not recorded here.",
+        stages=(GATE, REVERT, MEMORY),
+        status=DOC,
+        components=(".claude/skills/tool-blender-comfyui-video/references/"
+                    "asset-finish-gate.md",
+                    ".claude/skills/tool-blender-comfyui-video/references/"
+                    "art-direction-from-technical-master.md",
+                    ".claude/skills/tool-blender-comfyui-video/scripts/"
+                    "check_hybrid_video.py",
+                    "emptyos/sdk/media/review.py"),
+        family="brand",
+    ),
+    Loop(
+        id="mv-art-ledger",
+        name="MV art-direction ledger",
+        summary="Cross-song memory for the MV pipeline: one row per art "
+        "verdict with the contract clause it violated, and a recurring-failure "
+        "block seeded into the next song's reviewer once the same code has "
+        "been rejected on two different songs. Closes the `memory` gap that "
+        "made every MV start from zero. Registered LIVE 2026-07-28 and audited "
+        "2026-07-31, which is the lesson: a registered stage is not an earning "
+        "one. It was writing rows that taught nothing — 219 of 225 had an "
+        "empty contract_clause because ART_REVIEW (96% of rows) never asked "
+        "the model for one, 66 were unit-test fixtures written into the real "
+        "ledger by a hardcoded repo-root path, and one song counted as two "
+        "under its dated and undated names, halving the distinct-song bar. "
+        "All three fixed 2026-08-01; check the data before trusting the flag.",
+        stages=(MEMORY,),
+        status=LIVE,
+        components=("emptyos/sdk/art_ledger.py",
+                    "apps/personal/music-studio/visual.py"),
+        family="brand",
+    ),
+    Loop(
+        id="publish-framework-eval",
+        name="Publish framework evaluator",
+        summary="Grades an article draft against its declared framework via a "
+        "multi-lens LLM scorecard with deterministic validation (the model "
+        "judges; code checks the shape) — a content-quality gate before publish, "
+        "with the scorecard persisted for the next draft.",
+        stages=(GATE, MEMORY),
+        status=DARK,
+        flag="apps.publish.feature.framework-eval.enabled",
+        components=("apps/public/standard/publish/framework.py",),
+        family="brand",
+    ),
     Loop(
         id="brand-distribution",
         name="Brand distribution engine",

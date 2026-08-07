@@ -101,3 +101,78 @@ def test_agent_other_events_ignored():
 def test_garbage_line_is_safe():
     assert transform_stream_json_line("not json", T0) == []
     assert transform_stream_json_line("", T0) == []
+
+
+# ── Codex dialect (`codex exec --json`) ────────────────────────────────
+#
+# Every event below is verbatim from a real `codex exec --json` run captured
+# 2026-07-31 (codex-cli 0.144.1) — not hand-written — so the shapes are the
+# ones the parser will actually meet.
+
+CODEX_MSG = {
+    "type": "item.completed",
+    "item": {"id": "item_1", "type": "agent_message",
+             "text": "I’ll open the repository README directly."},
+}
+CODEX_CMD_STARTED = {
+    "type": "item.started",
+    "item": {"id": "item_2", "type": "command_execution",
+             "command": "powershell.exe -Command 'Get-Content README.md'",
+             "aggregated_output": "", "exit_code": None, "status": "in_progress"},
+}
+CODEX_CMD_FAILED = {
+    "type": "item.completed",
+    "item": {"id": "item_2", "type": "command_execution",
+             "command": "powershell.exe -Command 'Get-Content README.md'",
+             "aggregated_output": "execution error: windows sandbox: "
+                                  "helper_unknown_error: apply deny-read ACLs",
+             "exit_code": -1, "status": "failed"},
+}
+CODEX_CMD_OK = {
+    "type": "item.completed",
+    "item": {"id": "item_3", "type": "command_execution",
+             "command": "powershell.exe -Command 'Get-Content README.md'",
+             "aggregated_output": "# EmptyOS\r\n\r\nAn AI-native OS.",
+             "exit_code": 0, "status": "completed"},
+}
+
+
+def test_codex_agent_message_is_a_chunk():
+    ev = transform_stream_json_line(json.dumps(CODEX_MSG), T0)
+    assert _types(ev) == ["chunk"]
+    assert "README" in ev[0]["text"]
+
+
+def test_codex_command_pairs_tool_use_to_result_by_item_id():
+    started = transform_stream_json_line(json.dumps(CODEX_CMD_STARTED), T0)
+    done = transform_stream_json_line(json.dumps(CODEX_CMD_OK), T0)
+    assert _types(started) == ["tool_use"]
+    assert started[0]["tool"] == "Bash"
+    assert "Get-Content" in started[0]["input"]["command"]
+    assert _types(done) == ["tool_result"]
+    # The pairing the run drawer renders on is the shared item id.
+    assert done[0]["tool_use_id"] == "item_3"
+
+
+def test_codex_failed_command_surfaces_exit_code():
+    """A failed attempt must stay visible: codex's Windows sandbox fails open,
+    reporting the helper error here and then silently re-running unsandboxed.
+    Dropping it would hide the only trace of that retry."""
+    ev = transform_stream_json_line(json.dumps(CODEX_CMD_FAILED), T0)
+    assert _types(ev) == ["tool_result"]
+    assert ev[0]["preview"].startswith("[exit -1]")
+    assert "deny-read ACLs" in ev[0]["preview"]
+
+
+def test_codex_envelope_events_are_ignored():
+    for evt in ({"type": "thread.started", "thread_id": "t1"},
+                {"type": "turn.started"},
+                {"type": "turn.completed", "usage": {"input_tokens": 10}}):
+        assert transform_stream_json_line(json.dumps(evt), T0) == []
+
+
+def test_codex_preview_is_capped():
+    big = dict(CODEX_CMD_OK)
+    big["item"] = dict(CODEX_CMD_OK["item"], aggregated_output="x" * 5000)
+    ev = transform_stream_json_line(json.dumps(big), T0)
+    assert 0 < len(ev[0]["preview"]) <= 300

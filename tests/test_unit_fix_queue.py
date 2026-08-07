@@ -35,7 +35,7 @@ from helpers import app_path
 # app.py via bare importlib without registering a parent package fails with
 # "attempted relative import with no known parent package" (the gotcha in
 # .claude/rules/multi-module-apps.md). Register a package + pre-load the helper
-# modules first, mirroring tests/test_sys_rooms_logic.py.
+# modules first, mirroring tests/test_unit_rooms_logic.py.
 _FA_DIR = app_path("fix-agent")
 if "fa_app_for_test_pkg" not in sys.modules:
     _pkg = types.ModuleType("fa_app_for_test_pkg")

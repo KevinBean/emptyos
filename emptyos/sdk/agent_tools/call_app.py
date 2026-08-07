@@ -148,6 +148,20 @@ class CallAppTool(Tool):
                 content=(f"error: {app_id}.{method} not found.\navailable: {', '.join(methods)}"),
             )
 
+        # Gate 1 — shape-check against the verb's declared args schema. No-op
+        # unless [verbs] arg_gate is on and the verb declared one. Reuses the
+        # ToolResult(ok=False) channel below, which the model reads as a
+        # tool_result and self-corrects on — the reason the rejection names the
+        # bad key and the accepted set rather than just failing.
+        gate = getattr(kernel, "validate_verb_args", None)
+        if callable(gate):
+            ok, why = gate(f"{app_id}.{method}", arguments)
+            if not ok:
+                return ToolResult(
+                    ok=False,
+                    content=f"error: bad arguments to {app_id}.{method}: {why}",
+                )
+
         # Dispatch
         try:
             result = fn(**arguments)

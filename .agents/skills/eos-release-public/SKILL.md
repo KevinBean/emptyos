@@ -1,4 +1,5 @@
 ---
+name: eos-release-public
 description: Ship a release from local → private origin → public emptyos repo → demo VPS. Use when the user says "ship", "publish to public", "snap to public", "push a release", "release v0.X.Y", "deploy to demo", or wants unreleased commits on demo.binbian.net. Wraps the bump → push private → release-public.py → redeploy-demo flow with the smoke-test guard that v0.2.7-0.2.10 cost us. Distinct from /eos-release (that one packages tiered dists into dist/; this one promotes the working tree to the public-facing repo + live VPS).
 ---
 
@@ -112,7 +113,7 @@ If there are untracked one-off artifacts (screenshots, scratch outputs) that are
 - Or move/delete them
 - Or add them to `.gitignore` if they're a recurring class
 - Never `git add .` to clear the slate — that's how secrets ship
-- **Never `git stash -u` (or `git stash push -u`) without `-- <paths>`** — that takes EVERYTHING untracked. If another Codex session is mid-flight editing a new app or test file (anything still `??` in `git status`), the unspecified-paths stash silently removes their working files. Recovery is `git show "stash@{0}^3:<path>"` per file but it's only obvious if you knew to check `git stash list`. The 2026-05-17 v0.4.4 release lost `apps/feature-pipeline/` + `tests/test_sys_feature_pipeline.py` this way — both were `??` and were swept into stash mid-session. Always pass explicit paths.
+- **Never `git stash -u` (or `git stash push -u`) without `-- <paths>`** — that takes EVERYTHING untracked. If another Codex session is mid-flight editing a new app or test file (anything still `??` in `git status`), the unspecified-paths stash silently removes their working files. Recovery is `git show "stash@{0}^3:<path>"` per file but it's only obvious if you knew to check `git stash list`. The 2026-05-17 v0.4.4 release lost `apps/feature-pipeline/` + `tests/test_unit_feature_pipeline.py` this way — both were `??` and were swept into stash mid-session. Always pass explicit paths.
 
 #### 2c. On `main`, fast-forward with private origin
 

@@ -138,6 +138,12 @@ def _ollama_options(kwargs: dict) -> dict:
     return opts
 
 
+# Ollama model families whose reasoning tokens the OpenAI-compat shim strips.
+# See OpenAICompatThinkProvider._needs_think_false for the measurement and the
+# rule for adding to this list.
+_OLLAMA_REASONING_FAMILIES = ("qwen3", "qwythos", "deepseek-r1", "qwq")
+
+
 class OpenAICompatThinkProvider(ToolCapableProvider):
     """Think via any OpenAI-compatible chat completions API."""
 
@@ -262,6 +268,32 @@ class OpenAICompatThinkProvider(ToolCapableProvider):
         return "11434" in self.host or self.name == "ollama"
 
     @property
+    def _needs_think_false(self) -> bool:
+        """Ollama models that must go through the native API with think:false.
+
+        These emit a ``<think>`` block that ollama carries in a SEPARATE field.
+        The OpenAI-compat ``/v1/chat/completions`` shim drops that field, so if
+        the model spends its budget reasoning the response arrives with
+        ``content=""`` — a silent, expensive failure rather than an error.
+
+        Measured on the model-bench code/js-exec prompt (2026-07-24):
+
+            qwythos-32k via /v1/  ->  0 chars, 32,545 tokens, 387s
+            qwythos-32k native    ->  442 chars (working code), 177 tokens, 9.8s
+
+        Matching is substring-on-the-tag, so ``qwen3`` also covers
+        ``qwen3.5-32k``. It was ``qwen3`` alone, which silently missed
+        ``qwythos-32k`` — a Qwen3.5 finetune whose tag shares no substring with
+        its base. Add a family here when a local reasoning model starts
+        returning empty content; a trivial prompt will NOT reproduce it (short
+        reasoning terminates fine), so reproduce with a hard one.
+        """
+        if not self._is_ollama:
+            return False
+        tag = (self.model or "").lower()
+        return any(fam in tag for fam in _OLLAMA_REASONING_FAMILIES)
+
+    @property
     def _wants_max_completion_tokens(self) -> bool:
         """OpenAI's gpt-5 / o-series models reject `max_tokens` and require
         `max_completion_tokens`. Older OpenAI models, Ollama, LM Studio, and
@@ -336,8 +368,9 @@ class OpenAICompatThinkProvider(ToolCapableProvider):
         images: list[str] | None = None,
         **kwargs,
     ) -> str:
-        # Ollama: use native API with think:false for qwen3 models
-        if self._is_ollama and "qwen3" in self.model.lower():
+        # Ollama reasoning models: native API with think:false (see
+        # _needs_think_false — the compat shim drops their <think> field).
+        if self._needs_think_false:
             return await self._execute_ollama_native(
                 prompt, system, messages=messages, images=images, **kwargs
             )
@@ -399,7 +432,7 @@ class OpenAICompatThinkProvider(ToolCapableProvider):
             "model": self.model,
             "messages": msgs,
             "stream": False,
-            "think": False,
+            "think": bool(kwargs.get("think", False)),
             "options": _ollama_options(kwargs),
         }
 
@@ -440,7 +473,7 @@ class OpenAICompatThinkProvider(ToolCapableProvider):
             "model": self.model,
             "messages": msgs,
             "stream": True,
-            "think": False,
+            "think": bool(kwargs.get("think", False)),
             "options": _ollama_options(kwargs),
         }
 
@@ -577,7 +610,7 @@ class OpenAICompatThinkProvider(ToolCapableProvider):
         # Ollama + qwen3: mirror execute()'s native path so thinking mode is
         # disabled. Otherwise qwen3 burns the token budget on reasoning and
         # often emits zero content via the openai-compat endpoint.
-        if self._is_ollama and "qwen3" in self.model.lower():
+        if self._needs_think_false:
             async for chunk in self._stream_ollama_native(
                 prompt, system, messages=messages, images=images, **kwargs
             ):

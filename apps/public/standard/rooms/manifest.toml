@@ -46,7 +46,7 @@ emits = [
     "rooms:team_task_added", "rooms:team_task_assigned", "rooms:team_task_status",
     "rooms:team_run_started", "rooms:team_run_finished",
     "rooms:kb_extraction_failed",
-    "rooms:action_proposed",
+    "rooms:action_proposed", "rooms:action_adjudicated",
     "skill:invoked",
 ]
 # Per-room state changes — chat history is the audit trail; these don't
@@ -54,7 +54,7 @@ emits = [
 internal = [
     # Gate/team-run machinery — UI-only, no cross-app listener by design.
     "rooms:team_run_started", "rooms:team_run_finished",
-    "rooms:action_proposed", "skill:invoked",
+    "rooms:action_proposed", "rooms:action_adjudicated", "skill:invoked",
     "rooms:note_written",
     "rooms:reminder_fired",
     "rooms:scheduled_fired",

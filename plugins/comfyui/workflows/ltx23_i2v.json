@@ -31,7 +31,7 @@
   },
   "5": {
     "class_type": "CLIPTextEncode",
-    "inputs": {"text": "blurry, low quality, distorted, worst quality, ugly, static image, no motion", "clip": ["2", 0]}
+    "inputs": {"text": "{negative_prompt}, blurry, low quality, distorted, worst quality, ugly, static image, no motion", "clip": ["2", 0]}
   },
   "30": {
     "class_type": "EmptyLTXVLatentVideo",
@@ -54,7 +54,7 @@
     "inputs": {
       "positive": ["40", 0],
       "negative": ["40", 1],
-      "frame_rate": 25
+      "frame_rate": 24
     }
   },
   "8": {
@@ -99,8 +99,8 @@
     "class_type": "VHS_VideoCombine",
     "inputs": {
       "images": ["10", 0],
-      "frame_rate": 25, "loop_count": 0,
-      "filename_prefix": "eos-mv",
+      "frame_rate": 24, "loop_count": 0,
+      "filename_prefix": "eos-mv-ltx23",
       "format": "video/h264-mp4",
       "pingpong": false, "save_output": true
     }

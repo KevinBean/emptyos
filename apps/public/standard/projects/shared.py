@@ -21,6 +21,19 @@ PROJECT_STRUCTURE = {
     "log": "{id}/log/",  # Activity logs, changelogs, decision records
 }
 
+# One lifecycle vocabulary for every project read/write surface. `spec-ready`
+# is the deliberate handoff into Reactor -> App Builder; `archived` remains a
+# real terminal state rather than a UI-only column.
+PROJECT_STATUSES = (
+    "idea",
+    "active",
+    "spec-ready",
+    "blocked",
+    "shelved",
+    "completed",
+    "archived",
+)
+
 PROJECT_TYPES = {
     "personal": {
         "label": "Personal",

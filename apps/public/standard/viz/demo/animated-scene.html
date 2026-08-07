@@ -8,7 +8,7 @@
   :root { --accent: #ffd27d; --muted: #8a97a7; }
   * { margin: 0; box-sizing: border-box; }
   html, body { height: 100%; overflow: hidden; background: #05070f; }
-  #app { position: fixed; inset: 0; }
+  #app { position: fixed; inset: 0; /* eos-ios-ok: N H — full-bleed WebGL canvas; insetting it would letterbox the render. Overlay chrome carries its own safe-area. */ }
   canvas { display: block; }
   .title {
     position: fixed; left: 18px; top: 16px; z-index: 2;

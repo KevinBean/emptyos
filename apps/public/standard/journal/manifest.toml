@@ -37,7 +37,8 @@ module = "prompts"
 
 [provides.settings]
 schema = [
-    {key = "journal.default_mood", label = "Default Mood", type = "select", options = ["great", "good", "okay", "low", "bad"], default = "good"},
+    {key = "journal.default_mood", label = "Default Mood", type = "select", options = ["great", "good", "okay", "low", "bad"], default = "good", hint = "Mood preselected when opening a new day."},
+    {key = "journal.feature.atomic-note-writes.enabled", label = "Crash-safe journal writes", type = "toggle", default = false, hint = "Dark by default. Writes complete journal notes through an fsynced temporary file and atomic replacement."},
 ]
 
 [provides.assistant]

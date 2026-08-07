@@ -43,3 +43,41 @@ def test_normalize_repairs_a_corrupted_note_on_read():
     """A note written before the guard carries a list title; reading it must not
     hand a list to anything that renders or slugifies the project."""
     assert isinstance(_normalize({"id": "p", "title": ["was", "corrupted"]})["title"], str)
+
+
+# ── Section markdown sanitising (card expand) ────────────────────────
+
+_strip = app_mod._strip_embedded_markup
+
+
+def test_strip_removes_svg_blocks():
+    md = "Before\n<svg xmlns='x' viewBox='0 0 5 5'><line x1='1'/></svg>\nAfter"
+    out = _strip(md)
+    assert "<svg" not in out and "</svg>" not in out
+    assert "Before" in out and "After" in out
+    assert "diagram omitted" in out
+
+
+def test_strip_handles_multiple_and_multiline_svg():
+    md = "<svg>\n<a>\n</svg>middle<SVG attr='1'>x</SVG>"
+    out = _strip(md)
+    assert "<svg" not in out.lower()
+    assert "middle" in out
+
+
+def test_strip_leaves_plain_markdown_untouched():
+    md = "| a | b |\n|---|---|\n| 1 | 2 |"
+    assert _strip(md) == md
+
+
+def test_strip_none_is_empty():
+    assert _strip(None) == ""
+
+
+def test_normalize_revision_none_and_blank_become_A():
+    """setdefault alone leaves an explicit None in place; a bare str() would
+    then persist the literal string "None" as the revision."""
+    assert _normalize({"id": "p", "revision": None})["revision"] == "A"
+    assert _normalize({"id": "p", "revision": "  "})["revision"] == "A"
+    assert _normalize({"id": "p", "revision": "B"})["revision"] == "B"
+    assert _normalize({"id": "p", "revision": 3})["revision"] == "3"

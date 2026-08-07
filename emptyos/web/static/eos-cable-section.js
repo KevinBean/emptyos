@@ -37,9 +37,9 @@
 
       p.push('<circle cx="' + cx + '" cy="' + cy + '" r="' + maxR + '" style="fill:url(#cs-field);stroke:var(--border);stroke-width:1.5"/>');
       if (probeR != null && probeR >= rc && probeR <= R) {
-        p.push('<circle cx="' + cx + '" cy="' + cy + '" r="' + (probeR * scale).toFixed(1) + '" style="fill:none;stroke:var(--text-dim);stroke-dasharray:4 3;stroke-width:1"/>');
+        p.push('<circle cx="' + cx + '" cy="' + cy + '" r="' + (probeR * scale).toFixed(1) + '" style="fill:none;stroke:var(--text-muted);stroke-dasharray:4 3;stroke-width:1"/>');
       }
-      p.push('<circle cx="' + cx + '" cy="' + cy + '" r="' + rcPx.toFixed(1) + '" style="fill:color-mix(in srgb, var(--text-dim) 55%, var(--bg-card));stroke:var(--text);stroke-width:1.5"/>');
+      p.push('<circle cx="' + cx + '" cy="' + cy + '" r="' + rcPx.toFixed(1) + '" style="fill:color-mix(in srgb, var(--text-muted) 55%, var(--bg-card));stroke:var(--text);stroke-width:1.5"/>');
       if (rcPx > 22) p.push('<text x="' + cx + '" y="' + (cy + 4) + '" class="cs-annot" text-anchor="middle">' + (o.conductorLabel || 'conductor') + '</text>');
 
       var d2r = Math.PI / 180;

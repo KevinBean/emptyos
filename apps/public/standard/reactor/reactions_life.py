@@ -28,7 +28,10 @@ class LifeReactionsMixin:
     # are life events worth a line in the daily note.
     BIG_EXPENSE_AUD = 200
 
-    @on_event("expense:added")
+    # Detached: measured at 3.0s on the live daemon — it re-reads the whole
+    # month's expenses to check the threshold, on every single add. Pure side
+    # effect (journal ripple + a deduped alert); nothing reads its result.
+    @on_event("expense:added", background=True)
     async def on_expense(self, event):
         """Budget awareness — journal big single expenses; alert on high months."""
         try:
@@ -223,3 +226,27 @@ class LifeReactionsMixin:
     @on_event("recipes:cooked")
     async def on_recipe_cooked(self, event):
         self._log_action("recipes:cooked", event.data.get("name", "")[:30])
+
+    # ── Money artifacts (wired 2026-07-30: were declared-but-unheard) ──
+
+    @on_event("expense:recurring_posted")
+    async def on_recurring_posted(self, event):
+        """A recurring expense auto-posted — money moved without the user acting."""
+        desc = str(event.data.get("description") or event.data.get("name") or "")[:40]
+        amount = event.data.get("amount")
+        detail = f"{desc} ${amount}" if amount is not None else desc
+        self._log_action("expense:recurring_posted", detail)
+        await self._journal_ripple("🔁", f"Recurring expense posted: {detail}", dim="financial")
+
+    @on_event("expense:report-saved")
+    async def on_expense_report_saved(self, event):
+        self._log_action("expense:report-saved", str(event.data.get("path") or "")[:60])
+
+    @on_event("finance:report-saved")
+    async def on_finance_report_saved(self, event):
+        self._log_action("finance:report-saved", str(event.data.get("path") or "")[:60])
+
+    @on_event("mail:routine_completed")
+    async def on_mail_routine_completed(self, event):
+        routine = event.data.get("routine") or event.data.get("name", "")
+        self._log_action("mail:routine_completed", str(routine)[:50])

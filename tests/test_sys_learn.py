@@ -13,6 +13,7 @@ Test data uses TEST_PREFIX so the session-autouse cleanup catches it.
 
 import json
 from pathlib import Path
+from uuid import uuid4
 
 import pytest
 
@@ -286,10 +287,24 @@ class TestLearnAPI:
     # ── Reader notes ───────────────────────────────────────────
 
     def test_save_then_read_reader_note(self, http_client):
-        """POST a note then GET it back — round-trip via vault_append_section."""
-        # Save against the real concept note (it exists in vault).
+        """POST a note then GET it back — round-trip via vault_append_section.
+
+        Targets a KB note this test creates, never a real one. A reader note is
+        a multi-line entry (``- **date** · [[slug]]`` + an indented ``>`` quote
+        + an insight), so the leak guard can only flag the continuation lines
+        for manual review — stripping them would orphan the clean leader
+        bullet. Owning the whole note makes it one deletable unit instead:
+        TEST_PREFIX in the filename is the guard's ``owned`` shape.
+        """
+        slug = f"{TEST_PREFIX}reader-host-{uuid4().hex[:8]}"
+        created = assert_dict_response(http_client.post("/kb/api/notes", json={
+            "kind": "concept", "title": f"{TEST_PREFIX}Reader note host", "slug": slug,
+        }))
+        assert created.get("ok"), created
+        slug = created["slug"]
+
         payload = {
-            "slug": REAL_CONCEPT_SLUG,
+            "slug": slug,
             "quote": f"{TEST_PREFIX}quoted phrase",
             "note": f"{TEST_PREFIX}my insight about the standard",
             "course_id": REAL_COURSE_ID,
@@ -302,7 +317,7 @@ class TestLearnAPI:
         assert save["ok"] is True
         # Read back — note should appear in the parsed list.
         got = assert_dict_response(
-            http_client.get(f"/learn/api/lessons/notes/{REAL_CONCEPT_SLUG}"),
+            http_client.get(f"/learn/api/lessons/notes/{slug}"),
             required_keys=["notes"],
         )
         found = [n for n in got["notes"] if TEST_PREFIX in (n.get("note", "") + n.get("quote", ""))]

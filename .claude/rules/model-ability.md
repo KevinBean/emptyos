@@ -97,9 +97,29 @@ The first validity gate is the Tier-1 shape-validation engine
 (`engines/shape_validation/`): deterministic OCP/AABB checks that catch
 physically implausible geometry ("weird shapes") after compile. Wired into the
 eos-cad part path (`apps/extension/engineering/cad/compile_cq.py`) and the articulated
-path (`engines/articulated/testing.py` `TestContext.check_assembly`). Findings
-flow through `CompileReport.errors`/`warnings`, so the robot-modeller compile-retry
-loop regenerates on hard violations with no new plumbing.
+path (`engines/articulated/testing.py` `TestContext.check_assembly`).
+
+**Wiring status, corrected 2026-07-27 — on these two paths the gate is
+observe-and-ledger only.** The claim that findings "flow through
+`CompileReport.errors`/`warnings` so the compile-retry loop regenerates on hard
+violations" described an intended capability, not code:
+
+- `ValidationReport.errors()` / `.warnings()` (`report.py:64-76`) exist and are
+  shaped for `CompileReport`, but have **zero production call sites**.
+- The CAD compile route decides `ok` from `res.get("ok")` +the `CAD_COMPILE_OK`
+  marker (`cad/compiling.py:116`), never from `validation["ok"]` — a hard
+  `INVALID_BREP` / `ZERO_VOLUME` still returns `ok: True` with the report
+  attached. It is written to the ledger (`compiling.py:161`) and nothing gates.
+- `TestContext.check_assembly` maps *every* violation to `severity="warning"`
+  (`engines/articulated/testing.py:162`), so shape findings can never fail a
+  compile on the articulated path. (Sound today, since `validate_assembly` is
+  soft-only — but the mapping is hard-coded, not driven by `.errors()`.)
+
+The one path where a hard violation genuinely fails a response and drives a
+regenerate is the 2D sibling `cad/draft_validate.py` — it imports
+`ValidationReport` directly and its loop ANDs `geo_rep.ok` into the result
+(`cad/generate.py:242-258`). Wire the 3D paths the same way if the gate should
+bite there; until then, don't rely on it.
 
 The second is the **media validity gate** (`emptyos/sdk/media/review.py`,
 `review_audio`/`review_video` → `MediaVerdict{ok, hard, soft}`): deterministic
@@ -115,9 +135,26 @@ absent or output is unparseable. The frame-sampling slice shipped 2026-07-03:
 first consumer is viz's Export-MP4 self-check behind
 `[apps.viz] feature.output-review.enabled` (dark).
 
+The third is the **depth validity gate** (`scripts/check_depth_sequence.py`,
+2026-07-28): FLAT / RANGE / SMOOTH checks over a rendered blockout depth
+sequence, gating the geometry-guided MV path before it spends ~4 minutes of GPU
+on a control signal that has collapsed onto one surface. It returns the **same
+`MediaVerdict`** — no ffprobe machinery is shared and none should be, since a
+depth sequence is a control signal rather than a rendered artifact, but the
+claim is identical in all three and the shared type is what lets a caller
+(`music-studio/blockout.py`) treat every gate alike. Unlike the other two it is
+**live, not dark**, and its complaint feeds a retry loop that re-authors the
+scene against the gate's own words. Its DRIFT signal was demoted to advisory
+after falsely rejecting a legitimate crane-up reveal three times running —
+`.claude/rules/audits.md` discipline applied to a gate that had already cost
+three GPU renders.
+
 Posture mirrors the ability gate:
-- **Degrade-and-explain** — a hard violation surfaces a `✗ weird shape` verdict
-  (cad part workspace), not a silent failure.
+- **Degrade-and-explain** — a hard violation should surface a verdict, not a
+  silent failure. Live on the 2D draft path; **not** on the CAD part workspace —
+  the `✗ weird shape` chip described here was lost in the layouts migration
+  (no consumer under `cad/pages/` or `eos-cad-views/` reads `validation`), so
+  today a hard violation there is ledger-only and invisible to the user.
 - **Soft routing** — soft smells (scale, floating, interpenetration) annotate but
   pass; only hard violations (non-manifold / zero-volume / empty) fail a compile.
 - A **prediction ledger** (`data/shape_validation/ledger.jsonl`, written via

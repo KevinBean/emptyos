@@ -296,7 +296,7 @@ def team_start_run(self, room_id: str, max_turns: int = TEAM_DEFAULT_MAX_TURNS, 
     import asyncio
     try:
         asyncio.get_running_loop()
-        asyncio.create_task(self._team_dispatch_loop(room_id))
+        self.spawn_background(self._team_dispatch_loop(room_id))
     except RuntimeError:
         pass
     return {"ok": True, "run": tb["run"]}

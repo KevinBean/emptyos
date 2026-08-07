@@ -26,6 +26,30 @@ if TYPE_CHECKING:
 
 _TAILSCALE_CGNAT = ipaddress.ip_network("100.64.0.0/10")
 
+_LOOPBACK_LITERALS = ("localhost", "127.0.0.1", "::1", "0.0.0.0")
+_LOOPBACK_IN_URL = ("://localhost", "://127.0.0.1", "://::1", "://[::1]", "://0.0.0.0")
+
+
+def host_is_loopback(host: str) -> bool:
+    """True only for *this machine* — never for private-LAN or tailnet hosts.
+
+    Narrower than :func:`host_is_local`, which also returns True for private
+    ranges, Tailscale CGNAT and ``*.ts.net``. That breadth is right for consent
+    (your LAN is not the public internet) but hides the case that matters for
+    **trust**: a rented GPU joined to your tailnet is indistinguishable from
+    your own desktop by address alone.
+
+    Callers that must separate "definitely mine" from "looks local but could be
+    someone else's box" use this; see ``.claude/rules/rented-compute.md`` and
+    ``scripts/check_provider_trust.py``.
+    """
+    if not host:
+        return True
+    low = host.strip().lower()
+    if low in _LOOPBACK_LITERALS:
+        return True
+    return any(lit in low for lit in _LOOPBACK_IN_URL)
+
 
 def host_is_local(host: str) -> bool:
     """Return True for localhost / loopback / private-network hosts.
@@ -45,12 +69,9 @@ def host_is_local(host: str) -> bool:
 
     # Fast path — recognize common loopback literals even when urlparse would
     # choke on them (e.g. "http://::1" without IPv6 brackets).
-    low = host.strip().lower()
-    if low in ("localhost", "127.0.0.1", "::1", "0.0.0.0"):
+    if host_is_loopback(host):
         return True
-    for literal in ("://localhost", "://127.0.0.1", "://::1", "://[::1]", "://0.0.0.0"):
-        if literal in low:
-            return True
+    low = host.strip().lower()
 
     try:
         parsed = urlparse(host) if "://" in host else urlparse(f"http://{host}")

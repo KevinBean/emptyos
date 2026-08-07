@@ -38,6 +38,8 @@ from typing import TYPE_CHECKING
 
 from emptyos.sdk import web_route
 
+from .shared import post_url
+
 if TYPE_CHECKING:
     from .app import PublishApp  # noqa: F401 — for type hints only
 
@@ -88,6 +90,7 @@ def _new_posts_since_deploy(self, site: dict) -> list[dict]:
         seeded = "published_slugs" in state
         new_items = _diff_new_slugs(state.get("published_slugs", []), items) if seeded else []
         self._save_state({"published_slugs": current_slugs}, site)
+        domain = (site.get("domain") or "").strip()
         return [
             {
                 "slug": it["slug"],
@@ -96,6 +99,11 @@ def _new_posts_since_deploy(self, site: dict) -> list[dict]:
                 "tags": it.get("tags", []),
                 "date": it.get("date", ""),
                 "type": it.get("type", "post"),
+                # Additive. The distribution tracker's job is to be joinable
+                # against external analytics, so it needs the SAME url the
+                # sitemap and feed publish — hence the shared helper rather
+                # than a third copy of the formula. "" when no domain is set.
+                "canonical_url": post_url(domain, it["slug"]),
             }
             for it in new_items
         ]

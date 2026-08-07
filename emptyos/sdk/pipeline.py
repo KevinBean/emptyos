@@ -36,7 +36,7 @@ See ``.claude/rules/staged-pipeline.md`` for the full contract + when to use it.
 from __future__ import annotations
 
 import json
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Iterable, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
@@ -54,12 +54,126 @@ class PipelineError(Exception):
     """
 
 
+class PipelineReviewRequired(Exception):
+    """Pause a stage because evidence needs a human judgement.
+
+    Unlike a stage failure, this is an expected review gate.  The stage keeps
+    its durable preview artifacts on disk and resumes from the same stage after
+    the consumer records the user's byte-bound decision in ``inputs``.
+    """
+
+    def __init__(self, message: str, *, pending_review: dict | None = None):
+        super().__init__(message)
+        self.pending_review = dict(pending_review or {})
+
+
 def _now() -> str:
     return datetime.now(UTC).isoformat()
 
 
 def _clamp01(x: float) -> float:
     return max(0.0, min(1.0, x))
+
+
+def describe_exception(e: BaseException, *, limit: int = 500) -> str:
+    """Always-non-empty one-line description of an exception.
+
+    ``str(e)`` is empty for a bare ``raise SomeError()`` and for several
+    stdlib errors, so a run recorded ``error: ""`` — the only field the run
+    list reads — and the failure could not be diagnosed without re-running
+    the whole stage. Falling back to the type name (and the cause, when the
+    exception itself is mute) keeps a failure self-describing.
+    """
+    name = type(e).__name__
+    text = str(e).strip()
+    if not text:
+        cause = e.__cause__ or e.__context__
+        cause_text = str(cause).strip() if cause is not None else ""
+        text = (
+            f"{type(cause).__name__}: {cause_text}" if cause_text
+            else f"{name} (no message)"
+        )
+        return text[:limit]
+    return f"{name}: {text}"[:limit]
+
+
+# ── Stopped runs — the "it needs a human" surface ───────────────────────────
+# A staged run is expensive and long. When a gate pauses one for approval, or
+# a stage fails, the run keeps every completed stage on disk and is resumable —
+# but nothing outside the owning app says so, and a *caught* failure quietly
+# becomes an *abandoned* one. Any Pipeline consumer can surface its own with
+# ``BaseApp.stopped_runs_panel``; these are the pure pieces underneath.
+
+STOPPED_STATUSES = ("paused", "error")
+
+
+def stopped_run_reason(state: dict) -> str:
+    """Why this run is sitting there. Never empty — an unexplained stop is
+    itself the thing worth saying, not a blank cell."""
+    err = str(state.get("error") or "").strip()
+    if err:
+        return err
+    if state.get("status") == "paused":
+        return "waiting for your approval"
+    stage = state.get("failed_stage") or state.get("stage") or "an unknown stage"
+    return f"stopped at {stage} without recording a reason"
+
+
+def stopped_run_rows(
+    states: Iterable[Any],
+    *,
+    href: str,
+    label_fields: Sequence[str] = ("title",),
+    total_stages: int = 0,
+    limit: int = 5,
+) -> list[dict] | None:
+    """Hub ``plain-list`` rows for runs that stopped and need a human.
+
+    ``states`` accepts ``RunRegistry.recent_states()`` output (handle, state)
+    or bare state dicts. ``label_fields`` are ``inputs`` keys tried in order
+    for the run's human name — apps disagree here (a song, a topic), which is
+    the only real per-app difference. Returns ``None`` when nothing is stopped,
+    so a healthy day renders no panel at all.
+
+    Rows carry ``icon`` rather than ``tone``: the plain-list renderer ignores
+    ``tone``, so state has to be encoded in something it actually draws.
+    """
+    stopped: list[dict] = []
+    for item in states:
+        state = item[1] if isinstance(item, tuple) else item
+        if isinstance(state, dict) and state.get("status") in STOPPED_STATUSES:
+            stopped.append(state)
+    if not stopped:
+        return None
+
+    rows: list[dict] = []
+    for state in stopped[:limit]:
+        inputs = state.get("inputs") or {}
+        label = ""
+        for field in label_fields:
+            value = inputs.get(field)
+            if isinstance(value, str) and value.strip():
+                label = value.strip()
+                break
+        paused = state.get("status") == "paused"
+        stage = state.get("failed_stage") or state.get("stage") or "?"
+        subtitle = stopped_run_reason(state)
+        if total_stages > 0:
+            done = len(state.get("completed") or [])
+            subtitle = f"{subtitle} · {done}/{total_stages} stages"
+        rows.append({
+            "title": f"{label or 'untitled'} · {stage}",
+            "subtitle": subtitle,
+            "href": href,
+            "icon": "⏸" if paused else "⚠",
+        })
+    if len(stopped) > limit:
+        rows.append({
+            "title": f"+{len(stopped) - limit} more stopped",
+            "subtitle": "open the app to review",
+            "href": href,
+        })
+    return rows
 
 
 def _jsonable(value: Any) -> Any:
@@ -237,6 +351,7 @@ class Pipeline:
                 state["stage"] = stage.name
                 state["status"] = "running"
                 state["error"] = None
+                state.pop("pending_review", None)
                 state["updated"] = _now()
                 handle.write_state(state)
 
@@ -276,6 +391,23 @@ class Pipeline:
             handle.write_state(state)
             return _summary(handle, state)
 
+        except PipelineReviewRequired as e:
+            state["status"] = "paused"
+            state["error"] = None
+            state.pop("failed_stage", None)
+            state["pending_review"] = _jsonable({
+                **e.pending_review,
+                "message": str(e),
+                "stage": state.get("stage"),
+            })
+            state["budget"] = budget.snapshot()
+            state["updated"] = _now()
+            try:
+                handle.write_state(state)
+            except Exception:
+                pass
+            return _summary(handle, state, paused_at=state.get("stage"))
+
         except BudgetApprovalRequired as e:
             # A single call exceeded per_action_usd in cap mode — pause for
             # approval (resumable, distinct from a hard error). The consumer
@@ -295,7 +427,10 @@ class Pipeline:
 
         except Exception as e:  # noqa: BLE001 — capture, persist, never lose the run
             state["status"] = "error"
-            state["error"] = str(e)[:500]
+            # A stage must never fail silently: `str(e)` is empty for a bare
+            # `raise SomeError()`, which left the one field the run list reads
+            # carrying nothing and cost a full re-render to diagnose.
+            state["error"] = describe_exception(e)
             state["failed_stage"] = state.get("stage")
             state["budget"] = budget.snapshot()
             state["updated"] = _now()
@@ -362,6 +497,7 @@ def _summary(handle, state, *, paused_at: str | None = None) -> dict:
         "failed_stage": state.get("failed_stage"),
         "paused_at": paused_at,
         "pending_approval": state.get("pending_approval"),
+        "pending_review": state.get("pending_review"),
         "budget": state.get("budget"),
         "dir": str(handle.dir),
     }

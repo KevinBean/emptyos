@@ -67,7 +67,12 @@ class SystemLog:
         # retention (`trim`) runs on an asyncio.to_thread worker, so the two
         # must serialize — same reasoning as EventBus._db_lock.
         self._lock = threading.Lock()
-        self._conn = sqlite3.connect(str(db_path), check_same_thread=False)
+        # timeout=15: SQLite's own retry-before-raising window. Longer than
+        # the 5s default because a just-killed daemon's WAL handle on this
+        # file can take a few seconds to release (daemon-handling.md); see
+        # the try/except in log() below for what happens if it still isn't
+        # enough.
+        self._conn = sqlite3.connect(str(db_path), check_same_thread=False, timeout=15.0)
         self._conn.execute("PRAGMA journal_mode=WAL")
         self._conn.execute("""
             CREATE TABLE IF NOT EXISTS syslog (
@@ -94,18 +99,31 @@ class SystemLog:
         Personal-pattern scrubbing applies to `message` + every string inside
         `data` before insert (and before console print). See `_scrub` at the
         top of this module.
+
+        The DB write is best-effort: logging must never be able to crash its
+        caller. A transient "database is locked" (e.g. a stale WAL handle
+        still releasing from a just-killed daemon, daemon-handling.md) used
+        to propagate straight out of this call — app_loader's harmless "slow
+        load" diagnostic and plugin_loader's success/failure report both hit
+        it and took down otherwise-fine app/plugin loads with it
+        (data/wedge-evidence/20260801T080139Z and siblings). A dropped log
+        row is a fine trade for that; the message still prints below either
+        way.
         """
         safe_message = _scrub(message) if isinstance(message, str) else message
         safe_data = _scrub(data) if data else (data or {})
-        with self._lock:
-            self._conn.execute(
-                "INSERT INTO syslog (ts, level, source, message, data, job_id) VALUES (?, ?, ?, ?, ?, ?)",
-                (time.time(), level, source, safe_message, json.dumps(safe_data, default=str), job_id),
-            )
-            self._pending += 1
-            if self._pending >= 10 or level in ("error", "warn"):
-                self._conn.commit()
-                self._pending = 0
+        try:
+            with self._lock:
+                self._conn.execute(
+                    "INSERT INTO syslog (ts, level, source, message, data, job_id) VALUES (?, ?, ?, ?, ?, ?)",
+                    (time.time(), level, source, safe_message, json.dumps(safe_data, default=str), job_id),
+                )
+                self._pending += 1
+                if self._pending >= 10 or level in ("error", "warn"):
+                    self._conn.commit()
+                    self._pending = 0
+        except sqlite3.Error:
+            pass
         # Console output (scrubbed — stdout gets captured to log files by the
         # launcher; let's not undo the DB scrub at the print boundary)
         tag = f"[{source}]" if source else ""
@@ -125,6 +143,14 @@ class SystemLog:
 
     def warn(self, source: str, message: str, **kwargs):
         self.log("warn", source, message, **kwargs)
+
+    # Muscle memory writes `.warning` — that is what stdlib `logging` calls it,
+    # and `warn` is the *deprecated* alias there, so the instinct is well-trained
+    # and backwards here. Six sites in one plugin had already written it; every
+    # one sat on an error path, so each was an AttributeError waiting for the
+    # exact moment something else had already gone wrong. The stored level stays
+    # "warn" so queries and existing rows are unchanged.
+    warning = warn
 
     def error(self, source: str, message: str, **kwargs):
         self.log("error", source, message, **kwargs)

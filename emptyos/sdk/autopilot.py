@@ -23,6 +23,7 @@ import json
 import os
 import secrets
 import uuid
+from collections.abc import Sequence
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -284,6 +285,58 @@ def revoke_scope(data_dir: Path, scope: str) -> int:
     if n:
         _write_json(_store_root(data_dir) / GRANTS_FILE, kept)
     return n
+
+
+def replace_namespace_grants(
+    data_dir: Path,
+    *,
+    scope: str,
+    actors: Sequence[tuple[str, str]],
+    eligible: set[str],
+    ttl_seconds: int,
+    rationale: str = "",
+) -> list[dict]:
+    """Clean-toggle a scope: revoke its grants, then re-issue one ``<ns>.*``
+    grant per (actor × eligible namespace). Returns the grants issued.
+
+    This is the "⚡ auto-accept" toggle body — one click covering *every*
+    eligible verb for *every* actor in a scope. ``actors`` is a sequence of
+    ``(actor_type, actor_id)``; an empty ``actor_id`` means "any actor of this
+    type", which is what ``match()`` reads as the auto-accept-everyone pattern.
+    Namespaces are derived from ``eligible``, so the floor decides the reach —
+    a namespace whose verbs are all non-eligible raises in ``save_grant`` and is
+    skipped rather than aborting the sweep.
+
+    **Destructive first step, by design.** ``revoke_scope`` runs before any
+    grant is issued so a re-toggle replaces rather than stacks. Callers that
+    only want to revoke should call :func:`revoke_scope` directly instead of
+    passing an empty ``actors``.
+
+    Not for: single-verb grants (call :func:`save_grant`), or holds (the
+    pause-auto sibling — one caller today, so it stays inline in rooms).
+    """
+    namespaces = sorted({v.split(".", 1)[0] for v in eligible})
+    revoke_scope(data_dir, scope)
+    issued: list[dict] = []
+    for actor_type, actor_id in actors:
+        for ns in namespaces:
+            try:
+                issued.append(
+                    save_grant(
+                        data_dir,
+                        actor_type=actor_type,
+                        actor_id=actor_id,
+                        verb_pattern=f"{ns}.*",
+                        scope=scope,
+                        ttl_seconds=ttl_seconds,
+                        rationale=rationale,
+                        eligible=eligible,
+                    )
+                )
+            except ValueError:
+                # Namespace wildcard matched no eligible verb — skip it.
+                continue
+    return issued
 
 
 def _verb_matches(pattern: str, verb: str) -> bool:

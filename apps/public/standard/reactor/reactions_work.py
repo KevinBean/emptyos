@@ -743,3 +743,9 @@ class WorkReactionsMixin:
     async def on_company_worker_added(self, event):
         worker = event.data.get("name") or event.data.get("member_id", "")
         self._log_action("orgs:member_added", str(worker)[:50])
+
+    @on_event("requirements:verified")
+    async def on_requirement_verified(self, event):
+        """A requirement passed verification — an engineering milestone."""
+        rid = event.data.get("id") or event.data.get("title", "")
+        self._log_action("requirements:verified", str(rid)[:50])

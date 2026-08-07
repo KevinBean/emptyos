@@ -124,6 +124,10 @@ body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-se
 .pending-status.applied { background:color-mix(in srgb, var(--success) 25%, transparent); color:var(--success) }
 .pending-status.rejected { background:color-mix(in srgb, var(--text-muted) 20%, transparent); color:var(--text-muted) }
 .pending-status.failed { background:color-mix(in srgb, var(--danger) 25%, transparent); color:var(--danger) }
+/* Started, then interrupted before an outcome was recorded. Warn, not danger:
+   it may well have succeeded. The chip prints the status verbatim, so this is
+   styling only — company never mislabelled it. */
+.pending-status.approving { background:color-mix(in srgb, var(--warning) 25%, transparent); color:var(--warning) }
 
 .runs-list { display:flex; flex-direction:column; gap:8px }
 .run-row { background:var(--bg-card); border:1px solid var(--border); border-radius:8px; padding:12px; cursor:pointer; transition:all 0.15s }

@@ -1,6 +1,6 @@
 {
-  "_comment": "IP-Adapter character-consistency workflow for cubiq's ComfyUI_IPAdapter_plus. Uses SDXL (RealVisXL) — cubiq's plugin doesn't ship FLUX support out of the box. To use FLUX instead, install x-flux-comfyui or the BFL FLUX IP-Adapter separately and rewire nodes 3 + 4 to the FLUX-specific loader/applier.",
-  "_requires": ["ComfyUI_IPAdapter_plus", "RealVisXL_V4.0.safetensors", "ClipVision_ViT-H or auto-downloaded by IPAdapterUnifiedLoader"],
+  "_comment": "IP-Adapter character-consistency workflow for cubiq's ComfyUI_IPAdapter_plus. Uses the explicitly installed SDXL, ViT-H, and IP-Adapter Plus weights so runtime filename auto-detection cannot silently miss them.",
+  "_requires": ["ComfyUI_IPAdapter_plus", "RealVisXL_V4.0.safetensors", "clip_vision_h.safetensors", "ip-adapter-plus_sdxl_vit-h.safetensors"],
 
   "1": {
     "class_type": "CheckpointLoaderSimple",
@@ -18,22 +18,32 @@
   },
 
   "3": {
-    "class_type": "IPAdapterUnifiedLoader",
+    "class_type": "CLIPVisionLoader",
     "inputs": {
-      "model": ["1", 0],
-      "preset": "PLUS FACE (portraits)"
+      "clip_name": "clip_vision_h.safetensors"
     }
   },
 
   "4": {
-    "class_type": "IPAdapter",
+    "class_type": "IPAdapterAdvanced",
     "inputs": {
-      "model": ["3", 0],
-      "ipadapter": ["3", 1],
+      "model": ["1", 0],
+      "ipadapter": ["11", 0],
       "image": ["2", 0],
-      "weight": 0.85,
+      "weight": 0.65,
+      "weight_type": "ease out",
+      "combine_embeds": "concat",
       "start_at": 0.0,
-      "end_at": 1.0
+      "end_at": 0.8,
+      "embeds_scaling": "V only",
+      "clip_vision": ["3", 0]
+    }
+  },
+
+  "11": {
+    "class_type": "IPAdapterModelLoader",
+    "inputs": {
+      "ipadapter_file": "ip-adapter-plus_sdxl_vit-h.safetensors"
     }
   },
 
@@ -48,7 +58,7 @@
   "6": {
     "class_type": "CLIPTextEncode",
     "inputs": {
-      "text": "lowres, bad anatomy, blurry, deformed, extra limbs, watermark, text, signature, cartoon, anime",
+      "text": "{negative_prompt}, lowres, bad anatomy, blurry, deformed, extra limbs, watermark, text, signature, cartoon, anime",
       "clip": ["1", 1]
     }
   },

@@ -94,6 +94,27 @@ model = "llama3.1"
 
 Works with Ollama, OpenAI-compatible APIs, or Claude CLI. See [Getting Started](docs/GETTING-STARTED.md) for full setup.
 
+### Browser Companion (optional)
+
+A Chrome extension that turns any page into input for your daemon: a chat side
+panel, right-click capture of a page / selection / link, and "Ask Aura about
+this page" — which works on logged-in or paywalled pages a fetch can't reach.
+
+It ships in this repo rather than the Chrome Web Store, so you load it unpacked:
+
+1. Open `chrome://extensions` and turn on **Developer mode**
+2. **Load unpacked** → select `tools/chrome-extension/` in this clone
+3. Open its **Options** and set the daemon URL (`http://127.0.0.1:9000`), plus
+   the `auth_token` from your `emptyos.toml` if the daemon isn't in local mode
+
+Everything it does runs against *your* daemon — there is no third-party server,
+and it asks for no site permissions until you share a tab with it. It also asks
+the daemon which apps you actually have and only offers the actions something
+can answer, so it adapts to your install instead of showing dead menu items.
+
+See [the extension README](tools/chrome-extension/README.md) for the full
+feature list and which optional apps back which surfaces.
+
 ## Architecture
 
 ```

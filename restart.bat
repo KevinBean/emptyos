@@ -63,7 +63,14 @@ if %errorlevel%==0 (
 ) else (
     echo   ComfyUI: Starting...
     pushd D:\ComfyUI_windows_portable
-    start /b "" .\python_embeded\python.exe -s ComfyUI\main.py --windows-standalone-build >nul 2>nul
+    REM ComfyUI keeps its own timestamped log (ComfyUI\user\comfyui.log, 3
+    REM generations) and the per-prompt timings live there — do not re-derive a
+    REM baseline from this file. What this one adds is the boot and crash output
+    REM that precedes that logger, which >nul threw away. Rotate to bound it,
+    REM then APPEND: the comfyui plugin's auto_start() writes the same path when
+    REM it revives a dead ComfyUI, and truncating there would erase this boot.
+    if exist comfyui.log move /y comfyui.log comfyui.prev.log >nul 2>nul
+    start /b "" .\python_embeded\python.exe -s ComfyUI\main.py --windows-standalone-build >>comfyui.log 2>&1
     popd
     timeout /t 5 /nobreak >nul
 )
@@ -162,5 +169,10 @@ if not errorlevel 1 (
     start "EmptyOS Watchdog" /min cmd /c python scripts\daemon_watchdog.py --restart
 )
 
-REM Main daemon (foreground; Ctrl+C stops main + plugin-spawned children).
+REM Probe :9000/:9001/:9100 in the background while the foreground daemon
+REM boots. Results print into this console; :9001 is optional and never makes
+REM the restart fail. The main daemon's plugins own restoration of both sidecars.
+start "" /b python scripts\restart_health_check.py
+
+REM Main daemon (foreground; Ctrl+C triggers graceful plugin child shutdown).
 python -m emptyos start

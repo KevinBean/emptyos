@@ -1,12 +1,14 @@
 """Generate docs/SKILLS.md from the live skill trees — the skill matrix.
 
-Scans the two repo skill roots and renders one matrix per root, plus a
+Scans the three repo skill roots and renders project and bundled matrices, plus a
 "needs attention" self-audit section reusing check_skills.lint_one (per
 .claude/rules/self-audit-loops.md — the doc is a rerunnable audit surface,
 not a hand-maintained catalog):
 
-  .claude/skills/   project skills — read natively by the Claude Code harness
-                    AND by the daemon agent's discover_skills()
+  .agents/skills/   Codex-compatible project skills; agents-only entries are
+                    included and shared names defer to `.claude/skills/`
+  .claude/skills/   Claude-compatible project skills; these take precedence
+                    in the daemon agent's discover_skills()
   skills/           bundled product skills — daemon-side only (agent app);
                     a machine's ~/.claude/skills copies override these
 
@@ -37,7 +39,8 @@ BANNER = (
     "Run the script to refresh. -->"
 )
 
-PROJECT = ROOT / ".claude" / "skills"
+PROJECT_AGENTS = ROOT / ".agents" / "skills"
+PROJECT_CLAUDE = ROOT / ".claude" / "skills"
 BUNDLED = ROOT / "skills"
 
 # Theme buckets for the project (eos-*) tree — curated here so a new skill
@@ -76,6 +79,7 @@ PROJECT_THEMES: dict[str, str] = {
     "eos-deploy-homepc": "release / deploy",
     "eos-external-vault-connector": "release / deploy",
     "eos-kb-atomize": "kb / vault",
+    "eos-ai-conversation-ingest": "kb / vault",
     "eos-vault-study-pack": "kb / vault",
     "eos-tutorial": "kb / vault",
     "eos-tutorial-verify": "kb / vault",
@@ -147,31 +151,55 @@ def _routes(desc: str, known: set[str]) -> str:
 
 
 def _gitignored(paths: list[Path]) -> set[Path]:
-    """Subset of ``paths`` that git is deliberately ignoring.
+    """Which of `paths` git is told to ignore (one batched call).
 
-    This doc is TRACKED and ships in a public release, but the generator walks
-    the filesystem — so a skill excluded on purpose via .gitignore would still
-    have its name and description written into it. Three such skills were
-    caught that way (.gitignore:75-77).
+    A gitignored skill is a deliberate per-machine or private one. Rendering it
+    into `docs/SKILLS.md` — which IS tracked — publishes its name, description
+    and trigger phrases. That is the same reasoning this module already applies
+    to the user-global store (see the header); it simply never covered the
+    project roots. Found 2026-08-07: four skills ignored at .gitignore:74-77
+    were being documented in the committed doc.
 
-    Fails OPEN: if git is unavailable the doc is generated as before rather
-    than silently losing rows.
+    Queries each skill's `SKILL.md`, not its directory. Measured in this repo:
+    a directory path with a trailing slash reports a spurious match for
+    UNTRACKED directories — `-v` shows an empty pattern against a blank
+    `.gitignore` line — so a perfectly committable new skill comes back
+    "ignored" and would be dropped from the doc. Querying a file avoids it.
+    (Not reproducible in a minimal fixture, so the tests pin the contract
+    rather than this choice; the evidence is the real tree.)
+
+    Two further traps, both of which answer "not ignored" rather than erroring:
+    the path must be repo-RELATIVE, and `-z` is required because `text=True`
+    translates the `\\n` separators to `\\r\\n` on the way IN, so git receives
+    `skills/foo/\\r` and matches a different set. That one is the nastiest — it
+    returns a plausible, non-empty, wrong answer.
     """
     if not paths:
         return set()
+    rel: dict[str, Path] = {}
+    for p in paths:
+        try:
+            rel[(p / "SKILL.md").relative_to(ROOT).as_posix()] = p
+        except ValueError:
+            continue
+    if not rel:
+        return set()
     try:
         proc = subprocess.run(
-            ["git", "check-ignore", "--stdin"],
-            input="\n".join(str(p) for p in paths),
-            capture_output=True, text=True, cwd=str(ROOT), timeout=15,
+            ["git", "check-ignore", "-z", "--stdin"],
+            input="\0".join(rel),
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
+            cwd=ROOT,
         )
-    except (OSError, subprocess.SubprocessError):
-        return set()
-    # rc 0 = some ignored, 1 = none ignored, 128 = not a repo / error.
-    if proc.returncode not in (0, 1):
-        return set()
-    out = {Path(line.strip()) for line in proc.stdout.splitlines() if line.strip()}
-    return {p for p in paths if p in out or Path(str(p)) in out}
+    except OSError:
+        return set()  # no git available — render everything, as before
+    out: set[Path] = set()
+    for entry in proc.stdout.split("\0"):
+        key = entry.strip()
+        hit = rel.get(key)
+        if hit is not None:
+            out.add(hit)
+    return out
 
 
 def _skill_dirs(root: Path) -> list[Path]:
@@ -182,6 +210,17 @@ def _skill_dirs(root: Path) -> list[Path]:
     )
     ignored = _gitignored(dirs)
     return [p for p in dirs if p not in ignored]
+
+
+def _project_skill_dirs() -> list[Path]:
+    """Merge project roots using the daemon's precedence.
+
+    Keeping one directory per skill name prevents mirrored Codex/Claude skills
+    from appearing twice while still documenting agents-only canonical skills.
+    """
+    by_name = {d.name: d for d in _skill_dirs(PROJECT_AGENTS)}
+    by_name.update({d.name: d for d in _skill_dirs(PROJECT_CLAUDE)})
+    return sorted(by_name.values(), key=lambda p: p.name)
 
 
 def _esc(s: str) -> str:
@@ -204,16 +243,18 @@ def _table(dirs: list[Path], theme_of, known: set[str], essentials: set[str]) ->
 
 
 def render() -> str:
-    project_dirs = _skill_dirs(PROJECT)
+    project_dirs = _project_skill_dirs()
     bundled_dirs = _skill_dirs(BUNDLED)
-    retired = sorted(p.name for p in (PROJECT / "_retired").glob("*") if p.is_dir())
+    retired = sorted(
+        p.name for p in (PROJECT_CLAUDE / "_retired").glob("*") if p.is_dir()
+    )
     essentials = _essential_skills()
 
     known = {d.name for d in project_dirs} | {d.name for d in bundled_dirs}
     # user-global-only siblings referenced in routing (kept minimal + name-only,
     # so the committed doc stays machine-independent):
     known |= {
-        "vault-source-digest", "vault-ai-conversation-digest", "vault-yt-digest",
+        "vault-source-digest", "vault-yt-digest",
         "vault-info-ripple", "vault-semantic-search", "tool-academic-search",
         "tool-pdf-reader", "tool-youtube-transcript", "creative-suno-archive",
         "life-communication-written", "life-communication-speaking",
@@ -233,13 +274,13 @@ def render() -> str:
         "# EmptyOS Skills — the skill matrix",
         "",
         f"> {len(project_dirs)} project skills + {len(bundled_dirs)} bundled skills"
-        " across two repo roots (plus a per-machine user-global store).",
+        " across three repo roots (plus a per-machine user-global store).",
         ">",
         "> **Discovery precedence** (`apps/public/standard/agent/skills.py`):"
-        " bundled `skills/` → project `.claude/skills/` → user `~/.claude/skills/`,"
-        " later wins. The Claude Code harness reads the project + user roots natively;"
-        " the daemon agent reads all three. `_`-prefixed dirs (`_retired/`) are skipped"
-        " everywhere.",
+        " bundled `skills/` → project `.agents/skills/` → project `.claude/skills/`"
+        " → user `~/.claude/skills/`, later wins. Codex and Claude each read their"
+        " native project root; the daemon agent reads all four."
+        " `_`-prefixed dirs (`_retired/`) are skipped everywhere.",
         ">",
         "> **Authoring contract** (enforced by `scripts/check_skills.py`, see that file's"
         " docstring): frontmatter `name` == dir slug; single-line `description` with no"
@@ -263,7 +304,7 @@ def render() -> str:
         " uninstallable via the Store) marked ⭐ — parsed from"
         " `apps/public/core/store/app.py`.",
         "",
-        "## Project skills — `.claude/skills/` (harness + daemon)",
+        "## Project skills — `.agents/skills/` + `.claude/skills/` (harnesses + daemon)",
         "",
     ]
     lines += _table(project_dirs, project_theme, known, essentials)

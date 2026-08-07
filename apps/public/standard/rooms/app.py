@@ -120,6 +120,7 @@ class RoomsApp(BaseApp):
     _save_pending             = _pending._save_pending
     _load_pending             = _pending._load_pending
     _lookup_inverse           = _pending._lookup_inverse
+    _arg_gate_error           = _pending._arg_gate_error
     _method_signature         = _pending._method_signature
     _registry_signature       = _pending._registry_signature
     _execute_server_actions   = _pending._execute_server_actions
@@ -129,11 +130,13 @@ class RoomsApp(BaseApp):
     list_pending              = _pending.list_pending
     get_pending               = _pending.get_pending
     apply_pending             = _pending.apply_pending
+    resolve_unknown           = _pending.resolve_unknown
     reject_pending            = _pending.reject_pending
     edit_pending              = _pending.edit_pending
     api_room_pending          = _pending.api_room_pending
     api_global_pending        = _pending.api_global_pending
     api_apply_pending         = _pending.api_apply_pending
+    api_resolve_unknown       = _pending.api_resolve_unknown
     api_reject_pending        = _pending.api_reject_pending
     api_edit_pending          = _pending.api_edit_pending
     api_undo                  = _pending.api_undo

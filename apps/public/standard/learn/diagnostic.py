@@ -273,7 +273,7 @@ async def api_diagnostic_submit(self, request):
 
     plan = self._compute_plan(course, progress["mastery"])
     original_count = len(_parse_lessons(course["fm"]))
-    asyncio.create_task(self.emit("learn:diagnostic_taken", {
+    self.spawn_background(self.emit("learn:diagnostic_taken", {
         "course_id": course_id,
         "weak": len(summary["weak"]),
         "developing": len(summary["developing"]),
@@ -322,7 +322,7 @@ async def api_diagnostic_apply(self, request):
     progress["last_opened"] = 0
     progress.pop("completed_at", None)
     self._save_progress(course_id, progress)
-    asyncio.create_task(self.emit("learn:course_personalized", {
+    self.spawn_background(self.emit("learn:course_personalized", {
         "course_id": course_id, "lesson_count": len(plan),
     }))
     return {"ok": True, "course_id": course_id, "lesson_count": len(plan)}

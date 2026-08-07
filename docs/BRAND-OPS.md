@@ -46,6 +46,28 @@ WEEKLY (scheduled, low-traffic afternoon, system-local TZ)
   reactor ripples publish:deployed / podcast:generated → journal + Telegram "🚀 live"
 ```
 
+## The performance learning loop
+
+LinkedIn performance is a separate, human-gated feedback loop:
+
+1. Export analytics from your own LinkedIn account and import the CSV in
+   Promote's **Performance** tab. Promote does not scrape LinkedIn.
+2. Promote keeps the normalized rows in
+   `data/apps/promote/analytics/linkedin.csv`, attributes rows to known
+   distribution trackers when it can, and excludes posts younger than seven
+   days (or without a publish date) from comparisons.
+3. Results are compared only within the same post format and metric basis
+   (impressions, followers, or raw engagement). The analysis cites evidence,
+   counterexamples, confidence, and sample-size caveats; it does not claim that
+   correlation caused the outcome.
+4. The model proposes an editable playbook. **Apply** writes only a managed
+   section of the active site's `_voice.md`; **Reject** leaves the guide alone.
+5. Future LinkedIn drafts and Publish's LinkedIn adaptations read that approved
+   section. The next account export closes the loop again.
+
+The CSV is machine-owned evidence. The approved voice guide is human-owned
+content. Nothing in this loop posts to a third party.
+
 ## Surfaces it uses
 
 | Surface | Path | Role in the loop |
@@ -164,6 +186,7 @@ Most pieces exist; the work was *enable + configure*, not build.
 | 1 — Owned-site loop | `eos-devlog-publish` + `eos-screenshot` → `publish` build/deploy | ✅ proven; drafts staged, never auto-deployed |
 | 2 — Social drafting + approvals | `promote.weekly-drafter.enabled`; Telegram approvals | ✅ live (runtime setting, no restart); Telegram configured |
 | 2.5 — Auto-drafter eligibility filter | `run_weekly_draft` skips engineering/cable + personal candidates | ✅ built (`shared.py` helpers + `_candidate_eligible`); needs a restart |
+| 2.6 - Performance learning | Account-owned LinkedIn CSV -> normalized evidence -> editable playbook proposal -> approved `_voice.md` section | built and proven in a leased sandbox; no scraping or auto-posting |
 | 3 — Audio | On-demand `/eos-podcast`, pipeline preview-before-spend; no staff agent | ✅ pipeline flag enabled; on-demand by design |
 | 4 — Dev community | Release-moment manual draft + manual post | ✅ runbook above; intentionally manual |
 
@@ -175,6 +198,8 @@ capability ships off and is turned on once proven by hand.
 ## What not to do
 
 - **Don't auto-post to a third party.** Outbound is never autopilot-eligible.
+- **Don't scrape feeds or clone viral posts.** Learn from account-owned exports,
+  preserve counterexamples, and keep every playbook change human-approved.
 - **Don't fork the messaging.** `brand/MESSAGING.md` owns positioning; this doc
   owns operations.
 - **Don't publish proprietary engineering.** Illustrative/public data only; both

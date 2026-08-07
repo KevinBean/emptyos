@@ -114,8 +114,8 @@ class BrainDumpApp(BaseApp):
             handle.write_artifact(artifact, audio_bytes)
 
         import asyncio
-        asyncio.create_task(self.emit("braindump:started", {"mode": mode}))
-        asyncio.create_task(self._run_pipeline(inputs, run_id=run_id))
+        self.spawn_background(self.emit("braindump:started", {"mode": mode}))
+        self.spawn_background(self._run_pipeline(inputs, run_id=run_id))
         return {"run_id": run_id, "status": "running"}
 
     @web_route("GET", "/api/runs/{run_id}")
@@ -159,7 +159,7 @@ class BrainDumpApp(BaseApp):
             body = {}
         override = (body.get("summary_override") or "").strip()
         import asyncio
-        asyncio.create_task(self._resume_pipeline(run_id, summary_override=override))
+        self.spawn_background(self._resume_pipeline(run_id, summary_override=override))
         return {"run_id": run_id, "status": "running"}
 
     # ── Discard (privacy — leave no trace of an unwanted capture) ─────────
@@ -224,7 +224,7 @@ class BrainDumpApp(BaseApp):
             extra={"run_id": run_id},
         )
         import asyncio
-        asyncio.create_task(self.emit("braindump:summary_kept",
+        self.spawn_background(self.emit("braindump:summary_kept",
                                       {"run_id": run_id, "path": root_rel}))
         return {"ok": True, "path": root_rel}
 
@@ -235,7 +235,7 @@ class BrainDumpApp(BaseApp):
         if not self._enabled():
             return {"say": "Brain Dump is turned off. Enable it in Settings first."}
         import asyncio
-        asyncio.create_task(self.emit("braindump:started", {"mode": "voice-armed"}))
+        self.spawn_background(self.emit("braindump:started", {"mode": "voice-armed"}))
         return {
             "say": "Brain Dump ready — open it to record.",
             "link": {"text": "Open Brain Dump", "href": "/braindump/"},

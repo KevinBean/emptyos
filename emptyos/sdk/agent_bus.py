@@ -34,10 +34,13 @@ hasn't run ``pip install -e .`` against the EmptyOS repo.
 
 from __future__ import annotations
 
+import os
 import re
 import shutil
 from datetime import datetime
 from pathlib import Path
+
+from emptyos.runtime.atomic_io import atomic_write_text
 
 __all__ = [
     "split_markdown_into_sections",
@@ -501,22 +504,84 @@ def rules_menu_for_paths(workspace, paths, *, limit: int = 8) -> str:
 # ─── Commands ─────────────────────────────────────────────────────────────────
 
 
+def _replace_dir(staged: Path, live: Path) -> None:
+    """Swap ``staged`` into ``live``'s place using renames only.
+
+    Two ``os.replace`` calls, both metadata-only: move the live directory aside,
+    move the staged one in, then delete the old copy. Nothing here reads or
+    writes file *contents*, so the one operation that can block on a file lock
+    (the copying) has already finished before anything destructive starts.
+
+    If the second rename fails the first is rolled back, so the caller never
+    observes a missing store.
+    """
+    backup = live.with_name(f"{live.name}.old-{os.getpid()}")
+    shutil.rmtree(backup, ignore_errors=True)
+    if live.exists():
+        os.replace(live, backup)
+    try:
+        os.replace(staged, live)
+    except OSError:
+        if backup.exists() and not live.exists():
+            os.replace(backup, live)
+        raise
+    shutil.rmtree(backup, ignore_errors=True)
+
+
 def run_import(workspace_path, *, log=print) -> None:
-    """Initialize/refresh ``.agent-bus/`` from boot files + ``.claude/``."""
+    """Initialize/refresh ``.agent-bus/`` from boot files + ``.claude/``.
+
+    Builds into a staging directory and swaps it in at the end, rather than
+    wiping the live store first and refilling it.
+
+    The old order made a *partial* store the normal outcome of any failure: it
+    ``rmtree``'d ``sections/``, ``rules/`` and ``skills/`` up front, then copied
+    files back one at a time. A single locked source file — another process
+    holding a rule open, which is routine on a machine running several agent
+    sessions — aborted the loop with the store already emptied. Observed
+    2026-07-25: 35 of 62 rules survived, and the store stayed that way, because
+    nothing about the failure said "your context store is now half missing".
+
+    Staging inverts that: every fallible read/write happens while the live store
+    is untouched, so a lock now costs an aborted import rather than a truncated
+    store. A failed import is a no-op.
+    """
     root = Path(workspace_path).resolve()
     log(f"[*] Importing agent context from workspace: {root}")
 
     bus_dir = root / ".agent-bus"
-    sections_dir = bus_dir / "sections"
-    rules_dest_dir = bus_dir / "rules"
-    skills_dest_dir = bus_dir / "skills"
+    bus_dir.mkdir(parents=True, exist_ok=True)
 
-    # Wipe per-import-rebuilt areas so deleted sections/rules don't linger.
+    staging = bus_dir / f".staging-{os.getpid()}"
+    shutil.rmtree(staging, ignore_errors=True)
+    sections_dir = staging / "sections"
+    rules_dest_dir = staging / "rules"
+    skills_dest_dir = staging / "skills"
     for d in (sections_dir, rules_dest_dir, skills_dest_dir):
-        if d.exists():
-            shutil.rmtree(d)
         d.mkdir(parents=True, exist_ok=True)
 
+    try:
+        _build_import(
+            root, staging, sections_dir, rules_dest_dir, skills_dest_dir,
+            bus_dir, log=log,
+        )
+    except BaseException:
+        # The live store was never touched — leave it exactly as it was.
+        shutil.rmtree(staging, ignore_errors=True)
+        raise
+
+
+def _build_import(
+    root: Path,
+    staging: Path,
+    sections_dir: Path,
+    rules_dest_dir: Path,
+    skills_dest_dir: Path,
+    bus_dir: Path,
+    *,
+    log=print,
+) -> None:
+    """Populate the staging dirs, then swap them into the live store."""
     manifest: dict = {
         "version": "1.0.0",
         "workspace_name": root.name,
@@ -578,8 +643,17 @@ def run_import(workspace_path, *, log=print) -> None:
     for name, ass in assemblies.items():
         manifest[f"assembly_{name}"] = ass
 
+    # Everything fallible is done — the staged tree is complete. From here on
+    # it is renames only.
+    for name in ("sections", "rules", "skills"):
+        _replace_dir(staging / name, bus_dir / name)
+    shutil.rmtree(staging, ignore_errors=True)
+
+    # The manifest names what the store now holds, so it is written last and
+    # atomically (.claude/rules/atomic-persistence.md) — a torn manifest beside
+    # a good store is the same class of half-state this function exists to avoid.
     manifest_path = bus_dir / "manifest.toml"
-    manifest_path.write_text(dump_toml(manifest), encoding="utf-8")
+    atomic_write_text(manifest_path, dump_toml(manifest))
     log(f"[OK] Import complete. Manifest written to {rel_posix(manifest_path, root)}\n")
 
 

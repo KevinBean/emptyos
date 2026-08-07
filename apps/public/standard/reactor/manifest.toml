@@ -100,4 +100,8 @@ listens = [
     "kb:viewed",
     "app-builder:run_started", "app-builder:run_finished", "app-builder:scaffold_merged",
     "app-builder:draft_ready", "dogfood:verify_completed",
+    # Wired 2026-07-30 — previously declared-but-unheard (architecture review).
+    "expense:recurring_posted", "expense:report-saved", "finance:report-saved",
+    "mail:routine_completed", "music:release_uploaded", "vlog:montage_ready",
+    "reader:book_imported", "requirements:verified",
 ]

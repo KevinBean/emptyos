@@ -53,6 +53,29 @@ def section_contributors(manifests, *, exclude_app_id: str | None = None) -> lis
     return rows
 
 
+def apply_basis_map(basis: dict | None, mapping: dict) -> tuple[dict, dict]:
+    """Apply a design-basis → discipline-field mapping for a ``seed_from_basis``.
+
+    ``mapping`` is ``{basis_key: target_field}``. Basis keys that are absent or
+    ``None`` are skipped — a seed only writes what the basis actually declares.
+    Returns ``(updates, patch)``: ``updates`` keyed by the discipline's own
+    field names (splice into its model/spec/scenario), ``patch`` keyed by the
+    basis names (returned to the caller for display, and what substation-project
+    snapshots for stale-seed detection). Shared by the three seed implementations
+    (earthing / overhead-line / sc-force); each keeps its own storage read,
+    validation gate, write, and emit — that's where they genuinely differ.
+    """
+    basis = basis or {}
+    updates: dict = {}
+    patch: dict = {}
+    for basis_key, target_field in mapping.items():
+        v = basis.get(basis_key)
+        if v is not None:
+            updates[target_field] = v
+            patch[basis_key] = v
+    return updates, patch
+
+
 async def candidates_for(app: "BaseApp", row: dict) -> list[dict]:
     """``(id, label)`` entities a contributor exposes for linking, via the
     ``link_source`` method named in its manifest entry. Best-effort — an app

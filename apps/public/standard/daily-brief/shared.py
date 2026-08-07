@@ -10,6 +10,8 @@ from __future__ import annotations
 import re
 import html
 
+from emptyos.sdk.utils import first_prose_line
+
 
 _UA = "EmptyOS-DailyBrief/0.1"
 
@@ -190,3 +192,32 @@ def _compute_indicators(closes: list[float]) -> dict | None:
 def _md_esc(s: str) -> str:
     """Escape the few characters that break a markdown link label."""
     return (s or "").replace("[", "(").replace("]", ")").strip()
+
+
+_NOTIFY_MAX = 160
+_NOTIFY_LEAD = {
+    "zh": "今日简报已就绪",
+    "en": "Your daily brief is ready",
+}
+
+
+def _notify_text(brief_md: str, item_count: int, locale: str = "en") -> str:
+    """One line for a push notification: the lead, plus the brief's own opening.
+
+    A nudge is read at a glance and may be *spoken* (the voice channel), so the
+    line carries prose rather than markdown. Falls back to the story count alone
+    when the brief has no usable prose line, which is better than pushing an
+    empty string.
+    """
+    lead_word = _NOTIFY_LEAD.get(locale, _NOTIFY_LEAD["en"])
+    lead = f"{lead_word} — {item_count} 条" if locale == "zh" else \
+           f"{lead_word} — {item_count} {'story' if item_count == 1 else 'stories'}"
+
+    # allow_heading: a brief that is nothing but a title should still say the
+    # title rather than nothing at all.
+    best = first_prose_line(brief_md, allow_heading=True)
+    if not best:
+        return lead + "."
+    if len(best) > _NOTIFY_MAX:
+        best = best[: _NOTIFY_MAX - 1].rstrip() + "…"
+    return f"{lead}. {best}"

@@ -187,6 +187,14 @@ def _make_eval_self(tmp_path, think_json, *, redaction=None, enabled=True):
 
     return SimpleNamespace(
         app_config=lambda k, d=None: (enabled if k == "feature.framework-eval.enabled" else d),
+        # The flag is read from BOTH stores — app_config (emptyos.toml) first,
+        # then the restart-free settings service, per the setting_or_config
+        # pattern in .claude/rules/app-ui-patterns.md. A double that knows only
+        # the first half AttributeErrors the moment the toml read returns
+        # falsy, which is exactly the disabled-flag path under test.
+        setting=lambda k, d=None: (
+            enabled if k == "publish.feature.framework-eval.enabled" else d
+        ),
         safe_json=_safe_json,
         _vault_dir=lambda: str(tmp_path),
         _source_folder=lambda s=None: SOURCE,
@@ -220,7 +228,13 @@ def test_api_evaluate_end_to_end(tmp_path):
     assert card["ok"] is True
     assert card["framework_present"] is True
     assert card["site"] == "default"
-    assert card["verdict"] == "ready"
+    # Receipts-grade scores 2, and a hard failure on ANY single rubric axis is
+    # off-brand however well the others carry the average — the model's own
+    # top-level "verdict": "ready" in think_json is deliberately ignored, since
+    # the per-axis scores are the rubric it had to defend. This asserted
+    # "ready" from before that rule existed, so it was pinning the behaviour
+    # the rule was written to remove.
+    assert card["verdict"] == "off-brand"
     assert {d["name"] for d in card["dimensions"]} == {"Positioning fit", "Receipts-grade"}
     assert card["fixes"] == ["add a real demo"]
     assert card["provenance"]["provider"] == "stub"

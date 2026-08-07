@@ -64,6 +64,15 @@ def test_cors_present_on_public_routes(client):
     resp = client.get("/chatbot/health")
     assert resp.headers.get("access-control-allow-origin") == "*"
 
+    preflight = client.options("/chatbot/chat/stream")
+    assert preflight.status_code == 200
+    assert preflight.headers.get("access-control-allow-origin") == "*"
+
+
+def test_cors_is_not_host_wide(client):
+    assert "access-control-allow-origin" not in client.get("/health").headers
+    assert "access-control-allow-origin" not in client.get("/demos/printer-store/").headers
+
 
 def test_cors_absent_on_admin_routes(client):
     # Admin is server-to-server (X-Admin-Token); no CORS surface. 401 without token.
@@ -72,12 +81,45 @@ def test_cors_absent_on_admin_routes(client):
     assert "access-control-allow-origin" not in resp.headers
 
 
+def test_sse_stream_survives_mount_and_keeps_public_cors(client, monkeypatch):
+    import chatbot.main
+
+    async def faq_result(*_args, **_kwargs):
+        return {"hit": "faq", "faq": {"q": "hello", "a": "Hello from the lab."}}
+
+    monkeypatch.setattr(chatbot.main, "_resolve_query", faq_result)
+    resp = client.post(
+        "/chatbot/chat/stream",
+        headers={"Origin": "https://legacy.example"},
+        json={
+            "site_id": "legacy",
+            "session_id": "host-sse-test",
+            "messages": [{"role": "user", "content": "hello"}],
+        },
+    )
+
+    assert resp.status_code == 200
+    assert resp.headers["content-type"].startswith("text/event-stream")
+    assert resp.headers.get("access-control-allow-origin") == "*"
+    assert '"delta": "Hello from the lab."' in resp.text
+    assert '"done": true' in resp.text
+
+
 def test_demo_store_links_target_mounted_chatbot(client):
     html = client.get("/demos/printer-store/").text
     assert "/chatbot/demo-store/catalog.json" in html
     assert 'src="/chatbot/widget/chatbot-widget.js"' in html
     assert 'location.origin+"/chatbot"' in html
     assert "{{BASE}}" not in html
+
+
+def test_demo_store_has_independent_health(client):
+    resp = client.get("/demos/printer-store/health")
+    assert resp.status_code == 200
+    assert resp.json() == {"status": "ok", "demo": "printer-store"}
+    modules = client.get("/health").json()["modules"]
+    module = next(m for m in modules if m["id"] == "printer-store")
+    assert module["health"] == "/demos/printer-store/health"
 
 
 def test_legacy_demo_store_redirects(client):

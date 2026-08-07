@@ -20,8 +20,8 @@ Do not create category-specific visual forks such as `eos-engineering-ui.css`. E
 
 EmptyOS looks like a well-designed reading app, not like Material, iOS, or Linear.
 
-- **Ground:** warm off-white `#f5f2ed` (or the three theme alternates — dark, amber, nord). Never pure white.
-- **Accent:** single purple `#6c5ce7`. Used sparingly — links, current-state, primary buttons, focus rings.
+- **Ground:** warm off-white `#f5f2ed` (or any of the theme alternates — see `theme.css` for the live roster). Never pure white.
+- **Accent:** single purple `#6353da` in the default theme. Used sparingly — links, current-state, primary buttons, focus rings. Read it from `var(--accent)`; the literal is here to describe the feel, not to be pasted into a page.
 - **Type:** DM Sans for prose and headings; JetBrains Mono for data, timestamps, paths, FAB labels, keyboard hints.
 - **Shape:** rounded everything — 8px for inputs/buttons, 14px for cards and panels, 999px for pills/avatars. 4px and 6px are acceptable for small chips, badges, and tight inline tags; 10px and 12px for elements that sit visually between input and card (e.g. button-shaped tags, embedded chips). No sharp corners. No 3/5/7/9/16+ — those are drift.
 - **Depth:** soft shadows (`0 4px 14px var(--shadow)`) over hard borders. Never drop-shadow-everything — only floating layers.
@@ -75,14 +75,14 @@ Tokens exist in `theme.css` (`--accent`, `--bg-card`, `--border`, `--red/amber/g
 - **Data colors are semantic, not decorative.** `--red` = overdue/error, `--amber` = warning/stale, `--green` = done/success, `--blue` = info/pending, `--purple` = rare/special. Using `--red` for visual pop without a semantic reason is a bug.
 - **Never color a whole card background** except for alerts (`.r-hero-alert` pattern). Tint — don't flood.
 - **Borders carry meaning.** Default = neutral. `--border-strong` = hover/focus. Accent border = current/selected. Red border = invalid. No decorative colored borders.
-- **Dark themes are not just inverted light themes.** Backgrounds get dimmer, but accent + data colors often need to desaturate 10–15% to avoid vibrating. The four themes in `theme.css` already handle this; respect them.
+- **Dark themes are not just inverted light themes.** Backgrounds get dimmer, but accent + data colors often need to desaturate 10–15% to avoid vibrating. The themes in `theme.css` already handle this; respect them.
 - **Background tokens are not interchangeable — pick by *role*, not by *theme appearance*.** In dark/grim/nord themes, `--bg-card` is intentionally a low-alpha rgba over `--bg` so inline cards (stat tiles, hub panels, hero cards) feel like subtle elevation. That same token is wrong for **floating panels that must occlude content beneath them** — palettes, modals, dropdowns, popovers, history lists. Use `--bg-surface` (solid hex in every theme) for those. Rule: anything with `position:absolute|fixed` and `z-index ≥ 50` uses `--bg-surface`; inline page content uses `--bg-card`.
 
-### 4.1 Text colour must survive all six themes
+### 4.1 Text colour must survive every theme
 
 The 2026-07-11 readability audit found ~60 apps whose text was unreadable in at
 least one theme (`docs/READABILITY-AUDIT-2026-07-11.md`). Every case was the same
-mistake: **a colour chosen against one background, then rendered against six.**
+mistake: **a colour chosen against one background, then rendered against all of them.**
 The four rules that prevent it:
 
 - **Never hardcode a hex as a text colour.** `color:#34d399` is a dark-theme mint
@@ -126,7 +126,7 @@ The four rules that prevent it:
 
 Measure, don't eyeball: `?debug=readability` on any page paints the offenders live
 with their contrast ratios; `python scripts/check_readability.py --app <id>` checks
-it across all six themes. `scripts/check-text-tokens.py` gates all four rules
+it across every theme. `scripts/check-text-tokens.py` gates all four rules
 statically (T1 white-on-vivid, T2 hardcoded status hex, T3 token hijack).
 
 ## 5. Motion
@@ -219,6 +219,24 @@ Every page must handle all five states. Missing states are bugs.
 | **Error** | Inline, `--red` toned, dismissible, with a retry when relevant. Never `alert()`. Never a full-page error. |
 | **Offline / cloud-gated** | Dim + tooltip pattern (`[data-online-only]` from `.claude/rules/app-conventions-for-export.md`). Feature visible but muted with a "requires the daemon" / "requires cloud consent" hint. |
 
+### Long-running work must remain legible
+
+Every operation that can outlive the user's current attention must expose
+three kinds of information together:
+
+| Information | Required content |
+|---|---|
+| Progress | honest status, current stage, percent, and completed/total stages |
+| Settings | the effective persisted settings for this exact run, not current form defaults |
+| Choices | only actions legal in the current state, with the consequence of each |
+
+Prefer one compact status table on the current surface. When that cannot fit,
+the sticky progress card or summary row must link to a stable, exact run-detail
+URL that contains the table. A log link alone is not a detail surface: logs
+support diagnosis, but they do not explain settings or state-legal choices.
+Never make the user reconstruct a production state from chat messages, a
+terminal, scattered controls, or filenames.
+
 ## 8. Density
 
 - **Phone (≤640px):** tap targets ≥44px, one column, generous padding (16px edges, 12px within cards).
@@ -245,6 +263,7 @@ When rendering time-shaped data, use the shared components and these canonical s
 ### Keyboard
 
 - **Every feature reachable by mouse must be reachable by keyboard.**
+- **You do not hand-wire `tabindex`/`role` on a clickable `<div>` — the platform does it** (2026-07-31). The IIFE at the foot of `eos-components.js` selects every `[onclick]` element, skips native focusables and modal backdrops (`onclick` containing `event.target===this`), sets `tabindex="0"` + `role="button"`, and a delegated `keydown` fires `click()` on Enter/Space — re-running on DOM mutation, so dynamically rendered cards are covered. `.eos-tab` strips additionally get `role="tab"` via `EOS_UI._initTabA11y()`. Opt out with `data-no-key-enhance`. **The gap this does NOT cover:** a clickable wired with `addEventListener('click', …)` instead of an `onclick` attribute — there's no attribute to select on, so those need `<button>` or explicit `tabindex` + handler. Prefer `<button>` regardless; this is a safety net, not a licence.
 - `Ctrl+K` / `Cmd+K` — command palette
 - `g` + letter — go-to nav (g-t Tasks, g-j Journal, g-s Search, g-a Assistant)
 - `?` or `Ctrl+/` — shortcut help

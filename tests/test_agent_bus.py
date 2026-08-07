@@ -336,3 +336,81 @@ def test_paths_in_manifest_use_forward_slashes(workspace):
     manifest = load_toml(workspace / ".agent-bus" / "manifest.toml")
     assert "/" in manifest["original_rules_dir"]
     assert "\\" not in manifest["original_rules_dir"]
+
+
+# ─── Import atomicity ───────────────────────────────────────────────────────
+#
+# The store used to be wiped before it was refilled, so any failure part-way
+# through the copy left it truncated. Observed 2026-07-25: one locked rule file
+# and `.agent-bus/rules/` came out of the import holding 35 of 62 rules — with
+# nothing in the output saying so. These pin the inverted order: build first,
+# swap last, and a failure is a no-op.
+
+def _store_snapshot(root: Path) -> dict[str, bytes]:
+    bus = root / ".agent-bus"
+    return {
+        str(p.relative_to(bus)).replace("\\", "/"): p.read_bytes()
+        for p in sorted(bus.rglob("*")) if p.is_file()
+    }
+
+
+def test_failed_import_leaves_the_store_byte_identical(workspace, monkeypatch):
+    """A locked source file must cost the import, not the store."""
+    run_import(workspace)
+    before = _store_snapshot(workspace)
+    assert any(k.startswith("rules/") for k in before), "fixture built no rules"
+
+    # A second rule, so the copy loop has somewhere to fail part-way.
+    (workspace / ".claude" / "rules" / "rule-two.md").write_text(
+        "# Rule Two\n", encoding="utf-8"
+    )
+
+    real_copy2 = shutil.copy2
+
+    def locked(src, dst, *a, **kw):
+        if Path(src).name == "rule-two.md":
+            raise PermissionError(f"[WinError 32] file in use: {src}")
+        return real_copy2(src, dst, *a, **kw)
+
+    monkeypatch.setattr(shutil, "copy2", locked)
+
+    with pytest.raises(PermissionError):
+        run_import(workspace)
+
+    assert _store_snapshot(workspace) == before, (
+        "a failed import modified the live store — this is the 35-of-62 bug"
+    )
+
+
+def test_failed_import_leaves_no_staging_directory(workspace, monkeypatch):
+    """Staging is an implementation detail; a failure must not leave litter
+    behind that a later import would have to reason about."""
+    run_import(workspace)
+
+    def boom(*a, **kw):
+        raise PermissionError("locked")
+
+    monkeypatch.setattr(shutil, "copy2", boom)
+    with pytest.raises(PermissionError):
+        run_import(workspace)
+
+    leftovers = [p.name for p in (workspace / ".agent-bus").iterdir()
+                 if p.name.startswith((".staging-", "rules.old-",
+                                       "sections.old-", "skills.old-"))]
+    assert leftovers == [], leftovers
+
+
+def test_import_still_drops_deleted_rules(workspace):
+    """The swap must not turn into a merge: a rule deleted from `.claude/`
+    has to disappear from the store, which is what the original wipe bought."""
+    run_import(workspace)
+    assert (workspace / ".agent-bus" / "rules" / "rule-one.md").exists()
+
+    (workspace / ".claude" / "rules" / "rule-one.md").unlink()
+    (workspace / ".claude" / "rules" / "rule-three.md").write_text(
+        "# Rule Three\n", encoding="utf-8"
+    )
+    run_import(workspace)
+
+    names = {p.name for p in (workspace / ".agent-bus" / "rules").iterdir()}
+    assert names == {"rule-three.md"}, names

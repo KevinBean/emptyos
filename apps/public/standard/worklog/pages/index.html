@@ -42,7 +42,9 @@ textarea.prose { width:100%; min-height:70px; background:var(--bg); border:1px s
 .section-label { font-size:11px; text-transform:uppercase; letter-spacing:.05em; color:var(--text-muted); margin:14px 0 4px; font-weight:700 }
 .hidden { display:none }
 .heat-wrap, .rollup { background:var(--bg-card); border:1px solid var(--border); border-radius:14px; padding:16px; margin-bottom:14px }
-.wl-stats { display:grid; grid-template-columns:repeat(4,1fr); gap:8px; margin-bottom:12px }
+/* auto-fit so a 5th card (Hours, shown only when time is recorded) doesn't
+   leave an orphan on its own row */
+.wl-stats { display:grid; grid-template-columns:repeat(auto-fit,minmax(132px,1fr)); gap:8px; margin-bottom:12px }
 @media (max-width:640px) { .wl-stats { grid-template-columns:repeat(2,1fr) } }
 .prose-view { background:var(--bg); border:1px solid var(--border); border-radius:10px; padding:11px 13px; font-size:14px; line-height:1.55; color:var(--text) }
 .prose-view p { margin:0 0 8px } .prose-view p:last-child { margin-bottom:0 }
@@ -51,6 +53,24 @@ textarea.prose { width:100%; min-height:70px; background:var(--bg); border:1px s
 .ps-edit:hover { color:var(--accent) }
 .ps-add { background:none; border:1px dashed var(--border); color:var(--text-muted); border-radius:8px; padding:7px 11px; font-size:13px; cursor:pointer }
 .ps-add:hover { border-color:var(--accent); color:var(--accent) }
+.ps-prov { margin-left:6px; vertical-align:middle }
+.ts-btns { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:4px }
+/* theme.css sets a global `input, textarea, select { width:100% }`. The text
+   inputs here override it with an explicit width, but `.sel` never did — so
+   every select in a .form-row claimed the whole row and pushed the controls
+   after it onto their own lines (the Log work, Add-to-this-day and Search rows
+   all stacked). Scoped to this page rather than touching the global rule,
+   which plenty of full-width form layouts rely on. */
+.form-row .sel, #ts-range input[type="date"] { width:auto; flex:0 0 auto }
+#ts-range input[type="date"] { min-width:148px }
+.hours-chip { font-size:11px; padding:2px 8px; border-radius:10px; background:color-mix(in srgb,var(--accent) 12%,transparent); color:var(--accent); font-weight:700; text-transform:none; letter-spacing:0 }
+.sq-hit { background:color-mix(in srgb,var(--accent) 26%,transparent); color:inherit; border-radius:3px; padding:0 1px }
+.sq-kind { font-size:10px; width:20px; flex:0 0 20px; text-align:center; color:var(--text-muted); text-transform:uppercase; font-weight:700 }
+.sq-cycle { background:none; border:none; padding:0; cursor:pointer; font-size:14px; line-height:1.45; color:var(--text-muted); border-radius:4px }
+.sq-cycle:hover { background:color-mix(in srgb,var(--accent) 18%,transparent) }
+.sq-cycle:disabled { opacity:.5; cursor:default }
+.sq-toggle { display:inline-flex; align-items:center; gap:6px; margin-top:8px; font-size:13px; color:var(--text-muted); cursor:pointer }
+.sq-toggle input { width:auto; margin:0; cursor:pointer }
 </style>
 </head>
 <body>
@@ -59,9 +79,11 @@ textarea.prose { width:100%; min-height:70px; background:var(--bg); border:1px s
     <h1>🗂️ Work Log</h1>
     <div class="right">
       <select id="emp-filter" class="sel" onchange="onEmployerChange()"><option value="">All employers</option></select>
-      <button class="eos-btn eos-btn-sm eos-btn-secondary" onclick="openRollup()" title="AI summary of the last 7 days, grouped by project">✨ Rollup</button>
-      <button class="eos-btn eos-btn-sm eos-btn-secondary" onclick="exportTimesheet()" title="Download a 7-day timesheet PDF">PDF</button>
-      <button class="eos-btn eos-btn-sm eos-btn-secondary" onclick="openAppSettings()">⚙</button>
+      <span id="model-pill"></span>
+      <button class="eos-btn eos-btn-sm eos-btn-secondary" data-online-only onclick="openRollup()" title="AI summary of your recent work, grouped by project">✨ Rollup</button>
+      <button class="eos-btn eos-btn-sm eos-btn-secondary" data-online-only onclick="exportTimesheet()" title="Download a 7-day timesheet PDF">PDF</button>
+      <button class="eos-btn eos-btn-sm eos-btn-secondary" onclick="openDataTools()" title="Import or export portable Work Log data">Data</button>
+      <button class="eos-btn eos-btn-sm eos-btn-secondary" data-online-only onclick="openAppSettings()" title="Open Work Log settings">⚙</button>
     </div>
   </div>
 
@@ -70,6 +92,7 @@ textarea.prose { width:100%; min-height:70px; background:var(--bg); border:1px s
     <div class="tab" data-view="calendar" onclick="switchTab('calendar')">Calendar</div>
     <div class="tab" data-view="project" onclick="switchTab('project')">By project</div>
     <div class="tab" data-view="heatmap" onclick="switchTab('heatmap')">Heatmap</div>
+    <div class="tab" data-view="search" onclick="switchTab('search')">Search</div>
   </div>
 
   <!-- TIMELINE -->
@@ -81,7 +104,7 @@ textarea.prose { width:100%; min-height:70px; background:var(--bg); border:1px s
         <input id="wl-proj" class="proj-in" list="proj-list" placeholder="Project">
         <datalist id="proj-list"></datalist>
         <input id="wl-add-text" class="tx-in" placeholder="What did you do?  (✨ parses project/status/date)" onkeydown="if(event.key==='Enter')submitLog()">
-        <button class="eos-btn eos-btn-sm eos-btn-secondary" onclick="smartParse(this)" title="AI-fill project / status / date from the sentence — you still press Log">✨</button>
+        <button class="eos-btn eos-btn-sm eos-btn-secondary" data-online-only onclick="smartParse(this)" title="AI-fill project / status / date from the sentence — you still press Log">✨</button>
         <select id="wl-status" class="sel">
           <option value="in-progress">🔄 In progress</option>
           <option value="complete">✅ Complete</option>
@@ -92,7 +115,9 @@ textarea.prose { width:100%; min-height:70px; background:var(--bg); border:1px s
           <option value="blocked">⛔ Blocked</option>
         </select>
         <input id="wl-date" type="date" class="sel">
-        <button class="eos-btn eos-btn-sm eos-btn-primary" onclick="submitLog()">Log</button>
+        <button class="eos-btn eos-btn-sm eos-btn-primary" onclick="submitLog()" title="Log this work item">Log</button>
+        <!-- last in the row: appears only after ✨, and must not displace an input -->
+        <span id="sp-prov"></span>
       </div>
     </div>
     <div id="carryover-banner"></div>
@@ -101,7 +126,7 @@ textarea.prose { width:100%; min-height:70px; background:var(--bg); border:1px s
 
   <!-- DETAIL -->
   <div id="view-detail" class="hidden">
-    <button class="back" onclick="closeDetail()">← Back</button>
+    <button class="back" onclick="closeDetail()" title="Return to the current Work Log view">← Back</button>
     <div id="detail-body"></div>
   </div>
 
@@ -124,6 +149,25 @@ textarea.prose { width:100%; min-height:70px; background:var(--bg); border:1px s
   <div id="view-heatmap" class="hidden">
     <div class="heat-wrap"><div id="heatmap"></div></div>
     <div class="rollup" id="status-rollup"></div>
+  </div>
+
+  <!-- SEARCH -->
+  <div id="view-search" class="hidden">
+    <div class="card">
+      <div class="form-row">
+        <input id="sq" class="tx-in" placeholder="Search work items, plans and updates…"
+               onkeydown="if(event.key==='Enter')runSearch()" title="All terms must match (case-insensitive)">
+        <select id="sq-status" class="sel" onchange="runSearch()" title="Filter by status">
+          <option value="">Any status</option>
+          <option value="none">No status yet</option>
+        </select>
+        <button class="eos-btn eos-btn-sm eos-btn-primary" onclick="runSearch()" title="Search the work log">Search</button>
+      </div>
+      <label class="sq-toggle" title="Hide pasted links, id blobs and page numbers that imported content left behind as items">
+        <input type="checkbox" id="sq-clean" onchange="runSearch()"> Hide import debris
+      </label>
+    </div>
+    <div id="search-results"></div>
   </div>
 </div>
 
@@ -149,7 +193,7 @@ var _route = EOS_UI.hashRoute({
 
 // ── tabs ──
 function showTabView(v){
-  ['timeline','calendar','project','heatmap'].forEach(function(x){
+  ['timeline','calendar','project','heatmap','search'].forEach(function(x){
     document.getElementById('view-'+x).classList.toggle('hidden', x!==v);
   });
   document.getElementById('view-detail').classList.add('hidden');
@@ -159,6 +203,7 @@ function loadView(v){
   if(v==='calendar') loadCalendar();
   else if(v==='project') loadProjectPicker();
   else if(v==='heatmap') loadHeatmap();
+  else if(v==='search') loadSearch();
   else loadTimeline();
 }
 function switchTab(v){
@@ -173,10 +218,24 @@ function onEmployerChange(){ STATE.employer = document.getElementById('emp-filte
 async function loadEmployers(){
   var d = await api('/employers');
   var sel = document.getElementById('emp-filter');
+  sel.innerHTML = '<option value="">All employers</option>';
   (d.employers||[]).forEach(function(e){
     var o = document.createElement('option'); o.value = e.name==='—'?'':e.name;
     o.textContent = e.name+' ('+e.days+')'; sel.appendChild(o);
   });
+  // Rebuilt options drop the selection — restore it so a reload after an
+  // import doesn't show "All employers" while STATE is still filtering.
+  sel.value = STATE.employer || '';
+  if(sel.value !== (STATE.employer||'')){ STATE.employer = ''; sel.value = ''; }
+}
+
+// Local calendar date. `toISOString()` is UTC, so east of Greenwich it names
+// yesterday for the first hours of every day — the server sends local dates
+// (`date.today()`), so formatting must be local too or "today" disagrees.
+function isoDate(d){
+  d = d || new Date();
+  return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0')
+       + '-' + String(d.getDate()).padStart(2,'0');
 }
 
 // ── timeline stats (client-side, from the recent payload) ──
@@ -185,10 +244,10 @@ async function loadEmployers(){
 function calcStreak(dates){
   var set = {}; dates.forEach(function(x){ set[x] = true; });
   var cur = new Date(); cur.setHours(0,0,0,0);
-  if(!set[cur.toISOString().slice(0,10)]) cur.setDate(cur.getDate()-1);
+  if(!set[isoDate(cur)]) cur.setDate(cur.getDate()-1);
   var streak = 0;
   for(var guard = 0; guard < 400; guard++){
-    var iso = cur.toISOString().slice(0,10);
+    var iso = isoDate(cur);
     var dow = cur.getDay();
     if(set[iso]) streak++;
     else if(dow !== 0 && dow !== 6) break;
@@ -197,12 +256,13 @@ function calcStreak(dates){
   return streak;
 }
 function renderWlStats(days){
-  var thisMonth = new Date().toISOString().slice(0,7);
-  var weekAgo = new Date(Date.now() - 7*86400000).toISOString().slice(0,10);
-  var monthDays = 0, weekItems = 0, weekBlocked = 0;
+  var thisMonth = isoDate().slice(0,7);
+  var weekAgo = isoDate(new Date(Date.now() - 7*86400000));
+  var monthDays = 0, weekItems = 0, weekBlocked = 0, weekHours = 0;
   (days||[]).forEach(function(s){
     if(s.date.slice(0,7) === thisMonth) monthDays++;
     if(s.date >= weekAgo){
+      weekHours += (s.hours || 0);
       Object.keys(s.status_counts||{}).forEach(function(k){
         weekItems += s.status_counts[k];
         if(k === 'blocked') weekBlocked += s.status_counts[k];
@@ -210,38 +270,108 @@ function renderWlStats(days){
     }
   });
   var streak = calcStreak((days||[]).map(function(s){ return s.date; }));
-  EOS_UI.statCards('wl-stats', [
+  var cards = [
     {value: monthDays,   label: 'Days this month', variant: 'accent'},
     {value: weekItems,   label: 'Items this week', variant: 'accent'},
     {value: weekBlocked, label: 'Blocked (7d)',    variant: weekBlocked ? 'danger' : 'success'},
     {value: streak + (streak >= 5 ? ' 🔥' : ''), label: 'Workday streak', variant: 'success'},
-  ]);
+  ];
+  // Only when hours are actually recorded — an always-visible "0 h" would read
+  // as a broken stat on a vault that uses neither time convention.
+  if(weekHours > 0) cards.push({value: (Math.round(weekHours*10)/10)+' h', label: 'Hours (7d)', variant: 'accent'});
+  EOS_UI.statCards('wl-stats', cards);
 }
 
 // ── AI rollup + timesheet export + smart parse + carry-over ──
 var _rollupText = '';
-async function openRollup(){
-  EOS_UI.modal({ title:'✨ Weekly rollup (7 days)', body:'<div id="rollup-out" class="muted">Thinking…</div>', width:'640px' });
+var _rollupDays = 7;
+function openRollup(){
+  EOS_UI.modal({
+    title:'✨ Work rollup', width:'640px',
+    body:'<div class="form-row" style="margin-bottom:10px">'
+       +   '<span class="muted">Window</span>'
+       +   '<select id="rollup-days" class="sel" onchange="loadRollup()" title="How far back to summarise">'
+       +     [7,14,30,60,90].map(function(n){
+              return '<option value="'+n+'"'+(n===_rollupDays?' selected':'')+'>Last '+n+' days</option>'; }).join('')
+       +   '</select>'
+       + '</div><div id="rollup-out" class="muted">Thinking…</div>',
+  });
+  loadRollup();
+}
+async function loadRollup(){
+  var sel = document.getElementById('rollup-days');
+  if(sel) _rollupDays = parseInt(sel.value, 10) || 7;
+  var out = document.getElementById('rollup-out');
+  if(out){ out.className='muted'; out.textContent='Thinking…'; }
   try{
-    var d = await api('/rollup?days=7'+emp());
-    var out = document.getElementById('rollup-out');
-    if(!out) return;
-    if(d.error){ out.textContent = d.error; return; }
+    var d = await api('/rollup?days='+_rollupDays+emp());
+    out = document.getElementById('rollup-out');
+    if(!out) return;                       // modal closed while thinking
+    if(d.error){ out.className='muted'; out.textContent = d.error; return; }
     _rollupText = d.rollup || '';
     out.className = '';
     out.innerHTML = '<div class="prose-view" style="white-space:pre-wrap">'+esc(d.rollup)+'</div>'
       + '<div style="display:flex;gap:8px;margin-top:10px;align-items:center;flex-wrap:wrap">'
-      + '<button class="eos-btn eos-btn-sm eos-btn-secondary" onclick="copyRollup()">Copy</button>'
+      + '<button class="eos-btn eos-btn-sm eos-btn-secondary" onclick="copyRollup()" title="Copy this rollup">Copy</button>'
+      + (d.provenance && d.provenance.mode ? EOS_UI.provenance({
+            mode:d.provenance.mode, provider:d.provenance.provider, model:d.provenance.model,
+            title:'Summarised from '+d.items+' work item(s) over '+esc(d.window||'')}) : '')
       + '<span class="muted" style="font-size:12px">'+d.items+' items'
+      // The rollup caps how much it feeds the model; say so rather than
+      // presenting a summary of a subset as a summary of everything.
+      + (d.truncated ? ' (most recent of '+(d.items+d.truncated)+')' : '')
       + (d.saved ? ' · saved to vault' : '')+'</span></div>';
-  }catch(e){ var o=document.getElementById('rollup-out'); if(o) o.textContent='Rollup failed.'; }
+  }catch(e){ var o=document.getElementById('rollup-out'); if(o){ o.className='muted'; o.textContent='Rollup failed.'; } }
 }
 function copyRollup(){
   if(navigator.clipboard && _rollupText){
     navigator.clipboard.writeText(_rollupText).then(function(){ EOS.toast&&EOS.toast('Copied'); });
   }
 }
-function exportTimesheet(){ window.open(API+'/timesheet.pdf?days=7'+emp(), '_blank', 'noopener'); }
+// Timesheet range picker. A trailing "last N days" cannot express "FY2024",
+// which is the shape an employment record is actually asked for — and the 92-day
+// cap put almost all recorded hours out of reach.
+async function exportTimesheet(){
+  EOS_UI.modal({ title:'Export timesheet', width:'520px',
+    body:'<div id="ts-range" class="muted">Loading…</div>' });
+  var host = document.getElementById('ts-range');
+  var years = [];
+  try{ years = (await api('/years'+(STATE.employer?'?employer='+encodeURIComponent(STATE.employer):''))).years||[]; }
+  catch(e){}
+  // Only offer years that hold data — a gap year renders an empty PDF.
+  var yearBtns = years.map(function(y){
+    return '<button class="eos-btn eos-btn-sm eos-btn-secondary" onclick="runTimesheet(\''
+      + y.year+'-01-01\',\''+y.year+'-12-31\')" title="Export the '+y.year+' calendar year">'
+      + y.year+' <span class="muted">('+y.days+'d'+(y.hours?' · '+y.hours+'h':'')+')</span></button>';
+  }).join(' ');
+  host.className = '';
+  host.innerHTML =
+      '<div class="section-label">Quick ranges</div>'
+    + '<div class="ts-btns">'
+    +   '<button class="eos-btn eos-btn-sm eos-btn-secondary" onclick="runTimesheet(\'\',\'\',7)" title="Export the last 7 days">Last 7 days</button> '
+    +   '<button class="eos-btn eos-btn-sm eos-btn-secondary" onclick="runTimesheet(\'\',\'\',30)" title="Export the last 30 days">Last 30 days</button> '
+    +   '<button class="eos-btn eos-btn-sm eos-btn-secondary" onclick="runTimesheet(\'1970-01-01\',\'\')" title="Export every recorded day">All time</button>'
+    + '</div>'
+    + (yearBtns ? '<div class="section-label">By year</div><div class="ts-btns">'+yearBtns+'</div>' : '')
+    + '<div class="section-label">Custom range</div>'
+    + '<div class="form-row">'
+    +   '<input type="date" id="ts-from" class="sel" title="Start date (inclusive)">'
+    +   '<span class="muted">→</span>'
+    +   '<input type="date" id="ts-to" class="sel" title="End date (inclusive)">'
+    +   '<button class="eos-btn eos-btn-sm eos-btn-primary" onclick="runTimesheetCustom()" title="Export this date range">Export</button>'
+    + '</div>'
+    + (years.length ? '' : '<div class="muted" style="margin-top:8px">No worklog days found yet.</div>');
+}
+function runTimesheet(from, to, days){
+  var q = days ? 'days='+days : 'from='+encodeURIComponent(from||'')+'&to='+encodeURIComponent(to||'');
+  window.open(API+'/timesheet.pdf?'+q+emp(), '_blank', 'noopener');
+  EOS_UI.closeModal();
+}
+function runTimesheetCustom(){
+  var f = document.getElementById('ts-from').value, t = document.getElementById('ts-to').value;
+  if(!f && !t){ EOS.toast&&EOS.toast('Pick at least one date'); return; }
+  runTimesheet(f, t);
+}
 
 async function smartParse(btn){
   var text = document.getElementById('wl-add-text').value.trim();
@@ -254,6 +384,15 @@ async function smartParse(btn){
     document.getElementById('wl-add-text').value = d.text||text;
     if(d.status) document.getElementById('wl-status').value = d.status;
     if(d.date) document.getElementById('wl-date').value = d.date;
+    // The parse is AI-authored and the user is about to commit it — say which
+    // model produced it. The endpoint has always returned this; the page was
+    // throwing it away.
+    var prov = document.getElementById('sp-prov');
+    if(prov && d.provenance && d.provenance.mode){
+      prov.innerHTML = EOS_UI.provenance({
+        mode:d.provenance.mode, provider:d.provenance.provider, model:d.provenance.model,
+        title:'Project / status / date proposed by the model — review before logging'});
+    }
     EOS.toast&&EOS.toast('Parsed — review and press Log');
   }catch(e){ EOS.toast&&EOS.toast('Parse failed'); }
   finally{ if(btn){ btn.disabled=false; btn.textContent='✨'; } }
@@ -263,7 +402,7 @@ var _carryover = null;
 async function maybeCarryover(days){
   var host = document.getElementById('carryover-banner');
   if(!host) return;
-  var todayIso = new Date().toISOString().slice(0,10);
+  var todayIso = isoDate();
   var todayLogged = days.length && days[0].date === todayIso && days[0].item_count > 0;
   if(todayLogged){ host.innerHTML=''; return; }
   try{
@@ -272,7 +411,7 @@ async function maybeCarryover(days){
     _carryover = d;
     host.innerHTML = '<div class="card" style="border-left:3px solid var(--warning)">'
       + '<b>'+d.items.length+' open item'+(d.items.length>1?'s':'')+'</b> from '+esc(d.weekday||'')+' '+esc(d.from)
-      + ' <button class="eos-btn eos-btn-sm eos-btn-secondary" style="margin-left:8px" onclick="applyCarryover(this)">Carry over to today</button>'
+      + ' <button class="eos-btn eos-btn-sm eos-btn-secondary" style="margin-left:8px" onclick="applyCarryover(this)" title="Copy these open items into today">Carry over to today</button>'
       + '<div class="muted" style="font-size:12px;margin-top:6px">'
       + d.items.slice(0,5).map(function(it){ return (STATUS_EMOJI[it.status]||'·')+' '+esc(it.project)+': '+esc(it.text); }).join('<br>')
       + (d.items.length>5?'<br>… +'+(d.items.length-5)+' more':'')
@@ -306,6 +445,7 @@ async function loadTimeline(){
     return '<div class="card day-card" onclick="openDetail(\''+s.date+'\')">'
       + '<div class="day-head"><span class="day-date">'+s.date+'</span><span class="day-week">'+esc(s.weekday)+'</span>'
       + (s.employer?'<span class="emp-chip">'+esc(s.employer)+'</span>':'')
+      + (s.hours?'<span class="hours-chip">'+s.hours+'h</span>':'')
       + '<span class="pills">'+pills+'</span></div>'
       + '<div class="proj-badges">'+badges+'</div></div>';
   }).join('');
@@ -316,7 +456,7 @@ function openDetail(dateS){ _route.set(dateS); }   // → onShow → showDetail
 function closeDetail(){ _route.clear(); }           // → onHide → restore tab view
 async function showDetail(dateS){
   STATE.detailDate = dateS;
-  ['timeline','calendar','project','heatmap'].forEach(function(x){ document.getElementById('view-'+x).classList.add('hidden'); });
+  ['timeline','calendar','project','heatmap','search'].forEach(function(x){ document.getElementById('view-'+x).classList.add('hidden'); });
   document.getElementById('view-detail').classList.remove('hidden');
   var d = await api('/day?date='+encodeURIComponent(dateS));
   renderDetail(d);
@@ -336,22 +476,35 @@ function renderDetail(d){
         + '<span class="em">'+em+'</span><span class="tx">'+esc(it.text)+'</span></div>';
     });
   });
-  h += proseSection('Update', d.update||'', 'update');
-  // add-item to this day
-  h += '<div class="section-label">Add to this day</div>';
-  h += '<div class="form-row"><input id="dt-proj" class="proj-in" list="proj-list" placeholder="Project">'
-    + '<input id="dt-text" class="tx-in" placeholder="Work item" onkeydown="if(event.key===\'Enter\')addToDay()">'
-    + '<select id="dt-status" class="sel">'
-    + Object.keys(STATUS_EMOJI).map(function(k){return '<option value="'+k+'">'+STATUS_EMOJI[k]+' '+k+'</option>';}).join('')
-    + '</select><button class="eos-btn eos-btn-sm eos-btn-primary" onclick="addToDay()">Add</button></div>';
-  if(d.timesheet && d.timesheet.length){
-    h += '<div class="section-label">Timesheet</div>';
-    h += d.timesheet.map(function(t){return '<div class="muted">'+esc(t.project)+': '+t.hours+'h '+(t.note?'— '+esc(t.note):'')+'</div>';}).join('');
+  var itemCount = (d.projects||[]).reduce(function(n,g){ return n + ((g.items||[]).length); }, 0);
+  h += proseSection('Update', d.update||'', 'update', itemCount > 0);
+  // Hours come from either convention — an itemised ## Timesheet, or the
+  // hand-written `Logged time:` range that 136 of 213 day notes actually use.
+  if((d.timesheet && d.timesheet.length) || (d.logged_time && d.logged_time.length)){
+    h += '<div class="section-label">Hours'
+       + (d.hours ? ' <span class="hours-chip">'+d.hours+'h</span>' : '')+'</div>';
+    h += (d.timesheet||[]).map(function(t){
+      return '<div class="muted">'+esc(t.project)+': '+t.hours+'h '+(t.note?'— '+esc(t.note):'')+'</div>'; }).join('');
+    if(!(d.timesheet||[]).length){
+      h += (d.logged_time||[]).map(function(t){
+        var span = t.start ? esc(t.start)+'–'+esc(t.end)+' · ' : '';
+        return '<div class="muted">'+span+t.hours+'h'+(t.note?' — '+esc(t.note):'')+'</div>'; }).join('');
+    }
   }
   if(d.notes && d.notes.length){
     h += '<div class="section-label">Notes</div>';
     h += d.notes.map(function(n){return '<div class="muted">• '+esc(n)+'</div>';}).join('');
   }
+  // The add-item form goes LAST: everything above is what the day contains,
+  // this is the one action. With Hours empty it never mattered where this sat;
+  // now that Hours carries content, day content reading after an input form
+  // was the wrong order.
+  h += '<div class="section-label">Add to this day</div>';
+  h += '<div class="form-row"><input id="dt-proj" class="proj-in" list="proj-list" placeholder="Project">'
+    + '<input id="dt-text" class="tx-in" placeholder="Work item" onkeydown="if(event.key===\'Enter\')addToDay()">'
+    + '<select id="dt-status" class="sel">'
+    + Object.keys(STATUS_EMOJI).map(function(k){return '<option value="'+k+'">'+STATUS_EMOJI[k]+' '+k+'</option>';}).join('')
+    + '</select><button class="eos-btn eos-btn-sm eos-btn-primary" onclick="addToDay()" title="Add this item to the selected day">Add</button></div>';
   document.getElementById('detail-body').innerHTML = '<div class="card">'+h+'</div>';
 }
 async function cycleStatus(project, el){
@@ -375,27 +528,77 @@ function renderProse(text){
   html = html.replace(/\n\n+/g, '</p><p>').replace(/\n/g, '<br>');
   return '<p>'+html+'</p>';
 }
-function proseSection(label, text, field){
+function proseSection(label, text, field, canDraft){
   var has = !!(text||'').trim();
   var id = 'ps-'+field;
+  // The Update is assembled from the day's items rather than typed from
+  // scratch — that's the whole point of the ✨ button (see draftUpdate). With
+  // no items there is nothing to summarise, so don't offer an action that can
+  // only return an error.
+  var draftable = field === 'update' && canDraft !== false;
+  var draftBtn = draftable
+    ? ' <button class="ps-edit" data-online-only onclick="draftUpdate(this)"'
+      + ' title="Draft an end-of-day update from this day\'s work items">✨</button>'
+    : '';
   var head = '<div class="section-label">'+label
     + (has ? ' <button class="ps-edit" onclick="editProse(\''+field+'\')" title="Edit '+label+'">✎</button>' : '')
+    + draftBtn
+    + '<span id="'+id+'-prov" class="ps-prov"></span>'
     + '</div>';
   var view = '<div id="'+id+'-view" class="prose-view'+(has?'':' hidden')+'">'+renderProse(text)+'</div>';
-  var add  = '<button id="'+id+'-add" class="ps-add'+(has?' hidden':'')+'" onclick="editProse(\''+field+'\')">＋ Add '+label.toLowerCase()+'</button>';
+  var add  = '<button id="'+id+'-add" class="ps-add'+(has?' hidden':'')+'" onclick="editProse(\''+field+'\')" title="Add '+label+'">＋ Add '+label.toLowerCase()+'</button>'
+    + (draftable && !has
+        ? ' <button id="'+id+'-draftadd" class="ps-add" data-online-only onclick="draftUpdate(this)"'
+          + ' title="Draft an end-of-day update from this day\'s work items">✨ Draft from today\'s work</button>'
+        : '');
   var edit = '<div id="'+id+'-edit" class="hidden">'
-    + '<textarea class="prose" id="'+id+'-ta" placeholder="'+label+'…">'+esc(text||'')+'</textarea>'
+    + '<textarea class="prose" id="'+id+'-ta" placeholder="'+label+'…" oninput="autoGrow(this)">'+esc(text||'')+'</textarea>'
     + '<div style="text-align:right;margin-top:6px">'
-    +   '<button class="eos-btn eos-btn-sm eos-btn-secondary" onclick="cancelProse(\''+field+'\')">Cancel</button> '
-    +   '<button class="eos-btn eos-btn-sm eos-btn-primary" onclick="saveProse(\''+field+'\')">Save</button></div>'
+    +   '<button class="eos-btn eos-btn-sm eos-btn-secondary" onclick="cancelProse(\''+field+'\')" title="Discard these '+label+' edits">Cancel</button> '
+    +   '<button class="eos-btn eos-btn-sm eos-btn-primary" onclick="saveProse(\''+field+'\')" title="Save '+label+'">Save</button></div>'
     + '</div>';
   return head + view + add + edit;
 }
+// Draft the Update from the day's items → open the editor prefilled. The user
+// still presses Save: propose, never autofill.
+async function draftUpdate(btn){
+  var ta = document.getElementById('ps-update-ta');
+  var existing = ((ta && ta.value) || (STATE.day && STATE.day.update) || '').trim();
+  if(existing && !await EOS_UI.confirm({
+      message:'Replace the current Update with a fresh draft from today\'s work items?',
+      action:'Draft again'})) return;
+  var label = btn ? btn.textContent : '';
+  if(btn){ btn.disabled=true; btn.textContent='…'; }
+  try{
+    var d = await post('/update/draft', {date: STATE.detailDate});
+    if(d.error){ EOS.toast&&EOS.toast(d.error); return; }
+    editProse('update');
+    ta = document.getElementById('ps-update-ta');
+    if(ta){ ta.value = d.draft||''; ta.focus(); autoGrow(ta); }
+    var prov = document.getElementById('ps-update-prov');
+    if(prov && d.provenance && d.provenance.mode){
+      prov.innerHTML = EOS_UI.provenance({
+        mode:d.provenance.mode, provider:d.provenance.provider, model:d.provenance.model,
+        title:'Drafted from '+d.items+' work item(s) — review before saving'});
+    }
+    EOS.toast&&EOS.toast('Drafted from '+d.items+' item(s) — review, then Save');
+  }catch(e){ EOS.toast&&EOS.toast('Draft failed'); }
+  finally{ if(btn){ btn.disabled=false; btn.textContent=label; } }
+}
+
 function editProse(field){
   var id = 'ps-'+field;
-  ['-view','-add'].forEach(function(s){ var e=document.getElementById(id+s); if(e) e.classList.add('hidden'); });
+  // '-draftadd' too, or the empty-state ✨ button hangs above the open editor.
+  ['-view','-add','-draftadd'].forEach(function(s){ var e=document.getElementById(id+s); if(e) e.classList.add('hidden'); });
   document.getElementById(id+'-edit').classList.remove('hidden');
-  var ta = document.getElementById(id+'-ta'); if(ta) ta.focus();
+  var ta = document.getElementById(id+'-ta'); if(ta) { ta.focus(); autoGrow(ta); }
+}
+// A drafted Update runs 3-4 sentences — at the 70px min-height it lands
+// scrolled off the bottom, which reads as "the draft is truncated".
+function autoGrow(ta){
+  if(!ta) return;
+  ta.style.height = 'auto';
+  ta.style.height = Math.min(ta.scrollHeight + 2, 420) + 'px';
 }
 function cancelProse(field){ refreshDetail(); }
 async function saveProse(field){
@@ -433,7 +636,7 @@ async function loadProjects(){
 
 // ── calendar ──
 async function loadCalendar(){
-  var ym = (STATE.detailDate||new Date().toISOString().slice(0,10)).slice(0,7);
+  var ym = (STATE.detailDate||isoDate()).slice(0,7);
   if(!_grid){
     _grid = EOS_UI.monthGrid({ mount:'#cal-grid', month:ym, cells:[],
       onDayClick:function(date){ openDetail(date); },
@@ -466,6 +669,107 @@ async function loadByProject(){
     }).join('');
 }
 
+// ── search ──
+// Escape FIRST, then wrap matches: highlighting before escaping would let
+// item text inject markup through the <mark> we add.
+function highlight(text, terms){
+  var out = esc(text||'');
+  (terms||[]).forEach(function(t){
+    if(!t) return;
+    var re = new RegExp('('+t.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+')','gi');
+    out = out.replace(re, '<mark class="sq-hit">$1</mark>');
+  });
+  return out;
+}
+// Cycle an item's status from a search row, without leaving the results — a
+// backlog of 1,265 untagged items is only workable if tagging one costs a
+// click, not a round trip through the day view.
+async function cycleSearchStatus(ev, el){
+  ev.stopPropagation();                       // the card itself opens the day
+  var cur = (el.textContent || '').trim();
+  var curStatus = Object.keys(STATUS_EMOJI).find(function(k){ return STATUS_EMOJI[k]===cur; }) || '';
+  var next = CYCLE[(CYCLE.indexOf(curStatus)+1) % CYCLE.length];
+  el.disabled = true;
+  try{
+    var r = await post('/status', {date:el.dataset.date, project:el.dataset.project,
+                                   item:el.dataset.text, status:next});
+    if(r && r.error){ EOS.toast&&EOS.toast(r.error); return; }
+    el.textContent = STATUS_EMOJI[next] || '·';
+    el.title = next ? ('Status: '+next+' — click to change') : 'No status — click to set one';
+  }catch(e){ EOS.toast&&EOS.toast('Could not update status'); }
+  finally{ el.disabled = false; }
+}
+
+var _searchSeq = 0;
+async function runSearch(){
+  var q = document.getElementById('sq').value.trim();
+  var st = document.getElementById('sq-status').value;
+  var el = document.getElementById('search-results');
+  // A status filter alone is a valid search — that IS the untagged backlog pass.
+  if(!q && !st){ el.innerHTML = '<div class="muted card">Type something to search '
+    + 'your work items, plans and updates.</div>'; return; }
+  var seq = ++_searchSeq;
+  el.innerHTML = '<div class="muted card">Searching…</div>';
+  var d;
+  try{
+    var clean = document.getElementById('sq-clean').checked;
+    d = await api('/search?q='+encodeURIComponent(q)+(st?'&status='+encodeURIComponent(st):'')
+                  +(clean?'&hide_debris=1':'')+emp());
+  }catch(e){ if(seq===_searchSeq) el.innerHTML='<div class="muted card">Search failed.</div>'; return; }
+  if(seq !== _searchSeq) return;   // a newer query already answered
+  if(d.error){ el.innerHTML = '<div class="muted card">'+esc(d.error)+'</div>'; return; }
+  if(!d.count){
+    el.innerHTML = '<div class="muted card">'
+      + (st==='none' ? 'Every item has a status. Nothing left to tag.'
+                     : 'No matches for “'+esc(q)+'”.') + '</div>';
+    return;
+  }
+  var head = '<div class="muted" style="margin-bottom:8px">'
+    + (st==='none' ? d.count+' item'+(d.count===1?'':'s')+' with no status — click the · to tag one'
+                   : d.count+' match'+(d.count===1?'':'es'))
+    + (d.truncated ? ' · showing the first '+d.results.length+', narrow the query to see the rest' : '')
+    // Say what the filter removed — a quietly shortened list reads as
+    // "that's all there is", and the toggle is how you get them back.
+    + (d.hidden_debris ? ' · '+d.hidden_debris+' import fragment'
+        +(d.hidden_debris===1?'':'s')+' hidden' : '')
+    + '</div>';
+  el.innerHTML = head + d.results.map(function(r){
+    var badge = r.kind==='item'
+      ? '<button class="em sq-cycle" onclick="cycleSearchStatus(event,this)"'
+        + ' data-date="'+escAttr(r.date)+'" data-project="'+escAttr(r.project)+'"'
+        + ' data-text="'+escAttr(r.text)+'"'
+        + ' title="'+(r.status ? 'Status: '+escAttr(r.status)+' — click to change'
+                               : 'No status — click to set one')+'">'
+        + (STATUS_EMOJI[r.status]||'·')+'</button>'
+      : '<span class="sq-kind">'+esc(r.kind)+'</span>';
+    var meta = '<span class="day-date">'+r.date+'</span> <span class="day-week">'+esc(r.weekday)+'</span>'
+      + (r.project?' <span class="proj-badge">'+esc(r.project)+'</span>':'')
+      + (r.employer?' <span class="emp-chip">'+esc(r.employer)+'</span>':'');
+    return '<div class="card day-card" onclick="openDetail(\''+r.date+'\')" title="Open '+r.date+'">'
+      + '<div class="day-head">'+meta+'</div>'
+      + '<div class="item" style="cursor:pointer">'+badge
+      + '<span class="tx">'+highlight(r.text, d.terms)+'</span></div></div>';
+  }).join('');
+}
+function loadSearch(){
+  var sel = document.getElementById('sq-status');
+  if(sel.options.length <= 1){
+    Object.keys(STATUS_EMOJI).forEach(function(k){
+      var o=document.createElement('option'); o.value=k; o.textContent=STATUS_EMOJI[k]+' '+k; sel.appendChild(o);
+    });
+  }
+  // Opening the tab left a blank pane until the first query — say what this
+  // searches, so an empty result area never reads as "nothing found".
+  var el = document.getElementById('search-results');
+  if(!el.innerHTML.trim()){
+    el.innerHTML = '<div class="muted card">Search every work item, plan and update. '
+      + 'All terms must match — try a project name, a number like <b>45007</b>, or a person.'
+      + '<div style="margin-top:8px">Or pick <b>No status yet</b> to work through items '
+      + 'that were never tagged — they stay invisible to the blocked and in-review views.</div></div>';
+  }
+  document.getElementById('sq').focus();
+}
+
 // ── heatmap + rollup ──
 async function loadHeatmap(){
   try{
@@ -484,18 +788,105 @@ async function loadHeatmap(){
   el.innerHTML = h;
 }
 
-// ── settings ──
+// -- portable data transfer (live <-> standalone) --
+function openDataTools(){
+  EOS_UI.modal({
+    title:'Work Log data', width:'560px',
+    body:'<p class="muted" style="margin-bottom:12px">Move work between EmptyOS and the standalone HTML. Importing shows what would change first — nothing is written until you press Apply.</p>'
+      + '<div style="display:flex;gap:8px;flex-wrap:wrap">'
+      + '<button class="eos-btn eos-btn-primary" onclick="exportPortableData()" title="Download all Work Log days as portable JSON">Export JSON</button>'
+      + '<button class="eos-btn eos-btn-secondary" onclick="choosePortableImport()" title="Merge a portable or standalone backup JSON file">Import JSON</button>'
+      + '</div><div id="wl-import-receipt" style="margin-top:12px"></div>'
+  });
+}
+async function exportPortableData(){
+  try{
+    var doc = await api('/portable');
+    if(doc.error) throw new Error(doc.error);
+    var blob = new Blob([JSON.stringify(doc,null,2)], {type:'application/json'});
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'worklog-'+isoDate()+'.json';
+    document.body.appendChild(a); a.click();
+    setTimeout(function(){ URL.revokeObjectURL(a.href); a.remove(); }, 500);
+    EOS.toast&&EOS.toast('Work Log data exported');
+  }catch(e){ EOS.toast&&EOS.toast('Export failed: '+e.message); }
+}
+var _pendingImport = null;
+function choosePortableImport(){
+  var input=document.createElement('input');
+  input.type='file'; input.accept='.json,application/json'; input.style.display='none';
+  input.onchange=async function(){
+    var file=input.files&&input.files[0]; input.remove(); if(!file)return;
+    if(file.size>20*1024*1024){ EOS.toast&&EOS.toast('Import file is larger than 20 MB'); return; }
+    try{
+      var doc=JSON.parse(await file.text());
+      var r=await post('/import/preview',{document:doc});
+      if(r.error) throw new Error(r.error);
+      _pendingImport=doc;
+      renderImportReceipt(r);
+    }catch(e){ _pendingImport=null; EOS.toast&&EOS.toast('Import failed: '+e.message); }
+  };
+  document.body.appendChild(input); input.click();
+}
+async function applyPortableImport(btn){
+  if(!_pendingImport) return;
+  if(btn){ btn.disabled=true; btn.textContent='Applying…'; }
+  try{
+    var r=await post('/import',{document:_pendingImport});
+    if(r.error) throw new Error(r.error);
+    _pendingImport=null;
+    renderImportReceipt(r);
+    await refreshAfterImport();
+    EOS.toast&&EOS.toast('Work Log import complete');
+  }catch(e){
+    if(btn){ btn.disabled=false; btn.textContent='Apply import'; }
+    EOS.toast&&EOS.toast('Import failed: '+e.message);
+  }
+}
+function renderImportReceipt(r){
+  var el=document.getElementById('wl-import-receipt'); if(!el)return;
+  var changed=(r.days_created||0)+(r.days_updated||0);
+  var preview=!!r.preview;
+  var conflicts=(r.conflicts||[]).map(function(c){return esc(c.date)+': '+esc((c.fields||[]).join(', '));});
+  var rows=(r.changes||[]).slice(0,12).map(function(c){
+    var bits=[];
+    if(c.items_added) bits.push(c.items_added+' item'+(c.items_added===1?'':'s'));
+    if(c.statuses_updated) bits.push(c.statuses_updated+' status'+(c.statuses_updated===1?'':'es'));
+    if(c.timesheet_added) bits.push(c.timesheet_added+' timesheet');
+    if(c.notes_added) bits.push(c.notes_added+' note'+(c.notes_added===1?'':'s'));
+    if(c.prose_added) bits.push(c.prose_added+' prose');
+    return '<div class="muted">'+(c.created?'＋ ':'· ')+esc(c.date)+' — '+esc(bits.join(', ')||'no change')+'</div>';
+  });
+  var more=(r.changes||[]).length-rows.length;
+  el.innerHTML='<div class="prose-view"><b>'+changed+' day'+(changed===1?'':'s')+(preview?' will change':' changed')+'</b>'
+    +'<div class="muted" style="margin-top:4px">'+(r.items_added||0)+' item'+((r.items_added||0)===1?'':'s')+' &middot; '+(r.statuses_updated||0)+' status change'+((r.statuses_updated||0)===1?'':'s')+' &middot; '+(r.days_unchanged||0)+' unchanged</div>'
+    +(rows.length?'<div style="margin-top:8px">'+rows.join('')+(more>0?'<div class="muted">… +'+more+' more</div>':'')+'</div>':'')
+    +(conflicts.length?'<div style="color:var(--warning);margin-top:8px"><b>Will keep live values for:</b><br>'+conflicts.join('<br>')+'</div>':'')
+    +(preview&&changed?'<div style="margin-top:12px"><button class="eos-btn eos-btn-primary" onclick="applyPortableImport(this)" title="Merge these changes into the vault">Apply import</button> <button class="eos-btn eos-btn-secondary" onclick="cancelPortableImport()" title="Discard this import">Cancel</button></div>':'')
+    +(preview&&!changed?'<div class="muted" style="margin-top:8px">Nothing to apply.</div>':'')
+    +'</div>';
+}
+function cancelPortableImport(){
+  _pendingImport=null;
+  var el=document.getElementById('wl-import-receipt'); if(el) el.innerHTML='';
+}
+async function refreshAfterImport(){
+  STATE.day=null;
+  await loadEmployers(); await loadProjects();
+  if(STATE.detailDate) await refreshDetail(); else loadView(STATE.view);
+}
+
+// -- settings --
+// Fields come from the manifest's [provides.settings] schema — one declaration,
+// so a setting can't reach /settings and miss this panel (.claude/rules/app-ui-patterns.md).
 var _appSettings = EOS_UI.settingsPanel({
-  id:'worklog-settings', title:'Work Log Settings',
-  fields:[
-    {key:'worklog.default_employer', label:'Default employer', type:'text', default:'', hint:'Stamped on new day notes (e.g. your current employer).'},
-    {key:'worklog.default_status', label:'Default status', type:'select', options:['in-progress','todo','next','waiting','review','complete','blocked'], default:'in-progress'},
-  ],
+  id:'worklog-settings', title:'Work Log Settings', app:'worklog',
 });
 function openAppSettings(){ _appSettings.open(); }
 
 // ── companion sidebar (page-assistant.js): drive the page by chat ──
-function _focusDate(){ return STATE.detailDate || (STATE.day && STATE.day.date) || new Date().toISOString().slice(0,10); }
+function _focusDate(){ return STATE.detailDate || (STATE.day && STATE.day.date) || isoDate(); }
 async function _ensureDay(){
   if(STATE.day && STATE.day.date===_focusDate()) return STATE.day;
   STATE.day = await api('/day?date='+encodeURIComponent(_focusDate())); return STATE.day;
@@ -564,7 +955,7 @@ async function wlLogFromDraft(project){
   EOS.toast&&EOS.toast('Logged: '+text.slice(0,40));
   _showAfterWrite(dt);
 }
-function wlSwitchTab(view){ if(['timeline','calendar','project','heatmap'].indexOf(view)>=0) switchTab(view); }
+function wlSwitchTab(view){ if(['timeline','calendar','project','heatmap','search'].indexOf(view)>=0) switchTab(view); }
 function wlOpenDay(dateS){ if(/^\d{4}-\d{2}-\d{2}$/.test(String(dateS||'').trim())) openDetail(dateS.trim()); }
 
 if(window.EOS && EOS.registerActions){
@@ -596,12 +987,26 @@ if(window.EOS && EOS.registerActions){
 
 // ── boot ──
 (async function(){
-  document.getElementById('wl-date').value = new Date().toISOString().slice(0,10);
+  if(window.EOS_IS_EXPORT){
+    document.querySelectorAll('[data-online-only]').forEach(function(el){
+      el.disabled=true;
+      el.title='Requires the EmptyOS daemon';
+      el.setAttribute('aria-disabled','true');
+    });
+    window.addEventListener('eos-export:data-loaded', function(){ refreshAfterImport(); });
+  }
+  document.getElementById('wl-date').value = isoDate();
+  // Which model is about to spend the budget, and click-to-switch. Mount
+  // criteria met: two user-initiated think paths (Rollup, ✨ smart-parse) plus
+  // the Update draft. See .claude/rules/model-pill.md.
+  if(!window.EOS_IS_EXPORT && EOS_UI.modelPill){
+    try{ EOS_UI.modelPill({app:'worklog', mount:'#model-pill', domain:'text'}); }catch(e){}
+  }
   await loadEmployers();
   await loadProjects();
   loadTimeline();                 // populate timeline (behind detail if deep-linked)
   if(_route.current()) _route.init();   // deep link → onShow → showDetail
-  else { try{ STATE.day = await api('/day?date='+new Date().toISOString().slice(0,10)); }catch(e){} }  // prime companion context
+  else { try{ STATE.day = await api('/day?date='+isoDate()); }catch(e){} }  // prime companion context
 })();
 </script>
 </body>

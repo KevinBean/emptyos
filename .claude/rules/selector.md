@@ -6,7 +6,15 @@ KB bucket" — use `BaseApp.select(prompt, choices, *, system=, default=,
 min_ability=)`. It forces a single key out of `choices` (a list of keys or
 a `{key: description}` map), validates the answer against that set, and
 **never raises and never invents a key** — on a bad/unparseable response it
-returns `default` (or the first key). This is the inverse of the
+returns `default` (or the first key). The matching ladder is exact → bare →
+case-insensitive → **echoed menu line**: the menu renders as `- <key>: <desc>`
+and models routinely answer `{"choice": "clause: verbatim text of ..."}`, so a
+`<key>:` prefix resolves to that key (longest key first, since a key may itself
+contain a colon — `tag:cable` from `scope_menu`). Measured 2026-08-05 at ~11% of
+dict-form calls on both qwen3.5-32k and gpt-5.4-mini, every one naming the RIGHT
+key; without recovery those correct answers silently became the caller's
+`default`. Pass `default=` — every call site does, and it is what keeps an
+unusable reply off position 0. This is the inverse of the
 `[DO:app.verb]` / `[INTENT:...]` token pattern: those *parse a verb out of
 free-text generation*; `select()` *forces a choice* so the caller drives
 deterministic control flow on the returned key. Use `select()` for routing;

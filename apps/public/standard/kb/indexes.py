@@ -205,7 +205,12 @@ def _resolve_references(self, refs: list) -> list[dict]:
     return out
 
 
-def _clauses_for_standard(self, standard_id: str) -> list[dict]:
+def _clauses_for_standard(
+    self,
+    standard_id: str,
+    standard_name: str = "",
+    edition: str | None = None,
+) -> list[dict]:
     """List the clause notes belonging to a standard, for its landing page.
 
     Join order (a clause matches if EITHER holds):
@@ -220,7 +225,8 @@ def _clauses_for_standard(self, standard_id: str) -> list[dict]:
     can mix current + superseded revisions and badge them.
     """
     want_id = str(standard_id or "").strip().lower()
-    want_name = _norm_standard(standard_id)
+    want_name = _norm_standard(standard_name or standard_id)
+    want_edition = _norm_edition(edition)
     if not want_id and not want_name:
         return []
     on = self._supersession_enabled()
@@ -231,6 +237,9 @@ def _clauses_for_standard(self, standard_id: str) -> list[dict]:
             continue
         sid = str(props.get("standard_id") or "").strip().lower()
         std = _norm_standard(props.get("standard") or "")
+        clause_edition = _norm_edition(props.get("edition"))
+        if want_edition and clause_edition and want_edition != clause_edition:
+            continue
         id_match = bool(want_id) and sid == want_id
         name_match = bool(want_name) and bool(std) and std.startswith(want_name)
         if not (id_match or name_match):

@@ -137,6 +137,12 @@ def make_think_self(tmp_path, captured):
     base.think = think
     base.last_provenance = lambda: {"mode": "local"}
     base._voice_block = lambda: writer._voice_block(base)
+    # The adapt_* actions were refactored to delegate to `self.adapt_post` so
+    # the recipe lives in one place. Bind the REAL module function (same shape
+    # as _voice_block above) rather than stubbing a return value — the
+    # assertions below are about the system prompt and voice block that
+    # adapt_post builds, so a canned stub would leave them proving nothing.
+    base.adapt_post = lambda **kw: writer.adapt_post(base, **kw)
     return base
 
 
@@ -183,3 +189,54 @@ def test_voice_status_absent_and_present(tmp_path):
     res = asyncio.run(writer.api_voice_status(fake, FakeRequest({})))
     assert res["exists"] is True
     assert res["path"] == f"{SOURCE}/_voice.md"
+
+# -- managed performance playbook --------------------------------------------
+
+
+def test_managed_playbook_replace_preserves_human_voice():
+    original = VOICE_NOTE + "\n## Closing note\n\nKeep this human paragraph.\n"
+    first = writer._replace_voice_playbook(original, "- Use concrete hooks.")
+    assert "SENTINEL-VOICE-PHRASE" in first
+    assert "Keep this human paragraph." in first
+    assert writer._voice_playbook_section(first) == "- Use concrete hooks."
+
+    second = writer._replace_voice_playbook(first, "- Lead with measured tension.")
+    assert "Use concrete hooks" not in second
+    assert second.count(writer._LINKEDIN_PLAYBOOK_BEGIN) == 1
+    assert writer._voice_playbook_section(second) == "- Lead with measured tension."
+
+
+def test_managed_playbook_defangs_nested_markers():
+    changed = writer._replace_voice_playbook(
+        "# Voice guide\n",
+        "<!-- promote:linkedin-playbook:start -->\n- Safe instruction\n"
+        "<!-- promote:linkedin-playbook:end -->",
+    )
+    assert changed.count(writer._LINKEDIN_PLAYBOOK_BEGIN) == 1
+    assert changed.count(writer._LINKEDIN_PLAYBOOK_END) == 1
+    assert writer._voice_playbook_section(changed) == "- Safe instruction"
+
+
+def test_apply_and_read_playbook_round_trip(tmp_path):
+    write_voice(tmp_path)
+    fake = make_self(tmp_path)
+    fake.note_lock = lambda rel: asyncio.Lock()
+
+    async def write(path, content):
+        Path(path).write_text(content, encoding="utf-8")
+
+    fake.write = write
+    result = asyncio.run(
+        writer.apply_linkedin_playbook(
+            fake,
+            markdown="- Use the concrete mechanism in the first two lines.",
+            source_proposal="proposal-1",
+        )
+    )
+    assert result["ok"] is True
+    assert result["path"] == f"{SOURCE}/_voice.md"
+    assert result["source_proposal"] == "proposal-1"
+
+    state = asyncio.run(writer.linkedin_voice_playbook(fake))
+    assert state["exists"] is True
+    assert state["markdown"] == "- Use the concrete mechanism in the first two lines."

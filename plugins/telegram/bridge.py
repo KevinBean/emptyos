@@ -1,7 +1,7 @@
 """Telegram bridge — pure helpers for the two-way rooms bridge.
 
 Zero kernel imports by design: everything here is unit-testable without a
-daemon (tests/test_sys_telegram_bridge.py loads this file via importlib).
+daemon (tests/test_unit_telegram_bridge.py loads this file via importlib).
 The plugin (`plugin.py`) owns the aiohttp session, the poll loop, and all
 rooms `call_app` dispatch; this module owns parsing, rendering, chunking,
 and offset-state persistence.
@@ -183,22 +183,107 @@ def parse_callback_data(data: str) -> tuple[str, str] | None:
 # ── Rendering (HTML parse mode; escape everything interpolated) ────────────
 
 
+# ── Minimal disclosure ────────────────────────────────────────────────────
+# A card leaves the machine and persists in Telegram's chat history, so it
+# carries the least that still lets the owner decide Apply/Reject. The full
+# payload stays local, on /rooms/.
+
+# Values under these keys are NEVER disclosed — either structurally large
+# (a note body, a diff side) or the highest-risk thing we could print (a
+# shell command). You cannot meaningfully approve a command on a phone
+# anyway; repo.exec is in ALWAYS_GATE_VERBS precisely so it gets read locally.
+NEVER_DISCLOSE_KEYS = frozenset({
+    "cmd", "command", "content", "body", "old", "new", "patch", "diff",
+})
+# Longer than this and we send a size instead of the value.
+MAX_VALUE_CHARS = 120
+# Hard ceiling on the whole args block.
+MAX_ARGS_BLOCK_CHARS = 400
+
+
+def _scan_secrets(text: str) -> str:
+    """Pattern name if `text` looks like a secret or personal data, else "".
+
+    Reuses the outbound scanner so Telegram inherits the same high-confidence
+    secret patterns AND the machine's `.eos-personal` patterns. Fails CLOSED:
+    if the scanner can't be imported, treat the value as sensitive rather than
+    printing it — an unscannable value is exactly the one not to leak.
+    """
+    try:
+        from emptyos.capabilities.outbound_scan import scan_outbound
+    except Exception:
+        return "unscannable"
+    try:
+        findings = scan_outbound(text)
+    except Exception:
+        return "unscannable"
+    return findings[0].pattern_name if findings else ""
+
+
+def redact_args(args: dict) -> str:
+    """Render `args` for outbound disclosure. Keys stay visible, values don't.
+
+    Keys are always shown: knowing WHICH fields a verb was given is decidable
+    information and leaks nothing. Values are shown only when short, not under
+    a never-disclose key, and not secret-shaped.
+    """
+    if not isinstance(args, dict) or not args:
+        return ""
+    out: list[str] = []
+    for key, value in args.items():
+        k = str(key)
+        if k.lower() in NEVER_DISCLOSE_KEYS:
+            size = len(value) if isinstance(value, str) else len(str(value))
+            out.append(f"{k}: <hidden, {size} chars — review on /rooms/>")
+            continue
+        if isinstance(value, bool) or isinstance(value, (int, float)) or value is None:
+            out.append(f"{k}: {value}")
+            continue
+        if not isinstance(value, str):
+            # dict/list — shape only, never contents.
+            out.append(f"{k}: <{type(value).__name__}, {len(value)} item(s)>")
+            continue
+        if len(value) > MAX_VALUE_CHARS:
+            out.append(f"{k}: <str, {len(value)} chars — review on /rooms/>")
+            continue
+        hit = _scan_secrets(value)
+        out.append(f"{k}: <redacted: {hit}>" if hit else f"{k}: {value}")
+    block = "\n".join(out)
+    if len(block) > MAX_ARGS_BLOCK_CHARS:
+        block = block[:MAX_ARGS_BLOCK_CHARS] + "\n… (truncated — review on /rooms/)"
+    return block
+
+
+def card_expired(action: dict, *, now_ts: str, ttl_s: float) -> bool:
+    """Is this card too old to act on? `ttl_s <= 0` disables the check.
+
+    Delegates the timestamp arithmetic to `emptyos.sdk.utils.is_past_ttl`, which
+    fails open on an unparseable `ts` (refusing a real card is worse — the atomic
+    claim re-checks status at apply time anyway; this only stops a
+    long-scrolled-back tap from firing silently) and, importantly, normalises a
+    NAIVE stored timestamp to UTC. The hand-rolled version compared a naive `ts`
+    against an aware `now`, which raises TypeError and silently meant "never
+    expires".
+    """
+    from emptyos.sdk.utils import is_past_ttl
+
+    return is_past_ttl(str(action.get("ts", "")), ttl_s, now_ts)
+
+
 def render_card(action: dict) -> tuple[str, dict]:
     """Pending action → (HTML text, reply_markup) for one Telegram message.
 
     HTML mode is used because it has no ambient metacharacters — with
     `html.escape` on every interpolated value, hostile args can't break out
-    of the card markup.
+    of the card markup. Payload disclosure is minimised via `redact_args`;
+    the full args stay local.
     """
     verb = f"{action.get('app', '?')}.{action.get('method', '?')}"
     lines = [f"\U0001F4CB <b>{html.escape(verb)}</b>"]
 
-    args = action.get("args") or {}
-    if args:
-        pretty = json.dumps(args, ensure_ascii=False, indent=2)
-        if len(pretty) > 800:
-            pretty = pretty[:800] + "\n…"
-        lines.append(f"<pre>{html.escape(pretty)}</pre>")
+    block = redact_args(action.get("args") or {})
+    if block:
+        lines.append(f"<pre>{html.escape(block)}</pre>")
 
     for change in action.get("proposed_changes") or []:
         path = change.get("path") or "?"
@@ -207,12 +292,28 @@ def render_card(action: dict) -> tuple[str, dict]:
 
     cmd = action.get("proposed_command")
     if isinstance(cmd, dict) and cmd.get("cmd"):
-        lines.append(f"<pre>$ {html.escape(str(cmd.get('cmd')))}</pre>")
+        # Never the command itself. A shell command is the single most
+        # dangerous thing to put in a third party's chat history, and it is
+        # not approvable from a phone.
+        lines.append(html.escape(
+            f"$ <command hidden, {len(str(cmd.get('cmd')))} chars — review on /rooms/>"
+        ))
 
     if action.get("error"):
-        lines.append(html.escape(f"⚠ {action['error']}"))
+        # Errors can embed paths and payload fragments.
+        err = str(action["error"])
+        hit = _scan_secrets(err)
+        lines.append(html.escape(
+            f"⚠ <error redacted: {hit} — review on /rooms/>" if hit
+            else f"⚠ {err[:MAX_VALUE_CHARS]}"
+        ))
 
     aid = action.get("id", "")
+    # Always point at the local surface, even when nothing was hidden: the full
+    # payload, diff and room context only exist there. A relative path, never a
+    # URL — the host/port come from [network] config (CLAUDE.md rule 17) and a
+    # pure helper has no business guessing them.
+    lines.append(html.escape(f"🔒 full payload: /rooms/#{aid}"))
     markup = {
         "inline_keyboard": [[
             {"text": "✅ Apply", "callback_data": callback_data("ap", aid)},
@@ -256,16 +357,24 @@ def _speakable_result(raw: str) -> str:
     return "\n".join(parts) if parts else raw
 
 
-def render_resolution(verb: str, result: dict) -> str:
+def render_resolution(verb: str, result: dict, *, action_id: str = "") -> str:
     """Outcome of apply/reject → HTML replacing the card text (keyboard removed).
 
     `result` is what rooms returned: the action dict on success
     (status applied/rejected, result snippet) or {"error": ...} on failure /
     already-resolved (cards self-heal on tap).
+
+    `action_id` is the label fallback. The atomic claim's refusal
+    (`{"error": "already approving"}`) carries no app/method, which used to
+    render as a bare "?.?" — and concurrent taps made that common as soon as
+    the claim landed. The id is always known by the caller, so use it.
     """
     result = result if isinstance(result, dict) else {}
     action = result.get("action") if isinstance(result.get("action"), dict) else result
-    label = f"{action.get('app', '?')}.{action.get('method', '?')}"
+    if action.get("app") and action.get("method"):
+        label = f"{action['app']}.{action['method']}"
+    else:
+        label = action_id or "action"
 
     err = result.get("error")
     if err:

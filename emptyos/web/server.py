@@ -1269,6 +1269,16 @@ def create_server(kernel: Kernel) -> FastAPI:
             async def console_page():
                 return console_path.read_text(encoding="utf-8")
 
+        # Deep-link note viewer — /notes?path=<vault-relative> opens the shared
+        # EOS_UI.viewNote modal. Makes vault notes URL-addressable (chat links,
+        # reminders, cross-app references) without requiring an external viewer.
+        notes_path = static_dir / "notes.html"
+        if notes_path.exists():
+
+            @server.get("/notes", response_class=HTMLResponse)
+            async def notes_page():
+                return notes_path.read_text(encoding="utf-8")
+
         favicon_path = static_dir / "favicon.svg"
         if favicon_path.exists():
 
@@ -1334,14 +1344,21 @@ def create_server(kernel: Kernel) -> FastAPI:
 
 
 _THEME_BOOTSTRAP_TAG = (
-    # The whitelist mirrors EOS.THEMES in eos.js — keep in sync. A saved theme
-    # not in this list (renamed/dropped/typo, e.g. a stale 'botanical-scroll')
-    # would set an undefined `theme-<x>` class → every token falls back to bare
-    # :root and the UI renders pale/unstyled. Validate + self-heal to 'eos'.
+    # Pre-paint theme class, so a themed page never flashes unstyled.
+    #
+    # This deliberately does NOT carry the theme allowlist. It used to, and the
+    # list was duplicated into every page that ships its own bootstrap — so
+    # adding a theme meant editing 20+ files, and *missing one* was silently
+    # destructive: that page's snippet rewrote localStorage to 'eos', resetting
+    # the user's choice globally the moment they visited it.
+    #
+    # Now it only shape-validates (a syntactically safe class suffix) and never
+    # writes. `_setThemeClass` in eos.js owns the real registry and does the
+    # authoritative self-heal a few ms later, so an unknown id costs one
+    # unstyled pre-paint frame instead of a wiped preference.
     "<script>try{"
     "var _t=localStorage.getItem('eos-theme')||'eos';"
-    "if(['eos','digital-garden','soft-light','warm-dark','void-dark','nord'].indexOf(_t)<0)"
-    "{_t='eos';localStorage.setItem('eos-theme','eos');}"
+    "if(!/^[a-z][a-z0-9-]{0,31}$/.test(_t))_t='eos';"
     "document.documentElement.classList.add('theme-'+_t);"
     "}catch(e){document.documentElement.classList.add('theme-eos');}</script>"
 )

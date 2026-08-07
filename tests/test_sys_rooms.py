@@ -10,7 +10,7 @@ already-tested chat path; here we verify the team coordination *surface* the
 UI (rooms-team.js) drives.
 
 Pure-logic coverage (role normalization, prompt blocks, loop budget math) is
-in test_sys_rooms_logic.py. This file is the live-daemon companion.
+in test_unit_rooms_logic.py. This file is the live-daemon companion.
 
 Self-cleaning: creates two TEST_PREFIX agents + a group room and removes them
 in teardown, since conftest's sweep handles rooms-by-title but not the agent

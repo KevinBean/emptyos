@@ -10,6 +10,41 @@ Apps with `[provides.settings]` **must** include a ⚙ button in their toolbar t
 
 **Prefer `app: '<app-id>'`** — the panel derives its fields from that app's manifest `[provides.settings] schema` (the same source `/settings` renders from), fetched lazily on first open. One declaration, so a new setting can never reach `/settings` and miss the app's own panel.
 
+### Read it back with `BaseApp.setting_or_config` — not `app_config`
+
+Declaring a schema is only half the contract. The panel (and `/settings`) writes
+to the **settings service** — restart-free, keyed by the schema key **verbatim**,
+since the page calls `saveSetting(s.key, …)` with no app namespacing.
+`app_config()` reads a *different* store (`emptyos.toml`, loaded at boot). An app
+that declares a key and reads it with `app_config` alone therefore ships a
+**toggle that silently does nothing** — it writes a value the app never looks at.
+This shipped in 5 of the 96 apps declaring a schema (2026-07-17) and is invisible
+in review: the manifest looks right, the panel renders, the click succeeds.
+
+```python
+# Reads the live toggle, falls back to emptyos.toml [apps.<id>], then default.
+theme = self.setting_or_config("garden.theme", "moss")
+
+# config_key= when the two stores use different conventions — e.g. a dark flag
+# whose TOML key must stay `feature.x.enabled` for scripts/check_dark_flags.py
+# while its schema key is namespaced to avoid colliding in the global store.
+on = self.setting_or_config("myapp.feature.x.enabled", False,
+                            config_key="feature.x.enabled")
+```
+
+Two rules the helper encodes, both learned the hard way:
+
+- **Namespace the schema key** (`myapp.*`). The page writes it verbatim into a
+  *global* store, so a bare `ttl_minutes` collides across apps.
+- **A stored `null` or `""` means unset** and falls through to TOML — a reset
+  writes an explicit null, and clearing a text input writes `""`; neither should
+  permanently shadow the machine's config. `False`/`0` are real values and win,
+  which is what lets a toggle turn something *off*.
+
+Use plain `app_config()` when the value is **config-only** (no schema entry) —
+addon URL templates, a dark flag with no toggle, per-machine paths. That's still
+correct and is what most rules here show.
+
 ```html
 <button class="btn-settings" onclick="openAppSettings()">&#9881; Settings</button>
 ```

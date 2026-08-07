@@ -15,6 +15,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from emptyos.sdk.pending_claim import claim_pending
+
 from .base import (
     extract_do_actions,
     fan_out_think,
@@ -151,11 +153,14 @@ def list_pending(app, run_id: str = "", status: str = "") -> list[dict]:
 
 
 async def apply_pending(app, action_id: str) -> dict:
-    action = load_pending(app, action_id)
-    if not action:
-        return {"error": "action not found"}
-    if action.get("status") != "pending":
-        return {"error": f"already {action.get('status')}"}
+    action, claim_err = await claim_pending(
+        app.write_lock(f"pending:{action_id}"),
+        lambda aid: load_pending(app, aid),
+        lambda a: _save_pending(app, a),
+        action_id,
+    )
+    if claim_err:
+        return claim_err
     try:
         result = await app.call_app(action["app"], action["method"], **(action.get("args") or {}))
     except Exception as e:
@@ -176,12 +181,15 @@ async def apply_pending(app, action_id: str) -> dict:
 
 
 async def reject_pending(app, action_id: str) -> dict:
-    action = load_pending(app, action_id)
-    if not action:
-        return {"error": "action not found"}
-    if action.get("status") != "pending":
-        return {"error": f"already {action.get('status')}"}
-    action["status"] = "rejected"
+    action, claim_err = await claim_pending(
+        app.write_lock(f"pending:{action_id}"),
+        lambda aid: load_pending(app, aid),
+        lambda a: _save_pending(app, a),
+        action_id,
+        claim_status="rejected",
+    )
+    if claim_err:
+        return claim_err
     action["resolved_ts"] = now_iso()
     _save_pending(app, action)
     await app.emit("company:action_rejected", {

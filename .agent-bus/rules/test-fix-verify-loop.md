@@ -5,22 +5,24 @@ single app — it's four roles composed via the event bus + `call_app`. Any new
 app that wants to participate (as a friction *source* or as a friction *consumer*)
 plugs into the contract documented here.
 
-**Reference implementations today** (two friction sources):
-- `apps/dogfood-agent/` — friction *source* (persona runs) + drain orchestrator + active scenario-rerun verifier
-- `apps/trace-miner/` — friction *source* (syslog mining) + **passive** verifier. The LangSmith-Engine analogue: sweeps `data/syslog.db` on a cron, groups recurring errors into normalized signatures, classifies code-bug vs external-service noise, scores by frequency × recency, and emits fix-prompts into the dogfood queue dir tagged `source: trace-miner`.
-- `apps/fix-agent/` — fix-driver (worktree-per-fix, branch-per-issue, merge gate). Its verify handler branches on `source: trace-miner` and delegates to `trace-miner api_verify` instead of a dogfood scenario re-run.
+**Reference implementations today** (four friction sources now write to the shared queue):
+- `apps/extension/dev/dogfood-agent/` — friction *source* (persona runs) + drain orchestrator + active scenario-rerun verifier
+- `apps/extension/dev/trace-miner/` — friction *source* (syslog mining) + **passive** verifier. The LangSmith-Engine analogue: sweeps `data/syslog.db` on a cron, groups recurring errors into normalized signatures, classifies code-bug vs external-service noise, scores by frequency × recency, and emits fix-prompts into the dogfood queue dir tagged `source: trace-miner`.
+- `apps/extension/dev/fix-agent/` — fix-driver (worktree-per-fix, branch-per-issue, merge gate). Its verify handler branches on `source: trace-miner` and delegates to `trace-miner api_verify` instead of a dogfood scenario re-run.
+- `apps/extension/dev/kb-butler/` — a fourth trace-miner-shaped source (KB-maintenance findings → fix-prompts) + `scripts/ui_walk_promote.py` (promotes hand-walk friction). Both write the same fix-prompt format via the shared queue.
 - `plugins/dogfood-demo/` — sandbox lifecycle (the `:9001` daemon under test)
+- **Observation:** `apps/extension/dev/cockpit/` tails fix-agent/dogfood `stream.jsonl` run streams live (behind `feature.autorun-view.enabled`) — the read-only window into a running loop, not a participant.
 
 **Two verify shapes now exist.** Dogfood's is *active* — re-run the scenario; the persona shouldn't re-report the friction. Trace-miner's is *passive* — after merge, watch syslog for recurrence of the error signature: absence over the window = provisionally fixed, recurrence = regressed + reopened on the next sweep. Passive verify exists because syslog errors have no re-runnable scenario (exactly the "When NOT to plug in" caveat below). A friction source with a re-runnable path uses the active shape; one without owns a passive verify like trace-miner.
 
-**SDK extraction now justified** (CLAUDE.md rule 9 — the second consumer has landed): both sources write the same fix-prompt format to `data/apps/dogfood-agent/fix-prompts/`. It works without an abstraction today, but `emptyos/sdk/fix_queue.py` (`FixPromptQueue`) + `BaseApp.surface_friction(...)` is the clean extraction when a third consumer arrives or the format diverges.
+**SDK extraction is DONE.** `emptyos/sdk/fix_queue.py` (`FixPromptQueue` + `FRICTION_HEADING`) + `BaseApp.surface_friction(...)` shipped once the second consumer landed, and now has four+ consumers (dogfood, trace-miner, fix-agent/verify, kb-butler, `scripts/ui_walk_promote.py`) + `devboard` reading the done-ledger. All friction sources write the one format through it; build fix-prompts via `fix_queue.py` helpers, never by hand. (Historical note: `dogfood-agent/friction.py` predates the module and migrates on next touch.)
 
 ## The four roles
 
 | Role | Responsibility | Today |
 |---|---|---|
 | **Friction source** | Surface a failure as a structured fix-prompt with a stable key. Persist to a queue so the loop can find it later. | `dogfood-agent` persona runs |
-| **Fix-driver** | Read the fix-prompt, spawn an LLM with editing tools in an isolated worktree, run the py_compile gate, ff-merge on success. | `apps/fix-agent/` |
+| **Fix-driver** | Read the fix-prompt, spawn an LLM with editing tools in an isolated worktree, run the py_compile gate, ff-merge on success. | `apps/extension/dev/fix-agent/` |
 | **Sandbox** | Provide an isolated runtime that can be killed + restarted without touching the user-owned main daemon. Owned by a plugin that holds the subprocess handle. | `plugins/dogfood-demo/` |
 | **Verifier** | After merge + sandbox restart, re-exercise the originating scenario against the patched sandbox. Report verified / verify-failed. | `dogfood-agent` verify-runs |
 
@@ -58,9 +60,22 @@ without re-querying the source:
 The `## What surfaced this` block is the **load-bearing contract** — the fix-agent
 parses `persona / scenario / last_run_id / friction_kind / friction_text` via
 `_parse_prompt_meta`. Without them, verify can't anchor. New friction sources
-must emit this block.
+must emit this block. (On disk the locked quote heading is `## What the persona
+reported` — `emptyos/sdk/fix_queue.py::FRICTION_HEADING`; build prompts via that
+module's helpers rather than restating the format.)
 
-### Fix-driver lifecycle (today: `apps/fix-agent/api_run`)
+**Optional trace-identity frontmatter** (`usecase_id / milestone_id / step_id /
+walk_id / evidence`) rides the same contract for manual-UI-walk-promoted
+prompts (`source: ui-walk`, written by `scripts/ui_walk_promote.py`).
+`_parse_prompt_meta` plucks them into `verify_context`, so runs, verify runs,
+and loop receipts inherit the originating use case verbatim. ui-walk prompts
+verify by **human re-walk attestation** (`POST /fix-agent/api/runs/{id}/attest`)
+— a third verify shape next to active-scenario and passive-syslog — and the
+autonomous drain skips them at selection. Every close (any source) appends a
+disposition row to `fix-prompts/done/_ledger.jsonl`. Full contract:
+`.claude/rules/loop-traceability.md`.
+
+### Fix-driver lifecycle (today: `apps/extension/dev/fix-agent/api_run`)
 
 States transition: `queued → running → ready → merged → verifying → verified | verify-failed | verify-timeout`.
 
@@ -95,12 +110,12 @@ run id), `verify_friction` (the friction record), and the persona/scenario
 to re-run. On completion, the verifier sets `target_fixed = true|false` on
 its run record. The fix-driver polls until that flag appears.
 
-`apps/dogfood-agent/api_run` is the reference verifier surface today.
+`apps/extension/dev/dogfood-agent/api_run` is the reference verifier surface today.
 
 ## The drain orchestrator
 
 Optional — drives the four roles in a loop without per-step human approval.
-Today: `apps/dogfood-agent/_drain_queue`. The orchestrator does NOT spawn
+Today: `apps/extension/dev/dogfood-agent/_drain_queue`. The orchestrator does NOT spawn
 claude-cli; it composes the four roles' existing endpoints:
 
 ```
@@ -138,22 +153,29 @@ work unchanged.
 If they aren't true, you probably don't want a fix loop — you want a regular
 test or a regular alert. Don't force the shape.
 
-## When to extract this into the SDK
+## The SDK extraction (shipped)
 
-Today there's one friction source (`dogfood-agent` persona runs). The loop
-is "infrastructure-shaped" but it isn't formal SDK-level infrastructure
-because there's no second consumer pulling on the abstraction yet. Per
-CLAUDE.md rule #9: build specific first in one app, extract to `sdk/` when
-a second app needs it.
+The queue-writing contract is now `emptyos/sdk/fix_queue.py` — extracted once
+the second friction source landed (CLAUDE.md rule 9), and today carrying
+four+ consumers:
 
-Candidates for a second consumer (any one of these would justify SDK extraction):
-- An "integration-test fixer" — `tests/test_journeys.py` failures become fix-prompts
-- A "UI-walk fixer" — playwright failures from the smoke lane become fix-prompts
-- A "lint fixer" — `scripts/check-personal.py` violations become fix-prompts
+- `FixPromptQueue` — `enqueue()`, `pending()`, `move_to_done()`, `move_to_stuck()`,
+  `read_ledger()`, plus `FRICTION_HEADING` (the locked `## What the persona
+  reported` quote heading) and the fix-prompt format helpers.
+- `BaseApp.surface_friction(kind, text, scenario, persona, last_run_id)` — the
+  convenience writer every source uses.
 
-If one of those lands, the natural extraction is:
-- `emptyos/sdk/fix_queue.py` — `FixPromptQueue` with `enqueue()`, `pending()`, `move_to_done()`, `move_to_stuck()`
-- `BaseApp.surface_friction(kind, text, scenario, persona, last_run_id)` — convenience writer
+Consumers: `dogfood-agent` (persona runs), `trace-miner` (syslog mining),
+`fix-agent/verify.py` (done-ledger), `kb-butler` (KB-maintenance findings),
+`scripts/ui_walk_promote.py` (hand-walk promotion), `devboard` (reads the
+done-ledger for the fix-loop lane). **Never restate the fix-prompt format —
+build prompts via `fix_queue.py` helpers.** The one un-migrated site is
+`dogfood-agent/friction.py`, which predates the module and migrates on next
+touch.
+
+New friction source? Emit through `surface_friction`/`FixPromptQueue`, include
+the `## What surfaced this` block (§ The contract), and own a verify shape
+(active re-run, passive-recurrence, or human attestation).
 
 Until then, keep the contract documented here and let it sit in `dogfood-agent`.
 
@@ -167,6 +189,22 @@ Until then, keep the contract documented here and let it sit in `dogfood-agent`.
    diff. Auto-revert keeps `main` clean even if the user looks away.
 3. **py_compile gate before merge.** A SyntaxError in the diff would make the
    sandbox fail to restart — the worst possible failure mode of "blind merge."
+
+   **Regression gate (dark: `[apps.fix-agent] feature.regression-gate.enabled`).**
+   py_compile proves the diff *parses*; it is not evidence the bug is fixed, and
+   neither is the verifier — dogfood persona self-recurrence on an *unchanged*
+   system measured **2%** (2026-08-06), so 90% of unfixed friction read as
+   "verified cleared" before `_diff_friction`'s fail-open was closed. With the
+   flag on, a fix must carry a **daemon-free** test (`tests/test_unit_*` /
+   `tests/test_sdk_*`) that **passes on the branch and fails at the merge base**
+   — checked in a throwaway worktree at base with only the test file copied in.
+   Both sides are required: a test that passes at base pins nothing. Daemon-backed
+   suites (`test_sys_*`, `test_dogfood*`, `test_journeys`, `test_ui*`) cannot gate,
+   because they hit `:9000` and would test main-branch source rather than the
+   worktree — which is why the fix prompt bans pytest wholesale when the flag is
+   off. `apps/extension/dev/fix-agent/regression.py`. This is what promotes
+   `"regression-test"` in `fix_queue.LEARNING_OUTCOMES` from an optional
+   close-time label to a gate.
 4. **Drain is opt-in, capped, and stoppable.** A runaway loop can't churn the
    repo overnight; the operator can clear the active flag to halt cleanly.
 5. **WebFetch is excluded from fix-driver tools.** External calls would land

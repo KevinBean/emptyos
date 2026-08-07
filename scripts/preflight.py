@@ -53,6 +53,40 @@ CHECKS: list[dict] = [
     {"script": "check-vault-rmw-race.py",  "scope": ["always", "vault"],               "gate": False},
     {"script": "check_call_app_declared.py","scope": ["always", "release"],             "gate": True},
     {"script": "check_dark_flags.py",      "scope": ["always", "release"],             "gate": False},
+    # The registry sibling of check_dark_flags: a dark flag asks "was this ever
+    # turned on?", a deferred row asks "did its trigger ever fire?". Advisory,
+    # and deliberately NOT in "always" — deferring is a valid outcome, so an
+    # aging row is information for a periodic readiness pass (eos-insights §9),
+    # never a reason to block a session. Reports age + table-shape drift only;
+    # judging readiness stays with a human because triggers are prose.
+    {"script": "check_deferred_work.py",   "scope": ["deferred", "release"],           "gate": False},
+    # A detached task holding no strong reference can be garbage-collected
+    # mid-flight (asyncio weak-refs running tasks) and fails silently.
+    # Advisory: a legitimate detached task in a class with no app in reach is
+    # not a build break, and the opt-out is an inline marker at the call site.
+    {"script": "check_bare_create_task.py","scope": ["always", "apps"],                "gate": False},
+    # Runtime NameErrors from the multi-module split: a helper's __globals__ is
+    # its own module, so an import left in the spine is simply absent. Gates,
+    # because both classes it reports are unambiguous runtime bugs with no
+    # legitimate use, and the tree is at zero (1444 files, ~2s). Its second pass
+    # catches what pyflakes structurally cannot — a TYPE_CHECKING-only name used
+    # at runtime, which is how shadowing's worst audio bug stayed invisible.
+    {"script": "check_undefined_names.py", "scope": ["always", "apps", "release"],     "gate": True},
+    # The sibling of check_dark_flags: a feature unreachable NOT because it is
+    # behind a flag, but because nothing can set the field that selects it.
+    # Advisory — an app may legitimately declare a field its own machinery
+    # fills, and only the author knows which. Gating on "code-only" would fire
+    # on healthy code; the script's own exit code separates the two severities.
+    {"script": "check_field_authors.py",   "scope": ["always", "apps"],                "gate": False},
+    # Advisory, not a gate: it asks a question ("is this box yours?") that only
+    # the operator can answer, and a legitimate private-LAN service would
+    # otherwise break the build until annotated.
+    {"script": "check_provider_trust.py",  "scope": ["always", "security"],            "gate": False},
+    # loop registry ↔ reality reconciliation: registered components resolve +
+    # dark flags appear in code (its own exit code); dark-but-live-here is
+    # informational. Advisory here — unregistered-loop detection is deliberately
+    # NOT automated (ambiguous, per audits.md); the register mandate is doctrine.
+    {"script": "check_loops.py",           "scope": ["loops", "release"],              "gate": False},
     # suites.toml (suite catalog) member ids must resolve to real manifests —
     # deterministic (typo/retired-app drift only), so it gates. Unassigned
     # public apps are an advisory inside the check, never a gate.
@@ -92,6 +126,12 @@ CHECKS: list[dict] = [
     # omission can be deliberate (dark flag, secret) — mark it with
     # `settings-panel-drift: ignore <key>`, or pass `app:` to derive the fields.
     {"script": "check-settings-panel-drift.py", "scope": ["ui"],       "gate": False},
+    # An option EOS_UI.confirm cannot read is dropped in silence — no error, no
+    # console warning, and the dialog still opens. Two sites were rendering a
+    # bare "Are you sure?" on destructive actions and one delete button ran no
+    # callback at all. The component now reads every alias the 134 call sites
+    # actually use, so a healthy tree is silent and this gates.
+    {"script": "check_confirm_keys.py",    "scope": ["ui", "release"], "gate": True},
     # export-surface inline handlers must stay inside the eos-csp-bridge
     # grammar (MV3 extension packaging) — needs node; skips when absent
     {"script": "check-csp-inline.py",      "scope": ["ui", "export"],  "gate": False},
@@ -102,11 +142,23 @@ CHECKS: list[dict] = [
      "args": ["--root", "30_Resources/KB"], "label": "kb_claim_audit (personal)"},
     {"script": "kb_link_audit.py",         "scope": ["kb"],            "gate": False,
      "args": ["--root", "30_Resources/KB"], "label": "kb_link_audit (personal)"},
+    # test-suite hygiene: a `test_*` nested inside another `test_*` is never
+    # collected, yet the enclosing test still passes — so the coverage loss is
+    # invisible and CI is green. Cost 24 dead tests on 2026-07-31. Zero false
+    # positives across the tree, so it gates.
+    {"script": "check_nested_tests.py",    "scope": ["always", "tests", "release"], "gate": True},
     # vault hygiene
     {"script": "check_vault_test_leak.py", "scope": ["vault"],         "gate": False},
     {"script": "check_vault_structure.py", "scope": ["vault"],         "gate": False},
     # session memory hygiene (Claude-Code auto-memory)
     {"script": "check_memory_rot.py",      "scope": ["memory"],        "gate": False},
+    # session-plan hygiene. In `always` despite reading the vault — unlike the
+    # two vault scans above it reads ~3 small files, and the signal it carries
+    # (a stale `active_task`) is a mutual-exclusion claim that silently BLOCKS
+    # every other session until a human clears it. Degrades silently with no
+    # vault configured, so a fresh clone stays quiet. Advisory: a plan is a
+    # human artifact and every finding here is "someone should look".
+    {"script": "check_plan_staleness.py",  "scope": ["always", "vault"], "gate": False},
     # skill-authoring contract (frontmatter trigger + boundary + preflight)
     # release: repo store only (a release must not gate on the machine's personal skills)
     {"script": "check_skills.py",          "scope": ["release"],       "gate": True},
@@ -116,10 +168,32 @@ CHECKS: list[dict] = [
      "args": ["--user-skills"], "label": "check_skills (+ user store)"},
     # skill-content security scan (vendored SkillSpector static pass — advisory)
     {"script": "check_skill_security.py",  "scope": ["skills", "security"], "gate": False},
+    # a skill marked `vault_sync: true` must match its vault copy byte-for-byte.
+    # Gates because the marker is opt-in: only a human-declared pair is checked,
+    # so a finding is never ambiguous. Unmarked skills legitimately differ (the
+    # tracked copy carries {vault}/{home} placeholders per rule 13).
+    {"script": "check_skill_vault_sync.py", "scope": ["skills", "vault"], "gate": True},
+    # a skill's .agents/ and .claude/ Python copies must be byte-identical — both
+    # are tracked mirrors of the same runner. Gates, and unlike the vault check
+    # needs no opt-in marker: rule 13's placeholder rationale cannot apply when
+    # both copies are in git, and the tree measured 27/27 identical once synced.
+    # A .claude copy 162 lines behind its twin silently discarded a spec key.
+    {"script": "check_skill_script_sync.py", "scope": ["skills", "always", "release"],
+     "gate": True},
     # docs — generated docs must match the code (APPS.md, TIERS.md, SKILLS.md)
     {"script": "generate_apps_doc.py",  "scope": ["docs", "release"], "gate": True, "args": ["--check"]},
     {"script": "generate_tiers_doc.py", "scope": ["docs", "release"], "gate": True, "args": ["--check"]},
     {"script": "generate_skills_doc.py", "scope": ["docs", "skills", "release"], "gate": True,
+     "args": ["--check"]},
+    # DESIGN.md is generated FROM theme.css and is the machine-readable contract
+    # external AI tools read. It silently drifts on every token edit — nothing ran
+    # this until 2026-07-20, when a theme accent change reached theme.css, the app
+    # UI, and published sites while DESIGN.md kept serving the old hex.
+    # In "ui" as well as "docs" because the *cause* is a theme.css edit: whoever
+    # touches tokens runs --scope ui, and that is exactly where it was missed.
+    # (check-design-md.py is a different gate — it validates refs/hex/cycles, and
+    # a stale-but-well-formed file passes it.)
+    {"script": "gen-design-md.py", "scope": ["ui", "docs", "release"], "gate": True,
      "args": ["--check"]},
     # apps — whole-system 8-dimension quality scorecard (App Optimizer). Advisory;
     # --check prints the summary without writing a vault snapshot.
@@ -135,6 +209,11 @@ CHECKS: list[dict] = [
     # 30_Resources/EmptyOS/gap-analysis/). Advisory: exit = stale + missing
     # (capped 99); judgment layer = the eos-app-gap-analysis skill.
     {"script": "check_gap_freshness.py", "scope": ["apps"], "gate": False},
+    # apps — [[provides.verbs]] args declarations: unsupported type tokens
+    # (enforce nothing) + declared args the target method can't accept (would
+    # TypeError once [verbs] arg_gate is on). Advisory; opt out with an inline
+    # `# verb-args-check: ignore` in the manifest.
+    {"script": "check_verb_args.py", "scope": ["apps"], "gate": False},
     # release packaging
     {"script": "check-tier-folder.py",     "scope": ["release"],       "gate": True},
     {"script": "check-licenses.py",        "scope": ["release"],       "gate": False},
@@ -146,7 +225,7 @@ CHECKS: list[dict] = [
      "args": ["--timeout", "60"]},
 ]
 
-ALL_SCOPES = ["always", "ui", "kb", "vault", "memory", "skills", "docs", "topology", "apps", "security", "release"]
+ALL_SCOPES = ["always", "ui", "kb", "vault", "memory", "skills", "docs", "topology", "apps", "security", "loops", "tests", "release"]
 
 
 def _select(scopes: set[str], gate_only: bool) -> list[dict]:

@@ -3,7 +3,8 @@
 import pytest
 
 from helpers import TEST_PREFIX, assert_dict_response, assert_ok
-from page_helpers import assert_no_js_errors, click_first, wait_briefly
+from page_helpers import (assert_no_js_errors, click_first,
+                          visible_search_input, wait_briefly)
 
 
 @pytest.mark.api
@@ -88,8 +89,8 @@ class TestNoteUI:
         """Type in search → verify no errors."""
         page = app_page("note")
         wait_briefly(page, 1000)
-        search = page.locator("input[type='search'], input[placeholder*='earch' i]").first
-        if search.count() == 0:
+        search = visible_search_input(page)
+        if search is None:
             pytest.skip("No search input")
         search.fill("test")
         wait_briefly(page, 600)

@@ -11,7 +11,7 @@ Do not import from ``.app`` (it imports us, which would cycle).
 from __future__ import annotations
 
 from emptyos.sdk import web_route, ndjson_response
-from .shared import PRESETS, VIZ_ITERATE_SYSTEM, _shape_min_ability, _shape_max_tokens, _extract_html, _looks_like_html, _looks_truncated, _rewrite_user_msg, _new_id
+from .shared import PRESETS, VIZ_ITERATE_SYSTEM, MULTIPASS_SHAPES, VIZ_SKELETON_SUFFIX, build_skeleton_user_msg, build_fill_user_msg, _shape_min_ability, _shape_max_tokens, _extract_html, _looks_like_html, _looks_truncated, _rewrite_user_msg, _new_id
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -19,13 +19,42 @@ if TYPE_CHECKING:
 
 
 # ─── Bind to VizApp class as ────────────────────────────────
+#   _multipass_enabled         = _streaming._multipass_enabled
+#   _has_agent_runtime         = _streaming._has_agent_runtime
+#   _multipass_eligible        = _streaming._multipass_eligible
 #   _generate_stream_events    = _streaming._generate_stream_events
+#   _generate_multipass_events = _streaming._generate_multipass_events
+#   _generate_oneshot_events   = _streaming._generate_oneshot_events
 #   api_generate_stream        = _streaming.api_generate_stream
 #   _iterate_via_think_stream  = _streaming._iterate_via_think_stream
 #   _iterate_stream_events     = _streaming._iterate_stream_events
 #   api_iterate_stream         = _streaming.api_iterate_stream
 # Adding a new method here? Add a matching binding line in app.py.
 # ─────────────────────────────────────────────────────────────────────
+
+
+def _multipass_enabled(self) -> bool:
+    """Dark flag ``apps.viz.feature.multipass-generate.enabled`` (default off)."""
+    return bool(self.app_config("feature.multipass-generate.enabled", False))
+
+
+def _has_agent_runtime(self) -> bool:
+    """The truncation-immune fill pass needs the claude-cli agent primitive."""
+    try:
+        self.require("agent-runtime")
+        return True
+    except Exception:
+        return False
+
+
+def _multipass_eligible(self, shape: str) -> bool:
+    """Multi-pass only for dense, section-addressable DOM shapes, and only when
+    the agent primitive is present (its absence would force a whole-file rewrite
+    fill that re-hits the ceiling). Otherwise the one-shot path (with salvage)
+    runs — never a discard."""
+    return (self._multipass_enabled()
+            and shape in MULTIPASS_SHAPES
+            and self._has_agent_runtime())
 
 
 async def _generate_stream_events(
@@ -35,9 +64,82 @@ async def _generate_stream_events(
     shape: str | None = None,
     examples: list[str] | None = None,
 ):
-    """Concrete streaming impl used by api_generate_stream. Tracks the
-    full accumulated text alongside the flushed buffer so the final
-    validation + persist step has the whole document.
+    """Streaming generate dispatcher: route dense shapes through the multi-pass
+    skeleton→fill path when eligible, else the one-shot path (with salvage). Both
+    are byte-identical to the pre-feature one-shot path when the flags are off."""
+    shape = shape or self.app_config("default_shape", "3d-scene")
+    if self._multipass_eligible(shape):
+        async for evt in self._generate_multipass_events(prompt, shape=shape, examples=examples):
+            yield evt
+        return
+    async for evt in self._generate_oneshot_events(prompt, shape=shape, examples=examples):
+        yield evt
+
+
+async def _generate_multipass_events(
+    self,
+    prompt: str,
+    *,
+    shape: str,
+    examples: list[str] | None = None,
+):
+    """Skeleton → fill → assemble for a dense DOM shape.
+
+    Pass 1: a bounded skeleton generate (well under the ceiling) lays out valid
+    EMPTY sections. Pass 2: the truncation-immune agent read-then-Edit primitive
+    (`_iterate_stream_events`) fills each section one small Edit at a time, so the
+    per-call output ceiling never binds. The file on disk IS the assembled
+    artifact; the fill pass validates + persists it. If the skeleton itself can't
+    be produced, fall through to the one-shot path (never discard)."""
+    import time
+
+    prompt = (prompt or "").strip()
+    if not prompt:
+        yield {"type": "error", "error": "prompt is required"}
+        return
+    t0 = time.monotonic()
+    yield {"type": "started", "shape": shape, "multipass": True}
+
+    # ── Pass 1 — skeleton ──
+    yield {"type": "phase", "phase": "skeleton"}
+    system = self._system_for(shape) + VIZ_SKELETON_SUFFIX
+    examples_block = await self._build_examples_block(examples or [], shape)
+    if examples_block:
+        system = system + examples_block
+    skeleton = await self._think_html(
+        system, build_skeleton_user_msg(prompt), max_tokens=_shape_max_tokens(shape))
+    reason = self._reject_reason(skeleton)
+    if reason:
+        salvaged = self._truncation_salvage(skeleton)
+        if salvaged is None:
+            # Skeleton unusable → one-shot path (with its own salvage). No discard.
+            async for evt in self._generate_oneshot_events(prompt, shape=shape, examples=examples):
+                yield evt
+            return
+        skeleton = salvaged
+
+    rid = _new_id()
+    await self._persist(rid, skeleton, prompt, shape, is_update=False)
+    await self.emit("viz:created", {"id": rid, "shape": shape})
+    yield {"type": "skeleton_done", "id": rid, "elapsed_ms": int((time.monotonic() - t0) * 1000)}
+
+    # ── Pass 2 — fill each section via the agent (truncation-immune) ──
+    yield {"type": "phase", "phase": "fill"}
+    async for evt in self._iterate_stream_events(rid, build_fill_user_msg(prompt)):
+        yield evt  # includes the terminal 'done' with the assembled artifact meta
+
+
+async def _generate_oneshot_events(
+    self,
+    prompt: str,
+    *,
+    shape: str | None = None,
+    examples: list[str] | None = None,
+):
+    """Concrete one-shot streaming impl. Tracks the full accumulated text
+    alongside the flushed buffer so the final validation + persist step has the
+    whole document. On truncation, salvages the partial (dark flag) rather than
+    discarding.
     """
     import time
 
@@ -94,14 +196,25 @@ async def _generate_stream_events(
     raw = "".join(full_parts)
     html = _extract_html(raw)
     reason = self._reject_reason(html)
+    truncated = False
     if reason:
-        yield {"type": "error", "error": reason}
-        return
+        # Fresh generation → salvage the partial (dark flag) rather than discard
+        # the whole thing. (Iterate paths deliberately do NOT salvage: overwriting
+        # a good scene.html with a truncated one would lose the prior artifact.)
+        salvaged = self._truncation_salvage(html)
+        if salvaged is None:
+            yield {"type": "error", "error": reason}
+            return
+        html, truncated = salvaged, True
 
     rid = _new_id()
     meta = await self._persist(rid, html, prompt, shape, is_update=False)
     await self.emit("viz:created", {"id": rid, "shape": shape})
-    yield {"type": "done", **meta, "elapsed_ms": int((time.monotonic() - t0) * 1000)}
+    done_evt = {"type": "done", **meta, "elapsed_ms": int((time.monotonic() - t0) * 1000)}
+    if truncated:
+        done_evt["truncated"] = True
+        done_evt["note"] = "Saved a partial artifact — output was truncated at the model's limit; the page carries a banner saying so."
+    yield done_evt
 
 
 @web_route("POST", "/api/generate-stream")

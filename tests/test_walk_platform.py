@@ -17,7 +17,7 @@ import time
 
 import pytest
 
-from helpers import assert_ok
+from helpers import TEST_PREFIX, assert_ok
 
 
 @pytest.mark.api
@@ -127,3 +127,69 @@ class TestPlatformUI:
         # The think capability renders as <span class="cap-name">think</span>.
         think = page.locator(".cap-name", has_text="think")
         assert think.count() >= 1, "think capability must appear on /system/ page"
+
+    def test_notes_deeplink_page_served(self, http_client):
+        """6.4 — GET /notes serves the deep-link viewer shell."""
+        r = http_client.get("/notes")
+        assert r.status_code == 200, f"/notes must be served: {r.status_code}"
+        body = r.text
+        assert "eos-components.js" in body, "/notes must load the shared component bundle"
+        assert "viewNote" in body, "/notes must invoke the shared note viewer"
+
+    def test_notes_deeplink_opens_note_modal(self, http_client, page, base_url, page_errors):
+        """6.4 — /notes?path=<note> opens EOS_UI.viewNote with the note's content."""
+        note_path = f"00_Inbox/{TEST_PREFIX}notes-deeplink.md"
+        marker = f"{TEST_PREFIX}deep-link marker body"
+        assert_ok(
+            http_client.post(
+                "/api/vault/write",
+                json={"path": note_path, "content": f"# Deep link test\n\n{marker}\n"},
+            )
+        )
+        page.goto(f"{base_url}/notes?path={note_path}", wait_until="domcontentloaded")
+        page.wait_for_selector("#eos-note-overlay.open", timeout=8000)
+        page.wait_for_selector(f"#eos-note-view >> text={marker}", timeout=8000)
+        js_errors = [e for e in page_errors if "favicon" not in str(e).lower()]
+        assert not js_errors, f"JS errors on /notes deep link: {js_errors}"
+
+    def test_notes_deeplink_no_path_redirects_to_search(self, page, base_url):
+        """6.4 — /notes with no ?path is a viewer with nothing to show, so it
+        hands off to the note-finder (search) instead of a blank dead-end."""
+        page.goto(f"{base_url}/notes", wait_until="domcontentloaded")
+        page.wait_for_url("**/search/", timeout=8000)
+        assert page.url.rstrip("/").endswith("/search"), (
+            f"bare /notes must redirect to /search/, landed on {page.url}"
+        )
+
+    def test_vault_read_serves_a_note_inside_the_vault(self, http_client):
+        """6.5 — GET /api/vault/read returns a note under the vault (the /notes
+        deep-link viewer's read path)."""
+        note_path = f"00_Inbox/{TEST_PREFIX}vault-read-guard.md"
+        marker = f"{TEST_PREFIX}inside-vault body"
+        assert_ok(
+            http_client.post(
+                "/api/vault/write",
+                json={"path": note_path, "content": f"# guard\n\n{marker}\n"},
+            )
+        )
+        data = assert_ok(http_client.get(f"/api/vault/read?path={note_path}"))
+        assert marker in data.get("content", "")
+        assert data.get("relative") == note_path
+
+    @pytest.mark.parametrize(
+        "evil",
+        [
+            "../../../../../../etc/passwd",
+            "00_Inbox/../../../../escape.md",
+            "/etc/hosts",
+            "C:/Windows/win.ini",
+        ],
+    )
+    def test_vault_read_refuses_traversal(self, http_client, evil):
+        """6.5 — /api/vault/read refuses paths that escape the vault root
+        (mirrors /api/vault/file + /write). Regression for the read route
+        shipping unguarded while its siblings guarded (2026-07-22)."""
+        r = http_client.get("/api/vault/read", params={"path": evil})
+        assert r.status_code == 403, (
+            f"traversal {evil!r} must be refused, got {r.status_code}: {r.text[:120]}"
+        )

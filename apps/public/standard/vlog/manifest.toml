@@ -35,6 +35,8 @@ prefix = "/vlog"
 [provides.events]
 emits = ["vlog:saved", "vlog:montage_ready"]
 
+# internal: CRUD churn; vlog:montage_ready is the wired milestone
+internal = ["vlog:saved"]
 [provides.timeline]
 entity_source = "day_path"
 

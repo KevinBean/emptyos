@@ -950,7 +950,7 @@ class HubApp(BaseApp):
         else:
             action = {"kind": "navigate", "href": (template or "/search/?q={q}").format(q=quote(text, safe=""))}
 
-        asyncio.create_task(self.emit("hub:routed", {"shape": shape, "source": source, "rule": rule or ""}))
+        self.spawn_background(self.emit("hub:routed", {"shape": shape, "source": source, "rule": rule or ""}))
         return {
             "ok": True,
             "shape": shape,

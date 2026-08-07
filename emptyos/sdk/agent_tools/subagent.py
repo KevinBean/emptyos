@@ -276,7 +276,7 @@ class SubAgentTool(Tool):
                 "tools": sorted(tools.keys()),
                 "started": _utcnow(),
             })
-            asyncio.create_task(
+            app.spawn_background(
                 self._run_background(
                     app, handle, task, system, provider, tools, tool_consent, max_iters,
                     isolate=isolate,

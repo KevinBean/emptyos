@@ -207,7 +207,7 @@ async def _fail(self, item_id: str, error: str) -> dict:
         item_id,
         {"status": "failed", "error": error},
     ) or {"id": item_id, "status": "failed", "error": error}
-    asyncio.create_task(self.emit("video-digest:failed", {"id": item_id, "error": error}))
+    self.spawn_background(self.emit("video-digest:failed", {"id": item_id, "error": error}))
     return patched
 
 
@@ -253,7 +253,7 @@ async def api_queue(self, request):
         items.append(item)
         await self._write_queue(items)
 
-    asyncio.create_task(self.emit("video-digest:queued", {"id": item["id"], "url": url}))
+    self.spawn_background(self.emit("video-digest:queued", {"id": item["id"], "url": url}))
     return {"ok": True, "item": item}
 
 
@@ -366,7 +366,7 @@ async def api_adopt(self, request):
             items.append(item)
         await self._write_queue(items)
 
-    asyncio.create_task(
+    self.spawn_background(
         self.emit(
             "video-digest:digested",
             {
@@ -432,7 +432,7 @@ async def api_drain(self, request):
         await self._update_item(pending[0]["id"], {"status": "running", "error": None})
         or pending[0]
     )
-    asyncio.create_task(self._drain_loop(first_item=first))
+    self.spawn_background(self._drain_loop(first_item=first))
     return {"ok": True, "pending": len(pending), "started": True}
 
 

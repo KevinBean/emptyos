@@ -69,18 +69,28 @@ class ToolConsentManager:
     """
 
     DEFAULT_TIMEOUT_SECONDS = 300  # tools wait longer than cloud consent — user may walk away
+    # "Approve for this session" is a convenience, not a standing grant. Without
+    # an expiry it lived until the daemon restarted, which on a long-lived
+    # daemon is indistinguishable from "always".
+    DEFAULT_SESSION_TTL_SECONDS = 3600
 
     def __init__(
         self,
         policy: Policy = "ask",
         events: EventBus | None = None,
         ui: PermissionUI | None = None,
+        session_ttl_s: float | None = None,
+        now: Callable[[], float] = time.time,
     ):
         self.policy = policy if policy in ("ask", "auto", "deny") else "ask"
         self.events = events
         self.ui = ui
-        # Session-scoped approvals: (session_id, tool_name) set
-        self._session_approved: set[tuple[str, str]] = set()
+        self.session_ttl_s = (
+            self.DEFAULT_SESSION_TTL_SECONDS if session_ttl_s is None else session_ttl_s
+        )
+        self._now = now  # injectable for tests; never call time.time() directly
+        # Session-scoped approvals: (session_id, tool_name) -> expiry timestamp
+        self._session_approved: dict[tuple[str, str], float] = {}
         # In-flight requests by id
         self._pending: dict[str, _PendingToolRequest] = {}
         # Latest decision per (session_id, tool_name) — for UI display
@@ -95,8 +105,14 @@ class ToolConsentManager:
         self.ui = ui
 
     def reset_session(self, session_id: str):
-        """Clear all approvals for a session (e.g. on session close)."""
-        self._session_approved = {(s, t) for (s, t) in self._session_approved if s != session_id}
+        """Clear all approvals for a session. Call this on session close.
+
+        Wired to `agent.api_delete_session`; before that it had zero callers, so
+        a "for this session" grant outlived the session it was scoped to.
+        """
+        self._session_approved = {
+            k: v for k, v in self._session_approved.items() if k[0] != session_id
+        }
 
     async def check(
         self,
@@ -142,9 +158,15 @@ class ToolConsentManager:
         if self.policy == "auto":
             return True
 
-        # Session-level approval short-circuit
-        if (session_id, tool) in self._session_approved:
-            return True
+        # Session-level approval short-circuit — expires, see session_ttl_s.
+        key = (session_id, tool)
+        expiry = self._session_approved.get(key)
+        if expiry is not None:
+            if self._now() < expiry:
+                return True
+            # Expired: evict so a stale grant can never be reused, then fall
+            # through to a fresh prompt.
+            self._session_approved.pop(key, None)
 
         # Otherwise: ask.
         req_id = uuid.uuid4().hex[:12]
@@ -211,27 +233,66 @@ class ToolConsentManager:
         finally:
             self._pending.pop(req_id, None)
 
-    def approve(self, request_id: str, *, scope: Scope = "once") -> bool:
-        """Approve a pending request. `scope=session` remembers for this session."""
+    def _session_matches(
+        self, pending: _PendingToolRequest, expected_session_id: str | None,
+    ) -> bool:
+        """Is the decider allowed to decide THIS request?
+
+        `expected_session_id` is the session the deciding transport belongs to
+        (the agent websocket knows its own). It is optional because the CLI path
+        has no socket-session context — omitting it skips the check, which is
+        the pre-existing behaviour.
+
+        This is not id-guessing hardening: `agent:permission_requested` carries
+        the request id over the event bus, which `/ws` broadcasts to every
+        connected client. The id is handed out, so the binding is what stops one
+        session's client from deciding another session's tool call.
+        """
+        if not expected_session_id or pending.session_id == expected_session_id:
+            return True
+        self._last_decision[(pending.session_id, pending.tool)] = {
+            "decision": "refused",
+            "reason": f"session mismatch (from {expected_session_id!r})",
+            "at": self._now(),
+        }
+        return False
+
+    def approve(
+        self,
+        request_id: str,
+        *,
+        scope: Scope = "once",
+        expected_session_id: str | None = None,
+    ) -> bool:
+        """Approve a pending request. `scope=session` remembers it until the
+        grant's TTL elapses or the session is reset."""
         pending = self._pending.get(request_id)
         if not pending:
             return False
+        if not self._session_matches(pending, expected_session_id):
+            return False
         return self._resolve(pending, True, scope)
 
-    def deny(self, request_id: str) -> bool:
+    def deny(
+        self, request_id: str, *, expected_session_id: str | None = None,
+    ) -> bool:
+        """Deny a pending request. Also session-bound — a denial is a decision,
+        and another session must not make it either."""
         pending = self._pending.get(request_id)
         if not pending:
+            return False
+        if not self._session_matches(pending, expected_session_id):
             return False
         return self._resolve(pending, False, "once")
 
     def _resolve(self, pending: _PendingToolRequest, approved: bool, scope: Scope) -> bool:
         key = (pending.session_id, pending.tool)
         if approved and scope == "session":
-            self._session_approved.add(key)
+            self._session_approved[key] = self._now() + self.session_ttl_s
         self._last_decision[key] = {
             "decision": "approved" if approved else "denied",
             "scope": scope,
-            "at": time.time(),
+            "at": self._now(),
         }
         if not pending.future.done():
             pending.future.set_result(approved)

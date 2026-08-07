@@ -437,7 +437,7 @@ class TauriTarget:
 
         # Background drain — non-blocking; the caller gets back the record
         # immediately while output streams to the log file.
-        asyncio.create_task(
+        asyncio.create_task(  # noqa: eos-bgtask  (plain target class — no app to reach; long-lived process drain)
             _drain_process(proc, log_path, on_log),
             name=f"forge-dev-drain-{proc.pid}",
         )

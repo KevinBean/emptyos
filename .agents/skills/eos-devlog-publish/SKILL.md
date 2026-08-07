@@ -1,6 +1,6 @@
 ---
 name: eos-devlog-publish
-description: Turn EmptyOS session devlogs into DRAFT posts on the EmptyOS site (eos.binbian.net). Reads session sections from `{vault}/10_Projects/emptyos/log/YYYY-MM-DD.md`, writes them as `type: post` notes with `publish: false` by default under the EmptyOS site source. Posts show up in the Publish app's Drafts tab for review — user flips `publish: true` when ready. Pass `--publish` to skip the draft step. Checks discrepancies vs what's already published, triggers local rebuild, never auto-deploys. Use when the user says "publish devlog", "draft session", "save session as draft", "blog this session", or wants to surface session work publicly after `/eos-session-wrapup`.
+description: Turn EmptyOS session devlogs into DRAFT posts on the EmptyOS site (eos.binbian.net). Reads session sections from `{vault}/10_Projects/emptyos/log/YYYY-MM-DD.md`, writes them as draft post notes (unpublished by default) under the EmptyOS site source. Posts show up in the Publish app's Drafts tab for review — user flips the publish flag to true when ready. Pass `--publish` to skip the draft step. Checks discrepancies vs what's already published, triggers local rebuild, never auto-deploys. Use when the user says "publish devlog", "draft session", "save session as draft", "blog this session", or wants to surface session work publicly after `/eos-session-wrapup`.
 ---
 
 # EmptyOS Devlog Publish

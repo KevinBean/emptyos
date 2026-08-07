@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>Forge — EmptyOS</title>
-<script>try{var _t=localStorage.getItem('eos-theme')||'eos';if(['eos','digital-garden','soft-light','warm-dark','void-dark','nord'].indexOf(_t)<0){_t='eos';localStorage.setItem('eos-theme','eos');}document.documentElement.classList.add('theme-'+_t);}catch(e){document.documentElement.classList.add('theme-eos');}</script>
+<script>try{var _t=localStorage.getItem('eos-theme')||'eos';if(!/^[a-z][a-z0-9-]{0,31}$/.test(_t))_t='eos';document.documentElement.classList.add('theme-'+_t);}catch(e){document.documentElement.classList.add('theme-eos');}</script>
 <link rel="stylesheet" href="/static/theme.css">
 <link rel="stylesheet" href="/static/eos-components.css">
 <script src="/static/eos.js"></script>

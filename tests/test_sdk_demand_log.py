@@ -6,6 +6,8 @@ Pure in-process — no daemon required.
 from __future__ import annotations
 
 import asyncio
+import json
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
@@ -82,6 +84,57 @@ def test_summarize_groups_soil_requests(tmp_path):
     assert summary["by_kind"]["unmet_dependency"] == 2
     assert summary["top_missing"][0] == {"item": "connector:telegram", "count": 2}
     assert summary["recent_unmet_dependencies"][0]["app"] == "rooms"
+    # No window requested -> all-time, unchanged.
+    assert summary["window_days"] is None
+
+
+def test_summarize_window_drops_stale_demand(tmp_path):
+    """Demand decays: a dependency met months ago must stop driving a
+    'build this' growth signal, while cumulative volume stays honest.
+
+    Regression for the news-center signal, which kept recommending a retired
+    app for seven weeks after briefing/opportunity-radar migrated away.
+    """
+    stale = (datetime.now(timezone.utc) - timedelta(days=50)).isoformat(timespec="seconds")
+    fresh = (datetime.now(timezone.utc) - timedelta(days=2)).isoformat(timespec="seconds")
+    demand_log.append(
+        tmp_path,
+        {"ts": stale, "app": "briefing", "kind": "unmet_dependency",
+         "missing": ["app:news-center"]},
+    )
+    demand_log.append(
+        tmp_path,
+        {"ts": fresh, "app": "radar", "kind": "unmet_dependency",
+         "missing": ["app:still-wanted"]},
+    )
+
+    windowed = demand_log.summarize(tmp_path, window_days=30)
+    items = [m["item"] for m in windowed["top_missing"]]
+    assert "app:news-center" not in items
+    assert "app:still-wanted" in items
+    assert [e["app"] for e in windowed["recent_unmet_dependencies"]] == ["radar"]
+    # Cumulative volume is history, not demand — it must NOT shrink.
+    assert windowed["total"] == 2
+    assert windowed["by_kind"]["unmet_dependency"] == 2
+    assert windowed["window_days"] == 30
+
+    # ...and the all-time view still sees everything.
+    assert "app:news-center" in [m["item"] for m in demand_log.summarize(tmp_path)["top_missing"]]
+
+
+def test_summarize_window_keeps_undated_entries(tmp_path):
+    """An entry we can't date counts as in-window — dropping it would
+    silently shrink the signal the window exists to sharpen."""
+    demand_log.append(tmp_path, {"kind": "unmet_dependency", "missing": ["app:undated"]})
+    # append() stamps ts, so strip it to simulate a hand-written/legacy line.
+    path = tmp_path / demand_log.LOG_FILENAME
+    rows = [json.loads(x) for x in path.read_text(encoding="utf-8").splitlines() if x.strip()]
+    for r in rows:
+        r.pop("ts", None)
+    path.write_text("\n".join(json.dumps(r) for r in rows) + "\n", encoding="utf-8")
+
+    summary = demand_log.summarize(tmp_path, window_days=30)
+    assert [m["item"] for m in summary["top_missing"]] == ["app:undated"]
 
 
 # ---------- BaseApp._record_demand ----------

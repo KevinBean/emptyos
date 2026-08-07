@@ -32,6 +32,19 @@ from .parser import AUTHOR_MARKER, MOOD_EMOJI, extract_section, parse_entries, r
 
 class JournalApp(BaseApp):
 
+    def _atomic_note_writes_enabled(self) -> bool:
+        return bool(self.setting_or_config(
+            "journal.feature.atomic-note-writes.enabled",
+            False,
+            config_key="feature.atomic-note-writes.enabled",
+        ))
+
+    async def _write_note(self, path: Path, content: str):
+        """Write a journal note, optionally through atomic replacement."""
+        return await self.write(
+            str(path), content, atomic=self._atomic_note_writes_enabled()
+        )
+
     async def setup(self):
         await super().setup()
         # Pre-warm the related-entries embedding index in the background so
@@ -40,7 +53,9 @@ class JournalApp(BaseApp):
         # OpenAI). Quiet failure — the related panel handles unavailable
         # embeddings gracefully.
         if getattr(self, "embeddings_available", False):
-            asyncio.create_task(self._warm_related_index())
+            # spawn_background, not a bare create_task: asyncio only weak-refs a
+            # running task, so this warm-up could be collected mid-flight.
+            self.spawn_background(self._warm_related_index(), label="related index")
 
     async def _warm_related_index(self):
         try:
@@ -173,7 +188,7 @@ class JournalApp(BaseApp):
                 f"#### Three successful things\n\n"
                 f"1. \n2. \n3. \n"
             )
-            await self.write(str(path), content)
+            await self._write_note(path, content)
             await self.emit("journal:created", {"date": d.isoformat()})
             return content
 
@@ -525,7 +540,7 @@ class JournalApp(BaseApp):
                 current = (fm.get("author") or "user").strip().lower()
                 if current == "user":
                     new_content = set_frontmatter_field(new_content, "author", "both")
-            await self.write(str(self._daily_path(d)), new_content)
+            await self._write_note(self._daily_path(d), new_content)
         # Emit outside the lock — handlers that recurse back into journal
         # would deadlock otherwise.
         await self.emit("journal:entry", {"date": d.isoformat(), "mood": mood, "text": text})
@@ -616,8 +631,12 @@ class JournalApp(BaseApp):
             # First substantive entry text as a one-line preview so the recent
             # list shows what the day was about (the UI's .rd-preview slot read
             # a `preview` key that was never populated).
+            # `or ""` not `get(k, "")`: the default only applies to a MISSING
+            # key, so a present-but-None value still reaches .strip(). Safe today
+            # (parse_entries builds these in code) — cheap insurance if the
+            # entry ever comes from frontmatter instead.
             preview = next(
-                (e.get("text", "").strip() for e in entries if e.get("text", "").strip()),
+                ((e.get("text") or "").strip() for e in entries if (e.get("text") or "").strip()),
                 "",
             )
             results.append(

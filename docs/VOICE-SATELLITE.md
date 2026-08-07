@@ -183,9 +183,14 @@ The old `m5-bridge` sketch is mostly covered now:
 - ~~Device status screen feed~~ → **shipped** as the `devices` app's paper dashboard
   (server-rendered PNG composed from hub-panel sections; `docs/PAPER-DASHBOARD.md`).
 - ~~Hub tile~~ → **shipped**: `devices` contributes `panel_device_status()`.
-- Still open: physical **Approve/Reject** button for gated actions
-  (`call_app("rooms", "list_pending"/"apply_pending", …)`) and long-press → session grant
-  (`emptyos/sdk/autopilot.py::save_grant(actor_type="device", …)`; eligibility floor applies).
+- ~~physical **Approve/Reject** for gated actions~~ → **shipped**, on the
+  Cardputer Adv, not this puck: `firmware/cardputer_adv_chat/` — Tab shows the
+  oldest `GET /rooms/api/pending?status=open` entry, Y/N applies/rejects via
+  `POST /rooms/api/pending/{id}/apply|reject`. No board before it had a keyboard
+  to build this on. Still open: the same review surface on a *voice* device
+  (this puck has no way to say "yes"/"no" without a button), and long-press →
+  session grant (`emptyos/sdk/autopilot.py::save_grant(actor_type="device", …)`;
+  eligibility floor applies).
 - The M5Paper Color carries the same ES8311 codec family as the Echo Base, so a later phase
   can fold this voice path into the paper board (one device = dashboard + puck) — verify the
   ~2× ADC/DAC clock quirk first (`voice_satellite.ino` `audioInit`).

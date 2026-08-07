@@ -6,7 +6,7 @@ import asyncio
 import inspect
 import json
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from datetime import UTC
 from functools import cached_property
 from pathlib import Path
@@ -133,18 +133,102 @@ class BaseApp:
         self.kernel = kernel
         self.manifest = manifest
         self._event_unsubs: list = []
+        # Strong refs to detached tasks — background event handlers AND
+        # setup-time warm-ups. asyncio only weak-refs a running task.
+        self._bg_tasks: set = set()
 
     async def setup(self):
         """Called when app is loaded. Override to register handlers and get services."""
         for meta, method in self._get_decorated("_eos_event"):
-            unsub = self.kernel.events.on(meta["type"], method)
+            handler = method
+            if meta.get("background"):
+                handler = self._detached_handler(method, meta["type"])
+            unsub = self.kernel.events.on(meta["type"], handler)
             self._event_unsubs.append(unsub)
+
+    def _detached_handler(self, method, event_type: str):
+        """Wrap an ``@on_event(..., background=True)`` handler so bus dispatch
+        does not await it (see the decorator's docstring for when that is legal).
+
+        Returns a *non-awaitable* shim: ``EventBus.emit`` only awaits a result
+        that ``inspect.isawaitable`` accepts, so returning ``None`` is what
+        actually frees the bus. The spawned task is held in a strong-ref set —
+        asyncio only keeps a weak reference to running tasks and will otherwise
+        garbage-collect one mid-flight.
+        """
+        import asyncio
+        import inspect as _inspect
+
+        async def _run(event):
+            try:
+                result = method(event)
+                if _inspect.isawaitable(result):
+                    await result
+            except asyncio.CancelledError:
+                raise
+            except Exception as e:
+                # Same message shape as EventBus's own handler-error log, so a
+                # detached handler stays attributable to its app and keeps being
+                # picked up as a code-bug by trace-miner. A background handler
+                # that failed invisibly would recreate the exact silent-failure
+                # class this opt-in was added alongside.
+                try:
+                    self.kernel.syslog.error(
+                        "event_bus",
+                        f"Handler error for {event_type}: {e}",
+                        data={
+                            "event_type": event_type,
+                            "app": getattr(self.manifest, "id", ""),
+                            "background": True,
+                        },
+                    )
+                except Exception:
+                    pass
+
+        def _spawn(event):
+            # spawn_background owns tracking + teardown; the try/except in _run
+            # owns the message format, so its own error path never fires here.
+            self.spawn_background(_run(event), label=f"on_event {event_type}")
+            return None  # not awaitable → the bus continues immediately
+
+        return _spawn
+
+    def spawn_background(self, coro, *, label: str = ""):
+        """Run a coroutine detached from the caller, holding a strong reference.
+
+        For setup-time warm-ups: cache priming, index building — work that must
+        not delay app load and whose result nobody awaits. Awaiting one of these
+        in `setup()` blocks the whole app loader, which is how garden became the
+        slowest load on the daemon at 2.5s median / 31.7s worst.
+
+        Use this rather than a bare `asyncio.create_task`: asyncio keeps only a
+        WEAK reference to a running task, so a fire-and-forget warm-up can be
+        garbage-collected mid-flight — silently, and more often under memory
+        pressure, which is exactly when a boot is already struggling. Failures
+        are logged instead of vanishing into a never-retrieved exception.
+        """
+        from emptyos.sdk.background import spawn_tracked
+
+        def _log(e: BaseException) -> None:
+            try:
+                self.kernel.syslog.warn(
+                    "app_loader",
+                    f"background task failed in '{getattr(self.manifest, 'id', '?')}'"
+                    f"{(' (' + label + ')') if label else ''}: {e}",
+                )
+            except Exception:
+                pass
+
+        return spawn_tracked(coro, tasks=self._bg_tasks, on_error=_log)
 
     async def teardown(self):
         """Called when app is stopped. Override for cleanup."""
+        from emptyos.sdk.background import cancel_tracked
+
         for unsub in self._event_unsubs:
             unsub()
         self._event_unsubs.clear()
+        cancel_tracked(self._bg_tasks)
         # Close per-app SQLite connection if opened
         if "db" in self.__dict__:
             try:
@@ -1695,12 +1779,34 @@ class BaseApp:
     # it first (the underlying vec is keyed on text hash, not app id).
 
     def _embedder(self):
+        """The daemon's shared Embedder.
+
+        Cached on the KERNEL, not on each app. It was per-app-instance until
+        2026-08-05, which meant every app touching embeddings kept its own copy
+        of the same on-disk cache — and that cache is 265 MB / 0.39 GB resident,
+        so N apps meant N parses and N copies of identical vectors. The file is
+        already content-hash keyed and shared by path ("shared.json"), so the
+        per-app split bought nothing: it was duplication, not isolation.
+
+        Sharing also means the first app to actually embed warms the cache for
+        every other one, instead of each paying the load separately.
+        """
         from emptyos.sdk.embeddings import Embedder
 
-        if not hasattr(self, "_embedder_instance"):
-            cache_path = self.kernel.config.data_dir / "embeddings" / "shared.json"
-            self._embedder_instance = Embedder(cache_path=cache_path)
-        return self._embedder_instance
+        cache_path = self.kernel.config.data_dir / "embeddings" / "shared.json"
+        key = str(cache_path)
+        shared = getattr(self.kernel, "_eos_embedders", None)
+        if shared is None:
+            shared = {}
+            try:
+                self.kernel._eos_embedders = shared
+            except Exception:
+                # A kernel stand-in that refuses attributes (test doubles) —
+                # fall back to per-app so behaviour degrades rather than breaks.
+                return Embedder(cache_path=cache_path)
+        if key not in shared:
+            shared[key] = Embedder(cache_path=cache_path)
+        return shared[key]
 
     async def embed_text(self, text: str) -> list[float]:
         """Single-shot embed. Returns 1536-dim vector (or zero-vec if no API key)."""
@@ -2405,6 +2511,38 @@ class BaseApp:
         from emptyos.sdk.run_registry import RunRegistry
 
         return RunRegistry(self.data_dir / kind, state_filename=state_filename)
+
+    def stopped_runs_panel(
+        self,
+        *,
+        href: str,
+        kind: str = "runs",
+        label_fields: Sequence[str] = ("title",),
+        total_stages: int = 0,
+        limit: int = 5,
+        scan: int = 20,
+    ) -> list[dict] | None:
+        """Hub-panel rows for this app's staged runs that need a human.
+
+        The body of a ``[[contributes.hub.panel]]`` method for any Pipeline
+        consumer — a run that a gate paused for approval, or that failed, keeps
+        its completed stages on disk and is resumable, but nothing outside the
+        app says so. Returns ``None`` when nothing is stopped (no panel) and
+        never raises: a home screen must not break because a run folder is
+        unreadable.
+        """
+        from emptyos.sdk.pipeline import stopped_run_rows
+
+        try:
+            return stopped_run_rows(
+                self.runs(kind).recent_states(scan),
+                href=href,
+                label_fields=label_fields,
+                total_stages=total_stages,
+                limit=limit,
+            )
+        except Exception:
+            return None
 
     def load_state(self, default: Any = None) -> Any:
         """Load persistent state from disk."""

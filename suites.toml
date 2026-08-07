@@ -113,7 +113,7 @@ name = "Companion"
 line = "consumer"
 pitch = "The AI you talk to — chat, voice, rooms, agents — with you, not for you."
 pitch_zh = "可以对话的 AI——聊天、语音、房间、Agent——与你一起，而不是替你。"
-surface = ""   # candidate: promote `portal` (already the universal entry surface)
+surface = "portal"   # the one conversation door: rooms / assistant / agent / code modes
 apps = [
     "assistant",
     "voice-assistant",
@@ -170,4 +170,3 @@ apps = [
     "forge",
     "operate",
 ]
-

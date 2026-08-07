@@ -213,6 +213,54 @@ class BlenderPlugin(BasePlugin):
         finally:
             script_path.unlink(missing_ok=True)
 
+    async def run_script_file(
+        self,
+        script_path: str,
+        args: list[str] | None = None,
+        *,
+        timeout: float = 900,
+        blend_file: str = "",
+    ) -> tuple[int, str, str]:
+        """Run an existing .py inside headless Blender, passing ``args`` after ``--``.
+
+        Two differences from ``run_script``, both deliberate:
+
+        * it takes a **path**, so a version-controlled, testable script can be
+          run with arguments — `run_script` only accepts code text and has no
+          way to pass argv, which is why callers were reaching past the plugin
+          and re-implementing executable lookup and subprocess handling;
+        * it **returns** ``(returncode, stdout, stderr)`` instead of raising.
+          A script that signals a refusal through its exit code — a validation
+          gate rejecting bad input — is not an error the caller wants as an
+          exception. Callers that do want the strict behaviour keep using
+          ``run_script``.
+
+        ``-noaudio`` is passed because a headless render has no audio device and
+        Blender otherwise probes for one.
+        """
+        cmd = [self._blender_exe(), "--background", "-noaudio"]
+        if blend_file:
+            cmd.append(blend_file)
+        cmd.extend(["--python", str(script_path)])
+        if args:
+            cmd.append("--")
+            cmd.extend(str(a) for a in args)
+        proc = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        try:
+            out, err = await asyncio.wait_for(proc.communicate(), timeout=timeout)
+        except asyncio.TimeoutError:
+            proc.kill()
+            return 124, "", f"blender timed out after {timeout}s"
+        return (
+            proc.returncode or 0,
+            (out or b"").decode("utf-8", "replace"),
+            (err or b"").decode("utf-8", "replace"),
+        )
+
     # --- High-level operations ---
 
     async def render(

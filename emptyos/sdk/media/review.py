@@ -34,6 +34,25 @@ frame-sampling slice 2026-07-03 (ffmpeg ``freezedetect`` + ``blackdetect`` —
 catches the frozen-end-state / all-black clip a container probe can't see);
 its first consumer is viz's Export-MP4 self-check (behind
 ``[apps.viz] feature.output-review.enabled``).
+
+Two graduation candidates, both surfaced by the 2026-07-31 Log Out MV audit and
+both waiting on a decision rather than on a second consumer:
+
+1. **A tri-state verdict.** ``MediaVerdict`` is pass/fail; the skill checker at
+   ``.claude/skills/tool-blender-comfyui-video/scripts/check_hybrid_video.py``
+   independently re-implements freezedetect+blackdetect *only* to report a third
+   state — ``technical_status: "review"``, meaning "a human must decide". The two
+   disagreed on the Log Out v6 master purely on threshold (5 near-duplicate
+   intervals at ``-50dB`` vs 0 at this module's ``n=0.003``), and both readings
+   were correct for their purpose. The honest merge is to give this module the
+   tri-state, not to keep two implementations. Compare ``PipelineReviewRequired``,
+   which is the same shape one layer up.
+2. **``apps/personal/music-studio/source_quality.py``** holds generic media logic
+   next door to this file — ``file_sha256``, ``measure_motion_pair_visibility``,
+   ``measure_temporal_motion_persistence``, ``audit_edl_temporal_motion``. It is
+   *gitignored* yet already imported by tracked code (``scripts/mv_recut_proof.py``
+   and four tests, by file path), so no CI outside that machine can see it. That
+   inversion — tracked code depending on an untracked file — is the trigger.
 """
 
 from __future__ import annotations
@@ -326,6 +345,7 @@ async def review_video(
     sample_frames: bool = True,
     frozen_hard_frac: float = 0.9,
     frozen_soft_frac: float = 0.5,
+    freeze_noise: float = 0.003,
 ) -> MediaVerdict:
     """Video review — probe facts (non-empty file, positive duration, optional
     audio track) plus, when ``sample_frames`` is on, a frame-sampling pass via
@@ -333,6 +353,10 @@ async def review_video(
     for ≥ ``frozen_hard_frac`` of its duration hard-fails (the frozen-end-state
     a recorder produces when it can't seek the timeline), ≥ ``frozen_soft_frac``
     soft-flags.
+
+    ``freeze_noise`` is ffmpeg's per-pixel tolerance. The default preserves the
+    generic review posture; callers reviewing diffusion video may raise it so
+    low-amplitude model shimmer does not masquerade as movement.
 
     Fails open exactly like :func:`review_audio`."""
     p = Path(path)
@@ -384,7 +408,7 @@ async def review_video(
             freeze_d = min(2.0, dur / 4)
             err = await _run_stderr(ffmpeg, [
                 "-hide_banner", "-nostats", "-i", str(p),
-                "-vf", f"freezedetect=n=0.003:d={freeze_d:.3g},"
+                "-vf", f"freezedetect=n={freeze_noise:.4g}:d={freeze_d:.3g},"
                        f"blackdetect=d={freeze_d:.3g}:pix_th=0.10",
                 "-an", "-f", "null", "-",
             ])

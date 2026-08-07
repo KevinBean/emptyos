@@ -15,7 +15,10 @@ D:\emptyos\
 │   ├── extension/          #   engineering/ … dev/ others/ labs/ — tracked, never public
 │   └── personal/           #   user apps + labs/ (gitignored)
 ├── plugins/                # auto-discovered, loaded before apps
-├── products/               # standalone exe builds sliced from apps (see .claude/rules/product-packaging.md)
+├── products/               # double-clickable builds: a slice of apps (writedesk) OR the whole
+│                           #   daemon (desktop-windows). One product = one product.toml naming a
+│                           #   release.toml tier; shared pipeline in products/_shared/.
+│                           #   See .claude/rules/product-packaging.md + docs/DESKTOP.md
 ├── engines/personal/       # User engines (gitignored)
 ├── data/                   # Runtime state
 ├── emptyos.toml            # Machine config (.gitignored)

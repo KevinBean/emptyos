@@ -94,6 +94,17 @@ implemented nowhere; the registry exposed it and it was retired 2026-06-07).
   agent-config picklist. Read-only; `surfaces ∋ "agent"` = *offered*, the
   per-agent `server_actions` JSON stays the execution allowlist.
 
+- **Suite migration (2026-08-08):** the English/communication suite joined —
+  `speaking.list_sessions`, `shadowing.generate_sentences`,
+  `english.practice_stats`, `improv.get_warmup` (assistant) plus
+  `improv.start_scene`, `phrase-bank.start_drill` (voice). Registry 90 → 96.
+  Every legacy block deleted, not shadowed. Sandbox-verified after the swap,
+  which is the part that can silently break: sweep 0 drift with all six
+  resolving, all four slash commands still among the assistant's 68, both voice
+  verbs still among the 63 live intents. `english`'s voice **companion** (emma)
+  and **context** stayed legacy on purpose — separate contribution types, not
+  verbs.
+
 **All 6 phases complete (2026-06-07).** Voice + assistant + MCP surfaces are
 single-source (legacy declarations deleted); the agent picklist + autopilot floor
 read the registry. Remaining legacy `[[contributes.voice-assistant.intent]]` /

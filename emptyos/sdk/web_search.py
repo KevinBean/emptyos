@@ -42,13 +42,22 @@ import urllib.request
 import uuid
 from urllib.parse import quote_plus, urlparse
 
+from emptyos.sdk.web_politeness import host_gate, robots_allows
+
 
 def ddg_search(query: str, max_results: int) -> list[dict]:
-    """Return [{url, title}] from DuckDuckGo's lite API via ``ddgs``.
+    """Return [{url, title, snippet}] from DuckDuckGo's lite API via ``ddgs``.
 
     Synchronous + blocking — call via ``asyncio.to_thread`` so the daemon's
     event loop stays responsive. Deduplicates by URL so the same source
     from .text and .news indices doesn't count twice.
+
+    ``snippet`` is ddgs' ``body`` field — the SERP excerpt. It is what lets a
+    caller triage relevance *before* paying for a full ``read_web_source``
+    navigation (see :func:`triage_hits`), which is the dominant cost in every
+    research pipeline. Treat it as optional on read (``h.get("snippet") or ""``):
+    the vertical channels below populate it only where their API already
+    carries a description, so a merged multi-channel result set will have gaps.
     """
     from ddgs import DDGS
 
@@ -61,10 +70,57 @@ def ddg_search(query: str, max_results: int) -> list[dict]:
             if not url or url in seen or not title:
                 continue
             seen.add(url)
-            out.append({"url": url, "title": title})
+            out.append({
+                "url": url,
+                "title": title,
+                "snippet": " ".join((hit.get("body") or "").split()),
+            })
             if len(out) >= max_results:
                 break
     return out
+
+
+def triage_hits(hits: list[dict], query: str, *, keep_min: int = 2) -> list[dict]:
+    """Drop search hits whose snippet+title share no term with ``query``.
+
+    The cheap half of snippet triage: deterministic, no model call, no new
+    failure mode beyond "kept too many". Returns hits in their original order.
+
+    Deliberately conservative — a hit with **no** snippet is always kept (we
+    can't judge what we can't see, and several vertical channels never populate
+    one), and at least ``keep_min`` hits survive even if nothing matches, so a
+    query whose terms don't appear verbatim in any excerpt can't be triaged down
+    to nothing. That floor is the guard against the one real risk here: silently
+    discarding the single good source.
+
+    **MEASURED 2026-07-20: this is close to a no-op on real SERP data, and the
+    reason is structural.** A search-engine snippet *is* the fragment containing
+    the query match, so "snippet shares a term with the query" is true for
+    essentially every hit an engine returns. Live checks kept 5/5 and 8/8 on
+    real DuckDuckGo results. It only bites on merged multi-channel sets where a
+    vertical channel contributed an off-topic hit with its own description.
+
+    Keep it as the cheap floor, but do **not** expect it to reduce fetch volume
+    on a normal query — the saving that motivated snippet triage needs semantic
+    relevance judgement (a ``select()`` over the snippets), which is deferred
+    with this evidence in ``docs/DEFERRED-WORK.md``. The measurement is the
+    point: deterministic-first was the right thing to try and the wrong thing
+    to ship alone.
+    """
+    terms = {t for t in re.findall(r"\w+", (query or "").lower()) if len(t) > 2}
+    if not terms or not hits:
+        return hits
+    kept, dropped = [], []
+    for h in hits:
+        snippet = (h.get("snippet") or "").strip()
+        if not snippet:
+            kept.append(h)
+            continue
+        hay = f"{h.get('title') or ''} {snippet}".lower()
+        (kept if any(t in hay for t in terms) else dropped).append(h)
+    if len(kept) >= keep_min:
+        return kept
+    return (kept + dropped)[: max(keep_min, len(kept))]
 
 
 def site_label(url: str) -> str:
@@ -264,6 +320,7 @@ async def read_web_source(
     per_page_chars: int = 8_000,
     timeout_s: float = 20.0,
     context_id: str = "",
+    automated: bool = False,
 ) -> dict:
     """Navigate + snapshot one public-web URL through ``app.browse()``.
 
@@ -276,15 +333,34 @@ async def read_web_source(
     Context ownership: pass ``context_id`` to reuse a caller-owned browser
     context across sources (caller closes it); omit it and this helper
     creates and closes a throwaway context per call.
+
+    ``automated`` declares the *nature of the caller*, and must be passed
+    explicitly by anything running unattended (scheduled sweeps, miners,
+    background digests). It gates robots.txt only: automated callers respect
+    ``Disallow`` and skip with ``error: "disallowed by robots.txt"``, while a
+    user-initiated read does not (a person asking a question is not crawling —
+    see ``emptyos/sdk/web_politeness.py``). Per-host pacing applies either way.
+    Default ``False`` keeps every existing call site interactive, which is what
+    all four of today's consumers are at their entry points.
     """
     url = (url or "").strip()
     if not is_http_url(url):
         return {"ok": False, "url": url, "error": "invalid URL"}
     owns_context = not context_id
     ctx_id = context_id or f"websrc-{uuid.uuid4().hex[:8]}"
+    # Only a context we actually navigated needs closing. Without this, a URL
+    # rejected by the SSRF or robots gate still called browse("close") on a
+    # context that was never created — which can lazily launch a browser purely
+    # to tear down nothing. Cheap when one URL is blocked; not cheap on an
+    # automated sweep where many are.
+    opened = False
     try:
         if not await asyncio.to_thread(is_public_web_url, url):
             return {"ok": False, "url": url, "error": "blocked non-public URL"}
+        if not await robots_allows(url, automated=automated):
+            return {"ok": False, "url": url, "error": "disallowed by robots.txt"}
+        await host_gate(url)
+        opened = True
         await app.browse(
             "navigate",
             url=url,
@@ -303,7 +379,7 @@ async def read_web_source(
     except Exception as e:
         return {"ok": False, "url": url, "error": f"{type(e).__name__}: {e}"}
     finally:
-        if owns_context:
+        if owns_context and opened:
             try:
                 await asyncio.wait_for(app.browse("close", context_id=ctx_id), timeout=3)
             except Exception:
@@ -312,6 +388,11 @@ async def read_web_source(
 
 # ── Vertical channel searchers ────────────────────────────────────────────
 # Same [{url, title}] shape as ddg_search so pipelines can merge channels.
+# ``snippet`` is OPTIONAL on this shape: populated only where the channel's own
+# response already carries a description (no extra request), absent elsewhere.
+# Merge code and triage must therefore tolerate a missing/empty snippet rather
+# than assume ddg_search's shape — see triage_hits, which keeps un-snippeted
+# hits rather than judging them.
 # All synchronous (urllib) — call via asyncio.to_thread.
 
 _SEARCH_UA = "EmptyOS-Research/0.1"
@@ -349,7 +430,11 @@ def github_search(query: str, max_results: int, *, token: str = "") -> list[dict
             continue
         desc = " ".join((item.get("description") or "").split())[:120]
         title = item.get("full_name") or url
-        out.append({"url": url, "title": f"{title} — {desc}" if desc else title})
+        out.append({
+            "url": url,
+            "title": f"{title} — {desc}" if desc else title,
+            "snippet": desc,
+        })
     return out
 
 
@@ -453,7 +538,11 @@ def openalex_search(query: str, max_results: int, *, mailto: str = "") -> list[d
     works). Preferred default for a scholar channel — Semantic Scholar's
     keyless tier 429s under shared load; OpenAlex doesn't.
     """
-    clean_query = query.replace("?", "").replace("*", "").replace("/", "")
+    # `?` and `*` are OpenAlex search operators, so they are dropped. `/` is not
+    # an operator but still breaks the query — and DELETING it fuses the two
+    # words it separated, so "AC/DC converter" went out as the unsearchable
+    # "ACDC converter". A space keeps both terms findable.
+    clean_query = query.replace("?", "").replace("*", "").replace("/", " ")
     url = (
         f"https://api.openalex.org/works?search={quote_plus(clean_query)}"
         f"&per-page={max_results}&select=title,publication_year,cited_by_count,doi,id,primary_location"

@@ -9,7 +9,7 @@
 <link rel="stylesheet" href="/static/eos-keys.css">
 <script>
 // Theme bootstrap — apply saved theme class before paint so tokens resolve.
-(function(){try{var t=localStorage.getItem('eos-theme')||'eos';if(['eos','digital-garden','soft-light','warm-dark','void-dark','nord'].indexOf(t)<0)t='eos';document.documentElement.className='theme-'+t;}catch(e){}})();
+(function(){try{var t=localStorage.getItem('eos-theme')||'eos';if(!/^[a-z][a-z0-9-]{0,31}$/.test(t))t='eos';document.documentElement.className='theme-'+t;}catch(e){}})();
 // Embed mode — trim chrome when rendered inside a Workspace iframe (?embed=1).
 (function(){try{if(new URLSearchParams(location.search).get('embed')==='1')document.documentElement.classList.add('eos-embed');}catch(e){}})();
 </script>

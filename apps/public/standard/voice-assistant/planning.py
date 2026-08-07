@@ -66,6 +66,21 @@ async def execute_plan(self, plan: dict, only_indices: list[int] | None = None) 
     Each step is `{"index", "verb", ok|error|skipped, "result"?}`.
     Failed steps are isolated — execution continues. Recent-apps deque is
     updated on each successful call so subsequent voice turns inherit scope.
+
+    **The plan is untrusted.** ``POST /api/execute-plan`` (and quick-action's
+    forwarder) accept a caller-supplied plan dict, and validation used to live
+    only in ``build_plan_dict`` — which those endpoints never call. So every
+    step is re-resolved here against the intent registry:
+
+    * the verb must be a known, in-scope intent;
+    * ``app``/``method`` are **derived from the registry entry**, never read
+      from the plan — otherwise a step could name a benign verb and dispatch
+      something else entirely;
+    * args are re-validated against the entry's schema.
+
+    ``build_plan_dict`` sets ``app``/``method`` from the same registry, so the
+    legitimate path is unchanged; this is the defense-in-depth pass
+    ``/api/confirm-intent`` already does.
     """
     calls = plan.get("calls") or []
     indices = (
@@ -82,15 +97,26 @@ async def execute_plan(self, plan: dict, only_indices: list[int] | None = None) 
         if call.get("error"):
             results.append({"index": i, "verb": call.get("verb"), "error": call["error"]})
             continue
-        app_id = call.get("app")
-        method = call.get("method")
-        if not app_id or not method:
+        verb = call.get("verb") or ""
+        entry = (getattr(self, "_intents", None) or {}).get(verb)
+        if entry is None:
             results.append(
-                {"index": i, "verb": call.get("verb"), "error": "missing app/method"}
+                {"index": i, "verb": verb, "error": f"unknown or out-of-scope intent: {verb}"}
             )
             continue
+        # Derived, not read from the plan — see the docstring.
+        app_id = entry.get("_app_id")
+        method = entry.get("method")
+        if not app_id or not method:
+            results.append({"index": i, "verb": verb, "error": "missing app/method"})
+            continue
+        args = call.get("args") or {}
+        ok, msg = self._validate_args(entry.get("args") or {}, args)
+        if not ok:
+            results.append({"index": i, "verb": verb, "error": msg})
+            continue
         try:
-            res = await self.call_app(app_id, method, **(call.get("args") or {}))
+            res = await self.call_app(app_id, method, **args)
         except Exception as e:
             results.append({"index": i, "verb": call.get("verb"), "error": str(e)})
             continue

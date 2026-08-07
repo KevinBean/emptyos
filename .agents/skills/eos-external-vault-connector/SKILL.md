@@ -1,3 +1,7 @@
+---
+name: eos-external-vault-connector
+description: Connect, disconnect, or check the status of Claude Code's link to the external markdown vault — the gate to full read/write access over the user's notes and personal data. Use when the user says "connect vault", "open/mount vault", "disconnect/unmount vault", "vault status", or "is the vault connected". NOT for reading/writing individual notes once connected (do that directly), and NOT for app vault-data migrations (use eos-vault-migration).
+---
 # EmptyOS External Vault Connector
 
 Connect/disconnect Codex to the external markdown vault. When connected, you gain full read/write access to the user's knowledge base, notes, and personal data.

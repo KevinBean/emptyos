@@ -190,11 +190,10 @@ body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-se
 var _appSettings = EOS_UI.settingsPanel({
     id: 'expense-settings-panel',
     title: 'Expense Settings',
-    fields: [
-        {key: 'expense.budget', label: 'Monthly Budget ($)', type: 'number', default: 3000, hint: 'Monthly spending target'},
-        {key: 'expense.default_category', label: 'Default Category', type: 'select', options: ['Dining','Groceries','Transport','Shopping','Bills','Health','Entertainment','Other'], default: 'Other'},
-        {key: 'expense.alert_threshold', label: 'Budget Alert at %', type: 'number', default: 80, hint: 'Show warning when spending exceeds this % of budget'},
-    ],
+    // Fields derive from the manifest [provides.settings] schema — one
+    // declaration, so a new setting can't reach /settings and miss this panel.
+    // (A hand-written fields: list had drifted, hiding the two recurring keys.)
+    app: 'expense',
 });
 function openAppSettings() { _appSettings.open(); }
 </script>

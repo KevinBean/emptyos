@@ -51,6 +51,43 @@ class TestRenderMarkdown:
         assert "<li>bullet one</li>" in html and "<em>" not in html
         assert_no_js_errors(page_errors)
 
+    def test_table_align_row_never_renders(self, page, base_url, page_errors):
+        """|---|---| separator becomes <thead>, never a visible dashes row
+        (pre-2026-07-22 bug: isAlignRow regex missed multi-column separators)."""
+        html = self._render(page, base_url, "| A | B |\n|---|---|\n| 1 | 2 |")
+        assert "<thead>" in html and "<th>A</th>" in html
+        assert "---" not in html
+        assert_no_js_errors(page_errors)
+
+    def test_obsidian_comments_stripped(self, page, base_url, page_errors):
+        """Paired %%...%% is author-only and never renders; %% inside a code
+        fence is preserved."""
+        html = self._render(page, base_url, "keep %%secret\nnote%% this\n\n```\na %%not a comment%% b\n```")
+        assert "secret" not in html and "keep" in html and "this" in html
+        assert "%%not a comment%%" in html
+        assert_no_js_errors(page_errors)
+
+    def test_block_style_frontmatter_tags_render(self, page, base_url, page_errors):
+        """Vault-mandated block-style tags (tags:\\n  - a) must appear as pills
+        in the Properties card (the old parser silently skipped them)."""
+        html = self._render(page, base_url, "---\ntags:\n  - career\n  - wellbeing\n---\n\nbody")
+        assert "obs-frontmatter" in html
+        assert "#career" in html and "#wellbeing" in html
+        assert_no_js_errors(page_errors)
+
+    def test_numbered_list_keeps_numbering(self, page, base_url, page_errors):
+        """1./2./3. lines become a real <ol> (previously collapsed into <ul>,
+        losing the numbers)."""
+        html = self._render(page, base_url, "1. first\n2. second")
+        assert "<ol>" in html and "<li>first</li>" in html
+        assert_no_js_errors(page_errors)
+
+    def test_highlight_renders_mark(self, page, base_url, page_errors):
+        """==text== renders as <mark> (parity with the PDF renderer)."""
+        html = self._render(page, base_url, "an ==important== word")
+        assert '<mark class="obs-mark">important</mark>' in html
+        assert_no_js_errors(page_errors)
+
 
 # =============================================================================
 # MODALS — shared EOS_UI modal/formModal/confirm + app-specific modals

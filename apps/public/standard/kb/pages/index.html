@@ -179,7 +179,7 @@ body { font-family:var(--font); background:var(--bg); color:var(--text); min-hei
 /* Article body + "On this page" scroll-spy TOC rail */
 .article-layout { display:flex; gap:28px; align-items:flex-start }
 .article-layout > .detail-body { flex:1 1 auto; min-width:0; max-width:820px }
-.detail-toc { flex:0 0 212px; position:sticky; top:16px; max-height:calc(100vh - 32px); overflow:auto; font-size:13px }
+.detail-toc { flex:0 0 212px; position:sticky; top:16px; max-height:calc(100dvh - 32px); overflow:auto; font-size:13px }
 .detail-toc[hidden] { display:none }
 .toc-title { font-size:11px; font-weight:600; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.06em; margin:0 0 8px 11px }
 .toc-nav { display:flex; flex-direction:column; border-left:1px solid var(--border) }
@@ -198,9 +198,9 @@ body { font-family:var(--font); background:var(--bg); color:var(--text); min-hei
 .toc-ch .toc-link.toc-clause { padding-left:22px }
 /* Full-text reader — 3-column docs layout (LEFT document TOC · CENTER text · RIGHT on-this-page) */
 .fulltext-layout { display:flex; gap:24px; align-items:flex-start }
-.ft-doc-toc { flex:0 0 232px; position:sticky; top:14px; max-height:calc(100vh - 36px); overflow:auto; font-size:12.5px }
+.ft-doc-toc { flex:0 0 232px; position:sticky; top:14px; max-height:calc(100dvh - 36px); overflow:auto; font-size:12.5px }
 .ft-body { flex:1 1 auto; min-width:0; max-width:780px; background:var(--bg-card); border:1px solid var(--border); border-radius:14px; padding:20px 26px; line-height:1.6 }
-.ft-onpage { flex:0 0 196px; position:sticky; top:14px; max-height:calc(100vh - 36px); overflow:auto; font-size:12px }
+.ft-onpage { flex:0 0 196px; position:sticky; top:14px; max-height:calc(100dvh - 36px); overflow:auto; font-size:12px }
 .ft-onpage[hidden] { display:none }
 .ft-toc-title { font-size:11px; font-weight:600; color:var(--text-muted); text-transform:uppercase; letter-spacing:.06em; margin:0 0 8px 4px }
 .ft-onpage-ch { font-size:11px; color:var(--text-secondary); margin:0 0 6px 4px }
@@ -247,7 +247,7 @@ body { font-family:var(--font); background:var(--bg); color:var(--text); min-hei
 /* ── Redesigned detail page: one docs page, no tabs ── */
 .kb-reading { display:flex; gap:24px; align-items:flex-start }
 .kb-reading-main { flex:1 1 auto; min-width:0; max-width:840px }
-.kb-docnav { flex:0 0 234px; position:sticky; top:14px; max-height:calc(100vh - 36px); overflow:auto; font-size:12.5px }
+.kb-docnav { flex:0 0 234px; position:sticky; top:14px; max-height:calc(100dvh - 36px); overflow:auto; font-size:12.5px }
 .kb-docnav[hidden] { display:none }
 #kb-fulltext-mount:empty { display:none }
 @media (max-width:1100px){ .kb-reading > .detail-toc { display:none } }
@@ -391,6 +391,26 @@ body { font-family:var(--font); background:var(--bg); color:var(--text); min-hei
 .kb-health-sev-head.warn { color:var(--warning) }
 .kb-health-clean { padding:24px; text-align:center; color:var(--success); font-size:14px }
 .kb-health-foot { margin-top:16px; padding-top:12px; border-top:1px solid var(--border); text-align:right }
+.kb-coverage-intro { margin:0 0 14px; color:var(--text-muted); font-size:13px; line-height:1.5 }
+.kb-coverage-stats { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:8px; margin-bottom:16px }
+.kb-coverage-stat { padding:10px; border:1px solid var(--border); border-radius:9px; background:var(--bg-card) }
+.kb-coverage-stat strong { display:block; color:var(--text-heading); font-size:19px; line-height:1.1 }
+.kb-coverage-stat span { display:block; margin-top:4px; color:var(--text-muted); font-size:11px }
+.kb-coverage-section { margin-top:16px }
+.kb-coverage-section h3 { margin:0 0 8px; color:var(--text-heading); font-size:12px; text-transform:uppercase; letter-spacing:.06em }
+.kb-coverage-list { border:1px solid var(--border); border-radius:9px; overflow:hidden }
+.kb-coverage-row { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:10px; padding:9px 11px; border-bottom:1px solid var(--border); color:var(--text); text-decoration:none }
+.kb-coverage-row:last-child { border-bottom:0 }
+a.kb-coverage-row:hover { background:color-mix(in srgb,var(--accent) 5%,var(--bg-card)) }
+.kb-coverage-name { min-width:0; font-size:13px; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
+.kb-coverage-meta { margin-top:3px; color:var(--text-muted); font-size:11px; font-weight:400; white-space:normal }
+.kb-coverage-side { display:flex; align-items:center; gap:8px; white-space:nowrap }
+.kb-coverage-count { color:var(--text-muted); font-size:11px }
+.kb-coverage-status { padding:2px 7px; border-radius:999px; border:1px solid var(--border); color:var(--text-muted); font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.04em }
+.kb-coverage-status.digested { color:var(--success); border-color:color-mix(in srgb,var(--success) 45%,var(--border)); background:color-mix(in srgb,var(--success) 10%,transparent) }
+.kb-coverage-status.undigested, .kb-coverage-status.clauses-only, .kb-coverage-status.metadata-only { color:var(--warning); border-color:color-mix(in srgb,var(--warning) 45%,var(--border)); background:color-mix(in srgb,var(--warning) 10%,transparent) }
+.kb-coverage-status.source-missing, .kb-coverage-status.missing-reference { color:var(--danger); border-color:color-mix(in srgb,var(--danger) 45%,var(--border)); background:color-mix(in srgb,var(--danger) 10%,transparent) }
+@media (max-width:560px){ .kb-coverage-stats { grid-template-columns:repeat(2,minmax(0,1fr)) } }
 
 /* Not-found recovery */
 .kb-notfound { background:var(--bg-card); border:1px solid var(--border); border-radius:14px; padding:24px; text-align:center }
@@ -445,7 +465,8 @@ body { font-family:var(--font); background:var(--bg); color:var(--text); min-hei
         <a class="kb-action" href="/kb/pages/docs.html">Docs editor</a>
         <a class="kb-action" href="/kb/pages/guidelines.html" title="Prescriptive guidelines organized by category">Guidelines</a>
         <button class="kb-action" id="digest-btn" title="Paste an algorithm / standard excerpt → proposed KB notes for review">Digest doc</button>
-        <button class="kb-action" id="health-btn">Health</button>
+        <button class="kb-action" id="reference-coverage-btn" title="Inspect reference archives, clause-note coverage, and missing parent references">Reference coverage</button>
+        <button class="kb-action" id="health-btn" title="Inspect broken links, verification gaps, and corpus health">Health</button>
         <span id="kb-model-pill"></span>
         <button class="kb-action" id="kb-settings-btn" title="Knowledge Base settings">&#9881;</button>
       </div>

@@ -67,7 +67,7 @@ handles the publishing semantics:
   silently overwriting.
 
 Tests pin the no-force invariant + the wrangler.jsonc-preservation
-contract — see `tests/test_sys_publish_static_mirror.py`.
+contract — see `tests/test_unit_publish_static_mirror.py`.
 
 ### 2. Connect Cloudflare Pages
 

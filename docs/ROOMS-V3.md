@@ -117,8 +117,8 @@ id and an explicit participant list.
 api_chat_stream
 ├── _resolve_responder(text, parts)        # @mention or first responder
 ├── if cli → _dispatch_cli_turn
-│   ├── claude-cli: streaming + tool events + [DO:] gate
-│   └── other: text_cli_run (buffered)
+│   ├── stream_json adapters (claude-cli, codex): streaming + tool events + [DO:] gate
+│   └── other: text_cli_run (buffered, no tool events)
 └── if agent → think_stream + _execute_server_actions
 ```
 

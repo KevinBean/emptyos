@@ -16,10 +16,16 @@
 <script>
   // Theme bootstrap — without it the tokens below collapse to their defaults
   // and the page renders unstyled for a beat. Must run before first paint.
-  (function () {
-    var t = localStorage.getItem('eos-theme') || 'theme-eos';
-    document.documentElement.className = t;
-  })();
+  // This fragment has no <head>, so server-side bootstrap injection cannot run.
+  // Mirror the canonical pre-paint shape without rewriting the user's choice;
+  // eos.js owns authoritative theme validation after boot.
+  try {
+    var _t = localStorage.getItem('eos-theme') || 'eos';
+    if (!/^[a-z][a-z0-9-]{0,31}$/.test(_t)) _t = 'eos';
+    document.documentElement.classList.add('theme-' + _t);
+  } catch (e) {
+    document.documentElement.classList.add('theme-eos');
+  }
 </script>
 
 <style>

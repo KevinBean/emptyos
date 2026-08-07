@@ -245,7 +245,7 @@ async def scheduled_weekly_wheel_review(self):
         new_content = before + header + narrative + ("\n" + rest if rest else "\n")
     else:
         new_content = existing.rstrip() + header + narrative + "\n"
-    await self.write(str(wp), new_content)
+    await self._write_note(wp, new_content)
     await self.emit("journal:wheel-review", {"period": "week", "week": iso_cal[1]})
 
 

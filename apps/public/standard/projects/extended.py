@@ -12,6 +12,8 @@ from pathlib import Path
 
 from emptyos.sdk import parse_frontmatter, web_route
 
+from .shared import PROJECT_STATUSES
+
 # ------------------------------------------------------------------
 # Grouped / Stats / Portfolio Health
 # ------------------------------------------------------------------
@@ -19,7 +21,7 @@ from emptyos.sdk import parse_frontmatter, web_route
 
 @web_route("GET", "/api/grouped")
 async def api_grouped(self, request):
-    """Projects grouped by status: active, idea, blocked, shelved, completed, archived."""
+    """Projects grouped by the shared lifecycle vocabulary."""
     projects = await self.list_projects()
     groups: dict[str, list[dict]] = {}
     for p in projects:
@@ -32,7 +34,7 @@ async def api_grouped(self, request):
         else:
             items.sort(key=lambda p: p["name"].lower())
     # Ensure all categories exist
-    for s in ("active", "idea", "blocked", "shelved", "completed", "archived"):
+    for s in PROJECT_STATUSES:
         groups.setdefault(s, [])
     return groups
 

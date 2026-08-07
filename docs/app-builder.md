@@ -167,7 +167,7 @@ After Phase 3, the loop fires end-to-end without a human starting it: flip a pro
 
 The drafter lives in `app-builder` itself (not in `apps/staff/`) because it's pure: project markdown + linked KB → LLM call → spec note write. It owns no state.
 
-**Trigger.** Reactor handler `on_project_status_changed` (in `apps/reactor/reactions_system.py`) filters `projects:status_changed` events for `new == "spec-ready"`. When matched, it fires `call_app("app-builder", "api_draft_from_project", project_id)` via `asyncio.create_task` so the reactor handler returns immediately (per memory `feedback_long_handler_in_http_request` — synchronous handlers blocking on LLM calls break the event chain).
+**Trigger.** Reactor handler `on_project_status_changed` (in `apps/reactor/reactions_system.py`) filters `projects:status_changed` events for `new == "spec-ready"`. When matched, it fires `call_app("app-builder", "api_draft_from_project", project_id)` via `self.spawn_background(...)` so the reactor handler returns immediately (per memory `feedback_long_handler_in_http_request` — synchronous handlers blocking on LLM calls break the event chain). It was a bare `asyncio.create_task` until 2026-08-06; that detaches but keeps no strong reference, so the drafter could be garbage-collected before it ran.
 
 **Input.** `POST /app-builder/api/draft_from_project {"project_id": "<slug>"}`. The endpoint:
 1. Reads `10_Projects/<project_id>/<project_id>.md`

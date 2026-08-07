@@ -2,10 +2,18 @@
 
 Absorbed from the standalone vault-analytics app. Provides vault file counts,
 PARA distribution, recent/largest/stale file listings, uncovered folder scan.
+
+Every public method here is an async wrapper over a synchronous `_`-prefixed
+scanner, dispatched with ``asyncio.to_thread``. That split is load-bearing, not
+style: each scanner walks the entire vault with rglob + stat, which is blocking
+I/O measured in seconds on a large vault. Running it inline pins the event loop,
+the daemon stops answering /api/health, and the watchdog restarts it. Keep new
+scanners on the same shape — sync body, threaded wrapper.
 """
 
 from __future__ import annotations
 
+import asyncio
 import time
 from pathlib import Path
 
@@ -41,6 +49,9 @@ class VaultAnalyticsMixin:
         }
 
     async def stats(self) -> dict:
+        return await asyncio.to_thread(self._stats)
+
+    def _stats(self) -> dict:
         vault = self._vault()
         if not vault.exists():
             return {"error": "vault not found"}
@@ -75,6 +86,9 @@ class VaultAnalyticsMixin:
         }
 
     async def scan_uncovered(self) -> dict:
+        return await asyncio.to_thread(self._scan_uncovered)
+
+    def _scan_uncovered(self) -> dict:
         """Find vault folders not served by any app."""
         vault = self._vault()
         if not vault.exists():
@@ -124,6 +138,9 @@ class VaultAnalyticsMixin:
         return s
 
     async def recent(self, limit: int = 20) -> list:
+        return await asyncio.to_thread(self._recent, limit)
+
+    def _recent(self, limit: int = 20) -> list:
         """Most recently modified vault files."""
         vault = self._vault()
         if not vault.exists():
@@ -147,6 +164,9 @@ class VaultAnalyticsMixin:
         return files[:limit]
 
     async def largest(self, limit: int = 20) -> list:
+        return await asyncio.to_thread(self._largest, limit)
+
+    def _largest(self, limit: int = 20) -> list:
         """Largest vault files."""
         vault = self._vault()
         if not vault.exists():
@@ -164,6 +184,9 @@ class VaultAnalyticsMixin:
         return files[:limit]
 
     async def stale(self, days: int = 90, limit: int = 30) -> list:
+        return await asyncio.to_thread(self._stale, days, limit)
+
+    def _stale(self, days: int = 90, limit: int = 30) -> list:
         """Files not modified in N+ days."""
         vault = self._vault()
         if not vault.exists():
@@ -184,6 +207,9 @@ class VaultAnalyticsMixin:
         return stale[:limit]
 
     async def growth(self) -> dict:
+        return await asyncio.to_thread(self._growth)
+
+    def _growth(self) -> dict:
         """File count by PARA folder — for tracking vault growth."""
         vault = self._vault()
         result = {}

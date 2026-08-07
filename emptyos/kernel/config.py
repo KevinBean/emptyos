@@ -50,7 +50,27 @@ class Config:
 
     @property
     def data_dir(self) -> Path:
-        return Path(self.get("os.data_dir", "./data"))
+        """Machine-state root. Always absolute, for the same reason
+        ``notes_path`` is: a relative value silently changes meaning once it is
+        passed to a helper that resolves relative paths against the *vault*.
+
+        ``BaseApp.render_pdf`` does exactly that, so
+        ``render_pdf(str(self.data_dir / "exports" / name))`` wrote the PDF into
+        ``<vault>/data/apps/<id>/exports/`` while ``serve_data_file`` looked for
+        it under the repo — the export 404'd in the browser AND littered the
+        user's vault, with no error either side. Resolving here fixes the whole
+        class rather than that one call site.
+
+        A relative value is anchored to the **config file's directory**, not the
+        process CWD — the convention ``emptyos/cli/sandbox_target.py`` already
+        applied by hand and the one CLAUDE.md documents (``config.path.parent``
+        is the project dir). That also makes the state dir independent of where
+        a script was launched from. Nothing moves in practice: the daemon's
+        ``emptyos.toml`` sits at the repo root beside ``./data``, and sandbox
+        members configure an absolute ``os.data_dir``.
+        """
+        p = Path(self.get("os.data_dir", "./data"))
+        return p if p.is_absolute() else (self.path.resolve().parent / p).resolve()
 
     @property
     def notes_path(self) -> Path | None:

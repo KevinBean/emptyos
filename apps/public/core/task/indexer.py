@@ -247,7 +247,14 @@ class TaskIndexer:
         return tasks
 
     async def _scan_vault(self) -> tuple[list[dict], list[dict]]:
-        local = self._scan_local_folders()
+        # OFF-LOOP: _scan_local_folders is a synchronous rglob + read_text over
+        # every markdown file in the scanned folders. On a large vault that is
+        # seconds-to-minutes of blocking I/O, and awaiting it inline pins the
+        # event loop — the daemon stops answering /api/health, the watchdog
+        # calls it wedged and restarts it. Caught by py-spy on 2026-07-25
+        # (MainThread parked in read_text under api_stats). See
+        # .claude/rules/debugging.md § sync call in async context.
+        local = await asyncio.to_thread(self._scan_local_folders)
         delegated = await self._fetch_delegated()
 
         # Dedup by (file, line) — a task can only exist once at a given line.

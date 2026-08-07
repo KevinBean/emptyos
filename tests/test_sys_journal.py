@@ -29,18 +29,36 @@ class TestJournalAPI:
         assert isinstance(data, (dict, list))
 
     def test_today_reports_draft_flag(self, http_client):
-        """api/today echoes the (dark-by-default) three-things-draft flag so the
-        page can feature-detect the ✨ Draft button without a probe call."""
-        data = assert_dict_response(http_client.get("/journal/api/today"))
-        assert data.get("draft_enabled") is False
+        """api/today echoes the three-things-draft flag so the page can
+        feature-detect the ✨ Draft button without a probe call.
 
-    def test_draft_three_things_dark_contract(self, http_client):
-        """Draft endpoint is dark by default → returns no drafts with reason
-        'disabled' and never writes/raises. Regression contract: byte-identical
-        behaviour to pre-feature when the flag is off."""
+        Asserts the flag is REPORTED, not that it is off. These two tests read
+        `draft_enabled` from the daemon rather than assuming the dark default,
+        because the operator is allowed to turn the feature on — and once Kevin
+        did (`[apps.journal] feature.three-things-draft.enabled = true`) they
+        failed on a working system, which is a test bug, not a regression.
+        """
+        data = assert_dict_response(http_client.get("/journal/api/today"))
+        assert isinstance(data.get("draft_enabled"), bool), (
+            "api/today must report draft_enabled so the page can feature-detect"
+        )
+
+    def test_draft_three_things_contract(self, http_client):
+        """Whichever side of the flag this machine is on, the endpoint answers
+        in the shape the page expects and never raises.
+
+        Off → no drafts, reason 'disabled' (byte-identical to pre-feature).
+        On  → a drafts list. Both are contracts worth pinning; only one of them
+        is true on any given machine.
+        """
+        today = assert_dict_response(http_client.get("/journal/api/today"))
+        enabled = bool(today.get("draft_enabled"))
+
         data = assert_dict_response(http_client.get("/journal/api/three-things/draft"))
-        assert data.get("drafts") == []
-        assert data.get("reason") == "disabled"
+        assert isinstance(data.get("drafts"), list)
+        if not enabled:
+            assert data.get("drafts") == []
+            assert data.get("reason") == "disabled"
 
     def test_add_entry(self, http_client):
         payload = factories.journal_entry(text="entry from pytest", mood="good")

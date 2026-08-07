@@ -195,7 +195,7 @@ class LearnApp(BaseApp):
         progress = self._load_progress(course_id)
         if not progress.get("started_at"):
             self._update_progress(course_id, started_at=_now_iso())
-            asyncio.create_task(self.emit("learn:course_started", {"course_id": course_id}))
+            self.spawn_background(self.emit("learn:course_started", {"course_id": course_id}))
         return {
             "course_id": course_id,
             "index": idx,
@@ -227,9 +227,9 @@ class LearnApp(BaseApp):
         # Course completion check
         if len(completed) >= len(lessons) and not progress.get("completed_at"):
             progress["completed_at"] = _now_iso()
-            asyncio.create_task(self.emit("learn:course_completed", {"course_id": course_id}))
+            self.spawn_background(self.emit("learn:course_completed", {"course_id": course_id}))
         self._save_progress(course_id, progress)
-        asyncio.create_task(self.emit("learn:lesson_completed", {"course_id": course_id, "lesson_index": idx}))
+        self.spawn_background(self.emit("learn:lesson_completed", {"course_id": course_id, "lesson_index": idx}))
         return {"ok": True, "completed_count": len(completed), "total": len(lessons)}
 
     # ─── Quiz generation ───────────────────────────────────────
@@ -292,7 +292,7 @@ class LearnApp(BaseApp):
                         await self._srs_schedule(slug, score)
         except Exception:
             pass  # don't fail the quiz submit if SRS is broken
-        asyncio.create_task(self.emit("learn:quiz_taken", {"course_id": course_id, "lesson_index": idx, "score": score}))
+        self.spawn_background(self.emit("learn:quiz_taken", {"course_id": course_id, "lesson_index": idx, "score": score}))
         return {"score": score, "correct": correct, "total": len(questions), "details": details}
 
     # ─── Progress reset / status ───────────────────────────────
@@ -403,7 +403,7 @@ class LearnApp(BaseApp):
             current_author = (props.get("author") or "user").lower()
             if current_author != "both" and current_author != "ai":
                 self.vault_update(path, {"author": "both"})
-        asyncio.create_task(self.emit("learn:note_saved", {
+        self.spawn_background(self.emit("learn:note_saved", {
             "slug": slug, "path": path, "course_id": course_id,
             "lesson_index": lesson_index,
         }))
@@ -541,7 +541,7 @@ class LearnApp(BaseApp):
         else:
             self.vault_create_note(rel_path, fm, body_md)
         is_update = bool(existing)
-        asyncio.create_task(self.emit(
+        self.spawn_background(self.emit(
             "learn:course_saved",
             {"course_id": course_id, "path": rel_path, "is_update": is_update},
         ))
@@ -585,7 +585,7 @@ class LearnApp(BaseApp):
             props["verify_step"] = 0
             props["verify_error"] = ""
         self.vault_update(course["path"], props)
-        asyncio.create_task(self.emit(
+        self.spawn_background(self.emit(
             "learn:tutorial_verified",
             {"course_id": course_id, "status": status, "error": props.get("verify_error", "")},
         ))

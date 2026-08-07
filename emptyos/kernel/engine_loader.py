@@ -116,15 +116,56 @@ class EngineLoader:
                 if avail:
                     self.kernel.syslog.info("engine_loader", f"Loaded engine '{engine_id}'")
                 else:
-                    self.kernel.syslog.warn(
-                        "engine_loader",
-                        f"Engine '{engine_id}' loaded but unavailable (missing deps)",
-                    )
+                    # An engine that declares optional packages and is missing
+                    # one is DORMANT BY DESIGN — the same "dark until its dep is
+                    # installed" contract plugins use. Warning about it on every
+                    # boot forever is not a signal, it is a permanent false
+                    # positive: `pandapower` alone accounted for 95 warn rows and
+                    # ranked 2nd on the whole syslog board while its engine was
+                    # degrading gracefully exactly as intended. Only an engine
+                    # unavailable for an UNDECLARED reason is worth a warn.
+                    missing = self._missing_packages(manifest)
+                    if missing:
+                        self.kernel.syslog.info(
+                            "engine_loader",
+                            f"Engine '{engine_id}' dormant — install "
+                            f"{', '.join(missing)} to enable it",
+                        )
+                    else:
+                        self.kernel.syslog.warn(
+                            "engine_loader",
+                            f"Engine '{engine_id}' loaded but unavailable "
+                            f"(no missing declared package — check its available())",
+                        )
 
             except Exception as e:
                 self.kernel.syslog.error(
                     "engine_loader", f"Failed to load engine '{engine_id}': {e}"
                 )
+
+    @staticmethod
+    def _missing_packages(manifest: EngineManifest) -> list[str]:
+        """Declared `[requires] packages` that aren't importable.
+
+        Import-name check only (``importlib.util.find_spec``) — no install, no
+        network, no version resolution. A distribution whose import name differs
+        from its package name reads as missing, which is the safe direction: the
+        caller only uses this to decide between an info and a warn.
+        """
+        import importlib.util
+
+        out: list[str] = []
+        for pkg in manifest.requires.get("packages", []) or []:
+            name = str(pkg).strip()
+            if not name:
+                continue
+            root = name.replace("-", "_").split("[")[0].split("=")[0].split(">")[0].split("<")[0]
+            try:
+                if importlib.util.find_spec(root) is None:
+                    out.append(name)
+            except (ImportError, ValueError):
+                out.append(name)
+        return out
 
     def get(self, engine_id: str) -> Any | None:
         """Get a loaded engine instance by ID."""

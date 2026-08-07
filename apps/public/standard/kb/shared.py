@@ -9,8 +9,11 @@ Pure functions only. No `self`, no kernel access, no I/O.
 
 from __future__ import annotations
 
+import datetime as _dt
 import re
 from pathlib import Path
+
+from emptyos.sdk.vault_model import coerce_date_or_none as _parse_iso_date
 
 
 KINDS = ("concept", "formula", "reference", "clause", "case", "lesson", "pattern", "doc", "moc")
@@ -251,6 +254,64 @@ def _edition_sort_key(edition: str | None) -> tuple:
     if not m:
         return ()
     return tuple(int(p) for p in m.group(0).split("."))
+
+
+# ── Reference freshness ──────────────────────────────────────────────
+# Three optional frontmatter fields on `kind: reference` notes:
+#   effective_date     — when this edition came into force (static fact)
+#   source_checked_at  — when a human last confirmed it is still current
+#   review_due         — when to check again
+# Only `review_due` drives the health sweep. A reference with no `review_due`
+# is *unscheduled*, not stale — flagging all 98 of them would fire on every
+# healthy note and train the reader to ignore the bucket
+# (`.claude/rules/audits.md`). Unscheduled is surfaced as a coverage count.
+
+FRESHNESS_FIELDS = ("effective_date", "source_checked_at", "review_due")
+DEFAULT_REVIEW_INTERVAL_DAYS = 365
+
+
+def reference_freshness(props: dict, today: _dt.date) -> dict:
+    """Classify one reference note's review state. Pure.
+
+    state:
+      ``overdue``      — ``review_due`` parsed and is strictly before *today*
+      ``scheduled``    — ``review_due`` parsed and is today or later
+      ``malformed``    — ``review_due`` is set but unparseable
+      ``unscheduled``  — no ``review_due`` at all
+
+    ``malformed`` is deliberately NOT silently ignored: a note whose author
+    typed ``review_due: soon`` has made a commitment the sweep would otherwise
+    drop on the floor, which is the failure shape of a gate that skips what it
+    cannot parse (`feedback_skiplist_is_a_promise`).
+    """
+    raw_due = props.get("review_due")
+    has_due = str(raw_due or "").strip() != ""
+    due = _parse_iso_date(raw_due)
+    checked = _parse_iso_date(props.get("source_checked_at"))
+    effective = _parse_iso_date(props.get("effective_date"))
+
+    if not has_due:
+        state, days_overdue = "unscheduled", None
+    elif due is None:
+        state, days_overdue = "malformed", None
+    elif due < today:
+        state, days_overdue = "overdue", (today - due).days
+    else:
+        state, days_overdue = "scheduled", 0
+
+    return {
+        "state": state,
+        "days_overdue": days_overdue,
+        "review_due": due.isoformat() if due else (str(raw_due or "").strip() or ""),
+        "source_checked_at": checked.isoformat() if checked else "",
+        "effective_date": effective.isoformat() if effective else "",
+    }
+
+
+def next_review_due(today: _dt.date, interval_days: int) -> _dt.date:
+    """The `review_due` a check performed *today* should book. Pure so the
+    stamping endpoint and its test agree by construction."""
+    return today + _dt.timedelta(days=max(1, int(interval_days)))
 
 
 def _parse_citation(text: str) -> tuple[str, str | None, str | None] | None:

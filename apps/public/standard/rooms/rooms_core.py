@@ -544,7 +544,7 @@ async def panel_pending_count(self) -> dict | None:
     """Stat-tile: total pending [DO:] actions across every room. Drops
     silently when there are zero so the hub stays uncluttered."""
     try:
-        pending = self.list_pending(room_id="", status="pending")
+        pending = self.list_pending(room_id="", status="open")
     except Exception:
         return None
     if not pending:
@@ -1352,7 +1352,7 @@ async def api_fork_room(self, request):
     prev_head = room.get("current_head_entry_id")
     room["current_head_entry_id"] = at_entry_id
     self._save_agent(room)
-    asyncio.create_task(
+    self.spawn_background(
         self.emit(
             "rooms:head_changed",
             {

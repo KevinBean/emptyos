@@ -1,8 +1,10 @@
 # Conversation Stack
 
-EmptyOS has **5 backends** that talk to LLMs and **8 frontends** that surface them. Knowing which to reach for matters — they're not interchangeable. This doc is the canonical layout.
+EmptyOS has **5 backends** that talk to LLMs and **8 frontends** that surface them, plus **1 observer surface** that watches agent sessions without talking (cockpit — see the last section). Knowing which to reach for matters — they're not interchangeable. This doc is the canonical layout.
 
-Last verified: 2026-07-10 (`eos code` unified with the agent CLI; rooms code preset retained as `eos rooms --code`).
+Last verified: 2026-07-22 (added the cockpit observer category; `eos code` unified with the agent CLI; rooms code preset retained as `eos rooms --code`).
+
+> **Path note (2026 reorg):** the five backends live under `apps/public/standard/{agent,rooms,assistant,voice-assistant}/` and `apps/personal/staff/`; `/code/` is `apps/extension/plekto/code/`. This doc uses the short ids (`apps/agent`, `apps/rooms`, …) below for readability — app **ids** are location-independent at runtime, but grep the id, not the shorthand path.
 
 ---
 
@@ -63,7 +65,7 @@ Last verified: 2026-07-10 (`eos code` unified with the agent CLI; rooms code pre
 | `eos chat` | Terminal REPL | `apps/agent` | `@cli_command("chat")` in `apps/agent/repl.py` |
 | `eos code` | Terminal REPL | `apps/agent` | Alias registered by `@cli_command("code")`; seeds the session-scoped Code persona when agent modes are enabled |
 | `eos rooms` | Terminal REPL | `apps/rooms` | `app.command("rooms")` in `emptyos/cli/main.py` → `emptyos/cli/chat.py`; `--code` bootstraps the review-gated `cli-code` preset |
-| `/code/` | Responsive web page | `apps/agent` (via WebSocket + sessions) | `apps/code/` — desktop code workspace (tree + preview/diff + terminal + chat) that reflows into a phone-friendly remote (Agent + Review + Files + Output). Same agent loop and consent manager; mobile approvals are one-action only. Mobile guardrails (one-action approval, output-only terminal, secret files kept out of the workspace) are UX/exposure-reduction, **not** a sandbox — single-user token has full access via `/repo`, `/settings`, or the agent (docs/AUTH.md). |
+| `/code/` | Responsive web page | `apps/agent` (via WebSocket + sessions) | `apps/extension/plekto/code/` — desktop code workspace (tree + preview/diff + terminal + chat) that reflows into a phone-friendly remote (Agent + Review + Files + Output). Same agent loop and consent manager; mobile approvals are one-action only. Mobile guardrails (one-action approval, output-only terminal, secret files kept out of the workspace) are UX/exposure-reduction, **not** a sandbox — single-user token has full access via `/repo`, `/settings`, or the agent (docs/AUTH.md). |
 | `eos staff` | Terminal CLI (not REPL) | `apps/personal/staff` | `@cli_command("staff")` in `apps/personal/staff/app.py` |
 
 **Observations from the matrix:**
@@ -71,6 +73,18 @@ Last verified: 2026-07-10 (`eos code` unified with the agent CLI; rooms code pre
 - `apps/agent` has web `/agent/`, web `/code/`, and one CLI surface with two entry names (`eos chat` / `eos code`). `/code/` is a pure frontend over apps/agent — different layout, same backend.
 - `apps/personal/staff` CLI is operational, not conversational (different shape).
 - Aura and assistant have no CLI — voice is voice-shaped; assistant is web-shaped.
+
+**`/portal/` — the unified conversation door (the one front door).** `apps/public/standard/portal/`
+is a *frontend over multiple backends*, not a backend of its own. Its composer carries a
+backend **mode switch** — **Rooms** (`/rooms/api/chat/stream`), **Assistant**
+(`/assistant/api/chat`), **Agent** (native WS `/agent/ws/{sid}`, a deliberate subset of `/agent/`:
+streaming text + tool cards + permission modal + turn footer + cancel), and **Code** (the `/code/`
+IDE workspace hosted in portal's iframe pane via `?embed=1`). Each thread remembers its backend
+(`asst:`/`agent:` id prefixes; rooms = bare id). Backends are untouched; the dedicated pages and
+CLIs all still work. `portal` is the `companion` suite `surface` (`suites.toml`). This exists to
+collapse the "which chat app do I open" choice into one door — it does **not** merge any backend
+(see "Coexist, not merge" below). Portal drives its **own** agent sessions (the backend keeps one
+live-turn slot per session, so two frontends must not share a session).
 
 ---
 
@@ -167,6 +181,18 @@ Same operations, two consumers, two gate philosophies. Not duplication — paral
 **Verdict**: keep both.
 
 ---
+
+## The observer — watches, never talks
+
+**cockpit** (`apps/extension/dev/cockpit/`, shipped 2026-07-21) is a *sixth category* the five-backend model has no slot for: a **read-only observer** of agent sessions, not a participant. It is deliberately NOT one of the five backends and must not be merged into any of them.
+
+- **No session store, no LLM backend of its own.** It tails the transcript JSONL that Claude Code (`~/.claude/projects/`) and Codex (`~/.codex/sessions/`) write in *your own terminal*, subscribes to EmptyOS's `agent:*` bus (the `eos-agent` source), and — behind `feature.autorun-view.enabled` — tails fix-agent/dogfood `stream.jsonl` run streams. It renders the conversation, artifacts, and browser screenshots in a 3-pane UI + a mission-control wall.
+- **No gate — a hard read-only invariant.** Cockpit *cannot spawn or steer a CLI*; a terminal session owns its own stdin (an OS boundary, not a missing feature). Its own WS (`/cockpit/ws/{channel}`) is receive-only (`ping` from the client is the only inbound message), and the high-frequency stream never touches the persisted kernel bus — only two lifecycle events do (`cockpit:session_discovered/_ended`).
+- **The `active_sessions()` seam** (state/branch/deep-link per session) is consumed by devboard's "Live agent sessions" lane — a clean read-only layering, not a duplicated session list.
+- **Attention router, not chat.** Its value is *which agent needs me now* (state chips: working/waiting/stuck), *what did the others do while I looked away* (catch-up digest), and *what's it costing* (token rollup) — the scarce-resource-is-attention view when many sessions run in parallel. The idle→waiting nudge is the `cockpit-attention-push` loop (`emptyos/sdk/loops.py`, dark).
+- **Not in `suites.toml`.** Cockpit is `apps/extension/`, `store_category="dev"` — dev chrome, ineligible for the Companion suite (which groups only `apps/public/standard/` conversation apps). Recorded here so a future suite pass doesn't re-flag it.
+
+The four chat renderers (`/agent/`, `/rooms/`, cockpit, `/code/`) all render through the shared `EOS_UI.paintMarkdown` / `EOS_CONVERSATION` stack. `page-assistant.js`'s companion + nudge path (`_mdRich`) also delegates to the shared `EOS_UI.renderMarkdown`; its rooms path keeps a **deliberately minimal** renderer (`_renderMd`, bold/code/br only) because that path must leave `[BUTTON:]`/`[DO:]`/`[ACTION:]` action tokens intact for the regex passes that turn them into click-to-execute buttons — a rich renderer would escape the brackets and break the buttons. Not a consolidation target (token-safety constraint, verified 2026-07-22).
 
 ## Cross-references
 

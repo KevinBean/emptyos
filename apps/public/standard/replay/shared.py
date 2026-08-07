@@ -20,6 +20,7 @@ from emptyos.sdk.recipe_distill import (
     STEP_TOKEN_RE,
     WHOLE_TOKEN_RE,
 )
+from emptyos.sdk.utils import fm_scalar, parse_json_fence
 
 # The saved workflow artifact is a "replay". Its tag is deliberately NOT
 # "recipe" — that collides with cooking-recipe notes in the user's vault
@@ -121,25 +122,6 @@ def safe_resolve(value, inputs: dict, results: dict):
 # ── recipe note <-> draft ───────────────────────────────────────────────────
 
 
-_JSON_FENCE_RE = re.compile(r"```json\s*\n(.*?)\n```", re.S)
-
-
-def _fm_scalar(v) -> str:
-    """Encode one frontmatter string value to round-trip through
-    ``emptyos.sdk.utils.parse_frontmatter`` (the reader ``VaultLibrary.detail``
-    uses): bare when plain, else DOUBLE-quoted with ``\\``→``\\\\`` and
-    ``"``→``\\"`` (exactly what parse_frontmatter reverses). We never use the
-    single-quote/``''`` form — parse_frontmatter doesn't un-double it, which
-    corrupts apostrophes. Machine JSON does NOT live in frontmatter (see
-    :func:`render_recipe_note`), so values here are short prose only."""
-    sv = str(v)
-    if sv == "":
-        return '""'
-    if any(c in sv for c in ":#{}[]|>&*?!,\"'\\") or sv != sv.strip():
-        return '"' + sv.replace("\\", "\\\\").replace('"', '\\"') + '"'
-    return sv
-
-
 def render_recipe_note(draft: dict, *, source_session: str, source_trace: str, created: str) -> str:
     """Render a replay draft to the full ``.md`` note bytes (frontmatter + body).
 
@@ -175,7 +157,7 @@ def render_recipe_note(draft: dict, *, source_session: str, source_trace: str, c
         if isinstance(v, int):
             lines.append(f"{k}: {v}")
         else:
-            lines.append(f"{k}: {_fm_scalar(v)}")
+            lines.append(f"{k}: {fm_scalar(v)}")
     lines.append("tags:")
     lines.append(f"  - {RECIPE_TAG}")
     lines.append("---")
@@ -218,25 +200,11 @@ def render_recipe_note(draft: dict, *, source_session: str, source_trace: str, c
     return "\n".join(lines)
 
 
-def extract_spec(body: str) -> dict:
-    """Pull ``{inputs, steps, verify}`` from the body's ```json fence. Never raises."""
-    if not body:
-        return {}
-    m = _JSON_FENCE_RE.search(body)
-    if not m:
-        return {}
-    try:
-        data = json.loads(m.group(1))
-    except (json.JSONDecodeError, TypeError):
-        return {}
-    return data if isinstance(data, dict) else {}
-
-
 def parse_recipe(detail: dict) -> dict:
     """Decode a replay note ``detail`` (frontmatter fields + ``body``) into a
     recipe dict. Machine data comes from the body ```json fence; the rest from
     frontmatter. Never raises."""
-    spec = extract_spec(detail.get("body") or "")
+    spec = parse_json_fence(detail.get("body") or "")
     return {
         "id": detail.get("id") or slugify(detail.get("name") or ""),
         "name": detail.get("name") or "",
@@ -264,7 +232,7 @@ def render_skill_md(draft: dict, *, source_session: str) -> str:
     desc = goal or name
     if when:
         desc = f"{desc} Use when: {when}"
-    lines = ["---", f"name: eos-{slug}", f"description: {_fm_scalar(desc)}", "---", ""]
+    lines = ["---", f"name: eos-{slug}", f"description: {fm_scalar(desc)}", "---", ""]
     lines.append(f"# {name}")
     lines.append("")
     if goal:

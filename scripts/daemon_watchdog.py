@@ -22,10 +22,21 @@ Usage:
     python scripts/daemon_watchdog.py --probe-timeout 3 # 3s probe timeout (default 5)
 
 Recovery tuning (only with --restart):
-    --restart-grace 90      # wait this long for health after a respawn (default 90s)
+    --restart-grace 240     # wait this long for health after a respawn (default 240s)
+    --boot-timeout 900      # ...but keep waiting past that while the respawned
+                            #    PROCESS is still alive, up to this ceiling (default 15 min)
     --max-restarts 3        # respawns allowed within the storm window (default 3)
     --restart-window 1800   # storm window in seconds (default 30 min)
     --start-cmd <argv...>   # override the start command (default: <python> -m emptyos start)
+
+Why the two-level wait: "nothing LISTENING on :9000" means either the daemon
+crashed (respawn) or the daemon we just respawned is still booting (wait), and
+the port cannot distinguish them. Guessing wrong compounds — respawning on top
+of a live boot leaves both running, they starve each other, and boots get slower
+with every attempt. On 2026-07-30 that took a steady 28s boot to 1006s across
+four stacked daemons and kept :9000 down for ~50 minutes. So the watchdog keeps
+the PID it spawned, asks whether that process is alive before declaring failure,
+and kills any earlier boot of its own before starting another.
 
 Run in a separate terminal — keeps running until Ctrl+C. Restart-survival:
 re-run after restart.bat.
@@ -58,6 +69,7 @@ import sys
 import time
 import urllib.error
 import urllib.request
+from collections.abc import Callable
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -149,6 +161,41 @@ def syslog_tail(n: int = 200) -> str:
     return "\n".join(lines) or "(no rows)"
 
 
+def parse_pid_list(text: str) -> list[int]:
+    """Pull PIDs out of a pgrep / PowerShell listing, ignoring any noise lines."""
+    out: list[int] = []
+    for line in (text or "").splitlines():
+        tok = line.strip()
+        if tok.isdigit():
+            n = int(tok)
+            if n > 0 and n not in out:
+                out.append(n)
+    return out
+
+
+def find_daemon_pids(limit: int = 4) -> list[int]:
+    """Live EmptyOS daemon PIDs, found by command line rather than by port.
+
+    find_listening_pid answers "who holds the port", which is None in the exact
+    case most worth diagnosing: a daemon that is alive but no longer serving —
+    stuck in shutdown, saturated, or with its socket already gone. Evidence
+    capture keyed py-spy off the listening PID, so it skipped stacks precisely
+    when they mattered; every one of the 218 snapshots taken on 2026-07-30 has
+    no stacks and no usable process list, which is why that outage stayed
+    unfalsifiable. Costs a subprocess, but only on a confirmed wedge.
+    """
+    if sys.platform == "win32":
+        ps = (
+            "Get-CimInstance Win32_Process -Filter \"Name='python.exe'\" | "
+            "Where-Object { $_.CommandLine -like '*emptyos*start*' } | "
+            "Select-Object -ExpandProperty ProcessId"
+        )
+        out = run_cmd(["powershell", "-NoProfile", "-Command", ps], timeout=25)
+    else:
+        out = run_cmd(["pgrep", "-f", "emptyos start"], timeout=15)
+    return parse_pid_list(out)[:limit]
+
+
 def capture_evidence(
     port: int,
     pid: int | None,
@@ -159,10 +206,17 @@ def capture_evidence(
     out = EVIDENCE_ROOT / ts
     out.mkdir(parents=True, exist_ok=True)
 
+    # Alive-but-not-listening is the diagnosis that used to be invisible, so
+    # record it as its own field: daemon_pid is who holds the port (often None),
+    # daemon_pids is who is actually running.
+    daemon_pids = find_daemon_pids()
+
     summary = {
         "captured_at_utc": ts,
         "port": port,
         "daemon_pid": pid,
+        "daemon_pids": daemon_pids,
+        "alive_but_not_listening": bool(daemon_pids) and pid is None,
         "first_wedge_seen": datetime.fromtimestamp(first_seen).isoformat(),
         "last_healthy": datetime.fromtimestamp(last_healthy).isoformat() if last_healthy else None,
         "seconds_wedged": round(time.time() - first_seen, 1),
@@ -171,19 +225,25 @@ def capture_evidence(
     (out / "summary.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
 
     (out / "netstat.txt").write_text(run_cmd(["netstat", "-ano"]), encoding="utf-8")
+    # No /V: verbose resolves a window title + user per process and reliably blew
+    # the timeout on a loaded box, so every snapshot's process list read
+    # "TimeoutExpired" instead of naming the processes.
     (out / "tasklist.txt").write_text(
-        run_cmd(["tasklist", "/FO", "TABLE", "/V"]), encoding="utf-8"
+        run_cmd(["tasklist", "/FO", "TABLE"], timeout=30), encoding="utf-8"
     )
 
-    if pid and shutil.which("py-spy"):
-        (out / "pyspy_dump.txt").write_text(
-            run_cmd(["py-spy", "dump", "--pid", str(pid)], timeout=30),
-            encoding="utf-8",
-        )
-    elif pid:
+    # Dump every candidate, not just the listener — see find_daemon_pids.
+    targets: list[int] = ([pid] if pid else []) + [p for p in daemon_pids if p != pid]
+    if targets and shutil.which("py-spy"):
+        for target in targets[:3]:
+            (out / f"pyspy_dump_{target}.txt").write_text(
+                run_cmd(["py-spy", "dump", "--pid", str(target)], timeout=30),
+                encoding="utf-8",
+            )
+    elif targets:
         (out / "pyspy_dump.txt").write_text(
             "py-spy not on PATH — install with `pip install py-spy` and re-run watchdog "
-            f"for thread-stack evidence on PID {pid}.\n",
+            f"for thread-stack evidence on PIDs {targets}.\n",
             encoding="utf-8",
         )
 
@@ -195,6 +255,14 @@ def capture_evidence(
     )
     (out / "restart_log.txt").write_text(
         tail_file(DATA_DIR / "daemon-restart.log"), encoding="utf-8"
+    )
+    # How the daemon died: kernel.stop() clears this record as its FIRST act, so
+    # cleared => a graceful stop path ran (tray Quit, Settings restart) even if
+    # it never finished; still naming a dead PID => killed from outside.
+    pidfile = DATA_DIR / "daemon.pid.json"
+    (out / "daemon_pidfile.txt").write_text(
+        pidfile.read_text(encoding="utf-8") if pidfile.exists() else "(no daemon.pid.json)",
+        encoding="utf-8",
     )
     (out / "syslog_tail.txt").write_text(syslog_tail(), encoding="utf-8")
 
@@ -509,6 +577,52 @@ def _release_recovery_lock(port: int) -> None:
         pass
 
 
+# ─── Boot-vs-crash discrimination ─────────────────────────────────────────────
+# "Nothing is LISTENING on :9000" has two causes that demand opposite responses:
+# the daemon crashed (respawn it) or the daemon we already respawned is still
+# booting (wait). The port cannot tell them apart — only the child PID can, which
+# is why start_daemon_detached's return value is now kept rather than just logged.
+
+def boot_still_running(
+    spawned_pid: int | None,
+    elapsed: float,
+    boot_timeout: float,
+    *,
+    alive: Callable[[int], bool] | None = None,
+) -> bool:
+    """True when our last respawn is alive but hasn't bound the port yet.
+
+    The grace window is a *guess* at boot time; process liveness is the fact.
+    Bounded by `boot_timeout` so a boot that is genuinely hung (not merely slow)
+    is still eventually killed and retried rather than waited on forever.
+    See the module docstring for what respawning on top of a live boot costs.
+    """
+    if spawned_pid is None or boot_timeout <= 0 or elapsed >= boot_timeout:
+        return False
+    return (alive or _pid_alive)(spawned_pid)
+
+
+def pids_to_clear(
+    listening_pid: int | None,
+    spawned_pid: int | None,
+    *,
+    alive: Callable[[int], bool] | None = None,
+) -> list[int]:
+    """Every daemon PID that must die before a respawn — listener first.
+
+    The listener is the wedged daemon. `spawned_pid` is our own previous
+    respawn, which may be alive-but-not-listening (a boot that never finished).
+    Killing only the listener leaves that one running, which is precisely how
+    boots pile up. Deduped; empty when there is nothing to kill.
+    """
+    out: list[int] = []
+    if listening_pid:
+        out.append(listening_pid)
+    if spawned_pid and spawned_pid not in out and (alive or _pid_alive)(spawned_pid):
+        out.append(spawned_pid)
+    return out
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--port", type=int, default=9000)
@@ -539,9 +653,20 @@ def main() -> int:
     ap.add_argument(
         "--restart-grace",
         type=float,
-        default=90.0,
-        help="seconds to wait for health after a respawn before reassessing "
-        "(covers the boot window; default 90)",
+        default=240.0,
+        help="seconds to wait for health after a respawn before reassessing. "
+        "Only decides when to LOOK; if the respawned process is still alive the "
+        "wait is extended (see --boot-timeout), so this need not cover a "
+        "worst-case boot. Default 240.",
+    )
+    ap.add_argument(
+        "--boot-timeout",
+        type=float,
+        default=900.0,
+        help="ceiling on how long a respawned daemon may take to answer /api/health "
+        "while its process is still alive. Past this it is treated as hung, killed "
+        "and retried (default 900 = 15 min). Set 0 to disable the extension and "
+        "reassess strictly at --restart-grace.",
     )
     ap.add_argument(
         "--max-restarts",
@@ -619,6 +744,8 @@ def main() -> int:
     restart_times: list[float] = []   # epoch of each respawn within the window
     awaiting_recovery = False          # a respawn is in flight; allow boot grace
     recovery_deadline = 0.0            # respawn must be healthy by this time
+    spawned_pid: int | None = None     # PID of our last respawn — the only way to
+                                       # tell "still booting" from "crashed"
     gave_up = False                    # storm budget exhausted; in back-off cooldown
     gave_up_at = 0.0                   # epoch we entered back-off (for --giveup-cooldown)
 
@@ -640,6 +767,7 @@ def main() -> int:
             captured_for_this_wedge = False
             awaiting_recovery = False
             gave_up = False
+            spawned_pid = None
             last_healthy = now
             time.sleep(args.interval)
             continue
@@ -652,8 +780,23 @@ def main() -> int:
                 log(f"(restart booting — {recovery_deadline - now:.0f}s grace left, {detail})")
                 time.sleep(args.interval)
                 continue
-            # Grace expired and still down — the respawn failed to come up.
-            log("restart did not become healthy within grace — reassessing")
+            # Grace expired. Before calling it a failure, ask the process itself:
+            # a live respawn that hasn't bound the port yet is booting, not dead,
+            # and respawning on top of it is what turns one slow boot into a storm.
+            booting_for = now - (restart_times[-1] if restart_times else now)
+            if boot_still_running(spawned_pid, booting_for, args.boot_timeout):
+                log(
+                    f"(pid {spawned_pid} alive but not serving after {booting_for:.0f}s "
+                    f"— still booting, extending grace {args.restart_grace:.0f}s)"
+                )
+                recovery_deadline = now + args.restart_grace
+                time.sleep(args.interval)
+                continue
+            # Genuinely down (process gone, or hung past --boot-timeout).
+            log(
+                f"restart did not become healthy within grace "
+                f"({booting_for:.0f}s elapsed) — reassessing"
+            )
             awaiting_recovery = False
             # fall through to the recovery decision below (counts toward storm)
 
@@ -714,10 +857,16 @@ def main() -> int:
                 state = "wedged" if pid else "dead"
                 log(f"RECOVERY: daemon {state} (pid={pid}) — restarting")
                 _append_restart_log(f"recovery: {state} pid={pid} port={args.port}")
-                if pid:
-                    res = kill_pid_tree(pid)
-                    _append_restart_log(f"kill pid={pid}: {res.splitlines()[-1] if res else 'done'}")
-                    log(f"killed pid tree {pid}; waiting for :{args.port} to release")
+                # Listener + any earlier respawn of ours still alive; see pids_to_clear.
+                doomed = pids_to_clear(pid, spawned_pid)
+                for victim in doomed:
+                    res = kill_pid_tree(victim)
+                    tail = res.splitlines()[-1] if res else "done"
+                    label = "listener" if victim == pid else "orphaned boot"
+                    _append_restart_log(f"kill {label} pid={victim}: {tail}")
+                    log(f"killed pid tree {victim} ({label})")
+                if doomed:
+                    log(f"waiting for :{args.port} to release")
                     time.sleep(3.0)  # let SQLite WAL handles release (daemon-handling rule)
                 # Block on the port actually freeing so the respawn can't hit
                 # WinError 10048 binding a still-held :PORT.
@@ -730,6 +879,7 @@ def main() -> int:
                 new_pid = start_daemon_detached(args.start_cmd)
                 _append_restart_log(f"respawned detached pid={new_pid}")
                 log(f"respawned daemon (detached pid={new_pid}); grace {args.restart_grace:.0f}s")
+                spawned_pid = new_pid
                 restart_times.append(now)
                 awaiting_recovery = True
                 recovery_deadline = now + args.restart_grace

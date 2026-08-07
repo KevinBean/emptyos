@@ -91,6 +91,7 @@ def serve_data_file(
     subdir: str,
     *parts: str,
     media_type: str = "application/octet-stream",
+    download_name: str = "",
 ):
     """Serve a file under ``data_dir/{subdir}/{*parts}``.
 
@@ -124,6 +125,12 @@ def serve_data_file(
         return JSONResponse({"error": "invalid path"}, status_code=400)
     if not target.is_file():
         return JSONResponse({"error": "not found"}, status_code=404)
+    # Without an explicit filename the browser names the download from the URL
+    # path, so a route like `/api/timesheet.pdf` always saves as
+    # "timesheet.pdf" no matter what the generated file is called — two exports
+    # covering different periods land on top of each other in Downloads.
+    if download_name:
+        return FileResponse(str(target), media_type=media_type, filename=download_name)
     return FileResponse(str(target), media_type=media_type)
 
 
@@ -286,15 +293,28 @@ def list_calculations(self, *, limit: int = 50) -> list[dict]:
         model = parse_model_note(
             f.read_text(encoding="utf-8", errors="ignore")
         ) or {}
-        out.append(
-            {
-                "id": model.get("id") or f.stem,
-                "title": model.get("title") or f.stem,
-                "method": model.get("method"),
-                "created": model.get("created") or "",
-                "result": model.get("result"),
-                "path": self.vault_rel(f),
-            }
-        )
+        row = {
+            "id": model.get("id") or f.stem,
+            "title": model.get("title") or f.stem,
+            "method": model.get("method"),
+            "created": model.get("created") or "",
+            "result": model.get("result"),
+            "path": self.vault_rel(f),
+        }
+        # Optional engineering-evidence fields. Older calculation notes omit
+        # them and retain the historical response shape.
+        for key in (
+            "source_entity", "source_updated", "analysis", "model_hash",
+            "inputs_hash", "method_version", "standards", "warnings",
+            "result_summary",
+            # Solver-inputs-only staleness key, distinct from inputs_hash/model_hash
+            # (which hash the whole evidence model, results included). A live
+            # recompute loop probes against this; without it on the READ side the
+            # run always looks stale and the loop never terminates.
+            "input_signature",
+        ):
+            if key in model:
+                row[key] = model[key]
+        out.append(row)
     out.sort(key=lambda r: r.get("created") or "", reverse=True)
     return out[:limit]

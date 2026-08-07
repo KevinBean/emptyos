@@ -10,9 +10,14 @@ from __future__ import annotations
 import re
 from datetime import date
 
+import pytest
+
 from emptyos.sdk import (
     csv_to_rows,
+    fm_scalar,
     format_markdown_table,
+    parse_frontmatter,
+    parse_json_fence,
     normalize_clock_time,
     normalize_relative_date,
     parse_markdown_table,
@@ -22,7 +27,7 @@ from emptyos.sdk import (
     today_iso,
     unique_slug,
 )
-from emptyos.sdk.utils import safe_path_segment
+from emptyos.sdk.utils import parse_llm_json, safe_path_segment
 from emptyos.sdk.utils import today_iso as today_iso_direct
 from emptyos.sdk.utils import unique_slug as unique_slug_direct
 
@@ -370,3 +375,126 @@ class TestNormalizeClockTime:
         assert normalize_clock_time("noon") == ""
         assert normalize_clock_time("25:00") == ""
         assert normalize_clock_time("9:99") == ""
+
+
+# ── parse_llm_json ─────────────────────────────────────────────────────
+#
+# 116 files call this and it had no direct test until 2026-07-31, when a
+# model-bench grader exposed that an unfenced array with any preamble returned
+# its FIRST ELEMENT as a dict: the old scanner looked for every `{...}` before
+# trying `[...]` at all. Resolution is now largest-structure-wins.
+
+
+def test_parse_llm_json_bare_and_fenced():
+    assert parse_llm_json('{"a":1}') == {"a": 1}
+    assert parse_llm_json("[1,2,3]") == [1, 2, 3]
+    assert parse_llm_json('```json\n{"a":1}\n```') == {"a": 1}
+    assert parse_llm_json('```\n[{"a":1}]\n```') == [{"a": 1}]
+
+
+def test_parse_llm_json_unfenced_array_survives_prose():
+    """The 2026-07-31 regression. Each of these returned `{"a": 1}` before."""
+    payload = [{"a": 1}, {"a": 2}, {"a": 3}]
+    body = '[{"a":1},{"a":2},{"a":3}]'
+    assert parse_llm_json(f"Here are my picks:\n\n{body}") == payload
+    assert parse_llm_json(f"{body}\n\nThat is my answer.") == payload
+    assert parse_llm_json(f"Picks:\n{body}\nHope that helps.") == payload
+
+
+def test_parse_llm_json_prose_brackets_do_not_beat_the_payload():
+    """The case that makes largest-wins the right rule rather than earliest-wins.
+
+    A citation `[1]` is valid JSON, so an earliest-wins scanner would return it
+    and drop the object the caller asked for. Largest-wins keeps the payload."""
+    assert parse_llm_json('Per the notes [1], here it is: {"verb":"task.add"}') == {
+        "verb": "task.add"
+    }
+    assert parse_llm_json('Options [a, b, c] were considered. {"choice":"a"}') == {"choice": "a"}
+    assert parse_llm_json('See [[some-note]] — result: {"ok":true}') == {"ok": True}
+
+
+def test_parse_llm_json_is_string_aware():
+    """Braces and brackets inside string literals are content, not structure."""
+    assert parse_llm_json('Result: {"a":"has } brace"}') == {"a": "has } brace"}
+    assert parse_llm_json('Result: {"a":"use [brackets] here"}') == {"a": "use [brackets] here"}
+    assert parse_llm_json('Result: {"tpl":"{value}"}') == {"tpl": "{value}"}
+    assert parse_llm_json('Note: {"a":"he said \\"hi\\""}') == {"a": 'he said "hi"'}
+
+
+def test_parse_llm_json_falls_back_to_a_nested_structure():
+    """When the outermost span won't parse, a complete inner one beats nothing."""
+    assert parse_llm_json('[{"a":1}, {"b":2},]') == {"a": 1}  # trailing comma kills the array
+
+
+def test_parse_llm_json_recovers_after_a_stray_closer():
+    """Previously raised: the depth counter went negative and never recovered,
+    so every structure after a stray `}` was discarded."""
+    assert parse_llm_json('} then {"a":1}') == {"a": 1}
+
+
+def test_parse_llm_json_two_siblings_largest_wins():
+    """Documented consequence, pinned so the trade-off stays visible.
+
+    With two sibling structures the bigger one wins rather than the earlier one.
+    The case is ambiguous by nature — a model asked for one JSON value that emits
+    two has already failed the instruction — and no caller can depend on it."""
+    assert parse_llm_json('[1,2] and also [3,4,5,6]') == [3, 4, 5, 6]
+    assert parse_llm_json('{"a":1} and also {"b":2}') == {"a": 1}  # equal length → earliest
+
+
+def test_parse_llm_json_fallback_and_raise():
+    assert parse_llm_json("no json here", fallback={}) == {}
+    assert parse_llm_json("", fallback=[]) == []
+    with pytest.raises(ValueError):
+        parse_llm_json("no json here")
+    with pytest.raises(ValueError):
+        parse_llm_json('{"a":1')  # unclosed
+
+
+# ── fm_scalar / parse_json_fence (extracted from replay + operate) ──────────
+#
+# Both halves of one contract: fm_scalar encodes what parse_frontmatter reads
+# back, and parse_json_fence reads the body block that keeps machine JSON OUT
+# of frontmatter entirely. Round-trip tests, because that pairing is the whole
+# point — a change that breaks either direction breaks a committed note format.
+
+
+def test_fm_scalar_leaves_plain_values_bare():
+    assert fm_scalar("triage inbox") == "triage inbox"
+    assert fm_scalar("recipe") == "recipe"
+
+
+def test_fm_scalar_quotes_yaml_significant_and_padded_values():
+    assert fm_scalar("a: b") == '"a: b"'
+    assert fm_scalar("tags [x]") == '"tags [x]"'
+    assert fm_scalar(" padded ") == '" padded "'
+    assert fm_scalar("") == '""'
+
+
+def test_fm_scalar_round_trips_through_parse_frontmatter():
+    """The contract the encoder exists for. Apostrophes are the case that made
+    the single-quote form unusable — parse_frontmatter never un-doubles ''."""
+    for value in ("it's fine", 'he said "hi"', "a: b", "back\\slash", " padded ", ""):
+        note = f"---\nname: {fm_scalar(value)}\n---\nbody\n"
+        assert parse_frontmatter(note).get("name", "") == value
+
+
+def test_parse_json_fence_extracts_the_body_block():
+    body = 'Prose above.\n\n```json\n{"steps": [1, 2], "n": 3}\n```\n\nProse below.'
+    assert parse_json_fence(body) == {"steps": [1, 2], "n": 3}
+
+
+def test_parse_json_fence_degrades_to_empty_never_raises():
+    """A hand-editable note with a broken fence must not crash the reader."""
+    assert parse_json_fence("") == {}
+    assert parse_json_fence(None) == {}  # the guard the "never raises" contract needs
+    assert parse_json_fence("no fence here") == {}
+    assert parse_json_fence("```json\n{not json,}\n```") == {}
+    assert parse_json_fence("```json\n[1, 2]\n```") == {}  # top-level array → {}
+
+
+def test_parse_json_fence_ignores_unlabelled_fences():
+    """Stricter than parse_llm_json on purpose: this reads a committed format,
+    so only an explicitly ```json-labelled block counts."""
+    assert parse_json_fence('```\n{"a": 1}\n```') == {}
+    assert parse_llm_json('```\n{"a": 1}\n```') == {"a": 1}  # the fuzzy sibling does

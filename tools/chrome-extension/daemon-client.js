@@ -116,20 +116,18 @@ async function fetchAvailableApps() {
 // Cached in storage.session, not a module global: the MV3 service worker is torn
 // down after ~30s idle, so a global would be empty on most wakes. Session storage
 // clears on browser restart, which is exactly when onStartup re-probes.
-async function getAvailableApps({ refresh = true } = {}) {
-  if (refresh) {
-    try {
-      const ids = await fetchAvailableApps();
-      await chrome.storage.session.set({ appIds: [...ids] });
-      return ids;
-    } catch (_) { /* fall through to the last good probe */ }
-  }
+async function getAvailableApps() {
+  try {
+    const ids = await fetchAvailableApps();
+    await chrome.storage.session.set({ appIds: [...ids] });
+    return ids;
+  } catch (_) { /* fall through to the last good probe */ }
   const { appIds } = await chrome.storage.session.get({ appIds: null });
   return Array.isArray(appIds) ? new Set(appIds) : null;
 }
 
 globalThis.EOS_DAEMON = {
   DEFAULT_HOST, normalizeHost, migrateConfig, getConfig, saveConfig, authHeaders, wsHost,
-  fetchAvailableApps, getAvailableApps,
+  getAvailableApps,
 };
 })();

@@ -20,7 +20,7 @@
   position: fixed;
   z-index: 2147483647;
   width: min(320px, calc(100vw - 24px));
-  max-height: min(430px, calc(100vh - 24px));
+  max-height: min(430px, calc(100dvh - 24px));
   overflow: auto;
   padding: 16px 16px 13px;
   color: var(--eos-ink);
@@ -183,7 +183,7 @@
   right: 16px;
   z-index: 2147483646;          /* one below the card, which must sit above it */
   width: 268px;
-  max-height: calc(100vh - 140px);
+  max-height: calc(100dvh - 140px);
   display: flex;
   flex-direction: column;
   background: var(--eos-paper, #fff);

@@ -1,3 +1,7 @@
+---
+name: eos-sdk-extract
+description: Detect cross-app duplication and extract the smallest honest shared unit into emptyos/sdk/, codifying CLAUDE.md Dev Rule 9 (extract on the *second* caller, not the first). Use when the user says "extract", "sdk-extract", "dedupe the apps", "what's been copy-pasted", when you notice a familiar pattern while editing an app, or as a periodic health pass. NOT for single-app refactors or speculative design-for-the-future helpers — two real callers is the floor.
+---
 # EmptyOS SDK Extract
 
 Detect cross-app duplication and extract shared logic into `emptyos/sdk/` — codifying AGENTS.md §Development Rule 9 ("build specific first in one app, extract to `sdk/` when a second app needs it"). The rule is active only if someone runs it; this skill is the runner.

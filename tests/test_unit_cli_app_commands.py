@@ -2,6 +2,9 @@ from __future__ import annotations
 
 import urllib.error
 import urllib.request
+
+import click
+import pytest
 from types import SimpleNamespace
 
 from emptyos.sdk.cli_args import bind_cli_kwargs
@@ -220,13 +223,20 @@ def test_http_401_reports_auth_error_without_local_fallback(monkeypatch, tmp_pat
     fallback_calls = []
     monkeypatch.setattr(main, "_run_locally", lambda *a, **k: fallback_calls.append(a))
 
-    main._run_via_daemon(
-        "http://127.0.0.1:9000",
-        "sandbox",
-        "sandbox",
-        ["status"],
-        str(cfg),
-    )
+    # A rejected token must ALSO exit non-zero — a CLI that prints an auth
+    # error and returns 0 is worse than one that fails, because a caller
+    # scripting `eos` sees success. _run_via_daemon raises typer.Exit(1) for
+    # exactly that reason; the test simply never expected it and so went red
+    # on the correct behaviour.
+    with pytest.raises(click.exceptions.Exit) as exc:
+        main._run_via_daemon(
+            "http://127.0.0.1:9000",
+            "sandbox",
+            "sandbox",
+            ["status"],
+            str(cfg),
+        )
+    assert exc.value.exit_code == 1
 
     out = capsys.readouterr().out
     assert "Daemon rejected 'sandbox' (HTTP 401)" in out

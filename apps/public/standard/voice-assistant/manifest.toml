@@ -26,6 +26,7 @@ emits = [
     "voice-assistant:action_proposed",
     "voice-assistant:action_applied",
     "voice-assistant:action_rejected",
+    "voice-assistant:undo",
     "device:seen",
 ]
 # Live conversation channel — the assistant UI is the only consumer.
@@ -33,7 +34,7 @@ internal = [
     "voice-assistant:chat",
     # Pending-gate machinery — the Aura UI is the only consumer.
     "voice-assistant:action_proposed", "voice-assistant:action_applied",
-    "voice-assistant:action_rejected",
+    "voice-assistant:action_rejected", "voice-assistant:undo",
 ]
 
 # The voice satellite is the first device type — contribute its browser simulator

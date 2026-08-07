@@ -92,7 +92,7 @@ async def api_milestone(self, request):
         content = await self._ensure_daily(target)
         new_section = f"- 🏆 {text}"
         new_content = replace_section(content, "### Milestone", new_section)
-        await self.write(str(self._daily_path(target)), new_content)
+        await self._write_note(self._daily_path(target), new_content)
     await self.emit("journal:milestone", {"date": target.isoformat(), "text": text})
     return {"ok": True, "date": target.isoformat()}
 
@@ -142,7 +142,7 @@ async def api_three_things(self, request):
         content = await self._ensure_daily(target)
         new_section = "\n".join(f"{i + 1}. {t}" for i, t in enumerate(things)).rstrip() + "\n"
         new_content = replace_section(content, "#### Three successful things", new_section)
-        await self.write(str(self._daily_path(target)), new_content)
+        await self._write_note(self._daily_path(target), new_content)
     await self.emit("journal:three-things", {"date": target.isoformat()})
     # Echo what was actually saved so the caller can confirm rather than
     # trust a bare ok:true (a dogfood persona flagged the missing echo).

@@ -73,6 +73,12 @@
   // has its own chat UI, so the floating capture+assistant FABs collide with
   // the input bar and add nothing.
   if (/^\/(assistant|agent|voice-assistant)(\/|$)/.test(location.pathname)) return;
+  // Skip in embedded panes (?embed=1 — iframed by a host shell like portal):
+  // the host page carries its own companion rail; a second FAB inside the
+  // frame is doubled chrome. Mirrors eos.js's nav guard.
+  try {
+    if (new URLSearchParams(location.search).get('embed') === '1') return;
+  } catch (e) {}
 
   // Wait for EOS.nav to set the current app
   function waitForApp() {
@@ -679,6 +685,12 @@
     }
   }
 
+  // DELIBERATELY minimal (NOT the shared EOS_UI.renderMarkdown). renderResponse
+  // (the rooms path) calls this so the [BUTTON:]/[DO:]/[ACTION:] action tokens
+  // survive as literal `[...]` for the regex passes that turn them into
+  // click-to-execute buttons — a rich renderer would escape/mangle the brackets
+  // and break the buttons. The companion path (_mdRich) has no such tokens and
+  // DOES use the shared renderer. Do not "consolidate" this to the shared bundle.
   function _renderMd(text) {
     return _esc(text)
       .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')

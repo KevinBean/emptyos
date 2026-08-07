@@ -192,6 +192,47 @@ class TestPortalPinsAPI:
         assert resp.status_code == 200
 
 
+@pytest.mark.api
+class TestPortalModeBackendsAPI:
+    """Read-only smokes over the endpoints portal's unified door rides.
+
+    No LLM sends — these pin the response *shapes* the portal frontend
+    depends on (sidebar lists, home-strip chips), so a backend shape change
+    breaks here instead of silently blanking the door.
+    """
+
+    def test_rooms_global_pending_is_list(self, http_client):
+        resp = http_client.get("/rooms/api/pending")
+        assert_ok(resp)
+        assert isinstance(resp.json(), list)
+
+    def test_agent_sessions_shape(self, http_client):
+        resp = http_client.get("/agent/api/sessions")
+        assert_ok(resp)
+        rows = resp.json()
+        assert isinstance(rows, list)
+        if rows:
+            row = rows[0]
+            for key in ("id", "name", "message_count"):
+                assert key in row, f"agent session row missing {key!r}"
+
+    def test_assistant_sessions_shape(self, http_client):
+        resp = http_client.get("/assistant/api/sessions")
+        assert_ok(resp)
+        rows = resp.json()
+        assert isinstance(rows, list)
+        if rows:
+            row = rows[0]
+            for key in ("id", "name"):
+                assert key in row, f"assistant session row missing {key!r}"
+
+    def test_billing_today_has_cost(self, http_client):
+        resp = http_client.get("/billing/api/today")
+        assert_ok(resp)
+        body = resp.json()
+        assert "cost" in body and isinstance(body["cost"], (int, float))
+
+
 @pytest.mark.interactive
 class TestPortalUI:
     def test_page_loads_with_verb_chips(self, app_page, page_errors):
@@ -203,6 +244,49 @@ class TestPortalUI:
     def test_sidebar_has_rooms_and_shortcuts(self, app_page, page_errors):
         page = app_page("portal")
         # Sidebar sections: Shortcuts (with browse-all link), Rooms (with + button).
+        # Target the sidebar section heading specifically — a bare text=Rooms also
+        # matches the "Rooms" backend-mode button in the composer (strict-mode clash).
         page.locator("text=Shortcuts").wait_for(state="visible", timeout=4000)
-        page.locator("text=Rooms").wait_for(state="visible", timeout=4000)
+        page.locator(".portal-section-header h3", has_text="Rooms").wait_for(state="visible", timeout=4000)
         page.locator(".portal-section-add").wait_for(state="visible", timeout=4000)
+
+    def test_backend_mode_switch_renders(self, app_page, page_errors):
+        page = app_page("portal")
+        # The unified-door mode switch carries the core conversation backends.
+        for bk in ("rooms", "assistant", "agent"):
+            page.locator(f'.portal-bk[data-backend="{bk}"]').wait_for(state="visible", timeout=4000)
+
+    def test_backend_switch_persists_across_reload(self, app_page, page_errors):
+        page = app_page("portal")
+        asst = page.locator('.portal-bk[data-backend="assistant"]')
+        asst.wait_for(state="visible", timeout=4000)
+        asst.click()
+        page.wait_for_timeout(200)
+        assert "active" in (asst.get_attribute("class") or ""), "Assistant should be active after click"
+        page.reload()
+        asst = page.locator('.portal-bk[data-backend="assistant"]')
+        asst.wait_for(state="visible", timeout=4000)
+        page.wait_for_timeout(400)  # _syncBackendUI restores from localStorage on load
+        assert "active" in (asst.get_attribute("class") or ""), "Assistant should persist across reload"
+        # Restore the default so this test doesn't leak state to others.
+        page.locator('.portal-bk[data-backend="rooms"]').click()
+        page.wait_for_timeout(150)
+
+    def test_home_strip_container_present(self, app_page, page_errors):
+        page = app_page("portal")
+        # The strip is state-dependent (hidden when nothing to show) — assert the
+        # container exists and the page loads error-free, not its visibility.
+        assert page.locator("#portal-home-strip").count() == 1
+        assert page.locator("#portal-continue").count() == 1
+        assert page.locator("#portal-status-chips").count() == 1
+
+    def test_code_mode_opens_workspace_iframe(self, app_page, page_errors):
+        page = app_page("portal")
+        page.wait_for_timeout(600)  # let _syncBackendAvailability run after the app catalog loads
+        code_btn = page.locator('.portal-bk[data-backend="code"]')
+        if code_btn.count() == 0 or not code_btn.is_visible():
+            pytest.skip("code app not installed on this deployment")
+        code_btn.click()
+        page.locator(".portal-iframe-pane.open").wait_for(state="visible", timeout=5000)
+        src = page.locator("#portal-iframe-frame").get_attribute("src") or ""
+        assert "/code/" in src and "embed=1" in src, f"expected embedded code workspace, got {src!r}"

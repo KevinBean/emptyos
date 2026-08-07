@@ -278,7 +278,7 @@ async def api_listen_end(self, request):
 
     # Outside the lock: emit aggregator event. Background task so a slow
     # listener can't block the response.
-    asyncio.create_task(
+    self.spawn_background(
         self.emit(
             "english:active_listening",
             {

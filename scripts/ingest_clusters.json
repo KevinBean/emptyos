@@ -1,0 +1,39 @@
+{
+  "_comment": "Per-cluster parameters for build_cluster.py --cluster-id <id>. This registry exists because the cabletool artifact set was originally passed as ad-hoc CLI flags and survived only inside the emitted manifest's criterion string. Reproducibility verified 2026-08-07: both manifests regenerate byte-identical from these parameters.",
+  "emfieldcalc": {
+    "tag": "emfieldcalc",
+    "artifacts": [],
+    "task": "T2-emfieldcalc-cluster",
+    "out": "data/imports/t2-emfieldcalc-cluster.json"
+  },
+  "cabletool": {
+    "tag": "cable-tool",
+    "artifacts": [
+      "cableBuilder.js",
+      "cableArrangement.js",
+      "cableComponent.js",
+      "cableTemplates.js",
+      "iecStandards.js",
+      "cableVisualizationComponent.js",
+      "installationSettings.js",
+      "arrangementEditor.js"
+    ],
+    "task": "T2-cabletool-cluster",
+    "out": "data/imports/t2-cabletool-cluster.json"
+  },
+  "simplecalc": {
+    "_comment": "Corroborated 2026-08-07 from source scans: 121 members 2025-04-05..06-15 across BOTH providers, 44 via bulk-era `simplecalc` frontmatter tag + 77 via artifact body-mentions; absorbs the former 'dashboard' cluster (05-23..27). Gate recall 26% (32 flagged of 121). eventBus.js dropped — not confirmed in sampled sources; the seven below each corroborate multi-record with low sole-corroborator counts.",
+    "tag": "simplecalc",
+    "artifacts": [
+      "blocks-manager.js",
+      "documents-manager.js",
+      "knowledge-graph.js",
+      "actions-manager.js",
+      "markdown-editor-integration.js",
+      "dataview.js",
+      "storage-manager-extension.js"
+    ],
+    "task": "T2-simplecalc-cluster",
+    "out": "data/imports/t2-simplecalc-cluster.json"
+  }
+}

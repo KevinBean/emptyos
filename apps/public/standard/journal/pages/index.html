@@ -762,11 +762,7 @@ if (window.EOS_UI && EOS_UI.modelPill) {
 var _appSettings = EOS_UI.settingsPanel({
     id: 'app-settings-panel',
     title: 'Journal Settings',
-    fields: [
-        {key: 'journal.default_mood', label: 'Default Mood', type: 'select',
-         options: ['great', 'good', 'okay', 'low', 'bad'], default: 'good',
-         hint: 'Mood preselected when opening a new day.'},
-    ],
+    app: 'journal',
 });
 function openAppSettings() { _appSettings.open(); }
 </script>

@@ -45,16 +45,20 @@ def _sha256(text: str) -> str:
 
 
 def _is_expired(record: dict) -> bool:
-    created = record.get("created_at")
+    """Birth timestamp + TTL, via the shared helper (see is_past_ttl).
+
+    Behaviour preserved, including the `>=` boundary and failing open on a bad
+    timestamp or TTL. What changes: `created_at` values that are date-only or
+    naive now parse instead of quietly meaning "never expires".
+    """
+    from emptyos.sdk.utils import is_past_ttl
+
     ttl = record.get("ttl_hours", DEFAULT_TTL_HOURS)
-    if not created:
-        return False
     try:
-        born = datetime.fromisoformat(created)
-        age_h = (_now() - born).total_seconds() / 3600.0
-        return age_h >= float(ttl)
-    except (ValueError, TypeError):
+        ttl_seconds = float(ttl) * 3600.0
+    except (TypeError, ValueError):
         return False
+    return is_past_ttl(str(record.get("created_at") or ""), ttl_seconds, _now())
 
 
 def save_original(

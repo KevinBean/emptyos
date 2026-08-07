@@ -4,7 +4,7 @@
 // editors" with "one document, many synchronized views, switchable layouts".
 // This store is the single source of truth every view subscribes to:
 //
-//   { doc, selection, cursor, chainage, viewport } + a typed-mask change bus.
+//   { doc, selection, cursor, chainage, viewport, analysis } + a typed-mask change bus.
 //
 // A view never talks to another view — it mutates the store (select / patchObject
 // / setChainage) and re-draws on the store's events. Selecting a cable in the plan
@@ -74,6 +74,12 @@ export function createCadStore(initialDoc) {
     chainage: 0,                // active long-run position (corridor cursor), metres from run start
     viewport: null,             // the ONE persistent CadViewport handle
     dirty: false,
+    // Derived analysis — engine output ABOUT the doc (clearance/heat/force checks),
+    // never part of it. Written by the live-consequence tick (eos-cad-live.js) or a
+    // manual run; read by overlay views. Deliberately NOT undoable and NOT dirty-
+    // marking: it is a consequence of the doc, so restoring it on undo would show a
+    // result that no longer describes the document. See .claude/rules/cad-layouts.md.
+    analysis: null,
   };
   const subs = new Set();       // { fn, mask:Set|null }
 
@@ -106,13 +112,15 @@ export function createCadStore(initialDoc) {
     get chainage() { return state.chainage; },
     get viewport() { return state.viewport; },
     get dirty() { return state.dirty; },
+    get analysis() { return state.analysis; },
     objectByOid(oid) { return findObject(state.doc, oid); },
     objectOwningFeature(featureId) { return objectOwningFeature(state.doc, featureId); },
     objectsOfKind(kind) { return objectsOfKind(state.doc, kind); },
     iterObjects(opts) { return iterObjects(state.doc, opts); },
 
     // subscription — `types` is an array of event types this view cares about
-    // (doc | object | select | cursor | chainage | dirty | history), or omitted for all.
+    // (doc | object | select | cursor | chainage | dirty | history | analysis),
+    // or omitted for all.
     subscribe(fn, types) {
       const s = { fn, mask: (types && types.length) ? new Set(types) : null };
       subs.add(s);
@@ -161,6 +169,12 @@ export function createCadStore(initialDoc) {
       emit({ type: 'chainage', chainage: v });
     },
     setViewport(vp) { state.viewport = vp; },
+
+    // Publish derived analysis and fan it out to overlay views. Pass null to clear
+    // (e.g. the document changed to an entity we have no result for yet). Does not
+    // touch `dirty` — analysis is derived, not an unsaved user edit.
+    setAnalysis(a) { state.analysis = (a === undefined ? null : a); emit({ type: 'analysis' }); },
+
     markDirty(b) { state.dirty = (b === undefined ? true : !!b); emit({ type: 'dirty' }); },
 
     // ── history ── (mechanics in eos-history.js; snapshot/restore injected above)

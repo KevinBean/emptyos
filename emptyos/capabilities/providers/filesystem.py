@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 
 from emptyos.capabilities import Provider
+from emptyos.runtime.atomic_io import atomic_write_text
 
 
 class FilesystemReadProvider(Provider):
@@ -42,10 +44,15 @@ class FilesystemWriteProvider(Provider):
     async def available(self) -> bool:
         return True
 
-    async def execute(self, *, path: str, content: str, **kwargs) -> str:
+    async def execute(
+        self, *, path: str, content: str, atomic: bool = False, **kwargs
+    ) -> str:
         target = self._resolve(path)
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(content, encoding="utf-8")
+        if atomic:
+            await asyncio.to_thread(atomic_write_text, target, content)
+        else:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(content, encoding="utf-8")
         return str(target)
 
     def _resolve(self, path: str) -> Path:

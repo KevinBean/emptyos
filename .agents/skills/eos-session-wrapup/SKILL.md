@@ -112,7 +112,7 @@ Args: <one-line-per-fact summary of what changed>
 #### Safety
 
 - **Always surface before applying** — both classes propose; the user approves each batch. Wrapup never auto-applies vault edits.
-- **One-line summaries, not transcripts** — feed distilled facts, not raw conversation (transcript-shaped is `vault-ai-conversation-digest`'s job, wrong tool here).
+- **One-line summaries, not transcripts** — feed distilled facts, not raw conversation (transcript-shaped is `eos-ai-conversation-ingest`'s job, wrong tool here).
 - **Don't double-write to the journal** — Class A logs to today's journal; Step 4 (devlog) writes the project log under `10_Projects/emptyos/log/`. Different files, no conflict. Class B does **not** write a journal milestone (it's not a wellbeing-shaped event).
 
 ---

@@ -13,6 +13,7 @@
 
 import { defineView, esc } from '/static/eos-cad-view.js';
 import { createAiPanel } from '/static/eos-cad-ai-panel.js';
+import { attachLiveConsequence, LIVE_CLEAN, LIVE_IDLE, LIVE_ERROR } from '/static/eos-cad-live.js';
 
 const PREFIX = '/engineering-scene/api';
 
@@ -367,6 +368,74 @@ async function applyEngineeringInputs(vctx, st) {
   if (vctx.setStatus) vctx.setStatus('Engineering inputs saved; checks are stale');
 }
 
+// ── Live consequence ──
+//
+// Gated by the DECLARING app's own flag: [apps.engineering-scene]
+// feature.auto-recalculation.enabled, surfaced as features.auto_recalculate by
+// GET /engineering-scene/api/features (already fetched in boot()). That flag was
+// declared for exactly this and had no consumer until now — hence no new flag.
+//
+// Without this, moving a transformer says nothing until you press "Run checks".
+// With it, every scene mutation (each one re-fetches the caddoc → a `doc` event)
+// debounces into a cheap staleness probe and recomputes only when the inputs hash
+// actually moved. The result lands on store.setAnalysis so overlay views repaint.
+//
+// The probe is what makes this cheap enough to fire on every edit: checks/run
+// resolves fault levels through power-study (a full short-circuit solve per unique
+// bus ref), while GET checks only re-hashes the scene. It is also the loop-breaker
+// — a run that triggers another doc event settles on the next pass, because by then
+// the hash matches and the probe reports clean.
+function attachLive(vctx, st) {
+  if (!(st.features && st.features.auto_recalculate)) return null;
+  return attachLiveConsequence(vctx.store, {
+    key: () => sceneId(),
+    async probe() {
+      const id = sceneId();
+      if (!id) return { stale: false, analysis: null };
+      const r = await api('GET', PREFIX + '/scenes/' + encodeURIComponent(id) + '/checks');
+      if (!r || !r.ok) return null;
+      const checks = r.checks || {};
+      // The server marks a stored result `stale` when engineering_input_hash no
+      // longer matches the scene; `not-run` is the never-computed case.
+      return { stale: checks.status === 'stale' || checks.status === 'not-run', analysis: checks };
+    },
+    async run() {
+      const id = sceneId();
+      if (!id) return null;
+      const r = await api('POST', PREFIX + '/scenes/' + encodeURIComponent(id) + '/checks/run', {});
+      // Throw so the tick surfaces the backend's own message — a generic
+      // "Recompute failed" hides the one sentence that says what to fix.
+      if (r && r.error) throw new Error(r.error);
+      if (!r || !r.ok) return null;
+      if (st.scene) st.scene.checks = r.checks;   // keep the view's own copy in step
+      // Re-fetch the compiled caddoc so the WORLD repaints, not just the readout:
+      // scene_to_caddoc only emits check overlay geometry (heat-zone discs, pass/fail
+      // markers) when checks are fresh — check_overlay_features returns nothing while
+      // status is stale/not-run. Without this the numbers update and the 3D scene
+      // silently keeps the pre-edit overlay, which is the exact "world says nothing
+      // back" this whole feature exists to fix.
+      //
+      // This emits `doc`, which queues one more tick cycle — that is intended and
+      // self-terminating: the follow-up probe sees a matching inputs hash, reports
+      // clean, and stops. One extra cheap GET per recompute.
+      await reloadCaddoc(vctx, st);
+      return r.checks;
+    },
+    onStatus(state, detail) {
+      if (!vctx.setStatus) return;
+      if (state === LIVE_CLEAN) return;           // silent when nothing changed
+      if (state === LIVE_IDLE) {
+        const a = vctx.store.analysis;
+        const s = a && a.summary;
+        vctx.setStatus(s ? ('Checks: ' + (a.status || '?') + ' — ' + (s.failed || 0) + ' failed of ' + (s.total || 0))
+          : 'Checks up to date');
+        return;
+      }
+      vctx.setStatus(detail, state === LIVE_ERROR);
+    },
+  });
+}
+
 async function runChecks(vctx, st) {
   const r = await api('POST', PREFIX + '/scenes/' + encodeURIComponent(sceneId()) + '/checks/run', {});
   if (!r || !r.ok) { if (vctx.setStatus) vctx.setStatus('Checks failed: ' + ((r && r.error) || '?'), true); return; }
@@ -479,6 +548,10 @@ async function boot(vctx, st) {
   const ab = vctx.pane.querySelector('[data-se-anchor]'); if (ab) ab.addEventListener('click', () => anchorScene(vctx, st));
   const ob = vctx.pane.querySelector('[data-se-overlay]'); if (ob) ob.addEventListener('click', () => toggleOverlay(vctx, st));
   renderAll(vctx, st);
+  // Attach the live-consequence tick now that st.features carries the flag. A
+  // teardown that raced this boot leaves _seTornDown set — honour it, or we'd
+  // leak a subscription onto a store whose view is already gone.
+  if (!vctx._seTornDown) vctx._seLive = attachLive(vctx, st);
   // "+ New Site Layout" from the Documents dashboard lands here with ?new=1 —
   // open the New scene modal immediately (reuses the same create flow).
   if (!id && new URLSearchParams(location.search).get('new') === '1') newScene(vctx);
@@ -490,6 +563,8 @@ const _v = defineView({
   mount(vctx) {
     vctx._seState = { templates: {}, cableTypes: {}, nodes: [], features: {}, scene: null, selected: null, aiPanel: null };
     mountAiPanel(vctx, vctx._seState);
+    // boot() attaches the live-consequence tick once it knows the flag (it has to
+    // fetch /features first), so there is nothing to attach here.
     boot(vctx, vctx._seState);
     // mirror viewport selection into the roster
     vctx._seUnsub = vctx.store.subscribe((e) => {
@@ -502,7 +577,9 @@ const _v = defineView({
   },
   update() { /* edits re-render locally; nothing store-driven beyond selection */ },
   teardown(vctx) {
+    vctx._seTornDown = true;   // an in-flight boot() must not attach after this
     if (vctx._seUnsub) { try { vctx._seUnsub(); } catch (e) { /* */ } }
+    if (vctx._seLive) { try { vctx._seLive.detach(); } catch (e) { /* */ } vctx._seLive = null; }
     if (vctx._seState && vctx._seState.aiPanel) vctx._seState.aiPanel.teardown();
   },
 });

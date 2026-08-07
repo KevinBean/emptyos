@@ -37,9 +37,22 @@ those two are instances of.
    - **`scripts/release-public.py`** — the hard gate before a public release.
 
    This runner is itself an instance of the pattern: the registry of self-audits
-   grew big enough (~13+ scanners) to deserve its own aggregator.
+   grew big enough (~35 check-*/audit scanners) to deserve its own aggregator.
 
 ## Catalog (the loops that exist)
+
+> **The machine-readable catalog is `emptyos/sdk/loops.py`** — the registry that names
+> every EmptyOS feedback loop (not just the self-audit ones) as a single concept: each
+> scored on the six stages (`friction`, `act`, `gate`, `revert`, `memory`, `bound`), with
+> its live/dark status and exact dark-flag key. Query it with `eos loops list` / `show <id>`
+> / `stages`. **When you add a loop, add it there** — this table is the *narrative* of the
+> self-audit axis; the registry is the inventory of record. It also carries `LoopReceipt` /
+> `receipt_from_drain_state`, which builds a captured-run receipt from a real fix-agent
+> `run.json` (friction → attempts → files → gates → verify → revert → learned).
+>
+> Grounding note (2026-07-11): `bound` (termination/budget) exists because every serious
+> external framing names "how does the loop stop" as first-class — a loop with no stopping
+> condition is a failure mode, not a loop. See `project_loop_engineering_concept_grounding`.
 
 | Axis | Generator / registry (the feature) | Self-audit use | Where it reruns |
 |---|---|---|---|
@@ -52,6 +65,10 @@ those two are instances of.
 | **UI / interaction affordance** | the rendered DOM itself (no registry — geometry + ARIA are the ground truth) | can the user *reach* and *understand* the surface: content clipped with no scroll (broken height chain); a one-of-N button row with no tab/radio roles | `scripts/check_ui_affordance.py` + `?debug=affordance` (live daemon; design-system-audit Phase 0d / release) + `tests/test_sys_ui_affordance.py` (CI) |
 | **AI-native** | the platform's own AI mechanisms (`think` chain, `EOS_UI` AI chrome, verb registry) | per-app backend-AI vs assistant reach vs visible AI UI; "dark AI" = an app that thinks but shows no chip and exposes no verb | `scripts/check_ai_native.py` (/preflight `--scope apps`) + `eos-ai-native-audit` skill |
 | Flag hygiene | the dark-flag convention (`feature.<slug>.enabled` + `[autopilot]` keys) | inventory every dark flag with per-machine state + age; STALE = dark >90d with no `WANTED_DARK` trigger registered | `scripts/check_dark_flags.py` (/preflight, always scope) |
+| **Loop registry** | `emptyos/sdk/loops.py` (the loop catalog itself) | every registered loop's components resolve + dark flags appear in code; reconcile dark-vs-live per machine (dark-but-live-here). Unregistered-loop detection is deliberately NOT automated (ambiguous) — the register mandate stays doctrine | `scripts/check_loops.py` (/preflight `--scope loops`, advisory) + `tests/test_unit_check_loops.py` |
+| **KB maintenance** | kb-butler (`kb.health()` sweep) | autonomous backlink repair + convergence reflection → fix-prompts into the review gate | scheduled cron (dark until `[apps.kb-butler] enabled`) |
+| **Agent attention** | cockpit (session-state observer) | idle→waiting/stuck detection across parallel agent sessions → `proactive_notify` nudge | `cockpit-attention-push` loop (dark until `feature.attention-push.enabled`) |
+| Content quality | publish framework evaluator | multi-lens LLM scorecard grading a draft vs its framework, deterministic-validated | `apps/public/standard/publish/framework.py` (dark until `feature.framework-eval.enabled`) |
 | App gap vs market | `eos-app-gap-analysis` skill + vault registry (`30_Resources/EmptyOS/gap-analysis/`, one note per app) | benchmark each app vs 3-5 front-tier market alternatives; gap lifecycle (`open→shipped/deferred/declined`) tracked across re-runs | `scripts/check_gap_freshness.py` (/preflight, apps scope) + insights-ledger lens `gap` |
 | Docs | `eos app info`, `generate_emptyos_site.py` | self-documenting apps + live site | session-wrapup |
 

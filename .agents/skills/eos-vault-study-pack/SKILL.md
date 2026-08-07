@@ -1,6 +1,6 @@
 ---
 name: eos-vault-study-pack
-description: Turn any source content (an infographic image, pasted article, conversation excerpt, URL, or existing vault note) into a complete study pack — distilled KB notes + a Learn course with read/quiz lessons (SRS-scheduled) + an optional viz artifact. Use when the user says "make a study pack", "turn this into learning materials", "make notes + flashcards from this", "help me learn this", or hands over content and asks for "better notes / visualisation / learning materials". NOT for digesting a whole reference PDF into citation sources (use vault-source-digest) or archiving a raw chat transcript (use vault-ai-conversation-digest) — this skill is for *learnable* distillation, not archival.
+description: Turn any source content (an infographic image, pasted article, conversation excerpt, URL, or existing vault note) into a complete study pack — distilled KB notes + a Learn course with read/quiz lessons (SRS-scheduled) + an optional viz artifact. Use when the user says "make a study pack", "turn this into learning materials", "make notes + flashcards from this", "help me learn this", or hands over content and asks for "better notes / visualisation / learning materials". NOT for digesting a whole reference PDF into citation sources (use vault-source-digest) or archiving a raw chat transcript (use eos-ai-conversation-ingest) — this skill is for *learnable* distillation, not archival.
 ---
 
 # Study Pack — content → KB notes + Learn course + viz

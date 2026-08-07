@@ -56,7 +56,7 @@ var toolsByType = {};
 var featureRegistry = {};
 
 // ALL_STATUSES lives in workspace.js (loaded before this file).
-var STATUS_LABELS = { idea: 'Ideas', active: 'Active', blocked: 'Blocked', shelved: 'Shelved', completed: 'Done', archived: 'Archived' };
+var STATUS_LABELS = { idea: 'Ideas', active: 'Active', 'spec-ready': 'Spec Ready', blocked: 'Blocked', shelved: 'Shelved', completed: 'Done', archived: 'Archived' };
 function getStatusOrder() { return showArchived ? ALL_STATUSES : ALL_STATUSES.filter(function(s){return s!=='archived'}); }
 
 function toggleArchived() {
@@ -128,7 +128,7 @@ function projectCardHtml(p) {
 // Status → eos-pill palette. Mirrors the col-* CSS at the top of index.html so
 // the kanban header pill matches the per-status accent users expect.
 var STATUS_COLORS = {
-    idea: 'gray', active: 'green', blocked: 'red',
+    idea: 'gray', active: 'green', 'spec-ready': 'blue', blocked: 'red',
     shelved: 'amber', completed: 'purple', archived: 'gray',
 };
 
@@ -420,6 +420,7 @@ async function load() {
         typeConfig = tc.types || {};
         toolsByType = tc.tools || {};
         featureRegistry = tc.features || {};
+        ALL_STATUSES = tc.statuses || ALL_STATUSES;
         filteredProjects = allProjects;
         document.getElementById('subtitle').textContent = allProjects.length + ' projects';
         renderStats(allProjects);

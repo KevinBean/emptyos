@@ -1,6 +1,6 @@
 ---
 name: eos-ui-walk
-description: Act as Kevin — the user of EmptyOS — and walk the product by hand through a real browser, performing real use-case workflows end to end (capture a task, write a journal entry, look something up in the KB, add a job application, run a learn session…). Screenshot the meaningful steps, judge each one (works / slow / confusing / broken), and log it all into a self-contained HTML report to show the user. Designed to be re-run on a /loop ("dogfood the UI"). Use when the user says "UI walk", "dogfood the UI", "act as me and use the app", "walk the real use cases", "screenshot the steps", "test it like a user", or loops this skill. NOT for visual/design polish (use eos-page-design-review / eos-design-system-audit), NOT for backend correctness — async-loop wedges, vault read-modify-write races (use eos-bug-audit), NOT for architecture/wiring (use eos-architecture-review), NOT the authoring + fix-until-clean loop (use eos-usecase-audit — it wraps this walk).
+description: Act as Kevin — the user of EmptyOS — and walk the product by hand through a real browser, performing real use-case workflows end to end (capture a task, write a journal entry, look something up in the KB, add a job application, run a learn session…). Judge BOTH axes at every step — does the existing flow work (works / slow / confusing / broken), AND is the feature set enough to finish the real job (missing = feature gap). Screenshot the meaningful steps and log it all into a self-contained HTML report to show the user, with a per-use-case sufficiency verdict. Designed to be re-run on a /loop ("dogfood the UI"). Use when the user says "UI walk", "dogfood the UI", "act as me and use the app", "walk the real use cases", "screenshot the steps", "test it like a user", "is the app enough for my workflow", "walk my real work through it and see what's missing", or loops this skill. NOT for visual/design polish (use eos-page-design-review / eos-design-system-audit), NOT for backend correctness — async-loop wedges, vault read-modify-write races (use eos-bug-audit), NOT for architecture/wiring (use eos-architecture-review), NOT the authoring + fix-until-clean loop (use eos-usecase-audit — it wraps this walk).
 ---
 
 # EmptyOS UI Walk — dogfood as the user
@@ -14,8 +14,12 @@ report** the user can open and skim.
 
 This is dogfooding, not a test suite. Your judgment per step is the signal:
 `pass` (it just worked), `slow` (worked but made me wait), `confusing` (worked
-but I had to think / hunt), `fail` (broke / dead end). Be honest — a clean
-report that says "everything worked" is a fine and valuable outcome.
+but I had to think / hunt), `fail` (broke / dead end), `missing` (the real job
+needs a capability that doesn't exist — a feature gap, not a bug). Be honest —
+a clean report that says "everything worked" is a fine and valuable outcome,
+**but only if the real jobs could actually be finished**: "every button works
+and I still couldn't do my work" is a gap report, not a clean pass. The walk
+measures product quality AND product boundaries.
 
 The automated scanners (`check-js-errors.py`, `check-clickable.py`) are NOT the
 job here — they're a 60-second optional pre-pass for crude breakage. The job is
@@ -328,9 +332,17 @@ real, reproducible interactive bug with an obvious root cause:
 ## Step 8 — Report + loop decision
 
 Tell the user:
+- **Sufficiency verdict per use case, first** — one line each: `complete` /
+  `complete-with-friction` / `blocked-by-bug` / `blocked-by-gap` /
+  `workaround` (finished only by leaving the system — log the workaround as a
+  `missing` finding too). Judge against the real goal, not against the steps
+  that happened to be walkable; a goal silently skipped because no feature
+  supports it is `blocked-by-gap`, not `complete`.
 - **Where the report is** (the `report.html` path) and how to open it.
-- **Headline findings** — the `fail`/`confusing`/`slow` steps in plain language
-  ("adding a task works but doesn't show in Today without a reload").
+- **Headline findings** — the `fail`/`confusing`/`slow`/`missing` steps in
+  plain language ("adding a task works but doesn't show in Today without a
+  reload"; "there is no way to record a design decision against the project —
+  had to hand-edit the note").
 - **Anything fixed** (with commit hash) and anything **flagged-not-fixed** (the
   data-volume/perf/design class) and why.
 - **Triage summary** — which findings were promoted / dismissed / deferred /

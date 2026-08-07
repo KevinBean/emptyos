@@ -1,4 +1,5 @@
 ---
+name: eos-fix-drain
 description: Run the dogfood-agent fix drain end-to-end with the pre-flight + post-revert safety gates that `apps/fix-agent` itself doesn't enforce. Use when the user says "drain the fix queue", "run the fix drain", "process pending fix-prompts", "fix-drain", or wants to apply N queued fixes overnight / in one batch. Wraps `POST /dogfood-agent/api/fix-drain/start` with the invariants documented in `docs/fix-agent.md` — refuses to launch on dirty state, verifies main is linear + free of orphan branches after each revert, surfaces 529/interrupt fallout for manual triage.
 ---
 

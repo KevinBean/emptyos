@@ -11,8 +11,6 @@ import asyncio
 import importlib.util
 from pathlib import Path
 
-import pytest
-
 ROOT = Path(__file__).resolve().parents[1]
 PLUGIN_PATH = ROOT / "plugins" / "external-lab-host" / "plugin.py"
 
@@ -31,6 +29,10 @@ class _StubConfig:
         self._own_port = own_port
         self.demo_enabled = demo
 
+    @property
+    def data_dir(self):
+        return self.path.parent / "data"
+
     def get(self, key, default=None):
         if key == "network.port":
             return self._own_port
@@ -40,6 +42,27 @@ class _StubConfig:
 class _StubKernel:
     def __init__(self, root: Path, **cfg):
         self.config = _StubConfig(root, **cfg)
+        self.settings = _StubSettings()
+        self.services = _StubServices(self.settings)
+
+
+class _StubSettings:
+    def __init__(self):
+        self.values = {}
+
+    def get(self, key, default=None):
+        return self.values.get(key, default)
+
+    def set(self, key, value):
+        self.values[key] = value
+
+
+class _StubServices:
+    def __init__(self, settings):
+        self.settings = settings
+
+    def get_optional(self, name):
+        return self.settings if name == "settings" else None
 
 
 def _make_plugin(tmp_path, *, own_port=9000, demo=False, config=None):
@@ -143,6 +166,90 @@ def test_auto_start_spawn_failure_is_soft(tmp_path, monkeypatch):
     monkeypatch.setattr(mod, "spawn_emptyos_daemon", fake_spawn)
     # Never raises — returns False, :9000 boot unaffected.
     assert asyncio.run(plugin.auto_start()) is False
+
+
+def test_clean_bootstrap_generates_persistent_token_and_safe_config(tmp_path):
+    _, plugin = _make_plugin(tmp_path)
+
+    env = plugin._extra_env()
+
+    assert env["CHATBOT_ADMIN_TOKEN"] == plugin.kernel.settings.values[
+        "chatbot-studio.admin_token"
+    ]
+    assert len(env["CHATBOT_ADMIN_TOKEN"]) >= 32
+    assert env["CHATBOT_PUBLIC_ORIGIN"] == "http://127.0.0.1:9100"
+    sites = Path(env["CHATBOT_SITES_PATH"])
+    assert sites.exists()
+    assert "[defaults]" in sites.read_text(encoding="utf-8")
+    assert Path(env["CHATBOT_DATA_DIR"]).is_dir()
+    assert plugin._admin_token() == env["CHATBOT_ADMIN_TOKEN"]
+
+
+def test_first_boot_migrates_legacy_config_and_data_once(tmp_path):
+    legacy = tmp_path / "services" / "chatbot"
+    (legacy / "data" / "catalogs").mkdir(parents=True)
+    (legacy / "sites.toml").write_text("[defaults]\nmodel='legacy'\n", encoding="utf-8")
+    (legacy / "data" / "catalogs" / "legacy.json").write_text("{}", encoding="utf-8")
+    _, plugin = _make_plugin(tmp_path)
+
+    sites, data = plugin._prepare_runtime()
+
+    assert "model='legacy'" in sites.read_text(encoding="utf-8")
+    assert (data / "catalogs" / "legacy.json").exists()
+    # Managed state wins after migration; later legacy changes are not recopied.
+    (legacy / "sites.toml").write_text("changed", encoding="utf-8")
+    assert plugin._prepare_runtime()[0].read_text(encoding="utf-8") != "changed"
+
+
+def test_saved_ownership_requires_pid_time_port_and_identity(tmp_path, monkeypatch):
+    mod, plugin = _make_plugin(tmp_path)
+    plugin._write_state(1234, 50.25)
+    monkeypatch.setattr(plugin, "_process_create_time", lambda pid: 50.25)
+    monkeypatch.setattr(plugin, "_port_owner_pid", lambda: 1234)
+    plugin._identity = lambda: _coro(mod.IDENTITY)
+
+    assert asyncio.run(plugin._reattach()) is True
+    assert plugin._owned_pid == 1234
+
+    monkeypatch.setattr(plugin, "_port_owner_pid", lambda: 9999)
+    assert plugin._load_valid_state() is None
+
+
+def test_disconnect_attempts_graceful_owned_shutdown(tmp_path):
+    _, plugin = _make_plugin(tmp_path)
+    called = {"stop": False}
+
+    async def fake_stop():
+        called["stop"] = True
+        return {"ok": True}
+
+    plugin.stop = fake_stop
+    asyncio.run(plugin.disconnect())
+    assert called["stop"] is True
+
+
+def test_reattached_owned_process_can_be_stopped_after_final_validation(tmp_path, monkeypatch):
+    mod, plugin = _make_plugin(tmp_path)
+    plugin._owned_pid = 1234
+    plugin._owned_create_time = 50.25
+    monkeypatch.setattr(plugin, "_load_valid_state", lambda: (1234, 50.25))
+    monkeypatch.setattr(plugin, "_port_owner_pid", lambda: 1234)
+    monkeypatch.setattr(plugin, "_process_create_time", lambda pid: 50.25)
+    calls = []
+
+    class _Process:
+        def terminate(self):
+            calls.append("terminate")
+
+        def wait(self, _timeout):
+            calls.append("wait")
+
+    monkeypatch.setattr(mod.psutil, "Process", lambda pid: _Process())
+    result = asyncio.run(plugin._stop_reattached())
+
+    assert result == {"ok": True, "reattached": True}
+    assert calls == ["terminate", "wait"]
+    assert plugin._owned_pid is None
 
 
 async def _coro(value):

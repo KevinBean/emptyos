@@ -35,7 +35,7 @@ def load_release() -> dict:
 
 
 def resolve_tier(release: dict, tier_name: str) -> dict:
-    """Resolve a tier's apps/plugins/skills, including everything it `extends`.
+    """Resolve a tier's apps/plugins/skills/services, including inherited items.
 
     Delegates to the shared resolver that release-public.py and release.py
     already use, so "what is in tier X" means one thing across all three
@@ -55,7 +55,7 @@ def resolve_tier(release: dict, tier_name: str) -> dict:
 
     return {
         key: sorted(_resolve_shared(tiers, tier_name, key))
-        for key in ("apps", "plugins", "skills")
+        for key in ("apps", "plugins", "skills", "services")
     }
 
 
@@ -235,11 +235,26 @@ def collect_files(release: dict, tier: dict) -> list[tuple[Path, Path]]:
 
     # Tier skills
     for skill_id in tier["skills"]:
-        skill_dir = ROOT / "skills" / skill_id
-        if skill_dir.exists():
-            add_path(skill_dir)
+        legacy_skill_dir = ROOT / "skills" / skill_id
+        agent_skill_dir = ROOT / ".agents" / "skills" / skill_id
+        if legacy_skill_dir.exists():
+            add_path(legacy_skill_dir)
+        elif agent_skill_dir.exists():
+            add_path(agent_skill_dir)
         else:
-            print(f"  Warning: skill '{skill_id}' not found at {skill_dir}")
+            print(
+                f"  Warning: skill '{skill_id}' not found at "
+                f"{legacy_skill_dir} or {agent_skill_dir}"
+            )
+
+    # Tier standalone services. These are release resources, not kernel
+    # services: they are copied under services/ and supervised by a plugin.
+    for service_id in tier["services"]:
+        service_dir = ROOT / "services" / service_id
+        if service_dir.exists():
+            add_path(service_dir)
+        else:
+            print(f"  Warning: service '{service_id}' not found at {service_dir}")
 
     # Drop anything git already knows we must not ship. Last step, so it applies
     # uniformly to platform paths, apps, plugins and skills alike.
@@ -325,6 +340,7 @@ def package(tier_name: str, dry_run: bool = False, platform_override: str | None
     else:
         print()
     print(f"  Skills:  {len(tier['skills'])}")
+    print(f"  Services:{len(tier['services']):>3}")
     print()
 
     # Safety checks
@@ -375,6 +391,7 @@ def package(tier_name: str, dry_run: bool = False, platform_override: str | None
         "plugins": tier["plugins"],
         "plugins_dropped_for_platform": tier.get("_platform_dropped", []),
         "skills": tier["skills"],
+        "services": tier["services"],
         "file_count": len(files),
     }
     (out_dir / "MANIFEST.json").write_text(
@@ -384,7 +401,8 @@ def package(tier_name: str, dry_run: bool = False, platform_override: str | None
     print(f"\nPackaged to: {out_dir}")
     print(
         f"  {len(files)} files, {len(tier['apps'])} apps, "
-        f"{len(tier['plugins'])} plugins, {len(tier['skills'])} skills"
+        f"{len(tier['plugins'])} plugins, {len(tier['skills'])} skills, "
+        f"{len(tier['services'])} services"
     )
     print("  MANIFEST.json written")
 
@@ -426,7 +444,8 @@ def main():
             drop_note = f"  (dropped: {', '.join(dropped)})" if dropped else ""
             print(
                 f"\n  {name}{suffix}: {len(tier['apps'])} apps, "
-                f"{len(tier['plugins'])} plugins, {len(tier['skills'])} skills{drop_note}"
+                f"{len(tier['plugins'])} plugins, {len(tier['skills'])} skills, "
+                f"{len(tier['services'])} services{drop_note}"
             )
         return
 

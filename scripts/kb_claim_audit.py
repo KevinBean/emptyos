@@ -33,6 +33,7 @@ def main() -> int:
     impl_findings: list[str] = []
     sym_findings: list[str] = []
     va_findings: list[str] = []
+    unverifiable: list[str] = []
     impl_total = va_total = 0
 
     for p in sorted(KB.rglob("*.md")):
@@ -53,7 +54,15 @@ def main() -> int:
             if not raw:
                 continue
             if raw.startswith("method: "):
-                continue  # method-registry id, not a file path — needs the daemon to verify
+                # method-registry id, not a file path — needs the daemon to verify
+                unverifiable.append(f"{rel}: {raw}")
+                continue
+            if raw.startswith("external: "):
+                # a repo outside this one; nothing here can resolve it. Tallied
+                # rather than dropped, because an unverifiable claim that is also
+                # invisible is how a stale one survives.
+                unverifiable.append(f"{rel}: {raw}")
+                continue
             if raw.startswith("path: "):
                 raw = raw[len("path: "):].strip()
             raw = raw.split(" — ")[0].strip()  # drop freehand "path — symbols" annotation
@@ -94,6 +103,12 @@ def main() -> int:
         print("  " + f)
     print(f"=== verified_against anchors checked: {va_total} | missing: {len(va_findings)} ===")
     for f in va_findings:
+        print("  " + f)
+    print(
+        f"=== implemented_in unverifiable from here: {len(unverifiable)} "
+        "(advisory — method-registry ids need the daemon, external: names another repo) ==="
+    )
+    for f in unverifiable:
         print("  " + f)
     return 0
 

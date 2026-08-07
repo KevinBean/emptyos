@@ -43,6 +43,7 @@ emits = [
     "kb:doc_deleted",
     "kb:flipbook_visited",
     "kb:implemented_in_updated",
+    "kb:reference_checked",
     "kb:embed_added",
     "note:embed_added",
     "kb:standard_atomized",
@@ -53,6 +54,35 @@ emits = [
     "guideline:clause_added",
     "guideline:clause_updated",
     "guideline:clause_removed",
+]
+
+# Events that carry no cross-app meaning — routine CRUD on content that already
+# lives in the vault, plus the analytics-shape visit signal. `topology.py` reads
+# this to keep them off the dependency graph, so the graph shows the edges that
+# represent real coupling rather than every write.
+#
+# This list sat inside the last [[provides.verbs]] block until 2026-07-25, which
+# parsed as `provides.verbs[-1].internal` — a key nothing reads. Keep it under
+# [provides.events]; a stray table header above it silently disables it again.
+internal = [
+    "kb:note_created",
+    "kb:note_upserted",
+    "kb:doc_created",
+    "kb:doc_deleted",
+    "kb:doc_updated",
+    "kb:flipbook_visited",
+    "kb:implemented_in_updated",
+    "kb:reference_checked",
+    "kb:embed_added",
+    "note:embed_added",
+    "kb:standard_atomized",
+    "guideline:added",
+    "guideline:clause_added",
+    "guideline:clause_removed",
+    "guideline:clause_updated",
+    "guideline:deprecated",
+    "guideline:removed",
+    "guideline:updated",
 ]
 
 # ── Verb registry — voice entry point for "what do I know about X".
@@ -86,28 +116,6 @@ args = {}
 eligibility = "stable"
 surfaces = ["voice"]
 voice = { example = "remind me of a guideline", description = "Speak a random active guideline" }
-
-# KB doc/note CRUD — content lives in vault; no journal entry per edit.
-# Flipbook visit signal is analytics-shape; no journal entry either.
-internal = [
-    "kb:note_created",
-    "kb:note_upserted",
-    "kb:doc_created",
-    "kb:doc_deleted",
-    "kb:doc_updated",
-    "kb:flipbook_visited",
-    "kb:implemented_in_updated",
-    "kb:embed_added",
-    "note:embed_added",
-    "kb:standard_atomized",
-    "guideline:added",
-    "guideline:clause_added",
-    "guideline:clause_removed",
-    "guideline:clause_updated",
-    "guideline:deprecated",
-    "guideline:removed",
-    "guideline:updated",
-]
 
 # 4D timeline — KB notes are entities with a past (revisions, citations) and a
 # future (review anchors); detail views set data-entity-path → auto 📅 button.

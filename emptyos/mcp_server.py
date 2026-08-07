@@ -29,10 +29,11 @@ import sys
 import urllib.error
 import urllib.request
 
+from emptyos.mcp_protocol import PROTOCOL_VERSION
+
 EMPTYOS_PORT = os.environ.get("EMPTYOS_PORT", "9000")
 BASE_URL = f"http://127.0.0.1:{EMPTYOS_PORT}"
 
-PROTOCOL_VERSION = "2024-11-05"
 SERVER_INFO = {"name": "emptyos", "version": "1.0.0"}
 
 # Tools we expose through the MCP bridge — subset of the full registry that

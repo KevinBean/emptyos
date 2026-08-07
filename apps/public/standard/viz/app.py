@@ -179,6 +179,8 @@ class VizApp(BaseApp):
     _think_html        = _generation._think_html
     _check_size        = _generation._check_size
     _reject_reason     = _generation._reject_reason
+    _salvage_enabled   = _generation._salvage_enabled
+    _truncation_salvage = _generation._truncation_salvage
     _persist           = _generation._persist
     _think_html_stream = _generation._think_html_stream
     generate           = _generation.generate
@@ -216,7 +218,12 @@ class VizApp(BaseApp):
     cli_generate  = _routes.cli_generate
 
     # ── Streaming (extracted to streaming.py) ──
-    _generate_stream_events   = _streaming._generate_stream_events
+    _multipass_enabled         = _streaming._multipass_enabled
+    _has_agent_runtime         = _streaming._has_agent_runtime
+    _multipass_eligible        = _streaming._multipass_eligible
+    _generate_stream_events    = _streaming._generate_stream_events
+    _generate_multipass_events = _streaming._generate_multipass_events
+    _generate_oneshot_events   = _streaming._generate_oneshot_events
     api_generate_stream       = _streaming.api_generate_stream
     _iterate_via_think_stream = _streaming._iterate_via_think_stream
 

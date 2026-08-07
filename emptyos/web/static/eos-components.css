@@ -169,6 +169,11 @@ mark.eos-flash {
     font-family:var(--font-mono, JetBrains Mono, monospace);
     overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex:1;
 }
+.eos-job-link {
+    color:var(--accent); font-size:12px; font-weight:600;
+    white-space:nowrap; text-decoration:none
+}
+.eos-job-link:hover { text-decoration:underline }
 
 /* === Quick Actions Grid === */
 .eos-actions { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin-bottom:16px }
@@ -288,14 +293,24 @@ mark.eos-flash {
 blockquote { border-left:3px solid var(--accent); padding:4px 12px; margin:8px 0; color:var(--text-secondary); font-style:italic; background:color-mix(in srgb,var(--accent) 4%,transparent); border-radius:0 8px 8px 0 }
 
 /* Rendered markdown in note viewer */
-.eos-note-content h1,.eos-note-content h2,.eos-note-content h3,.eos-note-content h4 { color:var(--text-heading); margin:12px 0 6px; font-weight:600 }
-.eos-note-content h1 { font-size:20px } .eos-note-content h2 { font-size:18px } .eos-note-content h3 { font-size:16px }
+.eos-note-content h1,.eos-note-content h2,.eos-note-content h3,.eos-note-content h4,.eos-note-content h5 { color:var(--text-heading); font-weight:600; line-height:1.3; text-wrap:balance }
+.eos-note-content h2 { font-size:22px; margin:6px 0 12px; letter-spacing:-0.01em }
+.eos-note-content h3 { font-size:17.5px; margin:24px 0 8px; padding-bottom:5px; border-bottom:1px solid color-mix(in srgb, var(--border) 60%, transparent) }
+.eos-note-content h4 { font-size:15.5px; margin:18px 0 6px }
+.eos-note-content h5 { font-size:14px; margin:16px 0 6px; color:var(--text-secondary) }
+.eos-note-content > h2:first-child, .obs-frontmatter + h2 { margin-top:0 }
 .eos-note-content strong { color:var(--text-heading) }
-.eos-note-content ul,.eos-note-content ol { padding-left:20px; margin:6px 0 }
-.eos-note-content li { margin:3px 0 }
-.eos-note-content code { background:var(--border); padding:1px 5px; border-radius:4px; font-size:12px }
-.eos-note-content hr { border:none; border-top:1px solid var(--border); margin:12px 0 }
-.eos-note-content p { margin:6px 0 }
+.eos-note-content ul,.eos-note-content ol { padding-left:22px; margin:8px 0 }
+.eos-note-content ol { list-style:decimal }
+.eos-note-content li { margin:4px 0 }
+.eos-note-content li.obs-li-nested { margin-left:20px; list-style:circle }
+.eos-note-content li.obs-done,.eos-note-content li.obs-todo { list-style:none }
+.eos-note-content li.obs-done.obs-li-nested,.eos-note-content li.obs-todo.obs-li-nested { list-style:none }
+.eos-note-content code { background:var(--border); padding:1px 5px; border-radius:4px; font-size:0.86em; font-family:var(--mono, 'Menlo', 'Consolas', monospace) }
+.eos-note-content hr { border:none; border-top:1px solid var(--border); margin:20px 0 }
+.eos-note-content p { margin:8px 0 }
+.eos-note-content blockquote:not(.obs-callout) { border-left:3px solid var(--border); margin:10px 0; padding:2px 14px; color:var(--text-secondary); font-style:italic }
+.obs-mark { background:rgba(250,204,21,0.28); color:inherit; border-radius:3px; padding:0 2px }
 
 /* === Utility === */
 .eos-section-title { font-size:10px; font-weight:600; color:var(--text-muted); text-transform:uppercase; letter-spacing:1.5px; margin-bottom:8px; margin-top:16px; font-family:var(--mono) }
@@ -319,7 +334,8 @@ blockquote { border-left:3px solid var(--accent); padding:4px 12px; margin:8px 0
 .eos-note-backlinks { padding:8px 20px; border-bottom:1px solid var(--border); flex-shrink:0 }
 .eos-note-backlinks .eos-bl-row { margin:0 }
 @media (max-width:600px) { .eos-note-backlinks { padding:8px 16px } }
-.eos-note-content { padding:20px; margin:0; font-family:var(--mono, 'Menlo', 'Consolas', monospace); font-size:13px; line-height:1.7; color:var(--text); white-space:pre-wrap; word-break:break-word; background:transparent; border:none; tab-size:4 }
+.eos-note-content { padding:24px 28px 40px; margin:0; box-sizing:border-box; font-family:inherit; font-size:14.5px; line-height:1.75; color:var(--text); white-space:normal; word-break:break-word; background:transparent; border:none; tab-size:4 }
+@media (max-width:600px) { .eos-note-content { padding:16px 16px 32px } }
 .eos-note-editor { width:100%; height:100%; padding:20px; margin:0; font-family:var(--mono, 'Menlo', 'Consolas', monospace); font-size:13px; line-height:1.7; color:var(--text); background:var(--bg); border:none; outline:none; resize:none; tab-size:4; box-sizing:border-box }
 .eos-note-footer { display:flex; gap:8px; align-items:center; padding:12px 20px; border-top:1px solid var(--border); flex-shrink:0 }
 .eos-note-status { font-size:13px; color:var(--text-secondary); margin-left:auto }
@@ -332,9 +348,9 @@ blockquote { border-left:3px solid var(--accent); padding:4px 12px; margin:8px 0
 /* Rendered markdown: frontmatter */
 .obs-frontmatter { background:color-mix(in srgb, var(--accent) 5%, var(--bg)); border:1px solid color-mix(in srgb, var(--accent) 15%, var(--border)); border-radius:10px; padding:10px 14px; margin-bottom:16px; font-size:12px }
 .obs-fm-label { font-size:10px; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.5px; margin-bottom:6px; font-weight:600 }
-.obs-fm-row { display:flex; gap:8px; padding:2px 0 }
-.obs-fm-key { color:var(--text-muted); min-width:80px; font-weight:500 }
-.obs-fm-val { color:var(--text); flex:1 }
+.obs-fm-row { display:flex; gap:10px; padding:3px 0; align-items:baseline }
+.obs-fm-key { color:var(--text-muted); min-width:96px; font-weight:500; font-family:var(--mono, 'Menlo', 'Consolas', monospace); font-size:11px }
+.obs-fm-val { color:var(--text); flex:1; font-size:12.5px }
 
 /* Rendered markdown: code blocks */
 .obs-code-block { background:var(--bg); border:1px solid var(--border); border-radius:8px; padding:12px 14px; margin:8px 0; overflow-x:auto }
@@ -347,9 +363,9 @@ blockquote { border-left:3px solid var(--accent); padding:4px 12px; margin:8px 0
 .obs-embed-link:hover { border-color:var(--accent) }
 
 /* Rendered markdown: tables */
-.obs-table { width:100%; border-collapse:collapse; font-size:13px; margin:8px 0 }
-.obs-table th { text-align:left; padding:6px 10px; border-bottom:2px solid var(--border); color:var(--text-heading); font-weight:600; font-size:12px }
-.obs-table td { padding:5px 10px; border-bottom:1px solid color-mix(in srgb, var(--border) 50%, transparent) }
+.obs-table { width:100%; border-collapse:collapse; font-size:13.5px; margin:12px 0; font-variant-numeric:tabular-nums }
+.obs-table th { text-align:left; padding:7px 10px; border-bottom:2px solid var(--border); color:var(--text-heading); font-weight:600; font-size:12px; background:color-mix(in srgb, var(--accent) 4%, transparent) }
+.obs-table td { padding:6px 10px; border-bottom:1px solid color-mix(in srgb, var(--border) 50%, transparent); vertical-align:top }
 .obs-table tr:hover td { background:color-mix(in srgb, var(--accent) 3%, transparent) }
 
 /* Rendered markdown: callouts */
@@ -458,6 +474,35 @@ blockquote { border-left:3px solid var(--accent); padding:4px 12px; margin:8px 0
 .eos-btn-ghost { background:none; border-color:transparent; color:var(--text-muted) }
 .eos-btn-ghost:hover { color:var(--text); border-color:var(--border) }
 .eos-btn-icon { padding:8px 12px; font-size:16px; line-height:1; min-width:auto }
+
+/* === Microphone recorder (EOS_UI.recorder) === */
+.eos-rec-btn {
+    display:inline-flex; align-items:center; gap:7px;
+    padding:10px 18px; border-radius:var(--radius-pill, 999px);
+    border:1px solid var(--border); background:var(--bg-card); color:var(--text);
+    font:inherit; font-size:14px; font-weight:600; cursor:pointer;
+    transition:border-color .15s, background .15s, color .15s;
+    -webkit-tap-highlight-color:transparent;
+}
+.eos-rec-btn:hover { border-color:var(--border-strong); background:var(--bg-card-hover) }
+.eos-rec-btn:focus-visible { outline:2px solid var(--focus-ring); outline-offset:2px }
+.eos-rec-btn.recording {
+    border-color:var(--danger); color:var(--danger);
+    animation:eosRecPulse 1.4s ease-in-out infinite;
+}
+/* The pulse is the only signal that a take is live, so keep it for users who
+   accept reduced motion — fall back to a static tint rather than nothing. */
+@media (prefers-reduced-motion: reduce) {
+    .eos-rec-btn.recording { animation:none; background:var(--accent-bg) }
+}
+@keyframes eosRecPulse {
+    0%,100% { box-shadow:0 0 0 0 transparent }
+    50%     { box-shadow:0 0 0 4px var(--accent-bg) }
+}
+.eos-rec-timer {
+    margin-left:10px; font-family:var(--font-mono, ui-monospace, monospace);
+    font-size:13px; color:var(--text-muted); font-variant-numeric:tabular-nums;
+}
 
 /* === Tabs === */
 .eos-tabs { display:flex; border-bottom:1px solid var(--border); margin-bottom:16px; gap:0 }
@@ -755,7 +800,11 @@ textarea.eos-tool-field { resize:vertical; line-height:1.4 }
 /* Status variants — project states + generic lifecycle */
 .eos-badge-status-idea      { background:rgba(102,102,102,0.15); color:var(--text-muted); }
 .eos-badge-status-active    { background:rgba(52,199,89,0.15);   color:var(--success); }
-.eos-badge-status-blocked   { background:rgba(248,113,113,0.15); color:var(--danger); }
+/* `blocked` is waiting-on-something, not broken — agent_fleet uses it for a
+   stalled session and devboard for "blocked on you". It shared --danger with
+   `fail` until 2026-07-28, so the two rendered identically and every
+   awaiting-a-human row read as a failure. --info is the themed "pending" token. */
+.eos-badge-status-blocked   { background:rgba(96,165,250,0.15);  color:var(--info); }
 .eos-badge-status-shelved   { background:rgba(251,191,36,0.15);  color:var(--warning); }
 .eos-badge-status-completed { background:rgba(139,92,246,0.15);  color:var(--accent); }
 .eos-badge-status-archived  { background:rgba(102,102,102,0.10); color:var(--text-muted); opacity:0.85; }
@@ -848,7 +897,7 @@ html.eos-redact #eos-demo-banner {
 /* PWA install banner — dismissible, shown only when the browser offers install or on iOS Safari. */
 .eos-pwa-banner {
     position: sticky; top: 0; z-index: 9001;
-    background: var(--card, #161b22); color: var(--fg, #e6edf3);
+    background: var(--bg-card, #161b22); color: var(--text, #e6edf3);
     border-bottom: 1px solid var(--border, #30363d);
     padding: 10px 14px;
     font-size: 13px;
@@ -867,7 +916,7 @@ html.eos-redact #eos-demo-banner {
     min-width: 36px; min-height: 36px;
     display: inline-flex; align-items: center; justify-content: center;
 }
-.eos-pwa-dismiss-btn:hover { color: var(--fg, #e6edf3); }
+.eos-pwa-dismiss-btn:hover { color: var(--text, #e6edf3); }
 .eos-pwa-install-btn { min-height: 36px; display: inline-flex; align-items: center; }
 
 /* ===== Shared entity card (list-item card with title/meta/badges/actions) ===== */
@@ -1056,7 +1105,7 @@ html.eos-redact #eos-demo-banner {
 .eos-model-row-icon  { font-size: 13px; width: 16px; text-align: center; }
 .eos-model-row-name  { font-family: 'IBM Plex Mono', monospace; font-weight: 500; }
 .eos-model-row-sub   { color: var(--muted); font-family: 'IBM Plex Mono', monospace; font-size: 11px; margin-left: auto; }
-.eos-model-row-warn  { color: var(--err, #ef4444); font-size: 10.5px; margin-left: auto; }
+.eos-model-row-warn  { color: var(--danger, #ef4444); font-size: 10.5px; margin-left: auto; }
 .eos-model-row-clear { color: var(--muted); margin-top: 6px; border-style: dashed; }
 .eos-model-row-clear:hover { color: var(--text); }
 
@@ -1343,7 +1392,7 @@ html.eos-redact #eos-demo-banner {
     border-radius: var(--radius-lg, 10px);
     padding: 0.4rem 0.6rem;
     font-size: 0.82rem;
-    color: var(--text-primary);
+    color: var(--text);
     outline: none;
 }
 .eos-kanban-items {
@@ -1696,7 +1745,7 @@ html.eos-redact #eos-demo-banner {
     padding: 0 2px;
     font-size: 11px;
 }
-.eos-kb-info:hover { color: var(--text-dim); }
+.eos-kb-info:hover { color: var(--text-muted); }
 .eos-kb-why {
     background: none;
     border: none;
@@ -1823,7 +1872,7 @@ html.eos-redact #eos-demo-banner {
     white-space: pre-wrap;
 }
 .eos-stream-prose.err {
-    color: var(--err, #ef4444);
+    color: var(--danger, #ef4444);
 }
 
 /* Element-edit diff box — EOS_UI.diffLinesHtml(); shared by designer + viz.

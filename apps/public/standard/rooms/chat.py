@@ -929,12 +929,21 @@ async def _run_participant_turn(
         )
         kept = []
         applied_any = False
+        failures: list[str] = []
         for a in toks:
             if a.get("app") == "rooms" and a.get("method") in TEAM_VERBS:
                 try:
                     getattr(self, a["method"])(agent_id, **(a.get("args") or {}))
-                except Exception:
-                    pass
+                except Exception as e:
+                    # Never silently swallow. Before this, the exception was
+                    # dropped, applied_any was set anyway, and the token was
+                    # stripped below — so a failed team verb read to the user
+                    # as success, which is exactly what the review gate exists
+                    # to prevent. Surface it in the sibling paths' format
+                    # (`_summarize_server_actions`: "✗ app.method — err").
+                    failures.append(
+                        f"✗ {a.get('app', 'rooms')}.{a.get('method', '?')} — {str(e)[:200]}"
+                    )
                 applied_any = True
             else:
                 kept.append(a)
@@ -942,6 +951,8 @@ async def _run_participant_turn(
             full_text = remainder
             for a in kept:
                 full_text += f"\n[DO:{a['app']}.{a['method']}({_json.dumps(a.get('args') or {}, ensure_ascii=False)})]"
+            if failures:
+                full_text += "\n\n" + "\n".join(failures)
 
     pending: list[dict] = []
     if ptype == "cli":

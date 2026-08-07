@@ -205,6 +205,26 @@ class TestVizUI:
         assert page.locator("#empty").is_visible()
         assert page.locator("#preview").is_hidden()
 
+    def test_measured_svg_brief_routes_to_cad(self, page, base_url):
+        page.goto(base_url + "/viz/")
+        page.wait_for_load_state("networkidle")
+        brief = TEST_PREFIX + "cable cleat with a 2650 mm set radius"
+        page.locator("#shape").select_option("svg-diagram")
+        page.locator("#prompt").fill(brief)
+        route = page.locator(".cad-route")
+        assert route.is_visible()
+        assert "exact dimensions" in route.inner_text()
+
+        opened = page.evaluate("cadDraftUrl()")
+        assert "/cad/pages/layout-host.html" in opened
+        assert "layout=draft-edit" in opened
+        assert "brief=" in opened and "2650+mm" in opened
+        link = route.get_by_role("link", name="Continue in CAD 2D Drawing")
+        assert link.get_attribute("target") is None
+
+        page.locator("#shape").select_option("chart")
+        assert page.locator(".cad-route").count() == 0
+
 
 def _viz_embed_enabled(http_client) -> bool:
     """Live probe of [apps.viz] feature.artifact-embed.enabled on the daemon

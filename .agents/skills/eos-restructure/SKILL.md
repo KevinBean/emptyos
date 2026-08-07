@@ -1,3 +1,7 @@
+---
+name: eos-restructure
+description: Topology-driven app restructuring — analyze the live dependency graph (/api/topology, /api/apps/clusters), wire orphans, and merge natural clusters, in three modes — analyze / wire / merge (wire first, merge last). Use when the user says "restructure", "merge/consolidate apps", "wire/connect orphans", "fix topology", or "what should merge". NOT for renaming a single app or per-file cleanup (use eos-simplify).
+---
 # EmptyOS Restructure
 
 Topology-driven app restructuring — analyze the live dependency graph, identify natural clusters, wire orphans, and execute merges following established patterns.

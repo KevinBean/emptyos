@@ -1,6 +1,6 @@
 ---
 name: eos-repo-extract
-description: Study an external repo and mine it on two axes — the *code axis* (extract its discipline as the smallest honest abstraction over existing primitives, proven by >=2 real consumers plus a first-consumer implementation) and the *workflow axis* (does its sequencing expose a stage OUR pipeline never emits?). Build-nothing is a first-class outcome and still lands a logged verdict + memory + a triggered deferred row. Use when the user says "study/mine this repo", "borrow from <project>", "repo review", "extract the pattern from <external codebase>", or pastes a foreign repo to learn from. Sibling of eos-sdk-extract (which dedupes *within* the codebase); NOT for porting a foreign app wholesale.
+description: Study an external repo and mine it on two axes — the *code axis* (extract its discipline as the smallest honest abstraction over existing primitives, proven by >=2 real consumers plus a first-consumer implementation) and the *workflow axis* (does its sequencing expose a stage OUR pipeline never emits?). Build-nothing is a first-class outcome and still lands a logged verdict + memory + a triggered deferred row. Use when the user says "study/mine this repo", "borrow from <project>", "repo review", "extract the pattern from <external codebase>", "is this worth borrowing", "check this" over a foreign project, or pastes a foreign repo to learn from — and equally when what they paste is a **technique claim** rather than a codebase — a trending post saying a model / LoRA / prompt trick / workflow "can do X". A capability claim is still a borrow decision, but its verdict needs an **experiment on our own stack**, not just a read. Sibling of eos-sdk-extract (which dedupes *within* the codebase); NOT for porting a foreign app wholesale.
 ---
 
 # EmptyOS Repo Extract
@@ -33,6 +33,13 @@ the third time isn't hand-walked.
 - User pastes a repo blurb / trending post and asks "is this worth borrowing?" —
   that's a **repo review**, and it runs this skill. It usually ends in
   build-nothing, which is step 8, not a reason to skip the skill.
+- The external thing is a **technique, not a codebase** — a LoRA, a prompt trick,
+  a "it turns out model X can do Y" post. Same skill: it is still a borrow
+  decision with a verdict to log. The only difference is that step 1's digest
+  cannot settle it, so step 1b applies. Missed 2026-07-29 (Krea 2 markup trick)
+  because every trigger noun here was repo-shaped; a Reddit post about a LoRA
+  matched none of them and the whole pipeline — including step 0 — was
+  hand-walked out of order.
 
 **Not** for: rebuilding the external app feature-for-feature (that's a port, not
 an extraction); adopting a single function (just write it); pure research with no
@@ -57,6 +64,32 @@ state is persisted, what's swappable, and — critically — **the minimal
 discipline worth copying** + **the one thing NOT to copy verbatim**. Demand file
 paths and code-shape quotes, not prose. You're designing an abstraction from
 this, so vague is useless.
+
+### 1b. If the claim is a *capability*, falsify it on our own stack
+
+Reading settles an architecture claim. It cannot settle "model X can do Y" —
+for that, the verdict is an experiment, and it is usually minutes of GPU against
+a week of adoption work. Grep for the code path we **already own** that would
+host the capability, and run the claim through *that*, not a fresh graph:
+
+- **Off/on at one fixed seed.** Vary only the thing under test. Everything else
+  — prompt, steps, resolution, sampler, first frame — held byte-identical.
+- **Add a permutation control** where the claim is about *placement or mapping*.
+  Object priors alone can fake a positive (a lantern goes up, a stool goes down);
+  permuting the inputs is what separates correlation from cause.
+- **Measure, don't eyeball.** A mean-abs pixel diff against the noise floor beats
+  "looks the same" — and it is what makes the verdict re-checkable later.
+- **Kill the obvious confound before concluding.** A null result can mean the
+  mechanism is absent *or* that the model obeyed the one clause it understood.
+  One more run is cheaper than a wrong verdict.
+- If you mirrored a builder rather than calling it, **diff your mirror against
+  the real preset** before trusting the word "our path" in the verdict.
+
+Then explain the outcome mechanically — which conditioning channel exists on our
+stack and which doesn't. "It didn't work" is not a verdict; "our encoder never
+sees the image, theirs does" is, and it tells the reader what adopting would cost.
+Sibling discipline: `eos-measure-claim` failure-mode 1 (*you measured a code path
+the system does not use*) applies here verbatim.
 
 ### 2. Audit EmptyOS — *two axes, in parallel*
 

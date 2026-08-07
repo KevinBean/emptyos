@@ -1,23 +1,28 @@
 """SandboxedWrite — capture a proposed vault file write into an isolated dir,
 expose a unified diff for review, and replay the write only on explicit apply.
 
-Used by the rooms review-gate's `[DO:rooms.write_note(...)]` verb: when a CLI
-participant proposes a vault edit, the content lands here first; the pending
-action card surfaces the diff; the user clicks Apply (or Reject) before any
-real vault file changes.
+The propose/preview/confirm lifecycle of `.claude/rules/proposed-action.md`, in
+its diff-shaped form: content lands here first, the caller renders the diff, and
+`apply()` replays the write only on explicit confirm — refusing with
+`StaleSandbox` if the file moved underneath in the meantime.
 
 The pattern is intentionally simpler than `apps/fix-agent/`'s git worktree —
 vault writes are arbitrary file content, not commits, and a per-action temp
 dir is cheaper than a branch + worktree per edit.
 
-Lives in `emptyos/sdk/` as an exception to CLAUDE.md rule #9 ("extract to
-sdk/ when a second app needs it"). Rooms is currently the sole consumer,
-but moving the module into `apps/rooms/` breaks `tests/test_sys_rooms_logic.py`
-which loads `app.py` via `spec_from_file_location` without parent-package
-context (relative imports fail). The cost of fighting Python's import
-machinery outweighs the cost of a slightly-early SDK placement; the module
-is well-bounded, type-clean, and the surface ports cleanly if a second
-consumer ever lands.
+**Seven consumers** (was one; the "sole consumer, early SDK placement" apology
+this docstring used to carry was stale as of 2026-07-27): rooms pending-action
+gate, designer + viz element edit, viz embed re-sync, publish block edit,
+operate manual distill, and assistant reconcile via `emptyos/sdk/diff_proposal.py`.
+Rule #9 is comfortably satisfied.
+
+Scope, so a would-be eighth consumer knows what it is buying: the capture→apply
+*lifecycle* is generic, the *payload* is not. One UTF-8 **text** file at one
+path relative to one caller-supplied root — no multi-file changesets, no
+deletes or renames, no binary (everything is `read_text`/`write_text`), and
+staleness is byte-equality on that single file. There is no cheap non-mutating
+`is_stale()` probe: staleness is discovered by calling `apply()` and catching
+`StaleSandbox`.
 """
 
 from __future__ import annotations

@@ -32,6 +32,12 @@ class Provider:
     capacity: int = 0  # 0 = unlimited
     _current_load: int = 0
     host: str = ""  # optional — if set, used by default is_cloud detection
+    #: Declared trust domain: ``owned`` | ``rented`` | ``service``. Empty means
+    #: undeclared, and ``is_cloud`` falls back to inferring from ``host``.
+    #: Declare it for any compute that is not on hardware you own — address
+    #: inference cannot tell a rented GPU from your own machine.
+    #: See ``.claude/rules/rented-compute.md``.
+    trust: str = ""
 
     @property
     def current_load(self) -> int:
@@ -43,13 +49,32 @@ class Provider:
 
     @property
     def is_cloud(self) -> bool:
-        """True when this provider's host is a public/cloud endpoint.
+        """True when this provider's bytes leave hardware you own.
 
-        Default: auto-detect from `self.host` via `host_is_local`. Override
-        for providers that wrap a remote service through a local proxy (or
-        vice versa).
+        Resolution order:
+
+        1. **Declared ``trust``** wins. ``owned`` → not cloud; anything else
+           (``rented`` / ``service`` / an unrecognised value) → cloud.
+        2. Otherwise infer from ``host`` via ``host_is_local``.
+
+        The declaration exists because address inference cannot see the case
+        that matters most: a *rented* GPU. ``host_is_local`` treats private
+        ranges, Tailscale CGNAT (100.64/10) and ``*.ts.net`` as local — all
+        correct for your own machines, and all wrong for someone else's box
+        that you happen to have tunnelled to. A provider reaching hardware you
+        do not own must declare ``trust``; the network address cannot tell.
+
+        An unrecognised ``trust`` value fails **closed** (treated as cloud) so
+        a typo tightens the gate rather than opening it.
+
+        Override this property outright for providers that wrap a remote
+        service through a local proxy, or vice versa.
         """
         from emptyos.capabilities.consent import host_is_local
+
+        declared = (getattr(self, "trust", "") or "").strip().lower()
+        if declared:
+            return declared != "owned"
 
         host = getattr(self, "host", "") or ""
         return bool(host) and not host_is_local(host)
@@ -518,6 +543,19 @@ class Capability:
                 provider._current_load += 1
                 try:
                     value = await provider.execute(**call_kwargs)
+                    # A blank completion from `think` is a FAILURE, not a
+                    # success — a reasoning model that exhausts its token budget
+                    # inside <think> returns empty content (ollama carries the
+                    # reasoning in a separate channel). Fall through to the next
+                    # provider instead of handing the caller "". Mirrors the
+                    # blank-detection execute_compare already does for benching.
+                    if self.name == "think" and not str(
+                        getattr(value, "value", value) or ""
+                    ).strip():
+                        last_error = RuntimeError(
+                            f"provider '{provider.name}' returned empty content"
+                        )
+                        continue
                     return Result(
                         value=value,
                         provider=provider.name,
@@ -690,6 +728,20 @@ class Capability:
             meta = provider.variant_meta
             try:
                 value = await provider.execute(**kwargs)
+                # A blank completion is a FAILURE in a benchmark, but it does not
+                # raise — so without this it scores as a success with an empty
+                # preview. Real case: a reasoning model that exhausts its token
+                # budget inside <think> returns content="" after minutes of work
+                # (ollama carries reasoning in a separate field). Surface it as
+                # an error so ranking and the compare view both count it.
+                text = getattr(value, "value", value)
+                if not str(text if text is not None else "").strip():
+                    return {
+                        **meta,
+                        "response": value,
+                        "latency_ms": round((time.monotonic() - t0) * 1000),
+                        "error": "empty response (no content returned)",
+                    }
                 return {
                     **meta,
                     "response": value,

@@ -186,12 +186,12 @@ async def api_bulk_status(self, request):
     data = await request.json()
     ids = data.get("ids", [])
     new_status = data.get("status", "")
-    if new_status not in ("idea", "active", "blocked", "shelved", "completed"):
-        return {"error": "Invalid status"}
+    if new_status not in _core.PROJECT_STATUSES:
+        return {"error": f"Invalid status. Use: {', '.join(_core.PROJECT_STATUSES)}"}
     if not ids:
         return {"error": "ids required"}
 
-    changed = 0
+    changed_ids = []
     for pid in ids:
         target = self._find_project_file(pid)
         if not target:
@@ -202,11 +202,13 @@ async def api_bulk_status(self, request):
             content = await self.read(str(target))
             content = set_frontmatter_field(content, "status", new_status)
             await self.write(str(target), content)
-        changed += 1
+        changed_ids.append(pid)
 
-    if changed:
-        await self.emit("projects:status_changed", {"ids": ids, "status": new_status})
-    return {"ok": True, "changed": changed}
+    # One event per changed project keeps the payload identical to the single-
+    # project endpoint, so Reactor can fire the spec drafter for every item.
+    for pid in changed_ids:
+        await self.emit("projects:status_changed", {"id": pid, "status": new_status})
+    return {"ok": True, "changed": len(changed_ids)}
 
 
 # ------------------------------------------------------------------

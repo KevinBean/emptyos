@@ -237,7 +237,7 @@ class VlogApp(BaseApp):
             clip_path.write_bytes(data)
             self._ensure_note(d)
 
-        asyncio.create_task(self._process_clip(d, idx, clip_path))
+        self.spawn_background(self._process_clip(d, idx, clip_path))
         return {"ok": True, "date": d, "index": idx, "status": "processing"}
 
     async def _process_clip(self, d: str, idx: int, clip_path: Path):
@@ -264,7 +264,7 @@ class VlogApp(BaseApp):
         async with self.write_lock(f"vlog:{d}"):
             self._append_clip_to_note(d, idx, ts, dur, transcript, snippet)
 
-        asyncio.create_task(self.emit("vlog:saved", {
+        self.spawn_background(self.emit("vlog:saved", {
             "date": d, "index": idx, "duration": dur,
             "transcript": transcript, "path": self._note_rel(d),
         }))
@@ -375,7 +375,7 @@ class VlogApp(BaseApp):
             "status": "running", "period": period,
             "clip_count": len(clips), "out_name": out_name,
         })
-        asyncio.create_task(self._run_montage(handle.run_id, clips, out_name))
+        self.spawn_background(self._run_montage(handle.run_id, clips, out_name))
         return {"ok": True, "run_id": handle.run_id, "status": "running", "count": len(clips)}
 
     async def _run_montage(self, run_id: str, clips: list[Path], out_name: str):
@@ -384,7 +384,7 @@ class VlogApp(BaseApp):
         try:
             await self.compile_montage(clips, out)
             reg.update_state(run_id, status="done", url=f"/vlog/api/montage/{run_id}")
-            asyncio.create_task(self.emit("vlog:montage_ready",
+            self.spawn_background(self.emit("vlog:montage_ready",
                                           {"run_id": run_id, "out": out_name}))
         except Exception as e:
             self.log(f"vlog montage failed: {e}", level="error")

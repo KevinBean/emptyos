@@ -120,6 +120,16 @@
   }
   .shape-intro .intro-example:hover { color: var(--accent); }
   .shape-intro .intro-example-label { color: var(--muted); text-transform: uppercase; letter-spacing: .08em; font-size: 10px; margin-bottom: 2px; font-family: inherit; }
+  .shape-intro .cad-route {
+    border-top: 1px solid var(--border);
+    padding-top: 8px;
+    margin-top: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .shape-intro .cad-route-copy { color: var(--muted); }
+  .shape-intro .cad-route .eos-btn-sm { align-self: flex-start; }
 
   /* ── Element-edit loop (mirrors designer) ── */
   .btn-edit-on { background: var(--accent); color: var(--accent-ink, #fff); border-color: var(--accent); }
@@ -298,11 +308,13 @@ var SHAPE_INTROS = {
         title: 'SVG diagram',
         desc: 'Crisp vector diagrams — block diagrams, cross-sections, flow layouts. Sharp at any zoom; great for embedding in docs.',
         example: 'Block diagram of how a web request flows: browser → DNS → load balancer → web server → database, with a cache off to the side. Label each arrow.',
+        cadRoute: true,
     },
     'schematic': {
         title: 'Schematic (SVG)',
         desc: 'Technical schematics drawn as SVG with conventional symbols — circuits, plumbing, mechanical assemblies.',
         example: 'Simple LED circuit schematic: 9 V battery → switch → 330 Ω resistor → red LED → back to battery. Label each component with its value.',
+        cadRoute: true,
     },
     'network-graph': {
         title: 'Network graph (vis-network)',
@@ -353,7 +365,12 @@ function renderShapeIntro() {
         '<div class="intro-example-label">Try this brief ↓</div>' +
         '<div class="intro-example" onclick="useShapeExample()" title="Click to copy into the brief field">' +
             escapeHtml(info.example) +
-        '</div>';
+        '</div>' +
+        (info.cadRoute ?
+          '<div class="cad-route">' +
+            '<div class="cad-route-copy"><strong>Need exact dimensions?</strong> Use CAD for constrained geometry, measured arcs and DXF. Your current brief carries across for review.</div>' +
+            '<a class="eos-btn-sm" href="/cad/pages/layout-host.html?layout=draft-edit" onclick="return openCadDraft(this)">Continue in CAD 2D Drawing →</a>' +
+          '</div>' : '');
 }
 
 function useShapeExample() {
@@ -364,6 +381,20 @@ function useShapeExample() {
     ta.value = info.example;
     ta.focus();
     EOS_UI.toast && EOS_UI.toast('Example brief loaded — edit or hit Generate', 'ok');
+}
+
+function cadDraftUrl() {
+    var brief = document.getElementById('prompt').value.trim();
+    var url = new URL('/cad/pages/layout-host.html', location.origin);
+    url.searchParams.set('layout', 'draft-edit');
+    url.searchParams.set('from', 'viz');
+    if (brief) url.searchParams.set('brief', brief.slice(0, 8000));
+    return url.toString();
+}
+
+function openCadDraft(link) {
+    link.href = cadDraftUrl();
+    return true;
 }
 
 // ── Settings panel ────────────────────────────────────────────────

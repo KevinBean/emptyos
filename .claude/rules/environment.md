@@ -90,6 +90,31 @@ Another Claude session or the user can stage files into `git` while a session is
 
 This rule exists because several sessions burned hours on commit splits or history rewrites after parallel auto-adds bundled 23 files into what should have been a focused commit.
 
+### Stage and commit in ONE command — the index can move underneath you
+
+Checking `git status` and then committing in a **separate** call is not enough. A
+background clean/drain routine can stash + reset + re-stage the whole tree between
+your two commands, and a bare `git commit` commits **the index as it is at that
+moment**, not what you staged. On 2026-07-20 that turned an intended 3-file commit
+into 103 files of four other tracks' in-flight work.
+
+Chain the add, a count assertion, and the commit so nothing can intervene:
+
+```bash
+git add <paths> && N=$(git diff --cached --name-only | wc -l) \
+  && [ "$N" -eq <expected> ] && git commit -F- <<'MSG'
+…
+MSG
+```
+
+If the count is wrong, the commit never runs. Recovering afterwards is
+`git reset --soft HEAD~1` (undo the commit, keep every change) → `git reset`
+(unstage all) → re-add your paths — non-destructive, but far more expensive than
+the guard. Signals that a tree-manager is active: a `reset: moving to HEAD` entry
+in `git reflog`, or a stash named like `parallel-wip-during-clean-<date>`. Recover
+just your own files from such a stash with
+`git checkout stash@{0} -- <your paths>` rather than popping the whole thing.
+
 ### When a parallel session has touched the same file, or parked the tree on its branch
 
 Two sharper cases seen repeatedly in one long session (2026-07-15):

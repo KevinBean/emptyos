@@ -246,12 +246,21 @@ commands = ["myapp"]
 prefix = "/myapp"
 
 [provides.events]
-emits = ["myapp:done"]
+emits = ["myapp:done", "myapp:progress"]
+internal = ["myapp:progress"]   # subset of emits — no cross-app listener by design
 ```
 
 Declare every literal `self.call_app("id", ...)` target. Put load-time
 dependencies in `apps`; put integrations with graceful fallback in
 `optional_apps`.
+
+Declare every event the code emits — the topology graph builds event edges from
+manifests, so an undeclared emit is invisible to `/api/topology` and every audit
+reading it undercounts. **`internal` is a modifier on `emits`, not an
+alternative to it**: the graph walks `emits` and consults `internal` only to flag
+those edges, so a name listed *only* under `internal` produces no node and no
+edge. Mark an event `internal` when this app's own UI is its only consumer;
+it still belongs in `emits`. `scripts/check_event_wiring.py` reports drift.
 
 ### App Sub-Patterns
 
@@ -331,7 +340,7 @@ CLI detects running daemon → proxies via HTTP (shared kernel). No daemon → f
 15. **Community apps, personal config** — `apps/` are generic; machine-specific customization lives in `emptyos.toml` `[apps.<id>]`, read via `self.app_config(key, default)`. VaultLibrary accepts `extra_fields` from config. Same codebase, different behavior per machine. `apps/personal/` is for apps whose **logic** is personal, not customized community apps.
 16. **Wellbeing wheel as design lens** — the 8 dimensions (physical, social, intellectual, emotional, spiritual, environmental, financial, occupational) are a rubric applied in reasoning, **never a feature added to UIs**. When suggesting work, reviewing apps, or proposing features, silently score against wheel balance: prefer suggestions that feed thin dimensions over those that fatten already-dominant ones (typically occupational/intellectual). Resist adding dimension pickers, tag prompts, or wheel displays — the wheel shapes *what gets built and what gets refused*, not what the user sees. Canonical list + aliases live in `emptyos/sdk/dimensions.py`; read passive metadata from app manifests (`dimensions = [...]`) when available.
 17. **No localhost assumptions in app logic** — apps use `self.*` capabilities, never hardcode `localhost`, `127.0.0.1`, or port numbers. Host/port come from `[network]` config, which is derived from `network.mode` (`local` / `private` / `public`). The same code must run on a user's laptop, a Tailscale-private machine, a VPS, or a demo container without edits.
-18. **Cloud consent is mandatory** — any provider whose host is not localhost/127.0.0.1/private-IP is `is_cloud=True` and must pass through the consent gate in `Capability.execute()`. Never add cloud-specific code paths in apps — the provider chain handles routing, the consent gate handles approval. See `docs/DESIGN.md` "Cloud Provider Consent".
+18. **Cloud consent is mandatory** — a provider is `is_cloud=True` when it declares `trust` as anything but `"owned"`, or (undeclared) when its host is not localhost/127.0.0.1/private-IP; either way it must pass through the consent gate in `Capability.execute()`. **Declare `trust` for any compute not on hardware you own** — address inference reads Tailscale/private ranges as local, so a *rented* GPU is indistinguishable from your own machine without it (`.claude/rules/rented-compute.md`). Never add cloud-specific code paths in apps — the provider chain handles routing, the consent gate handles approval. See `docs/DESIGN.md` "Cloud Provider Consent".
 19. **No vault data to cloud by default** — cloud providers receive prompts, not raw vault content. If an app needs to send vault content to a cloud model, it must be explicit per-request or via an opt-in config flag. Never embed large vault excerpts in system prompts that hit cloud.
 20. **Docker-bootable** — the system must work from `docker run -v /vault:/vault -v ./emptyos.toml:/app/emptyos.toml emptyos`. No hardcoded absolute paths, no assumptions about the host OS, no Windows-only code in runtime paths (Windows-only tooling like `restart.bat` is fine).
 
@@ -551,7 +560,9 @@ python -m emptyos health   # Full health check
 python -m emptyos start    # Boot daemon on port 9000 (or restart.bat on Windows)
 ```
 
-In a Claude Code session, `/eos-session-resume` reads `{vault}/10_Projects/emptyos/log/_next.md` (written by the previous `/eos-session-wrapup`) and briefs you on where to pick up.
+In a Claude Code session, `/eos-session-resume` reads the per-track brief index at `{vault}/10_Projects/emptyos/log/_next/_index.md` (written by the previous `/eos-session-wrapup`) and briefs you on where to pick up.
+
+**Bounded work runs off a session plan.** A problem you can enumerate as ≥3 ordered tasks gets a plan file in `{vault}/10_Projects/emptyos/log/_plans/` — resume claims exactly one task (writing an `active_task` mutual-exclusion marker before starting), wrapup closes it with a disposition, and the plan moves to `done/` when its last task closes. Plans carry the *task*; `_next/` briefs carry the *story*; unbounded work stays track-driven. This is what keeps completed work from accumulating in the index — a track is a work area and never completes, so nothing about it ever closes. See `.claude/rules/session-plans.md`.
 
 **Reading this file means you're in conversation mode** — the system's most powerful runtime. You have the full architecture in context. You can create apps, extract patterns, wire events, make architectural decisions coherent with the consciousness model. The daemon serves what exists; you evolve what's next.
 
@@ -582,5 +593,5 @@ For recent work, use `git log` and `10_Projects/emptyos/log/`. Don't maintain ch
 - `emptyos/runtime/vault_map.py` — app-specific path discovery + auto-heal
 - `emptyos/capabilities/providers/claude_cli.py` — Claude Code provider
 - `emptyos/capabilities/providers/openai_compat.py` — OpenAI/Ollama provider
-- `.claude/rules/` — addons, agent-bus, agent-cli, app-conventions-for-export, app-ui-patterns, artifact-element-edit, audits, authorship-boundary, autopilot-grants, boards-as-view-layer, browser-extension-bridge, cad-extensions, cad-layouts, cad-workspaces, claude-design, daemon-handling, debugging, deep-link-to-app, deep-research, demo-mode, dev-gotchas, docs-sync, environment, field-suggest, geo, hub-panels, loop-traceability, model-ability, model-pill, multi-cli-participants, multi-module-apps, path-scoped-rules, pdf-markdown, plugins, product-packaging, prompt-management, prompt-prefix-cache, proposed-action, public-app-pattern, room-review-gate, sandbox-driven-testing, sandbox-usage, scoped-retrieval, selector, self-audit-loops, shared-frontend, skill-scan, slash-command-palette, staged-pipeline, standalone-distribution, store, test-fix-verify-loop, testing, text-first-data, three-natures-lens, time-dimension, tour-steps, untrusted-content, user-intent, vault-operator, verb-registry, voice-intents
+- `.claude/rules/` — addons, agent-bus, agent-cli, app-conventions-for-export, app-ui-patterns, artifact-element-edit, audits, authorship-boundary, autopilot-grants, boards-as-view-layer, browser-extension-bridge, cad-extensions, cad-layouts, cad-workspaces, claude-design, daemon-handling, debugging, deep-link-to-app, deep-research, demo-mode, dev-gotchas, docs-sync, environment, field-suggest, geo, hub-panels, loop-traceability, model-ability, model-pill, multi-cli-participants, multi-module-apps, path-scoped-rules, pdf-markdown, plugins, product-packaging, prompt-management, prompt-prefix-cache, proposed-action, public-app-pattern, rented-compute, room-review-gate, sandbox-driven-testing, sandbox-usage, scoped-retrieval, selector, self-audit-loops, session-plans, shared-frontend, skill-scan, slash-command-palette, staged-pipeline, standalone-distribution, store, test-fix-verify-loop, testing, text-first-data, three-natures-lens, time-dimension, tour-steps, untrusted-content, user-intent, vault-operator, verb-registry, voice-intents
 - `restart.bat` — kill python, check external services, boot EmptyOS

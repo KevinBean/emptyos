@@ -26,6 +26,7 @@ from typing import TYPE_CHECKING
 
 from emptyos.sdk import web_route
 from emptyos.sdk import autopilot as _autopilot
+from emptyos.sdk.pending_claim import CLAIMED, claim_pending
 
 if TYPE_CHECKING:
     from .app import VoiceAssistantApp  # noqa: F401 — for type hints only
@@ -163,7 +164,7 @@ async def save_pending_action(
         "status": "pending",
     }
     _save_pending(self, action)
-    asyncio.create_task(
+    self.spawn_background(
         self.emit(
             "voice-assistant:action_proposed",
             {
@@ -178,14 +179,26 @@ async def save_pending_action(
 
 
 def list_pending(self, status: str = "pending") -> list[dict]:
-    """List pending Aura actions. status='' returns every record."""
+    """List pending Aura actions.
+
+    ``status="open"`` selects everything still waiting on the user: `pending`
+    plus `approving` (claimed, then interrupted mid-execution — outcome
+    unknown). Exact match otherwise; ``status=""`` returns every record.
+    Without "open", an interrupted action is invisible on every surface.
+    """
+    if status == "open":
+        want = {"pending", CLAIMED}
+    elif status:
+        want = {status}
+    else:
+        want = set()
     out: list[dict] = []
     for f in _pending_dir(self).glob("act-*.json"):
         try:
             a = json.loads(f.read_text(encoding="utf-8"))
         except Exception:
             continue
-        if status and a.get("status") != status:
+        if want and a.get("status") not in want:
             continue
         out.append(a)
     out.sort(key=lambda x: x.get("ts", ""))
@@ -214,11 +227,16 @@ def find_pending_duplicate(self, verb: str, args: dict | None) -> dict | None:
 
 async def apply_pending(self, action_id: str) -> dict:
     """Execute a pending Aura action via call_app; mark applied."""
-    action = _load_pending(self, action_id)
-    if not action:
-        return {"error": "action not found"}
-    if action.get("status") != "pending":
-        return {"error": f"already {action.get('status')}"}
+    # Claim atomically before the side effect — a mis-heard repeated voice
+    # confirm otherwise executes the verb twice (see pending_claim docstring).
+    action, claim_err = await claim_pending(
+        self.write_lock(f"pending:{action_id}"),
+        lambda aid: _load_pending(self, aid),
+        lambda a: _save_pending(self, a),
+        action_id,
+    )
+    if claim_err:
+        return claim_err
     try:
         result = await self.call_app(
             action["app"], action["method"], **(action.get("args") or {}),
@@ -253,12 +271,15 @@ async def apply_pending(self, action_id: str) -> dict:
 
 async def reject_pending(self, action_id: str) -> dict:
     """Mark a pending Aura action rejected without executing."""
-    action = _load_pending(self, action_id)
-    if not action:
-        return {"error": "action not found"}
-    if action.get("status") != "pending":
-        return {"error": f"already {action.get('status')}"}
-    action["status"] = "rejected"
+    action, claim_err = await claim_pending(
+        self.write_lock(f"pending:{action_id}"),
+        lambda aid: _load_pending(self, aid),
+        lambda a: _save_pending(self, a),
+        action_id,
+        claim_status="rejected",
+    )
+    if claim_err:
+        return claim_err
     action["resolved_ts"] = datetime.now(timezone.utc).isoformat()
     _save_pending(self, action)
     await self.emit("voice-assistant:action_rejected", {
@@ -311,7 +332,9 @@ async def voice_reject_pending(self) -> dict:
 
 @web_route("GET", "/api/pending")
 async def api_pending_list(self, request):
-    status = request.query_params.get("status", "pending")
+    # Default "open" so an interrupted action (status `approving`) is
+    # surfaced rather than silently filtered out of every Aura surface.
+    status = request.query_params.get("status", "open")
     return {"pending": list_pending(self, status=status)}
 
 
@@ -367,9 +390,10 @@ async def api_autopilot_grant(self, request):
     """Toggle session-scoped auto-accept for the current voice session.
 
     Body: `{"enabled": true, "ttl_s": 3600}` to grant; `{"enabled": false}` to revoke.
-    Issues a single grant covering every eligible verb (`<ns>.*` pattern on
-    every namespace in the eligibility list) so the user gets "auto-accept
-    everything I'm allowed to" in one toggle.
+    One toggle, so the user gets "auto-accept everything I'm allowed to": issues
+    one `<ns>.*` grant per namespace in the eligibility list (N grants, not one —
+    a single cross-app pattern is forbidden by `save_grant`). Re-toggling
+    replaces the scope's grants rather than stacking them.
     """
     try:
         body = await request.json()
@@ -384,8 +408,6 @@ async def api_autopilot_grant(self, request):
         return {"ok": True, "revoked": n, "active": False}
 
     ttl = int(body.get("ttl_s") or 3600)
-    # Issue one grant per app namespace appearing in the eligibility list,
-    # so a single toggle covers "every eligible verb in this session."
     # Use the registry-derived floor when the flag is on; else the legacy
     # policy.json list. The same set both names the eligible namespaces and is
     # passed to save_grant so the save-time check agrees with the fire-time one.
@@ -393,26 +415,14 @@ async def api_autopilot_grant(self, request):
     eligible = _elig_fn() if callable(_elig_fn) else None
     if eligible is None:
         eligible = set(_autopilot.load_policy(root).get("eligible_verbs") or [])
-    namespaces = sorted({v.split(".", 1)[0] for v in eligible})
-    # Replace any existing session grants so the toggle is clean.
-    _autopilot.revoke_scope(root, scope)
-    issued = []
-    for ns in namespaces:
-        try:
-            g = _autopilot.save_grant(
-                root,
-                actor_type="voice",
-                actor_id="aura",
-                verb_pattern=f"{ns}.*",
-                scope=scope,
-                ttl_seconds=ttl,
-                rationale="voice toolbar toggle",
-                eligible=eligible,
-            )
-            issued.append(g)
-        except ValueError:
-            # Namespace wildcard hit a non-eligible verb somehow. Skip.
-            continue
+    issued = _autopilot.replace_namespace_grants(
+        root,
+        scope=scope,
+        actors=[("voice", "aura")],
+        eligible=eligible,
+        ttl_seconds=ttl,
+        rationale="voice toolbar toggle",
+    )
     return {"ok": True, "active": True, "scope": scope, "grants": issued, "expires_in_s": ttl}
 
 

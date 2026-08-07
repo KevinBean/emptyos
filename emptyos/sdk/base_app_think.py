@@ -274,6 +274,17 @@ async def think(
     if temperature is not None and 'temperature' not in kwargs:
         kwargs['temperature'] = temperature
 
+    # Reason domain: turn ON the model's chain-of-thought (ollama `think` mode,
+    # which is off by default for the fast/structured path) with a bounded token
+    # budget so multi-step reasoning can actually complete. If a model exhausts
+    # the budget inside its reasoning and returns EMPTY content (the qwen3.5
+    # runaway-think failure), the capability's blank-completion guard falls the
+    # call through to the next provider instead of handing the app "". Both
+    # defaults are overridable by the caller.
+    if domain == "reason":
+        kwargs.setdefault("think", True)
+        kwargs.setdefault("max_tokens", 8192)
+
     # Snapshot any citations the caller registered via self.cite() before
     # this think() call, then reset for the next one. Citations describe
     # the sources the app fed into the model — kept on _last_think_citations
@@ -1021,6 +1032,20 @@ async def select(
     for k in keys:
         if k.lower() == low:
             return k
+    # The menu renders as "- <key>: <description>" and models routinely echo the
+    # whole line back as the choice ({"choice": "clause: verbatim text of ..."}).
+    # Measured at ~11% of dict-form calls on both qwen3.5-32k and gpt-5.4-mini,
+    # every one of them naming the RIGHT key — so without this the correct answer
+    # is discarded for the caller's default. Longest key first, because keys may
+    # themselves contain a colon (``tag:cable`` from scope_menu) and a plain
+    # split would truncate them.
+    for cand in (pick, text):
+        if not isinstance(cand, str):
+            continue
+        c = cand.strip().strip('"').lower()
+        for k in sorted(keys, key=len, reverse=True):
+            if c.startswith(k.lower() + ":"):
+                return k
     self._record_demand(kind="think", query=prompt[:500], result="no_match")
     return fallback
 

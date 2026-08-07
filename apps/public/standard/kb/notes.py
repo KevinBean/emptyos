@@ -12,11 +12,10 @@ from __future__ import annotations
 
 import json
 import re
-from datetime import datetime
+from datetime import date, datetime
 from pathlib import Path
 from emptyos.sdk import extract_wikilinks, web_route
 from emptyos.sdk.utils import path_segment_error, require_path_segment
-from emptyos.sdk.utils import safe_path_segment
 from typing import TYPE_CHECKING
 
 from .shared import (
@@ -28,6 +27,7 @@ from .shared import (
     _related_targets,
     _slug_of,
     _slugify,
+    reference_freshness,
 )
 
 if TYPE_CHECKING:
@@ -207,15 +207,20 @@ _HEALTH_SEVERITY = {
     "formulas_missing_verification": "warn",
     "uncited_references": "warn",
     "orphans": "warn",
+    "stale_reference": "warn",
 }
 
 
-def _iter_health_findings(self, all_notes: list[dict], cited_by: dict):
+def _iter_health_findings(self, all_notes: list[dict], cited_by: dict, today: date | None = None):
     """Yield ``(category, slug, record)`` for every KB health issue, where
     ``category`` is a key of ``_HEALTH_SEVERITY`` and ``record`` is the exact
     dict the Health modal groups under that category. Single source of truth so
-    the modal and the per-note severity flags can never drift apart (#9)."""
+    the modal and the per-note severity flags can never drift apart (#9).
+
+    ``today`` is injectable so the date-dependent ``stale_reference`` rule is
+    testable without freezing the clock."""
     repo_root = Path(self.kernel.config.path).parent
+    today = today or date.today()
     by_slug: dict[str, dict] = {}
     slug_paths: dict[str, list[str]] = {}
     for n in all_notes:
@@ -261,6 +266,12 @@ def _iter_health_findings(self, all_notes: list[dict], cited_by: dict):
                 })
         if s["kind"] == "formula" and not vrefs:
             yield ("formulas_missing_verification", slug, s)
+        if s["kind"] == "reference":
+            fresh = reference_freshness(props, today)
+            # Only a *missed commitment* is a finding. A reference with no
+            # `review_due` is unscheduled, not stale — see shared.py.
+            if fresh["state"] in ("overdue", "malformed"):
+                yield ("stale_reference", slug, {**s, **fresh})
         if s["kind"] == "clause":
             if not cited_by.get(slug):
                 yield ("uncited_references", slug, s)
@@ -325,7 +336,11 @@ async def get_note(self, slug: str) -> dict:
     clauses: list[dict] = []
     chapters: list[dict] = []
     if props.get("kind") == "reference" and props.get("standard_id"):
-        clauses = self._clauses_for_standard(str(props["standard_id"]))
+        clauses = self._clauses_for_standard(
+            str(props["standard_id"]),
+            str(props.get("standard") or ""),
+            str(props.get("edition") or ""),
+        )
         # Real chapter titles from the archive's own TOC, for the reference-view
         # TOC tree. {} when no archive → UI falls back to bare "Chapter N".
         if clauses:
@@ -418,6 +433,7 @@ async def health(self) -> dict:
         "duplicate_slugs": buckets["duplicate_slugs"],
         "unresolved_verified_against": buckets["unresolved_verified_against"],
         "verification_target_not_case": buckets["verification_target_not_case"],
+        "stale_reference": buckets["stale_reference"],
     }
 
 

@@ -55,6 +55,7 @@ from emptyos.capabilities.providers._tool_capable import (
 from emptyos.sdk.agent_tools.base import Tool, feature_enabled
 from emptyos.sdk import tool_isolation, trace
 from emptyos.sdk.operation import OperationSpec, RetryPolicy, operation_tool_display
+from emptyos.sdk.retry_policy import repeated_tag
 
 if TYPE_CHECKING:
     from emptyos.capabilities.tool_consent import ToolConsentManager
@@ -73,6 +74,20 @@ ERROR_LOOP_THRESHOLD = 3
 # Hard cap on Edits to the same file in one turn. Any more is almost certainly
 # the agent thrashing (edit → fix → fix-the-fix) — force a pause.
 EDIT_PATH_LIMIT = 5
+
+# Appended to the tool_result the model reads next when the error-loop reflex
+# fires. Module-top like every other model-facing string in this file. `{shape}`
+# takes one of the two templates below: the nudge tells the model to stop
+# repeating "the same shape", so it may only assert sameness when `repeated_tag`
+# confirms the failure actually did repeat.
+LOOP_GUARD_NUDGE = (
+    "[loop-guard] That's {shape} this turn. "
+    "STOP retrying the same shape. Read the error text carefully. Don't "
+    "add workarounds on top of broken fixes. Call TaskList to re-plan from "
+    "scratch, or ask the user for more context. Another bandaid will make it worse."
+)
+LOOP_GUARD_SHAPE_REPEATED = "the SAME failure ({tag}) {count} times in a row"
+LOOP_GUARD_SHAPE_COUNTED = "error #{count} in a row"
 
 # Context management (Phase 4). Rough char→token ratio of 4:1 for English/code
 # is good enough for budgeting — we don't need exact counts, just "is this
@@ -589,7 +604,6 @@ REFACTOR_VERIFY_GATE_MSG = (
 
 
 @trace.trace_boundary
-@trace.trace_boundary
 async def run_turn(
     *,
     session: AgentSession,
@@ -637,25 +651,43 @@ async def run_turn(
 
     # Safety-reflex state (Phase 2). Turn-scoped; reset every user message.
     consecutive_errors = 0  # 2.1 — appended nudge when ≥ ERROR_LOOP_THRESHOLD
+    # Coarse shape of each consecutive error, so the guard can tell a model
+    # exploring three different failures from one stuck on the same failure.
+    error_tags: list[str] = []
     edit_counts: dict[str, int] = {}  # 2.3 — count Edit calls per path
     _plan_nudge_sent = False  # only inject the plan reminder once per turn
     _made_edits = False  # turn touched files (drives the refactor-verify gate)
     _verify_forced = False  # refactor-verify gate already fired this turn (force once)
 
-    def _maybe_loop_guard(content: str, counter: int) -> tuple[str, int]:
+    def _maybe_loop_guard(
+        content: str, counter: int, tag: str = ""
+    ) -> tuple[str, int]:
         """Increment the consecutive-error counter and, if we've hit the
         loop-guard threshold, append a stop-and-replan nudge to the content
         the model will read on the next iteration. Shared by every error path
         (unknown tool, denied, edit-guard, tool.run failure, tool returned ok=False)
-        so the counter actually reflects total errors this turn."""
+        so the counter actually reflects total errors this turn.
+
+        ``tag`` is the coarse shape of this error (usually the tool name). The
+        nudge has always told the model to "stop retrying the same shape", but
+        the counter only knew how MANY errors had happened — never whether they
+        were the same one, so it read identically to a model exploring three
+        different failures and a model stuck on one. `repeated_tag` supplies the
+        missing half, and the nudge now makes the claim only when it is true.
+        """
         counter += 1
+        error_tags.append(tag or "unknown")
         if counter >= ERROR_LOOP_THRESHOLD:
-            content = (content or "") + (
-                f"\n\n[loop-guard] That's error #{counter} in a row this turn. "
-                "STOP retrying the same shape. Read the error text carefully. Don't "
-                "add workarounds on top of broken fixes. Call TaskList to re-plan from "
-                "scratch, or ask the user for more context. Another bandaid will make it worse."
+            # counter >= threshold means these were consecutive errors with no
+            # intervening success, so the last two appends are always from the
+            # current run — the comparison never reaches across a reset.
+            stuck_on = repeated_tag(error_tags[-1:], error_tags[-2:-1])
+            shape = (
+                LOOP_GUARD_SHAPE_REPEATED.format(tag=stuck_on, count=counter)
+                if stuck_on
+                else LOOP_GUARD_SHAPE_COUNTED.format(count=counter)
             )
+            content = (content or "") + "\n\n" + LOOP_GUARD_NUDGE.format(shape=shape)
         return content, counter
 
     for iter_idx in range(max_iters):
@@ -789,7 +821,8 @@ async def run_turn(
             tool = tools.get(tu.name)
             if tool is None:
                 err = f"error: tool {tu.name!r} is not registered in this session"
-                err, consecutive_errors = _maybe_loop_guard(err, consecutive_errors)
+                err, consecutive_errors = _maybe_loop_guard(
+                    err, consecutive_errors, tag=f"unknown-tool:{tu.name}")
                 await _emit(
                     events,
                     "agent:tool_result",
@@ -824,7 +857,8 @@ async def run_turn(
 
             if not allowed:
                 err = "denied by user"
-                err, consecutive_errors = _maybe_loop_guard(err, consecutive_errors)
+                err, consecutive_errors = _maybe_loop_guard(
+                    err, consecutive_errors, tag=f"denied:{tu.name}")
                 await _emit(
                     events,
                     "agent:tool_result",
@@ -855,7 +889,8 @@ async def run_turn(
                     "TaskList), then STOP — the user will type /execute to leave plan mode "
                     "or /scrap to discard the plan."
                 )
-                gate_msg, consecutive_errors = _maybe_loop_guard(gate_msg, consecutive_errors)
+                gate_msg, consecutive_errors = _maybe_loop_guard(
+                    gate_msg, consecutive_errors, tag=f"plan-gate:{tu.name}")
                 await _emit(
                     events,
                     "agent:tool_result",
@@ -888,7 +923,8 @@ async def run_turn(
                         f"disk, reconsider the whole approach, and if the right fix isn't obvious, "
                         f"ask the user. Don't keep patching. (User can raise the cap with /grant-edits N.)"
                     )
-                    guard_msg, consecutive_errors = _maybe_loop_guard(guard_msg, consecutive_errors)
+                    guard_msg, consecutive_errors = _maybe_loop_guard(
+                        guard_msg, consecutive_errors, tag=f"edit-cap:{tu.name}")
                     await _emit(
                         events,
                         "agent:tool_result",
@@ -940,7 +976,8 @@ async def run_turn(
                     "refused rather than run raw in the daemon. Run this in a supervised "
                     "session, or restrict the unsupervised agent to read-only + Bash."
                 )
-                refuse_msg, consecutive_errors = _maybe_loop_guard(refuse_msg, consecutive_errors)
+                refuse_msg, consecutive_errors = _maybe_loop_guard(
+                    refuse_msg, consecutive_errors, tag="bash-refused")
                 await _emit(
                     events,
                     "agent:tool_result",
@@ -1097,9 +1134,13 @@ async def run_turn(
             # `_maybe_loop_guard()` above so bandaid loops get caught across
             # every failure shape.
             if is_error:
-                content, consecutive_errors = _maybe_loop_guard(content, consecutive_errors)
+                content, consecutive_errors = _maybe_loop_guard(
+                    content, consecutive_errors, tag=f"tool-error:{tu.name}")
             else:
+                # Reset both halves together — a stale tag list would outlive the
+                # run it described and grow across a long turn.
                 consecutive_errors = 0
+                error_tags.clear()
 
             # Include a truncated error snippet so benchmark + debug tools can
             # categorize failures without re-running. Skipped on success to
@@ -1178,7 +1219,6 @@ def _append_result(
 # ── Native-agent turn (for providers that run their own tool loop) ────────
 
 
-@trace.trace_boundary
 @trace.trace_boundary
 async def run_native_turn(
     *,

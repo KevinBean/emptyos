@@ -1,0 +1,66 @@
+[app]
+id = "countdown"
+store_category = "personal"
+name = "Countdown"
+version = "1.0.0"
+description = "Track days until or since important events — birthdays, trips, deadlines, anniversaries."
+icon = "📅"
+dimensions = ["emotional"]
+user_intent = [
+    "I want to count down to an event",
+    "how many days until my trip",
+    "track days since a milestone",
+    "距离...还有多少天",
+    "add a countdown for my birthday",
+    "days matter",
+]
+
+[app.entry]
+module = "app"
+class = "CountdownApp"
+
+[requires]
+capabilities = ["read", "write"]
+apps = []
+
+[provides.cli]
+commands = ["countdown"]
+
+[provides.web]
+prefix = "/countdown"
+
+[provides.events]
+emits = ["countdown:created", "countdown:updated", "countdown:deleted"]
+
+[provides.settings]
+schema = [
+    {key = "countdown.default_sort", label = "Default sort", type = "select", options = ["proximity", "created", "alphabetical"], default = "proximity", hint = "Proximity = pinned first, then closest to today in either direction."},
+]
+
+# ── Unified verb registry — see .claude/rules/verb-registry.md ──────────────
+[[provides.verbs]]
+verb = "countdown.add"
+method = "add"
+summary = "Add a countdown/count-up event"
+args = { title = "string", date = "string", repeat = "string?", category = "string?" }
+eligibility = "stable"
+surfaces = ["voice", "mcp", "agent"]
+voice = { method = "voice_add", example = "add a countdown for my flight on september 3rd", description = "Create a new countdown event. date accepts a specific date, 'today', or 'tomorrow'.", always = false }
+
+[[provides.verbs]]
+verb = "countdown.list_upcoming"
+method = "list_upcoming"
+summary = "List upcoming/nearby countdowns"
+args = {}
+eligibility = "stable"
+surfaces = ["voice", "assistant"]
+voice = { method = "voice_list", example = "what's coming up", description = "List countdowns sorted by proximity to today.", always = false, card = "task-list" }
+assistant = { slash = "/countdowns", method = "list_upcoming" }
+
+[[contributes.hub.panel]]
+id = "countdown-upcoming"
+method = "panel_upcoming"
+renderer = "countdown-tile"
+title = "Countdown"
+priority = 140
+group = "countdowns"

@@ -44,6 +44,12 @@ class AgentRunSpec:
     max_iters: int | None = None
     temperature: float | None = None
     extra_args: list[str] | None = None
+    # Detached-supervised lifecycle (ClaudeCliRunner.spawn_detached/await_handle/
+    # reattach_handle) — the child outlives the daemon; dogfood-agent persists the
+    # handle so a restart mid-run reattaches instead of orphaning the run.
+    env: dict[str, str] | None = None
+    supervision_key: str | None = None
+    early_exit_grace_s: float = 30.0
     metadata: dict[str, Any] = field(default_factory=dict)
 
 
@@ -145,6 +151,72 @@ class ClaudeCliRunner:
             binary=raw.get("binary"),
             raw=dict(raw),
         )
+
+    # ── Detached-supervised lifecycle ───────────────────────────────────
+    # The piped run() above is spawn+await in one call. A detached run is a
+    # split lifecycle: spawn now (persist the handle), await later (survives a
+    # daemon restart via reattach). These three own the claude-cli sentinels +
+    # arg plumbing so a harness app never reaches into runtime.CLAUDE_* — and
+    # they return the runtime's RAW result dict unchanged, so a caller's
+    # finalizer stays byte-identical to the pre-abstraction path.
+
+    def spawn_detached(self, spec: AgentRunSpec) -> dict:
+        """Detached spawn → ``{pid, started, create_time, binary}`` or ``{error}``.
+        Persist the handle, then drive ``await_handle`` (or ``reattach_handle``
+        after a restart)."""
+        kwargs: dict[str, Any] = {
+            "prompt": spec.prompt,
+            "system_prompt": spec.system_prompt,
+            "cwd": spec.cwd,
+            "stdout_path": spec.stdout_path,
+            "stderr_path": spec.stderr_path,
+            "model": spec.model,
+            "effort": spec.effort,
+            "extra_args": spec.extra_args,
+            "env": spec.env,
+            "supervision_key": spec.supervision_key,
+            "metadata": spec.metadata or {},
+        }
+        if spec.allowed_tools is not None:
+            kwargs["allowed_tools"] = spec.allowed_tools
+        return self.runtime.claude_cli_spawn_detached(**kwargs)
+
+    async def await_handle(self, handle: dict, spec: AgentRunSpec) -> dict:
+        """Await a detached handle to completion — raw runtime result dict."""
+        return await self.runtime.await_subprocess(
+            handle["pid"],
+            stdout_path=spec.stdout_path,
+            started=handle["started"],
+            create_time=handle.get("create_time"),
+            timeout_s=spec.timeout_s,
+            idle_timeout_s=spec.idle_timeout_s,
+            progress_predicate=self.runtime.CLAUDE_PROGRESS_PREDICATE,
+            early_exit_on_line=self.runtime.CLAUDE_RESULT_SENTINEL,
+            early_exit_grace_s=spec.early_exit_grace_s,
+            on_tick=spec.on_tick,
+            tick_interval_s=spec.tick_interval_s or 30.0,
+            poll_s=1.0,
+        )
+
+    async def reattach_handle(self, key: str, spec: AgentRunSpec) -> dict:
+        """Reattach to a supervised child after a daemon restart — raw result
+        dict (with ``reattached: True`` + ``metadata``). Raises ``KeyError``
+        when the supervision record is gone."""
+        return await self.runtime.reattach(
+            key,
+            timeout_s=spec.timeout_s,
+            idle_timeout_s=spec.idle_timeout_s,
+            progress_predicate=self.runtime.CLAUDE_PROGRESS_PREDICATE,
+            early_exit_on_line=self.runtime.CLAUDE_RESULT_SENTINEL,
+            early_exit_grace_s=spec.early_exit_grace_s,
+            on_tick=spec.on_tick,
+            tick_interval_s=spec.tick_interval_s or 30.0,
+            poll_s=1.0,
+        )
+
+    def clear_supervision(self, key: str) -> bool:
+        """Drop a run's supervision record once it's finalized in this lifetime."""
+        return self.runtime.clear_supervision(key)
 
 
 # Appended to every EosAgentRunner system prompt. A claude-cli run learns its

@@ -87,7 +87,8 @@
   body.we-focus #doc-editor {
     position: fixed; inset: 0; z-index: 500; background: var(--bg);
     display: flex; flex-direction: column; align-items: center;
-    padding: 4vh 24px 0; overflow: hidden;
+    padding: max(4vh, env(safe-area-inset-top)) 24px env(safe-area-inset-bottom);
+    overflow: hidden;
   }
   body.we-focus #doc-editor > * { width: 100%; max-width: 720px; }
   body.we-focus .doc-title-input { border: none; background: transparent; padding: 8px 0; }

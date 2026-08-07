@@ -127,3 +127,55 @@ class TestCollectorDropsSecrets:
 
         assert pr.is_secret_name(env) is True
         assert env.resolve() in pr.gitignored([env])
+
+
+class TestDeveloperServicePackaging:
+    def test_dev_tier_declares_both_external_lab_services(self):
+        tier = pr.resolve_tier(pr.load_release(), "dev")
+        assert tier["services"] == ["chatbot", "external_lab"]
+
+    def test_dev_artifact_collects_service_code_not_runtime_state(self):
+        release = pr.load_release()
+        # Exercise the real service collector without walking every app inherited
+        # by the full developer tier (that belongs to the package --check gate).
+        files = pr.collect_files(release, {
+            "apps": [], "plugins": [], "skills": [],
+            "services": ["chatbot", "external_lab"],
+        })
+        rels = {rel.as_posix() for _, rel in files}
+
+        assert "services/chatbot/main.py" in rels
+        assert "services/external_lab/main.py" in rels
+        assert not any(rel.endswith("/.env") for rel in rels)
+        assert "services/chatbot/sites.toml" not in rels
+        assert not any(rel.startswith("services/chatbot/data/") for rel in rels)
+
+
+class TestAgentSkillPackaging:
+    def test_collects_canonical_agent_skill_without_duplicate_legacy_copy(
+        self, tmp_path, monkeypatch
+    ):
+        canonical = (
+            tmp_path / ".agents" / "skills" / "eos-ai-conversation-ingest"
+        )
+        canonical.mkdir(parents=True)
+        (canonical / "SKILL.md").write_text("# Canonical\n", encoding="utf-8")
+
+        monkeypatch.setattr(pr, "ROOT", tmp_path)
+        monkeypatch.setattr(pr, "gitignored", lambda paths: set())
+
+        files = pr.collect_files(
+            {"exclude": {"patterns": []}, "include": {"paths": []}},
+            {
+                "apps": [],
+                "plugins": [],
+                "skills": ["eos-ai-conversation-ingest"],
+                "services": [],
+            },
+        )
+        rels = {rel.as_posix() for _, rel in files}
+
+        assert rels == {
+            ".agents/skills/eos-ai-conversation-ingest/SKILL.md"
+        }
+        assert not any(rel.startswith("skills/") for rel in rels)

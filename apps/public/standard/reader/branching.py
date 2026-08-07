@@ -132,6 +132,101 @@ Do NOT:
 - name the source books"""
 
 
+def _coerce_target_words(value) -> list[str]:
+    """Normalize persisted learning words from graph meta or frontmatter."""
+    if isinstance(value, str):
+        value = re.split(r"[,\n]", value)
+    if not isinstance(value, list):
+        return []
+    out: list[str] = []
+    for raw in value:
+        word = str(raw or "").strip()
+        if word and word not in out:
+            out.append(word)
+    return out[:20]
+
+
+def _as_bool(value) -> bool:
+    if isinstance(value, bool):
+        return value
+    return str(value or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _story_learning_meta(graph: "DecisionGraph", frontmatter: dict) -> dict:
+    meta = graph.meta or {}
+    words = _coerce_target_words(
+        meta.get("target_words") or frontmatter.get("target_words") or []
+    )
+    checks = _as_bool(
+        meta.get("comprehension_checks", frontmatter.get("comprehension_checks", False))
+    )
+    return {
+        "lang": frontmatter.get("lang") or "English",
+        "cefr": frontmatter.get("cefr") or "",
+        "target_words": words,
+        "comprehension_checks": checks,
+    }
+
+
+def _story_game_brief(
+    graph: "DecisionGraph", frontmatter: dict, slug: str
+) -> tuple[str, dict]:
+    """Build the game brief while preserving the story's learning contract."""
+    meta = graph.meta or {}
+    bible = meta.get("bible") or {}
+    learning = _story_learning_meta(graph, frontmatter)
+    chars = ", ".join(
+        f"{c.get('name')} ({c.get('anchor')})"
+        for c in (bible.get("characters") or [])[:3]
+        if c.get("name")
+    )
+    beats = "; ".join(
+        (node.data.get("title") or "").strip()
+        for node in list(graph.nodes.values())[:7]
+        if (node.data.get("title") or "").strip()
+    )
+    premise = meta.get("premise") or frontmatter.get("premise") or meta.get("title") or slug
+    cefr = learning["cefr"] or "the story's original level"
+    lang = learning["lang"]
+    words = learning["target_words"]
+
+    learning_rules = [
+        "Language-learning contract:",
+        f"- Keep every player-facing line (NPC dialogue, signs, item text, choices, and feedback) in {lang} at {cefr} CEFR difficulty.",
+        "- Make language use part of play: require 2-3 short dialogue, reading, or meaning-in-context interactions before the goal unlocks.",
+        "- Integrate learning into exploration and character interaction; do not interrupt the game with a detached quiz screen.",
+        "- Wrong answers must give a brief level-appropriate hint and allow an immediate retry without punishment.",
+        "- End with a concise recap of the language the player used to win.",
+    ]
+    if words:
+        learning_rules.append(
+            "- Reuse these target words naturally and make their meaning inferable from context: "
+            + ", ".join(words)
+            + "."
+        )
+    else:
+        learning_rules.append(
+            "- Include at least one meaning-in-context vocabulary interaction drawn from the story setting."
+        )
+    if learning["comprehension_checks"]:
+        learning_rules.append(
+            "- Preserve the story's comprehension-check mode with at least two checkpoints about events, motives, or word meaning."
+        )
+
+    brief = (
+        "Top-down adventure game based on this story. "
+        f"Premise: {premise}. "
+        f"Setting: {bible.get('setting', '')}. "
+        f"Mood: {bible.get('style_hint', '')}. "
+        + (f"Characters (as the player + NPCs): {chars}. " if chars else "")
+        + (f"Evoke these story beats as areas/NPCs/signs: {beats}. " if beats else "")
+        + "The player explores tiled areas, talks to NPCs, and reaches a goal that resolves the story. "
+        + "Keep it winnable in a couple of minutes.\n\n"
+        + "\n".join(learning_rules)
+    )
+    return brief, learning
+
+
 class BranchingMixin:
     # ── flag + paths ─────────────────────────────────────────────
 
@@ -156,6 +251,8 @@ class BranchingMixin:
             "lang": props.get("lang") or "English",
             "cefr": props.get("cefr") or "",
             "premise": props.get("premise") or "",
+            "target_words": _coerce_target_words(props.get("target_words") or []),
+            "comprehension_checks": _as_bool(props.get("comprehension_checks", False)),
             "in_progress": slug in (self.state_data.get("playthroughs", {}) or {}),
             "story": True,
         }
@@ -222,7 +319,16 @@ class BranchingMixin:
             return None, fm
 
     def _save_story(
-        self, slug: str, title: str, graph: "DecisionGraph", *, lang: str, cefr: str, premise: str
+        self,
+        slug: str,
+        title: str,
+        graph: "DecisionGraph",
+        *,
+        lang: str,
+        cefr: str,
+        premise: str,
+        target_words: list[str] | None = None,
+        with_checks: bool = False,
     ) -> str:
         rel = self._story_path_rel(slug)
         import json as _json
@@ -243,6 +349,8 @@ class BranchingMixin:
                 "lang": lang,
                 "cefr": cefr,
                 "premise": premise,
+                "target_words": _coerce_target_words(target_words or []),
+                "comprehension_checks": bool(with_checks),
                 "created": datetime.now(timezone.utc).isoformat(),
             },
             body=body,
@@ -354,7 +462,18 @@ class BranchingMixin:
                     slug = self._unique_story_slug(_slugify(title) or "story")
                     graph.meta.setdefault("title", title)
                     graph.meta.setdefault("premise", premise)
-                    rel = self._save_story(slug, title, graph, lang=lang, cefr=cefr, premise=premise)
+                    graph.meta["target_words"] = tw
+                    graph.meta["comprehension_checks"] = bool(with_checks)
+                    rel = self._save_story(
+                        slug,
+                        title,
+                        graph,
+                        lang=lang,
+                        cefr=cefr,
+                        premise=premise,
+                        target_words=tw,
+                        with_checks=with_checks,
+                    )
                 except Exception as e:  # a valid graph that won't persist — surface it, don't 500
                     log.warning("story save failed: %s", e)
                     return {"error": f"woven a valid story but saving failed: {e}"}
@@ -366,6 +485,8 @@ class BranchingMixin:
                     "nodes": len(graph.nodes),
                     "lang": lang,
                     "cefr": cefr,
+                    "target_words": tw,
+                    "comprehension_checks": bool(with_checks),
                 }
             last_errors = errors
             # Feed the errors back so the retry can self-correct.
@@ -506,6 +627,7 @@ class BranchingMixin:
             except DecisionGraphError:
                 view = None
         meta = graph.meta or {}
+        learning = _story_learning_meta(graph, fm)
         return {
             "slug": slug,
             "title": meta.get("title") or fm.get("title") or slug,
@@ -513,6 +635,8 @@ class BranchingMixin:
             "cefr": fm.get("cefr") or "",
             "premise": meta.get("premise") or fm.get("premise") or "",
             "bible": meta.get("bible") or {},
+            "target_words": learning["target_words"],
+            "comprehension_checks": learning["comprehension_checks"],
             "in_progress": bool(pt),
             "view": view,
         }
@@ -548,41 +672,24 @@ class BranchingMixin:
 
     async def story_to_game(self, slug: str) -> dict:
         """Turn a woven story into a playable top-down game via viz's game-2d shape.
-        Builds a spatial brief from the story's premise + bible + beat titles and
+        Builds a spatial brief from the story plus its CEFR/vocabulary/check contract and
         hands it to viz.generate. Optional integration — graceful if viz is absent."""
         graph, fm = self._load_story_graph(slug)
         if graph is None:
             return {"error": f"story '{slug}' not found"}
-        meta = graph.meta or {}
-        bible = meta.get("bible") or {}
-        chars = ", ".join(
-            f"{c.get('name')} ({c.get('anchor')})"
-            for c in (bible.get("characters") or [])[:3]
-            if c.get("name")
-        )
-        beats = "; ".join(
-            (n.data.get("title") or "").strip()
-            for n in list(graph.nodes.values())[:7]
-            if (n.data.get("title") or "").strip()
-        )
-        premise = meta.get("premise") or fm.get("premise") or meta.get("title") or slug
-        brief = (
-            f"Top-down adventure game based on this story. "
-            f"Premise: {premise}. "
-            f"Setting: {bible.get('setting', '')}. "
-            f"Mood: {bible.get('style_hint', '')}. "
-            + (f"Characters (as the player + NPCs): {chars}. " if chars else "")
-            + (f"Evoke these story beats as areas/NPCs/signs: {beats}. " if beats else "")
-            + "The player explores tiled areas, talks to NPCs, and reaches a goal "
-            "that resolves the story. Keep it winnable in a couple of minutes."
-        )
+        brief, learning = _story_game_brief(graph, fm, slug)
         try:
             res = await self.call_app("viz", "generate", prompt=brief, shape="game-2d")
         except Exception as e:
             return {"error": f"game generation needs the viz app: {e}"}
         if isinstance(res, dict) and res.get("ok") and res.get("id"):
             await self.emit("reader:story_to_game", {"slug": slug, "viz_id": res["id"]})
-            return {"ok": True, "viz_id": res["id"], "url": f"/viz/api/html/{res['id']}"}
+            return {
+                "ok": True,
+                "viz_id": res["id"],
+                "url": f"/viz/api/html/{res['id']}",
+                "learning": learning,
+            }
         return {"error": (res or {}).get("error", "game generation failed") if isinstance(res, dict) else "game generation failed"}
 
     # ── vocab-loop integration (English-learning track) ──────────

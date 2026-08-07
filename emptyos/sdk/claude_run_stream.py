@@ -5,12 +5,14 @@ write line-delimited Anthropic stream-json events to disk. Both fix-agent
 and dogfood-agent (and any future runner) want the same UX: a live ndjson
 endpoint that drives ``EOS_UI.streamPane`` in the browser.
 
-The transform reads **two dialects** off the same ``stream.jsonl``: Anthropic
-stream-json (``{"type": "assistant"|"user", ...}``, written by claude-cli) AND
-the eos-agent runner's flat ``{"type": "agent:*", ...}`` lines (written by
-``EosAgentRunner._RunnerEventRecorder``). Both normalize to the canonical shape
-below, so an eos-agent run renders the same as a claude-cli run instead of
-being dropped as "agent did nothing".
+The transform reads **three dialects** off the same ``stream.jsonl``: Anthropic
+stream-json (``{"type": "assistant"|"user", ...}``, written by claude-cli), the
+eos-agent runner's flat ``{"type": "agent:*", ...}`` lines (written by
+``EosAgentRunner._RunnerEventRecorder``), and Codex's ``codex exec --json``
+envelope (``{"type": "item.started"|"item.completed", "item": {...}}``). All
+normalize to the canonical shape below, so an eos-agent or codex run renders
+the same as a claude-cli run instead of being dropped as "agent did nothing"
+or arriving as one opaque blob.
 
 This helper owns the file-tail loop + the canonical event transform so
 each app's endpoint stays tiny — it composes the started/done envelope
@@ -51,6 +53,99 @@ def _parse_started_at(meta: dict, field: str) -> float:
     return time.time()
 
 
+def transform_stream_json_obj(evt: dict, elapsed_ms: int = 0,
+                              preview_chars: int = 300) -> list[dict]:
+    """One ALREADY-PARSED Anthropic stream-json object → 0+ canonical events.
+
+    THE single parser for the claude-cli stream-json (== transcript) dialect —
+    ``transform_stream_json_line`` wraps it with ``json.loads`` + a wall-clock
+    elapsed, and ``rooms/participants.py`` calls it directly (its queue already
+    holds parsed dicts) then maps the canonical shape to its own chunk shape.
+    ``preview_chars`` caps tool_result text (rooms wants 500, the run drawer 300).
+
+    NOTE — deliberately separate from ``apps/extension/dev/cockpit/adapters.py``
+    ``parse_claude_line``: cockpit reads the CLI's *own transcript file* and
+    emits a RICHER vocabulary (thinking / diff-synthesis / image-frames /
+    sidechain / done+usage) for its 3-source companion UI; this transforms the
+    runner's *redirected stdout* stream into the minimal run-drawer vocabulary.
+    Two sources, two vocabularies — do not merge (documented so the next auditor
+    doesn't re-flag it).
+    """
+    etype = evt.get("type")
+    out: list[dict] = []
+    if etype == "assistant":
+        for block in (evt.get("message", {}) or {}).get("content", []) or []:
+            btype = block.get("type")
+            if btype == "text":
+                text = block.get("text") or ""
+                if text:
+                    out.append({"type": "chunk", "text": text, "elapsed_ms": elapsed_ms})
+            elif btype == "tool_use":
+                out.append({
+                    "type": "tool_use",
+                    "tool": block.get("name") or "?",
+                    "input": block.get("input") or {},
+                    "id": block.get("id"),
+                    "elapsed_ms": elapsed_ms,
+                })
+    elif etype == "user":
+        for block in (evt.get("message", {}) or {}).get("content", []) or []:
+            if block.get("type") == "tool_result":
+                content = block.get("content")
+                if isinstance(content, list):
+                    content = " ".join(
+                        str(c.get("text", c)) for c in content if c
+                    )
+                preview = str(content)[:preview_chars] if content else ""
+                out.append({
+                    "type": "tool_result",
+                    "tool_use_id": block.get("tool_use_id"),
+                    "preview": preview,
+                    "elapsed_ms": elapsed_ms,
+                })
+    elif etype in ("item.started", "item.completed"):
+        # Codex CLI dialect (`codex exec --json`) — a third dialect on the same
+        # canonical shape, so an @codex turn renders with the same tool cards a
+        # claude-cli turn gets instead of arriving as one opaque text blob.
+        #
+        # Its envelope types (thread.started / turn.started / turn.completed)
+        # carry no canonical event and fall through to []. Only the item.*
+        # pair matters: command_execution arrives twice, once `started` with
+        # the command and once `completed` with the output, which is exactly
+        # the tool_use → tool_result pairing keyed on the shared item id.
+        item = evt.get("item") or {}
+        itype = item.get("type")
+        if itype == "command_execution":
+            if etype == "item.started":
+                out.append({
+                    "type": "tool_use",
+                    "tool": "Bash",
+                    "input": {"command": item.get("command") or ""},
+                    "id": item.get("id"),
+                    "elapsed_ms": elapsed_ms,
+                })
+            else:
+                output = str(item.get("aggregated_output") or "")
+                # Surface a non-zero exit in the preview. Codex's Windows
+                # sandbox fails open (.claude/rules/multi-cli-participants.md):
+                # it reports the helper error in this field and then silently
+                # re-runs the same command unsandboxed, so dropping the failed
+                # attempt would hide the only visible trace of that retry.
+                if item.get("status") == "failed":
+                    output = f"[exit {item.get('exit_code')}] {output}"
+                out.append({
+                    "type": "tool_result",
+                    "tool_use_id": item.get("id"),
+                    "preview": output[:preview_chars],
+                    "elapsed_ms": elapsed_ms,
+                })
+        elif etype == "item.completed" and itype in ("agent_message", "error"):
+            text = str(item.get("text") or item.get("message") or "")
+            if text:
+                out.append({"type": "chunk", "text": text, "elapsed_ms": elapsed_ms})
+    return out
+
+
 def transform_stream_json_line(raw: str, t0_wall_s: float) -> list[dict]:
     """One Anthropic stream-json line → 0+ canonical events.
 
@@ -64,38 +159,14 @@ def transform_stream_json_line(raw: str, t0_wall_s: float) -> list[dict]:
         return []
     elapsed = max(0, int((time.time() - t0_wall_s) * 1000))
     etype = evt.get("type")
+    if etype in ("assistant", "user", "item.started", "item.completed"):
+        # Codex's item.* pair is handled in _obj alongside the Anthropic
+        # dialect; route it there too or a stream.jsonl written by a codex run
+        # renders empty in the run drawer — the exact "agent did nothing" bug
+        # the agent:* branch below was added to fix.
+        return transform_stream_json_obj(evt, elapsed_ms=elapsed)
     out: list[dict] = []
-    if etype == "assistant":
-        for block in (evt.get("message", {}) or {}).get("content", []) or []:
-            btype = block.get("type")
-            if btype == "text":
-                text = block.get("text") or ""
-                if text:
-                    out.append({"type": "chunk", "text": text, "elapsed_ms": elapsed})
-            elif btype == "tool_use":
-                out.append({
-                    "type": "tool_use",
-                    "tool": block.get("name") or "?",
-                    "input": block.get("input") or {},
-                    "id": block.get("id"),
-                    "elapsed_ms": elapsed,
-                })
-    elif etype == "user":
-        for block in (evt.get("message", {}) or {}).get("content", []) or []:
-            if block.get("type") == "tool_result":
-                content = block.get("content")
-                if isinstance(content, list):
-                    content = " ".join(
-                        str(c.get("text", c)) for c in content if c
-                    )
-                preview = str(content)[:300] if content else ""
-                out.append({
-                    "type": "tool_result",
-                    "tool_use_id": block.get("tool_use_id"),
-                    "preview": preview,
-                    "elapsed_ms": elapsed,
-                })
-    elif etype and etype.startswith("agent:"):
+    if etype and etype.startswith("agent:"):
         # eos-agent runner dialect. `EosAgentRunner`'s `_RunnerEventRecorder`
         # writes flat `{"type": "agent:*", ...}` lines — NOT Anthropic
         # stream-json. Map them to the same canonical shape so a native

@@ -30,15 +30,28 @@ commands = ["worklog"]
 [provides.web]
 prefix = "/worklog"
 
+[provides.export]
+enabled = true
+mode = "standalone"
+hook = "export"
+targets = ["single-html"]
+assets = ["minimal"]
+fallbacks = [
+    "vault:indexeddb",
+    "events:local-bus",
+    "call_app:stub",
+    "viewer:none",
+]
+
 [provides.events]
-emits = ["worklog:logged", "worklog:created", "worklog:status-changed"]
+emits = ["worklog:logged", "worklog:created", "worklog:status-changed", "worklog:imported"]
 # Worklog IS the professional activity log (60_Worklogs) — a journal ripple
 # would duplicate its own record. UI-only, no cross-app listener by design.
-internal = ["worklog:logged", "worklog:created", "worklog:status-changed"]
+internal = ["worklog:logged", "worklog:created", "worklog:status-changed", "worklog:imported"]
 
 [provides.settings]
 schema = [
-    {key = "worklog.default_employer", label = "Default employer", type = "text", default = ""},
+    {key = "worklog.default_employer", label = "Default employer", type = "text", default = "", hint = "Stamped on new day notes (e.g. your current employer)."},
     {key = "worklog.default_status", label = "Default status", type = "select", options = ["in-progress", "todo", "next", "waiting", "review", "complete", "blocked"], default = "in-progress"},
 ]
 

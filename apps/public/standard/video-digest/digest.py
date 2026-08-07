@@ -255,7 +255,7 @@ async def _digest_one_inner(self, item: dict) -> dict:
         or item
     )
 
-    asyncio.create_task(
+    self.spawn_background(
         self.emit(
             "video-digest:digested",
             {
@@ -274,7 +274,7 @@ async def _digest_one_inner(self, item: dict) -> dict:
     except Exception as e:
         # Surface as an event but leave status=done — the digest itself
         # is the load-bearing output; KB candidates are downstream nice-to-have.
-        asyncio.create_task(
+        self.spawn_background(
             self.emit(
                 "video-digest:kb_extraction_failed",
                 {"id": item["id"], "error": str(e)[:200]},
@@ -358,7 +358,7 @@ async def _digest_web_inner(self, item: dict) -> dict:
         or item
     )
 
-    asyncio.create_task(
+    self.spawn_background(
         self.emit(
             "video-digest:digested",
             {
@@ -374,7 +374,7 @@ async def _digest_web_inner(self, item: dict) -> dict:
     try:
         await self._propose_kb_extractions(summary, source_stem=stem, content_label="web-page digest")
     except Exception as e:
-        asyncio.create_task(
+        self.spawn_background(
             self.emit(
                 "video-digest:kb_extraction_failed",
                 {"id": item["id"], "error": str(e)[:200]},
@@ -404,7 +404,7 @@ async def _propose_kb_extractions(
         content_label=content_label,
     )
     if proposed:
-        asyncio.create_task(
+        self.spawn_background(
             self.emit(
                 "video-digest:kb_proposed",
                 {
@@ -555,7 +555,7 @@ async def api_categorize_all(self, request):
             )
             continue
         processed.append({"path": path, "ok": True, "domain": inferred})
-    asyncio.create_task(self.emit("video-digest:categorized", {"count": len(processed)}))
+    self.spawn_background(self.emit("video-digest:categorized", {"count": len(processed)}))
     ok_count = sum(1 for p in processed if p.get("ok"))
     return {"ok": True, "processed": processed, "count": len(processed), "ok_count": ok_count}
 

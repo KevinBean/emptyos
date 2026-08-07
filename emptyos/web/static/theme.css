@@ -1,6 +1,18 @@
 /* ============================================================
    EmptyOS — Shared Theme System
-   Themes: eos (default), void-dark, warm-dark, nord, soft-light
+
+   Light:  eos (default), digital-garden, soft-light, tatami
+   Dark:   void-dark, warm-dark, nord, forest, deep-sea, vino
+
+   The id list lives in ONE place — `_KNOWN_THEMES` in eos.js, which
+   `EOS.THEMES` aliases. The pre-paint bootstrap in server.py deliberately
+   holds no list (it only shape-checks), so adding a theme means: a block
+   here, the id + a label in eos.js, and the settings schema. Nothing else.
+   `tests/test_unit_theme_registry.py` pins that those agree and that no page
+   has re-hardcoded the list.
+
+   Every theme must clear `python scripts/check-contrast.py` with 0 fail AND
+   0 warn — that is the current state, so any warning you see is yours.
    ============================================================ */
 
 @import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,100..1000;1,9..40,100..1000&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
@@ -123,9 +135,11 @@
   --text-muted:     #7a7a85;
   --border:         #d6d2ca;
   --border-strong:  #c4c0b6;
-  --accent:         #6c5ce7;
+  /* One step deeper than the original #6c5ce7, which read 4.02:1 as link text
+     on --bg (it cleared 4.5 only on --bg-card). The hue is unchanged. */
+  --accent:         #6353da;
   --accent-dim:     #8b80f0;
-  --accent-bg:      rgba(108,92,231,0.08);
+  --accent-bg:      rgba(99,83,218,0.08);
   --accent-ink:     #ffffff;
   /* Status colours are most often rendered as text on their OWN tint
      (`background: color-mix(--success 15%, …); color: var(--success)`) — the
@@ -172,7 +186,9 @@
   --bg: #242933; --bg-surface: #2a303c;
   --bg-card: rgba(59,66,82,0.5); --bg-card-hover: rgba(59,66,82,0.7);
   --bg-input: rgba(59,66,82,0.6);
-  --text: #d0d6e0; --text-heading: #e5eaf0; --text-secondary: #8790a2;
+  /* secondary lifted from #8790a2 (3.78:1 on --bg-card, which is a translucent
+     slate over --bg — so it composites lighter than it looks in isolation). */
+  --text: #d0d6e0; --text-heading: #e5eaf0; --text-secondary: #9ba4b6;
   --text-muted: #7b849a;  /* ≥3.0 on --bg-card too (was #6b7489 @ 2.6:1 on card) */
   --border: rgba(67,76,94,0.6); --border-strong: rgba(67,76,94,0.8);
   --accent: #81b8c4; --accent-dim: #5a8a98; --accent-bg: rgba(129,184,196,0.1); --accent-ink: #0f1417;
@@ -180,6 +196,69 @@
      3.0:1 as text on their own tint — the chip idiom. */
   --success: #a3be8c; --warning: #ebcb8b; --danger: #d9878d; --info: #7fa3cc;
   --shadow: rgba(0,0,0,0.3); --glow: 0 0 20px rgba(129,184,196,0.06);
+  --focus-ring: 0 0 0 2px var(--bg), 0 0 0 4px color-mix(in srgb, var(--accent) 60%, transparent);
+}
+
+/* ── forest — moss under canopy ──
+   Ink-black green paper, sage accent. The system had no green anywhere; this
+   is the one dark theme that reads as *outdoors* rather than as a screen.
+   Sampled from BLACK STALLION / OKROSHKA.
+
+   Accent (sage) and --success (grass) are both green and only separate by
+   chroma. That's the same trade warm-dark already makes with amber accent vs
+   amber warning — acceptable because status colour never appears alone; it
+   appears as a chip on its own tint, next to a label saying what it means. */
+.theme-forest {
+  --bg: #0e1712; --bg-surface: #131e18;
+  --bg-card: rgba(179,201,182,0.035); --bg-card-hover: rgba(179,201,182,0.07);
+  --bg-input: rgba(179,201,182,0.05);
+  --text: #c3d0c2; --text-heading: #e3ece2; --text-secondary: #8a9a89;
+  --text-muted: #7f8f7e;
+  --border: rgba(179,201,182,0.09); --border-strong: rgba(179,201,182,0.18);
+  --accent: #9cc49a; --accent-dim: #6b9a6e; --accent-bg: rgba(156,196,154,0.10);
+  --accent-ink: #0c1410;
+  --success: #4ade80; --warning: #fbbf24; --danger: #f87171; --info: #60a5fa;
+  --shadow: rgba(0,0,0,0.45); --glow: 0 0 20px rgba(156,196,154,0.05);
+  --focus-ring: 0 0 0 2px var(--bg), 0 0 0 4px color-mix(in srgb, var(--accent) 60%, transparent);
+}
+
+/* ── deep-sea — night navy ──
+   Deeper and bluer than nord, which is a grey-teal twilight. Reads as working
+   late rather than as arctic daylight. Sampled from BLACK IS BACK.
+   --info is pushed to cyan so it stays legible beside the blue accent. */
+.theme-deep-sea {
+  --bg: #0d111a; --bg-surface: #141b2b;
+  --bg-card: rgba(143,172,203,0.04); --bg-card-hover: rgba(143,172,203,0.08);
+  --bg-input: rgba(143,172,203,0.05);
+  --text: #c2cddd; --text-heading: #e4ebf5; --text-secondary: #8895ab;
+  --text-muted: #7e8ba5;
+  --border: rgba(143,172,203,0.09); --border-strong: rgba(143,172,203,0.18);
+  --accent: #7fa9db; --accent-dim: #557fae; --accent-bg: rgba(127,169,219,0.11);
+  --accent-ink: #0b1018;
+  --success: #34d399; --warning: #fbbf24; --danger: #f87171; --info: #7dd3fc;
+  --shadow: rgba(0,0,0,0.45); --glow: 0 0 20px rgba(127,169,219,0.05);
+  --focus-ring: 0 0 0 2px var(--bg), 0 0 0 4px color-mix(in srgb, var(--accent) 60%, transparent);
+}
+
+/* ── vino — cellar dark ──
+   Wine paper, berry-pink accent. Sampled from ITALIAN ROAST.
+
+   The one theme where the palette actively fights the design system: a red
+   chrome sits on top of --danger, which is also red. So --danger is pushed to
+   vermilion here — hotter and more orange than the berry accent, and the only
+   colour in the theme that leans warm. Verify error states by eye before
+   trusting this theme in a workflow where missing an error is expensive. */
+.theme-vino {
+  --bg: #1a0d10; --bg-surface: #241318;
+  --bg-card: rgba(188,120,141,0.045); --bg-card-hover: rgba(188,120,141,0.09);
+  --bg-input: rgba(188,120,141,0.055);
+  --text: #d3bcc2; --text-heading: #f0dde2; --text-secondary: #a58c94;
+  --text-muted: #997f88;
+  --border: rgba(188,120,141,0.10); --border-strong: rgba(188,120,141,0.20);
+  --accent: #d4738f; --accent-dim: #a34c68; --accent-bg: rgba(212,115,143,0.11);
+  --accent-ink: #1a0d10;
+  --success: #34d399; --warning: #fbbf24; --danger: #f4633a; --info: #7dd3fc;
+  --shadow: rgba(0,0,0,0.5); --glow: 0 0 20px rgba(212,115,143,0.06);
   --focus-ring: 0 0 0 2px var(--bg), 0 0 0 4px color-mix(in srgb, var(--accent) 60%, transparent);
 }
 
@@ -196,6 +275,38 @@
   --success: #0c8955; --warning: #c26800; --danger: #dc2626; --info: #0284c7;
   --shadow: rgba(0,0,0,0.03); --glow: none;
   --focus-ring: 0 0 0 2px var(--bg), 0 0 0 4px color-mix(in srgb, var(--accent) 60%, transparent);
+}
+
+/* ── tatami — rice paper and haze ──
+   Warm wood-brown ink on rice white, with a cool haze-blue accent. The three
+   existing light themes all accent warm (violet / indigo / terracotta); this
+   is the only one where the accent is *cooler* than the paper, which is what
+   makes dense forms feel calm rather than busy. Sampled from TATAMI TAN. */
+.theme-tatami {
+  --bg:             #ebe3d8;
+  --bg-surface:     #e2d8ca;
+  --bg-card:        #f7f2ea;
+  --bg-card-hover:  #fbf8f2;
+  --bg-input:       #f7f2ea;
+  --text:           #3a2e2d;
+  --text-heading:   #241c1b;
+  --text-secondary: #5f524c;
+  --text-muted:     #77685f;
+  --border:         #d8cbb8;
+  --border-strong:  #c4b49c;
+  --accent:         #3f6b87;
+  --accent-dim:     #5b8aa8;
+  --accent-bg:      rgba(63,107,135,0.09);
+  --accent-ink:     #ffffff;
+  /* Tuned to clear 3.0:1 as text on their own tint (the chip idiom), not just
+     on --bg — same discipline as .theme-eos above. */
+  --success:        #16794f;
+  --warning:        #8a6408;
+  --danger:         #c03a2b;
+  --info:           #2c6a90;
+  --shadow:         rgba(58,46,45,0.08);
+  --focus-ring:     0 0 0 2px var(--bg), 0 0 0 4px color-mix(in srgb, var(--accent) 45%, transparent);
+  --glow:           none;
 }
 
 /* ── digital-garden — Maggie Appleton's warm sketchbook ──
@@ -216,9 +327,13 @@
   --text-muted:     #80715f;
   --border:         #d4c4a0;
   --border-strong:  #c2ad84;
-  --accent:         #b56b3e;
+  /* Deepened from the ported #b56b3e, which read 3.06:1 as link text and gave
+     only 3.86:1 for ink on accent buttons — both below the body-text floor.
+     This is why the palette is now *inspired by* Appleton's rather than a
+     faithful port; the source was authored for prose, not for UI chrome. */
+  --accent:         #8f4e27;
   --accent-dim:     #c89548;
-  --accent-bg:      rgba(181,107,62,0.10);
+  --accent-bg:      rgba(143,78,39,0.10);
   --accent-ink:     #fdf8ee;
   --success:        #5f7d3c;
   --warning:        #9c6f1e;  /* ≥3.0 on --bg-card (was #b8852e @ 2.8:1) */
@@ -549,7 +664,7 @@ tr:hover td { background: color-mix(in srgb, var(--accent) 3%, transparent); }
   box-shadow: 0 1px 0 var(--border), 0 4px 16px rgba(30,28,24,0.05);
 }
 .theme-eos .nav a { color: var(--text-muted); font-weight: 500; }
-.theme-eos .nav a:hover { color: var(--text); background: rgba(108,92,231,0.05); }
+.theme-eos .nav a:hover { color: var(--text); background: rgba(99,83,218,0.05); }
 .theme-eos .nav .current {
   color: var(--accent); background: none; position: relative; font-weight: 600;
 }
@@ -573,11 +688,11 @@ tr:hover td { background: color-mix(in srgb, var(--accent) 3%, transparent); }
 /* ── Buttons ── */
 .theme-eos .btn:not(.btn-ghost):not(.btn-deploy):not(.btn-danger):not([style*="background"]) {
   background: linear-gradient(135deg, #7c6cf0 0%, #5a4bd4 100%);
-  box-shadow: 0 2px 8px rgba(108,92,231,0.2);
+  box-shadow: 0 2px 8px rgba(99,83,218,0.2);
   letter-spacing: 0.02em;
 }
 .theme-eos .btn:not(.btn-ghost):not(.btn-deploy):not([style*="background"]):hover {
-  box-shadow: 0 4px 16px rgba(108,92,231,0.3);
+  box-shadow: 0 4px 16px rgba(99,83,218,0.3);
   opacity: 1; filter: brightness(1.06);
 }
 .theme-eos .btn-ghost,
@@ -588,7 +703,7 @@ tr:hover td { background: color-mix(in srgb, var(--accent) 3%, transparent); }
 .theme-eos .btn-ghost:hover,
 .theme-eos .eos-btn-ghost:hover {
   border-color: var(--accent); color: var(--accent); background: var(--bg-card);
-  box-shadow: 0 2px 8px rgba(108,92,231,0.1);
+  box-shadow: 0 2px 8px rgba(99,83,218,0.1);
 }
 
 /* ── Inputs: underline in page content ── */
@@ -609,7 +724,7 @@ tr:hover td { background: color-mix(in srgb, var(--accent) 3%, transparent); }
 .theme-eos .eos-modal textarea:focus,
 .theme-eos .eos-modal select:focus {
   border-bottom-color: var(--accent); box-shadow: none;
-  background: rgba(108,92,231,0.02);
+  background: rgba(99,83,218,0.02);
 }
 
 /* ── Section titles: violet thread ── */
@@ -628,7 +743,7 @@ tr:hover td { background: color-mix(in srgb, var(--accent) 3%, transparent); }
 /* ── Tables ── */
 .theme-eos th { border-bottom: 2px solid var(--accent); color: var(--text-secondary); }
 .theme-eos td { border-bottom: 1px solid rgba(0,0,0,0.04); }
-.theme-eos tr:hover td { background: rgba(108,92,231,0.03); }
+.theme-eos tr:hover td { background: rgba(99,83,218,0.03); }
 
 /* ── Code/output ── */
 .theme-eos .output {
@@ -642,7 +757,7 @@ tr:hover td { background: color-mix(in srgb, var(--accent) 3%, transparent); }
 
 /* ── Blockquotes ── */
 .theme-eos blockquote {
-  border-left-color: var(--accent); background: rgba(108,92,231,0.03);
+  border-left-color: var(--accent); background: rgba(99,83,218,0.03);
 }
 
 /* ── Scrollbar: warm toned ── */

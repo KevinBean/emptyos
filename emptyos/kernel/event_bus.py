@@ -69,7 +69,9 @@ class EventBus:
         path.parent.mkdir(parents=True, exist_ok=True)
         # check_same_thread=False so persist/query can run on asyncio.to_thread
         # worker threads (serialized by self._db_lock) instead of the loop.
-        self._db = sqlite3.connect(str(path), check_same_thread=False)
+        # timeout=15: see the matching comment in kernel/syslog.py — same
+        # class of transient lock, same reasoning, separate file.
+        self._db = sqlite3.connect(str(path), check_same_thread=False, timeout=15.0)
         self._db.execute("PRAGMA journal_mode=WAL")
         self._db.execute("""
             CREATE TABLE IF NOT EXISTS events (
@@ -110,13 +112,24 @@ class EventBus:
         The INSERT + commit performs a WAL fsync; doing it inline in emit()
         blocked the event loop on every emitted event (async-wedge catalog,
         .claude/rules/debugging.md).
+
+        Best-effort, same as syslog.py's log(): a transient "database is
+        locked" here must not crash emit() and take down whatever awaited
+        it. Mirrors the "never raises" guard _check_slow already documents
+        below — this was the one write in this file that didn't honor it.
         """
-        with self._db_lock:
-            self._db.execute(
-                "INSERT INTO events (id, type, data, source, timestamp) VALUES (?, ?, ?, ?, ?)",
-                (event.id, event.type, json.dumps(event.data), event.source, event.timestamp),
-            )
-            self._db.commit()
+        try:
+            with self._db_lock:
+                self._db.execute(
+                    "INSERT INTO events (id, type, data, source, timestamp) VALUES (?, ?, ?, ?, ?)",
+                    (event.id, event.type, json.dumps(event.data), event.source, event.timestamp),
+                )
+                self._db.commit()
+        except sqlite3.Error as e:
+            # Console, not self._syslog — that write path can hit the exact
+            # same class of transient lock, and this is the fallback for
+            # when a write already failed once.
+            print(f"[EventBus] dropped persist for {event.type}: {e}")
 
     def _check_slow(self, handler: Callable, event_type: str, elapsed: float) -> None:
         """Warn when a handler blocked emit() for too long.

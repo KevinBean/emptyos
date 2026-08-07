@@ -13,7 +13,7 @@ import re
 from datetime import date, datetime
 from pathlib import Path
 from emptyos.sdk import parse_frontmatter, fm_list
-from .shared import PROJECT_TYPES, PROJECT_FEATURES, _META_RE
+from .shared import PROJECT_TYPES, PROJECT_FEATURES, PROJECT_STATUSES, _META_RE
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -73,7 +73,7 @@ def _infer_status(self, fm: dict, content: str, mtime_days: int) -> str:
     # 1. Explicit frontmatter status — `status:` (empty) in YAML parses to None,
     #    so .get(..., "") still returns None. Coerce defensively.
     status = (fm.get("status") or "").lower().strip()
-    if status in ("idea", "active", "blocked", "shelved", "completed", "archived"):
+    if status in PROJECT_STATUSES:
         return status
 
     # 2. Keyword scan

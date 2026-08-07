@@ -31,6 +31,7 @@ from . import digest as _digest
 from . import compose as _compose
 from . import docs as _docs
 from . import embeds as _embeds
+from . import engineering_evidence as _engineering_evidence
 from . import flipbook as _flipbook
 from . import graph as _graph
 from . import guidelines as _guidelines
@@ -39,6 +40,7 @@ from . import fulltext as _fulltext
 from . import boards as _boards
 from . import notes as _notes
 from . import revisions as _revisions
+from . import reference_coverage as _reference_coverage
 from . import source_pdf as _source_pdf
 
 # Flipbook subsystem — ported from apps/explore/ during the kb⇔explore merge.
@@ -274,6 +276,11 @@ class KBApp(_FlipbookGenerationMixin, _FlipbookIOMixin, BaseApp):
     kb_board_clauses      = _boards.kb_board_clauses
     board_presets         = _boards.board_presets
 
+    # Engineering method -> standard -> clause -> formula -> case evidence.
+    engineering_evidence      = _engineering_evidence.engineering_evidence
+    engineering_evidence_rows = _engineering_evidence.engineering_evidence_rows
+    api_engineering_evidence  = _engineering_evidence.api_engineering_evidence
+
     _all_notes            = _notes._all_notes
     _summarize            = _notes._summarize
     _title_for            = _notes._title_for
@@ -297,6 +304,11 @@ class KBApp(_FlipbookGenerationMixin, _FlipbookIOMixin, BaseApp):
     upsert_note           = _notes.upsert_note
     update_implemented_in = _notes.update_implemented_in
     api_note_create       = _notes.api_note_create
+
+    # Reference archive + clause coverage (read model over existing notes).
+    reference_coverage     = _reference_coverage.reference_coverage
+    api_reference_coverage = _reference_coverage.api_reference_coverage
+    api_mark_reference_checked = _reference_coverage.api_mark_reference_checked
 
     # ── Digest (extracted to digest.py) ──
     api_digest_doc        = _digest.api_digest_doc

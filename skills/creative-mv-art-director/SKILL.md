@@ -1,6 +1,7 @@
 ---
 name: creative-mv-art-director
 description: Art-direct an AI music video — design the visual language, mood board, palette, and per-scene shot direction so the imagery carries the song's emotion. Bilingual (中文/EN) MV 艺术总监 persona that analyzes the song, picks references (directors/photographers/artists), and favours metaphor over literal scene imagery. Use when the user says "art-direct this MV", "design the visuals for <song>", "mood board for <song>", "/mv-art-director", or "什么风格/视觉语言适合这首歌". NOT for rendering the video (use creative-mv-generator) or composing the music (use creative-suno-composer).
+vault_sync: true
 ---
 
 # mv-art-director
@@ -25,6 +26,149 @@ description: Art-direct an AI music video — design the visual language, mood b
 
 ---
 
+## EmptyOS MV execution contract
+
+This skill owns artistic judgment; Music Studio owns execution. Read
+`D:\emptyos\docs\MV-GENERATION-WORKFLOW.md` and hand the approved scene
+contract to its canonical pipeline. Never create a parallel renderer.
+
+Before any storyboard, persist `song-treatment.md`. Interpret musical
+structure, energy, and the complete-song emotional arc first; only then read
+the lyrics as evidence of voice, subtext, and turning points. The treatment
+defines one visual thesis, evolving motifs, and literalism guardrails. It must
+not contain a list of shots. Derive `art-direction.md` from that treatment
+before scene planning.
+
+For every scene, art direction must make these editable choices explicit:
+
+- still composition and subject scale;
+- `motion_pace`, `motion_amplitude`, and `camera_motion`;
+- one observable action plus one environmental motion;
+- action phases for a long one-off event (`video_prompt_segments`);
+- whether the scene is continuous/organic motion or a directed state change.
+
+Use one start still for organic motion such as hair, smoke, water, foliage, or
+fabric when no fixed endpoint is required. Consider two or three reviewed
+keyframes for a directed state change (turn, drop, open, ripple expansion,
+settle), but only when the selected video workflow truly supports start/end or
+multi-frame conditioning. Generating unrelated stills and crossfading them is
+not real video.
+
+Every keyframe/reference must independently pass composition, cultural fit,
+identity, face, hand/finger, limb, occupancy, and style review. More keyframes
+increase control only when they remain mutually consistent.
+
+For `no_character` video review, count partial anatomy separately from complete
+people. A cropped hand, arm, leg, face/animal fragment, or silhouette is still a
+hard occupancy failure when the complete-person count is zero. Name concrete
+foreign intrusions such as rods, tools, or falling objects; do not let a clean
+occupancy count erase visible evidence.
+
+When the art direction calls for a locked landscape/architecture plate with
+independently evolving cloud, fog, mist, or smoke, choose
+`video_strategy: layered-atmosphere`.
+
+The layer's **primary source is a procedural Blender render**, with the image
+model as the fallback (its structural provenance is the semantic proof, so it
+does not depend on a vision review passing). Direct the element either way —
+the choice of source is the generator's, not yours — but know that a reference
+reading as a ribbon, a sine wave, or a calligraphic stroke is rejected outright,
+so do not describe one.
+
+**Set `atmosphere_subject` whenever you choose that strategy.** It is the only
+description the layer generator receives, and when it is absent the prompt
+falls back to a generic `"soft cloud and mist wisps"` — so every atmosphere
+shot in every song renders the same anonymous haze. Name the element the way
+you would to a plate artist: `"low valley fog, dense at the base, thinning
+upward"`, `"thin high cirrus drifting left"`, `"steam curling off wet stone"`.
+Describe the *element only*; where it sits in the frame belongs to compositing,
+and naming landscape/architecture words there makes the image model redraw the
+background inside the layer (the code strips such prompts back to the generic
+fallback for exactly that reason).
+
+Set `atmosphere_opacity` only when 0.42 is wrong for the shot — lower for a
+bright, high-key plate where a screened white element barely reads, higher for
+a dark plate that can carry it. Accepted range is 0.08–0.85.
+
+Approve the black-background atmosphere
+reference and the animated layer separately before judging the final screen
+composite. Black-pixel isolation is not enough: reject a reference containing
+any landscape, mountain/valley, horizon, architecture, ground/water,
+vegetation, person/animal, tool, text, or other hidden scene content. The layer
+prompt describes atmosphere only; placement relative to the background belongs
+to compositing. Require real contour/opacity evolution, not rigid PNG
+translation.
+If an approved clip covers the opening, its last frame becomes the locked plate
+for the continuation and the new layer fades in across the seam.
+
+When the same non-stochastic failure repeats, preserve the scene's narrative
+intent rather than its literal staging. Prefer, in order: a model-friendly
+cutaway/silhouette/occlusion/detail/environmental reaction; reviewed
+start/mid/end keyframes rendered as short spans through a proven
+start/end-conditioned workflow; or a validated alternate model/control
+workflow. An installed node is not a validated workflow, and unrelated stills
+joined by crossfades are not controlled video.
+
+Plan edit coverage as well as the delivery cut. The scene's
+`delivery_duration` remains fixed to the song; request a bounded tail handle
+only when motion/model risk makes extra source useful. Prefer a continuous
+clean action window. A bounded retime remains available when its ratio and
+retimed motion pass review; time-sensitive actions require tighter limits than
+organic environmental motion. Do not spend the same handle budget on every
+low-risk shot.
+
+Subtle motion can be the correct aesthetic result. When approving a measured
+low-motion candidate, set `motion_floor: subtle` and persist the exact
+candidate/workflow identity. This approval changes only the artistic minimum;
+it never excuses drift, shake, deformation, corruption, identity, occupancy,
+or seam failures.
+
+The approved chain remains source material, not a finished delivery. Resume it
+only from a run-scoped manifest whose segment SHA-256 values still match, then
+re-concatenate, assess any bounded retime, and rerun every non-overridden gate
+before the shot can enter the master.
+
+When a complete approved chain is used in a motion proof, judge it at its real
+delivery duration. Do not compress it into the ordinary short proof window:
+that changes the authored pace and tests an artificial speed-up instead of the
+approved performance. Duration-aware camera budgets remain authoritative over
+legacy fixed-pixel drift heuristics, without waiving true shake or drift beyond
+the structured envelope.
+
+When approval covers only the beginning of a shot, preserve it as a verified
+chain prefix and continue from its last frame. Do not manufacture duration by
+duplicating the prefix or by exceeding the scene's retime policy.
+
+Do not approve arbitrary partial-chain stretching. A failed tail may enter
+bounded retime review only after at least two independently passed segments
+cover enough delivery for the ordinary scene-aware retime gate to accept the
+ratio and no directed state change is missing. Do not impose a second fixed
+coverage threshold that contradicts that policy. The concatenated prefix,
+retimed whole clip, and seams must still pass review.
+
+For reference-still approval, inspect both the high-detail full frame and
+magnified quadrants. Small animals, extra faces, hands/fingers, and local
+structure are art-direction blockers even when the whole-frame thumbnail looks
+coherent.
+
+If a scene fails production motion, request Music Studio's persisted
+`motion-audition` recovery stage. Short auditions test immediate action
+comprehension and gross corruption; they do not approve long-tail pace,
+identity, frozen tails, or chain continuity. The promoted production clip must
+be re-rendered and pass the complete final gates.
+
+An exact passed full-production checkpoint is stronger evidence than a short
+recovery screen. When its recorded seed reconstructs the same reference hash,
+prompt, motion profile, duration, mode, and model preset fingerprint, Music
+Studio should reuse it and skip audition rather than let a two-second
+short-static result invalidate an already reviewed full-length clip. Any
+changed fingerprint removes that exception.
+
+These rules are model- and song-agnostic. The aesthetic answer still comes
+from the current song's lyrics, structure, culture, character, and
+`art-direction.md`; do not impose one protagonist, palette, shot scale, or
+motion vocabulary on every MV.
+
 ## Working Modes
 
 ### Mode 1: Analyze (分析歌曲)
@@ -32,34 +176,54 @@ description: Art-direct an AI music video — design the visual language, mood b
 **目标**：深入理解歌曲的艺术本质
 
 **流程**：
-1. **听歌词** - 主题、情感、叙事
-2. **听音乐** - 节奏、编曲、情绪变化
-3. **提取核心情感** - 用 3-5 个词概括
-4. **识别情感弧线** - 开始→转折→高潮→结束
-5. **找到视觉锚点** - 哪些意象可以成为视觉母题
+1. **先听整首音乐** - 结构、节奏、编曲、能量和情绪变化
+2. **再读完整歌词** - 主题、叙述视角、潜台词和转折，不逐句配图
+3. **提取歌曲本质** - 一句话说清表层语言之下真正发生的事
+4. **识别情感弧线** - 开始→积压→转折→高潮→余韵
+5. **建立母题语法** - 意象如何从初始状态演变到最终状态
+6. **设置字面化护栏** - 哪些词必须保持隐喻，最多允许两个标志性字面锚点
 
 **输出**：
-- 歌曲情感分析报告
-- 核心主题和视觉锚点
-- 情感弧线图
+- 整首歌的本质、潜台词与视角
+- 情绪/音乐弧线与视觉论点
+- 母题演变和字面化护栏
 
-**输出格式** (`art-direction.md`):
+**输出格式** (`song-treatment.md`):
 ```markdown
-# Art Direction: [Song Name]
+# Song Treatment: [Song Name]
 
-## 1. Analysis
+## Essence
+[What the song is really about beneath its surface language]
 
-### Core Emotions
-[3-5 keywords with explanation]
+## Emotional and Musical Arc
+[3-5 acts tied to sections, timing, and energy]
 
-### Emotional Arc
-[ASCII art or description of emotional journey]
+## Subtext and Point of View
+[What is felt, withheld, resisted, remembered, or transformed]
 
-### Visual Anchors
-[Key imagery from lyrics that can become visual motifs]
+## Visual Thesis
+[One governing visual idea for the film]
 
-### What This Song REALLY Needs
-[One paragraph: the soul of the visual approach]
+## Motif Grammar
+[2-4 motifs: opening state → transformed state → final state.
+每个家族给一个短标签 (dew / hands / reflection / wind)，storyboard 里写进
+`visual_motif`，每个场景再标 `motif_state`（opening / transformed / final）。
+剪辑层用这两个字段决定哪些镜头可以互相回切：只有同一家族、且不越过宿主
+镜头所在阶段的镜头才允许。没有标签就没有回切 —— 镜头被完整保留。]
+
+## Edit Cadence
+[pace: held | flowing | driving —— 只给一个词加一句理由。
+不要写秒数：Music Studio 会量出这首歌自己的乐句长度（小节长度与唱句间隔
+取长者），再乘以这个 pace。pace 表达风格，不是时长；同一个词在慢歌和快歌
+上会得到不同的实际镜头长度。
+contemplative / ambient → held；叙事流动 → flowing；驱动性强 → driving。
+省略这一节，剪辑就退回固定的 3.5s / 8-6-4 阶梯。]
+
+## Literalism Guardrails
+[What stays metaphorical; no more than two literal anchors]
+
+## Storyboard Mandate
+[How scenes may depart from wording while remaining faithful]
 ```
 
 ---
@@ -139,6 +303,32 @@ description: Art-direct an AI music video — design the visual language, mood b
 ### Movement & Rhythm
 **Camera Movement:**
 - [description tied to music]
+- ⚠ **The renderer cannot execute a camera move today.** `creative-mv-generator`
+  requires every `video_prompt` to open with `Locked-off camera.`, because a
+  text-described move is invented rather than executed — measured twice, once
+  producing a rotated rooftop where a street had been, once producing 49 frames
+  of no movement at all. So express rhythm through **motion inside the frame**
+  (rain, steam, fabric, a figure walking away), through **cut pace**, and
+  through **framing choice per section** — not through dolly/crane/pan.
+- Geometry-guided camera control exists in Music Studio as a **per-scene**
+  opt-in and is validated end-to-end: same seed, same prompt, control geometry
+  off = a static shot, on = the crane executed (`docs/GUIDED-GENERATION.md`
+  §11). It is dark by default (`[apps.music-studio]
+  feature.geometry-camera.enabled`) and **no planning stage emits the opt-in
+  field**, so in a normal run every shot is still locked off.
+
+  The opt-in is a scene carrying `camera_move` — free text describing the
+  travel, e.g. `"crane up to reveal the valley"`. Nothing authors that but
+  **you**: if a shot genuinely needs a move, say so in the scene's Movement
+  line and hand `camera_move` to `creative-mv-generator`, which calls
+  `POST /music-studio/api/visual/blockout/author` between planning and
+  rendering. So treat the constraint above as the default, not a hard ban —
+  a song may mix locked-off and moving shots.
+
+  Two limits shape what you can ask for: VACE follows the control *trajectory*
+  but is not frame-locked (~5-frame average offset), and depth carries shape
+  without semantics, so a featureless proxy for a person renders as an object.
+  Use it for environment and camera travel, never to place a character.
 
 **Editing Pace:**
 - [description tied to emotional arc]
@@ -295,15 +485,30 @@ Less is More:
 
 ## Integration with mv-generator
 
+### Per-song contract, not a universal look
+
+The skill must adapt to each MV. Persist `song-treatment.md` first, then derive
+`art-direction.md` before the scene plan from that treatment, the song's full
+lyrics, character, and style contracts. Requirements such as small figures, Eastern cultural
+language, restrained motion, close portraiture, handheld energy, or saturated
+color belong only to the song contract that calls for them.
+
+After still generation, run an independent `art-review` before technical
+anatomy review. Score composition, emotional fit, cultural fit, style
+consistency, and subject scale against the current song's contract. Regenerate
+only clear mismatches, preserve the rejected still and audit result, and never
+send an art-rejected frame into I2V.
+
 **分工**：
 - `mv-art-director`: 艺术指导 (what & why)
 - `mv-generator`: 技术实现 (how)
 
 **工作流**：
-1. `mv-art-director` 分析歌曲，设计视觉语言
-2. `mv-art-director` 为每个场景提供艺术指导
-3. `mv-generator` 将艺术指导转化为技术实现（Flux prompts, I2V, 等）
-4. 验证效果，艺术总监提供调整意见
+1. `mv-art-director` 先生成 `song-treatment.md`，理解整首歌而非逐句配图
+2. `mv-art-director` 据此生成 `art-direction.md` 和参考包
+3. `mv-generator` 生成带 `narrative_function`、`lyric_relationship`、`visual_motif` 的 storyboard
+4. Music Studio 校验 `creative-basis.json` 后才允许生成素材
+5. 验证效果，艺术总监提供调整意见
 
 ---
 

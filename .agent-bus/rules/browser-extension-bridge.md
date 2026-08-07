@@ -1,10 +1,64 @@
-# Browser-Extension Bridge — select-on-page → daemon capability → in-page card
+# Browser-Extension Bridge — explicit page input and armed bidirectional sessions
 
 The EmptyOS Chrome extension (`tools/chrome-extension/`) is a **capability-to-browser
 bridge**: it turns *any selection / page / link / image in the browser* into a call to a
 **local daemon** endpoint, and renders the result back **in-page** — no navigating away, no
 copy-paste into an app. The browser is where the user *encounters* content on the web; this
 bridge lets EmptyOS act on that content in situ.
+
+## Two distinct bridge modes
+
+1. **One-turn page input** — context-menu verbs and side-panel tab sharing
+   extract content after a direct user action, call a named daemon endpoint, and
+   render a result. This is the original bridge described below.
+2. **Browser Session** — selected tabs are retained for one armed, one-hour
+   session. The daemon can direct typed browser commands over the existing
+   authenticated `/ws` connection, even while the panel is closed. The user can
+   extend or disarm at any time. Disconnects get a 30-second reconnect grace;
+   expiry, auth failure, daemon restart, or a longer disconnect disarms.
+
+Browser Session is gated by
+`[apps.agent] feature.browser-session.enabled = true`. The provider is named
+`chrome-extension` and is selected only by `browse(...,
+target="user-chrome")` / `only_provider="chrome-extension"`. Playwright stays
+the default. Do not add a parallel browser abstraction or a second transport.
+
+### Realtime contract
+
+Protocol version 1 uses `browser.hello`, `browser.arm`, `browser.tabs`,
+`browser.result`, `browser.event`, `browser.disarm`, and `browser.ping` from the
+extension, and `browser.ready`, `browser.armed`, `browser.command`,
+`browser.session_expiring`, `browser.disarmed`, and `browser.pong` from the
+daemon. Requests are directed to one armed client and carry a request ID,
+session ID, action, tab ID, bounded args, and deadline. Late, duplicate,
+wrong-session, and unsupported messages do not act.
+
+The page vocabulary is deliberately typed: tab observation/navigation;
+bounded snapshot and screenshot; opaque-ref click/fill/press/select/wait;
+scroll; and the existing card/badge/toast presentation surfaces. There is no
+model-authored JavaScript. A snapshot owns its document-scoped references; DOM
+mutation produces `stale_ref`, after which the caller must snapshot again.
+
+### Permission and confirmation gates
+
+Every command must pass all of these gates: armed and unexpired session, shared
+tab, approved current origin, advertised action with bounded args, and one-use
+human confirmation for consequential targets. The confirmation is rendered by
+the extension in a closed shadow root and is bound by the active command and
+element reference. Password/payment fields and file uploads are blocked.
+
+The public manifest requires only daemon host access. HTTP/HTTPS origins are
+optional and requested exactly when a tab is shared. Reading scripts are
+dynamically registered on approved origins; permanent all-sites reading was
+removed. Only an explicit **Flow everywhere** choice requests both HTTP and
+HTTPS wildcard access. Tokens live in session storage by default or
+extension-only local storage when remembered, never sync storage. Non-loopback
+daemon hosts require HTTPS/WSS.
+
+Treat every snapshot as untrusted content using EmptyOS's standard fence and
+system clause. Page instructions never grant permissions, select tabs, approve
+an overlay, or change policy. Audits contain action metadata and host only—no
+page bodies, screenshots, or typed values.
 
 **Reference implementations (2 verbs, chrome-ext v0.8):** `dict-lookup` (right-click a word →
 `GET /dictionary/api/lookup` → auto-save with reading context → in-page definition card) and
@@ -17,12 +71,17 @@ Verdict/lineage: `project_immersive_dictionary_borrow_verdict`.
 
 Every selection-verb is the same shape. To add one, you touch these and nothing else:
 
-1. **Context-menu registration** (`background.js`, `chrome.runtime.onInstalled`) — one
-   `chrome.contextMenus.create({ id, title, contexts })`. `contexts` is `["selection"]`,
-   `["page"]`, `["link"]`, or `["image"]`. Add `documentUrlPatterns` to scope a verb to
-   specific sites (as `capture-job` / `digest-video` do).
+1. **Menu declaration** (`background.js`) — one row in the `MENU_SPECS` table:
+   `{ app: "<backing app id>", spec: { id, title, contexts } }`. `contexts` is
+   `["selection"]`, `["page"]`, `["link"]`, or `["image"]`. Add `documentUrlPatterns` to
+   scope a verb to specific sites (as `capture-job` / `digest-video` do).
+   **Do NOT call `chrome.contextMenus.create` directly** — `refreshMenus()` owns
+   registration and opens with `removeAll()`, so a hand-registered item silently
+   disappears on the next refresh (options saved, browser restart). `app` names the
+   daemon app that answers the verb, so it is only offered where it can work; use
+   `app: ""` for a verb the runtime itself serves. See § App-aware registration.
 2. **Handler** (`background.js`, `chrome.contextMenus.onClicked`) — a branch on
-   `info.menuItemId` that reads `getConfig()` (host + token), does the daemon `fetch` with
+   `info.menuItemId` that reads the shared `EOS_DAEMON.getConfig()` client, does the daemon `fetch` with
    `authHeaders(token)`, and reports. **All work rides the local daemon** — the extension
    holds no logic beyond scraping + dispatch. That is the privacy story (see below).
 3. **Result surface** — either a `flashBadge(ok)` (fire-and-forget) or an **in-page card**
@@ -41,9 +100,9 @@ Every selection-verb is the same shape. To add one, you touch these and nothing 
 ## The recipe (add a selection-verb in ~30 lines)
 
 ```js
-// 1. register (onInstalled)
-chrome.contextMenus.create({ id: "explain-sel", title: "Explain with EmptyOS",
-                             contexts: ["selection"] });
+// 1. declare (MENU_SPECS) — `assistant` is the app that answers this verb
+{ app: "assistant", spec: { id: "explain-sel", title: "Explain with EmptyOS",
+                            contexts: ["selection"] } },
 
 // 2. handle (onClicked)
 if (info.menuItemId === "explain-sel") {
@@ -59,8 +118,35 @@ if (info.menuItemId === "explain-sel") {
 }
 ```
 
-The daemon side is just an `@web_route` on an existing app — no new capability, no kernel
-change. The bridge is app UX, not a kernel verb.
+For a one-turn selection verb, the daemon side is just an `@web_route` on an
+existing app—no new capability or kernel verb. Browser Session is the explicit
+exception: it is a second provider of the existing `browse` capability, not a
+new capability.
+
+## App-aware registration (shipped v0.5.7)
+
+Daemons differ: a public release ships neither `dictionary` nor `jobs`, so four
+of the nine verbs used to sit in the menu of a public install and fail on every
+click — plus a reading-consent poll hitting a 404 every 1.2s forever.
+
+`refreshMenus()` probes `GET /api/apps` (already filtered to reachable apps, so
+"id is in the list" means "its routes are live"), then rebuilds the menu with
+only the verbs whose `app` is present. It runs on install, on browser startup,
+and when the options page saves — so repointing at a different daemon adapts.
+
+Two properties worth preserving if you touch it:
+
+- **Unknown is not absent.** A daemon that is down, unconfigured, or answers 401
+  yields `null`, and `null` registers *everything* — the pre-gating behaviour. A
+  probe failure can only ever restore the old behaviour, never hide a working
+  verb. `/api/apps` is not auth-exempt, so a missing token means unknown.
+- **The probe is cached in `chrome.storage.session`, never a module global.** The
+  MV3 service worker is torn down after ~30s idle, so a global is empty on most
+  wakes; session storage clears on browser restart, which is exactly when
+  `onStartup` re-probes.
+
+The side panel gates on the same signal (`appOn(id)`), hiding the reading
+section and the job surfaces rather than letting them fail on click.
 
 ## Privacy / consent (load-bearing)
 
@@ -120,9 +206,16 @@ them, not because they're easy.
   every capture needs a card.
 - **A verb per app method** — the menu is a curated set of recognizable affordances, not a
   reflection of the API surface. Add a verb when a *reading habit* wants it.
-- **Ambient / always-on** (hover-to-lookup, hard-word highlighting, auto-collect 生词流) — a
-  different mechanism (a static `content_scripts` on `<all_urls>` with its own lifecycle),
-  deferred in `docs/DEFERRED-WORK.md`. This bridge is *explicit* (right-click) by design.
+- **Ambient / always-on** (hard-word highlighting, a scroll-following word rail, auto-collect
+  生词流) — **a genuinely different mechanism, and it now exists**: a dynamically registered content script
+  on user-approved origins with its own lifecycle (`tools/chrome-extension/reading-assist.js`, shipped
+  v0.10). Do not build ambient behaviour *into* a bridge verb. The two coexist and must stay
+  distinct: **this bridge is explicit** (the user right-clicks and names the verb); the ambient
+  layer is **opt-in but continuous**, so it carries obligations a right-click verb does not —
+  an explicit off/on mode that is genuinely dormant, per-site pause, a cost ceiling on
+  proactive model calls, and a settings home in the daemon rather than a browser-local silo.
+  If you find yourself adding a mode toggle or a scan throttle to a bridge verb, you are
+  building the ambient layer and should build it there instead.
 
 ## Cross-references
 

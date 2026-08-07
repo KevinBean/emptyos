@@ -328,7 +328,7 @@ async def api_save_doc(self, request):
 
     import asyncio
 
-    asyncio.create_task(self.emit("projects:doc_saved", {"id": project_id, "doc": target.name}))
+    self.spawn_background(self.emit("projects:doc_saved", {"id": project_id, "doc": target.name}))
     return {"ok": True, "name": target.name}
 
 

@@ -87,6 +87,62 @@ def looks_truncated(text: str) -> tuple[bool, str]:
     return False, ""
 
 
+def salvage_truncated_html(partial: str, *, banner_note: str = "") -> str:
+    """Repair a truncated HTML artifact into a valid, self-contained document.
+
+    The output-token ceiling can cut a dense artifact mid-stream. Detection
+    (``looks_truncated``) correctly refuses to *save* it as-is, but discarding
+    the whole thing loses everything the model did produce. This salvages the
+    partial: drops a dangling half-written tag, injects a visible truncation
+    banner at the top of the body, and appends the missing structural closers —
+    so the user sees what completed instead of nothing (no silent cap).
+
+    Pure. Returns "" for empty input. The banner is inline-styled + emoji-only so
+    the artifact stays self-contained (no external assets, CSP-safe).
+    """
+    s = (partial or "").rstrip()
+    if not s:
+        return ""
+    # Drop a dangling half-written tag (e.g. `<div class="foo`) so the appended
+    # banner/closers can't be swallowed into an unterminated element — but keep
+    # trailing plain text (a cut mid-sentence leaves readable content). A '<'
+    # with no '>' after it is the unterminated tag; trim from there.
+    last_lt, last_gt = s.rfind("<"), s.rfind(">")
+    if last_lt > last_gt:
+        s = s[:last_lt].rstrip()
+    kb = max(1, round(len(partial.encode("utf-8")) / 1024))
+    note = banner_note or (
+        f"This artifact was truncated at the model's output limit "
+        f"(~{kb} KB generated) and is incomplete — regenerate with a shorter or "
+        f"simpler brief, or split it into parts."
+    )
+    banner = (
+        '<div style="position:sticky;top:0;z-index:99999;background:#7a1f1f;'
+        'color:#fff;font:600 13px/1.5 -apple-system,Segoe UI,Roboto,sans-serif;'
+        'padding:10px 16px;border-bottom:2px solid #ff5c5c">'
+        "⚠️ " + html_escape(note) + "</div>"
+    )
+    low = s.lower()
+    bi = low.find("<body")
+    if bi >= 0:
+        gt = s.find(">", bi)
+        s = (s[:gt + 1] + banner + s[gt + 1:]) if gt >= 0 else (s + banner)
+    else:
+        s = banner + s
+    tail = s.lower()[-600:]
+    if "</body>" not in tail:
+        s += "</body>"
+    if "</html>" not in s.lower()[-600:]:
+        s += "</html>"
+    return s
+
+
+def html_escape(text: str) -> str:
+    """Minimal HTML-text escape for the salvage banner (no external dep)."""
+    return (str(text).replace("&", "&amp;").replace("<", "&lt;")
+            .replace(">", "&gt;").replace('"', "&quot;"))
+
+
 def rewrite_user_msg(prior_prompt: str, change: str, prior_html: str, *, preserve_hint: str = "") -> str:
     """Whole-file-rewrite user message for the iterate path.
 

@@ -39,4 +39,6 @@ Tags in frontmatter identify note types (`job-application`, `person`, `daily`, `
 
 Two access patterns coexist: **VaultIndex** (target — `vault_query`, `vault_update`) and **vault_config + file I/O** (legacy — `vault_config()` → `Path.glob()` → parse). Apps migrate when touched. Safe migration rule: only migrate an app when its notes have queryable frontmatter. Otherwise add tags first via a vault script — never silently return empty data.
 
-For vault operations and connection state, see `.claude/rules/vault-operator.md`.
+For the persisted syntax and renderer boundary, see
+`docs/EOS-MARKDOWN-PROFILE.md`. For vault operations and connection state, see
+`.claude/rules/vault-operator.md`.

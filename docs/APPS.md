@@ -2,7 +2,7 @@
 
 # EmptyOS Apps
 
-> 66 apps · 17 plugins · 16 capabilities · release v0.5.7.
+> 69 apps · 17 plugins · 16 capabilities · release v0.6.0.
 >
 > The apps that ship in a public EmptyOS release (`core` + `standard` tiers).
 
@@ -32,7 +32,7 @@ self-generated docs. This catalog is regenerated from manifests by
 
 ## Standard — full builder OS
 
-*53 apps.*
+*56 apps.*
 
 | App | What it does | Capabilities |
 |---|---|---|
@@ -47,6 +47,8 @@ self-generated docs. This catalog is regenerated from manifests by
 | **codoc** | Bridge to the live co-doc collaboration service — persist a live doc snapshot into the vault | write, read |
 | **commons** | Publish vault notes to a shared commons with visibility control — public, private, or shared with specific people. Outbound is consent-gated and leak-scanned; nothing leaves the vault without an explicit publish | read, write |
 | **company** | Manage organizations with human and AI members, and run simulated team scenarios | read, write, think |
+| **conversation-ingest** | Inspect and resume evidence-preserving AI conversation ingestion | read |
+| **countdown** | Track days until or since important events — birthdays, trips, deadlines, anniversaries | read, write |
 | **daily-brief** | Summarizes selected feeds with AI into one daily note | think, read, write |
 | **designer** | Creates styled standalone HTML page mockups from your prompts and chosen design systems | think, read, write, artifact |
 | **dictation** | Hold a hotkey in any text field and speak — your words are transcribed, lightly polished (punctuation, casing, your custom terms preserved), and inserted at the caret. Works in any EmptyOS input, textarea, or rich editor. Speak to create, type to refine | think, listen, write |
@@ -64,7 +66,7 @@ self-generated docs. This catalog is regenerated from manifests by
 | **life** | one day timeline composed from journal, worklog, and expense. Owns no data; member apps contribute items via [[contributes.life.timeline]] | — |
 | **music-library** | Browse, play, and edit songs in your vault, and generate AI lyrics | read, write, search, think |
 | **people** | Manage people, relationships, workload, capacity, birthdays, and interaction history | read, write, search, think |
-| **portal** | Routes thinking, capture, search, and learning into organized rooms with shared context | — |
+| **portal** | one composer with switchable backend modes (Rooms multi-participant chat / Assistant vault Q&A / Agent tool-loop / Code workspace), plus capability verbs (Capture / Find / Learn) across apps, a sidebar that organises threads into Rooms with shared instructions, pinned threads, and day + session navigation | — |
 | **ppt** | Create presentations from Markdown notes, present fullscreen, and export standalone HTML | read, write, think, draw, speak |
 | **proactive** | a restrained engine that scans your state for things worth surfacing (deadlines, journaling gaps, today's load, budget overruns) and nudges you through a quiet-hours + frequency-capped gate | — |
 | **projects** | Scans your vault to parse project status and track progress | read, write, search, think, artifact |
@@ -74,6 +76,7 @@ self-generated docs. This catalog is regenerated from manifests by
 | **reader** | Reads books with AI scene visualization, concept maps, and dictionary lookup | read, write, think, search, speak, draw |
 | **replay** | turn a finished agent session into a reusable, parameterized Replay (a saved workflow), then run it again later with every state-changing step routed through the review gate. Demonstrate once, replay safely | think, read, write |
 | **reports** | Creates structured technical reports, proposals, and specs with signoff and PDF/DOCX export | think |
+| **requirements** | capture, trace to standards, verify, and track requirements for any project | read, write |
 | **rooms** | Create persistent one-on-one or shared AI rooms with prompts, files, and history | think, read, write |
 | **routing** | Plans multi-stop routes for trip planning using cached OSRM directions | — |
 | **runbook** | Builds, schedules, and publishes typed block pipelines | read, write, think |

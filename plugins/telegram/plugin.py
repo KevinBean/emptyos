@@ -22,6 +22,7 @@ import json
 import os
 import time
 import uuid
+from datetime import datetime, timezone
 
 import aiohttp
 
@@ -449,7 +450,7 @@ class TelegramPlugin(BasePlugin):
                         # a long chat turn. apply/reject are independent of the
                         # chat pipeline, and a double-tap self-heals ("already
                         # applied" edits the card).
-                        asyncio.create_task(self._handle_callback(payload))
+                        self.spawn_background(self._handle_callback(payload))
                     elif kind == "voice":
                         # Serial like messages — the transcript becomes a turn.
                         await self._handle_voice(payload)
@@ -535,7 +536,7 @@ class TelegramPlugin(BasePlugin):
         for action in result.get("server_results") or []:
             if isinstance(action, dict) and action.get("status") == "pending":
                 await self._send_card(chat_id, action)
-        asyncio.create_task(
+        self.spawn_background(
             self.kernel.events.emit(
                 "telegram:inbound", {"room_id": "telegram-bridge", "chars": len(payload["text"])}
             )
@@ -603,7 +604,7 @@ class TelegramPlugin(BasePlugin):
                             chat_id=chat_id, parse_mode="")
             return
 
-        asyncio.create_task(
+        self.spawn_background(
             self.kernel.events.emit("telegram:inbound", {"room_id": "braindump", "chars": len(text)})
         )
 
@@ -699,18 +700,34 @@ class TelegramPlugin(BasePlugin):
         verb, action_id = parsed
         try:
             rooms = await self._rooms()
-            method = rooms.apply_pending if verb == "ap" else rooms.reject_pending
-            result = await method(action_id)
+            # Expiry: a tap on a card scrolled back to days later shouldn't
+            # silently fire. Chat + sender are already bound in
+            # bridge.parse_update; this is the time dimension of the same idea.
+            ttl_s = float(self.config("card_ttl_s", 86400) or 0)
+            existing = rooms.get_pending(action_id)
+            if existing and bridge.card_expired(
+                existing,
+                now_ts=datetime.now(timezone.utc).isoformat(),
+                ttl_s=ttl_s,
+            ):
+                result = {"error": (
+                    "card expired — re-propose or apply it on /rooms/"
+                )}
+            else:
+                method = rooms.apply_pending if verb == "ap" else rooms.reject_pending
+                result = await method(action_id)
         except Exception as e:
             result = {"error": str(e)[:200]}
-        text = bridge.render_resolution(verb, result if isinstance(result, dict) else {})
+        text = bridge.render_resolution(
+            verb, result if isinstance(result, dict) else {}, action_id=action_id,
+        )
         if payload.get("message_id"):
             await self.edit_message_text(
                 payload.get("chat_id", ""), payload["message_id"], text, parse_mode="HTML"
             )
         else:
             await self.send(text, chat_id=payload.get("chat_id", ""), parse_mode="HTML")
-        asyncio.create_task(
+        self.spawn_background(
             self.kernel.events.emit(
                 "telegram:action_resolved", {"action_id": action_id, "verb": verb}
             )

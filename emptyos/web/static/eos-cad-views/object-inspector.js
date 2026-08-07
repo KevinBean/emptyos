@@ -2,6 +2,7 @@
 // prop paths only; collection editors remain with the domain app.
 import { defineView, esc } from '/static/eos-cad-view.js';
 import { regenerateObject } from '/static/eos-cad-corridor.js';
+import { getPath, setPath, fieldsMarkup } from '/static/eos-cad-schema-form.js';
 
 const STYLES = `
   .cadv-oi { height:100%; overflow:auto; padding:12px; box-sizing:border-box; background:var(--bg); }
@@ -23,29 +24,6 @@ function registry() {
   if (!registryPromise) registryPromise = fetch('/cad/api/object-types').then((r) => r.json()).then((r) => r.object_types || []).catch(() => []);
   return registryPromise;
 }
-function getPath(root, path) { return path.split('.').reduce((value, part) => value == null ? undefined : value[part], root); }
-function setPath(root, path, value) {
-  const parts = path.split('.'); let cursor = root;
-  parts.slice(0, -1).forEach((part, index) => {
-    const next = parts[index + 1];
-    if (cursor[part] == null) cursor[part] = /^\d+$/.test(next) ? [] : {};
-    cursor = cursor[part];
-  });
-  cursor[parts.at(-1)] = value;
-}
-function inputFor(field, value) {
-  const common = ' data-key="' + escAttr(field.key) + '"' + (field.min != null ? ' min="' + escAttr(field.min) + '"' : '') + (field.max != null ? ' max="' + escAttr(field.max) + '"' : '');
-  if (field.type === 'boolean') return '<input type="checkbox"' + common + (value ? ' checked' : '') + '>';
-  if (field.type === 'select') return '<select' + common + '>' + (field.options || []).map((o) => '<option' + (String(o) === String(value) ? ' selected' : '') + '>' + esc(o) + '</option>').join('') + '</select>';
-  return '<input type="' + (field.type === 'number' ? 'number' : 'text') + '"' + common + (field.type === 'number' ? ' step="any"' : '') + ' value="' + escAttr(value == null ? '' : value) + '">';
-}
-function schemaMarkup(obj, fields) {
-  const groups = new Map();
-  fields.forEach((field) => { const g = field.group || 'Properties'; if (!groups.has(g)) groups.set(g, []); groups.get(g).push(field); });
-  return [...groups].map(([group, items]) => '<fieldset><legend>' + esc(group) + '</legend>' + items.map((field) =>
-    '<label><span>' + esc(field.label || field.key) + '</span>' + inputFor(field, getPath(obj.props, field.key)) + '<span class="unit">' + esc(field.unit || '') + '</span></label>'
-  ).join('') + '</fieldset>').join('');
-}
 async function render(vctx) {
   const host = vctx.pane.querySelector('[data-inspector]'); if (!host) return;
   const obj = vctx.store.objectByOid(vctx.store.selection);
@@ -62,7 +40,7 @@ async function render(vctx) {
     fields = schema && schema.ok ? schema.fields : null;
   }
   host.innerHTML = '<h3>' + esc(obj.props.label || obj.props.name || obj.oid) + '</h3><div class="sub">' + esc(obj.kind + ' · ' + obj.oid) + '</div>' +
-    (fields ? schemaMarkup(obj, fields) : '<div class="notice">No editable scalar schema is declared. The structured source remains read-only here.</div><pre>' + esc(JSON.stringify(obj.props, null, 2)) + '</pre>');
+    (fields ? fieldsMarkup(obj.props, fields) : '<div class="notice">No editable scalar schema is declared. The structured source remains read-only here.</div><pre>' + esc(JSON.stringify(obj.props, null, 2)) + '</pre>');
   host.querySelectorAll('[data-key]').forEach((input) => {
     const commit = async () => {
     const current = vctx.store.objectByOid(obj.oid); if (!current) return;

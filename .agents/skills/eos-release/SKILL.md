@@ -1,3 +1,7 @@
+---
+name: eos-release
+description: Cut a clean, verified tier-scoped distribution into dist/ — tier validation, personal-data + branding scans, full test suite, packaging, version bump, and git tag, reusing package-release.py / check-personal.py / check-branding.py. Use when the user says "release", "cut a release", "package <tier>", or "ship <tier>". NOT for routine commits (this is a coordinated gate), and distinct from eos-release-public, which promotes the working tree to the public repo + demo VPS.
+---
 # EmptyOS Release
 
 Cut a clean, verified release for a given tier — orchestrate tier validation, safety scans, full test suite, distribution packaging, version bump, and git tag. Uses the existing tooling (`scripts/package-release.py`, `check-personal.py`, `check-branding.py`) rather than reinventing it.

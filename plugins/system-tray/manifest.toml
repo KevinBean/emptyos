@@ -11,3 +11,7 @@ class = "SystemTrayPlugin"
 [provides]
 services = ["system-tray"]
 tags = ["desktop", "ui"]
+
+# Tray menu click — a real cross-app trigger with a live listener.
+[provides.events]
+emits = ["tray:capture_clicked"]

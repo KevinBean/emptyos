@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
 <title>Settings - EmptyOS</title>
-<script>try{var _t=localStorage.getItem('eos-theme')||'eos';if(['eos','digital-garden','soft-light','warm-dark','void-dark','nord'].indexOf(_t)<0){_t='eos';localStorage.setItem('eos-theme','eos');}document.documentElement.classList.add('theme-'+_t);}catch(e){document.documentElement.classList.add('theme-eos');}</script>
+<script>try{var _t=localStorage.getItem('eos-theme')||'eos';if(!/^[a-z][a-z0-9-]{0,31}$/.test(_t))_t='eos';document.documentElement.classList.add('theme-'+_t);}catch(e){document.documentElement.classList.add('theme-eos');}</script>
 <link rel="stylesheet" href="/static/theme.css">
 <link rel="stylesheet" href="/static/eos-components.css">
 <style>
@@ -407,7 +407,17 @@ async function loadSettings() {
                        user:'&#128100;', compass:'&#129517;', calendar:'&#128197;',
                        keyboard:'&#9000;', app:'&#9679;'};
         function renderSection(sec) {
-            var rows = sec.settings.map(function(s) {
+            // Fail soft per entry, the way hub panels do. A malformed
+            // `[provides.settings] schema` row in ONE app used to throw inside
+            // renderControl and blank the whole page — every app's settings,
+            // including the theme picker. (projects shipped four bare event
+            // strings here for ~3 weeks; that was the entire outage.)
+            var rows = (sec.settings || []).filter(function(s) {
+                if (s && typeof s === 'object' && s.key) return true;
+                console.warn('settings: skipping malformed entry in "' +
+                             (sec.title || sec.app_id || '?') + '":', s);
+                return false;
+            }).map(function(s) {
                 return '<div class="setting-row" data-row-label="' + escAttr((s.label||'').toLowerCase()) +
                     '" data-row-key="' + escAttr((s.key||'').toLowerCase()) + '">' +
                     '<div><div class="setting-label">' + esc(s.label) + '</div><div class="setting-key">' + esc(s.key) + '</div></div>' +
@@ -459,8 +469,14 @@ async function loadProduct() {
     var p;
     try {
         p = await EOS.api('/settings/api/product');
-    } catch (e) { return; }
-    if (!p || !p.enabled) return;
+    } catch (e) {
+        renderSourceRuntimeActions();
+        return;
+    }
+    if (!p || !p.enabled) {
+        renderSourceRuntimeActions();
+        return;
+    }
 
     function row(label, value) {
         return '<div class="setting-row"><div><div class="setting-label">' + esc(label) + '</div></div>' +
@@ -500,6 +516,46 @@ async function loadProduct() {
         '</div></div>';
 
     document.getElementById('system-content').insertAdjacentHTML('afterbegin', html);
+}
+
+function renderSourceRuntimeActions() {
+    if (document.getElementById('source-runtime-actions')) return;
+    var html =
+        '<div class="section" id="source-runtime-actions">' +
+        '<div class="section-hdr"><span class="section-icon">↻</span>' +
+        '<span class="section-name">Runtime</span></div>' +
+        '<div class="setting-group"><div class="setting-row">' +
+        '<div><div class="setting-label">Restart EmptyOS daemons</div>' +
+        '<div class="setting-desc">Reloads Python changes. This runs restart.bat and stops all local Python processes before relaunching EmptyOS.</div></div>' +
+        '<button class="eos-btn eos-btn-sm" onclick="restartSourceDaemon()">Restart</button>' +
+        '</div></div></div>';
+    document.getElementById('system-content').insertAdjacentHTML(
+        'afterbegin', html
+    );
+}
+
+async function restartSourceDaemon() {
+    // EOS_UI.confirm reads message/action/danger — title/body/confirmText are
+    // silently dropped, which left this destructive action showing a bare
+    // "Are you sure?" behind a primary-styled button.
+    var ok = await EOS_UI.confirm({
+        message: 'Restart EmptyOS daemons? This runs restart.bat, stops every ' +
+                 'local Python process, and then relaunches EmptyOS. The page ' +
+                 'will disconnect for about 15–20 seconds.',
+        action: 'Restart daemons',
+        danger: true
+    });
+    if (!ok) return;
+    EOS_UI.toast('Restarting daemons…', 'info');
+    // Losing the request is expected: this daemon is one of the processes
+    // restart.bat terminates. Reload after the detached restart has had time
+    // to bring the HTTP service back.
+    fetch('/settings/api/restart-daemon', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ confirm: true })
+    }).catch(function () { });
+    setTimeout(function () { location.reload(); }, 18000);
 }
 
 async function applyUpdate() {

@@ -1,7 +1,7 @@
 """Workspaces — curated, navigable groupings of apps around a goal.
 
 A *workspace* (a "Space") bundles related apps under one landing surface, the
-way "English Academy" gathers dictionary / learn / speaking / shadowing. This
+way "English Academy" gathers stories / courses / vocabulary / speaking. This
 app is the generic shell: it aggregates membership from three sources and
 renders a navigable landing per space. Domain-rich behaviour stays in each
 space's optional ``hero_app`` (e.g. ``academy.dashboard()``); this app only
@@ -72,6 +72,12 @@ DEFAULT_SPACES = [
         # human labels rather than raw app names.
         "members": [
             {"app": "learn", "title": "Courses", "icon": "📚", "blurb": "Follow structured lessons and review course cards."},
+            {
+                "app": "reader",
+                "title": "Interactive stories",
+                "icon": "\U0001F4D6",
+                "blurb": "Choose what happens next in CEFR-graded stories, then turn them into short games.",
+            },
             {"app": "dictionary", "title": "Vocabulary", "icon": "🔤", "blurb": "Look up words and review your vocabulary deck."},
             {"app": "speaking", "title": "Conversation", "icon": "🗣️", "blurb": "Practice speaking with guided feedback."},
             {"app": "lessons", "title": "Topical lessons", "icon": "📝", "blurb": "Work through focused English lesson material."},

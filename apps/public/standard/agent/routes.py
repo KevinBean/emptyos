@@ -48,6 +48,16 @@ async def api_create_session(self, request):
 async def api_delete_session(self, request):
     sid = request.path_params["sid"]
     self._sessions.delete_session(sid)
+    # Drop the session's tool grants with it — otherwise "allow for this
+    # session" outlives the session it was scoped to, and a later session
+    # reusing the id would inherit them. Fail-soft: consent bookkeeping must
+    # never break the delete.
+    try:
+        tool_consent = self.service("tool_consent")
+        if tool_consent:
+            tool_consent.reset_session(sid)
+    except Exception:
+        pass
     return {"ok": True}
 
 

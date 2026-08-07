@@ -23,6 +23,7 @@ When NOT to use:
 from __future__ import annotations
 
 import subprocess
+import sys
 from pathlib import Path
 
 
@@ -91,7 +92,12 @@ def py_compile_files(
     """
     try:
         r = subprocess.run(
-            ["python", "-m", "py_compile", *files],
+            # sys.executable, never bare "python": PATH may resolve to a
+            # different interpreter than the daemon's (this machine carries
+            # 3.13 and 3.11), and this gates every fix-agent merge -- a syntax
+            # check under the wrong Python is worse than none, because it
+            # reports green for source the daemon cannot import.
+            [sys.executable, "-m", "py_compile", *files],
             cwd=str(cwd),
             capture_output=True,
             text=True,

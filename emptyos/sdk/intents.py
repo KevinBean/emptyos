@@ -94,24 +94,66 @@ def find_intents(text: str) -> list[tuple[str, str, int, int]]:
     return out
 
 
-def validate_args(schema: dict, args: dict) -> tuple[bool, str]:
-    """Light shape check. `?` suffix marks optional. Types: string, number, boolean."""
+def validate_args(schema: dict, args: dict, *, allow_unknown: bool = True) -> tuple[bool, str]:
+    """Light shape check. `?` suffix marks optional. Types: string, number, boolean.
+
+    ``allow_unknown=True`` (default) is the original behaviour: only *declared*
+    keys are inspected, so an arg the schema never mentioned rides through to
+    ``fn(**kwargs)`` and becomes a ``TypeError`` deep inside the target method.
+    Pass ``allow_unknown=False`` on model-originated dispatch to make the
+    declared schema a real contract — the rejection then names the offending
+    key and the accepted set, which is what lets a model self-correct instead
+    of re-emitting the same malformed call.
+
+    The permissive default is deliberate: a partial schema is common (a verb may
+    legitimately accept kwargs its manifest never listed), so flipping every
+    existing caller at once would convert documentation gaps into hard failures.
+
+    An **empty** schema means "undeclared", never "accepts nothing" — the
+    unknown-key check is skipped entirely in that case, so a verb with
+    ``args = {}`` behaves identically whatever ``allow_unknown`` says.
+
+    Unknown *type tokens* (anything outside string/number/boolean) still pass
+    silently here on purpose; that is a manifest authoring error, caught
+    statically by ``scripts/check_verb_args.py``. Failing at dispatch would
+    break a working verb over a typo in its docs.
+
+    A **renamed** arg trips both checks at once (``text`` -> ``txt`` is a missing
+    required arg *and* an unexpected one), so in strict mode the two are
+    reported together — reporting only the first would tell the model half the
+    story and it would re-emit the same wrong key. Messages are unchanged when
+    only one problem exists, and the permissive path can only ever produce one.
+    """
     if not isinstance(args, dict):
         return False, "args must be a JSON object"
-    for key, type_spec in (schema or {}).items():
+    schema = schema or {}
+    declared_err = ""
+    for key, type_spec in schema.items():
         optional = isinstance(type_spec, str) and type_spec.endswith("?")
         base_type = (type_spec or "").rstrip("?") if isinstance(type_spec, str) else "string"
         if key not in args:
             if optional:
                 continue
-            return False, f"missing required arg '{key}'"
+            declared_err = f"missing required arg '{key}'"
+            break
         value = args[key]
         if base_type == "string" and not isinstance(value, str):
-            return False, f"arg '{key}' must be a string"
+            declared_err = f"arg '{key}' must be a string"
+            break
         if base_type == "number" and not isinstance(value, (int, float)):
-            return False, f"arg '{key}' must be a number"
+            declared_err = f"arg '{key}' must be a number"
+            break
         if base_type == "boolean" and not isinstance(value, bool):
-            return False, f"arg '{key}' must be a boolean"
+            declared_err = f"arg '{key}' must be a boolean"
+            break
+    if not allow_unknown and schema:
+        extra = sorted(k for k in args if k not in schema)
+        if extra:
+            names = ", ".join(f"'{k}'" for k in extra)
+            unknown_err = f"unexpected arg(s) {names} — accepted: {', '.join(sorted(schema))}"
+            return False, f"{declared_err}; {unknown_err}" if declared_err else unknown_err
+    if declared_err:
+        return False, declared_err
     return True, ""
 
 

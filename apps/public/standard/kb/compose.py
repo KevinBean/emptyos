@@ -88,7 +88,11 @@ def _compose_clauses(self, reference_slug: str):
         return None, props
     edition = str(props.get("edition") or "").strip()
     rows = []
-    for r in self._clauses_for_standard(str(props["standard_id"])):
+    for r in self._clauses_for_standard(
+        str(props["standard_id"]),
+        str(props.get("standard") or ""),
+        str(props.get("edition") or ""),
+    ):
         if edition and str(r.get("edition") or "").strip() != edition:
             continue
         if not _is_atomic_clause(r.get("clause")):
@@ -174,7 +178,11 @@ async def atomize_standard(self, reference_slug: str, *, dry_run: bool = False) 
         return {"error": "reference has no readable archive (local_text/source_file)"}
     edition = str(props.get("edition") or "").strip()
     existing = [
-        str(r.get("clause")) for r in self._clauses_for_standard(str(props["standard_id"]))
+        str(r.get("clause")) for r in self._clauses_for_standard(
+            str(props["standard_id"]),
+            str(props.get("standard") or ""),
+            str(props.get("edition") or ""),
+        )
         if str(r.get("edition") or "").strip() == edition and r.get("clause")
     ]
     vlevels = props.get("voltage_levels") if isinstance(props.get("voltage_levels"), list) else []

@@ -340,7 +340,7 @@ pieces now exist, each behind a default-off flag:
   exit 1 when any actor is over cap).
 
 Tests: `tests/test_unit_billing_meter.py`,
-`tests/test_sys_rooms_logic.py::TestGateBudgetCeiling`. Still not built: the
+`tests/test_unit_rooms_logic.py::TestGateBudgetCeiling`. Still not built: the
 hub panel fed by `all_budgets` (build when budgets are in real use) and
 actor-identity threading (build when a consumer needs the per-job split).
 

@@ -24,6 +24,7 @@ from emptyos.sdk.web_search import (
     read_web_source,
     site_label,
     source_fencer,
+    triage_hits,
 )
 
 DEFAULT_TOP_N = 5
@@ -113,6 +114,23 @@ async def run_research(
             }
             return
         yield {"type": "research-status", "stage": "found", "n": len(results)}
+
+        # 1b. Snippet triage — drop hits whose SERP excerpt shares no term with
+        # the query, so we don't pay a full browser navigation to discover a
+        # result is irrelevant (the dominant cost in this pipeline). Dark by
+        # default; deterministic (no model call). triage_hits keeps every
+        # un-snippeted hit and enforces a floor, so this can only ever reduce
+        # reads, never empty the source list.
+        if app.app_config("feature.snippet-triage.enabled", False) and len(results) > 2:
+            triaged = triage_hits(results, q)
+            if len(triaged) < len(results):
+                yield {
+                    "type": "research-status",
+                    "stage": "triaged",
+                    "n": len(triaged),
+                    "skipped": len(results) - len(triaged),
+                }
+                results = triaged
 
         # 2. Read each source.
         sources: list[dict] = []

@@ -158,16 +158,57 @@ class Embedder:
         self.cache_path = cache_path.with_name(
             f"{cache_path.stem}.{_model_tag(self.model)}{cache_path.suffix}"
         )
-        self.cache: dict[str, list[float]] = {}
-        if self.cache_path.exists():
-            try:
-                self.cache = json.loads(self.cache_path.read_text(encoding="utf-8"))
-            except Exception:
-                log.warning("embedding cache unreadable, starting fresh: %s", self.cache_path)
-                self.cache = {}
+        # The cache is loaded LAZILY — see _ensure_cache(). It used to be parsed
+        # here in __init__, which made merely *constructing* an Embedder cost a
+        # 265 MB json.loads: 2.4s of blocking event loop and 0.39 GB resident,
+        # measured 2026-08-05. Nothing about `available` (the overwhelmingly
+        # common call — it only reads provider config and pings reachability)
+        # needs a single cached vector, so the whole cost was being paid for a
+        # config check. journal's setup() did exactly that on every boot:
+        # 208 samples, 2.65s median, 97s worst.
+        self._cache: dict[str, list[float]] | None = None
         self._client = None
         self._reach_ok = False
         self._reach_at = 0.0
+
+    @property
+    def cache(self) -> dict[str, list[float]]:
+        """The content-hash vector cache, loaded on first touch.
+
+        A property rather than a plain attribute so every existing read/write
+        site keeps working unchanged while paying the load only when it is
+        genuinely needed.
+
+        The None check is inline rather than delegated to `_ensure_cache` because
+        `embed_many` evaluates `self.cache` once per element inside list
+        comprehensions over the batch — the steady-state cost should be an
+        identity test, not a function call per text.
+        """
+        if self._cache is None:
+            self._ensure_cache()
+        return self._cache  # type: ignore[return-value]
+
+    @cache.setter
+    def cache(self, value: dict[str, list[float]]) -> None:
+        self._cache = value
+
+    @property
+    def cache_loaded(self) -> bool:
+        """True once the on-disk cache has actually been read. Lets a caller
+        (and the tests) assert that a cheap path stayed cheap."""
+        return self._cache is not None
+
+    def _ensure_cache(self) -> None:
+        if self._cache is not None:
+            return
+        self._cache = {}
+        if not self.cache_path.exists():
+            return
+        try:
+            self._cache = json.loads(self.cache_path.read_text(encoding="utf-8"))
+        except Exception:
+            log.warning("embedding cache unreadable, starting fresh: %s", self.cache_path)
+            self._cache = {}
 
     @property
     def available(self) -> bool:
@@ -228,6 +269,12 @@ class Embedder:
         callers can detect via `available`. Persists cache after refresh.
         """
         import asyncio
+
+        # First real use pays the disk read — off the event loop, because a
+        # 265 MB json.loads is 2.4s of wedged daemon (the sync-in-async class in
+        # .claude/rules/debugging.md). Every later call sees it already loaded.
+        if not self.cache_loaded:
+            await asyncio.to_thread(self._ensure_cache)
 
         sigs = [_sig(t) for t in texts]
         missing = [(i, t) for i, (t, s) in enumerate(zip(texts, sigs)) if s not in self.cache]

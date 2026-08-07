@@ -54,18 +54,28 @@ Symptom is nearly always the same: **process alive + listening, but HTTP stops
 answering / a pipeline freezes mid-stage / no syslog error, no `blocked_reason`,
 no crash.** `EventBus.emit()` runs handlers *serially with `await` in the same
 task* (`emptyos/kernel/event_bus.py`), so any blocking handler pins the whole
-bus. The four shapes:
+bus. The last two shapes are the mirror image — work that was detached when it
+should not have been, or not detached when it should have been. The six shapes:
 
 | Shape | Tell | Fix |
 |---|---|---|
 | **Serial fan-out on dead peers** | Daemon freezes after PC sleep/lock; `Get-NetTCPConnection -LocalPort 9000` shows `CLOSE_WAIT` pile-up | Schedule the broadcast with `asyncio.create_task` at the bus boundary + per-send `asyncio.wait_for(..., timeout=2.0)` + `gather`. (`feedback_realtime_broadcast_serial_blocks_bus`) |
-| **Lock-held emit deadlock** | Pipeline stuck `stage: X, status: running` forever, no new subprocess, no error | Any `await self.emit(...)` inside `async with self._lock_for(...)` → `asyncio.create_task(self.emit(...))`. `asyncio.Lock` isn't reentrant. (`feedback_lock_held_emit_deadlock`) |
+| **Lock-held emit deadlock** | Pipeline stuck `stage: X, status: running` forever, no new subprocess, no error | Any `await self.emit(...)` inside `async with self._lock_for(...)` → `self.spawn_background(self.emit(...))`. `asyncio.Lock` isn't reentrant. (A bare `create_task` detaches but keeps no strong ref — see the last row.) (`feedback_lock_held_emit_deadlock`) |
 | **Sync call in async context** | Daemon goes silent N seconds after a trigger; py-spy names an ONNX/subprocess/IO frame on the main thread | Wrap the blocking call in `await asyncio.to_thread(fn, ...)`. Applies to middleware `apply()`, plugin service methods, route handlers. (`feedback_middleware_sync_blocks_loop`) |
-| **Long handler in HTTP request** | HTTP 500 "No response returned" at ~30s, handler keeps running, no syslog entry | Fire-and-forget the entry-point emit: `asyncio.create_task(self.emit(...))` then `return`. Don't `await` a multi-second chain in a route. (`feedback_long_handler_in_http_request`) |
+| **Long handler in HTTP request** | HTTP 500 "No response returned" at ~30s, handler keeps running, no syslog entry | Fire-and-forget the entry-point emit: `self.spawn_background(self.emit(...))` then `return`. Don't `await` a multi-second chain in a route. (`feedback_long_handler_in_http_request`) |
+| **Detached task collected mid-flight** | Work that "sometimes doesn't happen" — a warm-up that ran yesterday and not today, no error either way. Worse under memory pressure, i.e. exactly when a boot is already struggling | asyncio only *weak*-refs a running task, so a bare `asyncio.create_task(x)` whose result is discarded can be GC'd before it finishes. Use `self.spawn_background(coro, label=…)` (apps + plugins) — it keeps the ref, cancels on teardown, and logs failures. Guarded by `scripts/check_bare_create_task.py`. |
+| **Awaited warm-up in `setup()`** | One app dominates boot; `slow load '<x>': setup=NNNNms` in syslog | A cache prime / index build nobody awaits does not belong inline — it blocks the whole app loader. `spawn_background` it. garden was 2.5s median / 31.7s worst this way; the *embedder* behind it was worse (see below). |
 
 Before writing any `await self.emit(...)`: does the current task hold a lock?
 will the target handler re-acquire it? does it need to finish before return?
-Any "yes" → `create_task` it (or it's a design smell — use a return value).
+Any "yes" → `spawn_background` it (or it's a design smell — use a return value).
+
+**A constructor can be the blocking call.** `Embedder.__init__` did a
+`json.loads` of a 265 MB cache — 2.4s on the event loop and 0.39 GB resident,
+paid *per app instance*, and `available` (the common call, and the only one
+journal's `setup()` made) never reads a single cached vector. So the tell was
+"every app is slow to load", not "one function is slow". When a boot is
+uniformly slow, look at what every app constructs, not at what any one app does.
 
 ## Tooling for a wedge
 
@@ -82,6 +92,16 @@ Any "yes" → `create_task` it (or it's a design smell — use a return value).
   the watchdog is a **user-owned** process (launched by restart.bat) — Claude
   itself still never restarts/kills :9000. `pip install py-spy` unlocks full
   stacks. `--port 9001/9002+` for sidecar/sandbox. (`reference_daemon_watchdog`)
+- **A restart storm is not a wedge — read the boot times first.** A dead port has
+  two causes (crashed vs still booting) and the supervisor distinguishes them by
+  the PID it spawned, waiting while that process is alive (`--restart-grace` 240s,
+  extended to `--boot-timeout` 900s). Before blaming a slow app, check whether
+  several daemons were booting at once: `slow load` warnings in syslog and
+  `respawned detached pid=` lines in `data/daemon-restart.log` that outpace
+  `RECOVERED`. Stacked boots starve each other, so the import times they report
+  are a *symptom* of the storm, not its cause — on 2026-07-30 a steady 28s boot
+  read as 1006s across four daemons. Fixed 2026-07-30; the A/B repro is
+  `boot_still_running` / `pids_to_clear` in `tests/test_unit_daemon_watchdog.py`.
 - **Reproduce on a sandbox member, never on `:9000`.** Lease a pool member
   (`.claude/rules/sandbox-driven-testing.md`), reproduce + fix there. Never
   `taskkill` / `restart.bat` the user's daemon (`.claude/rules/daemon-handling.md`).

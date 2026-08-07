@@ -70,7 +70,7 @@ token delta, measured on the bench — not "OMP has it."
 | OMP primitive | Why parked |
 |---|---|
 | **Structured resource URLs** (`pr://`, `issue://`, `agent://` → here `vault://`, `app://`, `run://`, `kb://`) | Speculative refactor with real migration cost (rule 9: don't build the abstraction before the pain is real). The adjacent primitive already exists (`ContextRefTool`, `context_ref.py`) plus `vault_query`/`call_app`/`read`. Revisit only if the bench shows tool-proliferation is hurting routing. |
-| **Worktree auto-merge** | v1 leaves branch+diff for review; `fix-agent` already owns the merge-gate shape (py_compile → ff-merge) if a consumer needs it. |
+| **Worktree auto-merge** | v1 leaves branch+diff for review; `fix-agent` already owns the merge-gate shape (py_compile → regression test → ff-merge) if a consumer needs it. The regression step (`[apps.fix-agent] feature.regression-gate.enabled`) requires a daemon-free test that fails at the merge base and passes on the branch — the only deterministic evidence in that loop, since the persona "verifier" measured 2% self-recurrence on an unchanged system. |
 | **Browser/control polish** | P3; `Fetch`/`Screenshot`/`browse` cover today's needs. |
 
 ## Build order = which bench failure each primitive moves

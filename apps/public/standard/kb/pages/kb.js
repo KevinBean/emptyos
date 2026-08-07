@@ -1311,6 +1311,10 @@ var HEALTH_CATEGORIES = [
   {key:'orphans',                     sev:'warn',  label:'Orphans (no backlinks / related)',  detail:function(){ return ''; }},
   {key:'uncited_references',          sev:'warn',  label:'Uncited clauses',                   detail:function(){ return ''; }},
   {key:'verification_target_not_case',sev:'warn',  label:'Verify target not a case',          detail:function(b){ return '→ '+(b.target||'')+' ('+(b.target_kind||'?')+')'; }},
+  {key:'stale_reference',             sev:'warn',  label:'References past review date',        detail:function(b){
+    if(b.state === 'malformed') return 'unparseable review_due: '+(b.review_due||'');
+    return (b.days_overdue||0)+'d overdue (due '+(b.review_due||'?')+')';
+  }},
 ];
 
 function _healthBody(r){
@@ -1347,6 +1351,59 @@ function _healthBody(r){
 }
 
 // ── Digest doc → proposed KB notes (engineering pipeline stage 3) ──
+var COVERAGE_LABELS = {
+  'digested': 'Digested',
+  'undigested': 'Undigested',
+  'clauses-only': 'Clauses only',
+  'metadata-only': 'Metadata only',
+  'source-missing': 'Source missing',
+  'missing-reference': 'Missing reference',
+};
+
+function _coverageRow(row, linked){
+  var name = row.standard_id || row.standard || row.title || 'Untitled reference';
+  var details = [];
+  if(row.edition) details.push(row.edition);
+  if(row.domain) details.push(row.domain);
+  if(row.source_status === 'available') details.push('archive available');
+  else if(row.source_status === 'missing') details.push('archive path missing');
+  else if(linked) details.push('no local archive');
+  var status = row.status || 'metadata-only';
+  var count = Number(row.clause_count || 0);
+  var inner = '<div><div class="kb-coverage-name">'+esc(name)+'</div>'+
+    '<div class="kb-coverage-meta">'+esc(details.join(' · '))+'</div></div>'+
+    '<div class="kb-coverage-side"><span class="kb-coverage-count">'+count+' clause note'+(count===1?'':'s')+'</span>'+
+    '<span class="kb-coverage-status '+escAttr(status)+'">'+esc(COVERAGE_LABELS[status]||status)+'</span></div>';
+  if(linked && row.slug){
+    return '<a class="kb-coverage-row" href="#'+encodeURIComponent(row.slug)+'" data-coverage-slug="'+escAttr(row.slug)+'">'+inner+'</a>';
+  }
+  return '<div class="kb-coverage-row">'+inner+'</div>';
+}
+
+function _referenceCoverageBody(data){
+  var s = data.summary || {};
+  var refs = data.references || [];
+  var missing = data.missing_references || [];
+  var html = '<p class="kb-coverage-intro">A source archive makes a reference atomizable; clause notes make it searchable and composable. Counts show corpus coverage, not compliance with the standard.</p>'+
+    '<div class="kb-coverage-stats">'+
+      '<div class="kb-coverage-stat"><strong>'+Number(s.references||0)+'</strong><span>Reference notes</span></div>'+
+      '<div class="kb-coverage-stat"><strong>'+Number(s.clause_notes||0)+'</strong><span>Clause notes</span></div>'+
+      '<div class="kb-coverage-stat"><strong>'+Number(s.digested||0)+'</strong><span>Archived + digested</span></div>'+
+      '<div class="kb-coverage-stat"><strong>'+Number(s.missing_reference_groups||0)+'</strong><span>Missing parent groups</span></div>'+
+    '</div>';
+  if(missing.length){
+    html += '<section class="kb-coverage-section"><h3>Missing reference notes</h3><div class="kb-coverage-list">'+
+      missing.map(function(row){ return _coverageRow(row, false); }).join('')+'</div></section>';
+  }
+  if(refs.length){
+    html += '<section class="kb-coverage-section"><h3>Reference inventory</h3><div class="kb-coverage-list">'+
+      refs.map(function(row){ return _coverageRow(row, true); }).join('')+'</div></section>';
+  } else {
+    html += EOS_UI.emptyState({message:'No kind: reference notes are indexed yet.'});
+  }
+  return html;
+}
+
 function _digestBody(){
   var domains = (STATE.domains||[]).map(function(d){
     return '<option value="'+escAttr(d.domain)+'">'+esc(d.domain)+'</option>';
@@ -1451,6 +1508,26 @@ document.getElementById('health-btn').addEventListener('click', async () => {
       setBucket('attention');
     });
   }, 30);
+});
+
+document.getElementById('reference-coverage-btn').addEventListener('click', async function(){
+  EOS_UI.modal({ title:'Reference coverage', body:'<div id="kb-reference-coverage-body"><div class="empty">Inspecting the corpus…</div></div>', width:760 });
+  var mount = document.getElementById('kb-reference-coverage-body');
+  try {
+    var response = await fetch('/kb/api/reference-coverage');
+    var data = await response.json();
+    if(!response.ok || data.error) throw new Error(data.error || 'Request failed');
+    if(mount) mount.innerHTML = _referenceCoverageBody(data);
+    document.querySelectorAll('[data-coverage-slug]').forEach(function(link){
+      link.addEventListener('click', function(event){
+        event.preventDefault();
+        if(EOS_UI.closeModal) EOS_UI.closeModal();
+        _route.set(link.dataset.coverageSlug);
+      });
+    });
+  } catch(error) {
+    if(mount) mount.innerHTML = EOS_UI.errorState({message:'Could not load reference coverage: '+error.message});
+  }
 });
 
 // List filters

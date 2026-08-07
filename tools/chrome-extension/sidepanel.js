@@ -1781,6 +1781,15 @@ async function init() {
     }
   });
 
+  chrome.runtime.onMessage.addListener(message => {
+    if (message?.type !== "EOS_APPS_CHANGED") return false;
+    // Re-open against the new daemon app set: init() wires the gated surfaces,
+    // timers, and badges from scratch, which is safer than trying to diff the
+    // live panel state in place.
+    window.location.reload();
+    return false;
+  });
+
   // Input handlers
   const input = document.getElementById("input");
   input.addEventListener("input", () => {

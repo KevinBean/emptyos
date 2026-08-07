@@ -1,3 +1,7 @@
+---
+name: eos-simplify
+description: Review *changed* code against EmptyOS conventions (CLAUDE.md patterns) for reuse, quality, and efficiency, then apply the fixes — the EmptyOS-aware cousin of the generic simplify skill. Use before committing a meaningful change, before eos-session-wrapup, or when the user says "simplify", "eos-simplify", "review", "clean up", or "check my work". Quality only — NOT a correctness-bug hunt (use /code-review) and NOT a UI/design pass (use eos-design-system-audit / eos-page-design-review).
+---
 # EmptyOS Simplify
 
 Review **changed** code against EmptyOS conventions, then fix what you find. This is the EmptyOS-aware cousin of the generic `simplify` skill: same spirit (reuse, quality, efficiency), but tuned to the patterns in `AGENTS.md` so the review catches things a generic pass would miss.

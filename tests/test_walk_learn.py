@@ -13,6 +13,8 @@ Covers:
 
 from __future__ import annotations
 
+from uuid import uuid4
+
 import pytest
 
 from helpers import BASE_URL, TEST_PREFIX, assert_dict_response, assert_ok
@@ -98,8 +100,20 @@ class TestLearnWalkAPI:
         )
 
     def test_reader_note_roundtrip(self, http_client):
-        """POST a note then GET it back — verify vault persistence."""
-        slug = "asnzs-61439"
+        """POST a note then GET it back — verify vault persistence.
+
+        Writes into a KB note this test owns (TEST_PREFIX in the filename =
+        the leak guard's ``owned`` shape, deleted whole at session end) rather
+        than a real standard note, whose ``## Reader notes`` entries can only
+        ever be flagged for manual review. See test_sys_learn's sibling test.
+        """
+        created = assert_dict_response(http_client.post("/kb/api/notes", json={
+            "kind": "concept",
+            "title": f"{TEST_PREFIX}Walk reader host",
+            "slug": f"{TEST_PREFIX}walk-reader-host-{uuid4().hex[:8]}",
+        }))
+        assert created.get("ok"), created
+        slug = created["slug"]
         payload = {
             "slug": slug,
             "quote": f"{TEST_PREFIX}test quote walk1",

@@ -43,6 +43,18 @@ class GardenApp(BaseApp):
         await super().setup()
         self._state_path: Path = self.data_dir / "state.json"
         self._state_path.parent.mkdir(parents=True, exist_ok=True)
+        # Warm the state cache in the BACKGROUND. This tick was awaited inline
+        # until 2026-08-05, which made it the single slowest app load on the
+        # daemon: 2.5s median, 31.7s worst — the whole plot-source read across a
+        # 30-day window, paid before the loader would move on to the next app.
+        #
+        # Nothing needs it finished: `_state()` already recomputes on a missing
+        # or unreadable cache file, and a 6h `@scheduled` tick keeps it fresh
+        # after that. So the only thing awaiting bought was a slower boot.
+        # journal warms its embedding index exactly this way.
+        self.spawn_background(self._warm_state(), label="initial tick")
+
+    async def _warm_state(self):
         try:
             await self._tick()
         except Exception as e:

@@ -71,6 +71,45 @@ _ADAPT_PROMPTS = {
     "reddit": "adapt_reddit_prompt",
 }
 
+_LINKEDIN_PLAYBOOK_BEGIN = "<!-- promote:linkedin-playbook:start -->"
+_LINKEDIN_PLAYBOOK_END = "<!-- promote:linkedin-playbook:end -->"
+
+
+def _voice_playbook_section(text: str) -> str:
+    """Return only the managed LinkedIn playbook body from a voice note."""
+    if _LINKEDIN_PLAYBOOK_BEGIN not in text or _LINKEDIN_PLAYBOOK_END not in text:
+        return ""
+    middle = text.split(_LINKEDIN_PLAYBOOK_BEGIN, 1)[1].split(
+        _LINKEDIN_PLAYBOOK_END, 1
+    )[0].strip()
+    lines = middle.splitlines()
+    if lines and lines[0].strip().lower() == "## linkedin performance playbook":
+        lines = lines[1:]
+    return "\n".join(lines).strip()
+
+
+def _replace_voice_playbook(text: str, markdown: str) -> str:
+    """Replace the one managed block while preserving every human-owned byte."""
+    clean = (markdown or "").replace(_LINKEDIN_PLAYBOOK_BEGIN, "")
+    clean = clean.replace(_LINKEDIN_PLAYBOOK_END, "").strip()
+    block = (
+        _LINKEDIN_PLAYBOOK_BEGIN
+        + "\n## LinkedIn performance playbook\n"
+        + clean
+        + "\n"
+        + _LINKEDIN_PLAYBOOK_END
+    )
+    if _LINKEDIN_PLAYBOOK_BEGIN in text and _LINKEDIN_PLAYBOOK_END in text:
+        before, tail = text.split(_LINKEDIN_PLAYBOOK_BEGIN, 1)
+        _, after = tail.split(_LINKEDIN_PLAYBOOK_END, 1)
+        pieces = [before.rstrip(), block]
+        if after.strip():
+            pieces.append(after.strip())
+        return "\n\n".join(piece for piece in pieces if piece) + "\n"
+    base = text.rstrip() or "# Voice guide"
+    return base + "\n\n" + block + "\n"
+
+
 
 async def adapt_post(self, platform: str = "", text: str = "", parent: str = "") -> dict:
     """Adapt a finished blog post into a per-platform social draft.
@@ -147,6 +186,51 @@ async def _voice_block(self) -> str:
         "write or revise; when reviewing, judge the text against it:\n\n"
         + body[:6000]
     )
+
+async def linkedin_voice_playbook(self) -> dict:
+    """Read the managed playbook section from the active site's voice note."""
+    vault = self._vault_dir()
+    source = self._source_folder()
+    rel = f"{source}/_voice.md" if source else ""
+    if not vault or not source:
+        return {"exists": False, "path": rel, "markdown": ""}
+    note = Path(vault) / source / "_voice.md"
+    if not note.exists():
+        return {"exists": False, "path": rel, "markdown": ""}
+    try:
+        text = await self.read(str(note))
+    except Exception:
+        return {"exists": True, "path": rel, "markdown": ""}
+    return {"exists": True, "path": rel, "markdown": _voice_playbook_section(text)}
+
+
+async def apply_linkedin_playbook(
+    self, markdown: str = "", source_proposal: str = ""
+) -> dict:
+    """Apply one reviewed playbook to the owned voice note under a note lock."""
+    markdown = (markdown or "").strip()
+    if not markdown:
+        return {"error": "Playbook cannot be empty."}
+    vault = self._vault_dir()
+    source = self._source_folder()
+    if not vault or not source:
+        return {"error": "The active publish site has no vault source folder."}
+    rel = f"{source}/_voice.md"
+    note = Path(vault) / rel
+    async with self.note_lock(rel):
+        try:
+            current = await self.read(str(note)) if note.exists() else "# Voice guide\n"
+            updated = _replace_voice_playbook(current, markdown)
+            await self.write(str(note), updated)
+        except Exception as exc:
+            return {"error": f"Could not write the active site voice guide: {exc}"}
+    return {
+        "ok": True,
+        "path": rel,
+        "site": self._active_site_id(),
+        "source_proposal": source_proposal,
+    }
+
 
 
 @web_route("GET", "/api/voice-status")

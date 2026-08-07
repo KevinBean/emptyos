@@ -134,7 +134,7 @@ class PeopleApp(BaseApp):
         self.kernel.events.on("people:unassigned", self._on_unassigned)
         import asyncio
 
-        asyncio.create_task(self._rebuild_index())
+        self.spawn_background(self._rebuild_index())
 
     async def _rebuild_index(self):
         self._assignments.clear()

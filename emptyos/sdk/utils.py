@@ -261,10 +261,108 @@ def iso_age_days(iso_str: str, now: datetime | None = None) -> float | None:
     return (ref - dt).total_seconds() / 86400.0
 
 
+def is_past_ttl(
+    born_iso: str,
+    ttl_seconds: float,
+    now: datetime | str | None = None,
+) -> bool:
+    """Has `born_iso` aged past `ttl_seconds`?
+
+    The "birth timestamp + TTL" expiry shape, extracted on its second consumer
+    (`emptyos/context/store.py` originals, `plugins/telegram/bridge.py` Apply
+    cards). Built on `iso_age_days`, so both inherit its tolerance: date-only
+    strings, a trailing `Z`, and **naive timestamps treated as UTC** — that last
+    one matters, because comparing a naive stored `ts` against an aware `now`
+    raises TypeError, which a local try/except quietly turns into "never
+    expires". Several writers in this repo emit naive `datetime.now().isoformat()`.
+
+    Two deliberate fail-open cases, both returning False:
+      * `ttl_seconds <= 0` — the caller's way of disabling expiry.
+      * an unparseable timestamp — refusing a real item is worse than allowing
+        one, since expiry is a convenience gate and the real guard is downstream.
+
+    Boundary is `>=`: at exactly the TTL, treat it as expired. NOT for absolute
+    deadlines — an `expires_at` field is a plain comparison, not TTL arithmetic
+    (see `autopilot._is_expired`), and folding the two would be one function
+    pretending to be two.
+    """
+    if ttl_seconds <= 0:
+        return False
+    if isinstance(now, str):
+        age_now = iso_age_days(now)
+        # A now-string we can't parse means we have no reference clock; fall
+        # back to the real one rather than guessing.
+        now = None if age_now is None else datetime.fromisoformat(
+            now.strip().replace("Z", "+00:00")
+        )
+    age_days = iso_age_days(born_iso, now)
+    if age_days is None:
+        return False
+    return age_days * 86400.0 >= float(ttl_seconds)
+
+
+def _balanced_json_spans(text: str) -> list[tuple[int, int]]:
+    """Every balanced `{...}` / `[...]` span in `text`, outermost and nested alike.
+
+    String-aware: a brace or bracket inside a JSON string literal is content, not
+    structure, so `{"a": "has } brace"}` yields one span rather than a truncated
+    one. Escapes are honoured, so `"he said \\"hi\\""` does not end the string early.
+
+    Unbalanced input degrades instead of corrupting: a stray closer with nothing
+    open is skipped (the previous depth counter went negative here and silently
+    discarded every later structure), and a mismatched pair abandons the open
+    stack rather than pairing `{` with `]`.
+    """
+    spans: list[tuple[int, int]] = []
+    stack: list[tuple[str, int]] = []
+    in_str = False
+    esc = False
+    for i, ch in enumerate(text):
+        if in_str:
+            if esc:
+                esc = False
+            elif ch == "\\":
+                esc = True
+            elif ch == '"':
+                in_str = False
+            continue
+        if ch == '"':
+            in_str = True
+        elif ch in "{[":
+            stack.append((ch, i))
+        elif ch in "}]":
+            if not stack:
+                continue
+            open_ch, start = stack.pop()
+            if (open_ch == "{") != (ch == "}"):
+                stack.clear()
+                continue
+            spans.append((start, i + 1))
+    return spans
+
+
 def parse_llm_json(text: str, fallback: dict | list | None = None) -> dict | list:
-    """Extract JSON from LLM output — handles markdown fences, preamble, nested braces/brackets.
+    """Extract JSON from LLM output — handles markdown fences, preamble, trailing prose.
 
     Supports both JSON objects ({}) and arrays ([]).
+
+    Resolution order: whole-text parse, then a fenced block, then the **largest**
+    balanced structure in the text (ties broken by position, earliest first).
+
+    Largest — not first — is what makes this return the model's answer rather than
+    a fragment of it. Any nested structure is by construction shorter than the one
+    containing it, so an array of objects resolves to the array; and a stray valid
+    token in the prose ("per the notes [1], here it is: {...}") loses to the real
+    payload that follows it. The predecessor scanned for `{...}` everywhere before
+    trying `[...]` at all, which meant an unfenced array with any preamble silently
+    returned its FIRST ELEMENT as a dict — a caller asking for five picks got one.
+    Found 2026-07-31 while grading a model-bench response; the docstring claimed
+    "first" while the code did "objects, then arrays", and neither was right.
+
+    Consequence worth knowing: where a response contains two sibling structures,
+    the bigger wins rather than the earlier one. That case is ambiguous by nature
+    and no caller can depend on it — a model asked for one JSON value that emits
+    two has already failed the instruction.
 
     Args:
         text: Raw LLM response that may contain JSON wrapped in markdown code fences,
@@ -291,25 +389,99 @@ def parse_llm_json(text: str, fallback: dict | list | None = None) -> dict | lis
                 return result
         except json.JSONDecodeError:
             pass
-    # Find first valid JSON object or array by brace/bracket matching
-    for open_ch, close_ch in [("{", "}"), ("[", "]")]:
-        depth = 0
-        start = None
-        for i, ch in enumerate(text[:10000]):  # Cap at 10KB
-            if ch == open_ch:
-                if depth == 0:
-                    start = i
-                depth += 1
-            elif ch == close_ch:
-                depth -= 1
-                if depth == 0 and start is not None:
-                    try:
-                        return json.loads(text[start : i + 1])
-                    except json.JSONDecodeError:
-                        start = None
+    # Largest balanced structure wins, earliest breaks ties. Nested spans are
+    # kept as fallbacks: when the outermost one fails to parse (a trailing comma,
+    # a truncated tail) a complete inner structure is still better than nothing.
+    head = text[:10000]  # Cap at 10KB
+    for start, end in sorted(_balanced_json_spans(head), key=lambda s: (s[0] - s[1], s[0])):
+        try:
+            result = json.loads(head[start:end])
+        except json.JSONDecodeError:
+            continue
+        if isinstance(result, (dict, list)):
+            return result
     if fallback is not None:
         return fallback
     raise ValueError(f"Could not parse JSON from LLM response: {text[:200]}")
+
+
+_JSON_FENCE_RE = re.compile(r"```json\s*\n(.*?)\n```", re.S)
+
+
+def parse_json_fence(text: str) -> dict:
+    """Read the machine payload out of an explicit ```json fence. Never raises.
+
+    The strict sibling of :func:`parse_llm_json`. That one hunts for JSON
+    anywhere in a model's prose; this one reads a *committed note format* —
+    a note whose body carries its machine data in one fenced ```json block, so
+    the YAML frontmatter never has to hold JSON and never has to survive a
+    quoting round-trip. Anything unusable (no body, no fence, malformed JSON,
+    a top-level array) degrades to ``{}``: the caller is parsing a
+    hand-editable vault note, where a broken fence must not crash the reader.
+
+    Use for: reading back a note your own renderer wrote with a ```json block
+    (replay recipes, operate manuals). Not for: LLM output, where the fence is
+    optional and best-effort recovery is wanted — use :func:`parse_llm_json`.
+    """
+    if not text:
+        return {}
+    m = _JSON_FENCE_RE.search(text)
+    if not m:
+        return {}
+    try:
+        data = json.loads(m.group(1))
+    except (json.JSONDecodeError, TypeError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+# A horizontal rule: 3+ of the same marker, optionally spaced (`---`, `***`,
+# `___`, `* * *`). Matched before stripping because `strip_markdown`'s
+# bold/italic rule reaches `***` first and leaves a bare `*` behind, which no
+# longer looks like a rule to anything downstream. Deliberately does not match
+# a bullet (`* item`) — the second character must be the same marker.
+_HR_LINE_RE = re.compile(r"^\s*([-*_])(?:\s*\1){2,}\s*$")
+
+
+def first_prose_line(text: str, *, allow_heading: bool = False) -> str:
+    """First line of real prose in a markdown body, cleaned for human display.
+
+    For the recurring "I need one short line to represent this document" job —
+    a notification, a description fallback, a preview. Skips what is structure
+    rather than prose: blank lines, code fences (and their contents),
+    blockquotes, table rows, horizontal rules. Emphasis, links and bullet
+    markers are stripped via :func:`strip_markdown`.
+
+    Headings are skipped by default. A document's title ("Today's brief",
+    "# Overview") usually restates context the caller already has, so a heading
+    is rarely the line you want. ``allow_heading=True`` falls back to the first
+    heading's text when there is no prose at all — better than an empty string
+    for a caller that must say *something*.
+
+    Returns ``""`` when nothing usable is found. Callers do their own
+    truncation; the limit and whether an ellipsis is appended are display
+    decisions this can't make for them.
+    """
+    heading = ""
+    in_fence = False
+    for raw in (text or "").splitlines():
+        line = raw.strip()
+        if line.startswith("```"):
+            in_fence = not in_fence
+            continue
+        if in_fence or not line or line.startswith((">", "|")) or _HR_LINE_RE.match(line):
+            continue
+        # Read `#` before stripping — strip_markdown removes the marker, and
+        # after that a heading is indistinguishable from a sentence.
+        is_heading = line.startswith("#")
+        line = strip_markdown(line)
+        if not line:
+            continue
+        if is_heading:
+            heading = heading or line
+            continue
+        return line
+    return heading if allow_heading else ""
 
 
 def strip_markdown(text: str) -> str:
@@ -495,6 +667,33 @@ def set_frontmatter_field(content: str, key: str, raw_value: str) -> str:
     return f"---\n{line}\n---\n{content}"
 
 
+def fm_scalar(value) -> str:
+    """Encode one value as a frontmatter scalar :func:`parse_frontmatter` reads
+    back unchanged.
+
+    The write-side inverse of that function's unquoting, and the YAML encoding
+    :func:`set_frontmatter_field` leaves to its caller. Emits the value bare
+    when it is unambiguous, else DOUBLE-quoted with ``\\``→``\\\\`` and
+    ``"``→``\\"``.
+
+    Never the single-quote form. YAML escapes an apostrophe inside ``'...'`` by
+    doubling it, and :func:`parse_frontmatter` does not un-double, so ``it's``
+    would round-trip as ``it''s``. Double quotes are the form both sides agree
+    on.
+
+    Use for: short prose scalars (name, description, a status word). Not for:
+    lists (write ``- item`` lines or an inline ``[a, b]``), values containing a
+    newline (not escaped here — they break the block), or machine JSON, whose
+    contract is a fenced ```json block in the body (:func:`parse_json_fence`).
+    """
+    sv = str(value)
+    if sv == "":
+        return '""'
+    if any(c in sv for c in ":#{}[]|>&*?!,\"'\\") or sv != sv.strip():
+        return '"' + sv.replace("\\", "\\\\").replace('"', '\\"') + '"'
+    return sv
+
+
 def slugify(text: str, max_len: int | None = 60, *, fallback: str = "") -> str:
     """Convert text to a URL/filesystem-safe slug.
 
@@ -583,15 +782,37 @@ def safe_note_filename(folder, title: str, *, fallback_prefix: str) -> str:
     return f"{name}.md"
 
 
-_SAFE_PATH_SEG_RE = re.compile(r"^[A-Za-z0-9_-]+$")
+_SAFE_PATH_SEG_RE = re.compile(r"^[A-Za-z0-9._-]+$")
+
+# Windows resolves these as character devices, not files — and does so for any
+# extension, so "nul.md" is the NUL device, not a note. A write silently
+# succeeds and discards the data; a read returns nothing. Refused on every OS
+# rather than under sys.platform, so a vault authored on Linux stays openable
+# on Windows (CLAUDE.md rule 20 — no host-specific behaviour in runtime paths).
+_WIN_RESERVED_STEMS = (
+    {"con", "prn", "aux", "nul"}
+    | {f"com{i}" for i in range(1, 10)}
+    | {f"lpt{i}" for i in range(1, 10)}
+)
 
 
 def safe_path_segment(raw: str) -> str:
     """Return ``raw`` if it's a plain slug, else ``""`` — a path-traversal guard.
 
     For caller-supplied ids (HTTP path params, agent ``call_app`` args) that
-    flow into vault filesystem paths. Restricts to ``[A-Za-z0-9_-]`` so ``..``,
-    ``/``, ``\\``, and leading dots can't escape the intended directory.
+    flow into vault filesystem paths. Restricts to ``[A-Za-z0-9._-]`` so ``/``
+    and ``\\`` can't escape the intended directory, with dots allowed only in
+    the interior and never doubled — so ``..``, ``../etc`` and ``.hidden``
+    are still refused.
+
+    The dot is permitted because real-world ids legitimately carry one:
+    manufacturer cable ids use U0/U voltage notation (``nexans_6.35-11kv_…``),
+    and a stricter rule refused 82 of 110 catalogue rows, 500-ing the whole
+    browse endpoint (2026-07-20). Filenames may contain dots; only traversal
+    is dangerous, so guard traversal rather than the character. Trailing dots
+    are refused too — Windows silently strips them, so ``foo.`` and ``foo``
+    would resolve to the same file — as are the Windows reserved device stems
+    (see :data:`_WIN_RESERVED_STEMS`).
 
     Unlike :func:`slugify` / :func:`unique_slug` (which *transform* text into a
     slug), this **rejects** — it returns ``""`` for anything unsafe so callers
@@ -599,7 +820,13 @@ def safe_path_segment(raw: str) -> str:
     coercing ``"../etc"`` into ``"etc"``.
     """
     raw = (raw or "").strip()
-    return raw if _SAFE_PATH_SEG_RE.match(raw) else ""
+    if not _SAFE_PATH_SEG_RE.match(raw):
+        return ""
+    if ".." in raw or raw.startswith(".") or raw.endswith("."):
+        return ""
+    if raw.split(".")[0].lower() in _WIN_RESERVED_STEMS:
+        return ""
+    return raw
 
 
 def require_path_segment(raw: str, label: str = "id") -> str:
@@ -639,7 +866,8 @@ def path_segment_error(raw: str, label: str = "id") -> str | None:
         return None
     return (
         f"invalid {label} {raw!r} — must be letters, digits, "
-        "underscore or hyphen"
+        "underscore, hyphen or dot (no '..', no leading or trailing dot, "
+        "not a reserved device name like 'nul')"
     )
 
 

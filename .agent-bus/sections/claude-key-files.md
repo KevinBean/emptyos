@@ -7,6 +7,7 @@
 - `docs/FRONTEND-DESIGN-LANGUAGE.md` — visual + interaction DNA for every page
 - `docs/GETTING-STARTED.md` — public onboarding
 - `docs/DEFERRED-WORK.md` — registry of deferred features (build/deploy when X, with triggers + reference repos); add a row when deferring a substantive feature, grep it when a need arises
+- `docs/AGENT-FRAMEWORK.md` — the auto-agent assembly manual: a new autonomous agent (scheduled/event-driven/chat) is *config, not code* — pick one primitive per row (schedule/persona/verbs/gates/budgets/memory/comms/UI). The brand distribution engine is the worked example. Register every loop in `emptyos/sdk/loops.py`
 - `AGENTS.md` — non-Claude-Code AI self-config
 - `apps/public/standard/forge/FORGE.md` — Forge growth charter (read before adding a Target / Skill / Protocol method)
 - `emptyos.toml` — machine config (gitignored)
@@ -15,10 +16,11 @@
 - `emptyos/sdk/vault_library.py` — vault-backed collection standard
 - `emptyos/sdk/utils.py` — `parse_llm_json`, `streak_from_dates`, etc.
 - `emptyos/sdk/srs.py` — SM-2 spaced repetition scheduler
+- `emptyos/sdk/loops.py` — the feedback-loop registry: names every EmptyOS loop as one concept (6 stages: friction/act/gate/revert/memory/bound; live-vs-dark + flag key) + `LoopReceipt`. Query via `eos loops list|show|stages`. Add a new loop here.
 - `emptyos/web/server.py` — FastAPI server + auto-UI + topology
 - `emptyos/runtime/vault_index.py` — in-memory vault index
 - `emptyos/runtime/vault_map.py` — app-specific path discovery + auto-heal
 - `emptyos/capabilities/providers/claude_cli.py` — Claude Code provider
 - `emptyos/capabilities/providers/openai_compat.py` — OpenAI/Ollama provider
-- `.claude/rules/` — addons, agent-bus, agent-cli, app-conventions-for-export, app-ui-patterns, artifact-element-edit, audits, authorship-boundary, autopilot-grants, boards-as-view-layer, browser-extension-bridge, cad-extensions, cad-layouts, cad-workspaces, claude-design, daemon-handling, debugging, deep-link-to-app, deep-research, demo-mode, dev-gotchas, docs-sync, environment, field-suggest, geo, hub-panels, model-ability, model-pill, multi-cli-participants, multi-module-apps, path-scoped-rules, pdf-markdown, plugins, product-packaging, prompt-management, prompt-prefix-cache, proposed-action, public-app-pattern, room-review-gate, sandbox-driven-testing, sandbox-usage, scoped-retrieval, selector, self-audit-loops, shared-frontend, skill-scan, slash-command-palette, staged-pipeline, standalone-distribution, store, test-fix-verify-loop, testing, text-first-data, three-natures-lens, time-dimension, tour-steps, untrusted-content, user-intent, vault-operator, verb-registry, voice-intents
+- `.claude/rules/` — addons, agent-bus, agent-cli, app-conventions-for-export, app-ui-patterns, artifact-element-edit, audits, authorship-boundary, autopilot-grants, boards-as-view-layer, browser-extension-bridge, cad-extensions, cad-layouts, cad-workspaces, claude-design, daemon-handling, debugging, deep-link-to-app, deep-research, demo-mode, dev-gotchas, docs-sync, environment, field-suggest, geo, hub-panels, loop-traceability, model-ability, model-pill, multi-cli-participants, multi-module-apps, path-scoped-rules, pdf-markdown, plugins, product-packaging, prompt-management, prompt-prefix-cache, proposed-action, public-app-pattern, rented-compute, room-review-gate, sandbox-driven-testing, sandbox-usage, scoped-retrieval, selector, self-audit-loops, session-plans, shared-frontend, skill-scan, slash-command-palette, staged-pipeline, standalone-distribution, store, test-fix-verify-loop, testing, text-first-data, three-natures-lens, time-dimension, tour-steps, untrusted-content, user-intent, vault-operator, verb-registry, voice-intents
 - `restart.bat` — kill python, check external services, boot EmptyOS

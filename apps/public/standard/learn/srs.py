@@ -136,7 +136,7 @@ async def _srs_schedule(self, slug: str, score: int) -> dict:
     entry["last_quality"] = quality
     srs[slug] = entry
     await self._save_srs(srs)
-    asyncio.create_task(self.emit("learn:srs_scheduled", {
+    self.spawn_background(self.emit("learn:srs_scheduled", {
         "slug": slug, "score": score, "quality": quality,
         "next_review": entry["next_review"],
     }))

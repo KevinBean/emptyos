@@ -40,12 +40,21 @@ commands = ["myapp"]
 prefix = "/myapp"
 
 [provides.events]
-emits = ["myapp:done"]
+emits = ["myapp:done", "myapp:progress"]
+internal = ["myapp:progress"]   # subset of emits — no cross-app listener by design
 ```
 
 Declare every literal `self.call_app("id", ...)` target. Put load-time
 dependencies in `apps`; put integrations with graceful fallback in
 `optional_apps`.
+
+Declare every event the code emits — the topology graph builds event edges from
+manifests, so an undeclared emit is invisible to `/api/topology` and every audit
+reading it undercounts. **`internal` is a modifier on `emits`, not an
+alternative to it**: the graph walks `emits` and consults `internal` only to flag
+those edges, so a name listed *only* under `internal` produces no node and no
+edge. Mark an event `internal` when this app's own UI is its only consumer;
+it still belongs in `emits`. `scripts/check_event_wiring.py` reports drift.
 
 ### App Sub-Patterns
 

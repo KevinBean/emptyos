@@ -231,7 +231,7 @@ async def api_product_update_apply(self, request):
             pass
         os._exit(UPDATE_EXIT_CODE)
 
-    asyncio.create_task(_apply())
+    self.spawn_background(_apply())
     await self.emit("system:restart_requested", {"source": "product-update", "version": staged})
     return {"ok": True, "applying": staged}
 
@@ -261,6 +261,6 @@ async def api_product_restart(self, request):
             pass
         os._exit(RESTART_EXIT_CODE)
 
-    asyncio.create_task(_restart())
+    self.spawn_background(_restart())
     await self.emit("system:restart_requested", {"source": "product"})
     return {"ok": True, "restarting": True}

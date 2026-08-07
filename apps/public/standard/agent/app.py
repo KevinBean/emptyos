@@ -173,14 +173,31 @@ class AgentApp(SessionMixin, BaseApp):
         self._sessions.init_schema()
 
     async def _maybe_connect_inbound_mcp(self) -> None:
-        """Dark-flagged: spawn external MCP servers and add their tools to the
+        """Dark-flagged: connect external MCP servers and add their tools to the
         registry so the agent loop can use them like native tools (gated by the
         same ToolConsentManager — proxy tools are ``permission="ask"``).
 
         Off by default (`[apps.agent] feature.mcp-inbound.enabled`) → the
         registry is byte-identical. Fail-soft: a bad server, a parse error, or a
-        missing dep must never break agent boot. Servers are declared as
-        `[[apps.agent.mcp_servers]]` rows ({id, command, args, env, cwd}).
+        missing dep must never break agent boot.
+
+        Servers are declared as `[[apps.agent.mcp_servers]]` rows, each carrying
+        EITHER a `command` (stdio — we spawn it) or a `url` (HTTP — it is already
+        running)::
+
+            [[apps.agent.mcp_servers]]
+            id = "files"
+            command = "npx"
+            args = ["-y", "@modelcontextprotocol/server-filesystem", "/data"]
+
+            [[apps.agent.mcp_servers]]
+            id = "velorn"
+            url = "http://127.0.0.1:19790/mcp"
+
+        An HTTP server we do not spawn is simply *absent* when it is not running
+        — `connect_mcp_servers` drops it and the registry is unchanged. That is
+        the normal state for a desktop app like Velorn, so it must stay silent
+        rather than log an error on every boot.
         """
         try:
             from emptyos.sdk.agent_tools.base import feature_enabled
@@ -523,12 +540,22 @@ class AgentApp(SessionMixin, BaseApp):
                         scope = data.get("scope", "once")
                         if scope not in ("once", "session"):
                             scope = "once"
-                        tool_consent.approve(data.get("id", ""), scope=scope)
+                        # Bind the decision to THIS socket's session. The request
+                        # id rides `agent:permission_requested` over the event
+                        # bus, which /ws broadcasts to every client — so without
+                        # this any connected client could approve another
+                        # session's tool call.
+                        tool_consent.approve(
+                            data.get("id", ""), scope=scope,
+                            expected_session_id=session_id,
+                        )
 
                 elif msg_type == "deny_permission":
                     tool_consent = self.service("tool_consent")
                     if tool_consent:
-                        tool_consent.deny(data.get("id", ""))
+                        tool_consent.deny(
+                            data.get("id", ""), expected_session_id=session_id,
+                        )
 
                 elif msg_type == "set_plan_mode":
                     # Web-UI path for /plan /execute /scrap — flip the session's

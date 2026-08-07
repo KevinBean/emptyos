@@ -74,6 +74,14 @@ summary = await pipe.start({"topic": "AI"}, progress=cb)     # run to completion
 - **`stop_after="script"`** runs through `script` then pauses (`status="paused"`).
   The UI shows the artifact; `resume(run_id, inputs={"script": edited})` picks up
   at `audio`. This is the script-preview seam every generator already wants.
+- **`PipelineReviewRequired`** pauses *inside* the current stage when the
+  evidence has a genuine middle state that requires human judgement. The stage
+  writes its preview artifact first, then raises with a small
+  `pending_review` payload. The run records `status="paused"` (not `"error"`),
+  does not mark the stage complete, and resumes that same stage after the
+  consumer records a byte-bound decision in inputs. Use it for real tri-state
+  gates: hard pass continues, hard fail follows the stage's repair/error path,
+  and only the ambiguous middle asks the human.
 - **`resume(run_id)`** re-drives, skipping `completed` stages. Use it after a
   crash, a daemon restart, or a `stop_after` pause.
 - **Stage failures don't raise** — they're captured into `status="error"` +
@@ -90,6 +98,24 @@ summary = await pipe.start({"topic": "AI"}, progress=cb)     # run to completion
   Forward it straight into a helper that *already* emits absolute percentages
   (the podcast audio helper emits `("synthesizing", 30..75, …)`), so existing
   progress UX is preserved byte-for-byte during a migration.
+
+### The UI contract: progress + settings + choices
+
+Every Pipeline consumer must make an active, paused, or failed run
+understandable without consulting chat or logs. Its canonical run detail
+renders one structured table containing:
+
+| section | source of truth |
+|---|---|
+| Progress | persisted `status`, `stage`, `progress`, and `completed / stages` |
+| Settings | the run's persisted `inputs`, never whatever the form says now |
+| Choices | state-legal actions only: approve, retry, resume, cancel, inspect |
+
+If a compact surface uses `EOS_UI.jobProgress`, pass a stable exact-run detail
+link. If it uses a list or hub row, that row must open the same detail. A
+generic Resume button is invalid at an approval gate where only an explicit
+Approve or Regenerate action is legal. Logs remain a secondary diagnostic
+choice, not the primary explanation of the run.
 
 ### Per-run cost budget (`RunBudget`) — estimate → reserve → reconcile
 
@@ -170,6 +196,33 @@ stage sequencing + final-only history + mid-run data loss.
   A genuine branching DAG is out of scope — don't bend the linear model into one.
 - **High-frequency / per-item loops.** Reactor breadcrumbs, telemetry. The run
   folder per invocation would be litter.
+
+## A stopped run needs a way back (2026-07-28)
+
+A gate that pauses an expensive run, or a stage that fails, leaves every
+completed stage on disk and the run resumable — but if nothing outside the
+owning app says so, a *caught* failure quietly becomes an *abandoned* one. Two
+pieces close that, both in `emptyos/sdk/pipeline.py`:
+
+- **`describe_exception(e)`** — `state["error"]` can no longer be empty. `str(e)`
+  is blank for a bare `raise SomeError()`, so a music-studio MV run recorded
+  `error: ""` and diagnosing it meant re-running a GPU stage to reproduce a
+  failure that had already happened. Falls back to the type name, or the cause
+  when the exception itself is mute.
+- **`stopped_run_rows(...)` + `BaseApp.stopped_runs_panel(...)`** — hub
+  `plain-list` rows for this app's paused/error runs, or `None` on a healthy
+  day. A panel method is one call; the only per-app parameter that matters is
+  which `inputs` key names the run (a song vs a topic). Extracted at the second
+  consumer (music-studio MV renders, podcast episodes); podcast surfaced two
+  genuinely stranded runs the first time it ran.
+
+The hub row is a doorway, not the complete explanation. The owning app's
+run-detail surface still carries the progress/settings/choices table above.
+
+Any Pipeline consumer should contribute one — `[[contributes.hub.panel]]` at
+priority <150 (≥150 is dropped from the core hub, see
+`.claude/rules/hub-panels.md`). Rows carry `icon`, not `tone`: the plain-list
+renderer draws `icon` and silently ignores `tone`.
 
 ## Migration discipline (first consumer pattern)
 

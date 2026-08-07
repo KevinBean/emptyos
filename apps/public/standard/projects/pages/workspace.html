@@ -10,7 +10,7 @@
      emptyos/web/server.py (the 'eos-theme' marker keeps it idempotent). Without it
      every var(--bg-card)/--border/--accent collapses to bare :root and the UI
      renders unstyled (feedback_app_page_theme_bootstrap). -->
-<script>try{var _t=localStorage.getItem('eos-theme')||'eos';if(['eos','digital-garden','soft-light','warm-dark','void-dark','nord'].indexOf(_t)<0){_t='eos';localStorage.setItem('eos-theme','eos');}document.documentElement.classList.add('theme-'+_t);}catch(e){document.documentElement.classList.add('theme-eos');}</script>
+<script>try{var _t=localStorage.getItem('eos-theme')||'eos';if(!/^[a-z][a-z0-9-]{0,31}$/.test(_t))_t='eos';document.documentElement.classList.add('theme-'+_t);}catch(e){document.documentElement.classList.add('theme-eos');}</script>
 <script src="/static/eos-i18n.js" defer></script>
 <!-- Absolute asset paths required — this page lives one level below /projects/. -->
 <link rel="stylesheet" href="/static/theme.css">
@@ -178,6 +178,7 @@ function load() {}
         typeConfig = tc.types || {};
         toolsByType = tc.tools || {};
         featureRegistry = tc.features || {};
+        ALL_STATUSES = tc.statuses || ALL_STATUSES;
     } catch (e) { /* renderWorkspaceLayout tolerates empty config */ }
 
     await openProjectWorkspace(WORKSPACE_ID);

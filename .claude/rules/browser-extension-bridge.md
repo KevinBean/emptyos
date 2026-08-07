@@ -71,10 +71,15 @@ Verdict/lineage: `project_immersive_dictionary_borrow_verdict`.
 
 Every selection-verb is the same shape. To add one, you touch these and nothing else:
 
-1. **Context-menu registration** (`background.js`, `chrome.runtime.onInstalled`) — one
-   `chrome.contextMenus.create({ id, title, contexts })`. `contexts` is `["selection"]`,
-   `["page"]`, `["link"]`, or `["image"]`. Add `documentUrlPatterns` to scope a verb to
-   specific sites (as `capture-job` / `digest-video` do).
+1. **Menu declaration** (`background.js`) — one row in the `MENU_SPECS` table:
+   `{ app: "<backing app id>", spec: { id, title, contexts } }`. `contexts` is
+   `["selection"]`, `["page"]`, `["link"]`, or `["image"]`. Add `documentUrlPatterns` to
+   scope a verb to specific sites (as `capture-job` / `digest-video` do).
+   **Do NOT call `chrome.contextMenus.create` directly** — `refreshMenus()` owns
+   registration and opens with `removeAll()`, so a hand-registered item silently
+   disappears on the next refresh (options saved, browser restart). `app` names the
+   daemon app that answers the verb, so it is only offered where it can work; use
+   `app: ""` for a verb the runtime itself serves. See § App-aware registration.
 2. **Handler** (`background.js`, `chrome.contextMenus.onClicked`) — a branch on
    `info.menuItemId` that reads the shared `EOS_DAEMON.getConfig()` client, does the daemon `fetch` with
    `authHeaders(token)`, and reports. **All work rides the local daemon** — the extension
@@ -95,9 +100,9 @@ Every selection-verb is the same shape. To add one, you touch these and nothing 
 ## The recipe (add a selection-verb in ~30 lines)
 
 ```js
-// 1. register (onInstalled)
-chrome.contextMenus.create({ id: "explain-sel", title: "Explain with EmptyOS",
-                             contexts: ["selection"] });
+// 1. declare (MENU_SPECS) — `assistant` is the app that answers this verb
+{ app: "assistant", spec: { id: "explain-sel", title: "Explain with EmptyOS",
+                            contexts: ["selection"] } },
 
 // 2. handle (onClicked)
 if (info.menuItemId === "explain-sel") {
@@ -117,6 +122,31 @@ For a one-turn selection verb, the daemon side is just an `@web_route` on an
 existing app—no new capability or kernel verb. Browser Session is the explicit
 exception: it is a second provider of the existing `browse` capability, not a
 new capability.
+
+## App-aware registration (shipped v0.5.7)
+
+Daemons differ: a public release ships neither `dictionary` nor `jobs`, so four
+of the nine verbs used to sit in the menu of a public install and fail on every
+click — plus a reading-consent poll hitting a 404 every 1.2s forever.
+
+`refreshMenus()` probes `GET /api/apps` (already filtered to reachable apps, so
+"id is in the list" means "its routes are live"), then rebuilds the menu with
+only the verbs whose `app` is present. It runs on install, on browser startup,
+and when the options page saves — so repointing at a different daemon adapts.
+
+Two properties worth preserving if you touch it:
+
+- **Unknown is not absent.** A daemon that is down, unconfigured, or answers 401
+  yields `null`, and `null` registers *everything* — the pre-gating behaviour. A
+  probe failure can only ever restore the old behaviour, never hide a working
+  verb. `/api/apps` is not auth-exempt, so a missing token means unknown.
+- **The probe is cached in `chrome.storage.session`, never a module global.** The
+  MV3 service worker is torn down after ~30s idle, so a global is empty on most
+  wakes; session storage clears on browser restart, which is exactly when
+  `onStartup` re-probes.
+
+The side panel gates on the same signal (`appOn(id)`), hiding the reading
+section and the job surfaces rather than letting them fail on click.
 
 ## Privacy / consent (load-bearing)
 

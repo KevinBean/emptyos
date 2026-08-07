@@ -376,7 +376,7 @@ async def _create_project_impl(
             }
         status = "scaffolded" if result.ok else "scaffold-failed"
         self.vault_update(rel, {"status": status, "updated": today})
-        asyncio.create_task(self.emit(
+        self.spawn_background(self.emit(
             "forge:scaffolded",
             {"id": pid, "target": target, "repo_path": str(repo_path)},
         ))

@@ -56,6 +56,25 @@ Prefer a **verifiable** predicate over a textual one. "This path does not exist
 on disk" beats "this path looks hardcoded" — the first is checkable, the second
 is a guess. Tighten until the live tree is quiet, then read what remains.
 
+**After every narrowing, re-check that the founding case still fires.** A
+checker can become *more wrong by becoming quieter*, and the metric you are
+watching — false-positive count — moves the right way while it happens, so it
+looks like progress.
+
+Measured, 2026-07-28, building `check_field_authors.py`. Round 2 flagged 12
+false positives from one app whose fields are set through the settings service,
+so round 3 excluded any declaration in a file containing `app_config(`. The FP
+count dropped and the output looked clean. But nearly every app calls
+`app_config(`, so the exclusion also silenced **the two real findings the check
+was written for** — the check now passed on the exact defect that motivated it.
+The fix was to require that the loop variable be genuinely interpolated into
+the settings lookup, which excludes the settings-backed case without swallowing
+anything else.
+
+So keep the motivating case as a fixture from the first line of code, re-run it
+after each tightening, and ship it as a test (step 6). "Fewer hits" is only
+progress if the hits you wanted are still among them.
+
 ### 4. Triage every survivor by hand
 
 For each hit ask: *real defect, deliberate exception, or noise?* Never assume.

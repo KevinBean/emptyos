@@ -55,7 +55,8 @@ _DEFAULT_SITE = {
     "analytics": {
         "enabled": False,
         "collector_url": "",
-    },  # {enabled, collector_url (blank → inherit global)}
+        "ga_measurement_id": "",  # optional Google Analytics 4 tag (e.g. "G-XXXXXXXXXX"); independent of the self-hosted beacon above
+    },  # {enabled, collector_url (blank → inherit global), ga_measurement_id}
     "chatbot": {
         "enabled": False,
         "endpoint": "",  # e.g. "https://chat.binbian.net"
@@ -237,6 +238,7 @@ class PublishApp(BaseApp):
         s = site or self._active_site()
         config = self._site_config(s)
         config["analytics_script"] = self._analytics_script(s)
+        config["ga_measurement_id"] = ((s.get("analytics") or {}).get("ga_measurement_id") or "").strip()
         config["cross_site_links"] = self._cross_site_links(s)
         # Inject site_id into the chatbot block so the widget meta tags can
         # reference it. The chat service uses this site_id as its config key.
@@ -735,6 +737,8 @@ class PublishApp(BaseApp):
     api_suggest_topics = _writer.api_suggest_topics
     _voice_block = _writer._voice_block
     api_voice_status = _writer.api_voice_status
+    linkedin_voice_playbook = _writer.linkedin_voice_playbook
+    apply_linkedin_playbook = _writer.apply_linkedin_playbook
 
     # --- Branding-framework draft evaluator (see framework.py) ---
     _framework_enabled = _framework._framework_enabled

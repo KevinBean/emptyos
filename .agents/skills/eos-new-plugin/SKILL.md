@@ -1,3 +1,7 @@
+---
+name: eos-new-plugin
+description: Scaffold a new EmptyOS plugin end-to-end in the right shape — service (exposes a named service via self.require), enhancer (injects a capability provider at boot), or both — optionally wiring the external-service launch pattern (auto_start + CREATE_NO_WINDOW) for a local binary like ComfyUI / voice-api / Blender. Use when the user says "new plugin", "create plugin", "scaffold plugin <id>", or "wrap <service> as a plugin". NOT for anything with a UI/page — that is an app (use eos-new-app).
+---
 # EmptyOS New Plugin
 
 Scaffold a new plugin end-to-end with the right shape for its role — **service** (exposes a named service other apps consume), **enhancer** (injects a capability provider at boot), or **both**. Optionally wires the external-service launch pattern (`auto_start` + `CREATE_NO_WINDOW`) when the plugin wraps a local binary like ComfyUI / voice-api / Blender.

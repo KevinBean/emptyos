@@ -1,13 +1,20 @@
 """RunRegistry — per-run scratchpad + state for harness-shaped apps.
 
-Three apps converged on the same shape: each "run" is a stable id, a
-directory of intermediate artifacts, and a small JSON state file. dogfood-agent,
-staff, and model-bench all hand-rolled it slightly differently. This is the
+Harness apps converged on the same shape: each "run" is a stable id, a
+directory of intermediate artifacts, and a small JSON state file. This is the
 shared minimum.
 
+Consumers (2026-07-22): dogfood-agent, fix-agent, app-builder, rag-eval,
+agent_fleet, carrier-compare — via ``self.runs()`` — plus ``pipeline.py`` /
+``run_center.py`` / ``graph_pipeline.py`` layered on top. Two apps the original
+docstring named as motivating consumers did NOT migrate and are out of scope:
+``model-bench`` keeps a flat ``results.json`` (append+trim-100) with a UI read
+path — a store swap not worth destabilizing here; ``staff``'s ``agents.json``
+is agent *config*, not runs, so it never fit. Migrate model-bench only if its
+persistence is touched for another reason.
+
 Out of scope: phase orchestration, validation gates, sub-agent fan-out,
-resume-from-phase. None of those are shared across the three apps yet — pull
-them in only if a 4th harness app needs them.
+resume-from-phase — those live in ``pipeline.py`` (the documented graduation).
 """
 
 from __future__ import annotations

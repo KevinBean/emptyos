@@ -94,7 +94,7 @@ async def kb_board_clauses(self) -> list[dict]:
 
 
 def board_presets(self):
-    """Three live views over the KB corpus. Boards aggregates these generically
+    """Live views over the KB corpus. Boards aggregates these generically
     via call_contributions; boards code holds no KB knowledge. All readonly."""
     src = lambda method: {"type": "app", "app": "kb", "method": method}
     verified_col = {
@@ -156,5 +156,29 @@ def board_presets(self):
                 {"type": "kanban", "group_by": "standard"},
             ],
             "kanban_group_by": "standard",
+        },
+        {
+            "id": "kb-engineering-evidence",
+            "name": "Engineering Evidence",
+            "description": "App methods traced through standards and clauses to "
+                           "implemented formulas and verification cases.",
+            "source": src("engineering_evidence_rows"),
+            "columns": [
+                {"id": "app_id", "label": "App", "type": "text"},
+                {"id": "method", "label": "Method", "type": "text"},
+                {"id": "standard", "label": "Standard", "type": "text"},
+                {"id": "clauses", "label": "Clauses", "type": "text"},
+                {"id": "formulas", "label": "Formulas", "type": "text"},
+                {"id": "verification_cases", "label": "Cases", "type": "text"},
+                {"id": "status", "label": "Coverage", "type": "select",
+                 "options": ["verified", "unverified", "unresolved"],
+                 "color_map": {"verified": "green", "unverified": "amber",
+                               "unresolved": "red"}},
+            ],
+            "views": [
+                {"type": "table", "default": True},
+                {"type": "kanban", "group_by": "status"},
+            ],
+            "kanban_group_by": "status",
         },
     ]

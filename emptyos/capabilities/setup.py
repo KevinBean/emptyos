@@ -466,7 +466,10 @@ def _build_think_provider_raw(
             host=host or "http://localhost:11434",
             model=model or "llama3.1",
             api_key_env="",
-            provider_name="ollama",
+            # Config section name, not a literal (same reason as the OpenAI
+            # tiers below): lets several local models register side by side
+            # with distinct `p.name`. Identical when the section is "ollama".
+            provider_name=name,
             timeout=timeout,
         )
 

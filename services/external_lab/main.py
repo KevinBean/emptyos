@@ -21,18 +21,24 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from starlette.middleware.base import BaseHTTPMiddleware
 
-import chatbot
-from chatbot.main import app as chatbot_app, chatbot_init, chatbot_shutdown
-
 IDENTITY = "emptyos-external-lab"
 VERSION = "0.1.0"
 
-# Local defaults so the host is self-contained: point the chatbot at the repo's
-# own service config + data. The plugin may override any of these via env.
-_CHATBOT_PKG = Path(chatbot.__file__).resolve().parent
-os.environ.setdefault("CHATBOT_SITES_PATH", str(_CHATBOT_PKG / "sites.toml"))
-os.environ.setdefault("CHATBOT_DATA_DIR", str(_CHATBOT_PKG / "data"))
+# Set direct-run fallbacks before importing chatbot.main, whose module globals
+# read these paths at import time. The supervisor supplies managed data paths.
+_CHATBOT_PKG = Path(__file__).resolve().parents[1] / "chatbot"
+_FALLBACK_RUNTIME = Path(os.environ.get("EMPTYOS_DATA_DIR", "data")) / "external-lab" / "chatbot"
+_FALLBACK_SITES = _FALLBACK_RUNTIME / "sites.toml"
+if "CHATBOT_SITES_PATH" not in os.environ:
+    _FALLBACK_RUNTIME.mkdir(parents=True, exist_ok=True)
+    if not _FALLBACK_SITES.exists():
+        _FALLBACK_SITES.write_text("[defaults]\nprovider = \"openai\"\n", encoding="utf-8")
+os.environ.setdefault("CHATBOT_SITES_PATH", str(_FALLBACK_SITES))
+os.environ.setdefault("CHATBOT_DATA_DIR", str(_FALLBACK_RUNTIME / "data"))
 os.environ.setdefault("CHATBOT_DEMO_ENABLED", "1")
+
+from chatbot.main import app as chatbot_app  # noqa: E402
+from chatbot.main import chatbot_init, chatbot_shutdown  # noqa: E402
 
 # Static module registry (one module today). Site Lab reads this via /health and
 # polls each module's `health` path for live status. A demo module reuses another
@@ -51,6 +57,7 @@ MODULES: list[dict] = [
         "kind": "demo",
         "title": "Northstar Office — printer pilot",
         "url": "/demos/printer-store/",
+        "health": "/demos/printer-store/health",
         "serves_from": "chatbot",
         "manager_app": "chatbot-studio",
     },
@@ -71,21 +78,22 @@ async def lifespan(_app: FastAPI):
 app = FastAPI(title="EmptyOS External Lab Host", version=VERSION, lifespan=lifespan)
 
 
-def _is_admin_path(path: str) -> bool:
-    """Admin routes are server-to-server (X-Admin-Token). Mirror caddy.snippet:
-    CORS is applied to public routes only and stripped on /admin/*."""
-    return "/admin/" in path or path.endswith("/admin")
+def _is_public_chatbot_path(path: str) -> bool:
+    """Only the chatbot's browser-facing API gets cross-origin access."""
+    if path != "/chatbot" and not path.startswith("/chatbot/"):
+        return False
+    return not (path == "/chatbot/admin" or path.startswith("/chatbot/admin/"))
 
 
 class PublicCorsMiddleware(BaseHTTPMiddleware):
-    """Add permissive CORS to public routes only; leave /*/admin/* untouched.
+    """Add permissive CORS only to public /chatbot routes.
 
     The in-app per-site Origin lock (chatbot `_gate_request`/`_origin_site`) is the
     real access gate; this only lets a browser on another origin READ public
     responses, matching the production Caddy behavior."""
 
     async def dispatch(self, request: Request, call_next):
-        if _is_admin_path(request.url.path):
+        if not _is_public_chatbot_path(request.url.path):
             return await call_next(request)
         if request.method == "OPTIONS":
             resp = Response(status_code=200)
@@ -127,6 +135,14 @@ async def printer_store() -> HTMLResponse:
         raise HTTPException(404, "demo store is not installed")
     html = path.read_text(encoding="utf-8").replace("{{BASE}}", "/chatbot")
     return HTMLResponse(html)
+
+
+@app.get("/demos/printer-store/health")
+async def printer_store_health() -> dict:
+    path = _CHATBOT_PKG / "demo-store" / "index.html"
+    if not path.exists():
+        raise HTTPException(503, "demo store is not installed")
+    return {"status": "ok", "demo": "printer-store"}
 
 
 @app.get("/demo-store")

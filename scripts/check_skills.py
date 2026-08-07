@@ -47,17 +47,27 @@ except Exception:  # pragma: no cover
 ROOT = Path(__file__).resolve().parent.parent
 NATIVE = ROOT / ".claude" / "skills"
 MIRROR = ROOT / ".agent-bus" / "skills"
+# The Codex-facing mirror. Tracked, same SKILL.md shape, same frontmatter
+# contract — and it went unchecked until 2026-07-31, by which point 13 of its 49
+# skills breached the HARD contract (9 with no frontmatter at all, so Codex
+# silently refused to load them). A gate that skips a tracked sibling store is a
+# promise it isn't keeping. No bus mirror here, so the drift check is skipped.
+AGENTS_NATIVE = ROOT / ".agents" / "skills"
 
 # Skills whose body legitimately needs no preflight even though they mention a
 # daemon. Keep this tight — audits.md. Each entry is a known false positive:
 #   eos-session-resume / -wrapup : planning/aggregator, daemon is incidental
 #   eos-repo-extract             : the hint is literally "never :9000" (uses a sandbox)
 #   eos-external-vault-connector : already does an inline /api/health check
+#   eos-mutation-verify          : names :9000 / test_sys_* only to rule them OUT
+#                                  (a daemon-backed suite tests the running
+#                                  process, not the mutated worktree)
 PREFLIGHT_EXEMPT = {
     "eos-session-resume",
     "eos-session-wrapup",
     "eos-repo-extract",
     "eos-external-vault-connector",
+    "eos-mutation-verify",
 }
 
 FM_RE = re.compile(r"^---\s*\n(.*?)\n---", re.S)
@@ -171,6 +181,8 @@ def main() -> int:
 
     # (label, store_root, mirror_root) — mirror_root None ⇒ no bus-drift check.
     stores: list[tuple[str, Path, Path | None]] = [("", NATIVE, MIRROR)]
+    if AGENTS_NATIVE.is_dir() and AGENTS_NATIVE.resolve() != NATIVE.resolve():
+        stores.append(("[agents] ", AGENTS_NATIVE, None))
     if args.user_skills:
         user_root = Path.home() / ".claude" / "skills"
         if user_root.is_dir() and user_root.resolve() != NATIVE.resolve():

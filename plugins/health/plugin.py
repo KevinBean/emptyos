@@ -12,6 +12,7 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 from emptyos.sdk import BasePlugin
+from emptyos.sdk.gpu import COMFYUI_BASELINE_GB, headroom_gb, plan_admission
 
 try:
     import aiohttp
@@ -417,25 +418,78 @@ class HealthPlugin(BasePlugin):
         self._vram_total_gb = await asyncio.to_thread(probe)
         return self._vram_total_gb
 
+    async def gpu_vram_used(self) -> float:
+        """VRAM currently allocated on the primary GPU (GB); 0.0 if undetectable.
+
+        Ground truth, deliberately **not** cached — unlike total, this changes
+        constantly. It exists because summing the consumers the daemon knows
+        about (ollama + ComfyUI) misses the ones it doesn't: XTTS, the wav2vec2
+        pronounce service (which holds a CUDA context from boot), and
+        marker-pdf. That sum therefore *over*-reports free headroom, which is
+        the wrong direction for a fit check — an optimistic answer is what lets
+        a job be queued into a card that can't hold it.
+        """
+
+        def probe() -> float:
+            import subprocess
+
+            try:
+                out = subprocess.run(
+                    ["nvidia-smi", "--query-gpu=memory.used", "--format=csv,noheader,nounits"],
+                    capture_output=True, text=True, timeout=5,
+                )
+                if out.returncode != 0:
+                    return 0.0
+                first = (out.stdout or "").strip().splitlines()[0].strip()
+                return round(float(first) / 1024, 1)  # MiB → GB
+            except Exception:
+                return 0.0
+
+        return await asyncio.to_thread(probe)
+
     async def gpu_status(self) -> dict:
-        """Combined GPU VRAM status from Ollama + ComfyUI."""
-        ollama, comfyui = await asyncio.gather(self._ollama_gpu(), self._comfyui_gpu())
+        """Combined GPU VRAM status from Ollama + ComfyUI.
+
+        ``total_active_vram_gb`` is the daemon's own accounting (ollama +
+        ComfyUI). ``vram_used_gb`` is the whole-card truth from nvidia-smi and
+        is what admission decisions should use; the gap between the two is
+        everything else holding VRAM.
+        """
+        ollama, comfyui, used = await asyncio.gather(
+            self._ollama_gpu(), self._comfyui_gpu(), self.gpu_vram_used(),
+        )
         total_active = ollama["total_vram_gb"] + comfyui.get("vram_used_gb", 0)
         # ComfyUI CUDA context uses ~2GB baseline even when idle
-        baseline = 2.0 if comfyui["running"] else 0
+        baseline = COMFYUI_BASELINE_GB if comfyui["running"] else 0
+        total = (await self.gpu_vram_total()) or comfyui.get("vram_total_gb", 0) or 0
         return {
             "ollama": ollama,
             "comfyui": comfyui,
             "total_active_vram_gb": round(total_active, 1),
             # Direct probe first (works with ComfyUI down); ComfyUI total as
             # fallback covers non-NVIDIA GPUs that ComfyUI can still report.
-            "vram_total_gb": (await self.gpu_vram_total()) or comfyui.get("vram_total_gb", 0) or 0,
+            "vram_total_gb": total,
+            "vram_used_gb": used,
+            # No baseline here: `used` is the whole-card truth and already
+            # counts ComfyUI's idle context. `baseline` stays below for the
+            # gpu_busy heuristic, which reads the daemon-side estimate instead.
+            "headroom_gb": round(headroom_gb(total, used), 1),
+            "unaccounted_vram_gb": round(max(0.0, used - total_active), 1),
             "gpu_busy": total_active > (0.5 + baseline),
         }
 
-    async def gpu_free(self) -> dict:
-        """Unload all GPU models from Ollama and ComfyUI."""
+    async def gpu_free(self, targets: tuple[str, ...] | None = None) -> dict:
+        """Unload GPU models. ``targets`` defaults to both consumers.
+
+        Pass ``targets=("ollama",)`` to evict only the LLM. That is the
+        high-value move before a render: it reclaims several GB while leaving
+        ComfyUI's own models resident, whereas a blanket free also evicts the
+        checkpoint the very next job is about to reload.
+        """
         results = {"ollama": {"ok": False}, "comfyui": {"ok": False}}
+        wanted = set(targets) if targets else {"ollama", "comfyui"}
+        for skipped in {"ollama", "comfyui"} - wanted:
+            results[skipped] = {"ok": True, "skipped": True}
 
         if not _HAS_AIOHTTP:
             return results
@@ -443,7 +497,7 @@ class HealthPlugin(BasePlugin):
         # Ollama: unload each loaded model
         try:
             ollama = await self._ollama_gpu()
-            if ollama["running"]:
+            if "ollama" in wanted and ollama["running"]:
                 timeout = aiohttp.ClientTimeout(total=10)
                 async with aiohttp.ClientSession(timeout=timeout) as session:
                     for m in ollama["models"]:
@@ -457,15 +511,56 @@ class HealthPlugin(BasePlugin):
             results["ollama"] = {"ok": False, "error": str(e)}
 
         # ComfyUI: free memory
-        try:
-            timeout = aiohttp.ClientTimeout(total=5)
-            async with aiohttp.ClientSession(timeout=timeout) as session:
-                async with session.post(
-                    f"{self._comfyui_host}/free",
-                    json={"unload_models": True, "free_memory": True},
-                ) as resp:
-                    results["comfyui"] = {"ok": resp.status == 200}
-        except Exception as e:
-            results["comfyui"] = {"ok": False, "error": str(e)}
+        if "comfyui" in wanted:
+            try:
+                timeout = aiohttp.ClientTimeout(total=5)
+                async with aiohttp.ClientSession(timeout=timeout) as session:
+                    async with session.post(
+                        f"{self._comfyui_host}/free",
+                        json={"unload_models": True, "free_memory": True},
+                    ) as resp:
+                        results["comfyui"] = {"ok": resp.status == 200}
+            except Exception as e:
+                results["comfyui"] = {"ok": False, "error": str(e)}
 
         return results
+
+    async def gpu_reserve(self, need_gb: float, *, free_if_needed: bool = True) -> dict:
+        """Advisory pre-flight before a GPU job: check, optionally free, report.
+
+        Returns ``{ok, freed, headroom_gb, reason}``. **Never raises and never
+        refuses** — ``ok`` is always True. The value is the verdict and the log
+        line it produces, not a veto: the behaviour it replaces was to queue
+        blind, so a check that could block work would be a regression.
+
+        Advisory also in the concurrency sense. This probes, frees, then
+        re-probes, and each ``await`` is a point where another task can change
+        the picture (`.claude/rules/dev-gotchas.md` § Async atomicity). Losing
+        that race costs a redundant unload, never correctness — which is why
+        this is a check and not a lock. A real lock is unachievable anyway:
+        XTTS, pronounce and marker-pdf hold VRAM from outside the daemon.
+        """
+        status = await self.gpu_status()
+        reclaimable = status.get("ollama", {}).get("total_vram_gb", 0) or 0
+
+        # vram_used_gb is the whole-card reading, so no baseline adjustment —
+        # see headroom_gb's docstring on why adding one would double-count.
+        plan = plan_admission(
+            need_gb,
+            status.get("vram_total_gb", 0),
+            status.get("vram_used_gb", 0),
+            reclaimable_gb=reclaimable,
+        )
+
+        freed = None
+        if plan.free_first and free_if_needed and reclaimable > 0:
+            freed = await self.gpu_free(targets=("ollama",))
+            status = await self.gpu_status()
+
+        return {
+            "ok": True,
+            "freed": freed,
+            "headroom_gb": status.get("headroom_gb", 0),
+            "reason": plan.reason,
+            "need_gb": need_gb,
+        }

@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import AsyncIterator, TYPE_CHECKING
 
 from emptyos.sdk import web_route
+from emptyos.sdk.claude_run_stream import transform_stream_json_obj
 from emptyos.sdk.do_token import extract_do_tokens
 from emptyos.sdk.utils import path_segment_error
 
@@ -280,9 +281,36 @@ async def _dispatch_cli_turn(
     cwd = cli_part.get("cwd") or str(self.kernel.config.notes_path or Path.cwd())
     timeout_s = float(cli_part.get("timeout_s") or 600)
 
-    # Non-claude CLIs (codex, gemini, etc.) — buffered text adapter, no
-    # tool events, no streaming. The whole reply lands as one text chunk.
+    adapter_info: dict = {}
     if cli_id != "claude-cli":
+        # `text_cli_run` threads no tool restriction, so an adapter with a
+        # measured filesystem escape must not silently inherit the vault as
+        # its cwd (the default computed above). On Windows codex reports
+        # `sandbox: read-only` and writes anyway, which leaves cwd as the only
+        # real containment — see .claude/rules/multi-cli-participants.md. An
+        # explicit cwd is the user's deliberate choice and passes through.
+        try:
+            adapter_info = runtime.cli_adapter_info(cli_id) or {}
+        except Exception:
+            adapter_info = {}
+        if adapter_info.get("writes_unsandboxed") and not cli_part.get("cwd"):
+            yield {
+                "text": (
+                    f"[{cli_id} can write the filesystem on this platform despite its "
+                    f"read-only flag, so it was not run with the default vault working "
+                    f"directory. Set an explicit `cwd` on this participant — a scratch "
+                    f"or project directory — to use it here.]"
+                ),
+                "done": True, "error": True,
+                "responder_id": cli_id, "actor_type": "cli",
+            }
+            return
+
+    # Buffered path — CLIs that print a plain-text reply and emit no event
+    # stream. The whole reply lands as one text chunk, with no tool cards.
+    # Adapters that declare `stream_json` (codex, via `codex exec --json`)
+    # skip this and take the streaming path below instead.
+    if cli_id != "claude-cli" and not adapter_info.get("stream_json"):
         try:
             result = await runtime.text_cli_run(
                 cli_id=cli_id,
@@ -312,7 +340,12 @@ async def _dispatch_cli_turn(
         }
         return
 
-    # Claude-CLI path — streaming with tool events + review gate.
+    # Streaming path — claude-cli natively, plus any adapter declaring
+    # `stream_json`. Both emit line-delimited events that
+    # `transform_stream_json_obj` normalizes into one canonical vocabulary, so
+    # everything below this point is dialect-agnostic and codex reuses it
+    # unchanged rather than duplicating the branch (three dialects share the
+    # parser — emptyos/sdk/claude_run_stream.py).
     allowed_tools = cli_part.get("allowed_tools") or "Read,Grep,Glob,WebFetch"
     cli_model = cli_part.get("model") or None
     cli_effort = cli_part.get("effort") or None
@@ -333,16 +366,30 @@ async def _dispatch_cli_turn(
 
     async def driver():
         try:
-            result = await runtime.claude_cli_run(
-                prompt=prompt,
-                system_prompt=system_prompt,
-                allowed_tools=allowed_tools,
-                cwd=cwd,
-                model=cli_model,
-                effort=cli_effort,
-                on_stdout_line=on_line,
-                timeout_s=timeout_s,
-            )
+            if cli_id == "claude-cli":
+                result = await runtime.claude_cli_run(
+                    prompt=prompt,
+                    system_prompt=system_prompt,
+                    allowed_tools=allowed_tools,
+                    cwd=cwd,
+                    model=cli_model,
+                    effort=cli_effort,
+                    on_stdout_line=on_line,
+                    timeout_s=timeout_s,
+                )
+            else:
+                # Same line callback, different spawner. `text_cli_run`
+                # already forwards raw stdout lines, so a stream_json adapter
+                # needs no bespoke runner — only its `--json` flag.
+                result = await runtime.text_cli_run(
+                    cli_id=cli_id,
+                    prompt=prompt,
+                    system_prompt=system_prompt,
+                    cwd=cwd,
+                    timeout_s=timeout_s,
+                    extra_args=cli_part.get("extra_args") or None,
+                    on_stdout_line=on_line,
+                )
             if isinstance(result, dict) and "error" in result:
                 await queue.put({"_error": result["error"]})
             else:
@@ -350,6 +397,13 @@ async def _dispatch_cli_turn(
         except Exception as e:
             await queue.put({"_error": str(e)[:200]})
         finally:
+            # `on_line` hands events over with `call_soon_threadsafe`, which
+            # defers the put by a loop iteration. Posting the sentinel without
+            # yielding first can therefore close the consumer while the last
+            # events are still queued — a CLI that dumps its output and exits
+            # immediately loses its final tool cards. One turn is enough to
+            # flush the deferred callbacks.
+            await asyncio.sleep(0)
             await queue.put(None)
 
     task = asyncio.create_task(driver())
@@ -367,40 +421,34 @@ async def _dispatch_cli_turn(
                 continue
             if "_done" in evt:
                 continue
-            # Parse claude-cli stream-json events into normalized chunks.
-            etype = evt.get("type")
-            if etype == "assistant":
-                for block in evt.get("message", {}).get("content", []) or []:
-                    btype = block.get("type")
-                    if btype == "text":
-                        t = block.get("text", "")
-                        if t:
-                            full_text += t
-                            yield {"text": t, "done": False}
-                    elif btype == "tool_use":
-                        yield {
-                            "tool_use": {
-                                "name": block.get("name"),
-                                "input": block.get("input"),
-                                "id": block.get("id"),
-                            },
-                            "done": False,
-                        }
-            elif etype == "user":
-                for block in evt.get("message", {}).get("content", []) or []:
-                    if block.get("type") == "tool_result":
-                        content = block.get("content")
-                        if isinstance(content, list):
-                            content = " ".join(
-                                str(c.get("text", c)) for c in content if c
-                            )
-                        yield {
-                            "tool_result": {
-                                "tool_use_id": block.get("tool_use_id"),
-                                "content": str(content)[:500],
-                            },
-                            "done": False,
-                        }
+            # Parse claude-cli stream-json via the shared dialect parser
+            # (emptyos/sdk/claude_run_stream.py) — single source of truth for
+            # the Anthropic stream-json shape — then map its canonical events to
+            # this room's {text/tool_use/tool_result, done} chunk shape.
+            for canon in transform_stream_json_obj(evt, preview_chars=500):
+                ctype = canon.get("type")
+                if ctype == "chunk":
+                    t = canon.get("text", "")
+                    if t:
+                        full_text += t
+                        yield {"text": t, "done": False}
+                elif ctype == "tool_use":
+                    yield {
+                        "tool_use": {
+                            "name": canon.get("tool"),
+                            "input": canon.get("input"),
+                            "id": canon.get("id"),
+                        },
+                        "done": False,
+                    }
+                elif ctype == "tool_result":
+                    yield {
+                        "tool_result": {
+                            "tool_use_id": canon.get("tool_use_id"),
+                            "content": canon.get("preview", ""),
+                        },
+                        "done": False,
+                    }
     finally:
         try:
             await task
@@ -410,7 +458,12 @@ async def _dispatch_cli_turn(
     yield {
         "text": "", "done": True, "full": full_text,
         "responder_id": cli_part["id"], "actor_type": "cli",
-        "model": (cli_part.get("model") or "").strip(),
+        # Same precedence the buffered path uses: the participant's own model
+        # wins, then the adapter's declared label. Without the second term a
+        # stream_json CLI shows an empty chip even when its adapter names a
+        # model — the buffered path reads that off text_cli_run's return,
+        # which the streaming path never sees.
+        "model": (cli_part.get("model") or adapter_info.get("model") or "").strip(),
     }
 
 

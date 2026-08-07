@@ -68,17 +68,15 @@
     if (prev) prev.remove();
     var stories = (res && res.stories) || [];
     var cards = stories.map(function (s) {
-      var meta = '<div class="story-card-meta">' +
-        '<span class="story-badge">Interactive</span>' +
-        (s.cefr ? '<span class="story-badge">' + esc(s.cefr) + '</span>' : '') +
-        (s.lang ? '<span class="story-badge">' + esc(s.lang) + '</span>' : '') +
-        (s.in_progress ? '<span class="story-badge">▶ in progress</span>' : '') +
-        '</div>';
+      var badges = [{ label: 'Interactive', variant: 'neutral' }];
+      if (s.cefr) badges.push({ label: s.cefr, variant: 'neutral' });
+      if (s.lang) badges.push({ label: s.lang, variant: 'neutral' });
+      if (s.in_progress) badges.push({ label: 'In progress', variant: 'status-active' });
       return EOS_UI.entityCard({
         title: s.title,
-        meta: s.premise || 'Interactive story',
+        subtitle: s.premise || 'Interactive story',
+        badges: badges,
         onClick: "STORY_MODE_open(" + JSON.stringify(s.slug) + ")",
-        extraHtml: meta,
       });
     }).join('');
     var section = document.createElement('div');
@@ -95,12 +93,14 @@
   }
   window.renderStoryLibrary = renderStoryLibrary;
 
-  // EOS_UI.entityCard may not support extraHtml in all builds; degrade safely by
-  // falling back to a plain card if the helper ignores it.
+  // Keep story discovery available when the shared component is unavailable.
   if (!EOS_UI.entityCard) {
     EOS_UI.entityCard = function (o) {
       return '<div class="eos-entity-card" onclick="' + (o.onClick || '') + '"><strong>' + esc(o.title) + '</strong>' +
-        '<div style="opacity:.7;font-size:12px;">' + esc(o.meta || '') + '</div>' + (o.extraHtml || '') + '</div>';
+        '<div style="opacity:.7;font-size:12px;">' + esc(o.subtitle || '') + '</div>' +
+        '<div class="story-card-meta">' + (o.badges || []).map(function (badge) {
+          return '<span class="story-badge">' + esc(badge.label) + '</span>';
+        }).join('') + '</div></div>';
     };
   }
 

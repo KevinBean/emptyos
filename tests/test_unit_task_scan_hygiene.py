@@ -11,6 +11,7 @@ from __future__ import annotations
 import asyncio
 import importlib.util
 import sys
+import threading
 import types
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -83,6 +84,44 @@ class TestScanExclude:
         )
         texts = {t["text"] for t in idx._scan_local_folders()}
         assert texts == {"keep me"}
+
+
+class TestScanOffLoop:
+    """The local scan must not run on the event-loop thread.
+
+    `_scan_local_folders` is a synchronous rglob + read_text over every note in
+    the scanned folders. Awaiting it inline pinned the loop long enough that the
+    daemon stopped answering /api/health and the watchdog restarted it
+    (2026-07-25 — py-spy caught MainThread parked in read_text under api_stats).
+    Thread identity is the only thing worth asserting: the scan returns the same
+    tasks either way, so a functional test cannot see the regression.
+    """
+
+    def test_scan_runs_off_the_event_loop(self, task_pkg, tmp_path):
+        notes = tmp_path / "vault"
+        _write(notes / "00_Inbox/real.md", "- [ ] real task\n")
+        idx = task_pkg["indexer"].TaskIndexer(StubTaskApp(notes))
+
+        seen: dict[str, int] = {}
+        real_scan = idx._scan_local_folders
+
+        def recording_scan():
+            seen["scan"] = threading.get_ident()
+            return real_scan()
+
+        idx._scan_local_folders = recording_scan
+
+        async def run():
+            seen["loop"] = threading.get_ident()
+            return await idx._scan_vault()
+
+        open_tasks, _ = asyncio.run(run())
+
+        assert seen["scan"] != seen["loop"], (
+            "_scan_local_folders ran on the event-loop thread — a large vault "
+            "will freeze the daemon and trip the watchdog"
+        )
+        assert {t["text"] for t in open_tasks} == {"real task"}
 
 
 class TestArchivedDefault:

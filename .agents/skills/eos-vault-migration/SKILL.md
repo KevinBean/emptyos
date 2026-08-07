@@ -1,3 +1,7 @@
+---
+name: eos-vault-migration
+description: Migrate one app at a time from legacy vault access (vault_config + Path.glob + manual frontmatter parse) to the VaultIndex-backed pattern (vault_query / vault_update / vault_get_properties / vault_read_section). Use when the user says "migrate <app>", "modernise <app>'s vault access", "move <app> to VaultIndex", or when eos-simplify flags legacy access on a changed app. Hard rule — never silently return empty data — add tags first if notes aren't queryable. NOT for moving the vault's location on disk (use eos-external-vault-connector).
+---
 # EmptyOS Vault Migration
 
 Migrate one app at a time from the **legacy** vault access pattern (`vault_config()` → `Path.glob()` → manual frontmatter parse) to the **target** pattern (`VaultIndex`-backed `vault_query` / `vault_update` / `vault_get_properties` / `vault_read_section`). AGENTS.md §Vault Data Layer names this as ongoing drift work: "Apps migrate when touched."

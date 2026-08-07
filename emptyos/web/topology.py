@@ -157,6 +157,26 @@ def _build_topology(kernel) -> dict:
             node_ids.add(nid)
             nodes.append({"id": nid, "type": ntype, "label": label, **extra})
 
+    def add_emit_edges(owner_nid: str, manifest) -> None:
+        """Event emit edges for one manifest owner (an app or a plugin).
+
+        `internal` is a MODIFIER on `emits`, not an alternative to it: a name
+        listed only under `internal` produces no node and no edge, so an app
+        that declares there and nowhere else is invisible to this graph.
+        """
+        events = manifest.provides.get("events", {})
+        internal = set(events.get("internal", []))
+        for evt in events.get("emits", []):
+            add_node(f"event:{evt}", "event", evt)
+            edges.append(
+                {
+                    "source": owner_nid,
+                    "target": f"event:{evt}",
+                    "type": "emits_event",
+                    "internal": evt in internal,
+                }
+            )
+
     # --- Capabilities + Providers ---
     for cap_name, cap in kernel.capabilities.list().items():
         add_node(f"cap:{cap_name}", "capability", cap_name)
@@ -190,6 +210,13 @@ def _build_topology(kernel) -> dict:
                     "type": "provides_service",
                 }
             )
+        # Plugins emit device/bridge events apps genuinely listen for —
+        # `hotkey:pressed` (braindump arms a capture, command-launcher toggles
+        # its window) and `tray:capture_clicked`. Without this the listener
+        # edge lands on an event node with no source, so the trigger looks
+        # like it comes from nowhere and every metric counting emitters
+        # undercounts.
+        add_emit_edges(f"plugin:{plugin_id}", manifest)
 
     # --- Engines ---
     for engine_id, manifest in kernel.engines.manifests.items():
@@ -264,17 +291,7 @@ def _build_topology(kernel) -> dict:
             )
 
         # Event emit edges
-        internal_events = set(manifest.provides.get("events", {}).get("internal", []))
-        for evt in manifest.provides.get("events", {}).get("emits", []):
-            add_node(f"event:{evt}", "event", evt)
-            edges.append(
-                {
-                    "source": f"app:{app_id}",
-                    "target": f"event:{evt}",
-                    "type": "emits_event",
-                    "internal": evt in internal_events,
-                }
-            )
+        add_emit_edges(f"app:{app_id}", manifest)
 
         # Engine edges
         for eng in requires.get("engines", []):

@@ -17,9 +17,12 @@ shape and only auto-removes the high-confidence ones:
            Safe to delete the file (or, under ``outputs/<id>/`` or
            ``projects/<id>/``, the whole artifact dir + its non-prefixed sidecars
            such as ``milestone-log.md``).
-  strip    A single self-contained list line carrying the prefix, appended into a
-           real note by a task/capture/journal test — ``- [ ] PLAYWRIGHT-TEST-...``,
-           ``- **05:46** 🙂 PLAYWRIGHT-TEST-...``, ``1. PLAYWRIGHT-TEST-...``. Safe
+  strip    A single self-contained line carrying the prefix, appended into a real
+           note by a task/capture/journal test — ``- [ ] PLAYWRIGHT-TEST-...``,
+           ``- **05:46** 🙂 PLAYWRIGHT-TEST-...``, ``1. PLAYWRIGHT-TEST-...`` — or a
+           markdown TABLE ROW (``| 2026-08-01 | 5 | dictionary | ... |``), which is
+           equally self-contained: a header and its ``|---|`` separator carry no
+           prefix, and a table with zero data rows is still valid markdown. Safe
            to strip the one line; the surrounding real entries are untouched.
   review   Prefix on a NON-list line — a heading, paragraph, blockquote, or
            multi-line bullet whose marker line carries no prefix (e.g. KB
@@ -106,6 +109,27 @@ _ARTIFACT_CONTAINERS = {"outputs", "projects"}
 # prefix on ``> quote`` / indented-insight lines under a clean ``- **date**``
 # header, so stripping them would orphan the header — those go to review.
 _STRIP_LINE = re.compile(r"^\s*(?:[-*]|\d+\.)\s")
+# A markdown table DATA row: opens and closes with ``|`` and has at least two
+# delimiters. Self-contained in the same sense as a list item — nothing is
+# orphaned by removing it, because the header row and the ``|---|`` separator
+# never carry the prefix (an app appends rows, it does not append headers), and
+# a table whose data rows are all removed is still valid markdown. Added when
+# speaking/dictionary tests were found appending rows to a real practice log,
+# where every row could only be reported for manual review forever.
+_STRIP_TABLE_ROW = re.compile(r"^\s*\|.*\|\s*$")
+
+
+def _is_strippable_line(line: str) -> bool:
+    """True when the whole line can be dropped without orphaning anything."""
+    if _STRIP_LINE.match(line):
+        return True
+    if not _STRIP_TABLE_ROW.match(line) or line.count("|") < 2:
+        return False
+    # Never touch a separator row (``|---|:--:|``) — it has no text to leak, so
+    # this only fires on a malformed hand-edit, but losing it breaks the table.
+    return bool(re.sub(r"[\s:|-]", "", line))
+
+
 _FM_FIELD = re.compile(r"^([A-Za-z0-9_-]+):\s*(.*)$")
 
 
@@ -242,7 +266,7 @@ def scan(vault: Path, prefix: str = DEFAULT_PREFIX) -> Leaks:
             # so it also shields human notes (journals) those paths don't cover.
             if in_fence or _prefix_only_in_code(ln, pl):
                 continue
-            if _STRIP_LINE.match(ln):
+            if _is_strippable_line(ln):
                 strip_idxs.append(i)
             else:
                 leaks.review.append((md, i + 1, ln.strip()))
