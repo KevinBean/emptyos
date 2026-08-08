@@ -264,14 +264,23 @@ class Kernel:
     async def _demo_seed_apps(self) -> None:
         """Run each app's `demo/seed.py` `seed(app)` coroutine.
 
-        Probes `<app.path>/demo/seed.py` for every running app — works for
+        Probes `<app.path>/demo/seed.py` for every **enabled** app — works for
         both `apps/<id>/` and `apps/personal/<id>/` since `manifest.path` is
         the app's discovered directory. Per-app failures are caught and
         logged to syslog; seeding is best-effort, not boot-critical.
+
+        Enabled, not running: apps only reach STARTED via the `apps.autostart`
+        list, and a deployment that doesn't set one (the live demo doesn't —
+        `emptyos.toml.example` even calls an empty list "start all", which the
+        loop above does not do) leaves `apps.running` empty at this point. That
+        silently made the whole seed feature a no-op — every seeded app looked
+        healthy afterwards because apps lazy-load on their first HTTP request,
+        so nothing failed; the sample content simply never appeared. Load and
+        start a seeded app on demand instead, which is what seeding it means.
         """
         from emptyos.kernel.module_import import load_module
 
-        for app_id in list(self.apps.running):
+        for app_id in sorted(self.apps.enabled_ids()):
             manifest = self.apps.manifests.get(app_id)
             if not manifest:
                 continue
@@ -279,6 +288,14 @@ class Kernel:
             if not seed_file.exists():
                 continue
             instance = self.apps.instances.get(app_id)
+            if instance is None:
+                try:
+                    await self.apps.load(app_id)
+                    await self.apps.start(app_id)
+                except Exception as e:  # noqa: BLE001
+                    self.syslog.warn("kernel", f"demo seed '{app_id}': load failed: {e}")
+                    continue
+                instance = self.apps.instances.get(app_id)
             if instance is None:
                 continue
             try:

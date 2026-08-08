@@ -24,7 +24,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from emptyos.sdk import web_route
+from emptyos.sdk import JsonRecordStore, web_route
 from emptyos.sdk import autopilot as _autopilot
 from emptyos.sdk.pending_claim import CLAIMED, claim_pending
 
@@ -34,6 +34,7 @@ if TYPE_CHECKING:
 
 # ─── Bind to VoiceAssistantApp class as ─────────────────────────────────
 #   _pending_dir            = _pending._pending_dir
+#   _pending_store          = _pending._pending_store
 #   _pending_path           = _pending._pending_path
 #   _actions_log_path       = _pending._actions_log_path
 #   _save_pending           = _pending._save_pending
@@ -88,8 +89,14 @@ def _pending_dir(self) -> Path:
     return self.data_subdir("pending")
 
 
+def _pending_store(self) -> JsonRecordStore:
+    return JsonRecordStore(_pending_dir(self), label="action id", pattern="act-*.json")
+
+
 def _pending_path(self, action_id: str) -> Path:
-    return _pending_dir(self) / f"{action_id}.json"
+    """Resolve an action id to its file. Raises on an id carrying a path
+    separator — see the rooms twin; the same unguarded shape lived here."""
+    return _pending_store(self).path(action_id)
 
 
 def _actions_log_path(self) -> Path:
@@ -99,19 +106,13 @@ def _actions_log_path(self) -> Path:
 
 
 def _save_pending(self, action: dict) -> None:
-    _pending_path(self, action["id"]).write_text(
-        json.dumps(action, indent=2), encoding="utf-8",
-    )
+    # Atomic — a torn claim marker would read back as None and drop the
+    # action out of the queue rather than surfacing it as `approving`.
+    _pending_store(self).save(action)
 
 
 def _load_pending(self, action_id: str) -> dict | None:
-    p = _pending_path(self, action_id)
-    if not p.exists():
-        return None
-    try:
-        return json.loads(p.read_text(encoding="utf-8"))
-    except Exception:
-        return None
+    return _pending_store(self).load(action_id)
 
 
 def _is_grant_active(self, verb: str, *, companion_id: str | None = None) -> bool:

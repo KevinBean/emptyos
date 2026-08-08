@@ -111,6 +111,7 @@ class RoomsApp(BaseApp):
     # ── Pending (extracted to pending.py) ──
     _actions_log_path         = _pending._actions_log_path
     _pending_dir              = _pending._pending_dir
+    _pending_store            = _pending._pending_store
     _pending_path             = _pending._pending_path
     _sandbox_root             = _pending._sandbox_root
     _prepare_write_note       = _pending._prepare_write_note

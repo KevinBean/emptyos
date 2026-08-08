@@ -134,6 +134,45 @@ _EMBED_SKIP_DIRS = {".obsidian", ".trash", "node_modules", "_attachments"}
 # Ranked last so a capped candidate set spends its budget on active work.
 _EMBED_COLD_PREFIXES = ("40_archive/", "99_attachments/", "70_media/")
 
+# Question scaffolding adds no retrieval value and makes an OR keyword search
+# noisy. Keep this deliberately small and English-only: non-English tokens pass
+# through unchanged, while exact-phrase search remains the first term for every
+# language.
+_GREP_STOP_WORDS = frozenset({
+    "a", "an", "and", "are", "as", "at", "be", "by", "can", "did", "do",
+    "does", "for", "from", "had", "has", "have", "how", "i", "in", "into",
+    "is", "it", "me", "my", "of", "on", "or", "our", "should", "that",
+    "the", "their", "this", "to", "was", "were", "what", "when", "where",
+    "which", "who", "why", "will", "with", "would", "you", "your",
+})
+_GREP_MAX_KEYWORDS = 8
+
+
+def _grep_query_terms(query: str) -> list[str]:
+    """Exact phrase first, then distinct meaningful Unicode word tokens.
+
+    Punctuation splits compounds (``cross-bonding`` -> ``cross``, ``bonding``)
+    so ordinary prose still recalls a hyphenated query. Single-character ASCII
+    tokens are too noisy as fallbacks, but the original query is always kept;
+    a deliberate search for ``M`` therefore still works exactly.
+    """
+    query = re.sub(r"\s+", " ", (query or "").strip())
+    if not query:
+        return []
+    keywords: list[str] = []
+    seen = {query.casefold()}
+    for token in re.findall(r"[^\W_]+", query, flags=re.UNICODE):
+        key = token.casefold()
+        if key in seen or key in _GREP_STOP_WORDS:
+            continue
+        if len(key) == 1 and key.isascii():
+            continue
+        seen.add(key)
+        keywords.append(token)
+        if len(keywords) >= _GREP_MAX_KEYWORDS:
+            break
+    return [query, *keywords]
+
 
 def _embed_candidate_order(
     rels: list[tuple[str, float]],
@@ -419,64 +458,125 @@ class SearchApp(BaseApp):
         cleaned = re.sub(r"(?<=\w)[''\"'`](?=\w)", "", query)
         return re.sub(r"\s+", " ", cleaned).strip()
 
-    async def _search(self, query: str, top: int = 15) -> list:
-        """Search vault notes for matching files. Returns path strings only —
-        the snippet/rank layer lives in _search_hits."""
-        hits = await self._search_hits(query, top)
+    async def _search(
+        self,
+        query: str,
+        top: int = 15,
+        *,
+        tokenize: bool = True,
+    ) -> list:
+        """Search vault notes for matching files. Returns path strings only;
+        the snippet/rank layer lives in _search_hits.
+
+        ``tokenize=False`` preserves exact-per-term behavior for the semantic
+        expander, which already owns its own multi-term recall and ranking.
+        """
+        hits = await self._search_hits(query, top, tokenize=tokenize)
         return [h["path"] for h in hits]
 
-    async def _search_hits(self, query: str, top: int = 15) -> list[dict]:
+    async def _search_hits(
+        self,
+        query: str,
+        top: int = 15,
+        *,
+        tokenize: bool = True,
+    ) -> list[dict]:
         """Grounded vault note search: [{path, snippet, matches}, ...].
 
-        Grep's files_with_matches output is directory-walk order, so an
-        unranked top-N slice surfaces whatever files happen to sit first
-        (attachment indexes, logs) over the notes that actually discuss the
-        query. Two fixes: restrict note search to *.md (JSON indexes and
-        scripts stored in the vault never belong in note results), then rank
-        by per-file match count and carry the first matching line as a
-        snippet so every hit shows WHY it matched.
+        Search the exact phrase plus meaningful query tokens, union the
+        candidate files, then inspect their real text. Rank exact-phrase hits
+        first, followed by distinct-term coverage, filename coverage, total
+        occurrences, and matching-line count. This keeps title/phrase lookups
+        strong while making ordinary natural-language questions retrievable;
+        repeating one common word cannot outrank a note covering the question.
+        Only markdown files survive even when a provider ignores ``glob``.
         """
         import asyncio
 
         query = self._normalize_query(query)
         if not query:
             return []
-        results = await self.search(query, path=self._vault_path(), glob="*.md")
-        paths = []
-        for r in results:
-            p = r.get("path", "") if isinstance(r, dict) else str(r)
-            # Enforce md-only even when the provider ignored the glob
-            # (the plain-grep fallback has no --include wiring).
-            if p and p.lower().endswith(".md"):
-                paths.append(p)
+        search_terms = _grep_query_terms(query) if tokenize else [query]
 
-        pattern = re.compile(re.escape(query), re.IGNORECASE)
+        async def _find(term: str):
+            try:
+                return await self.search(term, path=self._vault_path(), glob="*.md")
+            except Exception:
+                return []
+
+        batches = await asyncio.gather(*[_find(term) for term in search_terms])
+        paths: dict[str, None] = {}
+        for results in batches:
+            for result in results:
+                p = result.get("path", "") if isinstance(result, dict) else str(result)
+                # Enforce md-only even when the provider ignored the glob
+                # (the plain-grep fallback has no --include wiring).
+                if p and p.lower().endswith(".md"):
+                    paths.setdefault(p, None)
+
+        keyword_terms = search_terms[1:] if tokenize and len(search_terms) > 1 else [query]
+        query_folded = query.casefold()
+        keyword_folded = [term.casefold() for term in keyword_terms]
+        exact_phrase_is_distinct = len(search_terms) > 1
 
         def _scan() -> list[dict]:
-            hits = []
+            ranked: list[tuple[tuple, dict]] = []
             for p in paths:
                 try:
                     text = Path(p).read_text(encoding="utf-8", errors="ignore")
                 except OSError:
                     continue
-                count = 0
+                phrase_hit = False
+                matched_terms: set[int] = set()
+                occurrence_count = 0
+                matching_lines = 0
                 snippet = ""
+                snippet_rank = (-1, -1, -1)
                 for line in text.splitlines():
-                    if pattern.search(line):
-                        count += 1
-                        if not snippet:
-                            snippet = line.strip()
-                if not count:
-                    # Grep matched but our literal scan didn't (regex-shaped
-                    # query) — keep the hit rather than silently dropping it.
-                    count = 1
-                hits.append({
+                    folded = line.casefold()
+                    phrase_here = exact_phrase_is_distinct and query_folded in folded
+                    line_terms = {
+                        index for index, term in enumerate(keyword_folded)
+                        if term in folded
+                    }
+                    if not phrase_here and not line_terms:
+                        continue
+                    matching_lines += 1
+                    if phrase_here:
+                        phrase_hit = True
+                    matched_terms.update(line_terms)
+                    line_occurrences = sum(folded.count(keyword_folded[i]) for i in line_terms)
+                    occurrence_count += line_occurrences
+                    rank = (int(phrase_here), len(line_terms), line_occurrences)
+                    if rank > snippet_rank:
+                        snippet_rank = rank
+                        snippet = line.strip()
+
+                # Preserve the pre-T14 behavior for regex-shaped provider hits:
+                # keep the candidate even if literal verification found no line.
+                if not matching_lines:
+                    matching_lines = 1
+                stem = Path(p).stem.replace("-", " ").replace("_", " ").casefold()
+                title_coverage = sum(term in stem for term in keyword_folded)
+                hit = {
                     "path": p.replace("\\", "/"),
                     "snippet": snippet[:160],
-                    "matches": count,
-                })
-            hits.sort(key=lambda h: -h["matches"])
-            return hits
+                    "matches": matching_lines,
+                }
+                rank_key = (
+                    int(phrase_hit),
+                    len(matched_terms),
+                    title_coverage,
+                    occurrence_count,
+                    matching_lines,
+                )
+                ranked.append((rank_key, hit))
+
+            ranked.sort(key=lambda row: (
+                -row[0][0], -row[0][1], -row[0][2], -row[0][3], -row[0][4],
+                row[1]["path"].casefold(),
+            ))
+            return [hit for _rank, hit in ranked]
 
         hits = await asyncio.to_thread(_scan)
         return hits[:top]
@@ -628,7 +728,7 @@ class SearchApp(BaseApp):
         # Step 2: Search for each term in parallel
         async def search_term(term):
             try:
-                return await self._search(term, top)
+                return await self._search(term, top, tokenize=False)
             except Exception:
                 return []
 

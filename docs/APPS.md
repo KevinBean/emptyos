@@ -2,7 +2,7 @@
 
 # EmptyOS Apps
 
-> 70 apps · 17 plugins · 16 capabilities · release v0.6.1.
+> 69 apps · 17 plugins · 16 capabilities · release v0.6.3.
 >
 > The apps that ship in a public EmptyOS release (`core` + `standard` tiers).
 
@@ -32,7 +32,7 @@ self-generated docs. This catalog is regenerated from manifests by
 
 ## Standard — full builder OS
 
-*57 apps.*
+*56 apps.*
 
 | App | What it does | Capabilities |
 |---|---|---|
@@ -83,7 +83,6 @@ self-generated docs. This catalog is regenerated from manifests by
 | **scroll** | Shows an AI-generated short video feed tailored to your chosen personas | read, write, think, speak, draw |
 | **sheet** | a grid of cells with per-cell formulas (=SUM, =IF, =TODAY), stored as a markdown table in a vault note | read, write |
 | **tour** | Guides you through EmptyOS features with interactive steps across real screens | — |
-| **trust-loop** | IEEE 80 tolerable touch/step voltages behind a live conformance gate, with the working shown and every number cited | — |
 | **vault-graph** | Visualizes your vault notes, links, and references as an interactive graph | read |
 | **video-digest** | Queue YouTube or web URLs and turn them into vault Web-Clip digests with AI-distilled summaries | think, read, write, browse |
 | **viz** | Creates standalone visual explainers, diagrams, charts, and Three.js scenes from plain-language briefs | think, read, write |

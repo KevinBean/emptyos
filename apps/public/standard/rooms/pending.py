@@ -18,7 +18,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from emptyos.sdk import web_route
+from emptyos.sdk import JsonRecordStore, web_route
 from emptyos.sdk.do_token import DO_RE, extract_do_tokens
 from emptyos.sdk.pending_claim import CLAIMED, claim_pending, is_unknown_effect
 from emptyos.sdk.sandbox import SandboxedWrite, StaleSandbox, load_sandbox
@@ -58,6 +58,7 @@ def _has_always_gate_token(response: str) -> bool:
 #   _actions_log_path          = _pending._actions_log_path
 #   _arg_gate_error            = _pending._arg_gate_error
 #   _pending_dir               = _pending._pending_dir
+#   _pending_store             = _pending._pending_store
 #   _pending_path              = _pending._pending_path
 #   _sandbox_root              = _pending._sandbox_root
 #   _prepare_write_note        = _pending._prepare_write_note
@@ -96,8 +97,16 @@ def _pending_dir(self) -> Path:
     return self.data_subdir("pending")
 
 
+def _pending_store(self) -> JsonRecordStore:
+    return JsonRecordStore(self._pending_dir(), label="action id", pattern="act-*.json")
+
+
 def _pending_path(self, action_id: str) -> Path:
-    return self._pending_dir() / f"{action_id}.json"
+    """Resolve an action id to its file. Raises on an id carrying a path
+    separator — ``{action_id}`` in the route excludes ``/`` but not ``\\``,
+    which is a separator on Windows, so an encoded ``..\\`` used to reach
+    outside this directory (verified on a sandbox 2026-08-08)."""
+    return self._pending_store().path(action_id)
 
 
 def _sandbox_root(self) -> Path:
@@ -290,19 +299,15 @@ def _prepare_repo_exec(self, action: dict) -> None:
 
 
 def _save_pending(self, action: dict) -> None:
-    self._pending_path(action["id"]).write_text(
-        json.dumps(action, indent=2, ensure_ascii=False), encoding="utf-8",
-    )
+    # Atomic: `pending_claim` persists the claim inside its lock so it
+    # survives a crash, which a torn write would defeat — the record would
+    # fail to parse, read back as None, and vanish from the queue instead of
+    # surfacing as `approving` for `resolve_unknown` to adjudicate.
+    self._pending_store().save(action)
 
 
 def _load_pending(self, action_id: str) -> dict | None:
-    p = self._pending_path(action_id)
-    if not p.exists():
-        return None
-    try:
-        return json.loads(p.read_text(encoding="utf-8"))
-    except Exception:
-        return None
+    return self._pending_store().load(action_id)
 
 
 def get_pending(self, action_id: str) -> dict | None:

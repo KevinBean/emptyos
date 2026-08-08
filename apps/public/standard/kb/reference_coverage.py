@@ -38,8 +38,16 @@ def _clause_identity(note: dict) -> tuple[str, str, str]:
     return standard_id.lower(), standard, _norm_edition(props.get("edition"))
 
 
-def _match_score(reference: dict, clause: dict) -> tuple[int, int] | None:
-    """Rank a clause-to-reference match; ``None`` means no match."""
+def reference_clause_match_score(
+    reference: dict,
+    clause: dict,
+) -> tuple[int, int] | None:
+    """Rank a clause-to-reference ownership match; ``None`` means no match.
+
+    Reference coverage and KB health share this primitive so a clause surfaced
+    through a composed reference landing page is not simultaneously reported
+    as an unused clause by the health sweep.
+    """
     ref_id, ref_standard, ref_edition = _reference_identity(reference)
     clause_id, clause_standard, clause_edition = _clause_identity(clause)
     if ref_edition and clause_edition and ref_edition != clause_edition:
@@ -92,7 +100,7 @@ def build_reference_coverage(
     for clause in clauses:
         candidates = []
         for index, reference in enumerate(references):
-            score = _match_score(reference, clause)
+            score = reference_clause_match_score(reference, clause)
             if score is not None:
                 candidates.append((score, index))
         if not candidates:

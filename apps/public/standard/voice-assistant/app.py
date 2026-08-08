@@ -494,6 +494,7 @@ class VoiceAssistantApp(BaseApp):
 
     # ── Pending-action gate (extracted to pending.py) ──
     _pending_dir         = _pending._pending_dir
+    _pending_store       = _pending._pending_store
     _pending_path        = _pending._pending_path
     _actions_log_path    = _pending._actions_log_path
     _save_pending        = _pending._save_pending

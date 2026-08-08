@@ -98,3 +98,38 @@ class TestValidation:
     def test_rejects_unknown_body_weight(self):
         with pytest.raises(ValueError):
             ieee80.tolerable_voltages(rho=100, t_s=0.5, body_kg=60)
+
+
+class TestDurationCurve:
+    """The chart plots engine output — so the sweep is pinned like any answer."""
+
+    def test_spans_the_whole_applicability_window(self):
+        c = ieee80.duration_curve(rho=100, body_kg=50)
+        assert c[0]["t_s"] == pytest.approx(ieee80.T_MIN_S)
+        assert c[-1]["t_s"] == pytest.approx(ieee80.T_MAX_S)
+
+    def test_every_point_is_inside_the_window(self):
+        # Float drift at the log ends would make the engine raise, not clamp.
+        c = ieee80.duration_curve(rho=100, body_kg=50, points=200)
+        assert all(ieee80.T_MIN_S <= p["t_s"] <= ieee80.T_MAX_S for p in c)
+
+    def test_monotonically_decreasing(self):
+        c = ieee80.duration_curve(rho=100, body_kg=50)
+        assert all(c[i]["e_touch_v"] >= c[i + 1]["e_touch_v"] for i in range(len(c) - 1))
+        assert all(c[i]["e_step_v"] >= c[i + 1]["e_step_v"] for i in range(len(c) - 1))
+
+    def test_curve_agrees_with_the_single_point_call(self):
+        # The headline number and the chart must never disagree — same engine.
+        c = ieee80.duration_curve(rho=250, body_kg=70, points=3)
+        for p in c:
+            one = ieee80.tolerable_voltages(rho=250, t_s=p["t_s"], body_kg=70)
+            assert p["e_touch_v"] == pytest.approx(one["e_touch_v"], abs=0.02)
+
+    def test_point_count_is_bounded(self):
+        assert len(ieee80.duration_curve(rho=100, points=1)) == 2
+        assert len(ieee80.duration_curve(rho=100, points=9999)) == 200
+
+    def test_surface_layer_lifts_the_whole_curve(self):
+        bare = ieee80.duration_curve(rho=100, points=6)
+        rock = ieee80.duration_curve(rho=100, rho_s=2500, h_s=0.1, points=6)
+        assert all(r["e_touch_v"] > b["e_touch_v"] for b, r in zip(bare, rock))

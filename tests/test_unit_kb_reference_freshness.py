@@ -16,6 +16,7 @@ import datetime as dt
 import importlib.util
 import sys
 import types
+from pathlib import Path
 
 from helpers import app_path
 
@@ -48,6 +49,15 @@ def _ref(slug, **props):
         "path": f"30_Resources/EmptyOS/kb/notes/{slug}.md",
         "name": slug,
         "properties": {"kind": "reference", "standard_id": slug, "title": slug, **props},
+    }
+
+
+def _clause(slug, **props):
+    """A minimally-shaped indexed clause note."""
+    return {
+        "path": f"30_Resources/EmptyOS/kb/sources/{slug}.md",
+        "name": slug,
+        "properties": {"kind": "clause", **props},
     }
 
 
@@ -138,6 +148,70 @@ class TestCoverageFreshnessRollup:
         out = refcov.build_reference_coverage([_ref("a"), _ref("b")], today=TODAY)
         assert out["summary"]["review_unscheduled"] == 2
         assert out["summary"]["review_overdue"] == 0
+
+
+class _HealthApp:
+    kernel = types.SimpleNamespace(
+        config=types.SimpleNamespace(path=str(Path(__file__).parents[1] / "emptyos.toml"))
+    )
+
+    def _supersession_enabled(self):
+        return False
+
+    def _summarize(self, note):
+        return notes_mod._summarize(self, note)
+
+    @staticmethod
+    def _parse_impl_ref(_ref):
+        return "", "", ""
+
+
+def _uncited_slugs(notes, cited_by=None):
+    return {
+        slug
+        for category, slug, _record in notes_mod._iter_health_findings(
+            _HealthApp(), notes, cited_by or {}, today=TODAY
+        )
+        if category == "uncited_references"
+    }
+
+
+class TestUncitedClauseHealth:
+    """Composition ownership is a real KB connection, not an uncited warning."""
+
+    def test_composed_clause_matched_by_standard_id_is_not_uncited(self):
+        notes = [
+            _ref("as-2067", standard_id="AS-2067", edition="2016"),
+            _clause("as-2067-4", standard_id="AS-2067", edition="2016", clause="4"),
+        ]
+        assert _uncited_slugs(notes) == set()
+
+    def test_legacy_composed_clause_matched_by_standard_name_is_not_uncited(self):
+        notes = [
+            _ref("iec-60287", standard_id="", standard="IEC 60287", edition="2023"),
+            _clause(
+                "iec-60287-1-1-2-1",
+                standard="IEC 60287-1-1",
+                edition="2023",
+                clause="2.1",
+            ),
+        ]
+        assert _uncited_slugs(notes) == set()
+
+    def test_ownerless_clause_remains_actionable(self):
+        clause = _clause("iec-60228-4", standard="IEC 60228", edition="2023", clause="4")
+        assert _uncited_slugs([clause]) == {"iec-60228-4"}
+
+    def test_edition_mismatch_does_not_hide_uncited_clause(self):
+        notes = [
+            _ref("example-2023", standard_id="", standard="Example", edition="2023"),
+            _clause("example-2024-1", standard="Example", edition="2024", clause="1"),
+        ]
+        assert _uncited_slugs(notes) == {"example-2024-1"}
+
+    def test_explicit_citation_still_suppresses_ownerless_clause(self):
+        clause = _clause("standalone-1", standard="Standalone", clause="1")
+        assert _uncited_slugs([clause], {"standalone-1": [{"slug": "formula"}]}) == set()
 
 
 class _FakeRequest:

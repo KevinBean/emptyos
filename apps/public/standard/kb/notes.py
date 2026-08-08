@@ -29,6 +29,7 @@ from .shared import (
     _slugify,
     reference_freshness,
 )
+from .reference_coverage import reference_clause_match_score
 
 if TYPE_CHECKING:
     from .app import KBApp  # noqa: F401 — for type hints only
@@ -223,6 +224,10 @@ def _iter_health_findings(self, all_notes: list[dict], cited_by: dict, today: da
     today = today or date.today()
     by_slug: dict[str, dict] = {}
     slug_paths: dict[str, list[str]] = {}
+    references = [
+        n for n in all_notes
+        if ((n.get("properties", {}) or {}).get("kind")) == "reference"
+    ]
     for n in all_notes:
         slug = _slug_of(n.get("path", ""))
         slug_paths.setdefault(slug, []).append(n.get("path", ""))
@@ -273,8 +278,17 @@ def _iter_health_findings(self, all_notes: list[dict], cited_by: dict, today: da
             if fresh["state"] in ("overdue", "malformed"):
                 yield ("stale_reference", slug, {**s, **fresh})
         if s["kind"] == "clause":
+            # A clause owned by a reference is already used by the composed
+            # document, even when no authored note cites it directly. The
+            # reference-coverage matcher is canonical for this ownership edge;
+            # unmatched standalone clauses remain actionable here.
             if not cited_by.get(slug):
-                yield ("uncited_references", slug, s)
+                has_reference_owner = any(
+                    reference_clause_match_score(reference, n) is not None
+                    for reference in references
+                )
+                if not has_reference_owner:
+                    yield ("uncited_references", slug, s)
             continue
         if not cited_by.get(slug) and not (props.get("related") or []):
             yield ("orphans", slug, s)

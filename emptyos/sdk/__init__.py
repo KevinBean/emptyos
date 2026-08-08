@@ -18,6 +18,7 @@ from emptyos.sdk.audio import assess_fillers, assess_pacing, compute_speech_metr
 from emptyos.sdk.base_app import BaseApp
 from emptyos.sdk.base_engine import BaseEngine
 from emptyos.sdk.base_plugin import BasePlugin
+from emptyos.sdk.record_store import JsonRecordStore
 from emptyos.sdk.capture_routes import (
     CAPTURE_DESTINATIONS,
     CaptureDestination,
@@ -288,6 +289,7 @@ __all__ = [
     "assess_fillers",
     "atomic_write_bytes",
     "atomic_write_text",
+    "JsonRecordStore",
     "lcs_score",
     "word_accuracy",
     "practice_stats",
