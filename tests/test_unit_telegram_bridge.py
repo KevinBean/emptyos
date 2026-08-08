@@ -98,6 +98,7 @@ class TestParseUpdate:
         kind, p = bridge.parse_update(_cb_update(), OWNER)
         assert kind == "callback"
         assert p["cq_id"] == "cq-1"
+        assert p["from_id"] == OWNER
         assert p["data"] == "ap:act-abc123"
         assert p["message_id"] == 99
 
@@ -280,6 +281,7 @@ class TestParseCommand:
 class _FakeRooms:
     def __init__(self):
         self.calls: list = []
+        self.bindings: list[dict] = []
 
     async def chat(self, agent_id: str, text: str):
         self.calls.append(("chat", agent_id, text))
@@ -292,12 +294,14 @@ class _FakeRooms:
             ],
         }
 
-    async def apply_pending(self, action_id: str):
+    async def apply_pending(self, action_id: str, **kwargs):
         self.calls.append(("apply", action_id))
+        self.bindings.append(kwargs)
         return {"app": "task", "method": "add", "status": "applied", "result": "ok"}
 
-    async def reject_pending(self, action_id: str):
+    async def reject_pending(self, action_id: str, **kwargs):
         self.calls.append(("reject", action_id))
+        self.bindings.append(kwargs)
         return {"app": "task", "method": "add", "status": "rejected"}
 
     def get_pending(self, action_id: str):
@@ -351,6 +355,7 @@ def _make_plugin(plugin_module, rooms, braindump=None):
     p._bridge_ready = True
     p._config = {}   # no bridge_password → periodic auth disabled by default
     p._state = {}
+    p._bg_tasks: set = set()
     p.sent: list = []
     p.edited: list = []
     p.acked: list = []
@@ -435,6 +440,16 @@ class TestHandlers:
         asyncio.run(run())
         assert p.acked == ["cq-1"]
         assert ("apply", "act-9") in rooms.calls
+        assert rooms.bindings == [{
+            "channel": "telegram",
+            "approver_binding": {
+                "type": "telegram-owner",
+                "chat_id": OWNER,
+                "sender_id": OWNER,
+                "callback_query_id": "cq-1",
+                "message_id": 99,
+            },
+        }]
         assert p.edited and p.edited[0]["message_id"] == 99
         assert p.edited[0]["text"].startswith("✅")
 

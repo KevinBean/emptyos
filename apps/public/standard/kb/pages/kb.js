@@ -698,6 +698,9 @@ async function showDetail(slug){
     },
   });
   bindWikiLinks('detail-body');
+  // Formula notes are a first-class kind here, so typeset their math. Lazy,
+  // idempotent, and a no-op on a note that has none.
+  if (EOS_UI.typesetMath) EOS_UI.typesetMath(document.getElementById('detail-body'));
   renderNeighborhoodFlipbook(slug, data);  // concept/lesson visual above the body
 
   // Reading surface: a reference with stored full text → 3-column docs reader

@@ -82,6 +82,9 @@ def _autopilot_data_root(self) -> Path:
     voice-assistant), so it lives under the kernel data root, not Aura's
     own data_dir. ``self.data_dir`` is ``data/apps/voice-assistant`` —
     its parent's parent is ``data/``."""
+    configured = getattr(getattr(self.kernel, "config", None), "data_dir", None)
+    if configured:
+        return Path(configured)
     return Path(self.data_dir).parent.parent
 
 
@@ -226,7 +229,38 @@ def find_pending_duplicate(self, verb: str, args: dict | None) -> dict | None:
     return None
 
 
-async def apply_pending(self, action_id: str) -> dict:
+def _append_pending_decision(
+    self,
+    action: dict,
+    *,
+    channel: str,
+    approver_binding: dict | None,
+    decision: str,
+    ok: bool,
+) -> None:
+    binding = dict(approver_binding or {})
+    binding.setdefault("type", "surface-context")
+    binding.setdefault("session", _session_scope(self))
+    companion = ((action.get("source_actor") or {}).get("companion") or "")
+    if companion:
+        binding.setdefault("companion", companion)
+    _autopilot.safe_append_decision_audit(
+        _autopilot_data_root(self),
+        action=action,
+        channel=channel,
+        approver_binding=binding,
+        decision=decision,
+        ok=ok,
+    )
+
+
+async def apply_pending(
+    self,
+    action_id: str,
+    *,
+    channel: str = "voice",
+    approver_binding: dict | None = None,
+) -> dict:
     """Execute a pending Aura action via call_app; mark applied."""
     # Claim atomically before the side effect — a mis-heard repeated voice
     # confirm otherwise executes the verb twice (see pending_claim docstring).
@@ -247,6 +281,10 @@ async def apply_pending(self, action_id: str) -> dict:
         action["error"] = str(e)[:200]
         action["resolved_ts"] = datetime.now(timezone.utc).isoformat()
         _save_pending(self, action)
+        _append_pending_decision(
+            self, action, channel=channel, approver_binding=approver_binding,
+            decision="approve", ok=False,
+        )
         return {"error": str(e)[:200], "action": action}
     action["status"] = "applied"
     action["result"] = str(result)[:500] if not isinstance(result, dict) else "ok"
@@ -263,6 +301,10 @@ async def apply_pending(self, action_id: str) -> dict:
     record_action(_actions_log_path(self), app=action["app"], method=action["method"],
                   args=action.get("args") or {}, result=result, inverse=inverse)
     _save_pending(self, action)
+    _append_pending_decision(
+        self, action, channel=channel, approver_binding=approver_binding,
+        decision="approve", ok=True,
+    )
     await self.emit("voice-assistant:action_applied", {
         "action_id": action_id, "verb": action.get("verb"),
         "app": action["app"], "method": action["method"],
@@ -270,7 +312,13 @@ async def apply_pending(self, action_id: str) -> dict:
     return action
 
 
-async def reject_pending(self, action_id: str) -> dict:
+async def reject_pending(
+    self,
+    action_id: str,
+    *,
+    channel: str = "voice",
+    approver_binding: dict | None = None,
+) -> dict:
     """Mark a pending Aura action rejected without executing."""
     action, claim_err = await claim_pending(
         self.write_lock(f"pending:{action_id}"),
@@ -283,6 +331,10 @@ async def reject_pending(self, action_id: str) -> dict:
         return claim_err
     action["resolved_ts"] = datetime.now(timezone.utc).isoformat()
     _save_pending(self, action)
+    _append_pending_decision(
+        self, action, channel=channel, approver_binding=approver_binding,
+        decision="reject", ok=True,
+    )
     await self.emit("voice-assistant:action_rejected", {
         "action_id": action_id, "verb": action.get("verb"),
     })
@@ -342,13 +394,13 @@ async def api_pending_list(self, request):
 @web_route("POST", "/api/pending/{action_id}/apply")
 async def api_pending_apply(self, request):
     action_id = request.path_params["action_id"]
-    return await apply_pending(self, action_id)
+    return await apply_pending(self, action_id, channel="voice-web")
 
 
 @web_route("POST", "/api/pending/{action_id}/reject")
 async def api_pending_reject(self, request):
     action_id = request.path_params["action_id"]
-    return await reject_pending(self, action_id)
+    return await reject_pending(self, action_id, channel="voice-web")
 
 
 @web_route("POST", "/api/undo")

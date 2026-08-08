@@ -36,9 +36,11 @@ class TestClaimPending:
         action, err = await claim_pending(asyncio.Lock(), load, save, "a1")
         assert err is None
         assert action["status"] == CLAIMED
+        assert action["attempt"] == 1
         assert action["claimed_ts"]
         # Persisted, not just returned — that is what survives a crash.
         assert db["a1"]["status"] == CLAIMED
+        assert db["a1"]["attempt"] == 1
 
     @pytest.mark.asyncio
     async def test_missing_action(self):

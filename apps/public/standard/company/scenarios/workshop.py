@@ -152,7 +152,38 @@ def list_pending(app, run_id: str = "", status: str = "") -> list[dict]:
     return out
 
 
-async def apply_pending(app, action_id: str) -> dict:
+def _append_pending_decision(
+    app,
+    action: dict,
+    *,
+    channel: str,
+    approver_binding: dict | None,
+    decision: str,
+    ok: bool,
+) -> None:
+    binding = dict(approver_binding or {})
+    binding.setdefault("type", "surface-context")
+    if action.get("run_id"):
+        binding.setdefault("run_id", action["run_id"])
+    config = getattr(getattr(app, "kernel", None), "config", None)
+    from emptyos.sdk.autopilot import safe_append_decision_audit
+    safe_append_decision_audit(
+        getattr(config, "data_dir", None),
+        action=action,
+        channel=channel,
+        approver_binding=binding,
+        decision=decision,
+        ok=ok,
+    )
+
+
+async def apply_pending(
+    app,
+    action_id: str,
+    *,
+    channel: str = "company-workshop",
+    approver_binding: dict | None = None,
+) -> dict:
     action, claim_err = await claim_pending(
         app.write_lock(f"pending:{action_id}"),
         lambda aid: load_pending(app, aid),
@@ -168,11 +199,19 @@ async def apply_pending(app, action_id: str) -> dict:
         action["error"] = str(e)[:200]
         action["resolved_ts"] = now_iso()
         _save_pending(app, action)
+        _append_pending_decision(
+            app, action, channel=channel, approver_binding=approver_binding,
+            decision="approve", ok=False,
+        )
         return {"error": str(e)[:200], "action": action}
     action["status"] = "applied"
     action["result"] = str(result)[:500]
     action["resolved_ts"] = now_iso()
     _save_pending(app, action)
+    _append_pending_decision(
+        app, action, channel=channel, approver_binding=approver_binding,
+        decision="approve", ok=True,
+    )
     await app.emit("company:action_applied", {
         "action_id": action_id, "run_id": action.get("run_id"),
         "app": action["app"], "method": action["method"],
@@ -180,7 +219,13 @@ async def apply_pending(app, action_id: str) -> dict:
     return action
 
 
-async def reject_pending(app, action_id: str) -> dict:
+async def reject_pending(
+    app,
+    action_id: str,
+    *,
+    channel: str = "company-workshop",
+    approver_binding: dict | None = None,
+) -> dict:
     action, claim_err = await claim_pending(
         app.write_lock(f"pending:{action_id}"),
         lambda aid: load_pending(app, aid),
@@ -192,6 +237,10 @@ async def reject_pending(app, action_id: str) -> dict:
         return claim_err
     action["resolved_ts"] = now_iso()
     _save_pending(app, action)
+    _append_pending_decision(
+        app, action, channel=channel, approver_binding=approver_binding,
+        decision="reject", ok=True,
+    )
     await app.emit("company:action_rejected", {
         "action_id": action_id, "run_id": action.get("run_id"),
     })

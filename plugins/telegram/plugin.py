@@ -715,7 +715,17 @@ class TelegramPlugin(BasePlugin):
                 )}
             else:
                 method = rooms.apply_pending if verb == "ap" else rooms.reject_pending
-                result = await method(action_id)
+                result = await method(
+                    action_id,
+                    channel="telegram",
+                    approver_binding={
+                        "type": "telegram-owner",
+                        "chat_id": payload.get("chat_id", ""),
+                        "sender_id": payload.get("from_id") or payload.get("chat_id", ""),
+                        "callback_query_id": payload.get("cq_id", ""),
+                        "message_id": payload.get("message_id"),
+                    },
+                )
         except Exception as e:
             result = {"error": str(e)[:200]}
         text = bridge.render_resolution(

@@ -230,10 +230,14 @@ async def api_get_run(self, request):
 @web_route("POST", "/api/pending/{action_id}/apply")
 async def api_apply_pending(self, request):
     aid = request.path_params["action_id"]
-    return await workshop_mod.apply_pending(self, aid)
+    return await workshop_mod.apply_pending(
+        self, aid, channel="company-web",
+    )
 
 
 @web_route("POST", "/api/pending/{action_id}/reject")
 async def api_reject_pending(self, request):
     aid = request.path_params["action_id"]
-    return await workshop_mod.reject_pending(self, aid)
+    return await workshop_mod.reject_pending(
+        self, aid, channel="company-web",
+    )

@@ -89,6 +89,7 @@ def test_empty_store(data_dir):
     assert rep["expiring_ids"] == []
     assert rep["week"]["fired"] == 0
     assert rep["audit_lines"] == 0
+    assert rep["decision_lines"] == 0
     assert rep["budgets_over"] == []
 
 
@@ -163,6 +164,31 @@ def test_week_rollup_counts_grantless_entries(data_dir):
     assert rep["audit_lines"] == 4
     # per-grant counter only sees the grant_id-bearing entry
     assert rep["grants"][0]["fire_count"] == 1
+
+
+def test_manual_decision_is_audited_but_not_counted_as_autopilot_fire(data_dir):
+    from emptyos.sdk.autopilot import append_decision_audit
+
+    action = {
+        "id": "act-manual1",
+        "source_actor": {"type": "worker", "id": "w1"},
+        "app": "publish",
+        "method": "deploy",
+        "args": {},
+        "attempt": 1,
+    }
+    append_decision_audit(
+        data_dir,
+        action=action,
+        channel="company-web",
+        approver_binding={"type": "surface-context", "run_id": "run-1"},
+        decision="reject",
+        ok=True,
+    )
+    rep = review_grants(data_dir, now=NOW)
+    assert rep["audit_lines"] == 1
+    assert rep["decision_lines"] == 1
+    assert rep["week"]["fired"] == 0
 
 
 def test_corrupt_audit_line_skipped(data_dir):

@@ -1948,3 +1948,26 @@ html.eos-redact #eos-demo-banner {
     font-size: 13px; color: var(--text);
 }
 .eos-deeplink-banner > span { flex: 1; min-width: 180px; }
+
+/* ── Math carriers (EOS_UI.renderMarkdown + typesetMath) ──────────────────
+   Before KaTeX loads — or if it never does — these hold the TeX source as
+   readable text, so a formula degrades to its source rather than to raw
+   `$...$`. Mono + a faint tint marks it as notation rather than prose. */
+.eos-math {
+  font-family: var(--mono);
+  font-size: 0.95em;
+  background: var(--accent-bg);
+  border-radius: var(--radius-sm);
+  padding: 0 4px;
+}
+.eos-math-block {
+  display: block;
+  margin: var(--space-3) 0;
+  padding: var(--space-3);
+  text-align: center;
+  overflow-x: auto;          /* a long derivation scrolls itself, never the page */
+}
+/* Once typeset, KaTeX owns the look — drop the placeholder chrome. */
+.eos-math[data-tex-done] { background: none; padding: 0; font-family: inherit; }
+.eos-math-block[data-tex-done] { padding: var(--space-2) 0; }
+.katex { color: var(--text); }

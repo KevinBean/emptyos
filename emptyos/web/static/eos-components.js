@@ -1073,6 +1073,54 @@ var EOS_UI = {
     // values + serve URLs are bake-authored ids, never free user text; the
     // iframe is sandbox="allow-scripts" only (opaque origin). See
     // .claude/rules/... artifact-embedding (the plan) + viz/embeds.py.
+    // EOS_UI.typesetMath(root) — upgrade [data-tex] carriers into real math.
+    //   renderMarkdown() emits `<span class="eos-math" data-tex="...">` holding
+    //   the TeX source as visible text. This lazy-loads KaTeX (same
+    //   load-on-demand pattern EOS_MAP uses for Leaflet) and typesets them.
+    //   Graceful enhancement: with no network the carriers keep showing the
+    //   formula source, which is still far better than raw `$...$`, so nothing
+    //   here is allowed to throw or blank the content.
+    //   Idempotent — a carrier is marked done and never typeset twice.
+    typesetMath: function(root) {
+        root = root || document;
+        var nodes = root.querySelectorAll('.eos-math[data-tex]:not([data-tex-done])');
+        if (!nodes.length) return Promise.resolve(false);
+
+        function render() {
+            if (!window.katex) return false;
+            nodes.forEach(function(el) {
+                var tex = el.getAttribute('data-tex') || '';
+                try {
+                    window.katex.render(tex, el, {
+                        displayMode: el.classList.contains('eos-math-block'),
+                        throwOnError: false,
+                        // A malformed formula shows in the error colour with its
+                        // source intact, rather than vanishing.
+                        errorColor: 'var(--danger)',
+                    });
+                } catch (e) { /* leave the source text in place */ }
+                el.setAttribute('data-tex-done', '1');
+            });
+            return true;
+        }
+        if (window.katex) return Promise.resolve(render());
+        if (EOS_UI._katexLoading) return EOS_UI._katexLoading.then(render);
+
+        var V = '0.16.9';
+        EOS_UI._katexLoading = new Promise(function(resolve) {
+            var css = document.createElement('link');
+            css.rel = 'stylesheet';
+            css.href = 'https://cdn.jsdelivr.net/npm/katex@' + V + '/dist/katex.min.css';
+            document.head.appendChild(css);
+            var js = document.createElement('script');
+            js.src = 'https://cdn.jsdelivr.net/npm/katex@' + V + '/dist/katex.min.js';
+            js.onload = function() { resolve(true); };
+            js.onerror = function() { resolve(false); };   // offline: keep the source
+            document.head.appendChild(js);
+        });
+        return EOS_UI._katexLoading.then(render);
+    },
+
     renderMarkdownWithEmbeds: function(bodyMd, vizEmbeds, opts) {
         bodyMd = bodyMd || '';
         var meta = {};
@@ -1148,6 +1196,7 @@ var EOS_UI = {
         // Obsidian-style embeds: ![[path/to/image.svg]] or ![[image.png|alt text]]
         // Must run BEFORE the wikilink rule, otherwise the inner [[..]] matches
         // and a stray `!` is left in the output.
+        var LINK_RE = /\[([^\]\n]+)\]\(([^)\s]+)(?:\s+"([^"]*)")?\)/g;
         var IMG_EXT = /\.(svg|png|jpe?g|gif|webp|avif|bmp)$/i;
         var AV_EXT = /\.(mp4|webm|mov|mp3|wav|ogg)$/i;
         var PDF_EXT = /\.pdf$/i;
@@ -1212,6 +1261,21 @@ var EOS_UI = {
             return _ph('<a class="obs-embed-link" href="' + resolved.src + '" target="_blank" rel="noopener">' + EOS_UI.esc(alt || raw) + '</a>');
         });
 
+        // Standard markdown links: [text](url). Never implemented — the image
+        // rule above even says "handled later" for a handler that did not
+        // exist, and 382 of these across 107 KB notes rendered as raw syntax.
+        // Runs AFTER the image rules, so ![alt](url) is already consumed.
+        text = text.replace(LINK_RE, function(_, label, raw, title) {
+            var href = (raw || '').trim();
+            // A note is content, not a script host.
+            if (/^\s*(?:javascript|vbscript|data):/i.test(href)) return _ph(EOS_UI.esc(label));
+            var external = /^(?:https?:)?\/\//i.test(href) || /^mailto:/i.test(href);
+            return _ph('<a class="obs-link" href="' + EOS_UI.escAttr(href) + '"'
+                + (external ? ' target="_blank" rel="noopener noreferrer"' : '')
+                + (title ? ' title="' + EOS_UI.escAttr(title) + '"' : '')
+                + '>' + EOS_UI.esc(label) + '</a>');
+        });
+
         // Wikilinks: [[Note Name]] or [[Note Name|Display]] or [[Note#section]]
         text = text.replace(/\[\[([^\]|#]+?)(?:#[^\]|]*)?(?:\|([^\]]+?))?\]\]/g, function(_, target, display) {
             var label = display || target;
@@ -1260,6 +1324,25 @@ var EOS_UI = {
         // Obsidian comments: paired %%...%% never renders (author-only notes).
         // Runs AFTER code extraction so %% inside a fence is preserved.
         body = body.replace(/%%[\s\S]*?%%/g, '');
+
+        // Step 3b: Extract LaTeX math before escaping and before the emphasis
+        // rules. This ordering is the whole point — `Z_Q` and `c^2U^2/S''_k`
+        // are full of underscores and asterisks, so math left in the stream
+        // comes out italicised and mangled rather than merely unrendered.
+        // Runs after the code fence so `$` inside a fence stays literal.
+        var _math = [];
+        function _mathPh(tex, display) {
+            var id = '\x00MATH' + _math.length + '\x00';
+            _math.push({ tex: tex, display: display });
+            return id;
+        }
+        body = body.replace(/\$\$([\s\S]+?)\$\$/g, function(_, tex) {
+            return _mathPh(tex.trim(), true);
+        });
+        // Inline: no newline inside, no space just inside either delimiter (so
+        // "$5 and $6" and a bare "$" are left alone), and \$ stays an escape.
+        body = body.replace(/(^|[^\\$])\$(?!\s)([^$\n]*[^\s$])\$(?!\d)/g,
+            function(_, before, tex) { return before + _mathPh(tex.trim(), false); });
 
         // Step 4: Escape HTML + markdown formatting
         var html = EOS_UI.esc(body)
@@ -1388,6 +1471,18 @@ var EOS_UI = {
         // Step 3: Restore link placeholders
         _links.forEach(function(link, i) {
             html = html.replace('\x00LINK' + i + '\x00', link);
+        });
+
+        // Math last: emit the TeX in a carrier that reads sensibly on its own.
+        // The visible text is the source without its `$`, so a page where the
+        // typesetter never loads still shows the formula instead of raw
+        // delimiters — and EOS_UI.typesetMath() upgrades it in place.
+        _math.forEach(function(m, i) {
+            var tag = m.display ? 'div' : 'span';
+            var cls = m.display ? 'eos-math eos-math-block' : 'eos-math';
+            html = html.replace('\x00MATH' + i + '\x00',
+                '<' + tag + ' class="' + cls + '" data-tex="' + EOS_UI.escAttr(m.tex) + '">' +
+                EOS_UI.esc(m.tex) + '</' + tag + '>');
         });
 
         return html;
@@ -6093,13 +6188,25 @@ EOS_UI.methodPicker = function(opts) {
     };
 };
 
-// EOS_UI.conformancePanel({mount, app, title})
+// EOS_UI.conformancePanel({mount, app, title, autorun, open, onResults})
 //   Calculator framework — the "validated against" contract surface for an app
 //   declaring [[provides.conformance.<endpoint>]]. Lists each case (label +
 //   references) and a Run button that POSTs /<app>/api/conformance/run, then
 //   shows pass/fail per case with each field's relative error vs its tolerance.
 //   Feature-detects: if /<app>/api/conformance 404s or has no cases, renders
-//   nothing (safe to drop into any page). Collapsed by default.
+//   nothing (safe to drop into any page). Collapsed and un-run by default.
+//
+//   autorun   — run the cases as soon as they load, instead of waiting for the
+//               button. OPT-IN, and deliberately not the default: several
+//               calculators here gate on a real solver, and a POST on every
+//               page load would be a surprise. Right for an app whose whole
+//               subject is the gate.
+//   open      — render expanded. A re-render preserves whatever the user last
+//               chose, so this sets the initial state only and never fights them.
+//   onResults — called with the results array after each run, so a caller can
+//               drive its own surface from the SAME run rather than issuing a
+//               second one that could disagree with what the panel shows.
+//
 //   Returns {refresh, run, el}. See emptyos/sdk/conformance.py for the contract.
 EOS_UI.conformancePanel = function(opts) {
     var mount = typeof opts.mount === 'string'
@@ -6108,6 +6215,7 @@ EOS_UI.conformancePanel = function(opts) {
     var app = opts.app;
     var title = opts.title || 'Validated against standards';
     var cases = [];
+    var startOpen = !!opts.open;
 
     function fmt(v) {
         if (v == null) return '—';
@@ -6158,8 +6266,13 @@ EOS_UI.conformancePanel = function(opts) {
         if (!cases.length) { mount.innerHTML = ''; return; }
         var resById = {};
         (results || []).forEach(function(r){ resById[r.case_id] = r; });
+        // Preserve whatever the reader last chose; fall back to the caller's
+        // initial preference only before the panel exists.
+        var existing = mount.querySelector('details.eos-conf-panel');
+        var isOpen = existing ? existing.open : startOpen;
         mount.innerHTML =
-            '<details class="eos-conf-panel"><summary class="eos-conf-summary">' +
+            '<details class="eos-conf-panel"' + (isOpen ? ' open' : '') +
+            '><summary class="eos-conf-summary">' +
             '<span class="eos-conf-title">🛡 ' + EOS_UI.esc(title) + '</span>' +
             '<span class="eos-conf-count">' + cases.length + '</span>' +
             '<button type="button" class="eos-conf-run" title="Run all conformance cases">Run</button></summary>' +
@@ -6181,14 +6294,26 @@ EOS_UI.conformancePanel = function(opts) {
                 body: '{}',
             })
             .then(function(r){ return r.json(); })
-            .then(function(j){ render(j.results || []); })
+            .then(function(j){
+                var results = j.results || [];
+                render(results);
+                if (typeof opts.onResults === 'function') {
+                    try { opts.onResults(results); } catch (e) { /* a caller's
+                        surface must never break the panel's own render */ }
+                }
+                return results;
+            })
             .catch(function(){ if (btn) { btn.disabled = false; btn.textContent = 'Run'; } });
     }
 
     function refresh() {
         return fetch('/' + app + '/api/conformance')
             .then(function(r){ return r.ok ? r.json() : {cases: []}; })
-            .then(function(j){ cases = j.cases || []; render(null); })
+            .then(function(j){
+                cases = j.cases || [];
+                render(null);
+                if (opts.autorun && cases.length) return run();
+            })
             .catch(function(){ mount.innerHTML = ''; });
     }
 

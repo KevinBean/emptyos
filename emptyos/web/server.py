@@ -8,7 +8,13 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from fastapi import FastAPI, Request, WebSocket
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.responses import (
+    FileResponse,
+    HTMLResponse,
+    JSONResponse,
+    PlainTextResponse,
+    RedirectResponse,
+)
 from fastapi.staticfiles import StaticFiles
 
 from emptyos.web.routes_auth import (
@@ -1278,6 +1284,52 @@ def create_server(kernel: Kernel) -> FastAPI:
             @server.get("/notes", response_class=HTMLResponse)
             async def notes_page():
                 return notes_path.read_text(encoding="utf-8")
+
+        # App-shipped docs. Eight apps carry markdown beside their code —
+        # FORGE.md, ALGORITHM.md, RT07-VALIDATION.md, DATABASE-STRUCTURE.md …
+        # — and until now none of them rendered anywhere: they were readable
+        # in the repo and nowhere else. This is /notes one level up: the doc
+        # travels with the app (so a fresh clone and the public snapshot both
+        # have it, with no vault dependency), and the platform renders it.
+        appdoc_path = static_dir / "appdoc.html"
+        if appdoc_path.exists():
+
+            @server.get("/appdoc", response_class=HTMLResponse)
+            async def appdoc_page():
+                return appdoc_path.read_text(encoding="utf-8")
+
+        @server.get("/api/appdoc")
+        async def appdoc_source(app: str = "", file: str = ""):
+            """Raw markdown of one doc shipped inside an app directory.
+
+            Constrained deliberately: a known app id, a `.md` file, and a
+            path that resolves inside that app's own directory. The id and
+            each path segment go through the shared guard, so a caller
+            cannot walk out with `..` or a Windows separator.
+            """
+            from emptyos.sdk.utils import path_segment_error
+
+            if err := path_segment_error(app, "app"):
+                return JSONResponse({"error": err}, status_code=400)
+            m = kernel.apps.manifests.get(app)
+            if not m:
+                return JSONResponse({"error": f"App not found: {app}"}, status_code=404)
+            rel = (file or "").replace("\\", "/").strip("/")
+            if not rel.lower().endswith(".md"):
+                return JSONResponse({"error": "only .md documents"}, status_code=400)
+            for seg in rel.split("/"):
+                if err := path_segment_error(seg, "path"):
+                    return JSONResponse({"error": err}, status_code=400)
+            target = (m.path / rel).resolve()
+            try:
+                target.relative_to(m.path.resolve())
+            except ValueError:
+                return JSONResponse({"error": "outside the app directory"}, status_code=400)
+            if not target.is_file():
+                return JSONResponse({"error": f"No such document: {rel}"}, status_code=404)
+            return PlainTextResponse(
+                target.read_text(encoding="utf-8"), media_type="text/markdown"
+            )
 
         favicon_path = static_dir / "favicon.svg"
         if favicon_path.exists():

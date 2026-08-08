@@ -4,7 +4,7 @@
 # Usage: python scripts/package-release.py <tier> [--check] [--platform=<name>]
 
 [release]
-version = "0.6.3"
+version = "0.6.4"
 
 # ── Platforms ─────────────────────────────────────────────────
 # Named deployment profiles. Plugins declare compatibility in
@@ -98,6 +98,7 @@ apps = [
     "reactor",
     "rooms",
     "tour",
+    "trust-loop",
     "vault-graph",
     "voice-assistant",
 ]
@@ -160,6 +161,7 @@ apps = [
     "scroll",
     "sheet",
     "tour",
+    "trust-loop",
     "vault-graph",
     "video-digest",
     "viz",

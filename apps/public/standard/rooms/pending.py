@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from emptyos.sdk import JsonRecordStore, web_route
+from emptyos.sdk.autopilot import safe_append_decision_audit
 from emptyos.sdk.do_token import DO_RE, extract_do_tokens
 from emptyos.sdk.pending_claim import CLAIMED, claim_pending, is_unknown_effect
 from emptyos.sdk.sandbox import SandboxedWrite, StaleSandbox, load_sandbox
@@ -764,7 +765,37 @@ def list_pending(self, room_id: str = "", status: str = "pending") -> list[dict]
     return out
 
 
-async def apply_pending(self, action_id: str) -> dict:
+def _append_pending_decision(
+    self,
+    action: dict,
+    *,
+    channel: str,
+    approver_binding: dict | None,
+    decision: str,
+    ok: bool,
+) -> None:
+    binding = dict(approver_binding or {})
+    binding.setdefault("type", "surface-context")
+    if action.get("room_id"):
+        binding.setdefault("room_id", action["room_id"])
+    config = getattr(getattr(self, "kernel", None), "config", None)
+    safe_append_decision_audit(
+        getattr(config, "data_dir", None),
+        action=action,
+        channel=channel,
+        approver_binding=binding,
+        decision=decision,
+        ok=ok,
+    )
+
+
+async def apply_pending(
+    self,
+    action_id: str,
+    *,
+    channel: str = "rooms",
+    approver_binding: dict | None = None,
+) -> dict:
     """Execute a pending action via call_app, mark it applied.
 
     Sandboxed actions (those carrying `proposed_changes` from
@@ -789,6 +820,10 @@ async def apply_pending(self, action_id: str) -> dict:
         action["status"] = "failed"
         action["resolved_ts"] = datetime.now(timezone.utc).isoformat()
         self._save_pending(action)
+        _append_pending_decision(
+            self, action, channel=channel, approver_binding=approver_binding,
+            decision="approve", ok=False,
+        )
         return {"error": action["error"], "action": action}
     proposed = action.get("proposed_changes") or []
     if proposed:
@@ -812,18 +847,30 @@ async def apply_pending(self, action_id: str) -> dict:
             action["error"] = str(e)[:200]
             action["resolved_ts"] = datetime.now(timezone.utc).isoformat()
             self._save_pending(action)
+            _append_pending_decision(
+                self, action, channel=channel, approver_binding=approver_binding,
+                decision="approve", ok=False,
+            )
             return {"error": action["error"], "action": action}
         except Exception as e:
             action["status"] = "failed"
             action["error"] = str(e)[:200]
             action["resolved_ts"] = datetime.now(timezone.utc).isoformat()
             self._save_pending(action)
+            _append_pending_decision(
+                self, action, channel=channel, approver_binding=approver_binding,
+                decision="approve", ok=False,
+            )
             return {"error": action["error"], "action": action}
         action["status"] = "applied"
         action["result"] = f"wrote {len(applied_paths)} file(s): " + \
             ", ".join(applied_paths)
         action["resolved_ts"] = datetime.now(timezone.utc).isoformat()
         self._save_pending(action)
+        _append_pending_decision(
+            self, action, channel=channel, approver_binding=approver_binding,
+            decision="approve", ok=True,
+        )
         await self.emit("rooms:note_written", {
             "action_id": action_id, "room_id": action.get("room_id"),
             "paths": applied_paths,
@@ -840,6 +887,10 @@ async def apply_pending(self, action_id: str) -> dict:
         action["status"] = "pending"
         action["error"] = gate_err
         self._save_pending(action)
+        _append_pending_decision(
+            self, action, channel=channel, approver_binding=approver_binding,
+            decision="approve", ok=False,
+        )
         return {"error": gate_err, "action": action}
 
     try:
@@ -851,12 +902,20 @@ async def apply_pending(self, action_id: str) -> dict:
         action["error"] = str(e)[:200]
         action["resolved_ts"] = datetime.now(timezone.utc).isoformat()
         self._save_pending(action)
+        _append_pending_decision(
+            self, action, channel=channel, approver_binding=approver_binding,
+            decision="approve", ok=False,
+        )
         return {"error": str(e)[:200], "action": action}
     action["status"] = "applied"
     action["result"] = str(result)[:500]
     action["links"] = self._action_result_links(action["app"], result)
     action["resolved_ts"] = datetime.now(timezone.utc).isoformat()
     self._save_pending(action)
+    _append_pending_decision(
+        self, action, channel=channel, approver_binding=approver_binding,
+        decision="approve", ok=True,
+    )
     await self.emit("rooms:action_applied", {
         "action_id": action_id, "room_id": action.get("room_id"),
         "app": action["app"], "method": action["method"],
@@ -864,7 +923,13 @@ async def apply_pending(self, action_id: str) -> dict:
     return action
 
 
-async def reject_pending(self, action_id: str) -> dict:
+async def reject_pending(
+    self,
+    action_id: str,
+    *,
+    channel: str = "rooms",
+    approver_binding: dict | None = None,
+) -> dict:
     """Mark a pending action rejected without executing. Sandboxed
     actions also have their captured sandbox dir discarded so we don't
     accumulate orphans."""
@@ -888,6 +953,10 @@ async def reject_pending(self, action_id: str) -> dict:
             sw.discard()
     action["resolved_ts"] = datetime.now(timezone.utc).isoformat()
     self._save_pending(action)
+    _append_pending_decision(
+        self, action, channel=channel, approver_binding=approver_binding,
+        decision="reject", ok=True,
+    )
     await self.emit("rooms:action_rejected", {
         "action_id": action_id, "room_id": action.get("room_id"),
     })
@@ -980,7 +1049,14 @@ async def api_global_pending(self, request):
     return self.list_pending(room_id="", status=status)
 
 
-async def resolve_unknown(self, action_id: str, outcome: str) -> dict:
+async def resolve_unknown(
+    self,
+    action_id: str,
+    outcome: str,
+    *,
+    channel: str = "rooms",
+    approver_binding: dict | None = None,
+) -> dict:
     """Adjudicate an interrupted action — record what the human found.
 
     Only valid on an entry stuck at the claim marker (`approving`): we started
@@ -1008,6 +1084,10 @@ async def resolve_unknown(self, action_id: str, outcome: str) -> dict:
         if outcome == "failed" and not action.get("error"):
             action["error"] = "interrupted mid-execution; marked failed by the user"
         self._save_pending(action)
+    _append_pending_decision(
+        self, action, channel=channel, approver_binding=approver_binding,
+        decision="adjudicate", ok=True,
+    )
     # Emit outside the lock — handlers may re-enter via call_app.
     await self.emit("rooms:action_adjudicated", {
         "action_id": action_id, "room_id": action.get("room_id"),
@@ -1021,18 +1101,24 @@ async def api_resolve_unknown(self, request):
     """Adjudicate an interrupted action. Body: ``{"outcome": "applied"|"failed"}``."""
     body = await self.safe_json(request)
     return await self.resolve_unknown(
-        request.path_params["action_id"], str((body or {}).get("outcome", "")),
+        request.path_params["action_id"],
+        str((body or {}).get("outcome", "")),
+        channel="rooms-web",
     )
 
 
 @web_route("POST", "/api/pending/{action_id}/apply")
 async def api_apply_pending(self, request):
-    return await self.apply_pending(request.path_params["action_id"])
+    return await self.apply_pending(
+        request.path_params["action_id"], channel="rooms-web",
+    )
 
 
 @web_route("POST", "/api/pending/{action_id}/reject")
 async def api_reject_pending(self, request):
-    return await self.reject_pending(request.path_params["action_id"])
+    return await self.reject_pending(
+        request.path_params["action_id"], channel="rooms-web",
+    )
 
 
 @web_route("POST", "/api/pending/{action_id}/edit")

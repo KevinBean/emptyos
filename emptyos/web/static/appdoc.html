@@ -1,0 +1,100 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Document — EmptyOS</title>
+<link rel="stylesheet" href="/static/theme.css">
+<link rel="stylesheet" href="/static/eos-components.css">
+<link rel="stylesheet" href="/static/eos-keys.css">
+<style>
+/* A document, so it is set as one: a single measured column, generous
+   leading, and headings that separate sections rather than shout. */
+.doc { max-width: 820px; margin: 0 auto; padding: var(--space-5) var(--space-4) var(--space-7); }
+.doc-nav { display: flex; gap: var(--space-3); align-items: center; margin-bottom: var(--space-5); font-size: var(--fs-small); }
+.doc-nav a { color: var(--accent); text-decoration: none; }
+.doc-body { color: var(--text); font-size: var(--fs-prose); line-height: var(--lh-prose); }
+/* EOS_UI.renderMarkdown shifts every heading down one level, so a note can
+   never emit an <h1> that competes with the page's own. `#` therefore lands
+   as h2, `##` as h3, `###` as h4 — style what actually arrives. */
+.doc-body h2 { font-size: var(--fs-h1); color: var(--text-heading); line-height: var(--lh-heading);
+  margin: 0 0 var(--space-4); }
+.doc-body h3 { font-size: var(--fs-h2); color: var(--text-heading); margin: var(--space-6) 0 var(--space-3);
+  padding-top: var(--space-3); border-top: 1px solid var(--border); }
+.doc-body h4 { font-size: var(--fs-body); color: var(--text-heading); margin: var(--space-4) 0 var(--space-2); }
+.doc-body h5 { font-size: var(--fs-body); color: var(--text-secondary); margin: var(--space-3) 0 var(--space-2); }
+/* The renderer wraps block elements in <p>; an empty one is just a gap. */
+.doc-body p:empty { display: none; }
+.doc-body p { margin: 0 0 var(--space-3); }
+.doc-body ul, .doc-body ol { margin: 0 0 var(--space-3); padding-left: var(--space-5); }
+.doc-body li { margin-bottom: var(--space-1); }
+.doc-body code { font-family: var(--mono); font-size: 0.92em; background: var(--bg-surface);
+  padding: 1px 5px; border-radius: var(--radius-sm); }
+.doc-body pre { background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--radius);
+  padding: var(--space-3); overflow-x: auto; }
+.doc-body pre code { background: none; padding: 0; }
+.doc-body table { width: 100%; border-collapse: collapse; margin: 0 0 var(--space-4); font-size: var(--fs-small); }
+.doc-body th, .doc-body td { padding: var(--space-2); border-top: 1px solid var(--border); text-align: left; vertical-align: top; }
+.doc-body th { font-size: var(--fs-meta); text-transform: uppercase; letter-spacing: .04em;
+  color: var(--text-muted); border-top: none; }
+.doc-body blockquote { margin: 0 0 var(--space-3); padding-left: var(--space-3);
+  border-left: 2px solid var(--border-strong); color: var(--text-secondary); }
+.doc-body a { color: var(--accent); }
+.doc-body hr { border: none; border-top: 1px solid var(--border); margin: var(--space-5) 0; }
+.doc-loading { color: var(--text-muted); font-size: var(--fs-small); }
+@media print { .doc-nav { display: none; } .doc { max-width: none; } }
+</style>
+</head>
+<body>
+<div class="doc">
+  <nav class="doc-nav">
+    <a id="back" href="/">&larr; Back</a>
+    <span id="crumb" style="color:var(--text-muted)"></span>
+    <a id="src" style="margin-left:auto" target="_blank" rel="noopener">source</a>
+  </nav>
+  <article class="doc-body" id="doc"><p class="doc-loading">Loading…</p></article>
+</div>
+
+<script src="/static/eos.js"></script>
+<script src="/static/eos-components.js"></script>
+<script>
+// Shared viewer for a markdown document that ships inside an app directory.
+//   /appdoc?app=<id>&file=<Doc.md>[&title=...]
+// Eight apps carry docs beside their code and none of them rendered anywhere
+// before this. Renders the SAME bytes /api/appdoc serves — one source, two
+// presentations — through the shared markdown renderer, so app docs get the
+// wikilinks, tables and math typesetting a vault note already gets.
+(function () {
+  var q = new URLSearchParams(location.search);
+  var app = q.get('app') || '';
+  var file = q.get('file') || '';
+  var el = document.getElementById('doc');
+  var src = '/api/appdoc?app=' + encodeURIComponent(app) + '&file=' + encodeURIComponent(file);
+
+  document.getElementById('back').href = app ? '/' + app + '/' : '/';
+  document.getElementById('back').textContent = app ? '← ' + app : '← Back';
+  document.getElementById('crumb').textContent = q.get('title') || file;
+  document.getElementById('src').href = src;
+  if (file) document.title = file.replace(/\.md$/i, '') + ' — ' + (app || 'EmptyOS');
+
+  if (!app || !file) {
+    el.innerHTML = '<p class="doc-loading">Usage: <code>/appdoc?app=&lt;id&gt;&file=&lt;Doc.md&gt;</code></p>';
+    return;
+  }
+  fetch(src)
+    .then(function (r) {
+      if (!r.ok) return r.json().then(function (j) { throw new Error(j.error || ('HTTP ' + r.status)); });
+      return r.text();
+    })
+    .then(function (md) {
+      el.innerHTML = EOS_UI.renderMarkdown(md);
+      if (EOS_UI.typesetMath) EOS_UI.typesetMath(el);
+    })
+    .catch(function (e) {
+      el.innerHTML = '<p class="doc-loading">Could not load this document: '
+        + EOS_UI.esc(String(e && e.message || e)) + '</p>';
+    });
+})();
+</script>
+</body>
+</html>

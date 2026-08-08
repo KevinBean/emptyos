@@ -518,6 +518,71 @@ For shadows specifically: **intensity may change, shape may not.** A flickering 
 legitimately makes a shadow's edges harden and blur. A shadow that *shifts position*
 has a body behind it.
 
+## 🚨 The VIDEO stage has a stricter content gate than the image stage
+
+Measured on Love Hate v6, 2026-08-09, across three refusals. **Nano Banana will generate
+stills that Omni Flash then refuses to animate**, failing with *"This generation might
+violate our policies."*
+
+On that film the boundary was **physical contact between two men** — not nudity, and not
+the act:
+
+| shot | both men | touching | clothing | result |
+|---|---|---|---|---|
+| eye contact across a room | yes | **no** | full | ✅ |
+| side by side on a doorstep | yes | **no** | full | ✅ |
+| bathhouse, bare back | yes | yes | bare | ❌ |
+| a kiss, near-black silhouettes | yes | yes | full | ❌ |
+| **pressed to a wall, fully clothed, both faces away** | yes | yes | **full** | ❌ |
+
+The third refusal is the decisive one: the least explicit framing of the three still
+refused, which rules out nudity and explicitness as the trigger. Two shots carrying both
+characters *passed* — so it is not "two men in frame" either.
+
+**The gate reads the START FRAME, not the prompt — so rewording cannot rescue a shot.**
+Tested to exhaustion on one refused image:
+
+| attempt | prompt | result |
+|---|---|---|
+| 1 | body language described (*"lowers his head closer to the neck"*) | ❌ |
+| 2 | that clause removed, other body language kept | ❌ |
+| 3 | **environment only** — a flickering tube, one water drip, and an explicit *"everything else in the frame stays completely still and unchanged"* | ❌ |
+
+The third prompt described no bodies at all and still refused with the identical message.
+**This matters because the error text says "Please try a different prompt", which points
+at exactly the thing that does not work.** Do not spend credits iterating wording.
+
+**Do not assume the still stage predicts the video stage.** If a film has an intimate
+register, test **one contact shot early**, before generating the whole still set around
+an assumption that it can be animated. 15 credits at the start is far cheaper than
+discovering it after the stills are finished.
+
+Since the image is the variable, the productive fallback is to **re-stage the still** —
+same beat, figures near but not touching — and animate that. The still stage has never
+refused any of this material.
+
+Practical consequences:
+
+- Budget for refusals. They cost credits and produce nothing.
+- **Count the `Videos` list to know what actually succeeded.** A failed generation never
+  appears there, so the count is the only honest signal — the chat shows an approval and
+  a scheduled message either way.
+- Fallbacks when a shot is refused: hold it as a **still** in the edit (a held frame
+  among moving ones reads as deliberate), **re-stage** so the figures are near but not
+  touching, or try a **different video model** — a different policy surface may apply.
+
+## ⚠ A generation is evidence only when it has FINISHED
+
+Corollary of the above, and it cost two wrong conclusions in one project. A clip sitting
+at 23% is not a pass. I twice reported a diagnosis built on an in-progress render, and
+twice the render subsequently failed — once producing a confident, wrong theory about
+where a content boundary lay.
+
+This is the same error as judging a still from a loading placeholder, and it is easier to
+make on video because progress percentages *look* like evidence of success.
+
+**Wait for terminal state, then count the `Videos` list.**
+
 ## Review at full size, never from thumbnails
 
 Two defects on 无所住 were **invisible in the grid and obvious full-screen**:

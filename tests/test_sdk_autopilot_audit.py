@@ -24,6 +24,8 @@ from emptyos.sdk.autopilot import (
     GENESIS_PREV,
     _canonical,
     append_audit,
+    append_decision_audit,
+    decision_payload_hash,
     verify_audit,
 )
 
@@ -63,6 +65,79 @@ def test_single_append_verifies(data_dir):
     assert r["lines_checked"] == 1
     assert r["tampered"] == []
 
+
+def test_decision_envelope_binds_payload_and_verifies(data_dir):
+    action = {
+        "id": "act-decision1",
+        "source_actor": {"type": "cli", "id": "codex"},
+        "app": "task",
+        "method": "add",
+        "args": {"due": "today", "text": "review report"},
+        "attempt": 2,
+        "status": "applied",
+        "result": "ok",
+    }
+    append_decision_audit(
+        data_dir,
+        action=action,
+        channel="rooms-web",
+        approver_binding={"type": "surface-context", "room_id": "r1"},
+        decision="approve",
+        ok=True,
+    )
+
+    entry = json.loads(_read_lines(data_dir)[0])
+    assert entry["decision_id"] == action["id"]
+    assert entry["channel"] == "rooms-web"
+    assert entry["actor"] == action["source_actor"]
+    assert entry["approver_binding"]["room_id"] == "r1"
+    assert entry["payload_hash"] == decision_payload_hash(action)
+    assert entry["decision"] == "approve"
+    assert entry["attempt"] == 2
+    assert entry["execution_result"] == {"status": "applied", "result": "ok"}
+    assert verify_audit(data_dir)["ok"] is True
+
+
+def test_payload_hash_is_order_stable_and_changes_after_edit():
+    a = {"app": "task", "method": "add", "args": {"text": "x", "due": "today"}}
+    b = {"method": "add", "args": {"due": "today", "text": "x"}, "app": "task"}
+    edited = {"app": "task", "method": "add", "args": {"text": "y", "due": "today"}}
+    assert decision_payload_hash(a) == decision_payload_hash(b)
+    assert decision_payload_hash(a) != decision_payload_hash(edited)
+
+
+def test_partial_decision_envelope_is_refused(data_dir):
+    with pytest.raises(ValueError, match="requires channel"):
+        append_audit(
+            data_dir,
+            actor={},
+            app="task",
+            method="add",
+            args={},
+            grant_id=None,
+            ok=True,
+            decision_id="act-incomplete",
+        )
+
+
+def test_non_hex_decision_payload_hash_is_refused(data_dir):
+    with pytest.raises(ValueError, match="SHA-256 payload_hash"):
+        append_audit(
+            data_dir,
+            actor={},
+            app="task",
+            method="add",
+            args={},
+            grant_id=None,
+            ok=True,
+            decision_id="act-bad-hash",
+            channel="rooms-web",
+            approver_binding={},
+            payload_hash="g" * 64,
+            decision="approve",
+            attempt=1,
+            execution_result={"status": "applied"},
+        )
 
 def test_three_appends_chain_intact(data_dir):
     sigs = []

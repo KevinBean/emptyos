@@ -29,6 +29,87 @@ class TestRenderMarkdown:
         wait_briefly(page, 800)
         return page.evaluate("EOS_UI.renderMarkdown(" + repr(md) + ")")
 
+    # ── Markdown links ────────────────────────────────────────────────────
+    # 382 links across 107 KB notes rendered as raw `[text](url)`: the rule was
+    # never written, and the image rule's own comment promised one "handled
+    # later" that did not exist.
+
+    def test_markdown_link_renders(self, page, base_url, page_errors):
+        html = self._render(page, base_url, "see [the paper](https://example.com/x.pdf) here")
+        assert '<a ' in html and 'href="https://example.com/x.pdf"' in html
+        assert "[the paper]" not in html
+        assert_no_js_errors(page_errors)
+
+    def test_external_link_opens_in_a_new_tab(self, page, base_url, page_errors):
+        html = self._render(page, base_url, "[x](https://example.com)")
+        assert 'target="_blank"' in html and "noopener" in html
+        assert_no_js_errors(page_errors)
+
+    def test_relative_link_stays_in_place(self, page, base_url, page_errors):
+        html = self._render(page, base_url, "[spec](docs/SPEC.md)")
+        assert 'href="docs/SPEC.md"' in html
+        assert 'target="_blank"' not in html
+        assert_no_js_errors(page_errors)
+
+    def test_script_url_is_refused(self, page, base_url, page_errors):
+        """A note is content, not a script host."""
+        html = self._render(page, base_url, "[click](javascript:alert(1))")
+        assert "javascript:" not in html
+        assert "<a " not in html
+        assert_no_js_errors(page_errors)
+
+    def test_image_is_still_an_image_not_a_link(self, page, base_url, page_errors):
+        html = self._render(page, base_url, "![alt](pic.png)")
+        assert "<img" in html
+        assert_no_js_errors(page_errors)
+
+    # ── LaTeX math ────────────────────────────────────────────────────────
+    # 68 vault notes carry TeX; the worst has 3,872 block equations. Before
+    # extraction they rendered as raw `$...$` AND were mangled by the emphasis
+    # rules, because `Z_Q` and `c^2U^2/S''_k` are full of underscores.
+
+    def test_inline_math_becomes_a_carrier(self, page, base_url, page_errors):
+        html = self._render(page, base_url, "Given $Z_Q = c U$ then done.")
+        assert 'class="eos-math"' in html
+        assert "$" not in html, "delimiters must not survive"
+        assert_no_js_errors(page_errors)
+
+    def test_math_is_not_mangled_by_emphasis(self, page, base_url, page_errors):
+        """The real bug: underscores inside TeX were eaten as italics."""
+        html = self._render(page, base_url, r"$R_Q$ and $X_Q$ and $c^2U^2/S_k$")
+        assert "<em>" not in html and "<i>" not in html
+        assert "R_Q" in html and "S_k" in html
+        assert_no_js_errors(page_errors)
+
+    def test_math_carrier_shows_its_source_before_typesetting(self, page, base_url, page_errors):
+        """Graceful degradation: with no typesetter the formula still reads."""
+        html = self._render(page, base_url, r"$\sqrt3 \times 14400$")
+        assert "sqrt3" in html, "source text must be visible in the carrier"
+        assert 'data-tex=' in html
+        assert_no_js_errors(page_errors)
+
+    def test_block_math_is_display(self, page, base_url, page_errors):
+        html = self._render(page, base_url, "Therefore:\n\n$$I_k = a/b$$")
+        assert "eos-math-block" in html
+        assert_no_js_errors(page_errors)
+
+    def test_currency_is_not_math(self, page, base_url, page_errors):
+        """`$5 and $6` is prose about money, not a formula."""
+        html = self._render(page, base_url, "It costs $5 and $6 total.")
+        assert "eos-math" not in html
+        assert "$5" in html and "$6" in html
+        assert_no_js_errors(page_errors)
+
+    def test_dollars_in_a_code_fence_stay_literal(self, page, base_url, page_errors):
+        html = self._render(page, base_url, "```\nprice = $x$\n```")
+        assert "eos-math" not in html
+        assert_no_js_errors(page_errors)
+
+    def test_escaped_dollar_is_not_math(self, page, base_url, page_errors):
+        html = self._render(page, base_url, r"costs \$5 exactly")
+        assert "eos-math" not in html
+        assert_no_js_errors(page_errors)
+
     def test_bold_crosses_single_newline(self, page, base_url, page_errors):
         """Hard-wrapped vault prose: **bold\\ntext** must render <strong>,
         never literal ** (the 2026-07-11 kb-audit bug)."""

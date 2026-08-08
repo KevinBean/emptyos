@@ -81,6 +81,7 @@ async def claim_pending(
         if current != from_status:
             return None, {"error": f"already {current}"}
         action["status"] = claim_status
+        action["attempt"] = int(action.get("attempt") or 0) + 1
         action["claimed_ts"] = now()
         save(action)
         return action, None

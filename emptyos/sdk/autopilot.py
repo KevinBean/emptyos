@@ -747,6 +747,21 @@ def _canonical(payload: dict) -> bytes:
     ).encode("utf-8")
 
 
+def decision_payload_hash(action: dict) -> str:
+    """SHA-256 identity of the action payload the approver actually saw.
+
+    Mutable queue metadata (status, timestamps, result) is excluded. The
+    decision binds only the dispatched verb and its arguments, so a later
+    edit produces a different digest while JSON key order does not.
+    """
+    payload = {
+        "app": (action or {}).get("app") or "",
+        "method": (action or {}).get("method") or "",
+        "args": (action or {}).get("args") or {},
+    }
+    return hashlib.sha256(_canonical(payload)).hexdigest()
+
+
 def _audit_key(data_dir: Path) -> bytes:
     """Return the chain's HMAC key, lazily generating + persisting on first use."""
     key_path = _store_root(data_dir) / AUDIT_KEY_FILE
@@ -802,6 +817,13 @@ def append_audit(
     grant_id: str | None,
     ok: bool,
     error: str | None = None,
+    decision_id: str | None = None,
+    channel: str | None = None,
+    approver_binding: dict | None = None,
+    payload_hash: str | None = None,
+    decision: str | None = None,
+    attempt: int | None = None,
+    execution_result: dict | None = None,
 ) -> str:
     """Append one HMAC-chained audit entry. Returns the new entry's hmac.
 
@@ -829,6 +851,34 @@ def append_audit(
         "error": error,
         "prev": prev,
     }
+    if decision_id is not None:
+        if not str(decision_id).strip():
+            raise ValueError("decision_id must be non-empty")
+        if not str(channel or "").strip():
+            raise ValueError("decision audit requires channel")
+        if not isinstance(approver_binding, dict):
+            raise ValueError("decision audit requires approver_binding object")
+        if (
+            not isinstance(payload_hash, str)
+            or len(payload_hash) != 64
+            or any(ch not in "0123456789abcdef" for ch in payload_hash)
+        ):
+            raise ValueError("decision audit requires a SHA-256 payload_hash")
+        if not str(decision or "").strip():
+            raise ValueError("decision audit requires decision")
+        if not isinstance(attempt, int) or isinstance(attempt, bool) or attempt < 1:
+            raise ValueError("decision audit requires positive integer attempt")
+        if not isinstance(execution_result, dict):
+            raise ValueError("decision audit requires execution_result object")
+        entry.update({
+            "decision_id": str(decision_id),
+            "channel": str(channel),
+            "approver_binding": approver_binding,
+            "payload_hash": payload_hash,
+            "decision": str(decision),
+            "attempt": attempt,
+            "execution_result": execution_result,
+        })
     sig = hmac.new(
         key, prev.encode("ascii") + _canonical(entry), hashlib.sha256,
     ).hexdigest()
@@ -838,6 +888,54 @@ def append_audit(
     with audit_path.open("a", encoding="utf-8") as f:
         f.write(line)
     return sig
+
+
+def _decision_execution_result(action: dict) -> dict:
+    result = {"status": (action or {}).get("status") or "unknown"}
+    for key in ("result", "result_say", "error", "adjudicated"):
+        if (action or {}).get(key) is not None:
+            result[key] = action[key]
+    return result
+
+
+def append_decision_audit(
+    data_dir: Path,
+    *,
+    action: dict,
+    channel: str,
+    approver_binding: dict,
+    decision: str,
+    ok: bool,
+) -> str:
+    """Append one complete review-gate decision envelope to the audit chain."""
+    error = (action or {}).get("error")
+    return append_audit(
+        data_dir,
+        actor=(action or {}).get("source_actor") or {},
+        app=(action or {}).get("app") or "",
+        method=(action or {}).get("method") or "",
+        args=(action or {}).get("args") or {},
+        grant_id=None,
+        ok=ok,
+        error=(str(error)[:200] if not ok and error else None),
+        decision_id=(action or {}).get("id"),
+        channel=channel,
+        approver_binding=approver_binding,
+        payload_hash=decision_payload_hash(action),
+        decision=decision,
+        attempt=int((action or {}).get("attempt") or 1),
+        execution_result=_decision_execution_result(action),
+    )
+
+
+def safe_append_decision_audit(data_dir: Path | None, **kwargs) -> str | None:
+    """Best-effort decision audit; telemetry must never break the action path."""
+    if data_dir is None:
+        return None
+    try:
+        return append_decision_audit(data_dir, **kwargs)
+    except Exception:
+        return None
 
 
 def verify_audit(data_dir: Path) -> dict:
@@ -932,6 +1030,7 @@ def review_grants(
     week = {"fired": 0, "ok": 0, "failed": 0, "by_verb": {}, "by_actor": {}}
     week_start = now - timedelta(days=7)
     audit_lines = 0
+    decision_lines = 0
     if audit_path.exists():
         try:
             raw_lines = audit_path.read_text(encoding="utf-8").splitlines()
@@ -945,6 +1044,9 @@ def review_grants(
             except ValueError:
                 continue  # corrupt line — verify_audit's problem, not review's
             audit_lines += 1
+            if e.get("decision_id"):
+                decision_lines += 1
+                continue
             ts = _parse_iso(e.get("ts"))
             gid = e.get("grant_id")
             if gid:
@@ -1006,4 +1108,5 @@ def review_grants(
         "holds_count": len(holds),
         "budgets_over": budgets_over,
         "audit_lines": audit_lines,
+        "decision_lines": decision_lines,
     }

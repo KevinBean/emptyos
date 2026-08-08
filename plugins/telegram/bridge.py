@@ -109,6 +109,7 @@ def parse_update(update: dict, allowed_chat_id: str) -> tuple[str | None, dict]:
         return "callback", {
             "cq_id": cq.get("id", ""),
             "chat_id": chat_id,
+            "from_id": from_id,
             "message_id": cq_msg.get("message_id"),
             "data": cq.get("data") or "",
         }

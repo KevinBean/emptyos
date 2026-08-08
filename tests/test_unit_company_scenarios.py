@@ -7,8 +7,10 @@ tests — no daemon required.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import sys
+import types
 from pathlib import Path
 
 import pytest
@@ -30,6 +32,10 @@ from scenarios.base import (  # noqa: E402
     render_deliverable_allowlist,
     save_pending,
 )
+from scenarios.workshop import (  # noqa: E402
+    apply_pending as apply_workshop_pending,
+    reject_pending as reject_workshop_pending,
+)
 
 
 class _FakeApp:
@@ -42,6 +48,22 @@ class _FakeApp:
 
     def __init__(self, root: Path):
         self.data_dir = root
+        self.kernel = types.SimpleNamespace(
+            config=types.SimpleNamespace(data_dir=root),
+        )
+        self._locks: dict[str, asyncio.Lock] = {}
+        self.calls: list[tuple] = []
+        self.events: list[tuple] = []
+
+    def write_lock(self, key: str) -> asyncio.Lock:
+        return self._locks.setdefault(key, asyncio.Lock())
+
+    async def call_app(self, app: str, method: str, **kwargs):
+        self.calls.append((app, method, kwargs))
+        return "ok"
+
+    async def emit(self, *args, **kwargs):
+        self.events.append((args, kwargs))
 
     def data_subdir(self, *parts: str) -> Path:
         d = self.data_dir.joinpath(*parts)
@@ -164,6 +186,58 @@ def test_save_pending_writes_one_file_per_action(tmp_path):
 
 
 # ── render_deliverable_allowlist ───────────────────────────────────
+
+
+def test_workshop_reject_writes_run_bound_decision_envelope(tmp_path):
+    app = _FakeApp(tmp_path)
+    action = {
+        "id": "act-company01",
+        "run_id": "run-1",
+        "source_actor": {"type": "worker", "worker_id": "w1"},
+        "app": "publish",
+        "method": "deploy",
+        "args": {},
+        "status": "pending",
+    }
+    save_pending(app, action)
+
+    result = asyncio.run(
+        reject_workshop_pending(app, action["id"], channel="company-web")
+    )
+
+    assert result["status"] == "rejected"
+    audit_path = tmp_path / "autopilot" / "audit.jsonl"
+    entry = json.loads(audit_path.read_text(encoding="utf-8").splitlines()[0])
+    assert entry["decision_id"] == action["id"]
+    assert entry["channel"] == "company-web"
+    assert entry["actor"] == action["source_actor"]
+    assert entry["approver_binding"]["run_id"] == "run-1"
+    assert entry["decision"] == "reject"
+    assert entry["attempt"] == 1
+    assert entry["execution_result"] == {"status": "rejected"}
+
+
+def test_workshop_apply_writes_execution_result(tmp_path):
+    app = _FakeApp(tmp_path)
+    action = {
+        "id": "act-company02",
+        "run_id": "run-2",
+        "source_actor": {"type": "worker", "worker_id": "w2"},
+        "app": "task",
+        "method": "add",
+        "args": {"text": "ship it"},
+        "status": "pending",
+    }
+    save_pending(app, action)
+
+    result = asyncio.run(apply_workshop_pending(app, action["id"]))
+
+    assert result["status"] == "applied"
+    assert app.calls == [("task", "add", {"text": "ship it"})]
+    audit_path = tmp_path / "autopilot" / "audit.jsonl"
+    entry = json.loads(audit_path.read_text(encoding="utf-8").splitlines()[0])
+    assert entry["decision"] == "approve"
+    assert entry["execution_result"] == {"status": "applied", "result": "ok"}
 
 
 def test_render_deliverable_allowlist_includes_every_verb():

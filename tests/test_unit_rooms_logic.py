@@ -1715,6 +1715,35 @@ class TestApplyPendingConcurrency:
 # ── unknown-effect visibility (status: approving) ─────────────────────
 
 
+    @pytest.mark.asyncio
+    async def test_apply_writes_complete_decision_envelope(self, app, tmp_path):
+        import json
+        from types import SimpleNamespace
+
+        self._wire(app, tmp_path, delay=0)
+        app.kernel = SimpleNamespace(
+            config=SimpleNamespace(data_dir=tmp_path / "data-root"),
+        )
+        aid = self._seed(app, "act-audit001")
+
+        await app.apply_pending(
+            aid,
+            channel="rooms-web",
+            approver_binding={"type": "surface-context", "request": "local"},
+        )
+
+        audit_path = tmp_path / "data-root" / "autopilot" / "audit.jsonl"
+        entry = json.loads(audit_path.read_text(encoding="utf-8").splitlines()[0])
+        assert entry["decision_id"] == aid
+        assert entry["channel"] == "rooms-web"
+        assert entry["actor"] == {"type": "cli", "id": "claude-cli"}
+        assert entry["approver_binding"]["room_id"] == "r1"
+        assert entry["decision"] == "approve"
+        assert entry["attempt"] == 1
+        assert entry["execution_result"]["status"] == "applied"
+        assert len(entry["payload_hash"]) == 64
+
+
 class TestUnknownEffectVisibility:
     """An action stuck at the claim marker must be VISIBLE and adjudicable.
 

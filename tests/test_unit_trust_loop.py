@@ -1,9 +1,12 @@
-"""Unit tests: trust-loop's pure IEEE 80 engine (daemon-free).
+"""Unit tests: trust-loop's pure fault-current engine (daemon-free).
 
 The engine is the sole compute path behind /trust-loop/api/calc and the
-conformance gate. These tests pin the anchor case the article publishes
-(188.65 V touch / 262.48 V step within 0.5%), the surface-layer derating
-factor, the body-weight factors, and the applicability-window refusals.
+conformance gate. These tests pin the published anchor and every structural
+property ALGORITHM.md section 6 nominates.
+
+Anchor: ABB Technical Application Paper No. 2 cl. 2.2 worked example,
+published result 14 943 A = 14.95 kA. Openly downloadable:
+https://library.e.abb.com/public/2c522f583c884a4fbdf3968e1fdf1481/1SDC007101G0202.pdf
 """
 
 from __future__ import annotations
@@ -14,122 +17,209 @@ from pathlib import Path
 
 import pytest
 
-_ENGINE = Path(__file__).resolve().parents[1] / "apps/public/standard/trust-loop/ieee80.py"
-_spec = importlib.util.spec_from_file_location("trust_loop_ieee80", _ENGINE)
-ieee80 = importlib.util.module_from_spec(_spec)
-_spec.loader.exec_module(ieee80)
+_ENGINE = Path(__file__).resolve().parents[1] / "apps/public/standard/trust-loop/fault_current.py"
+_spec = importlib.util.spec_from_file_location("trust_loop_fault_current", _ENGINE)
+fc = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(fc)
+
+# Published inputs, verbatim from the paper.
+PUBLISHED = {
+    "u_net": 20000.0, "i_k_net": 14400.0, "c": 1.1,
+    "r_mv": 0.360, "x_mv": 0.335,
+    "s_n": 400000.0, "u_2n": 400.0, "vk_pct": 4.0, "pk_pct": 3.0,
+    "r_lv": 0.000388, "x_lv": 0.000395,
+}
+PUBLISHED_A = 14943.0
 
 
-class TestAnchorCase:
-    """The standard's published case — the conformance gate's ground truth."""
+class TestPublishedCase:
+    """The anchor — ALGORITHM.md section 6.1."""
 
-    def test_touch_matches_published(self):
-        r = ieee80.tolerable_voltages(rho=100, t_s=0.5, body_kg=50)
-        assert r["e_touch_v"] == pytest.approx(188.65, rel=0.005)
+    def test_reproduces_published_current(self):
+        r = fc.prospective_fault_current(**PUBLISHED)
+        assert r["i_k3_a"] == pytest.approx(PUBLISHED_A, rel=0.005)
 
-    def test_step_matches_published(self):
-        r = ieee80.tolerable_voltages(rho=100, t_s=0.5, body_kg=50)
-        assert r["e_step_v"] == pytest.approx(262.48, rel=0.005)
+    def test_lands_just_below_the_printed_figure(self):
+        # The paper rounds its intermediates, so full precision sits slightly
+        # under. Pinning the direction stops a "fix" that chases the digits.
+        r = fc.prospective_fault_current(**PUBLISHED)
+        assert r["i_k3_a"] < PUBLISHED_A
+        assert abs(r["i_k3_a"] - PUBLISHED_A) / PUBLISHED_A < 0.002
 
-    def test_no_layer_means_cs_is_one(self):
-        r = ieee80.tolerable_voltages(rho=100, t_s=0.5, body_kg=50)
-        assert r["c_s"] == 1.0
-        assert r["rho_surface"] == 100.0
+    def test_intermediate_impedances_match_the_printed_values(self):
+        # Read off the source page: R_Tk 0.01256, X_Tk 0.01147, Z_Tk 0.017.
+        # Bands are 1e-5 because the source TRUNCATES rather than rounds — its
+        # own summands give 0.0125668, printed as 0.01256.
+        r = fc.prospective_fault_current(**PUBLISHED)
+        assert r["r_total_ohm"] == pytest.approx(0.01256, abs=1e-5)
+        assert r["x_total_ohm"] == pytest.approx(0.01147, abs=1e-5)
+        assert r["z_total_ohm"] == pytest.approx(0.017, abs=5e-5)
 
-    def test_intermediates_multiply_out(self):
-        r = ieee80.tolerable_voltages(rho=100, t_s=0.5, body_kg=50)
-        assert r["e_touch_v"] == pytest.approx(r["i_b_a"] * r["r_touch_ohm"], rel=1e-3)
-        assert r["e_step_v"] == pytest.approx(r["i_b_a"] * r["r_step_ohm"], rel=1e-3)
+    def test_the_residual_is_the_sources_own_rounding(self):
+        """The 0.06 % gap is explained, not tolerated.
 
+        The paper divides by its printed Z_Tk = 0.017 ohm. Feeding that same
+        rounded value through the final step reproduces 14 943 A exactly, so
+        the deviation is the source's rounding and nothing else.
+        """
+        r = fc.prospective_fault_current(**PUBLISHED)
+        from_rounded = 1.1 * 400.0 / (math.sqrt(3.0) * 0.017)
+        assert from_rounded == pytest.approx(PUBLISHED_A, abs=1.0)
+        # ...and full precision sits just below it, by less than a tenth of a percent.
+        assert 0 < (PUBLISHED_A - r["i_k3_a"]) / PUBLISHED_A < 0.001
 
-class TestPhysics:
-    def test_step_exceeds_touch(self):
-        # 6x surface term vs 1.5x — step tolerable is always the higher limit.
-        r = ieee80.tolerable_voltages(rho=250, t_s=1.0, body_kg=50)
-        assert r["e_step_v"] > r["e_touch_v"]
+    def test_network_split_follows_the_stated_relationships(self):
+        # The source states X = 0.995*Z and R = 0.1*X, not R = sqrt(Z^2-X^2).
+        r = fc.prospective_fault_current(**PUBLISHED)
+        net = r["contributions"][0]
+        assert net["name"] == "Supply network"
+        # rel=1e-4, not tighter: both are rounded to 9 dp on the way out, which
+        # costs the last significant digit of a 3.5e-05 value.
+        assert net["r_ohm"] == pytest.approx(net["x_ohm"] * 0.1, rel=1e-4)
 
-    def test_70kg_body_tolerates_more(self):
-        r50 = ieee80.tolerable_voltages(rho=100, t_s=0.5, body_kg=50)
-        r70 = ieee80.tolerable_voltages(rho=100, t_s=0.5, body_kg=70)
-        assert r70["e_touch_v"] == pytest.approx(r50["e_touch_v"] * 0.157 / 0.116, rel=1e-4)
+    def test_transformer_rated_current(self):
+        r = fc.prospective_fault_current(**PUBLISHED)
+        assert r["transformer_i_2n_a"] == pytest.approx(577.0, abs=1.0)
 
-    def test_shorter_fault_tolerates_more(self):
-        fast = ieee80.tolerable_voltages(rho=100, t_s=0.1, body_kg=50)
-        slow = ieee80.tolerable_voltages(rho=100, t_s=1.0, body_kg=50)
-        assert fast["e_touch_v"] > slow["e_touch_v"]
-        assert fast["e_touch_v"] == pytest.approx(slow["e_touch_v"] * math.sqrt(10), rel=1e-4)
-
-    def test_monotonic_in_resistivity(self):
-        lo = ieee80.tolerable_voltages(rho=50, t_s=0.5, body_kg=50)
-        hi = ieee80.tolerable_voltages(rho=500, t_s=0.5, body_kg=50)
-        assert hi["e_touch_v"] > lo["e_touch_v"]
-
-
-class TestSurfaceLayer:
-    def test_crushed_rock_derating(self):
-        # The standard's well-known example: 2500 ohm-m rock, 0.1 m over 100 ohm-m soil.
-        cs = ieee80.surface_derating(100, 2500, 0.1)
-        assert cs == pytest.approx(0.7021, abs=1e-3)
-
-    def test_layer_raises_tolerable_touch(self):
-        bare = ieee80.tolerable_voltages(rho=100, t_s=0.5, body_kg=50)
-        rock = ieee80.tolerable_voltages(rho=100, t_s=0.5, body_kg=50, rho_s=2500, h_s=0.1)
-        assert rock["e_touch_v"] > bare["e_touch_v"]
-
-    def test_same_resistivity_layer_is_no_layer(self):
-        assert ieee80.surface_derating(100, 100, 0.1) == 1.0
-
-    def test_conductive_layer_warns(self):
-        r = ieee80.tolerable_voltages(rho=1000, t_s=0.5, body_kg=50, rho_s=100, h_s=0.1)
-        assert r["warnings"]
+    def test_referral_ratio(self):
+        assert fc.prospective_fault_current(**PUBLISHED)["ratio"] == pytest.approx(50.0)
 
 
-class TestValidation:
-    def test_rejects_nonpositive_rho(self):
+class TestStructuralProperties:
+    """Hold for every input, not one point — ALGORITHM.md section 6.2."""
+
+    def test_transformer_dominates_this_topology(self):
+        r = fc.prospective_fault_current(**PUBLISHED)
+        assert r["dominant"] == "Transformer"
+        shares = {c["name"]: c["share_pct"] for c in r["contributions"]}
+        assert shares["Transformer"] > 90
+        assert all(v < shares["Transformer"] for k, v in shares.items() if k != "Transformer")
+
+    def test_pythagoras_on_the_totals(self):
+        r = fc.prospective_fault_current(**PUBLISHED)
+        # rel=1e-6, not tighter: the returned values are rounded to 9 dp, so
+        # hypot of the rounded parts cannot equal the rounded whole exactly.
+        assert r["z_total_ohm"] == pytest.approx(
+            math.hypot(r["r_total_ohm"], r["x_total_ohm"]), rel=1e-6)
+
+    def test_more_impedance_never_raises_the_current(self):
+        base = fc.prospective_fault_current(**PUBLISHED)["i_k3_a"]
+        for key in ("r_mv", "x_mv", "r_lv", "x_lv", "vk_pct"):
+            worse = fc.prospective_fault_current(**{**PUBLISHED, key: PUBLISHED[key] * 2})
+            assert worse["i_k3_a"] <= base, f"raising {key} raised the current"
+
+    def test_voltage_factor_is_linear(self):
+        a = fc.prospective_fault_current(**{**PUBLISHED, "c": 1.0})["i_k3_a"]
+        b = fc.prospective_fault_current(**{**PUBLISHED, "c": 2.0})["i_k3_a"]
+        # c scales both the network impedance and the driving voltage, so the
+        # ratio is not exactly 2 — but it must rise, and stay well-behaved.
+        assert b > a
+        assert 1.5 < b / a < 2.5
+
+    def test_referral_round_trips(self):
+        z = 0.36
+        assert fc._referred(z, 50.0) * 50.0**2 == pytest.approx(z, rel=1e-12)
+
+    def test_shares_sum_to_about_one_hundred(self):
+        r = fc.prospective_fault_current(**PUBLISHED)
+        total = sum(c["share_pct"] for c in r["contributions"])
+        # Magnitudes of complex parts, so not exactly 100 — but close, because
+        # every element here is dominated by one of R or X.
+        assert 95 < total < 110
+
+
+class TestNetworkImpedanceForm:
+    """The paper uses the current form; the printed power form disagrees."""
+
+    def test_current_form_value(self):
+        z = fc.network_impedance(c=1.1, u_net=20000, i_k_net=14400)
+        assert z == pytest.approx(0.882063, abs=1e-5)
+
+    def test_power_form_would_not_match(self):
+        # c^2*U^2/S with S = 500 MVA — the form the paper also prints.
+        z_current = fc.network_impedance(c=1.1, u_net=20000, i_k_net=14400)
+        z_power = (1.1**2) * (20000**2) / 500e6
+        assert z_power != pytest.approx(z_current, rel=0.01)
+
+
+class TestRefusals:
+    """ALGORITHM.md section 6.3 — legal in, illegal refused."""
+
+    @pytest.mark.parametrize("key", ["u_net", "i_k_net", "s_n", "u_2n", "vk_pct", "c"])
+    def test_nonpositive_refused(self, key):
         with pytest.raises(ValueError):
-            ieee80.tolerable_voltages(rho=0, t_s=0.5, body_kg=50)
+            fc.prospective_fault_current(**{**PUBLISHED, key: 0})
 
-    def test_rejects_duration_outside_window(self):
+    @pytest.mark.parametrize("key", ["r_mv", "x_mv", "r_lv", "x_lv"])
+    def test_negative_impedance_refused(self, key):
         with pytest.raises(ValueError):
-            ieee80.tolerable_voltages(rho=100, t_s=0.01, body_kg=50)
-        with pytest.raises(ValueError):
-            ieee80.tolerable_voltages(rho=100, t_s=5.0, body_kg=50)
+            fc.prospective_fault_current(**{**PUBLISHED, key: -1})
 
-    def test_rejects_unknown_body_weight(self):
-        with pytest.raises(ValueError):
-            ieee80.tolerable_voltages(rho=100, t_s=0.5, body_kg=60)
+    def test_inconsistent_transformer_test_data_refused(self):
+        # Huge load loss makes R_T exceed Z_T, so X_T would be imaginary.
+        with pytest.raises(ValueError, match="inconsistent"):
+            fc.prospective_fault_current(**{**PUBLISHED, "pk_pct": 90.0})
+
+    def test_legal_inputs_accepted(self):
+        assert fc.prospective_fault_current(**PUBLISHED)["i_k3_a"] > 0
 
 
-class TestDurationCurve:
-    """The chart plots engine output — so the sweep is pinned like any answer."""
+class TestSensitivity:
+    def test_sweep_is_monotonic_in_impedance(self):
+        pts = fc.sensitivity(base=PUBLISHED, element="transformer", points=12)
+        assert len(pts) > 5
+        currents = [p["i_k3_ka"] for p in pts]
+        assert currents == sorted(currents, reverse=True), "more impedance must mean less current"
 
-    def test_spans_the_whole_applicability_window(self):
-        c = ieee80.duration_curve(rho=100, body_kg=50)
-        assert c[0]["t_s"] == pytest.approx(ieee80.T_MIN_S)
-        assert c[-1]["t_s"] == pytest.approx(ieee80.T_MAX_S)
+    def test_unknown_element_refused(self):
+        with pytest.raises(ValueError, match="unknown element"):
+            fc.sensitivity(base=PUBLISHED, element="nonsense")
 
-    def test_every_point_is_inside_the_window(self):
-        # Float drift at the log ends would make the engine raise, not clamp.
-        c = ieee80.duration_curve(rho=100, body_kg=50, points=200)
-        assert all(ieee80.T_MIN_S <= p["t_s"] <= ieee80.T_MAX_S for p in c)
 
-    def test_monotonically_decreasing(self):
-        c = ieee80.duration_curve(rho=100, body_kg=50)
-        assert all(c[i]["e_touch_v"] >= c[i + 1]["e_touch_v"] for i in range(len(c) - 1))
-        assert all(c[i]["e_step_v"] >= c[i + 1]["e_step_v"] for i in range(len(c) - 1))
+class TestCalculationReport:
+    """Stage 6 — a sheet a reviewing engineer can check line by line."""
 
-    def test_curve_agrees_with_the_single_point_call(self):
-        # The headline number and the chart must never disagree — same engine.
-        c = ieee80.duration_curve(rho=250, body_kg=70, points=3)
-        for p in c:
-            one = ieee80.tolerable_voltages(rho=250, t_s=p["t_s"], body_kg=70)
-            assert p["e_touch_v"] == pytest.approx(one["e_touch_v"], abs=0.02)
+    def test_runs_from_inputs_to_result(self):
+        steps = fc.prospective_fault_current(**PUBLISHED)["steps"]
+        groups = []
+        for s in steps:
+            if s["group"] not in groups:
+                groups.append(s["group"])
+        assert groups == ["Given", "Supply network", "MV cable",
+                          "Transformer", "LV cable", "Total and result"]
 
-    def test_point_count_is_bounded(self):
-        assert len(ieee80.duration_curve(rho=100, points=1)) == 2
-        assert len(ieee80.duration_curve(rho=100, points=9999)) == 200
+    def test_final_step_is_the_answer(self):
+        r = fc.prospective_fault_current(**PUBLISHED)
+        last = r["steps"][-1]
+        assert last["symbol"] == "I_k3"
+        # abs=0.01: the report keeps full precision, the headline is rounded
+        # to 2 dp. They must agree to that rounding and no further.
+        assert last["value"] == pytest.approx(r["i_k3_a"], abs=0.01)
 
-    def test_surface_layer_lifts_the_whole_curve(self):
-        bare = ieee80.duration_curve(rho=100, points=6)
-        rock = ieee80.duration_curve(rho=100, rho_s=2500, h_s=0.1, points=6)
-        assert all(r["e_touch_v"] > b["e_touch_v"] for b, r in zip(bare, rock))
+    def test_every_step_is_checkable(self):
+        # A line without a formula, a value or a unit-bearing symbol is not a
+        # report line — it is decoration.
+        for s in fc.prospective_fault_current(**PUBLISHED)["steps"]:
+            assert s["symbol"] and s["formula"], s
+            assert isinstance(s["value"], (int, float)), s
+            assert s["value_str"], s
+
+    def test_substitutions_carry_real_numbers(self):
+        # The point of the report is that the reader can redo the arithmetic,
+        # so a derived step must show the numbers that went in.
+        derived = [s for s in fc.prospective_fault_current(**PUBLISHED)["steps"]
+                   if s["substitution"] != "given"]
+        assert len(derived) >= 14
+        for s in derived:
+            assert any(ch.isdigit() for ch in s["substitution"]), s
+
+    def test_totals_show_their_summands(self):
+        steps = {s["symbol"]: s for s in fc.prospective_fault_current(**PUBLISHED)["steps"]}
+        # Four elements summed, so three plus signs in the substitution.
+        assert steps["R_Tk"]["substitution"].count("+") == 3
+        assert steps["X_Tk"]["substitution"].count("+") == 3
+
+    def test_report_tracks_the_inputs(self):
+        other = fc.prospective_fault_current(**{**PUBLISHED, "s_n": 630000.0})
+        given = {s["symbol"]: s["value"] for s in other["steps"] if s["group"] == "Given"}
+        assert given["S_n"] == 630000.0

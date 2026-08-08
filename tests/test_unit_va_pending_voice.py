@@ -33,7 +33,9 @@ class StubVA:
 
     def __init__(self, tmp: Path):
         self.data_dir = tmp
-        self.kernel = types.SimpleNamespace()   # lookup_inverse fails soft on this
+        self.kernel = types.SimpleNamespace(
+            config=types.SimpleNamespace(data_dir=tmp),
+        )  # lookup_inverse still fails soft without a registry
         self._active_companion = ""
         self._last_pending: dict[str, str] = {}
         self.calls: list[tuple] = []
@@ -122,6 +124,32 @@ def test_voice_confirm_applies_and_speaks_result(pending_mod, tmp_path):
     # Second confirm: nothing pending anymore
     out2 = asyncio.run(pending_mod.voice_confirm_pending(app))
     assert out2["say"] == "Nothing pending to confirm."
+
+
+def test_voice_confirm_writes_session_bound_decision_envelope(pending_mod, tmp_path):
+    import json
+
+    app = StubVA(tmp_path)
+    saved = _save(
+        pending_mod,
+        app,
+        verb="task.add",
+        app="task",
+        method="add",
+        args={"text": "buy milk"},
+    )
+    app._last_pending[""] = saved["id"]
+
+    asyncio.run(pending_mod.voice_confirm_pending(app))
+
+    audit_path = tmp_path / "autopilot" / "audit.jsonl"
+    entry = json.loads(audit_path.read_text(encoding="utf-8").splitlines()[0])
+    assert entry["decision_id"] == saved["id"]
+    assert entry["channel"] == "voice"
+    assert entry["approver_binding"]["session"].startswith("session:voice-")
+    assert entry["decision"] == "approve"
+    assert entry["attempt"] == 1
+    assert entry["execution_result"]["status"] == "applied"
 
 
 def test_voice_reject_drops_without_executing(pending_mod, tmp_path):

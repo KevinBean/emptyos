@@ -43,6 +43,21 @@ if TYPE_CHECKING:
     from emptyos.sdk.base_app import BaseApp
 
 
+def _contained(base: Path, candidate: Path) -> Path | None:
+    """``candidate`` resolved, but only if it stays inside ``base``.
+
+    The join is what escapes, so the check has to be on the *resolved* path —
+    ``base / "../x"`` is a perfectly ordinary Path until you resolve it.
+    Returns None rather than raising: a lookup for something outside the
+    library is a lookup that found nothing, matching find_file's contract.
+    """
+    try:
+        resolved = candidate.resolve()
+        return resolved if resolved.is_relative_to(base.resolve()) else None
+    except (OSError, ValueError):
+        return None
+
+
 class VaultLibrary:
     """Base class for vault-backed note collections."""
 
@@ -307,16 +322,24 @@ class VaultLibrary:
                     if full.exists():
                         return full
 
-        # Fallback: scan configured directory
+        # Fallback: scan configured directory.
+        #
+        # Both branches below join a caller-supplied string onto a directory,
+        # and callers pass ids that came from a route (`detail(f"{id}.md")`).
+        # Measured 2026-08-08: `dir / "../SECRET.md"` resolves outside and
+        # `.exists()` is True, and — less obviously — `dir.rglob("../SECRET.md")`
+        # RETURNS the outside file rather than raising. So containment is
+        # checked on the resolved path, not assumed from the join.
         fallback_dir = self._fallback_dir()
         if fallback_dir and fallback_dir.exists():
-            direct = fallback_dir / filename
-            if direct.exists():
+            direct = _contained(fallback_dir, fallback_dir / filename)
+            if direct is not None and direct.exists():
                 return direct
             # Recursive search
-            found = list(fallback_dir.rglob(filename))
-            if found:
-                return found[0]
+            for candidate in fallback_dir.rglob(filename):
+                inside = _contained(fallback_dir, candidate)
+                if inside is not None:
+                    return inside
 
         return None
 

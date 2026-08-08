@@ -1,0 +1,52 @@
+[app]
+id = "trust-loop"
+name = "Trust Loop"
+version = "2.0.0"
+description = "Trustworthy-engineering showcase — prospective fault current at MV/LV transformer terminals, gated live against an openly-published worked example"
+dimensions = ["occupational"]
+store_category = "engineering"
+
+[app.entry]
+module = "app"
+class = "TrustLoopApp"
+
+[provides.cli]
+commands = ["trust-loop"]
+
+[provides.web]
+prefix = "/trust-loop"
+
+[requires]
+capabilities = []
+apps = []
+optional_apps = ["kb"]
+
+# Method registry — the calculator framework's contract surface. One method:
+# the impedance-referral method of ALGORITHM.md, pure and deterministic
+# (fault_current.py). No model call sits anywhere on the compute path.
+[[provides.methods.fault]]
+id = "impedance_referral"
+label = "Impedance referral (IEC 60909 method)"
+default = true
+fn = "_calc_fault"
+version = "2.0.0"
+description = "Refer every upstream impedance to the LV base, sum, and solve. Follows the method and worked example of ABB Technical Application Paper No. 2 clause 2.2."
+
+# Conformance — the gate. An openly-published worked example with a published
+# answer, so a reader can check the anchor without trusting this app.
+# Tolerance 0.5%: the paper prints its intermediates rounded to 2-3 significant
+# figures, so full-precision arithmetic lands ~0.06% below the printed answer.
+# See ALGORITHM.md section 6.1 for why the band is neither slack nor tight.
+[[provides.conformance.fault]]
+case_id = "abb-tap2-400kva-20kv"
+label = "ABB TAP No. 2 cl. 2.2 — 400 kVA 20/0.4 kV, 500 MVA network, 5 m LV cable (published 14.95 kA)"
+inputs_fn = "_conf_published_inputs"
+expected_fn = "_conf_published_expected"
+methods = ["impedance_referral"]
+tolerances = { default_pct = 0.5 }
+
+[provides.welcome]
+title = "Trust Loop"
+tagline = "How an engineering calculator earns trust — live, with receipts."
+href = "/trust-loop/"
+order = 45
