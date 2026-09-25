@@ -1,13 +1,19 @@
+---
+paths:
+  - "apps/**/rooms/**"
+  - "plugins/agent-runtime/**"
+  - "emptyos/sdk/claude_run_stream.py"
+---
 # Multi-CLI Participants Rule — agent-runtime adapters
 
-EmptyOS rooms (`apps/rooms/`) participants come in three flavours: `user`,
+EmptyOS rooms (`apps/public/standard/rooms/`) participants come in three flavours: `user`,
 `agent`, and `cli`. CLI participants run an external coding-agent CLI per
 @-mention via the `agent-runtime` plugin. This rule documents the adapter
 contract so adding a new CLI (codex, gemini, cursor-agent, kimi, …) is
 config-only when possible and a small plugin patch when not.
 
 **Reference implementation:** `plugins/agent-runtime/plugin.py`,
-`apps/rooms/participants.py:_dispatch_cli_turn` (bound onto `RoomsApp`
+`apps/public/standard/rooms/participants.py:_dispatch_cli_turn` (bound onto `RoomsApp`
 via the multi-module decomposition pattern in
 `.claude/rules/multi-module-apps.md`). See also `docs/ROOMS-V3.md`.
 
@@ -98,7 +104,7 @@ env_drop = []                         # env vars to strip
 up the next time `_dispatch_cli_turn` is called with `cli_id="kimi"`.
 
 To make it appear in the group-create modal CLI section, add a
-`simpleCliRow(...)` line in `apps/rooms/pages/index.html` (search for
+`simpleCliRow(...)` line in `apps/public/standard/rooms/pages/index.html` (search for
 `simpleCliRow`) and a name resolver in `agentNameById`.
 
 ### Windows: a multi-line prompt cannot go on argv through a `.CMD` shim
@@ -355,5 +361,5 @@ known-bad list, not a safety certificate: absent means "never tested", not
 
 `tests/test_unit_rooms_logic.py::TestResolveResponder` covers participant
 resolution including CLI ids. End-to-end CLI dispatch is exercised
-through `apps/dogfood-agent/` (the only other consumer of the
+through `apps/extension/dev/dogfood-agent/` (the only other consumer of the
 `agent-runtime` plugin) via its existing test suite.

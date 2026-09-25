@@ -23,9 +23,52 @@ from helpers import TEST_PREFIX, assert_dict_response, assert_list_response, ass
 # Fixtures already in the vault (from session 2026-05-24): the first real course
 # + the asnzs-61439 concept note + the §10.10 clause. Tests reference these
 # stable slugs rather than seeding their own — the vault is authoritative.
+def _expected_sources() -> tuple:
+    """The unified review queue's sources, read from review_all.py rather than
+    hardcoded here.
+
+    These assertions were already stale before picture-dict arrived: soundcheck
+    had been added to SOURCES and the literal list was never updated, so the
+    suite failed for a reason unrelated to the code under test. Deriving them
+    means the next silo added cannot break this.
+    """
+    import ast
+
+    src = Path(__file__).resolve().parent.parent / "apps/public/standard/learn/review_all.py"
+    for node in ast.parse(src.read_text(encoding="utf-8")).body:
+        if isinstance(node, ast.Assign) and getattr(node.targets[0], "id", "") == "SOURCES":
+            return tuple(ast.literal_eval(node.value))
+    raise AssertionError("SOURCES not found in review_all.py")
+
+
+EXPECTED_SOURCES = _expected_sources()
+
 REAL_COURSE_ID = "asnzs-61439-foundations"
 REAL_CONCEPT_SLUG = "asnzs-61439"
 REAL_CLAUSE_SLUG = "asnzs-61439-1-10-10"
+
+
+@pytest.fixture
+def require_real_course(http_client):
+    """Skip when this daemon's vault does not carry the authored course.
+
+    CI mounts a throwaway vault (./ci-vault, empty PARA dirs), so the course
+    exists only where the real vault is mounted. Same shape as
+    ``require_sim_engine`` in test_sys_sim.py: state the precondition and skip,
+    rather than failing and reading as a regression.
+    """
+    r = http_client.get(f"/learn/api/courses/{REAL_COURSE_ID}")
+    if r.status_code != 200 or (r.json() or {}).get("id") != REAL_COURSE_ID:
+        pytest.skip(f"course '{REAL_COURSE_ID}' is not in this daemon's vault")
+
+
+@pytest.fixture
+def require_real_concept(http_client):
+    """Skip when the authored KB concept note is not in this daemon's vault."""
+    r = http_client.get("/learn/api/authoring/kb-notes?kind=concept")
+    slugs = {n.get("slug") for n in (r.json() or {}).get("notes", [])} if r.status_code == 200 else set()
+    if REAL_CONCEPT_SLUG not in slugs:
+        pytest.skip(f"KB concept '{REAL_CONCEPT_SLUG}' is not in this daemon's vault")
 
 
 @pytest.mark.api
@@ -41,7 +84,7 @@ class TestLearnAPI:
             for key in ("id", "title", "lesson_count", "completed_count"):
                 assert key in c, f"Course missing key {key}: {c}"
 
-    def test_real_course_detail(self, http_client):
+    def test_real_course_detail(self, http_client, require_real_course):
         """GET /learn/api/courses/<id> returns the real course with parsed lessons."""
         data = assert_dict_response(http_client.get(f"/learn/api/courses/{REAL_COURSE_ID}"))
         assert data.get("id") == REAL_COURSE_ID
@@ -51,7 +94,7 @@ class TestLearnAPI:
             for key in ("index", "title", "kind", "slug"):
                 assert key in l
 
-    def test_lesson_load_with_citations(self, http_client):
+    def test_lesson_load_with_citations(self, http_client, require_real_course):
         """GET /learn/api/courses/<id>/lessons/3 (§10.10) returns body with
         PDF anchor button + converted wikilinks."""
         data = assert_dict_response(http_client.get(
@@ -99,7 +142,7 @@ class TestLearnAPI:
 
     # ── Authoring ──────────────────────────────────────────────
 
-    def test_authoring_kb_notes_list(self, http_client):
+    def test_authoring_kb_notes_list(self, http_client, require_real_concept):
         """GET /learn/api/authoring/kb-notes returns filterable list excluding kind:doc."""
         data = assert_dict_response(
             http_client.get("/learn/api/authoring/kb-notes?kind=concept"),
@@ -189,7 +232,7 @@ class TestLearnAPI:
         ))
         assert r["ok"] is True
         entry = r["entry"]
-        for key in ("ease", "review_count", "next_review", "last_score"):
+        for key in ("s", "d", "review_count", "next_review", "last_score"):
             assert key in entry, f"SRS entry missing {key}: {entry}"
         assert entry["last_score"] == 80
 
@@ -212,14 +255,14 @@ class TestLearnAPI:
             required_keys=["cards", "counts", "sources", "total_due"],
         )
         assert isinstance(data["cards"], list)
-        for source in ("learn", "dictionary", "media"):
+        for source in EXPECTED_SOURCES:
             assert source in data["counts"], f"counts missing {source}"
             assert isinstance(data["counts"][source], int)
         assert data["total_due"] == sum(data["counts"].values())
         for card in data["cards"]:
             for key in ("app", "id", "kind", "front", "back", "due", "meta"):
                 assert key in card, f"card missing {key}: {card}"
-            assert card["app"] in ("learn", "dictionary", "media")
+            assert card["app"] in EXPECTED_SOURCES
             if card["app"] == "learn":
                 # The MCQ is generated lazily per card, never during listing.
                 assert card["kind"] == "quiz"
@@ -282,7 +325,7 @@ class TestLearnAPI:
             required_keys=["total_cards", "due_today", "reviewed_today", "streak_days", "unified"],
         )
         assert isinstance(data["unified"]["total_due"], int)
-        assert set(data["unified"]["counts"]) == {"learn", "dictionary", "media"}
+        assert set(data["unified"]["counts"]) == set(EXPECTED_SOURCES)
 
     # ── Reader notes ───────────────────────────────────────────
 
@@ -423,6 +466,65 @@ class TestTutorialVerifyResult:
             self._set_flag(http_client, False)
 
 
+@pytest.mark.api
+class TestLessonVideoAPI:
+    """Lesson video routes — the gate and input validation only.
+
+    Generating a video hits an LLM, TTS, and headless Chromium; that path is
+    verified live on a sandbox member. These tests pin what must hold on any
+    daemon: off means refused, and bad ids answer in-band instead of 500.
+    """
+
+    KEY = "learn.feature.lesson-video.enabled"
+    DISABLED = "lesson video is disabled"
+
+    def _get_flag(self, http_client):
+        r = http_client.get("/settings/api/get", params={"key": self.KEY})
+        assert r.status_code == 200
+        return r.json().get("value")
+
+    def _set_flag(self, http_client, value):
+        r = http_client.post("/settings/api/set", json={"key": self.KEY, "value": value})
+        assert r.status_code == 200
+
+    def test_disabled_refuses_every_route(self, http_client):
+        # Restore whatever the user had — a test run must never wipe their toggle.
+        prior = self._get_flag(http_client)
+        self._set_flag(http_client, False)
+        try:
+            if http_client.get("/learn/api/courses/any-course/lessons/0/video").json().get("enabled"):
+                pytest.skip("lesson video is forced on by this daemon's emptyos.toml")
+            r = http_client.post("/learn/api/courses/any-course/lessons/0/video")
+            assert r.status_code == 200 and r.json().get("error") == self.DISABLED
+            assert http_client.get("/learn/api/video-runs/some-run").json().get("error") == self.DISABLED
+            assert http_client.post("/learn/api/video-runs/some-run/resume").json().get("error") == self.DISABLED
+            assert http_client.post("/learn/api/courses/any-course/videos").json().get("error") == self.DISABLED
+            r = http_client.get("/learn/api/videos/any-course/0")
+            # 404 alone would also be "no video for this lesson" — pin the gate's own body.
+            assert r.status_code == 404 and r.json().get("error") == self.DISABLED
+        finally:
+            self._set_flag(http_client, prior)
+
+    def test_bad_ids_answer_in_band(self, http_client):
+        prior = self._get_flag(http_client)
+        self._set_flag(http_client, True)
+        try:
+            r = http_client.post("/learn/api/courses/nul/lessons/0/video")
+            assert r.status_code == 200 and r.json().get("error", "").startswith("invalid course id")
+            r = http_client.post("/learn/api/courses/no-such-course-xyz/lessons/0/video")
+            assert r.json().get("error") == "course not found"
+            r = http_client.post("/learn/api/courses/no-such-course-xyz/lessons/abc/video")
+            assert "integer" in r.json().get("error", "")
+            assert http_client.get("/learn/api/video-runs/no-such-run-xyz").json().get("error") == "run not found"
+            assert http_client.get("/learn/api/video-runs/nul").json().get("error", "").startswith("invalid run id")
+            r = http_client.get("/learn/api/videos/no-such-course-xyz/0")
+            assert r.status_code == 404 and r.json().get("error") == "no video for this lesson"
+            r = http_client.get("/learn/api/videos/nul/0")
+            assert r.status_code == 400 and r.json().get("error", "").startswith("invalid course id")
+        finally:
+            self._set_flag(http_client, prior)
+
+
 # Notes for the maintainer:
 #
 # - LLM-touching endpoints (quiz generation) skipped intentionally —
@@ -434,8 +536,9 @@ class TestTutorialVerifyResult:
 #   a section-cleanup pass to conftest if accumulation becomes painful.
 #
 # - SRS grade test leaves a TEST_PREFIX entry in data/apps/learn/srs.json
-#   that won't surface as a "due" card (random slug doesn't resolve to a
-#   real KB note). Acceptable noise; clean by hand if needed. The unified
-#   grade-item tests do the same; on a machine with the dictionary app
-#   installed, the optional-app soft test also leaves a ghost word entry in
-#   data/apps/dictionary/srs.json (its ladder creates entries on demand).
+#   (the unified grade-item tests do the same, and on a machine with the
+#   dictionary app installed the optional-app soft test leaves a ghost word
+#   entry in data/apps/dictionary/srs.json). Neither app has a delete
+#   endpoint, so the API sweeps can't reach these; conftest's session-end
+#   SRS-store backstop drops them by key instead. Was "acceptable noise,
+#   clean by hand" until 2026-08-06, by which point nobody had.

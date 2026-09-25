@@ -33,6 +33,16 @@ DEFER findings + rejected false-positives. Two reasons it's load-bearing:
   against the *actual* write target — a shared file mislabelled "per-entity" is
   exactly the missed-bug shape (the 2026-06-16 shared-inbox `add_task_to_project`
   race was found this way, after a 21-iteration prior run had deferred it).
+- **Run the partial-lock discriminator per APP DIRECTORY, never per file.** The
+  discriminator: does this app have `write_lock`/`note_lock` writers of a note AND
+  an unlocked writer of the same note? >0 locks + an unlocked writer = a real
+  partial-lock bug (the lock is false safety). 0 locks anywhere = consistently
+  unlocked per-entity = defer. Apps are multi-module now, so a per-*file* grep
+  reports 0 locks for a sibling module and the file reads as benign — that is how
+  the 2026-07-18 publish hole (scheduling.py locked; media.py's 4 writers unlocked,
+  so a scheduled release's `publish: true` was silently clobbered and the post
+  never went live) survived FIVE runs classified as safe. Count over the whole app
+  dir: `grep -rc "write_lock\|note_lock" apps/<track>/<app>/*.py`.
 
 If no backlog exists, this is a first run — proceed to phase 1.
 
@@ -51,8 +61,17 @@ python scripts/check-vault-rmw-race.py              # shared-file RMW races
 ```
 - `check-asyncio-blocking.py` rule **blocking-in-async** = direct + intra-file
   transitive blocking primitive reached from an `async def`. ADVISORY.
-- `check-vault-rmw-race.py` = read→write on the same path with no `write_lock`.
-  ADVISORY (per-entity files are benign; shared-file writers are the real ones).
+- `check-vault-rmw-race.py` = read→write on the same path with no lock. Recognizes
+  `write_lock`, `note_lock`, and any `*_lock` helper that RETURNS one (apps wrap a
+  canonical key that way — `task._file_lock` borrows the projects lock). Tolerance is
+  FUNCTION-scoped, so an unlocked sibling of a locked writer is still flagged — do not
+  widen it to file scope or the partial-lock vein goes dark. ADVISORY (per-entity files
+  are benign; shared-file writers are the real ones). Both directions are pinned by
+  `tests/test_unit_check_vault_rmw_race.py`.
+- **Prefer `self.note_lock(path)` for a vault note**, not `write_lock`: it is
+  kernel-wide (shared across app *instances*) and normalizes abs/rel spellings, so it
+  excludes writers `write_lock` would miss. Don't hand-roll a per-app lock helper for
+  a note — that primitive already exists.
 - These graduated from one-off scans (audits.md). To add a class, extend the
   scanner, don't re-roll a throwaway.
 
@@ -88,7 +107,7 @@ Before fixing ANYTHING:
   edits) → probe `<host>` → `DELETE .../lease/{id}`. For a race fix, fire ~10
   concurrent writes and confirm all persisted. For a wedge fix, run the heavy op
   and confirm `/api/health` stays responsive (sub-second) concurrently — that
-  *is* the proof the loop didn't freeze. See `.Codex/rules/sandbox-driven-testing.md`.
+  *is* the proof the loop didn't freeze. See `.claude/rules/sandbox-driven-testing.md`.
 
 ### 6. Record
 Keep a running backlog (e.g. `data/audit-loop/backlog.md`): findings, status
@@ -113,7 +132,7 @@ instead of restarting from a cold scan each time.
 ## Cross-references
 - `scripts/check-asyncio-blocking.py`, `scripts/check-vault-rmw-race.py`,
   `scripts/check_call_app_declared.py` — the graduated scanners (in `scripts/preflight.py`).
-- `.Codex/rules/audits.md` — FP discipline + graduation; `.Codex/rules/debugging.md`
-  — root-cause + the async-wedge catalog; `.Codex/rules/sandbox-driven-testing.md`
-  — the lease/verify loop; `.Codex/rules/daemon-handling.md` — hands off :9000.
-- AGENTS.md § Development Gotchas — vault RMW race; § async-wedge catalog.
+- `.claude/rules/audits.md` — FP discipline + graduation; `.claude/rules/debugging.md`
+  — root-cause + the async-wedge catalog; `.claude/rules/sandbox-driven-testing.md`
+  — the lease/verify loop; `.claude/rules/daemon-handling.md` — hands off :9000.
+- CLAUDE.md § Development Gotchas — vault RMW race; § async-wedge catalog.

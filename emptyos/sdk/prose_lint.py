@@ -7,7 +7,7 @@ findings are advisory and nothing is ever auto-rewritten (audits.md posture:
 heuristics fire on healthy prose too; thresholds below are tuned against the
 voice guide's own calibration sentences, which must lint clean).
 
-Two rule families:
+Three rule families (the third only under ``spoken=True``):
 
 * **banned** (severity ``high``) — the voice guide's banned words & patterns:
   hype vocabulary, press-release openers, engagement bait, business-blog filler.
@@ -15,6 +15,13 @@ Two rule families:
   LLM-drafted prose: the "isn't X. It's Y." pivot repeated past a density
   threshold, stacked "That's the …" openers, triadic anaphora, AI filler
   phrases, and an em-dash rate far beyond the house style's own fondness.
+* **spoken-register** (``spoken=True`` only) — for a line that will be *said*:
+  contractions spelled out, semicolons (which have no spoken form), and
+  sentences longer than one breath. These exist because the two families above
+  are blind to the defect: a contraction-free recruiter email linted "clean, 0
+  findings" here while reading unmistakably machine-written, and a phone-screen
+  brief shipped with 0 contractions across 31 opportunities and 10 sentences
+  over 25 words. Register is invisible to a banned-word scan.
 
 Pure stdlib, no kernel imports — safe to import from a one-shot script
 (`python -c` / scripts/check_prose_tone.py) per daemon-handling rule 4.
@@ -34,6 +41,17 @@ NOT_X_ITS_Y_PER_1000 = 2.0
 THATS_THE_MAX = 2          # sentence-initial "That's the …" openers allowed
 # (calibrated against the published model-or-harness post, which uses 2 and reads fine)
 EM_DASH_PER_100_MAX = 2.5  # house style *likes* em-dashes; only flag excess
+
+# ── Thresholds — spoken register (only under lint_prose(spoken=True)) ───────
+# A line destined to be SAID has different failure modes than one destined to
+# be read, and the rules above cannot see any of them. Calibrated against the
+# vault's own spoken material, which is the standard these reproduce: the five
+# `spoken: true` notes measure 69-100% and all clear the floor, while the brief
+# that motivated the rule measured 0%. The floor sits at 50% so the gap between
+# "written by him" and "drafted for him" separates without touching the former.
+CONTRACTION_MIN_RATIO = 0.5   # of natural opportunities, at least this many taken
+CONTRACTION_MIN_OPPS = 4      # below this, the sample is too small to judge
+SPOKEN_SENTENCE_MAX_WORDS = 25
 
 # ── banned — from the voice guide, verbatim intent ──────────────────────────
 _BANNED: list[tuple[str, str, str]] = [
@@ -210,7 +228,91 @@ def _broken_image_embeds(text: str) -> list[tuple[int, str]]:
     return out
 
 
-def lint_prose(text: str, *, source: str = "") -> dict:
+# ── spoken register ────────────────────────────────────────────────────────
+# Spelled-out form (lowercased key) -> the contraction a speaker would use.
+# Deliberately conservative: only forms where the contraction is unmarked in
+# speech. "I will not" -> "I won't" is listed; "cannot" -> "can't" is not,
+# because a speaker sometimes stresses "cannot" on purpose.
+_CONTRACTIBLE: dict[str, str] = {
+    "i am": "I'm", "i have": "I've", "i would": "I'd", "i will": "I'll",
+    "you are": "you're", "you have": "you've", "we are": "we're",
+    "we have": "we've", "they are": "they're", "it is": "it's",
+    "that is": "that's", "there is": "there's", "what is": "what's",
+    "do not": "don't", "does not": "doesn't", "did not": "didn't",
+    "is not": "isn't", "are not": "aren't", "was not": "wasn't",
+    "will not": "won't", "would not": "wouldn't", "have not": "haven't",
+    "has not": "hasn't", "could not": "couldn't", "should not": "shouldn't",
+}
+# ONE alternation, not a loop of separate scans — overlapping phrases must count
+# once. "I have not run it" contains both "I have" and "have not"; scanning each
+# pattern independently counted it twice, so the same sentence scored 0/2 spoken
+# and 1/1 contracted and the ratio was not comparable between them.
+_CONTRACTIBLE_RE = re.compile(
+    r"\b(?:" + "|".join(re.escape(k) for k in _CONTRACTIBLE) + r")\b",
+    re.IGNORECASE,
+)
+_CONTRACTION_USED = re.compile(
+    r"\b(?:I'm|I've|I'd|I'll|you're|you've|we're|we've|they're|it's|that's|there's|"
+    r"what's|don't|doesn't|didn't|isn't|aren't|wasn't|won't|wouldn't|haven't|hasn't|"
+    r"couldn't|shouldn't)\b",
+    re.IGNORECASE,
+)
+
+
+def _spoken_findings(joined: str, add) -> dict:
+    """Register checks for prose that will be said aloud, not read.
+
+    Returns the metrics dict; appends findings through ``add``. Three signals,
+    each one a thing you can hear: a formal register a speaker would not use,
+    punctuation with no spoken form, and a sentence longer than one breath.
+    """
+    # Normalise curly apostrophes — authored prose uses them, the regexes don't.
+    text = joined.replace("’", "'")
+
+    spelled = [(m.group(0), _CONTRACTIBLE[m.group(0).lower()])
+               for m in _CONTRACTIBLE_RE.finditer(text)]
+    used = len(_CONTRACTION_USED.findall(text))
+    opps = len(spelled) + used
+    ratio = (used / opps) if opps else 1.0
+
+    if opps >= CONTRACTION_MIN_OPPS and ratio < CONTRACTION_MIN_RATIO:
+        sample = ", ".join(f'"{a}" -> "{b}"' for a, b in spelled[:3])
+        add("contraction-rate", "medium", 0, sample,
+            f"{used} of {opps} contraction points taken ({ratio:.0%}, floor "
+            f"{CONTRACTION_MIN_RATIO:.0%}) — spelling them out is the formal "
+            f"register, and it is what makes spoken lines sound written")
+
+    if ";" in text:
+        pos = text.index(";")
+        add("spoken-semicolon", "medium", pos, text[max(0, pos - 40):pos + 20],
+            f"{text.count(';')} semicolon(s) in text meant to be spoken — "
+            "a semicolon has no spoken form; use a full stop")
+
+    # Sentence-split per LINE, not across the document. For spoken material a
+    # line break is a pause, and the document-wide splitter glues a heading
+    # (which has no terminal punctuation) onto the sentence beneath it — that
+    # inflated three of six findings on a healthy STAR file into false hits.
+    line_sents = [seg.strip()
+                  for line in text.split("\n")
+                  for seg in _SENTENCE_SPLIT.split(line)
+                  if seg.strip()]
+    long_sents = [s for s in line_sents
+                  if len(_WORD.findall(s)) > SPOKEN_SENTENCE_MAX_WORDS]
+    for s in long_sents:
+        add("spoken-sentence-length", "low", joined.find(s[:30]), s,
+            f"{len(_WORD.findall(s))} words in one sentence (max "
+            f"{SPOKEN_SENTENCE_MAX_WORDS}) — break it where you would breathe")
+
+    return {
+        "contraction_opportunities": opps,
+        "contractions_used": used,
+        "contraction_ratio": round(ratio, 2),
+        "semicolons": text.count(";"),
+        "long_sentences": len(long_sents),
+    }
+
+
+def lint_prose(text: str, *, source: str = "", spoken: bool = False) -> dict:
     """Lint one markdown document. Returns ``{"source", "metrics", "findings"}``.
 
     ``findings`` rows carry ``rule`` / ``severity`` (high|medium|low) /
@@ -296,6 +398,8 @@ def lint_prose(text: str, *, source: str = "") -> dict:
             f"{dash_rate:.1f} em-dashes per 100 words (house ceiling "
             f"{EM_DASH_PER_100_MAX}) — convert some asides to plain sentences")
 
+    spoken_metrics = _spoken_findings(joined, add) if spoken else {}
+
     findings.sort(key=lambda f: ({"high": 0, "medium": 1, "low": 2}[f["severity"]], f["line"]))
     return {
         "source": source,
@@ -306,6 +410,7 @@ def lint_prose(text: str, *, source: str = "") -> dict:
             "em_dash_per_100": round(dash_rate, 2),
             "not_x_its_y": len(pivots),
             "thats_the_openers": len(thats),
+            **spoken_metrics,
         },
         "findings": findings,
     }

@@ -1,3 +1,9 @@
+---
+paths:
+  - "apps/**/manifest.toml"
+  - "apps/_example/**"
+---
+
 # User Intent Rule — `user_intent` on the manifest
 
 Every app's `manifest.toml` MAY carry a `user_intent` list under `[app]` —
@@ -104,7 +110,7 @@ mode on the existing `EOS_UI.searchBar`). Shape will be:
    (if not enabled), **pin to hub**.
 4. Auto-configure (writing to `emptyos.toml`) is deferred — uses
    `.claude/rules/proposed-action.md` diff-preview when it lands.
-5. "No app matches" routes the query to `apps/app-builder/` — never
+5. "No app matches" routes the query to `apps/extension/dev/app-builder/` — never
    tries to compose new logic itself.
 
 Don't build the recommender before the data is rich enough to be
@@ -133,5 +139,5 @@ deterministic name match, not instead of it.
 - `.claude/rules/hub-panels.md` — the eventual "pin to hub" action
   registers a panel contribution dynamically (one design path) or just
   flips an install/enable flag (simpler path; pick when implementing).
-- `apps/app-builder/` — the "no existing app fits, build a new one"
+- `apps/extension/dev/app-builder/` — the "no existing app fits, build a new one"
   branch handed off here, not absorbed into the recommender.

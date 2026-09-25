@@ -103,6 +103,66 @@
     window.EOS = window.EOS || {};
     EOS.base = base;
 
+    // Trusted app-identity icon registry. Manifests may select an id from this
+    // list, but never supply SVG markup or a sprite URL. Four separately
+    // painted symbols let the active theme recolor an icon without replacing
+    // the artwork or issuing a new request.
+    EOS.APP_ICON_IDS = [
+        'hub', 'settings', 'store', 'task', 'journal', 'projects', 'focus', 'search',
+        'assistant', 'quick-action', 'kb', 'cad', 'voice-assistant', 'boards',
+        'publish', 'dictionary', 'code', 'cable-network', 'jobs', 'explore',
+        'viz', 'canvas', 'worklog', 'studio',
+    ];
+    var _APP_ICON_ID_SET = {};
+    var _appIconSpriteRevision = 'live';
+    EOS.APP_ICON_IDS.forEach(function(id) { _APP_ICON_ID_SET[id] = true; });
+    EOS.registerAppIconIds = function(ids) {
+        (ids || []).forEach(function(id) {
+            if (/^[a-z0-9][a-z0-9-]{0,47}$/.test(id || '')) _APP_ICON_ID_SET[id] = true;
+        });
+    };
+    EOS.setAppIconRevision = function(revision) {
+        _appIconSpriteRevision = String(revision == null ? 'live' : revision).replace(/[^a-zA-Z0-9_-]/g, '') || 'live';
+    };
+    // An app with no icon yet (187 of 230 at time of writing) gets a letter
+    // monogram rather than a bare glyph: in a dense list a lone box reads as an
+    // unchecked checkbox. Drawn as an SVG on the same 1024 viewBox as a real
+    // icon so it scales with its slot identically — a CSS font-size could not,
+    // since the slot is 40px on a hub card and ~18px in the nav crumb.
+    function _monogramSvg(label) {
+        var text = String(label == null ? '' : label).trim();
+        if (!text) return '';
+        var m = text.match(/[A-Za-z0-9]/);
+        var ch = m ? m[0].toUpperCase() : text.charAt(0);
+        // Geometry is expressed in the sprite's own 1024 viewBox so the tile
+        // matches a real icon's optical weight at every slot size: a 32px inset
+        // leaves the same margin the drawn icons use, rx 224 (~22%) matches
+        // their corner radius, and y 536 rather than 512 nudges the glyph down
+        // off the cap-height centre so it reads optically centred.
+        return '<svg class="eos-app-icon eos-app-icon-monogram" viewBox="0 0 1024 1024" aria-hidden="true" focusable="false">' +
+            '<rect class="eos-app-icon-monogram-bg" x="32" y="32" width="960" height="960" rx="224"></rect>' +
+            '<text class="eos-app-icon-monogram-text" x="512" y="536" text-anchor="middle" dominant-baseline="central">' +
+            esc(ch) + '</text></svg>';
+    }
+    EOS.appIcon = function(iconId, fallback, label) {
+        if (!_APP_ICON_ID_SET[iconId]) {
+            // A manifest emoji, when the app declares one, still wins.
+            if (fallback) {
+                return '<span class="eos-app-icon-fallback" aria-hidden="true">' +
+                    esc(fallback) + '</span>';
+            }
+            return _monogramSvg(label) ||
+                '<span class="eos-app-icon-fallback" aria-hidden="true">▢</span>';
+        }
+        var stem = '/api/app-icons/sprite?revision=' + _appIconSpriteRevision + '#app-' + iconId + '-';
+        return '<svg class="eos-app-icon" viewBox="0 0 1024 1024" aria-hidden="true" focusable="false">' +
+            '<use class="eos-app-icon-paper" href="' + stem + 'paper"></use>' +
+            '<use class="eos-app-icon-accent" href="' + stem + 'accent"></use>' +
+            '<use class="eos-app-icon-accent-2" href="' + stem + 'accent-2"></use>' +
+            '<use class="eos-app-icon-ink" href="' + stem + 'ink"></use>' +
+            '</svg>';
+    };
+
     // BYOK — visitor-supplied API keys for cloud providers. Stored in
     // localStorage by the Settings panel; injected as headers on every
     // EOS.api / EOS.post / EOS.stream call. The server's byok_middleware
@@ -142,6 +202,124 @@
             headers[BYOK_HEADERS[provider]] = keys[provider];
         });
         return Object.assign({}, opts, {headers: headers});
+    }
+
+    // Is this request target the daemon itself? THE security property of the
+    // fetch patch below: a visitor's API key must never ride a cross-origin
+    // request. Unparseable → false, so it fails closed. Pure + exported so it
+    // can be pinned under `node --test`.
+    //
+    // Both sides go through URL rather than reading `location.origin`, which is
+    // an OPTIONAL property (absent in some sandboxed/embedded contexts and on
+    // `about:blank`). Comparing a real origin against `undefined` would fail
+    // closed EVERYWHERE — safe, but it would disable BYOK with no symptom.
+    // `location.href` is the one thing always present.
+    EOS.byok.sameOrigin = function(url) {
+        try { return new URL(String(url), location.href).origin === new URL(location.href).origin; }
+        catch (e) { return false; }
+    };
+
+    // --- Shared fetch-wrapper chain -----------------------------------------
+    // Four bundles independently monkey-patched `window.fetch`: BYOK injection
+    // (below), the 503 `ai_offline` toast (eos-components.js), provenance chips
+    // (eos-provenance.js) and the standalone export shim. Each captured the
+    // previous `window.fetch` and delegated, so the chain worked — but three
+    // things about it were accidental rather than designed:
+    //
+    //   * ORDER was whatever a page's <script> tags happened to be. Measured
+    //     2026-09-05: 239 pages load eos.js first, 5 load eos-components.js
+    //     first, so the same two layers nested in opposite orders by page.
+    //   * each layer invented its own idempotence flag (`__eosByok`,
+    //     `_eosFetchWrapped`, `_eosProvWrapped`, and the export shim has none).
+    //   * a layer that forgot to delegate would silently break every request on
+    //     the page, with nothing naming the culprit.
+    //
+    // `EOS.wrapFetch` owns the single patch and runs named layers in
+    // registration order; `EOS.fetchLayers()` names them for debugging.
+    //
+    // It is deliberately ORDER-INDEPENDENT rather than relying on those 244
+    // pages keeping their script order: a bundle loading before eos.js queues
+    // onto `__eosFetchPending` and eos.js drains it *after* registering its own
+    // layer, so every page ends up with the same chain regardless of tag order.
+    function _fetchChain() {
+        var c = window.__eosFetchChain;
+        if (c) return c;
+        var layers = [];
+        var native = window.fetch.bind(window);
+        window.fetch = function(input, init) {
+            var i = -1;
+            return (function next(inp, ini) {
+                i++;
+                return i < layers.length ? layers[i].fn(inp, ini, next) : native(inp, ini);
+            })(input, init);
+        };
+        c = window.__eosFetchChain = {
+            layers: layers,
+            use: function(name, fn) {
+                for (var j = 0; j < layers.length; j++) {
+                    if (layers[j].name === name) return false;   // idempotent per name
+                }
+                layers.push({name: name, fn: fn});
+                return true;
+            },
+        };
+        return c;
+    }
+
+    // fn(input, init, next) — call next(input, init) to continue the chain.
+    EOS.wrapFetch = function(name, fn) {
+        var chain = _fetchChain();
+        var added = chain.use(name, fn);
+        var pending = window.__eosFetchPending;
+        if (pending && pending.length) {
+            window.__eosFetchPending = [];
+            for (var i = 0; i < pending.length; i++) chain.use(pending[i][0], pending[i][1]);
+        }
+        return added;
+    };
+
+    EOS.fetchLayers = function() {
+        var c = window.__eosFetchChain;
+        return c ? c.layers.map(function(l) { return l.name; }) : [];
+    };
+
+    // --- BYOK on raw fetch() ------------------------------------------------
+    // EOS.api / EOS.apiSafe attach BYOK headers in _apiFetch, but 94 app pages
+    // call `fetch()` directly — 847 call sites (audit F2, 2026-09-03). 24 of
+    // them reach `self.think()` endpoints, so a visitor-supplied key could
+    // never arrive: BYOK was silently dead on exactly the apps that ship in the
+    // public distribution, which is the only place BYOK is the intended
+    // mechanism. `kb` alone had 48 raw calls and zero EOS.api calls.
+    //
+    // Migrating those call sites is NOT the fix. `EOS.api` THROWS on non-2xx
+    // and raw `fetch` does not, so a mechanical swap changes control flow at
+    // every one of the 847 — a large regression surface for a header problem.
+    // Patching the sink fixes every current and future page, and changes no
+    // control flow at all.
+    //
+    // Never overwrites a header the caller set, so EOS.api's own fetch (which
+    // lands here too) is idempotent rather than double-injected.
+    if (typeof window !== 'undefined' && typeof window.fetch === 'function') {
+        EOS.wrapFetch('byok', function(input, init, next) {
+            try {
+                var keys = EOS.byok.list();
+                var providers = Object.keys(keys);
+                if (providers.length) {
+                    var isReq = typeof Request !== 'undefined' && input instanceof Request;
+                    var url = isReq ? input.url : String(input);
+                    if (EOS.byok.sameOrigin(url)) {
+                        var headers = new Headers(
+                            (init && init.headers) || (isReq ? input.headers : undefined));
+                        providers.forEach(function(p) {
+                            if (!headers.has(BYOK_HEADERS[p])) headers.set(BYOK_HEADERS[p], keys[p]);
+                        });
+                        if (isReq && !init) return next(new Request(input, {headers: headers}), init);
+                        return next(input, Object.assign({}, init || {}, {headers: headers}));
+                    }
+                }
+            } catch (e) { /* key injection must never break the request itself */ }
+            return next(input, init);
+        });
     }
 
     // --- Presentation mode (runtime privacy toggle) ---
@@ -277,7 +455,15 @@
     EOS.offlineWrites = {
         enabled: _offlineWritesCached,
         matches: function(path) {
-            return /^\/(task|journal|projects|people)\/api\//.test(String(path || ''));
+            var p = String(path || '');
+            // Prefix-adopted families: every POST under these is a bounded write.
+            if (/^\/(task|journal|projects|people)\/api\//.test(p)) return true;
+            // worklog is enumerated, not prefixed: its /api/ also carries AI
+            // (smart-parse, update/draft) and the import merge gate, none of
+            // which may be replayed blind. The $ anchors keep /update out of
+            // /update/draft. Capturing work at the office is the whole reason
+            // the queue matters here — the daemon is often asleep at home.
+            return /^\/worklog\/api\/(log|status|plan|update)$/.test(p);
         },
         id: function() {
             if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
@@ -434,7 +620,7 @@
         {id:'search', prefix:'/search', name:'Search'},
     ];
 
-    function _renderNav(navApps, currentApp, currentLabel, currentIcon) {
+    function _renderNav(navApps, currentApp, currentLabel, currentIcon, currentIconId) {
         var nav = document.createElement('nav');
         nav.className = 'nav';
         var isHome = !currentApp || currentApp === 'hub';
@@ -447,10 +633,9 @@
         var links = '<a href="/" class="nav-home' + (isHome ? ' current' : '') + '" title="Home">⌂ Home</a>';
         if (currentApp && currentApp !== 'hub') {
             var label = currentLabel || currentApp;
-            var icon = currentIcon || '▢';
             links += '<span class="nav-crumb" title="' + escAttr(label) + '">' +
                      '<span class="nav-crumb-sep" aria-hidden="true">›</span>' +
-                     '<span class="nav-crumb-icon" aria-hidden="true">' + esc(icon) + '</span>' +
+                     '<span class="nav-crumb-icon">' + EOS.appIcon(currentIconId, currentIcon, label) + '</span>' +
                      '<span class="nav-crumb-name">' + esc(label) + '</span>' +
                      '</span>';
         }
@@ -566,11 +751,14 @@
             var loaded = {};
             var nameById = {};
             var iconById = {};
+            var iconIdById = {};
+            EOS.registerAppIconIds(apps.map(function(a) { return a && a.icon_id; }));
             apps.forEach(function(a) {
                 var id = (a && (a.id || a.name || a)) + '';
                 loaded[id] = true;
                 if (a && a.name) nameById[id] = a.name;
                 if (a && a.icon) iconById[id] = a.icon;
+                if (a && a.icon_id) iconIdById[id] = a.icon_id;
             });
             var filtered = navApps.filter(function(a) { return loaded[a.id]; });
             // Seed the app-presence map from this fetch if the dedicated probe
@@ -580,7 +768,7 @@
             // Always re-render once the app set is known: prunes dead quick-links,
             // upgrades the breadcrumb to the real app name + icon, and lets the
             // assistant button appear now that EOS.hasApp() is populated.
-            _renderNav(filtered, currentApp, nameById[currentApp], iconById[currentApp]);
+            _renderNav(filtered, currentApp, nameById[currentApp], iconById[currentApp], iconIdById[currentApp]);
         }).catch(function(){ /* fall back to whatever we already rendered */ });
 
         // Global search overlay (built once) — reuses EOS_UI.searchBar.
@@ -615,6 +803,9 @@
             // drawer browses by function group rather than one long list.
             fetch(base + '/api/apps/sections').then(function(r) { return r.json(); })
                 .then(function(sections) {
+                    EOS.registerAppIconIds([].concat.apply([], (sections || []).map(function(s) {
+                        return (s.apps || []).map(function(a) { return a.icon_id; });
+                    })));
                     EOS._drawerSections = (sections || []).map(function(s) {
                         return {key: s.key, label: s.label, icon: s.icon, apps: s.apps || []};
                     });
@@ -679,7 +870,10 @@
             var apps = (s.apps || []).filter(function(a) { return EOS._drawerMatch(a, q); });
             if (!apps.length) return;
             var cards = apps.map(function(a) {
-                return '<a class="app-drawer-item" href="' + (a.web_prefix || '#') + '/"><div class="adi-name">' + esc(a.name || a.id) + '</div><div class="adi-desc">' + esc(a.description || '') + '</div></a>';
+                return '<a class="app-drawer-item" href="' + (a.web_prefix || '#') + '/">' +
+                    '<span class="adi-icon">' + EOS.appIcon(a.icon_id, a.icon, a.name || a.id) + '</span>' +
+                    '<span class="adi-copy"><span class="adi-name">' + esc(a.name || a.id) + '</span>' +
+                    '<span class="adi-desc">' + esc(a.description || '') + '</span></span></a>';
             }).join('');
             html += '<div class="app-drawer-section">' +
                 '<div class="app-drawer-sec-hdr" onclick="EOS._toggleDrawerSec(this)">' +
@@ -713,7 +907,7 @@
     // --- Utilities ---
     window.esc = function(s) {
         var d = document.createElement('div');
-        d.textContent = s || '';
+        d.textContent = s == null ? '' : s;
         return d.innerHTML;
     };
 
@@ -742,6 +936,19 @@
         try {
             return await EOS.api('/geocode/api/reverse?lat=' + encodeURIComponent(lat) + '&lon=' + encodeURIComponent(lon));
         } catch(e) { return {}; }
+    };
+
+    // Batch forward geocode — sequential server-side (Nominatim <=1 req/s),
+    // so this call itself takes ~1s per address. Returns [] on any failure.
+    EOS.geocodeBatch = async function(addresses, limit) {
+        if (!Array.isArray(addresses) || !addresses.length) return [];
+        try {
+            var r = await EOS.api('/geocode/api/batch-lookup', {
+                method: 'POST', headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({addresses: addresses, limit: limit || 5}),
+            });
+            return Array.isArray(r.results) ? r.results : [];
+        } catch(e) { return []; }
     };
 
     // --- Routing (via /routing app — OSRM, cached + throttled server-side) ---
@@ -941,6 +1148,69 @@
             '</span>';
     };
 
+    // --- Quick-entry host ---
+    // A page can be showing inside a small transient window instead of a normal
+    // tab: the desktop shell's frameless always-on-top panel (preloaded, shown
+    // on a global hotkey) or plugins/command-launcher's borderless Chrome
+    // window. They differ in one way that matters to any code wanting OUT of
+    // that window — the shell has a bridge and the browser window does not —
+    // and `?launcher=1` is the older spelling of `?quick=1`, so both are one
+    // mode. This is the single place that knows all of that; consumers ask it
+    // rather than probing `window.pywebview` and parsing the query themselves.
+    EOS.quickHost = {
+        // Whether this page is in a quick window at all.
+        active: function() {
+            try {
+                var p = new URLSearchParams(location.search);
+                return p.get('quick') === '1' || p.get('launcher') === '1';
+            } catch (_) { return false; }
+        },
+        // The shell's API, or null. Probed by `hide`, which only the quick
+        // window's bridge publishes — never by a user-agent string, and never
+        // assumed from `window.pywebview` alone (the shell's MAIN window has a
+        // bridge too, without these verbs).
+        bridge: function() {
+            try {
+                var api = window.pywebview && window.pywebview.api;
+                return api && typeof api.hide === 'function' ? api : null;
+            } catch (_) { return null; }
+        },
+        // Put the window away. The shell hides a preloaded window; a browser
+        // launcher window is transient and simply closes.
+        dismiss: function() {
+            var api = EOS.quickHost.bridge();
+            if (api) {
+                try {
+                    // `hide` is a pywebview bridge call: it resolves a Promise
+                    // and does not throw synchronously, so a try/catch around
+                    // it guards a failure that cannot happen. The one the shell
+                    // CAN report is `{ok: false}` — hide_quick swallows its own
+                    // exception (Window.hide can block on `shown`) — and
+                    // discarding that strands a frameless, title-bar-less,
+                    // always-on-top panel the user has no way to close.
+                    var p = api.hide();
+                    if (p && typeof p.then === 'function') {
+                        p.then(function(r) {
+                            if (!r || r.ok === false) { try { window.close(); } catch (_) {} }
+                        }, function() { try { window.close(); } catch (_) {} });
+                    }
+                    return;
+                } catch (_) {}
+            }
+            try { window.close(); } catch (_) {}
+        },
+        // Hand a same-origin path to the full-size window and step aside. The
+        // caller owns the path; this owns where it goes.
+        openMain: function(path) {
+            var api = EOS.quickHost.bridge();
+            if (api && typeof api.open_main === 'function') {
+                try { api.open_main(path); return; } catch (_) {}
+            }
+            try { window.open(path, '_blank', 'noopener'); } catch (_) {}
+            EOS.quickHost.dismiss();
+        }
+    };
+
     // --- Keyboard Shortcuts ---
     // Auto-load eos-keys.css + eos-keys.js on every page
     var keyCss = document.createElement('link');
@@ -980,6 +1250,7 @@
         .then(function(list) {
             var ids = {};
             var pmap = {};
+            EOS.registerAppIconIds((list || []).map(function(a) { return a && a.icon_id; }));
             (list || []).forEach(function(a) {
                 if (!a || !a.id) return;
                 ids[a.id] = true;

@@ -1,11 +1,11 @@
 ---
 name: eos-life-insights
-description: Long-horizon personal-life reflection over the vault. Reads the last 30 days (or 90d / 365d on request) of daily journals, milestones, mood check-ins, active/stalled projects, people notes (stale relationships), and untriaged inbox captures, then writes a standalone AI-authored reflection report to 30_Resources/EmptyOS/insights/outputs/YYYY-MM-DD-life.md. The report surfaces recurring themes, a wellbeing-wheel balance read (names the THIN dimensions, never fattens the dominant ones), mood/energy trend, movement vs the user's stated life goals, and concrete stalled/stale/open-loop items — ending with 2-3 optional suggested actions that are NEVER auto-pushed. Use when the user says "life insights", "/eos-life-insights", "reflect on my life", "what have I been up to", "how am I doing lately", "patterns in my journal", or "monthly reflection". Distinct from eos-week-review (which fills the weekly-note template and pushes next-week tasks for ONE week — this is a cross-week trend report that edits no note and pushes nothing by default). Distinct from eos-insights (which reflects on EmptyOS development, not personal life). Mirrors what the vault shows; does not preach.
+description: Long-horizon personal-life reflection over the vault. Reads the last 30 days (or 90d / 365d on request) of daily journals, milestones, mood check-ins, active and stalled projects, people notes, and untriaged inbox captures, then writes a standalone AI-authored reflection report. Surfaces recurring themes, a wellbeing-wheel balance read (names the THIN dimensions, never fattens the dominant ones), mood and energy trend, movement against stated life goals, and concrete stalled or open-loop items — ending with 2-3 optional suggested actions that are NEVER auto-pushed. Use when the user says "life insights", "reflect on my life", "what have I been up to", "how am I doing lately", "patterns in my journal", or "monthly reflection". NOT the weekly-note ritual that pushes next-week tasks (use eos-week-review — this edits no note and pushes nothing), and NOT development reflection (use eos-insights). Mirrors what the vault shows; does not preach.
 ---
 
 # EmptyOS Life Insights
 
-A "knowledgeable friend reading your journal" report. Reflect on a window of the user's life (default 30 days), surface the patterns the user can't see day-to-day, and write a durable report — *without* prescribing. This is the personal-vault analogue of Codex's `/insights`: self-analysis over an activity corpus → reflective report + optional next steps.
+A "knowledgeable friend reading your journal" report. Reflect on a window of the user's life (default 30 days), surface the patterns the user can't see day-to-day, and write a durable report — *without* prescribing. This is the personal-vault analogue of Claude Code's `/insights`: self-analysis over an activity corpus → reflective report + optional next steps.
 
 ## When to use
 
@@ -23,8 +23,8 @@ The line vs `eos-week-review`: week-review *acts on one week* (template + tasks)
 
 The pure file-read path needs no daemon. A few **optional** enrichments hit the daemon — only then:
 
-- **Daemon up** (optional) — `curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:9000/` → `200`. If down, skip the API enrichments and read files directly; never restart the daemon yourself (`.Codex/rules/daemon-handling.md`).
-- **Auth (private mode)** — read `auth_token` from `emptyos.toml` `[network]`, send `Authorization: Bearer <token>` (`.Codex/rules/environment.md`).
+- **Daemon up** (optional) — `curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:9000/` → `200`. If down, skip the API enrichments and read files directly; never restart the daemon yourself (`.claude/rules/daemon-handling.md`).
+- **Auth (private mode)** — read `auth_token` from `emptyos.toml` `[network]`, send `Authorization: Bearer <token>` (`.claude/rules/environment.md`).
 - **`127.0.0.1`, not `localhost`** for any Python/urllib probe (IPv6 `::1` refusal).
 - **Non-ASCII** task text (if the user later opts to push actions) → Python `urllib`, never `curl -d` (cp1252 mangling).
 
@@ -32,7 +32,7 @@ The pure file-read path needs no daemon. A few **optional** enrichments hit the 
 
 - **Vault root** — `[notes] path` in `emptyos.toml` (forward slashes).
 - **Window** — default last 30 days from today; `90d` / `365d` if the user asks. Resolve dates with `datetime.date`.
-- **Report path** — `{vault}/30_Resources/EmptyOS/insights/outputs/YYYY-MM-DD-life.md` (today's date). The `outputs/` folder means the note is implicitly AI-authored (`.Codex/rules/authorship-boundary.md`); still set `author: ai` explicitly.
+- **Report path** — `{vault}/30_Resources/EmptyOS/insights/outputs/YYYY-MM-DD-life.md` (today's date). The `outputs/` folder means the note is implicitly AI-authored (`.claude/rules/authorship-boundary.md`); still set `author: ai` explicitly.
 - **Noise** — bot breadcrumbs + test fixtures that must be filtered from journal reads: `PLAYWRIGHT-TEST-*`, `Growth Agent`, `🎙️` (podcast), `🏗️` (site build), `✓ Applied`, `🪞 System reflected`.
 
 ## Process
@@ -47,7 +47,7 @@ What did last run suggest? A theme/suggestion **recurring** without movement is 
 
 ### Step 1 — Gather signal (read-only)
 
-Apply the **deep-research method** (`.Codex/rules/deep-research.md`) to the vault corpus: read primary sources, **triangulate** (no headline rests on one source), refute, grade. Direct file access is strongest in conversation mode.
+Apply the **deep-research method** (`.claude/rules/deep-research.md`) to the vault corpus: read primary sources, **triangulate** (no headline rests on one source), refute, grade. Direct file access is strongest in conversation mode.
 
 1. **Daily journals** — Glob `{vault}/50_Journal/{year}/YYYY-MM-DD.md` for each day in the window (windows may span two year folders). Read each; filter noise. Keep: `🎯` milestones, substantive mood entries, real `#tags` (not automated app emits), prose that carries a theme.
 2. **Mood / streak numbers (optional)** — `GET http://127.0.0.1:9000/journal/...` (`journal.get_summary`) for hard counts instead of re-deriving by hand.
@@ -64,7 +64,7 @@ Apply the **deep-research method** (`.Codex/rules/deep-research.md`) to the vaul
 
 ### Step 2 — Synthesize the report
 
-Interpret, don't chronicle — but back it with a **quantitative spine**, not prose alone (the Codex `/insights` standard):
+Interpret, don't chronicle — but back it with a **quantitative spine**, not prose alone (the Claude `/insights` standard):
 
 - A `## Stats` section right after Headline — a 2-col `Metric | Value` table (journal days with content, milestones, applications, interviews, social moments, mood check-ins). Becomes the stat-tile row.
 - **≥3 chartable distributions** — each a 2-col `Label | Value` table (the renderer auto-draws bars): **real activity by wheel dimension** (recompute with the `playwright-test-*`/app-emit noise filtered out — the honest read), mood/check-ins per week, and a job-application funnel (applied → interview → declined) or entries-per-week. Slice the month several ways.
@@ -75,7 +75,7 @@ Sections (markdown `##` — keep these names so the renderer themes them right):
 1. **Headline** — one short paragraph, the honest shape of the window (becomes the hero box).
 2. **Trend (vs prior window)** — this window vs the prior one, and a read of the *previous* life report's deltas if one exists (find the prior `…-life.md` in the outputs dir). Mood arc, attention shifts — trend, not a still photo.
 3. **Recurring themes** — what the user kept returning to (preoccupations / open questions), 3-6 bullets.
-4. **Wellbeing balance** — the wheel read. **Surface the THIN dimensions; never push to fatten the dominant ones** (AGENTS.md Rule 16 — this report is the one sanctioned place the wheel shapes output). State which dimensions got little signal and what (in the journal's own words) the quiet looked like. No score widget, no picker — a reflective sentence per thin dimension.
+4. **Wellbeing balance** — the wheel read. **Surface the THIN dimensions; never push to fatten the dominant ones** (CLAUDE.md Rule 16 — this report is the one sanctioned place the wheel shapes output). State which dimensions got little signal and what (in the journal's own words) the quiet looked like. No score widget, no picker — a reflective sentence per thin dimension.
 5. **Movement vs stated goals** — gently cross-check against the user's durable direction (career = energy×software; the "stay in power until a US green card" gate; possible US relocation). **Mirror, don't preach** (`user_buddhist_disposition`): "the vault shows X; the stated aim was Y" — describe the gap, don't prescribe the fix. The user owns judgment.
 6. **Open items** — named stalled projects, stale relationships, untriaged loops. Concrete, not generic.
 7. **Suggested next steps** — 2-3 specific, optional actions. **Do NOT auto-push.** End the section with: "Say the word and I'll add any of these to the projects app."
@@ -84,7 +84,7 @@ Sections (markdown `##` — keep these names so the renderer themes them right):
 
 ### Step 3 — Write the report
 
-Create the note (block-style YAML tags per `.Codex/rules/dev-gotchas.md`):
+Create the note (block-style YAML tags per `.claude/rules/dev-gotchas.md`):
 
 ```markdown
 ---
@@ -98,7 +98,7 @@ lifecycle: snapshot
 ---
 ```
 
-Write to `{vault}/30_Resources/EmptyOS/insights/outputs/YYYY-MM-DD-life.md`. Optionally add a one-line `[[YYYY-MM-DD-life]]` pointer to the current weekly note (`{vault}/50_Journal/{year}/{year}-W{NN}.md`) for discoverability — append only, never edit the user's prose (append discipline, `.Codex/rules/authorship-boundary.md`).
+Write to `{vault}/30_Resources/EmptyOS/insights/outputs/YYYY-MM-DD-life.md`. Optionally add a one-line `[[YYYY-MM-DD-life]]` pointer to the current weekly note (`{vault}/50_Journal/{year}/{year}-W{NN}.md`) for discoverability — append only, never edit the user's prose (append discipline, `.claude/rules/authorship-boundary.md`).
 
 Section-heading discipline (the renderer themes cards by keyword in the `##` title): a leading `## Headline` section becomes the amber hero box; *thin/stalled/stale/open loop* lean amber, *suggested/next step* → blue, *theme/balance/mood* → neutral/green. Keep the section names from Step 2 so the themes land right.
 
@@ -128,17 +128,17 @@ python scripts/insights_ledger.py record life --from "{vault}/30_Resources/Empty
 
 ## Cross-references
 
-- `.Codex/skills/eos-week-review/SKILL.md` — the weekly sibling; do not conflate (one week + tasks vs cross-week trend report).
-- `.Codex/skills/eos-insights/SKILL.md` — the system-side sibling (EmptyOS dev, not life).
+- `.claude/skills/eos-week-review/SKILL.md` — the weekly sibling; do not conflate (one week + tasks vs cross-week trend report).
+- `.claude/skills/eos-insights/SKILL.md` — the system-side sibling (EmptyOS dev, not life).
 - `scripts/insights_ledger.py` — the prediction ledger (Step 0 scorecard + Step 4 record).
 - `emptyos/sdk/dimensions.py` — `scan_text` + `balance_score` (pure; safe to shell, no kernel boot).
 - **Not the `explore` app** — it is web-only (`ask_web`), the wrong corpus for vault reflection; analysis here is internal-only.
 - `apps/public/standard/journal/app.py::get_summary` — optional streak/mood counts.
 - `apps/public/standard/people/app.py` — `person` notes, `last_contact`, `_health_score`, `_days_since`.
-- AGENTS.md Rule 16 — wellbeing wheel as a reasoning lens (surface thin, never display a widget).
-- `.Codex/rules/authorship-boundary.md` — `author: ai` + `outputs/` + append discipline.
-- `.Codex/rules/time-dimension.md` — past → present read; this report is a past-window synthesis.
-- `.Codex/rules/proposed-action.md` — propose, don't auto-apply (the no-auto-push rule above).
+- CLAUDE.md Rule 16 — wellbeing wheel as a reasoning lens (surface thin, never display a widget).
+- `.claude/rules/authorship-boundary.md` — `author: ai` + `outputs/` + append discipline.
+- `.claude/rules/time-dimension.md` — past → present read; this report is a past-window synthesis.
+- `.claude/rules/proposed-action.md` — propose, don't auto-apply (the no-auto-push rule above).
 - `user_buddhist_disposition` (memory) — mirror, don't preach.
 
 ## When NOT to use

@@ -1,6 +1,6 @@
 """Lead capture + intent tagging + deprecation-lever contract tests.
 
-Mined-lesson package (ELEK ClickConnector case, 2026-07-17):
+Mined-lesson package (website chatbot deployment case, 2026-07-17):
   - lead capture is a first-class deterministic outcome on content sites
   - a lead is stored BEFORE delivery is attempted — never lost
   - deprecation needs both levers (corpus removal is pinned in

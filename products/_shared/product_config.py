@@ -40,12 +40,26 @@ class ProductConfig:
     update_feed: str = ""
     window_width: int = 1440
     window_height: int = 900
+    # Third-party packages imported only after a plugin is loaded at runtime.
+    # PyInstaller cannot discover those from the launcher's static import graph,
+    # so products declare the packages they need collected into their bundle.
+    collect_packages: tuple[str, ...] = ()
+    # Optional capabilities present on a developer machine but intentionally
+    # absent from this product. Their source paths may still exist in the tier;
+    # imports degrade through EmptyOS's normal provider chain at runtime.
+    exclude_packages: tuple[str, ...] = ()
+    # First-run runtime policy. "human" is the non-AI fallback that keeps
+    # manual EmptyOS features usable without a model or external service.
+    think_providers: tuple[str, ...] = ("ollama", "human")
+    enable_plugins: tuple[str, ...] = ()
 
 
 def parse_product(data: dict) -> ProductConfig:
     """Build a :class:`ProductConfig` from parsed TOML. Pure — unit-testable."""
     product = data.get("product") or {}
     update = data.get("update") or {}
+    build = data.get("build") or {}
+    runtime = data.get("runtime") or {}
 
     pid = str(product.get("id") or "").strip()
     if not pid:
@@ -68,6 +82,26 @@ def parse_product(data: dict) -> ProductConfig:
         update_feed=str(update.get("feed") or ""),
         window_width=int(window.get("width") or 1440),
         window_height=int(window.get("height") or 900),
+        collect_packages=tuple(
+            str(name).strip()
+            for name in (build.get("collect_packages") or [])
+            if str(name).strip()
+        ),
+        exclude_packages=tuple(
+            str(name).strip()
+            for name in (build.get("exclude_packages") or [])
+            if str(name).strip()
+        ),
+        think_providers=tuple(
+            str(name).strip()
+            for name in (runtime.get("think_providers") or ["ollama", "human"])
+            if str(name).strip()
+        ),
+        enable_plugins=tuple(
+            str(name).strip()
+            for name in (runtime.get("enable_plugins") or [])
+            if str(name).strip()
+        ),
     )
 
 

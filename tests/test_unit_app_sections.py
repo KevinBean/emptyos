@@ -7,13 +7,15 @@ from types import SimpleNamespace
 from emptyos.sdk.app_sections import SECTION_META, group_by_category
 
 
-def _mf(app_id, *, category=None, name=None, prefix=None, desc="", icon="", user_intent=None):
+def _mf(app_id, *, category=None, name=None, prefix=None, desc="", icon="", icon_id="", user_intent=None):
     """Build a minimal manifest stand-in (duck-typed like AppManifest)."""
     app = {}
     if category is not None:
         app["store_category"] = category
     if icon:
         app["icon"] = icon
+    if icon_id:
+        app["icon_id"] = icon_id
     if user_intent is not None:
         app["user_intent"] = user_intent
     raw = {"app": app}
@@ -101,18 +103,26 @@ def test_reachable_ids_filter():
 
 def test_app_entry_shape():
     regs = _registry(
-        _mf("expense", category="productivity", name="Expense",
-            prefix="/expense", desc="Track spending", icon="💰"),
+        _mf("task", category="productivity", name="Tasks",
+            prefix="/task", desc="Track work", icon="📋", icon_id="task"),
     )
     app = group_by_category(regs)[0]["apps"][0]
     assert app == {
-        "id": "expense",
-        "name": "Expense",
-        "description": "Track spending",
-        "web_prefix": "/expense",
-        "icon": "💰",
+        "id": "task",
+        "name": "Tasks",
+        "description": "Track work",
+        "web_prefix": "/task",
+        "icon": "📋",
+        "icon_id": "task",
         "user_intent": [],
     }
+
+
+def test_unknown_icon_id_is_not_propagated():
+    app = group_by_category(
+        _registry(_mf("expense", category="productivity", icon_id="../../bad"))
+    )[0]["apps"][0]
+    assert app["icon_id"] == ""
 
 
 def test_user_intent_flows_through():

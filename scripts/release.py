@@ -120,8 +120,19 @@ _MAX_FILE_BYTES = 95 * 1024 * 1024
 
 
 def _git_lines(*args: str) -> list[str]:
-    r = subprocess.run(["git", *args], cwd=ROOT, capture_output=True, text=True)
-    return [ln for ln in r.stdout.splitlines() if ln.strip()]
+    """Paths from a git listing command, via `-z` and a UTF-8 decode.
+
+    Parsing text output dropped every non-ASCII path from the dist: git C-quotes
+    such a path and Windows decodes stdout as cp1252, so `snapshot_worktree` got a
+    name that does not exist and its `is_file()` check skipped it without a word.
+    Same defect and fix as `scripts/check_base.py::_git_paths` (2026-09-25).
+    """
+    r = subprocess.run(["git", *args, "-z"], cwd=ROOT, capture_output=True)
+    if r.returncode != 0:
+        # A failed listing used to yield an empty snapshot with no warning;
+        # snapshot_head fails loudly on the same condition.
+        fail(f"git {' '.join(args)} failed: {r.stderr.decode(errors='replace')}")
+    return [p for p in r.stdout.decode("utf-8").split("\0") if p.strip()]
 
 
 def snapshot_worktree(temp: Path, force_include: tuple[str, ...] = ()) -> None:
@@ -186,6 +197,8 @@ def tier_filter(temp: Path, apps: set[str], plugins: set[str]) -> None:
     step(f"Tier filter: keep {len(apps)} apps, {len(plugins)} plugins")
     prune_snapshot = _release_filter.prune_snapshot
     drop_tests_bound_to = _release_filter.drop_tests_bound_to
+    prune_never_published = _release_filter.prune_never_published
+    assert_never_published_absent = _release_filter.assert_never_published_absent
 
     report = prune_snapshot(
         temp,
@@ -193,7 +206,22 @@ def tier_filter(temp: Path, apps: set[str], plugins: set[str]) -> None:
         allowed_plugins=plugins,
         allowed_engines=None,
         drop_tracks=("personal",),
+        # `allowed_engines=None` turns the engine gate OFF for these targets
+        # (they ship engines wholesale), so `engines/personal/` has no other
+        # thing standing between it and a dist. It never reached one before
+        # 2026-08-16 only because it was gitignored and `git archive` could not
+        # see it; now that it is tracked, this is what keeps that true. Targets
+        # here include `plekto` → `plekto-dev/emptyos-dist`, a third-party org.
+        drop_test_dirs=("personal",),
     )
+    # Belt-and-braces over the per-kind gates above, then the receipt. These
+    # targets push to `emptyos-portfolio` and to `plekto-dev/emptyos-dist` — a
+    # third-party org — so a personal engine reaching one is not recoverable.
+    dropped_np = prune_never_published(temp)
+    if dropped_np:
+        print(f"    dropped never-published: {', '.join(dropped_np)}")
+    assert_never_published_absent(temp)
+
     dropped = list(report.dropped_apps)
     dropped.extend(f"plugin:{plugin_id}" for plugin_id in report.dropped_plugins)
     if dropped:

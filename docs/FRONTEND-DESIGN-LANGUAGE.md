@@ -23,11 +23,11 @@ EmptyOS looks like a well-designed reading app, not like Material, iOS, or Linea
 - **Ground:** warm off-white `#f5f2ed` (or any of the theme alternates — see `theme.css` for the live roster). Never pure white.
 - **Accent:** single purple `#6353da` in the default theme. Used sparingly — links, current-state, primary buttons, focus rings. Read it from `var(--accent)`; the literal is here to describe the feel, not to be pasted into a page.
 - **Type:** DM Sans for prose and headings; JetBrains Mono for data, timestamps, paths, FAB labels, keyboard hints.
-- **Shape:** rounded everything — 8px for inputs/buttons, 14px for cards and panels, 999px for pills/avatars. 4px and 6px are acceptable for small chips, badges, and tight inline tags; 10px and 12px for elements that sit visually between input and card (e.g. button-shaped tags, embedded chips). No sharp corners. No 3/5/7/9/16+ — those are drift.
+- **Shape:** rounded everything — 8px for inputs/buttons, 14px for cards and panels, 999px for pills/avatars. 4px and 6px are acceptable for small chips, badges, and tight inline tags; 10px and 12px for elements that sit visually between input and card (e.g. button-shaped tags, embedded chips). No sharp corners. No 3/5/7/9/11/13/16+ — those are drift.
 - **Depth:** soft shadows (`0 4px 14px var(--shadow)`) over hard borders. Never drop-shadow-everything — only floating layers.
 - **Density:** generous whitespace. A page that feels slightly empty is correct; a page that feels full is wrong.
 
-If you find yourself reaching for a second accent color, a gradient background, or a border-radius outside `{8, 10, 12, 14, 999}`, the language is being broken.
+If you find yourself reaching for a second accent color, a gradient background, or a border-radius outside `{4, 6, 8, 10, 12, 14, 999}`, the language is being broken.
 
 ## 2. Layout rhythm
 
@@ -91,6 +91,15 @@ The four rules that prevent it:
   This applies doubly to a `:root` palette of your own (`--h-cyan: #22d3ee`): that
   is a hardcoded hex wearing a token's clothes, and it defeats theming for every
   page that imports it. Alias such tokens to the semantic ones.
+
+  **`--red` and `--danger` are the same colour** — `theme.css` defines
+  `--red: var(--danger)`. Prefer the *data* name (`--red/--amber/--green/--blue/
+  --purple`) when the colour encodes a **value** in a list, chart, or badge, and
+  the *semantic* name (`--danger/--warning/--success/--info`) when it states the
+  **state of a control or surface** — a failed button, an error banner. Either
+  renders identically, so this is vocabulary, not behaviour; it is written down
+  because a reviewer citing "the design language says `--danger`" against a
+  correct `--red` has already cost one round-trip. Stay consistent within a file.
 - **Text on ANY vivid fill is `var(--ink-on-vivid)`, never `#fff`.** This covers
   `background: var(--accent)` *and* `background: var(--danger|--success|--warning|--info)`.
   White looks fine on the purple/blue accents (invisible-as-a-bug) and is **1.68:1**
@@ -127,13 +136,14 @@ The four rules that prevent it:
 Measure, don't eyeball: `?debug=readability` on any page paints the offenders live
 with their contrast ratios; `python scripts/check_readability.py --app <id>` checks
 it across every theme. `scripts/check-text-tokens.py` gates all four rules
-statically (T1 white-on-vivid, T2 hardcoded status hex, T3 token hijack).
+statically (T1 white-on-vivid, T2 hardcoded status hex as *text*, T3 token
+hijack, T4 hardcoded status hex on a *surface* — background / border / outline).
 
 ## 5. Motion
 
 Motion is a whisper, not a performance.
 
-- **Duration:** 120–200ms for hover/focus. 250ms for slide panels. 300ms max for anything visible to the user, except the hands-free pulse which is intentionally slow (0.8–1.4s).
+- **Duration:** 120–200ms for hover/focus. 250ms for slide panels. 300ms max for anything visible to the user, except the hands-free pulse (intentionally slow, 0.8–1.4s) and a **breath pacer** (`EOS_UI.breathCycle`, meditation + improv) whose transition duration matches its phase length (typically 4–8s) — the duration IS the exercise, not decorative motion.
 - **Easing:** `cubic-bezier(0.175, 0.885, 0.32, 1.275)` for FAB/drawer spring; `ease` or `ease-out` for everything else.
 - **What to animate:** `transform` and `opacity` only. Never animate `width`, `height`, `top`, `left` — they force layout.
 - **What not to animate:** page transitions, loading states between views, text appearing. Content should arrive instantly; only chrome should move.
@@ -167,6 +177,11 @@ Chips use `.eos-badge` styling, muted color, mono font. Clicking opens a small p
 For JSON endpoints that return `provenance`, pages may declare a pre-existing
 `data-ai-output` sink and let the dark-flagged runtime mount the chip. Full
 contract: `.claude/rules/auto-provenance.md`.
+
+For a manual render site (the auto-provenance sink doesn't fit), use
+`EOS_UI.provenanceLine(prov, opts)` rather than hand-rolling the guard +
+wrapper `<div>` — it collapsed the same ~4-line ternary duplicated across 11
+apps to one call each. See its doc comment in `eos-components.js`.
 
 ### Model pill (input-side provenance)
 
@@ -333,6 +348,7 @@ Product UI has its forbidden-pattern list in §10; marketing pages have their ow
 - **No filler verbs** ("Elevate", "Seamless", "Unleash") and **no fake-precise numbers** ("92%", "4.1×") unless they're real or labelled illustrative.
 - **No scroll cues, version labels in hero, or decorative photo credits.**
 - **Copy self-audit** — reread every visible string before ship; hallucinated phrasing is the tell that survives every other check.
+- **Escalate decoration cheapest-first** (borrowed from `nutlope/hallmark`'s hero-enrichment ladder — see *See also*): before reaching for a generated illustration, ask whether typography alone, a CSS-only shape, or a hand-authored SVG already carries the weight. Generated imagery is the second-to-last rung, not step one — it earns its place only when the cheaper rungs genuinely can't. This sharpens, not contradicts, "we don't force stock or generated imagery" above.
 
 ### Redesigning an existing brand island
 
@@ -360,6 +376,21 @@ runtime dependencies**. They map to existing EmptyOS layers:
 | Copy-owned component library | `EOS_UI` in `emptyos/web/static/eos-components.{css,js}` | Do not import React/Tailwind/shadcn |
 | Design-system brief generation | `frontend-design` + `apps/public/standard/designer/` | Brand islands only, not product app chrome |
 | `design.md` plus provenance metadata | Future local design-system library | Record source/license before reuse |
+
+**2026-08-22 addendum — `nutlope/hallmark`.** A sixth design-taste skill in the
+same family as `taste-skill` (a markdown `SKILL.md` + `references/` procedure
+for AI coding agents, not a runtime tool — see `check_borrow_verdict.py hallmark`
+/ `docs/OPEN-SOURCE-BORROWING-PLAN.md` § Design-tool borrow for the full
+digest). Verdict: **build-nothing** — every mechanism it uses already maps to
+an owned layer above, several more robustly (its 58-item "slop test" is
+LLM self-grading with no code backstop; `eos-design-system-audit` enforces the
+same territory with static scanners). Two ideas absorbed/logged rather than
+copied: the decorative-escalation ladder (folded into the checklist above) and
+a rolling "avoid repeating the last N picks" diversification log for generated
+brand-island output (no current consumer — logged in `docs/DEFERRED-WORK.md`,
+build when `designer`/`promote` output starts visibly repeating). Its
+`hallmark study`/`design.md` verb is the same shape as the D5 design-system-
+library row already deferred below — second data point, not a new row.
 
 Default rule: a product app page never changes its visual language because an
 external design skill says so. It may gain a sharper audit check or a better

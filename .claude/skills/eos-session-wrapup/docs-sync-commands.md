@@ -140,11 +140,24 @@ The script:
 - Injects live counts into `index.md` (between `<!-- stats:start/end -->` markers)
 - Updates app count in `architecture.md` ASCII art
 
-**After running**, if the EmptyOS daemon is running, trigger a site rebuild:
+**After running**, if the EmptyOS daemon is running, trigger a site rebuild.
+**Name the site** — `publish` serves several (`default` = the personal site,
+`portfolio`, `emptyos`), and a bare `build` rebuilds `default`, so the EmptyOS
+site silently stays on its old inventory:
 
 ```bash
-curl -s -X POST http://localhost:9000/publish/api/build
+TOK=$(python -c "import tomllib;print(tomllib.load(open('emptyos.toml','rb')).get('network',{}).get('auth_token') or '')")
+curl -s -X POST -H "Authorization: Bearer $TOK" -H "Content-Type: application/json" \
+  -d '{"site_id":"emptyos"}' http://127.0.0.1:9000/publish/api/build
 ```
+
+The site is named by **`site_id` in the JSON body** — `api_build` reads it via
+`_site_from_request`. A `?site=` query param is silently ignored and builds
+`default` instead: measured 2026-08-17, `?site=emptyos` returned 4 pages,
+`{"site_id":"emptyos"}` returned 80.
+
+A correct rebuild reports ~80 pages. If it reports 4, it built `default`.
+(`127.0.0.1`, not `localhost`: local mode binds IPv4 only.)
 
 If the daemon is not running, note in the report: "Site source updated — rebuild when daemon starts."
 
@@ -170,11 +183,26 @@ git add <path1> <path2> ...  # stage explicitly, by path, only what THIS session
 git commit -m "<type>(<scope>): <concise summary>"
 git push -u origin "$(git rev-parse --abbrev-ref HEAD)"   # -u sets upstream on first push
 git log --oneline -1                                      # re-confirm HEAD is YOUR commit
+
+python scripts/check_unpushed.py   # ...and did anything NOT leave the machine?
 ```
 
 The Bash tool is Git Bash (POSIX sh), **NOT** PowerShell — use `git commit -m`,
 never a PowerShell here-string (`@'…'@`). For a multi-line body use a POSIX
 heredoc or repeated `-m`. End the message with the `Co-Authored-By` trailer.
+
+### Push every repo you committed to, not just this one
+
+`git push` covers the repo you are standing in. **`apps/personal/` is a separate
+repo with its own remote**, and because the parent gitignores it, a wrapup that
+only pushes the parent leaves that work on the machine with nothing complaining.
+Four studio commits — including the one adding the whole System Icon Library —
+sat there overnight on 2026-09-01 for exactly this reason.
+
+`check_unpushed.py` is the backstop: it walks every repo this account owns and
+reports anything unpushed past 12h. Run it at the end of Step 7, and push what
+it names or say why you are holding it. A push there is normally a plain
+fast-forward — the dirty working tree does not block it.
 
 ---
 

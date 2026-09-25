@@ -26,8 +26,8 @@ import re
 from datetime import date, datetime
 from pathlib import Path
 
-from emptyos.sdk import BaseApp, web_route
-from emptyos.sdk.utils import parse_frontmatter, strip_frontmatter
+from emptyos.sdk import BaseApp, scheduled, web_route
+from emptyos.sdk.utils import parse_frontmatter, streak_from_dates, strip_frontmatter
 from emptyos.sdk.vault_library import VaultLibrary
 
 from . import media as _media
@@ -127,6 +127,26 @@ class VlogApp(BaseApp):
             })
         return out
 
+    # ── Daily capture reminder — routes through the shared proactive_notify
+    # gate (quiet-hours + dedup + daily-cap), same mechanism `countdown` uses.
+    # Found dark during the 2026-08 gap-analysis pass: 1 Second Everyday's
+    # whole retention mechanic is this exact evening nudge.
+    # ────────────────────────────────────────────────────────────────────
+
+    @scheduled("0 20 * * *", id="vlog-reminder")
+    async def _check_reminder(self):
+        today = date.today().isoformat()
+        days = self._scan_days()
+        today_row = next((d for d in days if d["date"] == today), None)
+        if today_row and today_row.get("clip_count", 0) > 0:
+            return
+        await self.proactive_notify(
+            "vlog",
+            "No clip yet today — capture one before the day's gone.",
+            dedup_key=f"vlog:{today}",
+            link={"text": "Open vlog", "href": "/vlog/"},
+        )
+
     # ── List + heatmap ───────────────────────────────────────────────────
     @web_route("GET", "/api/days")
     async def api_days(self, request):
@@ -140,7 +160,8 @@ class VlogApp(BaseApp):
             n = it["clip_count"] or len(self._list_clip_files(d))
             heatmap[d] = n
             days.append({**it, "clip_count": n, "thumb": f"/vlog/api/thumb/{d}/0"})
-        return {"days": days, "heatmap": heatmap, "count": len(days)}
+        streak = streak_from_dates({d for d, n in heatmap.items() if n > 0})
+        return {"days": days, "heatmap": heatmap, "count": len(days), "streak": streak}
 
     @web_route("GET", "/api/search")
     async def api_search(self, request):

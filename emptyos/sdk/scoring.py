@@ -1,11 +1,13 @@
 """Shared accuracy/scoring utilities for practice apps.
 
-Used by: shadowing (LCS), english (pronunciation), and future assessment apps.
+Used by: shadowing (LCS + alignment events), audio-course (both), english
+(pronunciation), and future assessment apps.
 
 Usage:
-    from emptyos.sdk.scoring import lcs_score, word_accuracy
+    from emptyos.sdk.scoring import lcs_score, word_accuracy, alignment_to_events
     score = lcs_score("the quick brown fox", "the brown fox")  # 0.75
     result = word_accuracy("hello world", "hello word")  # {"accuracy": 50.0, "grade": "C", ...}
+    events = alignment_to_events(await self.pronounce(audio, target))
 """
 
 from __future__ import annotations
@@ -61,3 +63,52 @@ def word_accuracy(target: str, spoken: str) -> dict:
     accuracy = round(matches / len(t_words) * 100, 1)
     grade = "A" if accuracy >= 90 else "B" if accuracy >= 75 else "C" if accuracy >= 50 else "D"
     return {"accuracy": accuracy, "grade": grade, "matches": matches, "total": len(t_words)}
+
+
+def alignment_to_events(payload: dict) -> list[dict]:
+    """Project a ``pronounce`` payload into flat rows for
+    ``dictionary.log_pronounce_events``.
+
+    Keeps only the *misses* (sub / del / ins — matches are dropped) and labels
+    each with the word it happened inside, so the analyzer can say "your DH→S
+    miss happened in 'the' here, 'this' there" rather than reporting a bare
+    phone.
+
+    Extracted from shadowing's private ``_alignment_to_events`` when audio-course
+    became the second consumer. shadowing lives in ``apps/personal/`` (gitignored),
+    so a tracked app cannot import it from there — the SDK is the only shared home.
+
+    Args:
+        payload: A ``BaseApp.pronounce()`` result — ``{alignment, word_alignment, ...}``.
+            Tolerates the ``{"unavailable": True}`` shape and any missing key.
+
+    Returns:
+        ``[{op, ref, hyp, confidence, word}, ...]`` — empty when there is nothing
+        to report.
+    """
+    rows = payload.get("alignment") or []
+    word_alignment = payload.get("word_alignment") or []
+
+    # Label each alignment row with its owning word. The aligner emits one row
+    # per ref phone plus one per inserted hyp, all in document order, so a
+    # running offset over each word's phones_alignment length lines them up.
+    word_lookup: dict[int, str] = {}
+    scan = 0
+    for w in word_alignment:
+        consumed = w.get("phones_alignment") or []
+        for i in range(len(consumed)):
+            if scan + i < len(rows):
+                word_lookup[scan + i] = w.get("word", "")
+        scan += len(consumed)
+
+    return [
+        {
+            "op": row.get("op"),
+            "ref": row.get("ref"),
+            "hyp": row.get("hyp"),
+            "confidence": row.get("confidence"),
+            "word": word_lookup.get(i, ""),
+        }
+        for i, row in enumerate(rows)
+        if row.get("op") != "match"
+    ]

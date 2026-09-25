@@ -4,13 +4,13 @@ EmptyOS has **5 backends** that talk to LLMs and **8 frontends** that surface th
 
 Last verified: 2026-07-22 (added the cockpit observer category; `eos code` unified with the agent CLI; rooms code preset retained as `eos rooms --code`).
 
-> **Path note (2026 reorg):** the five backends live under `apps/public/standard/{agent,rooms,assistant,voice-assistant}/` and `apps/personal/staff/`; `/code/` is `apps/extension/plekto/code/`. This doc uses the short ids (`apps/agent`, `apps/rooms`, …) below for readability — app **ids** are location-independent at runtime, but grep the id, not the shorthand path.
+> **Path note (2026 reorg):** the five backends live under `apps/public/standard/{agent,rooms,assistant,voice-assistant}/` and `apps/personal/staff/`; `/code/` is `apps/extension/plekto/code/`. This doc uses the short ids (`apps/public/standard/agent`, `apps/public/standard/rooms`, …) below for readability — app **ids** are location-independent at runtime, but grep the id, not the shorthand path.
 
 ---
 
 ## The 5 backends — what each is
 
-### `apps/agent` — autonomous tool-loop
+### `apps/public/standard/agent` — autonomous tool-loop
 
 - **Shape**: multi-iteration loop driven by `emptyos/sdk/agent_loop.py`. Model emits native tool calls; runtime dispatches; tool results feed back; loop continues until model stops calling tools or max-iters trips (default 25).
 - **Tool surface**: 18 bundled tools in `emptyos/sdk/agent_tools/` — Read, Edit, Write, Bash, Grep, Glob, Python, Fetch, Screenshot, CallApp, Skill, TaskList, SubAgent, RestartDaemon, etc.
@@ -18,7 +18,7 @@ Last verified: 2026-07-22 (added the cockpit observer category; `eos code` unifi
 - **State**: SQLite sessions with fork/revert/edit-stack/MCP support; full audit log.
 - **When to reach for it**: code work, debugging, refactors. Anywhere you want "read → think → edit → run tests → re-read" to happen autonomously inside one turn.
 
-### `apps/rooms` — multi-participant chat with review gate
+### `apps/public/standard/rooms` — multi-participant chat with review gate
 
 - **Shape**: single LLM call per user message; multi-participant rooms (1:1, group, CLI participants). `[DO:app.method(...)]` token grammar for state-changing verbs.
 - **Tool surface**: per-agent `server_actions` allowlist (e.g. `{"task": ["add", "complete"], "repo": ["read", "grep", "edit", "write", "exec"]}`). Verbs the agent can emit at all.
@@ -26,7 +26,7 @@ Last verified: 2026-07-22 (added the cockpit observer category; `eos code` unifi
 - **State**: per-room JSON history (`data/apps/rooms/history/`); pending actions on disk (`data/apps/rooms/pending/`); per-action sandbox dirs for write proposals (`data/apps/rooms/sandboxes/`); scheduled reminders.
 - **When to reach for it**: daily personal verbs (add task, log journal, capture, search), persona conversations (finance-advisor, job-scout), chat-shape coding via `eos rooms --code` and the `cli-code` agent with its `repo.*` allowlist.
 
-### `apps/assistant` — multi-provider research + vault chat
+### `apps/public/standard/assistant` — multi-provider research + vault chat
 
 - **Shape**: single-shot Q&A with vault context injection. WebSocket streaming. Multi-provider compare (`api_compare` sends the same prompt to every think provider, captures latency + diff).
 - **Tool surface**: dynamic slash command discovery — reads `[[provides.assistant]]` from every app manifest, builds a cross-app verb palette (e.g. `/task`, `/capture`, `/kb`). Optional model-driven Read/Grep/Glob tool-use.
@@ -34,7 +34,7 @@ Last verified: 2026-07-22 (added the cockpit observer category; `eos code` unifi
 - **State**: SQLite sessions with project pinning, auto-archiving, export-to-vault. Project-scoped sessions.
 - **When to reach for it**: research questions over the vault, "compare how these providers answer X", quick Q&A with attached images (auto-pins vision provider), project-pinned multi-turn threads.
 
-### `apps/voice-assistant` — Aura, voice runtime
+### `apps/public/standard/voice-assistant` — Aura, voice runtime
 
 - **Shape**: voice-in (`listen`) → think → voice-out (`speak`). Companions (persona variants) switchable mid-conversation. Multi-intent planning (`api_plan` + `api_execute_plan`) sequences multiple intents before executing.
 - **Tool surface**: voice intents declared by apps via `[[contributes.voice-assistant.intent]]`. Embedding-aware ranking + recency fallback narrows the in-scope intent set per turn. Post-intent narration (`[[contributes.voice-assistant.narration]]`) appends consequence sentences ("that's 3 open tasks total").
@@ -56,21 +56,21 @@ Last verified: 2026-07-22 (added the cockpit observer category; `eos code` unifi
 
 | Frontend | Type | Backend | Entry |
 |---|---|---|---|
-| `/agent/` | Web page | `apps/agent` | Browser |
-| `/rooms/` | Web page | `apps/rooms` | Browser |
-| `/assistant/` | Web page | `apps/assistant` | Browser |
-| `/voice-assistant/` | Web page | `apps/voice-assistant` | Browser, phone PWA |
+| `/agent/` | Web page | `apps/public/standard/agent` | Browser |
+| `/rooms/` | Web page | `apps/public/standard/rooms` | Browser |
+| `/assistant/` | Web page | `apps/public/standard/assistant` | Browser |
+| `/voice-assistant/` | Web page | `apps/public/standard/voice-assistant` | Browser, phone PWA |
 | `/staff/` | Web page | `apps/personal/staff` | Browser |
-| page-assistant (✨ FAB sidebar / pinnable rail) | Per-page sidebar | `apps/rooms` (primary), `apps/assistant` (fallback); **`apps/voice-assistant` brain when `feature.companion-frame.enabled`** | Every app page's bottom-right FAB (or a pinned docked rail); loaded by `emptyos/web/static/eos.js` |
-| `eos chat` | Terminal REPL | `apps/agent` | `@cli_command("chat")` in `apps/agent/repl.py` |
-| `eos code` | Terminal REPL | `apps/agent` | Alias registered by `@cli_command("code")`; seeds the session-scoped Code persona when agent modes are enabled |
-| `eos rooms` | Terminal REPL | `apps/rooms` | `app.command("rooms")` in `emptyos/cli/main.py` → `emptyos/cli/chat.py`; `--code` bootstraps the review-gated `cli-code` preset |
-| `/code/` | Responsive web page | `apps/agent` (via WebSocket + sessions) | `apps/extension/plekto/code/` — desktop code workspace (tree + preview/diff + terminal + chat) that reflows into a phone-friendly remote (Agent + Review + Files + Output). Same agent loop and consent manager; mobile approvals are one-action only. Mobile guardrails (one-action approval, output-only terminal, secret files kept out of the workspace) are UX/exposure-reduction, **not** a sandbox — single-user token has full access via `/repo`, `/settings`, or the agent (docs/AUTH.md). |
+| page-assistant (✨ FAB sidebar / pinnable rail) | Per-page sidebar | `apps/public/standard/rooms` (primary), `apps/public/standard/assistant` (fallback); **`apps/public/standard/voice-assistant` brain when `feature.companion-frame.enabled`** | Every app page's bottom-right FAB (or a pinned docked rail); loaded by `emptyos/web/static/eos.js` |
+| `eos chat` | Terminal REPL | `apps/public/standard/agent` | `@cli_command("chat")` in `apps/public/standard/agent/repl.py` |
+| `eos code` | Terminal REPL | `apps/public/standard/agent` | Alias registered by `@cli_command("code")`; seeds the session-scoped Code persona when agent modes are enabled |
+| `eos rooms` | Terminal REPL | `apps/public/standard/rooms` | `app.command("rooms")` in `emptyos/cli/main.py` → `emptyos/cli/chat.py`; `--code` bootstraps the review-gated `cli-code` preset |
+| `/code/` | Responsive web page | `apps/public/standard/agent` (via WebSocket + sessions) | `apps/extension/plekto/code/` — desktop code workspace (tree + preview/diff + terminal + chat) that reflows into a phone-friendly remote (Agent + Review + Files + Output). Same agent loop and consent manager; mobile approvals are one-action only. Mobile guardrails (one-action approval, output-only terminal, secret files kept out of the workspace) are UX/exposure-reduction, **not** a sandbox — single-user token has full access via `/repo`, `/settings`, or the agent (docs/AUTH.md). |
 | `eos staff` | Terminal CLI (not REPL) | `apps/personal/staff` | `@cli_command("staff")` in `apps/personal/staff/app.py` |
 
 **Observations from the matrix:**
-- `apps/rooms` has web `/rooms/`, the page-sidebar, and CLI `eos rooms` (including its `--code` preset).
-- `apps/agent` has web `/agent/`, web `/code/`, and one CLI surface with two entry names (`eos chat` / `eos code`). `/code/` is a pure frontend over apps/agent — different layout, same backend.
+- `apps/public/standard/rooms` has web `/rooms/`, the page-sidebar, and CLI `eos rooms` (including its `--code` preset).
+- `apps/public/standard/agent` has web `/agent/`, web `/code/`, and one CLI surface with two entry names (`eos chat` / `eos code`). `/code/` is a pure frontend over apps/agent — different layout, same backend.
 - `apps/personal/staff` CLI is operational, not conversational (different shape).
 - Aura and assistant have no CLI — voice is voice-shaped; assistant is web-shaped.
 
@@ -83,8 +83,41 @@ IDE workspace hosted in portal's iframe pane via `?embed=1`). Each thread rememb
 (`asst:`/`agent:` id prefixes; rooms = bare id). Backends are untouched; the dedicated pages and
 CLIs all still work. `portal` is the `companion` suite `surface` (`suites.toml`). This exists to
 collapse the "which chat app do I open" choice into one door — it does **not** merge any backend
-(see "Coexist, not merge" below). Portal drives its **own** agent sessions (the backend keeps one
-live-turn slot per session, so two frontends must not share a session).
+(see "Coexist, not merge" below). Portal drives its **own** agent sessions. The agent backend
+allows one running turn per session across every socket (`AgentApp._claim_turn`, 2026-09-12), so
+a second window on the same session is refused mid-turn rather than interleaving into its history.
+
+**Chat-first home (dark: `[apps.portal] feature.chat-first.enabled`).** With the flag on, a new
+conversation is an agent session with `profile="chat"` (`apps/public/standard/agent/profiles.py`):
+the chat persona (`CHAT_SYSTEM_PROMPT`); VaultQuery / Locate / WebSearch / Skill / ContextRef plus
+narrowed Fetch (public-web GET), CallApp (declared app verbs, never an eligibility-`never` one) and
+Read (vault + allowed folders, never the repo) — no shell, code execution or file writes; and none
+of the coding passes (orient, app scaffold, skill auto-trigger, episodic recall, plan-mode banner,
+CLAUDE.md, repo map). Rooms / Assistant / Agent (coding) / Code move behind a **More** menu; a
+model picker sets the session's provider from `GET /agent/api/providers`. A chat never runs on a
+natively-agentic provider (claude-cli brings its own tools past the registry and consent gate), a
+chat turn on a cloud model passes the cloud-consent gate, and once stored history has a wire kind
+it only switches between providers of that kind. The sidebar gains **Projects** (a name + standing
+instructions every chat in it receives), Recent chats and a chat search; "Copy rooms into projects"
+turns portal folders into projects (their agent threads move; Rooms threads stay in the folder). A
+new thread inside a portal folder still starts in Rooms. The composer attaches vault notes, uploads
+and pasted screenshots, and a **Vault** toggle grounds the answer in the user's notes — neither
+reaches a cloud model without an explicit yes for that message (`docs/AGENT.md` § Attachments).
+When an answer is a **thing** rather than prose, the model writes a standalone page through the
+flagged `CreateArtifact` tool and it opens in a side panel beside the conversation
+(`[apps.agent] feature.artifacts.enabled`). viz stores it, so an artifact gets the record note and
+the version ring a generated one gets — a revision keeps the render it replaced, and the panel's
+picker can show it. The preview frame has an opaque origin (`sandbox="allow-scripts"`, plus a CSP
+on the response when `[apps.viz] feature.html-csp-sandbox.enabled` is on), so model-written script
+never runs with the daemon's credentials.
+**Connectors** (`[apps.agent] feature.mcp-inbound.enabled`) let a chat reach an
+external MCP server's tools: the machine's servers are added, connected and
+disconnected without a restart, and each chat chooses which of them it may use
+— a connected server's tools existing is not the same as every conversation
+being offered them. Adding one that spawns a process shows the exact command
+line first. Same engine, same WS, same persistence — a
+profile is data, not a fifth backend. Details: `docs/AGENT.md` § Session profiles. Plan:
+`_plans/eos-desktop-gui.md` (B1).
 
 ---
 
@@ -134,7 +167,7 @@ If you fix a bug in the backend, every frontend over that backend picks it up. T
 
 The reflexive instinct on first inventory was "retire assistant, fold Aura into rooms, merge skill registries." An audit in 2026-05-16 showed each has unique value the others don't replicate. **None of these merges should happen.** Documenting the decisions so they don't get re-questioned.
 
-### Decision A — `apps/assistant` stays as its own backend
+### Decision A — `apps/public/standard/assistant` stays as its own backend
 
 **Unique features rooms doesn't have:**
 - `think_compare()` — send the same prompt to ALL providers, capture latency + responses. No rooms analogue.
@@ -146,7 +179,7 @@ The reflexive instinct on first inventory was "retire assistant, fold Aura into 
 
 **Verdict**: keep. If a feature here ever needs to be in rooms too (e.g. project pinning), port it — don't fold the whole app.
 
-### Decision B — `apps/voice-assistant` stays as its own backend
+### Decision B — `apps/public/standard/voice-assistant` stays as its own backend
 
 **Unique features rooms doesn't have:**
 - **Companion switching** mid-conversation via `[[contributes.voice-assistant.companion]]` — voice-scoped persona variants.
@@ -166,15 +199,15 @@ When a page sets `pageGpt: "<rooms-agent-id>"`, the sidebar POSTs to `/rooms/api
 
 **Verdict**: keep both fallback paths.
 
-### Decision D — `apps/skill` and `apps/agent/skills.py` both exist
+### Decision D — `apps/extension/dev/skill` and `apps/public/standard/agent/skills.py` both exist
 
-Same SKILL.md format, two registries — one for rooms slash-overlay (`apps/skill`), one for the agent loop's `Skill` tool (`apps/agent/skills.py`). Merging means one consumer dictates the other's loading semantics.
+Same SKILL.md format, two registries — one for rooms slash-overlay (`apps/extension/dev/skill`), one for the agent loop's `Skill` tool (`apps/public/standard/agent/skills.py`). Merging means one consumer dictates the other's loading semantics.
 
 **Verdict**: keep both. A skill written once works in both via the shared file format.
 
-### Decision E — `apps/repo` and `emptyos/sdk/agent_tools/*` both exist
+### Decision E — `apps/extension/dev/repo` and `emptyos/sdk/agent_tools/*` both exist
 
-`apps/repo` exposes read/grep/edit/write/exec as **rooms-callable verbs** (chat-shape, [DO:]-gated, sandboxed diff for writes). `emptyos/sdk/agent_tools/{read,edit,write,bash,grep,glob}` are **loop-internal tools** the agent loop dispatches with per-call consent.
+`apps/extension/dev/repo` exposes read/grep/edit/write/exec as **rooms-callable verbs** (chat-shape, [DO:]-gated, sandboxed diff for writes). `emptyos/sdk/agent_tools/{read,edit,write,bash,grep,glob}` are **loop-internal tools** the agent loop dispatches with per-call consent.
 
 Same operations, two consumers, two gate philosophies. Not duplication — parallel infrastructure for different UX shapes.
 
@@ -198,8 +231,8 @@ The four chat renderers (`/agent/`, `/rooms/`, cockpit, `/code/`) all render thr
 
 - `services/chatbot/README.md` § Architecture — the **external-site sibling** of this stack. Deliberately *not* one of the 5 backends above: it's a Lane 1 service (no vault, no kernel), so it can't reach data or verbs directly. Same shape with a **digest layer** substituted in the middle (`external site → emptyos digest → chat`): crawled corpus + catalogue feed stand in for `vault_query`, `sites.toml` `allowed_actions` for the verb registry, `commerce_reply()` for `[INTENT:]` routing, `secure_action_form` for the review gate, and the embeddable widget for the companion rail. Read it before adding a chat surface for a site EmptyOS doesn't own; patterns port there, code never does.
 - `docs/AGENT-FRAMEWORK.md` — the auto-agent **assembly manual**: this doc maps the conversational *surfaces*; that one maps the *primitives* (schedule/persona/verbs/gates/budgets/memory/comms/UI) you compose into an autonomous agent. Config, not code.
-- `apps/agent/manifest.toml` — the autonomous tool-loop backend.
-- `apps/rooms/manifest.toml` — the chat-shape multi-participant backend.
+- `apps/public/standard/agent/manifest.toml` — the autonomous tool-loop backend.
+- `apps/public/standard/rooms/manifest.toml` — the chat-shape multi-participant backend.
 - `.claude/rules/room-review-gate.md` — `[DO:]` token grammar + Apply/Reject mechanics.
 - `.claude/rules/voice-intents.md` — `[[contributes.voice-assistant.intent]]` contract.
 - `.claude/rules/autopilot-grants.md` — explicit-grant model (per-actor + per-verb + per-scope) layered on top of all gates.
@@ -207,7 +240,7 @@ The four chat renderers (`/agent/`, `/rooms/`, cockpit, `/code/`) all render thr
 - `emptyos/sdk/agent_loop.py` — the 950-line tool-use loop driver.
 - `emptyos/cli/chat.py` — `eos rooms` REPL and `--code` dispatch.
 - `emptyos/cli/code.py` — rooms code-preset bootstrap + cli-code agent seed.
-- `apps/agent/repl.py` — shared `eos chat` / `eos code` agent REPL (prompt_toolkit, slash commands, skill catalog).
+- `apps/public/standard/agent/repl.py` — shared `eos chat` / `eos code` agent REPL (prompt_toolkit, slash commands, skill catalog).
 
 ---
 

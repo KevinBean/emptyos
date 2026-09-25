@@ -1,3 +1,7 @@
+---
+paths:
+  - "tools/chrome-extension/**"
+---
 # Browser-Extension Bridge — explicit page input and armed bidirectional sessions
 
 The EmptyOS Chrome extension (`tools/chrome-extension/`) is a **capability-to-browser

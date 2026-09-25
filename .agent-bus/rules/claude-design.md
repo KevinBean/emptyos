@@ -1,3 +1,8 @@
+---
+paths:
+  - "plugins/claude-design/**"
+  - "apps/**/designer/**"
+---
 # Claude Design — claude.ai/design as an EmptyOS connection + capability
 
 Claude Design (`claude.ai/design`) is a hosted **canvas** for static HTML design

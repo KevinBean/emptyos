@@ -372,6 +372,36 @@ var _appSettings = EOS_UI.settingsPanel({
 function openAppSettings() { _appSettings.open(); }
 
 // --- Task metadata ---
+// Assign a task to a staff workflow agent — soft bridge, invisible-in-spirit
+// when staff isn't installed (empty roster -> a toast, not a broken modal).
+async function openAssignTask(projectId, taskLine) {
+    var agents = [];
+    try {
+        var r = await EOS.api('/projects/api/assignable-agents');
+        agents = (r && r.agents) || [];
+    } catch(e) {}
+    if (!agents.length) {
+        EOS_UI.toast('No workflow agents available — install/enable Staff with a workflow-mode agent', false);
+        return;
+    }
+    EOS_UI.formModal('Assign task to agent', [
+        {key: 'agent_id', label: 'Agent', type: 'select', options: agents.map(function(a) { return a.id; })},
+    ], async function(values) {
+        var agentId = (values.agent_id || '').trim();
+        if (!agentId) return;
+        try {
+            var res = await EOS.post('/projects/api/projects/' + encodeURIComponent(projectId) + '/tasks/' + taskLine + '/assign', {
+                agent_id: agentId,
+            });
+            if (res.error) { EOS_UI.toast(res.error, false); return; }
+            EOS_UI.toast('Assigned to ' + agentId + ' — job started');
+            openProjectWorkspace(projectId);
+        } catch(e) {
+            EOS_UI.toast('Failed to assign', false);
+        }
+    });
+}
+
 function openAddMeta(projectId, taskLine) {
     EOS_UI.formModal('Add task metadata', [
         {key: 'type',  label: 'Type',  type: 'select', options: ['info','need','calc','ref','sprint','milestone']},
@@ -436,11 +466,8 @@ async function showHealth(projectId) {
         var r = await EOS.api('/projects/api/projects/' + encodeURIComponent(projectId) + '/health');
         var el = document.getElementById('health-content');
         el.textContent = r.health || 'No assessment available';
-        var p = r.provenance;
-        if (p && p.mode) {
-            el.insertAdjacentHTML('beforeend',
-                '<div style="margin-top:10px">' + EOS_UI.provenance({mode: p.mode, provider: p.provider, model: p.model}) + '</div>');
-        }
+        var pv = EOS_UI.provenanceLine(r.provenance, {className: '', style: 'margin-top:10px'});
+        if (pv) el.insertAdjacentHTML('beforeend', pv);
     } catch(e) {
         document.getElementById('health-content').textContent = 'AI unavailable';
     }
@@ -453,7 +480,7 @@ function _renderProjectSceneModal(projectId, data) {
     var statusChip = data.cached
         ? '<span style="color:var(--text-muted); font-size:11px;">📌 cached · generated ' + EOS_UI.esc(whenLabel) + '</span>'
         : '<span style="color:var(--accent); font-size:11px;">✨ fresh · generated ' + EOS_UI.esc(whenLabel) + '</span>';
-    return '<div style="height:75vh; background:#0d1117; border-radius:8px; overflow:hidden;">' +
+    return '<div style="height:75vh; background:var(--bg-card, #0d1117); border-radius:8px; overflow:hidden;">' +
               '<iframe id="proj-scene-iframe" src="' + EOS_UI.escAttr(data.embed_url) + '?t=' + Date.now() + '" ' +
                 'style="width:100%; height:100%; border:0;" sandbox="allow-scripts"></iframe>' +
            '</div>' +

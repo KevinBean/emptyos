@@ -14,10 +14,12 @@ from __future__ import annotations
 
 import asyncio
 import datetime as _dt
-from pathlib import Path
+import re
 
 from emptyos.sdk import BaseApp, cli_command, web_route
-from emptyos.sdk.utils import parse_llm_json
+from emptyos.sdk.panels import DEFAULT_PANEL_BUDGET_S, panel_debug_page, parse_panel_budget
+from emptyos.sdk.panels import resolve_panels as resolve_contributed_panels
+from emptyos.sdk.utils import contribution_id, parse_llm_json
 
 
 LUCKY_SYSTEM = """You match a user's one-sentence goal to the right EmptyOS app from a catalog.
@@ -78,11 +80,21 @@ _INTERROGATIVES = {
 _ZH_INTERROGATIVES = ("为什么", "怎么", "什么", "如何", "哪")
 _FIND_PREFIXES = ("find ", "search ", "where is ", "where are ", "look up ", "my notes on ", "my notes about ")
 _OPEN_PREFIXES = ("open ", "launch ", "go to ")
+_OPEN_TOOL_PREFIXES = (
+    "i need a tool", "i need an app", "i want a tool", "i want an app",
+    "is there a tool", "is there an app", "a tool to ", "a tool for ",
+    "an app to ", "an app for ",
+)
+_ASK_PREFIXES = ("explain ", "describe ", "define ", "tell me about ")
 _ARTIFACT_NOUNS = {
     "report", "summary", "deck", "page", "post", "doc",
-    "document", "presentation", "brief", "one-pager", "plan",
+    "document", "presentation", "brief", "briefing", "one-pager", "plan",
 }
 _ARTIFACT_NOUNS_2W = {"slide deck"}
+_PRODUCE_VERBS = {
+    "create", "make", "draft", "write", "prepare", "generate", "build",
+    "compose", "produce",
+}
 
 # Leading imperative self-directed actions → capture (ROUTE_SYSTEM's first rule,
 # now deterministic). Curated for PRECISION: only unambiguous "do this errand"
@@ -137,11 +149,13 @@ def classify_route_heuristic(text: str) -> tuple[str | None, str | None, str | N
         return "ask", "interrogative", None
     if t.startswith(_ZH_INTERROGATIVES):
         return "ask", "interrogative", None
-
+    if low.startswith(_ASK_PREFIXES):
+        return "ask", "ask-verb", None
     for prefix in _OPEN_PREFIXES:
         if low.startswith(prefix) and len(t) > len(prefix):
             return "open", "open-verb", None
-
+    if low.startswith(_OPEN_TOOL_PREFIXES):
+        return "open", "tool-request", None
     words = low.split()
     # Leading imperative errand → capture (needs an object, so ≥2 words; the
     # smart bar only fires on ≥2 words anyway). Phrasals require their particle.
@@ -154,6 +168,15 @@ def classify_route_heuristic(text: str) -> tuple[str | None, str | None, str | N
     if len(words) >= 3 and words[0] in ("a", "an"):
         if words[1] in _ARTIFACT_NOUNS or " ".join(words[1:3]) in _ARTIFACT_NOUNS_2W:
             return "produce", "artifact-noun", None
+
+    # A generic production verb remains ambiguous until an exact artifact noun
+    # appears: "make a sandwich" and "create a task" still defer, while
+    # "prepare a summary" is safely an artifact request.
+    if len(words) >= 2 and words[0] in _PRODUCE_VERBS:
+        if any(word in _ARTIFACT_NOUNS for word in words[1:]):
+            return "produce", "artifact-request", None
+        if any(phrase in low for phrase in _ARTIFACT_NOUNS_2W):
+            return "produce", "artifact-request", None
 
     return None, None, None
 
@@ -206,6 +229,28 @@ Rules:
 """
 
 
+_RATIONALE_PREFIX = re.compile(r"^\s*suggested\s+because\s*[:\-–—]?\s*", re.IGNORECASE)
+
+
+def _strip_rationale_prefix(why: str) -> str:
+    """Drop a leading "Suggested because:" from the model's `why`.
+
+    The UI renders the rationale as ``Suggested because: <why>`` and the
+    prompt says so; models echo the prefix anyway (ollama did on 2026-09-06,
+    so the home screen read "Suggested because: Suggested because: 11 items
+    are waiting…"). Normalise at the parse boundary, once, not in the page.
+    """
+    # Loop, not count=0: `^` only matches at position 0, so a single sub()
+    # leaves the second copy when a model echoes the label twice, and the
+    # page would re-prefix it. The regex is anchored, so it cannot over-strip.
+    text = why or ""
+    while True:
+        stripped = _RATIONALE_PREFIX.sub("", text, count=1)
+        if stripped == text:
+            return text.strip()
+        text = stripped
+
+
 def _overdue_bucket(n: int) -> str:
     """Coarse bucket so the companion cache doesn't churn on every +/-1."""
     if n <= 0:
@@ -220,79 +265,24 @@ def _overdue_bucket(n: int) -> str:
 class HubApp(BaseApp):
     # ── Panel aggregator ──
 
-    async def resolve_panels(self, *, include_lazy: bool = False) -> list[dict]:
-        """Gather every [[contributes.hub.panel]], call its method, return
-        a list of {id, title, renderer, group, priority, source, data, lazy} items.
+    async def resolve_panels(
+        self, *, include_lazy: bool = False, only: str = "",
+        timeout_s: float | None = None,
+    ) -> list[dict]:
+        """Gather every [[contributes.hub.panel]] and render it to a row.
 
-        Fail-soft per panel: a contributor that raises drops out of the list
-        (logged to syslog) rather than breaking the whole page.
-
-        Lazy panels are emitted as placeholders unless include_lazy=True.
+        Aggregation lives in ``sdk.panels`` (shared with the life dashboard);
+        what stays here is the one thing that differs between hosts — which
+        contribution slot this board reads.
         """
-        contributions = self.kernel.apps.get_contributions("hub", "panel")
-        if not contributions:
-            return []
-
-        def _placeholder(contrib: dict) -> dict:
-            app_id = contrib.get("_app_id")
-            method = contrib.get("method")
-            return {
-                "id": contrib.get("id") or f"{app_id}:{method}",
-                "title": contrib.get("title") or "",
-                "renderer": contrib.get("renderer") or "plain-list",
-                "group": contrib.get("group") or "",
-                "priority": int(contrib.get("priority", 100) or 100),
-                "source": app_id,
-                "data": None,
-                "lazy": True,
-            }
-
-        async def _call_one(contrib: dict) -> dict | None:
-            app_id = contrib.get("_app_id")
-            method = contrib.get("method")
-            if not app_id or not method:
-                return None
-            try:
-                data = await self.call_app(app_id, method)
-            except Exception as e:
-                self.kernel.syslog.warn(
-                    "hub",
-                    f"panel '{contrib.get('id')}' ({app_id}.{method}) failed: {e}",
-                )
-                return None
-            if data is None:
-                return None
-            cap = contrib.get("limit")
-            if isinstance(data, list) and isinstance(cap, int) and cap > 0:
-                data = data[:cap]
-            return {
-                "id": contrib.get("id") or f"{app_id}:{method}",
-                "title": contrib.get("title") or "",
-                "renderer": contrib.get("renderer") or "plain-list",
-                "group": contrib.get("group") or "",
-                "priority": int(contrib.get("priority", 100) or 100),
-                "source": app_id,
-                "data": data,
-                "lazy": False,
-            }
-
-        eager: list[dict] = []
-        lazy_placeholders: list[dict] = []
-        eager_contribs: list[dict] = []
-        for c in contributions:
-            if c.get("lazy") and not include_lazy:
-                lazy_placeholders.append(_placeholder(c))
-            else:
-                eager_contribs.append(c)
-
-        results = await asyncio.gather(
-            *[_call_one(c) for c in eager_contribs], return_exceptions=False
+        return await resolve_contributed_panels(
+            self.kernel.apps.get_contributions("hub", "panel"),
+            call=self.call_app,
+            include_lazy=include_lazy,
+            only=only,
+            on_error=lambda msg: self.kernel.syslog.warn("hub", msg),
+            timeout_s=timeout_s,
         )
-        eager = [r for r in results if r is not None]
-
-        panels = eager + lazy_placeholders
-        panels.sort(key=lambda p: (p["priority"], p["id"]))
-        return panels
 
     # ── HTTP API ──
 
@@ -336,16 +326,36 @@ class HubApp(BaseApp):
     async def api_panel(self, request):
         """Refresh a single panel by id. Forces lazy panels to execute."""
         panel_id = request.path_params.get("panel_id", "")
-        panels = await self.resolve_panels(include_lazy=True)
+        panels = await self.resolve_panels(include_lazy=True, only=panel_id)
         for p in panels:
             if p["id"] == panel_id:
                 return p
+        # No row came back, and that has two very different causes the caller
+        # must be able to tell apart. A registered contributor that returned
+        # None means "nothing to show right now" — the documented empty state,
+        # not a failure. Reporting it as "not found" made the debug page's
+        # reload button say a working panel did not exist.
+        if any(
+            contribution_id(c) == panel_id
+            for c in self.kernel.apps.get_contributions("hub", "panel")
+        ):
+            return {"id": panel_id, "empty": True}
         return {"error": "not found", "id": panel_id}
 
     @web_route("GET", "/api/panels/all")
     async def api_panels_all(self, request):
-        """Like /api/panels but runs lazy contributors too. Used for debug."""
-        panels = await self.resolve_panels(include_lazy=True)
+        """Like /api/panels but runs lazy contributors too. Used for debug.
+
+        Every lazy contributor hydrates here at once, and `gather` waits for
+        the slowest, so one stuck LLM panel used to hold the whole listing
+        (12 s → >90 s on the same tree). Each contributor now gets
+        `[apps.hub] panel_timeout_s` (default `DEFAULT_PANEL_BUDGET_S`, 12 s;
+        0 disables); a panel past it is dropped and logged, the rest still
+        render. The single-panel `/api/panel/{id}` path stays unbounded so a
+        slow hydrate can finish on its own.
+        """
+        budget = parse_panel_budget(self.app_config("panel_timeout_s", DEFAULT_PANEL_BUDGET_S))
+        panels = await self.resolve_panels(include_lazy=True, timeout_s=budget)
         return {"panels": panels}
 
     # ── Daily command surface — deterministic state digest (Phase 1) ──
@@ -686,7 +696,7 @@ class HubApp(BaseApp):
             tone = "calm"
         move = {
             "title": str(parsed.get("title") or "").strip()[:80],
-            "why": str(parsed.get("why") or "").strip()[:200],
+            "why": _strip_rationale_prefix(str(parsed.get("why") or ""))[:200],
             "action_href": href,
             "action_label": str(parsed.get("action_label") or "Open").strip()[:24],
             "tone": tone,
@@ -965,10 +975,11 @@ class HubApp(BaseApp):
     async def debug_panels(self, request):
         from fastapi.responses import HTMLResponse
 
-        debug_file = Path(self.manifest.path) / "pages" / "debug.html"
+        # One shared page for every panel host — see sdk.panels.panel_debug_page.
+        debug_file = panel_debug_page()
         if not debug_file.exists():
             return HTMLResponse(
-                "<h1>debug.html missing</h1><p>See /hub/api/panels/all for raw data.</p>",
+                "<h1>panel-debug.html missing</h1><p>See /hub/api/panels/all for raw data.</p>",
                 status_code=404,
             )
         return HTMLResponse(debug_file.read_text(encoding="utf-8"))
@@ -1000,8 +1011,10 @@ class HubApp(BaseApp):
         renderer (hub.js) draws each section as a collapsible block. See
         `emptyos/sdk/app_sections.py` + `.claude/rules/store.md`.
         """
+        from emptyos.sdk.app_icons import active_system_icon_ids, manifest_icon_id
         from emptyos.sdk.app_sections import category_of, sections_from_buckets
 
+        active_icon_ids = active_system_icon_ids(self.kernel.config.data_dir)
         buckets: dict[str, list[dict]] = {}
         for app_id, app in self.kernel.apps.instances.items():
             if app_id == "hub":
@@ -1016,6 +1029,8 @@ class HubApp(BaseApp):
                     "title": app.manifest.name or app_id,
                     "href": href,
                     "description": (app.manifest.description or "").strip(),
+                    "icon": (app.manifest.raw.get("app", {}) or {}).get("icon", ""),
+                    "icon_id": manifest_icon_id(app.manifest, active_icon_ids),
                 }
             )
 

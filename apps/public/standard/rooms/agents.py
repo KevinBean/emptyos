@@ -48,6 +48,9 @@ if TYPE_CHECKING:
 #   api_get_history      = _agents.api_get_history
 #   clear_room_history   = _agents.clear_room_history
 #   api_clear_history    = _agents.api_clear_history
+#   _ensure_message_ids  = _agents._ensure_message_ids
+#   _walk_to_head        = _agents._walk_to_head
+#   api_verb_menu        = _agents.api_verb_menu
 # Adding a new method here? Add a matching binding line in app.py.
 # ─────────────────────────────────────────────────────────────────────
 
@@ -342,7 +345,7 @@ async def api_update_agent(self, request):
     data = await request.json()
     updatable = ("name", "system_prompt", "knowledge_files", "knowledge_dir",
                  "knowledge_char_limit", "provider", "model", "effort", "tools",
-                 "temperature", "tier", "server_actions", "gate_mode")
+                 "temperature", "tier", "server_actions", "gate_mode", "auto_route")
     for key in updatable:
         if key in data:
             agent[key] = data[key]

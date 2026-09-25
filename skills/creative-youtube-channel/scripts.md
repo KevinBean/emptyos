@@ -1,3 +1,4 @@
+<!-- skill-refs: ignore — script paths are relative to the vault's YouTube-Music-Channel project, not the repo -->
 # 3:30 Channel — Video, Shorts, Cover & Voice Scripts
 
 ## Generate Animated MV (AI Video Background)
@@ -41,7 +42,7 @@ python scripts/generate_animated_mv.py --audio song.mp3 --cover cover.png --titl
 - Background: Animated cover (full screen, looping)
 
 **Prerequisites**:
-- ComfyUI running (`$COMFYUI_HOST`, default `localhost:8188`; or your ComfyUI host's Tailscale address if remote)
+- ComfyUI running (localhost on Home PC, or `{homepc}:8188` via Tailscale)
 - AnimateDiff installed in ComfyUI
 - ffmpeg in PATH
 - `pip install requests mutagen`

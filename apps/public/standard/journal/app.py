@@ -676,6 +676,9 @@ class JournalApp(BaseApp):
     api_word_count = _analytics.api_word_count
     api_search     = _analytics.api_search
     api_export     = _analytics.api_export
+    _streak_as_of  = _analytics._streak_as_of
+    _nudge_enabled = _analytics._nudge_enabled
+    scheduled_no_entry_nudge = _analytics.scheduled_no_entry_nudge
     _heatmap       = _analytics._heatmap
     _mood_trend    = _analytics._mood_trend
 

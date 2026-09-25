@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
+  <title>SolidBench</title>
+  <desc>A set square / drafting triangle — accent-orange fill, ink outline, three ruled ticks along the long edge. Reads as a drafting-table tool at any size.</desc>
+
+  <polygon points="20,108 20,20 108,108" fill="#E05A1E" stroke="#232320" stroke-width="6" stroke-linejoin="round"/>
+
+  <g stroke="#232320" stroke-width="5" stroke-linecap="round">
+    <line x1="20" y1="108" x2="20" y2="94"/>
+    <line x1="20" y1="82" x2="34" y2="82"/>
+    <line x1="20" y1="56" x2="46" y2="56"/>
+  </g>
+</svg>

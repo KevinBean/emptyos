@@ -131,7 +131,15 @@ def render() -> str:
         for key in ext_keys:
             grp = key.split("/", 1)[1]
             rows = groups[key]
-            L.append(f"### {_EXT_TITLE.get(grp, 'Extension · ' + grp)}")
+            # An unmapped group used to render as a bare `Extension · <grp>`
+            # heading, which reads like a deliberate title — so a new extension
+            # group could sit untitled in the shipped catalog indefinitely
+            # (apps/extension/labs did, until 2026-08-30). Degrade loudly.
+            L.append(
+                f"### {_EXT_TITLE[grp]}"
+                if grp in _EXT_TITLE
+                else f"### Extension · {grp} — UNTITLED GROUP (add it to _EXT_TITLE)"
+            )
             L.append("")
             L.append(f"*{len(rows)} apps.*")
             L.append("")

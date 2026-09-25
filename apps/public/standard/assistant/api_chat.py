@@ -33,6 +33,7 @@ if TYPE_CHECKING:
 #   api_compare         = _api_chat.api_compare
 #   api_dispatch        = _api_chat.api_dispatch
 #   api_propose_kb_note = _api_chat.api_propose_kb_note
+#   api_browser_session_snapshots = _api_chat.api_browser_session_snapshots
 # Adding a new method here? Add a matching binding line in app.py.
 # ────────────────────────────────────────────────────────────────────
 
@@ -165,8 +166,8 @@ async def api_chat(self, request):
             elif verdict == "conflict" and differ:
                 conflict = {
                     "scoped": result, "full": full_v,
-                    "scoped_sources": self._provenance_items(scoped_paths),
-                    "full_sources": self._provenance_items(full_paths),
+                    "scoped_sources": self._provenance_items(scoped_paths, message),
+                    "full_sources": self._provenance_items(full_paths, message),
                     "scoped_paths": scoped_paths, "full_paths": full_paths,
                 }
         except Exception:

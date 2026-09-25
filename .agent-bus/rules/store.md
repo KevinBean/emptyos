@@ -1,3 +1,10 @@
+---
+paths:
+  - "apps/**/store/**"
+  - "emptyos/kernel/app_loader.py"
+  - "emptyos/kernel/plugin_loader.py"
+  - "registry/**"
+---
 # Store — Per-User Install Gate
 
 `/store` is the ComfyUI-Manager/Obsidian-community-plugins-style UI for browsing and toggling apps + plugins + skills. Restart-required for apps and plugins; skills hot-load (Claude Code reads `.claude/skills/` live).

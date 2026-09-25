@@ -12,6 +12,7 @@ class = "PeopleApp"
 
 [requires]
 capabilities = ["read", "write", "search", "think"]
+optional_apps = ["voice-assistant", "staff"]
 
 [provides.cli]
 commands = ["people"]
@@ -34,6 +35,10 @@ listens = ["people:assigned", "people:unassigned"]
 [provides.export]
 enabled = true
 mode = "standalone"
+# Ship only what the pages use — no optional bundle is referenced by its pages. Undeclared means EVERY bundle
+# (hands-free + assistant + keys + maps + realtime), which put the shared
+# _assets/ at 869 KB against the 800 KB guard in tests/test_sys_export.py.
+assets = ["minimal"]
 hook = "export"
 fallbacks = [
     "vault:indexeddb",
@@ -45,6 +50,7 @@ fallbacks = [
 [provides.assistant]
 commands = [
     {slash = "/people", method = "list_people"},
+    {slash = "/delegate", method = "delegate_from_text", arg = "task"},
 ]
 
 # ── Verb registry — voice surface only. The /people assistant slash stays on
@@ -66,6 +72,15 @@ args = { person = "string", text = "string?" }
 eligibility = "gated"
 surfaces = ["voice"]
 voice = { method = "voice_log_interaction", example = "log that I caught up with Tom about the DC role", description = "Record an interaction on a person's note and bump last-contact. person = their name; text = what happened. If text is missing, a small form asks for it.", card = "form" }
+
+[[provides.verbs]]
+verb = "people.delegate"
+method = "delegate_from_text"
+summary = "Decide who or what should do a task — you, a contact, or an AI"
+args = { task = "string" }
+eligibility = "stable"
+surfaces = ["voice"]
+voice = { method = "voice_delegate", example = "who should write the quarterly report", description = "Given a task, recommend whether to do it yourself, hand it to a contact, or delegate it to an AI model/agent, with a one-line reason. task = what needs doing.", card = "entity-card" }
 
 [provides.settings]
 schema = [

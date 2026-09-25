@@ -1,12 +1,13 @@
 version = "1.0.0"
-workspace_name = "mergewt"
-last_import = "2026-08-08T03:04:05.740830"
+workspace_name = "EmptyOS"
+last_import = "2026-09-10T13:28:00.261146"
 original_rules_dir = ".claude/rules"
 original_skills_dir = ".claude/skills"
 
 [sections]
 claude-what-is-this = "What Is This"
 claude-quick-start-fresh-clone = "Quick Start (fresh clone)"
+claude-working-agreements = "Working Agreements"
 claude-principles = "Principles"
 claude-architecture = "Architecture"
 claude-storage-vault = "Storage & Vault"
@@ -17,18 +18,22 @@ claude-app-development-pattern = "App Development Pattern"
 claude-web-cli-access = "Web & CLI Access"
 claude-development-rules = "Development Rules"
 claude-vault-data-layer = "Vault Data Layer"
+claude-career-job-search-workflow = "Career / Job Search Workflow"
 claude-deployment = "Deployment"
 claude-conversation-stack = "Conversation stack"
 claude-tech-stack = "Tech Stack"
 claude-dev-log = "Dev Log"
 claude-working-style = "Working Style"
+claude-writing-tone = "Writing & Tone"
 claude-git-version-control = "Git / Version Control"
 claude-emptyos-workflow = "EmptyOS Workflow"
+claude-autonomous-loops = "Autonomous Loops"
 claude-repo-evaluation = "Repo Evaluation"
 claude-testing = "Testing"
 claude-external-service-launch-pattern = "External Service Launch Pattern"
 claude-development-gotchas = "Development Gotchas"
 claude-shared-frontend = "Shared Frontend"
+claude-session-housekeeping = "Session Housekeeping"
 claude-session-continuation = "Session Continuation"
 claude-key-files = "Key Files"
 agents-the-canonical-sources = "The Canonical Sources"
@@ -39,7 +44,7 @@ agents-runtime-vs-conversation = "Runtime vs Conversation"
 
 [assembly_claude]
 boot_file = "CLAUDE.md"
-sections = ["claude-header", "claude-what-is-this", "claude-quick-start-fresh-clone", "claude-principles", "claude-architecture", "claude-storage-vault", "claude-task-project-data-flow", "claude-project-structure", "claude-apps", "claude-app-development-pattern", "claude-web-cli-access", "claude-development-rules", "claude-vault-data-layer", "claude-deployment", "claude-conversation-stack", "claude-tech-stack", "claude-dev-log", "claude-working-style", "claude-git-version-control", "claude-emptyos-workflow", "claude-repo-evaluation", "claude-testing", "claude-external-service-launch-pattern", "claude-development-gotchas", "claude-shared-frontend", "claude-session-continuation", "claude-key-files"]
+sections = ["claude-header", "claude-what-is-this", "claude-quick-start-fresh-clone", "claude-working-agreements", "claude-principles", "claude-architecture", "claude-storage-vault", "claude-task-project-data-flow", "claude-project-structure", "claude-apps", "claude-app-development-pattern", "claude-web-cli-access", "claude-development-rules", "claude-vault-data-layer", "claude-career-job-search-workflow", "claude-deployment", "claude-conversation-stack", "claude-tech-stack", "claude-dev-log", "claude-working-style", "claude-writing-tone", "claude-git-version-control", "claude-emptyos-workflow", "claude-autonomous-loops", "claude-repo-evaluation", "claude-testing", "claude-external-service-launch-pattern", "claude-development-gotchas", "claude-shared-frontend", "claude-session-housekeeping", "claude-session-continuation", "claude-key-files"]
 
 [assembly_agents]
 boot_file = "AGENTS.md"

@@ -33,7 +33,7 @@ schedule = "0 */4 * * *"        # every 4 hours; empty = manual mode only
 enabled = true                  # cron kill switch (the header pill toggles this live)
 daily_budget = 6                # max scheduled runs/day; manual runs uncapped
 error_backoff_after = 3         # if last N scheduled runs all errored, pause until enabled flipped
-telegram_on_new_friction = true # push to telegram on NEW (not duplicate) friction
+telegram_on_new_friction = true # notify on NEW (not duplicate) friction, through the proactive gate
 
 rotation = [
     { persona = "kevin-weekday", scenario = "tuesday-evening" },
@@ -55,7 +55,7 @@ Manual runs from the header bar are always uncapped. Verify-runs (per-scenario) 
 
 ## Issue dedup
 
-Friction items are keyed by `kind::first-60-chars-lowercased`. First time a key is seen → new issue, fix-prompt file written, telegram pinged, task created in `emptyos-dogfood` project. Same key in any later run → existing issue's `count` and `last_seen` get bumped; **no second task, no second telegram, no duplicate prompt file**.
+Friction items are keyed by `kind::first-60-chars-lowercased`. First time a key is seen → new issue, fix-prompt file written, a nudge sent, task created in `emptyos-dogfood` project. Same key in any later run → existing issue's `count` and `last_seen` get bumped; **no second task, no second nudge, no duplicate prompt file**.
 
 When a verify-run shows an issue cleared (its key didn't appear), the fix-prompt file moves to `fix-prompts/done/` and the seen-friction entry is dropped. A future regression of the same text will create a fresh task + ping (treated as new).
 
@@ -87,9 +87,9 @@ The fix-prompt body has YAML frontmatter (`kind`, `count`, `first_seen`, `last_s
 
 Contributes a `dashboard`-group hub-panel: `Dogfood · N runs/24h · M to triage`. Visible on `/hub/`.
 
-## Telegram notifications
+## Notifications
 
-When a NEW friction key lands (not a duplicate), the app pushes a one-line message via the `telegram` plugin if available. Duplicates do NOT notify. Set `telegram_on_new_friction = false` to disable, or remove the telegram plugin to silence everything.
+When a NEW friction key lands (not a duplicate), the app sends a one-line nudge through the proactive gate (`proactive_notify_or_raw`, kind `system`). It reaches the vault inbox, and your phone when the notifications service has Telegram settings (its own, or the `telegram` plugin's). Quiet hours, the daily cap and the minimum gap apply, and nothing retries a held one, so a run that finds several new frictions may notify only the first. Duplicates do NOT notify. Set `telegram_on_new_friction = false` to disable (the key keeps its old name). Muting the `system` kind at `/proactive/` also works, but it silences everything else sent under `system` too: failed test runs, system health, site deploys and pattern-harvester digests. Agent self-modification has its own kind, so it stays on.
 
 ## Verify runs (the single most useful action)
 

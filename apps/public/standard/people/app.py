@@ -32,9 +32,10 @@ from emptyos.sdk import (
     parse_frontmatter,
     web_route,
 )
-from emptyos.sdk.utils import slugify
+from emptyos.sdk.utils import csv_to_rows, read_upload_text, slugify, sniff_columns
 
 from . import ai_surfaces as _ai_surfaces
+from . import delegation as _delegation
 from . import engagement as _engagement
 from . import workload as _workload
 from .shared import (
@@ -52,6 +53,36 @@ from . import compose as _compose_routes
 _PERSON_TAG = "person"
 
 _FREQUENCY_DAYS = {"weekly": 7, "monthly": 30, "quarterly": 90, "yearly": 365}
+
+# CSV import (people-contact-import): best-effort header -> canonical field
+# map. vCard (.vcf) is out of scope for this pass — CSV covers the common
+# export shapes (Outlook, Apple Contacts "export as CSV", a manually
+# authored roster spreadsheet). A header is claimed by the first field
+# whose alias it contains, so more specific aliases (e.g. "first name")
+# must be listed before generic ones (e.g. "name" alone would otherwise
+# swallow a "First Name" column).
+MAX_IMPORT_BYTES = 2 * 1024 * 1024  # a contact list is never 2 MB
+MAX_IMPORT_ROWS = 1000  # a sane ceiling on one import
+#
+# `name`'s only reliable alias is the bare substring "name" (to also catch
+# "Full Name"/"Display Name"), and that substring is contained in "First
+# Name"/"Last Name"/"Organization Name" too — so every field with a more
+# specific alias MUST be processed (and claim its column) before `name`,
+# or `name` greedily swallows the first "*Name" column it sees. `name`
+# is deliberately last in this dict for that reason; don't reorder it.
+_IMPORT_FIELD_ALIASES: dict[str, list[str]] = {
+    "first_name": ["first name", "given name"],
+    "last_name": ["last name", "family name", "surname"],
+    "company": ["organization name", "company", "organization"],
+    "role": ["job title", "organization title", "title", "role", "position"],
+    "email": ["e-mail address", "e-mail 1 - value", "email address", "e-mail", "email"],
+    "phone": ["phone 1 - value", "mobile phone", "business phone", "home phone",
+              "phone", "mobile", "telephone"],
+    "relationship": ["relationship"],
+    "birthday": ["birthday", "birth date", "date of birth", "dob"],
+    "notes": ["notes", "note"],
+    "name": ["full name", "display name", "name"],
+}
 
 
 def _load_ratio(load_hours: float, capacity: float) -> float:
@@ -557,6 +588,157 @@ class PeopleApp(BaseApp):
         await self.emit("contacts:created", {"name": name, "file": f"{pid}.md"})
         return {"ok": True, "id": pid, "path": rel_path}
 
+    # ── CSV import (people-contact-import) ──────────────────────────────
+    def _parse_import_csv(self, csv_text: str) -> dict:
+        """Parse a contact-list CSV -> {rows, columns, mapping, warnings,
+        skipped}. Each output row: {name, email, phone, company, role,
+        relationship, birthday, notes}. A row with no derivable name is
+        dropped (counted in `skipped`)."""
+        raw_rows = csv_to_rows(csv_text)
+        if not raw_rows:
+            return {"rows": [], "columns": [], "mapping": {},
+                    "warnings": ["no rows found in file"], "skipped": 0}
+
+        columns = list(raw_rows[0].keys())
+        mapping = sniff_columns(columns, _IMPORT_FIELD_ALIASES)
+        warnings = []
+        if "name" not in mapping and "first_name" not in mapping and "last_name" not in mapping:
+            warnings.append("could not find a name column — every row will be skipped")
+
+        out_rows = []
+        skipped = 0
+        for raw in raw_rows:
+            name = str(raw.get(mapping.get("name", ""), "") or "").strip()
+            if not name:
+                first = str(raw.get(mapping.get("first_name", ""), "") or "").strip()
+                last = str(raw.get(mapping.get("last_name", ""), "") or "").strip()
+                name = f"{first} {last}".strip()
+            if not name:
+                skipped += 1
+                continue
+            out_rows.append({
+                "name": name,
+                "email": str(raw.get(mapping.get("email", ""), "") or "").strip(),
+                "phone": str(raw.get(mapping.get("phone", ""), "") or "").strip(),
+                "company": str(raw.get(mapping.get("company", ""), "") or "").strip(),
+                "role": str(raw.get(mapping.get("role", ""), "") or "").strip(),
+                "relationship": str(raw.get(mapping.get("relationship", ""), "") or "").strip(),
+                "birthday": str(raw.get(mapping.get("birthday", ""), "") or "").strip(),
+                "notes": str(raw.get(mapping.get("notes", ""), "") or "").strip(),
+            })
+        if len(out_rows) > MAX_IMPORT_ROWS:
+            warnings.append(f"file has {len(out_rows)} rows — only the first {MAX_IMPORT_ROWS} will be imported")
+            out_rows = out_rows[:MAX_IMPORT_ROWS]
+        return {"rows": out_rows, "columns": columns, "mapping": mapping,
+                "warnings": warnings, "skipped": skipped}
+
+    async def _existing_people_identity(self) -> tuple[set[str], set[str]]:
+        """(names, emails) already in the roster, both casefolded, for
+        duplicate flagging. Empty email is never counted as a match."""
+        names: set[str] = set()
+        emails: set[str] = set()
+        for row in await self.list_all():
+            if row.get("name"):
+                names.add(row["name"].strip().casefold())
+            if row.get("email"):
+                emails.add(row["email"].strip().casefold())
+        return names, emails
+
+    @web_route("POST", "/api/import/preview")
+    async def api_import_preview(self, request):
+        """Parse a contact-list CSV and flag rows already present in the
+        roster (by normalised name or email). Writes nothing.
+
+        Flagged in gap analysis (people-contact-import): every person is
+        hand-created today, where every competing personal CRM offers
+        vCard/CSV/Google-Contacts import. Follows the same
+        propose->preview->confirm shape as expense/requirements/dictionary
+        import (`.claude/rules/proposed-action.md`, impact-shaped).
+        """
+        csv_text, err = await read_upload_text(request, max_bytes=MAX_IMPORT_BYTES)
+        if err:
+            return {"error": err}
+        parsed = self._parse_import_csv(csv_text)
+        rows = parsed["rows"]
+        if not rows:
+            return {"error": "no importable contacts found", "warnings": parsed["warnings"],
+                    "columns": parsed["columns"], "mapping": parsed["mapping"]}
+
+        existing_names, existing_emails = await self._existing_people_identity()
+        out_rows = []
+        new_count = 0
+        for r in rows:
+            duplicate = r["name"].casefold() in existing_names or (
+                bool(r["email"]) and r["email"].casefold() in existing_emails
+            )
+            if not duplicate:
+                new_count += 1
+            out_rows.append({**r, "duplicate": duplicate})
+
+        return {
+            "rows": out_rows,
+            "columns": parsed["columns"],
+            "mapping": parsed["mapping"],
+            "warnings": parsed["warnings"],
+            "summary": {
+                "total": len(out_rows),
+                "new": new_count,
+                "duplicate": len(out_rows) - new_count,
+                "skipped": parsed["skipped"],
+            },
+        }
+
+    @web_route("POST", "/api/import/confirm")
+    async def api_import_confirm(self, request):
+        """Write the reviewed rows through the existing `create_person`
+        verb. Body: {rows: [{name, email, phone, company, role,
+        relationship, birthday, notes}]}. Re-checks duplicates against the
+        current roster (it may have grown since preview), so a stale
+        confirm can't double-import.
+        """
+        body = await request.json()
+        rows = body.get("rows") or []
+        if not isinstance(rows, list) or not rows:
+            return {"error": "rows required"}
+        if len(rows) > MAX_IMPORT_ROWS:
+            return {"error": "too many rows"}
+
+        existing_names, existing_emails = await self._existing_people_identity()
+        imported = 0
+        skipped = 0
+        seen_names: set[str] = set()
+        for r in rows:
+            if not isinstance(r, dict):
+                skipped += 1
+                continue
+            name = str(r.get("name", "")).strip()
+            if not name:
+                skipped += 1
+                continue
+            email = str(r.get("email", "")).strip()
+            key = name.casefold()
+            if key in existing_names or key in seen_names or (
+                email and email.casefold() in existing_emails
+            ):
+                skipped += 1
+                continue
+            res = await self.create_person(
+                name=name,
+                email=email,
+                phone=str(r.get("phone", "")).strip(),
+                company=str(r.get("company", "")).strip(),
+                role=str(r.get("role", "")).strip(),
+                relationship=str(r.get("relationship", "")).strip(),
+                birthday=str(r.get("birthday", "")).strip(),
+                body=str(r.get("notes", "")).strip(),
+            )
+            if res.get("error"):
+                skipped += 1
+                continue
+            seen_names.add(key)
+            imported += 1
+        return {"ok": True, "imported": imported, "skipped": skipped}
+
     @web_route("PATCH", "/api/people/{id}")
     async def api_update_person(self, request):
         pid = request.path_params.get("id", "")
@@ -842,3 +1024,15 @@ class PeopleApp(BaseApp):
     api_person_workload = _workload.api_person_workload
     api_workload        = _workload.api_workload
     panel_overloaded    = _workload.panel_overloaded
+
+    # ── Delegation (extracted to delegation.py) ──
+    _me_card              = _delegation._me_card
+    _ai_provider_roster   = _delegation._ai_provider_roster
+    _ai_agent_roster      = _delegation._ai_agent_roster
+    _delegation_roster    = _delegation._delegation_roster
+    _assess_clarity       = _delegation._assess_clarity
+    _delegate             = _delegation._delegate
+    delegate_from_text    = _delegation.delegate_from_text
+    voice_delegate        = _delegation.voice_delegate
+    api_delegation_roster = _delegation.api_delegation_roster
+    api_delegate          = _delegation.api_delegate

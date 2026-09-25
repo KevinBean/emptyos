@@ -241,12 +241,19 @@ def _pretty_category(store_category: str) -> str:
     return sc.replace("-", " ").title() if sc else ""
 
 
-def generate_app_page(app: dict) -> str:
+def generate_app_page(app: dict, public_ids: set[str] | None = None) -> str:
     """One deterministic per-app intro page (manifest-driven, no LLM).
 
     `app` is the inline-scanned manifest entry from main() — [app] fields plus
     `_provides` / `_requires` / `_has_ui`. Output is a nav_hidden doc page at
     slug `app-<id>` so it renders + is searchable but stays out of nav/sidebar.
+
+    `public_ids` filters the rendered Integrations list. main() already refuses
+    to give an extension/personal app its own page, but the dependency lists
+    were unfiltered, so a public page could name an app that does not exist in
+    the public distribution — a reader cannot install it, and for a personal app
+    the id itself is more than the site should say. Filtering here makes the body
+    honour the same rule the page selection already does.
     """
     aid = app.get("id", "?")
     name = app.get("name") or aid
@@ -256,6 +263,9 @@ def generate_app_page(app: dict) -> str:
     caps = list(req.get("capabilities", []) or [])
     needs_apps = list(req.get("apps", []) or [])
     opt_apps = list(req.get("optional_apps", []) or [])
+    if public_ids is not None:
+        needs_apps = [a for a in needs_apps if a in public_ids]
+        opt_apps = [a for a in opt_apps if a in public_ids]
     web_prefix = (prov.get("web", {}) or {}).get("prefix", "")
     cli = list((prov.get("cli", {}) or {}).get("commands", []) or [])
     emits = list((prov.get("events", {}) or {}).get("emits", []) or [])
@@ -699,8 +709,18 @@ def main():
     from emptyos.sdk.app_layout import iter_app_dirs, track_of
 
     apps_root = PROJECT_ROOT / "apps"
+    # Same filter docs/APPS.md gets: never publish an app directory that only
+    # exists on the generating machine. This page is the PUBLIC catalogue, so a
+    # gitignored local fixture (apps/test-app/) leaking here is worse than in a
+    # tracked doc. `iter_app_dirs` deliberately does not filter — the runtime
+    # loader should still load a local fixture app.
+    _found = list(iter_app_dirs(apps_root, include_personal=args.include_personal))
+    _ignored = doc_data._gitignored([d for _, d in _found])
+
     apps = []
-    for _aid, _adir in iter_app_dirs(apps_root, include_personal=args.include_personal):
+    for _aid, _adir in _found:
+        if _adir in _ignored:
+            continue
         try:
             with open(_adir / "manifest.toml", "rb") as f:
                 _data = tomllib.load(f)
@@ -738,7 +758,7 @@ def main():
     # --- per-app pages (apps/<id>.md, nav_hidden) ---
     print(f"  per-app pages: {len(page_apps)} public apps")
     for _app in page_apps:
-        _md = generate_app_page(_app)
+        _md = generate_app_page(_app, public_ids=_public_ids)
         _rel = f"apps/{_app['id']}.md"
         _target = site_dir / _rel
         _old = _target.read_text(encoding="utf-8") if _target.exists() else ""

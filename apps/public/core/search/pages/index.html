@@ -354,7 +354,7 @@ if(window.EOS&&EOS.registerActions){EOS.registerActions({vault_search:function(q
     <span class="eos-search-icon large" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.5-3.5"></path></svg></span>
     <input class="eos-search-input large" type="text" id="query"
            placeholder="Search notes, tags, topics..." autocomplete="off">
-    <button class="eos-search-clear" id="clear-btn" onclick="clearSearch()">&times;</button>
+    <button class="eos-search-clear" id="clear-btn" onclick="clearSearch()" aria-label="Clear search">&times;</button>
     <span class="eos-search-kbd">Ctrl+K</span>
     <div class="search-history" id="history-dropdown"></div>
   </div>
@@ -390,7 +390,7 @@ if(window.EOS&&EOS.registerActions){EOS.registerActions({vault_search:function(q
   <div class="preview-panel" id="preview">
     <div class="preview-toolbar">
       <span class="preview-title" id="preview-title"></span>
-      <button class="preview-close" onclick="closePreview()">&times;</button>
+      <button class="preview-close" onclick="closePreview()" aria-label="Close preview">&times;</button>
     </div>
     <div class="preview-body" id="preview-body"></div>
   </div>
@@ -812,7 +812,7 @@ async function loadLanding(){
 
   }catch(e){
     /* Silently degrade — show empty state */
-    document.getElementById('recent-grid').innerHTML='<div style="color:var(--text-muted);font-size:13px;padding:12px">Could not load vault data</div>';
+    document.getElementById('recent-grid').innerHTML=EOS_UI.errorState({message: 'Could not load vault data'});
     document.getElementById('folder-grid').innerHTML='';
   }
 }

@@ -40,6 +40,8 @@ if TYPE_CHECKING:
 #   _diagnostic_enabled    = _diagnostic._diagnostic_enabled
 #   _diagnostic_slugs      = _diagnostic._diagnostic_slugs
 #   _mastery_level         = _diagnostic._mastery_level          # @staticmethod
+#   _compute_mastery_score = _diagnostic._compute_mastery_score  # @staticmethod
+#   _confidence_weighted_mastery_enabled = _diagnostic._confidence_weighted_mastery_enabled
 #   _compute_plan          = _diagnostic._compute_plan
 #   api_diagnostic_status  = _diagnostic.api_diagnostic_status   # GET  /api/courses/{id}/diagnostic
 #   api_diagnostic_generate= _diagnostic.api_diagnostic_generate # POST /api/courses/{id}/diagnostic
@@ -55,6 +57,18 @@ _DEVELOPING_AT = 40
 # Defaults for diagnostic shape.
 _DEFAULT_PER_SLUG = 2     # questions sampled per concept
 _DEFAULT_MAX_SLUGS = 6    # cap distinct concepts probed (keeps the test short)
+
+# Confidence-weighted mastery scoring (ported 2026-08-22 from HKUDS/DeepTutor
+# `deeptutor/learning/mastery.py::compute_mastery`, verdict in
+# `docs/OPEN-SOURCE-BORROWING-PLAN.md` § HKUDS/DeepTutor). The legacy scorer
+# (`score = round(100 * correct/total)`) lets a single lucky answer at the
+# default `_DEFAULT_PER_SLUG = 2` register full "mastered" (100) from just 1-2
+# observations. `_compute_mastery_score` fixes this with two independent
+# defects closed: a confidence floor (few attempts can never round to fully
+# mastered) and recency weighting (a recent streak of wrong answers pulls the
+# score down even if the lifetime ratio looks fine).
+_MASTERY_CONFIDENCE_CAP = {1: 50, 2: 80}     # n attempts -> max attainable score
+_MASTERY_RECENCY_WEIGHTS = (0.5, 0.7, 0.85, 0.95, 1.0)  # oldest -> newest, last 5
 
 
 def _diagnostic_enabled(self) -> bool:
@@ -91,6 +105,41 @@ def _mastery_level(score: int) -> str:
     if score >= _DEVELOPING_AT:
         return "developing"
     return "weak"
+
+
+def _confidence_weighted_mastery_enabled(self) -> bool:
+    """Dark-default gate for the confidence-weighted scorer. Off by default
+    so the legacy flat-ratio score stays byte-identical unless flipped."""
+    v = self.setting("learn.feature.confidence-weighted-mastery.enabled", None)
+    if v is not None:
+        return bool(v)
+    return bool(self.app_config("feature.confidence-weighted-mastery.enabled", False))
+
+
+def _compute_mastery_score(history: list[bool]) -> int:
+    """Confidence-capped, recency-weighted mastery score (0-100) from an
+    ordered oldest->newest correctness history for one concept.
+
+    Two defects this closes vs. a flat lifetime ratio: (1) a confidence
+    floor — 1-2 total observations can never round to a fully "mastered"
+    100, however lucky; (2) recency weighting — the most recent (up to 5)
+    attempts are weighted toward the newest, so a recent wrong streak pulls
+    the score down even if older attempts were all correct.
+
+    Empty history scores 0 (unprobed = no evidence of mastery, not "developing" —
+    callers that want "developing" for the never-probed case keep doing so at
+    the mastery-dict level, same as today).
+    """
+    if not history:
+        return 0
+    window = history[-5:]
+    weights = _MASTERY_RECENCY_WEIGHTS[-len(window):]
+    weighted = sum(w * (1.0 if ok else 0.0) for w, ok in zip(weights, window))
+    score = round(100 * weighted / sum(weights))
+    cap = _MASTERY_CONFIDENCE_CAP.get(len(history))
+    if cap is not None:
+        score = min(score, cap)
+    return score
 
 
 def _compute_plan(self, course: dict, mastery: dict) -> list[dict]:
@@ -228,7 +277,8 @@ async def api_diagnostic_submit(self, request):
     if not questions:
         return {"error": "questions array required"}
 
-    # Tally correct/total per concept slug.
+    # Tally correct/total per concept slug — and keep the ORDER of results
+    # (results[]) so the confidence-weighted scorer can apply recency.
     per_slug: dict[str, dict] = {}
     details: list[dict] = []
     for i, q in enumerate(questions):
@@ -238,22 +288,36 @@ async def api_diagnostic_submit(self, request):
         picked = answers.get(str(i)) or answers.get(i)
         right = (q.get("answer") or "").strip().upper()
         ok = (picked or "").strip().upper() == right
-        bucket = per_slug.setdefault(slug, {"correct": 0, "total": 0})
+        bucket = per_slug.setdefault(slug, {"correct": 0, "total": 0, "results": []})
         bucket["total"] += 1
+        bucket["results"].append(ok)
         if ok:
             bucket["correct"] += 1
         details.append({"index": i, "slug": slug, "picked": picked,
                         "correct_answer": right, "ok": ok,
                         "explanation": q.get("explanation", "")})
 
+    weighted_on = self._confidence_weighted_mastery_enabled()
+    progress = self._load_progress(course_id)
+    existing_mastery = progress.get("mastery") or {}
     mastery: dict[str, dict] = {}
     summary = {"weak": [], "developing": [], "mastered": []}
     now = datetime.now().isoformat(timespec="seconds")
     for slug, b in per_slug.items():
-        score = round(100 * b["correct"] / max(1, b["total"]))
+        # History accumulates across diagnostic retakes, bounded to the last
+        # 20 (only the last 5 feed the weighted average; the rest is kept
+        # for the confidence-cap's total-attempt count and future audit).
+        history = list((existing_mastery.get(slug) or {}).get("history") or [])
+        history.extend(b["results"])
+        history = history[-20:]
+        if weighted_on:
+            score = _compute_mastery_score(history)
+        else:
+            score = round(100 * b["correct"] / max(1, b["total"]))
         level = _mastery_level(score)
         mastery[slug] = {"score": score, "level": level,
-                         "correct": b["correct"], "total": b["total"], "ts": now}
+                         "correct": b["correct"], "total": b["total"],
+                         "history": history, "ts": now}
         summary[level].append(slug)
         # Seed SRS — a diagnostic is a real assessment of this concept.
         try:
@@ -262,8 +326,7 @@ async def api_diagnostic_submit(self, request):
             pass
 
     # Persist mastery on the course progress (course-scoped, not global).
-    progress = self._load_progress(course_id)
-    progress["mastery"] = {**(progress.get("mastery") or {}), **mastery}
+    progress["mastery"] = {**existing_mastery, **mastery}
     progress["diagnostic"] = {
         "taken_at": now,
         "summary": summary,

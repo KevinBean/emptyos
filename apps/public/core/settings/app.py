@@ -11,6 +11,7 @@ from pathlib import Path
 
 from emptyos.sdk import BaseApp, cli_command, web_route
 
+from . import autopilot_panel as _autopilot_panel
 from . import product as _product
 
 
@@ -96,6 +97,14 @@ class SettingsApp(BaseApp):
     # Shared with product.py: the surgical, comment-preserving emptyos.toml editor.
     _write_toml_section = staticmethod(_write_toml_section)
 
+    # ── Autopilot console (extracted to autopilot_panel.py) ──
+    # The director's view of every standing AI-actor delegation in the system.
+    api_autopilot_console     = _autopilot_panel.api_autopilot_console
+    api_autopilot_grant       = _autopilot_panel.api_autopilot_grant
+    api_autopilot_revoke      = _autopilot_panel.api_autopilot_revoke
+    api_autopilot_hold_revoke = _autopilot_panel.api_autopilot_hold_revoke
+    api_autopilot_budget      = _autopilot_panel.api_autopilot_budget
+
     def _settings(self):
         return self.require("settings")
 
@@ -109,8 +118,12 @@ class SettingsApp(BaseApp):
 
         from emptyos.kernel.app_loader import AppState
 
+        # state_of() reconciles against the live instance registry, so an app
+        # whose state label drifted from `instances` still counts as loaded.
         apps_loaded = sum(
-            1 for s in k.apps.states.values() if s in (AppState.LOADED, AppState.STARTED)
+            1
+            for aid in k.apps.manifests
+            if k.apps.state_of(aid) in (AppState.LOADED, AppState.STARTED)
         )
 
         return {

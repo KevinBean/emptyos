@@ -869,7 +869,7 @@
       '<div class="deck-topic"></div>' +
       '<div class="deck-subtitle"></div>' +
       '<div class="deck-controls always">' +
-        '<button class="deck-btn deck-play">&#9654;</button>' +
+        '<button class="deck-btn deck-play" aria-label="Play">&#9654;</button>' +
         '<div class="deck-scrub">' +
           '<div class="deck-scrub-track">' +
             '<div class="deck-scrub-fill"></div>' +
@@ -878,7 +878,7 @@
         '</div>' +
         '<span class="deck-time">0:00 / 0:00</span>' +
         '<button class="deck-speed">1x</button>' +
-        '<button class="deck-btn deck-fs-btn">&#x26F6;</button>' +
+        '<button class="deck-btn deck-fs-btn" aria-label="Fullscreen">&#x26F6;</button>' +
       '</div>';
 
     var imgs = stage.querySelectorAll('.deck-img');

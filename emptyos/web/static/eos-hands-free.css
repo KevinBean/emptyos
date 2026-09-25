@@ -8,17 +8,17 @@
 
 .eos-hf-state-off .eos-hf-chip-icon { filter: grayscale(0.5); opacity: 0.8; }
 .eos-hf-state-loading { animation: eos-hf-pulse 1.2s ease-in-out infinite; }
-.eos-hf-state-idle { border-color: color-mix(in srgb, #4caf50 40%, var(--border)); }
-.eos-hf-state-idle .eos-hf-chip-label { color: #4caf50; }
+.eos-hf-state-idle { border-color: color-mix(in srgb, var(--success) 40%, var(--border)); }
+.eos-hf-state-idle .eos-hf-chip-label { color: var(--success); }
 .eos-hf-state-triggering { border-color: color-mix(in srgb, var(--accent) 60%, var(--border)); animation: eos-hf-pulse 0.6s ease-in-out infinite; }
-.eos-hf-state-listening { border-color: color-mix(in srgb, #ff5252 60%, var(--border)); background: color-mix(in srgb, #ff5252 10%, var(--bg-card)); animation: eos-hf-pulse 0.8s ease-in-out infinite; }
-.eos-hf-state-listening .eos-hf-chip-label { color: #ff5252; }
+.eos-hf-state-listening { border-color: color-mix(in srgb, var(--danger) 60%, var(--border)); background: color-mix(in srgb, var(--danger) 10%, var(--bg-card)); animation: eos-hf-pulse 0.8s ease-in-out infinite; }
+.eos-hf-state-listening .eos-hf-chip-label { color: var(--danger); }
 .eos-hf-state-thinking { border-color: color-mix(in srgb, var(--accent) 50%, var(--border)); animation: eos-hf-pulse 1.4s ease-in-out infinite; }
-.eos-hf-state-confirm { border-color: color-mix(in srgb, #ff9800 60%, var(--border)); }
-.eos-hf-state-firing { border-color: color-mix(in srgb, #4caf50 60%, var(--border)); }
-.eos-hf-state-undo_window { border-color: color-mix(in srgb, #ff9800 45%, var(--border)); opacity: 0.85; }
-.eos-hf-state-speaking { border-color: color-mix(in srgb, #4caf50 60%, var(--border)); background: color-mix(in srgb, #4caf50 10%, var(--bg-card)); animation: eos-hf-pulse 1.0s ease-in-out infinite; }
-.eos-hf-state-speaking .eos-hf-chip-label { color: #4caf50; }
+.eos-hf-state-confirm { border-color: color-mix(in srgb, var(--warning) 60%, var(--border)); }
+.eos-hf-state-firing { border-color: color-mix(in srgb, var(--success) 60%, var(--border)); }
+.eos-hf-state-undo_window { border-color: color-mix(in srgb, var(--warning) 45%, var(--border)); opacity: 0.85; }
+.eos-hf-state-speaking { border-color: color-mix(in srgb, var(--success) 60%, var(--border)); background: color-mix(in srgb, var(--success) 10%, var(--bg-card)); animation: eos-hf-pulse 1.0s ease-in-out infinite; }
+.eos-hf-state-speaking .eos-hf-chip-label { color: var(--success); }
 
 @keyframes eos-hf-pulse {
     0%, 100% { box-shadow: 0 4px 14px rgba(0,0,0,0.18); }

@@ -13,12 +13,12 @@
   .sidebar { border-right: 1px solid var(--border); padding-right: var(--space-3); }
   .sidebar h3 { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-muted); margin: 0 0 var(--space-2); }
   .cat-row { display: flex; justify-content: space-between; padding: var(--space-2) var(--space-2); border-radius: var(--radius-sm); cursor: pointer; }
-  .cat-row:hover { background: var(--bg-hover); }
-  .cat-row.active { background: var(--bg-active); color: var(--accent); }
+  .cat-row:hover { background: var(--bg-card-hover); }
+  .cat-row.active { background: var(--accent-tint-weak); color: var(--accent); }
   .cat-row .count { color: var(--text-muted); font-variant-numeric: tabular-nums; }
 
   .list-row { padding: var(--space-3); border-bottom: 1px solid var(--border); cursor: pointer; display: flex; gap: var(--space-3); align-items: baseline; }
-  .list-row:hover { background: var(--bg-hover); }
+  .list-row:hover { background: var(--bg-card-hover); }
   .list-row.deprecated { opacity: 0.45; }
   .list-row .title { font-weight: 500; flex: 1; }
   .list-row .cat { color: var(--text-muted); font-size: 0.85rem; }
@@ -28,11 +28,11 @@
   .detail-header { display: flex; gap: var(--space-3); align-items: baseline; margin-bottom: var(--space-2); }
   .detail-header h2 { margin: 0; }
   .detail-meta { color: var(--text-muted); font-size: 0.85rem; margin-bottom: var(--space-4); }
-  .toc { border: 1px solid var(--border); border-radius: var(--radius-md); padding: var(--space-3); margin-bottom: var(--space-4); background: var(--bg-card); }
+  .toc { border: 1px solid var(--border); border-radius: var(--radius-lg); padding: var(--space-3); margin-bottom: var(--space-4); background: var(--bg-card); }
   .toc h4 { margin: 0 0 var(--space-2); font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-muted); }
   .toc a { display: block; padding: var(--space-1) 0; color: var(--text); text-decoration: none; }
   .toc a:hover { color: var(--accent); }
-  .clause-card { border: 1px solid var(--border); border-radius: var(--radius-md); padding: var(--space-3); margin-bottom: var(--space-3); background: var(--bg-card); position: relative; }
+  .clause-card { border: 1px solid var(--border); border-radius: var(--radius-lg); padding: var(--space-3); margin-bottom: var(--space-3); background: var(--bg-card); position: relative; }
   .clause-card.highlight { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
   .clause-card h3 { margin: 0 0 var(--space-2); font-size: 1.05rem; }
   .clause-card .body { white-space: pre-wrap; font-family: var(--font); line-height: 1.6; color: var(--text); }
@@ -40,7 +40,7 @@
   .clause-card:hover .actions { display: flex; }
   .clause-card .empty-body { color: var(--text-muted); font-style: italic; }
   .add-clause-bar { margin-top: var(--space-4); padding-top: var(--space-3); border-top: 1px dashed var(--border); display: flex; justify-content: center; }
-  .cite-chip { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; margin: 0 2px; border-radius: 999px; background: var(--bg-active); color: var(--accent); font-size: 0.85em; text-decoration: none; line-height: 1.5; white-space: nowrap; vertical-align: baseline; border: 1px solid var(--border); }
+  .cite-chip { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; margin: 0 2px; border-radius: 999px; background: var(--accent-tint-weak); color: var(--accent); font-size: 0.85em; text-decoration: none; line-height: 1.5; white-space: nowrap; vertical-align: baseline; border: 1px solid var(--border); }
   .cite-chip:hover { background: var(--accent); color: var(--bg); }
   .cite-chip.broken { color: var(--text-muted); background: var(--bg-card); border-style: dashed; cursor: help; }
   .cite-chip .cite-icon { font-size: 0.9em; opacity: 0.85; }
@@ -338,6 +338,9 @@ async function deleteClause(gid, slug) {
   await loadList();
 }
 
+// Deliberately guideline-scoped subset of [provides.settings] — kb.stale_days
+// belongs to the full "Knowledge Base Settings" panel (kb.js), not this page.
+// settings-panel-drift: ignore kb.stale_days
 var _appSettings = EOS_UI.settingsPanel({
   id: 'kb-guideline-settings-panel',
   title: 'Guideline Settings',

@@ -28,6 +28,7 @@ from . import srs as _srs
 from . import review_all as _review_all
 from . import citations as _citations
 from . import diagnostic as _diagnostic
+from . import video as _video
 from .shared import _parse_lessons  # pure helper (shared with diagnostic.py)
 
 
@@ -73,11 +74,35 @@ class LearnApp(BaseApp):
     _diagnostic_enabled     = _diagnostic._diagnostic_enabled
     _diagnostic_slugs       = _diagnostic._diagnostic_slugs
     _mastery_level          = staticmethod(_diagnostic._mastery_level)
+    _compute_mastery_score  = staticmethod(_diagnostic._compute_mastery_score)
+    _confidence_weighted_mastery_enabled = _diagnostic._confidence_weighted_mastery_enabled
     _compute_plan           = _diagnostic._compute_plan
     api_diagnostic_status   = _diagnostic.api_diagnostic_status
     api_diagnostic_generate = _diagnostic.api_diagnostic_generate
     api_diagnostic_submit   = _diagnostic.api_diagnostic_submit
     api_diagnostic_apply    = _diagnostic.api_diagnostic_apply
+
+    # ── Lesson video bindings (video.py, dark-flagged) ──
+    _lesson_video_enabled   = _video._lesson_video_enabled
+    _video_pipeline         = _video._video_pipeline
+    _video_lesson           = _video._video_lesson
+    _video_inputs           = _video._video_inputs
+    _video_source           = _video._video_source
+    _open_video_run         = _video._open_video_run
+    _drive_video_run        = _video._drive_video_run
+    _queue_course_videos    = _video._queue_course_videos
+    _video_run_view         = _video._video_run_view
+    _publish_lesson_video   = _video._publish_lesson_video
+    _lesson_video_dir       = _video._lesson_video_dir
+    _load_video_index       = _video._load_video_index
+    api_video_start         = _video.api_video_start
+    api_video_run           = _video.api_video_run
+    api_video_resume        = _video.api_video_resume
+    api_video_discard       = _video.api_video_discard
+    api_lesson_video        = _video.api_lesson_video
+    api_video_file          = _video.api_video_file
+    api_video_queue_course  = _video.api_video_queue_course
+    panel_video_runs        = _video.panel_video_runs
 
     # ── Dark-default flag gate (tutorial series + verify loop) ──
     def _tutorial_enabled(self) -> bool:
@@ -161,6 +186,7 @@ class LearnApp(BaseApp):
                 "error": fm.get("verify_error") or "",
             },
             "lessons": lessons,
+            "video_enabled": self._lesson_video_enabled(),
             "progress": {
                 "completed_count": len(completed),
                 "total": len(lessons),
@@ -207,6 +233,7 @@ class LearnApp(BaseApp):
             "next": idx + 1 if idx + 1 < len(lessons) else None,
             "total": len(lessons),
             "completed": idx in set(self._load_progress(course_id).get("completed_lessons", [])),
+            "video_enabled": self._lesson_video_enabled(),
         }
 
     @web_route("POST", "/api/courses/{course_id}/lessons/{idx}/complete")

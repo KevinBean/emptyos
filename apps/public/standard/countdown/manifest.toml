@@ -1,6 +1,6 @@
 [app]
 id = "countdown"
-store_category = "personal"
+store_category = "productivity"
 name = "Countdown"
 version = "1.0.0"
 description = "Track days until or since important events — birthdays, trips, deadlines, anniversaries."

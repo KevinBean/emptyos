@@ -12,10 +12,14 @@ from __future__ import annotations
 import json as _json
 from datetime import datetime as _dt
 
+from starlette.responses import JSONResponse
+
 from emptyos.sdk import web_route
 from emptyos.sdk import autopilot as _autopilot
 from emptyos.sdk.agent_loop import DEFAULT_MAX_ITERS
 from emptyos.sdk.trace import current_trace_id
+
+from .profiles import PROFILES, history_kind_of, valid_profile  # leaf module like .prompts — imports nothing back
 
 # ── Session listing / CRUD ─────────────────────────────────────────────
 
@@ -25,23 +29,104 @@ async def api_list_sessions(self, request):
     return self._sessions.list_sessions()
 
 
+#: Per-provider availability probe in /api/providers. A reachable endpoint
+#: answers well inside it; the cap exists for the dead one, and the probes run
+#: concurrently, so the whole list costs at most this long.
+PROVIDER_PROBE_S = 3.0
+
+
 @web_route("GET", "/api/sessions/{sid}")
 async def api_get_session(self, request):
+    """The session with its messages, plus ``history_kind``: the provider kind
+    its stored history is locked to ("" = any), so a model picker can offer
+    exactly the providers a PATCH will accept."""
     sid = request.path_params["sid"]
     sess = self._get_session(sid)
     if not sess:
         return {"error": "not found"}
+    sess["history_kind"] = history_kind_of(sess.get("messages") or [])
     return sess
 
 
 @web_route("POST", "/api/sessions")
 async def api_create_session(self, request):
+    """Body: {name?, provider?, initial_user_message?, profile?, project_id?}.
+
+    ``profile`` is "coding" (the default, what /agent/ creates) or "chat" (the
+    portal home — see profiles.py). A chat needs a provider our own tool loop
+    drives; a natively-agentic one runs its own tools, so it is refused here
+    rather than failing at the first turn.
+    """
     data = await self.safe_json(request)
+    profile = valid_profile(data.get("profile", ""))
+    if profile is None:
+        return {"error": f"unknown profile {data.get('profile')!r} — use one of {sorted(PROFILES)}"}
+    provider = str(data.get("provider") or "").strip()
+    if profile == "chat":
+        if provider:
+            kind = self._provider_kind(provider)
+            if kind is None:
+                return {"error": f"no agent-capable provider named {provider!r}"}
+            if kind == "native":
+                return {"error": f"{provider!r} runs its own tools and cannot drive a chat — pick another model"}
+        else:
+            provider = self._chat_default_provider()
+            if not provider:
+                return {"error": "no model here can drive a chat — configure a tool-capable provider"}
+    project_id = str(data.get("project_id") or "")
+    if project_id and not self._sessions.get_project(project_id):
+        return {"error": "no such project"}
     return self._create_session(
         name=data.get("name", ""),
-        provider=data.get("provider", ""),
+        provider=provider,
         initial_user_message=data.get("initial_user_message", ""),
+        profile=profile,
+        project_id=project_id,
     )
+
+
+@web_route("GET", "/api/providers")
+async def api_providers(self, request):
+    """Agent-capable think providers, for a model picker.
+
+    Rows: {name, kind, model, available, chat_ok, is_cloud}. ``kind`` is the wire family
+    (anthropic / openai / json) or ``native``; once a conversation has stored
+    messages of one wire family it only moves between providers of that family
+    (see ``api_update_session``). ``chat_ok`` is False for native providers.
+    Availability is probed concurrently, each probe capped at
+    ``PROVIDER_PROBE_S`` so one dead endpoint cannot stall the picker.
+    """
+    import asyncio
+
+    provs = []
+    seen: set[str] = set()
+    for p in self.kernel.capability("think").all_providers():
+        if p.name in seen or self._provider_kind_of(p) is None:
+            continue
+        seen.add(p.name)
+        provs.append(p)
+
+    async def probe(p) -> bool:
+        try:
+            return bool(await asyncio.wait_for(p.available(), timeout=PROVIDER_PROBE_S))
+        except Exception:
+            return False
+
+    alive = await asyncio.gather(*(probe(p) for p in provs))
+    rows = []
+    for p, ok in zip(provs, alive):
+        kind = self._provider_kind_of(p)
+        rows.append({
+            "name": p.name,
+            "kind": kind,
+            "model": getattr(p, "model", "") or "",
+            "available": ok,
+            "chat_ok": kind != "native",
+            # Where the bytes go (the consent gate's own flag): the picker's
+            # cost icon and its local-first fallback read it.
+            "is_cloud": bool(getattr(p, "is_cloud", False)),
+        })
+    return {"providers": rows, "default": self._default_provider_name(), "chat_default": self._chat_default_provider()}
 
 
 @web_route("DELETE", "/api/sessions/{sid}")
@@ -63,16 +148,45 @@ async def api_delete_session(self, request):
 
 @web_route("PATCH", "/api/sessions/{sid}")
 async def api_update_session(self, request):
-    """Update session metadata — currently supports `name` and `provider`."""
+    """Update session metadata — `name`, `provider`, `project_id`.
+
+    The provider lock reads what is actually STORED — each message's
+    ``provider_kind`` — not the session's current provider name, which can be
+    renamed, removed, or not the one a fallback turn really ran on. History of
+    one wire family (OpenAI tool calls, Anthropic blocks) fails on the next
+    turn if replayed to the other, so it only moves within its family. Native
+    and handoff messages are plain strings any provider replays, and a native
+    provider flattens whatever history it is given, so neither locks anything.
+    A chat never takes a native provider.
+    """
     sid = request.path_params["sid"]
-    if not self._get_session(sid):
+    record = self._get_session(sid)
+    if not record:
         return {"error": "not found"}
     data = await self.safe_json(request)
     fields = {}
     if "name" in data:
         fields["name"] = str(data["name"])[:200]
+    if "project_id" in data:
+        project_id = str(data["project_id"] or "")
+        if project_id and not self._sessions.get_project(project_id):
+            return {"error": "no such project"}
+        fields["project_id"] = project_id
     if "provider" in data:
-        fields["provider"] = str(data["provider"])[:50]
+        new = str(data["provider"])[:50]
+        new_kind = self._provider_kind(new)
+        if record.get("profile") == "chat":
+            if new_kind is None:
+                return {"error": f"no agent-capable provider named {new!r}"}
+            if new_kind == "native":
+                return {"error": f"{new!r} runs its own tools and cannot drive a chat"}
+        stored = history_kind_of(record.get("messages") or [])
+        if stored and new_kind not in (None, "native") and new_kind != stored:
+            return {
+                "error": f"this conversation is stored in {stored} format; {new!r} is {new_kind}. "
+                "Switch to a model of the same kind, or start a new chat."
+            }
+        fields["provider"] = new
     if not fields:
         return {"error": "no updatable fields provided"}
     self._sessions.update_session(sid, **fields)
@@ -157,14 +271,38 @@ async def api_edit_stack(self, request):
 # ── MCP bridge / tool audit / tools listing ────────────────────────────
 
 
+def mcp_bridge_request_ok(headers) -> bool:
+    """True only for a non-browser JSON request (see ``api_mcp_tool_call``)."""
+    ctype = (headers.get("content-type") or "").split(";", 1)[0].strip().lower()
+    if ctype != "application/json":
+        return False
+    if headers.get("origin") is not None:
+        return False
+    return not any(k.lower().startswith("sec-fetch-") for k in headers.keys())
+
+
 @web_route("POST", "/api/mcp/tools/call")
 async def api_mcp_tool_call(self, request):
     """MCP bridge — dispatch a single tool call from the claude-cli MCP server.
 
     Called by emptyos/mcp_server.py (stdio MCP proxy) when claude-cli
-    invokes an EmptyOS MCP tool. No consent gate — the MCP path runs inside
-    claude-cli's own loop, which already handles --dangerously-skip-permissions.
+    invokes an EmptyOS MCP tool, and by emptyos/mcp_outbound_server.py after
+    its own five-step gate. No consent gate here — both callers own theirs.
+
+    Which is exactly why a BROWSER must never reach it: it runs any registered
+    tool, Bash included. In local mode there is no auth at all, and a
+    ``text/plain`` POST is a CORS "simple request" — any web page the user
+    opened could send one with no preflight and run a shell command (verified
+    2026-09-12). Both real callers are local Python processes that send JSON
+    and no browser headers, so: JSON content type only, and nothing that
+    carries ``Origin`` or ``Sec-Fetch-*`` (every current browser attaches one
+    to a POST, cross-site or same-origin alike).
     """
+    if not mcp_bridge_request_ok(request.headers):
+        return JSONResponse(
+            {"ok": False, "content": "error: this endpoint is for local MCP bridge processes only"},
+            status_code=403,
+        )
     try:
         data = await request.json()
     except Exception:

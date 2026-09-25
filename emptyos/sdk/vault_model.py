@@ -66,7 +66,7 @@ from __future__ import annotations
 
 import logging
 from datetime import date, datetime
-from typing import Any, ClassVar
+from typing import Any, ClassVar, get_origin
 
 from pydantic import (
     BaseModel,
@@ -159,7 +159,7 @@ class VaultModel(BaseModel):
     @model_validator(mode="before")
     @classmethod
     def _coerce_loose_str_fields(cls, data: Any) -> Any:
-        """Normalize plain `str` fields that YAML returned as a list/None/scalar.
+        """Normalize `str` and `list` fields that YAML returned as the wrong shape.
 
         A hand-edit or a tool can write a string-typed field block-style with
         no items (`follow_up_due:` → parsed as `[]`), or as `None`, or as a
@@ -169,22 +169,43 @@ class VaultModel(BaseModel):
         malformed note round-trips instead of vanishing. Only fields annotated
         exactly `str` are touched — `str | None`, enums, ints, dates keep
         their own validators.
+
+        The list side is the same failure read from the other direction. An
+        empty `tags:` parses as `""` when it is the *last* key in the block
+        (both frontmatter parsers close a trailing empty that way), and a
+        `list[str]` field raises `list_type` on a string — so a note whose
+        empty list happened to sit last vanished from `read_all` while the
+        identical note with one more key after it validated fine. Only the
+        empty shapes are widened; a genuine scalar still fails, so `audit()`
+        names it instead of this silently inventing a one-item list.
         """
         if not isinstance(data, dict):
             return data
         out: dict[str, Any] | None = None
         for name, field in cls.model_fields.items():
-            if field.annotation is not str or name not in data:
+            if name not in data:
                 continue
-            v = data[name]
-            if isinstance(v, str):
-                continue
-            if v is None:
-                fixed = ""
-            elif isinstance(v, (list, tuple)):
-                fixed = str(v[0]) if v else ""
+            ann = field.annotation
+            if ann is str:
+                v = data[name]
+                if isinstance(v, str):
+                    continue
+                if v is None:
+                    fixed: Any = ""
+                elif isinstance(v, (list, tuple)):
+                    fixed = str(v[0]) if v else ""
+                else:
+                    fixed = str(v)
+            elif get_origin(ann) is list or ann is list:
+                # `list[str]` is a generic alias, so an `is list` identity
+                # check never matches it — the origin is what to compare.
+                v = data[name]
+                if v is None or v == "":
+                    fixed = []
+                else:
+                    continue
             else:
-                fixed = str(v)
+                continue
             if out is None:
                 out = dict(data)
             out[name] = fixed

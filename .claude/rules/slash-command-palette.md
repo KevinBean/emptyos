@@ -1,10 +1,15 @@
+---
+paths:
+  - "apps/**"
+  - "emptyos/web/static/**"
+---
 # Slash Command Palette Rule — keyboard-first power moves
 
 A slash command palette is a single input affordance that fires named
 verbs without leaving the keyboard. Apps build them when a chat-shaped
 input grows enough actions that the chrome (buttons, menus) stops scaling.
 
-**Reference implementation:** `apps/rooms/pages/index.html`
+**Reference implementation:** `apps/public/standard/rooms/pages/index.html`
 (`SLASH_COMMANDS` array + `_scanSlashAtCursor` + `_renderSlashPopup`
 + `tryRunSlashCommand`). 21 commands at v3.
 

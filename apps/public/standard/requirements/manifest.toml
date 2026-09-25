@@ -48,8 +48,8 @@ verb = "requirements.list"
 method = "list_all"
 summary = "List requirements across projects"
 args = {}
-eligibility = "gated"
-surfaces = ["assistant"]
+eligibility = "stable"
+surfaces = ["assistant", "mcp"]
 assistant = { slash = "/requirements", method = "list_all" }
 
 [[provides.verbs]]

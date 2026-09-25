@@ -1,6 +1,6 @@
 ---
 name: dev-app-optimizer
-description: Systematic app optimization via multi-dimensional scoring, competitive benchmarking, and Quick Wins sprints. Use when the user wants to improve, optimize, audit, or enhance any web app or app suite — especially when they mention "quick wins", "feature gaps", "completeness", "competitive analysis", "what's missing", or want to rapidly add many small features. Also triggers on "audit this app", "compare to competitors", "improve all apps", or "optimization sprint".
+description: Systematic app optimization via multi-dimensional scoring, competitive benchmarking, and Quick Wins sprints. Use when the user wants to improve, optimize, audit, or enhance any web app or app suite — especially when they mention "quick wins", "feature gaps", "completeness", "competitive analysis", "what's missing", or want to rapidly add many small features. Also triggers on "audit this app", "compare to competitors", "improve all apps", or "optimization sprint". NOT for a market gap registry tracked across re-runs (use eos-app-gap-analysis) and NOT for AI-nativeness (use eos-ai-native-audit).
 ---
 
 # App Optimizer

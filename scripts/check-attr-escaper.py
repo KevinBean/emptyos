@@ -27,6 +27,17 @@ This tool detects attribute-context ``esc()`` and classifies each:
                    auto-fixed, because a naive escAttr would look fixed while
                    staying exploitable.
 
+**The fixed count is an upper bound, not a count of closed holes.** Matching is
+textual, with no scope analysis, and ``esc`` is not always the global: a page or
+module may define its own stronger one. Both ``cable-bonding/pages/index.html``
+(``&`` ``<`` ``>`` ``"``) and ``markitup/pages/markitup.js`` (those plus ``'``)
+do, so 16 of the 17 sites rewritten on 2026-09-03 were already attribute-safe —
+only ``projects/pages/app.js`` was reaching the global. The rewrite is still
+safe (``escAttr`` covers the attribute case) and it keeps this scan green, but
+do not report "N vulnerabilities fixed" from the fixed count: grep the file for
+a local ``function esc``/``var esc =`` first, and read the delta as "N sites
+normalised, of which M were genuinely exposed".
+
 Detection is deliberately precise over exhaustive: it only matches an ``esc(``
 whose nearest preceding unclosed quote is an attribute-opening ``"`` (no
 intervening ``" < >``), so text-context ``'>'+esc(x)`` never matches. It may

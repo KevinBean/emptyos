@@ -1,6 +1,8 @@
-# Environment Quirks — Windows Dev Shell
+# Environment Quirks — Dev Shells
 
-Stable facts about the user's Windows dev environment. Promoted from per-session re-discovery so we stop paying the same friction twice.
+Stable facts about the user's dev environments. Promoted from per-session re-discovery so we stop paying the same friction twice.
+
+Two machines, two shells, and the difference bites: the **Windows** box (homepc, `D:/emptyos`) runs the Bash tool as Git Bash / POSIX sh, and everything down to § Parallel-session staging assumes it. The **Mac** runs it as **zsh**, which is not a drop-in for the same one-liners — see § macOS / zsh.
 
 ## Console encoding
 
@@ -13,45 +15,13 @@ Stable facts about the user's Windows dev environment. Promoted from per-session
 - `g2p_en` has no Python 3.13 wheel as of recent sessions. Used by the pronounce stack.
 - `espeak-ng` Python binding needs separate Windows install.
 - `cadquery 2.7.0` (+ underlying `OCP` / `vtk`) needs Python 3.12. EmptyOS daemon stays on 3.13 — use the user-home env pattern below.
-- Apps that depend on these (`apps/pronounce`, `apps/voice-assistant` listen path) should gate imports behind try/except so the daemon doesn't refuse to boot when the user's interpreter lacks them.
+- Apps that depend on these (`apps/pronounce`, `apps/public/standard/voice-assistant` listen path) should gate imports behind try/except so the daemon doesn't refuse to boot when the user's interpreter lacks them.
 
-## User-home Python envs for heavy / version-pinned deps
+## User-home Python envs
 
-Never embed a venv in `D:/emptyos/`. When a tool needs a Python version or
-deps that conflict with the daemon's 3.13, install into a user-home venv and
-shell out from the plugin.
-
-```bash
-# One-time setup per tool
-uv venv --python 3.12 "$LOCALAPPDATA/eos/envs/<tool>-3.12"
-uv pip install --python "$LOCALAPPDATA/eos/envs/<tool>-3.12/Scripts/python.exe" <packages>
-```
-
-Plugin reads the python path from `emptyos.toml` `[plugins.<tool>] python_exe = "..."`.
-Shared plumbing lives in `emptyos/sdk/userhome_venv.py` — `default_venv_python(tool, pyver)`,
-`probe_launch(exe, args)`, `run_venv(exe, args) -> RunResult`. Stateless functions
-(not a base class), so each plugin keeps its own `_launch_ok`/`_launch_err` + domain
-error strings. A third venv-backed plugin should reuse these, not re-roll the subprocess plumbing.
-First consumer: `plugins/cadquery/` (cadquery + trimesh + vtk in
-`%LOCALAPPDATA%/eos/envs/cadquery-3.12/`). Verified 2026-05-23.
-Second consumer: `plugins/markitdown/` (`markitdown[pptx,xlsx,docx]` in
-`%LOCALAPPDATA%/eos/envs/markitdown-3.13/`) — markitdown's core `magika` dep
-pins `onnxruntime<=1.20.1` on win32, which conflicts with the daemon env's
-`onnxruntime-gpu 1.23.2`. Installing it in-process downgrades/breaks the GPU
-runtime, so it runs in an isolated venv reached via subprocess. Verified
-2026-06-07. (Note: the venv can be 3.13 here — markitdown only needs ≥3.10;
-the venv is for the onnxruntime *version* conflict, not a Python-version gap.)
-
-Why not embedded: keeps repo clean, survives `git clean -fdx`, shared across
-checkouts, never gets into `release-public.py` snapshots.
-
-Why not switching EmptyOS to 3.12: daemon's own deps (FastAPI, plugins,
-agent-runtime) have settled on 3.13.
-
-`py -0p` lists installed Pythons. `uv` is on PATH at
-`%APPDATA%\Python\Python313\Scripts\uv.exe`.
-
-See `reference_userhome_python_envs_for_heavy_deps` memory for cross-references.
+Never embed a venv in the repo. Heavy or version-pinned deps (cadquery,
+markitdown, the desktop shell) live in `%LOCALAPPDATA%/eos/envs/<tool>-<py>/`
+and are reached by subprocess → `.claude/rules/userhome-venvs.md`.
 
 ## Daemon ports
 
@@ -79,6 +49,39 @@ req = urllib.request.Request("http://127.0.0.1:9000/<app>/api/<endpoint>",
     headers={"Content-Type":"application/json","Authorization":f"Bearer {tok}"})
 with urllib.request.urlopen(req, timeout=8) as r: print(json.load(r))
 ```
+
+### Probing from PowerShell — `Invoke-WebRequest` needs `-UseBasicParsing`, or it hangs forever
+
+Windows PowerShell 5.1's `Invoke-WebRequest` parses the response through the
+**Internet Explorer DOM engine** unless you pass `-UseBasicParsing`. On a box
+where IE was never first-run configured — and in any non-interactive session —
+that parse **blocks indefinitely**. Not an error, not a timeout: `-TimeoutSec`
+does not apply, because the request already completed and the *parser* is what
+is stuck.
+
+Measured 2026-08-31 against a sandbox member, same URL, same body, one variable:
+
+| call | result |
+|---|---|
+| `curl.exe --data-binary "@file"` | **200 in 0.013s** |
+| `Invoke-WebRequest -UseBasicParsing` | **200 in 0.52s** |
+| `Invoke-WebRequest` (no flag) | **never returns** |
+
+The failure mode is worse than a hang, because the **server handled the request
+normally**. A POST that writes will have written; a py-spy dump of the daemon
+shows the event loop **idle** in `select`. So it reads as "the write landed but
+the response never came" — which looks exactly like a server-side wedge and is
+not one. Three probes were lost to this before an A/B, and it briefly got
+written up as an EmptyOS bug.
+
+`Invoke-RestMethod` is **unaffected** — it does not use the IE parser — which is
+why every other PowerShell call in the same session worked and hid the pattern.
+
+So: prefer `curl.exe` with `--data-binary "@file"` (which also dodges the
+quote-eating in § POST bodies above), or `Invoke-RestMethod`. If you must use
+`Invoke-WebRequest`, always `-UseBasicParsing`. And when a request appears to
+hang, **dump the server's stack before believing it** — an idle loop means the
+hang is in your client.
 
 ## Parallel-session staging
 
@@ -139,6 +142,44 @@ Two sharper cases seen repeatedly in one long session (2026-07-15):
   ```
 
   The commit exists on both branches (identical content) until the feature branch merges — a clean no-op merge. Verify with `git merge-base --is-ancestor <commit> main`. On Windows the temp worktree dir may stay locked; `worktree prune` is enough — the leftover dir is harmless scratch.
+
+## macOS / zsh
+
+### zsh does not word-split an unquoted variable — a loop over files silently runs nothing
+
+In POSIX sh, `python -m pytest $FILES` expands to one argument per file. **In zsh it
+expands to a single argument** containing the whole string, so pytest receives one
+path that does not exist. It reports `no tests ran in 0.01s` and exits 0-ish; a
+mutation batch built on it certifies every mutation as "survived" while nothing was
+ever executed. Measured 2026-09-01 on an eight-mutation verification pass — every
+line read `no tests ran`, which is at least loud, but the same shape in a `for f in
+$FILES` loop just iterates once over a bogus name.
+
+Use an array (`FILES=(a.py b.py); pytest $FILES` — zsh splits arrays), `${=VAR}` to
+force splitting, or list the paths literally. The habit that catches it regardless:
+**re-run the restored state after every mutation batch** and confirm the expected
+count comes back, rather than trusting the loop's own output.
+
+Same family as the harness traps in `.claude/rules/dev-gotchas.md` — a harness that
+cannot run the thing under test does not return a null result, it returns a false one.
+
+### Non-ASCII over `ssh homepc-ts` still hits the cp1252 trap
+
+`.claude/settings.json` sets `PYTHONIOENCODING=utf-8` for **locally** spawned
+processes. A python script run on the Windows box *through* ssh inherits that box's
+console encoding instead, so printing `§`, `Ω`, `·` or `→` raises `UnicodeEncodeError`
+mid-output — which looks like the script hanging or the daemon truncating a response,
+not like an encoding fault. Prefix the remote command with `set PYTHONIOENCODING=utf-8 &`,
+or wrap stdout: `sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")`.
+
+### Probe a remote file's content with Python, not a chained `findstr`
+
+`ssh host "cd /d D:\repo && findstr /C:\"needle\" file | find /c \"\""` returned `0`
+for strings that provably exist in the file — the quoting survives neither the ssh
+layer nor cmd's, and the failure is a plausible-looking count rather than an error.
+Write the probe to a file, `scp` it, run it. And **use positive markers**: a probe that
+passes when a string is *absent* cannot tell "the fix is applied" from "the file is
+missing", which is how one audit read a successful deploy as a wiped one.
 
 ## When to invoke
 

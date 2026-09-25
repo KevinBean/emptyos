@@ -1,6 +1,6 @@
 ---
 name: eos-wedge-postmortem
-description: Diagnose why the EmptyOS daemon went down — classify the failure shape (wedge vs death vs restart storm vs stacked boot), read the evidence bundle, and eliminate external causes before blaming code. Probe-only; never restarts :9000. Use when the user says "why did emptyos die", "the daemon is stuck", "emptyos keeps restarting", ":9000 is down", "check the wedge evidence", or after a wedge-alert.flag / Telegram wedge alert. NOT for reproducing a known bug (use eos-bug-audit), fixing async-loop bug classes you have already identified (the catalog is .claude/rules/debugging.md), or environment/dep problems (use env-check).
+description: Diagnose why the EmptyOS daemon went down — classify the failure shape (wedge vs death vs restart storm vs stacked boot vs machine exhaustion), read the evidence bundle, and eliminate external causes before blaming code. Covers whole-machine failures where the daemon is the victim, not the cause — console-host storms and runaway memory leaks that hard-froze this box three times. Probe-only; never restarts :9000. Use when the user says "why did emptyos die", "the daemon is stuck", "emptyos keeps restarting", ":9000 is down", "check the wedge evidence", "the PC froze", "terminal windows keep popping up", or after a wedge-alert.flag / Telegram wedge alert / a CONSOLE STORM line in the watchdog log. NOT for reproducing a known bug (use eos-bug-audit), fixing async-loop bug classes you have already identified (the catalog is .claude/rules/debugging.md), or environment/dep problems (use env-check).
 ---
 
 # EmptyOS Wedge Post-Mortem
@@ -27,7 +27,7 @@ wedge at all.
 
 ## Step 0 — Classify the shape FIRST
 
-Four failure shapes look identical from a browser, and they have opposite fixes.
+Five failure shapes look identical from a browser, and they have opposite fixes.
 Name the shape before reading a single stack trace.
 
 | Shape | Tell | Means |
@@ -36,13 +36,23 @@ Name the shape before reading a single stack trace.
 | **Death** | no listener, no daemon process | crashed or was killed → Steps 3-5 |
 | **Restart storm** | `respawned detached pid=` lines outpacing `RECOVERED` in `data/daemon-restart.log` | supervisor fighting a slow boot |
 | **Stacked boot** | several `python -m emptyos start` alive, none listening | storm's aftermath — boots starving each other |
+| **Machine exhaustion** | system commit near its limit; often thousands of `conhost`/`OpenConsole`; the whole desktop is slow, not just EmptyOS | **the daemon is a victim, not the cause** → Step 5b |
 
 ```bash
 curl -s -m 5 -o /dev/null -w "health %{http_code}\n" http://127.0.0.1:9000/api/health
 netstat -ano | grep -E "LISTENING" | grep ":9000"
 powershell -NoProfile -Command "Get-CimInstance Win32_Process -Filter \"Name='python.exe'\" | Where-Object { \$_.CommandLine -like '*emptyos start*' } | Select-Object ProcessId,CreationDate"
 tail -20 data/daemon-restart.log
+# machine-wide, always worth 2 seconds before blaming the daemon:
+powershell -NoProfile -Command "\$m=Get-CimInstance Win32_OperatingSystem; '{0:N0} MB committed of {1:N0} MB limit' -f ((\$m.TotalVirtualMemorySize-\$m.FreeVirtualMemory)/1KB),(\$m.TotalVirtualMemorySize/1KB); 'console hosts: ' + (Get-Process conhost,OpenConsole -EA SilentlyContinue).Count"
 ```
+
+**Check the machine before the daemon.** Three of this box's incidents were the
+machine running out of commit, and in all three the daemon's own stack looked
+guilty. 2026-08-15 is the cautionary one: py-spy named `list_pending` doing sync
+`read_text` on the loop — a *genuine* member of the debugging.md catalog, and
+entirely beside the point. Everything was slow because 1818 console hosts held
+21 GB. Fixing that frame would have been a real fix to the wrong problem.
 
 **The trap.** A storm makes every boot slow, so the syslog fills with
 `slow load 'x': import=NNNNNms` warnings. Those are the storm's **symptom**, not
@@ -58,6 +68,11 @@ Open the newest `data/wedge-evidence/<ts>/` and confirm it actually captured:
 - `tasklist.txt` — must have process rows, not `TimeoutExpired`
 - `pyspy_dump_<pid>.txt` — must exist (needs `pip install py-spy`)
 - `daemon_pidfile.txt`, `summary.json` with `daemon_pids` / `alive_but_not_listening`
+- `summary.json` `console` / `console_storm` / `memory` — **read these first**, they
+  answer Step 0's fifth shape in one line. Bundles before `e40ffa8fb` (2026-08-16)
+  lack them, which is why both console storms had to be reconstructed by counting
+  `conhost` rows in `tasklist.txt` by hand. A sibling `<ts>-console-storm/`
+  directory means the storm watch tripped and captured parentage.
 
 If those fields are missing, the machine is on a watchdog older than
 `c5cbb171` and the bundle cannot answer the question — **say so** instead of
@@ -140,8 +155,9 @@ Get-ChildItem "$env:LOCALAPPDATA\CrashDumps" | Select-Object Name,LastWriteTime
 # 2. WER / Application Error for python.exe
 Get-WinEvent -FilterHashtable @{LogName='Application'; StartTime=(Get-Date).AddDays(-7)} |
   Where-Object { $_.Message -like '*python*' } | Select-Object -First 10 TimeCreated,Id,ProviderName
-# 3. commit-limit kill
-Get-WinEvent -FilterHashtable @{LogName='System'; ProviderName='Microsoft-Windows-Resource-Exhaustion-Detector'; StartTime=(Get-Date).AddDays(-14)}
+# 3. commit-limit kill — PRINT THE MESSAGE, it names the culprit with PIDs + bytes
+Get-WinEvent -FilterHashtable @{LogName='System'; ProviderName='Microsoft-Windows-Resource-Exhaustion-Detector'; StartTime=(Get-Date).AddDays(-30)} |
+  Sort-Object TimeCreated | ForEach-Object { "$($_.TimeCreated)  $($_.Message)" }
 # 4. GPU TDR (matters when ComfyUI/MV work is running)
 Get-WinEvent -FilterHashtable @{LogName='System'; StartTime=(Get-Date).AddDays(-7)} | Where-Object { $_.Id -in 4101,4098 }
 ```
@@ -156,6 +172,70 @@ the Ctrl+K "Restart Daemon" palette action, and `POST /settings/api/restart-daem
 `settings/product.py`'s `os._exit` paths are gated by `_product_enabled()` and are
 dead when running from source.
 
+## Step 5b — Machine exhaustion: attribute it before reading any daemon stack
+
+Reached when Step 0 showed commit near the limit, or thousands of console hosts,
+or the Step 5 detector named a consumer. **Do not proceed to Step 6 first** — a
+stack taken while the box is thrashing names whichever frame happened to be
+doing I/O, and that will be a plausible, real, irrelevant bug.
+
+Three incidents on this box, two distinct mechanisms:
+
+| Date | Mechanism | Peak | Outcome |
+|---|---|---|---|
+| 2026-08-01 | console-host storm | 4307 hosts, 90 GB commit | daemon wedged ×4, survived |
+| 2026-08-13 | one `powershell.exe` leaking ~1 GB/min | 47 → **82 GB** in 37 min | daemon wedged ×4, crash dumps |
+| 2026-08-15 | console-host storm | 1818 hosts, ~22 GB in hosts alone | **machine hard-froze** |
+
+**Console storm — attribute it while the children are alive:**
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\find_console_spawner.ps1 -Minutes 60
+```
+
+LIVE half needs no elevation and prints its own verdict; HISTORY half reads
+Event 4688 and needs an elevated shell (`scripts\enable_process_auditing.ps1`
+turns 4688 on — **not retroactive**). The watchdog also auto-captures the live
+parent breakdown to `data/wedge-evidence/<ts>-console-storm/` the moment its
+storm watch trips.
+
+Measured baselines, so the numbers mean something:
+
+- **Healthy: 2055 console-host creations/hour (0.57/sec), only ~36 alive** —
+  they exit in milliseconds. Parentage is spread across ~26 parents.
+- **Storm: 6.6/sec (12×) *and they stop exiting*** — 1818 alive at once.
+- A storm needs **both halves**. A rate rise alone does not pile up, so
+  "what spawns them" and "what stops them draining" are two questions.
+- Healthy shape is *many parents, few children each*; a storm is one parent
+  owning nearly all of them. That contrast is the whole diagnosis.
+
+**Leak — the detector names it for you.** Step 5's Resource-Exhaustion-Detector
+message carries the top three consumers with PIDs and byte counts, and repeats
+every ~5 min, so consecutive events give a growth *rate*: that is how 2026-08-13
+resolved to a single PowerShell going 47.4 → 81.9 GB. Print the Message; do not
+just test whether the event exists.
+
+**Absence proves nothing here either.** The detector logged nothing for 08-01 or
+08-15 — a hard freeze denies Windows the chance to diagnose. Consistent with
+Step 1: an empty instrument is not a negative result.
+
+Verdict (2026-09-06, from Event 4688 on the third storm): the spawner was the
+**daemon itself, whenever it runs with no console at all** — the watchdog's
+`DETACHED_PROCESS` respawn. Such a process gives every console child a fresh
+*visible* console; Windows Terminal renders each as a tab. (A `CREATE_NO_WINDOW`
+process is different: it has a hidden console its children inherit — measured,
+zero new hosts.) 4688 traced 2,960 of the storm's resolved clients to the
+respawned daemon's pid; the most frequent client command was `git rev-parse
+--abbrev-ref HEAD` ×2,909, the polled `api_status`. Every storm on this box
+(three freezes + one caught live) followed a detached respawn by 17, 4, 75 and
+3 minutes. Why tabs accumulate rather than drain is inferred (non-zero exits
+keep a tab; WT falls behind under a burst). Fixed at the process level by
+`emptyos/headless.py` (first line of `eos start`);
+`project_console_storm_machine_freeze` in memory has the numbers. If a storm
+recurs with the guard installed, the decisive 4688 column is the *grandparent*
+(the parent of the git/cmd client), not the client — resolve it, don't stop at
+"git.exe".
+
 ## Step 6 — If a process is still alive, take the stack
 
 ```bash
@@ -167,6 +247,72 @@ fan-out on dead peers, lock-held emit deadlock, sync call in async context, long
 handler in an HTTP request). A shutdown that hangs in `_cancel_all_tasks` with a
 worker thread still doing filesystem work is a *teardown* hang, not a wedge — the
 port is already gone, so the supervisor reports "dead" while the process lives.
+
+### Step 6b — A stack names a frame, not a cause. Price the frame.
+
+**One sample is one instant.** It tells you what was running, never what took
+the time — and the odds of landing on any given frame scale with its duration,
+so the sample is *evidence about* the answer, not the answer. Before blaming
+whatever it named, measure that thing's actual cost two ways:
+
+**First rule out the machine (Step 5b).** When the box is out of commit, *every*
+frame that touches disk is slow, so the sample lands on I/O and indicts it. The
+frame will look like a textbook catalog hit and the fix will be real — just not
+the cause. On 2026-08-15 it named a sync `read_text` over 357 files while 1818
+console hosts held 21 GB. Pricing the frame offline is what separates the two,
+and here it settled the question outright: **that scan is ~19 ms warm, and the
+endpoint answers in 24 ms** — nowhere near the 49-80s observed. Two commits
+shipped naming it the cause before anyone measured it (`760f61adb`, corrected in
+`c667d0824`). If the frame costs milliseconds on an idle box, the box was the
+problem.
+
+Beware the *third* candidate, too: a genuine unrelated defect can sit in the
+same window and absorb the blame. The hub really was resolving all 114 panels
+per single-panel request — a flat 4.1s on an idle box, fixed in `b511e583c` —
+which exhaustion then inflated into the observed number. Two real bugs plus one
+machine failure, and only the machine failure explains the magnitude.
+
+```bash
+# (a) offline, no daemon — does the suspect work cost what you are attributing?
+python -c "import time,pathlib; t=time.perf_counter(); \
+  [p.read_text(encoding='utf-8') for p in pathlib.Path('<dir>').glob('*.json')]; \
+  print(f'{time.perf_counter()-t:.3f}s')"
+
+# (b) live — the narrowest endpoint that does the same work, nothing else
+curl -s -o /dev/null -w "%{time_total}s\n" -H "$AUTH" "http://127.0.0.1:9000/<narrow-route>"
+```
+
+If (a) and (b) disagree with the wedge duration by an order of magnitude, the
+frame is a passenger, not the driver. Measured 2026-08-16: py-spy caught
+`rooms.list_pending` inside `open()` 50s into a wedge, and the scan it was
+blamed for costs **19 ms** offline and **24 ms** through its own route.
+
+**Pricing the frame finds real defects that are still not the cause — say which
+is which.** That same pass found a genuine one nearby: the hub's single-panel
+endpoint resolved *all* contributors and discarded all but one, a flat **4.1s**
+on an idle box (fixed in b511e583c, now 0.003s). It is a true bug, it was worth
+fixing, and it did **not** wedge the daemon — Step 0's console-host storm did.
+Exhaustion inflated that 4.1s to the 49-80s actually observed, which is exactly
+why the two got conflated. Two commits shipped naming the wrong cause before the
+machine was checked. The order in this skill is the lesson: **machine (Step 0/5b)
+→ price the frame (here) → only then name a cause.**
+
+**Bisect a slow aggregate endpoint by timing its parts.** Anything that fans out
+(`/hub/api/panels`, digests, dashboards) hides which member is slow:
+
+```bash
+for id in $(curl -s -H "$AUTH" "$H/hub/api/panels" | python -c \
+    "import json,sys;print('\n'.join(i['id'] for b in json.load(sys.stdin)['blocks'] for i in b['items']))"); do
+  printf "%s " "$(curl -s -m 90 -o /dev/null -w '%{time_total}' -H "$AUTH" "$H/hub/api/panel/$id")"; echo "$id"
+done | sort -rn | head
+```
+
+Two tells worth knowing: **near-zero variance across runs** means a fixed cost
+(a timeout, a constant fan-out), not accumulated work; and **two unrelated
+members timing identically** means neither figure is about the member you asked
+for — the cost is in the wrapper. Note that `python -c` prints CRLF on Windows,
+so `tr -d '\r'` an id list before building URLs from it or every request 404s at
+0.000s and reads as "everything is instant".
 
 ## Step 7 — Conclude honestly
 
@@ -190,6 +336,16 @@ not re-derive them; each one costs several minutes of Windows event-log queries.
 - **`events.db` ids are not time-ordered** when several daemons wrote concurrently.
   Sort by `timestamp`, not `id`.
 - **Don't `grep -rn` the repo** — the tree is huge; use the Grep tool (ripgrep).
+- **Summed `tasklist` memory is not commit charge.** The Mem Usage column is
+  working set; adding it up gives a number that looks like commit and is not.
+  Read commit from `Win32_OperatingSystem` (Step 0) or `summary.json.memory`.
+- **A `conhost` count is not a spawn rate.** Console hosts normally exit in
+  milliseconds, so ~36 alive is consistent with 2000 created per hour. Alive-count
+  answers "are they draining", 4688 answers "how fast are they being made" — the
+  storm needs both to be wrong, so never infer one from the other.
+- **Windows Terminal is this box's default console host**, so every console
+  allocation is a *visible window*. "Terminal windows keep popping up" is a
+  user-visible symptom of the Step 0 fifth shape, not a cosmetic complaint.
 
 ## Never
 

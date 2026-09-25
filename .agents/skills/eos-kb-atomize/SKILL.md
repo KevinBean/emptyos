@@ -1,6 +1,6 @@
 ---
 name: eos-kb-atomize
-description: Turn a KB `kind:reference` standard (IEC/IEEE/Transgrid PDF archive) into atomic `kind:clause` notes — audit which references are undigested, reformat PyMuPDF-split or bilingual archives so they're section-addressable, then atomize with a throttled write that won't storm the vault watcher. Use when the user says "atomize this standard", "digest the KB references", "this full text needs proper md / sections", or asks to make a stored standard's clauses individually indexable. Case-by-case per document; this is the decision tree + the safe write procedure.
+description: Turn a KB `kind:reference` standard (IEC/IEEE/Transgrid PDF archive) into atomic `kind:clause` notes — audit which references are undigested, reformat PyMuPDF-split or bilingual archives so they're section-addressable, then atomize with a throttled write that won't storm the vault watcher. Use when the user says "atomize this standard", "digest the KB references", "this full text needs proper md / sections", or asks to make a stored standard's clauses individually indexable. Case-by-case per document; this is the decision tree + the safe write procedure. NOT for digesting a fresh PDF into the KB (use vault-source-digest) and NOT for checking KB consistency afterwards (use eos-kb-audit).
 ---
 
 # EmptyOS KB Atomize
@@ -83,7 +83,7 @@ python scripts/atomize_standard.py <slug> --write --throttle=0.25
 
 `--throttle=0.25` ≈ 4 writes/s — the bus drains each well under 250 ms, so events
 trickle instead of bursting. Never touch the daemon process / `restart.bat` /
-`data/*.db` (`.Codex/rules/daemon-handling.md`). After each batch:
+`data/*.db` (`.claude/rules/daemon-handling.md`). After each batch:
 
 ```
 curl -s -m5 http://127.0.0.1:9000/api/health -o /dev/null -w "HTTP %{http_code} %{time_total}s\n"
@@ -130,6 +130,6 @@ Delete the colliding auto `.md` directly (one file → one event, no storm).
 - `scripts/atomize_standard.py`, `scripts/reformat_split_headings.py` — the tools.
 - `emptyos/sdk/standard_atomize.py` (`plan_atomization`), `emptyos/sdk/doc_slice.py`
   (`parse_contents`/`slice_clause_text`) — the pure engine.
-- `.Codex/rules/daemon-handling.md` — never restart/kill `:9000`; throttle instead.
-- AGENTS.md § KB note kinds — `reference` (landing page) vs `clause` (atomic),
+- `.claude/rules/daemon-handling.md` — never restart/kill `:9000`; throttle instead.
+- CLAUDE.md § KB note kinds — `reference` (landing page) vs `clause` (atomic),
   `formula` (implementable spec) as the fallback for low-yield standards.

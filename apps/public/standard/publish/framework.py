@@ -413,41 +413,39 @@ _DEFAULT_FRAMEWORK_TEMPLATE = """---
 author: user
 ---
 
-# Branding framework — personal voice (NIW)
+# Branding framework — draft your voice
+
+Fill in each section below in your own words before the framework evaluator
+starts grading drafts against it. Delete this note's guidance text as you go.
 
 ## Positioning
-A power engineer who builds serious software; publishing the method and judgment,
-not selling a product. Never "founder", never "leaving power".
+Who are you writing as? What's the one-line description a stranger should
+walk away with? What would make a post feel obviously off-brand for you?
 
 ## Spine
-The human owns judgment; the machine owns reversible, verifiable execution.
-Two proof-vectors: systems judgment (architecture decisions) + energy × software
-(engineering thinking applied in code).
+What's the underlying principle every post should reflect back to, even when
+the topic varies? (e.g. a stance on how you work, a recurring theme, a value
+you build around.)
 
 ## Audiences
-- NIW reviewer / evidence file (primary) — original contribution, sustained record,
-  national importance (energy × software).
-- Engineer peers — rigor, receipts, standards, honest tradeoffs.
-- AI-builder community — reusable ideas, a working demo, borrowable patterns.
+Who is this actually for? List 1-3 concrete audiences (not "everyone") and
+what each one is looking for when they read you.
 
 ## Post shape
-Mechanism deep-dive, demo-centered: problem → the mechanism → how it's wired
-(real components) → a live demo / screenshot (the load-bearing receipt) → why the
-design is right. One real, falsifiable artifact per post; never invented.
+What does a typical post look like end to end? (e.g. problem → mechanism →
+how it's built → a real demo/receipt → why it matters.) Prefer a shape that
+forces a real, falsifiable artifact per post over argument-only pieces.
 
 ## Dimensions
-- Positioning fit — does it read as "builds serious software", not hype?
-- Spine — human-owns-judgment / verifiable-execution present?
-- Audience fit — evidence a NIW reviewer / engineer would weigh?
-- Receipts-grade — a real demo / number / repo path, not argument-only?
-- Differentiation — new, vs the discourse and the existing published body?
+List the 3-5 things you'd score a draft against before publishing — these
+become the framework evaluator's grading rubric. Examples: does it match your
+positioning, does it serve the audiences above, does it carry a real receipt
+(a demo/number/repo path) rather than just an argument.
 
 ## Hard guardrails (any hit = off-brand)
-- 唯识 / consciousness model is PRIVATE — never a subject in public copy.
-- Never publish cable-rating / IEC 60287 / proprietary engineering; engineering
-  content uses earthing / EMF / short-circuit / overhead-line / soil on
-  illustrative or standards data only.
-- No personal data, no third-party branding, no client/employer data.
+List anything that should never appear in public copy for you — proprietary
+work product, employer/client data, topics you keep private, personal data,
+third-party branding. Be specific; a vague guardrail won't get enforced.
 """
 
 _EMPTYOS_FRAMEWORK_TEMPLATE = """---

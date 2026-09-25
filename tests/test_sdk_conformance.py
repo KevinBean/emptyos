@@ -130,6 +130,96 @@ def test_run_case_missing_field_in_result_fails():
     assert "missing" in diff.get("reason", "")
 
 
+def _run_with_expected(result, expected) -> dict:
+    """Run one case whose method returns `result` against `expected`.
+
+    Both are passed through as given, so a test can hand in a value that is not
+    a mapping at all.
+    """
+    class App(BaseApp):
+        async def _solve(self, p): return result
+        async def _inputs(self): return {}
+        async def _expected(self): return expected
+
+    manifest = _make_manifest(
+        [{"id": "x", "fn": "_solve", "default": True}],
+        [{"case_id": "c", "inputs_fn": "_inputs", "expected_fn": "_expected",
+          "methods": ["x"], "tolerances": {"default_pct": 5.0}}],
+    )
+    return asyncio.run(App(_FakeKernel(), manifest).run_conformance("solve", "c"))
+
+
+# A bool or string anchor used to be skipped, so it was declared and never
+# evaluated, and a case whose anchors were all non-numeric passed with nothing
+# compared. Each of these would have passed before the fix.
+
+def test_a_bool_anchor_that_matches_passes():
+    out = _run_with_expected({"met": True, "u": 100.0}, {"met": True, "u": 100.0})
+    assert out["passed"] is True
+    diff = next(d for d in out["methods"]["x"]["diffs"] if d["field"] == "met")
+    assert diff["passed"] is True and diff["tolerance_pct"] is None
+
+
+def test_a_bool_anchor_that_does_not_match_fails():
+    out = _run_with_expected({"met": False}, {"met": True})
+    assert out["passed"] is False
+    diff = out["methods"]["x"]["diffs"][0]
+    assert diff["passed"] is False and diff["reason"] == "exact match required"
+
+
+def test_a_bool_anchor_is_not_matched_by_a_number():
+    # True == 1 in Python; an anchor saying "met" must not pass on a count of 1.
+    out = _run_with_expected({"met": 1}, {"met": True})
+    assert out["passed"] is False
+    assert out["methods"]["x"]["diffs"][0]["reason"] == "exact match required"
+
+
+def test_a_string_anchor_is_not_matched_by_a_number():
+    out = _run_with_expected({"code": 3}, {"code": "3"})
+    assert out["passed"] is False
+    assert out["methods"]["x"]["diffs"][0]["reason"] == "exact match required"
+
+
+def test_a_result_that_is_not_a_mapping_fails_and_says_why():
+    out = _run_with_expected([1.0], {"u": 1.0})
+    assert out["passed"] is False
+    assert "not a mapping of results" in out["methods"]["x"]["diffs"][0]["reason"]
+
+
+def test_an_expected_loader_that_returns_no_mapping_raises():
+    """A broken loader is an error, as a missing one is — not a silent failure
+    with no diffs, which the drift scan would report as zero findings."""
+    with pytest.raises(RuntimeError, match="not a mapping of expected values"):
+        _run_with_expected({"u": 1.0}, [1.0])
+
+
+def test_a_string_anchor_compares_exactly():
+    assert _run_with_expected({"verdict": "exclude"}, {"verdict": "exclude"})["passed"] is True
+    out = _run_with_expected({"verdict": "marginal"}, {"verdict": "exclude"})
+    assert out["passed"] is False
+    assert out["methods"]["x"]["diffs"][0]["got"] == "marginal"
+
+
+def test_a_missing_bool_anchor_field_fails_as_missing():
+    out = _run_with_expected({"u": 1.0}, {"met": True})
+    assert out["passed"] is False
+    assert out["methods"]["x"]["diffs"][0]["reason"] == "field missing in result"
+
+
+@pytest.mark.parametrize("anchor", [None, [1, 2], {"a": 1}])
+def test_an_anchor_that_cannot_be_compared_fails_and_says_why(anchor):
+    out = _run_with_expected({"u": 1.0, "v": anchor}, {"u": 1.0, "v": anchor})
+    assert out["passed"] is False
+    diff = next(d for d in out["methods"]["x"]["diffs"] if d["field"] == "v")
+    assert "cannot be compared" in diff["reason"]
+
+
+def test_a_case_with_no_expected_values_fails():
+    out = _run_with_expected({"u": 1.0}, {})
+    assert out["passed"] is False
+    assert "nothing would be compared" in out["methods"]["x"]["diffs"][0]["reason"]
+
+
 def test_run_case_method_exception_fails():
     class App(BaseApp):
         async def _solve(self, p): raise RuntimeError("boom")

@@ -1,7 +1,7 @@
   :root {
     --paper: #f5efe6;
     --ink: #2c2722;
-    --muted: #8a7456;
+    --ex-muted: #8a7456;    /* namespaced for the same reason as --ex-accent below: --muted became a declared theme token, and this :root won on load order — freezing the pill subtitle and every other muted surface to this brown on any page that loads the flipbook */
     --ex-accent: #6f5d3f;   /* namespaced: --accent is a THEME token; declaring it here at :root overrode the active theme's accent for the whole page (incl. the global nav) */
     --rule: #cdb88c;
     /* macOS-derived window-control colors — named so the metaphor is
@@ -56,7 +56,7 @@
   .ex-dot.ex-dot-close:hover { background: var(--traffic-close-hover); }
   .ex-dot.ex-dot-min:hover { background: var(--traffic-min-hover); }
   .ex-breadcrumb {
-    flex: 1; font-size: 14px; color: var(--muted);
+    flex: 1; font-size: 14px; color: var(--ex-muted);
     overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
   }
   .ex-breadcrumb .crumb-active { color: var(--ink); font-weight: 600; }
@@ -79,11 +79,11 @@
   .ex-status {
     font-size: 12px; padding: 4px 10px;
     border-radius: 999px; font-weight: 600;
-    background: rgba(0,0,0,0.06); color: var(--muted);
+    background: rgba(0,0,0,0.06); color: var(--ex-muted);
   }
   .ex-status.draft { background: #fbe9c7; color: #7a5a16; }
   .ex-status.verified { background: #d6efd0; color: #2f6f3f; }
-  .ex-status.cached { background: rgba(0,0,0,0.06); color: var(--muted); }
+  .ex-status.cached { background: rgba(0,0,0,0.06); color: var(--ex-muted); }
   .ex-status.dirty { background: #f4d4cc; color: #8a3c2c; }
 
   .ex-mode-toggle {
@@ -96,7 +96,7 @@
   .ex-mode-toggle button {
     background: transparent;
     border: none;
-    color: var(--muted);
+    color: var(--ex-muted);
     padding: 5px 12px;
     font-size: 12px;
     cursor: pointer;
@@ -113,7 +113,7 @@
   .ex-fast-toggle {
     background: transparent;
     border: 1px solid var(--rule);
-    color: var(--muted);
+    color: var(--ex-muted);
     padding: 5px 12px;
     font-size: 12px;
     border-radius: 999px;
@@ -148,7 +148,7 @@
     color: var(--ink); font-weight: 700;
   }
   .ex-stage .subtitle {
-    color: var(--muted); font-size: 16px;
+    color: var(--ex-muted); font-size: 16px;
     margin-bottom: 18px; font-style: italic;
   }
 
@@ -182,7 +182,7 @@
   .ex-image-error {
     padding: 40px 20px;
     text-align: center;
-    color: var(--muted);
+    color: var(--ex-muted);
     font-style: italic;
   }
   /* Leader-line overlay covers entire grid */
@@ -205,7 +205,7 @@
   .ex-edit-mode .ex-leaders { pointer-events: none; }
   .ex-edit-mode .ex-leaders circle.anchor-draggable { pointer-events: auto; }
   .ex-anchor-hint {
-    text-align: center; color: var(--muted);
+    text-align: center; color: var(--ex-muted);
     font-size: 12px; font-style: italic;
     margin-top: 4px;
   }
@@ -268,7 +268,7 @@
   }
   .ex-popover-close {
     background: transparent; border: none; cursor: pointer;
-    font-size: 18px; line-height: 1; color: var(--muted);
+    font-size: 18px; line-height: 1; color: var(--ex-muted);
     padding: 0 4px;
   }
   .ex-popover-close:hover { color: var(--ink); }
@@ -280,7 +280,7 @@
   }
   .ex-popover-facts li { margin-bottom: 4px; }
   .ex-popover-loading {
-    color: var(--muted); font-style: italic;
+    color: var(--ex-muted); font-style: italic;
   }
   .ex-popover-foot {
     margin-top: 10px; padding-top: 8px;
@@ -291,7 +291,7 @@
   .ex-caption {
     border-top: 1px solid var(--rule);
     padding: 14px 18px;
-    text-align: center; color: var(--muted);
+    text-align: center; color: var(--ex-muted);
     font-style: italic; font-size: 14px;
     margin-top: 12px;
   }
@@ -318,13 +318,13 @@
     border-color: var(--ex-accent);
   }
   .ex-start .hint {
-    color: var(--muted); font-size: 13px; margin-top: 10px;
+    color: var(--ex-muted); font-size: 13px; margin-top: 10px;
   }
   .ex-saved-list {
     margin-top: 36px; text-align: left; color: var(--ink);
   }
   .ex-saved-list h3 {
-    color: var(--muted); font-size: 13px; font-weight: 600;
+    color: var(--ex-muted); font-size: 13px; font-weight: 600;
     text-transform: uppercase; letter-spacing: 0.08em;
     margin: 0 0 12px 0;
   }
@@ -365,7 +365,7 @@
   .ex-saved-mark.verified { background: #d6efd0; color: #2f6f3f; }
   .ex-saved-mark.draft { background: #fbe9c7; color: #7a5a16; }
   .ex-saved-empty, .ex-saved-loading {
-    color: var(--muted); font-size: 13px; font-style: italic;
+    color: var(--ex-muted); font-size: 13px; font-style: italic;
     text-align: center; padding: 20px 0;
   }
   .ex-symbol-item {
@@ -389,11 +389,11 @@
     font-weight: 600; color: var(--ink); font-size: 14px;
   }
   .ex-symbol-desc {
-    color: var(--muted); font-size: 12px;
+    color: var(--ex-muted); font-size: 12px;
     margin-top: 4px; font-style: italic;
   }
   .ex-symbol-del {
-    background: transparent; border: none; color: var(--muted);
+    background: transparent; border: none; color: var(--ex-muted);
     cursor: pointer; font-size: 18px; line-height: 1;
     padding: 0 6px; border-radius: 4px;
     min-width: 32px; min-height: 32px;

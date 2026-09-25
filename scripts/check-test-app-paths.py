@@ -69,7 +69,7 @@ SYNTHETIC_IDS = {
     "bar",           # test_sys_pattern_harvester.py — fixture id
     "plain",         # test_unit_check_settings_panel_drift.py — schema-less app fixture
     "held",          # test_unit_release_filter.py — held-path fixture
-    "soft-client",   # test_app_builder_inspect.py — scaffolded into tmp_path
+    "soft-client",   # test_unit_app_builder_inspect.py — scaffolded into tmp_path
     "cable-network", # test_unit_kb_butler.py — fabricated symbol reference string
     "demo",          # test_unit_check_field_authors.py — app tree built under tmp_path
 }

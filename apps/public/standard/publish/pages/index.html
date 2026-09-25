@@ -27,9 +27,6 @@
 .toolbar { display:flex; gap:8px; margin-bottom:16px; flex-wrap:wrap; animation:fadeDown 0.4s ease 0.1s both }
 .toolbar .eos-btn { padding:8px 16px; border-radius:8px; font-size:13px; font-weight:600; cursor:pointer; border:none; transition:transform 0.1s }
 .toolbar .eos-btn:active { transform:scale(0.95) }
-.eos-btn-build { background:var(--accent); color: var(--accent-ink) }
-.eos-btn-deploy { background:var(--success); color:#000 }
-.eos-btn-deploy:disabled { opacity:0.4; cursor:not-allowed }
 .toolbar .info { margin-left:auto; font-size:12px; color:var(--text-muted); align-self:center }
 /* Toolbar grouping: thin divider between clusters + an overflow for config */
 .tb-sep { width:1px; align-self:stretch; background:var(--border); margin:2px 2px }
@@ -53,7 +50,7 @@
 .preview-panel.open { display:block }
 .preview-header { display:flex; align-items:center; justify-content:space-between; padding:16px; border-bottom:1px solid var(--border) }
 .preview-header h3 { font-size:16px; font-weight:600; color:var(--text-heading) }
-.preview-close { font-size:20px; color:var(--text-muted); cursor:pointer; padding:4px 8px; border-radius:6px; background:none; border:none }
+.preview-close { font-size:22px; color:var(--text-muted); cursor:pointer; padding:4px 8px; border-radius:6px; background:none; border:none }
 .preview-close:hover { color:var(--text); background:color-mix(in srgb,var(--text) 5%,transparent) }
 .preview-body { padding:24px }
 .preview-body .article { line-height:1.7 }
@@ -66,7 +63,7 @@
 .preview-body .article blockquote { border-left:3px solid var(--accent); padding:8px 16px; margin:12px 0; color:var(--text-secondary); background:var(--bg-card); border-radius:0 8px 8px 0 }
 .preview-body .article img { max-width:100%; border-radius:8px }
 .preview-body .article table { width:100%; border-collapse:collapse; margin:12px 0 }
-.preview-body .article th { text-align:left; font-size:11px; color:var(--text-muted); text-transform:uppercase; padding:8px 8px; border-bottom:1px solid var(--border) }
+.preview-body .article th { text-align:left; font-size:11px; color:var(--text-muted); text-transform:uppercase; letter-spacing:var(--tracking-meta); padding:8px 8px; border-bottom:1px solid var(--border) }
 .preview-body .article td { padding:8px 8px; border-bottom:1px solid var(--border); font-size:13px }
 
 .overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,0.5); z-index:199; cursor:pointer; -webkit-tap-highlight-color:transparent }
@@ -141,13 +138,13 @@ if(window.EOS&&EOS.registerActions){EOS.registerActions({},[],{description:"Publ
 
   <div class="toolbar">
     <!-- Author -->
-    <a class="eos-btn btn-build" href="/publish/pages/writer.html" style="text-decoration:none;display:inline-flex;align-items:center;gap:4px">&#9998; New Post</a>
+    <a class="eos-btn eos-btn-primary" href="/publish/pages/writer.html" style="text-decoration:none;display:inline-flex;align-items:center;gap:4px">&#9998; New Post</a>
     <span class="tb-sep"></span>
     <!-- Publish: build → preview → deploy → visit -->
-    <button class="eos-btn btn-build" onclick="doBuild()">Build Site</button>
-    <button class="eos-btn btn-deploy" id="btn-preview-site" onclick="previewSite()" disabled style="background:var(--warning);color:#000">Preview Site</button>
-    <button class="eos-btn btn-deploy" id="btn-deploy" onclick="doDeploy()" disabled title="Deploy the built site to the host configured in Site settings">Deploy</button>
-    <a class="eos-btn btn-deploy" id="btn-visit" href="#" target="_blank" style="display:none;background:var(--accent);text-decoration:none;color: var(--accent-ink)">Visit Site &#8599;</a>
+    <button class="eos-btn eos-btn-primary" onclick="doBuild()">Build Site</button>
+    <button class="eos-btn eos-btn-warning" id="btn-preview-site" onclick="previewSite()" disabled>Preview Site</button>
+    <button class="eos-btn eos-btn-success" id="btn-deploy" onclick="doDeploy()" disabled title="Deploy the built site to the host configured in Site settings">Deploy</button>
+    <a class="eos-btn eos-btn-primary" id="btn-visit" href="#" target="_blank" style="display:none;text-decoration:none">Visit Site &#8599;</a>
     <span class="tb-sep"></span>
     <!-- Assets -->
     <button class="btn-settings" onclick="doRasterizeDiagrams()" title="Re-render stale SVG diagram sources to their shipped 2x PNGs">&#11041; Diagrams</button>
@@ -191,7 +188,7 @@ if(window.EOS&&EOS.registerActions){EOS.registerActions({},[],{description:"Publ
 <div class="eos-settings-panel" id="settings-panel">
   <div class="sp-head">
     <h3>Site Settings — <span id="sf-site-label">Site</span></h3>
-    <button class="preview-close" onclick="closeSettings()">&times;</button>
+    <button class="preview-close" onclick="closeSettings()" aria-label="Close settings">&times;</button>
   </div>
   <div class="sp-body">
     <div class="sf-group">
@@ -349,7 +346,7 @@ if(window.EOS&&EOS.registerActions){EOS.registerActions({},[],{description:"Publ
 <div class="preview-panel" id="preview-panel">
   <div class="preview-header">
     <h3 id="preview-title">Preview</h3>
-    <button class="preview-close" onclick="closePreview()">&times;</button>
+    <button class="preview-close" onclick="closePreview()" aria-label="Close preview">&times;</button>
   </div>
   <div class="preview-body" id="preview-body"></div>
 </div>

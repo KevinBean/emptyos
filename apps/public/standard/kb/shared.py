@@ -13,10 +13,24 @@ import datetime as _dt
 import re
 from pathlib import Path
 
+from emptyos.sdk.utils import slugify_unicode
 from emptyos.sdk.vault_model import coerce_date_or_none as _parse_iso_date
 
 
-KINDS = ("concept", "formula", "reference", "clause", "case", "lesson", "pattern", "doc", "moc")
+# `guide` joined 2026-09-20, after checking it against the other nine rather
+# than assuming: it is a PROCEDURE for carrying out a task, and the three it
+# could plausibly duplicate answer different questions —
+#   concept  what a thing IS          (## What it is / ## Don't / ## Sources)
+#   lesson   what people get WRONG    (## The lesson / ## The misconception)
+#   guide    how to CARRY OUT a task  (## Review checklist / ## Inputs the
+#                                      calculation needs before it can start)
+# `doc` and `moc` are excluded on mechanism, not topic: a doc composes other
+# notes through `paragraphs_json`, a moc is a navigation hub with no
+# substantive body. The vault already had a peer `guides/` folder beside
+# cases/concepts/formulas/lessons/patterns/references, so the corpus had grown
+# the tenth kind before the code admitted it.
+KINDS = ("concept", "formula", "reference", "clause", "case", "lesson", "pattern", "doc",
+         "moc", "guide")
 DEFAULT_DOCS_DIR = "30_Resources/EmptyOS/kb/docs"
 DEFAULT_NOTES_DIR = "30_Resources/EmptyOS/kb/notes"
 # Legacy flipbook-asset locations searched as fallbacks; kept here so the
@@ -152,9 +166,9 @@ _CITATION_RE = re.compile(
 
 
 def _slugify(s: str) -> str:
-    s = re.sub(r"[^\w\s-]", "", str(s).strip().lower())
-    s = re.sub(r"[\s_]+", "-", s).strip("-")
-    return s or "untitled"
+    # Unicode-preserving: KB titles are frequently Chinese, and the ASCII
+    # slugify() would collapse every one of them onto "untitled".
+    return slugify_unicode(s, fallback="untitled")
 
 
 def _slug_of(path: str) -> str:
@@ -312,6 +326,37 @@ def next_review_due(today: _dt.date, interval_days: int) -> _dt.date:
     """The `review_due` a check performed *today* should book. Pure so the
     stamping endpoint and its test agree by construction."""
     return today + _dt.timedelta(days=max(1, int(interval_days)))
+
+
+# ── General note freshness (kb-butler-no-freshness-scoring) ───────────────
+# `reference_freshness` above is scoped to `kind: reference` notes with an
+# explicit `review_due` commitment. Every OTHER kind (concept/formula/case/
+# lesson/pattern/doc/moc) has no such commitment field, so this is a coarser
+# "have you touched this note in a long while" signal from `updated`/`created`
+# frontmatter alone — the general sibling `kb.health()` was missing.
+DEFAULT_STALE_DAYS = 365
+
+
+def note_staleness(props: dict, today: _dt.date, threshold_days: int) -> dict:
+    """Classify one note's freshness from its own `updated`/`created`
+    frontmatter. Pure.
+
+    state:
+      ``stale``    — days since the anchor date >= threshold_days
+      ``fresh``    — days since the anchor date < threshold_days
+      ``unknown``  — neither `updated` nor `created` parses
+
+    Anchor is `updated` when present and parseable, else `created`. A note
+    with neither field is `unknown` rather than silently `fresh` — a stale
+    check that skips what it can't parse is the failure shape to avoid
+    (`feedback_skiplist_is_a_promise`).
+    """
+    anchor = _parse_iso_date(props.get("updated")) or _parse_iso_date(props.get("created"))
+    if anchor is None:
+        return {"state": "unknown", "days_since_touched": None, "anchor_date": ""}
+    days = (today - anchor).days
+    state = "stale" if days >= threshold_days else "fresh"
+    return {"state": state, "days_since_touched": days, "anchor_date": anchor.isoformat()}
 
 
 def _parse_citation(text: str) -> tuple[str, str | None, str | None] | None:

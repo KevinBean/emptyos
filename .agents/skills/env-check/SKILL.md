@@ -1,6 +1,6 @@
 ---
 name: env-check
-description: Probe the dev environment for the recurring Windows quirks documented in `.Codex/rules/environment.md` — Python version + 3.13 dep gaps, stdout encoding (cp1252 trap, tested by actually writing a non-ASCII char), and daemon reachability on :9000 + :9001. Use when the shell is behaving oddly, when a non-ASCII print just crashed, or when the user says "env-check" / "/env-check".
+description: Probe the dev environment for the recurring Windows quirks documented in `.claude/rules/environment.md` — Python version + 3.13 dep gaps, stdout encoding (cp1252 trap, tested by actually writing a non-ASCII char), and daemon reachability on :9000 + :9001. Use when the shell is behaving oddly, when a non-ASCII print just crashed, or when the user says "env-check" / "/env-check". NOT a git/daemon state check at session start (use preflight) and NOT a diagnosis of why the daemon died (use eos-wedge-postmortem).
 ---
 
 # Env Check
@@ -31,7 +31,7 @@ python -c "import phonemizer" 2>&1 | head -1
 where espeak-ng 2>&1 | head -1
 ```
 
-Known: `g2p_en` has no Python 3.13 wheel as of recent sessions; `espeak-ng` needs a separate Windows install. Apps depending on these (`apps/pronounce`, `apps/voice-assistant` listen path) gate imports behind try/except. Surface gaps; do NOT install.
+Known: `g2p_en` has no Python 3.13 wheel as of recent sessions; `espeak-ng` needs a separate Windows install. Apps depending on these (`apps/pronounce`, `apps/public/standard/voice-assistant` listen path) gate imports behind try/except. Surface gaps; do NOT install.
 
 ### 2. Encoding — actively write a non-ASCII char
 
@@ -41,7 +41,7 @@ Reading `sys.stdout.encoding` is the indirect test. The direct test is to *write
 python -c "import sys; print('encoding:', sys.stdout.encoding); print('é α 中 ✓')"
 ```
 
-Expected with the `.Codex/settings.json` `env.PYTHONIOENCODING=utf-8` hook active: `encoding: utf-8` followed by the four chars rendering cleanly. If you see `UnicodeEncodeError` or `cp1252` in the first line, the hook isn't taking effect — flag it and tell the user to write non-ASCII via `open(path, "w", encoding="utf-8")` rather than `print()` until the hook is fixed.
+Expected with the `.claude/settings.json` `env.PYTHONIOENCODING=utf-8` hook active: `encoding: utf-8` followed by the four chars rendering cleanly. If you see `UnicodeEncodeError` or `cp1252` in the first line, the hook isn't taking effect — flag it and tell the user to write non-ASCII via `open(path, "w", encoding="utf-8")` rather than `print()` until the hook is fixed.
 
 ### 3. Daemons
 
@@ -50,7 +50,7 @@ curl -s -o /dev/null -w "main :9000 = %{http_code}\n" http://localhost:9000/api/
 curl -s -o /dev/null -w "dogfood :9001 = %{http_code}\n" http://localhost:9001/api/health
 ```
 
-Anything other than 200 → report, don't act (`.Codex/rules/daemon-handling.md`). Connection refused on :9001 is fine if `dogfood-demo` is disabled in `emptyos.toml`.
+Anything other than 200 → report, don't act (`.claude/rules/daemon-handling.md`). Connection refused on :9001 is fine if `dogfood-demo` is disabled in `emptyos.toml`.
 
 ### 4. Sandbox pool (only if test-fix work is queued)
 

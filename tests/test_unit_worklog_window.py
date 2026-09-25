@@ -93,8 +93,8 @@ def test_range_wins_over_days_when_both_given(win):
 
 
 def test_employer_passes_through_both_forms(win):
-    assert win(None, _Req(employer="Elek"))["employer"] == "Elek"
-    assert win(None, _Req(employer="Elek", **{"from": "2024-01-01"}))["employer"] == "Elek"
+    assert win(None, _Req(employer="Acme"))["employer"] == "Acme"
+    assert win(None, _Req(employer="Acme", **{"from": "2024-01-01"}))["employer"] == "Acme"
 
 
 def test_rollup_cap_is_a_real_ceiling(win):

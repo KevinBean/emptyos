@@ -103,3 +103,8 @@ def project_task(text="task"):
 def settings_test_key():
     """Generate a namespaced test key safe to write/delete."""
     return f"test.{TEST_PREFIX}{uuid.uuid4().hex[:6]}"
+
+
+def autopilot_actor_id():
+    """Generate a TEST_PREFIX-tagged actor id for autopilot grant/budget tests."""
+    return _tag("autopilot-actor")

@@ -109,7 +109,7 @@
 }
 
 .eos-geocad-status.eos-geocad-saved {
-    color: #22c55e;
+    color: var(--success);
 }
 
 .eos-geocad-status.eos-geocad-dirty {

@@ -1,19 +1,23 @@
 ---
 name: eos-simplify
-description: Review *changed* code against EmptyOS conventions (CLAUDE.md patterns) for reuse, quality, and efficiency, then apply the fixes — the EmptyOS-aware cousin of the generic simplify skill. Use before committing a meaningful change, before eos-session-wrapup, or when the user says "simplify", "eos-simplify", "review", "clean up", or "check my work". Quality only — NOT a correctness-bug hunt (use /code-review) and NOT a UI/design pass (use eos-design-system-audit / eos-page-design-review).
+description: Review *changed* code against EmptyOS conventions (CLAUDE.md patterns) for reuse, quality, and efficiency, then apply the fixes — the EmptyOS-aware cousin of the generic simplify skill. Use before committing a meaningful change, before eos-session-wrapup, or when the user says "simplify", "eos-simplify", "clean up my changes", "review my changes", or "check my work". Bare "review" is NOT this skill — it names no surface, and eos-architecture-review, eos-page-design-review and /code-review all answer to it. Quality only — NOT a correctness-bug hunt (use /code-review) and NOT a UI/design pass (use eos-design-system-audit / eos-page-design-review).
 ---
 
 # EmptyOS Simplify
 
 Review **changed** code against EmptyOS conventions, then fix what you find. This is the EmptyOS-aware cousin of the generic `simplify` skill: same spirit (reuse, quality, efficiency), but tuned to the patterns in `CLAUDE.md` so the review catches things a generic pass would miss.
 
-Run this **before committing a meaningful change**, or when the user says "simplify", "review", or "clean up".
+Run this **before committing a meaningful change**, or when the user says "simplify", "clean up my changes", or "review my changes".
 
 ## When to Use
 
 - After building or modifying an app, plugin, or shared SDK/frontend code
 - Before `/eos-session-wrapup` or a commit
-- When the user says "simplify", "eos-simplify", "review", "clean this up", "check my work"
+- When the user says "simplify", "eos-simplify", "clean this up", "review my changes", "check my work"
+
+> **Bare "review" is NOT this skill**, in the body as well as the frontmatter — it names no
+> surface, and `eos-architecture-review`, `eos-page-design-review` and `/code-review` all
+> answer to it. Ask which, or route on what the user named.
 
 ## Scope
 
@@ -80,7 +84,7 @@ Then cross-check the changed page against `docs/FRONTEND-DESIGN-LANGUAGE.md` —
 
 ### 4. Mandatory UI patterns
 
-- Apps with `[provides.settings]` in manifest **must** have a ⚙ Settings button using `EOS_UI.settingsPanel` (CLAUDE.md §In-App Settings Panel). If missing, add it.
+- Apps with `[provides.settings]` in manifest **must** have a ⚙ Settings button using `EOS_UI.settingsPanel` (`.claude/rules/app-ui-patterns.md` §In-App Settings Panel). If missing, add it.
 - Apps with a `showDetail(id)` pattern **must** use `EOS_UI.hashRoute` so deep links work (CLAUDE.md §Deep-linking Detail Views). If missing, add it.
 - Every POST/GET list API added in this diff should have a UI surface — no backend-only features.
 
@@ -153,6 +157,10 @@ Fix violations before continuing.
 - Multi-app change → full `pytest tests/ --ignore=tests/personal -v`
 - New app → ensure `tests/test_sys_<new>.py` exists with 10+ cases
 - Fixed a bug → add a user-story test that would have caught it (`tests/test_user_stories.py`)
+- **Any test added in this diff → prove it fails without the fix.** A test that has only
+  ever been green is not evidence that it pins anything (`.claude/rules/audits.md` §Failure
+  mode 3). Invoke `.claude/skills/eos-mutation-verify` — **don't re-derive the loop by hand**;
+  this checklist item exists because a simplify pass caught exactly that omission.
 
 If tests fail, fix the code (not the test) unless the test itself encodes stale behaviour.
 

@@ -21,6 +21,7 @@ from emptyos.sdk.autopilot import (
     save_grant,
     set_budget,
     within_budget,
+    within_subscriber_quota,
 )
 
 ELIGIBLE_VERB = "task.add"  # in DEFAULT_ELIGIBLE_VERBS (the legacy floor)
@@ -101,6 +102,37 @@ class TestBudgetLedger:
             set_budget(data_dir, "", 10.0)
         with pytest.raises(ValueError):
             record_spend(data_dir, "", 1.0)
+
+
+# ─── SaaS per-subscriber quota (Phase E, CAD build plan) ────────────────
+# A subscriber id shares the exact same ledger as an actor id — same store,
+# same rollover — so within_subscriber_quota is just a semantically-named
+# read of within_budget. These tests pin that it stays a thin pass-through
+# (not a fork with its own, possibly-diverging logic).
+
+
+class TestSubscriberQuota:
+    SUBSCRIBER = "sub-firebase-uid-123"
+
+    def test_untracked_subscriber_is_within_quota(self, data_dir):
+        assert within_subscriber_quota(data_dir, "nobody") is True
+
+    def test_mirrors_within_budget_on_the_same_ledger(self, data_dir):
+        set_budget(data_dir, self.SUBSCRIBER, 10.0)
+        record_spend(data_dir, self.SUBSCRIBER, 4.0)
+        assert within_subscriber_quota(data_dir, self.SUBSCRIBER) is True
+        record_spend(data_dir, self.SUBSCRIBER, 6.0)  # now at the cap
+        assert within_subscriber_quota(data_dir, self.SUBSCRIBER) is False
+        # And within_budget on the same id agrees — same ledger, not a fork.
+        assert within_budget(data_dir, self.SUBSCRIBER) is False
+
+    def test_subscriber_and_actor_ledgers_are_the_same_namespace(self, data_dir):
+        # A subscriber id and an app-actor id both just live in "actors" —
+        # documented, not accidental, until a real divergence trigger fires.
+        set_budget(data_dir, self.SUBSCRIBER, 5.0)
+        set_budget(data_dir, ACTOR, 5.0)
+        ids = {s["actor_id"] for s in all_budgets(data_dir)}
+        assert {self.SUBSCRIBER, ACTOR} <= ids
 
 
 # ─── monthly window roll ────────────────────────────────────────────────

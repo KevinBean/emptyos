@@ -29,15 +29,22 @@
   .pro-kinds { display: flex; flex-direction: column; gap: 8px; }
   .pro-kind { display: flex; align-items: center; gap: 10px; font-size: 14px; }
   .pro-kind input { width: 16px; height: 16px; }
+  .pro-group { border-top: 1px solid var(--border); padding: 10px 0 4px; }
+  .pro-group:first-child { border-top: 0; padding-top: 0; }
+  /* 12px, matching .pro-card h3 directly above: FRONTEND-DESIGN-LANGUAGE.md
+     caps all-caps at <=12px — uppercase at 13px+ reads as shouting. */
+  .pro-group > summary { cursor: pointer; font-size: 12px; font-weight: 600;
+    color: var(--text-muted); letter-spacing: .06em; text-transform: uppercase;
+    padding: 4px 0; }
+  .pro-group > summary:hover { color: var(--text); }
+  .pro-group > .pro-kinds { padding: 8px 0 4px 4px; }
+  .pro-count { font-weight: 400; opacity: .7; }
   .pro-log { display: flex; flex-direction: column; gap: 0; }
   .pro-log-row { display: flex; align-items: baseline; gap: 10px; padding: 9px 0; border-bottom: 1px solid var(--border); font-size: 14px; }
   .pro-log-row:last-child { border-bottom: none; }
   .pro-log-row .when { color: var(--text-muted); font-size: 12px; white-space: nowrap; font-variant-numeric: tabular-nums; min-width: 92px; }
   .pro-log-row .txt { flex: 1; }
   .pro-log-row .reason { font-size: 11px; color: var(--text-muted); }
-  .pro-pill { font-size: 11px; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--border); white-space: nowrap; }
-  .pro-pill.ok { color: var(--success); border-color: color-mix(in srgb, var(--success) 50%, var(--border)); }
-  .pro-pill.no { color: var(--text-muted); }
   .pro-empty { color: var(--text-muted); font-size: 14px; line-height: 1.6; }
   .pro-switch { position: relative; width: 44px; height: 24px; flex: none; }
   .pro-switch input { opacity: 0; width: 0; height: 0; }
@@ -95,6 +102,7 @@
 
 <script src="/static/eos.js"></script>
 <script src="/static/eos-components.js"></script>
+<script src="/proactive/pages/proactive-groups.js"></script>
 <script>
 var POLICY = null;
 var BASE = (window.EOS && EOS.base) || '';
@@ -126,11 +134,23 @@ function renderKinds(p) {
   var kinds = p.kinds || {};
   var el = document.getElementById('kinds');
   var keys = Object.keys(cat);
-  if (!keys.length) { el.innerHTML = '<div class="pro-empty">No nudge kinds registered.</div>'; return; }
-  el.innerHTML = keys.map(function(k) {
+  if (!keys.length) { el.innerHTML = EOS_UI.emptyState({message: 'No nudge kinds registered.'}); return; }
+
+  function row(k) {
     var muted = !!(kinds[k] && kinds[k].mute);
     return '<label class="pro-kind"><input type="checkbox" data-kind="' + escAttr(k) + '"' +
            (muted ? '' : ' checked') + ' onchange="toggleKind(this)"> ' + esc(cat[k]) + '</label>';
+  }
+
+  // Groups come from the server so the taxonomy lives beside KINDS. The
+  // partition itself is PROACTIVE_GROUPS.group (a sibling .js so tests/js can
+  // reach it): every catalog key comes back exactly once, with anything the
+  // server didn't place in a trailing "Other". A toggle that vanishes is a
+  // nudge with no off switch — the exact defect this catalog exists to prevent.
+  el.innerHTML = PROACTIVE_GROUPS.group(cat, p._kinds_groups).map(function(g) {
+    return '<details class="pro-group" open><summary>' + esc(g.name) +
+           ' <span class="pro-count">' + g.members.length + '</span></summary>' +
+           '<div class="pro-kinds">' + g.members.map(row).join('') + '</div></details>';
   }).join('');
 }
 
@@ -173,13 +193,14 @@ function loadLog() {
     var rows = (d && d.log) || [];
     var el = document.getElementById('log');
     if (!rows.length) {
-      el.innerHTML = '<div class="pro-empty">No nudges yet. Turn the master on, then "Scan now" or "Send test nudge".</div>';
+      el.innerHTML = EOS_UI.emptyState({message: 'No nudges yet. Turn the master on, then "Scan now" or "Send test nudge".', actionLabel: 'Send test nudge', onAction: 'sendTest()'});
       return;
     }
     el.innerHTML = rows.map(function(r) {
       var ok = !!r.delivered;
-      var pill = ok ? '<span class="pro-pill ok">' + (r.channels || []).join(' · ') + '</span>'
-                    : '<span class="pro-pill no">' + esc(r.reason || 'suppressed') + '</span>';
+      // Delivered rows name their channels; suppressed rows name the gate reason.
+      var pill = ok ? EOS_UI.statusBadge((r.channels || []).join(' · ') || 'delivered', 'delivered', {delivered: 'pass'})
+                    : EOS_UI.statusBadge(r.reason || 'suppressed', '');
       return '<div class="pro-log-row"><span class="when">' + esc(fmtWhen(r.iso)) + '</span>' +
              '<span class="txt">' + esc(r.text || '') +
              ' <span class="reason">· ' + esc(r.kind || '') + '</span></span>' + pill + '</div>';

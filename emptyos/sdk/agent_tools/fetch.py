@@ -13,9 +13,9 @@ Everything else asks permission.
 
 from __future__ import annotations
 
-import ipaddress
 from urllib.parse import urlparse
 
+from emptyos.nethost import host_is_loopback_or_private
 from emptyos.sdk.agent_tools.base import Tool, ToolResult
 
 DEFAULT_TIMEOUT = 30
@@ -25,17 +25,12 @@ MAX_BODY_CHARS = 30_000
 def _is_local_host(host: str) -> bool:
     """True if `host` is loopback or a private-network IP. Conservative:
     unknown hostnames (anything not an IP or 'localhost') are treated as
-    non-local so they go through the permission gate."""
-    if not host:
-        return False
-    h = host.lower().strip("[]")  # strip IPv6 brackets
-    if h in ("localhost",):
-        return True
-    try:
-        ip = ipaddress.ip_address(h)
-    except ValueError:
-        return False
-    return ip.is_loopback or ip.is_private
+    non-local so they go through the permission gate.
+
+    Canonicalises first, so `0x7f.0.0.1` and `127.0.0.1.` are recognised as
+    the loopback they resolve to rather than mistaken for DNS names.
+    """
+    return host_is_loopback_or_private(host)
 
 
 class FetchTool(Tool):

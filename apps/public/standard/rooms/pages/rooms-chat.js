@@ -146,7 +146,7 @@ function renderMessages(messages) {
             var first = responders[0];
             var firstId = first ? first.id : null;
             headline = esc(name);
-            sub = responders.length + ' participant' + (responders.length !== 1 ? 's' : '') + ' · use <code style="background:var(--bg-elevated);padding:1px 5px;border-radius:3px;font-size:12px">@name</code> to direct your message';
+            sub = responders.length + ' participant' + (responders.length !== 1 ? 's' : '') + ' · use <code style="background:var(--bg-surface);padding:1px 5px;border-radius:4px;font-size:12px">@name</code> to direct your message';
             // Suggestion chips — quick-fire @-mentions for each responder.
             suggestionsHtml = '<div style="display:flex;gap:6px;justify-content:center;flex-wrap:wrap;margin-top:18px">' +
                 responders.slice(0, 4).map(function(p) {
@@ -168,7 +168,7 @@ function renderMessages(messages) {
                 '<div class="icon" style="font-size:48px;margin-bottom:18px">' +
                     (isGroup ? '👥' : '💬') +
                 '</div>' +
-                '<h2 style="font-size:20px;font-weight:600;margin-bottom:8px">' + headline + '</h2>' +
+                '<h2 style="font-size:22px;font-weight:600;margin-bottom:8px">' + headline + '</h2>' +
                 '<p style="color:var(--text-muted);font-size:13px;max-width:380px;margin:0 auto;line-height:1.5">' + sub + '</p>' +
                 suggestionsHtml +
             '</div>';
@@ -428,7 +428,7 @@ async function sendMessage() {
                 try { inputStr = JSON.stringify(tu.input || {}, null, 2); } catch(e) { inputStr = String(tu.input); }
                 var card = document.createElement('div');
                 card.id = 'tool-card-' + tid;
-                card.style.cssText = 'border:1px solid var(--border);border-radius:6px;padding:6px 8px;font-family:var(--font-mono,monospace);font-size:12px;background:var(--bg-elevated)';
+                card.style.cssText = 'border:1px solid var(--border);border-radius:6px;padding:6px 8px;font-family:var(--font-mono,monospace);font-size:12px;background:var(--bg-surface)';
                 card.innerHTML = '<div style="font-weight:600;color:var(--accent)">→ ' + esc(tu.name || 'tool') + '</div>' +
                                  '<details style="margin-top:2px"><summary style="cursor:pointer;color:var(--text-muted)">input</summary>' +
                                  '<pre style="margin:4px 0 0 0;white-space:pre-wrap;font-size:11px">' + esc(inputStr) + '</pre></details>';

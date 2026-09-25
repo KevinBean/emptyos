@@ -12,7 +12,8 @@ import types
 
 import pytest
 
-from emptyos.sdk.vault_library import VaultLibrary, _contained
+from emptyos.sdk.utils import contained_path as _contained
+from emptyos.sdk.vault_library import VaultLibrary
 
 
 @pytest.fixture

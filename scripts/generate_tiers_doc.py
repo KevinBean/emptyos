@@ -36,9 +36,30 @@ _TIER_ORDER = [
     "basic-engineer",
     "engineering",
     "portfolio",
+    "macro-studio",
     "labs",
     "demo",
     "dev",
+]
+
+# (product line, tiers it is made of, audience, notes). Rendered only for the
+# tiers actually present in the release.toml being read, so a filtered snapshot
+# emits a truthful map instead of advertising held distributions.
+_PRODUCT_MAP = [
+    ("EmptyOS Core", ["core"], "Kernel-level install", "Minimal runnable OS."),
+    ("EmptyOS Standard", ["standard"], "Default public/community install",
+     "The general-purpose OS layer other packages build from."),
+    ("EmptyOS Plus", ["plus"], "Paid / premium users",
+     "Research + intelligence surfaces held out of the free public release."),
+    ("EnglishOS", ["english-learning", "englishos-cloud"], "English learners",
+     "Local learning bundle plus hosted per-learner cloud daemon."),
+    ("Coding Agent", ["plekto"], "Coding-agent users",
+     "Branded as Plekto: persistent memory, project workspaces, multi-agent rooms."),
+    ("Engineer", ["basic-engineer", "engineering", "portfolio"],
+     "Engineering users/builders",
+     "Calculator workbench, full power-systems bundle, and live portfolio distribution."),
+    ("Macro Studio", ["macro-studio"], "Windows macro builders",
+     "Offline desktop automation product built from products/macro-studio."),
 ]
 
 _KIND_ORDER = ["platform", "distribution", "operational"]
@@ -70,11 +91,22 @@ def _dash(value) -> str:
     return str(value) if value else "-"
 
 
-def render() -> str:
+def render(public_only: bool = False) -> str:
     rel = doc_data.scan_release()
     tiers = rel["tiers"]
     platforms = rel["platforms"]
     targets = rel["targets"]
+
+    if public_only:
+        # Mirror filter_release_toml: a tier marked private is not for the
+        # public snapshot. Run inside the snapshot this is a near no-op (the
+        # release already pruned release.toml), which is the point — the doc
+        # and its source agree instead of the doc being dropped wholesale.
+        # Held from v0.4.5 to v0.5.0 because the doc shipped while nothing
+        # regenerated it; this is the mode that lets it ship truthfully.
+        private = {n for n, t in tiers.items() if t.get("private")}
+        tiers = {n: t for n, t in tiers.items() if n not in private}
+        targets = {n: t for n, t in targets.items() if t.get("tier") not in private}
 
     ordered = _ordered(tiers)
     L: list[str] = [
@@ -93,28 +125,56 @@ def render() -> str:
         "",
         "## At a glance",
         "",
-        "| Tier | Name | Kind | Audience | Scope | Extends | Apps | Plugins | Skills | Purpose |",
-        "|---|---|---|---|---|---|---|---|---|---|",
+        "| Tier | Name | Kind | Audience | Scope | Delivery | Extends | Apps | Plugins | Skills | Purpose |",
+        "|---|---|---|---|---|---|---|---|---|---|---|",
     ]
     for name in ordered:
         t = tiers[name]
         L.append(
             f"| **{name}** | {_dash(t.get('display_name'))} | {_kind_of(t)} | "
-            f"{_dash(t.get('audience'))} | {_scope(t)} | {_dash(t['extends'])} | {len(t['apps'])} | "
+            f"{_dash(t.get('audience'))} | {_scope(t)} | {_dash(t.get('delivery'))} | "
+            f"{_dash(t['extends'])} | {len(t['apps'])} | "
             f"{len(t['plugins'])} | {len(t['skills'])} | {t['description'] or '—'} |"
         )
+    L.append("")
+    # Derived, never written down: a literal here would be a number sitting
+    # under a generated table that contradicts it, and `--check` could never
+    # notice because both sides come from the same string. The public build
+    # renders a filtered subset, where the count is genuinely different.
+    n_none = sum(
+        1 for t in tiers.values() if str(t.get("delivery", "")).startswith("none")
+    )
+    noun = "tier" if n_none == 1 else "tiers"
+    verb = "exists" if n_none == 1 else "exist"
+    pron = "It" if n_none == 1 else "They"
+    L.append(
+        "**Delivery** is how a tier actually reaches a user — a `[targets.*]` "
+        f"entry, a `products/*/product.toml`, a Dockerfile, or nothing. {n_none} "
+        f"{noun} here {'reads' if n_none == 1 else 'read'} `none`: {pron} "
+        f"{verb} as a folder invariant for "
+        "`check-tier-folder.py` and as documentation, and package only on demand "
+        "via `package-release.py <tier>`. That is a real state, not a defect — "
+        "but before this column you could only discover it by grepping the repo, "
+        "which is how a tier stays under-used without anyone noticing."
+    )
     L.append("")
 
     L.append("## Product Map")
     L.append("")
     L.append("| Product line | Tier(s) | Audience | Notes |")
     L.append("|---|---|---|---|")
-    L.append("| EmptyOS Core | `core` | Kernel-level install | Minimal runnable OS. |")
-    L.append("| EmptyOS Standard | `standard` | Default public/community install | The general-purpose OS layer other packages build from. |")
-    L.append("| EmptyOS Plus | `plus` | Paid / premium users | Research + intelligence surfaces held out of the free public release. |")
-    L.append("| EnglishOS | `english-learning`, `englishos-cloud` | English learners | Local learning bundle plus hosted per-learner cloud daemon. |")
-    L.append("| Coding Agent | `plekto` | Coding-agent users | Branded as Plekto: persistent memory, project workspaces, multi-agent rooms. |")
-    L.append("| Engineer | `basic-engineer`, `engineering`, `portfolio` | Engineering users/builders | Calculator workbench, full power-systems bundle, and live portfolio distribution. |")
+    for line, names, audience, notes in _PRODUCT_MAP:
+        # Data-driven so the map cannot name a tier this doc does not contain.
+        # These rows used to be hardcoded strings, which meant a public build
+        # would have advertised the paid/branded lines by name even with their
+        # tiers filtered out — the same "held thing named by a shipped file"
+        # shape that leaked the tier inventory in v0.4.5-v0.5.0.
+        present = [n for n in names if n in tiers]
+        if not present:
+            continue
+        L.append(
+            f"| {line} | {', '.join('`' + n + '`' for n in present)} | {audience} | {notes} |"
+        )
     L.append("")
 
     # Per-tier detail.
@@ -190,8 +250,18 @@ def render() -> str:
 def main() -> int:
     ap = argparse.ArgumentParser(description="Generate docs/TIERS.md")
     ap.add_argument("--check", action="store_true", help="exit 1 if TIERS.md is out of date")
-    ap.parse_args()
-    content = render()
+    ap.add_argument(
+        "--public-only",
+        action="store_true",
+        help=(
+            "drop private tiers + their targets (mirrors filter_release_toml, NOT "
+            "PUBLIC_TIERS — a non-private tier can still ship nothing; the release "
+            "runs this only after prune_release_toml_to_snapshot has already "
+            "pruned release.toml to what ships)"
+        ),
+    )
+    args = ap.parse_args()
+    content = render(public_only=args.public_only)
     if "--check" in sys.argv:
         old = OUT.read_text(encoding="utf-8") if OUT.exists() else ""
         if old.strip() != content.strip():

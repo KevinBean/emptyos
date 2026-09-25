@@ -335,6 +335,23 @@ var EOS_UI = {
 
     // Escape for an HTML ATTRIBUTE value — encodes & " ' < (mirror of window.escAttr).
     escAttr: function(s) { return (s == null ? '' : String(s)).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/'/g, '&#39;').replace(/</g, '&lt;'); },
+    // A JS value as an argument inside an onclick=""/oninput="" attribute.
+    //
+    //   '<button onclick="open(' + EOS_UI.jsArg(id) + ')">'
+    //
+    // JSON.stringify alone is the trap: it produces a correct JS *literal*, but
+    // that literal contains real double quotes, which close the attribute early.
+    // The handler is then a syntax error and never binds — the control renders
+    // perfectly and does nothing when clicked, with no console error. Four such
+    // dead handlers shipped across three apps before this helper existed.
+    // Escaping without stringifying is the mirror bug: it survives the parser
+    // but an apostrophe or a non-string breaks the JS. Both steps, this order.
+    //
+    // NOT for a sink that escapes for you. `entityCard({onClick})` runs escAttr
+    // over the whole expression string, so pass a bare JSON.stringify there —
+    // jsArg would escape twice and render &amp;quot; where the value belonged.
+    // Use jsArg only where YOU are writing the onclick="..." characters.
+    jsArg: function(v) { return EOS_UI.escAttr(JSON.stringify(v === undefined ? null : v)); },
     // Render a SandboxedWrite diff into themed HTML. `lines` is the
     // diff_lines payload [{kind, text}] where kind ∈ add|del|ctx|hunk. Returns a
     // self-contained .eos-diff scroll box (CSS in eos-components.css). Shared by
@@ -460,6 +477,78 @@ var EOS_UI = {
             .trim();
     },
 
+    // ── Speech synthesis ──────────────────────────────────
+    // One owner slot per caller. speechSynthesis.cancel() clears the WHOLE queue
+    // — the platform gives no per-utterance cancel — so the ownership slot cannot
+    // stop a cross-owner clobber; what it stops is the *gratuitous* one, where a
+    // caller with nothing outstanding cancels someone else's in-flight speech and
+    // silently fires that owner's end-of-utterance side effects.
+    //
+    // Deliberately NOT a consumer: eos-export-shim.js's _exportSpeak. That is a
+    // capability provider (promise-returning, its own offline error taxonomy) that
+    // must stand alone in an export bundle — a different thing wearing similar code.
+    _speechOwners: {},
+
+    // opts: {owner, rate, lang, voiceHint, maxChars, strip, onStart, onEnd(cancelled), onError}
+    // Returns false when the browser can't speak or the text is empty.
+    speakText: function(text, opts) {
+        opts = opts || {};
+        var owner = opts.owner || 'default';
+        if (!window.speechSynthesis || !window.SpeechSynthesisUtterance) return false;
+        var clean = opts.strip === false
+            ? String(text == null ? '' : text).trim()
+            : EOS_UI.stripMarkdownForTts(text);
+        if (!clean) return false;
+        EOS_UI.cancelSpeech(owner);
+        var u = new SpeechSynthesisUtterance(clean.substring(0, opts.maxChars || 3000));
+        if (opts.rate != null) u.rate = opts.rate;
+        if (opts.lang) u.lang = opts.lang;
+        var voice = EOS_UI._pickVoice(opts.voiceHint);
+        if (voice) u.voice = voice;
+        var slot = {utterance: u, cancelled: false};
+        EOS_UI._speechOwners[owner] = slot;
+        u.onstart = function() { if (opts.onStart) { try { opts.onStart(); } catch (e) {} } };
+        // onEnd always fires so an owner can restore its own visual state; the
+        // `cancelled` flag is what lets it skip auto-advance on a manual stop.
+        u.onend = function() {
+            if (EOS_UI._speechOwners[owner] === slot) EOS_UI._speechOwners[owner] = null;
+            if (opts.onEnd) { try { opts.onEnd(slot.cancelled); } catch (e) {} }
+        };
+        u.onerror = function() {
+            if (EOS_UI._speechOwners[owner] === slot) EOS_UI._speechOwners[owner] = null;
+            if (opts.onError) { try { opts.onError(); } catch (e) {} }
+            else if (opts.onEnd) { try { opts.onEnd(slot.cancelled); } catch (e) {} }
+        };
+        window.speechSynthesis.speak(u);
+        return true;
+    },
+
+    // Cancels only when THIS owner has an utterance outstanding. Returns whether
+    // it cancelled, so a caller can decide whether its stop was a real stop.
+    cancelSpeech: function(owner) {
+        owner = owner || 'default';
+        var slot = EOS_UI._speechOwners[owner];
+        if (!slot) return false;
+        slot.cancelled = true;
+        EOS_UI._speechOwners[owner] = null;
+        try { window.speechSynthesis.cancel(); } catch (e) {}
+        return true;
+    },
+
+    isSpeaking: function(owner) { return !!EOS_UI._speechOwners[owner || 'default']; },
+
+    _pickVoice: function(hint) {
+        if (!hint || !window.speechSynthesis) return null;
+        var voices = window.speechSynthesis.getVoices() || [];
+        var h = String(hint).toLowerCase();
+        for (var i = 0; i < voices.length; i++) {
+            var v = voices[i];
+            if ((v.name || '').toLowerCase().indexOf(h) >= 0) return v;
+            if ((v.lang || '').toLowerCase().indexOf(h) >= 0) return v;
+        }
+        return null;
+    },
+
     // Tab switching — works with .eos-tab buttons and .eos-tab-content panels.
     // Usage 1 (array): EOS_UI.switchTab(['log','history','calendar'], 'history')
     // Usage 2 (auto):  EOS_UI.switchTab(name) — finds tabs by data-tab attribute
@@ -489,12 +578,52 @@ var EOS_UI = {
     // Make .eos-tab strips keyboard-navigable fleet-wide: role=tab + tabindex=0
     // so the global Enter/Space delegate in eos.js activates them. Idempotent;
     // called on DOMContentLoaded and after every switchTab (covers dynamic tabs).
+    //
+    // Second pass: a one-of-N button row that does NOT use .eos-tab opts in by
+    // marking its container role="tablist" (switches panels) or role="radiogroup"
+    // (picks a value) — one attribute in the app, and the child roles plus the
+    // selected state are maintained here. That matters because each such app has
+    // its own switcher (switchTab / showTab / setMode / selectPrim / setFilter),
+    // so there is no single call site to hook; a MutationObserver on the
+    // container's class changes keeps aria state honest whatever the app does.
+    // Found by the rendered affordance audit (13 strips, 2026-09-03).
     _initTabA11y: function() {
         document.querySelectorAll('.eos-tab').forEach(function(el) {
             if (el.getAttribute('role') !== 'tab') el.setAttribute('role', 'tab');
             if (!el.hasAttribute('tabindex')) el.setAttribute('tabindex', '0');
             el.setAttribute('aria-selected', el.classList.contains('active') ? 'true' : 'false');
         });
+        document.querySelectorAll('[role="tablist"],[role="radiogroup"]').forEach(function(box) {
+            EOS_UI._syncStrip(box);
+            if (box.__eosStripObs || typeof MutationObserver === 'undefined') return;
+            // attributeFilter is class-only, so writing aria-* below cannot
+            // re-trigger this observer.
+            box.__eosStripObs = new MutationObserver(function() { EOS_UI._syncStrip(box); });
+            box.__eosStripObs.observe(box, {
+                attributes: true, attributeFilter: ['class'], subtree: true, childList: true,
+            });
+        });
+    },
+
+    //: Active-state class names used across the tree. `selected` is 3d-studio's
+    //: primitive picker; `current` appears on a few nav strips.
+    _STRIP_ACTIVE_RE: /(^|[\s_-])(active|selected|current|is-active)([\s_-]|$)/,
+
+    _syncStrip: function(box) {
+        var isTabs = box.getAttribute('role') === 'tablist';
+        var childRole = isTabs ? 'tab' : 'radio';
+        var stateAttr = isTabs ? 'aria-selected' : 'aria-checked';
+        for (var i = 0; i < box.children.length; i++) {
+            var k = box.children[i];
+            // A control here is a <button> or anything wired with onclick — the
+            // div-based strips (cockpit, bookmarks) are the latter.
+            if (k.tagName !== 'BUTTON' && !k.hasAttribute('onclick') &&
+                k.getAttribute('role') !== 'button') continue;
+            if (k.getAttribute('role') !== childRole) k.setAttribute('role', childRole);
+            if (!k.hasAttribute('tabindex')) k.setAttribute('tabindex', '0');
+            k.setAttribute(stateAttr,
+                EOS_UI._STRIP_ACTIVE_RE.test(k.className || '') ? 'true' : 'false');
+        }
     },
 
     // SVG Sparkline — inline trend chart
@@ -534,59 +663,180 @@ var EOS_UI = {
         el.innerHTML = svg;
     },
 
+    // Label/value rows under a result readout — the "how was this computed"
+    // strip every engineering calculator carries beneath its headline number.
+    // rows: [[label, value], ...]. Values are computed figures, not markup, so
+    // both halves are escaped.
+    //   EOS_UI.metaRows('#kp-meta', [['Stability factor K', '2.0'], ...])
+    metaRows: function(mount, rows) {
+        var el = typeof mount === 'string' ? document.querySelector(mount) : mount;
+        if (!el) return;
+        // The helper owns the class so a caller with bare markup is still styled;
+        // pages also carry it so the strip has its layout before the first render.
+        el.classList.add('eos-meta');
+        el.innerHTML = (rows || []).map(function(row) {
+            return '<div><span>' + EOS_UI.esc(row[0]) + '</span><code>' +
+                   EOS_UI.esc(row[1]) + '</code></div>';
+        }).join('');
+    },
+
+    // Caveats a calculation wants the engineer to read before trusting the
+    // number — a derating that was applied, an input outside a standard's
+    // validated range. Rendered as amber notes, one per string.
+    //
+    // Sibling of `warningBanner`, deliberately NOT the same thing: that one is a
+    // single iconed strip placed ABOVE content (a feature-disabled notice, a
+    // public-mode gate) and prints in --warning. This is a LIST of caveats below
+    // a computed result, in --text, because an engineer reads three stacked
+    // sentences here and amber-on-amber at that length is hard going. Reach for
+    // warningBanner when there is one notice and it gates the surface.
+    //   EOS_UI.warnList('#kp-warn', result.warnings)
+    warnList: function(mount, warnings) {
+        var el = typeof mount === 'string' ? document.querySelector(mount) : mount;
+        if (!el) return;
+        el.innerHTML = (warnings || []).map(function(w) {
+            return '<div class="eos-warn">' + EOS_UI.esc(w) + '</div>';
+        }).join('');
+    },
+
     // SVG line chart with labeled axes — dependency-free (no Plotly/Chart.js).
-    // Built for parameter-sweep curves (BaseApp.sweep_method output maps 1:1).
-    // Usage: EOS_UI.lineChart({mount:'#c', x:[10,20,30], y:[820,760,690],
-    //                          x_label:'Ambient (°C)', y_label:'Ampacity (A)',
-    //                          title:'Sensitivity', color:'var(--accent)'})
-    // y entries may be null (failed sweep points) — the line breaks across gaps.
+    // Built for parameter-sweep curves (BaseApp.sweep_method output maps 1:1),
+    // then generalised 2026-08-28 to also carry the two hand-rolled engineering
+    // charts that had grown beside it (relay-coordination's log-log TCC plot and
+    // transformer-rating's linear thermal transient). Log axes, multiple named
+    // series and horizontal reference lines were the visible three; absorbing
+    // them also required decade-aware tick FORMATTING (a log axis labelled by
+    // span precision reads "1000.000 / 1.000 / 0.010") and log-axis x
+    // GRIDLINES, without either of which the TCC plot is unreadable, plus
+    // opt-in per-point markers. Five, not three — recorded because "only three
+    // things" read as a smaller change than it was.
+    //
+    // Known edge: a log axis spanning less than one decade contains no power of
+    // ten, so `axisTicks` falls back to endpoints + midpoint rather than
+    // rendering bare rules (an IDMT curve at TMS 0.5 spans 0.9 of a decade).
+    //
+    // Empty data renders "No data to plot." Both hand-rolled predecessors
+    // cleared the mount instead; this is a deliberate change, called out because
+    // an absorbed helper quietly altering a caller's empty state is the kind of
+    // thing a diff does not show.
+    //
+    // Single series (legacy shape — same options, same gap-breaking, same
+    // per-point markers; the stroke is 0.2px thicker than before because one
+    // weight now serves every caller):
+    //   EOS_UI.lineChart({mount:'#c', x:[10,20,30], y:[820,760,690],
+    //                     x_label:'Ambient (°C)', y_label:'Ampacity (A)',
+    //                     title:'Sensitivity', color:'var(--accent)'})
+    //   y entries may be null (failed sweep points) — the line breaks across gaps.
+    //
+    // Multiple series + log axes + reference lines:
+    //   EOS_UI.lineChart({mount:'#c', x_scale:'log', y_scale:'log',
+    //     series:[{label:'Primary', color:'var(--accent)', points:[[I,t],...]}],
+    //     ref_lines:[{y:131, label:'Steady state', dash:'5 4'}]})
+    //
+    // A log axis grids and ticks by decade; a linear one by min/mid/max. Points
+    // that a scale can't represent (<= 0 on a log axis, null, non-finite) break
+    // the line rather than distorting the domain. A legend renders below the SVG
+    // whenever more than one thing on the plot is worth naming.
     lineChart: function(opts) {
         var el = typeof opts.mount === 'string' ? document.querySelector(opts.mount) : opts.mount;
         if (!el) return;
-        var xs = opts.x || [], ys = opts.y || [];
-        var pairs = [];
-        for (var i = 0; i < xs.length; i++) {
-            var yv = ys[i];
-            if (typeof xs[i] === 'number' && typeof yv === 'number' && isFinite(yv)) {
-                pairs.push([xs[i], yv]);
-            }
+
+        var xLog = opts.x_scale === 'log', yLog = opts.y_scale === 'log';
+        var refs = (opts.ref_lines || []).filter(function(r) {
+            return r && typeof r.y === 'number' && isFinite(r.y) && (!yLog || r.y > 0);
+        });
+
+        // Normalise the legacy {x, y} pair into the general series shape. Only the
+        // legacy path draws a marker per point — an explicit series is usually a
+        // dense computed curve where 40+ circles are noise, so it opts in.
+        var series = opts.series;
+        if (!series) {
+            var xs = opts.x || [], ys = opts.y || [], pts = [];
+            for (var i = 0; i < Math.max(xs.length, ys.length); i++) pts.push([xs[i], ys[i]]);
+            series = [{points: pts, color: opts.color, markers: true}];
         }
-        if (pairs.length < 1) {
+        series = series.filter(function(s) { return s && s.points && s.points.length; });
+
+        var ok = function(p) {
+            return p && typeof p[0] === 'number' && typeof p[1] === 'number' &&
+                   isFinite(p[0]) && isFinite(p[1]) &&
+                   (!xLog || p[0] > 0) && (!yLog || p[1] > 0);
+        };
+        var tx = function(v) { return xLog ? Math.log10(v) : v; };
+        var ty = function(v) { return yLog ? Math.log10(v) : v; };
+
+        var valid = [];
+        series.forEach(function(s) { s.points.forEach(function(p) { if (ok(p)) valid.push(p); }); });
+        if (!valid.length) {
             el.innerHTML = '<div style="color:var(--text-muted);font-size:12.5px;padding:12px">No data to plot.</div>';
             return;
         }
+
         var w = opts.width || el.offsetWidth || 520;
         if (w < 200) w = 520;
         var h = opts.height || 260;
-        var color = opts.color || 'var(--accent)';
+        // padB is unconditional: every call site passes x_label, so a `? 40 : 30`
+        // ternary was dead configurability whose 30-branch nothing rendered and
+        // no test could reach.
         var padL = 56, padR = 16, padT = opts.title ? 28 : 12, padB = 40;
         var plotW = w - padL - padR, plotH = h - padT - padB;
 
-        var xMin = Math.min.apply(null, pairs.map(function(p){return p[0];}));
-        var xMax = Math.max.apply(null, pairs.map(function(p){return p[0];}));
-        var yMin = Math.min.apply(null, pairs.map(function(p){return p[1];}));
-        var yMax = Math.max.apply(null, pairs.map(function(p){return p[1];}));
+        var txs = valid.map(function(p) { return tx(p[0]); });
+        var tys = valid.map(function(p) { return ty(p[1]); });
+        refs.forEach(function(r) { tys.push(ty(r.y)); });
+        var xMin = Math.min.apply(null, txs), xMax = Math.max.apply(null, txs);
+        var yMin = Math.min.apply(null, tys), yMax = Math.max.apply(null, tys);
         var xRange = (xMax - xMin) || 1, yRange = (yMax - yMin) || 1;
-        // Pad the y domain 5% so the curve isn't flush to the frame.
+        // Pad the y domain 5% so the curve (and any reference line) isn't flush to
+        // the frame. 5% is the value this helper has always used; the tick logic
+        // below no longer depends on it, so it is purely cosmetic.
         yMin -= yRange * 0.05; yMax += yRange * 0.05; yRange = yMax - yMin;
 
-        var sx = function(v){ return padL + ((v - xMin) / xRange) * plotW; };
-        var sy = function(v){ return padT + plotH - ((v - yMin) / yRange) * plotH; };
-        var fmt = function(v){
-            var a = Math.abs(v);
-            if (a !== 0 && (a < 0.01 || a >= 100000)) return v.toExponential(1);
-            return (Math.round(v * 100) / 100).toString();
-        };
+        var sx = function(v) { return padL + ((tx(v) - xMin) / xRange) * plotW; };
+        var sy = function(v) { return padT + plotH - ((ty(v) - yMin) / yRange) * plotH; };
 
-        // Build polyline segments, breaking on null/non-finite gaps.
-        var segs = [], cur = [];
-        for (var j = 0; j < xs.length; j++) {
-            var yj = ys[j];
-            if (typeof xs[j] === 'number' && typeof yj === 'number' && isFinite(yj)) {
-                cur.push(sx(xs[j]).toFixed(1) + ',' + sy(yj).toFixed(1));
-            } else if (cur.length) { segs.push(cur); cur = []; }
-        }
-        if (cur.length) segs.push(cur);
+        // Tick precision follows the domain's span, so a 44–110 °C axis reads
+        // "44 / 77 / 110" and a 0.2–0.9 one still resolves.
+        var fmtFor = function(span) {
+            return function(v) {
+                var a = Math.abs(v);
+                if (a !== 0 && (a < 0.01 || a >= 100000)) return v.toExponential(1);
+                var dp = span >= 50 ? 0 : span >= 5 ? 1 : span >= 0.5 ? 2 : 3;
+                // A tick that lands on a whole number reads as one — "10", not "10.0".
+                var s = dp ? v.toFixed(dp).replace(/\.?0+$/, '') : v.toFixed(0);
+                // ...and a tick just below zero reads "0", never "-0".
+                return s === '-0' ? '0' : s;
+            };
+        };
+        // A log tick is normally an exact power of ten, where a span-derived
+        // precision is meaningless — take it from the decade instead, so the axis
+        // reads "1000 / 1 / 0.01" rather than "1000.000 / 1.000 / 0.010". Decide by
+        // the EXPONENT, not the value: Math.pow(10,-4) is 0.00009999999999999999,
+        // so a magnitude test flips format style in the middle of an axis.
+        var logFmt = function(v) {
+            var e = Math.log10(v), d = Math.round(e);
+            if (Math.abs(e - d) < 1e-9) {
+                if (d >= 6 || d <= -4) return v.toExponential(0);
+                return d >= 0 ? v.toFixed(0) : v.toFixed(-d);
+            }
+            // Sub-decade fallback ticks are not powers of ten; show 2 significant figures.
+            if (v >= 100000 || v < 0.001) return v.toExponential(1);
+            return v >= 100 ? v.toFixed(0) : v >= 10 ? v.toFixed(1) : v.toPrecision(2);
+        };
+        var xFmt = xLog ? logFmt : fmtFor(xMax - xMin);
+        var yFmt = yLog ? logFmt : fmtFor(yMax - yMin);
+        // Ticks for one axis, given its domain in TRANSFORMED space.
+        // A log axis ticks by decade — but a domain narrower than one decade can
+        // contain no power of ten at all (an IDMT curve at TMS 0.5 spans 0.9 of a
+        // decade), and an axis with zero numbers on it is worse than an unrounded
+        // one. Fall back to endpoints + midpoint rather than rendering bare rules.
+        var axisTicks = function(lo, hi, isLog) {
+            if (!isLog) return [lo, (lo + hi) / 2, hi];
+            var out = [];
+            for (var d = Math.ceil(lo); d <= Math.floor(hi); d++) out.push(Math.pow(10, d));
+            return out.length ? out
+                              : [Math.pow(10, lo), Math.pow(10, (lo + hi) / 2), Math.pow(10, hi)];
+        };
 
         var muted = 'var(--text-muted)', border = 'var(--border)';
         var svg = '<svg width="100%" height="' + h + '" viewBox="0 0 ' + w + ' ' + h + '" preserveAspectRatio="xMidYMid meet" role="img">';
@@ -596,16 +846,20 @@ var EOS_UI = {
         // Axes
         svg += '<line x1="' + padL + '" y1="' + (padT + plotH) + '" x2="' + (padL + plotW) + '" y2="' + (padT + plotH) + '" stroke="' + border + '" stroke-width="1"/>';
         svg += '<line x1="' + padL + '" y1="' + padT + '" x2="' + padL + '" y2="' + (padT + plotH) + '" stroke="' + border + '" stroke-width="1"/>';
-        // y ticks (min, mid, max) with gridlines
-        [yMin, (yMin + yMax) / 2, yMax].forEach(function(tv) {
-            var ty = sy(tv);
-            svg += '<line x1="' + padL + '" y1="' + ty.toFixed(1) + '" x2="' + (padL + plotW) + '" y2="' + ty.toFixed(1) + '" stroke="' + border + '" stroke-width="0.5" opacity="0.4"/>';
-            svg += '<text x="' + (padL - 6) + '" y="' + (ty + 3).toFixed(1) + '" fill="' + muted + '" font-size="10" text-anchor="end">' + fmt(tv) + '</text>';
+
+        axisTicks(yMin, yMax, yLog).forEach(function(tv) {
+            var y = sy(tv);
+            svg += '<line x1="' + padL + '" y1="' + y.toFixed(1) + '" x2="' + (padL + plotW) + '" y2="' + y.toFixed(1) + '" stroke="' + border + '" stroke-width="0.5" opacity="0.4"/>';
+            svg += '<text class="eos-tick eos-tick-y" x="' + (padL - 6) + '" y="' + (y + 3).toFixed(1) + '" fill="' + muted + '" font-size="10" text-anchor="end">' + yFmt(tv) + '</text>';
         });
-        // x ticks (min, mid, max)
-        [xMin, (xMin + xMax) / 2, xMax].forEach(function(tv) {
-            var tx = sx(tv);
-            svg += '<text x="' + tx.toFixed(1) + '" y="' + (padT + plotH + 16) + '" fill="' + muted + '" font-size="10" text-anchor="middle">' + fmt(tv) + '</text>';
+        // A log x-axis grids as well as labels; a linear one only labels, so the
+        // plot isn't boxed by a grid in both directions.
+        axisTicks(xMin, xMax, xLog).forEach(function(tv) {
+            var x = sx(tv);
+            if (xLog) {
+                svg += '<line x1="' + x.toFixed(1) + '" y1="' + padT + '" x2="' + x.toFixed(1) + '" y2="' + (padT + plotH) + '" stroke="' + border + '" stroke-width="0.5" opacity="0.35"/>';
+            }
+            svg += '<text class="eos-tick eos-tick-x" x="' + x.toFixed(1) + '" y="' + (padT + plotH + 16) + '" fill="' + muted + '" font-size="10" text-anchor="middle">' + xFmt(tv) + '</text>';
         });
         // Axis labels
         if (opts.x_label) {
@@ -615,15 +869,53 @@ var EOS_UI = {
             var ly = padT + plotH / 2;
             svg += '<text x="12" y="' + ly + '" fill="' + muted + '" font-size="11" text-anchor="middle" transform="rotate(-90 12 ' + ly + ')">' + EOS_UI.esc(opts.y_label) + '</text>';
         }
-        // Series
-        segs.forEach(function(seg) {
-            svg += '<polyline points="' + seg.join(' ') + '" fill="none" stroke="' + color + '" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>';
+        // Reference lines are emitted before the series so the data draws over them.
+        refs.forEach(function(r) {
+            var y = sy(r.y).toFixed(1);
+            svg += '<line x1="' + padL + '" y1="' + y + '" x2="' + (padL + plotW) + '" y2="' + y +
+                   '" stroke="' + EOS_UI.escAttr(r.color || muted) + '" stroke-width="1.4" stroke-dasharray="' +
+                   EOS_UI.escAttr(r.dash || '5 4') + '" opacity="0.85"/>';
         });
-        pairs.forEach(function(p) {
-            svg += '<circle cx="' + sx(p[0]).toFixed(1) + '" cy="' + sy(p[1]).toFixed(1) + '" r="2.5" fill="' + color + '"/>';
+        // Series — the polyline breaks wherever a point can't be represented.
+        series.forEach(function(s) {
+            var color = EOS_UI.escAttr(s.color || opts.color || 'var(--accent)');
+            var segs = [], cur = [];
+            s.points.forEach(function(p) {
+                if (ok(p)) cur.push(sx(p[0]).toFixed(1) + ',' + sy(p[1]).toFixed(1));
+                else if (cur.length) { segs.push(cur); cur = []; }
+            });
+            if (cur.length) segs.push(cur);
+            segs.forEach(function(seg) {
+                svg += '<polyline points="' + seg.join(' ') + '" fill="none" stroke="' + EOS_UI.escAttr(color) +
+                       // 2.2 not 2: at 2px a log-log TCC curve and its gridlines
+                       // (0.5px at 0.35 opacity) read as the same weight where they
+                       // cross at a shallow angle. The 0.2px is the smallest step
+                       // that separates them without the line looking drawn-on.
+                       '" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round"/>';
+            });
+            if (s.markers) {
+                s.points.forEach(function(p) {
+                    if (ok(p)) svg += '<circle cx="' + sx(p[0]).toFixed(1) + '" cy="' + sy(p[1]).toFixed(1) + '" r="2.5" fill="' + EOS_UI.escAttr(color) + '"/>';
+                });
+            }
         });
         svg += '</svg>';
         el.innerHTML = svg;
+
+        // Legend — only when more than one thing on the plot is NAMED. An
+        // unlabelled series or reference line cannot appear in a key, so it must
+        // not trigger one either; a multi-series caller labels its series.
+        var keys = [];
+        series.forEach(function(s) { if (s.label) keys.push({label: s.label, color: EOS_UI.escAttr(s.color || opts.color || 'var(--accent)')}); });
+        refs.forEach(function(r) { if (r.label) keys.push({label: r.label, color: EOS_UI.escAttr(r.color || muted)}); });
+        if (keys.length > 1) {
+            var legend = document.createElement('div');
+            legend.className = 'eos-chart-legend';
+            legend.innerHTML = keys.map(function(k) {
+                return '<span><i style="background:' + EOS_UI.escAttr(k.color) + '"></i>' + EOS_UI.esc(k.label) + '</span>';
+            }).join('');
+            el.appendChild(legend);
+        }
     },
 
 
@@ -1141,6 +1433,40 @@ var EOS_UI = {
         return out.join('');
     },
 
+    // EOS_UI.sandboxFrame({src, title, height, className, loading, style}) —
+    // the ONE way to embed model-written HTML. Returns the <iframe> markup.
+    //
+    // `allow-same-origin` is never emitted and is not an option: with it, a
+    // page the model wrote runs on the daemon's own origin, where it can read
+    // the session cookie and call every /api/ route as the user. Without it
+    // the frame gets an opaque origin — scripts still run, and nothing they do
+    // reaches EmptyOS. That is the whole point of the helper, so the sandbox
+    // string is a constant here rather than a caller's argument (three call
+    // sites hand-rolled it before this existed, and a fourth would eventually
+    // paste a longer one from the app-embed pane above, which legitimately
+    // needs same-origin because it embeds OUR pages).
+    //
+    // `src` and every attribute value are escaped, so nothing can break OUT of
+    // an attribute. `style` is a different matter: it is concatenated into the
+    // style attribute, so a caller that puts user text there would be injecting
+    // CSS (not script) into its own frame — pass literals only.
+    sandboxFrame: function(opts) {
+        opts = opts || {};
+        // Leading number only. Stripping non-digits instead would turn
+        // "100px;position:fixed" into the silently-wrong 1000 rather than 100.
+        var h = parseFloat(opts.height);
+        if (!isFinite(h) || h < 0) h = 360;
+        var style = 'width:100%;height:' + h
+            + 'px;border:0;border-radius:12px;display:block;overflow:hidden;'
+            + (opts.style || '');
+        return '<iframe class="' + EOS_UI.escAttr(opts.className || 'eos-embed-frame') + '"'
+            + ' src="' + EOS_UI.escAttr(opts.src || 'about:blank') + '"'
+            + ' loading="' + (opts.loading === 'eager' ? 'eager' : 'lazy') + '"'
+            + ' sandbox="allow-scripts"'
+            + ' title="' + EOS_UI.escAttr(opts.title || 'embedded artifact') + '"'
+            + ' style="' + EOS_UI.escAttr(style) + '"></iframe>';
+    },
+
     // Build the iframe / poster / placeholder for one embed marker.
     _vizEmbedHtml: function(embedId, entry, kv) {
         if (!embedId) return '<div class="eos-embed-missing">embed removed</div>';
@@ -1156,22 +1482,18 @@ var EOS_UI = {
                 + 'data-height="' + EOS_UI.escAttr(height) + '" '
                 + 'onclick="EOS_UI._loadEmbedPoster(this)">&#9654; Load ' + EOS_UI.esc(shape || 'visual') + '</div>';
         }
-        return '<iframe class="eos-embed-frame" src="' + EOS_UI.escAttr(src) + '" loading="lazy" '
-            + 'sandbox="allow-scripts" title="' + EOS_UI.escAttr(shape) + ' embed" '
-            + 'style="width:100%;height:' + EOS_UI.escAttr(height) + 'px;border:0;border-radius:12px;'
-            + 'display:block;overflow:hidden;"></iframe>';
+        return EOS_UI.sandboxFrame({src: src, height: height, title: (shape || '') + ' embed'});
     },
 
     _loadEmbedPoster: function(el) {
-        var src = el.getAttribute('data-src');
-        var h = el.getAttribute('data-height') || '360';
-        var f = document.createElement('iframe');
-        f.className = 'eos-embed-frame';
-        f.src = src;
-        f.loading = 'lazy';
-        f.setAttribute('sandbox', 'allow-scripts');
-        f.style.cssText = 'width:100%;height:' + h + 'px;border:0;border-radius:12px;display:block;overflow:hidden;';
-        el.replaceWith(f);
+        var holder = document.createElement('div');
+        holder.innerHTML = EOS_UI.sandboxFrame({
+            src: el.getAttribute('data-src') || '',
+            height: el.getAttribute('data-height') || '360',
+            title: 'embed'
+        });
+        var f = holder.firstChild;
+        if (f) el.replaceWith(f);
     },
 
     // Render structured diff lines ({kind: add|del|ctx|hunk, text}) as HTML.
@@ -1189,6 +1511,49 @@ var EOS_UI = {
     // target slug (no #anchor, no |alias) and the display label.
     renderMarkdown: function(text, opts) {
         opts = opts || {};
+
+        // Step 0: park code before anything rewrites markdown, and put it back
+        // before Step 3 (which expects the fences still present, and formats
+        // them). Step 1 below rewrites wikilinks, embeds and bare `.md` paths
+        // across the whole document, so without this a `[[Note]]` or an
+        // `![[img.png]]` written *inside* a fenced or inline code sample was
+        // turned into a real link or a real <img> — the reader saw markup where
+        // the author wrote a literal. The same ordering rule is already stated
+        // for %% comments further down; it just was not applied up here.
+        var _parked = [];
+        var _park = function(m) {
+            var id = '\x00RAW' + _parked.length + '\x00';
+            _parked.push(m);
+            return id;
+        };
+        // Line-scanned, mirroring emptyos/sdk/markdown_render.py::strip_code so
+        // the two languages agree. A regex was tried twice and wrong twice: a
+        // bare `$` under /m matches end of *line*, not input; and a `\1`
+        // backreference demands an exact-length closing run, while CommonMark
+        // lets a longer run close a shorter fence — so ```…```` parked the rest
+        // of the document. A scan has neither failure mode.
+        var _fence = null;
+        text = String(text == null ? '' : text).split('\n').map(function(line) {
+            var t = line.trim();
+            if (_fence) {
+                if (t.charAt(0) === _fence.charAt(0) && t.length >= _fence.length &&
+                    t.split('').every(function(c) { return c === _fence.charAt(0); })) {
+                    _fence = null;
+                }
+                return _park(line);
+            }
+            var m = /^[ \t]*(`{3,}|~{3,})/.exec(line);
+            if (m) { _fence = m[1]; return _park(line); }
+            // Inline spans only, which markdown keeps to a single line.
+            return line.replace(/`{1,3}[^`\n]*`{1,3}/g, _park);
+        }).join('\n');
+        var _unpark = function(s) {
+            for (var i = _parked.length - 1; i >= 0; i--) {
+                s = s.split('\x00RAW' + i + '\x00').join(_parked[i]);
+            }
+            return s;
+        };
+
         // Step 1: Extract wikilinks + vault paths BEFORE esc (they contain [] which survive esc, but do it cleanly)
         var _links = [];
         var _ph = function(html) { var id = '\x00LINK' + _links.length + '\x00'; _links.push(html); return id; };
@@ -1302,6 +1667,10 @@ var EOS_UI = {
             var name = m.replace('.md', '').replace(/-/g, ' ');
             return _ph('<a href="#" onclick="EOS.viewNote(\'' + EOS.escPath(m) + '\');return false" class="obs-link note-ref">' + EOS_UI.esc(name) + '</a>');
         });
+
+        // Code comes back now: Step 3 formats the fences itself, and the
+        // frontmatter split below needs the real leading `---`.
+        text = _unpark(text);
 
         // Step 2: Separate frontmatter from body
         var frontmatter = '';
@@ -1804,6 +2173,9 @@ var EOS_UI = {
     statCards: function(targetId, items) {
         var el = document.getElementById(targetId);
         if (!el) return;
+        // Give the target the default row layout. Weak by design — see the
+        // .eos-stat-cards note in eos-components.css; a caller's own rule wins.
+        el.classList.add('eos-stat-cards');
         // Normalize: accept either array or object
         if (!Array.isArray(items)) {
             items = Object.entries(items).map(function(e) { return {label: e[0], value: e[1]}; });
@@ -1871,13 +2243,36 @@ var EOS_UI = {
         return EOS_UI.STATUS_VARIANTS.indexOf(s) >= 0 ? 'status-' + s : 'neutral';
     },
 
+    // statusVariant returns a *fragment* the caller still has to assemble, and
+    // four apps assembled it by hand. One of them wrote
+    // `'eos-badge-status-' + variant` — double-prefixing what statusVariant had
+    // already prefixed, so every one of its badges emitted a class with no CSS.
+    // That is the same colourless badge the comment above warns about, arriving
+    // through the helper meant to prevent it. These two own the concatenation so
+    // a call site cannot get it wrong.
+    //
+    //   statusBadgeClass(status, map?) -> "eos-badge eos-badge-<variant>"
+    //   statusBadge(label, status?, map?) -> the finished, escaped <span>
+    //
+    // `status` defaults to `label` for the common case where the label IS the
+    // status. Pass both when they differ ("3 failed" labelling a `fail`).
+    statusBadgeClass: function(status, map) {
+        return 'eos-badge eos-badge-' + EOS_UI.statusVariant(status, map);
+    },
+    statusBadge: function(label, status, map) {
+        var text = label == null ? '' : String(label);
+        return '<span class="' + EOS_UI.statusBadgeClass(
+            arguments.length < 2 || status === undefined ? text : status, map
+        ) + '">' + EOS_UI.esc(text) + '</span>';
+    },
+
     entityCard: function(opts) {
         var esc = EOS_UI.esc;
         var parts = [];
         var headRight = '';
         if (opts.badges && opts.badges.length) {
             headRight = '<div class="eec-badges right">' + opts.badges.map(function(b) {
-                return '<span class="eos-badge eos-badge-' + escAttr(b.variant || 'neutral') + '">' + esc(b.label) + '</span>';
+                return '<span class="eos-badge eos-badge-' + EOS_UI.escAttr(b.variant || 'neutral') + '">' + esc(b.label) + '</span>';
             }).join('') + '</div>';
         }
         parts.push('<div class="eec-head">');
@@ -1894,7 +2289,7 @@ var EOS_UI = {
         var cls = 'eos-entity-card' + (opts.className ? ' ' + opts.className : '');
         if (!opts.onClick) cls += ' no-hover';
         var attrs = '';
-        if (opts.id) attrs += ' id="' + escAttr(opts.id) + '"';
+        if (opts.id) attrs += ' id="' + EOS_UI.escAttr(opts.id) + '"';
         // NOT the same contract as statCards, which now takes a function and
         // emits no inline handler. Here onClick is still a JS expression string:
         // escAttr makes the ATTRIBUTE safe, so callers must JSON.stringify
@@ -1934,7 +2329,10 @@ var EOS_UI = {
         var label = opts.label || 'Record';
         var stopLabel = opts.stopLabel || 'Stop';
 
-        var rec = null, chunks = [], stream = null, t0 = 0, tick = null, capMs = 0;
+        // `starting` covers the await on getUserMedia, before `rec` exists: a
+        // second start() in that window used to open a second microphone
+        // stream and leak the first (it was never stopped).
+        var rec = null, chunks = [], stream = null, t0 = 0, tick = null, capMs = 0, starting = false;
 
         var btn = document.createElement('button');
         btn.type = 'button';
@@ -1966,19 +2364,22 @@ var EOS_UI = {
         }
 
         async function start() {
-            if (rec) return;
+            if (rec || starting) return;
             if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || !window.MediaRecorder) {
                 fail('This browser has no microphone recording support.');
                 return;
             }
+            starting = true;
             try {
                 stream = await navigator.mediaDevices.getUserMedia({
                     audio: { echoCancellation: true, noiseSuppression: true },
                 });
             } catch (e) {
+                starting = false;
                 fail('Microphone unavailable — check the browser permission.');
                 return;
             }
+            starting = false;
             var mrOpts = {};
             try {
                 if (window.MediaRecorder.isTypeSupported &&
@@ -2050,8 +2451,36 @@ var EOS_UI = {
             var c = typeof opts.cost === 'number' ? '~$' + opts.cost.toFixed(Math.max(3, Math.ceil(-Math.log10(opts.cost || 0.001)))) : opts.cost;
             parts.push('<span class="eos-badge-provenance-cost">· ' + esc(c) + '</span>');
         }
-        var title = opts.title ? ' title="' + escAttr(opts.title) + '"' : '';
-        return '<span class="eos-badge-provenance eos-badge-provenance-' + escAttr(mode) + '"' + title + '>' + parts.join('') + '</span>';
+        var title = opts.title ? ' title="' + EOS_UI.escAttr(opts.title) + '"' : '';
+        return '<span class="eos-badge-provenance eos-badge-provenance-' + EOS_UI.escAttr(mode) + '"' + title + '>' + parts.join('') + '</span>';
+    },
+
+    // --- Provenance line — the guard + wrapper every AI render site hand-rolls
+    // around provenance() (extracted 2026-08-21 after the same ~4-line ternary
+    // showed up in 11 files: boards, cockpit, dictionary-adjacent apps, jobs,
+    // hub-life, projects, + 6 apps fixed in one pass — .claude/rules/audits.md
+    // "second consumer" bar cleared long before this landed).
+    //
+    // prov: the raw {mode, provider, model, ...} object from self.last_provenance()
+    //       (or null/undefined — a think() that hasn't run, or a cache hit that
+    //       intentionally carries no provenance). Returns '' in that case — the
+    //       honest signal that content wasn't just AI-inferred.
+    // opts: {wrap?: bool (default true), className?: string (default 'muted',
+    //        pass '' for no class attr), style?: string (default 'margin:4px 0 8px'),
+    //        suffix?: string (appended INSIDE the wrapper, after the chip —
+    //        e.g. ' · review & edit'), cost?: number, title?: string}
+    provenanceLine: function(prov, opts) {
+        opts = opts || {};
+        if (!prov || !prov.mode || !EOS_UI.provenance) return '';
+        var chip = EOS_UI.provenance({
+            mode: prov.mode, provider: prov.provider, model: prov.model,
+            cost: opts.cost, title: opts.title,
+        }) + (opts.suffix || '');
+        if (opts.wrap === false) return chip;
+        var cls = opts.className != null ? opts.className : 'muted';
+        var classAttr = cls ? ' class="' + EOS_UI.escAttr(cls) + '"' : '';
+        var style = opts.style || 'margin:4px 0 8px';
+        return '<div' + classAttr + ' style="' + EOS_UI.escAttr(style) + '">' + chip + '</div>';
     },
 
     // --- Pin to home "Pinned references" (backed by the optional quickref app) ---
@@ -2186,7 +2615,10 @@ var EOS_UI = {
         if (opts.onRetry) {
             parts.push('<div class="eos-error-state-action"><button class="eos-btn eos-btn-sm eos-btn-ghost" title="Try loading again" onclick="' + opts.onRetry.replace(/"/g, '&quot;') + '">Retry</button></div>');
         }
-        return '<div class="eos-error-state">' + parts.join('') + '</div>';
+        // role="alert": a failure replacing a panel's content is exactly the
+        // change a reader not watching that region has no other way to learn
+        // of. Without it the state is visually distinct and audibly silent.
+        return '<div class="eos-error-state" role="alert">' + parts.join('') + '</div>';
     },
 
     // --- Entity list — fetch + render + delete + state lifecycle ---
@@ -2248,7 +2680,7 @@ var EOS_UI = {
                 className: 'eos-entity-card-row',
             });
             if (opts.deleteUrl && id) {
-                var del = '<button class="eos-row-del" data-del="' + escAttr(id) +
+                var del = '<button class="eos-row-del" data-del="' + EOS_UI.escAttr(id) +
                     '" aria-label="Delete"></button>';
                 card = card.replace('<div class="eec-head">', del + '<div class="eec-head">');
             }
@@ -2350,8 +2782,14 @@ var EOS_UI = {
     },
 
     // --- Modal ---
-    // Show a modal with custom content. Returns the modal element.
-    // options: {title, body (HTML string), onClose?, width?}
+    // Show a modal with custom content. Returns the modal element, which also
+    // carries .close() and .open() (it is already open; open() is a no-op).
+    // options: {title, body (HTML string), onClose?, width?, actions?}
+    //   actions: [{label, primary?, onClick?}] — footer buttons. The modal
+    //   closes only when onClick returns (or resolves to) exactly `true`;
+    //   anything else leaves it open for the handler to close or keep. Three
+    //   pages passed `actions` for months while this ignored it, so their
+    //   buttons — improv's "End & review" among them — never appeared.
     modal: function(options) {
         var existing = document.getElementById('eos-modal-overlay');
         if (existing) existing.remove();
@@ -2371,6 +2809,37 @@ var EOS_UI = {
                 '<button class="eos-modal-close" title="Close (Esc)" onclick="EOS_UI.closeModal()">&times;</button>' +
             '</div>' +
             '<div class="eos-modal-body">' + (options.body || '') + '</div>';
+
+        if (options.actions && options.actions.length) {
+            var foot = document.createElement('div');
+            foot.className = 'eos-modal-actions';
+            options.actions.forEach(function(action) {
+                var btn = document.createElement('button');
+                btn.type = 'button';
+                btn.className = 'eos-btn' + (action.primary ? ' eos-btn-primary' : '');
+                btn.textContent = action.label || 'OK';
+                btn.addEventListener('click', async function() {
+                    if (btn.disabled) return;
+                    btn.disabled = true;   // no double-submit while a handler awaits
+                    var result;
+                    try { result = action.onClick ? await action.onClick() : true; }
+                    catch (err) {
+                        // Say so on screen; a console-only rejection reads as a
+                        // button that did nothing.
+                        console.error('modal action failed:', err);
+                        if (EOS_UI.toast) EOS_UI.toast((action.label || 'Action') + ' failed: ' +
+                            ((err && err.message) || err), false);
+                        result = false;
+                    }
+                    finally { btn.disabled = false; }
+                    if (result === true) EOS_UI.closeModal();
+                });
+                foot.appendChild(btn);
+            });
+            modal.appendChild(foot);
+        }
+        modal.close = function() { EOS_UI.closeModal(); };
+        modal.open = function() {};
 
         overlay.appendChild(modal);
         document.body.appendChild(overlay);
@@ -2398,17 +2867,37 @@ var EOS_UI = {
     // --- Form Builder ---
     // Build a simple form inside a modal. Returns form HTML string.
     // fields: [{key, label, type?, placeholder?, value?, options?}]
+    // options (select / multi-select): strings, or {value, label} objects.
+    _optionValue: function(o) {
+        return (o !== null && typeof o === 'object') ? String(o.value == null ? '' : o.value) : o;
+    },
+    _optionLabel: function(o) {
+        if (o === null || typeof o !== 'object') return o;
+        return o.label == null ? EOS_UI._optionValue(o) : String(o.label);
+    },
+    // A form field's id is its `key`. `name:` in place of `key:` is the one
+    // mistake six pages made independently, and it failed silently: the input
+    // rendered as eos-form-undefined, the typed value never reached the
+    // handler, and each handler fell back without a word (an edit that never
+    // saved, a reason replaced by a default). So `name` is accepted as `key`
+    // here, once, rather than hoping every caller remembers. Copies — the
+    // caller's field objects are not mutated.
+    _normFields: function(fields) {
+        return (fields || []).map(function(f) {
+            return (f && f.key == null && f.name != null) ? Object.assign({}, f, {key: f.name}) : f;
+        });
+    },
+
     formHtml: function(fields, submitLabel) {
+        fields = EOS_UI._normFields(fields);
         // First field gets autofocus by default; pass {autofocus:true} to force it on a specific field
         // (overrides default-first behavior when an earlier field already opted out via autofocus:false).
         var explicitAuto = fields.some(function(f) { return f.autofocus === true; });
         return fields.map(function(f, i) {
-            // A field without `key` silently produces id="eos-form-undefined" for
-            // EVERY field, so _submitForm() reads nothing back and the form fails
-            // its own required-check ("name required") with the input discarded.
-            // Passing `name:` instead of `key:` is the easy way to hit this.
+            // A field with neither `key` nor `name` still renders as
+            // id="eos-form-undefined" and reads nothing back.
             if (!f.key && window.console) {
-                console.warn('EOS_UI.formHtml: field is missing `key` (did you pass `name:`?)', f);
+                console.warn('EOS_UI.formHtml: field has no `key`', f);
             }
             var id = 'eos-form-' + f.key;
             var val = f.value || '';
@@ -2418,14 +2907,58 @@ var EOS_UI = {
             if (f.type === 'textarea') {
                 input = '<textarea id="' + id + '" class="eos-form-input" placeholder="' + EOS_UI.escAttr(f.placeholder || '') + '" rows="3"' + autoAttr + '>' + EOS_UI.esc(val) + '</textarea>';
             } else if (f.type === 'select' && f.options) {
+                // An option is a string (value and label alike) or {value, label}.
+                // power-study's case pickers wrote the object form (as settingsPanel
+                // accepts), which rendered "[object Object]" and submitted it as the value.
                 var opts = f.options.map(function(o) {
-                    return '<option value="' + EOS_UI.escAttr(o) + '"' + (o === val ? ' selected' : '') + '>' + EOS_UI.esc(o) + '</option>';
+                    var ov = EOS_UI._optionValue(o);
+                    return '<option value="' + EOS_UI.escAttr(ov) + '"' + (ov === val ? ' selected' : '') + '>' + EOS_UI.esc(EOS_UI._optionLabel(o)) + '</option>';
                 }).join('');
                 input = '<select id="' + id + '" class="eos-form-input"' + autoAttr + '>' + opts + '</select>';
+            } else if (f.type === 'multi-select' && f.options) {
+                // Native <select multiple> — no extra chip-picker dependency,
+                // and formValues() below reads it back as a real array (the
+                // ColumnTypeRegistry 'multi-select' type stores a list; a
+                // plain text input here would silently mismatch that shape).
+                var selectedVals = Array.isArray(val) ? val : (val ? [val] : []);
+                var mopts = f.options.map(function(o) {
+                    var ov = EOS_UI._optionValue(o);
+                    return '<option value="' + EOS_UI.escAttr(ov) + '"' + (selectedVals.indexOf(ov) !== -1 ? ' selected' : '') + '>' + EOS_UI.esc(EOS_UI._optionLabel(o)) + '</option>';
+                }).join('');
+                input = '<select id="' + id + '" class="eos-form-input" multiple size="' + Math.min(f.options.length, 5) + '"' + autoAttr + '>' + mopts + '</select>';
+            } else if (f.type === 'link-record') {
+                // Options aren't known synchronously (they live on another
+                // board/app) — render an empty picker now, stamp the target
+                // board on it, and let the _eosInitLinkRecordAutoMount IIFE
+                // below fetch + populate it once this is in the DOM. Same
+                // async-after-render shape as the ✨ field-suggest auto-mount.
+                var selectedIds = Array.isArray(val) ? val : (val ? [val] : []);
+                var linkMulti = f.multi !== false;
+                input = '<select id="' + id + '" class="eos-form-input" data-link-record="' + EOS_UI.escAttr(f.target_board || '') + '" data-link-multi="' + (linkMulti ? 'true' : 'false') + '" data-link-selected="' + EOS_UI.escAttr(JSON.stringify(selectedIds)) + '"' + (linkMulti ? ' multiple size="5"' : '') + autoAttr + '><option value="" disabled selected>Loading…</option></select>';
+            } else if (f.type === 'rollup' || f.type === 'formula') {
+                // Computed, never editable — CollectionLibrary's rollup
+                // validate_fn rejects a write anyway (column_types.py); this
+                // just keeps the UI honest about it up front, matching
+                // Airtable's own formula-cell convention.
+                input = '<input id="' + id + '" class="eos-form-input" type="text" value="' + EOS_UI.escAttr(val) + '" disabled placeholder="(computed)"' + autoAttr + '>';
             } else if (f.type === 'number') {
-                input = '<input id="' + id + '" class="eos-form-input" type="number" value="' + EOS_UI.escAttr(val) + '" placeholder="' + EOS_UI.escAttr(f.placeholder || '') + '" step="any"' + autoAttr + '>';
+                // `step` / `min` / `max` pass through when declared; `step="any"`
+                // remains the default so every existing caller renders unchanged.
+                // They were hardcoded away until 2026-08-13, which made a declared
+                // domain a silent no-op — cable_network's project form has passed
+                // `step: 0.1` on soil resistivity the whole time and got `any`.
+                // A `min` here is a hint the browser offers, not a rule: a paste
+                // or a scripted client walks past it, so whatever consumes the
+                // value still has to refuse out-of-domain input itself.
+                var num = ' step="' + EOS_UI.escAttr(f.step != null ? f.step : 'any') + '"';
+                if (f.min != null) num += ' min="' + EOS_UI.escAttr(f.min) + '"';
+                if (f.max != null) num += ' max="' + EOS_UI.escAttr(f.max) + '"';
+                input = '<input id="' + id + '" class="eos-form-input" type="number" value="' + EOS_UI.escAttr(val) + '" placeholder="' + EOS_UI.escAttr(f.placeholder || '') + '"' + num + autoAttr + '>';
             } else if (f.type === 'date') {
                 input = '<input id="' + id + '" class="eos-form-input" type="date" value="' + EOS_UI.escAttr(val) + '"' + autoAttr + '>';
+            } else if (f.type === 'checkbox') {
+                var checked = (val === true || val === 'true' || val === 1 || val === '1') ? ' checked' : '';
+                input = '<input id="' + id + '" type="checkbox"' + checked + autoAttr + ' style="width:auto">';
             } else {
                 input = '<input id="' + id + '" class="eos-form-input" type="text" value="' + EOS_UI.escAttr(val) + '" placeholder="' + EOS_UI.escAttr(f.placeholder || '') + '"' + autoAttr + '>';
             }
@@ -2441,7 +2974,8 @@ var EOS_UI = {
                 if (s.endpoint) sg += ' data-suggest-endpoint="' + EOS_UI.escAttr(s.endpoint) + '"';
                 if (s.label) sg += ' data-suggest-label="' + EOS_UI.escAttr(s.label) + '"';
             }
-            return '<div class="eos-form-group"' + sg + '><label class="eos-form-label">' + EOS_UI.esc(f.label) + '</label>' + input + '</div>';
+            var reqMark = f.required ? ' <span style="color:var(--red)">*</span>' : '';
+            return '<div class="eos-form-group"' + sg + '><label class="eos-form-label">' + EOS_UI.esc(f.label) + reqMark + '</label>' + input + '</div>';
         }).join('') +
         '<div class="eos-form-actions"><button class="eos-btn eos-btn-primary" title="Submit this form" onclick="EOS_UI._submitForm()">' + EOS_UI.esc(submitLabel || 'Save') + '</button></div>';
     },
@@ -2626,9 +3160,13 @@ var EOS_UI = {
     // Collect form values by field keys
     formValues: function(fields) {
         var vals = {};
-        fields.forEach(function(f) {
+        EOS_UI._normFields(fields).forEach(function(f) {
             var el = document.getElementById('eos-form-' + f.key);
-            if (el) vals[f.key] = f.type === 'number' ? parseFloat(el.value) || 0 : el.value;
+            if (!el) return;
+            if (f.type === 'checkbox') vals[f.key] = el.checked;
+            else if (f.type === 'multi-select' || f.type === 'link-record') vals[f.key] = Array.from(el.selectedOptions).map(function(o) { return o.value; }).filter(Boolean);
+            else if (f.type === 'rollup' || f.type === 'formula') { /* computed — never submitted */ }
+            else vals[f.key] = f.type === 'number' ? parseFloat(el.value) || 0 : el.value;
         });
         return vals;
     },
@@ -2639,21 +3177,39 @@ var EOS_UI = {
     // Show a form modal. onSubmit(values) called with form data.
     formModal: function(title, fields, onSubmit) {
         // Accept object form: formModal({title, fields, onSubmit}) — common mistake.
+        // The object form also takes submitLabel: a form that proposes,
+        // searches or sends is not a "Save" (cable-pulling's route proposal
+        // had to reach into _formFields/_formCallback to relabel it).
+        var submitLabel = 'Save';
         if (typeof title === 'object' && title !== null && !Array.isArray(title) && Array.isArray(title.fields)) {
             var opts = title;
             title = opts.title; fields = opts.fields; onSubmit = opts.onSubmit;
+            if (opts.submitLabel) submitLabel = opts.submitLabel;
         }
+        fields = EOS_UI._normFields(fields);
         EOS_UI._formCallback = onSubmit;
         EOS_UI._formFields = fields;
         EOS_UI.modal({
             title: title,
-            body: EOS_UI.formHtml(fields, 'Save'),
+            body: EOS_UI.formHtml(fields, submitLabel),
         });
     },
 
     _submitForm: function() {
         if (EOS_UI._formCallback && EOS_UI._formFields) {
             var vals = EOS_UI.formValues(EOS_UI._formFields);
+            var missing = EOS_UI._formFields.filter(function(f) {
+                return f.required && f.type !== 'checkbox' &&
+                    (vals[f.key] === '' || vals[f.key] === undefined || vals[f.key] === null);
+            });
+            if (missing.length) {
+                if (EOS_UI.toast) {
+                    EOS_UI.toast('Missing required: ' + missing.map(function(f) {
+                        return f.label || f.key;
+                    }).join(', '), false);
+                }
+                return;
+            }
             EOS_UI._formCallback(vals);
         }
         EOS_UI.closeModal();
@@ -2900,7 +3456,20 @@ var EOS_UI = {
         'openai-mini': 'paid',
         'openai-nano': 'paid',
         'openai-gpt-4o-mini-vision': 'paid',
+        'anthropic':     'paid',  // per-token API key (claude-cli is the subscription path)
+        'anthropic_sdk': 'paid',
         'human':       'human',
+    },
+
+    // A provider row's cost class: the name lookup above, corrected by the
+    // row's declared locality when it carries one (is_cloud — the same flag the
+    // consent gate reads). A cloud provider is never shown 🔒 local (a rented
+    // box named "ollama-…"), and an unmapped provider declared local is.
+    _modelCostOf: function(p) {
+        var k = EOS_UI._modelCostFor(p.name, p.variant);
+        if (p.is_cloud === true && k === 'local') return 'unknown';
+        if (p.is_cloud === false && k === 'unknown') return 'local';
+        return k;
     },
 
     _modelCostFor: function(name, variant) {
@@ -3006,6 +3575,85 @@ var EOS_UI = {
         });
     },
 
+    // The pill and popover-row MARKUP, shared by modelPill (a per-app override)
+    // and any per-session picker that stores its choice elsewhere (portal's chat
+    // picker — the choice lives on the agent session, which think.app.<id>
+    // cannot express). Pure: p = {name, model?, variant?, available?, is_cloud?}.
+    //   modelPillHtml opts: {title, pinned, extraHtml, warn, empty}
+    //   modelRowHtml  opts: {current, title, disableUnavailable}
+    // The current row carries the word "current", not just the accent border
+    // (.claude/rules/list-card-density.md — status never by colour alone).
+    _modelSubtitle: function(p) {
+        return p.variant ? p.variant.replace(/^[^:]+:/, '') : (p.model || '');
+    },
+
+    modelPillHtml: function(p, o) {
+        p = p || {}; o = o || {};
+        var klass = EOS_UI._modelCostOf(p);
+        var subtitle = EOS_UI._modelSubtitle(p);
+        var cls = 'eos-model-pill eos-model-pill-' + klass + (o.pinned ? ' eos-model-pill-pinned' : '');
+        return '<button type="button" class="' + cls + '" aria-haspopup="dialog"' +
+                (o.title ? ' title="' + EOS_UI.escAttr(o.title) + '"' : '') + '>' +
+              '<span class="eos-model-pill-icon">' + EOS_UI._modelCostIcon(klass) + '</span>' +
+              '<span class="eos-model-pill-name">' + EOS_UI.esc(p.name || o.empty || 'none') + '</span>' +
+              (subtitle ? '<span class="eos-model-pill-sub">' + EOS_UI.esc(subtitle) + '</span>' : '') +
+              (o.extraHtml || '') +
+              (o.warn ? '<span class="eos-model-pill-warn">' + EOS_UI.esc(o.warn) + '</span>' : '') +
+              '<span class="eos-model-pill-caret">▾</span>' +
+            '</button>';
+    },
+
+    modelRowHtml: function(p, o) {
+        p = p || {}; o = o || {};
+        var klass = EOS_UI._modelCostOf(p);
+        var subtitle = EOS_UI._modelSubtitle(p);
+        var off = !p.available;
+        return '<button type="button" class="eos-model-row' + (o.current ? ' eos-model-row-active' : '') +
+                (off ? ' eos-model-row-unavail' : '') + '" data-prov="' + EOS_UI.escAttr(p.name) + '"' +
+                (o.title ? ' title="' + EOS_UI.escAttr(o.title) + '"' : '') +
+                (o.current ? ' aria-current="true"' : '') +
+                (off && o.disableUnavailable ? ' disabled' : '') + '>' +
+              '<span class="eos-model-row-icon">' + EOS_UI._modelCostIcon(klass) + '</span>' +
+              '<span class="eos-model-row-name">' + EOS_UI.esc(p.name) + '</span>' +
+              (o.current ? '<span class="eos-model-row-tag">current</span>' : '') +
+              (subtitle ? '<span class="eos-model-row-sub">' + EOS_UI.esc(subtitle) + '</span>' : '') +
+              (off ? '<span class="eos-model-row-warn">unreachable</span>' : '') +
+            '</button>';
+    },
+
+    // A modal list of choices — the popover the model picker draws, for any
+    // one-of-N pick (a mode, a destination, an action on an item). Rows are
+    // bound by index, so a value never has to survive an HTML attribute.
+    //   opts: {title, width?, rows: [{value, label, sub?, icon?, current?,
+    //          disabled?, warn?}], empty?, onPick(value, row)}
+    // The current row says "current" in words, as modelRowHtml's does.
+    choiceMenu: function(opts) {
+        opts = opts || {};
+        var rows = opts.rows || [];
+        var esc = EOS_UI.esc;
+        var body = rows.length ? rows.map(function(r, i) {
+            return '<button type="button" class="eos-model-row' + (r.current ? ' eos-model-row-active' : '') +
+                    (r.disabled ? ' eos-model-row-unavail' : '') + '" data-choice="' + i + '"' +
+                    (r.current ? ' aria-current="true"' : '') + (r.disabled ? ' disabled' : '') + '>' +
+                  (r.icon ? '<span class="eos-model-row-icon">' + esc(r.icon) + '</span>' : '') +
+                  '<span class="eos-model-row-name">' + esc(r.label) + '</span>' +
+                  (r.current ? '<span class="eos-model-row-tag">current</span>' : '') +
+                  (r.sub ? '<span class="eos-model-row-sub">' + esc(r.sub) + '</span>' : '') +
+                  (r.warn ? '<span class="eos-model-row-warn">' + esc(r.warn) + '</span>' : '') +
+                '</button>';
+        }).join('') : '<div class="eos-att-empty">' + esc(opts.empty || 'Nothing to choose.') + '</div>';
+        var modal = EOS_UI.modal({ title: opts.title || 'Choose', width: opts.width || '420px',
+                                   body: '<div class="eos-model-popover-body">' + body + '</div>' });
+        (modal || document).querySelectorAll('.eos-model-popover-body [data-choice]').forEach(function(btn) {
+            btn.onclick = function() {
+                var row = rows[+btn.getAttribute('data-choice')];
+                if (!row || row.disabled) return;
+                EOS_UI.closeModal();
+                if (opts.onPick) opts.onPick(row.value, row);
+            };
+        });
+    },
+
     modelPill: function(opts) {
         opts = opts || {};
         var app = opts.app;
@@ -3031,42 +3679,25 @@ var EOS_UI = {
             var eff = state.effective || {};
             var current = eff.provider || '';
             var meta = state.providers.find(function(p){ return p.name === current; }) || {};
-            var klass = EOS_UI._modelCostFor(current, meta.variant);
-            var icon = EOS_UI._modelCostIcon(klass);
-            var subtitle = meta.variant ? meta.variant.replace(/^[^:]+:/, '') : (meta.model || '');
             var authMode = meta.auth_mode || eff.active_auth_mode || '';
             var authIcon = EOS_UI._authModeIcon(authMode);
             var authChip = authIcon
                 ? '<span class="eos-model-pill-auth" title="Auth: ' + EOS_UI.escAttr(EOS_UI._authModeLabel(authMode)) + '">' + authIcon + '</span>'
                 : '';
-            var pillClass = 'eos-model-pill eos-model-pill-' + klass;
-            if (eff.source && eff.source !== 'chain') pillClass += ' eos-model-pill-pinned';
-            mount.innerHTML =
-                '<button type="button" class="' + pillClass + '" title="Click to switch model (this app only)">' +
-                  '<span class="eos-model-pill-icon">' + icon + '</span>' +
-                  '<span class="eos-model-pill-name">' + EOS_UI.esc(current || 'none') + '</span>' +
-                  (subtitle ? '<span class="eos-model-pill-sub">' + EOS_UI.esc(subtitle) + '</span>' : '') +
-                  authChip +
-                  '<span class="eos-model-pill-caret">▾</span>' +
-                '</button>';
+            mount.innerHTML = EOS_UI.modelPillHtml(
+                {name: current, variant: meta.variant, model: meta.model, is_cloud: meta.is_cloud},
+                {title: 'Click to switch model (this app only)', extraHtml: authChip,
+                 pinned: !!(eff.source && eff.source !== 'chain')}
+            );
             mount.querySelector('button').onclick = openPopover;
         }
 
         function openPopover() {
+            var cur = state.effective && state.effective.provider;
             var rows = state.providers
                 .filter(function(p){ return EOS_UI._modelCostFor(p.name, p.variant) !== 'human'; })
                 .map(function(p) {
-                    var klass = EOS_UI._modelCostFor(p.name, p.variant);
-                    var icon = EOS_UI._modelCostIcon(klass);
-                    var active = (state.effective && state.effective.provider === p.name) ? ' eos-model-row-active' : '';
-                    var unavail = p.available ? '' : ' eos-model-row-unavail';
-                    var subtitle = p.variant ? p.variant.replace(/^[^:]+:/, '') : (p.model || '');
-                    return '<button type="button" class="eos-model-row' + active + unavail + '" data-prov="' + EOS_UI.escAttr(p.name) + '" title="Switch this app to ' + EOS_UI.escAttr(p.name) + '">' +
-                            '<span class="eos-model-row-icon">' + icon + '</span>' +
-                            '<span class="eos-model-row-name">' + EOS_UI.esc(p.name) + '</span>' +
-                            (subtitle ? '<span class="eos-model-row-sub">' + EOS_UI.esc(subtitle) + '</span>' : '') +
-                            (p.available ? '' : '<span class="eos-model-row-warn">unreachable</span>') +
-                           '</button>';
+                    return EOS_UI.modelRowHtml(p, {current: cur === p.name, title: 'Switch this app to ' + p.name});
                 }).join('');
             var clearBtn = '<button type="button" class="eos-model-row eos-model-row-clear" data-prov="" title="Clear the override and use the default provider chain">' +
                             '<span class="eos-model-row-icon">↺</span>' +
@@ -3295,7 +3926,12 @@ var EOS_UI = {
         var promise = new Promise(function(res) { resolve = res; });
         EOS_UI.modal({
             title: title,
-            body: '<p style="margin:0 0 16px;font-size:15px;color:var(--text-secondary)">' + EOS_UI.esc(message) + '</p>' +
+            // pre-wrap, not the default: a confirm whose message contains the
+            // thing being confirmed — a command line, a path, a list — is the
+            // normal case, and collapsing its newlines runs it together with
+            // the warning prose. Still wraps, so a long single-line message is
+            // unchanged.
+            body: '<p style="margin:0 0 16px;font-size:15px;color:var(--text-secondary);white-space:pre-wrap">' + EOS_UI.esc(message) + '</p>' +
                 '<div class="eos-form-actions">' +
                     '<button class="eos-btn" id="eos-confirm-no" title="Cancel — nothing will change">' + EOS_UI.esc(cancel) + '</button>' +
                     '<button class="' + btnClass + '" id="eos-confirm-yes" title="Confirm and proceed">' + EOS_UI.esc(action) + '</button>' +
@@ -3402,7 +4038,12 @@ var EOS_UI = {
 
     _renderDict: function(popup, data) {
         var html = '<div class="eos-dict-word">' + EOS_UI.esc(data.word);
-        if (data.audio) html += ' <span class="eos-dict-play" onclick="EOS_UI._dictPlay(\'' + data.audio.replace(/'/g, "\\'") + '\')">&#128264;</span>';
+        // Unconditional — a lookup that carried real recorded audio plays that; every other
+        // lookup resolves lazily on click (daemon TTS, then the browser's own speech synth),
+        // so the button is never dead regardless of which lookup path answered.
+        html += ' <button type="button" class="eos-dict-play" title="Play pronunciation"' +
+                ' aria-label="Play pronunciation of ' + EOS_UI.escAttr(data.word) + '"' +
+                ' onclick="EOS_UI._dictPlay(' + EOS_UI.jsArg(data.word) + ',' + EOS_UI.jsArg(data.audio || '') + ',this)">&#128264;</button>';
         html += '</div>';
         if (data.ipa) html += '<span class="eos-dict-ipa">' + EOS_UI.esc(data.ipa) + '</span>';
         if (data.meanings) {
@@ -3421,9 +4062,59 @@ var EOS_UI = {
         popup.innerHTML = html;
     },
 
-    _dictPlay: function(url) {
-        try { new Audio(url).play(); } catch(e) {}
+    // word (lowercased) -> resolved audio url. '' records "no url for this word,
+    // go straight to speech synthesis" so a second click costs no round-trip.
+    _dictAudioCache: {},
+
+    _dictPlay: function(word, url, btn) {
+        var key = String(word || '').toLowerCase();
+        if (url) { EOS_UI._dictAudioCache[key] = url; EOS_UI._dictPlayUrl(url, word, btn); return; }
+        var cached = EOS_UI._dictAudioCache[key];
+        if (cached !== undefined) {
+            if (cached) EOS_UI._dictPlayUrl(cached, word, btn);
+            else EOS_UI._dictSpeak(word, btn);
+            return;
+        }
+        // Ask the dictionary app to synthesise it (TTS through the speak capability).
+        // Absent app, absent provider, or a declined cloud consent all land in .catch.
+        if (btn) btn.disabled = true;
+        fetch(EOS.base + '/dictionary/api/pronounce/' + encodeURIComponent(word))
+            .then(function(r) { return r.ok ? r.json() : Promise.reject('no dictionary app'); })
+            .then(function(d) {
+                if (!d || !d.audio_url) throw 'tts unavailable';
+                var full = EOS.base + d.audio_url;
+                EOS_UI._dictAudioCache[key] = full;
+                EOS_UI._dictPlayUrl(full, word, btn);
+            })
+            .catch(function() {
+                EOS_UI._dictAudioCache[key] = '';
+                EOS_UI._dictSpeak(word, btn);
+            });
     },
+
+    _dictPlayUrl: function(url, word, btn) {
+        if (btn) btn.disabled = true;
+        try {
+            var a = new Audio(url);
+            var p = a.play();
+            if (p && p.then) {
+                p.then(function() { EOS_UI._dictPlayIdle(btn); })
+                 .catch(function() { EOS_UI._dictSpeak(word, btn); });
+            } else {
+                EOS_UI._dictPlayIdle(btn);
+            }
+        } catch (e) { EOS_UI._dictSpeak(word, btn); }
+    },
+
+    // Last resort: the browser's own speech synthesis. No daemon, no key, no provider
+    // chain — it keeps the button honest on a deployment without the dictionary app.
+    _dictSpeak: function(word, btn) {
+        EOS_UI._dictPlayIdle(btn);
+        var spoke = EOS_UI.speakText(word, {owner: 'dict', lang: 'en-US', rate: 0.9});
+        if (!spoke) EOS_UI.toast('No pronunciation audio available', false);
+    },
+
+    _dictPlayIdle: function(btn) { if (btn) btn.disabled = false; },
 
     _dictSave: function(word) {
         fetch(EOS.base + '/dictionary/api/lookup?word=' + encodeURIComponent(word), {method: 'GET'})
@@ -4645,7 +5336,7 @@ var EOS_UI = {
     //   EOS_UI.kbPopover(slug, null, anchorEl);                  // whole note
     //   EOS_UI.kbPopover(slug, section, anchorEl, {maxWidth:560});
     //
-    // First consumer: apps/personal/cable-pulling/ (ppKbPopover).
+    // First consumer: the cable pulling calculator (ppKbPopover).
     // Second consumer: apps/personal/cable-hdd/. Extracted per CLAUDE.md
     // rule 9 — 2026-05-25.
     kbPopover: function(slug, section, anchorEl, opts) {
@@ -4820,7 +5511,8 @@ var EOS_UI = {
     aiFormFill: function(opts) {
         opts = opts || {};
         var esc = EOS_UI.esc;
-        var schema = opts.schema || [];
+        // Same field shape as formModal, so the same `name`-as-`key` reading.
+        var schema = EOS_UI._normFields(opts.schema || []);
         var endpoint = opts.endpoint || '/api/sdk/ai-form-fill';
         var submitLabel = opts.submitLabel || 'Create';
         var values = Object.assign({}, opts.initial || {});
@@ -4928,7 +5620,7 @@ var EOS_UI = {
             return '<div style="display:flex;gap:8px;margin-bottom:4px;font-size:13px">' +
                 '<span style="color:' + labelColor + ';font-weight:500;min-width:90px">' + esc(f.label || f.key) + ':</span>' +
                 '<span style="flex:1">' + display + '</span>' +
-                (hasValue ? '<button class="eos-btn" style="font-size:11px;padding:2px 8px" title="Edit this field by hand" onclick="EOS_UI._aiFillEdit(' + escAttr(JSON.stringify(f.key)) + ')">Edit</button>' : '') +
+                (hasValue ? '<button class="eos-btn" style="font-size:11px;padding:2px 8px" title="Edit this field by hand" onclick="EOS_UI._aiFillEdit(' + EOS_UI.escAttr(JSON.stringify(f.key)) + ')">Edit</button>' : '') +
             '</div>';
         });
         parts.push(rows.join(''));
@@ -5370,6 +6062,63 @@ var EOS_UI = {
     else boot();
 })();
 
+// ── link-record picker auto-mount ─────────────────────────────────────────
+// A `<select data-link-record="<target_board>">` (formHtml's link-record
+// branch above) has no options at render time — the target board's items
+// live behind a fetch. Same async-after-render / MutationObserver shape as
+// the ✨ field-suggest auto-mount just above; see .claude/rules/
+// boards-as-view-layer.md for the target board's item shape.
+(function _eosInitLinkRecordAutoMount() {
+    if (typeof document === 'undefined') return;
+    var pickLabel = function(item) {
+        return item.title || item.name || item.label || item.file || '(untitled)';
+    };
+    var populate = function(el) {
+        if (el.getAttribute('data-link-mounted') === '1') return;
+        el.setAttribute('data-link-mounted', '1');
+        var targetBoard = el.getAttribute('data-link-record') || '';
+        if (!targetBoard) return;
+        var selected;
+        try { selected = JSON.parse(el.getAttribute('data-link-selected') || '[]'); } catch (e) { selected = []; }
+        fetch('/boards/api/boards/' + encodeURIComponent(targetBoard) + '/items')
+            .then(function(r) { return r.ok ? r.json() : []; })
+            .then(function(items) {
+                if (!Array.isArray(items)) items = [];
+                var opts = items.map(function(it) {
+                    var id = it.file || it.id || '';
+                    var sel = selected.indexOf(id) !== -1 ? ' selected' : '';
+                    return '<option value="' + EOS_UI.escAttr(id) + '"' + sel + '>' + EOS_UI.esc(pickLabel(it)) + '</option>';
+                }).join('');
+                el.innerHTML = opts || '<option value="" disabled>(no ' + EOS_UI.esc(targetBoard) + ' items yet)</option>';
+            })
+            .catch(function() {
+                el.innerHTML = '<option value="" disabled selected>(couldn\'t load — is boards installed?)</option>';
+            });
+    };
+    var scan = function(root) {
+        if (!root || !root.querySelectorAll) return;
+        var hosts = root.querySelectorAll('[data-link-record]');
+        for (var i = 0; i < hosts.length; i++) populate(hosts[i]);
+        if (root.getAttribute && root.getAttribute('data-link-record')) populate(root);
+    };
+    var boot = function() {
+        scan(document.body);
+        if (!window.MutationObserver) return;
+        var mo = new MutationObserver(function(records) {
+            for (var i = 0; i < records.length; i++) {
+                var r = records[i];
+                for (var j = 0; j < r.addedNodes.length; j++) {
+                    var n = r.addedNodes[j];
+                    if (n.nodeType === 1) scan(n);
+                }
+            }
+        });
+        mo.observe(document.body, { childList: true, subtree: true });
+    };
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
+    else boot();
+})();
+
 // Global fetch wrapper — turns 503 `{error:"ai_offline"}` responses into
 // a toast + banner refresh so clicking an AI button while AI is offline
 // gives honest feedback instead of a silent failure. The response object
@@ -5391,12 +6140,10 @@ var EOS_UI = {
 })();
 
 (function _eosWrapFetch() {
-    if (typeof window === 'undefined' || window._eosFetchWrapped) return;
-    window._eosFetchWrapped = true;
-    var _origFetch = window.fetch.bind(window);
+    if (typeof window === 'undefined' || typeof window.fetch !== 'function') return;
     var _lastToast = 0;
-    window.fetch = function(input, init) {
-        return _origFetch(input, init).then(function(res) {
+    function aiOfflineToast(input, init, next) {
+        return next(input, init).then(function(res) {
             if (res && res.status === 503) {
                 var probe = res.clone();
                 probe.json().then(function(j) {
@@ -5419,7 +6166,14 @@ var EOS_UI = {
             }
             return res;
         });
-    };
+    }
+
+    // Register on the shared chain owned by eos.js (EOS.wrapFetch). On the five
+    // pages that load THIS bundle before eos.js, queue instead — eos.js drains
+    // `__eosFetchPending` right after registering its own layer, so the chain
+    // ends up identical on all 244 pages regardless of <script> order.
+    if (window.EOS && EOS.wrapFetch) EOS.wrapFetch('ai-offline-toast', aiOfflineToast);
+    else (window.__eosFetchPending = window.__eosFetchPending || []).push(['ai-offline-toast', aiOfflineToast]);
 })();
 
 // ── View helpers (viewSwitcher / kanbanLayout / inlineCellEdit / pillBadge) ──
@@ -6111,6 +6865,58 @@ EOS_UI.searchBar = function(opts) {
     };
 };
 
+// EOS_UI.refLinks(refs) -> escaped HTML for a manifest `references` list.
+//
+// Most engineering manifests write their references as KB wikilinks —
+// `[[iec-60865-rigid-busbar-forces]]` — and both consumers (methodPicker and
+// conformancePanel) used to render them straight through esc(). Measured
+// before the change: 21 manifests carry `references`, 10 of them have a page
+// that mounts one of these two components, and **8** were therefore showing
+// readers raw double brackets. The callers all agreed with each other, which
+// is the tell that the COMPONENT was wrong rather than the manifests.
+//
+// The grammar mirrors the markdown renderer's wikilink rule above —
+// [[target]], [[target#section]], [[target|Display]], label being the alias
+// when given, else the target with any #section dropped — but it is a SECOND,
+// anchored regex, not a reuse of that one, and the two can drift. Reuse was
+// rejected deliberately: the markdown rule's default branch emits an inline
+// `onclick="EOS.viewNote(…)"`, which MV3's CSP forbids
+// (.claude/rules/standalone-distribution.md), and it would run full markdown
+// over a bare reference string. The anchoring is the known divergence: a value
+// holding two wikilinks in prose links in markdown and passes through here.
+//
+// A string that is NOT a wikilink is escaped and passed through unlinked. That
+// branch is live TODAY, not future-proofing: `lightning` declares
+// `references = ["IEEE Std 998-2012"]` and mounts conformancePanel, and
+// `apps/personal/cable` declares a file path. A strip that assumed brackets
+// would mangle both.
+EOS_UI.refLinks = function(refs, opts) {
+    if (typeof refs === 'string') refs = [refs];
+    if (!refs || !refs.length) return '';
+    var sep = (opts && opts.separator) || ' · ';
+    return [].map.call(refs, function(ref) {
+        var s = String(ref === null || ref === undefined ? '' : ref).trim();
+        var m = s.match(/^\[\[([^\]|#]+?)(?:#[^\]|]*)?(?:\|([^\]]+?))?\]\]$/);
+        if (!m) return EOS_UI.esc(s);
+        var slug = m[1].trim();
+        var label = (m[2] || m[1]).trim();
+        // A whitespace-only target or alias matches the grammar but has
+        // nothing to link: `[[   ]]` produced `<a href="/kb/#" title=""></a>`,
+        // a zero-width anchor to nowhere that a mouse cannot see and the tab
+        // order still stops on. Fall through to passthrough instead.
+        if (!slug || !label) return EOS_UI.esc(s);
+        // Three sinks, three different helpers, and each is load-bearing:
+        // `encodeURIComponent` on the href (a raw `"` in a slug closes the
+        // attribute and a trailing `onmouseover=` then binds), `escAttr` on the
+        // title (`esc` deliberately leaves quotes alone), and `esc` on the
+        // label. All three are pinned in tests/js/eos_components.test.mjs —
+        // the first cut pinned only the label, and swapping either of the other
+        // two left the whole suite green.
+        return '<a href="/kb/#' + encodeURIComponent(slug) +
+            '" title="' + EOS_UI.escAttr(slug) + '">' + EOS_UI.esc(label) + '</a>';
+    }).join(sep);
+};
+
 // EOS_UI.methodPicker({mount, app, endpoint, value, onChange})
 //   Calculator framework — renders a <select> of methods declared at
 //   /<app>/api/methods. Methods with available=false are disabled with the
@@ -6149,7 +6955,7 @@ EOS_UI.methodPicker = function(opts) {
             var picked_meta = items.find(function(m){ return m.id === picked; });
             if (picked_meta && picked_meta.references && picked_meta.references.length) {
                 html += '<span class="eos-method-picker-refs">refs: ' +
-                    picked_meta.references.map(EOS_UI.esc).join(' · ') + '</span>';
+                    EOS_UI.refLinks(picked_meta.references) + '</span>';
             }
         }
         html += '</label>';
@@ -6231,11 +7037,17 @@ EOS_UI.conformancePanel = function(opts) {
             (m.diffs || []).forEach(function(d){
                 rows.push('<tr class="' + (d.passed ? 'ok' : 'bad') + '">' +
                     '<td>' + EOS_UI.esc(mid) + '</td>' +
-                    '<td>' + EOS_UI.esc(d.field) + '</td>' +
+                    '<td>' + EOS_UI.esc(fmt(d.field)) + '</td>' +
                     '<td>' + EOS_UI.esc(fmt(d.expected)) + '</td>' +
-                    '<td>' + EOS_UI.esc(fmt(d.got)) + '</td>' +
+                    // The runner's reason is the only explanation a row without a
+                    // percentage has (a mismatch, an uncomparable anchor, nothing compared).
+                    '<td>' + EOS_UI.esc(fmt(d.got)) + (d.reason ? ' — ' + EOS_UI.esc(d.reason) : '') + '</td>' +
                     '<td>' + (d.rel_pct == null ? '—' : EOS_UI.esc(d.rel_pct) + '%') + '</td>' +
-                    '<td>≤' + EOS_UI.esc(d.tolerance_pct) + '%</td></tr>');
+                    // "exact" only for a bool or string anchor; a row that was never
+                    // compared has no tolerance at all.
+                    '<td>' + (typeof d.expected === 'boolean' || typeof d.expected === 'string' ? 'exact'
+                        : (d.tolerance_pct == null ? '—' : '≤' + EOS_UI.esc(d.tolerance_pct) + '%')) +
+                    '</td></tr>');
             });
             if (m.error) {
                 rows.push('<tr class="bad"><td>' + EOS_UI.esc(mid) +
@@ -6250,7 +7062,7 @@ EOS_UI.conformancePanel = function(opts) {
 
     function caseRow(c, result) {
         var refs = (c.references && c.references.length)
-            ? '<span class="eos-conf-refs">' + c.references.map(EOS_UI.esc).join(' · ') + '</span>' : '';
+            ? '<span class="eos-conf-refs">' + EOS_UI.refLinks(c.references) + '</span>' : '';
         var badge = '';
         if (result) {
             badge = result.passed
@@ -6553,6 +7365,73 @@ EOS_UI.store = function(initial, render) {
         // mutation you couldn't route through set()).
         render: invoke,
     };
+};
+
+// ── Breathing pacer engine ──────────────────────────────────────────────
+// Pure phase-cycling scheduler — no DOM, no CSS. Two apps (meditation,
+// improv) independently hand-rolled the same 1s-tick phase loop; this is
+// the shared engine, extracted at the 2nd occurrence (CLAUDE.md rule 9).
+// Callers own their own circle/label markup and CSS — the visual layouts
+// legitimately differ (meditation: inline ring+dot; improv: modal-centered)
+// so only the scheduling behavior is shared, not markup.
+EOS_UI.BREATH_MODES = {
+    box:   { inhale: 4, hold1: 4, exhale: 4, hold2: 4 },
+    relax: { inhale: 4, hold1: 7, exhale: 8, hold2: 0 },
+};
+
+// Named mode string, or a custom {inhale, hold1, exhale, hold2} config
+// (hold1/hold2 of 0 or omitted are skipped). Returns an ordered phase list:
+// [{name, dur, scale}, ...].
+EOS_UI.breathPhases = function(mode) {
+    var cfg = (typeof mode === 'string') ? EOS_UI.BREATH_MODES[mode] : mode;
+    if (!cfg) return [];
+    var phases = [];
+    phases.push({name: 'Breathe in', dur: cfg.inhale, scale: 1});
+    if (cfg.hold1) phases.push({name: 'Hold', dur: cfg.hold1, scale: 1});
+    phases.push({name: 'Breathe out', dur: cfg.exhale, scale: 0.6});
+    if (cfg.hold2) phases.push({name: 'Hold', dur: cfg.hold2, scale: 0.6});
+    return phases;
+};
+
+// opts: {mode?, phases?, rounds?, onPhase?(phase, {round,index}), onDone?()}
+// `rounds` omitted/0 = run until stop() is called (meditation's use — a
+// breathing mode active for the length of an outer session timer).
+// `rounds` set = auto-stop after that many full cycles and fire onDone()
+// once (improv's use — a fixed-length grounding exercise).
+// Returns {start, stop, isRunning}.
+EOS_UI.breathCycle = function(opts) {
+    opts = opts || {};
+    var phases = opts.phases || EOS_UI.breathPhases(opts.mode || 'box');
+    var rounds = opts.rounds || 0;
+    var onPhase = opts.onPhase || function() {};
+    var onDone = opts.onDone || function() {};
+    var timer = null, idx = 0, elapsed = 0;
+
+    function currentRound() { return Math.floor(idx / phases.length) + 1; }
+
+    function tick() {
+        var total = rounds ? rounds * phases.length : Infinity;
+        if (idx >= total) { stop(); onDone(); return; }
+        onPhase(phases[idx % phases.length], {round: currentRound(), index: idx});
+    }
+
+    function start() {
+        stop();
+        idx = 0; elapsed = 0;
+        if (!phases.length) return;
+        tick();
+        timer = setInterval(function() {
+            elapsed++;
+            var p = phases[idx % phases.length];
+            if (elapsed >= p.dur) { elapsed = 0; idx++; tick(); }
+        }, 1000);
+    }
+
+    function stop() {
+        if (timer) { clearInterval(timer); timer = null; }
+    }
+
+    return {start: start, stop: stop, isRunning: function() { return !!timer; }};
 };
 
 /* ── Keyboard accessibility for [onclick] divs/spans ─────────────────────

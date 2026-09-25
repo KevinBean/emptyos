@@ -122,7 +122,7 @@ async function showCourse(id) {
         '</div>' +
         '<p style="margin-top:14px;max-width:680px;line-height:1.5">' + esc(res.description) + '</p>' +
       '</div>' +
-      '<div class="course-actions">' + startBtn + ' ' + resetBtn + ' <span id="diag-btn-slot"></span></div>' +
+      '<div class="course-actions">' + startBtn + ' ' + resetBtn + ' <span id="diag-btn-slot"></span> <span id="video-queue-slot"></span></div>' +
     '</div>' +
     '<div class="progress-bar"><div style="width:' + pct + '%"></div></div>' +
     '<div class="progress-label" style="margin-top:6px"><span>' + res.progress.completed_count + ' / ' + res.lessons.length + ' lessons complete</span><span>' + pct + '%</span></div>' +
@@ -141,6 +141,9 @@ async function showCourse(id) {
   // Feature-detected diagnostic affordance (dark flag → endpoint returns
   // {enabled:false} and we render nothing).
   hydrateDiagnosticButton(id);
+  if (res.video_enabled && window.LessonVideo) {
+    LessonVideo.mountCourse(document.getElementById('video-queue-slot'), id);
+  }
 }
 
 async function hydrateDiagnosticButton(id) {
@@ -198,6 +201,7 @@ async function showLesson(id, idx) {
     '</div>' +
     '<div class="player-shell">' +
       '<div>' +
+        '<div id="lesson-video-slot"></div>' +
         '<div class="player-content" id="lesson-body">' + bodyHtml + '</div>' +
         '<div class="player-nav">' + prevBtn + quizBtn + nextBtn + '</div>' +
       '</div>' +
@@ -220,6 +224,11 @@ async function showLesson(id, idx) {
     lesson_index: idx,
   });
   loadReaderNotes(res.source && res.source.slug);
+  // Lesson video (dark flag): the sibling lesson-video.js owns the whole panel.
+  // Reading lessons only — the backend refuses a video for any other kind.
+  if (res.video_enabled && res.kind === 'read' && res.slug && window.LessonVideo) {
+    LessonVideo.mountLesson(document.getElementById('lesson-video-slot'), id, idx);
+  }
   // If a reader-note click stashed a quote for this lesson, scroll to + flash it.
   var pendingQuote = sessionStorage.getItem('learn:scrollToQuote');
   if (pendingQuote) {
@@ -950,7 +959,7 @@ var SOURCE_LABELS = {
 async function showReview() {
   showView('review-view');
   var el = document.getElementById('review-view');
-  el.innerHTML = '<div class="review-shell"><p style="text-align:center;color:var(--muted);padding:40px">Loading review queue…</p></div>';
+  el.innerHTML = '<div class="review-shell"><p style="text-align:center;color:var(--muted);padding:48px">Loading review queue…</p></div>';
 
   var stats = await fetch('/learn/api/review/stats').then(function(r) { return r.json(); });
   var queue = await fetch('/learn/api/review/all?limit=30').then(function(r) { return r.json(); });
@@ -1055,9 +1064,17 @@ function advanceReview() {
 
 function renderRevealCard(card, revealed) {
   var m = card.meta || {};
+  // A picture card is answered FROM the photograph, so the image is the prompt
+  // and the name must stay hidden until reveal — printing card.front here would
+  // put the answer right next to the question.
+  var isPicture = card.kind === 'picture' && m.image;
+  var body = '';
+  if (isPicture) {
+    body += '<img class="card-image" src="' + escAttr(m.image) + '" alt="" loading="lazy">';
+  }
   var front = '<div class="card-front">' + esc(card.front) +
     (m.phonetic ? '<span class="phonetic">' + esc(m.phonetic) + '</span>' : '') + '</div>';
-  var body = front;
+  if (!isPicture || revealed) body += front;
   if (!revealed) {
     body += '<button class="eos-btn eos-btn-primary" style="width:100%;padding:12px" onclick="revealReviewCard()">Show answer</button>';
   } else {
@@ -1100,7 +1117,7 @@ async function gradeReviewCard(rating) {
 // ── Quiz cards (learn) — MCQ generated lazily for this specific slug ──
 
 async function renderQuizCard(card) {
-  reviewShell(card, '<p style="text-align:center;color:var(--muted);padding:40px">Generating questions…</p>');
+  reviewShell(card, '<p style="text-align:center;color:var(--muted);padding:48px">Generating questions…</p>');
   var quiz = await fetch('/learn/api/review/quiz/' + encodeURIComponent(card.id))
     .then(function(r) { return r.json(); })
     .catch(function(e) { return { error: String(e) }; });

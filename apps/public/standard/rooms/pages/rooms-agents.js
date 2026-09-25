@@ -170,7 +170,7 @@ function onGroupTitleInput(v) {
             '<div style="display:flex;flex-wrap:wrap;gap:6px">' +
             hits.map(function(h) {
                 var color = agentColor(h.name);
-                return '<button class="eos-btn-sm" style="display:inline-flex;align-items:center;gap:6px;background:var(--bg-elevated);border:1px solid var(--border);border-radius:14px;padding:4px 10px;font-size:12px;cursor:pointer" onclick="acceptSuggestion(\'' + escAttr(h.id) + '\')">' +
+                return '<button class="eos-btn-sm" style="display:inline-flex;align-items:center;gap:6px;background:var(--bg-surface);border:1px solid var(--border);border-radius:14px;padding:4px 10px;font-size:12px;cursor:pointer" onclick="acceptSuggestion(\'' + escAttr(h.id) + '\')">' +
                     '<span class="member-avatar" style="background:' + color + ';width:18px;height:18px;font-size:9px">' + esc(initial(h.name)) + '</span>' +
                     '<span>' + esc(h.name) + '</span>' +
                     '<span style="color:var(--accent);font-weight:600">+</span>' +
@@ -421,7 +421,7 @@ async function loadAgents() {
         catch(e) { _unreadMap = {}; }
         renderSidebar();
     } catch(e) {
-        document.getElementById('agent-list').innerHTML = '<div style="text-align:center;padding:20px;color:var(--text-muted)">Failed to load</div>';
+        document.getElementById('agent-list').innerHTML = EOS_UI.errorState({message: 'Failed to load', onRetry: 'loadAgents()'});
     }
     // Refresh the global pending badge whenever the agent list reloads —
     // covers room creation/deletion + post-action mutations.

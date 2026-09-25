@@ -20,12 +20,25 @@ The SMTP host is non-localhost for hosted mail, so the provider is
 cloud-classified and the first send passes through the consent gate. Grant it
 once (consent policy "always" for `email-smtp`) and booking/outreach emails
 flow without a per-message prompt.
+
+Attachments (added 2026-08-18):
+
+    await self.send(to="…", subject="…", body="…",
+                    attachments=["D:/emptyos/dist/thing.zip"])
+
+Absolute paths only, capped at 20MB total, and every file is validated *before*
+the SMTP connection opens — an invalid path raises rather than sending a mail
+that quietly lacks the file it was sent for. The names and sizes are rendered
+into `consent_summary`, because the gate is the last place a wrong attachment
+can be caught and a bare filename hides how big it is.
 """
 
 from __future__ import annotations
 
 import asyncio
+import mimetypes
 import os
+from pathlib import Path
 
 from emptyos.capabilities import Provider
 from emptyos.sdk import BasePlugin
@@ -103,18 +116,63 @@ class SmtpSendProvider(Provider):
             },
         }
 
+    # Total attached bytes. Gmail rejects ~25MB and most relays sit near it, so
+    # the cap exists to fail *here* with a readable message rather than at the
+    # SMTP server after the upload.
+    MAX_ATTACH_BYTES = 20 * 1024 * 1024
+
+    def _resolve_attachments(self, raw) -> list[Path]:
+        """Validate `attachments=` into readable files, or raise.
+
+        Outbound, so it refuses rather than silently skipping: an email that
+        quietly arrives without the file it was sent for is worse than an error.
+        """
+        if not raw:
+            return []
+        items = [raw] if isinstance(raw, (str, Path)) else list(raw)
+        out: list[Path] = []
+        total = 0
+        for item in items:
+            p = Path(str(item)).expanduser()
+            if not p.is_absolute():
+                raise ValueError(f"send: attachment must be an absolute path: {item}")
+            if not p.is_file():
+                raise ValueError(f"send: attachment not found: {p}")
+            size = p.stat().st_size
+            total += size
+            if total > self.MAX_ATTACH_BYTES:
+                raise ValueError(
+                    f"send: attachments exceed {self.MAX_ATTACH_BYTES // (1024*1024)}MB "
+                    f"(at {p.name}, running total {total // 1024}KB)"
+                )
+            out.append(p)
+        return out
+
     def consent_summary(self, **kwargs) -> str:
         to = kwargs.get("to", "")
         subject = kwargs.get("subject", "")
         body = kwargs.get("body", "")
-        return f"To: {to}\nSubject: {subject}\n\n{body}"
+        # Attachments must appear in the consent text — the gate is the last
+        # place a wrong file can be caught, and a name alone hides the size.
+        lines = [f"To: {to}", f"Subject: {subject}"]
+        try:
+            files = self._resolve_attachments(kwargs.get("attachments"))
+        except ValueError as e:
+            files, lines = [], lines + [f"Attachments: INVALID — {e}"]
+        for p in files:
+            lines.append(f"Attachment: {p.name} ({p.stat().st_size // 1024} KB) — {p}")
+        return "\n".join(lines) + f"\n\n{body}"
 
     async def execute(self, *, to: str, subject: str = "", body: str = "", **kwargs) -> dict:
         if not to:
             raise ValueError("send: 'to' is required")
+        files = self._resolve_attachments(kwargs.get("attachments"))
         loop = asyncio.get_event_loop()
         await loop.run_in_executor(None, self._send_sync, to, subject, body, kwargs)
-        return {"ok": True, "provider": self.name, "detail": f"emailed {to}"}
+        detail = f"emailed {to}"
+        if files:
+            detail += " with " + ", ".join(p.name for p in files)
+        return {"ok": True, "provider": self.name, "detail": detail}
 
     def _send_sync(self, to: str, subject: str, body: str, kwargs: dict) -> None:
         import smtplib
@@ -129,6 +187,15 @@ class SmtpSendProvider(Provider):
         msg.set_content(body or (subject or "(no content)"))
         if html:
             msg.add_alternative(html, subtype="html")
+
+        # Attachments last: add_attachment on a message that already has an
+        # html alternative converts it to multipart/mixed correctly, whereas
+        # attaching before set_content loses the body.
+        for p in self._resolve_attachments(kwargs.get("attachments")):
+            ctype, _ = mimetypes.guess_type(p.name)
+            maintype, _, subtype = (ctype or "application/octet-stream").partition("/")
+            msg.add_attachment(p.read_bytes(), maintype=maintype,
+                               subtype=subtype or "octet-stream", filename=p.name)
 
         password = self._password()
         if self.security == "ssl":

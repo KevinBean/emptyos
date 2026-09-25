@@ -1,3 +1,9 @@
+---
+paths:
+  - "apps/**"
+  - "emptyos/web/static/**"
+  - "emptyos/web/server.py"
+---
 # Auto-Provenance Rule — response provenance on declared output sinks
 
 `ui.auto_provenance` is a dark flag for the serve-time provenance runtime. When

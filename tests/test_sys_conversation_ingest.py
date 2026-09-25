@@ -193,8 +193,14 @@ class TestConversationIngestUI:
         page.goto(base_url + "/conversation-ingest/", wait_until="domcontentloaded")
         page.wait_for_selector(".ci-tab", timeout=5000)
         tabs = page.locator("button.ci-tab")
-        assert tabs.count() == 4
-        assert tabs.nth(0).get_attribute("title")
+        assert tabs.count() == 5
+        assert tabs.evaluate_all(
+            "nodes => nodes.map(node => node.dataset.tab)"
+        ) == ["overview", "queue", "routing", "backfill", "mechanism"]
+        assert all(
+            tabs.nth(index).get_attribute("title")
+            for index in range(tabs.count())
+        )
 
     def test_pending_table_opens_bookmarkable_detail(self, page, base_url):
         page.goto(base_url + "/conversation-ingest/", wait_until="domcontentloaded")

@@ -17,10 +17,10 @@ Auto-approves for localhost / loopback / private-IP hosts.
 
 from __future__ import annotations
 
-import ipaddress
 import time
 from urllib.parse import urlparse
 
+from emptyos.nethost import host_is_loopback_or_private
 from emptyos.sdk.agent_tools.base import Tool, ToolResult, repo_root
 
 DEFAULT_TIMEOUT_MS = 15_000
@@ -30,16 +30,10 @@ MAX_ERROR_LINES = 30
 
 
 def _is_local_host(host: str) -> bool:
-    if not host:
-        return False
-    h = host.lower().strip("[]")
-    if h in ("localhost",):
-        return True
-    try:
-        ip = ipaddress.ip_address(h)
-    except ValueError:
-        return False
-    return ip.is_loopback or ip.is_private
+    """Loopback / private-LAN check for the auto-approve gate. Canonicalises
+    first, so `0x7f.0.0.1` and `127.0.0.1.` are recognised as the loopback they
+    resolve to rather than mistaken for DNS names."""
+    return host_is_loopback_or_private(host)
 
 
 class ScreenshotTool(Tool):

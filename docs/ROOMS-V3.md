@@ -2,7 +2,7 @@
 
 > The conversation substrate. Where you, named agents, and CLIs meet.
 
-`apps/rooms/` started life as `apps/gpts/` — a single-agent persistent-chat
+`apps/public/standard/rooms/` started life as `apps/personal/gpts/` — a single-agent persistent-chat
 app. Phases 0-27 turned it into a multi-participant workspace with vault
 integration, scheduled check-ins, review-gated CLI participants, and a
 full lifecycle (archive / export / distill / pin / remember / reply).
@@ -23,7 +23,7 @@ This doc is the operator's reference for what's there and where it lives.
   contents, prepended to the LLM prompt. Persistent room knowledge lives
   in the Knowledge tab. Distill writes a KB note tagged `room-distill`.
 - **Tasks ripple.** `/task <text>` attaches a task to the room AND inserts
-  it into `apps/projects/`'s universal pool with a `🗨️` marker. The
+  it into `apps/public/standard/projects/`'s universal pool with a `🗨️` marker. The
   Activity drawer's Tasks tab can also browse all vault tasks (across
   every project) and attach existing ones to the current room.
 - **Lifecycle.** Archive (reversible) / Export to vault (markdown) /
@@ -52,7 +52,7 @@ This doc is the operator's reference for what's there and where it lives.
 | Save a frequent prompt | `/save <name>`, recall with `/snip <name>` |
 | Defer attention | `/remind 2h finish review` |
 | Recurring check-in | `/schedule` |
-| Pin a fact agent should always remember | `/remember Kevin prefers tabs over spaces` |
+| Pin a fact agent should always remember | `/remember prefers tabs over spaces` |
 
 ## Slash commands (21)
 
@@ -138,7 +138,7 @@ Memory + wikilinks + knowledge files are merged into context before
 `rooms:unarchived`, `rooms:exported`, `rooms:distilled`, `rooms:pinned`,
 `rooms:unpinned`, `rooms:reminder_fired`, `rooms:scheduled_fired`.
 
-The reactor (`apps/reactor/reactions_work.py`) listens to the lifecycle
+The reactor (`apps/public/standard/reactor/reactions_work.py`) listens to the lifecycle
 events and writes journal breadcrumbs:
 
 | Event | Journal line |
@@ -230,18 +230,18 @@ python -m pytest tests/personal/test_rooms_design_shots.py -v --timeout=30
 
 | Surface | File |
 |---|---|
-| App backend | `apps/rooms/app.py` |
-| App frontend | `apps/rooms/pages/index.html` (~188k) |
-| Manifest | `apps/rooms/manifest.toml` |
-| Cross-app: tasks | `apps/projects/app.py` (`add_task_to_project room_id`, `tasks_for_room`, `ROOM_PATTERN`) |
-| Cross-app: tasks | `apps/task/app.py` (`api_attach_room`) |
-| Cross-app: scroll | `apps/scroll/app.py` (call_app calls renamed) |
-| Reactor | `apps/reactor/reactions_work.py`, `apps/reactor/manifest.toml` |
+| App backend | `apps/public/standard/rooms/app.py` |
+| App frontend | `apps/public/standard/rooms/pages/index.html` (~188k) |
+| Manifest | `apps/public/standard/rooms/manifest.toml` |
+| Cross-app: tasks | `apps/public/standard/projects/app.py` (`add_task_to_project room_id`, `tasks_for_room`, `ROOM_PATTERN`) |
+| Cross-app: tasks | `apps/public/core/task/app.py` (`api_attach_room`) |
+| Cross-app: scroll | `apps/public/standard/scroll/app.py` (call_app calls renamed) |
+| Reactor | `apps/public/standard/reactor/reactions_work.py`, `apps/public/standard/reactor/manifest.toml` |
 | SDK | `emptyos/sdk/intents.py` (extracted from voice-assistant), `emptyos/sdk/utils.py` (`ROOM_PATTERN`) |
 | Web | `emptyos/web/server.py`, `emptyos/web/clustering.py`, `emptyos/web/static/page-assistant.js` |
 | Plugin | `plugins/agent-runtime/{plugin.py, manifest.toml}` (extracted from dogfood-agent) |
-| Dogfood | `apps/dogfood-agent/app.py` (uses agent-runtime plugin) |
-| Voice | `apps/voice-assistant/intents.py` (re-exports from SDK) |
+| Dogfood | `apps/extension/dev/dogfood-agent/app.py` (uses agent-runtime plugin) |
+| Voice | `apps/public/standard/voice-assistant/intents.py` (re-exports from SDK) |
 | Tests | `tests/personal/test_rooms_design_shots.py` (24 shots), `tests/personal/test_rooms.py`, `tests/helpers.py` |
 
 ## Phase index

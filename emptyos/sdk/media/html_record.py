@@ -161,6 +161,7 @@ async def record_html_to_mp4(
     settle_ms: int = 400,
     context_id: str | None = None,
     keep_frames: bool = False,
+    viewport: str | dict | None = None,
 ) -> dict:
     """Record an HTML page's animation timeline to an MP4.
 
@@ -170,6 +171,11 @@ async def record_html_to_mp4(
     ``duration_s``: clip length; inferred from the page's longest animation when
                     omitted, falling back to 6 s, and always clamped to
                     ``max_duration_s``.
+    ``viewport``  : ``"1280x720"`` or ``{width, height}`` for this page.
+                    Omitted, no size is sent and the context's current size
+                    applies — normally the plugin default (1280x800), which is
+                    not 16:9, so a caller assembling a 720p video must pass it
+                    or every recorded frame gets letterboxed.
 
     Returns ``{ok, path, frames, fps, duration_s}`` or ``{ok: False, error}``.
     Never raises — capture/encoding failures come back as ``ok: False``.
@@ -189,7 +195,10 @@ async def record_html_to_mp4(
     pattern = str(frames_dir / "f_%05d.png")
 
     try:
-        await plugin.navigate(url, wait="load", context_id=cid)
+        nav_kwargs = {"wait": "load", "context_id": cid}
+        if viewport:
+            nav_kwargs["viewport"] = viewport
+        await plugin.navigate(url, **nav_kwargs)
         # Let webfonts + first layout settle so frame 0 isn't a flash of
         # unstyled / unlaid-out content. The page's animations may run during
         # this real-time wait, but the per-frame seek below pauses + rewinds each

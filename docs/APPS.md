@@ -2,7 +2,7 @@
 
 # EmptyOS Apps
 
-> 70 apps · 17 plugins · 16 capabilities · release v0.6.4.
+> 72 apps · 26 plugins · 16 capabilities · release v0.7.0.
 >
 > The apps that ship in a public EmptyOS release (`core` + `standard` tiers).
 
@@ -17,7 +17,7 @@ self-generated docs. This catalog is regenerated from manifests by
 | App | What it does | Capabilities |
 |---|---|---|
 | **hub** | Combines panel content from installed apps into one hub | think |
-| **link** | Finds and manages links between your notes | read, search, think |
+| **link** | Finds and manages links between your notes | read, think |
 | **note** | Create, read, list, and update your notes | read, write, search, think |
 | **providers** | Manage local models, cloud APIs, and Claude CLI in the live capability chain | think |
 | **quick-action** | Turns one input into the right capture, routing, or action | read, write, think |
@@ -32,12 +32,12 @@ self-generated docs. This catalog is regenerated from manifests by
 
 ## Standard — full builder OS
 
-*57 apps.*
+*59 apps.*
 
 | App | What it does | Capabilities |
 |---|---|---|
 | **agent** | Runs a permission-gated AI agent that uses tools in terminal and web | think |
-| **app-analytics** | Tracks app usage and vault health to show what to fix or delete | think, search |
+| **app-analytics** | Tracks app usage and vault health to show what to fix or delete | think |
 | **assistant** | Helps you search your vault, compare agents, and use voice conversations | think, read, write, search, speak, listen, browse |
 | **billing** | Tracks token usage, daily stats, and budget alerts | write, think |
 | **boards** | Organizes work in flexible boards with multiple views, automations, and offline export | read, write, think |
@@ -62,8 +62,10 @@ self-generated docs. This catalog is regenerated from manifests by
 | **hands-free** | Control EmptyOS by raising your hand, speaking, then confirming with a gesture | think |
 | **journal** | Capture journal entries, milestones, moods, and reflections over time | read, write, search, think |
 | **kb** | concepts, formulas, standards, cases, lessons, and prescriptive guidelines | read, write, think, draw, search |
-| **learn** | Turns your notes into structured courses with lessons, quizzes, and progress tracking | think, read, write |
+| **learn** | Turns your notes into structured courses with lessons, quizzes, and progress tracking | think, read, write, speak |
+| **library** | papers and PDFs with citation metadata, full-text search, annotation, and BibTeX/CSL export | read, write, search, think |
 | **life** | one day timeline composed from journal, worklog, and expense. Owns no data; member apps contribute items via [[contributes.life.timeline]] | — |
+| **markitup** | Visual review of a captured surface. Point it at a website — a client's or one of our own — and it captures the views worth reviewing, writes tagged comments against real page elements, and pins each one to the exact region it is about. The daemon page is the working artifact; PDF and markdown are exports | think, browse, write |
 | **music-library** | Browse, play, and edit songs in your vault, and generate AI lyrics | read, write, search, think |
 | **people** | Manage people, relationships, workload, capacity, birthdays, and interaction history | read, write, search, think |
 | **portal** | one composer with switchable backend modes (Rooms multi-participant chat / Assistant vault Q&A / Agent tool-loop / Code workspace), plus capability verbs (Capture / Find / Learn) across apps, a sidebar that organises threads into Rooms with shared instructions, pinned threads, and day + session navigation | — |

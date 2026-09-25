@@ -46,6 +46,7 @@ function readingError(text) {
   if (!note) return;
   note.textContent = text;
   note.classList.add("reading-error");
+  note.hidden = false;   // a failure that renders as nothing is not a failure report
 }
 
 async function saveReadingSettings(patch) {
@@ -118,11 +119,16 @@ function renderReadingSettings(current) {
   fillLanguages("reading-native-language", current.native_language || "Chinese");
   const note = document.getElementById("reading-note");
   note.classList.remove("reading-error");
+  // Kept as a tooltip rather than three permanent lines of prose in a 375px panel.
+  note.hidden = true;
   note.textContent = current.mode === "off"
     ? "No page analysis, observers, highlights, or model calls."
     : current.mode === "ask"
       ? "Double-click a word. Your own note comes first, then a cached answer, then the local model."
       : "The words on screen are checked as you scroll. Answers are cached; a word joins your vocabulary only when you judge it.";
+  // Set AFTER the text, or the tooltip lags one render behind.
+  const modes = document.querySelector(".reading-modes");
+  if (modes) modes.title = note.textContent;
 }
 
 async function refreshReadingSiteButton(current) {
@@ -1352,19 +1358,64 @@ async function openModelPicker(data) {
     setStatus("Model list unavailable", "err");
     return;
   }
-  // Lightweight modal — re-uses status bar for simplicity
-  const choice = window.prompt(
-    "Switch model for assistant — type a provider name (blank = chain default):\n\n" +
-    providers.map(p => "  " + (p.name || p)).join("\n"),
-    ""
-  );
-  if (choice === null) return;
-  const { host, token } = await getConfig();
-  await fetch(host + "/settings/api/set", {
-    method: "POST", headers: authHeaders(token),
-    body: JSON.stringify({ key: "think.app.assistant", value: choice.trim() }),
+  const pop = document.getElementById("model-popover");
+  if (!pop) return;
+
+  async function pick(value) {
+    close();
+    const { host, token } = await getConfig();
+    await fetch(host + "/settings/api/set", {
+      method: "POST", headers: authHeaders(token),
+      body: JSON.stringify({ key: "think.app.assistant", value }),
+    });
+    refreshModelPill();
+  }
+
+  function close() {
+    pop.classList.remove("open");
+    pop.innerHTML = "";
+    document.removeEventListener("keydown", onKey, true);
+    document.removeEventListener("click", onOutside, true);
+  }
+  function onKey(e) { if (e.key === "Escape") { e.stopPropagation(); close(); } }
+  function onOutside(e) { if (!pop.contains(e.target)) close(); }
+
+  // Same derivation refreshModelPill uses, so the pill and this list can't
+  // disagree about which provider is live.
+  const active = (data.effective && data.effective.provider) || data.provider || "";
+  const rows = [
+    ...providers.map(p => {
+      const name = p.name || String(p);
+      return { value: name, label: name, cost: modelCostMeta(name)[1],
+               current: name === active };
+    }),
+    // Clearing the per-app override is a real choice, not the absence of one.
+    { value: "", label: "↺ Use chain default", cost: "", current: false },
+  ];
+
+  // escHtml, not esc — this file's helper is named escHtml.
+  pop.innerHTML = rows.map((r, i) =>
+    '<div class="model-row' + (r.current ? " current" : "") + '" role="option" ' +
+    'tabindex="0" data-i="' + i + '">' + escHtml(r.label) +
+    (r.cost ? '<span class="cost">' + escHtml(r.cost) + "</span>" : "") + "</div>"
+  ).join("");
+
+  pop.querySelectorAll(".model-row").forEach(el => {
+    const r = rows[Number(el.dataset.i)];
+    el.addEventListener("click", () => pick(r.value));
+    el.addEventListener("keydown", e => {
+      if (e.key === "Enter" || e.key === " ") { e.preventDefault(); pick(r.value); }
+    });
   });
-  refreshModelPill();
+
+  pop.classList.add("open");
+  pop.querySelector(".model-row")?.focus();
+  // Capture phase, and registered after this click finishes, or the click that
+  // opened the popover would immediately close it again.
+  setTimeout(() => {
+    document.addEventListener("keydown", onKey, true);
+    document.addEventListener("click", onOutside, true);
+  }, 0);
 }
 
 // ── Input wiring ─────────────────────────────────────────────────
@@ -1859,6 +1910,8 @@ async function init() {
     if (voice.audioBusy) stopTTS();
   });
 
+  initLectureCapture();
+
   // Esc anywhere on the page interrupts TTS / mic.
   document.addEventListener("keydown", (e) => {
     if (e.key === "Escape") {
@@ -1866,6 +1919,150 @@ async function init() {
       else if (voice.listening) stopListening();
     }
   });
+}
+
+// ── Lecture capture ──────────────────────────────────────────────
+// Records the active tab's audio and hands it to the daemon, which transcribes
+// it locally and files a vault note. Tab-scoped, so nothing but the lecture is
+// ever recorded. Elapsed time is polled from the offscreen recorder rather than
+// counted here — the panel can be closed and reopened mid-capture.
+
+const LECTURE_FOLDER_KEY = "lectureFolder";
+const DEFAULT_LECTURE_FOLDER = "30_Resources/Courses/_captures";
+let lectureTimer = null;
+
+function lectureEls() {
+  return {
+    label: document.getElementById("lecture-label"),
+    folder: document.getElementById("lecture-folder"),
+    start: document.getElementById("lecture-start"),
+    stop: document.getElementById("lecture-stop"),
+    how: document.getElementById("lecture-how"),
+    state: document.getElementById("lecture-state"),
+    hint: document.getElementById("lecture-hint"),
+  };
+}
+
+function lectureHint(text, isError) {
+  const { hint } = lectureEls();
+  if (!hint) return;
+  hint.textContent = text || "";
+  hint.classList.toggle("err", Boolean(isError));
+}
+
+async function lectureCanRecordHere() {
+  try {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (!tab?.url || !/^https?:/.test(tab.url)) return false;
+    return await chrome.permissions.contains(
+      { origins: [new URL(tab.url).origin + "/*"] });
+  } catch (e) { return false; }
+}
+
+function renderLecture(st) {
+  const e = lectureEls();
+  if (!e.state) return;
+  const rec = Boolean(st?.recording);
+  const secs = Math.round(st?.seconds || 0);
+  e.state.textContent = rec
+    ? "Recording " + String(Math.floor(secs / 60)).padStart(2, "0") + ":" +
+      String(secs % 60).padStart(2, "0")
+    : "Idle";
+  e.stop.disabled = !rec;
+  if (e.start) e.start.disabled = rec || e.start.dataset.blocked === "1";
+  if (e.state) e.state.className = rec ? "lecture-live" : "muted";
+  if (e.how) {
+    e.how.textContent = rec
+      ? "recording this tab — switching tabs is fine, the audio stays "
+        + "audible. Ctrl+Shift+U grabs the current slide."
+      : (e.start && e.start.dataset.blocked === "1"
+          ? "Record needs access to this site — press Ctrl+Shift+L on the tab "
+            + "(or right-click → Start lecture capture) and Chrome will grant it."
+          : "Ctrl+Shift+L also starts. Ctrl+Shift+U grabs the current slide "
+            + "(screenshot + page text) into the same note.");
+  }
+  if (e.label) e.label.disabled = rec;
+  if (e.folder) e.folder.disabled = rec;
+}
+
+async function pollLecture() {
+  try {
+    const st = await chrome.runtime.sendMessage({ type: "EOS_LECTURE_STATE" });
+    renderLecture(st);
+    // A capture started from the context menu (the path that actually gets
+    // activeTab) never ran the panel's start handler, so adopt the timer here
+    // rather than showing a frozen "Idle" while the recorder is running.
+    if (st?.recording && !lectureTimer) lectureTimer = setInterval(pollLecture, 1000);
+    if (!st?.recording && lectureTimer) { clearInterval(lectureTimer); lectureTimer = null; }
+  } catch (e) { /* worker asleep; next tick re-reads */ }
+}
+
+function initLectureCapture() {
+  const e = lectureEls();
+  if (!e.stop) return;
+
+  chrome.storage.local.get({ [LECTURE_FOLDER_KEY]: DEFAULT_LECTURE_FOLDER }).then(v => {
+    if (e.folder) e.folder.value = v[LECTURE_FOLDER_KEY] || DEFAULT_LECTURE_FOLDER;
+  });
+  e.folder?.addEventListener("change", () => {
+    chrome.storage.local.set({ [LECTURE_FOLDER_KEY]: e.folder.value.trim() });
+  });
+  // Persisted so the "Start lecture capture" context-menu item — which is the
+  // path that actually gets activeTab granted — can read the label the panel
+  // is showing.
+  e.label?.addEventListener("input", () => {
+    chrome.storage.local.set({ lectureLabel: e.label.value.trim() });
+  });
+
+  async function refreshRecordable() {
+    if (!e.start) return;
+    const ok = await lectureCanRecordHere();
+    e.start.dataset.blocked = ok ? "0" : "1";
+    pollLecture();
+  }
+  refreshRecordable();
+  chrome.tabs.onActivated.addListener(refreshRecordable);
+  chrome.tabs.onUpdated.addListener((_id, info) => { if (info.url) refreshRecordable(); });
+
+  e.start?.addEventListener("click", async () => {
+    lectureHint("starting…");
+    e.start.disabled = true;
+    try {
+      const r = await chrome.runtime.sendMessage({ type: "EOS_LECTURE_START" });
+      if (r?.error) lectureHint(r.error, true);
+      else lectureHint("recording");
+    } catch (err) {
+      lectureHint(err?.message || "could not start", true);
+    }
+    pollLecture();
+  });
+
+  e.stop.addEventListener("click", async () => {
+    lectureHint("transcribing… this takes a moment");
+    e.stop.disabled = true;
+    try {
+      const r = await chrome.runtime.sendMessage({
+        type: "EOS_LECTURE_STOP",
+        label: (e.label?.value || "").trim(),
+        folder: (e.folder?.value || "").trim(),
+      });
+      if (r?.error) { lectureHint(r.error, true); }
+      else {
+        lectureHint("filed " + r.path + " — " + (r.chars || 0) + " chars, " +
+                    (r.seconds || 0) + "s");
+        if (e.label) e.label.value = "";
+      }
+    } catch (err) {
+      lectureHint(err?.message || "stop failed", true);
+    }
+    if (lectureTimer) { clearInterval(lectureTimer); lectureTimer = null; }
+    pollLecture();
+  });
+
+  pollLecture();
+  // Cheap heartbeat so a menu-started capture is noticed even if the panel was
+  // closed when it began.
+  setInterval(() => { if (!lectureTimer) pollLecture(); }, 4000);
 }
 
 init();

@@ -29,8 +29,9 @@
 | `speak-sharper:pattern_detected` | voice-review | — | Unheard |
 | `shadowing:attempt` | shadowing | english | |
 | `shadowing:perfect` | shadowing | english, reactor | |
-| `reader:highlight_added` | reader | english, hub, reactor | |
-| `reader:review_completed` | reader | english, hub, reactor | |
+| `media:highlight_added` | media | english, hub-life | renamed from `reader:highlight_added` 2026-08-28 |
+| `media:review_completed` | media | english, hub-life | renamed from `reader:review_completed` 2026-08-28 |
+| `media:session_logged` | media | — | Unheard; renamed from `reader:session_logged` 2026-08-28 |
 | `dictionary:word_saved` | dictionary | english, hub, reactor | |
 | `dictionary:word_reviewed` | dictionary | english, reactor | |
 | `english:level_up` | english | reactor | |

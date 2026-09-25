@@ -10,6 +10,20 @@ report `docs/suites/life-cohesion.md`, contract `timeline_items` +
 `[[contributes.life.timeline]]`, surface `apps/public/standard/life/`.
 Catalog: `suites.toml` (repo root); validator: `python scripts/check_suites.py`.
 
+
+## Prerequisites
+
+None that block the pass. Membership comes from the suite's `[[suite]]` entry in
+`suites.toml`, and steps 2-4 are a filesystem sweep — all of it works with the daemon
+down.
+
+Step 3 alone touches `/api/topology`, for connectivity **evidence** only. That route is
+not auth-exempt, so in `network.mode = "private"` it needs the bearer token from
+`emptyos.toml`; without it the call returns `{"error":"unauthorized"}`, which reads
+exactly like a daemon that is down (`.claude/rules/environment.md`). If you cannot
+reach it, record the connectivity column as unknown and finish the pass — do not
+start or restart the daemon (`.claude/rules/daemon-handling.md`).
+
 ## Steps
 
 ### 1. Scope from the catalog

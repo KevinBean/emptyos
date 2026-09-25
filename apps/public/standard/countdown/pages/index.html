@@ -12,7 +12,7 @@ body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-se
 .page { max-width:960px; margin:0 auto; min-width:0 }
 
 .cd-toolbar { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; padding:14px 0 12px; flex-wrap:wrap }
-.cd-toolbar h1 { font-size:20px; font-weight:700; color:var(--text-heading) }
+.cd-toolbar h1 { font-size:22px; font-weight:700; color:var(--text-heading) }
 .cd-toolbar .sub { font-size:13px; color:var(--text-secondary); margin-top:2px }
 .cd-actions { display:flex; gap:8px; align-items:center; flex-wrap:wrap }
 
@@ -26,8 +26,14 @@ body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-se
 .cd-tile:hover { box-shadow:0 4px 14px rgba(0,0,0,0.12); transform:translateY(-1px) }
 .cd-tile.today { border-left-color:var(--warning) }
 .cd-tile.archived { opacity:.55 }
+.cd-tile.has-cover { background-size:cover; background-position:center; color:#fff }
+.cd-tile.has-cover::before { content:''; position:absolute; inset:0; border-radius:inherit; background:linear-gradient(180deg, rgba(0,0,0,.18), rgba(0,0,0,.68)); z-index:0 }
+.cd-tile.has-cover > * { position:relative; z-index:1 }
+.cd-tile.has-cover .cd-title, .cd-tile.has-cover .cd-days, .cd-tile.has-cover .cd-dir, .cd-tile.has-cover .cd-meta, .cd-tile.has-cover .cd-days-unit { color:#fff }
+.cd-tile.has-cover .cd-op-btn { color:rgba(255,255,255,.85) }
+.cd-tile.has-cover .cd-op-btn.pinned { color:var(--warning) }
 .cd-tile-top { display:flex; align-items:center; justify-content:space-between; margin-bottom:8px }
-.cd-icon { font-size:20px }
+.cd-icon { font-size:22px }
 .cd-tile-ops { display:flex; gap:4px }
 .cd-op-btn { background:none; border:none; cursor:pointer; font-size:14px; color:var(--text-muted); padding:2px 4px; border-radius:4px; line-height:1 }
 .cd-op-btn:hover { background:var(--bg-hover, color-mix(in srgb, var(--accent) 10%, transparent)) }
@@ -56,6 +62,8 @@ if(window.EOS&&EOS.registerActions){EOS.registerActions({},[],{description:"Coun
         </div>
         <div class="cd-actions">
             <button class="eos-btn eos-btn-primary eos-btn-sm" onclick="openAdd()" title="Add a new countdown">+ Add</button>
+            <button class="eos-btn eos-btn-sm" onclick="openImportIcs()" title="Import events from an .ics calendar file">&#8613; Import .ics</button>
+            <input type="file" id="ics-file-input" accept=".ics,text/calendar" style="display:none" onchange="handleIcsFile(event)">
             <button class="eos-btn eos-btn-sm" onclick="openAppSettings()" title="Settings">&#9881;</button>
         </div>
     </div>
@@ -114,8 +122,11 @@ function tileHtml(e) {
     var dir = isToday ? 'Today!' : (isFuture ? 'days to go' : 'days ago');
     var occ = e.occurrence ? (' · ' + ordinal(e.occurrence)) : '';
     var repeatLabel = (e.repeat && e.repeat !== 'none') ? (' · repeats ' + e.repeat) : '';
-    return '<div class="cd-tile' + (isToday ? ' today' : '') + (e.archived ? ' archived' : '') + '" ' +
-        'style="border-left-color:' + colorVar(e.color) + '" onclick="openEdit(' + escAttr(JSON.stringify(e.file)) + ')">' +
+    var reminderLabel = e.remind_days_before ? (' · &#128276; ' + esc(e.remind_days_before) + 'd before') : '';
+    var style = 'border-left-color:' + colorVar(e.color);
+    if (e.has_cover) style += ';background-image:url(' + '/countdown/api/events/' + encodeURIComponent(e.file) + '/cover)';
+    return '<div class="cd-tile' + (isToday ? ' today' : '') + (e.archived ? ' archived' : '') + (e.has_cover ? ' has-cover' : '') + '" ' +
+        'style="' + escAttr(style) + '" onclick="openEdit(' + escAttr(JSON.stringify(e.file)) + ')">' +
         '<div class="cd-tile-top">' +
             '<span class="cd-icon">' + (e.icon || '📌') + '</span>' +
             '<div class="cd-tile-ops">' +
@@ -128,7 +139,7 @@ function tileHtml(e) {
         '<div class="cd-dir">' + esc(dir) + '</div>' +
         (isToday ? '<div class="cd-today-badge">TODAY</div>' : '') +
         '<div class="cd-title">' + esc(e.title || '') + '</div>' +
-        '<div class="cd-meta">' + esc(fmtDate(e.target_date)) + occ + repeatLabel + '</div>' +
+        '<div class="cd-meta">' + esc(fmtDate(e.target_date)) + occ + repeatLabel + reminderLabel + '</div>' +
     '</div>';
 }
 
@@ -166,8 +177,73 @@ function formFields(existing) {
         {key: 'category', label: 'Category', type: 'select', options: CATEGORIES, value: existing.category || 'other'},
         {key: 'icon', label: 'Icon (optional)', type: 'text', value: existing.icon || '', placeholder: 'auto from category'},
         {key: 'color', label: 'Color', type: 'select', options: COLORS, value: existing.color || 'accent'},
+        {key: 'remind_days_before', label: 'Remind me (days before, optional)', type: 'text',
+         value: existing.remind_days_before || '', placeholder: 'e.g. 3'},
         {key: 'notes', label: 'Notes (optional)', type: 'textarea', value: existing.notes || ''},
     ];
+}
+
+// Calendar (.ics) import (countdown-no-calendar-import) — preview/confirm,
+// same shape as the other CSV-style imports this session.
+function openImportIcs() { document.getElementById('ics-file-input').click(); }
+
+async function handleIcsFile(event) {
+    var file = event.target.files && event.target.files[0];
+    event.target.value = '';
+    if (!file) return;
+    var form = new FormData();
+    form.append('file', file);
+    var res = await fetch('/countdown/api/import-ics/preview', { method: 'POST', body: form })
+        .then(function(r) { return r.json(); })
+        .catch(function() { return { error: 'upload failed' }; });
+    if (res.error) { EOS_UI.toast(res.error, false); return; }
+    showIcsPreview(res);
+}
+
+function showIcsPreview(res) {
+    var s = res.summary || {};
+    var warnHtml = (res.warnings || []).map(function(w) {
+        return '<div style="color:var(--warning);font-size:0.8rem;margin-bottom:4px">⚠ ' + esc(w) + '</div>';
+    }).join('');
+    var rowsHtml = (res.rows || []).slice(0, 200).map(function(r, i) {
+        return '<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border)">' +
+            '<input type="checkbox" class="ics-row-check" data-idx="' + i + '"' + (r.duplicate ? '' : ' checked') + '>' +
+            '<span style="flex:1;font-size:0.85rem">' + esc(r.title) + '</span>' +
+            '<span style="font-size:0.8rem;color:var(--text-muted)">' + esc(r.date) + '</span>' +
+            (r.duplicate ? '<span style="font-size:0.75rem;color:var(--text-muted)">already exists</span>' : '') +
+        '</div>';
+    }).join('') || '<div class="eos-empty">No importable events</div>';
+
+    window._icsRows = res.rows || [];
+    EOS_UI.modal({
+        title: 'Import from calendar',
+        width: '480px',
+        body:
+            '<div style="margin-bottom:10px;font-size:0.85rem;color:var(--text-secondary)">' +
+                (s.total || 0) + ' events found — ' + (s.new || 0) + ' new, ' + (s.duplicate || 0) + ' already exist' +
+            '</div>' +
+            warnHtml +
+            '<div style="max-height:320px;overflow-y:auto;border-top:1px solid var(--border)">' + rowsHtml + '</div>' +
+            '<div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px">' +
+                '<button class="eos-btn" onclick="EOS_UI.closeModal()">Cancel</button>' +
+                '<button class="eos-btn eos-btn-primary" onclick="confirmIcsImport()">Import selected</button>' +
+            '</div>',
+    });
+}
+
+async function confirmIcsImport() {
+    var checks = document.querySelectorAll('.ics-row-check:checked');
+    var rows = Array.prototype.slice.call(checks).map(function(c) {
+        return window._icsRows[parseInt(c.getAttribute('data-idx'), 10)];
+    }).filter(Boolean);
+    if (!rows.length) { EOS_UI.toast('No events selected', false); return; }
+    var res = await EOS.apiSafe('/countdown/api/import-ics/confirm', {
+        method: 'POST', body: JSON.stringify({ rows: rows }),
+    });
+    if (res && res.error) { EOS_UI.toast(res.error, false); return; }
+    EOS_UI.closeModal();
+    EOS_UI.toast('Imported ' + res.imported + ' countdown' + (res.imported === 1 ? '' : 's') + (res.skipped ? ' (' + res.skipped + ' skipped)' : ''));
+    loadEvents();
 }
 
 function openAdd() {

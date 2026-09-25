@@ -306,5 +306,70 @@ def test_audit_reports_invalid_without_mutating():
     assert app.updates == []
 
 
+
+def test_an_empty_list_field_does_not_drop_the_note():
+    """A `list[str]` field must survive the empty shape *both* parsers produce.
+
+    An empty `tags:` closes as `[]` when another key follows it and as `""`
+    when it is the last key in the block — so the same note validated or
+    vanished depending on the order of its frontmatter. Pydantic raises
+    `list_type` on the string, `read_all` swallows the failure by design, and
+    the note silently left the result set. Nothing pointed at the cause.
+
+    The sibling of `test_str_field_coerces_loose_yaml_shapes`, read from the
+    other direction.
+    """
+
+    class Tagged(VaultModel):
+        TAG = "job-application"
+        company: str
+        tags: list[str] = []
+
+    app = FakeApp()
+    mid = "20_Areas/Career/Job-Applications/mid/_application.md"
+    app.notes[mid] = {"company": "Mid", "tags": []}          # empty, key follows
+    app.tags[mid] = ["job-application"]
+    last = "20_Areas/Career/Job-Applications/last/_application.md"
+    app.notes[last] = {"company": "Last", "tags": ""}        # empty, trailing key
+    app.tags[last] = ["job-application"]
+    none = "20_Areas/Career/Job-Applications/none/_application.md"
+    app.notes[none] = {"company": "None", "tags": None}
+    app.tags[none] = ["job-application"]
+    real = "20_Areas/Career/Job-Applications/real/_application.md"
+    app.notes[real] = {"company": "Real", "tags": ["bess", "hv"]}
+    app.tags[real] = ["job-application"]
+
+    by_company = {r.company: r for r in Tagged.read_all(app)}
+    assert set(by_company) == {"Mid", "Last", "None", "Real"}   # none dropped
+    assert by_company["Mid"].tags == []
+    assert by_company["Last"].tags == []
+    assert by_company["None"].tags == []
+    assert by_company["Real"].tags == ["bess", "hv"]
+
+
+def test_a_scalar_in_a_list_field_still_fails_loudly():
+    """Only the *empty* shapes are widened. A real scalar must still fail.
+
+    Inventing `["20260701"]` from a hand-typed `tags: 20260701` would hide a
+    mis-authored note; `audit()` exists to name it instead.
+    """
+
+    class Tagged(VaultModel):
+        TAG = "job-application"
+        company: str
+        tags: list[str] = []
+
+    app = FakeApp()
+    bad = "20_Areas/Career/Job-Applications/bad/_application.md"
+    app.notes[bad] = {"company": "Bad", "tags": "20260701"}
+    app.tags[bad] = ["job-application"]
+
+    assert Tagged.read_all(app) == []                  # fail-soft skip
+    report = Tagged.audit(app)                          # ...but named here
+    assert report["valid"] == 0
+    assert len(report["invalid"]) == 1
+    assert report["invalid"][0]["path"] == bad
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

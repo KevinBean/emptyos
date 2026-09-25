@@ -43,7 +43,7 @@
 .ed-preview blockquote { border-left:3px solid var(--accent); padding:8px 16px; margin:12px 0; color:var(--text-secondary); background:var(--bg-card); border-radius:0 8px 8px 0 }
 .ed-preview img { max-width:100%; border-radius:8px; margin:12px 0 }
 .ed-preview table { width:100%; border-collapse:collapse; margin:12px 0 }
-.ed-preview th { text-align:left; font-size:11px; color:var(--text-muted); text-transform:uppercase; padding:8px; border-bottom:1px solid var(--border) }
+.ed-preview th { text-align:left; font-size:11px; color:var(--text-muted); text-transform:uppercase; letter-spacing:var(--tracking-meta); padding:8px; border-bottom:1px solid var(--border) }
 .ed-preview td { padding:8px; border-bottom:1px solid var(--border); font-size:13px }
 .ed-preview .callout { border-left:3px solid var(--accent); padding:12px 16px; margin:12px 0; background:var(--bg-card); border-radius:0 8px 8px 0 }
 .ed-preview .callout-title { font-weight:600; color:var(--text-heading) }
@@ -99,7 +99,7 @@
 .edit-panel.open { display:flex }
 .ep-head { display:flex; align-items:center; gap:8px; padding:10px 14px; border-bottom:1px solid var(--border) }
 .ep-title { font-size:13px; font-weight:600; color:var(--text-heading) }
-.ep-close { margin-left:auto; cursor:pointer; background:transparent; border:none; color:var(--text-muted); font-size:20px }
+.ep-close { margin-left:auto; cursor:pointer; background:transparent; border:none; color:var(--text-muted); font-size:22px }
 .ep-body { padding:12px 14px; overflow-y:auto }
 .ep-blocktext { font-size:12px; color:var(--text-muted); background:var(--bg-alt,rgba(127,127,127,0.08)); border:1px solid var(--border); border-radius:6px; padding:8px; max-height:90px; overflow:auto; margin-bottom:8px; white-space:pre-wrap }
 .ep-input { width:100%; box-sizing:border-box; padding:8px; background:var(--bg); border:1px solid var(--border); border-radius:6px; color:var(--text); font-family:inherit; font-size:13px; resize:vertical }
@@ -123,7 +123,7 @@
   <!-- Back + title -->
   <div style="display:flex;align-items:center;gap:10px;padding:16px 0 4px">
     <a href="/publish/" style="color:var(--text-muted);font-size:13px">&larr; Back</a>
-    <h1 style="font-size:20px;font-weight:700;color:var(--text-heading)">Writer</h1>
+    <h1 style="font-size:22px;font-weight:700;color:var(--text-heading)">Writer</h1>
     <a href="/publish/pages/guide.html" style="margin-left:auto;font-size:12px;color:var(--text-muted)">Format Guide</a>
   </div>
 
@@ -245,7 +245,7 @@
   <div class="edit-panel" id="edit-panel">
     <div class="ep-head">
       <span class="ep-title">&#9998; Edit block</span>
-      <button class="ep-close" onclick="closeEditPanel()">&times;</button>
+      <button class="ep-close" onclick="closeEditPanel()" aria-label="Close edit panel">&times;</button>
     </div>
     <div class="ep-body" id="ep-body"></div>
   </div>
@@ -744,7 +744,7 @@ async function aiReview() {
       + '<button class="ai-btn" onclick="aiReview()">Re-run</button>'
       + '<span style="font-size:11px;color:var(--text-muted)">Apply fixes by clicking a block in the Preview tab.</span>'
       + '</div>';
-    var close = '<button onclick="document.getElementById(\'review-panel\').classList.remove(\'open\')" style="float:right;cursor:pointer;background:transparent;border:none;color:var(--text-muted);font-size:20px;padding:0 4px">&times;</button>';
+    var close = '<button onclick="document.getElementById(\'review-panel\').classList.remove(\'open\')" style="float:right;cursor:pointer;background:transparent;border:none;color:var(--text-muted);font-size:22px;padding:0 4px" aria-label="Get element by id">&times;</button>';
     panel.innerHTML = close + body + actions;
     toast('Review complete', true);
   } catch(e) {

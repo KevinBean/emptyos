@@ -105,7 +105,7 @@ def test_local_vault_read_is_utf8_and_confined_to_root(tmp_path):
         MODULE.local_vault_read(
             vault, "30_Resources/conversations/ledger.md"
         )
-        == "证据\r\n"
+        == "证据\n"
     )
 
 
@@ -114,6 +114,15 @@ def test_local_vault_read_rejects_path_escape(tmp_path):
 
     with pytest.raises(ValueError, match="escapes root"):
         MODULE.local_vault_read(tmp_path / "vault", "../outside.md")
+
+
+def test_local_vault_read_normalizes_legacy_crcrlf(tmp_path):
+    vault = tmp_path / "vault"
+    note = vault / "legacy.md"
+    vault.mkdir()
+    note.write_bytes(b"one\r\r\ntwo\r\n")
+
+    assert MODULE.local_vault_read(vault, "legacy.md") == "one\n\ntwo\n"
 
 
 def test_render_source_preserves_attachment_text_and_hash():
@@ -167,6 +176,107 @@ def test_render_source_normalizes_provider_newlines_before_hashing():
     assert "\r" not in body
     assert "one\ntwo\nthree" in body
     assert "alpha\nbeta\ngamma" in body
+    assert hashlib.sha256(body.encode("utf-8")).hexdigest() == (
+        rendered["content_sha256"]
+    )
+
+
+def test_render_source_preserves_generated_artifact_tool_input():
+    chat = conversation(ID_NEXT)
+    artifact = "const label = `goal`;\nconsole.log(label);"
+    chat["chat_messages"][1]["text"] = (
+        "Viewing artifacts created via the Analysis Tool web feature preview "
+        "isn’t yet supported on mobile."
+    )
+    chat["chat_messages"][1]["content"] = [
+        {"type": "text", "text": "I'll create it."},
+        {
+            "type": "tool_use",
+            "name": "artifacts",
+            "input": {
+                "command": "create",
+                "id": "goal-tracker",
+                "title": "Goal Tracker",
+                "type": "text/html",
+                "version_uuid": "version-123",
+                "content": artifact,
+            },
+        },
+    ]
+
+    rendered = MODULE.render_source(chat, "2026-07-25T12:00:00+10:00")
+    body = rendered["content"].split("---", 2)[2].lstrip("\n")
+
+    assert "#### Generated artifact 1: Goal Tracker" in body
+    assert "- Command: `create`" in body
+    assert "- Artifact ID: `goal-tracker`" in body
+    assert "- Type: `text/html`" in body
+    assert "- Version UUID: `version-123`" in body
+    assert hashlib.sha256(artifact.encode("utf-8")).hexdigest() in body
+    assert artifact in body
+    assert hashlib.sha256(body.encode("utf-8")).hexdigest() == (
+        rendered["content_sha256"]
+    )
+
+
+def test_render_source_preserves_artifact_update_repl_and_search_traces():
+    chat = conversation(ID_NEXT)
+    chat["chat_messages"][1]["text"] = "Unsupported tool previews."
+    chat["chat_messages"][1]["content"] = [
+        {
+            "type": "tool_use",
+            "name": "artifacts",
+            "input": {
+                "command": "update",
+                "id": "info-log",
+                "old_str": "old probability",
+                "new_str": "corrected probability",
+                "version_uuid": "version-456",
+            },
+        },
+        {
+            "type": "tool_result",
+            "name": "artifacts",
+            "content": [{"type": "text", "text": "OK"}],
+            "is_error": False,
+        },
+        {
+            "type": "tool_use",
+            "name": "repl",
+            "input": {"code": "const risk = 0.03;\nconsole.log(risk);"},
+        },
+        {
+            "type": "tool_result",
+            "name": "repl",
+            "content": [{"type": "text", "text": "0.03"}],
+            "is_error": False,
+        },
+        {
+            "type": "tool_use",
+            "name": "web_search",
+            "input": {"query": "official visa bulletin"},
+        },
+        {
+            "type": "tool_result",
+            "name": "web_search",
+            "content": [
+                {"type": "knowledge", "title": "Visa Bulletin", "url": "https://example.test"}
+            ],
+            "is_error": False,
+        },
+    ]
+
+    rendered = MODULE.render_source(chat, "2026-07-25T12:00:00+10:00")
+    body = rendered["content"].split("---", 2)[2].lstrip("\n")
+
+    assert "#### Artifact operation 1: artifacts" in body
+    assert '"old_str": "old probability"' in body
+    assert '"new_str": "corrected probability"' in body
+    assert "#### Tool call 3: repl" in body
+    assert "const risk = 0.03;" in body
+    assert "#### Tool call 5: web_search" in body
+    assert '"query": "official visa bulletin"' in body
+    assert "https://example.test" in body
     assert hashlib.sha256(body.encode("utf-8")).hexdigest() == (
         rendered["content_sha256"]
     )

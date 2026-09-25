@@ -6,7 +6,7 @@
 
 ## Why
 
-A contemplative overlay that renders Kevin's life as a programmatic SVG garden —
+A contemplative overlay that renders the user's life as a programmatic SVG garden —
 8 plots (one per wellbeing dimension), plants whose density and health mirror
 real signals from existing apps. The wheel rule (CLAUDE.md #16) says dimensions
 shape *what we build* but never appear as UI; garden is the one allowed

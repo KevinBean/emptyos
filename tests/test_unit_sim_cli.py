@@ -8,7 +8,16 @@ them to float at the `_list_runs` read boundary via `_num`. No daemon needed —
 `_num` is a module-level pure function.
 """
 
+import pytest
+
 from helpers import load_app_module  # noqa: E402
+
+# The sim app hard-imports numpy at module scope
+# (apps/extension/engineering/sim/app.py), so loading it here fails collection
+# wherever numpy is absent -- and numpy is not a base dependency, so that
+# includes CI. Guard before the load, not after: the ModuleNotFoundError is
+# raised by load_app_module itself.
+pytest.importorskip("numpy")
 
 sim = load_app_module("sim", "app")
 _num = sim._num

@@ -1,6 +1,6 @@
 ---
 name: life-people-manager
-description: Manage relationships in the vault — track contacts, log interactions, analyze relationship health and staleness, personality profiling, network analysis. Use when the user says "add a person", "who haven't I talked to lately", "relationship check", "profile X", or after meeting someone new. NOT for drafting the actual outreach message (use life-communication-written).
+description: Manage relationships in the vault — track contacts, log interactions, analyze relationship health and staleness, personality profiling, network analysis. Use when the user says "add a person", "who haven't I talked to lately", "relationship check", "profile X", or after meeting someone new. NOT for drafting the actual outreach message (use life-communication-written — a user-global skill that lives in ~/.claude/skills, not in this repo).
 ---
 
 # People Manager

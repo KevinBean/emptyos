@@ -12,10 +12,11 @@ from __future__ import annotations
 import json
 import logging
 from collections import deque
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 from emptyos.sdk import BaseApp, cli_command, on_event, scheduled, web_route
+from emptyos.sdk.utils import clamp_days
 
 from . import archive as _archive
 from . import mutations, queries
@@ -200,6 +201,42 @@ class TaskApp(BaseApp):
                 )
             )
         return out
+
+    async def timeline_items(self, days: int = 1) -> list[dict]:
+        """Life-suite timeline contribution ([[contributes.life.timeline]]).
+
+        Flagged in gap analysis (life-three-contributors): `task` owns
+        day-shaped events (things due, things completed) but declared
+        nothing. One item per task completed in the window, plus one per
+        currently-overdue open task whose due date falls in the window —
+        most recent first. Item shape (suite contract,
+        docs/suites/life-cohesion.md): {ts, title, kind, href}.
+        """
+        n = clamp_days(days)
+        cutoff = (date.today() - timedelta(days=n - 1)).isoformat()
+        open_tasks, done_tasks = await self._idx.get()
+        items: list[dict] = []
+        for t in done_tasks:
+            done_date = (t.get("done_date") or "")[:10]
+            if not done_date or done_date < cutoff:
+                continue
+            items.append({
+                "ts": f"{done_date}T00:00:00",
+                "title": f"✓ {t['text']}".strip(),
+                "kind": "task-done",
+                "href": "/task/",
+            })
+        for t in open_tasks:
+            due_date = (t.get("due") or "")[:10]
+            if not due_date or due_date < cutoff or t.get("overdue_days", 0) <= 0:
+                continue
+            items.append({
+                "ts": f"{due_date}T00:00:00",
+                "title": f"{t['text']} (overdue)".strip(),
+                "kind": "task-overdue",
+                "href": "/task/",
+            })
+        return items
 
     @scheduled("5 8 * * *", id="task-reminders-push")
     async def scheduled_task_reminders_push(self):

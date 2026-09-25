@@ -22,7 +22,7 @@ from functools import cached_property
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from emptyos.sdk.utils import now_iso
+from emptyos.sdk.utils import contained_path, is_archived, now_iso
 
 if TYPE_CHECKING:
     from .base_app import BaseApp  # noqa: F401 — for type hints only
@@ -153,8 +153,22 @@ def vault_dir(self) -> Path:
 
 
 def vault_path(self, filename: str) -> Path:
-    """Get a path inside this app's vault directory."""
-    return self.vault_dir / filename
+    """Get a path inside this app's vault directory.
+
+    ``filename`` may nest (``"<room-id>/floorplan.json"``), but the result
+    must stay inside ``vault_dir``. Apps pass ids that arrived from a route,
+    and a route parameter can carry ``..`` (and, on Windows, a backslash), so
+    the join is checked rather than trusted.
+
+    Raises ``ValueError`` on escape — this is the path *builder* every write
+    goes through, and a caller that has smuggled a separator into an id
+    should fail loudly rather than write somewhere surprising. ``vault_read``
+    keeps its soft contract by catching it.
+    """
+    contained = contained_path(self.vault_dir, self.vault_dir / filename)
+    if contained is None:
+        raise ValueError(f"path escapes the app vault directory: {filename!r}")
+    return contained
 
 
 def vault_rel(self, p) -> str:
@@ -210,7 +224,12 @@ def vault_rel_if_exists(self, rel: str) -> str:
 
 def vault_read(self, filename: str, default: str = "") -> str:
     """Read a file from this app's vault directory."""
-    p = self.vault_path(filename)
+    try:
+        p = self.vault_path(filename)
+    except ValueError:
+        # A read for something outside the app's dir found nothing — keep
+        # this helper's "never raises, returns default" contract.
+        return default
     if p.exists():
         return p.read_text(encoding="utf-8", errors="ignore")
     return default
@@ -237,15 +256,19 @@ def vault_read_at(self, rel_path: str, default: str = "") -> str:
     path resolved from ``vault_config()`` that already includes the
     full ``30_Resources/EmptyOS/<app>/...`` prefix).
     """
-    p = self.vault_root / rel_path
-    if p.exists():
+    p = contained_path(self.vault_root, self.vault_root / rel_path)
+    if p is not None and p.exists():
         return p.read_text(encoding="utf-8", errors="ignore")
     return default
 
 
 def vault_write_at(self, rel_path: str, content: str) -> None:
     """Write a file at a vault-root-relative path. Creates parents."""
-    p = self.vault_root / rel_path
+    # Wider base than vault_path (the whole vault, by design — see the
+    # docstring above), but still a base: never outside the vault.
+    p = contained_path(self.vault_root, self.vault_root / rel_path)
+    if p is None:
+        raise ValueError(f"path escapes the vault: {rel_path!r}")
     p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text(content, encoding="utf-8")
 
@@ -720,7 +743,7 @@ def vault_project_list(
     out: list[dict] = []
     for n in notes:
         fm = n.get("properties") or {}
-        if fm.get("archived"):
+        if is_archived(fm):
             continue
         row: dict = {
             "id": fm.get("id") or Path(n["path"]).stem,
@@ -748,11 +771,40 @@ async def vault_project_create(
     extra_fm: dict | None = None,
     body: str | None = None,
     event_name: str | None = None,
+    path_for=None,
 ) -> dict:
     """Create a vault-backed project note. Returns ``{"ok", "id", "path"}``
-    or ``{"error": ...}`` if a note already exists at ``path``."""
-    if self.vault_get_properties(path):
-        return {"error": f"project {project_id} already exists"}
+    or ``{"error": ...}`` if a live project already exists at ``path``.
+
+    Deleting a project is a soft delete (``vault_project_delete`` sets
+    ``archived: true``), so the note keeps its id after it vanishes from the
+    list. Without help, that id stays reserved forever and a user re-creating
+    "the same" project is told it already exists while seeing nothing. When
+    the caller passes ``path_for(id) -> path`` and only an ARCHIVED project
+    holds the id, the new project takes the next free ``<id>-2``, ``<id>-3``…
+    and the result carries ``renamed_from``. The archived note is never
+    touched — its data stays recoverable.
+    """
+    existing = self.vault_get_properties(path)
+    if existing:
+        if not is_archived(existing):
+            return {"error": f"project {project_id} already exists"}
+        if path_for is None:
+            return {"error": (
+                f"a deleted project still holds the id {project_id} — "
+                f"choose another id or name"
+            )}
+        requested = project_id
+        for n in range(2, _MAX_ID_SUFFIX + 1):
+            candidate = f"{requested}-{n}"
+            candidate_path = path_for(candidate)
+            if not self.vault_get_properties(candidate_path):
+                project_id, path = candidate, candidate_path
+                break
+        else:
+            return {"error": f"no free id left after {requested}-{_MAX_ID_SUFFIX}"}
+    else:
+        requested = None
     fm: dict = {
         "id": project_id,
         "name": name,
@@ -766,7 +818,18 @@ async def vault_project_create(
     self.vault_create_note(path, fm, body_md)
     if event_name:
         await self.emit(event_name, {"id": project_id, "name": name})
-    return {"ok": True, "id": project_id, "path": path}
+    out = {"ok": True, "id": project_id, "path": path}
+    if requested:
+        out["renamed_from"] = requested
+    return out
+
+
+# Upper bound on the "<id>-N" search when an archived project holds an id.
+# The search skips every existing note, live or archived, so reaching it
+# means <id>-2 .. <id>-99 are all taken. Far past any real re-creation
+# count; refused rather than searched further so a pathological vault
+# cannot make create loop.
+_MAX_ID_SUFFIX = 99
 
 
 async def vault_project_update(

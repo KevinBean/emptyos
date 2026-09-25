@@ -19,8 +19,8 @@ Usage:
         --root <dir-with-dump-*.md> \
         --vault "/path/to/vault" \
         --employer "<Employer Name>" \
-        [--archive "20_Areas/Career/Previous-Roles/Worklog 2023 August-2024 July - ELEK.md"] \
-        [--archive-source "Elek-Worklog-2023-08_2024-07.pdf"] \
+        [--archive "20_Areas/Career/Previous-Roles/Worklog 2023-2024 - Employer.md"] \
+        [--archive-source "Employer-Worklog-2023-2024.pdf"] \
         [--dry-run] [--overwrite] [--only 2023,2024]
 
 Input files: any *.md under --root whose first lines are a tool-pdf-reader dump
@@ -89,7 +89,7 @@ _NOTE_RE = re.compile(r"^#*\s*note[:s]?\s*$", re.I)
 _PROJECT_HASH_RE = re.compile(r"^#{1,4}\s*(?:\d+\.\s*)?(.+?)\s*$")
 _PROJECT_BOLD_RE = re.compile(r"^\*\*(.+?)\*\*:?\s*$")
 _PROJECT_LABEL_RE = re.compile(r"^([A-Z][A-Za-z0-9 /&._-]{1,38}):\s*$")
-# A timesheet line: "18 Jun - 8 hours - ..." or "AI Insights: 4h".
+# A timesheet line: "18 Jun - 8 hours - ..." or "Data Insights: 4h".
 _TIMESHEET_HOURS_RE = re.compile(r"\b(\d+(?:\.\d+)?)\s*h(?:ours?)?\b", re.I)
 
 
@@ -341,7 +341,7 @@ def main(argv=None):
     ap.add_argument("files", nargs="*", help="explicit dump .md files (else --root)")
     ap.add_argument("--root", help="dir to scan for dump *.md")
     ap.add_argument("--vault", required=True, help="vault root for writes")
-    ap.add_argument("--employer", default="Elek")
+    ap.add_argument("--employer", required=True)
     ap.add_argument("--archive", help="vault-rel path for the compact archive note")
     ap.add_argument("--archive-title", default="Worklog (imported)")
     ap.add_argument("--archive-source", help="PDF filename to cite in the archive note")

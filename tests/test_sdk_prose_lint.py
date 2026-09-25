@@ -201,3 +201,95 @@ def test_empty_input_safe():
     report = lint_prose("")
     assert report["findings"] == []
     assert report["metrics"]["words"] == 0
+
+
+# ── spoken register (spoken=True only) ──────────────────────────────────────
+# Both directions are pinned per audits.md: a checker that has only ever been
+# watched going green has proved nothing. Calibration sample is the vault's own
+# interview phrase bank (Phrase Bank family G) — the standard these reproduce.
+
+SPOKEN_HEALTHY = """
+I'm a power engineer with nine years in HV cable systems, most recently
+network modelling. Three things I'd want you to know: the rating work, the
+earthing work, and the software. Good question. Let me give you a concrete
+example rather than a general answer. I haven't worked with that directly.
+The closest thing I've done is cable rating. I'd be guessing if I gave you a
+number. What I can tell you is how I'd find out.
+"""
+
+# The register a real phone-screen brief shipped with, 2026-08-19.
+SPOKEN_DEFECT = (
+    "I am a power engineer, fourteen years. It is actually why I put this one "
+    "in: it is the first posting I have seen that names HV. I am not a "
+    "protection-and-control engineer; I would not claim secondary systems."
+)
+
+
+def _spoken_rules(report: dict) -> set[str]:
+    return {f["rule"] for f in report["findings"]
+            if f["rule"].startswith(("contraction", "spoken"))}
+
+
+def test_spoken_healthy_is_quiet():
+    report = lint_prose(SPOKEN_HEALTHY, spoken=True)
+    assert _spoken_rules(report) == set()
+    assert report["metrics"]["contraction_ratio"] >= 0.5
+
+
+def test_spoken_contraction_free_flagged():
+    report = lint_prose(SPOKEN_DEFECT, spoken=True)
+    assert "contraction-rate" in _spoken_rules(report)
+    assert report["metrics"]["contractions_used"] == 0
+
+
+def test_spoken_semicolon_flagged():
+    report = lint_prose(SPOKEN_DEFECT, spoken=True)
+    assert "spoken-semicolon" in _spoken_rules(report)
+
+
+def test_spoken_long_sentence_flagged():
+    long_one = "I " + "really " * 30 + "do think so."
+    report = lint_prose(long_one, spoken=True)
+    assert "spoken-sentence-length" in _spoken_rules(report)
+
+
+def test_spoken_short_sample_not_judged():
+    """Below CONTRACTION_MIN_OPPS the sample is noise — must stay quiet."""
+    report = lint_prose("It is fine.", spoken=True)
+    assert "contraction-rate" not in _spoken_rules(report)
+
+
+def test_curly_apostrophes_counted_as_contractions():
+    """Authored prose uses U+2019; the rule must not read it as spelled-out."""
+    report = lint_prose(
+        "I’m here and I’d go and it’s fine and that’s all.",
+        spoken=True,
+    )
+    assert report["metrics"]["contractions_used"] == 4
+    assert "contraction-rate" not in _spoken_rules(report)
+
+
+def test_overlapping_contractible_phrases_count_once():
+    """"I have not" contains "I have" AND "have not" — one point, not two.
+
+    Counting each pattern separately made the denominator depend on whether the
+    text was already contracted: the same sentence scored 0/2 spoken out and
+    1/1 contracted, so the ratio was not comparable between the two versions.
+    """
+    pad = " Padding one. Padding two. Padding three."
+    spelled = lint_prose("I have not run it." + pad, spoken=True)["metrics"]
+    contracted = lint_prose("I haven't run it." + pad, spoken=True)["metrics"]
+    assert spelled["contraction_opportunities"] == contracted["contraction_opportunities"] == 1
+    assert spelled["contraction_ratio"] == 0.0
+    assert contracted["contraction_ratio"] == 1.0
+
+
+def test_spoken_off_is_byte_identical():
+    """The regression contract: spoken=False changes nothing at all."""
+    assert lint_prose(SPOKEN_DEFECT) == lint_prose(SPOKEN_DEFECT, spoken=False)
+
+
+def test_spoken_rules_do_not_leak_into_default():
+    report = lint_prose(SPOKEN_DEFECT)
+    assert _spoken_rules(report) == set()
+    assert "contraction_ratio" not in report["metrics"]

@@ -1,3 +1,8 @@
+---
+paths:
+  - "apps/**"
+  - "emptyos/sdk/base_app.py"
+---
 # Selector Rule — `BaseApp.select()` for LLM-backed routing
 
 When an app needs the model to **choose one branch from a closed set** —

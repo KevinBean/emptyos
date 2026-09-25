@@ -1,10 +1,19 @@
+---
+paths:
+  - "apps/**"
+  - "emptyos/web/static/**"
+---
 # Hub Panels Rule — Contribution-Based Hub Aggregation
 
 The hub (`/hub/`) is a panel aggregator. Apps declare `[[contributes.hub.panel]]` in their manifest and implement a matching `panel_*` instance method. The hub calls each contributor in parallel, dispatches to a named renderer, and fails soft per panel. Hub code has zero knowledge of which apps contribute what.
 
-**First reference implementation:** `apps/task/` `pulse-stats` + `todays-tasks`, `apps/projects/` `upcoming-deadlines`, `apps/hub/` (own panels). Full docs at `docs/APP-DEVELOPMENT.md` § "Hub Panel Contributions".
+**First reference implementation:** `apps/public/core/task/` `pulse-stats` + `todays-tasks`, `apps/public/standard/projects/` `upcoming-deadlines`, `apps/public/core/hub/` (own panels). Full docs at `docs/APP-DEVELOPMENT.md` § "Hub Panel Contributions".
 
 **Sibling namespace — `hub-life.panel` (deliberate, don't converge).** The personal life dashboard (`apps/personal/hub-life/`) aggregates the UNION of `hub-life.panel` + `hub.panel` contributions (`resolve_panels`), while core `/hub/` reads only `hub.panel`. So the parallel namespace IS the scoping mechanism: a panel declared `[[contributes.hub-life.panel]]` appears on the life dashboard but never leaks onto the generic hub. This was reviewed 2026-07-10 (architecture review) and kept — replacing it with a `surface = "life"` field on `hub.panel` would rebuild the same filter with core-hub churn. It's the same shape as any app-defined slot (`cable.calculator`, `work.deliverable`): declare into `hub.panel` for both surfaces, into `hub-life.panel` for life-only.
+
+**Two slots, one aggregator.** Keeping the namespaces separate never required keeping two *aggregators*, and for a long time there were two — byte-identical, and they drifted where it counted. Since 2026-08-16 both boards delegate to `emptyos/sdk/panels.py::resolve_panels(contributions, *, call, include_lazy, only, on_error)`; each host supplies only its slot list. A third panel host writes a slot list and a delegation, never a third copy.
+
+**`only=` is why `lazy` means anything.** A host's single-panel endpoint must pass `only=<id>` so the narrowing happens *before* any contributor is called. Both hubs used to resolve every contributor and discard all but one, which cost the whole board per refresh (a flat 4.1s on a 114-panel hub) and executed the very lazy panels the declaration exists to defer — including a 60s cached LLM synthesis. The symptom is unreadable if you don't know to look for it: two unrelated panels time *identically*, because neither figure is about the panel you asked for.
 
 ## Principles
 
@@ -80,11 +89,47 @@ See `docs/APP-DEVELOPMENT.md` for the full table. Common picks:
 - **`task-list`** — actionable rows with checkboxes.
 - **`stat-tile` (no group)** — standalone tile.
 
-If no existing renderer fits, don't inline HTML. Add a renderer to `apps/hub/pages/index.html` with a documented data contract, then use it.
+If no existing renderer fits, don't inline HTML. Add a renderer to `apps/public/core/hub/pages/index.html` with a documented data contract, then use it.
 
 ## Lazy panels
 
 Use `lazy = true` when your method can take >500ms (LLM call, big vault scan, network fetch). The hub renders a placeholder on first paint and lazily loads the panel when it scrolls into view. Already applied to `ai-insights` on the hub app.
+
+**A full-board hydrate has a per-contributor budget.** `/hub/api/panels/all`
+(and hub-life's twin — the `/debug/panels` listing) runs every lazy contributor
+at once through `asyncio.gather`, which waits for the slowest, so one stuck LLM
+panel held the whole listing (12 s → >90 s on the same tree, 2026-09-12). Each
+contributor now gets `[apps.hub] panel_timeout_s` / `[apps.hub-life]
+panel_timeout_s` (default `emptyos.sdk.panels.DEFAULT_PANEL_BUDGET_S`, 12 s —
+under the test client's 15 s and above the slowest healthy lazy panel measured;
+`0` disables). The single-panel `/api/panel/{id}` hydrate stays unbounded on
+purpose, so a slow panel can still finish when asked for alone. A contributor
+that raises its *own* `TimeoutError` (a socket) is reported as `failed`, never
+as the budget — `asyncio.timeout(...).expired()` is the only signal that the
+budget fired.
+
+**A budget expiry MARKS the row, it never deletes it.** The row comes back with
+`data: null` and a human `unavailable` reason, logged as `timed out after Ns`.
+This is not politeness: the budget cannot tell a stuck panel from a healthy one
+**queued behind a shared lock**, and the only caller that sets a budget is a
+listing whose product is the *complete* set of contributions. Measured
+2026-09-12 — two LLM-backed panels blew a 12 s budget on every full-board
+hydrate and were silently deleted from the one page that exists to enumerate
+them. Both mechanisms are in play and neither is a fault: the think chain's
+first provider holds a one-slot semaphore, so concurrent LLM panels queue; and
+on a cold cache the work itself is slow (`repo-review.recent-convergence`
+measured **0.0 s warm and 144 s cold** — the warm figure is what first made
+this look like pure queue wait, so take a single timing of a cached panel as
+evidence of nothing). Either way the budget is reading wall-clock it cannot
+attribute, which is exactly why it may bound latency but must not decide
+existence. A contributor that *raises* is still dropped, which is the
+pre-existing fail-soft contract.
+
+Cancelling a contributor mid-think is safe only because the providers reap
+their subprocess on `CancelledError` too, not just on their own timeout
+(`claude_cli.py` / `codex_cli.py`, fixed the same day — before that a
+budget-cancelled think left a `claude` process running until its stdout pipe
+filled).
 
 ## Grouping
 

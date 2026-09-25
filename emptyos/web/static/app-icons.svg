@@ -1,0 +1,149 @@
+<svg xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+  <!-- EmptyOS adaptive app icons. Each app is four independently painted
+       symbols: paper, accent, accent-2, ink. ViewBox and optical padding are
+       deliberately identical so the family stays aligned at 32 px. -->
+
+  <!-- Home / EmptyOS mark -->
+  <symbol id="app-hub-paper" viewBox="0 0 1024 1024"><rect x="144" y="144" width="736" height="736" rx="176" fill="currentColor"/></symbol>
+  <symbol id="app-hub-accent" viewBox="0 0 1024 1024"><path d="M512 270a242 242 0 1 1-180 80" fill="none" stroke="currentColor" stroke-width="112" stroke-linecap="round"/></symbol>
+  <symbol id="app-hub-accent-2" viewBox="0 0 1024 1024"><circle cx="512" cy="512" r="90" fill="currentColor"/></symbol>
+  <symbol id="app-hub-ink" viewBox="0 0 1024 1024"><rect x="144" y="144" width="736" height="736" rx="176" fill="none" stroke="currentColor" stroke-width="64"/><circle cx="512" cy="512" r="32" fill="currentColor"/></symbol>
+
+  <!-- Settings -->
+  <symbol id="app-settings-paper" viewBox="0 0 1024 1024"><circle cx="512" cy="512" r="294" fill="currentColor"/></symbol>
+  <symbol id="app-settings-accent" viewBox="0 0 1024 1024"><circle cx="512" cy="512" r="152" fill="currentColor"/></symbol>
+  <symbol id="app-settings-accent-2" viewBox="0 0 1024 1024"><circle cx="512" cy="512" r="58" fill="currentColor"/></symbol>
+  <symbol id="app-settings-ink" viewBox="0 0 1024 1024"><g fill="none" stroke="currentColor" stroke-width="64" stroke-linecap="round" stroke-linejoin="round"><circle cx="512" cy="512" r="294"/><circle cx="512" cy="512" r="152"/><path d="M512 148v92M512 784v92M148 512h92M784 512h92M254 254l66 66M704 704l66 66M770 254l-66 66M320 704l-66 66"/></g></symbol>
+
+  <!-- Store -->
+  <symbol id="app-store-paper" viewBox="0 0 1024 1024"><path d="M208 390h608l-54 430H262z" fill="currentColor"/></symbol>
+  <symbol id="app-store-accent" viewBox="0 0 1024 1024"><path d="M208 390h152v154c0 50-34 90-76 90s-76-40-76-90zm304 0h152v154c0 50-34 90-76 90s-76-40-76-90z" fill="currentColor"/></symbol>
+  <symbol id="app-store-accent-2" viewBox="0 0 1024 1024"><path d="M360 390h152v154c0 50-34 90-76 90s-76-40-76-90zm304 0h152v154c0 50-34 90-76 90s-76-40-76-90z" fill="currentColor"/></symbol>
+  <symbol id="app-store-ink" viewBox="0 0 1024 1024"><g fill="none" stroke="currentColor" stroke-width="64" stroke-linecap="round" stroke-linejoin="round"><path d="M208 390h608l-54 430H262zM208 390l74-176h460l74 176M360 390v154c0 50-34 90-76 90s-76-40-76-90V390M512 390v154c0 50-34 90-76 90s-76-40-76-90V390M664 390v154c0 50-34 90-76 90s-76-40-76-90V390M816 390v154c0 50-34 90-76 90s-76-40-76-90V390"/></g></symbol>
+
+  <!-- Tasks: family anchor -->
+  <symbol id="app-task-paper" viewBox="0 0 1024 1024"><rect x="176" y="128" width="672" height="768" rx="128" fill="currentColor"/></symbol>
+  <symbol id="app-task-accent" viewBox="0 0 1024 1024"><rect x="256" y="250" width="160" height="160" rx="42" fill="currentColor"/><rect x="256" y="526" width="160" height="160" rx="42" fill="currentColor"/></symbol>
+  <symbol id="app-task-accent-2" viewBox="0 0 1024 1024"><rect x="482" y="276" width="238" height="54" rx="27" fill="currentColor"/><rect x="482" y="552" width="176" height="54" rx="27" fill="currentColor"/></symbol>
+  <symbol id="app-task-ink" viewBox="0 0 1024 1024"><g fill="none" stroke="currentColor" stroke-width="64" stroke-linecap="round" stroke-linejoin="round"><rect x="176" y="128" width="672" height="768" rx="128"/><rect x="256" y="250" width="160" height="160" rx="42"/><path d="M286 330l34 36 70-84"/><rect x="256" y="526" width="160" height="160" rx="42"/><path d="M482 303h238M482 579h176"/></g></symbol>
+
+  <!-- Journal -->
+  <symbol id="app-journal-paper" viewBox="0 0 1024 1024"><rect x="202" y="126" width="620" height="772" rx="106" fill="currentColor"/></symbol>
+  <symbol id="app-journal-accent" viewBox="0 0 1024 1024"><path d="M202 232c0-59 47-106 106-106h74v772h-74c-59 0-106-47-106-106z" fill="currentColor"/></symbol>
+  <symbol id="app-journal-accent-2" viewBox="0 0 1024 1024"><path d="M650 126h92v294l-46-38-46 38z" fill="currentColor"/></symbol>
+  <symbol id="app-journal-ink" viewBox="0 0 1024 1024"><g fill="none" stroke="currentColor" stroke-width="64" stroke-linecap="round" stroke-linejoin="round"><rect x="202" y="126" width="620" height="772" rx="106"/><path d="M382 126v772M502 320h178M502 468h220M502 616h150"/></g></symbol>
+
+  <!-- Projects -->
+  <symbol id="app-projects-paper" viewBox="0 0 1024 1024"><path d="M150 284h300l84 92h340v410c0 62-50 112-112 112H262c-62 0-112-50-112-112z" fill="currentColor"/></symbol>
+  <symbol id="app-projects-accent" viewBox="0 0 1024 1024"><path d="M150 284h300l84 92H150z" fill="currentColor"/></symbol>
+  <symbol id="app-projects-accent-2" viewBox="0 0 1024 1024"><path d="M282 566h460l-52 184H230z" fill="currentColor"/></symbol>
+  <symbol id="app-projects-ink" viewBox="0 0 1024 1024"><g fill="none" stroke="currentColor" stroke-width="64" stroke-linecap="round" stroke-linejoin="round"><path d="M150 376v410c0 62 50 112 112 112h500c62 0 112-50 112-112V376H534l-84-92H150z"/><path d="M230 750h460l52-184H282z"/></g></symbol>
+
+  <!-- Focus -->
+  <symbol id="app-focus-paper" viewBox="0 0 1024 1024"><circle cx="512" cy="512" r="352" fill="currentColor"/></symbol>
+  <symbol id="app-focus-accent" viewBox="0 0 1024 1024"><circle cx="512" cy="512" r="222" fill="currentColor"/></symbol>
+  <symbol id="app-focus-accent-2" viewBox="0 0 1024 1024"><circle cx="512" cy="512" r="96" fill="currentColor"/></symbol>
+  <symbol id="app-focus-ink" viewBox="0 0 1024 1024"><g fill="none" stroke="currentColor" stroke-width="64"><circle cx="512" cy="512" r="352"/><circle cx="512" cy="512" r="222"/><circle cx="512" cy="512" r="96"/></g><circle cx="512" cy="512" r="28" fill="currentColor"/></symbol>
+
+  <!-- Search -->
+  <symbol id="app-search-paper" viewBox="0 0 1024 1024"><circle cx="430" cy="424" r="260" fill="currentColor"/></symbol>
+  <symbol id="app-search-accent" viewBox="0 0 1024 1024"><path d="M620 602l210 210-86 86-210-210z" fill="currentColor"/></symbol>
+  <symbol id="app-search-accent-2" viewBox="0 0 1024 1024"><rect x="328" y="322" width="204" height="204" rx="54" fill="currentColor"/></symbol>
+  <symbol id="app-search-ink" viewBox="0 0 1024 1024"><g fill="none" stroke="currentColor" stroke-width="64" stroke-linecap="round" stroke-linejoin="round"><circle cx="430" cy="424" r="260"/><path d="M620 602l210 210-86 86-210-210M328 424h204M430 322v204"/></g></symbol>
+
+  <!-- Assistant -->
+  <symbol id="app-assistant-paper" viewBox="0 0 1024 1024"><path d="M146 194h732v526c0 72-58 130-130 130H426l-190 78 34-78c-69-3-124-60-124-130z" fill="currentColor"/></symbol>
+  <symbol id="app-assistant-accent" viewBox="0 0 1024 1024"><circle cx="384" cy="510" r="116" fill="currentColor"/></symbol>
+  <symbol id="app-assistant-accent-2" viewBox="0 0 1024 1024"><circle cx="642" cy="412" r="72" fill="currentColor"/><circle cx="668" cy="630" r="42" fill="currentColor"/></symbol>
+  <symbol id="app-assistant-ink" viewBox="0 0 1024 1024"><g fill="none" stroke="currentColor" stroke-width="64" stroke-linecap="round" stroke-linejoin="round"><path d="M146 194h732v526c0 72-58 130-130 130H426l-190 78 34-78c-69-3-124-60-124-130z"/><circle cx="384" cy="510" r="116"/><path d="M500 510h96M642 484v104M596 630h30"/></g></symbol>
+
+  <!-- Quick capture -->
+  <symbol id="app-quick-action-paper" viewBox="0 0 1024 1024"><path d="M164 482h218l62 102h136l62-102h218v332H164z" fill="currentColor"/></symbol>
+  <symbol id="app-quick-action-accent" viewBox="0 0 1024 1024"><path d="M448 144h128v286l106-106 90 90-260 260-260-260 90-90 106 106z" fill="currentColor"/></symbol>
+  <symbol id="app-quick-action-accent-2" viewBox="0 0 1024 1024"><rect x="268" y="704" width="488" height="54" rx="27" fill="currentColor"/></symbol>
+  <symbol id="app-quick-action-ink" viewBox="0 0 1024 1024"><g fill="none" stroke="currentColor" stroke-width="64" stroke-linecap="round" stroke-linejoin="round"><path d="M164 482h218l62 102h136l62-102h218v332H164zM512 144v468M342 414l170 170 170-170"/></g></symbol>
+
+  <!-- Knowledge base -->
+  <symbol id="app-kb-paper" viewBox="0 0 1024 1024"><path d="M150 214c126-34 246-10 362 72v568c-116-82-236-106-362-72zm724 0c-126-34-246-10-362 72v568c116-82 236-106 362-72z" fill="currentColor"/></symbol>
+  <symbol id="app-kb-accent" viewBox="0 0 1024 1024"><circle cx="342" cy="454" r="78" fill="currentColor"/><circle cx="682" cy="454" r="78" fill="currentColor"/></symbol>
+  <symbol id="app-kb-accent-2" viewBox="0 0 1024 1024"><path d="M342 594l170 102 170-102v112L512 808 342 706z" fill="currentColor"/></symbol>
+  <symbol id="app-kb-ink" viewBox="0 0 1024 1024"><g fill="none" stroke="currentColor" stroke-width="64" stroke-linecap="round" stroke-linejoin="round"><path d="M150 214c126-34 246-10 362 72v568c-116-82-236-106-362-72zm724 0c-126-34-246-10-362 72v568c116-82 236-106 362-72zM512 286v568M342 454h340M342 594l170 102 170-102"/></g></symbol>
+
+  <!-- CAD -->
+  <symbol id="app-cad-paper" viewBox="0 0 1024 1024"><path d="M512 128l326 188v376L512 880 186 692V316z" fill="currentColor"/></symbol>
+  <symbol id="app-cad-accent" viewBox="0 0 1024 1024"><path d="M512 128l326 188-326 188-326-188z" fill="currentColor"/></symbol>
+  <symbol id="app-cad-accent-2" viewBox="0 0 1024 1024"><path d="M512 504l326-188v376L512 880z" fill="currentColor"/></symbol>
+  <symbol id="app-cad-ink" viewBox="0 0 1024 1024"><path d="M512 128l326 188v376L512 880 186 692V316zm0 376v376m0-376L186 316m326 188l326-188" fill="none" stroke="currentColor" stroke-width="64" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+
+  <!-- Voice assistant -->
+  <symbol id="app-voice-assistant-paper" viewBox="0 0 1024 1024"><rect x="164" y="160" width="696" height="704" rx="210" fill="currentColor"/></symbol>
+  <symbol id="app-voice-assistant-accent" viewBox="0 0 1024 1024"><rect x="412" y="250" width="200" height="350" rx="100" fill="currentColor"/></symbol>
+  <symbol id="app-voice-assistant-accent-2" viewBox="0 0 1024 1024"><path d="M260 488h74v112h-74zm430-92h74v204h-74z" fill="currentColor"/></symbol>
+  <symbol id="app-voice-assistant-ink" viewBox="0 0 1024 1024"><g fill="none" stroke="currentColor" stroke-width="64" stroke-linecap="round" stroke-linejoin="round"><rect x="164" y="160" width="696" height="704" rx="210"/><rect x="412" y="250" width="200" height="350" rx="100"/><path d="M326 520v42c0 103 83 186 186 186s186-83 186-186v-42M512 748v92M388 840h248"/></g></symbol>
+
+  <!-- Boards -->
+  <symbol id="app-boards-paper" viewBox="0 0 1024 1024"><rect x="132" y="156" width="760" height="712" rx="110" fill="currentColor"/></symbol>
+  <symbol id="app-boards-accent" viewBox="0 0 1024 1024"><rect x="214" y="250" width="168" height="260" rx="48" fill="currentColor"/><rect x="428" y="250" width="168" height="158" rx="48" fill="currentColor"/></symbol>
+  <symbol id="app-boards-accent-2" viewBox="0 0 1024 1024"><rect x="642" y="250" width="168" height="342" rx="48" fill="currentColor"/><rect x="428" y="454" width="168" height="238" rx="48" fill="currentColor"/></symbol>
+  <symbol id="app-boards-ink" viewBox="0 0 1024 1024"><g fill="none" stroke="currentColor" stroke-width="64" stroke-linejoin="round"><rect x="132" y="156" width="760" height="712" rx="110"/><path d="M405 218v588M619 218v588"/><rect x="214" y="250" width="168" height="260" rx="48"/><rect x="428" y="250" width="168" height="158" rx="48"/><rect x="642" y="250" width="168" height="342" rx="48"/></g></symbol>
+
+  <!-- Publish -->
+  <symbol id="app-publish-paper" viewBox="0 0 1024 1024"><path d="M202 132h436l184 184v576H202z" fill="currentColor"/></symbol>
+  <symbol id="app-publish-accent" viewBox="0 0 1024 1024"><path d="M638 132v184h184z" fill="currentColor"/></symbol>
+  <symbol id="app-publish-accent-2" viewBox="0 0 1024 1024"><path d="M448 690h128V516l98 98 90-90-252-252-252 252 90 90 96-98z" fill="currentColor"/></symbol>
+  <symbol id="app-publish-ink" viewBox="0 0 1024 1024"><g fill="none" stroke="currentColor" stroke-width="64" stroke-linecap="round" stroke-linejoin="round"><path d="M202 132h436l184 184v576H202zM638 132v184h184M512 744V400M352 560l160-160 160 160"/></g></symbol>
+
+  <!-- Dictionary -->
+  <symbol id="app-dictionary-paper" viewBox="0 0 1024 1024"><path d="M154 194c126-36 246-12 358 70v590c-112-82-232-106-358-70zm716 0c-126-36-246-12-358 70v590c112-82 232-106 358-70z" fill="currentColor"/></symbol>
+  <symbol id="app-dictionary-accent" viewBox="0 0 1024 1024"><path d="M246 366h178v74H246zm0 136h218v74H246z" fill="currentColor"/></symbol>
+  <symbol id="app-dictionary-accent-2" viewBox="0 0 1024 1024"><path d="M598 376c110 0 198 66 198 148s-88 148-198 148l-68 64 18-92c-44-28-72-70-72-120 0-82 54-148 122-148z" fill="currentColor"/></symbol>
+  <symbol id="app-dictionary-ink" viewBox="0 0 1024 1024"><g fill="none" stroke="currentColor" stroke-width="64" stroke-linecap="round" stroke-linejoin="round"><path d="M154 194c126-36 246-12 358 70v590c-112-82-232-106-358-70zm716 0c-126-36-246-12-358 70v590c112-82 232-106 358-70zM512 264v590M246 366h178M246 502h218M598 376c110 0 198 66 198 148s-88 148-198 148l-68 64 18-92"/></g></symbol>
+
+  <!-- Code -->
+  <symbol id="app-code-paper" viewBox="0 0 1024 1024"><rect x="132" y="154" width="760" height="716" rx="112" fill="currentColor"/></symbol>
+  <symbol id="app-code-accent" viewBox="0 0 1024 1024"><path d="M420 354L250 512l170 158 82-88-78-70 78-70z" fill="currentColor"/></symbol>
+  <symbol id="app-code-accent-2" viewBox="0 0 1024 1024"><path d="M604 354l170 158-170 158-82-88 78-70-78-70z" fill="currentColor"/></symbol>
+  <symbol id="app-code-ink" viewBox="0 0 1024 1024"><g fill="none" stroke="currentColor" stroke-width="64" stroke-linecap="round" stroke-linejoin="round"><rect x="132" y="154" width="760" height="716" rx="112"/><path d="M132 292h760M224 224h8M318 224h8M420 354L250 512l170 158M604 354l170 158-170 158"/></g></symbol>
+
+  <!-- Cable network -->
+  <symbol id="app-cable-network-paper" viewBox="0 0 1024 1024"><rect x="138" y="138" width="748" height="748" rx="190" fill="currentColor"/></symbol>
+  <symbol id="app-cable-network-accent" viewBox="0 0 1024 1024"><circle cx="304" cy="322" r="94" fill="currentColor"/><circle cx="720" cy="702" r="94" fill="currentColor"/></symbol>
+  <symbol id="app-cable-network-accent-2" viewBox="0 0 1024 1024"><circle cx="724" cy="306" r="72" fill="currentColor"/><circle cx="320" cy="716" r="72" fill="currentColor"/></symbol>
+  <symbol id="app-cable-network-ink" viewBox="0 0 1024 1024"><g fill="none" stroke="currentColor" stroke-width="64" stroke-linecap="round"><rect x="138" y="138" width="748" height="748" rx="190"/><path d="M382 322h168c56 0 102 46 102 102s-46 102-102 102h-76c-56 0-102 46-102 102s46 102 102 102h152M398 662l-26 68M652 372l72-66"/><circle cx="304" cy="322" r="94"/><circle cx="720" cy="702" r="94"/><circle cx="724" cy="306" r="72"/><circle cx="320" cy="716" r="72"/></g></symbol>
+
+  <!-- Jobs -->
+  <symbol id="app-jobs-paper" viewBox="0 0 1024 1024"><rect x="142" y="294" width="740" height="548" rx="112" fill="currentColor"/></symbol>
+  <symbol id="app-jobs-accent" viewBox="0 0 1024 1024"><path d="M382 294v-92h260v92z" fill="currentColor"/><rect x="142" y="416" width="740" height="168" fill="currentColor"/></symbol>
+  <symbol id="app-jobs-accent-2" viewBox="0 0 1024 1024"><rect x="442" y="500" width="140" height="116" rx="34" fill="currentColor"/></symbol>
+  <symbol id="app-jobs-ink" viewBox="0 0 1024 1024"><g fill="none" stroke="currentColor" stroke-width="64" stroke-linecap="round" stroke-linejoin="round"><rect x="142" y="294" width="740" height="548" rx="112"/><path d="M382 294v-92h260v92M142 500h300M582 500h300"/><rect x="442" y="500" width="140" height="116" rx="34"/></g></symbol>
+
+  <!-- Explore -->
+  <symbol id="app-explore-paper" viewBox="0 0 1024 1024"><circle cx="512" cy="512" r="360" fill="currentColor"/></symbol>
+  <symbol id="app-explore-accent" viewBox="0 0 1024 1024"><path d="M676 348L584 584 348 676l92-236z" fill="currentColor"/></symbol>
+  <symbol id="app-explore-accent-2" viewBox="0 0 1024 1024"><circle cx="512" cy="512" r="62" fill="currentColor"/></symbol>
+  <symbol id="app-explore-ink" viewBox="0 0 1024 1024"><g fill="none" stroke="currentColor" stroke-width="64" stroke-linecap="round" stroke-linejoin="round"><circle cx="512" cy="512" r="360"/><path d="M676 348L584 584 348 676l92-236zM512 152v72M512 800v72M152 512h72M800 512h72"/></g></symbol>
+
+  <!-- Visualization -->
+  <symbol id="app-viz-paper" viewBox="0 0 1024 1024"><rect x="140" y="140" width="744" height="744" rx="156" fill="currentColor"/></symbol>
+  <symbol id="app-viz-accent" viewBox="0 0 1024 1024"><path d="M274 696h118V474H274zm180 0h118V326H454z" fill="currentColor"/></symbol>
+  <symbol id="app-viz-accent-2" viewBox="0 0 1024 1024"><path d="M634 696h118V548H634z" fill="currentColor"/><path d="M656 302a132 132 0 0 1 132 132H656z" fill="currentColor"/></symbol>
+  <symbol id="app-viz-ink" viewBox="0 0 1024 1024"><g fill="none" stroke="currentColor" stroke-width="64" stroke-linejoin="round"><rect x="140" y="140" width="744" height="744" rx="156"/><path d="M240 744h544M274 696h118V474H274zm180 0h118V326H454zm180 0h118V548H634zM656 302a132 132 0 0 1 132 132H656z"/></g></symbol>
+
+  <!-- Canvas -->
+  <symbol id="app-canvas-paper" viewBox="0 0 1024 1024"><rect x="136" y="136" width="752" height="752" rx="146" fill="currentColor"/></symbol>
+  <symbol id="app-canvas-accent" viewBox="0 0 1024 1024"><rect x="230" y="246" width="210" height="170" rx="54" fill="currentColor"/><circle cx="698" cy="338" r="94" fill="currentColor"/></symbol>
+  <symbol id="app-canvas-accent-2" viewBox="0 0 1024 1024"><path d="M254 720l154-180 116 106 116-142 132 216z" fill="currentColor"/></symbol>
+  <symbol id="app-canvas-ink" viewBox="0 0 1024 1024"><g fill="none" stroke="currentColor" stroke-width="64" stroke-linecap="round" stroke-linejoin="round"><rect x="136" y="136" width="752" height="752" rx="146"/><rect x="230" y="246" width="210" height="170" rx="54"/><circle cx="698" cy="338" r="94"/><path d="M440 331h164M698 432v72M254 720l154-180 116 106 116-142 132 216z"/></g></symbol>
+
+  <!-- Worklog -->
+  <symbol id="app-worklog-paper" viewBox="0 0 1024 1024"><rect x="174" y="138" width="676" height="748" rx="122" fill="currentColor"/></symbol>
+  <symbol id="app-worklog-accent" viewBox="0 0 1024 1024"><circle cx="420" cy="442" r="154" fill="currentColor"/></symbol>
+  <symbol id="app-worklog-accent-2" viewBox="0 0 1024 1024"><rect x="622" y="312" width="112" height="300" rx="42" fill="currentColor"/></symbol>
+  <symbol id="app-worklog-ink" viewBox="0 0 1024 1024"><g fill="none" stroke="currentColor" stroke-width="64" stroke-linecap="round" stroke-linejoin="round"><rect x="174" y="138" width="676" height="748" rx="122"/><circle cx="420" cy="442" r="154"/><path d="M420 348v104l76 50M622 312h112M622 454h112M622 596h112M280 724h454"/></g></symbol>
+
+  <!-- Studio -->
+  <symbol id="app-studio-paper" viewBox="0 0 1024 1024"><rect x="136" y="160" width="752" height="704" rx="150" fill="currentColor"/></symbol>
+  <symbol id="app-studio-accent" viewBox="0 0 1024 1024"><circle cx="430" cy="512" r="188" fill="currentColor"/></symbol>
+  <symbol id="app-studio-accent-2" viewBox="0 0 1024 1024"><path d="M430 324a188 188 0 0 1 188 188H430z" fill="currentColor"/><circle cx="716" cy="332" r="62" fill="currentColor"/></symbol>
+  <symbol id="app-studio-ink" viewBox="0 0 1024 1024"><g fill="none" stroke="currentColor" stroke-width="64" stroke-linecap="round" stroke-linejoin="round"><rect x="136" y="160" width="752" height="704" rx="150"/><circle cx="430" cy="512" r="188"/><circle cx="430" cy="512" r="72"/><path d="M618 512h128M682 448v128"/><circle cx="716" cy="332" r="62"/></g></symbol>
+</svg>

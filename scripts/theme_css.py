@@ -21,6 +21,7 @@ from emptyos.sdk.theme_tokens import (  # noqa: E402,F401
     SITE_TOKENS,
     THEME_CSS,
     blank_comments,
+    global_token_prefixes,
     load,
     parse_root,
     parse_themes,
@@ -29,5 +30,6 @@ from emptyos.sdk.theme_tokens import (  # noqa: E402,F401
 
 __all__ = [
     "ROOT_BLOCK", "SITE_TOKENS", "THEME_CSS", "REPO",
-    "blank_comments", "load", "parse_root", "parse_themes", "theme_var_map",
+    "blank_comments", "global_token_prefixes", "load", "parse_root",
+    "parse_themes", "theme_var_map",
 ]

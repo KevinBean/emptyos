@@ -14,10 +14,8 @@ language: en-sa
 bpm: 95
 duration: "3:13"
 date_created: 2026-04-25
-suno_url: "https://suno.com/song/68741e7e-f58a-4eee-90ed-d212e31bd53f"
-suno_song_id: 68741e7e-f58a-4eee-90ed-d212e31bd53f
-suno_model: v5.5
-suno_created: 2026-04-25T11:59:00
+model_version: v5.5
+published_at: 2026-04-25T11:59:00
 license: "© 2026 3:30 Channel — All rights reserved"
 ---
 
@@ -91,7 +89,4 @@ Handshake terminated — I am the source
 
 ## 版权证明 / Copyright proof
 
-![[07 · Pāramitā Protocol-screenshot.png]]
-
-Suno publication: **April 25, 2026 at 11:59 AM** (v5.5).
-Source: https://suno.com/song/68741e7e-f58a-4eee-90ed-d212e31bd53f
+Published: **April 25, 2026 at 11:59 AM** (v5.5).

@@ -1,0 +1,16 @@
+[plugin]
+id = "ocr"
+name = "OCR (marker-pdf)"
+version = "0.1.0"
+description = "Local GPU OCR for image-only / scanned PDFs (and images) that have no text layer — the case markitdown and the KB page-marked extractor both punt on. Wraps datalab marker-pdf in an isolated user-home venv, injects a provider into the read capability that fires ONLY when in-process text extraction finds no text layer (born-digital PDFs are never shadowed). Returns page-marked markdown. 100% local — no cloud, no consent gate."
+
+[plugin.entry]
+module = "plugin"
+class = "OcrPlugin"
+
+[provides]
+services = ["ocr"]
+tags = ["read", "ocr", "pdf", "scanned", "markdown"]
+
+[platforms]
+supports = ["laptop", "vps-gpu", "docker"]

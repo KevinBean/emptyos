@@ -131,7 +131,10 @@ class PptApp(BaseApp):
     narrate_deck         = _media.narrate_deck
     set_narration        = _media.set_narration
     speakify_deck        = _media.speakify_deck
+    _render_deck_html    = _media._render_deck_html
+    _write_vault_binary  = _media._write_vault_binary
     export_html          = _media.export_html
+    export_pdf           = _media.export_pdf
     api_resolve_images   = _media.api_resolve_images
     api_narrate          = _media.api_narrate
     api_narration_toggle = _media.api_narration_toggle

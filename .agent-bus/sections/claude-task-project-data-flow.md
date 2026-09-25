@@ -1,13 +1,3 @@
 
 
-Projects is the **write endpoint**, task app is the **read-only aggregator**.
-
-```
-Capture #dev   → projects.add_task_to_project("emptyos-development")
-Capture other  → task.add() → projects.add_task_to_project("inbox")
-Task app       → scans entire vault for - [ ] lines (cross-project view)
-```
-
-- `task.add(text)` routes to inbox by default, or specific project via `project=` kwarg
-- Quick-action tag → project routing: `_TAG_PROJECT` in `apps/quick-action/app.py`
-- Task UI shows `[Project Name]` badges for tasks in `10_Projects/`
+Projects is the **write endpoint**, task app is the **read-only aggregator**. `task.add(text)` routes to the inbox project by default, or a specific project via `project=`; capture `#dev` goes to `emptyos-development` (tag → project routing: `_TAG_PROJECT` in `apps/public/core/quick-action/app.py`). The task app scans the whole vault for `- [ ]` lines and shows `[Project Name]` badges for tasks in `10_Projects/`.

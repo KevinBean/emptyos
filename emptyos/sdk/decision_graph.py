@@ -7,10 +7,21 @@ state (the "condition node"), and **mutations** carry variables along whichever
 path is taken (the "set node"). ``DecisionRun`` is the "play mode" — it walks
 the graph reactively to the accumulated variable state.
 
-Latent consumers (CLAUDE.md rule 9 — this stays a pure module, unblessed as SDK,
-until the *second* concrete one lands): branching tours (the `condition` field
-already promised in `.claude/rules/tour-steps.md`), adaptive Learn paths, and
-`apps/company/` scenario dialogue trees.
+Consumers (CLAUDE.md rule 9 was satisfied long ago — this is blessed SDK, not a
+latent module; the note below used to say "until the *second* concrete one lands"
+and was stale by seven): ``apps/public/standard/tour`` (branching tour steps — the
+`condition` field promised in `.claude/rules/tour-steps.md`, now real),
+``apps/public/standard/reader/branching.py`` (the fiction case this was generalised
+from), ``apps/public/labs/workflows`` (the visual verb-orchestration canvas),
+``apps/public/labs/synth``, ``apps/public/standard/viz/refine.py``, plus two
+view-only topology consumers — ``apps/extension/dev/feature-pipeline/workflow_graph.py``
+and ``apps/extension/dev/model-bench/harness_compiler.py``.
+
+Two SDK layers sit on top: ``graph_pipeline.py`` (``GraphRunner`` — action dispatch,
+``pass_vars``/``emit`` variable threading, human pause/resume) and ``graph_run.py``
+(``GraphRunService`` — background run lifecycle). ``emptyos/web/static/eos-graph.js``
+renders and edits a graph in the browser. **Extend this module rather than authoring
+a parallel graph model** — that is what the consumer count is here to tell you.
 
 Pure logic only — no kernel, no I/O, no randomness (``random``/``Date.now`` are
 banned in this codebase for resume-determinism, and a decision walk must be

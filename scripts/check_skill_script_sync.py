@@ -1,9 +1,9 @@
 #!/usr/bin/env python
-"""Report drift between a skill's `.agents/` and `.claude/` Python copies.
+"""Report drift between a skill's `.agents/` and `.claude/` copies.
 
 Both trees are git-tracked mirrors of the same skill: `.agents/skills/` is the
 Codex-facing copy, `.claude/skills/` the Claude-Code-facing one. A runner
-invoked from either path must behave identically, so every `*.py` present in
+invoked from either path must behave identically, so every `*.py` and `*.md` present in
 both is compared byte-for-byte after line-ending normalisation.
 
 Why this exists, concretely: on 2026-08-05 the `.claude` copy of
@@ -49,6 +49,7 @@ AGENTS_ROOT = REPO_ROOT / ".agents" / "skills"
 CLAUDE_ROOT = REPO_ROOT / ".claude" / "skills"
 OPT_OUT = re.compile(r"^script_sync:\s*false\s*$", re.MULTILINE | re.IGNORECASE)
 SKIP_DIR_PARTS = {"__pycache__", ".pytest_cache"}
+SKIP_MIRROR_SUFFIXES = ("-memory.md",)
 
 
 def _frontmatter(text: str) -> str:
@@ -73,17 +74,33 @@ def _normalise(raw: bytes) -> bytes:
     return raw.replace(b"\r\n", b"\n").replace(b"\r", b"\n").strip()
 
 
-def _py_files(base: Path) -> list[Path]:
+def _synced_files(base: Path) -> list[Path]:
+    """Files that must be byte-identical across both mirrors.
+
+    ``*.py`` — a runner invoked from either path must behave identically.
+
+    ``*.md`` — the skill text itself. Covered from 2026-08-14: markdown was
+    excluded, so 43 ``SKILL.md`` files silently drifted and `.agents/` shipped
+    corrupted ``.Codex/rules/...`` paths (a naive Claude->Codex word swap had
+    rewritten real `.claude/` references into directories that do not exist).
+    The Python check would never have seen it.
+
+    ``*-memory.md`` sidecars are per-machine living state and are never
+    mirrored — same exclusion `sync_user_skills.py` applies to the bundled tree.
+    """
     if not base.is_dir():
         return []
     return sorted(
-        p for p in base.rglob("*.py")
-        if not SKIP_DIR_PARTS.intersection(p.parts)
+        p for p in base.rglob("*")
+        if p.is_file()
+        and p.suffix in (".py", ".md")
+        and not p.name.endswith(SKIP_MIRROR_SUFFIXES)
+        and not SKIP_DIR_PARTS.intersection(p.parts)
     )
 
 
 def scan(agents_root: Path, claude_root: Path) -> dict:
-    """Compare every shared skill's Python files across the two trees."""
+    """Compare every shared skill's scripts and markdown across the two trees."""
     findings: list[dict] = []
     advisories: list[dict] = []
     pairs = 0
@@ -107,8 +124,8 @@ def scan(agents_root: Path, claude_root: Path) -> dict:
         if _opted_out(a_dir) or _opted_out(c_dir):
             skipped.append(name)
             continue
-        rels = {p.relative_to(a_dir) for p in _py_files(a_dir)}
-        rels |= {p.relative_to(c_dir) for p in _py_files(c_dir)}
+        rels = {p.relative_to(a_dir) for p in _synced_files(a_dir)}
+        rels |= {p.relative_to(c_dir) for p in _synced_files(c_dir)}
         if not rels:
             continue
         skills_checked.append(name)
@@ -152,7 +169,7 @@ def main(argv: list[str] | None = None) -> int:
             "ok": not findings,
             "code": "ok" if not findings else "drift",
             "message": (
-                f"{result['pairs']} shared script pair(s) across "
+                f"{result['pairs']} shared file pair(s) across "
                 f"{len(result['skills_checked'])} skill(s), {len(findings)} drifted"
             ),
             "data": result,
@@ -182,7 +199,7 @@ def main(argv: list[str] | None = None) -> int:
     if findings:
         print(f"DRIFT: {len(findings)} shared skill script(s) differ across trees")
     else:
-        print(f"OK: {result['pairs']} shared script pair(s) across "
+        print(f"OK: {result['pairs']} shared file pair(s) across "
               f"{len(result['skills_checked'])} skill(s) are identical")
     return len(findings)
 

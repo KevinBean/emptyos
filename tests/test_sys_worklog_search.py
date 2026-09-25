@@ -1,7 +1,7 @@
 """System: worklog free-text search.
 
 Search runs over ~1,500 short items with AND-over-terms substring matching —
-no index, because substring beats stemming on strings like "45007" or "TB 908"
+no index, because substring beats stemming on strings like "12345" or "TB 908"
 and the corpus is small enough that a real index would be machinery with no
 payoff. These pin the contract, the filters, and the caps.
 """

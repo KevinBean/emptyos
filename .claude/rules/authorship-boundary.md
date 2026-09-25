@@ -1,3 +1,12 @@
+---
+paths:
+  - "apps/public/standard/reactor/**"
+  - "apps/public/standard/journal/**"
+  - "apps/public/standard/kb/**"
+  - "apps/**/conversation-ingest/**"
+  - "emptyos/sdk/vault_*.py"
+---
+
 # Authorship Boundary — every vault file has one owner
 
 A vault note's *author* is either the user, the system, or both. Today EmptyOS

@@ -19,7 +19,7 @@
 <style>
 body { margin: 0; font-family: system-ui, -apple-system, sans-serif;
        background: var(--bg); color: var(--text); }
-.cs-wrap { max-width: 760px; margin: 0 auto; padding: 16px 16px 40px; }
+.cs-wrap { max-width: 760px; margin: 0 auto; padding: 16px 16px 48px; }
 .cs-head { display: flex; align-items: center; gap: 12px; margin-bottom: 4px; }
 .cs-head h1 { font-size: 19px; font-weight: 700; margin: 0; flex: 1;
               display: flex; align-items: center; gap: 8px; }
@@ -51,9 +51,21 @@ textarea.cs-ta { width: 100%; box-sizing: border-box; min-height: 120px; resize:
 .cs-pc-verb { color: var(--text-muted); font-family: ui-monospace, monospace; }
 .cs-pc-body { font-size: 14px; line-height: 1.4; margin-bottom: 12px; }
 .cs-pc-actions { display: flex; gap: 8px; }
-.cs-gate { text-align: center; padding: 40px 24px; }
+.cs-gate { text-align: center; padding: 48px 24px; }
 .cs-gate code { background: var(--bg); padding: 2px 8px; border-radius: 4px; }
 .hidden { display: none !important; }
+/* Recall across kept dumps (dark by default; hidden unless the flag is on) */
+input.cs-q { flex: 1; min-width: 200px; background: var(--bg); color: var(--text);
+             border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px;
+             font: inherit; font-size: 14px; }
+.cs-answer { background: var(--bg); border: 1px solid var(--accent); border-radius: 8px;
+             padding: 12px 16px; margin: 12px 0; font-size: 14px; line-height: 1.5;
+             white-space: pre-wrap; }
+.cs-hit { background: var(--bg); border: 1px solid var(--border); border-radius: 8px;
+          padding: 12px 16px; margin-bottom: 8px; }
+.cs-hit-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+               font-size: 12px; margin-bottom: 6px; }
+.cs-hit-body { font-size: 13px; line-height: 1.45; color: var(--text-muted); }
 </style>
 </head>
 <body>
@@ -147,6 +159,30 @@ textarea.cs-ta { width: 100%; box-sizing: border-box; min-height: 120px; resize:
         <button class="eos-btn-sm" onclick="resetSession()">＋ New dump</button>
       </div>
     </div>
+
+    <!-- Recall across kept dumps (dark by default — hidden unless the flag is on) -->
+    <div id="stage-recall" class="cs-card hidden">
+      <h3 style="margin-top:0">Ask across your kept dumps
+        <span class="cs-hint" id="recall-count"></span></h3>
+      <div class="cs-row" style="margin-top:0">
+        <input id="recall-q" class="cs-q" type="text"
+               placeholder="What have I said about…?"
+               onkeydown="if(event.key==='Enter')runRecall()">
+        <button id="recall-btn" class="eos-btn" onclick="runRecall()">Search</button>
+      </div>
+      <label class="cs-row" style="font-size:13px">
+        <input type="checkbox" id="recall-answer"> Also write an answer from the matches
+        <span class="cs-hint">— sends the matched excerpts to the model; search alone does not</span>
+      </label>
+      <p class="cs-hint">Searches only the summaries you chose to keep. Discarded
+         dumps are never searched — they are not part of the corpus.</p>
+      <p id="busy-recall" class="cs-busy">Searching your kept dumps</p>
+      <!-- Auto-provenance sink. The prefix also matches GET /api/recall/status; that is
+           safe because eos-provenance.js only retracts a chip from the exact path
+           that painted it, and /recall/status returns no `provenance` key. -->
+      <div id="recall-answer-box" class="cs-answer hidden" data-ai-output="/braindump/api/recall"></div>
+      <div id="recall-hits"></div>
+    </div>
   </div>
 </div>
 
@@ -175,7 +211,67 @@ async function init() {
   var cfg = await EOS.api('/braindump/api/config') || {};
   document.getElementById('gate').classList.toggle('hidden', !!cfg.enabled);
   document.getElementById('app').classList.toggle('hidden', !cfg.enabled);
-  if (cfg.enabled) initMeeting();
+  if (cfg.enabled) { initMeeting(); if (cfg.recall) initRecall(); }
+}
+
+// ── Recall across kept dumps ──
+// Dark by default: /api/config already carries the flag, so with recall off
+// this never runs and the page makes no extra request — identical to before.
+async function initRecall() {
+  var st = await EOS.api('/braindump/api/recall/status') || {};
+  var sec = document.getElementById('stage-recall');
+  if (!st.enabled) { sec.classList.add('hidden'); return; }
+  sec.classList.remove('hidden');
+  document.getElementById('recall-count').textContent =
+    '— ' + (st.kept || 0) + ' kept ' + ((st.kept === 1) ? 'summary' : 'summaries') +
+    (st.semantic ? ' · semantic' : ' · keyword');
+}
+
+async function runRecall() {
+  var q = (document.getElementById('recall-q').value || '').trim();
+  if (!q) return;
+  var wantAnswer = document.getElementById('recall-answer').checked;
+  var hitsEl = document.getElementById('recall-hits');
+  var ansEl = document.getElementById('recall-answer-box');
+  ansEl.classList.add('hidden'); ansEl.textContent = '';
+  busy('busy-recall', true); disable('recall-btn', true);
+  try {
+    var res = await fetchT('/braindump/api/recall', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ query: q, answer: wantAnswer }) });
+    var data = await res.json();
+    if (data.error) {
+      hitsEl.innerHTML = EOS_UI.errorState({ message: 'Recall failed: ' + data.error });
+      return;
+    }
+    if (data.answer) { ansEl.textContent = data.answer; ansEl.classList.remove('hidden'); }
+    renderRecall(data.hits || []);
+  } catch (e) {
+    hitsEl.innerHTML = EOS_UI.errorState({
+      message: e.name === 'AbortError' ? 'Timed out searching' : ('Failed: ' + e.message),
+      onRetry: 'runRecall()' });
+  } finally {
+    busy('busy-recall', false); disable('recall-btn', false);
+  }
+}
+
+function renderRecall(hits) {
+  var el = document.getElementById('recall-hits');
+  if (!hits.length) {
+    el.innerHTML = EOS_UI.emptyState({ icon: '🔍',
+      message: 'Nothing in your kept summaries matches that.' });
+    return;
+  }
+  el.innerHTML = hits.map(function(h, i) {
+    return '<div class="cs-hit">' +
+      '<div class="cs-hit-head">' +
+        '<span class="eos-badge">' + (i + 1) + '</span>' +
+        EOS.noteActions(h.path, h.title) +
+        (h.as_of ? '<span class="cs-hint">' + esc(h.as_of) + '</span>' : '') +
+      '</div>' +
+      '<div class="cs-hit-body">' + esc(h.excerpt || '') + '</div>' +
+    '</div>';
+  }).join('');
 }
 
 // ── Meeting capture (system-audio loopback + mic via the meeting-capture plugin) ──

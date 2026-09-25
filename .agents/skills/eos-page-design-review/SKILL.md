@@ -24,7 +24,7 @@ It does not introduce new fonts, new palettes, brand islands, novel components. 
 
 Ask the user for:
 
-1. **Target** — file path or app id (`apps/radio/pages/index.html`)
+1. **Target** — file path or app id (`apps/extension/english-learning/radio/pages/index.html`)
 2. **Mode** — `review` (output only, propose-don't-edit) or `apply` (edit in place)
 3. **Constraint reminders** (optional) — anything to be especially careful about (e.g. "this is the public/kiosk page")
 
@@ -201,7 +201,7 @@ If a daemon's running, this can be partly automated by hitting `/api/presentatio
 
 ## Phase 2.6 — Mobile / breakpoint coverage
 
-EmptyOS ships as a PWA tested on iPhone Safari, Android Chrome, desktop Chrome, and desktop Edge (per AGENTS.md § Testing). A page that's beautiful on a 1440px laptop screen can be unusable on a 390px iPhone. The seven-question critique is breakpoint-agnostic, but the *answers* must hold on mobile.
+EmptyOS ships as a PWA tested on iPhone Safari, Android Chrome, desktop Chrome, and desktop Edge (per CLAUDE.md § Testing). A page that's beautiful on a 1440px laptop screen can be unusable on a 390px iPhone. The seven-question critique is breakpoint-agnostic, but the *answers* must hold on mobile.
 
 The canonical EmptyOS mobile breakpoint is **640px** (per the mobile-nav-collapses memory rule). Some pages use 520px or 540px for tighter content; both are fine.
 
@@ -291,13 +291,37 @@ Verify:
 
 If a daemon's running, append `?width=390` to a debug URL or use the EmptyOS PWA mobile preview tooling.
 
+## Phase 2.7 — Slop tells (mechanical anti-slop pass)
+
+The seven questions catch *structural* weakness; this pass catches *generic-AI tells* — content and styling patterns that make a page read as machine-generated even when its hierarchy is fine. Adapted from the taste-skill anti-slop ruleset (`github.com/Leonxlnx/taste-skill`), filtered to what applies to in-system EmptyOS app pages — most marketing-landing-page tells don't apply here; the universal ones always do.
+
+These are **mechanical** — grep or eyeball, no judgment call.
+
+### Universal block (flag on any archetype)
+
+- **Em-dashes (—).** Banned everywhere — headings, labels, buttons, body, captions, attribution. Replace with period / comma / colon / parentheses / spaced hyphen ( - ). `grep -F "—" pages/index.html` → must be 0.
+- **Generic placeholder content** — "John Doe", "Sarah Chan", "Acme", "Nexus", lorem-ipsum, egg/glyph avatars. Real app copy or real data only.
+- **Filler marketing verbs** in UI copy — "Elevate", "Seamless", "Unleash", "Revolutionize". EmptyOS copy is plain and functional (DL voice).
+- **Fake-precise numbers** (99.99%, 4.1×, 1,234,567) that aren't real data or labelled sample.
+- **Pure `#000` / `#fff`** instead of tokens — already caught by the hex grep, but flag the *intent*: use `var(--text)` / `var(--bg)`, not pure black/white.
+- **Decoration masquerading as state** — colored status dots on every list/nav row, scroll cues ("↓ scroll"), version labels (BETA / V0.6) used as ornament rather than real state.
+
+### Marketing-shaped surfaces only (`publish` / `portal` / landing pages — rare in-system)
+
+- **Eyebrow spam** — small uppercase tracking labels above *every* section. Cap at one per three sections; never section-number eyebrows ("01 · …", "00/INDEX").
+- **Section-layout repetition** — 3+ consecutive image+text zigzag sections, or three identical equal-width feature cards.
+- **Fake product screenshots** built from `<div>`s (fake dashboards/terminals/task lists).
+- **Duplicate CTA intent** — two buttons that mean the same thing ("Get in touch" + "Contact us").
+
+Most EmptyOS pages are instruments / lists / dashboards / forms, where the marketing tells don't fire — apply the universal block always, and add the marketing block only when reviewing a `publish` / `portal` outward-facing surface.
+
 ## Phase 3 — Propose fixes within tokens only
 
 For each finding, write a fix. Each fix MUST:
 
-1. **Use only existing tokens** — `var(--accent)` not `#4a90e2`; `var(--radius-md)` not `8px`; `var(--font)` not `'Inter'`
+1. **Use only existing tokens** — `var(--accent)` not `#4a90e2`; `var(--radius)` not `8px`; `var(--font)` not `'Inter'`
 2. **Use only existing helpers** — `EOS_UI.statCards`, `.eos-badge`, `.eos-entity-card`, etc. — not new ones
-3. **Stay on the type/spacing/radius scale** — `{10, 11, 12, 13, 14, 15, 22, 28, 32, 48}px` for type; `{0, 2, 4, 8, 12, 16, 24, 32, 48}px` for spacing; `{0, 4, 6, 8, 14, 999}px` for radius
+3. **Stay on the type/spacing/radius scale** — `{10, 11, 12, 13, 14, 15, 16, 17, 18, 22, 28, 32–48}px` for type; `{0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 24, 32, 48}px` for spacing (plus multiples of 8 above 48: 56/64/80); `{0, 4, 6, 8, 10, 12, 14, 999}px` for radius
 4. **Not introduce a new font, palette, or visual language** — the moment a fix needs that, the right answer is a brand-island review (run `frontend-design` instead, with explicit user approval)
 
 ### Refusal list — auto-reject these proposals
@@ -349,6 +373,7 @@ For `mode = apply`, edit in place per the proposed fixes table, run smoke checks
 ## Phase 5 — Verify
 
 - `grep -E "[: ,(]#[0-9a-fA-F]{6}\b"` on the page → 0 hex colors (per DL-1, brand-islands excepted but this skill never produces them)
+- `grep -F "—" pages/index.html` → 0 em-dashes (Phase 2.7 universal tell — use period / comma / colon / spaced hyphen instead)
 - Type sizes used → all within scale
 - Spacing values used → all within scale
 - No `alert()` / `confirm()` / `prompt()` introduced
@@ -372,6 +397,6 @@ For `mode = apply`, edit in place per the proposed fixes table, run smoke checks
 - `docs/FRONTEND-DESIGN-LANGUAGE.md` — visual + interaction DNA
 - `emptyos/web/static/theme.css` — token list
 - `emptyos/web/static/eos-components.{css,js}` — helper library
-- `.Codex/skills/eos-design-system-audit/SKILL.md` — for system-wide compliance sweeps
-- `.Codex/skills/eos-simplify/SKILL.md` — for per-file code review (capabilities, prompts, branding)
+- `.claude/skills/eos-design-system-audit/SKILL.md` — for system-wide compliance sweeps
+- `.claude/skills/eos-simplify/SKILL.md` — for per-file code review (capabilities, prompts, branding)
 - `frontend-design:frontend-design` — for *creating* distinctive interfaces (the opposite mode; brand islands)

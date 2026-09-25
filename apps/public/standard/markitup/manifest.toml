@@ -1,0 +1,113 @@
+[app]
+id = "markitup"
+name = "Mark It Up"
+version = "1.0.0"
+description = "Visual review of a captured surface. Point it at a website — a client's or one of our own — and it captures the views worth reviewing, writes tagged comments against real page elements, and pins each one to the exact region it is about. The daemon page is the working artifact; PDF and markdown are exports."
+dimensions = ["intellectual", "occupational"]
+store_category = "creative"
+user_intent = [
+    "review this website for me",
+    "what's wrong with this landing page",
+    "give me feedback on a site",
+    "annotate a web page with comments",
+    "critique my portfolio site",
+    "mark up a page design",
+    "帮我评审这个网站",
+]
+
+[app.entry]
+module = "app"
+class = "MarkitupApp"
+
+[requires]
+# `browse` drives the capture: navigate, stamp anchors, harvest rects,
+# screenshot. `think` writes the comments. `write` lands the markdown export.
+# All three are core capabilities, so declaring them never blocks load — but a
+# deployment with no browse PROVIDER (playwright not installed) can still open
+# saved reviews and hand-annotate, which is why capture failures surface as a
+# run error rather than a boot one. `read` is deliberately absent: run state is
+# data/ file I/O, which rule 1 exempts.
+capabilities = ["think", "browse", "write"]
+apps = []
+optional_apps = []
+services = []
+events = []
+
+[provides.web]
+prefix = "/markitup"
+
+[provides.prompts]
+module = "prompts"
+
+[provides.events]
+emits = [
+    "markitup:review_started",
+    "markitup:review_ready",
+    "markitup:comment_resolved",
+    "markitup:proposal_saved",
+    "markitup:exported",
+]
+listens = []
+# The UI is the only consumer of the first four; `exported` is left public so a
+# reactor can breadcrumb a delivered review into the journal.
+internal = [
+    "markitup:review_started",
+    "markitup:review_ready",
+    "markitup:comment_resolved",
+    "markitup:proposal_saved",
+]
+
+[provides.settings]
+schema = [
+    {key = "markitup.rubric", label = "Default rubric", type = "select", default = "site", options = ["site", "design", "requirements"], hint = "Which comment vocabulary a new review starts with. `site` tags a disposition (KEEP/REFRAME/PROVE/FIX/OPTION) for reviewing someone else's site; `design` tags a design property (focal/hierarchy/rhythm/…) for reviewing one of ours; `requirements` tags a finding per statement (UNCLEAR/WRONG/MISSING/CONFLICT/QUESTION/ACCEPT) for reviewing a rendered specification document."},
+    {key = "markitup.viewports", label = "Capture viewports", type = "text", default = "1440x900,390x844", hint = "Comma-separated WxH. Each view is captured once per viewport, so two viewports doubles both the browser time and the review cost."},
+    {key = "markitup.document_width", label = "Document capture viewport", type = "text", default = "1200x900", hint = "One WxH for a rendered document source (a markdown file under docs/, the vault's 30_Resources/, or uploads/). A document has no mobile layout worth a second pass, so it is captured once."},
+    {key = "markitup.max_comments", label = "Max comments per view", type = "number", default = 12, hint = "Cap on what one review pass may return for a single captured view. Three sharp comments beat eight limp ones — raising this rarely helps."},
+    {key = "markitup.max_views", label = "Max views per review", type = "number", default = 8, hint = "Ceiling on how many views discovery may propose. You approve the list before anything is captured."},
+    {key = "markitup.crawl_budget", label = "Crawl page budget", type = "number", default = 40, hint = "How many same-origin links discovery may look at before it must choose. Politeness bound, not a quality knob."},
+    {key = "markitup.run_budget_usd", label = "Per-run budget (USD)", type = "number", default = 2.0, hint = "Hard ceiling for one end-to-end run. A run that would exceed it pauses and asks rather than failing or quietly continuing. 0 disables the cap."},
+    {key = "markitup.think_domain", label = "Think domain", type = "select", default = "text", options = ["text", "reason", "code"], hint = "Routing hint for the review pass. `reason` favours stronger models when the rubric asks for judgement rather than description."},
+]
+
+[provides.welcome]
+title = "Visual Review"
+tagline = "Capture a site, comment on what you see, pin every note to the thing it is about."
+href = "/markitup/"
+order = 23
+
+# ── Verb registry (.claude/rules/verb-registry.md) ───────────────────
+# Eligibility is the autopilot floor, not a description: `stable` may auto-run,
+# `gated` always asks. Capture reaches an external host and review spends
+# tokens, so neither is ever autopilot-eligible however convenient it would be.
+
+[[provides.verbs]]
+verb = "markitup.list_reviews"
+method = "list_reviews"
+summary = "List saved visual reviews, newest first"
+args = { }
+eligibility = "stable"
+surfaces = ["assistant", "mcp", "agent"]
+assistant = { slash = "/reviews", method = "list_reviews" }
+
+[[provides.verbs]]
+verb = "markitup.start_review"
+method = "start_review"
+summary = "Capture a site and draft a visual review of it"
+args = { url = "string", rubric = "string?", title = "string?", approve = "boolean?" }
+eligibility = "gated"
+surfaces = ["assistant", "agent"]
+
+# ── Hub panel (.claude/rules/hub-panels.md) ──────────────────────────
+# Priority <150: the ambient band is dropped from the core hub entirely, so a
+# panel authored at 150+ aggregates and never renders. Fed by
+# BaseApp.stopped_runs_panel — a paused or failed run needs a way back, and a
+# run that stopped at the approval gate is the normal case here, not an error.
+
+[[contributes.hub.panel]]
+id = "markitup-runs"
+method = "panel_runs"
+renderer = "plain-list"
+title = "Reviews needing you"
+priority = 135
+lazy = true
+limit = 5

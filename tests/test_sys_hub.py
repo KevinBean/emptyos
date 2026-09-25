@@ -72,6 +72,7 @@ class TestHubPanelsAPI:
         assert len(apps) > 0, "launcher should list at least one app"
         for c in apps:
             assert "title" in c and "href" in c, f"chip missing title/href: {c}"
+            assert "icon" in c and "icon_id" in c, f"launcher icon contract missing: {c}"
 
     def test_single_panel_fetch(self, http_client):
         """Fetching one panel returns its full envelope."""
@@ -106,7 +107,11 @@ class TestHubPanelsAPI:
 
     def test_panels_all_includes_lazy_executed(self, http_client):
         """/api/panels/all forces lazy contributors to run."""
-        data = http_client.get("/hub/api/panels/all").json()
+        # Forcing every lazy panel to hydrate synchronously across 100+
+        # registered contributions is the heaviest hub endpoint — measured
+        # ~18s under load, past the fixture's shared 15s default. A per-call
+        # override here avoids raising the default for every other test.
+        data = http_client.get("/hub/api/panels/all", timeout=45).json()
         assert "panels" in data
         for p in data["panels"]:
             assert "lazy" in p, f"panel {p.get('id')} missing lazy flag"
@@ -255,6 +260,20 @@ class TestHubRoute:
 
 @pytest.mark.interactive
 class TestHubUI:
+
+    def test_launcher_shows_adaptive_icons_and_labels(self, page, base_url, page_errors):
+        page.goto(base_url + "/hub/", wait_until="domcontentloaded", timeout=15000)
+        try:
+            # A full personal install can contribute 200+ launcher cards; give
+            # the aggregate panel fetch its documented long-request allowance.
+            page.locator(".r-app-card").first.wait_for(state="visible", timeout=30000)
+        except Exception:
+            pytest.skip("app launcher is not present in this environment")
+        assert page.locator(".r-app-card-name").count() > 0
+        assert page.locator(".r-app-card-icon .eos-app-icon").count() > 0
+        box = page.locator(".r-app-card-icon .eos-app-icon").first.bounding_box()
+        assert box and round(box["width"]) == 40 and round(box["height"]) == 40
+        assert_no_js_errors(page_errors, allow_patterns=_UI_ALLOW)
 
     def test_page_loads(self, page, base_url, page_errors):
         """/hub/ serves the command surface — greeting + mode chips render."""

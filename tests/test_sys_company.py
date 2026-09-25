@@ -179,6 +179,28 @@ class TestOrgsAPI:
         ).json()
         assert resp.get("error"), f"expected AI-members-required error, got {resp}"
 
+    def test_route_to_specialist_requires_ai_members(self, http_client):
+        empty_name = _org_name("RouteEmptyAI")
+        empty = http_client.post(
+            "/orgs/api/orgs",
+            json={"name": empty_name, "kind": "team", "reality": "real", "scope": "member"},
+        ).json()
+        oid = empty.get("id")
+        if not oid:
+            pytest.skip(f"could not create empty org: {empty}")
+        resp = http_client.post(
+            f"/orgs/api/orgs/{oid}/route",
+            json={"item_text": "who should own this?"},
+        ).json()
+        assert resp.get("error"), f"expected AI-members-required error, got {resp}"
+
+    def test_route_to_specialist_requires_item_text(self, http_client, created_org, created_ai_member):
+        resp = http_client.post(
+            f"/orgs/api/orgs/{created_org}/route",
+            json={"item_text": ""},
+        ).json()
+        assert resp.get("error"), f"expected item_text-required error, got {resp}"
+
     def test_run_unknown_scenario_rejected(self, http_client, created_org, created_ai_member):
         resp = http_client.post(
             "/orgs/api/scenario/run",
@@ -399,6 +421,39 @@ class TestOrgsScenarioRun:
         assert data.get("id"), f"run returned no id: {data}"
         assert isinstance(data.get("responses"), list)
         assert "tally" in data
+
+
+@pytest.mark.api
+@pytest.mark.llm
+class TestOrgsRouteToSpecialist:
+    """Live LLM test — the single-specialist-pick sibling of scenario/run's
+    fan-out-to-all. Creates its own pair of AI members (rather than reusing
+    the session-scoped `created_ai_member`) so the classification genuinely
+    has 2 distinct choices."""
+
+    def test_routes_to_one_of_two_members(self, http_client, created_org):
+        a = http_client.post("/orgs/api/members", json={
+            "org_id": created_org, "mode": "ai",
+            "name": f"{TEST_PREFIX}Route Architect",
+            "role": "Architecture — system design, judgment calls",
+        }).json()
+        b = http_client.post("/orgs/api/members", json={
+            "org_id": created_org, "mode": "ai",
+            "name": f"{TEST_PREFIX}Route Mechanic",
+            "role": "Mechanical bulk edits — fast, repetitive changes",
+        }).json()
+        aid, bid = a.get("id"), b.get("id")
+        if not aid or not bid:
+            pytest.skip(f"could not create routing members: {a}, {b}")
+        resp = http_client.post(
+            f"/orgs/api/orgs/{created_org}/route",
+            json={"item_text": "Rename this variable across 40 files."},
+            timeout=60,
+        )
+        data = assert_ok(resp)
+        assert data.get("member_id") in {aid, bid}, f"unexpected member_id: {data}"
+        assert data.get("response"), f"no response: {data}"
+        assert "provenance" in data
 
 
 @pytest.mark.interactive

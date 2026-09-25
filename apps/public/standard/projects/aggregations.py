@@ -23,6 +23,7 @@ from emptyos.sdk import (
     compute_task_decay,
     extract_due,
     parse_frontmatter,
+    scheduled,
     web_route,
 )
 
@@ -38,6 +39,8 @@ if TYPE_CHECKING:
 #   _iter_project_files  = _aggregations._iter_project_files
 #   api_all_tasks        = _aggregations.api_all_tasks
 #   api_tasks_for_room   = _aggregations.api_tasks_for_room
+#   _deadline_nudge_enabled  = _aggregations._deadline_nudge_enabled
+#   scheduled_deadline_nudge = _aggregations.scheduled_deadline_nudge
 # Adding a new method here? Add a matching binding line in app.py.
 # ────────────────────────────────────────────────────────────────────
 
@@ -75,6 +78,53 @@ async def api_deadlines(self, request):
     days = int(request.query_params.get("days", "90"))
     overdue_days = int(request.query_params.get("overdue_days", "7"))
     return await self.get_deadlines(days, overdue_days)
+
+
+def _deadline_nudge_enabled(self) -> bool:
+    """Daily project-deadline summary toggle (dark default)."""
+    return bool(self.setting_or_config(
+        "projects.feature.deadline-nudge.enabled",
+        False,
+        config_key="feature.deadline-nudge.enabled",
+    ))
+
+
+@scheduled("0 8 * * *", id="projects-deadline-nudge")
+async def scheduled_deadline_nudge(self):
+    """Push one bounded daily summary for imminent/overdue project deadlines.
+
+    Last of the four apps this pass to adopt the shared proactive_notify
+    pattern (quotes/task/people/journal already did) — reuses the
+    existing get_deadlines() query, which already computes exactly the
+    window this nudge needs.
+    """
+    if not self._deadline_nudge_enabled():
+        return {"enabled": False, "sent": False}
+    days = int(self.setting_or_config(
+        "projects.deadline_alert_days", 7, config_key="deadline_alert_days",
+    ))
+    items = await self.get_deadlines(days=days, overdue_days=days)
+    if not items:
+        return {"enabled": True, "sent": False, "count": 0}
+
+    overdue = [i for i in items if i["overdue"]]
+
+    def _item_label(i):
+        when = "overdue" if i["overdue"] else f"{i['days_left']}d"
+        return f"{i['name']} ({when})"
+
+    top = "; ".join(_item_label(i) for i in items[:3])
+    label = f"{len(items)} project deadline{'s' if len(items) != 1 else ''}"
+    if overdue:
+        label += f" ({len(overdue)} overdue)"
+    await self.proactive_notify(
+        kind="projects-deadline",
+        text=f"{label}: {top}",
+        dedup_key=f"projects-deadline:{date.today().isoformat()}",
+        priority="high" if overdue else "info",
+        link={"text": "Open projects", "href": "/projects/"},
+    )
+    return {"enabled": True, "sent": True, "count": len(items), "overdue": len(overdue)}
 
 
 async def get_all_tasks(self, status_filter: str = "", include_archived: bool = False) -> list[dict]:

@@ -471,13 +471,18 @@ function fmt(value) {
 function pct(done, total) {
   return total ? Math.round((Number(done || 0) / Number(total)) * 100) : 0;
 }
+// Every target here must be one of EOS_UI.STATUS_VARIANTS. `done`, `pending`
+// and `warning` were not, so they fell through to `neutral` — and the span was
+// then built as 'eos-badge-status-' + variant, double-prefixing what
+// statusVariant had already prefixed. Between the two, all ten states rendered
+// an unstyled class. EOS_UI.statusBadge owns the concatenation now.
+var CI_STATUS_MAP = {
+  audited: 'completed', queued: 'draft', degraded: 'blocked',
+  'audit-only': 'draft', complete: 'completed', partial: 'draft',
+  verified: 'completed', missing: 'blocked'
+};
 function badge(label, status) {
-  var variant = EOS_UI.statusVariant(status || 'neutral', {
-    audited: 'done', queued: 'pending', degraded: 'blocked',
-    'audit-only': 'warning', complete: 'done', partial: 'warning',
-    verified: 'done', missing: 'blocked'
-  });
-  return '<span class="eos-badge eos-badge-status-' + variant + '">' + esc(label) + '</span>';
+  return EOS_UI.statusBadge(label, status || '', CI_STATUS_MAP);
 }
 function loadingHtml() {
   return '<div class="ci-loading"><span class="eos-spinner" aria-label="Loading"></span></div>';
@@ -492,11 +497,17 @@ function activeImport() {
   var rows = STATE.overview && STATE.overview.imports || [];
   return rows.find(function(row) { return row.key === STATE.selectedImport; }) || null;
 }
+// conversation-ingest-single-import-scope: a dedicated sentinel (not '') for
+// "every import merged" — '' is reserved for the "nothing discovered yet"
+// state so the two can never be confused when the select re-renders.
+var ALL_IMPORTS = '__all__';
 function importOptions() {
   var select = document.getElementById('import-select');
   var rows = STATE.overview && STATE.overview.imports || [];
   select.innerHTML = rows.length
-    ? rows.map(function(row) {
+    ? '<option value="' + ALL_IMPORTS + '"' +
+        (STATE.selectedImport === ALL_IMPORTS ? ' selected' : '') + '>All imports</option>' +
+      rows.map(function(row) {
         return '<option value="' + escAttr(row.key) + '"' +
           (row.key === STATE.selectedImport ? ' selected' : '') + '>' +
           esc(row.key) + '</option>';
@@ -523,9 +534,11 @@ async function loadOverview() {
   } else {
     STATE.overview = result;
     if (!STATE.selectedImport) STATE.selectedImport = result.active || '';
-    if (STATE.selectedImport && !(result.imports || []).some(function(row) {
-      return row.key === STATE.selectedImport;
-    })) STATE.selectedImport = result.active || '';
+    // '__all__' is a deliberate choice, not a stale import key — never reset it.
+    if (STATE.selectedImport && STATE.selectedImport !== ALL_IMPORTS &&
+        !(result.imports || []).some(function(row) { return row.key === STATE.selectedImport; })) {
+      STATE.selectedImport = result.active || '';
+    }
   }
   STATE.loading = false;
   importOptions();
@@ -535,7 +548,9 @@ async function loadOverview() {
 
 async function loadResume() {
   STATE.resume = null;
-  if (!STATE.selectedImport) return;
+  // No single resume target when every import is merged — resume is
+  // inherently per-import (it names one atomic next item).
+  if (!STATE.selectedImport || STATE.selectedImport === ALL_IMPORTS) return;
   var result = await EOS.apiSafe(
     '/conversation-ingest/api/resume?import=' + encodeURIComponent(STATE.selectedImport)
   );
@@ -574,9 +589,9 @@ async function loadItems(bucket) {
   STATE.loading = true;
   STATE.error = '';
   render();
-  var url = '/conversation-ingest/api/items?import=' +
-    encodeURIComponent(STATE.selectedImport) +
-    '&bucket=' + encodeURIComponent(bucket) +
+  var url = '/conversation-ingest/api/items?' +
+    (STATE.selectedImport === ALL_IMPORTS ? '' : 'import=' + encodeURIComponent(STATE.selectedImport) + '&') +
+    'bucket=' + encodeURIComponent(bucket) +
     '&q=' + encodeURIComponent(STATE.query) +
     '&offset=' + STATE.offset + '&limit=' + STATE.limit;
   var result = await EOS.apiSafe(url);
@@ -660,6 +675,10 @@ var _route = EOS_UI.hashRoute({
 });
 
 function copyResume() {
+  if (STATE.selectedImport === ALL_IMPORTS) {
+    EOS_UI.toast('Select a specific import to copy its resume prompt.', 'warning');
+    return;
+  }
   var prompt = STATE.resume && STATE.resume.prompt || '';
   if (!prompt) {
     EOS_UI.toast('No pending or backfill item is available.', 'warning');
@@ -674,10 +693,12 @@ function copyResume() {
 
 function renderOverview() {
   var current = activeImport();
-  if (!current) return emptyHtml('No supported queue or evidence-audit artifacts were found under the import root.');
-  var progress = pct(current.processed, current.total);
-  var html = '<div class="ci-stats" id="ci-stats"></div>' +
-    '<section class="ci-panel">' +
+  var allMode = STATE.selectedImport === ALL_IMPORTS;
+  if (!current && !allMode) return emptyHtml('No supported queue or evidence-audit artifacts were found under the import root.');
+  var html = '<div class="ci-stats" id="ci-stats"></div>';
+  if (current) {
+    var progress = pct(current.processed, current.total);
+    html += '<section class="ci-panel">' +
       '<div class="ci-panel-head"><div><h2>Active coverage</h2>' +
       '<div class="ci-meta ci-mono">' + esc(current.key) + '</div></div>' +
       badge(current.status, current.status) + '</div>' +
@@ -685,7 +706,8 @@ function renderOverview() {
       '<div class="ci-meta">' + fmt(current.processed) + ' of ' + fmt(current.total) +
       ' indexed by the current queue. Telemetry alone never marks an item complete.</div>' +
     '</section>';
-  if (current.top_backfill_reasons && current.top_backfill_reasons.length) {
+  }
+  if (current && current.top_backfill_reasons && current.top_backfill_reasons.length) {
     html += '<section class="ci-panel"><div class="ci-panel-head"><h2>Largest evidence gaps</h2>' +
       '<button class="eos-btn eos-btn-sm" type="button" title="Open the backfill queue" onclick="switchTab(\'backfill\')">Review backfill</button></div>' +
       '<div class="ci-reasons">' +
@@ -710,16 +732,30 @@ function renderOverview() {
         '</article>';
     }).join('') + '</div></section>';
   setTimeout(function() {
+    // In "All imports" mode there's no single current row — sum across every
+    // discovered import instead of leaving the stat tiles blank.
+    var stats = current || (allMode ? sumImports(STATE.overview.imports || []) : null);
+    if (!stats) return;
     EOS_UI.statCards('ci-stats', [
-      { label: 'Processed', value: fmt(current.processed) },
-      { label: 'Pending', value: fmt(current.pending), variant: current.pending ? 'warning' : 'success' },
-      { label: 'Living-note mutations', value: fmt(current.living_note_mutations), variant: 'accent' },
-      { label: 'Routing review', value: fmt(current.routing_review_required), variant: current.routing_review_required ? 'danger' : 'success' },
-      { label: 'Backfill', value: fmt(current.needs_backfill), variant: current.needs_backfill ? 'danger' : 'success' },
-      { label: 'Accounted no-mutation', value: fmt(current.accounted_no_mutation), variant: 'muted' }
+      { label: 'Processed', value: fmt(stats.processed) },
+      { label: 'Pending', value: fmt(stats.pending), variant: stats.pending ? 'warning' : 'success' },
+      { label: 'Living-note mutations', value: fmt(stats.living_note_mutations), variant: 'accent' },
+      { label: 'Routing review', value: fmt(stats.routing_review_required), variant: stats.routing_review_required ? 'danger' : 'success' },
+      { label: 'Backfill', value: fmt(stats.needs_backfill), variant: stats.needs_backfill ? 'danger' : 'success' },
+      { label: 'Accounted no-mutation', value: fmt(stats.accounted_no_mutation), variant: 'muted' }
     ]);
   }, 0);
   return html;
+}
+function sumImports(rows) {
+  var fields = ['processed', 'pending', 'living_note_mutations', 'routing_review_required',
+    'needs_backfill', 'accounted_no_mutation'];
+  var out = {};
+  fields.forEach(function(f) { out[f] = 0; });
+  rows.forEach(function(row) {
+    fields.forEach(function(f) { out[f] += Number(row[f] || 0); });
+  });
+  return out;
 }
 
 function renderItems(bucket) {
@@ -730,11 +766,28 @@ function renderItems(bucket) {
       ? 'Semantic routing-review queue'
       : 'Pending conversations';
   if (!data) return emptyHtml('Choose a supported import to inspect its queue.');
+  var aggregated = data.import_key == null;
   var html = '<section class="ci-panel"><div class="ci-panel-head"><div><h2>' + label + '</h2>' +
-    '<div class="ci-meta">' + fmt(data.total) + ' matching records</div></div></div>' +
+    '<div class="ci-meta">' + fmt(data.total) + ' matching records' +
+    (aggregated ? ' across ' + fmt((data.imports || []).length) + ' import(s)' : '') + '</div></div></div>' +
     '<div class="ci-filter"><div class="ci-filter-group"><label for="ci-query">Search title, ID, path, or failure</label>' +
     '<input id="ci-query" type="search" value="' + escAttr(STATE.query) + '" placeholder="Press Enter to search" onkeydown="applySearch(event)"></div>' +
     '<button class="eos-btn eos-btn-sm" type="button" title="Apply the current search query" onclick="applySearch()">Search</button></div>';
+  if (aggregated && ((data.import_errors && data.import_errors.length) || (data.truncated_imports && data.truncated_imports.length))) {
+    var notes = [];
+    if (data.truncated_imports && data.truncated_imports.length) {
+      // 200 mirrors MAX_PAGE_SIZE in store.py — the per-import cap this merged
+      // view fetches before pagination. Keep in sync if that constant moves.
+      notes.push('showing only the first 200 matches per import for: ' +
+        data.truncated_imports.map(esc).join(', '));
+    }
+    if (data.import_errors && data.import_errors.length) {
+      notes.push('could not read: ' + data.import_errors.map(function(e) {
+        return esc(e.import_key) + ' (' + esc(e.error) + ')';
+      }).join('; '));
+    }
+    html += '<div class="ci-inline-error">' + notes.join(' — ') + '</div>';
+  }
   if (!data.rows.length) {
     html += emptyHtml(bucket === 'backfill'
       ? 'No records need evidence backfill in this view.'
@@ -760,12 +813,17 @@ function renderItems(bucket) {
             row.derived_outcome === 'accounted-no-mutation' ||
             row.derived_outcome === 'no-durable-delta' ? 'verified' : 'missing') +
           '</div>';
+        // In the aggregated (all-imports) view every row carries its own
+        // import_key (store.py's aggregate_items tags it); a single-import
+        // view has no per-row import_key, so data.import_key is the fallback.
+        var rowImportKey = row.import_key || data.import_key;
         return '<tr tabindex="0" role="button" data-open="1" data-import-key="' +
-          escAttr(data.import_key) + '" data-provider-id="' + escAttr(row.provider_id) +
+          escAttr(rowImportKey) + '" data-provider-id="' + escAttr(row.provider_id) +
           '" aria-label="Open ' + escAttr(row.title) + '"' +
           ' onclick="openItemFromRow(this)"' +
           ' onkeydown="if(event.key===\'Enter\'||event.key===\' \'){event.preventDefault();openItemFromRow(this)}">' +
           '<td class="ci-title-cell"><strong>' + esc(row.title) + '</strong>' +
+          (aggregated ? '<div class="ci-meta ci-mono">' + esc(rowImportKey) + '</div>' : '') +
           '<div class="ci-meta ci-mono">' + esc(row.provider_id) + '</div>' +
           '<div class="ci-meta">' + esc(String(row.date || '').slice(0, 10)) + '</div></td>' +
           '<td class="ci-mono">' + (row.message_count == null ? '-' : fmt(row.message_count)) + '</td>' +

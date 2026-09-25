@@ -145,6 +145,7 @@ release path, so doc drift fails loudly — same pattern as the `check-*.py` sca
 | `docs/SOFT-SCHEMA.md` | Builder | VaultModel soft-typed frontmatter |
 | `docs/FRONTEND-DESIGN-LANGUAGE.md` | Builder | Visual + interaction DNA (read before touching a page) |
 | `docs/ENGINEERING-APP-WORKFLOW.md` | Builder | Algorithm-doc → KB → engine → calculator pipeline |
+| `docs/TRUST-LOOP.md` | Builder / Engineer | Seven-stage source-to-release engineering-assurance package contract |
 | `docs/ROOMS-V3.md` | Builder | Multi-participant rooms + review gate |
 | `docs/DOGFOOD-AGENT.md`, `docs/fix-agent.md` | Contributor | Self-test/fix loop internals |
 | `docs/app-builder.md` | Builder | In-app app generation |

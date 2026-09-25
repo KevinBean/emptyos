@@ -20,7 +20,7 @@ import logging
 import re
 
 from emptyos.sdk import BaseApp, cli_command, web_route
-from emptyos.sdk.utils import now_iso, safe_path_segment
+from emptyos.sdk.utils import csv_to_rows, now_iso, read_upload_text, safe_path_segment, sniff_columns
 
 log = logging.getLogger("emptyos.requirements")
 
@@ -28,6 +28,21 @@ TAG = "requirement"
 DEFAULT_PROJECT = "inbox"
 STATUSES = ("proposed", "approved", "verified", "superseded")
 PRIORITIES = ("must", "should", "could")
+
+# CSV import (requirements-no-import): best-effort header -> canonical field
+# map. A header is claimed by the first field whose alias it contains, so
+# "statement" is checked before "title" — a "Description" column becomes the
+# richer statement field, not the shorter title.
+MAX_IMPORT_BYTES = 2 * 1024 * 1024  # a requirements spreadsheet is never 2 MB
+MAX_IMPORT_ROWS = 500  # a sane ceiling on one import
+_IMPORT_FIELD_ALIASES: dict[str, list[str]] = {
+    "statement": ["requirement statement", "statement", "requirement text",
+                  "description", "requirement", "text"],
+    "title": ["title", "name", "summary"],
+    "project": ["project"],
+    "priority": ["priority", "moscow"],
+    "references": ["references", "traces to", "standard", "clause", "reference"],
+}
 
 # proposed/approved/verified/superseded → shared STATUS_VARIANTS whitelist
 # (draft/active/pass/archived) so the badge colours render across all themes.
@@ -42,6 +57,18 @@ STATUS_COLOR_MAP = {
 # case; anything else is manual evidence text the human verifies by hand.
 _CONFORMANCE_RE = re.compile(r"^conformance:([^/]+)/([^/]+)/(.+)$")
 _REQ_ID_RE = re.compile(r"REQ-(\d+)", re.IGNORECASE)
+
+# Suspect-link flagging (requirements-no-suspect-link): a verified requirement
+# whose note has been edited SINCE last_verified is "suspect" — the same
+# concept as IBM DOORS Next's suspect link, computed here from the vault
+# note's real file mtime rather than an app-tracked `updated` field, since a
+# requirement note is meant to be hand-editable (a Statement edit made
+# directly in the vault never touches `updated`, only the file's own mtime).
+# A grace window absorbs the write-ordering race inside verify() itself,
+# where `last_verified` (seconds precision) and the file's actual write
+# (sub-second mtime) land in the same call but can round to different whole
+# seconds.
+_SUSPECT_GRACE_S = 5
 
 
 class RequirementsApp(BaseApp):
@@ -84,11 +111,27 @@ class RequirementsApp(BaseApp):
             return [r.strip() for r in refs.split(",") if r.strip()]
         return []
 
+    @staticmethod
+    def _is_suspect(note: dict, status: str, last_verified: str) -> bool:
+        if status != "verified" or not last_verified:
+            return False
+        modified = note.get("modified")
+        if modified is None:
+            return False
+        try:
+            from datetime import datetime
+
+            lv_epoch = datetime.fromisoformat(last_verified).timestamp()
+        except ValueError:
+            return False
+        return modified > lv_epoch + _SUSPECT_GRACE_S
+
     def _row(self, note: dict) -> dict:
         p = note.get("properties", {}) or {}
         project = str(p.get("project", "") or "")
         req_id = str(p.get("req_id", "") or "")
         status = str(p.get("status", "") or "proposed")
+        last_verified = str(p.get("last_verified", "") or "")
         return {
             "id": f"{project}~{req_id}",
             "req_id": req_id,
@@ -99,6 +142,7 @@ class RequirementsApp(BaseApp):
             "verified": "verified" if status == "verified" else "unverified",
             "references": ", ".join(self._refs_list(p)),
             "verified_by": str(p.get("verified_by", "") or ""),
+            "suspect": self._is_suspect(note, status, last_verified),
         }
 
     def _find(self, rid: str) -> dict | None:
@@ -286,6 +330,207 @@ class RequirementsApp(BaseApp):
     @web_route("GET", "/api/impact")
     async def api_impact(self, request):
         return await self.impact(request.query_params.get("reference", ""))
+
+    # ── RTM export ─────────────────────────────────────────────────────
+    async def _rtm_rows(self, project: str = "") -> list[dict]:
+        """Requirement -> standard clause -> verification evidence, one row
+        per requirement — the report a client/regulatory reviewer asks for.
+        No new data: joins list_all()'s rows with the same kb.resolve_reference
+        lookup api_get() already does per-requirement."""
+        rows = await self.list_all()
+        if project:
+            rows = [r for r in rows if r["project"] == project]
+        out = []
+        for r in rows:
+            note = self._find(r["id"])
+            props = (note or {}).get("properties", {}) or {}
+            resolved = await self._resolve_refs(self._refs_list(props))
+            clauses = ", ".join(
+                (x["slug"] or x["reference"]) for x in resolved
+            ) if resolved else ""
+            out.append({
+                "req_id": r["req_id"],
+                "project": r["project"],
+                "title": r["title"],
+                "priority": r["priority"],
+                "standard_clause": clauses,
+                "status": r["status"],
+                "verified_by": r["verified_by"],
+                "last_verified": str(props.get("last_verified", "") or ""),
+            })
+        return out
+
+    @web_route("GET", "/api/export/rtm")
+    async def api_export_rtm(self, request):
+        """Requirements Traceability Matrix — the single artifact a
+        client/regulatory reviewer actually asks for. Flagged in gap
+        analysis (requirements-no-rtm-export): a report view over data
+        already computed elsewhere in this app, not new data.
+
+        ``?project=<id>`` scopes to one project (default: all).
+        ``?format=csv`` returns CSV (``rows_to_csv``); default is a
+        markdown table (``format_markdown_table``), per the text-first-data
+        convention (.claude/rules/text-first-data.md).
+        """
+        from emptyos.sdk.utils import format_markdown_table, rows_to_csv
+
+        project = (request.query_params.get("project") or "").strip()
+        fmt = (request.query_params.get("format") or "md").strip().lower()
+        rows = await self._rtm_rows(project)
+        columns = [
+            "req_id", "project", "title", "priority",
+            "standard_clause", "status", "verified_by", "last_verified",
+        ]
+        if fmt == "csv":
+            from starlette.responses import Response
+
+            return Response(
+                rows_to_csv(rows, columns),
+                media_type="text/csv",
+                headers={"Content-Disposition": 'attachment; filename="rtm.csv"'},
+            )
+        title = f"# Requirements Traceability Matrix — {project or 'all projects'}\n\n"
+        body = title + (format_markdown_table(rows, columns) if rows else "_No requirements found._")
+        return {"markdown": body, "rows": rows}
+
+    # ── CSV import ─────────────────────────────────────────────────────
+    def _parse_import_csv(self, csv_text: str) -> dict:
+        """Parse a requirements spreadsheet -> {rows, columns, mapping,
+        warnings, skipped}. Each output row: {statement, title, project,
+        priority, references}. A row with no statement is dropped (counted
+        in `skipped`) — there's nothing to import without one. Priority and
+        project are passed through unvalidated; `add()` already falls back
+        to sane defaults for both, so this stays a thin pass-through."""
+        raw_rows = csv_to_rows(csv_text)
+        if not raw_rows:
+            return {"rows": [], "columns": [], "mapping": {},
+                    "warnings": ["no rows found in file"], "skipped": 0}
+
+        columns = list(raw_rows[0].keys())
+        mapping = sniff_columns(columns, _IMPORT_FIELD_ALIASES)
+        warnings = []
+        if "statement" not in mapping:
+            warnings.append("could not find a requirement-statement column — every row will be skipped")
+
+        out_rows = []
+        skipped = 0
+        for raw in raw_rows:
+            statement = str(raw.get(mapping.get("statement", ""), "") or "").strip()
+            if not statement:
+                skipped += 1
+                continue
+            title = str(raw.get(mapping.get("title", ""), "") or "").strip()
+            project = str(raw.get(mapping.get("project", ""), "") or "").strip() or DEFAULT_PROJECT
+            priority = str(raw.get(mapping.get("priority", ""), "") or "").strip().lower()
+            references = str(raw.get(mapping.get("references", ""), "") or "").strip()
+            out_rows.append({
+                "statement": statement,
+                "title": title or statement[:80],
+                "project": project,
+                "priority": priority,
+                "references": references,
+            })
+        if len(out_rows) > MAX_IMPORT_ROWS:
+            warnings.append(f"file has {len(out_rows)} rows — only the first {MAX_IMPORT_ROWS} will be imported")
+            out_rows = out_rows[:MAX_IMPORT_ROWS]
+        return {"rows": out_rows, "columns": columns, "mapping": mapping,
+                "warnings": warnings, "skipped": skipped}
+
+    async def _existing_titles_by_project(self) -> dict[str, set[str]]:
+        out: dict[str, set[str]] = {}
+        for row in await self.list_all():
+            out.setdefault(row["project"], set()).add(row["title"].strip().casefold())
+        return out
+
+    @web_route("POST", "/api/import/preview")
+    async def api_import_preview(self, request):
+        """Parse a requirements spreadsheet and flag rows already present in
+        the target project (by normalised title). Writes nothing.
+
+        Flagged in gap analysis (requirements-no-import): onboarding an
+        existing project's requirements from a client spreadsheet or
+        another tool's export meant re-typing every row by hand. Follows
+        the same propose->preview->confirm shape as expense's statement
+        import (`.claude/rules/proposed-action.md`, impact-shaped) —
+        csv_to_rows, then the reviewed batch is handed to `add()`, the
+        existing locked, event-emitting write primitive.
+
+        Returns {rows, columns, mapping, summary, warnings} where each row
+        is {statement, title, project, priority, references, duplicate}.
+        """
+        csv_text, err = await read_upload_text(request, max_bytes=MAX_IMPORT_BYTES)
+        if err:
+            return {"error": err}
+        parsed = self._parse_import_csv(csv_text)
+        rows = parsed["rows"]
+        if not rows:
+            return {"error": "no importable requirements found", "warnings": parsed["warnings"],
+                    "columns": parsed["columns"], "mapping": parsed["mapping"]}
+
+        existing_titles = await self._existing_titles_by_project()
+        out_rows = []
+        new_count = 0
+        for r in rows:
+            duplicate = r["title"].casefold() in existing_titles.get(r["project"], set())
+            if not duplicate:
+                new_count += 1
+            out_rows.append({**r, "duplicate": duplicate})
+
+        return {
+            "rows": out_rows,
+            "columns": parsed["columns"],
+            "mapping": parsed["mapping"],
+            "warnings": parsed["warnings"],
+            "summary": {
+                "total": len(out_rows),
+                "new": new_count,
+                "duplicate": len(out_rows) - new_count,
+                "skipped": parsed["skipped"],
+                "projects": sorted({r["project"] for r in out_rows}),
+            },
+        }
+
+    @web_route("POST", "/api/import/confirm")
+    async def api_import_confirm(self, request):
+        """Write the reviewed rows through the existing `add()` verb. Body:
+        {rows: [{statement, title, project, priority, references}]}.
+        Re-checks duplicates against the current vault (the source of
+        truth may have grown since preview), so a stale confirm can't
+        double-import.
+        """
+        body = await request.json()
+        rows = body.get("rows") or []
+        if not isinstance(rows, list) or not rows:
+            return {"error": "rows required"}
+        if len(rows) > MAX_IMPORT_ROWS:
+            return {"error": "too many rows"}
+
+        existing_titles = await self._existing_titles_by_project()
+        imported = 0
+        skipped = 0
+        seen: dict[str, set[str]] = {}
+        for r in rows:
+            if not isinstance(r, dict):
+                skipped += 1
+                continue
+            statement = str(r.get("statement", "")).strip()
+            if not statement:
+                skipped += 1
+                continue
+            project = str(r.get("project", "")).strip() or DEFAULT_PROJECT
+            title = str(r.get("title", "")).strip() or statement[:80]
+            key = title.casefold()
+            if key in existing_titles.get(project, set()) or key in seen.get(project, set()):
+                skipped += 1
+                continue
+            seen.setdefault(project, set()).add(key)
+            priority = str(r.get("priority", "")).strip()
+            references = str(r.get("references", "")).strip()
+            await self.add(statement=statement, project=project, title=title,
+                           priority=priority, references=references)
+            imported += 1
+
+        return {"ok": True, "imported": imported, "skipped": skipped}
 
     # ── kb citation resolution (fail-soft) ─────────────────────────────
     async def _resolve_one(self, reference: str) -> dict:

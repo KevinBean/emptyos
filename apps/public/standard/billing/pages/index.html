@@ -12,7 +12,7 @@ body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-se
 .budget-bar { height:8px; border-radius:4px; background:var(--border); margin-top:8px; overflow:hidden }
 .budget-fill { height:100%; border-radius:4px; transition:width 0.5s }
 .cost-table { width:100%; border-collapse:collapse; font-size:13px; margin-top:8px }
-.cost-table th { text-align:left; color:var(--text-muted); font-size:11px; text-transform:uppercase; padding:8px 8px; border-bottom:1px solid var(--border) }
+.cost-table th { text-align:left; color:var(--text-muted); font-size:11px; text-transform:uppercase; letter-spacing:var(--tracking-meta); padding:8px 8px; border-bottom:1px solid var(--border) }
 .cost-table td { padding:8px 8px; border-bottom:1px solid var(--border) }
 .cost-table .num { text-align:right; font-family:var(--mono); font-weight:600 }
 .daily-chart { display:flex; gap:2px; align-items:flex-end; height:60px; margin-top:8px }
@@ -71,9 +71,12 @@ async function init() {
   try{monthly=await EOS.api('/billing/api/monthly')}catch(e){}
 
   var t=usage.total||{};
+  var savedCard=(today.saved_today>0)?
+    '<div class="eos-hero-card"><div class="eos-hero-label">Saved today</div><div class="eos-hero-val" style="color:var(--success)">$'+today.saved_today.toFixed(4)+'</div><div class="eos-hero-sub">running local vs. cloud rates</div></div>':'';
   document.getElementById('hero').innerHTML=
     '<div class="eos-hero-card"><div class="eos-hero-label">Today</div><div class="eos-hero-val">$'+(today.total_cost||0).toFixed(4)+'</div><div class="eos-hero-sub">'+(today.calls||0)+' calls, '+(today.images||0)+' images</div></div>'+
-    '<div class="eos-hero-card"><div class="eos-hero-label">30 Days</div><div class="eos-hero-val">$'+(t.total_cost||0).toFixed(4)+'</div><div class="eos-hero-sub">'+(t.calls||0)+' calls, '+(t.tokens||0).toLocaleString()+' tokens'+((t.cached_tokens||0)>0?', '+(t.cache_hit_pct||0)+'% cache hit':'')+'</div></div>';
+    '<div class="eos-hero-card"><div class="eos-hero-label">30 Days</div><div class="eos-hero-val">$'+(t.total_cost||0).toFixed(4)+'</div><div class="eos-hero-sub">'+(t.calls||0)+' calls, '+(t.tokens||0).toLocaleString()+' tokens'+((t.cached_tokens||0)>0?', '+(t.cache_hit_pct||0)+'% cache hit':'')+'</div></div>'+
+    savedCard;
 
   if(today.budget>0){
     var bs=document.getElementById('budget-section');bs.style.display='block';

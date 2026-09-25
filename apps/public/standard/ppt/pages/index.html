@@ -11,6 +11,9 @@
   html, body { height: 100%; }
   body { background: var(--bg); color: var(--text); overflow: hidden; }
   .ppt-shell [hidden] { display: none !important; }
+  /* The auto-provenance chip is the edit pane's next sibling; keep it out of the
+     empty state while a generated deck is still loading. */
+  .ppt-shell #edit-pane[hidden] + .eos-auto-provenance{display:none!important}
   .ppt-shell { display: grid; grid-template-rows: auto minmax(0, 1fr); height: 100dvh; min-height: 0; }
   .ppt-header {
     display: flex; align-items: center; gap: var(--space-3); padding: var(--space-3) var(--space-5);
@@ -46,7 +49,7 @@
   .ppt-search-icon { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); color: var(--text-muted); font-size: 13px; pointer-events: none; }
   .ppt-list { display: flex; flex-direction: column; gap: var(--space-2); min-height: 0; overflow: auto; padding-right: 2px; }
   .ppt-deck-row {
-    position: relative; display: grid; gap: var(--space-1); padding: 12px 40px 12px 12px;
+    position: relative; display: grid; gap: var(--space-1); padding: 12px 48px 12px 12px;
     border: 1px solid var(--border); border-radius: var(--radius);
     background: var(--bg-card); cursor: pointer; transition: background var(--dur-fast), border-color var(--dur-fast), transform var(--dur-fast);
   }
@@ -105,13 +108,13 @@
   .ppt-visual-dot {
     width: 12px; height: 12px; flex: 0 0 12px; border-radius: 50%;
     border: 1px solid color-mix(in srgb, var(--text) 24%, transparent);
-    background: linear-gradient(135deg, #8b5cf6, #22d3ee);
+    background: linear-gradient(135deg, #8b5cf6, #22d3ee);  /* design-hex: ignore - deck-theme swatch: a preview of slide content, not app chrome */
   }
-  .ppt-visual-dot.is-editorial { background: linear-gradient(135deg, #fbf3e8, #b94a3c); }
-  .ppt-visual-dot.is-tech { background: linear-gradient(135deg, #061018, #38bdf8); }
-  .ppt-visual-dot.is-luxury { background: linear-gradient(135deg, #17110d, #d6b56d); }
+  .ppt-visual-dot.is-editorial { background: linear-gradient(135deg, #fbf3e8, #b94a3c); }  /* design-hex: ignore - deck-theme swatch: a preview of slide content, not app chrome */
+  .ppt-visual-dot.is-tech { background: linear-gradient(135deg, #061018, #38bdf8); }  /* design-hex: ignore - deck-theme swatch: a preview of slide content, not app chrome */
+  .ppt-visual-dot.is-luxury { background: linear-gradient(135deg, #17110d, #d6b56d); }  /* design-hex: ignore - deck-theme swatch: a preview of slide content, not app chrome */
   .ppt-visual-dot.is-clay { background: linear-gradient(135deg, #f4f0e8, #6f8b77, #b87562); }
-  .ppt-visual-dot.is-ink { background: linear-gradient(135deg, #f8f7f1, #1d4ed8); }
+  .ppt-visual-dot.is-ink { background: linear-gradient(135deg, #f8f7f1, #1d4ed8); }  /* design-hex: ignore - deck-theme swatch: a preview of slide content, not app chrome */
   .ppt-toolbar-actions { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
   .ppt-toggle-row {
     display: inline-flex; align-items: center; gap: var(--space-1); min-height: 36px; padding: 0 12px;
@@ -366,9 +369,10 @@
           <button class="eos-btn" onclick="toPodcast()" title="Generate a two-host podcast episode from this deck">&#127908; Podcast</button>
           <button class="eos-btn" onclick="toPost()" title="Convert this deck to a draft blog post">&#128221; Blog post</button>
           <button class="eos-btn" onclick="exportCurrent()" title="Export this deck as standalone HTML">Export HTML</button>
+          <button class="eos-btn" onclick="exportPdf()" title="Export this deck as a real, multi-page PDF — one page per slide">Export PDF</button>
         </div>
       </div>
-      <div id="edit-pane" class="ppt-edit-area" hidden>
+      <div id="edit-pane" class="ppt-edit-area" hidden data-ai-output="/ppt/api/generate-from-plan">
         <section class="ppt-pane">
           <div class="ppt-pane-head">
             <span>Markdown</span>

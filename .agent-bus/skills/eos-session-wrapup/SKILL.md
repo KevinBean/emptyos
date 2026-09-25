@@ -69,7 +69,7 @@ A Claude Code session produces three durable outputs: **code** (git + devlog), *
 
 #### When to run — two fact classes
 
-**Class A — personal-life facts** (career, status, finance, strategy, project, relationship, health). Routed to the `vault-info-ripple` skill. Signals:
+**Class A — personal-life facts** (career, status, finance, strategy, project, relationship, health). Routed to the `vault-info-ripple` skill (user-global skill — lives in `~/.claude/skills`, not in the repo). Signals:
 
 - Career / posture changes — "switching to X", "stopped pursuing Y", "we decided to leave Z"
 - Status changes — "the offer came in", "the interview happened", "RFI is now active", "deadline moved to…"
@@ -96,7 +96,7 @@ The discriminator is *vault footprint*: a refactor that renames a symbol a KB no
 
 #### How to run — route by class
 
-**Class A → `vault-info-ripple` skill.** One-line summary per fact. It scans Kevin's personal-life zones for the **old** state, surfaces what's stale, proposes edits, and logs a wellbeing-tagged milestone to today's journal.
+**Class A → `vault-info-ripple` skill** (user-global skill — lives in `~/.claude/skills`, not in the repo). One-line summary per fact. It scans Kevin's personal-life zones for the **old** state, surfaces what's stale, proposes edits, and logs a wellbeing-tagged milestone to today's journal.
 
 ```
 Skill: vault-info-ripple
@@ -114,6 +114,58 @@ Args: <one-line-per-fact summary of what changed>
 - **Always surface before applying** — both classes propose; the user approves each batch. Wrapup never auto-applies vault edits.
 - **One-line summaries, not transcripts** — feed distilled facts, not raw conversation (transcript-shaped is `vault-ai-conversation-digest`'s job, wrong tool here).
 - **Don't double-write to the journal** — Class A logs to today's journal; Step 4 (devlog) writes the project log under `10_Projects/emptyos/log/`. Different files, no conflict. Class B does **not** write a journal milestone (it's not a wellbeing-shaped event).
+
+---
+
+### Step 3.5: Knowledge Capture — record what this session *learned*
+
+Step 3 propagates facts that **changed**. This step captures a fact that is
+**new** — a durable lesson the session produced that no note yet holds. Different
+question, so a separate step; do not fold it into the ripple's staleness framing.
+
+**Ask once:** did this session produce a transferable fact that outlives the
+files it touched?
+
+#### The bar — all three, or it isn't a lesson
+
+1. **Transferable.** It holds beyond this session's files. *"The button was
+   misaligned"* is not. *"A rendered-DOM audit must settle animations before
+   measuring"* is.
+2. **Statable in one sentence.** If you can't, it isn't a lesson yet — it's
+   still a story. Write the sentence first; if it comes out as a narrative,
+   skip.
+3. **Not already held.** Grep the destination before proposing. Restating what
+   a rule already says is not capture.
+
+#### Qualifying shapes and where each belongs
+
+| Shape | Destination |
+|---|---|
+| A **measured result that overturns an assumption** (INT8 beat fp16 3:29 vs 16:44 — paging, not arithmetic) | KB `lesson` note via `vault-note-factory`, **plus** a `.claude/rules/dev-gotchas.md` row if it will bite code again |
+| A **defect class that will recur** (a check green because it checks nothing) | `.claude/rules/audits.md` or `dev-gotchas.md`; graduate to a real checker via `eos-graduate-audit` when the signal is mechanical |
+| A **build / borrow / build-nothing verdict** | `docs/OPEN-SOURCE-BORROWING-PLAN.md`, **plus** a `docs/DEFERRED-WORK.md` row when it defers a substantive feature, **plus** a `*-borrow-verdict` memory |
+| A **domain fact** (a clause's behaviour, a validation anchor, a method) | KB note via `vault-source-digest` / `vault-note-factory` |
+| **Guidance about how I should work** (a correction that recurred) | auto-memory, `feedback` type — never the KB |
+
+#### Two ordering constraints
+
+- Runs **before Step 4**, so the devlog can name what was captured.
+- If the destination is a **repo file** (`dev-gotchas.md`, a rule, CLAUDE.md,
+  `DEFERRED-WORK.md`), the edit must land **before Step 7's commit** — otherwise
+  the capture misses the commit and surfaces as an orphan diff next session.
+
+#### Safety
+
+- **Propose, don't write.** Name the candidate, its destination, and the
+  one-sentence form; the user approves each. Same discipline as Step 3 and
+  `.claude/rules/proposed-action.md`.
+- **Skip loudly, and often.** "No durable lesson this session" is the common and
+  correct outcome — 4 of 136 devlogs carry one, and that ratio is roughly
+  honest. **Do not invent a lesson to justify the step.** A KB accreting a note
+  per session is worse than one accreting none.
+- **Not a transcript digest.** Same boundary as Step 3: distilled facts only.
+  Turning a whole conversation into notes is `vault-ai-conversation-digest`'s
+  job, invoked deliberately, not here.
 
 ---
 
@@ -190,7 +242,7 @@ Identify which track this session advanced — by tags on the dated log, by the 
 
 - `em-engines` — `engines/` work + cable/lightning/interference/earthing apps
 - `career` — jobs app, outreach, applications, interview prep
-- `publish-site` — `apps/publish/`, `eos.binbian.net` content
+- `publish-site` — `apps/public/standard/publish/`, `eos.binbian.net` content
 - `core-infra` — kernel, SDK, capabilities, runtime, web framework
 - `apps-other` — UI work on apps that don't fit the above
 

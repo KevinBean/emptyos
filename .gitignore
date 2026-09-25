@@ -16,6 +16,8 @@ __pycache__/
 *.egg-info/
 dist/
 build/
+# Generated PDFs/reports (report_response output dir)
+output/
 .venv/
 .DS_Store
 .obsidian/
@@ -62,10 +64,24 @@ dogfood/*
 .env.demo
 .env
 
-# Personal apps & engines (not shipped with core OS)
+# apps/personal/ is its OWN git repository (remote: emptyos-personal), so it
+# stays ignored here — adding it to this repo would commit a bare gitlink and
+# none of the files. Its work is versioned there, not lost. Commit inside it:
+#   git -C apps/personal commit ...
 apps/personal/
-engines/personal/
-tests/personal/
+
+# engines/personal/ and tests/personal/ are plain directories with no repo of
+# their own, so ignoring them meant the work was genuinely untracked. Tracked
+# here from 2026-08-16 (this is the private repo). They are still never shipped:
+# `release-public.py` prunes tests/personal/ via `drop_test_dirs`, the engine
+# allowlist drops engines/personal/, and it asserts both are absent from the
+# built snapshot before pushing — see NEVER_PUBLISHED_PATHS in
+# `emptyos/sdk/release_filter.py`.
+#
+# Consequence to know about: the personal-data and branding scanners SKIP these
+# paths, because a personal test is supposed to carry the owner's vault paths
+# and employer name. Credential scanning still applies everywhere — a leaked key
+# is compromised the moment it enters git history, public or not.
 
 # Marketplace-installed apps are kept out of git per-clone via .git/info/exclude
 # (the Store writes apps/<category>/<id>/ lines there on install) — not here,
@@ -139,6 +155,11 @@ scratch/
 scripts/_*.py
 # ...except shared helpers that committed scripts import (not one-offs)
 !scripts/_eos_browser.py
+
+# Cross-machine transport artifacts: format-patch exports + git bundles.
+# Keep the comment on its own line - a trailing one becomes part of the pattern.
+_*.patch
+*.bundle
 
 # Serena MCP server cache (server removed 2026-05-14; ignore stragglers if uvx re-spawns it)
 .serena/

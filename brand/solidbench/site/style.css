@@ -1,0 +1,235 @@
+:root {
+  /* Light — the drafting table: warm vellum paper, graphite pencil, ruled grid. */
+  --paper: #F0EFE6;
+  --paper-raised: #F7F6EE;
+  --ink: #232320;
+  --mute: #5B5B52;
+  --line: #C9C6B4;
+  --line-strong: #9E9B87;
+  --accent: #E05A1E;
+  --accent-ink: #FFF7EF;
+  --grid: rgba(35,35,32,0.055);
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    /* Dark — the actual blueprint: white linework on cyanotype blue. */
+    --paper: #102A44;
+    --paper-raised: #143255;
+    --ink: #EAF3F7;
+    --mute: #9CB9CB;
+    --line: #2C4E6C;
+    --line-strong: #3E6688;
+    --accent: #FF7A38;
+    --accent-ink: #1B1200;
+    --grid: rgba(234,243,247,0.06);
+  }
+}
+
+* { box-sizing: border-box; }
+html { text-size-adjust: 100%; }
+body {
+  margin: 0;
+  background:
+    linear-gradient(var(--grid) 1px, transparent 1px) 0 0 / 100% 32px,
+    linear-gradient(90deg, var(--grid) 1px, transparent 1px) 0 0 / 32px 100%,
+    var(--paper);
+  color: var(--ink);
+  font-family: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
+}
+@media (prefers-reduced-motion: reduce) {
+  * { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; }
+}
+
+h1, h2, h3 {
+  font-family: "Big Shoulders Display", "Arial Narrow", sans-serif;
+  font-weight: 800;
+  letter-spacing: 0.01em;
+  text-transform: uppercase;
+  text-wrap: balance;
+  margin: 0;
+  line-height: 0.94;
+}
+.mono {
+  font-family: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+  font-variant-numeric: tabular-nums;
+}
+.eyebrow {
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.72rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--accent);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.eyebrow::before {
+  content: "";
+  width: 22px;
+  height: 1px;
+  background: var(--accent);
+  display: inline-block;
+}
+a { color: inherit; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+
+.wrap { max-width: 1180px; margin: 0 auto; padding: 0 28px; }
+
+/* ── title-block header ─────────────────────────────────────────── */
+header.tb {
+  border-bottom: 1.5px solid var(--line-strong);
+}
+.tb-inner {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 18px 28px;
+  max-width: 1180px; margin: 0 auto;
+  gap: 16px; flex-wrap: wrap;
+}
+.wordmark {
+  display: flex; align-items: baseline; gap: 10px;
+  font-family: "Big Shoulders Display", sans-serif;
+  font-weight: 800; font-size: 1.5rem; letter-spacing: 0.02em;
+}
+.wordmark .tag {
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.62rem; letter-spacing: 0.1em; color: var(--mute);
+  border: 1px solid var(--line-strong);
+  padding: 2px 6px;
+  text-transform: uppercase;
+}
+nav.tb-nav { display: flex; gap: 30px; font-size: 0.86rem; }
+nav.tb-nav a { text-decoration: none; color: var(--mute); }
+nav.tb-nav a:hover { color: var(--ink); }
+.btn {
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.78rem; letter-spacing: 0.05em; text-transform: uppercase;
+  text-decoration: none;
+  padding: 10px 18px;
+  border: 1.5px solid var(--ink);
+  color: var(--ink);
+  display: inline-block;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+.btn.solid { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.btn.solid:hover { filter: brightness(1.08); }
+.btn.ghost:hover { background: var(--ink); color: var(--paper); }
+
+/* ── hero ────────────────────────────────────────────────────────── */
+.hero {
+  padding: 96px 0 84px;
+  display: grid;
+  grid-template-columns: minmax(0,1fr) 300px;
+  gap: 56px;
+  align-items: start;
+}
+@media (max-width: 860px) { .hero { grid-template-columns: 1fr; } }
+.hero h1 { font-size: clamp(2.7rem, 6vw, 5.1rem); margin-top: 14px; }
+.hero h1 em { font-style: normal; color: var(--accent); }
+.hero p.lede {
+  font-size: 1.14rem; line-height: 1.6; color: var(--mute);
+  max-width: 46ch; margin: 26px 0 34px;
+}
+.hero .ctas { display: flex; gap: 14px; flex-wrap: wrap; }
+
+/* dimension-style annotation panel beside the hero */
+.dim-card {
+  border: 1.5px solid var(--line-strong);
+  background: var(--paper-raised);
+  padding: 20px;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.78rem;
+  line-height: 1.9;
+  color: var(--mute);
+}
+.dim-card .dim-title {
+  color: var(--ink); font-size: 0.68rem; letter-spacing: 0.12em;
+  text-transform: uppercase; border-bottom: 1px solid var(--line);
+  padding-bottom: 10px; margin-bottom: 12px;
+}
+.dim-row { display: flex; justify-content: space-between; gap: 12px; }
+.dim-row b { color: var(--ink); font-weight: 500; }
+
+/* ── section rhythm — ruled sheets, not shadow cards ───────────────── */
+section.sheet { border-top: 1.5px solid var(--line-strong); padding: 64px 0; }
+.sheet-head {
+  display: grid; grid-template-columns: 240px minmax(0,1fr);
+  gap: 40px; margin-bottom: 40px;
+}
+@media (max-width: 760px) { .sheet-head { grid-template-columns: 1fr; } }
+.sheet-head h2 { font-size: clamp(1.9rem, 3.4vw, 2.7rem); }
+.sheet-head .desc { color: var(--mute); font-size: 1.02rem; line-height: 1.65; max-width: 58ch; }
+.sheet-head .num { font-family: "IBM Plex Mono", monospace; color: var(--line-strong); font-size: 0.8rem; }
+
+/* leader-line feature callouts */
+.callouts {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: 0;
+  border: 1px solid var(--line);
+}
+.callout {
+  padding: 26px 24px;
+  border-right: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  position: relative;
+}
+.callout:last-child { border-right: none; }
+.callout .k {
+  font-family: "IBM Plex Mono", monospace; font-size: 0.7rem;
+  color: var(--accent); letter-spacing: 0.08em; margin-bottom: 10px; display: block;
+}
+.callout h3 {
+  font-size: 1.15rem; text-transform: none; font-weight: 600;
+  font-family: "IBM Plex Sans", sans-serif; letter-spacing: 0; margin-bottom: 8px;
+}
+.callout p { color: var(--mute); font-size: 0.92rem; line-height: 1.55; margin: 0; }
+
+/* two-up feature rows */
+.row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 48px; align-items: center; }
+@media (max-width: 760px) { .row2 { grid-template-columns: 1fr; } }
+.row2 .copy p { color: var(--mute); font-size: 1.02rem; line-height: 1.65; max-width: 48ch; }
+.row2 h3 { font-size: clamp(1.5rem, 2.6vw, 2rem); margin: 8px 0 14px; }
+
+/* diagram box — used instead of stock photography */
+.diagram {
+  border: 1.5px solid var(--line-strong);
+  background: var(--paper-raised);
+  aspect-ratio: 4/3;
+  position: relative;
+  overflow: hidden;
+}
+.diagram svg { width: 100%; height: 100%; display: block; }
+.diagram .cap {
+  position: absolute; left: 12px; bottom: 10px;
+  font-family: "IBM Plex Mono", monospace; font-size: 0.66rem;
+  color: var(--mute); letter-spacing: 0.06em; text-transform: uppercase;
+}
+
+ul.check { list-style: none; margin: 18px 0 0; padding: 0; display: grid; gap: 10px; }
+ul.check li { display: flex; gap: 10px; font-size: 0.95rem; color: var(--ink); }
+ul.check li::before {
+  content: "\2713"; color: var(--accent); font-family: "IBM Plex Mono", monospace;
+  font-weight: 500; flex-shrink: 0;
+}
+
+/* ── final CTA sheet ─────────────────────────────────────────────── */
+section.close {
+  border-top: 1.5px solid var(--line-strong);
+  padding: 84px 0 90px;
+  text-align: center;
+}
+section.close h2 { font-size: clamp(2.2rem, 5vw, 3.6rem); max-width: 20ch; margin: 0 auto 20px; }
+section.close p { color: var(--mute); max-width: 48ch; margin: 0 auto 32px; font-size: 1.05rem; }
+.close .ctas { display: flex; gap: 14px; justify-content: center; flex-wrap: wrap; }
+.close .note { margin-top: 18px; font-family: "IBM Plex Mono", monospace; font-size: 0.72rem; color: var(--mute); letter-spacing: 0.04em; }
+
+/* ── footer title block ──────────────────────────────────────────── */
+footer.tb-footer {
+  border-top: 1.5px solid var(--line-strong);
+  padding: 22px 0 34px;
+}
+.tb-footer .wrap {
+  display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;
+}
+.tb-footer .mono { font-size: 0.72rem; color: var(--mute); letter-spacing: 0.04em; }

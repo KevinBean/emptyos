@@ -47,6 +47,67 @@ def resolve_cli_method(
     return None, rest
 
 
+def missing_required_args(method: Any, kwargs: dict[str, Any]) -> list[str]:
+    """Names of required (no-default) parameters not present in ``kwargs``.
+
+    Checked after ``bind_cli_kwargs`` so a short/bare invocation (a calculator
+    command run with a required input omitted) can be reported as a clean
+    usage message instead of letting the call raise a raw ``TypeError:
+    ... missing N required positional argument`` straight at the user.
+    """
+    sig = inspect.signature(method)
+    return [
+        p.name for p in sig.parameters.values()
+        if p.name != "self"
+        and p.kind not in (inspect.Parameter.VAR_POSITIONAL, inspect.Parameter.VAR_KEYWORD)
+        and p.default is inspect.Parameter.empty
+        and p.name not in kwargs
+    ]
+
+
+def cli_command_label(
+    cli_methods: Iterable[tuple[dict, Any]], method: Any, cmd_name: str
+) -> str:
+    """The user-facing command label for a resolved method (for usage strings).
+
+    ``eos <cmd_name>`` when the method's own registered name matches the
+    top-level command, else ``eos <cmd_name> <sub-verb>`` — mirrors how
+    ``resolve_cli_method`` consumed the sub-verb from the raw args.
+    """
+    for meta, m in cli_methods:
+        if m == method:
+            name = meta.get("name", "")
+            return cmd_name if not name or name == cmd_name else f"{cmd_name} {name}"
+    return cmd_name
+
+
+def cli_usage(method: Any, label: str) -> str:
+    """A ``Usage: eos <label> ...`` line built from the method's signature.
+
+    Required params render as ``<name>``, optional ones as ``[name=default]``.
+    The method's own docstring (if any) rides along as a one-line hint. This
+    is what a caller shows instead of a raw ``TypeError`` when
+    ``missing_required_args`` finds a gap.
+    """
+    sig = inspect.signature(method)
+    parts = []
+    for p in sig.parameters.values():
+        if p.name == "self" or p.kind in (
+            inspect.Parameter.VAR_POSITIONAL,
+            inspect.Parameter.VAR_KEYWORD,
+        ):
+            continue
+        if p.default is inspect.Parameter.empty:
+            parts.append(f"<{p.name}>")
+        else:
+            parts.append(f"[{p.name}={p.default}]")
+    usage = "Usage: eos " + label + (" " + " ".join(parts) if parts else "")
+    doc_lines = (inspect.getdoc(method) or "").strip().splitlines()
+    if doc_lines:
+        usage += f"\n{doc_lines[0].strip()}"
+    return usage
+
+
 def render_cli_return(value: Any) -> str | None:
     """Render a CLI command's *return value* for display, or None to show nothing.
 

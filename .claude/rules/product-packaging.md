@@ -1,3 +1,8 @@
+---
+paths:
+  - "products/**"
+  - "scripts/build_standalone_release.py"
+---
 # Product Packaging Rule — slicing EmptyOS apps into distributable products
 
 EmptyOS is the **foundry**: apps are grown in conversation mode, on the daemon,
@@ -30,6 +35,30 @@ Hard-won launcher rules (don't rediscover): `--noconsole` exes have
 pre-create the browser profile dir; always write a startup line to a log file
 next to the exe; ship the API key in `config.toml` beside the exe, never baked
 into the binary.
+
+**The page-heartbeat line above is specific to a browser `--app` window** — it
+exists because Edge re-execs and hands off, so the spawned process handle says
+nothing about whether a window is still open. It does **not** apply to the
+native shell (`products/_shared/shell.py`, pywebview → WebView2), which owns its
+window object directly and ends when `webview.start()` returns.
+
+**The native shell has two modes, and only one of them owns a daemon.**
+*Attach* (the daily driver, `scripts/eos_desktop.py --webview`) points at the
+user's running `:9000`, never restarts or kills it, and quits leaving it up —
+`.claude/rules/daemon-handling.md` applies to the shell exactly as it does to a
+Claude session. *Boot* (the product case) is the existing `Supervisor`. Modules:
+`shell_core.py` (every decision, GUI-free and unit-tested), `shell.py` (the only
+importer of `webview`), `single_instance.py`, `hotkey_win.py`, `tray.py`. They
+run from the shell's own user-home venv and must never import `emptyos.sdk`.
+
+**Quick entry** (`[desktop] quick_entry.enabled`, dark) adds a second, frameless,
+always-on-top window preloaded at startup and shown on a global hotkey. Preloaded
+is the point: the Chrome `--app` launcher it replaces respawned a window per
+press. Two things about it generalise. Its page-facing verbs are gated on the
+**window** pywebview posted from, not the origin — both windows are the same
+daemon origin, so the URL cannot tell them apart. And it holds a per-port named
+mutex while its hotkey is registered, which is how the daemon's own launcher
+knows to stand down (`emptyos/desktop_presence.py`).
 
 ## Which apps slice cleanly
 

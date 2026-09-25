@@ -2927,6 +2927,29 @@ def serve_main(args) -> None:
         )
     print()
 
+    # Same Windows peer-reset teardown guard the daemon installs. It matters
+    # more here, not less: this server is meant to be reached from a phone over
+    # Tailscale, and a phone browser dropping a connection is exactly the case
+    # where the Proactor transport's shutdown() raises mid-`finally` and skips
+    # sock.close() + server._detach(). Fail-soft — a standalone script must
+    # still serve if the import is unavailable.
+    try:
+        sys.path.insert(0, str(REPO_ROOT))
+        from emptyos.proactor_guard import install_proactor_reset_guard
+
+        install_proactor_reset_guard()
+    except Exception:
+        pass
+    # Same boot-guard family, own try so one guard failing cannot skip the
+    # other: when this server runs with no console, no child it spawns may
+    # allocate a visible one (emptyos/headless.py).
+    try:
+        from emptyos.headless import install_headless_subprocess_guard
+
+        install_headless_subprocess_guard()
+    except Exception:
+        pass
+
     uvicorn.run(app, host=args.bind, port=args.port, log_level="info")
 
 

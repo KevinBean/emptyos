@@ -7,7 +7,7 @@ description: Audit every `self.think(...)`, `self.think_stream(...)`, and `self.
 
 Model Bench's scenarios are only useful if they mirror what `self.think(...)` actually does across the system. As apps are added or prompts change, the audit can drift — this skill refreshes the taxonomy.
 
-Authoritative source of the taxonomy: the `BUCKETS` constant at the top of `apps/model-bench/app.py`. This skill compares that list against actual call-sites and proposes updates.
+Authoritative source of the taxonomy: the `BUCKETS` constant at the top of `apps/extension/dev/model-bench/app.py`. This skill compares that list against actual call-sites and proposes updates.
 
 ## When to Run
 
@@ -35,7 +35,7 @@ Only include **real invocations** — skip occurrences in comments, docstrings, 
 # Extract the BUCKETS constant from model-bench
 ```
 
-Open `apps/model-bench/app.py` and read the `BUCKETS` list. That's the taxonomy. Record each `(id, domain, task_shape, description)` tuple.
+Open `apps/extension/dev/model-bench/app.py` and read the `BUCKETS` list. That's the taxonomy. Record each `(id, domain, task_shape, description)` tuple.
 
 ### 2. Locate every call-site
 
@@ -80,10 +80,10 @@ Format:
 
 | Bucket             | Count | In taxonomy | Example call-sites |
 |---|---|---|---|
-| text/classify      | 2     | ✓           | apps/capture/app.py:78, apps/assistant/app.py:245 |
-| text/qa            | 4     | ✓           | apps/assistant/app.py:436, ... |
-| text/rewrite       | 3     | ✓           | apps/publish/app.py:757, ... |
-| text/ranked-list   | 1     | ✗ MISSING   | apps/focus/app.py:40 |
+| text/classify      | 2     | ✓           | apps/public/core/quick-action/app.py:78, apps/public/standard/assistant/app.py:245 |
+| text/qa            | 4     | ✓           | apps/public/standard/assistant/app.py:436, ... |
+| text/rewrite       | 3     | ✓           | apps/public/standard/publish/app.py:757, ... |
+| text/ranked-list   | 1     | ✗ MISSING   | apps/public/standard/focus/app.py:40 |
 ```
 
 ### 6. Propose changes (only if needed)
@@ -98,9 +98,9 @@ Otherwise:
 
 ### 7. If the user approves changes
 
-- **Add bucket**: edit `BUCKETS` in `apps/model-bench/app.py`, add a matching `_prompt_<name>` method and register it in `_PROMPT_BUILDERS`. Use a real prompt from the identified call-site — import the constant or copy it verbatim with a comment pointing at the source file.
+- **Add bucket**: edit `BUCKETS` in `apps/extension/dev/model-bench/app.py`, add a matching `_prompt_<name>` method and register it in `_PROMPT_BUILDERS`. Use a real prompt from the identified call-site — import the constant or copy it verbatim with a comment pointing at the source file.
 - **Remove bucket**: delete the `BUCKETS` entry, its `_prompt_*` method, and the `_PROMPT_BUILDERS` mapping.
-- After edits, smoke-test: `python -c "import importlib.util,sys; spec=importlib.util.spec_from_file_location('m','apps/model-bench/app.py'); m=importlib.util.module_from_spec(spec); spec.loader.exec_module(m); print(len(m.BUCKETS))"` — make sure it imports and the count is what you expect.
+- After edits, smoke-test: `python -c "import importlib.util,sys; spec=importlib.util.spec_from_file_location('m','apps/extension/dev/model-bench/app.py'); m=importlib.util.module_from_spec(spec); spec.loader.exec_module(m); print(len(m.BUCKETS))"` — make sure it imports and the count is what you expect.
 - Suggest the user run `python -m emptyos start` and `eos model-bench run` to regenerate benchmark data against the updated taxonomy.
 
 ## Output Shape

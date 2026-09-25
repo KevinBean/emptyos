@@ -1,3 +1,10 @@
+---
+paths:
+  - "emptyos/cli/**"
+  - "scripts/scanner_lib.py"
+  - "scripts/check*.py"
+---
+
 # Agent-Facing CLI Convention — structured output for new `eos` commands
 
 Borrowed from `cursor/plugins`' "CLI for agents" idea. EmptyOS's `eos` CLI is
@@ -63,6 +70,24 @@ branch — nineteen of them hand-rolled ``json.dumps({...})`` and the shape had 
 drifted (``check_call_app_declared.py`` emits no ``code``/``message`` and spreads its
 payload across the top level).
 
+``scanner_lib`` now also holds ``page_files()`` — the ``apps/**/pages/`` walk plus
+its exclusion set — for the same anti-drift reason, generalised. Twenty-three
+scanners each carried their own version, and the differences were not style: a
+walk missing ``_example`` reports on a scaffold, one missing ``.min.js`` reports
+inside a third-party bundle where the fix is impossible, and ``check_error_state.py``
+shipped missing both. The module stays plumbing-only — a scanner's value is still
+its heuristic — and adoption stays on-touch, because several of the twenty-three
+are gates whose reported denominators would shift.
+
+It also holds ``is_brand_island()`` (2026-08-17), for the third instance of the
+same lesson. Two scanners grew their own copy and **both were wrong, in opposite
+directions**, because both bounded the token *prefix length* instead of asking
+what the prefix means: 4 chars missed ``--boards-*``, 6 chars read theme.css's
+own ``--accent-ink/-dim/-bg`` as a private namespace. The shared rule takes the
+global families from ``theme_tokens.global_token_prefixes()`` — derived from
+theme.css, not listed — so length stops mattering. Adopting it corrected
+``check_ui_structure`` from 8 islands to 12 with nothing dropped.
+
 ## When NOT to add `--json`
 
 - The command is interactive (a REPL: `eos rooms`, `eos chat`) — there's no single
@@ -75,6 +100,17 @@ payload across the top level).
 ## Cross-references
 
 - `emptyos/cli/commands/verb.py` — first command built to this convention.
+- `emptyos/cli/commands/send.py` — first **mutating** one, so it exercises the
+  `--dry-run` clause above rather than just describing it. Three additions worth
+  copying for any irreversible command: `--dry-run` **beats** `--yes` (a preview
+  can never fire), `--json` is *refused* without `--yes` rather than running
+  unattended (`code: "needs_confirm"`), and success is judged on the **outcome**,
+  not the absence of an exception — a `send` that fell through to the `human`
+  provider is reported `not_sent`, because that is exactly what an unapproved
+  cloud-consent gate produces and calling it `ok` records a silent
+  non-delivery as delivered. Also: register a leaf command with
+  `app.command(name=…)(fn)`, not `add_typer` — a group demands a subcommand and
+  mis-binds the positional.
 - `emptyos/cli/_common.py` — shared envelope, config lookup, auth, and health plumbing.
 - `emptyos/cli/commands/bus.py` — exit-code-as-signal precedent (`ripple --dry-run`).
 - `emptyos/sdk/verb_registry.py` — the registry `eos verb` reads.

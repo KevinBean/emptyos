@@ -28,10 +28,20 @@ from ever coming back:
       every surface that imported the bundle. Namespace component tokens
       (`--ex-accent`), or scope the block to the component root.
 
-All three are high-confidence — none has a legitimate use — and T1/T2 are DL-1
-(hardcoded colours) compliance as much as contrast fixes. Backgrounds, fills,
-strokes, borders and chart palettes are never touched: only `color:` declarations,
-and (for T3) token declarations in a global block.
+  T4  A hardcoded status-palette hex painting a SURFACE — background, border,
+      outline or box-shadow. Same theme-invariant-palette defect as T2, one
+      property over: `--red/--amber/--green/--blue` alias the per-theme status
+      tokens, so the literal stays frozen while every theme redefines the token.
+      Found `.eos-bar-ok`/`.obs-callout-*` in the shared bundle — a platform
+      defect no per-app pass would surface. (Added 2026-08-17.)
+
+T1-T3 are high-confidence — none has a legitimate use. T4 is the narrow slice of
+the surface case that behaves the same way, and it only separates after four
+measured exclusions (gradients, 3+-hex palette lines, quoted JS values, and
+`var(--token, #hex)` fallbacks); brand islands are skipped wholesale. SVG `fill`
+and `stroke` remain untouched — a chart's fill is a categorical axis, not a
+status surface. Chart palettes are never policed. Otherwise only `color:`
+declarations, and (for T3) token declarations in a global block.
 
 Opt-out (rare — a genuinely deliberate case): put an inline marker on the line
 or the line above:
@@ -50,25 +60,59 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import scanner_lib  # noqa: E402 — sibling script, path set above
 import theme_css  # noqa: E402 — sibling script, path set above
 
 REPO = Path(__file__).resolve().parent.parent
 _blank_comments = theme_css.blank_comments
 
-# Status-palette hexes that must never be a text colour. These are the literals
-# the audit actually found in the tree, in both long and short form.
-STATUS_HEX = {
-    # info / cyan / blue
-    "#22d3ee", "#06b6d4", "#60a5fa", "#3b82f6",
-    # success / green
-    "#34d399", "#10b981", "#1fc66b", "#34c759", "#88bb88", "#66aa66", "#84cc16",
-    "#8b8", "#6a6",
-    # warning / amber
-    "#fbbf24", "#f59e0b", "#eab308", "#cc9966", "#c96",
-    # danger / red
-    "#fb7185", "#ff6565", "#cc7777", "#dd6666", "#ef4444",
-    "#d66", "#d55", "#c55", "#c66", "#c77",
+# Status-palette hexes that must never be a text colour (T2) or a status
+# surface (T4) — the literals the audit found in the tree, long and short form.
+#
+# Keyed by the token they should have been, because the membership test and the
+# suggestion were previously two hand-kept copies of the same four sets: a hex
+# added to one and not the other silently suggested `var(--danger)`.
+#
+# MEMBERSHIP TEST — this list is empirical, not a designed palette. A literal
+# earns a place from how it is *used in this tree*, never from its position in
+# a colour ramp. Grep the literal first: if its occurrences read as state
+# (`.scene-status.draft`, `.urg-chip.weak`, a "saved" indicator) it belongs; if
+# they read as identity (a chart series, a speaker, a deck accent, a named
+# pill) it does not, and adding it only manufactures false positives.
+#
+# Two families were measured and deliberately excluded on that test:
+#   * purple `#8b5cf6` `#a855f7` `#a78bfa` — theme.css calls --purple
+#     "rare / special", and every occurrence was categorical (`.eos-pill-purple`,
+#     a debug overlay, a PiP document). There is also no status token to suggest.
+#   * sky `#38bdf8` — reads as an accent, not a state: eos-deck uses it for
+#     `speaker-b` and again as `--deck-accent` for its `style-tech` theme.
+#
+# The Material trio `#4caf50` `#ff5252` `#ff9800` was ADDED 2026-09-04, and it
+# is the sharpest case yet for why the set is empirical rather than a ramp: all
+# three passed the state test unambiguously — they painted the hands-free chip's
+# idle / listening / speaking / confirm / undo_window states — and the gate was
+# green on them for months purely because nobody had written the literals down.
+# The chip is injected by eos.js on EVERY page, so the miss was fleet-wide, in
+# the one layer no per-app pass can reach.
+#
+# Blast radius measured before adding, per .claude/rules/audits.md: 9 findings,
+# all in eos-hands-free.css, zero anywhere else in the tree. The only other
+# occurrences sit in apps/personal/reticulation/vendor/legacy/ — a vendored
+# snapshot that does not load — and are quoted JS values, which T2's regex does
+# not match and T4 already excludes.
+STATUS_PALETTE: dict[str, frozenset[str]] = {
+    "info": frozenset({"#22d3ee", "#06b6d4", "#60a5fa", "#3b82f6"}),
+    "success": frozenset({"#34d399", "#10b981", "#1fc66b", "#34c759", "#88bb88",
+                          "#66aa66", "#84cc16", "#22c55e", "#059669", "#8b8", "#6a6",
+                          "#4caf50"}),
+    "warning": frozenset({"#fbbf24", "#f59e0b", "#eab308", "#cc9966", "#d97706", "#c96",
+                          "#ff9800"}),
+    "danger": frozenset({"#fb7185", "#ff6565", "#cc7777", "#dd6666", "#ef4444",
+                         "#dc2626", "#f85149", "#d66", "#d55", "#c55", "#c66", "#c77",
+                         "#ff5252"}),
 }
+
+STATUS_HEX = frozenset().union(*STATUS_PALETTE.values())
 
 SUGGEST = {
     "info": "var(--info)", "success": "var(--success)",
@@ -78,12 +122,9 @@ SUGGEST = {
 
 def _suggest(h: str) -> str:
     h = h.lower()
-    if h in {"#22d3ee", "#06b6d4", "#60a5fa", "#3b82f6"}:
-        return SUGGEST["info"]
-    if h in {"#34d399", "#10b981", "#1fc66b", "#34c759", "#88bb88", "#66aa66", "#84cc16", "#8b8", "#6a6"}:
-        return SUGGEST["success"]
-    if h in {"#fbbf24", "#f59e0b", "#eab308", "#cc9966", "#c96"}:
-        return SUGGEST["warning"]
+    for category, hexes in STATUS_PALETTE.items():
+        if h in hexes:
+            return SUGGEST[category]
     return SUGGEST["danger"]
 
 
@@ -158,6 +199,41 @@ def _global_theme_tokens() -> frozenset[str]:
 
 _THEME_TOKENS = _global_theme_tokens()
 
+# ── T4 — status hex painting a SURFACE (background / border / outline) ────────
+#
+# T2's scope note above ("backgrounds ... are never touched") holds for the
+# *general* case and is deliberate: a raw hex background has legitimate uses
+# that a text colour does not. T4 is the narrow slice where it does not — a lone
+# semantic status literal used as a status surface, which is the same
+# theme-invariant-palette defect T2 catches one property over. `--red/--amber/
+# --green/--blue/--purple` alias `--danger/--warning/--success/--info` and every
+# theme redefines those, so the literal is frozen where the token adapts.
+#
+# The signal only separates after four exclusions, each measured against the
+# real tree (2026-08-17) rather than guessed:
+#   • gradients            — decorative by construction (coin sheen, avatar fill)
+#   • lines carrying 3+ hex — a categorical palette (COLORS/CHART_COLORS/mood
+#                             scales); those axes are not theme-tunable at all
+#   • quoted hex           — a JS object value, not a CSS declaration
+#   • var(--token, #hex)   — the token is already wired; the hex is the fallback
+# Brand islands (a file with its own --xx-* namespace) are skipped wholesale for
+# the same reason they are exempt from DL-1.
+#
+# Deliberate cases opt out per-line with the existing marker, so a legitimate
+# decorative surface never has to become a permanent allowlist entry.
+_SURFACE_DECL = re.compile(
+    r"(?<![-\w])(?:background|border|outline|box-shadow)[-\w]*\s*:\s*([^;{}\n]+)",
+    re.IGNORECASE)
+_HEX_ANY = re.compile(r"#[0-9a-fA-F]{3,8}\b")
+_VAR_FALLBACK = re.compile(r"var\(\s*--[\w-]+\s*,[^)]*\)")
+_QUOTED_HEX = re.compile(r"""['"]\s*#[0-9a-fA-F]{3,8}\s*['"]""")
+
+_GLOBAL_PREFIXES = theme_css.global_token_prefixes()
+
+
+def _is_brand_island(src: str) -> bool:
+    return scanner_lib.is_brand_island(src, global_prefixes=_GLOBAL_PREFIXES)
+
 
 def _line_of(text: str, idx: int) -> int:
     return text.count("\n", 0, idx) + 1
@@ -228,6 +304,36 @@ def scan(path: Path) -> list[tuple[int, str, str]]:
                     f"`color: {m.group(1)}` is a hardcoded status colour — "
                     f"use {_suggest(h)} (theme-tuned; the literal fails on some themes)"))
 
+    # T4 — hardcoded status hex painting a surface (background / border / outline).
+    # One line can carry two surface declarations sharing a hex
+    # (`border-color:#3b82f6; background:#3b82f6`) — that is one defect, so
+    # report it once.
+    seen_t4: set[tuple[int, str]] = set()
+    if not _is_brand_island(src):
+        for m in _SURFACE_DECL.finditer(src):
+            value = m.group(1)
+            if "gradient(" in value.lower():
+                continue                      # decorative by construction
+            ln = _line_of(src, m.start())
+            line = lines[ln - 1] if 0 <= ln - 1 < len(lines) else ""
+            if len(_HEX_ANY.findall(line)) >= 3:
+                continue                      # categorical palette, not a status surface
+            if _ignored(lines, ln):
+                continue
+            # Blank the shapes that are already correct, then look at what is left.
+            probe = _QUOTED_HEX.sub(" ", _VAR_FALLBACK.sub(" ", value))
+            for hm in _HEX_ANY.finditer(probe):
+                h = hm.group(0).lower()
+                if h not in STATUS_HEX:
+                    continue
+                if (ln, h) in seen_t4:
+                    continue
+                seen_t4.add((ln, h))
+                out.append((ln, "T4",
+                            f"`{hm.group(0)}` is a hardcoded status colour on a surface — "
+                            f"use {_suggest(h)} (theme-tuned; the literal is frozen while "
+                            f"every theme redefines the token)"))
+
     return out
 
 
@@ -238,6 +344,10 @@ def targets() -> list[Path]:
         seen += REPO.glob(pat)
     return sorted({p for p in seen
                    if "_retired" not in p.parts and "_archive" not in p.parts
+                   # _example is the new-app scaffold, not a shipped surface — its
+                   # placeholder styling is a template, so flagging it would put a
+                   # permanent finding in front of every reader of this checker.
+                   and "_example" not in p.parts
                    and not p.name.endswith(".legacy.html")})
 
 

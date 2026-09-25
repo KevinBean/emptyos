@@ -13,12 +13,13 @@ import asyncio
 import json
 import os
 import re
-import shutil
 import signal
 import subprocess
 import time
 from datetime import datetime
 from pathlib import Path
+
+from emptyos.sdk.toolchain import resolve_binary
 
 from .base import (
     BuildResult,
@@ -28,6 +29,7 @@ from .base import (
     ReleaseResult,
     ScaffoldCtx,
     ScaffoldResult,
+    probe_check,
 )
 
 
@@ -70,7 +72,7 @@ def _identifier_for(project_id: str, prefix: str = "com.eos") -> str:
 def _resolve_binary(name: str) -> str | None:
     """Resolve a CLI name to its full path. On Windows `npm` is `npm.cmd`;
     asyncio.create_subprocess_exec needs the resolved path."""
-    return shutil.which(name)
+    return resolve_binary(name)
 
 
 def _tauri_cli_binding_for_host() -> str | None:
@@ -176,28 +178,7 @@ class TauriTarget:
         ]
         return checks
 
-    @staticmethod
-    def _probe(binary: str, *, version_args: list[str], install_hint: str, hint_url: str) -> Check:
-        path = shutil.which(binary)
-        if not path:
-            return Check(name=binary, ok=False, detail=install_hint, hint_url=hint_url)
-        # Quick non-async version probe — Phase 1 is fine with a blocking
-        # subprocess here because preflight runs only on demand from the UI.
-        import subprocess
-
-        try:
-            flags = getattr(subprocess, "CREATE_NO_WINDOW", 0) if os.name == "nt" else 0
-            out = subprocess.run(
-                [path, *version_args],
-                capture_output=True,
-                text=True,
-                timeout=5,
-                creationflags=flags,
-            )
-            ver = (out.stdout or out.stderr).strip().splitlines()[0] if out.returncode == 0 else "?"
-        except Exception:
-            ver = "?"
-        return Check(name=binary, ok=True, detail=ver, hint_url=hint_url)
+    _probe = staticmethod(probe_check)
 
     # ── Scaffold ────────────────────────────────────────────────────────────
 

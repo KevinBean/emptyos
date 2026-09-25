@@ -15,6 +15,9 @@ class = "AgentApp"
 # Read/search intentionally bypass capabilities — tools need arbitrary paths
 # outside the vault-scoped FilesystemReadProvider.
 capabilities = ["think"]
+# A chat's "Vault" context falls back to the search app's whole-vault
+# embedding search when the scoped slice finds nothing (turn_inputs.py).
+optional_apps = ["search", "viz"]
 
 [provides.cli]
 commands = ["chat", "code"]
@@ -67,7 +70,7 @@ lazy = true
 
 [provides.settings]
 schema = [
-    {key = "agent.default_provider", label = "Default Provider", type = "select", options = ["anthropic_sdk", "openai", "openai-mini", "openai-nano", "ollama", "claude-cli"], default = "anthropic_sdk", hint = "openai = gpt-5.4 (full, strongest) · openai-mini = gpt-5.4-mini (best $/quality, default) · openai-nano = gpt-5.4-nano (cheap bulk) · claude-cli = Max subscription"},
+    {key = "think.app.agent", label = "Default Provider", type = "select", options = ["anthropic_sdk", "openai", "openai-mini", "openai-nano", "ollama", "claude-cli"], default = "anthropic_sdk", hint = "Same setting as the model pill on /agent/ and `/model … save` in eos chat. openai = gpt-5.4 (full, strongest) · openai-mini = gpt-5.4-mini (best $/quality) · openai-nano = gpt-5.4-nano (cheap bulk) · claude-cli = Max subscription"},
     {key = "agent.max_iters", label = "Max Iterations per Turn", type = "number", default = 25},
     {key = "agent.tool_policy", label = "Tool Policy", type = "select", options = ["ask", "auto", "deny"], default = "ask", hint = "Global policy overlay; per-tool defaults still apply"},
 ]

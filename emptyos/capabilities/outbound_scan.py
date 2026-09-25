@@ -9,12 +9,18 @@ from __future__ import annotations
 
 import asyncio
 import re
-from pathlib import Path
 from typing import NamedTuple
 
 # High-confidence secret patterns. Conservative on purpose — fixed prefixes
 # / well-defined formats so false positives are rare.
-_SECRET_PATTERNS: list[tuple[str, re.Pattern]] = [
+#
+# PUBLIC: this is the shared credential vocabulary, not an outbound-only
+# detail. `scripts/check-personal.py` loads it *by file path* (never
+# `from emptyos.capabilities...`) so the commit gate keeps working in a bare
+# CI checkout without project deps — which is why everything at module scope
+# here must stay stdlib-only, and why `_personal_patterns()` imports
+# `emptyos.sdk` lazily inside the function rather than at the top.
+SECRET_PATTERNS: list[tuple[str, re.Pattern]] = [
     ("OpenAI API key", re.compile(r"sk-(?!ant-)(?:proj-)?[A-Za-z0-9_-]{20,}")),
     ("Anthropic API key", re.compile(r"sk-ant-[A-Za-z0-9_-]{20,}")),
     ("AWS access key", re.compile(r"AKIA[0-9A-Z]{16}")),
@@ -52,7 +58,13 @@ def _personal_patterns() -> list[tuple[str, re.Pattern]]:
     return _CACHED_PERSONAL
 
 
-def _redact(match: str) -> str:
+def redact_preview(match: str) -> str:
+    """Short, safe rendering of a matched span — never the full value.
+
+    PUBLIC alongside `SECRET_PATTERNS`: any consumer that *reports* a hit needs
+    this, because printing the raw match turns a leak report into a second leak
+    (a CI log carrying the key it just found).
+    """
     if len(match) <= 16:
         return "*" * len(match)
     return match[:4] + "*" * (len(match) - 8) + match[-4:]
@@ -68,10 +80,10 @@ def scan_outbound(text: str) -> list[Finding]:
         return []
     findings: list[Finding] = []
     seen: set[tuple[str, str]] = set()
-    for name, pat in _SECRET_PATTERNS + _personal_patterns():
+    for name, pat in SECRET_PATTERNS + _personal_patterns():
         for m in pat.finditer(text):
             matched = m.group(0)
-            preview = _redact(matched)
+            preview = redact_preview(matched)
             key = (name, preview)
             if key in seen:
                 continue

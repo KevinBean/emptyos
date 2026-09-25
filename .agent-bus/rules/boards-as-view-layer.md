@@ -1,8 +1,14 @@
+---
+paths:
+  - "apps/**/boards/**"
+  - "emptyos/sdk/collection_app.py"
+  - "emptyos/sdk/column_types.py"
+---
 # Boards as a View Layer — App Integration Contract
 
 The `boards` app is a generic view+edit layer over data declared by other apps. Apps don't *belong to* boards; boards reads from them. To make an app's data renderable as a board (kanban / table / gallery / calendar / timeline / chart, with filter / sort / bulk / saved views for free), the app exposes three things.
 
-**Reference implementations:** `apps/task/app.py`, `apps/projects/app.py`, `apps/personal/{jobs,reminders,media,expense}/app.py`, `apps/people/app.py`.
+**Reference implementations:** `apps/public/core/task/app.py`, `apps/public/standard/projects/app.py`, `apps/personal/{jobs,reminders,media,expense}/app.py`, `apps/public/standard/people/app.py`.
 
 ## What an app declares
 
@@ -58,7 +64,7 @@ async def set_field(self, id: str, field: str, value) -> dict:
 
 ## What boards declares
 
-A preset in `apps/boards/presets.py` with `source.type = "app"`:
+A preset in `apps/public/standard/boards/presets.py` with `source.type = "app"`:
 
 ```python
 PRESETS["job-applications"] = {
@@ -70,6 +76,12 @@ PRESETS["job-applications"] = {
 ```
 
 App-sourced presets are auto-instantiated as saved boards on boards-app boot (see `BoardsApp.setup`) and default to `readonly: True` — system database views, not editable inline. The user can flip the toggle button to enable editing per-board; the choice persists.
+
+**A `vault_tag`-sourced preset auto-materializes too, but only via manifest contribution — never the built-in `PRESETS` dict.** `_sync_presets` (2026-08-22) tracks which preset ids came from `call_contributions("boards", "preset")` and auto-saves those regardless of `source.type`; the static `PRESETS` templates (`crm-pipeline`, `bug-tracker`, `personal-habits`, ...) stay template-gallery-only so a fresh user doesn't get a sidebar full of boards for domains they don't use. A contributed `vault_tag` board is **not** forced `readonly` — there's no source app to route writes through, so it's editable like any user-created `vault_tag` board. First consumer: `emptyos/sdk/collection_app.py`'s `CollectionApp.board_presets()` — a schema-driven app that owns its own vault-tagged notes gets a live, editable board for free. Test: `tests/test_unit_boards_preset_sync.py`.
+
+**`board_presets()` now reaches relational + computed columns, not just scalars (2026-08-22).** Its field-projection whitelist used to drop `link-record`'s `target_board`/`multi`/`inverse` and `rollup`'s `source_link`/`target_field`/`agg` — the column still rendered as the right `type`, but the underlying boards machinery (`links.py`'s inverse maintenance, `board_engine.py`'s `evaluate_formulas`) silently never activated, because it never saw those keys. Fixed at the single point every collection-app schema passes through, so any app already declaring these fields benefits without a code change. The grill `collection-app` recipe now extracts `link-record`/`rollup` fields too (one-directional links only — no reciprocal-field auto-authoring; see `apps/extension/dev/grill/app.py`'s `_collection_handoff_frontmatter`), and `CollectionLibrary` write/read paths call `boards`' `set_link_field`/`evaluate_collection_items` (both in `links.py`) so a schema-driven app's own native CRUD gets the same reciprocal-inverse write-through and live rollup evaluation a boards-native write already had — `boards` is a soft (`optional_apps`) dependency, degrading gracefully when absent. `eos-components.js`'s `formHtml`/`formValues` gained a `link-record` picker widget and a read-only `rollup`/`formula` display to match. Tests: `tests/test_sdk_column_types.py`, `tests/test_sdk_collection_app.py`.
+
+**A public Form view exists now (2026-08-22).** `apps/public/standard/boards/public_form.py` + `pages/form.html` — an anonymous, no-login submission form generic over any board's fillable columns (`link-record`/`rollup`/`formula` excluded, matching Airtable's own Form-view restriction). `GET /boards/f/<id>` serves the page, `GET/POST /boards/api/public/{schema,submit}/<id>` are the `public_routes`-exempt endpoints. Reuses `_create_item_from_fields` (no parallel writer) and the shared `columns_to_form_fields` mapper (`emptyos/sdk/column_types.py` — also used by `emptyos/web/auto_ui.py`'s authenticated add-form, so the two never drift on field shape).
 
 ### Two ways to register a preset
 

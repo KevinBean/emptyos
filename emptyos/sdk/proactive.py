@@ -45,9 +45,34 @@ DEFAULT_POLICY: dict = {
     "quiet_start": "22:00",  # HH:MM, 24h local
     "quiet_end": "07:00",
     "daily_cap": 8,  # max nudges delivered per local day across all kinds
-    "min_gap_sec": 1800,  # min seconds between any two delivered nudges (anti-burst)
+    "min_gap_sec": 1800,  # min seconds between delivered nudges that spend the budget (anti-burst; bypassing critical nudges do not)
     "critical_bypasses_quiet": True,  # urgency="critical" ignores quiet/gap/cap
-    "kinds": {},  # per-kind overrides: {kind: {mute, channels, daily_cap, min_gap_sec}}
+    # per-kind overrides: {kind: {mute, channels, daily_cap, min_gap_sec, own_budget}}
+    #
+    # ``own_budget`` gives a kind its own allowance instead of a share of the
+    # global one: the global cap and the global anti-burst gap stop applying to
+    # it, and its deliveries stop counting toward them. Quiet hours, dedup and
+    # mute still apply, and it is still capped — by its own daily_cap/min_gap_sec
+    # if it declares them, otherwise by the GLOBAL numbers used as its own
+    # allowance. It is a separate budget, never an unbounded exemption: without
+    # that fallback, a kind with no per-kind cap would deliver without limit,
+    # which is what the gate exists to prevent. Added for `file` (a clip pushed
+    # to the phone), where a deliberately-requested artifact was refused because
+    # eight ordinary reminders had already spent the day's allowance.
+    # `test` is the operator's own probe (POST /proactive/api/test, and the sys
+    # tests that drive it against the live daemon). It gets its own allowance so
+    # verifying the setup — or running the suite — never spends the day's real
+    # nudge budget. Measured 2026-09-16: four test probes were sitting in the
+    # user's daily total, and a clip they asked for was refused as `daily-cap`.
+    #   min_gap_sec 0 — the anti-burst gap exists to stop the SYSTEM talking too
+    #     often unprompted, which cannot apply to a button the operator just
+    #     pressed. Without it the probe silently borrows the global 1800s as its
+    #     own gap, so a second click inside 30 min is refused `gap:test` and the
+    #     cap below is unreachable (a hard ceiling of 48/day sits under it).
+    #   daily_cap 20 — the sys suite sends 4 probes per run, so this is five full
+    #     runs plus hand clicks in one day. It bounds a runaway caller; it is not
+    #     meant to be reached in normal use.
+    "kinds": {"test": {"own_budget": True, "daily_cap": 20, "min_gap_sec": 0}},
 }
 
 DEDUP_TTL_SEC = 24 * 3600  # a dedup_key suppresses repeats for 24h
@@ -68,13 +93,34 @@ def load_policy(data_root: Path) -> dict:
     stores). Never raises — a corrupt file falls back to defaults."""
     p = _proactive_dir(data_root) / "policy.json"
     pol = dict(DEFAULT_POLICY)
-    pol["kinds"] = {}
+    pol["kinds"] = {k: dict(v) for k, v in (DEFAULT_POLICY.get("kinds") or {}).items()}
     if p.exists():
         try:
             stored = json.loads(p.read_text(encoding="utf-8"))
             if isinstance(stored, dict):
                 for k, v in stored.items():
-                    pol[k] = v
+                    if k == "kinds":
+                        # Merge per kind, per key. A stored map used to REPLACE the
+                        # defaults wholesale, which silently dropped any default
+                        # per-kind config the moment the user muted anything —
+                        # invisible until DEFAULT_POLICY["kinds"] stopped being {}.
+                        # A malformed stored value (null, a list, a string) is
+                        # IGNORED rather than assigned: falling through to the
+                        # plain branch replaced the merged map with a non-dict,
+                        # which the trailing guard then reset to {} — defaults
+                        # gone, and the probe back on the user's daily budget.
+                        # Same reason a non-dict cfg keeps its default here.
+                        if not isinstance(v, dict):
+                            continue
+                        for kind, cfg in v.items():
+                            if not isinstance(cfg, dict):
+                                continue
+                            if isinstance(pol["kinds"].get(kind), dict):
+                                pol["kinds"][kind].update(cfg)
+                            else:
+                                pol["kinds"][kind] = dict(cfg)
+                    else:
+                        pol[k] = v
         except (OSError, json.JSONDecodeError):
             pass
     if not isinstance(pol.get("kinds"), dict):
@@ -82,8 +128,35 @@ def load_policy(data_root: Path) -> dict:
     return pol
 
 
+def strip_kind_defaults(kinds: dict | None) -> dict:
+    """Drop per-kind keys that merely echo DEFAULT_POLICY, and any kind left
+    empty by that.
+
+    Every writer does ``load_policy`` -> mutate -> ``save_policy``, and
+    ``load_policy`` returns the DEFAULTS MERGED IN. Writing that view back
+    freezes a copy of today's defaults into the user's file, and because a
+    stored key now wins per key, a later change to DEFAULT_POLICY could never
+    reach them again — the merge added for migration would have destroyed
+    migration for exactly the keys it was added to carry. One mute click was
+    enough to do it.
+    """
+    defaults = DEFAULT_POLICY.get("kinds") or {}
+    out: dict = {}
+    for kind, cfg in (kinds or {}).items():
+        if not isinstance(cfg, dict):
+            out[kind] = cfg
+            continue
+        base = defaults.get(kind) or {}
+        delta = {k: v for k, v in cfg.items() if k not in base or base[k] != v}
+        if delta or kind not in defaults:
+            out[kind] = delta
+    return out
+
+
 def save_policy(data_root: Path, policy: dict) -> None:
     p = _proactive_dir(data_root) / "policy.json"
+    policy = dict(policy)
+    policy["kinds"] = strip_kind_defaults(policy.get("kinds"))
     p.write_text(json.dumps(policy, indent=2, ensure_ascii=False), encoding="utf-8")
 
 
@@ -150,6 +223,14 @@ def _resolve_channels(policy: dict, kind: str, requested: list | None) -> tuple[
     return tuple(out) or DEFAULT_CHANNELS
 
 
+def bypasses_budget(policy: dict, urgency: str) -> bool:
+    """True when a nudge of this urgency skips quiet hours, the daily cap and
+    the minimum gap — and therefore must not spend them either
+    (``record_sent(spends_budget=...)``). One definition, used by ``decide`` and
+    by ``BaseApp.proactive_notify``, so the two can never disagree."""
+    return urgency == "critical" and bool(policy.get("critical_bypasses_quiet", True))
+
+
 def decide(
     policy: dict,
     state: dict,
@@ -167,7 +248,7 @@ def decide(
     now = time.time() if now is None else now
     channels = _resolve_channels(policy, kind, requested_channels)
     kcfg = _kind_cfg(policy, kind)
-    critical = urgency == "critical"
+    own = bool(kcfg.get("own_budget"))
 
     if not policy.get("enabled", False):
         return Decision(False, "disabled", channels)
@@ -180,26 +261,33 @@ def decide(
         if seen and (now - float(seen)) < DEDUP_TTL_SEC:
             return Decision(False, f"dup:{dedup_key}", channels)
 
-    if not (critical and policy.get("critical_bypasses_quiet", True)):
+    if not bypasses_budget(policy, urgency):
         if in_quiet_hours(policy.get("quiet_start", ""), policy.get("quiet_end", ""), now_dt):
             return Decision(False, "quiet-hours", channels)
         # daily cap
         day = state.get("day", {})
         if day.get("date") == _local_date(now_dt):
+            # An own_budget kind with no cap of its own borrows the global
+            # NUMBER as its own allowance — otherwise "separate budget" would
+            # mean "no budget", and 40 distinct clips would all deliver at once.
             cap = kcfg.get("daily_cap")
+            if cap is None and own:
+                cap = policy.get("daily_cap")
             if cap is not None and day.get("kinds", {}).get(kind, 0) >= int(cap):
                 return Decision(False, f"daily-cap:{kind}", channels)
             gcap = policy.get("daily_cap")
-            if gcap is not None and day.get("total", 0) >= int(gcap):
+            if not own and gcap is not None and day.get("total", 0) >= int(gcap):
                 return Decision(False, "daily-cap", channels)
         # min gap — per-kind first, then the global anti-burst gap
         kgap = kcfg.get("min_gap_sec")
+        if kgap is None and own:
+            kgap = policy.get("min_gap_sec")  # same reason as the cap above
         if kgap is not None:
             last_k = state.get("last_sent", {}).get(kind)
             if last_k and (now - float(last_k)) < float(kgap):
                 return Decision(False, f"gap:{kind}", channels)
         ggap = policy.get("min_gap_sec")
-        if ggap is not None:
+        if not own and ggap is not None:
             last_any = state.get("last_sent", {}).get(_ANY)
             if last_any and (now - float(last_any)) < float(ggap):
                 return Decision(False, "gap", channels)
@@ -211,25 +299,50 @@ def _local_date(now_dt: datetime | None = None) -> str:
     return (now_dt or datetime.now()).date().isoformat()
 
 
+def has_own_budget(policy: dict, kind: str) -> bool:
+    """Whether ``kind`` is metered on its own allowance rather than the global
+    one. Read it here rather than re-deriving it at each call site: `decide`
+    and `record_sent` must agree, or a kind skips the global cap while still
+    spending it (or the reverse)."""
+    return bool(_kind_cfg(policy, kind).get("own_budget"))
+
+
 def record_sent(
     state: dict, kind: str, dedup_key: str | None = None,
     now: float | None = None, now_dt: datetime | None = None,
+    *, spends_budget: bool = True, own_budget: bool = False,
 ) -> dict:
     """Mutate ``state`` to record a delivered nudge: bump per-kind + global
     last_sent, roll/increment the day counters, stamp the dedup key, prune old
-    dedup entries. Returns the same dict for chaining."""
-    now = time.time() if now is None else now
-    ls = state.setdefault("last_sent", {})
-    ls[kind] = now
-    ls[_ANY] = now
+    dedup entries. Returns the same dict for chaining.
 
-    today = _local_date(now_dt)
-    day = state.get("day") or {}
-    if day.get("date") != today:
-        day = {"date": today, "total": 0, "kinds": {}}
-    day["total"] = int(day.get("total", 0)) + 1
-    day.setdefault("kinds", {})[kind] = int(day.get("kinds", {}).get(kind, 0)) + 1
-    state["day"] = day
+    ``spends_budget=False`` records only the dedup key. A critical nudge skips
+    the cap and the gap, so letting it spend them would hold the ordinary
+    nudges (reminders) it never waited behind.
+
+    ``spends_budget=False`` wins over ``own_budget``: a critical nudge skipped
+    every budget on the way in, so it records none of them on the way out —
+    including the kind's own counter.
+
+    ``own_budget=True`` records the kind's OWN counters but not the global ones:
+    a kind that `decide` exempted from the global cap and gap must not spend
+    them either, or it would hold back the nudges it never queued behind. The
+    two flags must be read from the same policy (`has_own_budget`)."""
+    now = time.time() if now is None else now
+    if spends_budget:
+        ls = state.setdefault("last_sent", {})
+        ls[kind] = now
+        if not own_budget:
+            ls[_ANY] = now
+
+        today = _local_date(now_dt)
+        day = state.get("day") or {}
+        if day.get("date") != today:
+            day = {"date": today, "total": 0, "kinds": {}}
+        if not own_budget:
+            day["total"] = int(day.get("total", 0)) + 1
+        day.setdefault("kinds", {})[kind] = int(day.get("kinds", {}).get(kind, 0)) + 1
+        state["day"] = day
 
     if dedup_key:
         dd = state.setdefault("dedup", {})
@@ -237,6 +350,22 @@ def record_sent(
         cutoff = now - DEDUP_TTL_SEC
         state["dedup"] = {k: v for k, v in dd.items() if float(v) >= cutoff}
     return state
+
+
+def counts_as_sent(result: dict | None) -> bool:
+    """Whether a ``proactive_notify`` / ``proactive_notify_or_raw`` result means
+    the message reached the user — the question a sender asks before recording
+    "sent" (``fired_at``, ``pinged``). True for a delivery, for ``dup:`` (an
+    earlier attempt with the same key was delivered), and for ``disabled`` only
+    when ``_or_raw`` reports ``raw_sent`` — its fallback sends only if the
+    notifications service exists, and the verdict is ``disabled`` either way.
+    A hold, an error, or a missing result is not sent."""
+    if not isinstance(result, dict):
+        return False
+    reason = str(result.get("reason") or "")
+    if result.get("delivered") or reason.startswith("dup:"):
+        return True
+    return reason == "disabled" and bool(result.get("raw_sent"))
 
 
 # ─── Audit log (the surface the user actually reads) ─────────────────────────

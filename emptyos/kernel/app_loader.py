@@ -149,6 +149,40 @@ class AppLoader:
     def running(self) -> list[str]:
         return [aid for aid, s in self.states.items() if s == AppState.STARTED]
 
+    def reachable_manifests(self) -> list[AppManifest]:
+        """Manifests a user can actually get to — what `/api/apps` reports.
+
+        An app the loader only DISCOVERED (present on disk, never installed) or
+        that ERRORed has no mounted routes, so anything enumerating "the apps"
+        for a user-facing surface wants this rather than `manifests.values()`.
+        Listing the difference is what made Studio's icon library count 231
+        against the launcher's 230, and put a test fixture in a product surface.
+        """
+        skip = {AppState.DISCOVERED, AppState.ERROR}
+        return [m for m in self.manifests.values() if self.state_of(m.id) not in skip]
+
+    def state_of(self, app_id: str) -> AppState:
+        """Reported state for an app, reconciled against the live instance.
+
+        `states` is a hand-maintained mirror of `instances`; when the two
+        disagree, `instances` is the fact — an app with a live instance had its
+        routes mounted and is reachable, whatever the label says. Reporting it
+        as DISCOVERED makes a working app invisible to `/api/apps` (and so to
+        nav, `/api/apps/sections`, topology, and the four audits that iterate
+        that list) while every one of its routes still answers 200.
+
+        Only DISCOVERED is reconciled. ERROR is never upgraded: `load()` pops
+        the instance on failure, so ERROR and a live instance cannot both hold,
+        and a genuine load error must stay visible. STOPPED is a deliberate
+        state and is left alone.
+
+        Read this instead of `states.get(...)` at every reporting surface.
+        """
+        st = self.states.get(app_id, AppState.DISCOVERED)
+        if st is AppState.DISCOVERED and dict.__contains__(self.instances, app_id):
+            return AppState.LOADED
+        return st
+
     def discover(self) -> list[AppManifest]:
         """Scan apps directory for manifest.toml files."""
         apps_path = Path(self.kernel.config.get("apps.path", "./apps"))
@@ -179,6 +213,12 @@ class AppLoader:
         demo_on = self.kernel.config.demo_enabled
         hide = set(self.kernel.config.get("demo.hide_apps", []) or [])
 
+        # Read once, above the loop: it is loop-invariant, and inside the loop
+        # it would sit under the per-manifest `except Exception` below, where a
+        # missing property degrades into a misleading "Failed to parse <file>"
+        # and silently skips that manifest's alias registration.
+        booted = self.kernel.started
+
         for _id_hint, app_dir in iter_app_dirs(
             apps_path, include_personal=True, include_catalog=True
         ):
@@ -206,7 +246,47 @@ class AppLoader:
                         f"'{manifest.id}' at {app_dir} overrides {existing.path}",
                     )
                 self.manifests[manifest.id] = manifest
-                self.states[manifest.id] = AppState.DISCOVERED
+                # Never downgrade an app that already has a live instance.
+                # `states` is a mirror of `instances`, and `load()` short-circuits
+                # on anything already in `instances` — so a discover() that runs
+                # after a load strands that app at DISCOVERED permanently, and
+                # `/api/apps` (plus nav, sections, topology, and the four audits
+                # that read it) hides an app whose routes are mounted and serving.
+                # This is a real boot path, not a hypothetical (confirmed on the
+                # live daemon 2026-08-31, five apps every boot):
+                #   1. `cli/main.py::_get_kernel()` calls discover() — #1.
+                #   2. `Kernel.start()` runs `plugins.load_all()`, and the
+                #      telegram plugin's `connect()` spawns `_poll_loop()`, whose
+                #      first tick calls `_ensure_bridge_agent()` →
+                #      `apps.load("rooms")`. Manifests are already populated by
+                #      #1, so it succeeds and pulls the whole dependency tree:
+                #      rooms → projects → {github-connector, git, reports}.
+                #   3. `Kernel.start()` then calls discover() — #2 — which used
+                #      to stamp all five back to DISCOVERED.
+                #   4. The boot loop skips them (`not in instances`), so nothing
+                #      ever re-set the state.
+                # A sandbox pool member never reproduced it because it has no
+                # telegram token, so step 2 never runs.
+                #
+                # The log line stays, because it is what names the caller if a
+                # *different* path starts doing the same thing — but it is only
+                # a warning AFTER boot. During boot the five apps above hit it
+                # every single time, and five expected WARN lines per boot is
+                # noise that a sixth, genuinely new id would disappear into: a
+                # detector that always fires carries no signal
+                # (`.claude/rules/audits.md` — the inverse of a check that is
+                # green because it checks nothing). So boot logs `info`, and a
+                # discover() once the kernel is up — the case nobody has
+                # explained yet — logs `warn`.
+                if dict.__contains__(self.instances, manifest.id):
+                    log = self.kernel.syslog.warn if booted else self.kernel.syslog.info
+                    log(
+                        "app_loader",
+                        f"discover() re-ran while '{manifest.id}' is loaded — "
+                        f"keeping its state instead of downgrading to discovered",
+                    )
+                else:
+                    self.states[manifest.id] = AppState.DISCOVERED
                 # Aliases also resolve to this manifest (for dependency strings)
                 # but iteration yields canonical entries only.
                 for alias in manifest.aliases:

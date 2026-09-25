@@ -157,6 +157,27 @@ def _load_toml(path: Path) -> dict:
         return {}
 
 
+def _flatten_settings(node: object, prefix: str = "") -> dict[str, object]:
+    """Flatten data/settings.json to dotted keys.
+
+    The settings service stores an app's toggles nested under its id
+    (``{"agent_fleet": {"feature": {"fleet": {"enabled": true}}}}``) while the
+    settings *page* writes some keys verbatim as one dotted string. Flattening
+    normalises both into the form ``BaseApp.setting_or_config`` actually asks
+    for: ``<app_id>.feature.<slug>.enabled``.
+    """
+    out: dict[str, object] = {}
+    if not isinstance(node, dict):
+        return out
+    for k, v in node.items():
+        key = f"{prefix}{k}"
+        if isinstance(v, dict):
+            out.update(_flatten_settings(v, key + "."))
+        else:
+            out[key] = v
+    return out
+
+
 def machine_state(flags: dict[str, dict]) -> dict[str, list[str]]:
     """Where each flag is flipped TRUTHY on this machine. {flag: ["src=val"]}."""
     cfg = _load_toml(REPO_ROOT / "emptyos.toml")
@@ -203,6 +224,21 @@ def machine_state(flags: dict[str, dict]) -> dict[str, list[str]]:
             # so the matched key is shown for the human to judge. Scalar
             # truthy only — a dict value is an unrelated config blob, not a
             # flipped toggle (e.g. key "feature-pipeline" vs slug "pipeline").
+            # Precise: the exact key BaseApp.setting_or_config reads, i.e.
+            # "<app_id>.feature.<slug>.enabled". The store is NESTED, so the
+            # top-level value is a dict and the scalar heuristic below can never
+            # see it — that blind spot reported 4 live flags as dark (2026-08-28).
+            # Only truthy counts: a reset writes null and a cleared input writes
+            # "", both of which mean "unset, fall through to TOML".
+            suffix = f"feature.{slug}.enabled"
+            flat = _flatten_settings(settings)
+            for key, val in flat.items():
+                if (key == suffix or key.endswith("." + suffix)) and val:
+                    hits.append(f"settings.json {key}={val!r}")
+            # Legacy heuristic, deliberately unchanged and top-level-only: a flat
+            # scalar toggle whose key merely CONTAINS the slug (e.g.
+            # "voice-assistant.two-speed"). Widening it over the flattened map
+            # would trade this fix for a new false-positive class.
             for key, val in settings.items():
                 if slug in str(key) and isinstance(val, (bool, int, str)) and val:
                     hits.append(f"setting {key}={val!r}")

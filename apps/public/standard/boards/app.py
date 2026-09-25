@@ -20,6 +20,7 @@ from . import activity as _activity
 from . import attachments as _attachments
 from . import comments as _comments
 from . import planner_sync as _planner_sync
+from . import public_form as _public_form
 from .board_engine import BoardConfigStore, DynamicBoardLibrary
 from .link_index import LinkIndex
 from .presets import PRESETS, get_preset, list_presets
@@ -150,35 +151,50 @@ class BoardsApp(BaseApp):
                 except Exception:
                     pass  # a contributor that won't load just doesn't get a board
         all_presets = dict(PRESETS)
+        contributed_ids: set[str] = set()
         try:
             for _entry, result in await self.call_contributions("boards", "preset"):
                 contributed = result if isinstance(result, list) else [result]
                 for p in contributed:
                     if isinstance(p, dict) and p.get("id"):
                         all_presets[p["id"]] = p
+                        contributed_ids.add(p["id"])
         except Exception:
             pass
         for pid, preset in all_presets.items():
             src = preset.get("source") or {}
             stype = src.get("type")
-            # `app` and `mixed` are both read-only system-database views — the
-            # source app(s) own the data, edits route through them. (`mixed`
-            # unions several app sources, e.g. the cross-harness runs board.)
-            if stype not in ("app", "mixed"):
+            # `app` and `mixed` are always auto-materialized — the source
+            # app(s) own the data unambiguously. A `vault_tag` preset is
+            # auto-materialized only when it's APP-CONTRIBUTED: the static
+            # PRESETS templates (crm-pipeline, bug-tracker, ...) stay
+            # template-gallery-only (a generic template every user doesn't
+            # necessarily want in their sidebar), but a contributing app's
+            # own `[[contributes.boards.preset]]` is unambiguous — the app
+            # is already installed and the board IS that app's data. See
+            # emptyos/sdk/collection_app.py for the first vault_tag
+            # contributor (`CollectionApp.board_presets`).
+            if stype not in ("app", "mixed") and pid not in contributed_ids:
                 continue
             src_app = src.get("app", "") if stype == "app" else ""
+            # `app`/`mixed` boards route edits through the source app's
+            # set_field — always read-only here. A contributed `vault_tag`
+            # board owns its notes directly (no source app to route
+            # through), so it's editable like any user-created vault_tag
+            # board.
+            force_readonly = stype in ("app", "mixed")
             existing = self._store.get_board(pid)
             if existing:
                 # System-database views track their preset: the source app(s),
-                # columns, and views are system-defined (the board is read-only,
-                # so a user never hand-edits them). Re-sync these structural
-                # fields from the preset on every boot so a preset that gains a
-                # source / column / view propagates instead of silently sticking
-                # at whatever shape was first instantiated. Saved per-user view
-                # state lives separately in ViewStore and is untouched.
+                # columns, and views are system-defined. Re-sync these
+                # structural fields from the preset on every boot so a preset
+                # that gains a source / column / view propagates instead of
+                # silently sticking at whatever shape was first instantiated.
+                # Saved per-user view state lives separately in ViewStore and
+                # is untouched.
                 changed = False
-                if not existing.get("readonly") or existing.get("source_app_id") != src_app:
-                    existing["readonly"] = True
+                if existing.get("readonly") != force_readonly or existing.get("source_app_id") != src_app:
+                    existing["readonly"] = force_readonly
                     existing["source_app_id"] = src_app
                     changed = True
                 for k in ("source", "columns", "views", "kanban_group_by", "rules"):
@@ -189,7 +205,7 @@ class BoardsApp(BaseApp):
                     self._store.save_board(pid, existing)
                 continue
             cfg = dict(preset)
-            cfg["readonly"] = True
+            cfg["readonly"] = force_readonly
             cfg["source_app_id"] = src_app
             self._store.save_board(pid, cfg)
 
@@ -467,11 +483,20 @@ class BoardsApp(BaseApp):
     api_archive_item         = _items.api_archive_item
 
     # ── Links (extracted to links.py) ──
-    _rebuild_links          = _links._rebuild_links
-    _index_board            = _links._index_board
-    _maintain_link_inverses = _links._maintain_link_inverses
-    api_item_backlinks      = _links.api_item_backlinks
-    api_links_rebuild       = _links.api_links_rebuild
+    _rebuild_links           = _links._rebuild_links
+    _index_board             = _links._index_board
+    _reindex_link_edges      = _links._reindex_link_edges
+    _write_inverse_for_column = _links._write_inverse_for_column
+    _maintain_link_inverses  = _links._maintain_link_inverses
+    set_link_field           = _links.set_link_field
+    evaluate_collection_items = _links.evaluate_collection_items
+    api_item_backlinks       = _links.api_item_backlinks
+    api_links_rebuild        = _links.api_links_rebuild
+
+    # ── Public Form view (extracted to public_form.py) ──
+    public_form_page       = _public_form.public_form_page
+    api_public_form_schema = _public_form.api_public_form_schema
+    api_public_form_submit = _public_form.api_public_form_submit
 
     # ── Saved Views (extracted to saved_views.py) ──
     api_list_views  = _saved_views.api_list_views

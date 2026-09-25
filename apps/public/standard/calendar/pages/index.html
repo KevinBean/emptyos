@@ -29,7 +29,7 @@ body { padding:env(safe-area-inset-top) 16px calc(env(safe-area-inset-bottom) + 
 .cal-day-item.is-done .ci-title { text-decoration:line-through; color:var(--text-muted) }
 .cal-day-item .ci-time { font-size:11px; color:var(--text-muted); font-family:var(--mono); min-width:48px }
 .cal-day-item .ci-title { flex:1; color:var(--text); cursor:pointer }
-.cal-day-item .ci-tag { font-size:10px; padding:2px 8px; border-radius:6px; background:var(--bg); color:var(--text-secondary); text-transform:uppercase }
+.cal-day-item .ci-tag { font-size:10px; padding:2px 8px; border-radius:6px; background:var(--bg); color:var(--text-secondary); text-transform:uppercase;letter-spacing:var(--tracking-meta) }
 .cal-day-item.tone-overdue { border-left:3px solid var(--danger) }
 .cal-day-item.tone-today { border-left:3px solid var(--warning) }
 #cal-brief { background:var(--bg-card); border:1px solid var(--border); border-left:3px solid var(--accent); border-radius:10px; padding:10px 14px; font-size:13px; line-height:1.5; margin-top:12px }
@@ -263,6 +263,50 @@ async function loadDay(date) {
 
 function esc(s) { var d = document.createElement('div'); d.textContent = s == null ? '' : s; return d.innerHTML; }
 
+// ----- Quick add (calendar-quick-add): routes the create to the owning
+// app (task.add / reminders.add) — the calendar itself never writes. -----
+function openQuickAdd() {
+    var defaultDate = selectedDate || _todayIso();
+    EOS_UI.modal({
+        title: 'Quick add',
+        width: '380px',
+        body:
+            '<div style="display:flex;flex-direction:column;gap:10px">' +
+                '<select id="qa-kind" class="eos-input">' +
+                    '<option value="reminder">Reminder</option>' +
+                    '<option value="task">Task</option>' +
+                '</select>' +
+                '<input type="text" id="qa-text" class="eos-input" placeholder="What is it?" autofocus>' +
+                '<div style="display:flex;gap:8px">' +
+                    '<input type="date" id="qa-due" class="eos-input" value="' + escAttr(defaultDate) + '" style="flex:1">' +
+                    '<input type="time" id="qa-time" class="eos-input" style="max-width:130px">' +
+                '</div>' +
+                '<div style="display:flex;justify-content:flex-end;gap:8px;margin-top:4px">' +
+                    '<button class="eos-btn" onclick="EOS_UI.closeModal()">Cancel</button>' +
+                    '<button class="eos-btn eos-btn-primary" onclick="submitQuickAdd()">Add</button>' +
+                '</div>' +
+            '</div>',
+    });
+}
+
+async function submitQuickAdd() {
+    var kind = document.getElementById('qa-kind').value;
+    var text = (document.getElementById('qa-text').value || '').trim();
+    var due = document.getElementById('qa-due').value || '';
+    var time = document.getElementById('qa-time').value || '';
+    if (!text) { if (window.EOS_UI) EOS_UI.toast('Enter what it is', false); return; }
+    if (!due) { if (window.EOS_UI) EOS_UI.toast('Pick a date', false); return; }
+    var res = await EOS.apiSafe('/calendar/api/quick-add', {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({kind: kind, text: text, due: due, time: time}),
+    });
+    if (res && res.error) { if (window.EOS_UI) EOS_UI.toast(res.error, false); return; }
+    EOS_UI.closeModal();
+    if (window.EOS_UI) EOS_UI.toast('Added ' + (kind === 'task' ? 'task' : 'reminder'), true);
+    if (grid) await loadMonth(grid.month());
+    if (selectedDate) loadDay(selectedDate);
+}
+
 // Deep links: #YYYY-MM-DD opens that day (jumping months if needed);
 // #YYYY-MM opens that month. Set from day clicks + month nav, so
 // back/forward and shared /calendar/#2026-07-03 URLs both work.
@@ -289,7 +333,8 @@ async function loadBrief(btn) {
     el.textContent = '✨ Thinking…';
     try {
         var d = await EOS.api('/calendar/api/brief');
-        el.textContent = '✨ ' + (d.brief || 'No brief available.');
+        var pv = EOS_UI.provenanceLine(d.provenance, {style: 'margin:0 0 6px'});
+        el.innerHTML = pv + '✨ ' + esc(d.brief || 'No brief available.');
     } catch (e) {
         el.textContent = 'Brief failed.';
     } finally {
@@ -334,6 +379,7 @@ window.addEventListener('load', async function() {
         actions: '<button class="eos-btn eos-btn-sm eos-btn-ghost" onclick="loadBrief(this)" title="AI morning brief over today + tomorrow">&#10024; Brief</button>'
             + '<button class="eos-btn eos-btn-sm eos-btn-ghost" onclick="goToday()" title="Jump back to today">Today</button>'
             + '<a class="eos-btn eos-btn-sm eos-btn-ghost" href="/calendar/api/export.ics" title="Download / subscribe as an iCalendar feed">.ics</a>'
+            + '<button class="eos-btn eos-btn-sm eos-btn-primary" onclick="openQuickAdd()" title="Add a dated task or reminder without leaving the calendar">＋ Quick add</button>'
             + '<button class="btn-settings eos-btn eos-btn-sm eos-btn-ghost" onclick="openAppSettings()" title="Settings">&#9881;</button>',
     });
     var todayIso = _todayIso();

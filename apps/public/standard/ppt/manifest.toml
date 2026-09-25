@@ -40,7 +40,7 @@ schema = [
     {key = "ppt.default_aspect", label = "Default aspect", type = "select", default = "16:9", options = ["16:9", "4:3"]},
     {key = "ppt.default_visual_style", label = "Default visual style", type = "select", default = "studio", options = ["studio", "editorial", "tech", "luxury", "clay", "ink"]},
     {key = "ppt.embed_base", label = "Embed host (live)", type = "text", default = "", hint = "Prepend to ![embed: /journal/] etc. Empty = current host. Set to http://localhost:9001 to point at a dogfood daemon, or https://demo.binbian.net for the public demo. Override per-deck via 'embed_base:' in frontmatter."},
-    {key = "ppt.export_embed_base", label = "Embed host (exported HTML)", type = "text", default = "https://demo.binbian.net", hint = "Used by Export HTML so standalone bundles don't point at localhost. Falls back to ppt.embed_base if blank."},
+    {key = "ppt.export_embed_base", label = "Embed host (exported HTML)", type = "text", default = "", hint = "A publicly-reachable URL for this daemon so exported standalone bundles don't embed localhost. Falls back to ppt.embed_base if blank; if both are blank, Export HTML warns that embeds won't resolve outside this machine."},
 ]
 
 [[contributes.hub.panel]]

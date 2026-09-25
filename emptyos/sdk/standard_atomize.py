@@ -21,12 +21,13 @@ import re
 from dataclasses import dataclass, field
 
 from emptyos.sdk.doc_slice import parse_contents, slice_clause_text
+from emptyos.sdk.utils import slugify_unicode
 
 
 def _slugify(s: str) -> str:
-    s = re.sub(r"[^\w\s-]", "", str(s).strip().lower())
-    s = re.sub(r"[\s_]+", "-", s).strip("-")
-    return s or "untitled"
+    # Unicode-preserving: clause titles are frequently non-English, and the
+    # ASCII slugify() would collapse them all onto "untitled".
+    return slugify_unicode(s, fallback="untitled")
 
 
 def _norm_clause(s) -> str | None:

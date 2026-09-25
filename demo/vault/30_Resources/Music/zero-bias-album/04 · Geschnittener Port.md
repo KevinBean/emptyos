@@ -14,10 +14,8 @@ language: de
 bpm: 85
 duration: "3:44"
 date_created: 2026-04-25
-suno_url: "https://suno.com/song/7329666f-0e07-4b92-81c0-6af6d1a099cc"
-suno_song_id: 7329666f-0e07-4b92-81c0-6af6d1a099cc
-suno_model: v5.5
-suno_created: 2026-04-25T11:57:00
+model_version: v5.5
+published_at: 2026-04-25T11:57:00
 license: "© 2026 3:30 Channel — All rights reserved"
 ---
 
@@ -92,7 +90,4 @@ Und du bist zum ersten Mal vollständig
 
 ## 版权证明 / Copyright proof
 
-![[04 · Geschnittener Port-screenshot.png]]
-
-Suno publication: **April 25, 2026 at 11:57 AM** (v5.5).
-Source: https://suno.com/song/7329666f-0e07-4b92-81c0-6af6d1a099cc
+Published: **April 25, 2026 at 11:57 AM** (v5.5).

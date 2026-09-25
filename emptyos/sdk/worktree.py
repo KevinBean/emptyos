@@ -26,6 +26,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from emptyos.headless import no_window_flags
+
 
 def git_run(
     args: list[str],
@@ -37,6 +39,13 @@ def git_run(
 
     Never raises — subprocess failures collapse to ``(-1, "", str(exc))``
     so callers can branch on returncode uniformly.
+
+    ``creationflags`` is explicit because this is the daemon's single busiest
+    spawn (the ``api_status`` poll behind fix-agent / app-builder runs it every
+    4-5 s per open page): from a console-less daemon each call opened a
+    Windows Terminal tab, and 2,909 of them in 18 minutes was the 2026-09-06
+    console storm. The process-level guard in ``emptyos/headless.py`` covers
+    the daemon; the flag here also covers a script importing this helper.
     """
     try:
         r = subprocess.run(
@@ -45,6 +54,7 @@ def git_run(
             capture_output=True,
             text=True,
             timeout=timeout,
+            creationflags=no_window_flags(),
         )
         return r.returncode, r.stdout, r.stderr
     except Exception as e:

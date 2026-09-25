@@ -47,106 +47,97 @@ homes the same day you write them:
 The graduation step is the load-bearing part. Without it the next person who
 needs the same insight rewrites the audit from scratch.
 
-## What graduation looks like
+## Failure mode 3 — the check is green because it checks nothing
 
-For the UI walk audit (round 1 + round 2, 2026-05-16):
+The first two failure modes are about a check that fires too often or stops
+running. This one is worse because it looks like success: **a check that passes
+on a healthy tree has proved nothing at all until you have watched it fail.**
+Green is the expected state, so it is indistinguishable from green-for-the-
+wrong-reason, and the check then sits in CI for months certifying a defect
+class it never actually inspects.
 
-- **Mobile-overflow heuristic** → `tests/test_sys_mobile.py` (pytest, parametrized
-  over `/api/apps`). `DESKTOP_ONLY` allowlist for the few apps that can't
-  collapse at narrow viewports.
-- **Click-intercept via `elementFromPoint(center)`** → `scripts/check-clickable.py`
-  (needs running daemon; release-only). `ALLOWLIST` for apps where the
-  collision is content-vs-FAB at scroll position (legitimately expected).
-- **Click-intercept dev overlay** → `emptyos/web/static/eos-debug-clickable.js`
-  loaded by `?debug=clickable` query param. Visual feedback at design time.
-- **Inline `position:absolute` without ancestor `position:relative`** →
-  `scripts/check-absolute.py` (static scan, no daemon needed).
-- **Theme-bootstrap injection** → `emptyos/web/server.py:_inject_theme_bootstrap`
-  (kernel auto-injects on every `pages/index.html` response — graduates from
-  per-app reminder to platform guarantee).
-- **Perceptual readability (2026-07-11)** — rendered-page WCAG contrast +
-  tiny-font + opacity-faded text, all apps × all 6 themes →
-  `scripts/check_readability.py` (needs running daemon; manual/skill/release —
-  wire into `release-public.py` once the tree stays FP-clean) +
-  `emptyos/web/static/eos-readability.js` (`?debug=readability` overlay; shared
-  walk core, fixture-tested in `tests/test_sys_readability.py`) +
-  the extended `scripts/check-contrast.py` (rgba surface tokens composited over
-  `--bg`, plus the four semantic status colors per theme; static,
-  preflight-gated). Opt-out: `data-readability-ignore` on the element.
+**The rule: break the thing deliberately and watch the check go red — once per
+failure shape it claims to cover, not once overall.** The procedure is
+`.claude/skills/eos-mutation-verify`; don't restate it, invoke it.
 
-  Unusually for an audit, the **fail band was mostly real** — 317 fail groups
-  across 59 apps, and the opt-out marker was needed **zero** times. That's a
-  consequence of threshold design, not luck: `fail` is <2.5:1, which is below
-  *every* theme-token floor, so nothing legitimately muted lives there. The
-  dominant defects were **theme-invariant palettes** — three apps (`cable.css`
-  shared by 7 engineering apps, `finance.css`, grid-analytics) defined `:root`
-  hue tokens as dark-theme brights used as text, so every readout sat at
-  1.3–1.5:1 on the light themes; aliasing those to the semantic tokens fixed
-  ~90 groups in three one-line edits. Second was `color:#fff` on
-  `var(--accent)` (invisible bug on purple themes, **1.68:1 in warm-dark's
-  amber**) across 25 files. Full triage: `docs/READABILITY-AUDIT-2026-07-11.md`.
+What this section adds is that the rule is **not scanner-specific**. It binds
+equally to test assertions and to conformance anchors:
 
-  Three noise classes were fixed **in the checker, not the tree** (the
-  failure-mode-1 discipline above), and the middle one is the transferable
-  lesson for any future rendered-DOM audit:
-  1. *Emoji + symbol-only glyphs* (😊 ✎) — `color` doesn't govern a color
-     bitmap; require a letter/digit before measuring.
-  2. **Mid-animation frames** — entry animations (`cardIn`, `fadeDown`) leave
-     elements at partial opacity for ~350ms, so the walk measured transient
-     composites. Timeline's apparent 7-shade "color ramp" was **one color at
-     seven animation opacities** = 44 phantom fail groups from one element.
-     Fix: `document.getAnimations().forEach(a => a.finish())` before walking.
-     **Any audit that reads computed style _or geometry_ must settle animations
-     first.** It is now `settleAnimations()` in the shared `eos-audit-walk.js`
-     harness, so a new audit inherits it by construction. The geometry half is
-     not hypothetical: the affordance walk below reads `scrollHeight`/`offsetTop`,
-     shipped without settling, and only the harness extraction caught it.
-  3. *Warn band 3.0–4.5* — exactly where muted-by-design text legitimately
-     lives; warn floor lowered to 3.0.
+- **Scanners** — `check_helper_bindings.py`'s first "0 findings" version stayed
+  green when a `@web_route` binding was deleted, precisely the case where an
+  unbound helper is worst (the endpoint silently stops existing). Catalog entry
+  below.
+- **Test assertions** — a chart test asserting "the SVG has numeric tick text"
+  passed against a build whose y axis was completely blank, because the *x* axis
+  still carried a label. Measured 2026-08-28, on a test written for a bug that
+  had already shipped.
+- **Conformance anchors** — a number back-filled from the implementation rather
+  than transcribed from the published source proves self-consistency, not
+  correctness. It cannot go red for the shape that matters.
 
-  **The last two defects were in the platform, not in any app** — and are the
-  reason a per-app audit would never have been enough: `theme.css` itself
-  defined `--blue`/`--purple` as *fixed literals* while their siblings
-  `--red/--amber/--green` alias the theme-tuned tokens (so the design system
-  shipped two theme-invariant colours inside the token set whose whole job is to
-  be theme-aware), and the shared toast-bell painted a hardcoded dark scrim under
-  `var(--text)` (dark-on-dark at 2.1:1 on the light themes). Both only surface
-  when you render **the platform's own components** across **every theme**.
+**"There is nothing to anchor" is usually a claim about the wrong quantity.** A
+composite result can be unbenchmarkable while a *factor* inside it is published,
+and anchoring the factor is worth far more than anchoring nothing. The earthing
+app's manifest asserted for months that its EG-0 method had "no fixed scalar to
+anchor" — true of the **risk**, which depends on an exposure model nobody
+publishes, and false of the **physiology** under it: AS 2067 App. A publishes
+P_fibrillation = 0.652 at 430 V / 500 ms, and the engine returned 0.6546
+unmodified. The whole probabilistic path shipped unverified behind a sentence
+that was accurate about one thing and read as a verdict on everything.
 
-  The rendered audit needs a daemon and ~1h, so it can't gate. The **cheap
-  static half was graduated out of it**: `scripts/check-text-tokens.py`
-  (preflight `ui`, **gates**, pinned by `tests/test_unit_check_text_tokens.py`)
-  pins the two highest-volume shapes — `#fff` on `var(--accent)`, and hardcoded
-  status hex as a text colour — neither of which has a legitimate use. It caught
-  6 violations the regex sweeps had missed on its first run. Prevention rules:
-  `docs/FRONTEND-DESIGN-LANGUAGE.md` §4.1.
+The test for a factor worth anchoring is **independence**: P_fibrillation is a
+function of touch voltage and duration only, so no exposure input can
+contaminate it — which is exactly what licenses pinning one field of a case
+whose other half has no published value. Assert that independence too
+(`test_exposure_inputs_cannot_move_the_anchored_field`), or the anchor quietly
+stops meaning what the manifest says it does. And anchor only the published
+field: adding `Z_B` or `I_B` there, because the worked example implies them,
+back-fills from the implementation and lands straight back in the row above.
 
-Each one started life as a print-statement loop inside `scripts/ui_walk_audit.py`.
-The audit was the seed; the test/script/platform-fix is the keep.
+The generalisable trap, and the reason the chart case is worth recording: **an
+assertion scoped wider than the thing it names is satisfied by a healthy
+neighbour of the broken part.** "Somewhere in this page / file / response there
+is an X" passes while the specific X you meant is missing. The fix is usually to
+narrow the assertion to the named unit — which may require making the markup
+addressable first (that test needed `.eos-tick-x/-y` classes before it could
+assert per-axis at all). Budget for that: a check can be un-writable until the
+thing it checks is made observable.
 
-- **Interaction affordance (2026-07-11)** — the perceptual gap that let a batch of
-  CAD-workspace UX bugs ship behind a green `node --check` + `pytest` + `curl`:
-  content clipped with no way to scroll to it, and a row of buttons acting as a
-  one-of-N switcher with no tab/radio roles → `emptyos/web/static/eos-ui-affordance.js`
-  (shared walk + `?debug=affordance` overlay; `data-affordance-ignore` opt-out) +
-  `scripts/check_ui_affordance.py` (live daemon; design-system-audit Phase 0d) +
-  `tests/test_sys_ui_affordance.py` (both-direction fixture pins, CI). Calibration
-  on 21 healthy apps: **0 fails** → the broken-height-chain signal gates; the
-  `buttons-as-tabs` semantic signal hit 3/21 (~14%, all genuine) → ships
-  **advisory**, never gates. The third candidate detector (adjacent-panel
-  non-separation) was the weakest/highest-FP and was **deliberately not built** —
-  deferred with a trigger in `docs/DEFERRED-WORK.md`.
+It wears three disguises, and only the third is really surprising. A value
+printed on **two rows** (or a word on two lines) where deleting one occurrence
+still satisfies the whole-document assertion. A section that renders **only on
+failure**, which a reader cannot tell apart from one never implemented. And a
+test that **greps the source** for a marker string — which the explanatory
+*comment above the code* satisfies on its own, so the guard can be disabled and
+the grep stays green. All three appeared in one session (2026-09-01), none was
+caught by the suite going green, and only mutation found them. For the grep
+shape the fix is not a narrower grep: stop reading the file and **execute the
+handler**.
 
-  Being the *second* rendered audit, it triggered the rule-9 extraction:
-  `emptyos/web/static/eos-audit-walk.js` (`window.__eosAudit` — settle, walk
-  helpers, `groupFindings` dedupe/sort/cap/mark, `?debug=` overlay) +
-  `scripts/audit_driver.py` (fetch apps, authed context, goto+inject+evaluate,
-  report, exit code). **A third rendered audit writes a detector, not a
-  harness** — don't copy a third skeleton. The judgment half of this
-  gap (visual hierarchy, "does this surface have the affordances it needs") is
-  **not automatable** and stays with the `eos-ui-walk` hand-walk — whose skip on
-  "the Chrome extension isn't connected" was the actual root cause; that skill now
-  documents the Playwright-MCP fallback and that the skip is never valid.
+**Six more shapes of the same failure** — each has a measured case in
+`.claude/rules/audits-casebook.md` (scanners, tests) or
+`.claude/rules/conformance-anchors.md` (engineering anchors). Read the relevant
+file before writing that kind of check.
+
+- **An identity field copied from the request is a label, not evidence** — trace
+  a provenance field to the response side before trusting it.
+- **A defensive `except` inside a scanner reports "no findings" whenever it
+  cannot parse its own input** — assert the input shape up front and fail loud.
+- **A test of a pure helper never proves anything calls it** — assert the call
+  site; when mutation-verifying, delete the wiring, not the helper.
+- **An anchor on the first equation of a chain proves nothing about the chain**
+  — anchor the deepest published value, one case per branch.
+- **An anchor's inputs must come from the source, and its tolerance must exclude
+  the wrong answer** — grep the source for every literal; published value ± a
+  tight absolute, never a range.
+- **An uncertainty flag keyed on the winner cannot see a loser that would
+  overtake it** — re-run the selection under each documented alternative reading.
+
+## Graduation
+
+The graduation catalog (mobile overflow, click-intercept, readability,
+affordance, helper bindings, spoken register, skill refs) lives in
+`.claude/rules/audits-casebook.md`.
 
 The procedure is packaged as the **`eos-graduate-audit` skill** — name the defect
 class, measure the false-positive rate *before* writing the checker, narrow until

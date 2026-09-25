@@ -339,7 +339,7 @@ static String jsonEscape(const String& input) {
 }
 
 // Battery level (0-100), or -1 if the driver can't read it — the devices app
-// already knows to drop a -1 rather than store it (apps/extension/others/devices/app.py
+// already knows to drop a -1 rather than store it (apps/extension/dev/devices/app.py
 // api_register: "battery -1 = driver can't read it -> drop rather than store").
 // VERIFY[hardware]: M5Cardputer.Power is the guessed sub-object name, mirroring
 // the already-confirmed .Keyboard/.Display/.Imu pattern.

@@ -262,7 +262,14 @@ async function loadErrors() {
             '</div>';
         }).join('') || EOS_UI.emptyState({message:'No errors in the last 24 hours'});
     } catch(e) {
-        document.getElementById('error-feed').innerHTML = '<div style="color:var(--text-muted);padding:8px">Log database not available yet (restart needed)</div>';
+        // The line above renders EOS_UI.emptyState for a genuinely empty feed,
+        // so this must not look like it. The old text also named a cause the
+        // catch cannot know — a fetch fails for many reasons, and "restart
+        // needed" was a guess presented to the user as a diagnosis.
+        document.getElementById('error-feed').innerHTML = EOS_UI.errorState({
+            message: 'Could not read the log database.',
+            onRetry: 'loadErrors()',
+        });
     }
 }
 

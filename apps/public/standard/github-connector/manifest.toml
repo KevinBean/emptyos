@@ -12,6 +12,9 @@ class = "GitHubConnectorApp"
 
 [requires]
 capabilities = ["read", "write"]
+# projects is the write target for "import as task" — soft dependency so the
+# connector degrades to read-only sync if projects isn't installed.
+optional_apps = ["projects"]
 
 [provides.cli]
 commands = ["github"]
@@ -26,7 +29,35 @@ tools = [
 ]
 
 [provides.events]
-emits = ["github:synced", "github:pr_status"]
+emits = ["github:synced", "github:pr_status", "github:issue_imported"]
+
+# Pure reads (no mutation on GitHub or in EmptyOS) — eligibility="stable" so a
+# generic automation (apps/public/labs/workflows/) may auto-run them unattended.
+# Verb app-half is "github-connector" (must equal the app id — CLAUDE.md
+# .claude/rules/verb-registry.md's cross-app guard).
+[[provides.verbs]]
+verb = "github-connector.sync_issues"
+method = "sync_issues"
+summary = "Fetch open GitHub issues for a repo"
+args = { repo = "string?" }
+eligibility = "stable"
+surfaces = ["agent"]
+
+[[provides.verbs]]
+verb = "github-connector.pr_status"
+method = "pr_status"
+summary = "Fetch open GitHub pull requests for a repo"
+args = { repo = "string?" }
+eligibility = "stable"
+surfaces = ["agent"]
+
+[[provides.verbs]]
+verb = "github-connector.import_issue_as_task"
+method = "import_issue_as_task"
+summary = "Create an EmptyOS project task from one GitHub issue"
+args = { repo = "string?", number = "number", project = "string?" }
+eligibility = "stable"
+surfaces = ["agent"]
 
 [provides.settings]
 schema = [

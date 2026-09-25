@@ -1,8 +1,14 @@
+---
+paths:
+  - "apps/**/voice-assistant/**"
+  - "emptyos/sdk/verb_registry.py"
+  - "apps/**/manifest.toml"
+---
 # Voice Intents Rule — Apps Contribute Verbs to Aura
 
 A **voice intent** is a verb an app exposes for Aura (the voice assistant) to invoke from natural speech. Intents are how apps gain voice agency without Aura hardcoding knowledge of any app. Same shape as `[[contributes.hub.panel]]`, different slot.
 
-**Reference implementations:** `apps/task/` (`task.add`, `task.list_today`), `apps/journal/` (`journal.add_entry`).
+**Reference implementations:** `apps/public/core/task/` (`task.add`, `task.list_today`), `apps/public/standard/journal/` (`journal.add_entry`).
 
 ## Principles
 
@@ -83,7 +89,8 @@ Cap at 12 intents. If more match, prefer `always` first, then companion-app, the
 
 ## Card renderers (V1)
 
-Aura's frontend (`apps/voice-assistant/pages/index.html`) maps three renderer names today. Aura ships its own renderers (not `EOS_UI`) because it's a deliberate visual island — full-screen dark glassy aesthetic, not the standard app surface. Data shapes are stable; styling stays Aura-native:
+Aura's frontend (`apps/public/standard/voice-assistant/pages/voice-assistant.js` —
+`CARD_RENDERERS`; extracted from `index.html` 2026-08-11) maps three renderer names today. Aura ships its own renderers (not `EOS_UI`) because it's a deliberate visual island — full-screen dark glassy aesthetic, not the standard app surface. Data shapes are stable; styling stays Aura-native:
 
 | Renderer      | Data shape                                                                |
 |---------------|---------------------------------------------------------------------------|
@@ -93,7 +100,7 @@ Aura's frontend (`apps/voice-assistant/pages/index.html`) maps three renderer na
 
 The full event from the backend is `{type:"card", intent, renderer, data, title?}`. `title` becomes a small uppercase header above the card body.
 
-To add a new renderer: add a function to the `CARD_RENDERERS` map in `index.html`, document the data shape here, then any app can return it. Never hand-roll HTML in app handlers — stay in the data-shape contract.
+To add a new renderer: add a function to the `CARD_RENDERERS` map in `voice-assistant.js`, document the data shape here, then any app can return it. Never hand-roll HTML in app handlers — stay in the data-shape contract.
 
 ## Post-intent narration (pull-side slot)
 

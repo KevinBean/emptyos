@@ -169,6 +169,67 @@ class TestRenderMarkdown:
         assert '<mark class="obs-mark">important</mark>' in html
         assert_no_js_errors(page_errors)
 
+    # ── Code is never rewritten ───────────────────────────────────────────
+    # Wikilinks, embeds and bare `.md` paths were substituted across the whole
+    # document before code was protected, so a literal written inside a fence
+    # or a code span became a real link or a real <img>. Surfaced on a canvas
+    # card that showed a broken-image glyph for an `![[photo.png]]` written as
+    # an example. Same defect existed server-side in resolve_wikilinks and in
+    # the link index; all three now share one rule.
+
+    def test_embed_inside_inline_code_is_not_an_image(self, page, base_url, page_errors):
+        html = self._render(page, base_url, "An `![[photo.png]]` example.")
+        assert "<img" not in html
+        assert "<code" in html
+        assert_no_js_errors(page_errors)
+
+    def test_embed_inside_a_fence_is_not_an_image(self, page, base_url, page_errors):
+        html = self._render(page, base_url, "```\n![[photo.png]]\n```\n")
+        assert "<img" not in html
+        assert_no_js_errors(page_errors)
+
+    def test_wikilink_inside_a_fence_is_not_a_link(self, page, base_url, page_errors):
+        html = self._render(page, base_url, "```js\nconst q = `[[Note]]`;\n```\n")
+        assert "<a " not in html
+        assert_no_js_errors(page_errors)
+
+    def test_bare_md_path_inside_code_is_not_a_link(self, page, base_url, page_errors):
+        html = self._render(page, base_url, "See `plan.md` here.")
+        assert "<a " not in html
+        assert_no_js_errors(page_errors)
+
+    def test_an_unclosed_fence_protects_to_end_of_input(self, page, base_url, page_errors):
+        """`$` under /m matches end of LINE — the first fix parked only the
+        opening fence and let the body through."""
+        html = self._render(page, base_url, "text\n```\n![[photo.png]]\n")
+        assert "<img" not in html
+        assert_no_js_errors(page_errors)
+
+    def test_a_longer_run_closes_a_shorter_fence(self, page, base_url, page_errors):
+        """CommonMark: the closing fence must be at least as long, not equal.
+
+        A `\\1` backreference demands an exact length, so ```…```` left the rest
+        of the document parked and every later link vanished. Found by checking
+        the JS against the Python rule rather than by reading either.
+        """
+        html = self._render(page, base_url, "```\n[[Hidden]]\n````\n[[Shown]]\n")
+        assert "Shown" in html
+        assert "<a " in html
+        assert_no_js_errors(page_errors)
+
+    def test_real_links_and_embeds_still_render(self, page, base_url, page_errors):
+        """The other direction: protecting code must not disable markdown."""
+        html = self._render(page, base_url, "```\n[[A]]\n```\n\nReal [[B]] and ![[c.png]].\n")
+        assert html.count("<a ") >= 1
+        assert "<img" in html
+        assert_no_js_errors(page_errors)
+
+    def test_frontmatter_split_survives_code_protection(self, page, base_url, page_errors):
+        """Code is restored before the `---` split, which needs the real text."""
+        html = self._render(page, base_url, "---\ntitle: x\n---\n\nBody [[N]].\n")
+        assert "<a " in html
+        assert_no_js_errors(page_errors)
+
 
 # =============================================================================
 # MODALS — shared EOS_UI modal/formModal/confirm + app-specific modals
@@ -462,4 +523,49 @@ class TestSlidePanels:
             query.fill("readme")
             query.press("Enter")
             wait_briefly(page, 2000)
+        assert_no_js_errors(page_errors)
+
+
+# =============================================================================
+# FORM FIELDS — shared EOS_UI.formHtml
+# =============================================================================
+
+
+@pytest.mark.interactive
+class TestFormHtmlNumberDomain:
+    """Pins `step` / `min` / `max` on a number field.
+
+    All three were hardcoded away until 2026-08-13 — the branch emitted a
+    literal `step="any"` and nothing else — so a caller declaring a domain got
+    silence rather than an error. `cable_network`'s project form had been
+    passing `step: 0.1` on soil resistivity the whole time.
+
+    Both directions matter here and the second is the load-bearing one: a
+    field declaring nothing must render exactly as it did before, because 149
+    call sites depend on that and none of them asked for this.
+    """
+
+    def _field(self, page, base_url, field):
+        page.goto(base_url + "/", wait_until="domcontentloaded", timeout=15000)
+        wait_briefly(page, 800)
+        return page.evaluate("EOS_UI.formHtml([" + repr(field).replace("'", '"') + "])")
+
+    def test_a_declared_step_reaches_the_input(self, page, base_url, page_errors):
+        html = self._field(page, base_url, {"key": "rho", "type": "number", "step": 0.1})
+        assert 'step="0.1"' in html
+        assert 'step="any"' not in html
+        assert_no_js_errors(page_errors)
+
+    def test_a_declared_domain_reaches_the_input(self, page, base_url, page_errors):
+        html = self._field(
+            page, base_url, {"key": "x", "type": "number", "min": 0, "max": 10}
+        )
+        assert 'min="0"' in html and 'max="10"' in html
+        assert_no_js_errors(page_errors)
+
+    def test_a_field_declaring_nothing_is_unchanged(self, page, base_url, page_errors):
+        """The regression contract for the other 149 call sites."""
+        html = self._field(page, base_url, {"key": "n", "type": "number"})
+        assert 'step="any"' in html
+        assert " min=" not in html and " max=" not in html
         assert_no_js_errors(page_errors)

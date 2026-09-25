@@ -237,12 +237,62 @@ def render_markdown_pdf(markdown_text: str, out_path, *, style: "PdfStyle | str 
     return _chromium_pdf(html, out, page_size=s.page_size, margin=s.margin_dict())
 
 
+# Chromium's header/footer templates render in their own document: no page CSS
+# reaches them, and an unset font-size prints nothing visible. `pageNumber` /
+# `totalPages` are the class names Chromium substitutes. The header is a blank
+# span rather than omitted, because turning the footer on turns both on.
+PAGE_NUMBER_FOOTER = (
+    '<div style="font-size:8pt;width:100%;text-align:center;color:#888;'
+    'font-family:system-ui,sans-serif">'
+    '<span class="pageNumber"></span> / <span class="totalPages"></span></div>'
+)
+_BLANK_HEADER = "<span></span>"
+
+
+def pdf_print_options(
+    *,
+    page_size: str = "A4",
+    margin: "dict | None" = None,
+    outline: bool = False,
+    page_numbers: bool = False,
+) -> dict:
+    """The keyword arguments handed to Playwright's ``page.pdf``.
+
+    Pure, so the two navigation aids a long document wants can be pinned
+    without launching a browser: ``outline`` asks Chromium to build the PDF's
+    bookmark sidebar from the document's headings (``h1``…``h6``), and
+    ``page_numbers`` prints ``n / total`` in the footer. Both default off so
+    every existing caller prints byte-for-byte what it printed before.
+
+    The footer is drawn inside the bottom margin, so ``page_numbers`` assumes
+    one of roughly 10 mm or more; both renderers here always pass a margin,
+    but a caller reaching this directly with none gets a footer over its text.
+    """
+    opts: dict = {"format": page_size, "print_background": True}
+    if margin:
+        opts["margin"] = margin
+    if outline:
+        # Chromium builds the outline from the tagged structure tree, so
+        # `outline` alone yields a PDF with no bookmarks at all. Measured on a
+        # three-heading probe (Playwright 1.58): outline only → 0 bookmarks,
+        # tagged only → 0, both → 3. Tagged output is also the accessible form.
+        opts["outline"] = True
+        opts["tagged"] = True
+    if page_numbers:
+        opts["display_header_footer"] = True
+        opts["header_template"] = _BLANK_HEADER
+        opts["footer_template"] = PAGE_NUMBER_FOOTER
+    return opts
+
+
 def render_html_pdf(
     html: str,
     out_path,
     *,
     page_size: str = "A4",
     margin: "dict | None" = None,
+    outline: bool = False,
+    page_numbers: bool = False,
 ) -> Path:
     """Render a self-contained HTML string straight to PDF (no markdown pipeline).
 
@@ -262,19 +312,23 @@ def render_html_pdf(
             "render_html_pdf needs Playwright Chromium: pip install playwright && playwright install chromium"
         ) from e
     margin = margin or {"top": "14mm", "bottom": "14mm", "left": "13mm", "right": "13mm"}
-    return _chromium_pdf(html, Path(out_path), page_size=page_size, margin=margin)
+    return _chromium_pdf(html, Path(out_path), page_size=page_size, margin=margin,
+                         outline=outline, page_numbers=page_numbers)
 
 
-def _chromium_pdf(html: str, out: Path, *, page_size: str, margin: dict) -> Path:
+def _chromium_pdf(html: str, out: Path, *, page_size: str, margin: dict,
+                  outline: bool = False, page_numbers: bool = False) -> Path:
     """Shared Chromium print step: HTML string → PDF file at ``out``."""
     from playwright.sync_api import sync_playwright
 
+    opts = pdf_print_options(page_size=page_size, margin=margin,
+                             outline=outline, page_numbers=page_numbers)
     out.parent.mkdir(parents=True, exist_ok=True)
     with sync_playwright() as p:
         b = p.chromium.launch()
         pg = b.new_page()
         pg.set_content(html, wait_until="networkidle")
-        pg.pdf(path=str(out), format=page_size, print_background=True, margin=margin)
+        pg.pdf(path=str(out), **opts)
         b.close()
     return out
 

@@ -8,8 +8,14 @@
  * the PDF binary fetched from `<serveBase>/<path>`. Drawer dismisses via
  * Esc, close button, or backdrop click.
  *
+ * Optional `onHighlight(page)` shows a "+ Highlight" button in the header;
+ * click passes the page currently on screen. v1 scope is page + a typed
+ * quote/note captured by the caller afterward — not click-drag text-layer
+ * selection (a bigger feature, deliberately deferred; see
+ * apps/public/standard/library/INTENT.md § Future).
+ *
  * First consumer: apps/learn/ for clause citations referencing local PDFs.
- * Graduate to EOS_UI namespace once a second app needs it.
+ * Second consumer: apps/public/standard/library/ (paper PDFs + highlight capture).
  */
 (function () {
   'use strict';
@@ -88,6 +94,7 @@
   var _pdfDoc = null;
   var _currentPage = 1;
   var _scale = 1.5;
+  var _onHighlight = null;
 
   function ensureDrawer() {
     if (_drawer) return _drawer;
@@ -103,10 +110,11 @@
       '<div class="eos-pdf-header">',
       '  <div class="title" id="eos-pdf-title">PDF</div>',
       '  <div class="controls">',
-      '    <button class="eos-pdf-btn" id="eos-pdf-prev">←</button>',
+      '    <button class="eos-pdf-btn" id="eos-pdf-highlight" style="display:none" title="Highlight this page">+ Highlight</button>',
+      '    <button class="eos-pdf-btn" id="eos-pdf-prev" aria-label="Back">←</button>',
       '    <input class="eos-pdf-page-input" id="eos-pdf-page-input" type="number" min="1">',
       '    <span style="color:var(--muted,#888);font-size:.85rem">/ <span id="eos-pdf-total">?</span></span>',
-      '    <button class="eos-pdf-btn" id="eos-pdf-next">→</button>',
+      '    <button class="eos-pdf-btn" id="eos-pdf-next" aria-label="Forward">→</button>',
       '    <button class="eos-pdf-btn" id="eos-pdf-close" title="Close (Esc)">✕</button>',
       '  </div>',
       '</div>',
@@ -117,6 +125,9 @@
     document.getElementById('eos-pdf-prev').onclick = function () { goPage(_currentPage - 1); };
     document.getElementById('eos-pdf-next').onclick = function () { goPage(_currentPage + 1); };
     document.getElementById('eos-pdf-close').onclick = close;
+    document.getElementById('eos-pdf-highlight').onclick = function () {
+      if (_onHighlight) _onHighlight(_currentPage);
+    };
     document.getElementById('eos-pdf-page-input').onchange = function (e) {
       var n = parseInt(e.target.value, 10);
       if (!isNaN(n)) goPage(n);
@@ -172,6 +183,8 @@
 
     ensureDrawer();
     document.getElementById('eos-pdf-title').textContent = opts.title || opts.path.split('/').pop();
+    _onHighlight = typeof opts.onHighlight === 'function' ? opts.onHighlight : null;
+    document.getElementById('eos-pdf-highlight').style.display = _onHighlight ? '' : 'none';
     setStatus('Loading PDF.js…');
     _backdrop.classList.add('open');
     _drawer.classList.add('open');

@@ -1,0 +1,13 @@
+[plugin]
+id = "command-launcher"
+name = "Command Launcher"
+version = "0.1.0"
+description = "Spawns a borderless Chrome/Edge app-mode window pointing at the command palette when the global hotkey fires."
+
+[plugin.entry]
+module = "plugin"
+class = "CommandLauncherPlugin"
+
+[provides]
+services = ["command-launcher"]
+tags = ["desktop", "input", "launcher"]

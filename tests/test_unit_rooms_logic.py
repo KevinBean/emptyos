@@ -364,42 +364,92 @@ class TestResolveResponder:
         agents = {"curator": {"id": "curator", "name": "Curator"}}
 
         class _F(RoomsApp):
+            def __init__(self):
+                self.select_calls = []
+                self.select_return = None
+
             def _load_agent(self, aid):
                 return agents.get(aid)
 
-        return object.__new__(_F)
+            async def select(self, prompt, choices, **kwargs):
+                self.select_calls.append({"prompt": prompt, "choices": choices, **kwargs})
+                default = kwargs.get("default")
+                return self.select_return or default or next(iter(choices))
 
-    def test_no_responders(self, fake_app):
+        return _F()
+
+    @pytest.mark.asyncio
+    async def test_no_responders(self, fake_app):
         parts = [{"type": "user", "id": "me"}]
-        assert fake_app._resolve_responder("hi", parts) is None
+        result, meta = await fake_app._resolve_responder("hi", parts)
+        assert result is None
+        assert meta is None
 
-    def test_single_responder_picked(self, fake_app):
+    @pytest.mark.asyncio
+    async def test_single_responder_picked(self, fake_app):
         parts = [
             {"type": "user", "id": "me"},
             {"type": "agent", "id": "curator"},
         ]
-        assert fake_app._resolve_responder("hi", parts) == {
-            "type": "agent", "id": "curator",
-        }
+        result, meta = await fake_app._resolve_responder("hi", parts)
+        assert result == {"type": "agent", "id": "curator"}
+        assert meta is None
 
-    def test_cli_responder_resolved_by_id(self, fake_app):
+    @pytest.mark.asyncio
+    async def test_cli_responder_resolved_by_id(self, fake_app):
         parts = [
             {"type": "user", "id": "me"},
             {"type": "agent", "id": "curator"},
             {"type": "cli", "id": "claude-cli"},
         ]
-        result = fake_app._resolve_responder("@claude-cli help", parts)
+        result, meta = await fake_app._resolve_responder("@claude-cli help", parts)
         assert result["type"] == "cli"
         assert result["id"] == "claude-cli"
+        assert meta is None
 
-    def test_user_never_resolved(self, fake_app):
+    @pytest.mark.asyncio
+    async def test_user_never_resolved(self, fake_app):
         parts = [
             {"type": "user", "id": "me"},
             {"type": "agent", "id": "curator"},
         ]
         # @me is unknown to the responder pool → falls back to first responder
-        assert fake_app._resolve_responder("@me", parts) == {
-            "type": "agent", "id": "curator",
+        result, meta = await fake_app._resolve_responder("@me", parts)
+        assert result == {"type": "agent", "id": "curator"}
+        assert meta is None
+
+    @pytest.mark.asyncio
+    async def test_fallback_without_auto_route_stays_first(self, fake_app):
+        """Regression contract: room absent, or auto_route not set/false,
+        must behave byte-identically to pre-auto-route behaviour — no
+        select() call, first responder wins, meta is None."""
+        parts = [
+            {"type": "user", "id": "me"},
+            {"type": "agent", "id": "curator"},
+            {"type": "cli", "id": "codex"},
+        ]
+        result, meta = await fake_app._resolve_responder(
+            "no mention here", parts, room={"auto_route": False},
+        )
+        assert result == {"type": "agent", "id": "curator"}
+        assert meta is None
+        assert fake_app.select_calls == []
+
+    @pytest.mark.asyncio
+    async def test_auto_route_dispatches_via_select(self, fake_app):
+        parts = [
+            {"type": "user", "id": "me"},
+            {"type": "agent", "id": "curator", "specialty": "editorial review"},
+            {"type": "cli", "id": "codex", "specialty": "mechanical bulk edits"},
+        ]
+        fake_app.select_return = "codex"
+        result, meta = await fake_app._resolve_responder(
+            "rename this variable everywhere", parts, room={"auto_route": True},
+        )
+        assert result["id"] == "codex"
+        assert meta == {"reason": "auto-routed to codex"}
+        assert fake_app.select_calls[0]["choices"] == {
+            "curator": "editorial review", "codex": "mechanical bulk edits",
         }
 
 
@@ -595,6 +645,11 @@ class TestGateServerActions:
         inst = object.__new__(_F)
         inst.kernel = _FakeKernel()
         inst._emitted_ref = emitted
+        # `object.__new__` skips BaseApp.__init__, so the tracked-task set that
+        # `spawn_background` appends to does not exist. The auto-apply path
+        # spawns one, so without this the gate tests die on AttributeError
+        # instead of exercising the gate.
+        inst._bg_tasks = set()
         return inst
 
     @pytest.mark.asyncio
@@ -682,6 +737,11 @@ class TestGateAutoStableDefault:
         inst.kernel = _FakeKernel()
         inst._emitted_ref = emitted
         inst._called_ref = called
+        # `object.__new__` skips BaseApp.__init__, so the tracked-task set that
+        # `spawn_background` appends to does not exist. The auto-apply path
+        # spawns one, so without this the gate tests die on AttributeError
+        # instead of exercising the gate.
+        inst._bg_tasks = set()
         return inst
 
     @pytest.mark.asyncio
@@ -747,6 +807,11 @@ class TestEditPending:
         inst = object.__new__(_F)
         inst.kernel = _FakeKernel()
         inst._called_ref = called
+        # `object.__new__` skips BaseApp.__init__, so the tracked-task set that
+        # `spawn_background` appends to does not exist. The auto-apply path
+        # spawns one, so without this the gate tests die on AttributeError
+        # instead of exercising the gate.
+        inst._bg_tasks = set()
         return inst
 
     async def _gate_one(self, app, token='[DO:task.add({"text":"buy milk"})]'):
@@ -843,6 +908,11 @@ class TestGateBudgetCeiling:
         inst = object.__new__(_F)
         inst.kernel = _FakeKernel()
         inst._called_ref = called
+        # `object.__new__` skips BaseApp.__init__, so the tracked-task set that
+        # `spawn_background` appends to does not exist. The auto-apply path
+        # spawns one, so without this the gate tests die on AttributeError
+        # instead of exercising the gate.
+        inst._bg_tasks = set()
         return inst
 
     @pytest.mark.asyncio
@@ -908,6 +978,11 @@ class TestGateModeBridge:
         inst.kernel = _FakeKernel()
         inst._emitted_ref = emitted
         inst._called_ref = called
+        # `object.__new__` skips BaseApp.__init__, so the tracked-task set that
+        # `spawn_background` appends to does not exist. The auto-apply path
+        # spawns one, so without this the gate tests die on AttributeError
+        # instead of exercising the gate.
+        inst._bg_tasks = set()
         return inst
 
     @pytest.mark.asyncio
@@ -1000,6 +1075,11 @@ class TestWriteNoteSandbox:
         inst = object.__new__(_F)
         inst.kernel = _FakeKernel()
         inst._emitted_ref = emitted
+        # `object.__new__` skips BaseApp.__init__, so the tracked-task set that
+        # `spawn_background` appends to does not exist. The auto-apply path
+        # spawns one, so without this the gate tests die on AttributeError
+        # instead of exercising the gate.
+        inst._bg_tasks = set()
         return inst, vault_dir
 
     @pytest.mark.asyncio
@@ -1365,6 +1445,92 @@ class TestTeamVerbs:
         app._team_finish_run("team-room", "done")
         run = app.team_list("team-room")["run"]
         assert run["active"] is False and run["reason"] == "done"
+
+    @pytest.mark.asyncio
+    async def test_worker_turn_timeout_blocks_task_and_finishes_run(self, app, monkeypatch):
+        """A hung WORKER turn must not freeze the run: team.py wraps that turn
+        in `asyncio.wait_for(..., TEAM_TURN_TIMEOUT_S)`, blocks the task, and
+        closes the run with reason 'turn_timeout'.
+
+        Scope note: this pins the WORKER turn. The lead turn a few lines below
+        it in `_team_dispatch_loop` has its own guard sharing the same constant
+        but a deliberately different timeout policy (it leaves the task alone)
+        — see test_lead_turn_timeout_finishes_run_without_blocking_task.
+        """
+        task_id = app.team_add_task("team-room", "ship it", "w1")["task"]["id"]
+
+        async def _hanging_turn(room, participant, text, *, reply_to="",
+                                source="chat", apply_team_tokens=False):
+            await asyncio.sleep(30)  # far beyond the patched timeout
+            return {"reply": "unreachable"}
+
+        monkeypatch.setattr(type(app), "_run_participant_turn",
+                            staticmethod(_hanging_turn))
+        monkeypatch.setattr(sys.modules["apps.rooms.team"],
+                            "TEAM_TURN_TIMEOUT_S", 0.01)
+
+        # Inside a running loop team_start_run fire-and-forgets the dispatch
+        # loop into _bg_tasks (team.py:295-300), so awaiting that task drives
+        # the real production wiring rather than calling the loop by hand.
+        app._bg_tasks = set()
+        app.team_start_run("team-room", max_turns=3)
+        assert app._bg_tasks, "team_start_run did not spawn the dispatch loop"
+        loop_task = next(iter(app._bg_tasks))
+
+        # Bounded so losing the guard fails the test instead of hanging pytest.
+        try:
+            await asyncio.wait_for(loop_task, timeout=5)
+        except (TimeoutError, asyncio.TimeoutError):
+            pytest.fail("dispatch loop hung — the worker-turn wait_for guard is gone")
+
+        run = app.team_list("team-room")["run"]
+        assert run["active"] is False
+        assert run["reason"] == "turn_timeout"
+        task = app._team_find_task(app._load_agent("team-room"), task_id)
+        assert task["status"] == "blocked"
+        assert "timed out" in (task.get("result") or "")
+
+    @pytest.mark.asyncio
+    async def test_lead_turn_timeout_finishes_run_without_blocking_task(self, app, monkeypatch):
+        """A hung LEAD turn must not freeze the run either.
+
+        Deliberately NOT a mirror of the worker branch: by the time the lead
+        reacts, the worker has already finished the task and its result is
+        recorded, so the task keeps status 'done' and its result. Only the
+        lead's reaction is lost, and the run closes with a distinct reason so
+        the surfaced '(last run: ...)' says which side hung.
+        """
+        task_id = app.team_add_task("team-room", "ship it", "w1")["task"]["id"]
+
+        async def _worker_ok_lead_hangs(room, participant, text, *, reply_to="",
+                                        source="chat", apply_team_tokens=False):
+            if participant["id"] == "lead1":
+                await asyncio.sleep(30)  # far beyond the patched timeout
+                return {"reply": "unreachable"}
+            return {"reply": "worker done"}
+
+        monkeypatch.setattr(type(app), "_run_participant_turn",
+                            staticmethod(_worker_ok_lead_hangs))
+        monkeypatch.setattr(sys.modules["apps.rooms.team"],
+                            "TEAM_TURN_TIMEOUT_S", 0.01)
+
+        app._bg_tasks = set()
+        app.team_start_run("team-room", max_turns=3)
+        assert app._bg_tasks, "team_start_run did not spawn the dispatch loop"
+        loop_task = next(iter(app._bg_tasks))
+
+        try:
+            await asyncio.wait_for(loop_task, timeout=5)
+        except (TimeoutError, asyncio.TimeoutError):
+            pytest.fail("dispatch loop hung — the lead-turn wait_for guard is gone")
+
+        run = app.team_list("team-room")["run"]
+        assert run["active"] is False
+        assert run["reason"] == "lead_turn_timeout"
+        # The worker's completed work survives the lead's timeout.
+        task = app._team_find_task(app._load_agent("team-room"), task_id)
+        assert task["status"] == "done"
+        assert task["result"] == "worker done"
 
 
 # ── run_panel forum loop (diverge → moderate → converge) ───────────────
@@ -1782,17 +1948,63 @@ class TestUnknownEffectVisibility:
         })
         return aid
 
-    def test_open_status_includes_pending_and_approving(self, app, tmp_path):
+    @pytest.mark.asyncio
+    async def test_open_status_includes_pending_and_approving(self, app, tmp_path):
         self._wire(app, tmp_path)
         self._seed(app, "act-p", "pending")
         self._seed(app, "act-a", "approving")
         self._seed(app, "act-done", "applied")
 
-        ids = {a["id"] for a in app.list_pending(status="open")}
+        ids = {a["id"] for a in await app.list_pending(status="open")}
         assert ids == {"act-p", "act-a"}, "open must surface the stuck claim"
         # Exact-match statuses keep working for existing callers.
-        assert {a["id"] for a in app.list_pending(status="pending")} == {"act-p"}
-        assert {a["id"] for a in app.list_pending(status="approving")} == {"act-a"}
+        assert {a["id"] for a in await app.list_pending(status="pending")} == {"act-p"}
+        assert {a["id"] for a in await app.list_pending(status="approving")} == {"act-a"}
+
+    @pytest.mark.asyncio
+    async def test_scan_does_not_block_the_event_loop(self, app, tmp_path, monkeypatch):
+        """A slow scan must not stall anything else on the loop.
+
+        Regression for the 2026-08-15 wedge: ``list_pending`` was a plain
+        ``def``, and ``call_app`` runs a sync target inline, so the whole
+        pending directory was read on the event loop. Two rooms hub panels do
+        it, the hub fans out 114 panels, and 357 accumulated action files were
+        enough to stop the daemon answering ``/api/health`` for 50s.
+
+        Asserting "is it async" would pass on a coroutine that still blocks, so
+        this drives a genuinely slow scan and counts how much other work runs
+        **while it is in flight**. Counting ticks that merely finish eventually
+        does not work — they do, just afterwards — and a first draft of this
+        test passed against the blocking version for exactly that reason.
+        """
+        import time
+
+        self._wire(app, tmp_path)
+        pending_mod = sys.modules["apps.rooms.pending"]
+        monkeypatch.setattr(
+            pending_mod, "_scan_pending",
+            lambda *a, **kw: (time.sleep(0.30), [])[1],
+        )
+
+        scan_done = False
+        ticks_during = 0
+
+        async def scan():
+            nonlocal scan_done
+            await app.list_pending(status="open")
+            scan_done = True
+
+        async def ticker():
+            nonlocal ticks_during
+            while not scan_done and ticks_during < 200:
+                await asyncio.sleep(0.01)
+                ticks_during += 1
+
+        await asyncio.gather(scan(), ticker())
+        assert ticks_during >= 10, (
+            f"loop stalled during the scan — only {ticks_during} ticks ran "
+            "before it returned; the directory read is back on the event loop"
+        )
 
     @pytest.mark.asyncio
     async def test_resolve_unknown_never_re_executes(self, app, tmp_path):

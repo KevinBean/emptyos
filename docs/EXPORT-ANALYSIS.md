@@ -48,7 +48,7 @@ The conventions (`render-from-STATE`, `[data-online-only]`, `[provides.export].f
 
 - `[provides.export]` manifest section: `enabled`, `mode = "standalone"`, `fallbacks = [...]`, `hook = "export"`.
 - Optional `apps/<id>/export.py` with up to three callables: `export_state(app)`, `stub_routes()`, `client_overrides()`.
-- **Reference implementation**: `apps/boards/export.py` (191 lines) — full hook. `export_state` snapshots boards/items/presets, `stub_routes` declares GET path → snapshot key mappings, `client_overrides` returns ~120 lines of inline JS that registers POST/PATCH/DELETE handlers and emits in-page events.
+- **Reference implementation**: `apps/public/standard/boards/export.py` (191 lines) — full hook. `export_state` snapshots boards/items/presets, `stub_routes` declares GET path → snapshot key mappings, `client_overrides` returns ~120 lines of inline JS that registers POST/PATCH/DELETE handlers and emits in-page events.
 
 ### Documentation + tests
 
@@ -84,7 +84,7 @@ The conventions (`render-from-STATE`, `[data-online-only]`, `[provides.export].f
 ### Tier 1 — Make group export actually work
 
 - **Auto-generate cross-app RPC registration in `GroupExporter._rewrite_sub_app_html`**: emit a `<script>` that walks every bundled app's `@web_route` method and registers a handler that does an in-page `fetch('/<other-app>/api/<path>')` (which the shim already routes correctly via the merged routes table + handlers). This is ~30 lines in `exporter.py` and unblocks every group bundle. Critical file: `emptyos/sdk/exporter.py:553`.
-- **Add `client_overrides` for the four group members that don't have one** (task, projects, people, quick-action) — at minimum the POST/PATCH/DELETE handlers that mirror their `set_field` / `add` write paths so writes don't silently lose semantics. Use `apps/boards/export.py` as the template. Each is ~60-100 lines.
+- **Add `client_overrides` for the four group members that don't have one** (task, projects, people, quick-action) — at minimum the POST/PATCH/DELETE handlers that mirror their `set_field` / `add` write paths so writes don't silently lose semantics. Use `apps/public/standard/boards/export.py` as the template. Each is ~60-100 lines.
 
 ### Tier 2 — Make capabilities real
 
@@ -94,7 +94,7 @@ The conventions (`render-from-STATE`, `[data-online-only]`, `[provides.export].f
 
 ### Tier 3 — Per-app conformance
 
-- **Migrate three high-value pages to render-from-STATE**: journal, task, boards. Pattern: read from `window.EOS_EXPORT_DATA` if set, else fetch. Pure `render(STATE)` function. Critical files: `apps/journal/pages/index.html`, `apps/task/pages/index.html`, `apps/boards/pages/index.html`.
+- **Migrate three high-value pages to render-from-STATE**: journal, task, boards. Pattern: read from `window.EOS_EXPORT_DATA` if set, else fetch. Pure `render(STATE)` function. Critical files: `apps/public/standard/journal/pages/index.html`, `apps/public/core/task/pages/index.html`, `apps/public/standard/boards/pages/index.html`.
 - **Apply `[data-online-only]`** to AI buttons + voice mic + "open in viewer" affordances across journal, task, capture, boards. The shim already dims + tooltips them; the work is just adding the attribute.
 - **Add `[provides.export].assets`** opt-in (default = "minimal" bundle of `theme.css + eos.js + eos-components.{js,css} + eos-export-shim.js`). Critical file: `emptyos/sdk/exporter.py:44`.
 
@@ -122,11 +122,11 @@ End-to-end smoke for any of the above:
 |---|---|
 | `emptyos/sdk/exporter.py` | Auto-RPC registration (Tier 1), `[provides.export].assets` opt-in (Tier 3), `_meta/capabilities.json` (Tier 4) |
 | `emptyos/web/static/eos-export-shim.js` | BYOK think/speak wiring + consent gate (Tier 2), explicit stubs for unfallback'd capabilities |
-| `apps/task/export.py` *(new)* | `client_overrides` for task POST/PATCH/DELETE (Tier 1) |
-| `apps/projects/export.py` *(new)* | Same, for projects |
-| `apps/people/export.py` *(new)* | Same, for people |
-| `apps/quick-action/export.py` *(new)* | Same, for capture/quick-action |
-| `apps/journal/pages/index.html`, `apps/task/pages/index.html`, `apps/boards/pages/index.html` | Render-from-STATE migration + `[data-online-only]` gating (Tier 3) |
+| `apps/public/core/task/export.py` *(new)* | `client_overrides` for task POST/PATCH/DELETE (Tier 1) |
+| `apps/public/standard/projects/export.py` *(new)* | Same, for projects |
+| `apps/public/standard/people/export.py` *(new)* | Same, for people |
+| `apps/public/core/quick-action/export.py` *(new)* | Same, for capture/quick-action |
+| `apps/public/standard/journal/pages/index.html`, `apps/public/core/task/pages/index.html`, `apps/public/standard/boards/pages/index.html` | Render-from-STATE migration + `[data-online-only]` gating (Tier 3) |
 | `tests/test_sys_export_groups.py` | Add cross-app RPC assertion + bundle-size budget |
 | `docs/EXPORT.md` *(new)* | Single canonical user-facing doc (Tier 4) |
 

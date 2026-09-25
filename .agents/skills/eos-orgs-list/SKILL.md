@@ -1,11 +1,11 @@
 ---
 name: eos-orgs-list
-description: List Real Orgs registered in `apps/company/`. Use when the user asks "which orgs do I have", "list my companies", "show all teams", "what orgs are in the system", or wants to look up an org id before invoking `eos-orgs-member-add`. Read-only — never creates or modifies.
+description: List Real Orgs registered in `apps/public/standard/company/`. Use when the user asks "which orgs do I have", "list my companies", "show all teams", "what orgs are in the system", or wants to look up an org id before invoking `eos-orgs-member-add`. Read-only — never creates or modifies. NOT for creating an org (use eos-orgs-create) or adding a member (use eos-orgs-member-add).
 ---
 
 # EmptyOS Orgs — List
 
-Read-only listing of orgs from `apps/company/`. Wraps `GET /orgs/api/orgs` with optional filters. Useful as a precursor to `eos-orgs-member-add` (which needs an org id) or just to confirm what the system already knows.
+Read-only listing of orgs from `apps/public/standard/company/`. Wraps `GET /orgs/api/orgs` with optional filters. Useful as a precursor to `eos-orgs-member-add` (which needs an org id) or just to confirm what the system already knows.
 
 ## When to Use
 
@@ -13,6 +13,14 @@ Read-only listing of orgs from `apps/company/`. Wraps `GET /orgs/api/orgs` with 
 - Before `eos-orgs-member-add` — to find the target org's id
 - To check whether an org already exists before invoking `eos-orgs-create`
 - **Not** for inspecting one org's members — use the web UI at `/orgs/?org=<id>` for that (richer detail surface)
+
+## Pre-flight
+
+This skill reads through the daemon HTTP API, so the daemon must be reachable first:
+
+- **Daemon up** — `curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:9000/orgs/` should print `200`. If not, ask the user to run `restart.bat` — never start/restart the daemon yourself (`.claude/rules/daemon-handling.md`).
+- **Auth (private mode)** — read `auth_token` from `emptyos.toml` `[network]` and send `Authorization: Bearer <token>` on every request (`.claude/rules/environment.md`).
+- **Read-only** — this skill never creates or modifies; a failed call means the daemon or auth is off, not bad data.
 
 ## Filters
 

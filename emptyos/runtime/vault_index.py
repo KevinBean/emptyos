@@ -21,6 +21,16 @@ import time
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+# The frontmatter parser used to live here too, as a near-verbatim copy of the
+# SDK's. They drifted three separate ways — empty scalars by position, quoted
+# empties, and where the block ends — each found only after the previous fix.
+# One implementation now, top-level so this module can reach it without
+# importing `emptyos.sdk` (which would run its package __init__ and pull in
+# base_app). The private aliases are kept because this module's four internal
+# call sites and the tests use them.
+from emptyos.frontmatter import fm_end as _fm_end  # noqa: F401
+from emptyos.frontmatter import parse_frontmatter as _parse_fm  # noqa: F401
+
 if TYPE_CHECKING:
     from emptyos.kernel import Kernel
 
@@ -54,90 +64,6 @@ def _read_may_block(stat_res) -> bool:
     return bool(getattr(stat_res, "st_flags", 0) & _SF_DATALESS)
 
 
-def _fm_end(content: str) -> int:
-    """Offset of the closing `---` LINE of a frontmatter block, or -1.
-
-    Line-anchored on purpose. A bare ``content.find("---", 3)`` matches `---`
-    anywhere — including inside a quoted value (`title: A---B`) — and silently
-    truncates the block, dropping every key after it. Every frontmatter split in
-    this module goes through here so the parser and the body-splitter can never
-    disagree about where the block ends.
-    """
-    nl = content.find("\n", 3)
-    if nl < 0:
-        return -1
-    pos = nl + 1
-    while pos < len(content):
-        nxt = content.find("\n", pos)
-        line = content[pos:] if nxt < 0 else content[pos:nxt]
-        if line.strip() == "---":
-            return pos
-        if nxt < 0:
-            return -1
-        pos = nxt + 1
-    return -1
-
-
-def _parse_fm(content: str) -> dict:
-    """Parse YAML frontmatter from markdown. Handles simple lists."""
-    if not content.startswith("---"):
-        return {}
-    end = _fm_end(content)
-    if end < 0:
-        return {}
-    fm: dict = {}
-    current_key: str | None = None
-    current_list: list[str] | None = None
-    for line in content[3:end].strip().split("\n"):
-        stripped = line.strip()
-        if stripped.startswith("- ") and current_key is not None and current_list is not None:
-            current_list.append(stripped[2:].strip().strip('"').strip("'"))
-            continue
-        if current_key is not None and current_list is not None:
-            fm[current_key] = current_list
-            current_key = None
-            current_list = None
-        if ":" in line and not stripped.startswith("-"):
-            key, _, val = line.partition(":")
-            key = key.strip()
-            val = val.strip()
-            # Track quote-wrapping so JSON-encoded strings like
-            # `svg_callouts: "[{...}]"` aren't mis-detected as YAML inline
-            # arrays and split on commas. Quoted = always a string.
-            was_quoted = False
-            if len(val) >= 2 and val[0] == val[-1] and val[0] in ('"', "'"):
-                quote_char = val[0]
-                val = val[1:-1]
-                if quote_char == '"':
-                    val = val.replace('\\"', '"').replace("\\\\", "\\")
-                was_quoted = True
-            if val:
-                # Inline YAML arrays "[a, b, c]" → real list (only when the
-                # value wasn't string-quoted). Without this, "[a, b, c]"
-                # stays a malformed string and tag-based lookups miss it.
-                if not was_quoted and val.startswith("[") and val.endswith("]"):
-                    inner = val[1:-1].strip()
-                    fm[key] = (
-                        [t.strip().strip('"').strip("'") for t in inner.split(",") if t.strip()]
-                        if inner
-                        else []
-                    )
-                else:
-                    fm[key] = val
-            elif was_quoted:
-                # Explicit empty string (`key: ""` / `key: ''`) — a string,
-                # NOT the start of a block list. Without this the empty value
-                # opens a block-list that the next key closes as `[]`, so a
-                # str-typed field surfaces as an empty list downstream.
-                fm[key] = ""
-            else:
-                current_key = key
-                current_list = []
-    if current_key is not None and current_list is not None:
-        fm[current_key] = current_list if current_list else ""
-    return fm
-
-
 def _has_newline(sv: str) -> bool:
     return "\n" in sv or "\r" in sv
 
@@ -158,6 +84,39 @@ def _yaml_quote_oneline(sv: str) -> str:
     return f'"{sv}"'
 
 
+def _yaml_flow_scalar(v) -> str:
+    """A single value as a YAML flow scalar — quoted only when it must be,
+    so plain numbers/words stay unquoted inside a flow map/sequence."""
+    if v is None:
+        return "null"
+    if isinstance(v, bool):
+        return "true" if v else "false"
+    if isinstance(v, (int, float)):
+        return str(v)
+    sv = str(v)
+    if sv == "" or _has_newline(sv) or any(c in sv for c in ":#{}[]|>&*?!,\"'"):
+        return _yaml_quote_oneline(sv)
+    return sv
+
+
+def _yaml_flow(v) -> str:
+    """Recursively render a Python value as one-line YAML flow syntax
+    (``{k: v, ...}`` / ``[a, b, ...]``) — the nested-value counterpart to
+    the scalar/list handling below.
+
+    Used for a dict-valued frontmatter field (e.g. the geo.md ``geo:``
+    block: ``{type: MultiPoint, coordinates: [[lon, lat], ...]}``).
+    Flow style keeps the whole value on ONE physical line, preserving
+    `_serialize_fm`'s "one key = one physical line" invariant instead of
+    needing a block-style multi-line mapping.
+    """
+    if isinstance(v, dict):
+        return "{" + ", ".join(f"{k}: {_yaml_flow(vv)}" for k, vv in v.items()) + "}"
+    if isinstance(v, (list, tuple)):
+        return "[" + ", ".join(_yaml_flow(vv) for vv in v) + "]"
+    return _yaml_flow_scalar(v)
+
+
 def _serialize_fm(fm: dict) -> str:
     """Convert dict to YAML frontmatter block.
 
@@ -173,7 +132,15 @@ def _serialize_fm(fm: dict) -> str:
     - Other special chars (`: # { } [ ] | > & * ? ! ,`) → double-quoted.
 
     Invariant: one key emits exactly one physical line (plus one line per list
-    item). Pinned by tests/test_unit_vault_fm_injection.py.
+    item, or the single flow-style line for a dict value — see `_yaml_flow`).
+    Pinned by tests/test_unit_vault_fm_injection.py.
+
+    A dict value (e.g. the geo.md `geo:` block) is rendered as one-line YAML
+    flow syntax via `_yaml_flow` — NOT `str(v)`. Before this, `str({...})`
+    produced Python's dict repr (single-quoted keys, no real YAML structure),
+    which the parser reads back as an opaque STRING rather than a mapping —
+    silently breaking every app following the geo.md `geo:` block convention
+    the moment it round-tripped through a read.
     """
     lines = ["---"]
     for k, v in fm.items():
@@ -184,6 +151,8 @@ def _serialize_fm(fm: dict) -> str:
             for item in v:
                 si = str(item)
                 lines.append(f"  - {_yaml_quote_oneline(si) if _has_newline(si) else si}")
+        elif isinstance(v, dict):
+            lines.append(f"{k}: {_yaml_flow(v)}")
         elif isinstance(v, (int, float, bool)):
             lines.append(f"{k}: {v}")
         else:

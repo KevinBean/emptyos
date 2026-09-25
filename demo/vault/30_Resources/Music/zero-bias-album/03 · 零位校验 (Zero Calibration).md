@@ -14,10 +14,8 @@ language: zh
 bpm: 80
 duration: "4:02"
 date_created: 2026-04-25
-suno_url: "https://suno.com/song/e1a806ee-21ea-4d9c-9b59-5fb339450165"
-suno_song_id: e1a806ee-21ea-4d9c-9b59-5fb339450165
-suno_model: v5.5
-suno_created: 2026-04-25T11:57:00
+model_version: v5.5
+published_at: 2026-04-25T11:57:00
 license: "© 2026 3:30 Channel — All rights reserved"
 ---
 
@@ -98,7 +96,4 @@ Now... Zero... Out...
 
 ## 版权证明 / Copyright proof
 
-![[03 · 零位校验 (Zero Calibration)-screenshot.png]]
-
-Suno publication: **April 25, 2026 at 11:57 AM** (v5.5).
-Source: https://suno.com/song/e1a806ee-21ea-4d9c-9b59-5fb339450165
+Published: **April 25, 2026 at 11:57 AM** (v5.5).

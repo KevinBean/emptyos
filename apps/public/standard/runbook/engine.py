@@ -321,6 +321,12 @@ def block_statuses(self, runbook_id: str, blocks: list) -> list[dict]:
             "parse_error": b.parse_error,
             "status": status, "ran_at": ran_at,
             "output_preview": bs.get("output_preview"),
+            # value_kind (runbook-no-rich-output): the VALUE's shape (table /
+            # artifact-ref / number / json / text), not the block's own type —
+            # a calculate block can yield number or json, so the frontend must
+            # branch rendering on this, not on `type`. Full value is fetched
+            # lazily via GET .../block/{id}/output only for table/artifact-ref.
+            "value_kind": bs.get("value_kind"),
             "error": bs.get("error"), "verb": bs.get("verb"),
         })
     return out

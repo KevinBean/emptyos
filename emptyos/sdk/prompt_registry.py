@@ -269,11 +269,19 @@ def _write_overrides(path: Path, overrides: dict) -> None:
     _CACHE = None
 
 
+MAX_OVERRIDE_HISTORY = 10
+
+
 def set_override(key: str, text: str, *, path: Path | None = None, note: str = "") -> dict:
     """Validated write of one override. Returns ``{"ok": True, ...}`` or
     ``{"ok": False, "error": ..., "expected": [...]}. Unregistered keys and
     placeholder mismatches are rejected — the UI/CLI is the *validated* write
-    path (hand-editing the JSON bypasses this and degrades to fall-back)."""
+    path (hand-editing the JSON bypasses this and degrades to fall-back).
+
+    The overwritten value (if any) is pushed onto a bounded ``history`` list
+    (newest first, capped at ``MAX_OVERRIDE_HISTORY``) so a bad edit can be
+    rolled back via ``rollback_override`` — found missing during the 2026-08
+    gap-analysis pass; every prior override was silently discarded."""
     path = Path(path) if path is not None else overrides_path()
     entry = _REGISTRY.get(key)
     if entry is None:
@@ -290,9 +298,42 @@ def set_override(key: str, text: str, *, path: Path | None = None, note: str = "
                 "got": sorted(got) if got is not None else None,
             }
     overrides = load_overrides(path)
+    prior = overrides.get(key)
+    history = list(prior.get("history") or []) if prior else []
+    if prior and prior.get("text") != text:
+        history.insert(0, {"text": prior["text"], "updated": prior.get("updated", ""), "note": prior.get("note", "")})
+        history = history[:MAX_OVERRIDE_HISTORY]
     overrides[key] = {"text": text, "updated": datetime.now().isoformat(timespec="seconds")}
     if note:
         overrides[key]["note"] = note
+    if history:
+        overrides[key]["history"] = history
+    _write_overrides(path, overrides)
+    return {"ok": True, "key": key}
+
+
+def rollback_override(key: str, index: int, *, path: Path | None = None) -> dict:
+    """Restore history entry ``index`` (0 = most recent prior value) as the
+    current override, pushing the current value into history in its place.
+    Returns ``{"ok": False, "error": ...}`` for an unregistered key, no
+    override, or an out-of-range index."""
+    path = Path(path) if path is not None else overrides_path()
+    overrides = load_overrides(path)
+    current = overrides.get(key)
+    if not current:
+        return {"ok": False, "error": f"no override exists for {key!r}"}
+    history = list(current.get("history") or [])
+    if not (0 <= index < len(history)):
+        return {"ok": False, "error": f"history index {index} out of range (0..{len(history) - 1})"}
+    restored = history.pop(index)
+    history.insert(0, {"text": current["text"], "updated": current.get("updated", ""), "note": current.get("note", "")})
+    overrides[key] = {
+        "text": restored["text"],
+        "updated": datetime.now().isoformat(timespec="seconds"),
+        "history": history[:MAX_OVERRIDE_HISTORY],
+    }
+    if restored.get("note"):
+        overrides[key]["note"] = restored["note"]
     _write_overrides(path, overrides)
     return {"ok": True, "key": key}
 

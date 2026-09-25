@@ -91,8 +91,8 @@ var _appSettings = EOS_UI.settingsPanel({
          options: VISUAL_STYLE_ORDER.map(function(k){ return {value:k, label:VISUAL_STYLES[k].label}; })},
         {key: 'ppt.embed_base', label: 'Embed host (live)', type: 'text', default: '',
          hint: "Prepend to ![embed: /journal/] etc. Empty = current host. Override per-deck via 'embed_base:' in frontmatter."},
-        {key: 'ppt.export_embed_base', label: 'Embed host (exported HTML)', type: 'text', default: 'https://demo.binbian.net',
-         hint: "Used by Export HTML so standalone bundles don't point at localhost. Falls back to ppt.embed_base if blank."},
+        {key: 'ppt.export_embed_base', label: 'Embed host (exported HTML)', type: 'text', default: '',
+         hint: "A publicly-reachable URL for this daemon so exported bundles don't embed localhost. Falls back to ppt.embed_base if blank; if both are blank, Export HTML warns instead."},
     ],
     // NOTE: hand-listed (not `app: 'ppt'`) because default_visual_style's options
     // are derived from VISUAL_STYLE_ORDER at runtime — a manifest can't express
@@ -170,18 +170,29 @@ async function deleteDeck(id) {
     if (!ok) return;
     var r = await fetch('/ppt/api/decks/' + encodeURIComponent(id), {method: 'DELETE'});
     var data = await r.json();
-    if (data.error) { EOS_UI.toast(data.error, 'error'); return; }
+    if (data.error) { EOS_UI.toast(data.error, false); return; }
     EOS_UI.toast('Deleted: ' + label);
     if (STATE.currentId === id) { STATE.currentId = null; _route.clear(); }
     await load();
 }
 
+// The generate-from-plan provenance chip attaches to #edit-pane and nothing
+// retracts it on its own (a deck GET is a different endpoint), so it is cleared
+// whenever the pane shows a deck other than the one that was just generated.
+var _generatedDeckId = null;
+function clearGenerateProvenance() {
+    var pane = document.getElementById('edit-pane');
+    var chip = pane && pane.nextElementSibling;
+    if (chip && chip.classList.contains('eos-auto-provenance')) chip.remove();
+    if (pane) pane.removeAttribute('data-prov-path');
+}
 async function showDeck(id) {
+    if (id !== _generatedDeckId) clearGenerateProvenance();
     STATE.currentId = id;
     renderList();
     var r = await fetch('/ppt/api/decks/' + encodeURIComponent(id));
     var deck = await r.json();
-    if (deck.error) { EOS_UI.toast(deck.error, 'error'); return; }
+    if (deck.error) { EOS_UI.toast(deck.error, false); return; }
     STATE.currentDeck = deck;
     document.getElementById('empty').hidden = true;
     document.getElementById('toolbar').hidden = false;
@@ -210,6 +221,7 @@ async function showDeck(id) {
     };
 }
 function showEmpty() {
+    clearGenerateProvenance();
     STATE.currentId = null;
     STATE.currentDeck = null;
     renderList();
@@ -343,13 +355,13 @@ async function setDeckStyle(field, value) {
             body: JSON.stringify(body),
         });
         var data = await r.json();
-        if (data.error) { EOS_UI.toast(data.error, 'error'); return; }
+        if (data.error) { EOS_UI.toast(data.error, false); return; }
         await rePreviewFromEditor();
         await load();
         if (!dirtyBefore) STATE.dirty = false;
         updateDeckStatus();
     } catch (e) {
-        EOS_UI.toast('Style update failed: ' + (e.message || e), 'error');
+        EOS_UI.toast('Style update failed: ' + (e.message || e), false);
     }
 }
 
@@ -554,7 +566,7 @@ function duplicateBoardSlide() {
 function deleteBoardSlide() {
     var st = STATE.slideBoard;
     if (!st || st.parts.slides.length <= 1) {
-        EOS_UI.toast('Keep at least one slide', 'error');
+        EOS_UI.toast('Keep at least one slide', false);
         return;
     }
     st.parts.slides.splice(st.selected, 1);
@@ -620,7 +632,7 @@ async function saveCurrent() {
         body: JSON.stringify({raw: raw}),
     });
     var data = await r.json();
-    if (data.error) { EOS_UI.toast(data.error, 'error'); return; }
+    if (data.error) { EOS_UI.toast(data.error, false); return; }
     EOS_UI.toast('Saved');
     STATE.dirty = false;
     updateDeckStatus();
@@ -630,8 +642,17 @@ async function exportCurrent() {
     if (!STATE.currentId) return;
     var r = await fetch('/ppt/api/decks/' + encodeURIComponent(STATE.currentId) + '/export', {method:'POST'});
     var data = await r.json();
-    if (data.error) { EOS_UI.toast(data.error, 'error'); return; }
+    if (data.error) { EOS_UI.toast(data.error, false); return; }
+    if (data.warning) EOS_UI.toast(data.warning);
     EOS_UI.toast('Exported → ' + data.rel);
+}
+async function exportPdf() {
+    if (!STATE.currentId) return;
+    EOS_UI.toast('Rendering PDF (one page per slide) — this takes a few seconds…');
+    var r = await fetch('/ppt/api/decks/' + encodeURIComponent(STATE.currentId) + '/export?format=pdf', {method:'POST'});
+    var data = await r.json();
+    if (data.error) { EOS_UI.toast(data.error, false); return; }
+    EOS_UI.toast('Exported ' + data.slides + ' slide(s) → ' + data.rel);
 }
 function presentCurrent() {
     if (!STATE.currentId) return;
@@ -648,7 +669,7 @@ async function toPodcast() {
     EOS_UI.toast('Generating podcast (this takes a while)…');
     var r = await fetch('/ppt/api/decks/' + encodeURIComponent(STATE.currentId) + '/to-podcast', {method: 'POST'});
     var data = await r.json();
-    if (data.error) { EOS_UI.toast(data.error, 'error'); return; }
+    if (data.error) { EOS_UI.toast(data.error, false); return; }
     EOS_UI.toast('Episode ready → /podcast/');
 }
 
@@ -662,7 +683,7 @@ async function toPost() {
     if (!ok) return;
     var r = await fetch('/ppt/api/decks/' + encodeURIComponent(STATE.currentId) + '/to-post', {method: 'POST'});
     var data = await r.json();
-    if (data.error) { EOS_UI.toast(data.error, 'error'); return; }
+    if (data.error) { EOS_UI.toast(data.error, false); return; }
     EOS_UI.toast('Draft post created → /publish/');
 }
 
@@ -678,7 +699,7 @@ function newFromCanvas() {
             body: JSON.stringify({board_id: board, title: vals.title || ''}),
         });
         var data = await r.json();
-        if (data.error) { EOS_UI.toast(data.error, 'error'); return; }
+        if (data.error) { EOS_UI.toast(data.error, false); return; }
         EOS_UI.toast('Drafted ' + (data.slides || 0) + ' slides');
         await load();
         _route.set(data.id);
@@ -737,7 +758,7 @@ async function regenerateDeck() {
 
         document.getElementById('ppt-regen-go').onclick = async function() {
             var direction = (document.getElementById('ppt-regen-direction').value || '').trim();
-            if (!direction) { EOS_UI.toast('Direction is required', 'error'); return; }
+            if (!direction) { EOS_UI.toast('Direction is required', false); return; }
             var scope = scopeSel.value;
             var elements = readElementChoice();
             var payload = {direction: direction, allowed_elements: elements, scope: scope};
@@ -756,12 +777,12 @@ async function regenerateDeck() {
                     body: JSON.stringify(payload),
                 });
                 var data = await r.json();
-                if (data.error) { EOS_UI.toast(data.error, 'error'); return; }
+                if (data.error) { EOS_UI.toast(data.error, false); return; }
                 await showDeck(STATE.currentId);
                 load();
                 EOS_UI.toast('Regenerated · ' + (data.slides || '?') + ' slides');
             } catch (e) {
-                EOS_UI.toast('Regenerate failed: ' + (e.message || e), 'error');
+                EOS_UI.toast('Regenerate failed: ' + (e.message || e), false);
             } finally {
                 setBusy(null);
             }
@@ -781,13 +802,13 @@ async function resolveImages() {
     try {
         var r = await fetch('/ppt/api/decks/' + encodeURIComponent(STATE.currentId) + '/resolve-images', {method: 'POST'});
         var data = await r.json();
-        if (data.error) { EOS_UI.toast(data.error, 'error'); return; }
+        if (data.error) { EOS_UI.toast(data.error, false); return; }
         var msg = (data.resolved || 0) + ' resolved';
         if ((data.errors || []).length) msg += ', ' + data.errors.length + ' failed';
         EOS_UI.toast(msg);
         await showDeck(STATE.currentId);
     } catch (e) {
-        EOS_UI.toast('Resolve failed: ' + (e.message || e), 'error');
+        EOS_UI.toast('Resolve failed: ' + (e.message || e), false);
     } finally {
         setBusy(null);
     }
@@ -950,14 +971,14 @@ async function narrateCurrent() {
             body: JSON.stringify(body),
         });
         var data = await r.json();
-        if (data.error) { EOS_UI.toast(data.error, 'error'); return; }
+        if (data.error) { EOS_UI.toast(data.error, false); return; }
         var msg = (data.generated || 0) + ' track' + (data.generated === 1 ? '' : 's') + ' generated';
         if (data.skipped) msg += ', ' + data.skipped + ' skipped (no notes)';
         if ((data.errors || []).length) msg += ', ' + data.errors.length + ' failed';
         EOS_UI.toast(msg);
         await showDeck(STATE.currentId);
     } catch (e) {
-        EOS_UI.toast('Narrate failed: ' + (e.message || e), 'error');
+        EOS_UI.toast('Narrate failed: ' + (e.message || e), false);
     } finally {
         setBusy(null);
     }
@@ -984,14 +1005,14 @@ async function speakifyCurrent() {
             body: JSON.stringify(body),
         });
         var data = await r.json();
-        if (data.error) { EOS_UI.toast(data.error, 'error'); return; }
+        if (data.error) { EOS_UI.toast(data.error, false); return; }
         var msg = (data.rewritten || 0) + ' Say: line' + (data.rewritten === 1 ? '' : 's') + ' written';
         if (data.skipped) msg += ', ' + data.skipped + ' skipped';
         if ((data.errors || []).length) msg += ', ' + data.errors.length + ' failed';
         EOS_UI.toast(msg);
         await showDeck(STATE.currentId);
     } catch (e) {
-        EOS_UI.toast('Speakify failed: ' + (e.message || e), 'error');
+        EOS_UI.toast('Speakify failed: ' + (e.message || e), false);
     } finally {
         setBusy(null);
     }
@@ -1006,10 +1027,10 @@ async function toggleNarration(enabled) {
             body: JSON.stringify({enabled: enabled}),
         });
         var data = await r.json();
-        if (data.error) { EOS_UI.toast(data.error, 'error'); return; }
+        if (data.error) { EOS_UI.toast(data.error, false); return; }
         EOS_UI.toast('Auto-play ' + (enabled ? 'on' : 'off'));
     } catch (e) {
-        EOS_UI.toast('Toggle failed: ' + (e.message || e), 'error');
+        EOS_UI.toast('Toggle failed: ' + (e.message || e), false);
     }
 }
 
@@ -1113,7 +1134,7 @@ async function newDeck() {
         if (!goBtn) return;
         goBtn.onclick = async function() {
             var title = (document.getElementById('ppt-new-title').value || '').trim();
-            if (!title) { EOS_UI.toast('Title is required', 'error'); return; }
+            if (!title) { EOS_UI.toast('Title is required', false); return; }
             var outline = document.getElementById('ppt-new-outline').value || '';
             var audience = (document.getElementById('ppt-new-audience').value || '').trim();
             var duration = parseInt(document.getElementById('ppt-new-duration').value, 10) || 5;
@@ -1135,12 +1156,12 @@ async function newDeck() {
                         }),
                     });
                     var plan = await pr.json();
-                    if (plan.error) { EOS_UI.toast(plan.error, 'error'); return; }
+                    if (plan.error) { EOS_UI.toast(plan.error, false); return; }
                     plan.visual_style = visualStyle;
                     setBusy(null);
                     showPlanReview(plan, {doResolve: doResolve, doPodcast: doPodcast, visualStyle: visualStyle});
                 } catch (e) {
-                    EOS_UI.toast('Plan failed: ' + (e.message || e), 'error');
+                    EOS_UI.toast('Plan failed: ' + (e.message || e), false);
                 } finally {
                     setBusy(null);
                 }
@@ -1158,7 +1179,7 @@ async function newDeck() {
                 body: JSON.stringify({title: title, outline: outline, allowed_elements: elements, visual_style: visualStyle}),
             });
             var data = await r.json();
-            if (data.error) { job.hide(); EOS_UI.toast(data.error, 'error'); return; }
+            if (data.error) { job.hide(); EOS_UI.toast(data.error, false); return; }
             stepIdx = 1;
             await load();
             _route.set(data.id);
@@ -1166,7 +1187,7 @@ async function newDeck() {
                 job.update({stage: 'Resolving images', detail: data.id, step: stepStr(), pct: pctFor()});
                 var rr = await fetch('/ppt/api/decks/' + encodeURIComponent(data.id) + '/resolve-images', {method:'POST'});
                 var rdata = await rr.json();
-                if (rdata.error) { job.hide(); EOS_UI.toast(rdata.error, 'error'); return; }
+                if (rdata.error) { job.hide(); EOS_UI.toast(rdata.error, false); return; }
                 stepIdx++;
                 EOS_UI.toast((rdata.resolved||0) + ' images resolved');
             }
@@ -1174,7 +1195,7 @@ async function newDeck() {
                 job.update({stage: 'Generating podcast', detail: 'this takes a while…', step: stepStr(), pct: pctFor()});
                 var pr = await fetch('/ppt/api/decks/' + encodeURIComponent(data.id) + '/to-podcast', {method:'POST'});
                 var pdata = await pr.json();
-                if (pdata.error) { job.hide(); EOS_UI.toast(pdata.error, 'error'); return; }
+                if (pdata.error) { job.hide(); EOS_UI.toast(pdata.error, false); return; }
                 stepIdx++;
                 EOS_UI.toast('Episode ready → /podcast/');
             }
@@ -1314,8 +1335,8 @@ async function generateFromPlan() {
     plan.subtitle = document.getElementById('plan-subtitle').value.trim();
     plan.visual_style = normalizeVisualStyle(document.getElementById('plan-visual-style').value);
     plan.allowed_elements = PLAN_STATE.allowed;
-    if (!plan.title) { EOS_UI.toast('Title is required', 'error'); return; }
-    if (!plan.slides || !plan.slides.length) { EOS_UI.toast('Plan needs at least one slide', 'error'); return; }
+    if (!plan.title) { EOS_UI.toast('Title is required', false); return; }
+    if (!plan.slides || !plan.slides.length) { EOS_UI.toast('Plan needs at least one slide', false); return; }
     EOS_UI.closeModal();
 
     var followups = PLAN_STATE.followups || {};
@@ -1332,8 +1353,9 @@ async function generateFromPlan() {
             body: JSON.stringify({plan: plan}),
         });
         var data = await r.json();
-        if (data.error) { job.hide(); EOS_UI.toast(data.error, 'error'); return; }
+        if (data.error) { job.hide(); EOS_UI.toast(data.error, false); return; }
         stepIdx = 1;
+        _generatedDeckId = data.id;
         await load();
         _route.set(data.id);
         if (followups.doResolve) {
@@ -1352,7 +1374,7 @@ async function generateFromPlan() {
         showDeck(data.id);
     } catch (e) {
         job.hide();
-        EOS_UI.toast('Generate failed: ' + (e.message || e), 'error');
+        EOS_UI.toast('Generate failed: ' + (e.message || e), false);
     }
 }
 

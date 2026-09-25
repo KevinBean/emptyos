@@ -25,6 +25,7 @@ from .shared import (
     DESIGNER_BASE_SYSTEM,
     DESIGNER_MIN_ABILITY,
     DESIGNER_STYLE_INTRO,
+    _artifact_title,
     _extract_html,
     _looks_like_html,
     _looks_truncated,
@@ -140,9 +141,15 @@ def _reject_reason(self, html: str) -> str:
 
 
 async def _persist(
-    self, rid: str, html: str, prompt: str, style: str, embeds: list[str], *, is_update: bool
+    self, rid: str, html: str, prompt: str, style: str, embeds: list[str], *,
+    is_update: bool, source: str = "",
 ) -> dict:
-    """Write page.html + record.md, return metadata dict."""
+    """Write page.html + record.md, return metadata dict.
+
+    `source` is an optional origin the caller wants recorded (a vault-relative
+    note path, or an app id for a programmatic caller). It lands in a
+    ``vault-graph`` ref field so the page points back at what produced it.
+    """
     record_dir = self._record_dir(rid)
     record_dir.mkdir(parents=True, exist_ok=True)
 
@@ -157,6 +164,7 @@ async def _persist(
 
     record_path = record_dir / "record.md"
     now = _now_iso()
+    existing: dict = {}
     if is_update and record_path.exists():
         existing = self.vault_get_properties(self._rel_record(rid)) or {}
         created = existing.get("created", now)
@@ -170,21 +178,37 @@ async def _persist(
         history = [{"ts": now, "prompt": prompt}]
         display_prompt = prompt
 
+    # `lifecycle` stays folder-inferred (30_Resources/ -> living): an iterate
+    # rewrites THIS record in place and grows `history`, so the note keeps
+    # changing rather than being a frozen snapshot.
     fm = {
         "tags": ["designer"],
+        "title": _artifact_title(display_prompt, fallback=f"Designer page {rid}"),
         "designer_id": rid,
         "style": style or "",
         "prompt": display_prompt,
+        "author": "ai",
         "created": created,
         "updated": now,
         "size_kb": round(len(html.encode("utf-8")) / 1024, 1),
         "embeds": embeds or [],
         "history": history,
     }
+    # `style` is the design-system pattern slug that shaped this page, but
+    # `style:` is not a field vault-graph walks — mirroring it into `related:`
+    # is what turns the design system into an actual edge. Preserved across an
+    # iterate, which passes no new provenance.
+    related = [style] if style else (existing.get("related") or [])
+    if related:
+        fm["related"] = related
+    origin = (source or "").strip() or str(existing.get("source") or "").strip()
+    if origin:
+        fm["source"] = origin
+
     style_line = f"**Design system:** {style}\n\n" if style else ""
     embed_line = f"**Embedded viz artifacts:** {', '.join(embeds)}\n\n" if embeds else ""
     body = (
-        f"# Designer page `{rid}`\n\n"
+        f"# {fm['title']}\n\n"
         f"**Original brief:** {display_prompt}\n\n"
         f"{style_line}{embed_line}"
         f"**Latest change:** {prompt}\n\n"
@@ -212,12 +236,14 @@ async def generate(
     *,
     style: str | None = None,
     embed: bool | None = None,
+    source: str = "",
 ) -> dict:
     """Single-shot page generation. Returns the same dict shape as api_generate.
 
     style: a `kind: pattern` KB note slug (topic: ui-design) to inject as the
            visual law, or None/"" for a freeform aesthetic.
     embed: override the `designer.embed_viz` setting for this call.
+    source: optional origin to record on the page (vault path or app id).
     """
     prompt = (prompt or "").strip()
     if not prompt:
@@ -242,6 +268,8 @@ async def generate(
             return {"ok": False, "error": why}
 
     rid = _new_id()
-    meta = await self._persist(rid, html, prompt, style, embeds, is_update=False)
+    meta = await self._persist(
+        rid, html, prompt, style, embeds, is_update=False, source=source
+    )
     await self.emit("designer:created", {"id": rid, "style": style, "embeds": embeds})
     return {"ok": True, **meta}

@@ -1,3 +1,9 @@
+---
+paths:
+  - "emptyos/sdk/agent_loop.py"
+  - "emptyos/capabilities/**"
+  - "apps/**"
+---
 # Prompt-Prefix-Cache Discipline — stable prefixes are money
 
 Any multi-turn LLM loop (agent loop, rooms session, staff run) resends its

@@ -245,10 +245,7 @@ async def api_task_meta(self, request):
         if not re.match(r"\s*- \[[ xX]\] ", lines[line_num]):
             return {"error": "Line is not a task"}
 
-        insert_at = line_num + 1
-        while insert_at < len(lines) and _core._META_RE.match(lines[insert_at]):
-            insert_at += 1
-
+        insert_at = _core.scan_task_meta_block(lines, line_num)["insert_at"]
         meta_line = f"  - {meta_type}: {value}"
         lines.insert(insert_at, meta_line)
         target.write_text("\n".join(lines), encoding="utf-8")

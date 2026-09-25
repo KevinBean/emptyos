@@ -63,16 +63,21 @@ async def _generate_stream_events(
     *,
     shape: str | None = None,
     examples: list[str] | None = None,
+    source: str = "",
 ):
     """Streaming generate dispatcher: route dense shapes through the multi-pass
     skeleton→fill path when eligible, else the one-shot path (with salvage). Both
     are byte-identical to the pre-feature one-shot path when the flags are off."""
     shape = shape or self.app_config("default_shape", "3d-scene")
     if self._multipass_eligible(shape):
-        async for evt in self._generate_multipass_events(prompt, shape=shape, examples=examples):
+        async for evt in self._generate_multipass_events(
+            prompt, shape=shape, examples=examples, source=source
+        ):
             yield evt
         return
-    async for evt in self._generate_oneshot_events(prompt, shape=shape, examples=examples):
+    async for evt in self._generate_oneshot_events(
+        prompt, shape=shape, examples=examples, source=source
+    ):
         yield evt
 
 
@@ -82,6 +87,7 @@ async def _generate_multipass_events(
     *,
     shape: str,
     examples: list[str] | None = None,
+    source: str = "",
 ):
     """Skeleton → fill → assemble for a dense DOM shape.
 
@@ -103,7 +109,7 @@ async def _generate_multipass_events(
     # ── Pass 1 — skeleton ──
     yield {"type": "phase", "phase": "skeleton"}
     system = self._system_for(shape) + VIZ_SKELETON_SUFFIX
-    examples_block = await self._build_examples_block(examples or [], shape)
+    examples_block, used_patterns = await self._build_examples_block(examples or [], shape)
     if examples_block:
         system = system + examples_block
     skeleton = await self._think_html(
@@ -113,13 +119,18 @@ async def _generate_multipass_events(
         salvaged = self._truncation_salvage(skeleton)
         if salvaged is None:
             # Skeleton unusable → one-shot path (with its own salvage). No discard.
-            async for evt in self._generate_oneshot_events(prompt, shape=shape, examples=examples):
+            async for evt in self._generate_oneshot_events(
+                prompt, shape=shape, examples=examples, source=source
+            ):
                 yield evt
             return
         skeleton = salvaged
 
     rid = _new_id()
-    await self._persist(rid, skeleton, prompt, shape, is_update=False)
+    await self._persist(
+        rid, skeleton, prompt, shape, is_update=False,
+        patterns=used_patterns, source=source,
+    )
     await self.emit("viz:created", {"id": rid, "shape": shape})
     yield {"type": "skeleton_done", "id": rid, "elapsed_ms": int((time.monotonic() - t0) * 1000)}
 
@@ -135,6 +146,7 @@ async def _generate_oneshot_events(
     *,
     shape: str | None = None,
     examples: list[str] | None = None,
+    source: str = "",
 ):
     """Concrete one-shot streaming impl. Tracks the full accumulated text
     alongside the flushed buffer so the final validation + persist step has the
@@ -153,7 +165,7 @@ async def _generate_oneshot_events(
         return
 
     system = self._system_for(shape)
-    examples_block = await self._build_examples_block(examples or [], shape)
+    examples_block, used_patterns = await self._build_examples_block(examples or [], shape)
     if examples_block:
         system = system + examples_block
 
@@ -208,7 +220,10 @@ async def _generate_oneshot_events(
         html, truncated = salvaged, True
 
     rid = _new_id()
-    meta = await self._persist(rid, html, prompt, shape, is_update=False)
+    meta = await self._persist(
+        rid, html, prompt, shape, is_update=False,
+        patterns=used_patterns, source=source,
+    )
     await self.emit("viz:created", {"id": rid, "shape": shape})
     done_evt = {"type": "done", **meta, "elapsed_ms": int((time.monotonic() - t0) * 1000)}
     if truncated:
@@ -224,6 +239,7 @@ async def api_generate_stream(self, request):
         body.get("prompt", ""),
         shape=body.get("shape"),
         examples=body.get("examples") or [],
+        source=(body.get("source") or "").strip(),
     ))
 
 

@@ -14,6 +14,7 @@ from fastapi.responses import (
     JSONResponse,
     PlainTextResponse,
     RedirectResponse,
+    Response,
 )
 from fastapi.staticfiles import StaticFiles
 
@@ -33,7 +34,7 @@ from emptyos.web.routes_vault import (
     register_vault_query_routes,
 )
 from emptyos.web.topology import (
-    _app_dependency_cycles,  # noqa: F401 — re-export (tests/test_topology_analysis.py)
+    _app_dependency_cycles,  # noqa: F401 — re-export (tests/test_unit_topology_analysis.py)
     register_topology_routes,
 )
 
@@ -186,7 +187,7 @@ def create_server(kernel: Kernel) -> FastAPI:
         app_states = {}
         error_apps = []
         for m in kernel.apps.manifests.values():
-            state = kernel.apps.states.get(m.id, AppState.DISCOVERED).value
+            state = kernel.apps.state_of(m.id).value
             app_states[state] = app_states.get(state, 0) + 1
             if state == "error":
                 error_apps.append(m.id)
@@ -332,7 +333,9 @@ def create_server(kernel: Kernel) -> FastAPI:
         # filter, which trusts this list to reflect "what's reachable". The
         # /store catalog endpoint (/api/catalog/apps) is the surface for
         # browsing every manifest including not-installed ones.
-        skip = {AppState.DISCOVERED, AppState.ERROR}
+        from emptyos.sdk.app_icons import active_system_icon_ids, manifest_icon_id
+
+        active_icon_ids = active_system_icon_ids(kernel.config.data_dir)
         return [
             {
                 "id": m.id,
@@ -340,7 +343,8 @@ def create_server(kernel: Kernel) -> FastAPI:
                 "version": m.version,
                 "description": m.description,
                 "icon": (m.raw.get("app", {}) or {}).get("icon", ""),
-                "state": kernel.apps.states.get(m.id, AppState.DISCOVERED).value,
+                "icon_id": manifest_icon_id(m, active_icon_ids),
+                "state": kernel.apps.state_of(m.id).value,
                 "web_prefix": m.provides.get("web", {}).get("prefix", ""),
                 "cli_commands": m.provides.get("cli", {}).get("commands", []),
                 # Declared grouping + function-search data layer (read straight
@@ -348,8 +352,7 @@ def create_server(kernel: Kernel) -> FastAPI:
                 "store_category": (m.raw.get("app", {}) or {}).get("store_category", "other"),
                 "user_intent": (m.raw.get("app", {}) or {}).get("user_intent", []),
             }
-            for m in kernel.apps.manifests.values()
-            if kernel.apps.states.get(m.id, AppState.DISCOVERED) not in skip
+            for m in kernel.apps.reachable_manifests()
         ]
 
     @server.get("/api/apps/load-timings")
@@ -388,15 +391,27 @@ def create_server(kernel: Kernel) -> FastAPI:
         the section names are fixed and come from each app's manifest
         ``[app] store_category`` — see ``emptyos/sdk/app_sections.py``.
         """
+        from emptyos.sdk.app_icons import active_system_icon_ids
         from emptyos.sdk.app_sections import group_by_category
 
-        skip = {AppState.DISCOVERED, AppState.ERROR}
-        reachable = {
-            m.id
-            for m in kernel.apps.manifests.values()
-            if kernel.apps.states.get(m.id, AppState.DISCOVERED) not in skip
-        }
-        return group_by_category(kernel.apps.manifests, reachable)
+        reachable = {m.id for m in kernel.apps.reachable_manifests()}
+        return group_by_category(
+            kernel.apps.manifests,
+            reachable,
+            icon_ids=active_system_icon_ids(kernel.config.data_dir),
+        )
+
+    @server.get("/api/app-icons/sprite")
+    async def app_icon_sprite():
+        """Serve the trusted built-in sprite plus approved Studio overlays."""
+        from emptyos.sdk.app_icons import effective_sprite
+
+        source = (Path(__file__).parent / "static" / "app-icons.svg").read_text(encoding="utf-8")
+        return Response(
+            effective_sprite(source, kernel.config.data_dir),
+            media_type="image/svg+xml",
+            headers={"Cache-Control": "no-cache, must-revalidate"},
+        )
 
     @server.get("/api/apps/{app_id}")
     async def app_detail(app_id: str):
@@ -422,7 +437,7 @@ def create_server(kernel: Kernel) -> FastAPI:
             "name": m.name,
             "version": m.version,
             "description": m.description,
-            "state": kernel.apps.states.get(m.id, AppState.DISCOVERED).value,
+            "state": kernel.apps.state_of(m.id).value,
             "requires": {
                 "capabilities": m.requires.get("capabilities", []),
                 "apps": m.requires.get("apps", []),
@@ -489,9 +504,20 @@ def create_server(kernel: Kernel) -> FastAPI:
                 filename=f"{app_id}-export.zip",
             )
         if format == "single-html":
+            # octet-stream, NOT text/html: this is a download, not a page to
+            # render. Every text/html response passes through the viewport
+            # middleware, which rewrites the first literal `<head>` it finds —
+            # and in an inlined bundle that string occurs inside an eos.js
+            # comment ("may be loaded synchronously in <head> before <body>
+            # exists"). The injected <meta> landed mid-comment and broke the
+            # JS, so every single-html export downloaded over HTTP arrived
+            # corrupted. Measured 2026-08-20; the on-disk build path was never
+            # affected, which is why it went unnoticed.
+            # See .claude/rules/dev-gotchas.md § "any response with
+            # content-type: text/html is rewritten in middleware".
             return FileResponse(
                 str(result),
-                media_type="text/html",
+                media_type="application/octet-stream",
                 filename=f"{app_id}.html",
             )
         # dir: return a JSON pointer (CLI users get the tree on disk; web users
@@ -768,6 +794,19 @@ def create_server(kernel: Kernel) -> FastAPI:
                 "reason": summary.get("backend_state", "not running"),
                 "status": summary,
             }
+        # `tailscale serve` is a separate opt-in plugin. Read it best-effort:
+        # its HTTPS origin is the only secure-context URL a phone can install a
+        # PWA from, so it wins over the plain-http tailnet IP when it is up.
+        # Absent/erroring plugin must never break the read panel -> "".
+        serve_url = ""
+        try:
+            svc = kernel.services.get_optional("tailscale-serve")
+            if svc and await svc.available():
+                st = await svc.serve_state()
+                if st.get("on") and st.get("https_ready"):
+                    serve_url = str(st.get("url") or "")
+        except Exception:
+            serve_url = ""
         try:
             return _tailnet_payload(
                 await ts.status(),
@@ -777,6 +816,7 @@ def create_server(kernel: Kernel) -> FastAPI:
                 port=kernel.config.port,
                 network_mode=kernel.config.network_mode,
                 demo_enabled=kernel.config.demo_enabled,
+                serve_url=serve_url,
             )
         except Exception as e:
             return {"available": False, "reason": f"read failed: {e}"}
@@ -1031,6 +1071,9 @@ def create_server(kernel: Kernel) -> FastAPI:
 
         from emptyos.sdk.cli_args import (
             bind_cli_kwargs,
+            cli_command_label,
+            cli_usage,
+            missing_required_args,
             render_cli_return,
             resolve_cli_method,
         )
@@ -1047,6 +1090,21 @@ def create_server(kernel: Kernel) -> FastAPI:
                 "error": f"Command '{cmd_name}' not found in '{app_id}'",
             }
 
+        kwargs = bind_cli_kwargs(method, cmd_args)
+
+        # A short/bare invocation missing a required arg gets a usage hint
+        # instead of a raw `TypeError: ... missing N required positional
+        # argument` reaching the caller (the calculator-CLI leak).
+        missing = missing_required_args(method, kwargs)
+        if missing:
+            label = cli_command_label(instance.get_cli_methods(), method, cmd_name)
+            return {
+                "ok": False,
+                "error_code": "missing_args",
+                "error": f"Missing required argument(s): {', '.join(missing)}",
+                "usage": cli_usage(method, label),
+            }
+
         # Capture print output
         import contextlib
         import io
@@ -1054,8 +1112,6 @@ def create_server(kernel: Kernel) -> FastAPI:
         buf = io.StringIO()
         try:
             with contextlib.redirect_stdout(buf):
-                kwargs = bind_cli_kwargs(method, cmd_args)
-
                 result = method(**kwargs)
                 if inspect.isawaitable(result):
                     result = await result
@@ -1428,12 +1484,6 @@ _I18N_BOOTSTRAP_TAG = '<script src="/static/eos-i18n.js" defer></script>'
 _PROVENANCE_TAG = '<script src="/static/eos-provenance.js"></script>'
 
 
-def _truthy(value) -> bool:
-    if isinstance(value, str):
-        return value.strip().lower() in ("1", "true", "yes", "on")
-    return bool(value)
-
-
 def _auto_provenance_enabled(kernel) -> bool:
     """Resolve the restart-free ``ui.auto_provenance`` dark flag.
 
@@ -1443,12 +1493,14 @@ def _auto_provenance_enabled(kernel) -> bool:
     reset permanently shadow the ``[ui]`` TOML value and the
     ``EOS_UI_AUTO_PROVENANCE`` env override.
     """
+    from emptyos.sdk.utils import is_truthy
+
     settings = kernel.services.get_optional("settings")
     if settings is not None:
         value = settings.get("ui.auto_provenance")
         if value is not None:
-            return _truthy(value)
-    return _truthy(kernel.config.get("ui.auto_provenance", False))
+            return is_truthy(value)
+    return is_truthy(kernel.config.get("ui.auto_provenance", False))
 
 
 def _tailnet_payload(
@@ -1460,6 +1512,7 @@ def _tailnet_payload(
     port: int,
     network_mode: str,
     demo_enabled: bool,
+    serve_url: str = "",
 ) -> dict:
     """Build the ``/api/tailnet`` success payload from raw service reads.
 
@@ -1468,6 +1521,13 @@ def _tailnet_payload(
     - ``phone_url`` / ``magic_dns`` — derived conveniences so the frontend need
       not recompute. Rule 17: the daemon port comes from the caller's config,
       never hardcoded.
+    - ``serve_url`` — the `tailscale serve` HTTPS origin when that opt-in plugin
+      has it up, else "". **When present it IS ``phone_url``**, because the
+      tailnet-IP fallback is plain ``http://`` on a non-loopback host, which is
+      not a secure context: a phone pointed at it can register no service worker
+      and install no PWA, so EmptyOS degrades to a browser tab the user must
+      re-navigate to. ``phone_url_secure`` reports which of the two it is, so
+      the panel can say *why* rather than silently handing out the weaker URL.
     - ``mode_nudge`` — True when the tailnet is up but the daemon listens on
       loopback only (``network.mode == "local"``), so the tailnet IP isn't
       actually reachable yet. The panel turns this into a *propose-not-autofill*
@@ -1480,6 +1540,7 @@ def _tailnet_payload(
     summary = summary or {}
     self_ip = summary.get("self_ip", "")
     self_dns = summary.get("self_dns", "")
+    serve_url = (serve_url or "").strip()
     if demo_enabled:
         # Keep only coarse, non-identifying counts.
         summary = {
@@ -1488,13 +1549,17 @@ def _tailnet_payload(
             "online_peer_count": summary.get("online_peer_count", 0),
         }
         identity, peers, self_ip, self_dns = {}, [], "", ""
+        serve_url = ""
+    ip_url = f"http://{self_ip}:{port}/" if self_ip else ""
     return {
         "available": True,
         "status": summary,
         "identity": identity,
         "peers": peers,
         "funnel_enabled": funnel_enabled,
-        "phone_url": f"http://{self_ip}:{port}/" if self_ip else "",
+        "phone_url": serve_url or ip_url,
+        "phone_url_secure": bool(serve_url),
+        "serve_url": serve_url,
         "magic_dns": self_dns,
         "mode_nudge": network_mode == "local",
     }

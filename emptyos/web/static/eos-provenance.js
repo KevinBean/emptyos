@@ -8,7 +8,6 @@
     var CACHE_TTL = 60 * 1000;
     var CACHE_SIZE = 8;
     var cache = [];
-    var origFetch = window.fetch.bind(window);
     var lastT0 = 0;
 
     function nextT0() {
@@ -131,10 +130,10 @@
         }
     }
 
-    window.fetch = function(input, init) {
+    function provenanceLayer(input, init, next) {
         var url = requestUrl(input);
         var t0 = nextT0();
-        var pending = origFetch(input, init);
+        var pending = next(input, init);
         pending.then(function(res) {
             if (!url || !res || !res.ok || url.origin !== window.location.origin ||
                     url.pathname.indexOf('/api/') === -1 ||
@@ -157,7 +156,13 @@
             }, function() {});
         }, function() {});
         return pending;
-    };
+    }
+
+    // Shared chain (eos.js). This bundle is server-injected and always loads
+    // after eos.js, but it queues on the same fallback as eos-components.js so
+    // injection order can never silently disable provenance chips.
+    if (window.EOS && EOS.wrapFetch) EOS.wrapFetch('provenance', provenanceLayer);
+    else (window.__eosFetchPending = window.__eosFetchPending || []).push(['provenance', provenanceLayer]);
 
     function bootObserver() {
         if (!document.body || !window.MutationObserver) return;

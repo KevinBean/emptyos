@@ -1,6 +1,6 @@
 ---
 name: vault-note-factory
-description: Unified note-creation router — detects what kind of note the content wants, runs pre-checks (duplicates, location, naming), and routes to the right skill or template. Use when the user says "create a note", "save this as a note", "new person/book/project note", or content needs filing and the type is unclear. NOT for digesting sources (use vault-source-digest for PDFs, eos-ai-conversation-ingest for chat transcripts) or KB clause work (use eos-kb-atomize).
+description: Unified note-creation router — detects what kind of note the content wants, runs pre-checks (duplicates, location, naming), and routes to the right skill or template. Use when the user says "create a note", "save this as a note", "new person/book/project note", or content needs filing and the type is unclear. NOT for digesting sources (use vault-source-digest for PDFs, vault-ai-conversation-digest for chat transcripts) or KB clause work (use eos-kb-atomize).
 ---
 
 # Note Factory
@@ -18,8 +18,8 @@ Unified entry point for creating any type of note in the vault. Handles detectio
 | "new place X" | Place | → (this skill) |
 | "new project X" | Project | → project-builder |
 | "journal today" | Daily | → daily-journal |
-| "save / file / digest this conversation" + pasted AI chat | AI transcript | → eos-ai-conversation-ingest |
-| "I'll paste conversations and you note them properly" | AI transcript | → eos-ai-conversation-ingest |
+| "save / file / digest this conversation" + pasted AI chat | AI transcript | → ai-conversation-digest |
+| "I'll paste conversations and you note them properly" | AI transcript | → ai-conversation-digest |
 
 ---
 

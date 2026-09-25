@@ -6,7 +6,7 @@ variant dedup. The local-model branch used to hardcode ``provider_name="ollama"`
 which silently collapsed two distinct local models onto one identity.
 
 Both directions are pinned: the existing "ollama" section must keep its name
-(no regression for every shipped config, including emptyos.toml.example), and a
+(no regression for every shipped config, including emptyos.example.toml), and a
 second local section must get a distinct one.
 """
 

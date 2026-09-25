@@ -38,7 +38,25 @@ Discipline:
 - Rules without `paths:` never match in `rules_for_paths` — unscoped means
   "already in context", so injecting them would re-add the noise the resolver
   exists to cut.
-- Seeded pilots: `cad-extensions`, `cad-workspaces`, `geo`.
+- **45 of 75 rules are scoped today** (2026-08-31). Seeded pilots were
+  `cad-extensions`, `cad-workspaces`, `geo`; a one-time bulk pass then scoped 35
+  more when the always-loaded set reached 611KB (~153k est. tokens *per session*,
+  80% of the whole context budget). That pass was a deliberate exception to the
+  on-touch rule above, taken once because the cost had compounded past the point
+  where incremental annotation could catch up — **it is not a precedent**. It
+  touched only rules unambiguously scoped to one subsystem and left every
+  cross-cutting rule always-on.
+- **Second pass, 2026-09-25: a hard budget, not a preference.** Claude Code
+  warns when the always-loaded instruction files exceed **150k chars**; the set
+  had regrown to 34 files / 484k. 22 subsystem rules were scoped, and the four
+  cross-cutting rules were **split rather than scoped**: each keeps its rules
+  always-on and moves its measured case studies into a scoped sibling
+  (`dev-gotchas` → `media-gotchas` + `chrome-extension-gotchas`; `audits` →
+  `audits-casebook` + `conformance-anchors`; `testing` → `test-authoring`;
+  `debugging` → `wedge-tooling`). CLAUDE.md sheds detail the same way and ends
+  with a "Rules loaded on demand" index. Result: 12 always-loaded files,
+  ~126k chars. **Keep the total under 150k** — measure before adding to an
+  always-on file, and put a new case study in the scoped sibling, not the core.
 - `eos bus ripple`/`import` syncs the frontmatter into `.agent-bus/` like any
   rule edit; the resolver reads native-first (what a spawned CLI itself reads).
 

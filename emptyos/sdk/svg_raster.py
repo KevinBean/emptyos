@@ -77,3 +77,94 @@ def rasterize_svgs(paths: list[Path], scale: int = 2) -> list[Path]:
         finally:
             browser.close()
     return out
+
+
+def _target_dimensions(svg_text: str, target_size: int | tuple[int, int] | None) -> tuple[int, int]:
+    if target_size is None:
+        return svg_size(svg_text)
+    if isinstance(target_size, int):
+        if target_size <= 0:
+            raise ValueError("target_size must be positive")
+        return target_size, target_size
+    width, height = int(target_size[0]), int(target_size[1])
+    if width <= 0 or height <= 0:
+        raise ValueError("target_size dimensions must be positive")
+    return width, height
+
+
+def _render_svg_page(page, svg_text: str, width: int, height: int, output: Path, transparent: bool) -> None:
+    """Render one SVG string into an exact CSS-pixel viewport."""
+    page.set_viewport_size({"width": width, "height": height})
+    background = "transparent" if transparent else "white"
+    page.set_content(
+        "<!doctype html><style>html,body{margin:0;width:100%;height:100%;"
+        f"overflow:hidden;background:{background}}}svg{{display:block;width:100%;height:100%}}</style>"
+        + svg_text,
+        wait_until="load",
+    )
+    page.screenshot(path=str(output), omit_background=transparent)
+
+
+def rasterize_svg(
+    svg_path: Path,
+    output_path: Path | None = None,
+    *,
+    target_size: int | tuple[int, int] | None = None,
+    scale: int = 1,
+    transparent: bool = False,
+) -> Path:
+    """Render one SVG at an exact target size, optionally with transparency.
+
+    This is the icon/export-oriented sibling of :func:`rasterize_svgs`. Its
+    defaults keep a one-CSS-pixel render; the older batch API retains its 2x,
+    white-page publish behavior unchanged.
+    """
+    from playwright.sync_api import sync_playwright
+
+    svg_path = Path(svg_path)
+    svg_text = svg_path.read_text(encoding="utf-8")
+    width, height = _target_dimensions(svg_text, target_size)
+    if scale <= 0:
+        raise ValueError("scale must be positive")
+    width, height = width * scale, height * scale
+    output = Path(output_path) if output_path else svg_path.with_suffix(".png")
+    output.parent.mkdir(parents=True, exist_ok=True)
+    with sync_playwright() as p:
+        browser = p.chromium.launch()
+        try:
+            page = browser.new_page(viewport={"width": width, "height": height})
+            _render_svg_page(page, svg_text, width, height, output, transparent)
+            page.close()
+        finally:
+            browser.close()
+    return output
+
+
+def rasterize_svg_sizes(
+    svg_path: Path,
+    output_dir: Path,
+    sizes: tuple[int, ...] | list[int],
+    transparent: bool = True,
+) -> list[Path]:
+    """Render square ``icon-<size>.png`` variants in one browser session."""
+    from playwright.sync_api import sync_playwright
+
+    svg_path, output_dir = Path(svg_path), Path(output_dir)
+    svg_text = svg_path.read_text(encoding="utf-8")
+    clean_sizes = [int(size) for size in sizes]
+    if not clean_sizes or any(size <= 0 for size in clean_sizes):
+        raise ValueError("sizes must contain positive integers")
+    output_dir.mkdir(parents=True, exist_ok=True)
+    outputs: list[Path] = []
+    with sync_playwright() as p:
+        browser = p.chromium.launch()
+        try:
+            page = browser.new_page(viewport={"width": clean_sizes[0], "height": clean_sizes[0]})
+            for size in clean_sizes:
+                target = output_dir / f"icon-{size}.png"
+                _render_svg_page(page, svg_text, size, size, target, transparent)
+                outputs.append(target)
+            page.close()
+        finally:
+            browser.close()
+    return outputs

@@ -299,6 +299,51 @@ def test_split_chrome_counts_sibling_js_loaded_by_the_primary_page(tmp_path: Pat
     assert r["split_chrome"] == []
 
 
+# ── provenanceLine — the wrapped chip the token list did not know ─────────
+# 2026-09-03 architecture review: 11 apps (incl. apps/personal; 6 on a public
+# clone) render their chip through `EOS_UI.provenanceLine(prov)`, a wrapper over
+# `EOS_UI.provenance(`. The substring `EOS_UI.provenance(` does NOT occur inside
+# `EOS_UI.provenanceLine(`, so every adopter scanned as chip-less: 3 "dark" apps
+# and 8 provenance-drops. All three tests use ONLY the wrapped form, so the
+# bare-token match cannot satisfy them by accident, and each fixture has exactly
+# one route to a clean verdict — the token — so it cannot pass through a
+# healthy neighbour (audits.md § Failure mode 3).
+
+
+def test_provenance_line_counts_as_a_chip(tmp_path: Path):
+    d = _app(tmp_path, "apps/x",
+             page="el.innerHTML = EOS_UI.provenanceLine(r.provenance, {suffix: ' · edit'});")
+    ui = scanner._scan_pages(d)
+    assert ui["prov"] is True
+    assert ui["pill"] is False  # it is a chip, not a pill — no mount to resolve
+
+
+def test_provenance_line_lifts_a_backend_only_app_out_of_dark(tmp_path: Path):
+    """The boards / hub-life / work-fit shape: one page, backend think, the
+    chip rendered through provenanceLine and nothing else. No secondary page,
+    so `partial` cannot be reached through a pill — only the token clears it."""
+    apps = tmp_path / "apps"
+    _app(apps, "public/standard/solo", py="await self.think(P)",
+         page="el.innerHTML = EOS_UI.provenanceLine(r.provenance);")
+    r = scanner.scan(apps_root=apps, dark_ok=set())
+    assert [a["id"] for a in r["dark"]] == []
+
+
+def test_provenance_line_in_loaded_sibling_js_covers_the_primary_surface(tmp_path: Path):
+    """A chip reached only through a sibling script the primary page loads is
+    chrome for that page (same rule as the modelPill sibling case above), and
+    that holds for the wrapped token too. Not projects' shape — projects'
+    sibling chip sits in an uncalled function, so its page carries an inline
+    ignore marker instead of relying on this."""
+    apps = tmp_path / "apps"
+    d = _split_app(apps, primary='<script src="/x/pages/dialogs.js"></script>',
+                   secondary="EOS_UI.modelPill({});")
+    (d / "pages" / "dialogs.js").write_text(
+        "var pv = EOS_UI.provenanceLine(r.provenance);", encoding="utf-8")
+    r = scanner.scan(apps_root=apps, dark_ok=set())
+    assert r["split_chrome"] == []
+
+
 def test_split_chrome_inline_ignore_marker_opts_out(tmp_path: Path):
     """An inline marker at the call site beats a central allowlist — a new
     legitimate case (index is a chooser, AI lives in tabs) must not break CI."""
@@ -314,5 +359,197 @@ def test_split_chrome_silent_for_apps_without_backend_ai(tmp_path: Path):
     apps = tmp_path / "apps"
     d = _app(apps, "public/core/calc", py="def r(): return 1/2", page="<h1>calc</h1>")
     (d / "pages" / "other.html").write_text("EOS_UI.provenance({});", encoding="utf-8")
+    r = scanner.scan(apps_root=apps, dark_ok=set())
+    assert r["split_chrome"] == []
+
+
+# ── 7. provenance-drop — self.last_provenance() called, no chip anywhere ───
+# Added 2026-08-21 (eos-ai-native-audit, 5th run) after the shape recurred 8
+# times across three runs (boards, cockpit, then 6 more found by grepping
+# every self.last_provenance() call site for a matching chip). Same
+# false-positive discipline as split-chrome: fires only when the author
+# demonstrably knew provenance existed (they called the accessor) yet no
+# page in the app renders a chip for it.
+
+
+def test_provenance_drop_fires_when_called_with_no_chip(tmp_path: Path):
+    apps = tmp_path / "apps"
+    _app(apps, "personal/dropper",
+         py="async def h(self):\n    return {'text': x, 'provenance': self.last_provenance()}",
+         page="<div>no chip here</div>")
+    r = scanner.scan(apps_root=apps, dark_ok=set(), provenance_ok=set())
+    assert [a["id"] for a in r["provenance_drop"]] == ["dropper"]
+
+
+def test_provenance_drop_silent_when_chip_present(tmp_path: Path):
+    """The fixed shape — a chip renders the returned provenance — is not a
+    finding, regardless of which chip token (modelPill/provenance/
+    data-ai-output) satisfies it."""
+    apps = tmp_path / "apps"
+    _app(apps, "personal/fixed",
+         py="async def h(self):\n    return {'provenance': self.last_provenance()}",
+         page="<div data-ai-output='/fixed/api/h'></div>")
+    r = scanner.scan(apps_root=apps, dark_ok=set(), provenance_ok=set())
+    assert r["provenance_drop"] == []
+
+
+def test_provenance_drop_silent_without_a_last_provenance_call(tmp_path: Path):
+    """A plain dark app (think(), no provenance accessor at all) is the
+    existing `dark` finding, not this one — the two checks are independent."""
+    apps = tmp_path / "apps"
+    _app(apps, "personal/plain-dark", py="await self.think(P)", page="<h1>x</h1>")
+    r = scanner.scan(apps_root=apps, dark_ok=set(), provenance_ok=set())
+    assert r["provenance_drop"] == []
+
+
+def test_provenance_ok_suppresses_finding(tmp_path: Path):
+    """Mirror of DARK_OK — a judged exception must actually suppress, not be
+    dead code the skill tells people to edit for nothing."""
+    apps = tmp_path / "apps"
+    _app(apps, "personal/bespoke",
+         py="async def h(self):\n    return {'provenance': self.last_provenance()}",
+         page="<div>estimated · openai (bespoke, not a shared chip token)</div>")
+    r = scanner.scan(apps_root=apps, dark_ok=set(), provenance_ok={"bespoke"})
+    assert r["provenance_drop"] == []
+    assert r["provenance_ok"] == ["bespoke"]
+
+
+def test_provenance_drop_does_not_affect_tier_or_dark_count(tmp_path: Path):
+    """Advisory only: an app with reach (so it's `partial`, not `dark`) that
+    also drops provenance must not be double-counted into `dark`, and its
+    tier must be unaffected by the new check."""
+    apps = tmp_path / "apps"
+    _app(apps, "public/core/reachy",
+         manifest='[app]\nid = "reachy"\n\n[[provides.verbs]]\nverb = "reachy.go"\n'
+                  'method = "go"\neligibility = "stable"\nsurfaces = ["voice"]\n\n'
+                  '[provides.verbs.voice]\nmethod = "go"\n',
+         py="async def go(self):\n    x = await self.think(P)\n    return {'provenance': self.last_provenance()}",
+         page="<h1>reachy</h1>")
+    r = scanner.scan(apps_root=apps, dark_ok=set(), provenance_ok=set())
+    assert [a["id"] for a in r["provenance_drop"]] == ["reachy"]
+    assert r["dark"] == []
+    assert r["tiers"].get("dark", 0) == 0
+    reachy = next(a for a in r["apps"] if a["id"] == "reachy")
+    assert reachy["class"] == "partial"
+
+
+# ── 6b. split AI chrome — the sibling fold must be EFFECTIVE, not nominal ──
+# Regression pin for the 2026-08-30 dictionary + projects bugs. The fold that
+# makes a sibling script part of the primary surface was satisfied by two things
+# that do not put a chip on that surface: a pill mounting into a slot the page
+# never contains (dictionary — the pill lived in the pack-compose flow while the
+# default Look-up tab spent think bare), and a filename appearing only in a code
+# comment (projects — `tabs.js` mentions "workspace-page.js" in prose, so that
+# file's pill was folded into a page that never loads it).
+
+
+def _sibling_app(apps: Path, *, primary: str, sibling: str) -> Path:
+    """index.html + one sibling main.js, plus a secondary page carrying a chip
+    (the secondary is what makes this a *split* candidate at all)."""
+    d = _split_app(apps, primary=primary, secondary="EOS_UI.modelPill({});")
+    (d / "pages" / "main.js").write_text(sibling, encoding="utf-8")
+    return d
+
+
+_LOADS_MAIN = '<script src="/x/pages/main.js"></script>'
+
+
+def test_split_chrome_fires_when_sibling_pill_anchor_is_absent_from_primary(tmp_path: Path):
+    """The dictionary shape: the sibling IS loaded, but mounts the pill into a
+    slot another flow renders — so the primary surface shows no chip."""
+    apps = tmp_path / "apps"
+    _sibling_app(apps, primary=_LOADS_MAIN,
+                 sibling="EOS_UI.modelPill({app:'x', mount:'#pc-model'});")
+    r = scanner.scan(apps_root=apps, dark_ok=set())
+    assert [a["id"] for a in r["split_chrome"]] == ["splitty"]
+
+
+def test_split_chrome_silent_when_sibling_pill_anchor_is_in_primary(tmp_path: Path):
+    """The fixed shape — the slot exists in the page's own markup."""
+    apps = tmp_path / "apps"
+    _sibling_app(apps, primary=_LOADS_MAIN + '<span id="model-pill"></span>',
+                 sibling="EOS_UI.modelPill({app:'x', mount:'#model-pill'});")
+    r = scanner.scan(apps_root=apps, dark_ok=set())
+    assert r["split_chrome"] == []
+
+
+def test_split_chrome_resolves_a_mount_held_in_a_variable(tmp_path: Path):
+    """dictionary mounts via `var slot = document.getElementById('pc-model')`,
+    so a literal-only resolver would miss it and pass the app blindly."""
+    apps = tmp_path / "apps"
+    _sibling_app(
+        apps, primary=_LOADS_MAIN,
+        sibling="var slot = document.getElementById('pc-model');\n"
+                "EOS_UI.modelPill({app:'x', mount: slot});",
+    )
+    r = scanner.scan(apps_root=apps, dark_ok=set())
+    assert [a["id"] for a in r["split_chrome"]] == ["splitty"]
+    # ...and the same code is silent once the page carries that slot.
+    apps2 = tmp_path / "apps2"
+    _sibling_app(
+        apps2, primary=_LOADS_MAIN + '<div id="pc-model"></div>',
+        sibling="var slot = document.getElementById('pc-model');\n"
+                "EOS_UI.modelPill({app:'x', mount: slot});",
+    )
+    assert scanner.scan(apps_root=apps2, dark_ok=set())["split_chrome"] == []
+
+
+def test_split_chrome_never_fires_on_an_unresolvable_mount(tmp_path: Path):
+    """Conservative edge: a mount the scanner cannot resolve counts as covered,
+    so the gate never fires on a guess (audits.md — ambiguity must not gate)."""
+    apps = tmp_path / "apps"
+    _sibling_app(apps, primary=_LOADS_MAIN,
+                 sibling="EOS_UI.modelPill({app:'x', mount: pickSlot(cfg)});")
+    r = scanner.scan(apps_root=apps, dark_ok=set())
+    assert r["split_chrome"] == []
+
+
+def test_split_chrome_ignores_a_filename_named_only_in_a_comment(tmp_path: Path):
+    """A filename NAMED in the primary page is not a filename LOADED by it.
+    A bare-substring fold swallows other.js's chip on the strength of a comment
+    and passes an app whose surface never runs that file."""
+    apps = tmp_path / "apps"
+    d = _sibling_app(
+        apps,
+        primary=_LOADS_MAIN + "\n<!-- the pill is mounted by other.js -->",
+        sibling="var x = 1;",
+    )
+    (d / "pages" / "other.js").write_text("EOS_UI.modelPill({app:'x'});", encoding="utf-8")
+    r = scanner.scan(apps_root=apps, dark_ok=set())
+    assert [a["id"] for a in r["split_chrome"]] == ["splitty"]
+
+
+def test_split_chrome_fold_is_not_transitive_through_sibling_content(tmp_path: Path):
+    """The projects shape proper: index.html loads main.js, whose COMMENT names
+    other.js. The original fold appended each sibling into the very string it
+    was scanning, so a sibling's prose could pull a third file's chip onto the
+    surface — which is how projects passed while /projects/ rendered no pill."""
+    apps = tmp_path / "apps"
+    d = _sibling_app(
+        apps, primary=_LOADS_MAIN,
+        sibling="// renderWorkspaceLayout() lives in other.js\n",
+    )
+    (d / "pages" / "other.js").write_text("EOS_UI.modelPill({app:'x'});", encoding="utf-8")
+    r = scanner.scan(apps_root=apps, dark_ok=set())
+    assert [a["id"] for a in r["split_chrome"]] == ["splitty"]
+
+
+def test_split_chrome_counts_a_cache_busted_script_src(tmp_path: Path):
+    """music-studio's real shape: `src="pages/music-studio.js?v=..."`. A load
+    test that ignores the query string would call this app a finding."""
+    apps = tmp_path / "apps"
+    _sibling_app(apps,
+                 primary='<script src="pages/main.js?v=2026-07-28-2"></script>',
+                 sibling="EOS_UI.modelPill({app:'x', mount: anything});")
+    r = scanner.scan(apps_root=apps, dark_ok=set())
+    assert r["split_chrome"] == []
+
+
+def test_split_chrome_silent_when_sibling_renders_a_provenance_chip(tmp_path: Path):
+    """`EOS_UI.provenance(obj)` RETURNS a string its caller interpolates — there
+    is no mount anchor to resolve, so it covers wherever its caller renders."""
+    apps = tmp_path / "apps"
+    _sibling_app(apps, primary=_LOADS_MAIN,
+                 sibling="el.innerHTML = EOS_UI.provenance(resp.provenance);")
     r = scanner.scan(apps_root=apps, dark_ok=set())
     assert r["split_chrome"] == []

@@ -419,6 +419,11 @@
   // ---------------------------------------------------------------
   // Fetch interceptor
   // ---------------------------------------------------------------
+  // Deliberately NOT on eos.js's `EOS.wrapFetch` chain. This shim runs in a
+  // standalone export bundle where there is no daemon and eos.js may not be
+  // present at all, and it does not *decorate* a request — it TERMINATES
+  // `/api/*` by answering from the snapshot, so it is a backend substitute
+  // rather than a chain layer. Its guard is the bundle loading once.
   var _origFetch = window.fetch.bind(window);
   window.fetch = async function (input, init) {
     var url = typeof input === 'string' ? input : (input && input.url) || '';

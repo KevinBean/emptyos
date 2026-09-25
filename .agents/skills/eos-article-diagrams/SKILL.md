@@ -1,22 +1,23 @@
 ---
 name: eos-article-diagrams
-description: Author conceptual diagrams for Published-site articles to the house standard — hand-written SVG in the GitHub-dark style, rasterized to a shipped 2x PNG, referenced with takeaway-bearing alt text. Use when the user says "add diagrams/graphs to this article", "diagram this post", "make a figure for X", or when drafting a post whose argument walks a structure (stack, loop, classification, before/after). NOT for data charts from real datasets (use the dataviz skill directly), app-UI screenshots (eos-screenshot), or generated cover art (publish app generate-cover).
+description: Author conceptual diagrams for Published-site articles to the house standard — SVG in the GitHub-dark style (hand-written, or generated via viz against the house-style pattern and then corrected), rasterized to a shipped 2x PNG, referenced with takeaway-bearing alt text. Use when the user says "add diagrams/graphs to this article", "diagram this post", "make a figure for X", or when drafting a post whose argument walks a structure (stack, loop, classification, before/after). NOT for data charts from real datasets (use the dataviz skill directly), app-UI screenshots (eos-screenshot), or generated cover art (publish app generate-cover).
 ---
 
 # EmptyOS Article Diagrams
 
 Diagram *authoring* is judgment work — what to diagram, what to say, how to lay
 it out — so it lives here in conversation mode, not in an app `think()` call
-(intricate SVG needs a strong model; see `.Codex/rules/model-ability.md`).
+(intricate SVG needs a strong model; see `.claude/rules/model-ability.md`).
 The *mechanical* half is deterministic and lives in the tooling: SVG → 2× PNG
 via `emptyos/sdk/svg_raster.py`, exposed as `scripts/rasterize_svg.py`, the
 publish endpoints (`GET /publish/api/diagrams`,
 `POST /publish/api/diagrams/rasterize`), and a self-healing hook that
 re-rasterizes stale pairs on every site build.
 
-Canonical standard: **vault `AGENTS.md` § "Article diagram standard"**.
-Reference implementations: `{vault}/30_Resources/Published/images/harness-*.svg`
-and `operable-*.svg`.
+Canonical standard: **vault `CLAUDE.md` § "Article diagram standard"**.
+Reference implementations: `{vault}/30_Resources/Published/images/harness-*.svg`,
+`ai-access-*.svg`, and `operable-*.svg`.
+Few-shot pattern for the generate route: KB note `viz-article-diagram-house-style`.
 
 ## Procedure
 
@@ -30,9 +31,40 @@ sentence, it's not a diagram yet.
 
 ### 2. Author the SVG (the source of truth)
 
-Write it by hand into `{vault}/30_Resources/Published/images/` as
+Land it at `{vault}/30_Resources/Published/images/` as
 `<post-shortname>-<concept>.svg` (kebab-case; one shared prefix per article so
-its diagrams sort together).
+its diagrams sort together). Two ways there — the judgment in step 1 is the
+same either way, and step 4 (eyeball it) is mandatory in both.
+
+**a. Generate a first draft, then correct it.** Requires
+`[apps.viz] feature.figure-export.enabled`. Generate against the house-style
+pattern, which carries the palette, the type scale, and the construction rule
+as few-shot:
+
+```bash
+# shape: svg-diagram (a structure) or schematic (an elevation / one-line)
+POST /viz/api/generate  {"prompt": "<the one-sentence argument + the elements>",
+                         "shape": "svg-diagram",
+                         "examples": ["viz-article-diagram-house-style"]}
+POST /viz/api/figure    {"id": "<artifact id>", "target": "publish:<post>/<concept>"}
+```
+
+`/api/figure` writes the `.svg` into `images/` under the house name and hands
+back the ready body line; it refuses any shape that isn't SVG-at-rest. Then
+**correct the result by hand** — the model gets the palette and the geometry
+right and is unreliable about label collisions, arrow routing, and whether the
+diagram makes the argument. Treat its output as a first draft, not a deliverable.
+
+**b. Write it by hand.** Always available, and still the right call for a
+diagram whose layout is the whole idea.
+
+Whichever route, the construction rule is not optional: **style with
+presentation attributes (`fill="#e6edf3"`), never a CSS class plus a `<style>`
+block, and paint the canvas with a full-bleed `<rect>` as the first child.** An
+SVG that depends on a stylesheet is a diagram *plus its page*: standalone, every
+shape falls back to black — paths lose `fill:none` and flood solid — and nothing
+errors, so it looks like a rendering bug rather than a missing stylesheet. The
+reference set is already built this way.
 
 House tokens (GitHub-dark):
 
@@ -51,7 +83,7 @@ Status: teal = good/auto, orange = warning/gated, red `#f85149` = danger/never
 (reserved — never a fourth series color). Identity is never color-alone:
 every colored element carries a text label. This palette already passes CVD
 separation and ≥3:1 contrast on `#0d1117`; if you add a NEW hue, validate it
-first with the dataviz skill's `scripts/validate_palette.js --mode dark`
+first with the dataviz skill's own `<dataviz-skill>/scripts/validate_palette.js --mode dark`
 (load the dataviz skill for the procedure).
 
 Layout habits from the reference set: title + one-line muted subtitle at top
@@ -100,7 +132,15 @@ the built page; drafts need no build.
   don't embed it. The SVG stays beside the PNG as the editable source; edit
   the SVG, never the PNG.
 - **Never `sed` on vault `.md`** — use the Edit tool or Python (vault
-  AGENTS.md; encoding-corruption history).
+  CLAUDE.md; encoding-corruption history).
 - Real-data charts (benchmarks, time series) are the dataviz skill's domain —
   follow its full procedure and validator, then ship through the same
   SVG→PNG pairing here.
+
+## Cross-references
+
+- `eos-communication-define-your-reader` — run it first when the article has
+  a dual/mixed audience. Step 1's "single argument the reader could quote"
+  is only findable once the reader is defined; without that, a diagram tends
+  to make the argument the *writer* already understands, not the one the
+  actual reader needs.

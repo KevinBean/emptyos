@@ -28,7 +28,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING
 
 from emptyos.sdk import web_route
-from emptyos.sdk.utils import csv_to_rows
+from emptyos.sdk.utils import csv_to_rows, read_upload_text, sniff_columns as _sniff_columns
 
 from .categories import detect_category
 
@@ -69,26 +69,15 @@ _DATE_FORMATS = [
 
 
 def sniff_columns(headers: list[str]) -> dict[str, str]:
-    """Best-effort map of canonical field → the actual header that carries it.
+    """Map canonical field → the bank's header, using ``_FIELD_ALIASES``.
 
     Returns a dict with any of ``date``/``amount``/``debit``/``credit``/
-    ``description`` that matched. A header is claimed by the first canonical
-    field whose alias it contains, so one column can't fill two roles.
+    ``description`` that matched. Deliberately a 1-arg wrapper over the SDK
+    ``sniff_columns`` (not a leftover copy): it binds this module's bank
+    vocabulary, which ``tests/test_unit_expense_statements.py`` pins through
+    this name.
     """
-    normalized = [(h, (h or "").strip().lower()) for h in headers]
-    claimed: set[str] = set()
-    mapping: dict[str, str] = {}
-    for field, aliases in _FIELD_ALIASES.items():
-        for alias in aliases:
-            hit = next(
-                (h for h, low in normalized if h not in claimed and alias in low),
-                None,
-            )
-            if hit is not None:
-                mapping[field] = hit
-                claimed.add(hit)
-                break
-    return mapping
+    return _sniff_columns(headers, _FIELD_ALIASES)
 
 
 def parse_amount(raw: str) -> float | None:
@@ -245,25 +234,6 @@ async def _existing_keys(self, dates: list[str]) -> set[str]:
     return keys
 
 
-async def _read_import_payload(self, request) -> tuple[str, str]:
-    """Return (csv_text, error). Accepts a multipart file or JSON csv_content."""
-    ctype = request.headers.get("content-type", "")
-    if "multipart/form-data" in ctype:
-        form = await request.form()
-        upload = form.get("file")
-        if upload is None or not hasattr(upload, "read"):
-            return "", "no file uploaded"
-        data = await upload.read()
-        if not data:
-            return "", "the file is empty"
-        if len(data) > MAX_IMPORT_BYTES:
-            return "", "file is too large"
-        return data.decode("utf-8-sig", "replace"), ""
-    body = await request.json()
-    text = body.get("csv_content", "")
-    return (text, "") if text else ("", "csv_content required")
-
-
 @web_route("POST", "/api/import/preview")
 async def api_import_preview(self, request):
     """Parse a statement and classify each row new-vs-duplicate. Writes nothing.
@@ -271,7 +241,7 @@ async def api_import_preview(self, request):
     Returns ``{rows, columns, mapping, summary, warnings}`` where each row is
     ``{date, amount, description, category, duplicate}``.
     """
-    csv_text, err = await _read_import_payload(self, request)
+    csv_text, err = await read_upload_text(request, max_bytes=MAX_IMPORT_BYTES)
     if err:
         return {"error": err}
 

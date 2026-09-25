@@ -342,14 +342,31 @@ def _provenance(self, paths: list[str]) -> str:
     return "\n".join(lines) if lines else "- (no sources)"
 
 
-def _provenance_items(self, paths: list[str]) -> list[dict]:
+def _provenance_items(self, paths: list[str], query: str = "") -> list[dict]:
     """Structured source attribution for the UI: [{name, date, path}] so the
     conflict/correction cards can render clickable note links (EOS.noteActions)
-    alongside each source's date — the 'open the notes to decide' affordance."""
+    alongside each source's date — the 'open the notes to decide' affordance.
+
+    With ``query`` and the passage-citation flag on, each item also carries
+    ``section`` / ``anchor`` / ``excerpt`` / ``href`` naming the passage inside
+    that note that actually matched — so the chip clicks through to the text
+    that produced the claim rather than to the top of the note. ``query`` is
+    passed per-call (never stashed on ``self``) because two chats retrieve
+    concurrently and a shared field would attribute one turn's passages to the
+    other's answer.
+
+    Passage fields are strictly additive: with no query, an unreadable note, or
+    the flag off, an item is byte-identical to the note-level form it has
+    always had.
+    """
     out = []
+    want_passage = bool(query) and self._passage_citations_enabled()
     for p in (paths or [])[:6]:
         rel = (p or "").replace("\\", "/")
-        out.append({"name": rel.rsplit("/", 1)[-1], "date": self._note_date(p), "path": rel})
+        item = {"name": rel.rsplit("/", 1)[-1], "date": self._note_date(p), "path": rel}
+        if want_passage:
+            item.update(self._passage_for(rel, query))
+        out.append(item)
     return out
 
 

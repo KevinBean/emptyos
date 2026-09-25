@@ -1,5 +1,6 @@
 [app]
 id = "kb"
+icon_id = "kb"
 store_category = "productivity"
 name = "Knowledge Base"
 version = "0.2.0"
@@ -45,6 +46,7 @@ emits = [
     "kb:implemented_in_updated",
     "kb:reference_checked",
     "kb:embed_added",
+    "kb:figure_attached",
     "note:embed_added",
     "kb:standard_atomized",
     "guideline:added",
@@ -126,6 +128,7 @@ entity_source = "note_path"
 schema = [
     {key = "kb.guideline_default_category", label = "Default category for new guidelines", type = "text", default = "general"},
     {key = "kb.guideline_hub_panel_enabled", label = "Show daily guideline on hub", type = "boolean", default = true},
+    {key = "kb.stale_days", label = "Stale-note threshold (days)", type = "number", default = 365, hint = "Flag a non-reference note as stale in Health if untouched (updated/created) for this many days."},
 ]
 
 # ✨ AI field-suggest for guideline clause bodies (see .claude/rules/field-suggest.md)

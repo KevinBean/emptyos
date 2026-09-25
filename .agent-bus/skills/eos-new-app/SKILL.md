@@ -67,7 +67,7 @@ If the user picks extend/contribute, stop this skill and hand off (read the rele
 
 **Phase 1 — Grill.** Read `<SKILL_DIR>/grill-questions.md` and work the 14-question bank (1A Problem & Users, then 1B Solution shape). One question at a time; send each "Why" line with its question.
 
-**Phase 2 — Brainstorm pass (mandatory for "new shape", skip for trivial CRUD).** With answers in hand, propose 2-3 alternative shapes the app could take (e.g. "as a vault-notes app with a hub panel" vs. "as a derived view over `apps/task` data" vs. "as a generator with no persistent storage") and let the user pick. Often the first answer to Phase 1 is the obvious shape; the brainstorm surfaces the non-obvious shape that would have been better. State the tradeoff for each (what it makes cheap, what it makes expensive later) — don't just list names.
+**Phase 2 — Brainstorm pass (mandatory for "new shape", skip for trivial CRUD).** With answers in hand, propose 2-3 alternative shapes the app could take (e.g. "as a vault-notes app with a hub panel" vs. "as a derived view over `apps/public/core/task` data" vs. "as a generator with no persistent storage") and let the user pick. Often the first answer to Phase 1 is the obvious shape; the brainstorm surfaces the non-obvious shape that would have been better. State the tradeoff for each (what it makes cheap, what it makes expensive later) — don't just list names.
 
 **Phase 3 — Write the spec note (BA-shaped).** Write the answers + decisions to `{vault}/30_Resources/EmptyOS/grill/new-app-<id>-<ts>.md` with frontmatter `tags: [grill-spec]`, `recipe: new-app`. Section list: `grill-questions.md` §Phase 3. Anyone reading it should understand who the app is for and what "done" means, without re-running the grill.
 

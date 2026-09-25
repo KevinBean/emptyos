@@ -95,7 +95,6 @@ class SystemReactionsMixin:
                 msg, priority="info", kind="wellbeing",
                 dedup_key=self._daily_dedup("wellbeing"),
             )
-            await self._telegram(msg)
             self._log_action("journal:entry", "low mood support sent")
 
     @on_event("journal:created")
@@ -139,6 +138,13 @@ class SystemReactionsMixin:
         pr = event.data.get("pr", "")
         status = event.data.get("status", "")
         self._log_action("github:pr_status", f"PR {pr}: {status}")
+
+    @on_event("github:issue_imported")
+    async def on_github_issue_imported(self, event):
+        repo = str(event.data.get("repo", ""))[:30]
+        number = event.data.get("number", "?")
+        project = str(event.data.get("project", ""))[:30]
+        self._log_action("github:issue_imported", f"{repo}#{number} -> {project}")
 
     # ── Staff agents ──
 
@@ -188,7 +194,20 @@ class SystemReactionsMixin:
         action = event.data.get("action", "?")
         reason = event.data.get("reason", "")
         self._log_action("reflect:agent_modified", f"{agent_id}: {action} — {reason[:80]}")
-        await self._telegram(f"🧬 Self-modification: {agent_id} → {action}\n{reason[:100]}")
+        await self._notify(
+            f"🧬 Self-modification: {agent_id} → {action}\n{reason[:100]}",
+            priority="warning", kind="self-modification",
+            dedup_key=self._daily_dedup(f"selfmod:{agent_id}:{action}"),
+            # An agent changing itself must not wait out quiet hours or the
+            # cap: nothing retries a held one-off notice.
+            urgency="critical",
+        )
+
+    @on_event("reflect:agent_policy_proposed")
+    async def on_agent_policy_proposed(self, event):
+        agent_id = event.data.get("agent_id", "?")
+        field = event.data.get("field", "?")
+        self._log_action("reflect:agent_policy_proposed", f"{agent_id}: {field} (pending review)")
 
     @on_event("system:reflected")
     async def on_system_reflected(self, event):
@@ -199,12 +218,10 @@ class SystemReactionsMixin:
         await self._journal_ripple("🪞", f"System reflected: {health} — {insights} insights")
         if health == "declining":
             await self._notify(
-                f"System health declining — {insights} insights found",
+                f"System health declining — {insights} insights, "
+                f"{mods} self-modifications applied",
                 priority="warning", kind="system",
                 dedup_key=self._daily_dedup("syshealth"),
-            )
-            await self._telegram(
-                f"⚠️ System health declining. {insights} insights, {mods} self-modifications applied."
             )
 
     @on_event("settings:changed")
@@ -256,6 +273,19 @@ class SystemReactionsMixin:
         app_id = event.data.get("id", "")
         self._log_action("app-gen:created", f"new mini-app: {app_id}")
 
+    @on_event("app-gen:refined")
+    async def on_app_gen_refined(self, event):
+        app_id = event.data.get("id", "")
+        instruction = str(event.data.get("instruction", ""))[:50]
+        # app-gen emits on every refine turn, including one that changed no
+        # file — say so, or the log records a refinement that never happened.
+        tail = "" if event.data.get("changed", True) else " (no change)"
+        self._log_action("app-gen:refined", f"{app_id}: {instruction}{tail}")
+
+    @on_event("app-gen:refine_undone")
+    async def on_app_gen_refine_undone(self, event):
+        self._log_action("app-gen:refine_undone", f"refine undone: {event.data.get('id', '')}")
+
     @on_event("plugin-gen:created")
     async def on_plugin_gen(self, event):
         pid = event.data.get("id", "")
@@ -277,6 +307,16 @@ class SystemReactionsMixin:
     async def on_model_bench_chain(self, event):
         bucket = event.data.get("bucket", "")
         self._log_action("model-bench:chain_applied", f"bucket: {bucket}")
+
+    # Wired 2026-08-16 — previously declared-but-unheard (architecture review).
+    @on_event("model-bench:harness_compiled")
+    async def on_model_bench_harness(self, event):
+        promotable = event.data.get("promotable")
+        verdict = "promotable" if promotable else "rejected-by-holdout"
+        self._log_action(
+            "model-bench:harness_compiled",
+            f"{str(event.data.get('target', ''))[:30]} → {verdict}",
+        )
 
     @on_event("providers:changed")
     async def on_providers_changed(self, event):
@@ -344,7 +384,13 @@ class SystemReactionsMixin:
         errors = event.data.get("errors", 0)
         self._log_action("tests:run_completed", f"{path}: {passed}p/{failed}f/{errors}e")
         if failed or errors:
-            await self._telegram(f"🧪 Tests failed: {path} — {failed}f / {errors}e")
+            await self._notify(
+                f"🧪 Tests failed: {path} — {failed}f / {errors}e",
+                priority="warning", kind="system",
+                # One key for the day, not per path: a morning of failing runs
+                # must not spend the daily cap that reminders rely on.
+                dedup_key=self._daily_dedup("tests-failed"),
+            )
 
     # ── Publishing ──
 
@@ -360,8 +406,7 @@ class SystemReactionsMixin:
         site = event.data.get("site", "default")
         self._log_action("publish:deployed", f"site deployed: {site}")
         await self._journal_ripple("🚀", f"Deployed site '{site}'")
-        await self._notify(f"Site deployed: {site}", priority="info", kind="system")
-        await self._telegram(f"🚀 Site deployed: {site}")
+        await self._notify(f"🚀 Site deployed: {site}", priority="info", kind="system")
 
     # ── Billing ──
 

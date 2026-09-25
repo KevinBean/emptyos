@@ -2,15 +2,17 @@
   "manifest_version": 3,
   "minimum_chrome_version": "116",
   "name": "EmptyOS",
-  "version": "0.11.0",
-  "description": "Thin bridge to EmptyOS for Browser Sessions, Aura chat, capture, reading, dictionary, jobs, voice, cards, and streaming.",
+  "version": "0.12.0",
+  "description": "Thin bridge to EmptyOS for Browser Sessions, Aura chat, capture, lecture recording, reading, dictionary, jobs, voice, cards, and streaming.",
   "permissions": [
     "activeTab",
     "contextMenus",
     "storage",
     "scripting",
     "sidePanel",
-    "tabs"
+    "tabs",
+    "tabCapture",
+    "offscreen"
   ],
   "host_permissions": [
     "http://localhost:9000/*",
@@ -37,6 +39,20 @@
         "mac": "Command+Shift+E"
       },
       "description": "Open EmptyOS side panel"
+    },
+    "start-lecture-capture": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+L",
+        "mac": "Command+Shift+L"
+      },
+      "description": "Start lecture capture on this tab"
+    },
+    "capture-lecture-page": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+U",
+        "mac": "Command+Shift+U"
+      },
+      "description": "Capture this page (screenshot + text) to the lecture note"
     }
   }
 }

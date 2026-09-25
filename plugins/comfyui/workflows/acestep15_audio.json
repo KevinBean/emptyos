@@ -1,5 +1,5 @@
 {
-  "_comment": "ACE-Step 1.5 text-to-audio API workflow. Verified against local ComfyUI v0.17.0 on 2026-07-27.",
+  "_comment": "ACE-Step 1.5 text-to-audio API workflow. Verified against local ComfyUI v0.17.0 on 2026-07-27; key/meter templated 2026-08-15 against v0.33.0. WHAT IS DELIBERATELY NOT TEMPLATED, so it is not 'fixed' later: (1) node 5 cfg_scale/temperature/top_p/top_k/min_p are byte-identical to the node's own defaults and are flagged advanced by ComfyUI - hardcoding them is inert, not a bug; (2) node 5 generate_audio_codes must stay true - the tooltip says disable it only when supplying an audio reference, and this workflow has no audio input; (3) node 8 cfg=1.0 and node 4 shift=3.0 are the TURBO recipe, co-dependent with acestep_v1.5_turbo in _requires - a non-turbo checkpoint needs its own workflow file, not an argument. NOTE steps is NOT part of that recipe and was wrongly pinned at 8 until 2026-08-15: 8 is what turbo is distilled for, but 40 sounds audibly better and costs +2.5s on a 60s song (8 steps 0.65s sampling, 40 steps 3.10s, both at ~12.5 it/s). Do not re-pin it on the theory that a distilled model is converged - that theory was tested by ear and lost, while the spectral proxy that supported it (rolloff moved 3.8k->4.3k) did not predict what was audible; (4) node 7 batch_size must stay 1 because the caller reads items[0] and would silently discard the rest; (5) negative prompts are INERT here - at cfg 1.0 ComfyUI skips the uncond branch entirely (comfy/samplers.py), so node 6 exists only to satisfy KSampler's required negative input.",
   "_requires": [
     "acestep_v1.5_turbo.safetensors",
     "qwen_0.6b_ace15.safetensors",
@@ -44,9 +44,9 @@
       "seed": "{seed}",
       "bpm": "{bpm}",
       "duration": "{duration}",
-      "timesignature": "4",
+      "timesignature": "{timesignature}",
       "language": "{language}",
-      "keyscale": "E minor",
+      "keyscale": "{keyscale}",
       "generate_audio_codes": true,
       "cfg_scale": 2.0,
       "temperature": 0.85,
@@ -76,7 +76,7 @@
       "negative": ["6", 0],
       "latent_image": ["7", 0],
       "seed": "{seed}",
-      "steps": 8,
+      "steps": "{steps}",
       "cfg": 1.0,
       "sampler_name": "euler",
       "scheduler": "simple",

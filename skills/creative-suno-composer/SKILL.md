@@ -1,221 +1,119 @@
 ---
 name: creative-suno-composer
-description: Create Suno AI music — minimal prompts, maximum creativity — craft style/lyric prompts and iterate on generations. Use when the user says "Suno prompt", "make a song about X", or "write lyrics for Suno". NOT for archiving/organizing finished Suno songs (use creative-suno-archive) or the release pipeline (use creative-youtube-channel).
+description: Create, iterate, or review Suno songs and multi-style albums; turn a concept into copy-ready style/lyric prompts, compare generated audio, and learn from the user's catalog. Use when the user says "Suno prompt", "make a song about X", "design an album", or "review these Suno tracks". NOT for archiving/downloading finished songs (use creative-suno-archive) or publishing them (use creative-youtube-channel).
+vault_sync: true
 ---
 
-# Suno AI Composer
+# Suno Composer
 
-歌曲创作工作流。**核心原则：极简 Prompt，后置 Review。**
+Create music that carries the user's idea and taste. The working principle is
+**minimum sufficient control**: specify what must survive the generation, and
+leave the rest open enough for Suno to surprise us.
 
-## Reference
+## Route the request
 
-- **Style Guide**: `30_Resources/Technology/Suno AI 曲风参考.md`
-- **制作经验**: `30_Resources/Technology/洞察疗愈专辑制作经验.md`
-- **Healing Songs**: `20_Areas/Health/inner child healing songs.md`, `20_Areas/Health/insight healing songs.md`
+- **Single song** — develop a brief, lyrics, style prompt, and audition plan.
+- **Album / EP** — design the album identity and arc, then develop anchor tracks
+  before filling the sequence.
+- **Review existing generations** — inspect the exact prompt, lyrics, and audio;
+  compare versions and extract reusable lessons.
+- **Style or lyric revision only** — preserve the other half unless the user
+  asks to reopen it.
 
----
+By default, deliver copy-ready material. Using Suno itself can consume credits;
+generate, extend, remaster, publish, or train a model only when the user has
+explicitly asked for that external action.
 
-## Quick Start
+## Creative stance
 
-### 触发词
+1. **Album cohesion does not mean one genre.** Never impose a fixed genre, BPM
+   range, language, vocal type, or maximum number of styles. A multi-style album
+   can cohere through its thesis, narrative arc, recurring image, rhythmic
+   gesture, vocal perspective, production space, transition, or opening/closing
+   mirror.
+2. **Prompt length follows the control problem.** A familiar pop brief may need
+   one compact line. A through-composed, meditative, functional, or unusually
+   staged track may need precise dynamic instructions. Remove decorative
+   adjectives, not load-bearing direction.
+3. **The audio is the result.** A generation is not successful because it
+   followed the words on paper. Judge the recording: melody, diction, groove,
+   dynamics, emotional truth, and its role in the album.
+4. **Taste stays human-owned.** When several versions work, surface the tradeoff
+   and let the user's felt response decide. Plays and likes are weak supporting
+   signals, never the verdict.
+5. **Preserve the strange good part.** Revise around a surprising melody, vocal
+   crack, cadence, or production turn that gives a version life; do not polish
+   it away merely to satisfy a checklist.
 
-| User Says | Action |
-|-----------|--------|
-| "写首歌" / "create a song" | 极简 Prompt 生成 |
-| "疗愈歌曲" / "healing song" | 加一句洞察描述 |
-| "推荐曲风" / "what style" | Style Prompt 推荐 |
-| "优化歌词" / "polish lyrics" | openai_exec 优化 |
-| "优化歌名" / "song title" | 歌名生成 |
+## Build the brief
 
-### 核心原则
+Before writing, capture only the decisions that materially change the song:
 
-| 原则 | 说明 |
-|------|------|
-| **Prompt 极简** | 只给灵感，其他交给 AI |
-| **语言不限** | 中文、英文、混合都行 |
-| **曲风可混** | 不强制单一风格 |
-| **无人设** | 不加「专家」标签 |
-| **规则后置** | 检查在生成后，不在 prompt 中 |
+- listener job: what should this song let someone feel, do, remember, or move to?
+- source tension or scene: the concrete thing the song keeps returning to;
+- point of view and language choice;
+- structural mode;
+- must-keep words, images, facts, melody, or functional constraints;
+- choices intentionally left open to Suno.
 
----
+Choose a structural mode to fit the song rather than forcing every idea into
+verse–pre-chorus–chorus:
 
-## 默认极简 Prompt
+- **hook-led** — repetition and melodic recall carry the song;
+- **scene-led** — objects, actions, and changes in place carry the emotion;
+- **through-composed / movement-led** — development replaces a repeated chorus;
+- **meditative / spacious** — silence, drone, recurrence, and restrained change
+  are part of the form;
+- **functional** — dance cues, warm-up progression, timing, or other real-world
+  use is the primary success condition;
+- **spoken, bilingual, or hybrid** — code-switching and speech have an emotional
+  or dramatic reason, not novelty value.
 
-**必须通过 Bash 调用 openai_exec**（不要用 Task tool）：
+These are starting shapes, not a closed menu.
 
-```bash
-python openai_exec.py "写一首歌《歌名》。
+## Write the Suno inputs
 
-[一句话灵感]"
+### Style field
+
+Describe the few sonic relationships that matter. Useful ingredients include:
+
+1. style, era, or hybrid identity;
+2. motion or energy curve;
+3. the instruments or textures doing the work;
+4. vocal delivery and distance;
+5. production space or transition;
+6. a small number of exclusions only when Suno repeatedly adds the wrong thing.
+
+Compact example:
+
+```text
+City pop, 95 BPM; groovy bass, bright synths and snappy drums; intimate
+talk-sung vocal; confident, warm, forward-moving.
 ```
 
-### 示例
+Precise example:
 
-**最简形式**：
-```bash
-python openai_exec.py "写一首歌《蓝》。
-
-关于那种深深的、静静的悲伤，像海一样。"
+```text
+Meditative folk moving through five restrained lifts rather than a pop chorus.
+Fingerpicked nylon guitar begins alone; a low drone enters on lift two and one
+frame-drum strike marks lift five. Close, clear vocal; the intensity becomes
+quieter as the pitch rises. End in unaccompanied room tone, without a climax.
 ```
 
-**加一点方向**（可选）：
-```bash
-python openai_exec.py "写一首歌《玻璃墙》。
+Do not turn these examples into defaults. In particular, the catalog already
+uses ambient, folk, pop, rock, trip-hop, industrial, jazz, dance, devotional,
+spoken, and hybrid forms. Reach beyond recurring `warm / intimate / ambient /
+close-mic` language when the concept asks for another world.
 
-关于在别人情绪风暴中保护自己。想要画面感，不要说教。"
-```
+### Lyrics field
 
-**疗愈歌曲**：
-```bash
-python openai_exec.py "写一首歌《习惯》。
+**Every section tag gets a `(production direction)` line immediately after it.**
+This is the standing format for this catalog — do not drop it for brevity. The
+direction describes what the arrangement does in that section: instruments,
+energy, dynamics, vocal distance, space. Concise but pictorial; one line, in
+parentheses, before the first lyric line of the section.
 
-洞察：我不需要证明自己值得被爱。
-旧信念 → 新信念：我必须努力才能被爱 → 我本来就值得。"
-```
-
-### 不要在 Prompt 中加的东西
-
-| 删除 | 原因 |
-|------|------|
-| ❌ "你是华语歌词创作者" | 限定思维框架 |
-| ❌ "每行7-10字" | 生成后检查即可 |
-| ❌ "押韵用 -ang" | 让 AI 自由选择 |
-| ❌ "参考周杰伦风格" | 除非用户主动要求 |
-| ❌ "不要说教" | 生成后 review 时修 |
-| ❌ 指定语言（中文/英文） | 让 AI 根据主题自然选择 |
-
----
-
-## 工作流
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│  1. 收集灵感（一句话）                                        │
-│     └─ 不需要详细描述，简单即可                               │
-└──────────────────────┬──────────────────────────────────────┘
-                       ↓
-┌─────────────────────────────────────────────────────────────┐
-│  2. OpenAI 生成初稿（极简 Prompt）                            │
-│     └─ python openai_exec.py "写一首歌《X》。[灵感]"         │
-└──────────────────────┬──────────────────────────────────────┘
-                       ↓
-┌─────────────────────────────────────────────────────────────┐
-│  3. Claude Review（用下方清单）                              │
-│     └─ 检查自然感、可唱性、情绪传达                          │
-└──────────────────────┬──────────────────────────────────────┘
-                       ↓
-┌─────────────────────────────────────────────────────────────┐
-│  4. OpenAI 优化（1-2轮，针对具体问题）                       │
-│     └─ 提供：当前版本 + 问题列表                             │
-└──────────────────────┬──────────────────────────────────────┘
-                       ↓
-┌─────────────────────────────────────────────────────────────┐
-│  5. 生成 Style Prompt + 保存笔记                             │
-│     └─ 主题、Style Prompt、歌词、production notes            │
-└─────────────────────────────────────────────────────────────┘
-```
-
----
-
-## 生成后 Review
-
-> **以下清单用于生成后检查，不要放入 Prompt！**
-
-### 通用检查项
-
-- [ ] **自然感**：朗读一遍，听起来像人话吗？
-- [ ] **可唱性**：有气口吗？节奏顺吗？
-- [ ] **情绪传达**：情绪旅程完整吗？
-- [ ] **字数/音节**：中文 7-10字 / 英文 6-10 syllables（超过12就要拆）
-- [ ] **押韵**：主韵统一吗？（90%+ 同韵）
-
-### 陷阱警告
-
-#### 语序扭曲（最常见问题）
-
-很多「文艺」歌词把「诗意」理解成「打乱语序」，导致：
-- 唱起来不顺口
-- 听起来像翻译腔
-- 失去情感冲击力
-
-| 问题歌词 | 修正版本 | 问题分析 |
-|----------|----------|---------|
-| 咖啡杯雾气模糊你 | 咖啡杯的雾 模糊了你 | 缺少虚词 |
-| 童年油彩晕开我的名 | 小时候画脸谱 画着画着忘了自己 | 意象堆叠 |
-| 初见眼睛躲开光 | 初见时 你眼睛躲开光 | 缺主语 |
-
-**自然感检查**：
-1. 不看字，单凭听觉能听懂吗？
-2. 「的」「了」「着」该有的有吗？
-3. 这一行有几个独立意象？（超过1个就警惕）
-4. 有动词带动节奏吗？
-
-#### 说教/直白（Pop 风格要避免）
-
-| 避免 | 改用 |
-|------|------|
-| "我学会了..." | 用场景暗示 |
-| "原来..." | 用画面展示 |
-| "没关系" | 用行动表达 |
-
-#### 意象过密（Artistic 风格要注意）
-
-每行最多一个核心意象，用动词/场景带过其他元素。
-
-**参考标杆**（《玻璃墙》）：
-```
-以前你情绪砸落像雨飘   ← 语序正常，一个比喻
-我像窗纱无力只让雾飘   ← 语序正常，一个比喻
-每滴雨滑过把心浇到老   ← 动词带动（滑过、浇）
-```
-
----
-
-## 三种风格参考
-
-保留作为理解参考，但**不影响 Prompt 生成**：
-
-| 维度 | Healing 治愈 | Pop 流行 | Artistic 艺术 |
-|------|-------------|----------|--------------|
-| **核心目标** | 疗愈效果 | 传唱度 | 艺术表达 |
-| **表达方式** | 直接说出洞察 | 画面叙事 | 意象隐喻 |
-| **语言风格** | 温暖、肯定 | 口语、自然 | 诗意（但语序仍需自然） |
-| **副歌特点** | 重复核心信念 | catchy hook | 升华意象 |
-
-### 同一主题「允许自己慢」三种表达
-
-**Healing**：慢一点 没关系的 / 你不用追赶任何人
-
-**Pop**：窗外的雨落得很慢 / 茶杯里还有余温 / 不着急收拾昨天的梦
-
-**Artistic**：芭蕉听雨 一滴一滴 / 都是时间的脚印
-
----
-
-## OpenAI 优化 Prompt
-
-当需要修改时：
-
-```bash
-python openai_exec.py "优化以下歌词：
-
-[当前版本]
-
-问题：
-1. 第三行语序不自然
-2. 副歌不够 catchy
-3. Bridge 意象太密
-
-保持原有情感，修复这些问题。"
-```
-
----
-
-## Production Direction Notes
-
-每个 section tag 后加 `(production direction)` 指导 Suno 音频生成。
-
-```
+```text
 [Verse 1]
 (mid-tempo groove with piano lead, crisp drums, shimmering guitars)
 Lyrics here...
@@ -223,162 +121,242 @@ Lyrics here...
 [Chorus]
 (full band lift; pounding drums, handclaps, stacked vocals)
 Hook line here...
+
+[Bridge]
+(everything drops to voice and bass; half-time feel; room tone audible)
+...
 ```
 
-**要点**：描述乐器、能量、动态、氛围。简洁但有画面感。
+Sections with different energy must read differently in their direction line —
+two choruses that should not be copies get two different directions. The Styles
+field describes the song's overall sonic relationships; the per-section
+directions carry the arc.
 
----
+These directions are **steering hints, not guaranteed control syntax**. Suno may
+reinterpret a label or sing a parenthetical note, so keep each line short and
+free of anything that would be wrong if sung. Verify the audio.
 
-## Style Prompt 生成
+For model-specific capabilities or syntax, verify the current official Suno
+documentation first. Do not present the old v4.5 guidance as current; the
+catalog already contains v5 and v5.5 generations.
 
-### 三层架构
+## Lyric review
 
+Review aloud and in the generated recording.
+
+- **Natural order:** would a person say it this way without the melody?
+- **Breath unit:** can the singer carry the line without cramming or an awkward
+  pause? Chinese 7–10 characters and English 6–10 syllables are useful starting
+  ranges, not rules; long or short lines are valid when the phrasing earns them.
+- **Scene before aphorism:** a maxim is strongest when the song has first made
+  it concrete. The catalog's producer reviews repeatedly found that a line
+  reaching for a conclusion can break the lived-in register.
+- **Rhyme serves delivery:** do not demand 90% one-rhyme consistency. Use rhyme,
+  slant rhyme, consonance, or deliberate non-rhyme according to the voice and
+  genre.
+- **Hook function:** the hook may be a title, action, sound, image, spoken cue,
+  melodic phrase, or returning production gesture; it need not be a conventional
+  chorus.
+- **Bilingual phrasing:** switch language where thought, character, rhythm, or
+  intimacy changes. Remove translations that merely duplicate the previous line.
+- **Meaning fidelity:** protect source facts and the user's intended emotional
+  boundary. For public work based on private material, deliberately choose
+  direct detail, abstraction, or fictionalization rather than leaking specifics
+  by accident.
+
+When revising, name the exact problem and change only enough to solve it. One or
+two targeted passes are usually more useful than rewriting the whole song.
+
+## Audition generations
+
+If exploration is wanted, generate meaningfully different candidates rather
+than repeated clones. A useful starting set is:
+
+- **A — concept-faithful:** preserves the brief with the least intervention;
+- **B — stronger musical proposition:** makes the hook, melody, groove, or
+  dynamic turn more decisive;
+- **C — unexpected but faithful:** changes the sonic world or form while keeping
+  the core tension intact.
+
+Two strong candidates may be enough; add a third only when it tests a real
+hypothesis. On later rounds, vary one load-bearing dimension at a time so the
+result teaches us something.
+
+Listen once without reading, then once with lyrics and prompt visible. For each
+candidate record:
+
+- immediate emotional and bodily response;
+- the moment remembered after one listen;
+- vocal identity and intelligibility;
+- groove, tempo feel, and arrangement arc;
+- strongest accident worth protecting;
+- one failure that actually matters;
+- album role and contrast with neighboring tracks;
+- decision: keep, revise, repurpose, or reject — with a reason.
+
+For functional music, measure the condition that matters. A dance or warm-up
+track needs actual BPM, cue clarity, safe progression, and usable duration; a
+meditation track needs real silence/space and loop behavior. A number written in
+the prompt is not verification.
+
+## Design a multi-style album
+
+Write a short album bible before drafting every track:
+
+- one-sentence thesis and listener journey;
+- opening state, turning point, and closing state;
+- two to four cohesion axes chosen for this album;
+- recurring images, phrases, sounds, or transitions;
+- deliberate contrast plan: where genre, language, tempo, density, or voice
+  changes and why;
+- no-go list specific to this album;
+- track roles and running order;
+- two or three anchor tracks to audition first.
+
+Good cohesion axes include concept, narrative, place, season, character,
+language progression, recurring field recording, shared harmonic color,
+production texture, vocal point of view, dynamic contour, or an opener/closer
+callback. Genre is only one possible axis.
+
+Audition the anchor tracks before completing the rest. One should establish the
+album's thesis, one should test its widest contrast, and one should reveal the
+ending register. Let their audio results recalibrate later briefs. Sequence for
+emotional causality and useful contrast, not a mechanical slow-to-fast curve.
+
+## Per-song loop
+
+Album work runs one song at a time, each song in its own note, every note
+through the same two gates. This replaced "write the whole bible, then draft
+every track" on 2026-09-06, after a 2,500-word spec turned composing into
+compliance and the feeling of the early albums went missing.
+
+**The album note is short.** Under ~300 words: a `## 核心句` in the user's own
+words (the album has not started until the user has written it), a `## 曲目`
+table linking each song note, a `## 整體形狀` of a few lines, and a `## 進度`
+checkbox list. A long spec or "creative bible" is an attachment
+(`_<album>-製作規格.md`), never the starting point. Model:
+`{vault}/70_Media/Music/不识/album.md`.
+
+**One note per song, one song at a time.** Do not pre-write every note. Open
+the next song only when the current one has reached `generated`.
+
+**Song note sections**, in this order: `場景` (one sentence) · `Hook` (the line
+that cannot be lost) · `歌詞` (every section tag with its production-direction
+line) · `Suno 欄位` (Title / Styles / Exclude / sliders, plus a short sound
+direction) · `文字檢查` · `生成記錄` · `聽感`. Frontmatter carries `status` and
+the catalog fields `suno_url`, `suno_song_id`, `suno_model`, `suno_created`.
+
+**Status — exactly these five, never a new one:**
+`draft` → `text-checked` → `generated` → `selected` | `revise` | `shelved`.
+`revise` returns the note to `draft`.
+
+**CHECK, before generating.** Run the Lyric review list above (natural order,
+breath unit, scene before aphorism, rhyme serves delivery, hook function,
+bilingual phrasing, meaning fidelity) plus the album's own no-go list. Write
+the result into `## 文字檢查`: one line per item — pass, or what changed — and
+the single line most likely to read as false or AI-written, with its fix. A
+note without this section is not generated. Status → `text-checked`.
+
+**GENERATE.** One song, one submission: candidate A, concept-faithful. B and C
+are generated only after A has been heard and there is a specific hypothesis
+to test. Immediately write each clip's URL, id, model and creation time into
+`## 生成記錄`. Status → `generated`. Then stop — listening belongs to the user.
+
+**LISTEN, the user's.** Record the user's verdict in `## 聽感` with the
+audition fields above; keep / revise / repurpose / reject sets the status.
+
+**Suno through the browser.** The lyrics field is a contenteditable div, not a
+textarea. Streaming ~2,500 characters as keystrokes froze the renderer for over
+a minute (measured 2026-09-06); one `execCommand('insertText')` call inserts
+the text but drops every line break; `insertParagraph` between lines does
+nothing. What works (verified 2026-09-06): the editor is Lexical, and a
+synthetic paste keeps every line break —
+`ed.focus(); const dt = new DataTransfer(); dt.setData('text/plain', text);`
+`ed.dispatchEvent(new ClipboardEvent('paste', {clipboardData: dt, bubbles: true, cancelable: true}))`
+on `div.lyrics-editor-content[contenteditable]`. Clear first with a real
+`ctrl+a` + `Delete` keystroke. Styles / Exclude / Title are plain inputs
+(`form_input` works); the sliders are `role=slider` elements. The create
+form is a server-side draft shared across tabs, so a half-filled form in a
+frozen tab reappears in the next one — check the fields before submitting.
+Read the song page (`/song/<id>`) after generation: it shows the exact
+lyrics, styles, excludes, model and creation time to copy into the note.
+
+## Learn from an existing catalog
+
+When asked to analyze finished work, use the archived evidence instead of
+memory. Start with `{vault}/70_Media/Music/_suno-index.json`, album notes,
+per-track notes, exact audio, and download/copyright manifests.
+
+Separate three evidence levels:
+
+- **observed:** exact prompt, lyric, audio, model, duration, generation ID, date;
+- **selected:** the user's explicit choice, producer verdict, published version,
+  or documented rejection reason;
+- **inferred:** a pattern across works. Label it as an inference and do not turn
+  a single success into a universal rule.
+
+Compare matched pairs when possible: two prompts for one song, a remaster and
+original, two vocal versions, or two tracks with the same function. Extract the
+smallest lesson that explains the audible difference. Update this skill only
+for repeated patterns or explicit standing preferences; keep one-album choices
+inside that album's bible.
+
+Current catalog priors to preserve:
+
+- multi-style and multilingual albums are intentional, not drift;
+- strong albums often establish a concept, arc, no-go list, and anchor tracks
+  before polishing individual songs;
+- effective prompts range from compact genre sketches to detailed production
+  maps; specificity matters more than brevity;
+- hooks, spoken cues, movements, silence, and production motifs can replace a
+  literal chorus;
+- short conversational lines are common, but strict line-length and rhyme rules
+  would erase successful exceptions;
+- `warm / intimate / ambient / guitar / piano / reverb` form a recurring home
+  palette. Treat it as a signature available to use, not the automatic answer.
+
+## Deliverables
+
+For a single song, normally return:
+
+```text
+Title
+Core brief
+Style
+Lyrics
+Candidate variation to test (if useful)
+What to listen for
 ```
-[曲风] | [情绪+乐器] | [人声+制作]
+
+For an album, normally return:
+
+```text
+Album thesis and arc
+Cohesion axes
+Contrast plan
+Track roles / running order
+Anchor tracks
+No-go list
+Per-track briefs and prompts as they are developed
 ```
 
-示例：
-```
-Ambient dream pop, 78 BPM | warm, introspective, Rhodes piano, soft pads | female vocal, whispered verses, lo-fi production
-```
+When saving a selected generation, preserve the exact Style and Lyrics payloads,
+model/version, song ID and URL, creation time, audio path, candidate label,
+selection/rejection reason, and any measured functional properties. Keep prompt
+intent separate from measured audio fact.
 
-### 曲风速查
+## References
 
-| 情绪 | 推荐曲风 | BPM |
-|------|----------|-----|
-| 温暖治愈 | Ambient dream pop | 70-85 |
-| 轻松释然 | Lo-fi indie | 80-95 |
-| 坚定力量 | Indie pop/rock | 95-110 |
-| 忧郁内省 | Sad indie | 65-80 |
-
----
-
-## 歌名生成
-
-```bash
-python openai_exec.py "为这首歌生成 5 个歌名。
-
-主题：[主题描述]
-情绪：[情绪描述]
-
-要求：2-5字，有画面感，避免俗套词（勇敢、梦想、相信）。"
-```
-
-**好歌名标准**：简短有力、有画面感、有情绪钩子、易记易传。
-
----
-
-## 笔记记录格式
-
-```markdown
-## 歌名（洞察X：主题）
-
-**主题**: 一句话概括
-**曲风/Style**: `完整 Style Prompt`
-
-### 歌词
-
-[完整歌词含 production notes]
-
-### 使用说明
-
-**这首歌治愈什么？** [描述]
-**什么时候听？** [场景]
-```
-
----
-
-## 专辑管理
-
-状态符号：⏳待创作 | 🔄进行中 | ✅已完成
-
-同一专辑建议统一 BPM 范围、主曲风、押韵倾向。
-
----
-
-## Troubleshooting
-
-| 问题 | 解决 |
-|------|------|
-| 歌词太诗意/翻译腔 | 检查语序、虚词、意象密度 |
-| 押韵混乱 | 优化时指定主韵 |
-| 行太长 | 让 openai_exec 拆分 |
-| 不够 catchy | 强调 hook 需要重复 |
-
----
-
-## Related
-
-- YouTube Channel: `youtube-channel` skill
-- Style Reference: `30_Resources/Technology/Suno AI 曲风参考.md`
-
----
-
-<details>
-<summary>Archive: 完整版 Prompts（点击展开）</summary>
-
-### 中文歌词规范（历史参考）
-
-| 项目 | 规范 |
-|------|------|
-| **字数** | 普通行 7-10字，Hook 5-8字，最多12字 |
-| **押韵** | 统一主韵，推荐开口韵 -ang/-ao/-ai |
-| **风格** | talk-sung，像说话不像诗 |
-
-### talk-sung 参考
-
-| 要做 | 不要做 |
-|------|--------|
-| 像跟自己说话 | 像在写诗 |
-| 口语化用词 | 书面语/成语 |
-| 短句、有气口 | 长句不断句 |
-
-**参考标杆**：《习惯》副歌
-```
-习惯 让好事落下来
-习惯 不用再证明
-你说好 那就是好
-这就够了 不用再做什么
-```
-
-### Era Reference（英文歌曲）
-
-| Era | Style Keywords | BPM | Reference Feel |
-|-----|----------------|-----|----------------|
-| 70s Beach Boys | Soft rock, layered harmonies | 105-115 | Sunny, warm |
-| 70s Glam | Theatrical rock, flamboyant | 110-120 | Bowie vibe |
-| 80s Synth-pop | Electronic pop, sequenced | 110-125 | Cool, retro |
-| 90s Grunge | Raw rock, distorted | 90-110 | Heavy, real |
-| 2010s Americana | Road-weary, bittersweet | 95-110 | Baritone, folk |
-
-### 英文 Style Prompts（历史版本）
-
-**Healing Mode (English)**:
-```bash
-python openai_exec.py "Write healing lyrics for '[Title]'.
-Theme: [insight]
-Old belief → New belief: [transformation]
-Conversational, like Phoebe Bridgers. 6-10 syllables per line."
-```
-
-**Pop Mode (English)**:
-```bash
-python openai_exec.py "Write pop lyrics for '[Title]'.
-Theme: [one sentence]
-Show don't tell. No preaching. Catchy hook. 6-10 syllables."
-```
-
-**Artistic Mode (English)**:
-```bash
-python openai_exec.py "Write artistic lyrics for '[Title]'.
-Core imagery: [image]
-Let images carry meaning. Leave space. Poetic but not pretentious."
-```
-
-### Legacy Pipeline
-
-> 实验结论：直接生成优于 Pipeline
-
-6阶段流程（已废弃）：INPUT → CONCEPT → STYLE → LYRICS → REVIEW → OUTPUT
-
-</details>
+- Catalog index: `{vault}/70_Media/Music/_suno-index.json`
+- Style vocabulary (legacy v4.5 reference; vocabulary only, not constraints):
+  `{vault}/30_Resources/Technology/Suno AI 曲风参考.md`
+- Earlier healing-album workflow (historical evidence, not a universal recipe):
+  `{vault}/30_Resources/Technology/洞察疗愈专辑制作经验.md`
+- Useful album examples:
+  - `{vault}/70_Media/Music/further-assessment/further-assessment.md`
+  - `{vault}/70_Media/Music/不识/album.md`
+  - `{vault}/10_Projects/YouTube-Music-Channel/songs/temporary-residence-album/_临时居所-Album.md`
+  - `{vault}/10_Projects/YouTube-Music-Channel/songs/warwick-album/_Twelve-Moons-Album.md`
+  - `{vault}/10_Projects/YouTube-Music-Channel/songs/zero-bias-album/_零偏置-Album.md`
+- Current official model reference: `https://help.suno.com/en/articles/11362305`
+- Official prompt-in-Lyrics guidance: `https://help.suno.com/en/articles/5782977`

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Icon Studio"
+  short_description: "Create cohesive icons in adaptable visual styles"
+  default_prompt: "Use $icon-studio to create a cohesive icon set from my brief or reference image."

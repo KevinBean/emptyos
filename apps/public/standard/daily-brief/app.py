@@ -515,7 +515,3 @@ class DailyBriefApp(BaseApp):
     api_command_center       = _snapshots.api_command_center
     _SIGNAL_LABELS           = _snapshots._SIGNAL_LABELS
 
-
-def _md_esc(s: str) -> str:
-    """Escape the few characters that break a markdown link label."""
-    return (s or "").replace("[", "(").replace("]", ")").strip()

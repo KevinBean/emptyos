@@ -67,7 +67,9 @@ a.eos-btn .ico { font-size:16px }
 // public booking route (/bookme/b or /bookme/b/<event>). Anything else = owner.
 var PUBLIC = !!window.EOS_PUBLIC_FACE || /\/bookme\/b(\/|$)/.test(location.pathname);
 var root = document.getElementById('root');
-function esc2(s){ return (window.esc ? esc(String(s==null?'':s)) : String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];})); }
+// escAttr, not esc: this page interpolates into attribute values (value="", data-t="",
+// href="") as well as text, and EOS_UI.esc leaves quotes alone.
+function esc2(s){ return EOS_UI.escAttr(s==null?'':String(s)); }
 function api(method, path, body){
   return fetch(path, {method:method, headers: body?{'Content-Type':'application/json'}:{}, body: body?JSON.stringify(body):undefined})
     .then(function(r){ return r.json(); });
@@ -81,7 +83,7 @@ if (PUBLIC) {
 
   function renderPublic(){
     if (!EV) { root.innerHTML = '<div class="bm-card">Loading…</div>'; return; }
-    if (EV.error) { root.innerHTML = '<div class="bm-card bm-err">This booking link is not available.</div>'; return; }
+    if (EV.error) { root.innerHTML = '<div class="bm-card">'+EOS_UI.errorState({message:'This booking link is not available.'})+'</div>'; return; }
     root.innerHTML =
       '<div class="bm-hero"><h1>'+esc2(EV.name)+'</h1>'+
       '<div class="desc">'+esc2(EV.duration_min)+' min'+(EV.owner_name?(' with '+esc2(EV.owner_name)):'')+
@@ -328,7 +330,7 @@ else {
     body.innerHTML = '<div class="bm-muted">Loading…</div>';
     api('GET','/bookme/api/bookings').then(function(r){
       var rows = (r && r.bookings) || [];
-      if (!rows.length) { body.innerHTML = '<div class="bm-card bm-muted">No bookings yet.</div>'; return; }
+      if (!rows.length) { body.innerHTML = '<div class="bm-card">'+EOS_UI.emptyState({icon:'📅', message:'No bookings yet. Share an event link and bookings land here.'})+'</div>'; return; }
       body.innerHTML = rows.map(function(b){
         var cancelled = (b.status==='cancelled');
         return '<div class="bm-booking'+(cancelled?' cancelled':'')+'">'+

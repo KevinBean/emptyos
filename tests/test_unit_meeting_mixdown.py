@@ -9,10 +9,16 @@ from __future__ import annotations
 import io
 import wave
 
-import numpy as np
 import pytest
 
 from emptyos.sdk.audio import mix_streams_to_wav
+
+# numpy is an optional extra (`semantic` / `fem`), and `mix_streams_to_wav`
+# imports it lazily so the SDK works without it. CI installs neither extra, so a
+# module-level `import numpy` here aborted collection for the whole suite —
+# exit 2, taking the collect-only gate and the API job down with it. Skip the
+# module instead, matching every other optional-dep test in this directory.
+np = pytest.importorskip("numpy")
 
 
 def _read(wav_bytes: bytes):

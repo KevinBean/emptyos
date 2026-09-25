@@ -23,7 +23,7 @@ def _vault_root() -> Path:
     repo_root = Path(__file__).resolve().parents[1]
     config_path = repo_root / "emptyos.toml"
     if not config_path.exists():
-        config_path = repo_root / "emptyos.toml.example"
+        config_path = repo_root / "emptyos.example.toml"
     with config_path.open("rb") as fh:
         config = tomllib.load(fh)
     path = config.get("notes", {}).get("path", "")
@@ -602,7 +602,7 @@ references:
   - "CIGRE TB 889 cable pulling"
   - "IEEE 1185-2019 capstan equation"
 verified_by:
-  - "apps/personal/cable-pulling/pulling.py::calculate_pull"
+  - "apps/extension/engineering/cable-pulling/pulling.py::calculate_pull"
 related:
   - cable-pulling-tension
 created: 2026-06-04

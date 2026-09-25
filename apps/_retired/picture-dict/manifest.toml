@@ -1,0 +1,90 @@
+[app]
+id = "picture-dict"
+store_category = "productivity"
+name = "Picture Dictionary"
+version = "1.0.0"
+description = "Learn English vocabulary from real photographs — browse a visual gallery, quiz yourself, say the words aloud, and review what you keep."
+icon = "🖼"
+dimensions = ["intellectual"]
+user_intent = [
+    "I want to learn animal names in English",
+    "show me a picture of a heron",
+    "quiz me on animals",
+    "what is this animal called in English",
+    "practise saying animal names",
+    "看图学单词",
+    "这个动物英语怎么说",
+    "动物单词测验",
+]
+
+[app.entry]
+module = "app"
+class = "PictureDictApp"
+
+[requires]
+# All three are SOFT — each is probed at call time and each has a degraded path,
+# so the app is fully usable on a daemon with no voice stack at all.
+capabilities = ["speak", "listen", "pronounce"]
+apps = []
+# dictionary -> the star "save to my vocabulary" sink (it owns the vault contract).
+# learn      -> the unified review queue. Absent = our cards simply don't appear.
+optional_apps = ["dictionary", "learn"]
+
+[provides.cli]
+commands = ["picture-dict"]
+
+[provides.web]
+prefix = "/picture-dict"
+
+[provides.events]
+emits = [
+    "picture-dict:quiz_completed",
+    "picture-dict:word_saved",
+    "picture-dict:images_ready",
+]
+
+[provides.settings]
+schema = [
+    { key = "picture-dict.prefetch_on_open", label = "Fetch photos automatically", type = "boolean", default = true, hint = "Downloads the pack's photos in the background the first time you open the app. Off means the gallery stays on emoji tiles until you press Fetch photos." },
+    { key = "picture-dict.image_width", label = "Photo size", type = "select", default = "500", options = ["330", "500", "960"], hint = "These are the only sizes the photo service actually serves. Measured for a 130-animal pack: 330 is about 5 MB on disk, 500 about 10 MB, 960 about 31 MB." },
+    { key = "picture-dict.quiz_length", label = "Questions per quiz", type = "select", default = "10", options = ["5", "10", "15", "20"] },
+    { key = "picture-dict.quiz_mode", label = "Quiz direction", type = "select", default = "photo-to-name", options = ["photo-to-name", "name-to-photo", "mixed"] },
+    { key = "picture-dict.show_chinese", label = "Show 中文", type = "boolean", default = true },
+    { key = "picture-dict.pass_score", label = "Speaking pass mark", type = "select", default = "0.85", options = ["0.70", "0.80", "0.85", "0.90"], hint = "A spoken attempt at or above this counts the review card as remembered. Below it the attempt is recorded but never grades the card down — a bad microphone should not wreck a schedule." },
+]
+
+[[contributes.hub.panel]]
+id = "picture-dict-due"
+title = "🖼 Pictures"
+method = "panel_due"
+renderer = "stat-tile"
+priority = 138
+group = "dashboard"
+lazy = true
+
+[[provides.verbs]]
+verb = "picture-dict.lookup"
+method = "lookup"
+summary = "Show the picture and name for an animal"
+args = { name = "string" }
+eligibility = "stable"
+surfaces = ["voice", "assistant", "mcp", "agent"]
+voice = { method = "voice_lookup", example = "show me a picture of a heron", description = "Find one item in the picture dictionary and describe it.", always = false, card = "entity-card" }
+assistant = { slash = "/pic", method = "lookup", arg = "name" }
+
+[[provides.verbs]]
+verb = "picture-dict.due"
+method = "srs_due"
+summary = "How many picture cards are due for review"
+args = { limit = "number?" }
+eligibility = "stable"
+surfaces = ["voice", "assistant", "mcp", "agent"]
+voice = { method = "voice_due", example = "how many pictures are due", description = "Report the picture-card review backlog.", always = false }
+
+[[provides.verbs]]
+verb = "picture-dict.save"
+method = "save_to_vocabulary"
+summary = "Save a picture-dictionary word to your vocabulary"
+args = { slug = "string" }
+eligibility = "gated"
+surfaces = ["mcp", "agent"]

@@ -68,6 +68,7 @@ ICON_WIN = ROOT / PRODUCT.brand_dir / "icon.ico" if PRODUCT.brand_dir else None
 ICON_MAC = ROOT / PRODUCT.brand_dir / "icon.icns" if PRODUCT.brand_dir else None
 
 hidden = []
+PRODUCT_EXCLUDES = set(PRODUCT.exclude_packages)
 # Third-party packages that lazy-import their own submodules (uvicorn's
 # protocols, apscheduler's executors) vanish from the bundle unless collected.
 #
@@ -82,8 +83,27 @@ hidden = []
 for pkg in ("uvicorn", "fastapi", "starlette", "anyio", "h11", "h2",
             "aiohttp", "anthropic", "openai", "watchfiles", "apscheduler",
             "pystray", "PIL"):
+    if pkg in PRODUCT_EXCLUDES:
+        continue
     try:
         hidden += collect_submodules(pkg)
+    except Exception:
+        pass
+
+# Plugins are loaded from the tier tree at runtime, outside PyInstaller's
+# static import graph. Products name the optional packages those plugins need;
+# keeping this declarative avoids hard-coding one product's dependencies into
+# the shared spec. Adding the package itself also handles single-module wheels
+# for which collect_submodules() correctly returns an empty list.
+for pkg in PRODUCT.collect_packages:
+    if pkg not in hidden:
+        hidden.append(pkg)
+    try:
+        hidden += collect_submodules(pkg)
+    except Exception:
+        pass
+    try:
+        datas += collect_data_files(pkg)
     except Exception:
         pass
 
@@ -108,6 +128,8 @@ HEAVY_EXCLUDES = [
     "playwright", "av", "pyarrow",
 ]
 
+ALL_EXCLUDES = ["tkinter", *HEAVY_EXCLUDES, *PRODUCT.exclude_packages]
+
 
 a = Analysis(
     [str(PRODUCT_DIR / "launcher.py")],
@@ -121,7 +143,7 @@ a = Analysis(
     # NOT "unittest": some engines import it at module level, and excluding it
     # made them fail to load ("No module named 'unittest'"). Inherited from the
     # plekto spec, where those engines weren't in the tier so it never showed.
-    excludes=["tkinter", *HEAVY_EXCLUDES],
+    excludes=ALL_EXCLUDES,
     noarchive=False,
     optimize=0,
 )

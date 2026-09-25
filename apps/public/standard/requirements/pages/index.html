@@ -15,18 +15,23 @@
   table.req-table th, table.req-table td { text-align:left; padding:9px 12px;
     border-bottom:1px solid var(--border); font-size:14px; }
   table.req-table th { color:var(--text-muted); font-weight:600; font-size:12px;
-    text-transform:uppercase; letter-spacing:.03em; }
+    text-transform:uppercase; letter-spacing:var(--tracking-meta); }
   table.req-table tr.req-row { cursor:pointer; }
   table.req-table tr.req-row:hover { background:var(--bg-card-hover); }
   .req-id { font-family:var(--mono, monospace); color:var(--text-muted); white-space:nowrap; }
   .req-detail-field { margin:14px 0; }
-  .req-detail-field .lbl { font-size:12px; text-transform:uppercase; letter-spacing:.03em;
+  .req-detail-field .lbl { font-size:12px; text-transform:uppercase; letter-spacing:var(--tracking-meta);
     color:var(--text-muted); margin-bottom:5px; }
   .req-ref { display:inline-flex; gap:6px; align-items:center; margin:3px 6px 3px 0;
     padding:4px 9px; border-radius:8px; border:1px solid var(--border); background:var(--surface); }
   .req-ref.matched { border-color:var(--green); }
   .req-ref a { color:var(--accent); text-decoration:none; }
   .req-statement { white-space:pre-wrap; line-height:1.55; }
+  .req-suspect-flag { display:inline-block; margin-left:6px; padding:2px 8px; border-radius:8px;
+    font-size:11px; font-weight:600; background:color-mix(in srgb, var(--warning) 18%, transparent);
+    color:var(--warning); white-space:nowrap; }
+  .req-suspect-banner { padding:8px 12px; border-radius:8px; margin-bottom:10px; font-size:13px;
+    background:color-mix(in srgb, var(--warning) 14%, transparent); color:var(--warning); font-weight:600; }
 </style>
 </head>
 <body>
@@ -43,6 +48,9 @@
         <select id="f-status" onchange="load()"><option value="">All</option></select>
       </label>
       <div class="spacer"></div>
+      <button class="eos-btn eos-btn-sm" onclick="exportRtm('csv')" title="Requirements Traceability Matrix — requirement, standard clause, verification evidence">Export RTM (CSV)</button>
+      <button class="eos-btn eos-btn-sm" onclick="openImportPicker()" title="Onboard requirements from a spreadsheet — Statement/Title/Project/Priority/References columns">Import CSV</button>
+      <input type="file" id="import-file-input" accept=".csv,text/csv" style="display:none" onchange="handleImportFile(event)">
       <button class="eos-btn eos-btn-primary" onclick="openAdd()">+ Requirement</button>
     </div>
     <div id="list"></div>
@@ -59,8 +67,7 @@ var STATUS_MAP = { proposed:'draft', approved:'active', verified:'pass', superse
 function esc(s){ return EOS_UI.esc(s == null ? '' : String(s)); }
 
 function statusBadge(status){
-  var v = EOS_UI.statusVariant(status, STATUS_MAP);
-  return '<span class="eos-badge eos-badge-' + v + '">' + esc(status) + '</span>';
+  return EOS_UI.statusBadge(status, status, STATUS_MAP);
 }
 
 function fillFilters(){
@@ -90,7 +97,7 @@ function render(){
       '<td class="req-id">' + esc(r.req_id) + '</td>' +
       '<td>' + esc(r.title) + '</td>' +
       '<td>' + esc(r.project) + '</td>' +
-      '<td>' + statusBadge(r.status) + '</td>' +
+      '<td>' + statusBadge(r.status) + (r.suspect ? ' <span class="req-suspect-flag" title="Verified, but the note has been edited since — re-verify">🚩 suspect</span>' : '') + '</td>' +
       '<td>' + esc(r.priority) + '</td>' +
       '<td>' + esc(r.references) + '</td>' +
     '</tr>';
@@ -120,6 +127,75 @@ async function load(){
     fillFilters();
     render();
   }
+}
+
+function exportRtm(format){
+  var project = document.getElementById('f-project').value || '';
+  var qs = '?project=' + encodeURIComponent(project) + '&format=' + encodeURIComponent(format || 'csv');
+  window.open('/requirements/api/export/rtm' + qs, '_blank', 'noopener');
+}
+
+// ── CSV import (requirements-no-import) ──────────────────────────────
+var IMPORT_PREVIEW = null;
+
+function openImportPicker(){
+  document.getElementById('import-file-input').click();
+}
+
+async function handleImportFile(ev){
+  var file = ev.target.files && ev.target.files[0];
+  ev.target.value = '';  // allow re-selecting the same file later
+  if (!file) return;
+  var fd = new FormData();
+  fd.append('file', file);
+  var data = await EOS.apiSafe('/requirements/api/import/preview', { method:'POST', body: fd });
+  if (data.error){ EOS_UI.toast(data.error, 'error'); return; }
+  showImportPreview(data);
+}
+
+function showImportPreview(data){
+  IMPORT_PREVIEW = data;
+  var s = data.summary || {};
+  var warn = (data.warnings || []).map(function(w){
+    return '<div style="color:var(--amber,#c90);font-size:12px;margin:2px 0">' + esc(w) + '</div>';
+  }).join('');
+  var rows = (data.rows || []).map(function(r, i){
+    return '<tr>' +
+      '<td><input type="checkbox" class="import-row-cb" data-idx="' + i + '"' + (r.duplicate ? '' : ' checked') + '></td>' +
+      '<td>' + esc(r.title) + '</td>' +
+      '<td>' + esc(r.project) + '</td>' +
+      '<td>' + esc(r.priority || '—') + '</td>' +
+      '<td>' + esc(r.references || '—') + '</td>' +
+      '<td>' + (r.duplicate ? '<span style="color:var(--text-muted)">already present</span>' : 'new') + '</td>' +
+    '</tr>';
+  }).join('');
+  var body =
+    warn +
+    '<div style="font-size:12px;color:var(--text-muted);margin-bottom:10px">' +
+      esc(s.total || 0) + ' rows parsed · ' + esc(s.new || 0) + ' new · ' + esc(s.duplicate || 0) + ' already present' +
+      (s.skipped ? ' · ' + esc(s.skipped) + ' skipped (no statement found)' : '') +
+    '</div>' +
+    '<div style="max-height:360px;overflow:auto">' +
+    '<table class="req-table"><thead><tr><th></th><th>Requirement</th><th>Project</th>' +
+    '<th>Priority</th><th>Traces to</th><th>Status</th></tr></thead><tbody>' + rows + '</tbody></table></div>' +
+    '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px">' +
+      '<button class="eos-btn eos-btn-secondary" onclick="EOS_UI.closeModal()">Cancel</button>' +
+      '<button class="eos-btn eos-btn-primary" onclick="confirmImport()">Import selected</button>' +
+    '</div>';
+  EOS_UI.modal({ title: 'Import requirements — review before writing', body: body, width: '760px' });
+}
+
+async function confirmImport(){
+  if (!IMPORT_PREVIEW) return;
+  var checked = Array.prototype.slice.call(document.querySelectorAll('.import-row-cb:checked'));
+  var rows = checked.map(function(cb){ return IMPORT_PREVIEW.rows[parseInt(cb.dataset.idx, 10)]; });
+  if (!rows.length){ EOS_UI.toast('Nothing selected', 'warn'); return; }
+  var res = await EOS.apiSafe('/requirements/api/import/confirm', { method:'POST', body: JSON.stringify({ rows: rows }) });
+  if (res.error){ EOS_UI.toast(res.error, 'error'); return; }
+  EOS_UI.toast('Imported ' + res.imported + ' requirement(s)' + (res.skipped ? ', skipped ' + res.skipped : ''), 'success');
+  EOS_UI.closeModal();
+  IMPORT_PREVIEW = null;
+  await load();
 }
 
 function openAdd(){
@@ -174,6 +250,7 @@ async function showDetail(id){
           statusOpts + '</select> &nbsp; ' + statusBadge(d.status) + '</div>';
   body += '<div class="req-detail-field"><div class="lbl">Traces to (standards)</div>' + refs + '</div>';
   body += '<div class="req-detail-field"><div class="lbl">Verification</div>' +
+          (d.suspect ? '<div class="req-suspect-banner">🚩 Suspect — this note has been edited since it was last verified. Re-verify before relying on this status.</div>' : '') +
           '<div>' + (d.verified_by ? esc(d.verified_by) : '<span style="color:var(--text-muted)">no evidence linked</span>') +
           '</div>' + (d.last_verified ? '<div style="color:var(--text-muted);font-size:12px;margin-top:4px">last verified ' + esc(d.last_verified) + '</div>' : '') +
           '<button class="eos-btn eos-btn-sm" style="margin-top:8px" onclick="verify()">Verify</button></div>';

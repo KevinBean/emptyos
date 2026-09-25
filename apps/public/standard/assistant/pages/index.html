@@ -42,9 +42,9 @@ body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-se
 #messages { -webkit-overflow-scrolling:touch } /* base styling from .eos-chat-transcript */
 /* Provider brand hues, blended toward --text so they stay recognisable but keep
    contrast on light themes (raw #da7756 measured 2.33:1 on digital-garden). */
-.eos-chat-role-label.provider-claude-cli { color:color-mix(in srgb,#da7756 70%,var(--text)) }
-.eos-chat-role-label.provider-ollama     { color:#a8d080 }
-.eos-chat-role-label.provider-openai     { color:#10a37f }
+.eos-chat-role-label.provider-claude-cli { color:color-mix(in srgb,#da7756 70%,var(--text)) } /* design-hex: ignore - third-party brand hue */
+.eos-chat-role-label.provider-ollama     { color:#a8d080 } /* design-hex: ignore - third-party brand hue */
+.eos-chat-role-label.provider-openai     { color:#10a37f } /* design-hex: ignore - third-party brand hue */
 .eos-chat-role-label.provider-system     { color:var(--text-muted) }
 .eos-chat-turn.system .eos-chat-turn-content { color:var(--text-muted); font-style:italic; font-size:14px }
 .thinking { color:var(--text-muted); font-size:14px; padding:4px 0 4px 16px; border-left:2px solid var(--text-muted) }
@@ -215,6 +215,28 @@ body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-se
 .verify-conflict-card .vc-side b { font-size:var(--fs-meta); color:var(--text-muted); }
 .vc-src { font-size:var(--fs-meta); color:var(--text-muted); margin:2px 0; opacity:0.9; line-height:1.7; }
 .vc-src .vc-date { color:var(--text-muted); opacity:0.8; }
+.vc-src-row { margin:2px 0; }
+/* Passage citation — the chip names the section that matched; clicking it
+   expands that section's own text inline. */
+.vc-passage-chip {
+    font-size:var(--fs-meta); font-family:inherit; color:var(--accent);
+    background:var(--accent-bg); border:1px solid var(--border);
+    border-radius:var(--radius-sm); padding:0 6px; margin-left:4px;
+    cursor:pointer; line-height:1.5;
+}
+.vc-passage-chip:hover, .vc-passage-chip.is-open { border-color:var(--accent); }
+.vc-passage-open { margin-left:4px; color:var(--accent); text-decoration:none; }
+.vc-passage-excerpt {
+    font-size:var(--fs-meta); color:var(--text-muted);
+    margin:2px 0 0 12px; padding-left:8px; border-left:2px solid var(--border);
+}
+.vc-passage-body {
+    font-size:var(--fs-meta); color:var(--text); white-space:pre-wrap;
+    margin:4px 0 0 12px; padding:6px 8px; max-height:260px; overflow:auto;
+    background:var(--bg-surface); border-left:2px solid var(--accent);
+    border-radius:var(--radius-sm);
+}
+.vc-passage-body.vc-passage-error { color:var(--red); border-left-color:var(--red); }
 .vc-actions { margin-top:8px; }
 .vc-difflabel { font-size:var(--fs-meta); color:var(--text-muted); margin-bottom:4px; }
 .vc-diff {
@@ -263,7 +285,7 @@ body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-se
 <div id="main">
   <div id="topbar">
     <div class="tb-left">
-      <button id="btn-menu" onclick="toggleSidebar()">&#9776;</button>
+      <button id="btn-menu" onclick="toggleSidebar()" aria-label="Toggle sidebar">&#9776;</button>
       <input id="session-title" value="New chat" onchange="renameSession(this.value)">
     </div>
     <div class="tb-right">
@@ -319,7 +341,7 @@ var slashCmds = [];
 var compareMode = false;
 var recognition = null;
 var isListening = false;
-var currentUtterance = null;
+var speakingBtn = null;   // button whose .speaking class we must clear on stop
 
 async function init() {
   if (window.EOS_UI && EOS_UI.modelPill) {
@@ -365,7 +387,7 @@ function renderSessions() {
     return '<div class="eos-chat-session-item' + cls + '" onclick="activateSession(\'' + s.id + '\')">'
       + '<span class="s-name">' + esc(s.name) + '</span>'
       + '<span class="sess-actions">'
-      +   '<button class="del" onclick="event.stopPropagation();deleteSession(\'' + s.id + '\')">&times;</button>'
+      +   '<button class="del" onclick="event.stopPropagation();deleteSession(\'' + s.id + '\')" aria-label="Close">&times;</button>'
       + '</span>'
       + '</div>';
   }).join('');
@@ -701,13 +723,67 @@ var pendingVerify=false;
 function _srcList(items){
   // structured [{name,date,path}] → clickable note links (view/edit/open) + date,
   // so "open the notes to decide" is actionable. Tolerates a legacy string.
+  // When the backend supplied passage fields (anchor/section/excerpt), the row
+  // also carries a chip that expands the exact passage inline — the claim's
+  // source text, not just the note it lives in.
   if(!items) return '';
   if(typeof items === 'string'){ return '<div class="vc-src">'+esc(items)+'</div>'; }
   if(!items.length) return '';
+  // Each source is its own row element, not a <br>-joined run: the passage
+  // toggle scopes its lookup to `.vc-src-row`, so a shared parent would let
+  // one row's toggle find and replace another row's open passage.
   return '<div class="vc-src">'+items.map(function(it){
-    return (typeof EOS!=='undefined' && EOS.noteActions ? EOS.noteActions(it.path, it.name) : esc(it.name))
-      + ' <span class="vc-date">('+esc(it.date||'no date')+')</span>';
-  }).join('<br>')+'</div>';
+    return '<div class="vc-src-row">'
+      + (typeof EOS!=='undefined' && EOS.noteActions ? EOS.noteActions(it.path, it.name) : esc(it.name))
+      + ' <span class="vc-date">('+esc(it.date||'no date')+')</span>'
+      + _passageChip(it)
+      + '</div>';
+  }).join('')+'</div>';
+}
+
+// ── Passage citations ────────────────────────────────────────────────
+// A citation names a note; the passage chip names the section inside it that
+// matched, and expands that section's text on click. Renders nothing when the
+// backend sent no anchor (flag off, no query, or no section scored), so the
+// note-level row is unchanged in that case.
+function _passageChip(it){
+  if(!it || !it.anchor || !it.section) return '';
+  var label = it.section.length > 42 ? it.section.slice(0, 41) + '…' : it.section;
+  var chip = ' <button type="button" class="vc-passage-chip"'
+    + ' onclick="togglePassage(this,' + EOS_UI.jsArg(it.anchor) + ')"'
+    + ' title="Show the passage this came from">¶ ' + esc(label) + '</button>';
+  if(it.href){
+    chip += ' <a class="vc-passage-open" href="' + EOS_UI.escAttr(it.href) + '"'
+      + ' title="Open in its own tool">↗</a>';
+  }
+  if(it.excerpt){
+    chip += '<div class="vc-passage-excerpt">' + esc(it.excerpt) + '</div>';
+  }
+  return chip;
+}
+
+async function togglePassage(btn, anchor){
+  // Scope to this source's own row — see the comment in _srcList.
+  var row = btn.closest ? btn.closest('.vc-src-row') : null;
+  if(!row) row = btn.parentNode;
+  var open = row.querySelector('.vc-passage-body');
+  if(open){ open.remove(); btn.classList.remove('is-open'); return; }
+  btn.classList.add('is-open');
+  var box = document.createElement('div');
+  box.className = 'vc-passage-body';
+  box.textContent = 'Loading passage…';
+  row.appendChild(box);
+  var r = await EOS.apiSafe('/assistant/api/passage?anchor=' + encodeURIComponent(anchor));
+  if(!r || !r.ok){
+    // A missing passage is a real failure (the note moved, or the section was
+    // renamed), not an empty state — say so rather than showing blank text.
+    box.className = 'vc-passage-body vc-passage-error';
+    box.textContent = (r && r.error) ? ('Passage unavailable: ' + r.error)
+                                     : 'Passage unavailable.';
+    return;
+  }
+  box.className = 'vc-passage-body';
+  box.textContent = r.body + (r.truncated ? '\n…' : '');
 }
 function setVerify(state, d){
   d = d || {};
@@ -1118,25 +1194,24 @@ function stopMic() {
   try { if(recognition) recognition.stop(); } catch(e) {}
 }
 
+// Toggle: a second click on a speaking button stops it. Utterance construction and
+// the cancel-ownership rule live in EOS_UI.speakText; the .speaking class is ours.
 function speakText(text, btn) {
-  // Stop any current speech
-  if (currentUtterance) {
-    window.speechSynthesis.cancel();
-    currentUtterance = null;
-    if (btn) btn.classList.remove('speaking');
+  var stopBtn = speakingBtn;
+  if (EOS_UI.isSpeaking('assistant')) {
+    EOS_UI.cancelSpeech('assistant');
+    if (stopBtn) stopBtn.classList.remove('speaking');
+    speakingBtn = null;
     return;
   }
-  var clean = EOS_UI.stripMarkdownForTts(text);
-  if (!clean) return;
-
-  var utterance = new SpeechSynthesisUtterance(clean.substring(0, 3000));
-  utterance.rate = 1.1;
-  currentUtterance = utterance;
-  if (btn) btn.classList.add('speaking');
-
-  utterance.onend = function() { currentUtterance = null; if(btn) btn.classList.remove('speaking'); };
-  utterance.onerror = function() { currentUtterance = null; if(btn) btn.classList.remove('speaking'); };
-  window.speechSynthesis.speak(utterance);
+  speakingBtn = btn || null;
+  var spoke = EOS_UI.speakText(text, {
+    owner: 'assistant',
+    rate: 1.1,
+    onStart: function() { if (btn) btn.classList.add('speaking'); },
+    onEnd: function() { if (btn) btn.classList.remove('speaking'); speakingBtn = null; },
+  });
+  if (!spoke) speakingBtn = null;
 }
 
 // ── Helpers ───────────────────────────────────────────
@@ -1182,6 +1257,7 @@ function extractImages(text) {
 // --- App Settings slide-out (shared helper) ---
 // Dark feature flag is managed from global Settings, not this compact panel:
 // settings-panel-drift: ignore assistant.feature.assistant-cross-session-memory.enabled
+// settings-panel-drift: ignore assistant.feature.passage-citations.enabled
 var _appSettings = EOS_UI.settingsPanel({
     id: 'app-settings-panel',
     title: 'Assistant Settings',

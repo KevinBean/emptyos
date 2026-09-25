@@ -14,10 +14,8 @@ language: en
 bpm: 60
 duration: "0:38"
 date_created: 2026-04-25
-suno_url: "https://suno.com/song/f276b793-8e40-47d2-b85c-b5d037f6b6eb"
-suno_song_id: f276b793-8e40-47d2-b85c-b5d037f6b6eb
-suno_model: v5.5
-suno_created: 2026-04-25T11:59:00
+model_version: v5.5
+published_at: 2026-04-25T11:59:00
 license: "© 2026 3:30 Channel — All rights reserved"
 ---
 
@@ -60,7 +58,4 @@ Ambient Downtempo, minimalist piano, deep warm sub-bass, soft analog drones, vin
 
 ## 版权证明 / Copyright proof
 
-![[08 · Log Out-screenshot.png]]
-
-Suno publication: **April 25, 2026 at 11:59 AM** (v5.5).
-Source: https://suno.com/song/f276b793-8e40-47d2-b85c-b5d037f6b6eb
+Published: **April 25, 2026 at 11:59 AM** (v5.5).

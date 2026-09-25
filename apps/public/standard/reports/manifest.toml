@@ -26,6 +26,7 @@ emits = [
     "reports:created",
     "reports:section-updated",
     "reports:exported",
+    "reports:signed-off",
 ]
 
 [provides.settings]

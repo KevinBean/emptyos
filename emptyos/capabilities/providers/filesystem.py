@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 from pathlib import Path
 
+from emptyos.basepath import resolve_under_base
 from emptyos.capabilities import Provider
 from emptyos.runtime.atomic_io import atomic_write_text
 
@@ -25,12 +26,7 @@ class FilesystemReadProvider(Provider):
         return target.read_text(encoding="utf-8")
 
     def _resolve(self, path: str) -> Path:
-        p = Path(path)
-        if p.is_absolute():
-            return p
-        if self.base_path:
-            return self.base_path / p
-        return p
+        return resolve_under_base(path, self.base_path)
 
 
 class FilesystemWriteProvider(Provider):
@@ -56,9 +52,4 @@ class FilesystemWriteProvider(Provider):
         return str(target)
 
     def _resolve(self, path: str) -> Path:
-        p = Path(path)
-        if p.is_absolute():
-            return p
-        if self.base_path:
-            return self.base_path / p
-        return p
+        return resolve_under_base(path, self.base_path)

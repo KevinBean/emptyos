@@ -134,6 +134,39 @@ def test_planned_chatgpt_assets_have_deterministic_paths_and_hashes():
     assert plans[0]["content_sha256"] == hashlib.sha256(content).hexdigest()
 
 
+def test_planned_chatgpt_assets_collapse_frontmatter_delimiter_in_name():
+    content = b"AC1032"
+
+    class Helper:
+        @staticmethod
+        def conversation_asset_records(_conversation):
+            return [
+                {
+                    "provider_asset_id": "file-dwg",
+                    "recoverable_id": True,
+                    "name": "260610 - P530678 - REV 4.dwg",
+                    "mime_type": "image/vnd.dwg",
+                }
+            ]
+
+        @staticmethod
+        def read_export_asset(_exports, _identifier):
+            return content, "export.zip!file-dwg.dat"
+
+    plans = MODULE.planned_chatgpt_assets(
+        Helper(),
+        {"conversation_id": PROVIDER_ID},
+        ["export.zip"],
+        SOURCE_PATH,
+    )
+
+    assert len(plans) == 1
+    assert "---" not in Path(plans[0]["path"]).name
+    assert plans[0]["path"].endswith(
+        "/assets/22222222/001-260610-P530678-REV-4.dwg"
+    )
+
+
 def test_planned_chatgpt_assets_sniffs_wav_payload_hidden_in_dat():
     content = b"RIFF" + (36).to_bytes(4, "little") + b"WAVEfmt "
 
@@ -221,6 +254,21 @@ def test_source_gap_override_requires_explanation_for_forced_partial():
         assert "requires source_gap_notes" in str(error)
     else:
         raise AssertionError("Expected a reviewed source-gap explanation")
+
+
+def test_source_gap_override_accepts_claude_conversation_heading():
+    body = "# Example\n\n## Conversation\n\n### 001 · User\n\nHello\n"
+    digest = hashlib.sha256(body.encode("utf-8")).hexdigest()
+    updated = MODULE.apply_source_gap_overrides(
+        {
+            "capture_fidelity": "export-native",
+            "content_sha256": digest,
+            "content": "---\ncapture_fidelity: export-native\nraw_status: complete\n"
+            f"content_sha256: {digest}\n---\n{body}",
+        },
+        {"source_gap_notes": ["A generated artifact is absent."]},
+    )
+    assert updated["content"].index("## Unavailable payloads") < updated["content"].index("## Conversation")
 
 
 def _verified_complete_asset_source():

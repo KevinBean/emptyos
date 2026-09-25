@@ -40,6 +40,7 @@ if TYPE_CHECKING:
 #   _action_result_links     = _chat._action_result_links  # @staticmethod
 #   api_chat_stream          = _chat.api_chat_stream
 #   api_debug_system_prompt  = _chat.api_debug_system_prompt
+#   _run_participant_turn    = _chat._run_participant_turn
 # Adding a new method here? Add a matching binding line in app.py.
 # ─────────────────────────────────────────────────────────────────────
 
@@ -645,7 +646,10 @@ async def api_chat_stream(self, request):
     parts = self._normalize_participants(room)
     kind = self._room_kind(room)
     # Participant-aware resolution — picks an agent OR cli participant.
-    responder_part = self._resolve_responder(text, parts)
+    # auto_meta is non-None only when room["auto_route"] fired the
+    # LLM-classified fallback (2+ responders, no @mention match) — never
+    # silent, surfaced to the client as the stream's first chunk below.
+    responder_part, auto_meta = await self._resolve_responder(text, parts, room)
     if not responder_part:
         return {"error": "room has no responder participants"}
 
@@ -658,6 +662,8 @@ async def api_chat_stream(self, request):
         cli_id = responder_part["id"]
 
         async def generate_cli():
+            if auto_meta:
+                yield {"auto_routed": True, **auto_meta, "responder_id": responder_part["id"]}
             full_text = ""
             model_label = ""
             async for chunk in app._dispatch_cli_turn(
@@ -767,6 +773,8 @@ async def api_chat_stream(self, request):
     prompt = await self._build_prompt_async(responder, text, merged_context, history)
 
     async def generate():
+        if auto_meta:
+            yield {"auto_routed": True, **auto_meta, "responder_id": responder_part["id"]}
         full_text = ""
         try:
             stream_kwargs = {"system": system, "domain": "text"}

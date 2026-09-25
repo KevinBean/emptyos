@@ -15,11 +15,21 @@ is resolved by walking a `DecisionGraph` server-side — the first consumer of t
 shared branching-state engine (`emptyos/sdk/decision_graph.py`). The engine does
 the skip routing (gated auto-transitions over a router/step spine), so this grows
 into reader-choice branch steps later without a rewrite.
+
+`state.json` only ever held the CURRENT walkthrough (last_step/dismissed) —
+never a history to aggregate. `runs.jsonl` (append-only, one line per finished
+run) plus `/api/analytics` closes that: the frontend tags every `/api/state` +
+`/api/dismiss` call with a client-generated `run_id`, `state.json` tracks the
+in-progress run's `steps_seen` under `current_run`, and `/api/dismiss` finalizes
+it into the log. A run abandoned mid-walk (tab closed, no dismiss/finish ever
+fired) self-heals into the log as `completed: false` the next time a tour
+starts — best-effort, not exact: a run that's *never* resumed stays uncounted.
 """
 
 from __future__ import annotations
 
 import json
+import time
 from pathlib import Path
 
 from emptyos.sdk import BaseApp, web_route
@@ -88,6 +98,50 @@ def shown_indices(graph: DecisionGraph, variables: dict) -> list[int]:
     return [int(h[1:]) for h in run.history if h[:1] == "s"]
 
 
+def compute_funnel(runs: list[dict], order: list[str], titles: dict[str, str]) -> dict:
+    """Pure aggregation: finished-run records -> a per-step completion/drop-off funnel.
+
+    `runs` is the parsed `runs.jsonl` — each record `{run_id, completed,
+    steps_seen: [step_id, ...], ...}`. `order`/`titles` come from the current
+    (unfiltered) step contributions, so the funnel prints in walkthrough order;
+    a step id from a run that no longer exists in `order` is appended at the
+    end in first-seen order rather than dropped, so nothing found in the log
+    is silently discarded.
+    """
+    index_of = {sid: i for i, sid in enumerate(order)}
+    reached: dict[str, int] = {}
+    dropped_here: dict[str, int] = {}
+    completions = 0
+    for run in runs:
+        seen = run.get("steps_seen") or []
+        for sid in seen:
+            if sid not in index_of:
+                index_of[sid] = len(index_of)
+            reached[sid] = reached.get(sid, 0) + 1
+        if run.get("completed"):
+            completions += 1
+        elif seen:
+            dropped_here[seen[-1]] = dropped_here.get(seen[-1], 0) + 1
+
+    total = len(runs)
+    funnel = [
+        {
+            "step_id": sid,
+            "title": titles.get(sid, ""),
+            "reached": reached.get(sid, 0),
+            "dropped_here": dropped_here.get(sid, 0),
+        }
+        for sid in sorted(index_of, key=lambda s: index_of[s])
+        if reached.get(sid)
+    ]
+    return {
+        "total_runs": total,
+        "completions": completions,
+        "completion_rate": round(completions / total, 3) if total else None,
+        "funnel": funnel,
+    }
+
+
 class TourApp(BaseApp):
     """Aggregates tour-step contributions and tracks completion state."""
 
@@ -95,6 +149,7 @@ class TourApp(BaseApp):
         self._state_dir = Path(self.kernel.config.path).parent / "data" / "apps" / "tour"
         self._state_dir.mkdir(parents=True, exist_ok=True)
         self._state_path = self._state_dir / "state.json"
+        self._runs_path = self._state_dir / "runs.jsonl"
 
     def _read_state(self) -> dict:
         if not self._state_path.exists():
@@ -106,6 +161,48 @@ class TourApp(BaseApp):
 
     def _write_state(self, state: dict) -> None:
         self._state_path.write_text(json.dumps(state, indent=2), encoding="utf-8")
+
+    def _append_run(self, record: dict) -> None:
+        """Append one finished-run record to the analytics log. Best-effort."""
+        try:
+            with self._runs_path.open("a", encoding="utf-8") as f:
+                f.write(json.dumps(record) + "\n")
+        except Exception:
+            pass
+
+    def _read_runs(self) -> list[dict]:
+        if not self._runs_path.exists():
+            return []
+        runs: list[dict] = []
+        try:
+            text = self._runs_path.read_text(encoding="utf-8")
+        except Exception:
+            return []
+        for line in text.splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                runs.append(json.loads(line))
+            except Exception:
+                continue
+        return runs
+
+    def _step_order_and_titles(self) -> tuple[list[str], dict[str, str]]:
+        """Canonical step order + titles from the raw (unfiltered) contributions.
+
+        Condition filtering (`when`/`skip_when`) is deliberately NOT applied
+        here — a historical run may reference a step id that's since become
+        conditionally hidden, and it should still show up in the funnel.
+        """
+        entries = self.kernel.apps.get_contributions("tour", "step")
+        records = sorted(
+            entries,
+            key=lambda e: (int(e.get("priority") or 100), e.get("id") or ""),
+        )
+        order = [e.get("id") or "" for e in records]
+        titles = {e.get("id") or "": e.get("title") or "" for e in records}
+        return order, titles
 
     async def _missing_capabilities(self, requires: list[str]) -> list[str]:
         """Return the subset of `requires` for which no provider is available."""
@@ -209,34 +306,90 @@ class TourApp(BaseApp):
 
     @web_route("POST", "/api/dismiss")
     async def api_dismiss(self, request):
-        """Mark the tour as dismissed/completed so the first-run banner stops."""
+        """Mark the tour as dismissed/completed + finalize the run into the log."""
         body = {}
         try:
             body = await request.json()
         except Exception:
             pass
-        import time
 
         state = self._read_state()
         state["dismissed"] = True
-        if body.get("completed"):
+        completed = bool(body.get("completed"))
+        if completed:
             state["completed_at"] = time.time()
+
+        current = state.get("current_run") or {}
+        run_id = body.get("run_id") or current.get("run_id")
+        if run_id:
+            seen = current.get("steps_seen") or (
+                [state["last_step"]] if state.get("last_step") else []
+            )
+            self._append_run(
+                {
+                    "run_id": run_id,
+                    "started_at": current.get("started_at"),
+                    "ended_at": time.time(),
+                    "completed": completed,
+                    "steps_seen": seen,
+                }
+            )
+            state["current_run"] = None
+
         self._write_state(state)
-        if body.get("completed"):
+        if completed:
             await self.emit("tour:completed", {"last_step": state.get("last_step")})
         return {"ok": True, "state": state}
 
     @web_route("POST", "/api/state")
     async def api_state_set(self, request):
-        """Persist last-step (for resume across reloads — UI also uses localStorage)."""
+        """Persist last-step (for resume) + track the in-progress run.
+
+        `run_id` (client-generated per walkthrough) buckets step events into
+        one run so `/api/analytics` can compute a per-step funnel. Omitting it
+        (a stale cached bundle) falls back to the pre-analytics behaviour
+        byte-for-byte — only `last_step` is persisted.
+        """
         body = await request.json()
         state = self._read_state()
         if "last_step" in body:
             state["last_step"] = body["last_step"]
+
+        run_id = body.get("run_id")
+        if run_id and "last_step" in body:
+            current = state.get("current_run") or {}
+            if current.get("run_id") != run_id:
+                if current.get("run_id"):
+                    # A prior run never reached dismiss/finish (tab closed
+                    # mid-walk) — finalize it as abandoned so it isn't silently
+                    # missing from the funnel forever.
+                    self._append_run(
+                        {
+                            "run_id": current["run_id"],
+                            "started_at": current.get("started_at"),
+                            "ended_at": time.time(),
+                            "completed": False,
+                            "steps_seen": current.get("steps_seen") or [],
+                        }
+                    )
+                current = {"run_id": run_id, "started_at": time.time(), "steps_seen": []}
+            seen = current.setdefault("steps_seen", [])
+            step_id = body["last_step"]
+            if not seen or seen[-1] != step_id:
+                seen.append(step_id)
+            state["current_run"] = current
+
         self._write_state(state)
         if "last_step" in body:
             await self.emit("tour:step_advanced", {"step": body["last_step"]})
         return {"ok": True, "state": state}
+
+    @web_route("GET", "/api/analytics")
+    async def api_analytics(self, request):
+        """Aggregate per-step completion/drop-off stats across historical runs."""
+        runs = self._read_runs()
+        order, titles = self._step_order_and_titles()
+        return compute_funnel(runs, order, titles)
 
     @web_route("GET", "/debug/steps")
     async def debug_steps(self, request):
@@ -262,9 +415,42 @@ class TourApp(BaseApp):
             "th{color:var(--text-muted);font-weight:600;font-size:11px;text-transform:uppercase}"
             "code{font-family:var(--mono,Consolas);font-size:12px}</style>"
             f"<h1>Tour steps ({len(steps_resp['steps'])})</h1>"
+            "<p><a href='/tour/debug/analytics'>&rarr; completion/drop-off analytics</a></p>"
             f"<p style='color:var(--text-muted)'>State: <code>{json.dumps(steps_resp['state'])}</code></p>"
             "<table><thead><tr><th>Pri</th><th>id</th><th>app</th><th>route</th><th>spotlight</th><th>requires</th><th>missing</th></tr></thead><tbody>"
             + "".join(rows)
+            + "</tbody></table>"
+        )
+        return HTMLResponse(html)
+
+    @web_route("GET", "/debug/analytics")
+    async def debug_analytics(self, request):
+        """Dev introspection — the same funnel `/api/analytics` returns, as a table."""
+        from starlette.responses import HTMLResponse
+
+        data = await self.api_analytics(request)
+        rows = []
+        for f in data["funnel"]:
+            rows.append(
+                f"<tr><td><code>{f['step_id']}</code></td><td>{f['title']}</td>"
+                f"<td>{f['reached']}</td><td>{f['dropped_here']}</td></tr>"
+            )
+        rate = data["completion_rate"]
+        rate_txt = "—" if rate is None else f"{rate * 100:.1f}%"
+        html = (
+            "<!doctype html><meta charset=utf-8><title>Tour analytics debug</title>"
+            "<link rel=stylesheet href=/static/theme.css>"
+            "<style>body{font-family:system-ui;padding:24px;max-width:1100px;margin:auto}"
+            "table{width:100%;border-collapse:collapse;font-size:13px}"
+            "th,td{padding:6px 10px;border-bottom:1px solid var(--border);text-align:left;vertical-align:top}"
+            "th{color:var(--text-muted);font-weight:600;font-size:11px;text-transform:uppercase}"
+            "code{font-family:var(--mono,Consolas);font-size:12px}</style>"
+            f"<h1>Tour analytics</h1>"
+            "<p><a href='/tour/debug/steps'>&larr; steps</a></p>"
+            f"<p>{data['total_runs']} run(s) recorded &middot; {data['completions']} completed &middot; "
+            f"completion rate {rate_txt}</p>"
+            "<table><thead><tr><th>step</th><th>title</th><th>reached</th><th>dropped here</th></tr></thead><tbody>"
+            + ("".join(rows) or "<tr><td colspan=4 style='color:var(--text-muted)'>No runs recorded yet.</td></tr>")
             + "</tbody></table>"
         )
         return HTMLResponse(html)

@@ -23,12 +23,15 @@ from .shared import (
     CATEGORIZE_SYSTEM,
     DEFAULT_DOMAINS,
     DIGEST_SYSTEM,
+    DIGEST_TIMESTAMP_CLAUSE,
     EXTRACTION_SYSTEM,
     WEB_CLIPS_DIR,
     WEB_DIGEST_SYSTEM,
     _DATE_PREFIX_RE,
     extract_video_id,
+    format_timestamped_transcript,
     is_youtube_url,
+    linkify_timestamps,
     normalize_domain,
     note_stem,
     render_clip_note,
@@ -177,23 +180,47 @@ async def _digest_one_inner(self, item: dict) -> dict:
     if not transcript.strip():
         return await self._fail(item["id"], "Empty transcript — captions may be disabled")
 
+    # Fetch the timestamped transcript BEFORE summarising. It is fetched for
+    # Listen mode regardless, so anchoring the digest to it costs one reordering
+    # and no extra call — without it nothing links a claim in the summary back
+    # to the second it was said. Best-effort: a failure here leaves the digest
+    # unanchored rather than failing it, and Listen still lazy-fetches on demand.
+    # Skipped for a pasted transcript, which has no timestamps to anchor to.
+    timestamped_lines: list[dict] = []
+    if not pasted_transcript:
+        try:
+            timestamped_lines = await self._fetch_transcript_with_timestamps(video_id)
+        except Exception:
+            timestamped_lines = []
+
+    prompt_transcript = format_timestamped_transcript(timestamped_lines) if timestamped_lines else ""
+    if prompt_transcript:
+        system = DIGEST_SYSTEM + DIGEST_TIMESTAMP_CLAUSE
+    else:
+        prompt_transcript = transcript
+        system = DIGEST_SYSTEM
+
     target_words = int(self.app_config("summary_words", 600) or 600)
     summary_prompt = (
         f"Distill this transcript into a digest of approximately {target_words} words.\n\n"
         f"VIDEO: {meta.get('title')} — {meta.get('channel')}\n"
         f"URL: {meta.get('url')}\n\n"
-        f"TRANSCRIPT:\n{transcript}\n"
+        f"TRANSCRIPT:\n{prompt_transcript}\n"
     )
     try:
         summary = await self.think(
             summary_prompt,
-            system=DIGEST_SYSTEM,
+            system=system,
             domain="text",
             temperature=0.5,
             max_tokens=4000,
         )
     except Exception as e:
         return await self._fail(item["id"], f"summarisation failed: {e}")
+
+    # Turn whatever [mm:ss] anchors the model emitted into deep links at that
+    # second. A no-op when it emitted none, so the unanchored path is unchanged.
+    summary = linkify_timestamps(summary, str(meta.get("url") or ""))
 
     # Inline categorization — best-effort. On any failure the field is left
     # blank, and the manual "Categorize all" backfill catches it later.
@@ -211,17 +238,6 @@ async def _digest_one_inner(self, item: dict) -> dict:
     rel_path = f"{WEB_CLIPS_DIR}/{stem}.md"
     transcript_rel = f"{WEB_CLIPS_DIR}/{stem}.transcript.txt"
     transcript_json_rel = f"{WEB_CLIPS_DIR}/{stem}.transcript.json"
-
-    # Fetch timestamped transcript for Listen mode. Best-effort: a failure
-    # here doesn't break the digest write — Listen will lazy-fetch on demand.
-    # Skip when transcript was pasted (no timestamps available, and the
-    # API call would just fail with the same IpBlocked anyway).
-    timestamped_lines: list[dict] = []
-    if not pasted_transcript:
-        try:
-            timestamped_lines = await self._fetch_transcript_with_timestamps(video_id)
-        except Exception:
-            timestamped_lines = []
 
     try:
         await self.write(rel_path, render_clip_note(meta, summary))

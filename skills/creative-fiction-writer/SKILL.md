@@ -22,7 +22,7 @@ Structured creative writing using **Obsidian files** (source of truth) + **Writi
 
 ## Reference
 
-- **Memory**: `.claude/skills/creative-fiction-writer/fiction-memory.md`
+- **Memory**: `<SKILL_DIR>/fiction-memory.md`
 - **Writing Engine**: `10_Projects/writing-engine/` (web UI on port 7800)
 - **Projects**: `10_Projects/<Title>/` (each novel/memoir/story is a project folder)
 

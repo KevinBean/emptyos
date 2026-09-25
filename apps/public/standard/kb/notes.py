@@ -21,12 +21,14 @@ from typing import TYPE_CHECKING
 from .shared import (
     DEFAULT_DOCS_DIR,
     DEFAULT_NOTES_DIR,
+    DEFAULT_STALE_DAYS,
     KINDS,
     _note_has_visual,
     _parse_citation,
     _related_targets,
     _slug_of,
     _slugify,
+    note_staleness,
     reference_freshness,
 )
 from .reference_coverage import reference_clause_match_score
@@ -209,7 +211,14 @@ _HEALTH_SEVERITY = {
     "uncited_references": "warn",
     "orphans": "warn",
     "stale_reference": "warn",
+    "stale_note": "warn",
 }
+
+# Kinds `note_staleness` skips: `reference` already has its own review_due-
+# based freshness check (`stale_reference`), and `clause` notes are verbatim
+# excerpts from a standard — static by nature, never expected to be "kept
+# fresh" the way a concept/lesson/case note is.
+_STALE_NOTE_SKIP_KINDS = frozenset({"reference", "clause"})
 
 
 def _iter_health_findings(self, all_notes: list[dict], cited_by: dict, today: date | None = None):
@@ -222,6 +231,7 @@ def _iter_health_findings(self, all_notes: list[dict], cited_by: dict, today: da
     testable without freezing the clock."""
     repo_root = Path(self.kernel.config.path).parent
     today = today or date.today()
+    stale_days = int(self.setting_or_config("kb.stale_days", DEFAULT_STALE_DAYS) or DEFAULT_STALE_DAYS)
     by_slug: dict[str, dict] = {}
     slug_paths: dict[str, list[str]] = {}
     references = [
@@ -271,6 +281,10 @@ def _iter_health_findings(self, all_notes: list[dict], cited_by: dict, today: da
                 })
         if s["kind"] == "formula" and not vrefs:
             yield ("formulas_missing_verification", slug, s)
+        if s["kind"] not in _STALE_NOTE_SKIP_KINDS:
+            stale = note_staleness(props, today, stale_days)
+            if stale["state"] == "stale":
+                yield ("stale_note", slug, {**s, **stale})
         if s["kind"] == "reference":
             fresh = reference_freshness(props, today)
             # Only a *missed commitment* is a finding. A reference with no
@@ -448,6 +462,7 @@ async def health(self) -> dict:
         "unresolved_verified_against": buckets["unresolved_verified_against"],
         "verification_target_not_case": buckets["verification_target_not_case"],
         "stale_reference": buckets["stale_reference"],
+        "stale_note": buckets["stale_note"],
     }
 
 
@@ -633,7 +648,7 @@ async def create_note(
     slug: str = "",
     author: str = "",
 ) -> dict:
-    """Create a general KB note (concept / formula / reference / case / lesson / moc).
+    """Create a general KB note (concept / formula / reference / case / lesson / guide / moc).
 
     Docs (`kind: doc`) use `create_doc` instead — they carry `paragraphs_json`
     and live in a separate folder. Clauses (`kind: clause`) are typically

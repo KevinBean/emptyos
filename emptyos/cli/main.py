@@ -82,6 +82,14 @@ from emptyos.cli.commands.loops import loops_app  # noqa: E402
 
 app.add_typer(loops_app, name="loops")
 
+# `eos send` — the ONLY general entry point to the `send` capability, and a CLI
+# rather than an HTTP route on purpose: outbound to a third party is permanently
+# human-gated (CLAUDE.md north star), and a typed command carries that intent in
+# the act. An endpoint would be POST-able by any page, agent or [DO:] token.
+from emptyos.cli.commands.send import send_cmd  # noqa: E402
+
+app.command(name="send")(send_cmd)
+
 from emptyos.cli._common import (
     bearer_headers,
     require_config,
@@ -310,6 +318,9 @@ def _run_locally(app_id: str, cmd_name: str, cfg_path: str, args: list[str] | No
 
         from emptyos.sdk.cli_args import (
             bind_cli_kwargs,
+            cli_command_label,
+            cli_usage,
+            missing_required_args,
             render_cli_return,
             resolve_cli_method,
         )
@@ -323,6 +334,16 @@ def _run_locally(app_id: str, cmd_name: str, cfg_path: str, args: list[str] | No
             raise typer.Exit(1)
 
         kwargs = bind_cli_kwargs(method, cmd_args)
+
+        # A short/bare invocation missing a required arg gets a usage hint
+        # instead of a raw `TypeError: ... missing N required positional
+        # argument` reaching the terminal (the calculator-CLI leak).
+        missing = missing_required_args(method, kwargs)
+        if missing:
+            label = cli_command_label(instance.get_cli_methods(), method, cmd_name)
+            console.print(f"[red]Missing required argument(s): {', '.join(missing)}[/red]")
+            console.print(f"[dim]{cli_usage(method, label)}[/dim]")
+            raise typer.Exit(1)
 
         # Wrap the call so a raising command prints a clean error + exits
         # non-zero, mirroring the daemon /api/cli path (which returns
@@ -429,6 +450,15 @@ def start(
 ):
     """Start EmptyOS kernel, services, and web dashboard."""
     os.environ["EOS_DAEMON"] = "1"  # Signal non-interactive mode to human providers
+    # Before the kernel exists: a daemon started with no console at all (the
+    # watchdog's DETACHED respawn, any GUI parent) must never let a child open
+    # one — that is the console storm behind three hard freezes and a fourth
+    # storm caught live (2026-08-01, 08-15, 09-06). Kernel boot itself spawns
+    # (sandbox-pool, dogfood-demo, comfyui), so this has to be the first thing
+    # `start` does. No-op with a console, hidden or not. See emptyos/headless.py.
+    from emptyos.headless import install_headless_subprocess_guard
+
+    install_headless_subprocess_guard()
     kernel = _get_kernel()
 
     async def _start():
@@ -506,6 +536,14 @@ def start(
                 f"[green]Web dashboard at http://{_host}:{kernel.config.port}[/green] "
                 f"[dim](mode: {_mode}{'  auth: on' if _token else ''})[/dim]"
             )
+            # Windows peer-reset teardown guard. A dying client makes the
+            # Proactor transport's shutdown() raise mid-`finally`, which both
+            # prints an unactionable traceback AND skips sock.close() +
+            # server._detach(). See emptyos/proactor_guard.py.
+            from emptyos.proactor_guard import install_proactor_reset_guard
+
+            install_proactor_reset_guard()
+
             # Suppress benign Windows WS disconnect noise: when a browser
             # tab dies abruptly, websockets-legacy logs a full traceback
             # ("data transfer failed" + WinError 121) before raising the

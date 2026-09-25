@@ -36,7 +36,7 @@ h1 { margin:16px 0 8px; font-size:22px }
 <div class="panel">
   <h2>Forward — address → lat/lon</h2>
   <div class="row">
-    <input id="fwd-q" placeholder="e.g. Eiffel Tower, Paris" autocomplete="off">
+    <input id="fwd-q" placeholder="e.g. Eiffel Tower, Paris" autocomplete="off" oninput="onFwdInput()">
     <button id="fwd-btn" onclick="doLookup()">Lookup</button>
   </div>
   <div id="fwd-results" class="results"></div>
@@ -50,6 +50,15 @@ h1 { margin:16px 0 8px; font-size:22px }
     <button id="rev-btn" onclick="doReverse()">Reverse</button>
   </div>
   <div id="rev-results" class="results"></div>
+</div>
+
+<div class="panel">
+  <h2>Batch lookup — one address per line</h2>
+  <textarea id="batch-q" rows="4" style="width:100%;box-sizing:border-box" placeholder="Eiffel Tower, Paris&#10;Sydney Opera House&#10;..."></textarea>
+  <div class="row" style="margin-top:8px">
+    <button id="batch-btn" onclick="doBatchLookup()">Batch lookup</button>
+  </div>
+  <div id="batch-results" class="results"></div>
 </div>
 
 <div class="panel">
@@ -74,7 +83,7 @@ async function loadStatus() {
     var banner = document.getElementById('status-banner');
     if (!s.enabled) {
       banner.innerHTML = EOS_UI.warningBanner({ message: 'Disabled: ' + (s.reason || 'unknown') });
-      ['fwd-btn','rev-btn'].forEach(id => { var b=document.getElementById(id); if (b) b.disabled=true; });
+      ['fwd-btn','rev-btn','batch-btn'].forEach(id => { var b=document.getElementById(id); if (b) b.disabled=true; });
     } else {
       banner.innerHTML = '';
     }
@@ -111,25 +120,52 @@ function showOnMap(items) {
   m.fitBounds();
 }
 
+// Numeric lat/lon can never contain a quote — safe to interpolate raw into
+// the onclick attribute. display_name/name is untrusted API text and MUST be
+// esc()'d before it ever reaches innerHTML (this file's own batch-lookup
+// path already does; the forward/reverse paths didn't — fixed here).
+function renderLookupItems(items) {
+  return items.map(function(it) {
+    return '<div class="result" onclick="document.getElementById(\'rev-lat\').value=\'' + it.lat + '\';document.getElementById(\'rev-lon\').value=\'' + it.lon + '\'">'
+      + '<div class="result-name">' + esc(it.display_name || it.name || '') + '</div>'
+      + '<div class="result-coords">' + (+it.lat).toFixed(5) + ', ' + (+it.lon).toFixed(5) + '</div>'
+      + '</div>';
+  }).join('');
+}
+
 async function doLookup() {
   var q = document.getElementById('fwd-q').value.trim();
   if (!q) return;
+  await runLookup(q, /*fromTyping=*/false);
+}
+
+// Debounced as-you-type suggestions (geocode-no-autocomplete): Nominatim has
+// no true autocomplete endpoint, but a debounced call to the existing cached
+// /api/lookup?limit=5 gets most of the UX for free — no new backend capability.
+var _fwdDebounce = null;
+function onFwdInput() {
+  var q = document.getElementById('fwd-q').value.trim();
+  if (_fwdDebounce) clearTimeout(_fwdDebounce);
+  if (q.length < 3) { document.getElementById('fwd-results').innerHTML = ''; return; }
+  _fwdDebounce = setTimeout(function() { runLookup(q, /*fromTyping=*/true); }, 350);
+}
+
+async function runLookup(q, fromTyping) {
   var box = document.getElementById('fwd-results');
-  box.innerHTML = '<div class="result">Searching…</div>';
+  if (!fromTyping) box.innerHTML = '<div class="result">Searching…</div>';
   try {
     var res = await fetch('/geocode/api/lookup?q=' + encodeURIComponent(q) + '&limit=5').then(r => r.json());
-    if (res.error) { box.innerHTML = '<div class="result">' + res.error + '</div>'; return; }
+    // A later keystroke may have already changed the input while this
+    // request was in flight — drop a stale response rather than overwrite
+    // what the user is now looking at.
+    if (fromTyping && document.getElementById('fwd-q').value.trim() !== q) return;
+    if (res.error) { box.innerHTML = '<div class="result">' + esc(res.error) + '</div>'; return; }
     var items = Array.isArray(res) ? res : (res.results || []);
     if (!items.length) { box.innerHTML = '<div class="result">No matches</div>'; return; }
-    box.innerHTML = items.map(it =>
-      '<div class="result" onclick="document.getElementById(\'rev-lat\').value=\'' + it.lat + '\';document.getElementById(\'rev-lon\').value=\'' + it.lon + '\'">'
-      + '<div class="result-name">' + (it.display_name || it.name || '') + '</div>'
-      + '<div class="result-coords">' + (+it.lat).toFixed(5) + ', ' + (+it.lon).toFixed(5) + '</div>'
-      + '</div>'
-    ).join('');
+    box.innerHTML = renderLookupItems(items);
     showOnMap(items);
-    loadStats();
-  } catch(e) { box.innerHTML = '<div class="result">Error: ' + e + '</div>'; }
+    if (!fromTyping) loadStats();
+  } catch(e) { if (!fromTyping) box.innerHTML = '<div class="result">Error: ' + esc(String(e)) + '</div>'; }
 }
 
 async function doReverse() {
@@ -140,13 +176,41 @@ async function doReverse() {
   box.innerHTML = '<div class="result">Looking up…</div>';
   try {
     var res = await fetch('/geocode/api/reverse?lat=' + encodeURIComponent(lat) + '&lon=' + encodeURIComponent(lon)).then(r => r.json());
-    if (res.error) { box.innerHTML = '<div class="result">' + res.error + '</div>'; return; }
+    if (res.error) { box.innerHTML = '<div class="result">' + esc(res.error) + '</div>'; return; }
     var name = res.display_name || res.name || JSON.stringify(res);
-    box.innerHTML = '<div class="result"><div class="result-name">' + name + '</div>'
+    box.innerHTML = '<div class="result"><div class="result-name">' + esc(name) + '</div>'
       + '<div class="result-coords">' + (+lat).toFixed(5) + ', ' + (+lon).toFixed(5) + '</div></div>';
     showOnMap([{ lat: lat, lon: lon, display_name: name }]);
     loadStats();
-  } catch(e) { box.innerHTML = '<div class="result">Error: ' + e + '</div>'; }
+  } catch(e) { box.innerHTML = '<div class="result">Error: ' + esc(String(e)) + '</div>'; }
+}
+
+async function doBatchLookup() {
+  var raw = document.getElementById('batch-q').value;
+  var addresses = raw.split('\n').map(function(s) { return s.trim(); }).filter(Boolean);
+  if (!addresses.length) return;
+  var box = document.getElementById('batch-results');
+  box.innerHTML = '<div class="result">Looking up ' + addresses.length + ' address(es)… (~' + addresses.length + 's, rate-limited)</div>';
+  try {
+    var res = await fetch('/geocode/api/batch-lookup', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({addresses: addresses, limit: 1}),
+    }).then(function(r) { return r.json(); });
+    if (res.error) { box.innerHTML = '<div class="result">' + esc(res.error) + '</div>'; return; }
+    var mapped = [];
+    box.innerHTML = res.results.map(function(r) {
+      var top = r.results && r.results[0];
+      if (top) mapped.push(top);
+      return '<div class="result">'
+        + '<div class="result-name">' + esc(r.address) + '</div>'
+        + '<div class="result-coords">' + (top
+            ? (+top.lat).toFixed(5) + ', ' + (+top.lon).toFixed(5) + ' — ' + esc(top.display_name || '')
+            : '<em>no match</em>') + '</div>'
+        + '</div>';
+    }).join('') + '<div class="result">' + res.summary.matched + '/' + res.summary.total + ' matched</div>';
+    if (mapped.length) showOnMap(mapped);
+    loadStats();
+  } catch(e) { box.innerHTML = '<div class="result">Error: ' + esc(String(e)) + '</div>'; }
 }
 
 document.getElementById('fwd-q').addEventListener('keydown', e => { if (e.key === 'Enter') doLookup(); });

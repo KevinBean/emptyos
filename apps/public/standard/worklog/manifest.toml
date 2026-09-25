@@ -1,5 +1,6 @@
 [app]
 id = "worklog"
+icon_id = "worklog"
 store_category = "productivity"
 name = "Work Log"
 version = "1.0.0"
@@ -20,7 +21,7 @@ class = "WorklogApp"
 [requires]
 capabilities = ["read", "write", "think"]
 apps = []
-optional_apps = ["projects"]
+optional_apps = ["projects", "worklog-capture"]
 services = []
 connectors = []
 
@@ -44,10 +45,10 @@ fallbacks = [
 ]
 
 [provides.events]
-emits = ["worklog:logged", "worklog:created", "worklog:status-changed", "worklog:imported"]
+emits = ["worklog:logged", "worklog:created", "worklog:status-changed", "worklog:imported", "worklog:competency-tagged"]
 # Worklog IS the professional activity log (60_Worklogs) — a journal ripple
 # would duplicate its own record. UI-only, no cross-app listener by design.
-internal = ["worklog:logged", "worklog:created", "worklog:status-changed", "worklog:imported"]
+internal = ["worklog:logged", "worklog:created", "worklog:status-changed", "worklog:imported", "worklog:competency-tagged"]
 
 [provides.settings]
 schema = [
@@ -70,10 +71,26 @@ title = "Blocked at work"
 priority = 145
 lazy = true
 
+# CPEng competency elements that can fail the Chartered application and still
+# carry no tagged evidence. Returns None once nothing is outstanding, so this
+# vanishes rather than becoming a permanent badge.
+[[contributes.hub.panel]]
+id = "worklog-competency"
+method = "panel_competency"
+renderer = "plain-list"
+title = "CPEng evidence still missing"
+priority = 148
+lazy = true
+
 # Life-suite day timeline (suite contract: docs/suites/life-cohesion.md)
 [[contributes.life.timeline]]
 id = "worklog-timeline"
 method = "timeline_items"
+
+# Kanban-by-status board over recent work items (.claude/rules/boards-as-view-layer.md)
+[[contributes.boards.preset]]
+id = "worklog-boards"
+method = "board_presets"
 
 # ── Unified verb registry (see .claude/rules/verb-registry.md) ──
 [[provides.verbs]]
@@ -82,8 +99,9 @@ method = "voice_log_work"
 summary = "Log a work item under a project to today's worklog"
 args = { project = "string", text = "string", status = "string?" }
 eligibility = "stable"
-surfaces = ["voice"]
+surfaces = ["voice", "assistant"]
 voice = { example = "log work on CablePro: finished the OAuth login flow", description = "Record a work item under a project in today's work log", always = true }
+assistant = { slash = "/log", method = "log_work", arg = "text" }
 
 [[provides.verbs]]
 verb = "worklog.set_status"

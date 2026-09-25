@@ -2,9 +2,10 @@
 name: eos-external-vault-connector
 description: Connect, disconnect, or check the status of Claude Code's link to the external markdown vault — the gate to full read/write access over the user's notes and personal data. Use when the user says "connect vault", "open/mount vault", "disconnect/unmount vault", "vault status", or "is the vault connected". NOT for reading/writing individual notes once connected (do that directly), and NOT for app vault-data migrations (use eos-vault-migration).
 ---
+
 # EmptyOS External Vault Connector
 
-Connect/disconnect Codex to the external markdown vault. When connected, you gain full read/write access to the user's knowledge base, notes, and personal data.
+Connect/disconnect Claude Code to the external markdown vault. When connected, you gain full read/write access to the user's knowledge base, notes, and personal data.
 
 ## When to Use
 
@@ -36,10 +37,10 @@ Read a vault file by relative path.
 
 1. Read `emptyos.toml` to get `[notes] path`
 2. Verify the path exists and is a directory
-3. Check for `{vault}/AGENTS.md` — if it exists, read and display it
+3. Check for `{vault}/CLAUDE.md` — if it exists, read and display it
 4. Check for `{vault}/30_Resources/EmptyOS/_vault-map.toml` — report app data locations
-5. Write connection state to `.Codex/vault-connection.json`
-6. Report: vault path, file count, folder structure, AGENTS.md presence
+5. Write connection state to `.claude/vault-connection.json`
+6. Report: vault path, file count, folder structure, CLAUDE.md presence
 
 ```bash
 # Read vault path
@@ -54,19 +55,19 @@ state = {
     "connected": True,
     "vault_path": vault_path,
     "connected_at": datetime.now().isoformat(),
-    "vault_claude_md": f"{vault_path}/AGENTS.md" if Path(f"{vault_path}/AGENTS.md").exists() else None,
+    "vault_claude_md": f"{vault_path}/CLAUDE.md" if Path(f"{vault_path}/CLAUDE.md").exists() else None,
 }
-Path(".Codex/vault-connection.json").write_text(json.dumps(state, indent=2))
+Path(".claude/vault-connection.json").write_text(json.dumps(state, indent=2))
 ```
 
 ### Disconnect
 
-1. Write `{"connected": false}` to `.Codex/vault-connection.json`
+1. Write `{"connected": false}` to `.claude/vault-connection.json`
 2. Report disconnection
 
 ### Status
 
-1. Read `.Codex/vault-connection.json`
+1. Read `.claude/vault-connection.json`
 2. If connected, verify path still exists
 3. Report: connected/disconnected, path, file count, daemon status
 
@@ -102,16 +103,16 @@ full_path = Path(vault_path) / relative_path
 content = full_path.read_text(encoding="utf-8")
 ```
 
-## Vault AGENTS.md
+## Vault CLAUDE.md
 
-If the vault has its own `AGENTS.md`, it may contain:
+If the vault has its own `CLAUDE.md`, it may contain:
 - Personal preferences and writing style
 - Vault folder conventions beyond PARA
 - Project-specific context
 - Tag taxonomy
 - Templates and note types
 
-Read it on connect and respect its instructions alongside the EmptyOS AGENTS.md.
+Read it on connect and respect its instructions alongside the EmptyOS CLAUDE.md.
 
 ## After Connection
 

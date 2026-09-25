@@ -35,7 +35,7 @@ def t():
 
 @pytest.fixture(scope="module")
 def vault():
-    # emptyos.toml is gitignored — a fresh clone has only emptyos.toml.example,
+    # emptyos.toml is gitignored — a fresh clone has only emptyos.example.toml,
     # so this raised FileNotFoundError at fixture setup and the tests ERRORED
     # rather than skipping. A machine with no config simply has no vault.
     cfg = _REPO / "emptyos.toml"

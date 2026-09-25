@@ -215,6 +215,12 @@ def prospective_fault_current(
         "x_total_ohm": round(x_total, 9),
         "z_total_ohm": round(z_total, 9),
         "ratio": round(ratio, 4),
+        # K² is the referral divisor of section 4.1, and the page prints it on
+        # the referral boundary. Returned rather than squared there: `ratio *
+        # ratio` in a render function is the interface deriving an engineering
+        # quantity, which is the one thing the thin-app invariant forbids
+        # (`UX-RES-04`).
+        "ratio_squared": round(ratio**2, 4),
         "transformer_i_2n_a": round(tr["i_2n_a"], 2),
         "contributions": contributions,
         "dominant": max(contributions, key=lambda e: e["share_pct"])["name"],

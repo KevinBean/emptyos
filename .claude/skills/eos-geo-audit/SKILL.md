@@ -78,6 +78,6 @@ This lets future audits be queried via `VaultIndex` and the vault graph picks th
 
 ## Cross-references
 
-- `apps/publish/` — owns the build that this skill audits. The `[provides.publish]` site config in `data/apps/publish/sites.json` is the source of truth.
+- `apps/public/standard/publish/` — owns the build that this skill audits. The `[provides.publish]` site config in `data/apps/publish/sites.json` is the source of truth.
 - `.claude/skills/eos-screenshot/SKILL.md` — sibling skill for visual capture of the same sites; share the privacy/branding posture (`.eos-personal` + `.eos-branding`).
 - Upstream `geo-seo-claude` — does the actual GEO scoring + recommendation work. This skill is purely the EmptyOS-context binding around it.

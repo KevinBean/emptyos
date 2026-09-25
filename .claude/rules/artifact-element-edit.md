@@ -1,3 +1,12 @@
+---
+paths:
+  - "emptyos/sdk/html_element_edit.py"
+  - "emptyos/sdk/html_anchors.py"
+  - "emptyos/sdk/markdown_block_edit.py"
+  - "emptyos/sdk/markdown_blocks.py"
+  - "emptyos/web/static/eos-edit-shim.js"
+  - "apps/**"
+---
 # Artifact Element-Edit Rule — highlight-to-edit on generated HTML
 
 An app that generates a standalone HTML artifact (designer's web page, viz's
@@ -119,14 +128,22 @@ calls `/api/edit/propose` → renders the diff → Apply/Reject. Reference page 
 
 ## Graduation paths
 
-- **Per-artifact version history / time-travel** — both apps store
-  `history:[{ts,prompt}]` (prompts only, no rendered snapshot), so an edit
-  can't be *undone to a prior render*. The honest next borrow from Open Canvas:
-  `outputs/<id>/versions/<n>/` ring + picker, tied to the `outputs/` authorship
-  convention (`.claude/rules/authorship-boundary.md`) and the
-  `[provides.timeline]` both apps already declare (a version list IS the
-  artifact's `past`). Separate extraction with its own first-consumer; build
-  when someone wants restore-to-version.
+- **Per-artifact version history / time-travel** — **SHIPPED for `viz`
+  2026-08-28 (`622498d33`); `designer` is still on prompts-only.** Both apps
+  stored `history:[{ts,prompt}]` (prompts only, no rendered snapshot), so an
+  edit could not be *undone to a prior render*. viz now keeps an
+  `outputs/<id>/versions/<n>/` ring (`_snapshot_version` / `list_versions` /
+  `restore_version` in `apps/public/standard/viz/generation.py`, cap
+  `viz.version_ring`, default 10) with a History toolbar picker, tied to the
+  `outputs/` authorship convention (`.claude/rules/authorship-boundary.md`) and
+  the `[provides.timeline]` both apps declare — a version list IS the artifact's
+  `past`. Two invariants worth preserving in any second consumer: the snapshot
+  is taken **before** an overwrite (so it is the render being replaced, never
+  the new one), and a **restore snapshots what it replaces**, so restoring
+  cannot become the destructive op the ring exists to prevent.
+  `designer` (`designer-version-restore`, still open) is the natural second
+  consumer — extract the ring to the SDK there rather than copying it, per
+  CLAUDE.md rule 9.
 - **Reflections (passive style memory)** — Open Canvas distills style prefs from
   edit history. EmptyOS's substrate already exists (agent-context bus + KB
   `kind:pattern` few-shot via `resolve_pattern_examples`). Rejected for now:

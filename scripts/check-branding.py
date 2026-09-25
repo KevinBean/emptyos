@@ -14,6 +14,14 @@ import sys
 from pathlib import Path
 
 from check_base import REPO_ROOT, git_staged, git_tracked, git_untracked
+from check_common import load_by_path
+
+# Loaded by path, not as `emptyos.sdk.release_filter`: the package initialiser
+# pulls in the daemon runtime, which a bare CI checkout does not have. That
+# module keeps its own scope stdlib-only for this reason.
+_is_never_published = load_by_path(
+    "release_filter_paths_branding", "emptyos/sdk/release_filter.py"
+).is_never_published
 
 PATTERNS_FILE = ".eos-branding"
 
@@ -35,13 +43,22 @@ EXEMPT_PREFIXES = (
     "results/",  # benchmark/test results
     ".gitignore",  # folder names like .obsidian
     "emptyos.example.toml",
-    "emptyos.toml.example",
     "release.toml",  # build manifest — plugin IDs are functional identifiers
     # Provider-selector code: model-id prefix detection (gpt-*, chatgpt-*) is
     # functional routing, not user-facing branding (.eos-branding: "OK in
     # provider selectors"). Narrow file exemption — the rest of model-bench
     # (UI text, prompts) stays checked.
     "apps/extension/dev/model-bench/agent_bench.py",
+    # Capability providers are the kernel-layer twin of plugins/: a provider
+    # necessarily names the service it wraps, and CLAUDE.md rule 14's exception
+    # ("plugin code that integrates with a specific service may reference it")
+    # applies for the same reason. codex_cli.py's module docstring states which
+    # subscription the CLI authenticates against — a developer-facing technical
+    # fact, not user-facing branding, and rewording it would lose the precision
+    # that makes the docstring useful. Narrow file exemption rather than the whole
+    # providers/ directory, so a brand name in a provider's *error message* (which
+    # does reach the user) still gets caught.
+    "emptyos/capabilities/providers/codex_cli.py",
 )
 
 # Binary extensions to skip
@@ -110,7 +127,14 @@ def get_files(staged_only: bool = False, include_untracked: bool = False) -> lis
 
 def is_exempt(filepath: str) -> bool:
     normalized = filepath.replace("\\", "/")
-    return any(normalized.startswith(prefix) for prefix in EXEMPT_PREFIXES)
+    if any(normalized.startswith(prefix) for prefix in EXEMPT_PREFIXES):
+        return True
+    # Subtrees git-tracked in the private repo but pruned from every public
+    # snapshot (see emptyos/sdk/release_filter.py, where the list sits beside
+    # the prune that enforces it and the assertion that proves it). Rule 14 is
+    # about what a *shipped* UI says; a personal app that integrates with a
+    # named service is the same case as `plugins/` above.
+    return _is_never_published(normalized)
 
 
 def is_false_positive(line: str) -> bool:

@@ -1,5 +1,6 @@
 [app]
 id = "quick-action"
+icon_id = "quick-action"
 store_category = "core"
 name = "Quick Action"
 version = "1.1.0"
@@ -22,6 +23,10 @@ emits = ["capture:saved", "capture:archived"]
 [provides.export]
 enabled = true
 mode = "standalone"
+# Ship only what the pages use — pages load realtime.js. Undeclared means EVERY bundle
+# (hands-free + assistant + keys + maps + realtime), which put the shared
+# _assets/ at 869 KB against the 800 KB guard in tests/test_sys_export.py.
+assets = ["realtime"]
 fallbacks = ["vault:indexeddb", "think:byok-openai", "events:local-bus", "call_app:bundled", "viewer:none"]
 
 [requires]
@@ -30,7 +35,7 @@ capabilities = ["read", "write", "think"]
 # falls through to plain capture when any are absent (call_app inside try/except).
 # Declared so dependency graph + manifest-deps lint reflect reality; loader logs
 # but doesn't refuse on missing optional deps.
-apps = ["task", "projects", "journal", "canvas"]
+apps = ["task", "projects", "journal"]
 # Plan & Run soft deps: voice-assistant owns the action-shaped verb planner;
 # work owns deliverable-shaped production. Both reached via call_app inside
 # try/except — quick-action degrades to a clear error / action-only when
@@ -39,12 +44,32 @@ apps = ["task", "projects", "journal", "canvas"]
 # reminders (a personal app) is the target of the reminder tag route, gated by
 # `[apps.quick-action] feature.reminder-route.enabled` (default off); the route
 # call is in try/except and falls back to an inbox note when it's absent.
-optional_apps = ["voice-assistant", "work", "reminders"]
+# canvas is the target of the `#canvas[/<board>]` ambient tag route — one call
+# site, inside try/except, and the capture persists either way. That is the
+# definition of an integration with graceful fallback (CLAUDE.md § Manifest:
+# "load-time dependencies in `apps`; integrations with graceful fallback in
+# `optional_apps`"), so it moved here from `apps`. Being a HARD dep was also
+# what made the old swallow comment ("canvas may not be loaded") nonsense — a
+# hard dep is validated at load.
+optional_apps = ["voice-assistant", "work", "reminders", "canvas"]
 services = []
 events = []
 
 [provides.settings]
 schema = [{key = "quick-action.auto_classify", label = "AI Auto-classify", type = "toggle", default = true}]
+
+# The one glanceable number this app owns: how many captures are waiting to be
+# triaged. Priority sits in the cognitive band (<150) per
+# .claude/rules/hub-panels.md; note the hub filters a *grouped* tile by its
+# block's priority, so the band is the documented convention, not a per-tile
+# visibility switch.
+[[contributes.hub.panel]]
+id = "quick-action-inbox"
+title = "Inbox"
+method = "panel_inbox_count"
+renderer = "stat-tile"
+group = "dashboard"
+priority = 120
 
 # [provides.assistant] /inbox now lives in capture.add's [[provides.verbs]]
 # assistant sub-table (Phase 4 — assistant reads the unified registry).

@@ -1,5 +1,6 @@
 [app]
 id = "task"
+icon_id = "task"
 store_category = "core"
 name = "Task Manager"
 version = "1.0.0"
@@ -132,6 +133,10 @@ voice = { example = "note on the call mom task that I left a voicemail", descrip
 [provides.export]
 enabled = true
 mode = "standalone"
+# Ship only what the pages use — no optional bundle is referenced by its pages. Undeclared means EVERY bundle
+# (hands-free + assistant + keys + maps + realtime), which put the shared
+# _assets/ at 869 KB against the 800 KB guard in tests/test_sys_export.py.
+assets = ["minimal"]
 fallbacks = ["vault:indexeddb", "events:local-bus", "call_app:bundled", "viewer:none"]
 
 [requires]
@@ -191,6 +196,11 @@ priority = 100
 id = "open-tasks"
 method = "assistant_context"
 priority = 30
+
+# Life-suite day timeline (suite contract: docs/suites/life-cohesion.md)
+[[contributes.life.timeline]]
+id = "task-timeline"
+method = "timeline_items"
 
 # Voice intents + narration for task.* now live in [[provides.verbs]] above
 # (Phase 3 — voice-assistant reads the unified registry). Removed here to keep

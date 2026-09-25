@@ -28,7 +28,7 @@ The two non-negotiable principles:
 ```bash
 git clone https://github.com/KevinBean/emptyos.git
 cd emptyos
-cp emptyos.toml.example emptyos.toml      # then edit notes.path
+cp emptyos.example.toml emptyos.toml      # then edit notes.path
 pip install -e .
 pip install playwright pytest-playwright pytest-timeout pytest-rerunfailures httpx
 playwright install chromium

@@ -20,7 +20,7 @@ body { min-height:100dvh; padding:env(safe-area-inset-top) 16px calc(env(safe-ar
 .detail-row { display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px; margin:16px 0 }
 .detail-card { background:var(--bg-card); border:1px solid var(--border); border-radius:14px; padding:12px; text-align:center }
 .detail-val { font-size:18px; font-weight:700; color:var(--text-heading) }
-.detail-label { font-size:11px; color:var(--text-secondary); text-transform:uppercase }
+.detail-label { font-size:11px; color:var(--text-secondary); text-transform:uppercase;letter-spacing:var(--tracking-meta) }
 
 .forecast-section { margin:16px 0 }
 .forecast-section h3 { font-size:12px; color:var(--text-secondary); text-transform:uppercase; letter-spacing:0.5px; margin-bottom:12px }
@@ -99,7 +99,7 @@ async function loadWeather(){
       html += `<div class="weather-feels">Feels like ${Math.round(data.feels_like)}°${unit}${data.temp_max!=null?` &middot; H:${Math.round(data.temp_max)}° L:${Math.round(data.temp_min)}°`:''}</div>`;
     }
   } else if (data.summary || data.description) {
-    html += `<div class="weather-desc" style="font-size:20px">${esc(data.summary||data.description||'')}</div>`;
+    html += `<div class="weather-desc" style="font-size:22px">${esc(data.summary||data.description||'')}</div>`;
   }
   html += `<div class="weather-source">${esc(source)}${data.stale?' &middot; cached':''}</div></div>`;
 

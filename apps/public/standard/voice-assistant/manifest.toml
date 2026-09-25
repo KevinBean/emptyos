@@ -1,5 +1,6 @@
 [app]
 id = "voice-assistant"
+icon_id = "voice-assistant"
 store_category = "ai"
 name = "Aura"
 version = "0.1.0"

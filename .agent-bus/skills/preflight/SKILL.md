@@ -1,6 +1,6 @@
 ---
 name: preflight
-description: Pre-work safety check at the start of a session. Inspects git state for unexpected staged files or parallel-session commits, confirms the main daemon (:9000) and dogfood daemon (:9001) are reachable, and surfaces anomalies before any code work begins. Use when the user says "preflight", "/preflight", "check state", or whenever you suspect another Claude/user session may have been editing in parallel.
+description: Pre-work safety check at the start of a session. Inspects git state for unexpected staged files or parallel-session commits, confirms the main daemon (:9000) and dogfood daemon (:9001) are reachable, and surfaces anomalies before any code work begins. Use when the user says "preflight", "/preflight", "check state", or whenever you suspect another Claude/user session may have been editing in parallel. NOT a shell/dependency probe (use env-check) and NOT a code audit (use eos-architecture-review / eos-bug-audit).
 ---
 
 # Preflight

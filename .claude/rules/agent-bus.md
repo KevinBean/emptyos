@@ -1,3 +1,13 @@
+---
+paths:
+  - ".agent-bus/**"
+  - "emptyos/sdk/agent_bus.py"
+  - "scripts/agent_bus.py"
+  - "scripts/bus_sync_guard.py"
+  - "emptyos/cli/commands/bus.py"
+  - "apps/**/staff/**"
+---
+
 # Agent Context Bus — workspace config sync + internal-think context loading
 
 The Agent Context Bus has two consumer paths that **must stay separate** in

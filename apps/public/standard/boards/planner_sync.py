@@ -48,7 +48,7 @@ _MAP_WRAPPER = "window.EOS_PLANNER_MAP ="
 
 def _load_planner_map() -> dict:
     """Parse pages/planner-map.js — strict JSON behind the one-line wrapper
-    (pinned by tests/test_planner_roundtrip.py)."""
+    (pinned by tests/test_unit_planner_roundtrip.py)."""
     text = (Path(__file__).parent / "pages" / "planner-map.js").read_text(encoding="utf-8")
     body = text[text.index(_MAP_WRAPPER) + len(_MAP_WRAPPER):].strip()
     return json.loads(body.rstrip(";"))

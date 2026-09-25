@@ -44,6 +44,10 @@ from emptyos.sdk import now_iso as _now
 
 _SCHEMA_VERSION = 1
 
+#: The agent app's project-name cap (apps/public/standard/agent/projects.py
+#: NAME_MAX). A longer folder name is clamped rather than failing every run.
+MIGRATE_NAME_MAX = 120
+
 
 def _new_id() -> str:
     return "fld-" + uuid.uuid4().hex[:10]
@@ -81,6 +85,32 @@ class PortalApp(BaseApp):
             if thread_id in (f.get("thread_ids") or []):
                 return fid
         return None
+
+    # ── Page config (dark flags the page reads at boot) ─────────────────
+
+    @web_route("GET", "/api/config")
+    async def api_config(self, request):
+        """Flags the page needs before it renders. ``chat_first`` turns the home
+        into the chat-first surface (pages/portal-chat.js): new conversations are
+        agent sessions with profile "chat", and the other modes move under More.
+        ``[apps.portal] feature.chat-first.enabled`` — off by default.
+
+        ``artifacts`` opens the side panel when a chat produces one. It is the
+        agent app's flag, not portal's (``[apps.agent] feature.artifacts.enabled``),
+        because that is what decides whether the tool exists at all — a panel
+        portal enabled on its own would be a door onto a room with no floor.
+        """
+        return {
+            "chat_first": bool(self.app_config("feature.chat-first.enabled", False)),
+            "artifacts": bool(self.kernel.config.get("apps.agent.feature.artifacts.enabled", False)),
+            # Same reasoning for connectors: the agent app's flag is what
+            # decides whether an MCP tool can exist, so a portal-only toggle
+            # would offer a picker over nothing. Public mode is refused
+            # server-side as well (connectors.py).
+            "connectors": bool(
+                self.kernel.config.get("apps.agent.feature.mcp-inbound.enabled", False)
+            ) and str(self.kernel.config.get("network.mode", "local")) != "public",
+        }
 
     # ── Folder CRUD ──────────────────────────────────────────────────
 
@@ -167,6 +197,83 @@ class PortalApp(BaseApp):
         self._save(state)
         await self.emit("portal:folder_deleted", {"id": fid, "name": f.get("name", "")})
         return {"deleted": fid, "freed_threads": list(f.get("thread_ids") or [])}
+
+    # ── Folders → chat projects (chat-first, desktop GUI plan B2) ────
+
+    @web_route("POST", "/api/folders/migrate")
+    async def api_migrate_folders(self, request):
+        """Copy every folder into an agent chat project: its name, and its
+        instructions (``system_prompt``) as the project's instructions. Agent
+        threads in the folder (``agent:<sid>``) move into the project; Rooms
+        and Assistant threads stay in the folder, which is kept.
+
+        Re-runnable: a folder records ``chat_project_id`` as soon as its
+        project exists, and is skipped after that — so a run cut short by an
+        error resumes instead of duplicating. ``folders.json`` (only that file:
+        the agent's projects are not in it) is backed up before the first
+        change of each run. A folder's model override is not copied — a chat's
+        model is chosen per chat. A chat already in a project stays there.
+        Chat-first only (``feature.chat-first.enabled``).
+        """
+        if not self.app_config("feature.chat-first.enabled", False):
+            return {"error": "chat-first is off"}
+        # Serialised: two overlapping runs (two tabs, a double click) would
+        # both read the same to-do list and create every project twice.
+        async with self.write_lock("folders-migrate"):
+            todo = [f for f in self._load().get("folders", {}).values() if not f.get("chat_project_id")]
+            if not todo:
+                return {"ok": True, "migrated": [], "failed": [], "backup": ""}
+            backup = self._backup_folders()
+            migrated, failed = [], []
+            for f in todo:
+                try:
+                    project = await self.call_app(
+                        "agent", "create_chat_project",
+                        name=(f.get("name") or "Folder")[:MIGRATE_NAME_MAX],
+                        instructions=f.get("system_prompt") or "",
+                    )
+                except Exception as e:  # one folder must not strand the rest
+                    project = {"error": f"{type(e).__name__}: {e}"}
+                if not isinstance(project, dict) or not project.get("id"):
+                    failed.append({"folder": f["id"], "name": f.get("name", ""),
+                                   "error": (project or {}).get("error", "create failed")})
+                    continue
+                self._mark_migrated(f["id"], project["id"])
+                moved = 0
+                for tid in f.get("thread_ids") or []:
+                    if not tid.startswith("agent:"):
+                        continue
+                    try:
+                        r = await self.call_app(
+                            "agent", "assign_chat_project",
+                            session_id=tid[len("agent:"):], project_id=project["id"], keep_existing=True,
+                        )
+                    except Exception:
+                        r = None
+                    moved += 1 if isinstance(r, dict) and r.get("ok") and not r.get("kept") else 0
+                migrated.append({"folder": f["id"], "project": project["id"], "name": project["name"], "chats_moved": moved})
+            return {"ok": not failed, "migrated": migrated, "failed": failed, "backup": backup.name}
+
+    def _backup_folders(self) -> Path:
+        """Copy folders.json aside under a name no earlier backup has."""
+        stamp = _now().replace(":", "").replace("-", "")[:15]
+        backup = self._folders_path.with_name(f"folders.backup-{stamp}.json")
+        n = 1
+        while backup.exists():
+            backup = self._folders_path.with_name(f"folders.backup-{stamp}-{n}.json")
+            n += 1
+        backup.write_bytes(self._folders_path.read_bytes())
+        return backup
+
+    def _mark_migrated(self, fid: str, project_id: str) -> None:
+        """Record a folder's project at once. Read-modify-write with no await
+        between, so a folder request landing during the run is not lost."""
+        state = self._load()
+        folder = state.get("folders", {}).get(fid)
+        if folder is not None:
+            folder["chat_project_id"] = project_id
+            folder["updated"] = _now()
+            self._save(state)
 
     # ── Thread membership ────────────────────────────────────────────
 

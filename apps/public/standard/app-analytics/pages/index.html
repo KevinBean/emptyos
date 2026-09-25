@@ -12,7 +12,7 @@
 .aa-card { background:var(--bg-card); border:1px solid var(--border); border-radius:14px; padding:16px 16px; }
 .aa-card-title { font-size:12px; color:var(--text-secondary); text-transform:uppercase; letter-spacing:0.5px; margin-bottom:12px; }
 .aa-table { width:100%; border-collapse:collapse; font-size:13px; }
-.aa-table th { text-align:left; color:var(--text-muted); font-size:11px; text-transform:uppercase; padding:8px 8px; border-bottom:1px solid var(--border); }
+.aa-table th { text-align:left; color:var(--text-muted); font-size:11px; text-transform:uppercase; letter-spacing:var(--tracking-meta); padding:8px 8px; border-bottom:1px solid var(--border); }
 .aa-table td { padding:8px 8px; border-bottom:1px solid var(--border); }
 .aa-table .num { text-align:right; font-variant-numeric:tabular-nums; }
 .aa-table tr.danger td { color:var(--danger); }
@@ -22,6 +22,22 @@
 .aa-tod-labels { display:flex; gap:2px; }
 .aa-tod-labels span { flex:1; text-align:center; font-size:10px; color:var(--text-muted); min-width:8px; }
 .aa-heatmap-wrap { margin-top:8px; }
+/* Productivity split. Colour is theme-tuned and never the only signal —
+   every segment is named in the legend and every row carries a text badge. */
+.aa-pr-head { display:flex; align-items:baseline; gap:12px; flex-wrap:wrap; margin-bottom:10px; }
+.aa-pr-pct { font-size:30px; font-weight:700; color:var(--success); font-variant-numeric:tabular-nums; }
+.aa-pr-sub { font-size:13px; color:var(--text-secondary); }
+.aa-pr-track { display:flex; height:14px; border-radius:8px; overflow:hidden; background:var(--bg-card); border:1px solid var(--border); }
+.aa-pr-seg { height:100%; transition:width 0.4s ease; }
+.aa-pr-seg-productive { background:var(--success); }
+.aa-pr-seg-neutral { background:var(--text-muted); }
+.aa-pr-seg-personal { background:var(--info); }
+.aa-pr-legend { display:flex; gap:14px; flex-wrap:wrap; margin-top:8px; font-size:12px; color:var(--text-secondary); }
+.aa-pr-key { display:inline-block; width:10px; height:10px; border-radius:4px; margin-right:5px; vertical-align:middle; }
+.aa-pr-days { display:flex; gap:2px; align-items:flex-end; height:56px; margin-top:14px; }
+.aa-pr-day { flex:1; min-width:4px; display:flex; flex-direction:column-reverse; height:100%; justify-content:flex-start; }
+.aa-pr-day-seg { width:100%; }
+.aa-pr-select { padding:3px 6px; background:var(--bg-card); border:1px solid var(--border); color:var(--text); border-radius:6px; font-size:12px; }
 .aa-app-select { padding:4px 8px; background:var(--bg-card); border:1px solid var(--border); color:var(--text); border-radius:6px; font-size:12px; margin-left:8px; }
 .aa-streak-bar { display:inline-block; height:10px; background:var(--accent); border-radius:4px; min-width:2px; }
 /* Vault tab styles */
@@ -42,6 +58,10 @@
 .va-file-meta { color:var(--text-secondary); font-family:'SF Mono',Consolas,monospace; font-size:13px; flex-shrink:0; }
 .va-section-title { font-size:18px; font-weight:600; color:var(--text-heading, var(--text)); margin:24px 0 12px; }
 .va-empty { text-align:center; padding:32px; color:var(--text-secondary); }
+.va-structure-panel { background:var(--bg-card); border:1px solid var(--border); border-radius:14px; padding:16px; margin-top:16px; }
+.va-structure-status { display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin-bottom:12px; }
+.va-structure-meta { color:var(--text-secondary); font-size:13px; }
+.va-structure-actions { display:flex; gap:8px; flex-wrap:wrap; }
 </style>
 </head>
 <body>
@@ -66,6 +86,17 @@
 
     <div id="tab-usage" class="eos-tab-content active">
         <div id="aa-stats" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px"></div>
+        <div id="aa-productivity"></div>
+        <div class="aa-card" id="aa-digest-card" style="margin-top:16px">
+            <div class="aa-card-title" style="display:flex;justify-content:space-between;align-items:center">
+                <span>This week</span>
+                <span style="display:flex;gap:8px;align-items:center">
+                    <span id="aa-model-pill"></span>
+                    <button class="eos-btn eos-btn-sm" onclick="loadDigest()">&#10024; Summarize</button>
+                </span>
+            </div>
+            <div id="aa-digest-text" style="font-size:14px;color:var(--text-secondary);line-height:1.6"></div>
+        </div>
         <div id="aa-content"></div>
     </div>
 
@@ -79,6 +110,17 @@ function esc(s) { return EOS_UI.esc(String(s == null ? '' : s)); }
 
 /* ═══════════════ USAGE TAB ═══════════════ */
 
+async function loadDigest() {
+    var box = document.getElementById('aa-digest-text');
+    box.textContent = 'Summarizing this week…';
+    try {
+        var d = await EOS.api('/app-analytics/api/digest');
+        box.textContent = d.digest || 'Not enough usage this week for a summary.';
+    } catch(e) {
+        box.textContent = 'Could not generate a summary — an AI provider may be unavailable.';
+    }
+}
+
 async function loadUsage() {
     try {
         var [summary, unused, errors, tod, streaks] = await Promise.all([
@@ -90,7 +132,7 @@ async function loadUsage() {
         ]);
         renderUsage(summary, unused, errors, tod, streaks);
     } catch(e) {
-        document.getElementById('aa-content').innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:40px">Failed to load — is the daemon running?</div>';
+        document.getElementById('aa-content').innerHTML = EOS_UI.errorState({message: 'Failed to load — is the daemon running?', onRetry: 'loadUsage()'});
     }
 }
 
@@ -193,9 +235,118 @@ async function loadHeatmap() {
     } catch(e) {}
 }
 
+/* ═══════════════ PRODUCTIVITY SPLIT ═══════════════ */
+/* Dark by default — /api/productivity answers {enabled:false} until
+   [apps.app-analytics] feature.productivity-split.enabled = true, and this
+   section then renders nothing at all. A real failure still shows an error
+   state; only the deliberate off-state is silent. */
+
+// EOS_UI.statusBadge owns the class concatenation (shared-frontend rule).
+var AA_PR_STATUS_MAP = { productive: 'completed', neutral: 'draft', personal: 'idea' };
+var AA_PR_ORDER = ['productive', 'neutral', 'personal'];
+var _prData = null;
+
+async function loadProductivity() {
+    var mount = document.getElementById('aa-productivity');
+    if (!mount) return;
+    var d = await EOS.apiSafe('/app-analytics/api/productivity?days=30');
+    if (d && d.error) {
+        mount.innerHTML = '<div class="aa-card" style="margin-top:16px">' +
+            EOS_UI.errorState({ message: 'Could not load the productivity split.' }) + '</div>';
+        return;
+    }
+    if (!d || !d.enabled) { mount.innerHTML = ''; return; }
+    _prData = d;
+    renderProductivity(d);
+}
+
+function renderProductivity(d) {
+    var labels = d.labels || {};
+    var totals = d.totals || {};
+    var total = d.total || 0;
+
+    if (!total) {
+        document.getElementById('aa-productivity').innerHTML =
+            '<div class="aa-card" style="margin-top:16px"><div class="aa-card-title">Productive vs personal</div>' +
+            EOS_UI.emptyState({ message: 'No app views recorded in the last ' + d.days + ' days yet.' }) +
+            '</div>';
+        return;
+    }
+
+    var segs = '', legend = '';
+    AA_PR_ORDER.forEach(function(c) {
+        var n = totals[c] || 0;
+        var pct = total ? (n / total * 100) : 0;
+        if (pct > 0) {
+            segs += '<div class="aa-pr-seg aa-pr-seg-' + c + '" style="width:' + pct.toFixed(2) + '%" ' +
+                'title="' + escAttr((labels[c] || c) + ': ' + n + ' views') + '"></div>';
+        }
+        legend += '<span><span class="aa-pr-key aa-pr-seg-' + c + '"></span>' +
+            esc(labels[c] || c) + ' — ' + n + ' (' + pct.toFixed(0) + '%)</span>';
+    });
+
+    var daily = d.daily || [];
+    var dayMax = 1;
+    daily.forEach(function(r) {
+        dayMax = Math.max(dayMax, AA_PR_ORDER.reduce(function(a, c) { return a + (r[c] || 0); }, 0));
+    });
+    var daysHtml = daily.map(function(r) {
+        var sum = AA_PR_ORDER.reduce(function(a, c) { return a + (r[c] || 0); }, 0);
+        var h = Math.max(2, Math.round(sum / dayMax * 54));
+        var inner = AA_PR_ORDER.map(function(c) {
+            var part = sum ? Math.round((r[c] || 0) / sum * h) : 0;
+            return part > 0
+                ? '<div class="aa-pr-day-seg aa-pr-seg-' + c + '" style="height:' + part + 'px"></div>'
+                : '';
+        }).join('');
+        return '<div class="aa-pr-day" style="height:' + h + 'px" title="' +
+            escAttr(r.date + ' — ' + sum + ' views') + '">' + inner + '</div>';
+    }).join('');
+
+    var rows = (d.apps || []).slice(0, 15).map(function(r) {
+        var opts = AA_PR_ORDER.map(function(c) {
+            return '<option value="' + escAttr(c) + '"' + (c === r['class'] ? ' selected' : '') + '>' +
+                esc(labels[c] || c) + '</option>';
+        }).join('');
+        return '<tr><td>' + esc(r.name || r.app) + '</td>' +
+            '<td>' + EOS_UI.statusBadge(labels[r['class']] || r['class'], r['class'], AA_PR_STATUS_MAP) +
+            (r.source === 'inferred' ? ' <span style="font-size:11px;color:var(--text-muted)">guessed</span>' : '') +
+            '</td>' +
+            '<td class="num">' + r.views + '</td>' +
+            '<td><select class="aa-pr-select" aria-label="' + escAttr('Classify ' + (r.name || r.app)) +
+            '" onchange="setAppClass(' + EOS_UI.jsArg(r.app) + ', this.value)">' + opts +
+            '<option value="">Auto (guess)</option></select></td></tr>';
+    }).join('');
+
+    document.getElementById('aa-productivity').innerHTML =
+        '<div class="aa-card" style="margin-top:16px">' +
+            '<div class="aa-card-title">Productive vs personal (last ' + d.days + ' days)</div>' +
+            '<div class="aa-pr-head"><span class="aa-pr-pct">' + d.productive_pct + '%</span>' +
+                '<span class="aa-pr-sub">of ' + d.total + ' app views were productive</span></div>' +
+            '<div class="aa-pr-track">' + segs + '</div>' +
+            '<div class="aa-pr-legend">' + legend + '</div>' +
+            '<div class="aa-pr-days">' + daysHtml + '</div>' +
+            '<table class="aa-table" style="margin-top:16px">' +
+                '<tr><th>App</th><th>Class</th><th class="num">Views</th><th>Change</th></tr>' +
+                rows +
+            '</table>' +
+        '</div>';
+}
+
+async function setAppClass(app, cls) {
+    try {
+        await EOS.post('/app-analytics/api/productivity/classify', { app: app, 'class': cls });
+        EOS_UI.toast(cls ? 'Reclassified as ' + cls + '.' : 'Back to the guess.');
+        await loadProductivity();
+    } catch (e) {
+        EOS_UI.toast('Could not reclassify that app.', 'error');
+    }
+}
+
 /* ═══════════════ VAULT TAB ═══════════════ */
 
 var _vaultLoaded = false;
+var _vaultStructure = null;
 
 function vaFileList(items, metaFn) {
     if (!items.length) return '<div class="va-empty">No files</div>';
@@ -208,15 +359,17 @@ async function loadVault() {
     if (_vaultLoaded) return;
     _vaultLoaded = true;
     try {
-        var [stats, recent, largest, stale] = await Promise.all([
+        var [stats, recent, largest, stale, structure] = await Promise.all([
             EOS.api('/app-analytics/api/vault/stats'),
             EOS.api('/app-analytics/api/vault/recent?limit=20'),
             EOS.api('/app-analytics/api/vault/largest?limit=20'),
             EOS.api('/app-analytics/api/vault/stale?days=90&limit=20'),
+            EOS.apiSafe('/app-analytics/api/vault-structure'),
         ]);
+        _vaultStructure = (structure && !structure.error) ? structure.sweep : null;
         renderVault(stats, recent, largest, stale);
     } catch(e) {
-        document.getElementById('va-content').innerHTML = '<div class="va-empty">Failed to load vault data</div>';
+        document.getElementById('va-content').innerHTML = EOS_UI.errorState({message: 'Failed to load vault data', onRetry: 'loadVault()'});
     }
 }
 
@@ -258,7 +411,85 @@ function renderVault(stats, recent, largest, stale) {
         '</div>' +
         '<div id="tab-va-recent" class="eos-tab-content active">' + recentHtml + '</div>' +
         '<div id="tab-va-largest" class="eos-tab-content">' + largestHtml + '</div>' +
-        '<div id="tab-va-stale" class="eos-tab-content">' + staleHtml + '</div>';
+        '<div id="tab-va-stale" class="eos-tab-content">' + staleHtml + '</div>' +
+        '<div class="va-section-title">Vault structure health</div>' +
+        '<div id="va-structure-panel"></div>';
+    renderVaultStructure();
+}
+
+// app-analytics-vault-structure-purge-action: the one-click fix/purge for
+// vault-health findings (empty dirs, sync-conflict dupes, aged zero-byte
+// files) that scripts/check_vault_structure.py already detects but, before
+// this, could only be acted on from a terminal. "Review" items are never
+// purge-eligible by design — this only ever touches the 'safe' class.
+// EOS_UI.statusBadge owns the class concatenation (never build
+// 'eos-badge-status-' + x by hand — see .claude/rules/shared-frontend.md).
+var VA_STRUCTURE_STATUS_MAP = { safe: 'draft', 'safe-clear': 'completed', review: 'blocked', 'review-clear': 'completed' };
+function renderVaultStructure() {
+    var mount = document.getElementById('va-structure-panel');
+    if (!mount) return;
+    var s = _vaultStructure;
+    var status, purgedNote = '';
+    if (!s) {
+        status = '<div class="va-structure-meta">Not checked yet.</div>';
+    } else {
+        var safe = s.safe_count || 0;
+        var review = s.review_count || 0;
+        var when = s.ts ? new Date(s.ts).toLocaleString() : 'unknown';
+        status = '<div class="va-structure-status">' +
+            EOS_UI.statusBadge(safe + ' auto-fixable', safe ? 'safe' : 'safe-clear', VA_STRUCTURE_STATUS_MAP) +
+            EOS_UI.statusBadge(review + ' need review', review ? 'review' : 'review-clear', VA_STRUCTURE_STATUS_MAP) +
+            '<span class="va-structure-meta">checked ' + esc(when) + '</span>' +
+            '</div>';
+        if (s.purged) {
+            purgedNote = '<div class="va-structure-meta">Last purge removed ' +
+                (s.purged.files_deleted || 0) + ' file(s), ' + (s.purged.dirs_deleted || 0) +
+                ' dir(s)' + (s.purged.snapshot ? ' — snapshot: ' + esc(s.purged.snapshot) : '') +
+                '.</div>';
+        }
+    }
+    var purgeBtn = (s && s.safe_count)
+        ? '<button class="eos-btn eos-btn-sm eos-btn-danger" type="button" title="Remove the auto-fixable items (a snapshot is taken first)" onclick="purgeVaultStructure()">Purge ' + s.safe_count + ' safe item(s)</button>'
+        : '';
+    mount.innerHTML = status + purgedNote +
+        '<div class="va-structure-actions">' +
+        '<button class="eos-btn eos-btn-sm" type="button" title="Re-scan the vault for structural drift" onclick="checkVaultStructure()">Check now</button>' +
+        purgeBtn +
+        '</div>';
+}
+async function checkVaultStructure() {
+    EOS_UI.toast('Scanning vault structure…');
+    try {
+        var res = await EOS.post('/app-analytics/api/vault-structure/scan', {});
+        _vaultStructure = res;
+        renderVaultStructure();
+        EOS_UI.toast(res.message || 'Scan complete.');
+    } catch (e) {
+        EOS_UI.toast('Vault structure scan failed.', 'error');
+    }
+}
+async function purgeVaultStructure() {
+    var s = _vaultStructure;
+    if (!s || !s.safe_count) return;
+    var ok = await EOS_UI.confirm({
+        title: 'Purge vault structure drift',
+        message: 'Remove ' + s.safe_count + ' auto-fixable item(s) — empty folders, byte-identical ' +
+            'sync-conflict copies, aged zero-byte files? A snapshot is taken first, and the ' +
+            (s.review_count || 0) + ' item(s) needing review are never touched.',
+        action: 'Purge',
+        danger: true,
+    });
+    if (!ok) return;
+    EOS_UI.toast('Purging…');
+    try {
+        var res = await EOS.post('/app-analytics/api/vault-structure/purge', {});
+        _vaultStructure = res;
+        renderVaultStructure();
+        var purged = res.purged || {};
+        EOS_UI.toast('Purged ' + (purged.files_deleted || 0) + ' file(s), ' + (purged.dirs_deleted || 0) + ' dir(s).');
+    } catch (e) {
+        EOS_UI.toast('Purge failed.', 'error');
+    }
 }
 
 /* ═══════════════ SETTINGS ═══════════════ */
@@ -274,6 +505,8 @@ var _appSettings = EOS_UI.settingsPanel({
 function openAppSettings() { _appSettings.open(); }
 
 loadUsage();
+loadProductivity();
+EOS_UI.modelPill({app: 'app-analytics', mount: '#aa-model-pill', domain: 'text'});
 </script>
 </body>
 </html>

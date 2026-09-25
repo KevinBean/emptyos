@@ -1,4 +1,4 @@
-"""System app tests: Projects — 11 use cases."""
+"""System app tests: Projects — 11 use cases + list-page chrome regressions."""
 
 import pytest
 
@@ -185,6 +185,58 @@ class TestProjectsAPI:
         assert "employer" in recent
         assert any(item.get("text") == text for item in recent.get("items", []))
 
+    # ── Task assignee bridge to staff (optional_apps=["staff"], soft — must
+    # stay clean whether or not the personal `staff` app is installed) ──
+
+    def test_assignable_agents_endpoint(self, http_client):
+        """Never errors — returns [] when staff isn't installed on this machine."""
+        data = assert_dict_response(http_client.get("/projects/api/assignable-agents"))
+        assert "agents" in data and isinstance(data["agents"], list)
+
+    def test_assign_task_missing_agent_id(self, http_client):
+        pid = _first_valid_project_id(http_client)
+        if not pid:
+            pytest.skip("No resolvable project")
+        r = http_client.post(f"/projects/api/projects/{pid}/tasks/0/assign", json={})
+        assert "error" in r.json()
+
+    def test_assign_task_unknown_agent_is_clean_error(self, http_client):
+        """Assigning to a bogus agent never 500s, with or without staff installed."""
+        pid = _first_valid_project_id(http_client)
+        if not pid:
+            pytest.skip("No resolvable project")
+        text = TEST_PREFIX + "assignee bridge probe"
+        added = assert_dict_response(
+            http_client.post(f"/projects/api/projects/{pid}/tasks/add", json={"text": text}))
+        assert added.get("ok") is True, added
+        detail = assert_dict_response(http_client.get(f"/projects/api/projects/{pid}"))
+        line = next((t["line"] for t in detail.get("tasks", []) if t.get("text") == text), None)
+        if line is None:
+            pytest.skip("Could not resolve the added task's line")
+        r = http_client.post(
+            f"/projects/api/projects/{pid}/tasks/{line}/assign",
+            json={"agent_id": TEST_PREFIX + "no-such-agent"},
+        )
+        assert r.status_code == 200
+        assert "error" in r.json()
+        # A failed dispatch must not write an assignment meta line.
+        status = assert_dict_response(
+            http_client.get(f"/projects/api/projects/{pid}/tasks/{line}/assignment"))
+        assert status.get("assigned") is False
+
+    def test_task_assignment_status_unassigned(self, http_client):
+        pid = _first_valid_project_id(http_client)
+        if not pid:
+            pytest.skip("No resolvable project")
+        detail = assert_dict_response(http_client.get(f"/projects/api/projects/{pid}"))
+        tasks = detail.get("tasks", [])
+        if not tasks:
+            pytest.skip("No tasks to check")
+        line = tasks[0]["line"]
+        data = assert_dict_response(
+            http_client.get(f"/projects/api/projects/{pid}/tasks/{line}/assignment"))
+        assert "assigned" in data
+
     # ── Date cascade (deep logic in tests/test_unit_projects_scheduling.py) ──
 
     def test_cascade_check_shape(self, http_client):
@@ -329,3 +381,190 @@ class TestProjectsUI:
         page.wait_for_selector(".ws-grid", timeout=10000)
         assert "/projects/workspace/" in page.url
         assert_no_js_errors(page_errors)
+
+
+@pytest.mark.interactive
+class TestProjectsListChrome:
+    """Pins for the list page's stat strip / filter / sort chrome.
+
+    Every test here was RED against the implementation that shipped before it
+    (see the adversarial review that produced them) — the point of each is a
+    specific defect, named in its docstring, not general coverage. They drive
+    the page's own functions through page.evaluate because the logic is pure
+    and there is no daemon-free JS harness in this repo.
+    """
+
+    def _boot(self, app_page):
+        page = app_page("projects")
+        page.wait_for_function("typeof visibleBase === 'function'", timeout=10000)
+        page.wait_for_function("allProjects && allProjects.length > 0", timeout=10000)
+        return page
+
+    def test_stat_strip_counts_the_same_set_the_board_renders(self, app_page, page_errors):
+        """The Projects card read 100 beside a board of 77 — it counted archived
+        projects while the board excluded them, so the number and the rows it
+        revealed disagreed on screen."""
+        page = self._boot(app_page)
+        res = page.evaluate(
+            """() => {
+                setQuickFilter('');
+                const card = statItems().find(i => i.label === 'Projects');
+                return {card: card.value, rendered: filteredProjects.length,
+                        archived: allProjects.filter(p => p.status === 'archived').length};
+            }"""
+        )
+        # Guard against a vacuous pass: with no archived projects the two
+        # numbers match no matter which base the card uses.
+        if not res["archived"]:
+            pytest.skip("no archived projects — this assertion cannot discriminate")
+        assert res["card"] == res["rendered"], (
+            f"stat card says {res['card']} while the board renders {res['rendered']}"
+        )
+
+    def test_subtitle_does_not_claim_a_filter_that_is_not_set(self, app_page, page_errors):
+        """Fresh load with nothing filtered rendered "77 of 100 projects",
+        because the total counted archived and the shown count did not."""
+        page = self._boot(app_page)
+        res = page.evaluate(
+            """() => {
+                setQuickFilter(''); setCategory(''); clearSearch();
+                return {text: document.getElementById('subtitle').textContent,
+                        archived: allProjects.filter(p => p.status === 'archived').length};
+            }"""
+        )
+        if not res["archived"]:
+            pytest.skip("no archived projects — this assertion cannot discriminate")
+        assert " of " not in res["text"], (
+            f'unfiltered page claims a filtered count: "{res["text"]}"'
+        )
+
+    def test_kanban_renders_an_explained_empty_state(self, app_page, page_errors):
+        """kanbanLayout maps over its groups unconditionally and has no empty
+        state, so a zero-result filter in the DEFAULT view produced six blank
+        columns with no message and no way back."""
+        page = self._boot(app_page)
+        html = page.evaluate(
+            """() => {
+                setView('kanban');
+                renderKanban([]);
+                return document.getElementById('main-view').innerHTML;
+            }"""
+        )
+        assert "eos-empty-state" in html, "empty kanban rendered no empty state"
+
+    def test_explicit_empty_filter_clears_the_search_box(self, app_page, page_errors):
+        """EOS.registerActions dispatches filter(""); the box kept showing the
+        old term beside an unfiltered board."""
+        page = self._boot(app_page)
+        res = page.evaluate(
+            """() => {
+                document.getElementById('search').value = 'zzzz-no-such-term';
+                filterProjects('zzzz-no-such-term');
+                const narrowed = filteredProjects.length;
+                filterProjects('');
+                return {box: document.getElementById('search').value,
+                        narrowed: narrowed, after: filteredProjects.length};
+            }"""
+        )
+        assert res["box"] == "", f'search box still reads "{res["box"]}" after filter("")'
+        assert res["after"] > res["narrowed"], "filter('') did not widen the result set"
+
+    def test_sort_picker_matches_the_sort_actually_applied(self, app_page, page_errors):
+        """A stored value outside the five <option>s set selectedIndex = -1, so
+        the picker rendered blank while the list sorted by `recent`."""
+        page = self._boot(app_page)
+        page.evaluate("localStorage.setItem('eos-projects-sort', 'bogus-sort-key')")
+        page = app_page("projects")
+        page.wait_for_function("typeof setSort === 'function'", timeout=10000)
+        res = page.evaluate(
+            """() => ({picker: document.getElementById('sort').value, applied: currentSort})"""
+        )
+        page.evaluate("localStorage.removeItem('eos-projects-sort')")
+        assert res["picker"], "sort picker rendered blank"
+        assert res["picker"] == res["applied"], (
+            f'picker says "{res["picker"]}" while sorting by "{res["applied"]}"'
+        )
+
+    def test_every_sort_keeps_the_whole_result_set(self, app_page, page_errors):
+        """A sort path that drops or duplicates rows is invisible on screen.
+
+        The expected count comes from visibleBase(), NOT from a previously
+        captured filteredProjects.length: the first cut of this test took its
+        baseline after the same code path it was testing, so a uniform row loss
+        cancelled out on both sides and it stayed green under mutation.
+        """
+        page = self._boot(app_page)
+        res = page.evaluate(
+            """() => {
+                setQuickFilter(''); setCategory(''); clearSearch();
+                const n = visibleBase().length;   // independent of the sort path
+                const out = {};
+                ['recent','stale','deadline','progress','name'].forEach(k => {
+                    setSort(k);
+                    const ids = filteredProjects.map(p => p.id);
+                    out[k] = {count: ids.length, unique: new Set(ids).size};
+                });
+                setSort('recent');
+                return {base: n, out: out};
+            }"""
+        )
+        for key, got in res["out"].items():
+            assert got["count"] == res["base"], f"sort '{key}' changed the row count"
+            assert got["unique"] == got["count"], f"sort '{key}' duplicated rows"
+
+    def test_undated_projects_sort_last_under_deadline_first(self, app_page, page_errors):
+        """`deadline` ordering with no null branch: the sentinel has to sort
+        ABOVE every ISO date or undated projects lead the list."""
+        page = self._boot(app_page)
+        res = page.evaluate(
+            """() => {
+                setQuickFilter(''); setCategory(''); clearSearch(); setSort('deadline');
+                const dated = filteredProjects.filter(p => p.deadline).length;
+                const firstUndated = filteredProjects.findIndex(p => !p.deadline);
+                return {dated: dated, firstUndated: firstUndated};
+            }"""
+        )
+        if not res["dated"] or res["firstUndated"] < 0:
+            pytest.skip("need both dated and undated projects to discriminate")
+        assert res["firstUndated"] >= res["dated"], (
+            "an undated project sorted above a dated one under 'deadline first'"
+        )
+
+    def test_kanban_board_does_not_overflow_its_container(self, app_page, page_errors):
+        """min-width x column count + gaps exceeded the 1360px content box, so
+        the default board shipped a permanent 40px horizontal scroll with the
+        last column clipped — at every viewport, because .pj-page caps at 1400."""
+        page = self._boot(app_page)
+        page.set_viewport_size({"width": 1456, "height": 900})
+        res = page.evaluate(
+            """() => {
+                setQuickFilter(''); setCategory(''); clearSearch(); setView('kanban');
+                const b = document.querySelector('.eos-kanban');
+                return {cols: document.querySelectorAll('.eos-kanban-col').length,
+                        overflow: b.scrollWidth - b.clientWidth};
+            }"""
+        )
+        assert res["overflow"] <= 0, (
+            f'board overflows {res["overflow"]}px with {res["cols"]} columns'
+        )
+
+    def test_kanban_columns_stop_above_the_fab_dock(self, app_page, page_errors):
+        """The column scroll height was a hardcoded calc() that knew nothing
+        about body's 80px FAB-dock padding or the chip bar's height, and it
+        measured the mount rather than the scroller that carries the max-height."""
+        page = self._boot(app_page)
+        page.set_viewport_size({"width": 1456, "height": 900})
+        res = page.evaluate(
+            """() => {
+                setQuickFilter(''); setCategory(''); clearSearch(); setView('kanban');
+                const more = document.querySelector('[data-chip-more]');
+                if (more) more.click();          // worst case: tallest chrome
+                const it = document.querySelector('.eos-kanban-items');
+                const dock = parseFloat(getComputedStyle(document.body).paddingBottom) || 0;
+                return {bottom: Math.round(it.getBoundingClientRect().bottom),
+                        usable: window.innerHeight - dock};
+            }"""
+        )
+        assert res["bottom"] <= res["usable"], (
+            f'column scroller ends at {res["bottom"]}, under the dock at {res["usable"]}'
+        )

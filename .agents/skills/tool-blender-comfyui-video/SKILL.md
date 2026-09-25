@@ -100,6 +100,20 @@ production pipeline.
 - Do not treat smoke pasted over a static plate as general motion. Name the
   authored moving subjects in the scene contract and verify those subjects at
   ordinary playback size.
+- Prevent a technically moving edit from becoming a slideshow. Before final
+  assembly, name the song's performance or action spine and measure the share
+  of the full timeline carried by full-frame video rather than still-image
+  camera drift. Use a project-specific floor (60% is a useful starting point
+  for performance-led music videos) and review the slow sections by intent.
+  A repeated clip counts only when the music or lyric itself repeats and the
+  recurrence changes or deepens meaning; looping unrelated motion to satisfy
+  the percentage is a hard fail.
+- For locally generated lip-sync, discard guide audio in assembly, preserve
+  the canonical song track, and measure any stable visual latency with a
+  hand-placed mouth ROI. Correct a stable offset at the source in-point; do
+  not time-stretch the performance unless drift over time is separately
+  demonstrated. Always read the open/closed extreme-frame sheet so a bad ROI
+  or proxy cannot masquerade as a sync result.
 - Give every generated overlay or geometry effect an attachment contract:
   source anchor, direction, scale, depth/layer, colour, and tolerance. Derive
   coordinates from the approved plate or mask rather than guessing them.
@@ -206,6 +220,33 @@ diagnosis; label it as luminance, not depth.
 
 ## Route detailed questions
 
+- For two-pin cloth drape, soft folds, attached patterns, and matte animation
+  shading, read [soft-cloth-animation-example.md](references/soft-cloth-animation-example.md).
+  It records a rendered case and its failures, not universal cloth settings
+  or final artistic approval.
+
+- For runnable paper-peel and action-blocking examples, read
+  [animation-examples.md](references/animation-examples.md); build editable
+  scenes with `scripts/build_animation_examples.py`. The samples are teaching
+  mechanisms with documented limitations, not finished character animation.
+
+- For authored animation, paper peel, lyric timing, surface attachment, and
+  reproducible rendering, read `docs/BLENDER-ANIMATION-GUIDE.md` from the
+  repository root. It separates implemented case-study methods from proposed
+  improvements and does not impose the case study's style or frame timings.
+
+- For real lyrics written onto a generated page or other locked-off surface
+  (clean plate, homography-mapped Blender text, masked composite over a
+  motion clip), read [lyric-surface-composite.md](references/lyric-surface-composite.md).
+  It records the 不可說 build and its limits, not a typography preset.
+
+- Read [local-fix-toolkit.md](references/local-fix-toolkit.md) when a finished
+  generated shot has a local defect — blank screens or props, slanted surface
+  text, ghosting doors, an exterior that contradicts the interior, a join that
+  will not connect, a third failed regeneration, or an uneven grade. It records
+  the 〈換班〉 multi-layer compositor, proxy tracking, 2.5D plates, salvage
+  slow-down and per-shot LUT grade, with the failures that shaped them.
+
 - Read [technique-matrix.md](references/technique-matrix.md) to choose between
   plates, projections, depth geometry, material video, masks, control passes,
   and the sandwich loop.
@@ -228,7 +269,18 @@ diagnosis; label it as luminance, not depth.
   shot final, whenever a rig, imported asset, or simulated element might still
   be a control proxy — a technically valid simulation can still render as a
   blockout, and pixel evidence at delivery resolution is the authority.
+- Read [native-3d-environment.md](references/native-3d-environment.md) when an
+  AI environment reference must be rebuilt as real Blender architecture, or
+  when a 2D character card must inhabit a camera-moving 3D set.
 
 After editing EmptyOS runtime Python, do not restart ports `9000` or `9001`.
 Tell the user that `restart.bat` is required for their running daemon to load
 the change, or use the repository's sanctioned sandbox verification path.
+
+## Reuse an illustrated performance with local cloth
+
+Read [illustrated-performance-compositing.md](references/illustrated-performance-compositing.md)
+when preserving an existing actor take while repairing scene continuity with
+Blender cloth, mattes, camera projection or contact shadows. It records the
+Spark G look, dark-clothing matte failure, attachment framing and distinction
+between selected acting, held poses and reused native cloth motion.

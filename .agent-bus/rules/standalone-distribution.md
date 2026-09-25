@@ -1,3 +1,11 @@
+---
+paths:
+  - "emptyos/sdk/exporter.py"
+  - "scripts/build_standalone_release.py"
+  - "scripts/verify_extension.py"
+  - "scripts/check-csp-inline.py"
+  - "emptyos/web/static/eos-csp-bridge.js"
+---
 # Standalone Distribution — single-html + Chrome-extension targets
 
 The two standard **browser-delivered distribution formats** for an

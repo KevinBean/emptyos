@@ -1,15 +1,51 @@
 // Projects — tab content loaders. Called from app.js via TAB_RENDERERS.
 
-function renderTaskMeta(meta) {
+// Assignee bridge to staff's workflow-agent dispatch engine — see
+// .claude/rules dev notes / docs/OPEN-SOURCE-BORROWING-PLAN.md (Multica
+// borrow verdict). `queued/running/done/error` mirrors staff's job status
+// verbatim; `unknown` covers staff-absent or a job that aged out of its
+// 200-job retention window.
+var ASSIGN_STATUS_MAP = {queued: 'draft', running: 'running', done: 'completed', error: 'fail', unknown: ''};
+
+function renderTaskMeta(meta, taskLine) {
     if (!meta || !meta.length) return '';
-    var filtered = meta.filter(function(m) { return m.type !== 'depends_on' && m.type !== 'blocks'; });
-    if (!filtered.length) return '';
-    return '<div class="task-meta">' + filtered.map(function(m) {
-        if (m.type === 'sprint') return '<div class="task-meta-item"><span class="dep-badge" style="background:rgba(59,130,246,0.15);color:var(--info)">Sprint ' + esc(m.value) + '</span></div>';
-        if (m.type === 'milestone') return '<div class="task-meta-item"><span class="dep-badge" style="background:color-mix(in srgb, var(--purple) 15%, transparent);color:var(--purple)">' + esc(m.value) + '</span></div>';
+    var assigned = meta.find(function(m) { return m.type === 'assigned'; });
+    var filtered = meta.filter(function(m) { return m.type !== 'depends_on' && m.type !== 'blocks' && m.type !== 'assigned'; });
+    var out = [];
+    if (assigned) {
+        var agentId = (assigned.value || '').split(':')[0];
+        out.push('<div class="task-meta-item" id="assign-badge-' + taskLine + '">' +
+            EOS_UI.statusBadge('🤖 ' + agentId, 'queued', ASSIGN_STATUS_MAP) +
+        '</div>');
+    }
+    filtered.forEach(function(m) {
+        if (m.type === 'sprint') { out.push('<div class="task-meta-item"><span class="dep-badge" style="background:rgba(59,130,246,0.15);color:var(--info)">Sprint ' + esc(m.value) + '</span></div>'); return; }
+        if (m.type === 'milestone') { out.push('<div class="task-meta-item"><span class="dep-badge" style="background:color-mix(in srgb, var(--purple) 15%, transparent);color:var(--purple)">' + esc(m.value) + '</span></div>'); return; }
         var cls = 'meta-type' + (m.type === 'need' ? ' meta-type-need' : m.type === 'calc' ? ' meta-type-calc' : '');
-        return '<div class="task-meta-item"><span class="' + cls + '">' + m.type + ':</span> ' + esc(m.value) + '</div>';
-    }).join('') + '</div>';
+        out.push('<div class="task-meta-item"><span class="' + cls + '">' + m.type + ':</span> ' + esc(m.value) + '</div>');
+    });
+    if (!out.length) return '';
+    return '<div class="task-meta">' + out.join('') + '</div>';
+}
+
+// Lazily hydrate each "assigned" badge with live staff job status. No
+// websocket for v1 — one cheap fetch per assigned task, fired once per
+// tab render (staged-pipeline.md's "no consumer yet" bar for a live
+// stream isn't met: staff jobs are single-shot think() calls, not a
+// multi-step tool loop with a transcript to stream).
+function refreshAssignmentBadges(id, tasks) {
+    (tasks || []).forEach(function(t) {
+        var hasAssign = (t.meta || []).some(function(m) { return m.type === 'assigned'; });
+        if (!hasAssign) return;
+        EOS.api('/projects/api/projects/' + encodeURIComponent(id) + '/tasks/' + t.line + '/assignment').then(function(r) {
+            var el = document.getElementById('assign-badge-' + t.line);
+            if (!el || !r || !r.assigned) return;
+            var status = r.status || 'unknown';
+            // EOS_UI.statusBadge escapes `label` internally — pass raw text.
+            var label = '🤖 ' + (r.agent_id || '') + ' · ' + status;
+            el.innerHTML = EOS_UI.statusBadge(label, status, ASSIGN_STATUS_MAP);
+        }).catch(function() {});
+    });
 }
 
 function renderTasksTab(p, id) {
@@ -41,8 +77,9 @@ function renderTasksTab(p, id) {
             '<div style="flex:1">' +
                 '<div class="task-text ' + (t.done ? 'done' : '') + '">' + esc(t.text) + '</div>' +
                 depInfo +
-                renderTaskMeta(t.meta) +
+                renderTaskMeta(t.meta, t.line) +
             '</div>' +
+            '<button class="eos-btn-sm eos-btn-ghost" onclick="event.stopPropagation();openAssignTask(\'' + escAttr(id) + '\',' + t.line + ')" title="Assign to an agent" style="font-size:10px;padding:2px 6px">🤖</button>' +
             '<button class="eos-btn-sm eos-btn-ghost" onclick="event.stopPropagation();openAddMeta(\'' + escAttr(id) + '\',' + t.line + ')" title="Add info" style="font-size:10px;padding:2px 6px">+meta</button>' +
         '</div>';
     }).join('') || '<div style="color:var(--text-muted);font-size:13px;padding:8px 0">No tasks yet</div>';
@@ -64,6 +101,7 @@ function renderTasksTab(p, id) {
         '</div>' +
         '<div id="dep-map" style="display:none;margin-bottom:10px"></div>' +
         tasksHtml;
+    refreshAssignmentBadges(id, p.tasks || []);
 }
 
 // ── Date-cascade check: surface tasks due before a blocker, offer to fix ──
@@ -77,7 +115,7 @@ async function checkCascadeDates(ev, id) {
     try {
         res = await EOS.api('/projects/api/projects/' + encodeURIComponent(id) + '/cascade/check');
     } catch (e) {
-        el.innerHTML = '<div style="color:var(--text-muted);font-size:12px;padding:8px">Could not check dates.</div>';
+        el.innerHTML = EOS_UI.errorState({message: 'Could not check dates.'});
         return;
     }
     if (res.cycle) {
@@ -145,7 +183,7 @@ async function toggleDepMap(ev, id) {
         var g = await EOS.api('/projects/api/projects/' + encodeURIComponent(id) + '/dependency-graph');
         el.innerHTML = renderDepGraphSvg(g.nodes || [], g.edges || []);
     } catch (e) {
-        el.innerHTML = '<div style="color:var(--text-muted);font-size:12px;padding:8px">Could not load dependency map.</div>';
+        el.innerHTML = EOS_UI.errorState({message: 'Could not load dependency map.'});
     }
 }
 
@@ -269,7 +307,7 @@ async function loadDocsTab(id) {
         });
         tc.innerHTML = html;
     } catch(e) {
-        tc.innerHTML = '<div class="eos-empty">Failed to load docs: ' + esc(e.message || String(e)) + '</div>';
+        tc.innerHTML = EOS_UI.errorState({message: 'Failed to load docs: ' + (e.message || String(e)), onRetry: 'loadDocsTab(' + JSON.stringify(id) + ')'});
     }
 }
 
@@ -325,7 +363,7 @@ async function loadCalcsTab(id) {
         }).join('');
         tc.innerHTML = html;
     } catch(e) {
-        tc.innerHTML = '<div class="eos-empty">Failed to load calculations</div>';
+        tc.innerHTML = EOS_UI.errorState({message: 'Failed to load calculations', onRetry: 'loadCalcsTab(' + JSON.stringify(id) + ')'});
     }
 }
 
@@ -343,7 +381,7 @@ async function toggleCalc(btn, id, file, fid) {
         el.innerHTML = renderCalcDetail(r.data);
         el.dataset.loaded = '1';
     } catch (e) {
-        el.innerHTML = '<div style="color:var(--text-muted);font-size:12px">Failed to load result</div>';
+        el.innerHTML = EOS_UI.errorState({message: 'Failed to load result'});
     }
 }
 
@@ -406,7 +444,7 @@ async function loadCodeTab(p, id) {
         html += '</div></div>';
         tc.innerHTML = html;
     } catch(e) {
-        tc.innerHTML = '<div class="eos-empty">Failed to load git data: ' + esc(e.message || String(e)) + '</div>';
+        tc.innerHTML = EOS_UI.errorState({message: 'Failed to load git data: ' + (e.message || String(e))});
     }
 }
 
@@ -474,7 +512,7 @@ async function loadSprintsTab(p, id) {
 
         tc.innerHTML = html;
     } catch(e) {
-        tc.innerHTML = '<div class="eos-empty">Failed to load sprints: ' + esc(e.message || String(e)) + '</div>';
+        tc.innerHTML = EOS_UI.errorState({message: 'Failed to load sprints: ' + (e.message || String(e))});
     }
 }
 
@@ -536,7 +574,7 @@ async function loadMilestonesTab(p, id) {
 
         tc.innerHTML = html;
     } catch(e) {
-        tc.innerHTML = '<div class="eos-empty">Failed to load milestones: ' + esc(e.message || String(e)) + '</div>';
+        tc.innerHTML = EOS_UI.errorState({message: 'Failed to load milestones: ' + (e.message || String(e))});
     }
 }
 
@@ -574,6 +612,6 @@ async function loadReleasesTab(p, id) {
 
         tc.innerHTML = html;
     } catch(e) {
-        tc.innerHTML = '<div class="eos-empty">Failed to load releases: ' + esc(e.message || String(e)) + '</div>';
+        tc.innerHTML = EOS_UI.errorState({message: 'Failed to load releases: ' + (e.message || String(e))});
     }
 }

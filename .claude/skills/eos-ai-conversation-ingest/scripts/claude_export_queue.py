@@ -107,16 +107,28 @@ def processed_ids_from_ledger(
     history cannot distort another provider's queue or audit.
     """
     normalized_provider = provider.lower() if provider else None
-    processed: set[str] = set()
-    for match in LEDGER_ROW_RE.finditer(markdown):
+    matches = list(LEDGER_ROW_RE.finditer(markdown))
+    explicit_by_id: dict[str, set[str]] = {}
+    for match in matches:
+        provider_id = match.group("id").lower()
         row_provider = ledger_row_provider(match)
+        if row_provider is not None:
+            explicit_by_id.setdefault(provider_id, set()).add(row_provider)
+
+    processed: set[str] = set()
+    for match in matches:
+        provider_id = match.group("id").lower()
+        row_provider = ledger_row_provider(match)
+        explicit = explicit_by_id.get(provider_id, set())
+        if normalized_provider and explicit and normalized_provider not in explicit:
+            continue
         if (
             normalized_provider
             and row_provider is not None
             and row_provider != normalized_provider
         ):
             continue
-        processed.add(match.group("id").lower())
+        processed.add(provider_id)
     return processed
 
 
@@ -152,7 +164,10 @@ def local_vault_read(vault_root: Path, vault_path: str) -> str:
         target.relative_to(root)
     except ValueError as error:
         raise ValueError(f"Vault path escapes root: {vault_path}") from error
-    return target.read_bytes().decode("utf-8")
+    # Match `/api/vault/read`, whose Path.read_text() uses universal-newline
+    # translation. Preserving CRLF here makes Markdown/frontmatter parsing
+    # diverge from the daemon-backed audit on legacy Windows-authored notes.
+    return target.read_text(encoding="utf-8")
 
 
 def conversation_id(conversation: dict[str, Any]) -> str:
@@ -302,6 +317,120 @@ def render_file(file_item: dict[str, Any], ordinal: int) -> list[str]:
     return lines
 
 
+def render_artifact(block: dict[str, Any], ordinal: int) -> list[str]:
+    """Render recoverable Claude artifact source embedded in a tool call.
+
+    Claude's native export keeps generated artifact code in
+    ``content[].input.content`` while the message text contains only a mobile
+    preview placeholder. Omitting that tool input silently drops the actual
+    deliverable from the immutable source archive.
+    """
+    artifact_input = block.get("input")
+    if not isinstance(artifact_input, dict):
+        return []
+    content = artifact_input.get("content")
+    if content in (None, ""):
+        return []
+    if not isinstance(content, str):
+        content = json.dumps(content, ensure_ascii=False, indent=2)
+
+    command = str(artifact_input.get("command") or "unknown")
+    artifact_id = str(artifact_input.get("id") or f"artifact-{ordinal}")
+    title = str(artifact_input.get("title") or artifact_id)
+    media_type = str(artifact_input.get("type") or "unknown")
+    version_uuid = artifact_input.get("version_uuid")
+    content_hash = hashlib.sha256(content.encode("utf-8")).hexdigest()
+    language = (
+        "html"
+        if media_type == "text/html"
+        else "jsx"
+        if media_type == "application/vnd.ant.react"
+        else "text"
+    )
+    longest_ticks = max((len(run) for run in re.findall(r"`+", content)), default=0)
+    fence = "`" * max(3, longest_ticks + 1)
+
+    lines = [
+        f"#### Generated artifact {ordinal}: {title}",
+        "",
+        f"- Command: `{command}`",
+        f"- Artifact ID: `{artifact_id}`",
+        f"- Type: `{media_type}`",
+    ]
+    if version_uuid:
+        lines.append(f"- Version UUID: `{version_uuid}`")
+    lines.extend(
+        [
+            f"- Content SHA-256: `{content_hash}`",
+            "",
+            f"{fence}{language}",
+            content,
+            fence,
+        ]
+    )
+    return lines
+
+
+def fenced_payload(value: Any, language: str = "json") -> tuple[str, str, str]:
+    """Return stable text, hash, and a safe Markdown fence for a tool payload."""
+    if isinstance(value, str):
+        text = value
+    else:
+        text = json.dumps(value, ensure_ascii=False, indent=2, sort_keys=True)
+    longest_ticks = max((len(run) for run in re.findall(r"`+", text)), default=0)
+    fence = "`" * max(3, longest_ticks + 1)
+    digest = hashlib.sha256(text.encode("utf-8")).hexdigest()
+    return text, digest, f"{fence}{language}"
+
+
+def render_tool_trace(block: dict[str, Any], ordinal: int) -> list[str]:
+    """Preserve recoverable non-create tool calls and tool results.
+
+    Claude exports can keep the only copy of artifact update patches, REPL
+    programs, and web-search evidence in ``content[]`` while the flattened
+    message text contains only an unsupported-preview marker. These payloads
+    are part of the available source evidence and must not be silently lost.
+    """
+    block_type = block.get("type")
+    name = str(block.get("name") or "unknown")
+    if block_type == "tool_use":
+        payload = block.get("input")
+        label = "Artifact operation" if name == "artifacts" else "Tool call"
+        language = "javascript" if name == "repl" else "json"
+        if name == "repl" and isinstance(payload, dict) and set(payload) == {"code"}:
+            payload = payload["code"]
+        text, digest, opening = fenced_payload(payload, language)
+        fence = opening.split(language, 1)[0] if language else opening
+        return [
+            f"#### {label} {ordinal}: {name}",
+            "",
+            f"- Payload SHA-256: `{digest}`",
+            "",
+            opening,
+            text,
+            fence,
+        ]
+    if block_type == "tool_result":
+        payload: dict[str, Any] = {
+            "content": block.get("content"),
+            "is_error": bool(block.get("is_error")),
+        }
+        if block.get("structured_content") is not None:
+            payload["structured_content"] = block.get("structured_content")
+        text, digest, opening = fenced_payload(payload)
+        fence = opening[:-4]
+        return [
+            f"#### Tool result {ordinal}: {name}",
+            "",
+            f"- Payload SHA-256: `{digest}`",
+            "",
+            opening,
+            text,
+            fence,
+        ]
+    return []
+
+
 def render_source(
     conversation: dict[str, Any],
     captured_at: str,
@@ -328,6 +457,26 @@ def render_source(
                 "",
             ]
         )
+        artifact_index = 0
+        tool_trace_index = 0
+        for block in message.get("content") or []:
+            if not isinstance(block, dict):
+                continue
+            block_type = block.get("type")
+            if block_type not in {"tool_use", "tool_result"}:
+                continue
+            if block_type == "tool_use" and block.get("name") == "artifacts":
+                artifact_index += 1
+                rendered_artifact = render_artifact(block, artifact_index)
+                if rendered_artifact:
+                    body_lines.extend(rendered_artifact)
+                    body_lines.append("")
+                    continue
+            tool_trace_index += 1
+            rendered_trace = render_tool_trace(block, tool_trace_index)
+            if rendered_trace:
+                body_lines.extend(rendered_trace)
+                body_lines.append("")
         for attachment_index, attachment in enumerate(
             message.get("attachments") or [], start=1
         ):

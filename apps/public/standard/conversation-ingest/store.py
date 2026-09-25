@@ -878,6 +878,80 @@ def list_items(
     }
 
 
+def aggregate_items(
+    root: Path,
+    *,
+    bucket: str = "pending",
+    query: str = "",
+    offset: int = 0,
+    limit: int = 50,
+) -> dict[str, Any]:
+    """Merge `list_items` across every discovered import.
+
+    conversation-ingest-single-import-scope: `list_items` requires one import
+    key at a time, so there was no "everything pending across all sources"
+    view — this is that view, built by fanning `list_items` out over
+    `discover_imports`'s own list and merging, not a parallel read path.
+
+    A single broken import (unreadable queue/audit JSON) is skipped and named
+    in `import_errors`, not taken down with it — the same fail-soft posture
+    `discover_imports` already applies per-folder. An import whose matching
+    row count exceeds `MAX_PAGE_SIZE` is fetched only up to that cap before
+    merging (the same ceiling `list_items` already enforces per-import) and
+    named in `truncated_imports` — never a silent drop.
+    """
+    discovered = discover_imports(root)
+    offset = max(0, _as_int(offset))
+    limit = max(1, min(_as_int(limit, 50), MAX_PAGE_SIZE))
+    if not discovered["root_ok"]:
+        return {
+            "import_key": None,
+            "bucket": bucket,
+            "query": query,
+            "offset": offset,
+            "limit": limit,
+            "total": 0,
+            "rows": [],
+            "imports": [],
+            "import_errors": [],
+            "truncated_imports": [],
+        }
+
+    rows: list[dict[str, Any]] = []
+    import_errors: list[dict[str, str]] = []
+    truncated_imports: list[str] = []
+    for row in discovered["imports"]:
+        key = row["key"]
+        try:
+            page = list_items(root, key, bucket=bucket, query=query, offset=0, limit=MAX_PAGE_SIZE)
+        except (ImportPathError, ValueError) as exc:
+            import_errors.append({"import_key": key, "error": str(exc)})
+            continue
+        if page["total"] > MAX_PAGE_SIZE:
+            truncated_imports.append(key)
+        for item in page["rows"]:
+            tagged = dict(item)
+            tagged["import_key"] = key
+            rows.append(tagged)
+
+    # Most-recent-first across the whole merged set; items with no `date`
+    # (empty string sorts lowest) fall to the end rather than the front.
+    rows.sort(key=lambda r: str(r.get("date") or ""), reverse=True)
+    total = len(rows)
+    return {
+        "import_key": None,
+        "bucket": bucket,
+        "query": query,
+        "offset": offset,
+        "limit": limit,
+        "total": total,
+        "rows": rows[offset : offset + limit],
+        "imports": [row["key"] for row in discovered["imports"]],
+        "import_errors": import_errors,
+        "truncated_imports": truncated_imports,
+    }
+
+
 def item_detail(root: Path, import_key: str, provider_id: str) -> dict[str, Any] | None:
     queue, audit = load_import(root, import_key)
     pid = (provider_id or "").strip()
@@ -907,8 +981,10 @@ def item_detail(root: Path, import_key: str, provider_id: str) -> dict[str, Any]
     if not queue_row and not audit_row and pid not in missing:
         return None
     checks = (audit_row or {}).get("source_checks") or {}
-    derived = (audit_row or {}).get("derived_notes") or []
-    reciprocal = (audit_row or {}).get("reciprocal_links") or {}
+    # `derived_notes`/`reciprocal_links` are already exposed to callers via the
+    # nested `audit` object (audit_row) returned below — the frontend reads
+    # `data.audit.derived_notes` directly (pages/index.html:919). Dead locals
+    # once shadowed them here; pyflakes caught it on an unrelated edit.
     reasons = (audit_row or {}).get("reasons") or []
     receipts = _operation_receipts(
         audit_row,

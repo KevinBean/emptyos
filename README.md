@@ -33,7 +33,7 @@ A markdown vault serves as the **hard drive** — external, swappable, human-rea
 ### What you get
 
 - 🧠 **A markdown vault is the hard drive** — your data stays human-readable, portable, and usable even without the system.
-- ⚙️ **57 built-in apps + a plugin system** — tasks, projects, journal, search, AI assistant, publishing, and creative workflows in one place.
+- ⚙️ **71 built-in apps + a plugin system** — tasks, projects, journal, search, AI assistant, publishing, and creative workflows in one place.
 - 🔁 **An event bus + scheduler drive automation** — capture → organize → review → self-fix closes the loop.
 - 🤖 **Any model, any provider** — Ollama / OpenAI / Claude / any OpenAI-compatible API, routed per task.
 - 🔒 **Cloud calls pass a consent gate** — by default your raw vault never leaves the machine.
@@ -209,7 +209,7 @@ Commercial licenses (for proprietary forks, hosted services, or closed distribut
 
 ## Plugins
 
-**33 plugins** extend capabilities or add external services. **Enhancer** plugins inject a provider into a capability at startup (graceful fallback if absent); **service** plugins expose named services apps call via `self.require(...)`. A sample:
+**37 plugins** extend capabilities or add external services. **Enhancer** plugins inject a provider into a capability at startup (graceful fallback if absent); **service** plugins expose named services apps call via `self.require(...)`. A sample:
 
 | Plugin | Kind | What |
 |---|---|---|

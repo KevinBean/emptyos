@@ -19,38 +19,53 @@
 if(window.EOS&&EOS.registerActions){EOS.registerActions({filter:function(q){filterProjects(q)},set_view:function(v){setView(v)},open_project:function(id){if(id)openProject(id)}},[{name:"filter",description:"Filter projects",params:["query"]},{name:"set_view",description:"View: grid or list",params:["view"]},{name:"open_project",description:"Open a project's workspace by ID",params:["project_id"]}],{description:"Projects — status, tasks, health assessment, kanban view.",quickActions:[{label:"Stale projects",msg:"Which projects have no recent activity?"}]});}
 </script>
 
-<div class="page">
+<!-- ai-native: ignore split-chrome (this page is the portfolio list; the two
+     think routes — /ask and /health — are reached only from the standalone
+     /projects/workspace/<id> page, which mounts its own model pill. The only
+     chip dialogs.js carries, provenanceLine inside showHealth, has no caller
+     on this page, so nothing here spends think.) -->
+<div class="page pj-page">
     <!-- Header -->
     <div class="eos-header">
         <div>
             <h1>Projects</h1>
             <div style="font-size:13px;color:var(--text-secondary)" id="subtitle">Loading...</div>
         </div>
-        <div style="display:flex;gap:8px;align-items:center">
-            <div class="view-toggle">
-                <div class="view-btn active" id="btn-kanban" onclick="setView('kanban')">Kanban</div>
-                <div class="view-btn" id="btn-list" onclick="setView('list')">List</div>
-                <div class="view-btn" id="btn-timeline" onclick="setView('timeline')">Timeline</div>
-                <div class="view-btn" id="btn-calendar" onclick="setView('calendar')">Calendar</div>
+        <div class="pj-toolbar">
+            <div class="view-toggle" role="group" aria-label="View">
+                <button type="button" class="view-btn active" id="btn-kanban" aria-pressed="true" onclick="setView('kanban')">Kanban</button>
+                <button type="button" class="view-btn" id="btn-list" aria-pressed="false" onclick="setView('list')">List</button>
+                <button type="button" class="view-btn" id="btn-timeline" aria-pressed="false" onclick="setView('timeline')">Timeline</button>
+                <button type="button" class="view-btn" id="btn-calendar" aria-pressed="false" onclick="setView('calendar')">Calendar</button>
             </div>
-            <button class="eos-btn-sm eos-btn-ghost" id="btn-archive" onclick="toggleArchived()" style="font-size:11px">Show Archived</button>
-            <button class="eos-btn-sm eos-btn-ghost" onclick="openAsBoard()" title="Open in Boards (kanban / table / timeline / chart)" style="font-size:11px">Open as Board</button>
-            <button class="eos-btn eos-btn-sm eos-btn-ghost" onclick="openAppSettings()" title="App Settings">&#9881; Settings</button>
-            <button class="eos-btn-sm eos-btn-ghost" onclick="openCreateAI()" title="Describe in plain English; AI fills the form">✨ AI</button>
+            <div class="pj-toolbar-sec">
+                <button class="eos-btn-sm eos-btn-ghost" id="btn-archive" onclick="toggleArchived()" title="Include archived projects" aria-pressed="false">Archived</button>
+                <button class="eos-btn-sm eos-btn-ghost" onclick="openAsBoard()" title="Open in Boards (kanban / table / timeline / chart)">Board&nbsp;&#8599;</button>
+                <button class="eos-btn-sm eos-btn-ghost" onclick="openAppSettings()" title="App Settings" aria-label="App Settings">&#9881;</button>
+            </div>
+            <button class="eos-btn-sm eos-btn-ghost" onclick="openCreateAI()" title="Describe in plain English; AI fills the form">&#10024; AI</button>
             <button class="eos-btn-sm" onclick="openCreate()">+ New</button>
         </div>
     </div>
 
-    <!-- Stats -->
-    <div class="eos-hero" id="stats-row"></div>
+    <!-- Stats — compact strip; each card is also a quick filter (see setQuickFilter). -->
+    <div class="pj-stats" id="stats-row"></div>
 
-    <!-- Search -->
-    <div style="margin-bottom:12px">
-        <input type="text" id="search" placeholder="Search projects..." oninput="filterProjects()" style="border-radius:14px;padding:12px 16px">
+    <!-- Search + sort + the active quick filter -->
+    <div class="pj-filters">
+        <input type="text" id="search" class="pj-search" placeholder="Search projects, tags, status..." oninput="filterProjects()">
+        <select id="sort" class="pj-sort" onchange="setSort(this.value)" aria-label="Sort projects">
+            <option value="recent">Recently active</option>
+            <option value="stale">Most neglected</option>
+            <option value="deadline">Deadline first</option>
+            <option value="progress">Most progress</option>
+            <option value="name">Name A–Z</option>
+        </select>
+        <span id="active-filter"></span>
     </div>
 
     <!-- Category chips (tag-based filter) -->
-    <div id="category-bar" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px"></div>
+    <div id="category-bar" class="pj-chipbar"></div>
 
     <!-- Main content -->
     <div id="main-view"></div>
@@ -78,7 +93,7 @@ if(window.EOS&&EOS.registerActions){EOS.registerActions({filter:function(q){filt
         <input type="date" id="new-deadline">
         <input type="text" id="new-employer" placeholder="Company / employer (for Worklog)">
         <div class="type-fields hidden" id="dev-fields">
-            <input type="text" id="new-repo" placeholder="Repository path (e.g. D:/emptyos)">
+            <input type="text" id="new-repo" placeholder="Repository path (e.g. /path/to/repo)">
         </div>
         <div id="template-picker" style="margin-top:8px"></div>
         <div class="eos-modal-actions">

@@ -1,17 +1,16 @@
 """Unit tests for emptyos/sdk/art_ledger.py — the MV pipeline's cross-song
 memory. Pure file I/O, no daemon, no kernel."""
 
-import json
-
-import pytest
-
 from emptyos.sdk.art_ledger import (
     log_art_verdict,
     read_rows,
     recurring_failures,
     recurring_failures_block,
     song_key,
+    song_keys,
 )
+
+SHA = "ab" * 32
 
 
 def _log(root, song, code, *, scene=1, stage="art-review",
@@ -170,3 +169,143 @@ class TestSongIdentity:
         _log(tmp_path, "2026-02-23__梦幻泡影", "style_mismatch")
         _log(tmp_path, "Porch-Light-Low", "style_mismatch")
         assert recurring_failures(tmp_path, exclude_song="梦幻泡影") == []
+
+
+class TestMangledSongName:
+    """`2026-02-23__????` is `2026-02-23__梦幻泡影` written through a cp1252
+    console (live ledger, row of 2026-07-29). Repaired at read time only."""
+
+    def test_question_marks_resolve_to_the_dated_song_with_that_length(self, tmp_path):
+        _log(tmp_path, "2026-02-23__梦幻泡影", "c1")
+        _log(tmp_path, "2026-02-23__????", "c1")
+        _log(tmp_path, "Porch-Light-Low", "c1")
+        out = recurring_failures(tmp_path)
+        assert [r["code"] for r in out] == ["c1"]
+        assert out[0]["songs"] == 2, "a mangled name is not a second song"
+
+    def test_evidence_names_the_repaired_identity_and_keeps_the_raw_name(self, tmp_path):
+        _log(tmp_path, "2026-02-23__梦幻泡影", "c1", scene=10)
+        _log(tmp_path, "2026-02-23__????", "c1", scene=13)
+        _log(tmp_path, "Porch-Light-Low", "c1", scene=2)
+        ev = recurring_failures(tmp_path)[0]["evidence"]
+        assert {e["song_identity"] for e in ev} == {song_key("梦幻泡影"), song_key("Porch-Light-Low")}
+        assert {e["song"] for e in ev} == {"2026-02-23__梦幻泡影", "2026-02-23__????", "Porch-Light-Low"}
+
+    def test_excluding_an_unrelated_same_date_song_keeps_the_repair(self, tmp_path):
+        _log(tmp_path, "2026-02-23__梦幻泡影", "c1")
+        _log(tmp_path, "2026-02-23__????", "c1")
+        _log(tmp_path, "Porch-Light-Low", "c1")
+        out = recurring_failures(tmp_path, exclude_song="2026-02-23__一念之间")
+        assert [r["code"] for r in out] == ["c1"] and out[0]["songs"] == 2
+
+    def test_length_picks_between_songs_sharing_a_date(self):
+        rows = [{"song": "2026-02-23__梦幻泡影"}, {"song": "2026-02-23__无所住"},
+                {"song": "2026-02-23__???"}, {"song": "2026-02-23__????"}]
+        keys = song_keys(rows)
+        assert keys["2026-02-23__???"] == song_key("无所住")
+        assert keys["2026-02-23__????"] == song_key("梦幻泡影")
+
+    def test_ambiguous_or_unmatched_stays_its_own_song(self):
+        rows = [{"song": "2026-02-23__梦幻泡影"}, {"song": "2026-02-23__一念之间"},
+                {"song": "2026-02-23__????"}, {"song": "2026-03-01__??"}]
+        keys = song_keys(rows)
+        assert keys["2026-02-23__????"] == song_key("2026-02-23__????")
+        assert keys["2026-03-01__??"] == song_key("2026-03-01__??")
+
+    def test_an_undated_question_mark_name_is_left_alone(self):
+        rows = [{"song": "2026-02-23__梦幻泡影"}, {"song": "????"}]
+        assert song_keys(rows)["????"] == "????"
+
+    def test_exclude_song_covers_the_mangled_row(self, tmp_path):
+        _log(tmp_path, "2026-02-23__????", "style_mismatch")
+        _log(tmp_path, "2026-02-23__梦幻泡影", "palette_mismatch")
+        _log(tmp_path, "Porch-Light-Low", "style_mismatch")
+        assert recurring_failures(tmp_path), "control: without the exclude the code recurs"
+        assert recurring_failures(tmp_path, exclude_song="梦幻泡影") == []
+
+    def test_a_mangled_exclude_name_excludes_the_song_it_stands_for(self, tmp_path):
+        _log(tmp_path, "2026-02-23__梦幻泡影", "c1")
+        _log(tmp_path, "Porch-Light-Low", "c1")
+        _log(tmp_path, "潮痕", "c1")
+        assert recurring_failures(tmp_path)[0]["songs"] == 3, "control"
+        out = recurring_failures(tmp_path, exclude_song="2026-02-23__????")
+        assert out[0]["songs"] == 2
+        assert all(e["song_identity"] != song_key("梦幻泡影") for e in out[0]["evidence"])
+
+    def test_reading_never_rewrites_the_stored_row(self, tmp_path):
+        _log(tmp_path, "2026-02-23__梦幻泡影", "style_mismatch")
+        _log(tmp_path, "2026-02-23__????", "style_mismatch")
+        _log(tmp_path, "Porch-Light-Low", "style_mismatch")
+        led = tmp_path / "data" / "art_direction" / "ledger.jsonl"
+        before = led.read_bytes()
+        assert recurring_failures(tmp_path)[0]["songs"] == 2
+        assert led.read_bytes() == before
+        assert read_rows(tmp_path)[1]["song"] == "2026-02-23__????"
+
+    def test_attempt_id_is_capped(self, tmp_path):
+        log_art_verdict(tmp_path, "a", 1, stage="human", verdict="reject",
+                        hard_codes=["c"], attempt_id="x" * 500)
+        assert len(read_rows(tmp_path)[0]["attempt_id"]) == 200
+
+
+class TestEvidenceLinks:
+    def test_attempt_id_and_sha_round_trip(self, tmp_path):
+        log_art_verdict(tmp_path, "a", 1, stage="human", verdict="reject",
+                        hard_codes=["style_mismatch"], attempt_id="a:still:S01:2",
+                        output_sha256=SHA.upper())
+        row = read_rows(tmp_path)[0]
+        assert row["attempt_id"] == "a:still:S01:2"
+        assert row["output_sha256"] == SHA
+
+    def test_absent_links_are_not_written(self, tmp_path):
+        _log(tmp_path, "a", "style_mismatch")
+        assert "attempt_id" not in read_rows(tmp_path)[0]
+        assert "output_sha256" not in read_rows(tmp_path)[0]
+
+    def test_a_malformed_sha_is_not_written(self, tmp_path):
+        log_art_verdict(tmp_path, "a", 1, stage="human", verdict="reject",
+                        hard_codes=["c"], output_sha256="abc123")
+        assert "output_sha256" not in read_rows(tmp_path)[0]
+
+    def test_recurring_failures_points_at_the_rejections(self, tmp_path):
+        log_art_verdict(tmp_path, "song-a", 3, stage="art-review", verdict="regenerate",
+                        hard_codes=["palette_mismatch"], attempt_id="song-a:still:S03:1",
+                        output_sha256=SHA)
+        _log(tmp_path, "song-b", "palette_mismatch", scene=7)
+        ev = recurring_failures(tmp_path)[0]["evidence"]
+        assert {e["song"] for e in ev} == {"song-a", "song-b"}
+        assert {e["song_identity"] for e in ev} == {"song-a", "song-b"}
+        linked = [e for e in ev if e["song"] == "song-a"][0]
+        assert linked["attempt_id"] == "song-a:still:S03:1"
+        assert linked["output_sha256"] == SHA
+        assert linked["scene"] == 3
+        unlinked = [e for e in ev if e["song"] == "song-b"][0]
+        assert "attempt_id" not in unlinked and unlinked["scene"] == 7
+
+    def test_evidence_is_newest_first_and_capped(self, tmp_path):
+        for i, s in enumerate(("a", "b", "c", "d")):
+            _log(tmp_path, s, "wide_code", scene=i)
+        ev = recurring_failures(tmp_path, evidence_limit=2)[0]["evidence"]
+        assert [e["scene"] for e in ev] == [3, 2]
+
+    def test_passes_are_not_evidence(self, tmp_path):
+        _log(tmp_path, "a", "c1")
+        _log(tmp_path, "b", "c1")
+        log_art_verdict(tmp_path, "c", 9, stage="art-review", verdict="pass",
+                        hard_codes=["c1"], attempt_id="c:still:S09:1")
+        assert all(e.get("attempt_id") != "c:still:S09:1"
+                   for e in recurring_failures(tmp_path)[0]["evidence"])
+
+    def test_prompt_block_is_unchanged_by_links(self, tmp_path):
+        # The reviewer prompt must stay byte-identical whether or not rows carry links.
+        _log(tmp_path, "a", "palette_mismatch", clause="no teal")
+        _log(tmp_path, "b", "palette_mismatch", clause="no teal")
+        plain = recurring_failures_block(tmp_path)
+        assert plain, "control: two songs make a block"
+        log_art_verdict(tmp_path / "x", "a", 1, stage="art-review", verdict="regenerate",
+                        hard_codes=["palette_mismatch"], contract_clause="no teal",
+                        attempt_id="a:still:S01:1", output_sha256=SHA)
+        log_art_verdict(tmp_path / "x", "b", 1, stage="art-review", verdict="regenerate",
+                        hard_codes=["palette_mismatch"], contract_clause="no teal",
+                        attempt_id="b:still:S01:1")
+        assert recurring_failures_block(tmp_path / "x") == plain

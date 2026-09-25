@@ -1,4 +1,9 @@
 ---
+paths:
+  - "emptyos/runtime/atomic_io.py"
+  - "emptyos/sdk/**"
+  - "emptyos/web/routes_vault.py"
+  - "apps/**"
 abstract: Use one crash-safe replacement primitive for whole-file persistence; keep logical read-modify-write locks separate.
 ---
 

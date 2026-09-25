@@ -6,9 +6,12 @@ utility layer + engine helpers via ``self`` (bound). Never imports ``.app``.
 # ─── Bind to RunbookApp class as ─────────────────────────────────────
 #   api_list           = _routes.api_list
 #   api_get            = _routes.api_get
+#   api_templates      = _routes.api_templates
 #   api_create         = _routes.api_create
 #   api_run            = _routes.api_run
 #   api_run_block      = _routes.api_run_block
+#   api_block_output   = _routes.api_block_output
+#   api_publish        = _routes.api_publish
 #   api_schedule       = _routes.api_schedule
 #   api_from_session   = _routes.api_from_session
 #   api_from_confirm   = _routes.api_from_confirm
@@ -124,6 +127,48 @@ async def api_get(self, request):
     }
 
 
+# ── starter templates (gallery of KB `pattern` notes, fail-soft) ───────────
+_TEMPLATE_SLUGS = (
+    "runbook-pattern-calculate",
+    "runbook-pattern-think",
+    "runbook-pattern-call-app",
+)
+_DEFAULT_STARTER = (
+    "```eos-block\n"
+    'id = "items"\n'
+    'type = "vault_query"\n'
+    'output = "items"\n'
+    "---\n"
+    "# header fields above the --- ; body below\n"
+    "```"
+)
+
+
+@web_route("GET", "/api/templates")
+async def api_templates(self, request):
+    """Starting-point options for openNew()'s modal. Always includes the
+    baseline vault_query starter first; each KB `pattern` note beyond that is
+    best-effort — a missing note or an unavailable kb app just means fewer
+    options, never an error (openNew() must still work with zero KB notes)."""
+    out = [{"slug": "default", "title": "Query the vault (default)", "body": _DEFAULT_STARTER}]
+    for slug in _TEMPLATE_SLUGS:
+        try:
+            note = await self.call_app("kb", "get_note", slug=slug)
+        except Exception:  # noqa: BLE001 — kb app may not be installed
+            continue
+        if not isinstance(note, dict) or note.get("error"):
+            continue
+        note_blocks = [b for b in parse_blocks(note.get("body") or "") if b.type != "invalid"]
+        if not note_blocks:
+            continue
+        out.append({
+            "slug": slug,
+            "title": (note.get("properties") or {}).get("title") or slug,
+            "body": serialize_blocks(note_blocks[:1]).rstrip("\n"),
+        })
+    return {"templates": out}
+
+
 # ── create ───────────────────────────────────────────────────────────────
 @web_route("POST", "/api/runbooks")
 async def api_create(self, request):
@@ -160,6 +205,72 @@ async def api_run_block(self, request):
     rid = _norm_rid(request.path_params["rid"])
     bid = request.path_params["bid"]
     return await self.run_from(rid, bid, mode="interactive")
+
+
+# ── rich output (runbook-no-rich-output) ────────────────────────────────────
+@web_route("GET", "/api/runbooks/{rid}/block/{bid}/output")
+async def api_block_output(self, request):
+    """Full raw cached value for one block. block_statuses' output_preview is
+    a truncated STRING (None for a table/artifact-ref value), so a `table`-
+    typed vault_query result or a `artifact-ref`-typed chart needs its real
+    value fetched separately — the frontend does this lazily, only for those
+    two kinds. `bid` is matched against real parsed block ids before it ever
+    reaches the cache store, mirroring run_from's own safety pattern — never
+    pass a raw path param straight into a filename-building call."""
+    rid = _norm_rid(request.path_params["rid"])
+    bid = request.path_params["bid"]
+    rel = f"{_shared.RUNBOOK_DIR}/{rid}.md"
+    if not self.vault_get_properties(rel):
+        return {"error": f"runbook '{rid}' not found"}
+    blocks = parse_blocks(self.vault_read_body(rel) or "")
+    if not any(b.id == bid for b in blocks):
+        return {"error": f"block '{bid}' not found"}
+    value = self._run_store().cached_output(rid, bid)
+    return {"value": value}
+
+
+# ── publish (runbook-publish-not-built) ─────────────────────────────────────
+def _publish_content(title: str, statuses: list[dict]) -> tuple[str, bool]:
+    """Render the last-run terminal artifact as a markdown summary — one
+    section per block that has actually produced a result. A block with no
+    string preview (a `number`/`json` output — see runbook-no-rich-output,
+    a separate gap) gets an honest placeholder rather than a raw Python repr.
+    Returns (markdown, any_block_ran)."""
+    lines = [f"# {title}", ""]
+    any_run = False
+    for b in statuses:
+        if b.get("status") not in ("ok", "stale") or not b.get("ran_at"):
+            continue
+        any_run = True
+        lines.append(f"## {b['id']} ({b['type']})")
+        preview = b.get("output_preview")
+        lines.append(preview if preview else "*(no text preview for this block's output)*")
+        lines.append("")
+    return "\n".join(lines).rstrip() + "\n", any_run
+
+
+@web_route("POST", "/api/runbooks/{rid}/publish")
+async def api_publish(self, request):
+    """Hand the runbook's last-run terminal artifact to the `publish` app as a
+    new draft. Requires at least one block to have actually run — publishing
+    an empty pipeline would just create a blank post."""
+    rid = _norm_rid(request.path_params["rid"])
+    rel = f"{_shared.RUNBOOK_DIR}/{rid}.md"
+    fm = self.vault_get_properties(rel)
+    if not fm:
+        return {"error": f"runbook '{rid}' not found"}
+    blocks = parse_blocks(self.vault_read_body(rel) or "")
+    statuses = self.block_statuses(rid, blocks)
+    content, any_run = _publish_content(fm.get("title") or rid, statuses)
+    if not any_run:
+        return {"error": "run this runbook at least once before publishing"}
+    try:
+        res = await self.call_app("publish", "save_draft", title=fm.get("title") or rid, content=content)
+    except Exception as e:  # noqa: BLE001 — publish is an optional_apps integration
+        return {"error": f"publish app unavailable: {type(e).__name__}: {e}"}
+    if res.get("ok"):
+        await self.emit("runbook:published", {"id": rid, "path": res.get("path")})
+    return res
 
 
 # ── schedule ─────────────────────────────────────────────────────────────

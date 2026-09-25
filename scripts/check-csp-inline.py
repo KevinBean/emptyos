@@ -78,6 +78,16 @@ _CONCAT_SEAM_RE = re.compile(r"'\s*\+(?:\s|//[^\n]*)*'")
 # (…,\''+item.file+'\',…) — placeholder must NOT add its own quotes.
 _WRAPPED_INTERP_RE = re.compile(r"\\''\s*\+.*?\+\s*'\\'", re.S)
 _INTERP_RE = re.compile(r"'\s*\+.*?\+\s*'", re.S)
+# Prose in a `//` comment is not code. A comment documenting the helpers —
+# `// Use jsArg only where YOU are writing the onclick="..." characters.` —
+# otherwise reaches the bridge as a handler whose body is the literal `...`,
+# which no parser accepts. That is a phantom finding, and it masked the real
+# signal: the checker read 1 FAIL for a file with zero defective handlers.
+# Only a comment that OPENS its line is stripped, so a `//` inside a handler
+# string (a URL, a concat seam — see _CONCAT_SEAM_RE, which consumes comments
+# *between* seams and must still see them) is untouched. The newline is kept
+# so reported line positions do not shift.
+_LINE_COMMENT_RE = re.compile(r"^[ \t]*//[^\n]*", re.M)
 
 
 def _extract(path: Path) -> list[tuple[str, str]]:
@@ -89,7 +99,8 @@ def _extract(path: Path) -> list[tuple[str, str]]:
     no-ops — they contain no '+'-concat seams or escaped quotes)."""
     text = path.read_text(encoding="utf-8")
     out: list[tuple[str, str]] = []
-    normalized = _CONCAT_SEAM_RE.sub("", text)
+    normalized = _LINE_COMMENT_RE.sub("", text)
+    normalized = _CONCAT_SEAM_RE.sub("", normalized)
     normalized = _WRAPPED_INTERP_RE.sub(r"\\'ARG\\'", normalized)
     normalized = _INTERP_RE.sub("'ARG'", normalized)
     for m in _ATTR_RE.finditer(normalized):

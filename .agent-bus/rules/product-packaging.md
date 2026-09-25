@@ -1,3 +1,8 @@
+---
+paths:
+  - "products/**"
+  - "scripts/build_standalone_release.py"
+---
 # Product Packaging Rule — slicing EmptyOS apps into distributable products
 
 EmptyOS is the **foundry**: apps are grown in conversation mode, on the daemon,

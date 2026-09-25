@@ -23,6 +23,23 @@ The model in one line: **1 vault = 1 user; N users = N vaults = N daemons; the
 commons is the one shared, non-vault store.** "Multi-user" is never "many people in
 one vault" — that's the thing this pin forbids.
 
+**One exception, and its fences: a shared daemon that holds no per-user data.**
+A public demo already serves many anonymous visitors from one daemon. The
+control plane's *shared mode* (`services/englishos-control-plane/README.md`
+§ Shared mode, added 2026-09-25 for the hosted Cable Pulling+ site) does the
+same behind a sign-in: visitors are identified in the control plane, never in
+the daemon, and nothing a visitor does is stored per visitor. It stays inside
+this pin only while all of these hold:
+
+- the product keeps no per-user state (the hosted Cable Pulling+ build refuses
+  saved projects when the hosted switch is on);
+- the control plane forwards only an allowlist of paths (`SHARED_PATHS`,
+  required), because every visitor rides the daemon's inner token;
+- every forward carries `X-EOS-Public: 1`, so an app that branches on
+  `is_public_request()` serves its restricted face.
+
+A product whose users need saved state of their own is daemon-per-user (#3), not this.
+
 ## The shape we keep
 
 A daemon process serves **one human**. Authentication is a network gate, not
@@ -39,6 +56,46 @@ same single trust boundary.
 
 When `network.mode = "private"` or `"public"`, at least one of these MUST be
 set. Mode `"local"` skips the gate entirely (loopback only).
+
+### The shell login exchange — a scoped third secret, and what it is worth
+
+The desktop shell (`products/_shared/`) already holds `auth_token`: it reads
+`emptyos.toml` to talk to the daemon. The webview it opens does not, so in
+private mode the user is asked to log in **by hand, per webview profile**, to a
+daemon running as them on their own machine. `emptyos/web/auth_exchange.py`
+closes that, and it is worth being precise about what it does and does not add:
+
+- It adds a **third secret, deliberately scoped**: an exchange code. Calling it
+  "not a credential" would be word-play — it is independently presentable, has
+  its own store and TTL, and redeeming it yields a session. What keeps the
+  two-credential model honest is that a code cannot be *obtained* without one of
+  the two (mint is bearer-only) and cannot be *spent* from another machine.
+- **A redeemed code yields the same cookie `/login` would**, whose value is the
+  `auth_token` itself, for 30 days. Be clear-eyed about that: the code is
+  short-lived, but what it buys is not. That is why redeeming is restricted to
+  the loopback socket — and why the locality check reads `request.client.host`
+  and never `X-Forwarded-For`, which the caller sets.
+- **Mint** (`POST /api/auth/shell-exchange`) is **bearer-only and refuses a
+  session cookie**, even though the middleware would admit one to any `/api/`
+  route. A cookie is what a *page* holds; an XSS anywhere in the daemon could
+  otherwise mint a code and carry a working login off the machine.
+- **Redeem** (`GET /auth/shell-exchange?code=…&next=…`) is auth-exempt by
+  necessity — it is the route that makes you authenticated — so it carries its
+  own gate: the **peer socket** must be loopback (strictly this machine, not
+  the private LAN, and never a forwarded-for header), the code must be
+  unexpired and unused, `next` is clamped to a path on this daemon, and a wrong
+  code counts against the same per-IP limit as `/login`. A request carrying
+  **no** code answers 400 without counting: otherwise any page the user visits
+  could lock them out of `/login` with five `<img src=…>`.
+- A **code, not the token**, because the token is permanent and would land in
+  the address bar, history, and any log that records a URL. A code is worth 60
+  seconds, once.
+
+Dark behind `[network] feature.shell-exchange.enabled`, and not registered at
+all without an `auth_token` — there would be nothing to exchange. When the
+routes are absent the shell falls back to the ordinary one-time `/login`, which
+is why every failure in `shell_core.mint_exchange_code` answers `None` rather
+than raising.
 
 ## What this is NOT
 
@@ -177,7 +234,7 @@ Two consequences worth pinning:
 - **Read-only public landing pages** (e.g. published article on a
   demo deployment) use `[provides.web].public_routes` in the app's
   manifest — those bypass the auth gate without weakening it for the
-  rest of the daemon. See `apps/radio/` for an example.
+  rest of the daemon. See `apps/extension/english-learning/radio/` for an example.
 
 ## See also
 

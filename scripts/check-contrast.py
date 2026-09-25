@@ -33,7 +33,6 @@ from __future__ import annotations
 
 import re
 import sys
-import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -110,6 +109,12 @@ _CHECKS = [
     ("text-muted", "bg", 3.0, 3.5, "muted/bg"),
     ("accent", "bg", 3.0, 4.5, "link/bg"),
     ("accent-ink", "accent", 0.0, 4.5, "btn-label/accent"),
+    # Filled success/warning/danger buttons put the same ink on a status fill
+    # (.eos-btn-success/-warning, and .eos-btn-danger on hover). soft-light and
+    # digital-garden shipped 3.98-4.44 here until 2026-09-21.
+    ("accent-ink", "success", 0.0, 4.5, "btn-label/success"),
+    ("accent-ink", "warning", 0.0, 4.5, "btn-label/warning"),
+    ("accent-ink", "danger", 0.0, 4.5, "btn-label/danger"),
     # Surface pairs — the text actually sits on cards/inputs, whose tokens are
     # rgba in the dark themes (composited over --bg by resolve()). Warn-only
     # until calibration shows them stable; promote per-pair after that.

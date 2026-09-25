@@ -165,6 +165,10 @@ class _HealthApp:
     def _parse_impl_ref(_ref):
         return "", "", ""
 
+    @staticmethod
+    def setting_or_config(_key, default=None):
+        return default
+
 
 def _uncited_slugs(notes, cited_by=None):
     return {
@@ -358,6 +362,9 @@ class TestHealthBucketWiring:
     def test_stale_reference_is_a_declared_bucket(self):
         assert notes_mod._HEALTH_SEVERITY["stale_reference"] == "warn"
 
+    def test_stale_note_is_a_declared_bucket(self):
+        assert notes_mod._HEALTH_SEVERITY["stale_note"] == "warn"
+
     def test_butler_severity_mirror_has_not_drifted(self):
         """kb-butler hand-copies the bucket map. A bucket added to kb and not
         mirrored there is silently ignored by every butler cycle."""
@@ -367,3 +374,87 @@ class TestHealthBucketWiring:
         spec.loader.exec_module(butler)
         assert set(butler._BUCKET_SEVERITY) == set(notes_mod._HEALTH_SEVERITY)
         assert butler._BUCKET_SEVERITY == dict(notes_mod._HEALTH_SEVERITY)
+
+
+# ── General note staleness (kb-butler-no-freshness-scoring) ───────────────
+def _concept(slug, **props):
+    """A minimally-shaped indexed concept note."""
+    return {
+        "path": f"30_Resources/EmptyOS/kb/notes/{slug}.md",
+        "name": slug,
+        "properties": {"kind": "concept", "title": slug, **props},
+    }
+
+
+def _stale_findings(notes, threshold_days=None):
+    app = _HealthApp()
+    if threshold_days is not None:
+        # Instance-attribute assignment of a plain function does NOT bind as
+        # a method (no implicit `self`) — this shadows the class staticmethod.
+        app.setting_or_config = lambda _k, _d=None: threshold_days
+    return {
+        slug: record
+        for category, slug, record in notes_mod._iter_health_findings(app, notes, {}, today=TODAY)
+        if category == "stale_note"
+    }
+
+
+class TestNoteStaleness:
+    def test_fresh_note_is_not_stale(self):
+        r = shared.note_staleness({"updated": "2026-07-20"}, TODAY, 365)
+        assert r["state"] == "fresh"
+        assert r["days_since_touched"] == 5
+
+    def test_old_note_is_stale(self):
+        r = shared.note_staleness({"updated": "2024-01-01"}, TODAY, 365)
+        assert r["state"] == "stale"
+        assert r["days_since_touched"] > 365
+
+    def test_boundary_at_exactly_threshold_is_stale(self):
+        anchor = TODAY - dt.timedelta(days=365)
+        r = shared.note_staleness({"updated": anchor.isoformat()}, TODAY, 365)
+        assert r["state"] == "stale"
+        assert r["days_since_touched"] == 365
+
+    def test_falls_back_to_created_when_no_updated(self):
+        r = shared.note_staleness({"created": "2024-01-01"}, TODAY, 365)
+        assert r["state"] == "stale"
+        assert r["anchor_date"] == "2024-01-01"
+
+    def test_updated_wins_over_created(self):
+        r = shared.note_staleness(
+            {"created": "2020-01-01", "updated": "2026-07-01"}, TODAY, 365)
+        assert r["state"] == "fresh"
+        assert r["anchor_date"] == "2026-07-01"
+
+    def test_no_dates_is_unknown_not_silently_fresh(self):
+        """A gate that treats unparseable/missing input as healthy is the
+        failure shape to avoid (`feedback_skiplist_is_a_promise`)."""
+        r = shared.note_staleness({}, TODAY, 365)
+        assert r["state"] == "unknown"
+        assert r["days_since_touched"] is None
+
+
+class TestStaleNoteHealthBucket:
+    def test_old_concept_note_is_flagged(self):
+        notes = [_concept("old-idea", updated="2024-01-01")]
+        found = _stale_findings(notes)
+        assert "old-idea" in found
+        assert found["old-idea"]["state"] == "stale"
+
+    def test_recent_concept_note_is_not_flagged(self):
+        notes = [_concept("fresh-idea", updated="2026-07-20")]
+        assert _stale_findings(notes) == {}
+
+    def test_reference_notes_are_skipped_they_have_their_own_check(self):
+        notes = [_ref("as-2067", updated="2020-01-01")]
+        assert _stale_findings(notes) == {}
+
+    def test_clause_notes_are_skipped_verbatim_and_static(self):
+        notes = [_clause("as-2067-4", updated="2020-01-01")]
+        assert _stale_findings(notes) == {}
+
+    def test_threshold_is_configurable(self):
+        notes = [_concept("recentish", updated="2026-01-01")]
+        assert _stale_findings(notes, threshold_days=1000) == {}
+        assert "recentish" in _stale_findings(notes, threshold_days=30)

@@ -49,12 +49,24 @@ class TestParseProduct:
                 "brand_dir": "brand/emptyos", "window": {"width": 1200, "height": 800},
             },
             "update": {"feed": "https://example.test/latest.json"},
+            "build": {
+                "collect_packages": ["pyautogui", "win32gui"],
+                "exclude_packages": ["openai", "numpy"],
+            },
+            "runtime": {
+                "think_providers": ["human"],
+                "enable_plugins": ["global-hotkey"],
+            },
         })
         assert p.exe_name == "EmptyOS"
         assert p.start_url == "/journal/"
         assert p.welcome_url == "/welcome?first=1"
         assert p.update_feed == "https://example.test/latest.json"
         assert (p.window_width, p.window_height) == (1200, 800)
+        assert p.collect_packages == ("pyautogui", "win32gui")
+        assert p.exclude_packages == ("openai", "numpy")
+        assert p.think_providers == ("human",)
+        assert p.enable_plugins == ("global-hotkey",)
 
     @pytest.mark.parametrize("data", [
         {"product": {"tier": "core"}},                 # no id
@@ -79,6 +91,38 @@ class TestParseProduct:
 
         with open(root / "release.toml", "rb") as f:
             assert p.tier in tomllib.load(f)["tiers"]
+
+    def test_macro_studio_product_is_offline_and_collects_desktop_dependencies(self):
+        root = Path(__file__).resolve().parents[1]
+        from _shared.product_config import load_product
+
+        p = load_product(root / "products" / "macro-studio" / "product.toml")
+
+        assert p.id == "macro-studio"
+        assert p.exe_name == "MacroStudio"
+        assert p.tier == "macro-studio"
+        assert p.start_url == "/operate/?mode=macro"
+        assert p.welcome_url == ""
+        assert p.update_feed == ""
+        assert p.think_providers == ("human",)
+        assert p.enable_plugins == ("global-hotkey",)
+        assert {"pyautogui", "pywinauto", "pynput", "keyboard", "win32gui"} <= set(
+            p.collect_packages
+        )
+        assert {"openai", "anthropic", "sentry_sdk", "wandb", "numpy"} <= set(
+            p.exclude_packages
+        )
+
+        import tomllib
+
+        with open(root / "release.toml", "rb") as f:
+            release = tomllib.load(f)
+        tier = release["tiers"][p.tier]
+        assert tier.get("private", False) is False
+        assert tier["apps"] == ["operate"]
+        assert set(tier["plugins"]) == {
+            "desktop-control", "screen-capture", "global-hotkey"
+        }
 
 
 # ── first-run config ─────────────────────────────────────────────────────────
@@ -114,6 +158,19 @@ class TestEnsureConfig:
         cfg = tmp_path / "emptyos.toml"
         lc.ensure_config(cfg, vault=tmp_path / "v", port=9007, display_name="T")
         assert lc.read_port(cfg) == 9007
+
+    def test_product_can_enable_bundled_hotkey_without_an_ai_provider(self, tmp_path):
+        cfg = tmp_path / "emptyos.toml"
+        lc.ensure_config(
+            cfg, vault=tmp_path / "v", port=9000, display_name="Macro Studio",
+            think_providers=("human",), enable_plugins=("global-hotkey",),
+        )
+        body = cfg.read_text(encoding="utf-8")
+        assert 'providers = ["human"]' in body
+        assert "capabilities.think.ollama" not in body
+        assert "[plugins.global-hotkey]\n" in body
+        assert "[plugins.global-hotkey]\n# Off" in body
+        assert "enabled = true" in body.split("[plugins.global-hotkey]", 1)[1]
 
     def test_read_port_survives_a_corrupt_config(self, tmp_path):
         cfg = tmp_path / "emptyos.toml"

@@ -419,10 +419,15 @@ class ClaudeCLIThinkProvider(NativelyAgenticProvider):
                 stdout, stderr = await asyncio.wait_for(
                     proc.communicate(input=stdin_data), timeout=self.timeout
                 )
-            except (asyncio.TimeoutError, TimeoutError):
-                # Reap the wedged subprocess so it can't hold OS resources or
-                # block subsequent calls indirectly. wait_for cancels the
-                # communicate() coroutine but does NOT signal the child.
+            except (asyncio.TimeoutError, TimeoutError, asyncio.CancelledError):
+                # Reap the subprocess so it can't hold OS resources or block
+                # subsequent calls indirectly. wait_for cancels the communicate()
+                # coroutine but does NOT signal the child — and neither does an
+                # OUTER cancellation (a caller's own wait_for, e.g. the hub's
+                # per-panel budget), which arrives here as CancelledError, not
+                # TimeoutError. Before 2026-09-12 that branch released the
+                # semaphore and left `claude` running until its stdout pipe
+                # filled, so every budget-cancelled think leaked one process.
                 try:
                     proc.kill()
                     await proc.communicate()

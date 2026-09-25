@@ -63,6 +63,7 @@ class ReactorApp(
         *,
         kind: str,
         dedup_key: str | None = None,
+        urgency: str = "normal",
     ):
         """Route a user-facing nudge through the shared proactive gate.
 
@@ -73,17 +74,9 @@ class ReactorApp(
         reaction goes silently dark before the gate is opted into.
         """
         await self.proactive_notify_or_raw(
-            kind, message, dedup_key=dedup_key, priority=priority, source="reactor",
+            kind, message, dedup_key=dedup_key, priority=priority,
+            urgency=urgency, source="reactor",
         )
-
-    async def _telegram(self, message: str):
-        """Push notification to Telegram (phone)."""
-        tg = self.service("telegram")
-        if tg:
-            try:
-                await tg.send(message)
-            except Exception:
-                pass
 
     async def _journal_ripple(self, emoji: str, text: str, dim: str = ""):
         """Write an activity summary to the daily journal note.

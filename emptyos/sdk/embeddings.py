@@ -29,11 +29,15 @@ Cost: text-embedding-3-small at $0.02/1M tokens. ~$0.03 to embed a
 
 from __future__ import annotations
 
+import array
 import hashlib
 import json
 import logging
 import math
 import os
+import struct
+import sys
+import threading
 import tomllib
 from pathlib import Path
 from typing import Any, Callable
@@ -116,6 +120,79 @@ def _sig(text: str) -> str:
     return hashlib.sha1(text.encode("utf-8")).hexdigest()[:16]
 
 
+# One lock per store, shared by every Embedder on it. Two instances can point
+# at the same cache (BaseApp keeps a shared one and per-app ones), and both
+# loading and appending run on worker threads. The lock covers the whole
+# load (read, torn-tail trim, JSON conversion) and every append, so a load
+# never trims or overwrites an append that landed meanwhile. Re-entrant
+# because a load that trims takes it again from inside.
+_APPEND_LOCKS: dict[str, threading.RLock] = {}
+_APPEND_LOCKS_GUARD = threading.Lock()
+
+
+def _append_lock(path: Path) -> threading.RLock:
+    key = str(path.resolve())
+    with _APPEND_LOCKS_GUARD:
+        return _APPEND_LOCKS.setdefault(key, threading.RLock())
+
+
+# Binary vector store: STORE_MAGIC, then records of
+#   <u8 sig length> <u32 vector length> <sig utf-8> <float32 * length>
+# little-endian. Float32 loses nothing for bge-m3, which already returns
+# float32 values: cosine scores and top-10 orders were identical on 5,466
+# real vectors (2026-09-24). A JSON float list costs ~5x the bytes and far
+# more to parse. A torn trailing record is found by length and trimmed.
+STORE_MAGIC = b"EOSVEC1\n"
+_REC_HEAD = struct.Struct("<BI")
+
+
+def _encode_record(sig: str, vec: list[float]) -> bytes:
+    sig_b = sig.encode("utf-8")
+    if len(sig_b) > 255:
+        raise ValueError(f"embedding signature too long: {len(sig_b)} bytes")
+    floats = array.array("f", vec)
+    if sys.byteorder != "little":
+        floats.byteswap()
+    return _REC_HEAD.pack(len(sig_b), len(floats)) + sig_b + floats.tobytes()
+
+
+_MAX_DIM = 65536
+_MAX_RECORD = _REC_HEAD.size + 255 + 4 * _MAX_DIM
+
+
+def _decode_store(data: bytes) -> tuple[dict[str, list[float]], int, bool]:
+    """Parse a store.
+
+    Returns (vectors, bytes up to the last whole record, tail_ok). tail_ok is
+    False when parsing stopped at something a crash cannot produce: a
+    vector length over _MAX_DIM, or a partial record followed by more bytes
+    than one whole record would need. A crash only ever tears the LAST
+    record, so trimming is safe exactly when tail_ok is True; otherwise the
+    bytes after `pos` may be good records behind a damaged one.
+    """
+    out: dict[str, list[float]] = {}
+    pos = len(STORE_MAGIC)
+    size = len(data)
+    prev_len = 0
+    while pos + _REC_HEAD.size <= size:
+        sig_len, n = _REC_HEAD.unpack_from(data, pos)
+        if n > _MAX_DIM:
+            return out, pos, False
+        start = pos + _REC_HEAD.size
+        end = start + sig_len + 4 * n
+        if end > size:
+            leftover = size - pos
+            return out, pos, leftover < (prev_len or _MAX_RECORD)
+        floats = array.array("f")
+        floats.frombytes(data[start + sig_len:end])
+        if sys.byteorder != "little":
+            floats.byteswap()
+        out[data[start:start + sig_len].decode("utf-8", "replace")] = floats.tolist()
+        prev_len = end - pos
+        pos = end
+    return out, pos, True
+
+
 def cosine(a: list[float], b: list[float]) -> float:
     if not a or not b:
         return 0.0
@@ -145,7 +222,24 @@ class Embedder:
     server returns. OpenAI stays an opt-in *alternative primary* (set
     ``provider = "openai"``), never an automatic per-query backup.
 
-    Cache file shape: {<sig>: [floats]}, at ``<cache_path>.<model>.json``.
+    Cache on disk: ``<cache_path>.<model>.f32``, a binary append-only store
+    (format beside STORE_MAGIC). Vectors are held at float32. For bge-m3
+    that was measured lossless (5,466 real vectors, identical cosine scores
+    and rankings), since ollama already returns float32 values. It has not
+    been measured for OpenAI models.
+
+    Older versions wrote ``<cache_path>.<model>.json`` plus a
+    ``.append.jsonl`` log. When no store exists, those are read and
+    converted once; they are left on disk and not read again.
+
+    New vectors are appended, never saved by rewriting the cache. The old code
+    re-serialised the whole cache after every embed, on the event loop. Aura
+    embeds every new sentence, so its reply waited on the rewrite, and so did
+    everything else the daemon was doing. Measured 2026-09-24 on a sandbox
+    with a 124 MB cache: json.dumps alone took 1.6 s. The main daemon's cache
+    was 777 MB, so roughly 10 s per rewrite there (extrapolated, not measured).
+
+    A failed batch is cached and persisted as zero vectors, as it always was.
     """
 
     def __init__(self, cache_path: Path):
@@ -158,6 +252,8 @@ class Embedder:
         self.cache_path = cache_path.with_name(
             f"{cache_path.stem}.{_model_tag(self.model)}{cache_path.suffix}"
         )
+        self.append_path = self.cache_path.with_name(f"{self.cache_path.stem}.append.jsonl")
+        self.store_path = self.cache_path.with_name(f"{self.cache_path.stem}.f32")
         # The cache is loaded LAZILY — see _ensure_cache(). It used to be parsed
         # here in __init__, which made merely *constructing* an Embedder cost a
         # 265 MB json.loads: 2.4s of blocking event loop and 0.39 GB resident,
@@ -201,14 +297,179 @@ class Embedder:
     def _ensure_cache(self) -> None:
         if self._cache is not None:
             return
-        self._cache = {}
-        if not self.cache_path.exists():
+        # Held for the whole load. Two first loads (the shared Embedder and a
+        # per-app one, or two threads) would otherwise both convert the JSON
+        # and the later os.replace would drop appends made in between; and a
+        # trim computed from a read taken before an append would cut it off.
+        with _append_lock(self.store_path):
+            if self._cache is not None:
+                return
+            if self.store_path.exists():
+                self._cache = self._load_store()
+                return
+            cache = self._load_legacy()
+            if cache:
+                self._migrate(cache)
+            self._cache = cache
+
+    def _move_aside(self, reason: str) -> None:
+        """Rename a damaged store out of the way. Never deletes, never
+        overwrites an earlier aside copy."""
+        n = 0
+        while True:
+            aside = self.store_path.with_name(
+                f"{self.store_path.name}.unreadable" + (f".{n}" if n else ""))
+            if not aside.exists():
+                break
+            n += 1
+        try:
+            os.replace(self.store_path, aside)
+            log.warning("embedding store %s; moved to %s", reason, aside)
+        except OSError:
+            log.warning("embedding store %s: %s", reason, self.store_path)
+
+    def _load_store(self) -> dict[str, list[float]]:
+        """Read the store. Caller holds the store lock."""
+        try:
+            data = self.store_path.read_bytes()
+        except OSError:
+            log.warning("embedding store unreadable: %s", self.store_path)
+            return {}
+        if not data.startswith(STORE_MAGIC):
+            self._move_aside("has no header")
+            return {}
+        cache, good, tail_ok = _decode_store(data)
+        if good < len(data) and not tail_ok:
+            # Damage before the end, not a torn tail: the bytes after it may
+            # be good records. Keep them all for inspection and start fresh.
+            self._move_aside(f"is damaged at byte {good}")
+            return {}
+        if good < len(data):
+            # A crash mid-append. Trim the partial record so the next append
+            # starts on a record boundary instead of being read as garbage.
+            try:
+                with open(self.store_path, "r+b") as f:
+                    f.truncate(good)
+                log.warning("trimmed %d torn byte(s) from %s", len(data) - good, self.store_path)
+            except OSError:
+                log.warning("could not trim torn tail of %s", self.store_path)
+        return cache
+
+    def _load_legacy(self) -> dict[str, list[float]]:
+        """The JSON base plus its append log, as written before the binary store."""
+        cache: dict[str, list[float]] = {}
+        if self.cache_path.exists():
+            try:
+                loaded = json.loads(self.cache_path.read_text(encoding="utf-8"))
+                if isinstance(loaded, dict):
+                    cache = loaded
+            except Exception:
+                log.warning("embedding cache unreadable, starting fresh: %s", self.cache_path)
+        if self.append_path.exists():
+            skipped = 0
+            try:
+                with open(self.append_path, encoding="utf-8") as f:
+                    for line in f:
+                        try:
+                            sig, vec = json.loads(line)
+                        except (ValueError, TypeError):
+                            # A crash mid-append leaves a torn last line.
+                            skipped += 1
+                            continue
+                        if isinstance(sig, str) and isinstance(vec, list):
+                            cache[sig] = vec
+            except OSError:
+                log.warning("embedding append log unreadable: %s", self.append_path)
+            if skipped:
+                log.warning("skipped %d unreadable line(s) in %s", skipped, self.append_path)
+        return cache
+
+    def _migrate(self, cache: dict[str, list[float]]) -> None:
+        """Write the legacy cache out as a binary store, once.
+
+        The JSON files are left in place; nothing reads them once the store
+        exists. On failure no store is created, so appends keep going to the
+        JSON append log and the next load tries again.
+        """
+        tmp = self.store_path.with_name(f"{self.store_path.name}.tmp")
+        try:
+            with open(tmp, "wb") as f:
+                f.write(STORE_MAGIC)
+                for sig, vec in cache.items():
+                    f.write(_encode_record(sig, vec))
+                # On disk before the rename. Otherwise a power loss could put
+                # a half-written store in place; its missing tail would be
+                # trimmed as torn and the rest of the JSON never converted.
+                f.flush()
+                os.fsync(f.fileno())
+            os.replace(tmp, self.store_path)
+            log.info("migrated %d embedding(s) to %s", len(cache), self.store_path)
+        except Exception:
+            log.exception("embedding store migration failed; staying on JSON")
+            try:
+                tmp.unlink(missing_ok=True)
+            except OSError:
+                pass
+
+    def _uses_store(self) -> bool:
+        """The binary store is live once it exists, or from the start when
+        there is no JSON cache to migrate."""
+        return self.store_path.exists() or not (
+            self.cache_path.exists() or self.append_path.exists()
+        )
+
+    def _append(self, entries: list[tuple[str, list[float]]]) -> None:
+        """Persist newly embedded vectors by appending, never by rewriting.
+
+        Runs on a worker thread (see embed_many). Never raises: a vector that
+        fails to persist is simply embedded again after a restart.
+        """
+        if not entries:
             return
         try:
-            self._cache = json.loads(self.cache_path.read_text(encoding="utf-8"))
+            # The store lock also covers the choice below and a legacy append,
+            # so a vector cannot land in the JSON log while a conversion that
+            # has already read that log is still running.
+            with _append_lock(self.store_path):
+                # Load (and so trim any torn tail) before the first append, or
+                # the new records would sit behind a torn one and the next load
+                # would read the store as damaged mid-file.
+                self._ensure_cache()
+                if self._uses_store():
+                    self._append_store(entries)
+                else:
+                    self._append_legacy(entries)
         except Exception:
-            log.warning("embedding cache unreadable, starting fresh: %s", self.cache_path)
-            self._cache = {}
+            log.exception("failed to persist %d embedding(s)", len(entries))
+
+    def _append_store(self, entries: list[tuple[str, list[float]]]) -> None:
+        """Caller holds the store lock."""
+        records = b"".join(_encode_record(sig, vec) for sig, vec in entries)
+        self.store_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(self.store_path, "ab") as f:
+            if f.tell() == 0:
+                f.write(STORE_MAGIC)
+            f.write(records)
+
+    def _append_legacy(self, entries: list[tuple[str, list[float]]]) -> None:
+        lines = "".join(
+            json.dumps([sig, vec], separators=(",", ":")) + "\n" for sig, vec in entries
+        )
+        self.append_path.parent.mkdir(parents=True, exist_ok=True)
+        with _append_lock(self.append_path):
+            # A crash mid-append leaves a last line with no newline. Start
+            # on a fresh line, or the next vector joins the torn one and is
+            # lost with it.
+            prefix = ""
+            try:
+                with open(self.append_path, "rb") as f:
+                    f.seek(-1, os.SEEK_END)
+                    if f.read(1) != b"\n":
+                        prefix = "\n"
+            except OSError:
+                pass  # missing or empty file: nothing to terminate
+            with open(self.append_path, "a", encoding="utf-8") as f:
+                f.write(prefix + lines)
 
     @property
     def available(self) -> bool:
@@ -253,20 +514,12 @@ class Embedder:
                 self._client = OpenAI()
         return self._client
 
-    def _flush(self) -> None:
-        try:
-            self.cache_path.parent.mkdir(parents=True, exist_ok=True)
-            tmp = self.cache_path.with_suffix(".tmp")
-            tmp.write_text(json.dumps(self.cache), encoding="utf-8")
-            tmp.replace(self.cache_path)
-        except Exception:
-            log.exception("failed to persist embedding cache")
-
     async def embed_many(self, texts: list[str]) -> list[list[float]]:
         """Embed a batch. Returns vectors aligned to input. Uses cache for hits.
 
         On no-API-key or batch failure, returns zero-vectors for misses so
-        callers can detect via `available`. Persists cache after refresh.
+        callers can detect via `available`. Appends each new batch to the
+        store, off the event loop.
         """
         import asyncio
 
@@ -294,17 +547,29 @@ class Embedder:
                 def _call(bt=batch_texts):
                     return client.embeddings.create(model=self.model, input=bt)
 
+                fresh = []
                 try:
                     resp = await asyncio.to_thread(_call)
                 except Exception:
+                    # Cached (and persisted) as zero vectors, as before the
+                    # append log: the search indexer treats a cached sig as
+                    # done, so leaving failures out would drop those notes
+                    # from search instead of retrying them.
                     log.exception("embedding batch failed (provider=%s size=%d)",
                                   self.provider, len(batch_texts))
                     for idx, _ in batch:
-                        self.cache[sigs[idx]] = [0.0] * self.dim
-                    continue
-                for j, item in enumerate(resp.data):
-                    self.cache[sigs[batch[j][0]]] = item.embedding
-            self._flush()
+                        zero = [0.0] * self.dim
+                        self.cache[sigs[idx]] = zero
+                        fresh.append((sigs[idx], zero))
+                else:
+                    for j, item in enumerate(resp.data):
+                        sig = sigs[batch[j][0]]
+                        # Held at the store's float32 precision so a vector
+                        # reads the same before and after a restart.
+                        vec = array.array("f", item.embedding).tolist()
+                        self.cache[sig] = vec
+                        fresh.append((sig, vec))
+                await asyncio.to_thread(self._append, fresh)
 
         return [self.cache.get(s, [0.0] * self.dim) for s in sigs]
 

@@ -749,7 +749,7 @@ async function loadSuggestions() {
         + '</a>';
     }).join('');
   } catch(e) {
-    list.innerHTML = '<div style="padding:12px;color:var(--text-muted);font-size:12px">Could not load suggestions. Click Refresh to try again.</div>';
+    list.innerHTML = EOS_UI.errorState({message: 'Could not load suggestions. Click Refresh to try again.', onRetry: 'loadSuggestions()'});
   }
 }
 
@@ -1155,7 +1155,7 @@ async function qaEdit(qaId) {
   // EOS_UI.formModal takes positional args: (title, fields, onSubmit)
   EOS_UI.formModal(
     'Edit reply',
-    [{ name: 'reply', label: 'Reply', type: 'textarea', value: current, required: true }],
+    [{ key: 'reply', label: 'Reply', type: 'textarea', value: current, required: true }],
     async function(values) {
       var url = '/publish/api/chatbot/qa-log/' + encodeURIComponent(activeSiteId) + '/' + qaId;
       var res = await EOS.post(url, { action: 'edit', reply: values.reply });

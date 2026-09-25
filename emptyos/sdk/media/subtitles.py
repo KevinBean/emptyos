@@ -67,8 +67,13 @@ def proportional_timings(total_ms: int, script: list[dict]) -> list[dict]:
     return timings
 
 
-def generate_srt(timings: list[dict], output_path: str):
-    """Generate SRT subtitle file from segment timings."""
+def generate_srt(timings: list[dict], output_path: str, *, speaker_labels: bool = True):
+    """Generate SRT subtitle file from segment timings.
+
+    ``speaker_labels`` prefixes each cue with ``Host A`` / ``Host B`` (the
+    two-host podcast shape). A single-narrator video passes False, which writes
+    the text alone and no longer requires a ``speaker`` key per timing.
+    """
 
     def _fmt(ms: int) -> str:
         h, ms = divmod(int(ms), 3600000)
@@ -78,12 +83,16 @@ def generate_srt(timings: list[dict], output_path: str):
 
     lines = []
     for i, t in enumerate(timings):
-        speaker = "Host A" if t["speaker"] == "A" else "Host B"
+        if speaker_labels:
+            speaker = "Host A" if t["speaker"] == "A" else "Host B"
+            cue = f"{speaker}: {t['text']}"
+        else:
+            cue = t["text"]
         lines.extend(
             [
                 str(i + 1),
                 f"{_fmt(t['start_ms'])} --> {_fmt(t['end_ms'])}",
-                f"{speaker}: {t['text']}",
+                cue,
                 "",
             ]
         )

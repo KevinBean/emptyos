@@ -1,0 +1,16 @@
+[plugin]
+id = "tailscale"
+name = "Tailscale"
+version = "1.0.0"
+description = "Tailscale-aware integration — reads `tailscale status --json` to expose this node's tailnet identity, online peers, and Funnel state. Read-only: does not run `tailscale up/down`. Apps use `self.require(\"tailscale\")` for peer-aware audit logs, device pickers, and is-this-request-from-my-tailnet checks."
+
+[plugin.entry]
+module = "plugin"
+class = "TailscalePlugin"
+
+[provides]
+services = ["tailscale"]
+tags = ["network", "identity", "connector"]
+
+[platforms]
+supports = ["laptop"]

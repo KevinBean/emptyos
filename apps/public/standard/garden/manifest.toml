@@ -1,6 +1,6 @@
 [app]
 id = "garden"
-store_category = "personal"
+store_category = "creative"
 name = "Garden"
 version = "0.2.0"
 description = "Programmatic SVG garden mirroring vault entities across the 4 V1 wellbeing plots"

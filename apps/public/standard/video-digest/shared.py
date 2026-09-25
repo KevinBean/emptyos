@@ -270,3 +270,91 @@ def note_stem(meta: dict, today: str) -> str:
     raw_title = meta.get("title") or "Untitled"
     safe_title = re.sub(r'[<>:"/\\|?*]', "", raw_title).strip()
     return f"{today} {speaker} - {safe_title}"
+
+
+# ── Timestamp anchors ────────────────────────────────────────────────
+# The timestamped transcript is fetched for Listen mode anyway, so the digest
+# can be anchored to it for free: nothing linked a claim in the summary back to
+# the second it was said, which is the one thing a transcript sidecar cannot
+# give you without re-reading the whole thing.
+
+# Appended to DIGEST_SYSTEM only when timestamps are actually available. Kept
+# separate rather than folded into the base prompt because a pasted transcript
+# carries no timestamps, and asking for anchors that cannot exist invites the
+# model to invent them.
+DIGEST_TIMESTAMP_CLAUSE = """
+
+TIMESTAMPS:
+The transcript lines are prefixed with [mm:ss] (or [h:mm:ss] past an hour).
+Begin every `##` section heading line with the [mm:ss] anchor where that
+argument STARTS, as: `## [12:34] Section name`.
+- Use ONLY timestamps that appear in the transcript. Never invent, round to a
+  neat number, or interpolate one.
+- Anchor the ## Thesis section too, at the point the central claim is stated.
+- Do not put timestamps anywhere else — not in body prose, not in bullets.
+"""
+
+_TS_ANCHOR_RE = re.compile(r"\[(\d{1,2}:\d{2}(?::\d{2})?)\]")
+
+
+def format_timestamp(seconds: float) -> str:
+    """Seconds -> ``mm:ss``, or ``h:mm:ss`` once past an hour."""
+    total = max(0, int(seconds))
+    h, rem = divmod(total, 3600)
+    m, s = divmod(rem, 60)
+    return f"{h}:{m:02d}:{s:02d}" if h else f"{m}:{s:02d}"
+
+
+def parse_timestamp(label: str) -> int | None:
+    """``mm:ss`` / ``h:mm:ss`` -> seconds, or None if it isn't one."""
+    parts = (label or "").split(":")
+    if not 2 <= len(parts) <= 3 or not all(p.isdigit() for p in parts):
+        return None
+    nums = [int(p) for p in parts]
+    if len(nums) == 2:
+        m, s = nums
+        h = 0
+    else:
+        h, m, s = nums
+    if m > 59 or s > 59:
+        return None
+    return h * 3600 + m * 60 + s
+
+
+def format_timestamped_transcript(lines: list[dict]) -> str:
+    """``[{text, start}]`` -> ``[mm:ss] text`` per line, for the digest prompt."""
+    out = []
+    for ln in lines or []:
+        txt = str((ln or {}).get("text") or "").strip()
+        if not txt:
+            continue
+        try:
+            start = float((ln or {}).get("start") or 0.0)
+        except (TypeError, ValueError):
+            start = 0.0
+        out.append(f"[{format_timestamp(start)}] {txt}")
+    return "\n".join(out)
+
+
+def linkify_timestamps(summary: str, url: str) -> str:
+    """Turn ``[mm:ss]`` anchors into deep links at that second in the video.
+
+    Only rewrites anchors the model actually emitted; a digest without them is
+    returned unchanged, so this is safe to run unconditionally. A malformed
+    anchor (``[99:99]``) is left as literal text rather than linked to a
+    nonsense offset — better a visible oddity than a link that silently lands
+    at the wrong place.
+    """
+    base = (url or "").strip()
+    if not base or not summary:
+        return summary
+    joiner = "&" if "?" in base else "?"
+
+    def _sub(m: re.Match) -> str:
+        label = m.group(1)
+        secs = parse_timestamp(label)
+        if secs is None:
+            return m.group(0)
+        return f"[[{label}]({base}{joiner}t={secs}s)]"
+
+    return _TS_ANCHOR_RE.sub(_sub, summary)

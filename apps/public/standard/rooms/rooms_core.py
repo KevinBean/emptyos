@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from emptyos.sdk import cli_command, web_route
+from emptyos.sdk.app_layout import find_repo_root
 from emptyos.sdk.utils import parse_llm_json
 
 if TYPE_CHECKING:
@@ -210,7 +211,7 @@ def _scan_repo_files() -> list[dict]:
     now = time.time()
     if now - _repo_file_cache["at"] < _REPO_FILE_TTL_S and _repo_file_cache["files"]:
         return _repo_file_cache["files"]
-    repo_root = Path(__file__).resolve().parent.parent.parent  # apps/rooms/.. -> repo
+    repo_root = find_repo_root(Path(__file__))
     out: list[dict] = []
     for root_name in _REPO_FILE_ROOTS:
         root = repo_root / root_name
@@ -544,7 +545,7 @@ async def panel_pending_count(self) -> dict | None:
     """Stat-tile: total pending [DO:] actions across every room. Drops
     silently when there are zero so the hub stays uncluttered."""
     try:
-        pending = self.list_pending(room_id="", status="open")
+        pending = await self.list_pending(room_id="", status="open")
     except Exception:
         return None
     if not pending:
@@ -605,7 +606,7 @@ async def panel_autopilot_recent(self) -> list[dict] | None:
     (i.e. flag still dark + no grants), so it appears exactly when relevant.
     """
     try:
-        actions = self.list_pending(room_id="", status="")
+        actions = await self.list_pending(room_id="", status="")
     except Exception:
         return None
     auto = [a for a in actions if a.get("auto_reason")]
@@ -1210,6 +1211,7 @@ async def create_room(
     *,
     system_prompt: str = "",
     model: str = "",
+    auto_route: bool = False,
 ) -> dict:
     """Create a group room (≥2 agent participants).
 
@@ -1234,6 +1236,10 @@ async def create_room(
                     for k in ("cwd", "allowed_tools", "timeout_s", "model", "effort"):
                         if k in p:
                             entry[k] = p[k]
+                # Applies to agent AND cli — a routing hint for auto_route,
+                # not CLI config (mirrors participants.py::add_participant).
+                if p.get("specialty"):
+                    entry["specialty"] = p["specialty"]
                 norm.append(entry)
     responder_count = sum(1 for p in norm if p.get("type") in ("agent", "cli"))
     if responder_count < 2:
@@ -1259,6 +1265,7 @@ async def create_room(
         "server_actions": {},
         "temperature": None,
         "builtin": False,
+        "auto_route": auto_route,
         "created": datetime.now(timezone.utc).isoformat(),
     }
     self._save_agent(room)
@@ -1287,6 +1294,7 @@ async def api_create_room(self, request):
         participants=data.get("participants") or [],
         system_prompt=data.get("system_prompt", ""),
         model=data.get("model", ""),
+        auto_route=bool(data.get("auto_route", False)),
     )
 
 

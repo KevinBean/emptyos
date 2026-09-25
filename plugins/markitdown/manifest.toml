@@ -1,0 +1,16 @@
+[plugin]
+id = "markitdown"
+name = "MarkItDown"
+version = "0.1.0"
+description = "Local document → markdown conversion (PPTX/XLSX/XLS/DOCX/EPub/HTML/CSV/JSON/XML/ZIP) via Microsoft MarkItDown, run in an isolated user-home venv. Injects a provider into the read capability; PDFs are excluded (KB keeps the page-marked extractor). 100% local — no Azure, no cloud client."
+
+[plugin.entry]
+module = "plugin"
+class = "MarkItDownPlugin"
+
+[provides]
+services = ["markitdown"]
+tags = ["read", "documents", "conversion", "markdown"]
+
+[platforms]
+supports = ["laptop", "vps-cpu", "vps-gpu", "docker"]

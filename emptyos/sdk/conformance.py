@@ -3,7 +3,7 @@
 Each method on the calculator framework can declare a list of conformance
 cases: a frozen input + expected scalar outputs + tolerances. The runner
 exercises every case against every claimed method, asserting that headline
-numbers stay within declared tolerances.
+numbers stay within declared tolerances and that bool or string anchors match.
 
 This is **not** a replacement for granular Python unit tests (which validate
 internal physics, intermediate values, KCL closure, edge cases). Conformance
@@ -17,14 +17,16 @@ Manifest shape:
     case_id = "rt07"
     label = "RT-07 230 kV East Central (CDEGS reference)"
     inputs_fn = "_load_rt07_payload"   # async method on the app, no args, returns payload
-    expected_fn = "_rt07_expected"     # async method, no args, returns dict of expected scalars
+    expected_fn = "_rt07_expected"     # async method, no args, returns {field: number | bool | str}
     methods = ["analytic", "emtp"]     # methods that MUST pass this case
     tolerances = { default_pct = 5.0, central_epr_v_pct = 2.0 }
     references = ["[[rt07-230kv-east-central]]"]
 
-Each case at endpoint `solve` is run against every listed method. Headline
-scalars from the result are compared against `expected` using either the
-field-specific `<field>_pct` tolerance or `default_pct`.
+Each case at endpoint `solve` is run against every listed method. A numeric
+anchor is compared against the result using either the field-specific
+`<field>_pct` tolerance or `default_pct`; a bool or string anchor must match
+exactly; any other anchor, an empty expected mapping, or a result that is not
+a mapping fails with a stated reason rather than being skipped.
 """
 
 from __future__ import annotations
@@ -47,7 +49,7 @@ class ConformanceCase:
     case_id: str
     label: str
     inputs_fn: str             # name of async BaseApp method returning payload
-    expected_fn: str           # name of async BaseApp method returning {field: number}
+    expected_fn: str           # name of async BaseApp method returning {field: number | bool | str}
     methods: list[str]         # method ids that must pass this case
     tolerances: dict[str, float]
     references: list[str] = field(default_factory=list)
@@ -138,6 +140,13 @@ async def run_case(
 
     payload = await inputs_loader()
     expected = await expected_loader()
+    if not isinstance(expected, dict):
+        # A broken loader is an error the scan must report, like a missing one —
+        # not a quiet per-method "failed" with no diffs for a consumer to show.
+        raise RuntimeError(
+            f"expected_fn '{case.expected_fn}' returned {type(expected).__name__}, "
+            f"not a mapping of expected values"
+        )
 
     methods_to_run = [method_id] if method_id else list(case.methods)
     if not methods_to_run:
@@ -193,38 +202,66 @@ async def run_case(
     }
 
 
+def _row(field_name, expected, got, passed: bool, *, rel_pct=None,
+         tolerance_pct=None, reason: str = "") -> dict:
+    """One diff row. ``reason`` is present only when it explains a failure."""
+    row = {"field": field_name, "expected": expected, "got": got,
+           "rel_pct": rel_pct, "tolerance_pct": tolerance_pct, "passed": passed}
+    if reason:
+        row["reason"] = reason
+    return row
+
+
 def _compare_result(result: Any, expected: dict, case: ConformanceCase) -> tuple[list[dict], bool]:
-    """For each expected field, compute relative pct error vs result; collect
-    diffs + overall pass flag based on per-field tolerances."""
+    """Compare each expected field against the result; return diffs + overall pass.
+
+    A number compares by relative error against the field's tolerance. A bool or
+    a string compares by exact equality — neither has a tolerance — and a bool is
+    only ever matched by a bool, because ``True == 1`` in Python.
+
+    Anything else an expected mapping carries (``None``, a list, a dict) cannot
+    be compared, so that field FAILS and says why. Such fields used to be
+    skipped: a case could declare an expectation that was never evaluated, and
+    a case whose expected values were all non-numeric passed with nothing
+    compared at all. An empty expected mapping fails for the same reason.
+    """
+    # Each early return carries a reason row. An empty diff list with a failing
+    # verdict gives every consumer — the drift scan, the gate, the panel —
+    # nothing to report, which is the silence this function exists to prevent.
+    if not isinstance(expected, dict):
+        return [_row(None, None, None, False, reason=(
+            f"the expected values are a {type(expected).__name__}, not a mapping"))], False
     if not isinstance(result, dict):
-        return [], False
+        return [_row(None, None, None, False, reason=(
+            f"the method returned a {type(result).__name__}, not a mapping of results"))], False
+    if not expected:
+        return [_row(None, None, None, False, reason=(
+            "the case declares no expected values, so nothing would be compared"))], False
     diffs: list[dict] = []
-    all_passed = True
     for field_name, exp_val in expected.items():
-        if not isinstance(exp_val, (int, float)) or isinstance(exp_val, bool):
-            continue
         got = result.get(field_name)
-        if not isinstance(got, (int, float)) or isinstance(got, bool):
-            diffs.append({
-                "field": field_name, "expected": exp_val, "got": None,
-                "rel_pct": None, "tolerance_pct": case.tolerance_for(field_name),
-                "passed": False, "reason": "field missing in result",
-            })
-            all_passed = False
-            continue
-        if exp_val == 0:
-            rel_pct = 0.0 if got == 0 else float("inf")
+        if isinstance(exp_val, (bool, str)):
+            same_kind = isinstance(got, bool) if isinstance(exp_val, bool) else isinstance(got, str)
+            passed = same_kind and got == exp_val
+            diffs.append(_row(field_name, exp_val, got, passed, reason="" if passed else (
+                "field missing in result" if field_name not in result
+                else "exact match required")))
+        elif not isinstance(exp_val, (int, float)):
+            diffs.append(_row(field_name, exp_val, got, False, reason=(
+                "the expected value is not a number, bool or string, so it cannot be compared")))
+        elif not isinstance(got, (int, float)) or isinstance(got, bool):
+            diffs.append(_row(field_name, exp_val, None, False,
+                              tolerance_pct=case.tolerance_for(field_name),
+                              reason="field missing in result"))
         else:
-            rel_pct = abs(got - exp_val) / abs(exp_val) * 100
-        tol = case.tolerance_for(field_name)
-        passed = rel_pct <= tol
-        if not passed:
-            all_passed = False
-        diffs.append({
-            "field": field_name, "expected": exp_val, "got": got,
-            "rel_pct": round(rel_pct, 4), "tolerance_pct": tol, "passed": passed,
-        })
-    return diffs, all_passed
+            if exp_val == 0:
+                rel_pct = 0.0 if got == 0 else float("inf")
+            else:
+                rel_pct = abs(got - exp_val) / abs(exp_val) * 100
+            tol = case.tolerance_for(field_name)
+            diffs.append(_row(field_name, exp_val, got, rel_pct <= tol,
+                              rel_pct=round(rel_pct, 4), tolerance_pct=tol))
+    return diffs, all(d["passed"] for d in diffs)
 
 
 # ── HTTP surface mixin ────────────────────────────────────────────────
@@ -233,7 +270,7 @@ def _compare_result(result: Any, expected: dict, case: ConformanceCase) -> tuple
 class CalculatorRoutesMixin:
     """The generic calculator-framework HTTP surface every calculator app shares.
 
-    Inherit alongside BaseApp to expose the three routes the shared frontend
+    Inherit alongside BaseApp to expose the routes the shared frontend
     helpers expect, generic over **every** endpoint in the app's method +
     conformance registries (single- and multi-endpoint apps alike):
 
@@ -248,13 +285,18 @@ class CalculatorRoutesMixin:
                                        case at every endpoint (the shared
                                        panel's POST); ``endpoint`` / ``case_id``
                                        / ``method_id`` narrow.
+        GET  /api/saved              → {"saved": [...]} — apps using
+                                       ``self.save_calculation()`` get this for
+                                       free; override for a bespoke shape.
 
     Extracted 2026-06-10 from nine hand-rolled near-identical sets across the
     engineering apps (cable-stress, cable-network, earthing, interference,
-    lightning, overhead-line, power-study, short-circuit, soil). Use via
-    inheritance: ``class MyApp(CalculatorRoutesMixin, BaseApp): ...`` — the
-    handlers register through the MRO walk in ``BaseApp._get_decorated``; an
-    app-local method of the same name still wins when a bespoke shape is needed.
+    lightning, overhead-line, power-study, short-circuit, soil); the
+    ``/api/saved`` pair joined 2026-08-27 from the third byte-identical copy.
+    Use via inheritance: ``class MyApp(CalculatorRoutesMixin, BaseApp): ...``
+    — the handlers register through the MRO walk in
+    ``BaseApp._get_decorated``; an app-local method of the same name still
+    wins when a bespoke shape is needed.
     """
 
     @web_route("GET", "/api/methods")
@@ -300,3 +342,76 @@ class CalculatorRoutesMixin:
         except ValueError as e:
             return {"error": str(e)}
         return {"results": results}
+
+    @web_route("GET", "/api/saved")
+    async def api_saved(self, request) -> dict:
+        """Generic saved-calculations list for apps using ``self.save_calculation()``.
+
+        Returns ``{"saved": [...]}`` — empty for apps that don't save via that
+        convention (harmless; ``list_calculations()`` reads an app-scoped vault
+        glob that's simply empty). An app needing a different shape (e.g.
+        sc-force's ``{"bays": [...]}`` over its own domain store) defines its
+        own ``api_saved``/``list_saved`` directly on the app class — ordinary
+        Python method resolution makes that win over this mixin method, no
+        override ceremony needed.
+
+        Extracted 2026-08-27 from the third byte-identical copy (busbar-rating,
+        ct-vt-sizing, relay-coordination).
+        """
+        return {"saved": await self.list_saved()}
+
+    async def list_saved(self) -> list[dict]:
+        return self.list_calculations()
+
+    async def run_method_endpoint(self, endpoint: str, request, *,
+                                  label: str | None = None) -> dict:
+        """Dispatch a POST body through one method-registry endpoint.
+
+        The body of every calculator's per-endpoint compute route: read the
+        payload, resolve the requested method (or the default), run it, and
+        return the standard ``{ok, result, method, provenance}`` envelope —
+        with a caller error surfaced in-band as ``{"error": ...}`` rather
+        than becoming a 500.
+
+        Apps keep their own thin ``@web_route`` per endpoint, because the URL
+        (``/api/rect``, ``/api/knee-point``, …) IS the app's public contract
+        and should stay visible in the app::
+
+            @web_route("POST", "/api/lighting")
+            async def api_lighting(self, request) -> dict:
+                return await self.run_method_endpoint("lighting", request)
+
+        ``label`` overrides the noun in the unexpected-exception message when
+        the endpoint id reads poorly to a user.
+
+        Extracted 2026-08-28 from **fourteen byte-identical route bodies**
+        across six calculator apps (busbar-rating, ct-vt-sizing,
+        relay-coordination, transformer-rating, battery-sizing, aux-services)
+        — normalising for the endpoint name and the error noun left exactly
+        one distinct implementation.
+        """
+        body = await self.safe_json(request)
+        try:
+            spec = self.resolve_method(endpoint, body.get("method"))
+            # Hand the method fn the INPUTS, not the envelope. `method` is this
+            # function's own routing key and is fully consumed by the line
+            # above, so passing it on makes it indistinguishable from a field
+            # the caller supplied.
+            #
+            # A calculator that refuses undeclared inputs -- the right posture,
+            # since a misspelled field must not be silently ignored -- then
+            # refuses every request that names a method, which is exactly the
+            # request that needed the registry. cable-bonding is the only one
+            # of the seven consumers strict enough to have been bitten so far;
+            # the next one inherits the fix instead of rediscovering it.
+            #
+            # Verified safe across all seven: none reads `method` from its
+            # payload, because the mixin is what reads it.
+            result = await spec.run(self, {k: v for k, v in body.items()
+                                           if k != "method"})
+        except ValueError as e:
+            return {"error": str(e)}
+        except Exception as e:  # noqa: BLE001 — surfaced in-band, never a 500
+            return {"error": f"{label or endpoint} failed: {e}"}
+        return {"ok": True, "result": result, "method": spec.id,
+                "provenance": self.last_compute_provenance(endpoint)}

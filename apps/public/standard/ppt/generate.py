@@ -44,6 +44,7 @@ if TYPE_CHECKING:
 #   api_plan                = _generate.api_plan
 #   api_generate_from_plan  = _generate.api_generate_from_plan
 #   api_regenerate          = _generate.api_regenerate
+#   deliver_work            = _generate.deliver_work
 # Adding a new method here? Add a matching binding line in app.py.
 # ─────────────────────────────────────────────────────────────────────
 
@@ -209,7 +210,12 @@ async def generate_from_plan(self, plan: dict, source_path: str = "") -> dict:
     }
     self.vault_create_note(rel, fm, text)
     await self.emit("ppt:created", {"id": slug, "title": title, "from": "plan"})
-    return {"id": slug, "path": rel, "title": title, "slides": len(slides)}
+    return {
+        "id": slug, "path": rel, "title": title, "slides": len(slides),
+        # Auto-provenance chip on the edit pane (data-ai-output) once the
+        # generated deck opens.
+        "provenance": self.last_provenance(),
+    }
 
 
 async def regenerate_deck(

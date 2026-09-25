@@ -473,15 +473,15 @@ async def ws_chat(self, websocket):
                                 self.log_warn(f"persist verify-correction failed: {_pe}")
                             await websocket.send_json({
                                 "type": "verify-correction", "agent": provider, "text": full_v,
-                                "sources": self._provenance_items(full_paths),
+                                "sources": self._provenance_items(full_paths, text),
                                 "stale_paths": scoped_paths, "source_paths": full_paths,
                             })
                         elif verdict == "conflict" and differ:
                             await websocket.send_json({
                                 "type": "verify-conflict",
                                 "scoped": full_text, "full": full_v,
-                                "scoped_sources": self._provenance_items(scoped_paths),
-                                "full_sources": self._provenance_items(full_paths),
+                                "scoped_sources": self._provenance_items(scoped_paths, text),
+                                "full_sources": self._provenance_items(full_paths, text),
                                 "scoped_paths": scoped_paths, "full_paths": full_paths,
                             })
                         else:

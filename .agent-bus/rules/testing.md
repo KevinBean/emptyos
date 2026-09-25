@@ -1,6 +1,6 @@
 # Testing Rule
 
-Run tests at well-defined checkpoints during development. See CLAUDE.md § "Testing (pytest + Playwright)" for full details on suite structure.
+Run tests at well-defined checkpoints during development. See CLAUDE.md § Testing for the suite structure.
 
 ## When to run tests
 
@@ -12,35 +12,35 @@ Run tests at well-defined checkpoints during development. See CLAUDE.md § "Test
   `python -m pytest tests/ --ignore=tests/personal -v`
 - **When adding a new app** — add a matching `tests/test_sys_<app>.py` with 10+ use cases (API + UI workflows)
 
-## Adding tests for a new app
+## Writing tests
 
-When a new app is created under `apps/`, follow the pattern from existing `test_sys_*.py` files:
+Adding a `test_sys_<app>.py`, story tests, browser-JS tests (`node --test`),
+precondition guards (skip, don't fail, when CI lacks a dep/app/browser), and
+the PWA cross-browser matrix → `.claude/rules/test-authoring.md` (loads on
+`tests/**`).
 
-1. Create `tests/test_sys_<app>.py` with an `@pytest.mark.api class Test<App>API` and an `@pytest.mark.interactive class Test<App>UI`.
-2. Aim for 10+ use cases total — mix of API CRUD tests and real UI workflows (click button → fill form → verify toast/list updates).
-3. Use helpers: `assert_ok`, `assert_dict_response`, `assert_list_response` from `helpers.py`.
-4. Use UI helpers: `switch_tab`, `click_first`, `wait_for_toast`, `assert_no_js_errors` from `page_helpers.py`.
-5. Register all created test data using `TEST_PREFIX` — it will be cleaned up by `cleanup_after_all` in conftest.py. If the app stores data somewhere new, add a cleanup block to conftest.py.
-6. Personal apps (gitignored) go in `tests/personal/test_<app>.py` and use the `require_app` fixture to skip gracefully when the app isn't installed.
+## A new test is not evidence until it has been red
 
-## Ongoing deepening (Option 3 practice)
+A test that has only ever passed pins nothing (`.claude/rules/audits.md`
+§ Failure mode 3). Break the thing it names, watch that test fail, restore.
 
-After the initial test file is in place, keep growing coverage where real bugs appear:
+**Use `.claude/skills/eos-mutation-verify` — do not re-derive the loop.** For a
+batch, its `run_mutations.py` takes a data file of `(label, old, new, expect)`
+rows. That runner exists because the same ~70-line loop was hand-rolled four
+times in one session and the copies disagreed; it was then hand-rolled three
+more times in a later session, which is why this pointer now sits here, at the
+moment a test gets written, rather than only in the simplify checklist.
 
-**When you touch an app, add 1-2 deep user story tests for it** in `tests/test_user_stories.py`. A "story test" differs from the baseline `test_sys_*.py` tests:
+It reports one outcome a hand-run cannot: **MISTARGETED** — the named test
+passed but another test in the file caught the mutation, so the behaviour *is*
+pinned and only the `expect` filter is wrong. Without that re-check a mis-aimed
+`-k` is indistinguishable from unpinned behaviour.
 
-| Baseline test (sufficient for new apps) | Story test (add on significant touch) |
-|---|---|
-| "Add button exists" | "Add entry → verify in list → check dashboard total updates → delete → verify all views update" |
-| "Page loads without JS errors" | "Reload after adding data → data still there (persistence)" |
-| "API returns 200" | "Response contains the value we just wrote" |
-| "Tab switches" | "Switch tab → verify tab-specific data loaded → switch back → state preserved" |
-
-**Triggers for adding a story test:**
-- Fixed a bug in the app → add a test that would have caught it
-- Added a cross-app feature (event emission, vault ripple) → add a journey test in `test_journeys.py`
-- Changed the data model → add a persistence test
-- Touched UI layout → add a visual baseline to `test_visual.py` + regenerate screenshot
+It also catches the shape a hand-run reads as success: running several suites
+and calling a mutation caught if *any* of them goes red. Measured 2026-09-09 —
+a contract test asserting "no object is sent with a zero distance" could never
+fail, because the fixture it read always supplied real distances; a sibling
+JS test was the one going red, and the hand-rolled loop reported it caught.
 
 **Story test file map:**
 - `test_user_stories.py` — multi-step flows with verification at each step (primary)
@@ -49,6 +49,30 @@ After the initial test file is in place, keep growing coverage where real bugs a
 - `test_visual.py` — screenshot baselines (regenerate with `python -m pytest tests/test_visual.py` after intentional UI changes)
 - `test_components.py` — modal/sidebar/chat component lifecycle
 
+## A tracked test must not import a gitignored app at module scope
+
+`apps/personal/` is gitignored, so it is absent in every public clone and in
+CI — and CI's first step is a bare `pytest --collect-only`, which aborts the
+**whole run** on one collection error. A single unguarded
+`from apps.personal.… import …` therefore turns the entire suite red
+(measured 2026-09-01: 15358 tests collected, 1 error, exit non-zero).
+
+Guard it:
+
+```python
+_APP = ROOT / "apps" / "personal" / "<app>" / "<module>.py"
+needs_app = pytest.mark.skipif(not _APP.exists(), reason="apps/personal/<app> is gitignored")
+if _APP.exists():
+    from apps.personal.<app>.<module> import thing
+else:
+    thing = None
+pytestmark = needs_app
+```
+
+Same shape as `test_unit_clip_chaining.py` / `test_unit_music_studio_frames.py`.
+Verify with a real archive, never the working tree —
+`git archive HEAD | tar -x -C <scratch>` then collect there.
+
 ## Requirements
 
 - EmptyOS must be running on `localhost:9000` to run tests (not required for `--collect-only`)
@@ -56,29 +80,3 @@ After the initial test file is in place, keep growing coverage where real bugs a
 - CI (`.github/workflows/tests.yml`) runs `--collect-only` on every push to catch import/syntax errors
 - CI (`.github/workflows/dogfood.yml`) boots the daemon against a throwaway vault and runs `pytest -m "dogfood and not llm"` on every push to `main` and every PR. Non-LLM only; LLM dogfood runs locally or on demand.
 
-## Cross-browser testing (PWA work)
-
-PWA-related tests (`tests/test_sys_pwa.py`) must run across all three Playwright engines to catch iOS/Safari-specific issues. WebKit is the load-bearing one — it's what iOS Safari runs.
-
-Setup (one-time, in addition to the default):
-- `playwright install firefox webkit`
-
-Run the PWA suite on each engine locally:
-- `python -m pytest tests/test_sys_pwa.py -v --browser chromium`
-- `python -m pytest tests/test_sys_pwa.py -v --browser firefox`
-- `python -m pytest tests/test_sys_pwa.py -v --browser webkit`
-
-Tests that legitimately diverge by engine (e.g. service worker registration in WebKit private contexts) should `pytest.skip()` rather than fail.
-
-### Manual device matrix (PWA ship blocker)
-
-Cross-browser automation only catches engine differences, not real-device install flows. Before declaring the PWA shippable, verify on real devices:
-
-| Device / Browser          | Install works | SW caches | Offline fallback | Capture + journal flow |
-|---------------------------|---------------|-----------|------------------|-----------------------|
-| iPhone Safari             |               |           |                  |                       |
-| Android Chrome            |               |           |                  |                       |
-| Desktop Chrome (Windows)  |               |           |                  |                       |
-| Desktop Edge (Windows)    |               |           |                  |                       |
-
-iPhone Safari + Android Chrome rows must all pass. Other devices are V1.5.

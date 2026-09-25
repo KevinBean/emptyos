@@ -11,6 +11,13 @@ assert SPEC and SPEC.loader
 SPEC.loader.exec_module(MODULE)
 
 
+def test_optional_read_treats_missing_local_note_like_api_404():
+    def missing(_path):
+        raise FileNotFoundError("missing")
+
+    assert MODULE.optional_read(missing, "missing.md") is None
+
+
 def source(provider_id):
     body = "# Example\n\n## Conversation\n\n### 001 · User · now\n\nHello\n"
     import hashlib
@@ -539,3 +546,83 @@ def test_source_paths_from_search_requires_exact_provider_and_short_id():
             "2026-07-24-custom--12345678.md"
         )
     ]
+
+
+def test_frontmatter_is_line_anchored_not_a_bare_split():
+    """A `---` inside a YAML VALUE must not terminate the block.
+
+    `text.split("---", 2)` did, so a note whose asset name sanitized to
+    `260610---P530678` had its body sliced mid-frontmatter and the wrong bytes
+    hashed. That was patched once by sanitizing the input; the parser stayed
+    wrong for every other input carrying a run of dashes, and five sibling call
+    sites shared it.
+    """
+    note = "---\nasset: 260610---P530678\ntitle: x\n---\nREAL BODY\n"
+
+    assert MODULE.body(note) == "REAL BODY\n"
+    assert "260610---P530678" in MODULE.frontmatter(note)
+    assert "REAL BODY" not in MODULE.frontmatter(note)
+
+    # The old implementation, kept here so the regression is legible: it slices
+    # at the first `---` run wherever it appears.
+    naive = note.split("---", 2)
+    assert naive[2].lstrip("\n") != MODULE.body(note)
+
+
+def test_a_dash_run_inside_prose_does_not_end_the_block():
+    note = "---\nnote: a --- b\n---\nbody text\n"
+    assert MODULE.body(note) == "body text\n"
+    assert MODULE.frontmatter(note) == "note: a --- b"
+
+
+def test_a_note_without_frontmatter_round_trips():
+    assert MODULE.body("plain note\n") == "plain note\n"
+    assert MODULE.frontmatter("plain note\n") == ""
+
+
+def test_crlf_is_normalised():
+    assert MODULE.body("---\r\na: 1\r\n---\r\nbody\r\n") == "body\n"
+
+
+def test_a_horizontal_rule_is_not_an_unclosed_fence():
+    """A note opening with `----` has NO frontmatter — body is the whole note.
+
+    Caught by differentially executing the old and new parsers rather than
+    reasoning about equivalence. Two ways to get this wrong, and the first
+    version of the rewrite had one of them:
+
+      old  `text.startswith("---")` is true of `----`, so it split on the dash
+           run and silently ate the first lines — or returned "" when there was
+           no third part.
+      new  a first draft asked the same `startswith("---")` when deciding
+           whether an unclosed fence meant "no trustworthy body", so `----`
+           returned "" and lost the document.
+
+    Both feed the content hash, so either one hashes the wrong bytes.
+    """
+    doc = "----\na: 1\n---\nbody\n"
+    assert MODULE.body(doc) == doc          # no frontmatter: body is everything
+    assert MODULE.frontmatter(doc) == ""
+
+    rule_only = "----\n\nreal content\n"
+    assert MODULE.body(rule_only) == rule_only
+    assert MODULE.frontmatter(rule_only) == ""
+
+
+def test_an_unclosed_fence_still_yields_no_body():
+    """The case the `----` fix must not break: a real opening fence, never closed."""
+    assert MODULE.body("---\na: 1\nbody\n") == ""
+    assert MODULE.body("---\n") == ""
+    assert MODULE.frontmatter("---\na: 1\nbody\n") == ""
+
+
+def test_a_fence_line_with_trailing_space_still_closes():
+    doc = "---  \na: 1\n---  \nbody\n"
+    assert MODULE.body(doc) == "body\n"
+    assert MODULE.frontmatter(doc) == "a: 1"
+
+
+def test_a_horizontal_rule_in_the_body_is_left_alone():
+    """Only the FIRST closing fence ends the block; later `---` is content."""
+    doc = "---\na: 1\n---\nbody\n\n---\n\nmore\n"
+    assert MODULE.body(doc) == "body\n\n---\n\nmore\n"

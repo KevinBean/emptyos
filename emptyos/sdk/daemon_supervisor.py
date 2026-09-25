@@ -35,6 +35,8 @@ from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import Any
 
+from emptyos.headless import no_window_flags
+
 
 def resolve_python_exe() -> str:
     """Return a `python.exe` path suitable for spawning a child daemon.
@@ -82,12 +84,11 @@ def spawn_emptyos_daemon(
     env["EOS_CONFIG"] = str(config_path)
     if extra_env:
         env.update({k: str(v) for k, v in extra_env.items()})
-    creation_flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
     return subprocess.Popen(  # noqa: ASYNC220
         [resolve_python_exe(), *args],
         cwd=str(cwd),
         env=env,
-        creationflags=creation_flags,
+        creationflags=no_window_flags(),
         stdout=stdout,
         stderr=stderr,
     )

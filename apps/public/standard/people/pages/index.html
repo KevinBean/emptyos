@@ -13,8 +13,12 @@
         .subtitle { color: var(--text-secondary); font-size: 0.9rem; margin-bottom: 1rem; }
 
         .toolbar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem; gap: 0.6rem; flex-wrap: wrap; }
-        .eos-btn-primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
-        .eos-btn-primary:hover { background: var(--accent-dim); border-color: var(--accent-dim); }
+        /* No local primary-button hover. This page used to paint
+           `.eos-btn-primary:hover` with --accent-dim, which is not a fill
+           --accent-ink reads on: it is LIGHTER than the accent in several light
+           themes, and ink on it measures under 4.5:1 in 5 of 10 themes (3.26 in
+           the default, measured 2026-09-21). The shared hover deepens the
+           accent slightly under the same ink, 6.18:1 or better in every theme. */
 
         /* Roster */
         .roster { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 0.8rem; }
@@ -81,6 +85,37 @@
         .suggest-name { font-weight: 600; font-size: 15px; color: var(--text-heading); }
         .suggest-reason { font-size: 13px; color: var(--text-secondary); line-height: 1.5; margin-bottom: 8px; }
         .suggest-opener { font-size: 13px; background: var(--accent-bg); border-left: 3px solid var(--accent); padding: 8px 12px; border-radius: 0 8px 8px 0; margin-bottom: 12px; }
+
+        /* Delegation roster — Me + AI hero cards */
+        .section-label { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-secondary); margin: 1.1rem 0 0.5rem; }
+        .section-label:first-child { margin-top: 0; }
+        .hero-card { background: var(--bg-card); border: 2px solid var(--accent); border-radius: var(--radius-lg); padding: 1rem; display: flex; gap: 0.85rem; align-items: center; margin-bottom: 0.4rem; cursor: pointer; }
+        .hero-card .icon { font-size: 1.8rem; flex-shrink: 0; }
+        .hero-card .name { font-weight: 700; color: var(--text-heading); font-size: 1rem; }
+        .hero-card .you-badge { font-size: 0.65rem; background: var(--accent-bg); color: var(--accent); padding: 2px 8px; border-radius: 999px; margin-left: 6px; vertical-align: middle; }
+        .hero-card .sub { font-size: 0.8rem; color: var(--text-secondary); margin-top: 2px; }
+        .ai-roster { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 0.7rem; margin-bottom: 0.4rem; }
+        .ai-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 0.8rem; display: flex; gap: 0.6rem; align-items: center; cursor: pointer; transition: background 0.1s, border-color 0.1s; }
+        .ai-card:hover { background: var(--bg-card-hover); border-color: var(--border-strong); }
+        .ai-card .icon { font-size: 1.4rem; flex-shrink: 0; }
+        .ai-card .meta { flex: 1; min-width: 0; }
+        .ai-card .name { font-weight: 600; color: var(--text-heading); font-size: 0.88rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .ai-card .sub { font-size: 0.72rem; color: var(--text-secondary); }
+        .ai-card.unavailable { opacity: 0.5; }
+
+        /* Delegate tab */
+        .delegate-form { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 1rem; margin-bottom: 1rem; }
+        .delegate-form textarea { width: 100%; min-height: 70px; background: var(--bg-input); border: 1px solid var(--border); border-radius: var(--radius); padding: 0.5rem 0.7rem; color: var(--text); font-family: inherit; resize: vertical; box-sizing: border-box; }
+        .delegate-row { display: flex; gap: 0.6rem; margin-top: 0.6rem; flex-wrap: wrap; }
+        .delegate-row input { flex: 1; min-width: 140px; background: var(--bg-input); border: 1px solid var(--border); border-radius: var(--radius); padding: 0.4rem 0.6rem; color: var(--text); font-family: inherit; }
+        .delegate-result { background: var(--bg-card); border: 1px solid var(--accent); border-radius: var(--radius-lg); padding: 1rem; }
+        .delegate-pick { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; }
+        .delegate-pick .icon { font-size: 1.8rem; }
+        .delegate-pick .name { font-weight: 700; font-size: 1.05rem; color: var(--text-heading); }
+        .delegate-pick .kind { font-size: 0.72rem; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.05em; }
+        .delegate-reason { font-size: 0.85rem; color: var(--text-secondary); line-height: 1.5; margin-bottom: 10px; }
+        .delegate-considered { font-size: 0.76rem; color: var(--text-muted); margin-top: 10px; display: flex; flex-wrap: wrap; gap: 6px; }
+        .delegate-considered .chip.picked { background: var(--accent); color: var(--bg-card); }
     </style>
 </head>
 <body>
@@ -93,6 +128,7 @@
         <div class="eos-tab" data-tab="relationships" onclick="switchTab('relationships')">Relationships</div>
         <div class="eos-tab" data-tab="due" onclick="switchTab('due')">Overdue</div>
         <div class="eos-tab" data-tab="birthdays" onclick="switchTab('birthdays')">Birthdays</div>
+        <div class="eos-tab" data-tab="delegate" onclick="switchTab('delegate')">🎯 Delegate</div>
     </div>
 
     <!-- Roster tab -->
@@ -103,10 +139,30 @@
                 <button class="eos-btn" onclick="showAISuggest()">✨ Suggest</button>
                 <button class="eos-btn" onclick="openAppSettings()" title="Settings">&#9881;</button>
                 <button class="eos-btn" onclick="openCreateAI()" title="Describe in plain English; AI fills the form">✨ AI</button>
+                <button class="eos-btn" onclick="openImportPicker()" title="Import contacts from a CSV export">⇪ Import CSV</button>
+                <input type="file" id="import-file-input" accept=".csv,text/csv" style="display:none" onchange="handleImportFile(event)">
                 <button class="eos-btn eos-btn-primary" onclick="openCreate()">＋ Add person</button>
             </div>
         </div>
+        <div id="me-card"></div>
+        <div class="section-label">AI models &amp; agents</div>
+        <div id="ai-roster" class="ai-roster"></div>
+        <div class="section-label">Team</div>
         <div id="roster" class="roster"></div>
+    </div>
+
+    <!-- Delegate tab -->
+    <div id="tab-delegate" class="eos-tab-content">
+        <p class="subtitle" style="margin-top:0">Delegation: thoughtfully deciding what work to do with AI vs. doing yourself. Describe a task — you'll get one recommendation, drawn from you, your team, and the AI models/agents connected to this vault.</p>
+        <div class="delegate-form">
+            <textarea id="dg-task" placeholder="e.g. Draft next week's status update for the client…"></textarea>
+            <div class="delegate-row">
+                <input type="text" id="dg-skills" placeholder="Skills needed (optional, comma-separated)">
+                <input type="number" id="dg-hours" placeholder="Est. hours (optional)" style="max-width:140px">
+                <button class="eos-btn eos-btn-primary" onclick="submitDelegate()">Who should do this?</button>
+            </div>
+        </div>
+        <div id="delegate-result"></div>
     </div>
 
     <!-- Relationships tab -->
@@ -130,7 +186,7 @@
 
 <!-- Detail slide-out -->
 <aside class="detail" id="detail">
-    <button class="close" onclick="closeDetail()">×</button>
+    <button class="close" onclick="closeDetail()" aria-label="Close detail">×</button>
     <h2 id="detail-name" class="eos-personal">…</h2>
     <div id="detail-role" class="role eos-personal" style="color:var(--text-secondary)"></div>
 
@@ -290,7 +346,7 @@ function composeForPerson() {
     });
 }
 
-var STATE = { people: [], currentId: null, tab: 'roster' };
+var STATE = { people: [], currentId: null, tab: 'roster', delegation: null, delegatePending: null };
 
 // Dark feature flag — flipped in emptyos.toml / /settings, not from the app's
 // own panel, so its absence here is deliberate:
@@ -313,13 +369,240 @@ function bandColor(b) {
          : b === 'busy'       ? 'var(--warning)'
          : 'var(--success)';
 }
+var BAND_LABEL = { overloaded: 'Overloaded', busy: 'Busy', ok: 'OK' };
+var BAND_VARIANT = { overloaded: 'fail', busy: 'shelved', ok: 'pass' };
+function bandBadge(b) {
+    return b ? EOS_UI.statusBadge(BAND_LABEL[b] || b, b, BAND_VARIANT) : '';
+}
 function healthClass(h) { return h >= 70 ? 'health-good' : h >= 40 ? 'health-ok' : 'health-low'; }
 function esc(s) { var d = document.createElement('div'); d.textContent = s == null ? '' : String(s); return d.innerHTML; }
 
 async function loadAll() {
     STATE.people = await fetch('/people/api/people').then(function(r){return r.json();});
     renderRoster();
+    try {
+        STATE.delegation = await fetch('/people/api/delegation/roster').then(function(r){return r.json();});
+    } catch (e) { STATE.delegation = null; }
+    renderMeCard();
+    renderAIRoster();
     if (STATE.tab !== 'roster') renderCurrentTab();
+}
+
+/* CSV contact import (people-contact-import) — preview/confirm, same
+   shape as requirements/dictionary import this session. */
+function openImportPicker() { document.getElementById('import-file-input').click(); }
+
+async function handleImportFile(event) {
+    var file = event.target.files && event.target.files[0];
+    event.target.value = '';
+    if (!file) return;
+    var form = new FormData();
+    form.append('file', file);
+    var res = await fetch('/people/api/import/preview', { method: 'POST', body: form })
+        .then(function(r) { return r.json(); })
+        .catch(function() { return { error: 'upload failed' }; });
+    if (res.error) { if (window.EOS_UI) EOS_UI.toast(res.error, false); return; }
+    showImportPreview(res);
+}
+
+function showImportPreview(res) {
+    var s = res.summary || {};
+    var warnHtml = (res.warnings || []).map(function(w) {
+        return '<div style="color:var(--warning);font-size:0.8rem;margin-bottom:4px">⚠ ' + esc(w) + '</div>';
+    }).join('');
+    var rowsHtml = (res.rows || []).slice(0, 200).map(function(r, i) {
+        return '<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border)">' +
+            '<input type="checkbox" class="import-row-check" data-idx="' + i + '"' + (r.duplicate ? '' : ' checked') + '>' +
+            '<span style="flex:1;font-size:0.85rem">' + esc(r.name) +
+                (r.company ? ' <span style="color:var(--text-muted)">· ' + esc(r.company) + '</span>' : '') +
+                (r.email ? ' <span style="color:var(--text-muted)">· ' + esc(r.email) + '</span>' : '') +
+            '</span>' +
+            (r.duplicate ? '<span style="font-size:0.75rem;color:var(--text-muted)">already in roster</span>' : '') +
+        '</div>';
+    }).join('') || '<div class="eos-empty">No importable rows</div>';
+
+    window._importRows = res.rows || [];
+    EOS_UI.modal({
+        title: 'Import contacts',
+        width: '560px',
+        body:
+            '<div style="margin-bottom:10px;font-size:0.85rem;color:var(--text-secondary)">' +
+                (s.total || 0) + ' rows found — ' + (s.new || 0) + ' new, ' + (s.duplicate || 0) + ' already in roster' +
+                (s.skipped ? ', ' + s.skipped + ' skipped (no name)' : '') +
+            '</div>' +
+            warnHtml +
+            '<div style="max-height:340px;overflow-y:auto;border-top:1px solid var(--border)">' + rowsHtml + '</div>' +
+            '<div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px">' +
+                '<button class="eos-btn" onclick="EOS_UI.closeModal()">Cancel</button>' +
+                '<button class="eos-btn eos-btn-primary" onclick="confirmImport()">Import selected</button>' +
+            '</div>',
+    });
+}
+
+async function confirmImport() {
+    var checks = document.querySelectorAll('.import-row-check:checked');
+    var rows = Array.prototype.slice.call(checks).map(function(c) {
+        return window._importRows[parseInt(c.getAttribute('data-idx'), 10)];
+    }).filter(Boolean);
+    if (!rows.length) { if (window.EOS_UI) EOS_UI.toast('No rows selected', false); return; }
+    var res = await EOS.apiSafe('/people/api/import/confirm', {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ rows: rows }),
+    });
+    if (res && res.error) { if (window.EOS_UI) EOS_UI.toast(res.error, false); return; }
+    EOS_UI.closeModal();
+    if (window.EOS_UI) EOS_UI.toast('Imported ' + res.imported + ' contact' + (res.imported === 1 ? '' : 's') + (res.skipped ? ' (' + res.skipped + ' skipped)' : ''), true);
+    loadAll();
+}
+
+/* Me + AI roster — the delegation hero cards */
+function renderMeCard() {
+    var el = document.getElementById('me-card');
+    var me = STATE.delegation && STATE.delegation.me;
+    if (!me || !me.exists) {
+        el.innerHTML = '<div class="hero-card" onclick="switchTab(\'delegate\')">' +
+            '<div class="icon">⭐</div><div class="meta">' +
+            '<div class="name">You <span class="you-badge">Me</span></div>' +
+            '<div class="sub">No profile yet — jot goals/values in your _me.md and they\'ll show up here.</div>' +
+            '</div></div>';
+        return;
+    }
+    var bits = [];
+    if (me.life_stage) bits.push(esc(me.life_stage));
+    if (me.goals && me.goals.length) bits.push('focus: ' + me.goals.slice(0,2).map(esc).join(', '));
+    el.innerHTML = '<div class="hero-card" onclick="switchTab(\'delegate\')">' +
+        '<div class="icon">⭐</div><div class="meta">' +
+        '<div class="name">'+esc(me.name || 'You')+' <span class="you-badge">Me</span></div>' +
+        '<div class="sub">'+(bits.join(' · ') || 'Doing the work yourself')+'</div>' +
+        '</div></div>';
+}
+
+function aiCardIcon(a) {
+    if (a.kind === 'ai_model') return '🤖';
+    if (a.subkind === 'companion') return '🎙️';
+    return '⚙️';
+}
+function aiCardSub(a) {
+    if (a.kind === 'ai_model') {
+        var loc = a.is_cloud ? (a.cost_per_1k ? ('☁ ~$'+a.cost_per_1k+'/1K') : '☁ free') : '🔒 local, free';
+        return (a.domain ? esc(a.domain) + ' · ' : '') + loc;
+    }
+    if (a.subkind === 'companion') return 'Voice companion';
+    return (a.role ? esc(a.role) : 'Staff agent') + (a.enabled === false ? ' · off' : '');
+}
+function renderAIRoster() {
+    var el = document.getElementById('ai-roster');
+    var d = STATE.delegation;
+    var items = d ? [].concat(d.ai_models || [], d.ai_agents || []) : [];
+    if (!items.length) {
+        el.innerHTML = '<div style="color:var(--text-muted);font-size:0.8rem">No AI providers or agents connected yet.</div>';
+        return;
+    }
+    el.innerHTML = items.map(function(a) {
+        var unavailable = a.kind === 'ai_model' && !a.available;
+        return '<div class="ai-card'+(unavailable ? ' unavailable' : '')+'" title="Click for details" onclick="openAICard(' + escAttr(JSON.stringify(a.id)) + ')">' +
+            '<div class="icon">'+aiCardIcon(a)+'</div>' +
+            '<div class="meta"><div class="name">'+esc(a.name)+'</div>' +
+            '<div class="sub">'+aiCardSub(a)+'</div></div></div>';
+    }).join('');
+}
+
+function openAICard(id) {
+    var d = STATE.delegation;
+    var items = d ? [].concat(d.ai_models || [], d.ai_agents || []) : [];
+    var a = items.find(function(x){ return x.id === id; });
+    if (!a) return;
+    var rows = [];
+    var openHref = '';
+    if (a.kind === 'ai_model') {
+        rows.push(['Domain', a.domain || 'general']);
+        rows.push(['Location', a.is_cloud ? 'Cloud' : 'Local (on-device)']);
+        rows.push(['Cost', !a.is_cloud ? 'free' : (a.cost_per_1k ? ('~$'+a.cost_per_1k+' / 1K tokens') : 'free')]);
+        rows.push(['Model', a.model || '—']);
+        rows.push(['Available', a.available ? 'Yes' : 'No']);
+        openHref = '/system?capability=think';
+    } else if (a.subkind === 'companion') {
+        rows.push(['Type', 'Voice companion']);
+        rows.push(['Talk to it via', 'Aura']);
+        openHref = '/voice-assistant/';
+    } else {
+        rows.push(['Role', a.role || '—']);
+        rows.push(['Enabled', a.enabled ? 'Yes' : 'No']);
+        rows.push(['Watches', (a.observe_apps || []).join(', ') || '—']);
+        rows.push(['Can act on', (a.action_apps || []).join(', ') || '—']);
+        openHref = '/staff/#' + encodeURIComponent(String(a.id).replace(/^staff:/, ''));
+    }
+    var body = rows.map(function(r) {
+        return '<div style="display:flex;justify-content:space-between;gap:12px;padding:6px 0;border-bottom:1px solid var(--border);font-size:0.85rem">' +
+            '<span style="color:var(--text-secondary)">'+esc(r[0])+'</span><span style="text-align:right">'+esc(String(r[1]))+'</span></div>';
+    }).join('') + '<div style="margin-top:12px;text-align:right"><a class="eos-btn eos-btn-sm" href="'+escAttr(openHref)+'">Open →</a></div>';
+    EOS_UI.modal({ title: aiCardIcon(a) + ' ' + a.name, body: body });
+}
+
+/* Delegate — the "who/what should do this" routing helper */
+async function submitDelegate() {
+    var task = document.getElementById('dg-task').value.trim();
+    if (!task) { EOS_UI.toast('Describe the task first', false); return; }
+    var skills = document.getElementById('dg-skills').value.trim();
+    var hours = document.getElementById('dg-hours').value.trim();
+    var body = { task: task };
+    if (skills) body.skills = skills;
+    if (hours) body.hours = parseFloat(hours) || undefined;
+    await runDelegate(body);
+}
+
+async function runDelegate(body) {
+    var resultEl = document.getElementById('delegate-result');
+    resultEl.innerHTML = '<div style="color:var(--text-secondary);font-size:0.85rem">Thinking…</div>';
+    var r = await EOS.post('/people/api/delegation/suggest', body);
+    if (r.error) {
+        resultEl.innerHTML = EOS_UI.errorState ? EOS_UI.errorState({message: r.error}) : ('<div>'+esc(r.error)+'</div>');
+        return;
+    }
+    if (r.needs_clarification) { renderClarify(r, body); return; }
+    renderDelegateResult(r);
+}
+
+// Problem-awareness gate: the backend only asks when it genuinely can't tell
+// who should own the task; one answer folds into the task text and re-routes
+// (skip_clarify=true so it can't loop forever on a still-vague answer).
+function renderClarify(r, priorBody) {
+    var el = document.getElementById('delegate-result');
+    el.innerHTML = '<div class="delegate-result">' +
+        '<div style="font-weight:600;color:var(--text-heading);margin-bottom:6px">One thing first —</div>' +
+        '<div class="delegate-reason">'+esc(r.question || 'Can you say more about this task?')+'</div>' +
+        '<textarea id="dg-clarify-answer" placeholder="Your answer…" style="width:100%;min-height:50px;margin-top:6px;background:var(--bg-input);border:1px solid var(--border);border-radius:var(--radius);padding:0.5rem 0.7rem;color:var(--text);font-family:inherit;box-sizing:border-box"></textarea>' +
+        '<div style="display:flex;justify-content:flex-end;margin-top:8px">' +
+        '<button class="eos-btn eos-btn-primary" onclick="submitClarify()">Continue</button></div></div>';
+    STATE.delegatePending = { body: priorBody, task: r.task || priorBody.task };
+    var ta = document.getElementById('dg-clarify-answer');
+    if (ta) ta.focus();
+}
+
+async function submitClarify() {
+    var answer = document.getElementById('dg-clarify-answer').value.trim();
+    if (!answer || !STATE.delegatePending) return;
+    var body = Object.assign({}, STATE.delegatePending.body);
+    body.task = STATE.delegatePending.task + '\n\nClarification: ' + answer;
+    body.skip_clarify = true;
+    STATE.delegatePending = null;
+    await runDelegate(body);
+}
+
+function renderDelegateResult(r) {
+    var resultEl = document.getElementById('delegate-result');
+    var kindIcon = {self: '⭐', human: '👤', ai_model: '🤖', ai_agent: '🎙️'};
+    var pick = r.pick || {};
+    var considered = (r.considered || []).map(function(c) {
+        return '<span class="chip'+(c.id === pick.id ? ' picked' : '')+'">'+(kindIcon[c.kind]||'')+' '+esc(c.name)+'</span>';
+    }).join('');
+    resultEl.innerHTML = '<div class="delegate-result">' +
+        '<div class="delegate-pick"><div class="icon">'+(kindIcon[pick.kind]||'🎯')+'</div><div>' +
+        '<div class="name">'+esc(pick.name || '?')+'</div>' +
+        '<div class="kind">'+esc(pick.kind || '')+'</div></div></div>' +
+        (r.reasoning ? '<div class="delegate-reason">'+esc(r.reasoning)+'</div>' : '') +
+        (considered ? '<div class="delegate-considered">'+considered+'</div>' : '') +
+        '</div>';
 }
 
 function renderRoster() {
@@ -342,7 +625,7 @@ function renderRoster() {
             donut +
             '<div class="meta">' +
                 '<div class="name eos-personal">'+esc(p.name)+' '+typeChip+'</div>' +
-                '<div class="role eos-personal">'+(p.role ? esc(p.role) : '&nbsp;')+'</div>' +
+                '<div class="role eos-personal">'+(p.role ? esc(p.role) : '&nbsp;')+' '+bandBadge(p.band)+'</div>' +
                 '<div class="chips">'+skills+'</div>' +
             '</div></div>';
     }).join('');
@@ -479,7 +762,7 @@ async function openDetail(id) {
                 '</div>';
             }).join('');
         } catch (e) {
-            orgsEl.innerHTML = '<span style="color:var(--text-muted);font-size:0.8rem">(orgs app unavailable)</span>';
+            orgsEl.innerHTML = EOS_UI.errorState({message: '(orgs app unavailable)'});
         }
     })();
     document.getElementById('detail-skills').innerHTML = (p.skills || []).map(function(s){return '<span class="chip">'+esc(s)+'</span>';}).join('') || '<span style="color:var(--text-muted);font-size:0.8rem">(none)</span>';

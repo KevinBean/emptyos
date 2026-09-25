@@ -83,3 +83,25 @@ def test_value_never_spans_more_than_one_physical_line():
     body = doc.split("---", 2)[1] if doc.startswith("---") else doc
     keys = [ln.split(":")[0].strip() for ln in body.strip().split("\n") if ":" in ln]
     assert "lifecycle" not in keys and "x" not in keys
+
+
+def test_dict_value_serializes_as_one_line_yaml_flow_not_python_repr():
+    """A dict-valued field (e.g. geo.md's `geo:` block) used to serialize via
+    bare `str(v)`, producing Python's dict repr — single-quoted keys, no real
+    YAML structure (`"{'type': 'MultiPoint', ...}"`). Now emits valid one-line
+    YAML flow syntax instead, preserving the one-line invariant the string
+    tests above pin for exactly the same injection-safety reason.
+
+    NOTE: `_parse_fm` cannot yet parse YAML flow syntax back into a dict — it
+    reads the whole flow-map text as an opaque string (see the corrected
+    caveat in `.claude/rules/geo.md`). This test pins the WRITE side only; a
+    matching read-side fix is a separate, larger change to the hand-rolled
+    line-based parser.
+    """
+    fm = {"tags": ["x"], "geo": {"type": "MultiPoint", "coordinates": [[1.0, 2.0], [3.0, 4.0]]}}
+    doc = _serialize_fm(fm)
+    lines = [ln for ln in doc.split("\n") if ln.strip()]
+    geo_lines = [ln for ln in lines if ln.startswith("geo:")]
+    assert len(geo_lines) == 1, "geo: value must stay on exactly one physical line"
+    assert "'" not in geo_lines[0], f"still emitting Python repr, not YAML: {geo_lines[0]!r}"
+    assert geo_lines[0] == "geo: {type: MultiPoint, coordinates: [[1.0, 2.0], [3.0, 4.0]]}"

@@ -107,6 +107,10 @@
     "hash": "c3a8c080f081f6e8",
     "summary": "Design grounding grids by analyzing soil, safety limits, layouts, and cost-optimized scenarios"
   },
+  "eink-bridge": {
+    "hash": "d4426c3e9d167276",
+    "summary": "Shows your terminal on an e-ink reader's browser over your local network"
+  },
   "engineering-scene": {
     "hash": "db8c547648d9686a",
     "summary": "Places yard equipment, georeferences it, and links each item to electrical nodes"
@@ -172,8 +176,8 @@
     "summary": "Combines panel content from installed apps into one hub"
   },
   "improv": {
-    "hash": "de28c11cd989add2",
-    "summary": "Practice improv with an AI scene partner and save sessions for review"
+    "hash": "0edeba0d3399c3dd",
+    "summary": "Practice improv scenes with an AI partner and get feedback on dropped offers"
   },
   "interference": {
     "hash": "dd3004615ac3ecc3",
@@ -190,10 +194,6 @@
   "kb-butler": {
     "hash": "f3cf0e03ea40a4ad",
     "summary": "Monitors knowledge base health, fixes broken reciprocal links, and summarizes structural issues"
-  },
-  "eink-bridge": {
-    "hash": "d4426c3e9d167276",
-    "summary": "Shows your terminal on an e-ink reader's browser over your local network"
   },
   "learn": {
     "hash": "155c3a5ab7a91f04",

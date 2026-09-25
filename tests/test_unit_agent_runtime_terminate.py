@@ -10,7 +10,7 @@ the supervision record. It must:
   - return a benign result for an unknown key.
 
 Driven against tiny python subprocesses, same shape as
-test_agent_runtime_detached.py.
+test_unit_agent_runtime_detached.py.
 """
 
 from __future__ import annotations

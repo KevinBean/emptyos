@@ -17,6 +17,77 @@ except ImportError:
     HAS_MARKDOWN = False
 
 
+# --- Code regions ---
+# A markdown renderer does not transform inside code, so nothing that rewrites
+# markdown should either. Extracted here when `apps/public/core/link/linkindex.py`
+# became the second consumer (CLAUDE.md principle 9) — it needs the same regions
+# to *exclude* link targets, where this module needs them to *preserve* code
+# verbatim. One scanner, two derived helpers.
+
+# Inline code, kept to one line: markdown inline code effectively never wraps,
+# and allowing it to made the pattern catastrophically slow — an alternation
+# between two backtick runs backtracks so badly it measured 44.1s across 27,591
+# notes, against 4.6s for this.
+_INLINE_CODE = re.compile(r"`{1,3}[^`\n]*`{1,3}")
+_FENCE_OPEN = re.compile(r"^[ \t]*(`{3,}|~{3,})")
+
+
+def iter_code_segments(text: str):
+    """Yield ``(is_code, chunk)`` pairs covering ``text`` in order.
+
+    Line-scanned rather than matched with one big regex, which also gets fence
+    state right where a regex did not: an unclosed fence runs to end of file,
+    and a closing run must be at least as long and of the same character as the
+    one that opened it.
+    """
+    lines = str(text or "").split("\n")
+    fence: str | None = None
+    for i, line in enumerate(lines):
+        nl = "\n" if i < len(lines) - 1 else ""
+        if fence is not None:
+            stripped = line.strip()
+            if (stripped.startswith(fence[0]) and len(stripped) >= len(fence)
+                    and set(stripped) == {fence[0]}):
+                fence = None
+            yield True, line + nl
+            continue
+        m = _FENCE_OPEN.match(line)
+        if m:
+            fence = m.group(1)
+            yield True, line + nl
+            continue
+        pos = 0
+        for cm in _INLINE_CODE.finditer(line):
+            if cm.start() > pos:
+                yield False, line[pos:cm.start()]
+            yield True, cm.group(0)
+            pos = cm.end()
+        yield False, line[pos:] + nl
+
+
+def sub_outside_code(pattern: re.Pattern, repl, text: str) -> str:
+    """``pattern.sub(repl, text)``, but never inside code.
+
+    Without this, a `[[Note]]` written inside a fenced example became a real
+    ``<a href>`` in the rendered code block on the published site — the reader
+    saw markup where the author wrote a literal.
+    """
+    return "".join(chunk if is_code else pattern.sub(repl, chunk)
+                   for is_code, chunk in iter_code_segments(text))
+
+
+def strip_code(text: str) -> str:
+    """``text`` with every code region blanked, line count preserved.
+
+    Blanked rather than deleted so nothing on either side of a code span is
+    joined into a construct that was never written.
+    """
+    return "".join(
+        re.sub(r"[^\n]", " ", chunk) if is_code else chunk
+        for is_code, chunk in iter_code_segments(text)
+    )
+
+
 # --- Wikilink handling ---
 
 WIKILINK = re.compile(r"\[\[([^\]|]+)(?:\|([^\]]+))?\]\]")
@@ -49,7 +120,10 @@ def resolve_wikilinks(text: str, published_slugs: dict[str, str], link_prefix: s
             return f'<a href="{href}" class="wikilink">{display}</a>'
         return f'<span class="wikilink-private">{display}</span>'
 
-    return WIKILINK.sub(_replace, text)
+    # Outside code only. A `[[Note]]` inside a fenced example is a literal the
+    # author wrote, and substituting it put an `<a href>` into the rendered code
+    # block on the published site.
+    return sub_outside_code(WIKILINK, _replace, text)
 
 
 def convert_callouts(text: str) -> str:

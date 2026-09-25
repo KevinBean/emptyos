@@ -7,6 +7,7 @@ once per AgentApp instance; pass the result into the loop.
 
 from __future__ import annotations
 
+from emptyos.sdk.agent_tools.artifact import CreateArtifactTool
 from emptyos.sdk.agent_tools.base import Tool, ToolResult
 from emptyos.sdk.agent_tools.bash import BashTool
 from emptyos.sdk.agent_tools.browse import BrowseTool
@@ -52,6 +53,7 @@ V1_TOOLS: list[type[Tool]] = [
     ScreenshotTool,
     SubAgentTool,
     ContextRefTool,
+    CreateArtifactTool,
 ]
 
 
@@ -102,6 +104,7 @@ __all__ = [
     "BrowseTool",
     "SubAgentTool",
     "ContextRefTool",
+    "CreateArtifactTool",
     "V1_TOOLS",
     "build_registry",
 ]

@@ -5,10 +5,11 @@ from __future__ import annotations
 import asyncio
 from pathlib import Path
 
-from emptyos.sdk import BaseApp, cli_command, web_route
+from emptyos.sdk import BaseApp, cli_command, scheduled, web_route
 
 from .store import (
     ImportPathError,
+    aggregate_items,
     discover_imports,
     item_detail,
     list_items,
@@ -16,8 +17,7 @@ from .store import (
     resume_target,
 )
 
-REPO_ROOT = Path(__file__).resolve().parents[4]
-
+DEFAULT_BACKLOG_THRESHOLD = 20
 
 class ConversationIngestApp(BaseApp):
     """Read-only dashboard over conversation ingestion telemetry and evidence."""
@@ -31,7 +31,8 @@ class ConversationIngestApp(BaseApp):
         return Path(self.kernel.config.data_dir) / "imports"
 
     def _repo_root(self) -> Path:
-        return REPO_ROOT
+        # Thin alias; the BaseApp property is the canonical accessor.
+        return self.repo_root
 
     def _skill_root(self) -> Path:
         return self._repo_root() / ".agents" / "skills" / "eos-ai-conversation-ingest"
@@ -45,7 +46,16 @@ class ConversationIngestApp(BaseApp):
         query = request.query_params
         import_key = (query.get("import") or "").strip()
         if not import_key:
-            return {"error": "import is required"}
+            # conversation-ingest-single-import-scope: no `import` -> the
+            # merged "everything pending across all sources" view.
+            return await asyncio.to_thread(
+                aggregate_items,
+                self._imports_root(),
+                bucket=query.get("bucket") or "pending",
+                query=query.get("q") or "",
+                offset=query.get("offset") or 0,
+                limit=query.get("limit") or 50,
+            )
         try:
             return await asyncio.to_thread(
                 list_items,
@@ -107,6 +117,38 @@ class ConversationIngestApp(BaseApp):
             "routing_contract_path": str(routing_path).replace("\\", "/"),
             "canonical_owner": "eos-ai-conversation-ingest",
         }
+
+    # ── Proactive backlog nudge (conversation-ingest-no-backlog-nudge) ──────
+    # Dark until `[apps.conversation-ingest] feature.backlog-nudge.enabled` —
+    # a fresh install's daily sweep does nothing until opted in. Even once
+    # enabled, `proactive_notify` itself ships dark (master policy toggle
+    # defaults off) and applies its own quiet-hours/daily-cap/dedup gate, so
+    # this is never more than a candidate nudge, never a guaranteed one.
+    @scheduled("0 9 * * *", id="conversation-ingest-backlog-nudge")
+    async def backlog_nudge_sweep(self):
+        if not self.app_config("feature.backlog-nudge.enabled", False):
+            return
+        threshold = int(
+            self.setting_or_config(
+                "conversation-ingest.backlog_threshold", DEFAULT_BACKLOG_THRESHOLD
+            )
+            or DEFAULT_BACKLOG_THRESHOLD
+        )
+        result = await asyncio.to_thread(discover_imports, self._imports_root())
+        if not result.get("root_ok"):
+            return
+        for row in result.get("imports") or []:
+            pending = int(row.get("pending") or 0)
+            if pending < threshold:
+                continue
+            key = str(row.get("key") or "")
+            await self.proactive_notify(
+                "conversation-ingest-backlog",
+                f"{pending} conversations pending ingestion in '{key}'.",
+                dedup_key=f"conversation-ingest-backlog:{key}",
+                link={"text": "Open Conversation Ingest",
+                      "href": f"/conversation-ingest/?import={key}"},
+            )
 
     @cli_command("status", help="Show conversation ingestion coverage")
     async def cli_status(self):

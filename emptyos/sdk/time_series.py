@@ -17,6 +17,11 @@ provider_stats / app_stats). Reused in apps/web-analytics.
     views.top("path", "2026-04-01", "2026-04-30", limit=10)
     views.total(start="2026-04-01")
     views.trim(before="2025-04-15")
+
+    # one statement each, instead of one query per key on the event loop:
+    views.last_bucket("path")                     # {path: newest bucket}
+    views.buckets_by("path", start, end)          # {path: [bucket, ...]}
+    views.sums_by("path", start, end, where=...)  # {path: SUM(count)}
 """
 
 from __future__ import annotations
@@ -148,6 +153,68 @@ class TimeSeriesCounter:
         cols = ["bucket", *self.dims, "count"]
         sql = f"SELECT {','.join(cols)} FROM {self.name}{where_sql} ORDER BY bucket"
         return [dict(zip(cols, r, strict=False)) for r in self.conn.execute(sql, args)]
+
+    def last_bucket(self, field: str, where: dict | None = None) -> dict[str, str]:
+        """Newest bucket per distinct value of `field`, in ONE statement.
+
+        ``{key: bucket}`` — the last day (or hour) each key was seen. Exists
+        because app-analytics answered "when was each app last used" with one
+        ``range(where={"app": id})`` per app — 233 sequential sync SQLite calls
+        on the event loop. Those cost ~0.4 s in isolation; what made them a
+        37 s wedge (evidence 20260906T112242Z) was GIL starvation: fifteen
+        CPU-bound worker threads from another app's audit were running, and
+        every one of the 233 calls released and re-acquired the GIL behind
+        them. One grouped statement is one round-trip instead of 233 —
+        one covering-index scan of the PK plus a temp b-tree for the GROUP BY,
+        O(rows) once instead of O(rows) × keys.
+        """
+        if field not in self.dims:
+            raise ValueError(f"unknown field: {field}")
+        where_sql, args = self._where_clause(None, None, where)
+        sql = f"SELECT {field} AS key, MAX(bucket) AS last FROM {self.name}{where_sql} GROUP BY {field}"
+        return {r[0]: r[1] for r in self.conn.execute(sql, args)}
+
+    def buckets_by(
+        self,
+        field: str,
+        start: str | None = None,
+        end: str | None = None,
+        where: dict | None = None,
+    ) -> dict[str, list[str]]:
+        """Distinct buckets per value of `field`, ascending, in ONE statement.
+
+        ``{key: [bucket, …]}``. The per-key sibling of ``range(group_by=
+        "bucket")``: app-analytics' streak calculation ran that once per app
+        (233 full-table scans per page load). One grouped statement replaces
+        the loop.
+        """
+        if field not in self.dims:
+            raise ValueError(f"unknown field: {field}")
+        where_sql, args = self._where_clause(start, end, where)
+        sql = (
+            f"SELECT {field} AS key, bucket FROM {self.name}{where_sql} "
+            f"GROUP BY {field}, bucket ORDER BY {field}, bucket"
+        )
+        out: dict[str, list[str]] = {}
+        for key, bucket in self.conn.execute(sql, args):
+            out.setdefault(key, []).append(bucket)
+        return out
+
+    def sums_by(
+        self,
+        field: str,
+        start: str | None = None,
+        end: str | None = None,
+        where: dict | None = None,
+    ) -> dict[str, int]:
+        """``{key: SUM(count)}`` per value of `field` in the window, in ONE
+        statement — ``top()`` without the limit, as a dict. Replaces per-key
+        ``total()`` loops (app-analytics ran 466 of them per page load)."""
+        if field not in self.dims:
+            raise ValueError(f"unknown field: {field}")
+        where_sql, args = self._where_clause(start, end, where)
+        sql = f"SELECT {field} AS key, SUM(count) FROM {self.name}{where_sql} GROUP BY {field}"
+        return {r[0]: int(r[1] or 0) for r in self.conn.execute(sql, args)}
 
     def top(
         self,

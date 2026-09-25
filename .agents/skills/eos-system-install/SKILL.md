@@ -2,6 +2,7 @@
 name: eos-system-install
 description: Set up EmptyOS from scratch on a new machine, or verify/repair an existing install — dependencies, config, vault connection, external services, boot-on-login, first run. Use when the user says "install", "set up", "get started", "set up on this machine", "eos won't start", "missing dependencies", or "is my install ok?". NOT for connecting an already-installed daemon to a vault (use eos-external-vault-connector).
 ---
+
 # EmptyOS System Install
 
 Set up EmptyOS from scratch on a new machine, or verify/repair an existing installation. Covers dependencies, config, vault connection, external services, boot-on-login, and first run.
@@ -103,9 +104,9 @@ python -c "import tomllib; c=tomllib.load(open('emptyos.toml','rb')); print(c.ge
 Check vault structure:
 - Does `{vault}/30_Resources/EmptyOS/` exist? If not, first boot will create it.
 - Does `{vault}/30_Resources/EmptyOS/_vault-map.toml` exist? If not, first boot auto-generates it.
-- Does `{vault}/AGENTS.md` exist? If yes, it contains vault-specific instructions.
+- Does `{vault}/CLAUDE.md` exist? If yes, it contains vault-specific instructions.
 
-Write Codex vault connection state:
+Write Claude Code vault connection state:
 ```python
 import json
 from datetime import datetime
@@ -114,9 +115,9 @@ state = {
     "connected": True,
     "vault_path": vault_path,
     "connected_at": datetime.now().isoformat(),
-    "vault_claude_md": f"{vault_path}/AGENTS.md" if Path(f"{vault_path}/AGENTS.md").exists() else None,
+    "vault_claude_md": f"{vault_path}/CLAUDE.md" if Path(f"{vault_path}/CLAUDE.md").exists() else None,
 }
-Path(".Codex/vault-connection.json").write_text(json.dumps(state, indent=2))
+Path(".claude/vault-connection.json").write_text(json.dumps(state, indent=2))
 ```
 
 ### Step 5: External Services
@@ -195,7 +196,12 @@ Or use `restart.bat` for manual start (also checks/starts Ollama and ComfyUI).
 If developing or verifying the install thoroughly:
 
 ```bash
-# EmptyOS must be running on localhost:9000
+# EmptyOS must be running on localhost:9000.
+# Run this in YOUR OWN terminal, not from an agent tool call: a daemon spawned
+# from a tool inherits that tool's process group and dies when the call returns,
+# so the tests below would then fail against nothing. (Starting a daemon is fine
+# in *this* skill — a fresh install has no user-owned :9000 to protect — the
+# backgrounding is the part that bites.)
 python -m emptyos start &
 
 # Run smoke tests (every app page loads)

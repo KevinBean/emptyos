@@ -1,3 +1,11 @@
+---
+paths:
+  - "plugins/sandbox-pool/**"
+  - "apps/extension/dev/sandbox/**"
+  - "tests/fixtures/sandbox/**"
+  - ".claude/skills/eos-sandbox-verify/**"
+---
+
 # Sandbox Usage — lease a pool member, never taskkill it
 
 When a Claude session needs to test a code change against a running daemon,

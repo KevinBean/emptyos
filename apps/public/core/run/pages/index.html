@@ -8,18 +8,21 @@
 <link rel="stylesheet" href="/static/eos-components.css">
 <style>
 .cmd-form { display: flex; gap: 8px; max-width: 700px; }
-.cmd-form input { flex: 1; padding: 12px; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 6px; color: var(--text); font-family: monospace; font-size: 14px; }
-.output-box { margin-top: 16px; padding: 16px; background: #111; border: 1px solid var(--border); border-radius: 8px; white-space: pre-wrap; font-family: monospace; font-size: 13px; max-height: 500px; overflow-y: auto; color: #0f0; }
+.cmd-form input { flex: 1; padding: 12px; background: var(--bg-card); border: 1px solid var(--border); border-radius: 6px; color: var(--text); font-family: monospace; font-size: 14px; }
+.output-box { margin-top: 16px; padding: 16px; background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px; white-space: pre-wrap; font-family: monospace; font-size: 13px; max-height: 500px; overflow-y: auto; color: var(--text); }
 .history-item { padding: 8px 12px; border-bottom: 1px solid var(--border); cursor: pointer; font-family: monospace; font-size: 13px; }
-.history-item:hover { background: var(--bg-secondary); }
+.history-item:hover { background: var(--bg-card); }
 .history-item .ts { color: var(--text-secondary); font-size: 11px; }
 </style>
 </head>
 <body>
 <div class="page-shell">
-<div class="page-header">
-    <h1>Command Runner</h1>
-    <p class="subtitle">Execute shell commands</p>
+<div class="page-header" style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px;">
+    <div>
+        <h1>Command Runner</h1>
+        <p class="subtitle">Execute shell commands</p>
+    </div>
+    <span id="model-pill" title="Provider used by the Suggest button"></span>
 </div>
 
 <div class="cmd-form">
@@ -79,6 +82,7 @@ async function loadHistory() {
 }
 
 function esc(s) { return s.replace(/'/g, "\\'").replace(/</g, '&lt;'); }
+EOS_UI.modelPill({app: 'run', mount: '#model-pill', domain: 'code'});
 loadHistory();
 </script>
 </body>

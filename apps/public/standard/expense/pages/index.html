@@ -351,7 +351,7 @@ EOS_UI.pageHeader({
     title: 'Expense',
     mount: 'page-header',
     actions: '<button class="eos-btn eos-btn-icon" onclick="openAppSettings()" title="Settings">&#9881;</button>'
-        + '<div class="month-nav"><button onclick="changeMonth(-1)">&#8249;</button><span id="month-label"></span><button onclick="changeMonth(1)">&#8250;</button></div>',
+        + '<div class="month-nav"><button onclick="changeMonth(-1)" aria-label="Next month">&#8249;</button><span id="month-label"></span><button onclick="changeMonth(1)" aria-label="Next month">&#8250;</button></div>',
 });
 
 function toast(msg,ok){EOS_UI.toast(msg,ok)}
@@ -578,13 +578,23 @@ async function deleteEntry(){
     try{await EOS.api('/expense/api/delete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({entry:editingEntry})});toast('Deleted');closeModal();loadData()}catch(e){toast('Error',false)}
 }
 
+// ── Local-date keys ──────────────────────────────────────────
+// The heatmap is keyed by the entry's calendar date. `toISOString()` converts
+// to UTC first, so east of Greenwich a local midnight becomes YESTERDAY's key
+// (at UTC+10 every day before 10:00 was mis-keyed, and the month loop below
+// counted 31 Aug and never today). Build keys from local y/m/d instead.
+function localIso(d) {
+    var p = function(n){ return (n < 10 ? '0' : '') + n; };
+    return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate());
+}
+
 // ── Sparkline (7-day mini bars) ──────────────────────────────
 function renderSparkline(heatmapData) {
     var days = [];
     var today = new Date();
     for (var i = 6; i >= 0; i--) {
         var d = new Date(today); d.setDate(d.getDate() - i);
-        var key = d.toISOString().slice(0,10);
+        var key = localIso(d);
         days.push({date: key, amount: heatmapData[key] || 0, isToday: i === 0});
     }
     var max = Math.max.apply(null, days.map(function(d){return d.amount})) || 1;
@@ -601,12 +611,12 @@ function renderSparkline(heatmapData) {
 // spending, not days with. All client-side from the heatmap payload.
 function renderSpendChips(dates) {
     var today = new Date();
-    var thisMonth = today.toISOString().slice(0, 7);
-    var todayIso = today.toISOString().slice(0, 10);
+    var todayIso = localIso(today);
+    var thisMonth = todayIso.slice(0, 7);
     var noSpendMonth = 0, loggedMonth = 0;
     for (var d = new Date(today.getFullYear(), today.getMonth(), 1);
          d <= today; d.setDate(d.getDate() + 1)) {
-        var key = d.toISOString().slice(0, 10);
+        var key = localIso(d);
         if (key > todayIso) break;
         if ((dates[key] || 0) > 0) loggedMonth++; else noSpendMonth++;
     }
@@ -614,7 +624,7 @@ function renderSpendChips(dates) {
     var bestRun = 0, run = 0;
     for (var i = 89; i >= 0; i--) {
         var dd = new Date(today); dd.setDate(dd.getDate() - i);
-        if ((dates[dd.toISOString().slice(0, 10)] || 0) > 0) run = 0;
+        if ((dates[localIso(dd)] || 0) > 0) run = 0;
         else { run++; if (run > bestRun) bestRun = run; }
     }
     EOS_UI.statCards('spend-chips', [
@@ -651,7 +661,7 @@ async function loadData(){
             EOS.api('/expense/api/summary?month='+curMonth),
             EOS.api('/expense/api/list?limit=15&month='+curMonth),
             EOS.api('/expense/api/forecast'),
-            EOS.api('/expense/api/heatmap').catch(function(){return{dates:{}}})
+            EOS.api('/expense/api/heatmap').catch(function(){return{data:{}}})
         ]);
         recentEntries=Array.isArray(entries)?entries:[];
         cachedForecast = forecast;
@@ -660,7 +670,10 @@ async function loadData(){
         // Hero with budget bar + sparkline
         var budgetPct=forecast.budget_pct||0;
         var barClass=budgetPct>100?'budget-over':budgetPct>80?'budget-warn':'budget-ok';
-        var sparkHTML = renderSparkline(heatmap.dates || heatmap || {});
+        // /api/heatmap answers {start, data:{date: amount}} — read `data`, not the
+        // envelope, or every day looks like $0 (sparkline + no-spend chips read it).
+        var heatDates = heatmap.data || heatmap.dates || {};
+        var sparkHTML = renderSparkline(heatDates);
         document.getElementById('hero').innerHTML=
             '<div class="hero-card card-in"><div class="hero-label">This Month</div><div class="hero-val eos-personal">$'+total.toFixed(0)+'</div><div class="hero-sub">'+count+' entries</div><div class="budget-bar"><div class="budget-fill '+barClass+'" style="width:'+Math.min(100,budgetPct)+'%"></div></div><div style="font-size:11px;color:var(--text-muted);margin-top:4px">'+budgetPct+'% of $'+forecast.budget+' budget</div></div>'
             +'<div class="hero-card card-in"><div class="hero-label">Forecast</div><div class="hero-val sm eos-personal">$'+forecast.forecast.toFixed(0)+'</div><div class="hero-sub eos-personal">avg $'+forecast.daily_avg.toFixed(0)+'/day</div><div class="hero-sub '+(forecast.on_track?'trend-down':'trend-up')+'">'+(forecast.on_track?'On track':'Over budget')+'</div></div>'
@@ -670,7 +683,7 @@ async function loadData(){
         renderBudgetRemaining(forecast);
 
         // No-spend chips (from the same heatmap payload the sparkline uses)
-        renderSpendChips(heatmap.dates || heatmap || {});
+        renderSpendChips(heatDates);
 
         // Donut
         var cats=Object.entries(summary.by_category||{}).sort(function(a,b){return b[1]-a[1]});
@@ -687,7 +700,7 @@ async function loadData(){
 }
 
 async function loadHistory(){
-    try{var entries=await EOS.api('/expense/api/list?limit=100&month='+curMonth);renderEntries(Array.isArray(entries)?entries:[],'all-entries')}catch(e){document.getElementById('all-entries').innerHTML='<div class="empty">Error</div>'}
+    try{var entries=await EOS.api('/expense/api/list?limit=100&month='+curMonth);renderEntries(Array.isArray(entries)?entries:[],'all-entries')}catch(e){document.getElementById('all-entries').innerHTML=EOS_UI.errorState({message:'Could not load this month\'s entries.',onRetry:'loadHistory()'})}
 }
 
 async function loadTrends(){
@@ -747,7 +760,7 @@ async function generateReport(btn){
 async function loadHeatmap(){
     try{
         var data = await EOS.api('/expense/api/heatmap');
-        var dates = data.dates || data || {};
+        var dates = data.data || data.dates || {};   // {start, data:{date: amount}}
         var el = document.getElementById('heatmap-section');
         var cells = [];
         var today = new Date();
@@ -758,14 +771,14 @@ async function loadHeatmap(){
 
         for(var i=89; i>=0; i--){
             var d = new Date(today); d.setDate(d.getDate()-i);
-            var key = d.toISOString().slice(0,10);
+            var key = localIso(d);
             var amt = dates[key] || 0;
             var cls = amt === 0 ? 'hm-0' : amt <= t1 ? 'hm-1' : amt <= t2 ? 'hm-2' : amt <= t3 ? 'hm-3' : 'hm-4';
             cells.push('<div class="hm-cell '+cls+'" title="'+key+': $'+amt.toFixed(0)+'"></div>');
         }
         el.innerHTML = '<div class="heatmap-grid">'+cells.join('')+'</div>'
             +'<div class="heatmap-legend"><span>Less</span><div class="hm-cell hm-0"></div><div class="hm-cell hm-1"></div><div class="hm-cell hm-2"></div><div class="hm-cell hm-3"></div><div class="hm-cell hm-4"></div><span>More</span></div>';
-    }catch(e){ document.getElementById('heatmap-section').innerHTML='<div class="empty">Could not load heatmap</div>'; }
+    }catch(e){ document.getElementById('heatmap-section').innerHTML=EOS_UI.errorState({message:'Could not load the spending heatmap.',onRetry:'loadHeatmap()'}); }
 }
 
 async function loadRecurring(){
@@ -777,14 +790,14 @@ async function loadRecurring(){
         el.innerHTML = items.map(function(r, i){
             var on = r.enabled !== false;
             return '<div class="recurring-item">'
-                +'<button class="recurring-toggle '+(on?'on':'off')+'" onclick="toggleRecurring('+i+')"></button>'
+                +'<button class="recurring-toggle '+(on?'on':'off')+'" onclick="toggleRecurring('+i+')" aria-label="Toggle recurring"></button>'
                 +'<span class="recurring-name">'+esc(r.name||r.description||'')+'</span>'
                 +'<span class="recurring-freq">'+esc(r.frequency||'monthly')+'</span>'
                 +'<span class="recurring-next">'+(r.next_due||'')+'</span>'
                 +'<span class="recurring-amt">$'+(typeof r.amount==='number'?r.amount.toFixed(2):r.amount)+'</span>'
                 +'</div>';
         }).join('');
-    }catch(e){ document.getElementById('recurring-list').innerHTML='<div class="empty">Could not load recurring</div>'; }
+    }catch(e){ document.getElementById('recurring-list').innerHTML=EOS_UI.errorState({message:'Could not load recurring expenses.',onRetry:'loadRecurring()'}); }
 }
 
 async function addRecurring(){
@@ -846,7 +859,7 @@ async function loadIncome(){
         listEl.querySelectorAll('.inc-del').forEach(function(btn){
             btn.onclick=function(){ deleteIncome(this.dataset.date, parseFloat(this.dataset.gross)); };
         });
-    }catch(e){ console.error(e); document.getElementById('income-list').innerHTML='<div class="empty">Error loading income</div>'; }
+    }catch(e){ console.error(e); document.getElementById('income-list').innerHTML=EOS_UI.errorState({message:'Could not load income for this month.',onRetry:'loadIncome()'}); }
 }
 
 async function addIncome(){

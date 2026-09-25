@@ -157,6 +157,23 @@ def effective_eligible(data_dir: Path, derived: set[str] | list[str]) -> set[str
     return (set(derived) | op_el) - op_rm
 
 
+def eligible_set_for_kernel(kernel) -> set[str]:
+    """Registry-derived effective floor for a kernel (None -> legacy
+    ``policy.json`` fallback). Every per-app grant issuer needs exactly this
+    two-step resolution — try ``kernel.autopilot_eligible_set()`` first (the
+    drift-resistant registry-derived floor), else fall back to
+    ``policy.json``'s ``eligible_verbs`` — so it's named once here instead of
+    being copy-adapted per issuer (rooms' room-chip, settings' console, ...).
+    Pass the result as ``save_grant``'s ``eligible=`` so a manually/UI-issued
+    grant is refused on exactly the same floor the gate checks at fire time.
+    """
+    fn = getattr(kernel, "autopilot_eligible_set", None)
+    elig = fn() if callable(fn) else None
+    if elig is None:
+        elig = set(load_policy(Path(kernel.config.data_dir)).get("eligible_verbs") or [])
+    return elig
+
+
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -654,6 +671,34 @@ def all_budgets(data_dir: Path) -> list[dict]:
     """Budget snapshots for every tracked actor (panel feed)."""
     return [budget_status(data_dir, aid)
             for aid in _load_budgets(data_dir)["actors"].keys()]
+
+
+# ── SaaS per-subscriber quota (Phase E, CAD build plan; DEFERRED-WORK #103) ──
+#
+# `within_budget()` above is keyed by "actor" — an app id, a CLI, an agent:
+# the thing whose *autopilot eligibility* is being checked. A paying SaaS
+# subscriber is a DIFFERENT kind of identity: a human account, billed by
+# Stripe, whose *usage quota* (not autopilot eligibility) needs checking
+# before an expensive call runs. They happen to share the exact same ledger
+# shape today (a string id -> {monthly_cap_usd, spent_usd, window_start}), so
+# rather than forking the store, `within_subscriber_quota` is a thin,
+# semantically-named entry point onto the same `budgets.json` — a subscriber
+# id is just another key in the same "actors" map, same rollover, same
+# `record_spend`/`budget_status` calls. This is deliberate, not an oversight:
+# forking into a genuinely separate `subscribers.json` store is the right
+# move only once a subscriber's quota policy actually diverges from an
+# actor's (e.g. a subscriber owning multiple actors with a shared cap) — no
+# consumer needs that yet. Call `set_budget`/`record_spend`/`budget_status`
+# directly with the subscriber's id for the write side; this function is the
+# one the consent/think-gate chain should call before an expensive action.
+def within_subscriber_quota(data_dir: Path, subscriber_id: str) -> bool:
+    """True iff `subscriber_id` may still spend this billing month.
+
+    Same semantics as `within_budget` (no record/no cap/under-cap -> True),
+    named for its call site: a per-request quota check in the consent chain
+    ahead of a paid capability call, not an autopilot-eligibility decision.
+    """
+    return within_budget(data_dir, subscriber_id)
 
 
 def decide(

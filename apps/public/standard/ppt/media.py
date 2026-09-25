@@ -14,6 +14,7 @@ import json as _json
 from datetime import datetime
 from pathlib import Path
 from emptyos.sdk import web_route
+from emptyos.sdk.utils import contained_path
 from .parser import (
     DEFAULT_VISUAL_STYLE,
     SPEAKIFY_SYSTEM,
@@ -43,7 +44,10 @@ if TYPE_CHECKING:
 #   narrate_deck          = _media.narrate_deck
 #   set_narration         = _media.set_narration
 #   speakify_deck         = _media.speakify_deck
+#   _render_deck_html     = _media._render_deck_html
+#   _write_vault_binary   = _media._write_vault_binary
 #   export_html           = _media.export_html
+#   export_pdf            = _media.export_pdf
 #   api_export            = _media.api_export
 #   api_resolve_images    = _media.api_resolve_images
 #   api_narrate           = _media.api_narrate
@@ -376,13 +380,14 @@ async def speakify_deck(self, id: str, slide_index: int | None = None, overwrite
     return {"rewritten": rewritten, "skipped": skipped, "errors": errors}
 
 
-async def export_html(self, id: str) -> dict:
-    """Export a deck to standalone HTML in {vault}/30_Resources/Published/decks/.
+async def _render_deck_html(self, id: str) -> dict:
+    """Build a deck's standalone-HTML bundle in memory — no vault write.
 
-    Embed targets are re-resolved with an export-tier `embed_base` default
-    (`apps.ppt.export_embed_base`, falling back to https://demo.binbian.net)
-    so iframes in the standalone bundle point at a publicly-reachable host
-    rather than the localhost daemon that rendered them.
+    Shared by `export_html` (writes the bundle to the vault) and
+    `export_pdf` (renders the same bundle in headless Chromium instead):
+    one source of truth for how a deck becomes a standalone document.
+
+    Returns `{html, title, slide_count, warning?}` or `{"error": ...}`.
     """
     path = self._path_for(id)
     if not path:
@@ -393,7 +398,6 @@ async def export_html(self, id: str) -> dict:
         str(fm_peek.get("embed_base") or "").strip()
         or str(self.app_config("export_embed_base", "")).strip()
         or str(self.app_config("embed_base", "")).strip()
-        or "https://demo.binbian.net"
     )
     parsed = parse_deck(
         text,
@@ -410,11 +414,6 @@ async def export_html(self, id: str) -> dict:
             self.app_config("default_visual_style", DEFAULT_VISUAL_STYLE),
         ),
     }
-    decks_dir = self.vault_config("published_decks_dir", "30_Resources/Published/decks")
-    published_rel = f"{decks_dir}/{id}.html"
-    vault = self.kernel.config.notes_path
-    if not vault:
-        return {"error": "No vault configured"}
     deck_js = _load_deck_js()
     if not deck_js:
         return {"error": "Renderer asset eos-deck.js not found"}
@@ -426,23 +425,156 @@ async def export_html(self, id: str) -> dict:
         ensure_ascii=False,
     )
     title = deck["frontmatter"].get("title") or id
-    theme = deck["theme"]
-    aspect = deck["aspect"]
-    visual_style = deck["visual_style"]
     html = _STANDALONE_HTML.format(
         title=_html_escape(title),
-        theme=theme,
-        aspect=aspect,
-        visual_style=visual_style,
+        theme=deck["theme"],
+        aspect=deck["aspect"],
+        visual_style=deck["visual_style"],
         slides_json=slides_json,
         deck_js=deck_js,
     )
-    self.vault_write_at(published_rel, html)
-    return {"ok": True, "path": str(vault / published_rel), "rel": published_rel}
+    result = {"html": html, "title": title, "slide_count": len(deck["slides"])}
+    if not export_base:
+        result["warning"] = (
+            "No embed host configured (ppt.export_embed_base in Settings) — "
+            "embeds in this export will point at this machine and won't resolve "
+            "once the file is opened elsewhere."
+        )
+    return result
+
+
+def _write_vault_binary(self, rel_path: str, data: bytes) -> Path:
+    """Write bytes at a vault-root-relative path. Mirrors `vault_write_at`'s
+    containment guarantee (never escape the vault) for binary content,
+    which `vault_write_at` (text-only) can't carry."""
+    p = contained_path(self.vault_root, self.vault_root / rel_path)
+    if p is None:
+        raise ValueError(f"path escapes the vault: {rel_path!r}")
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_bytes(data)
+    return p
+
+
+async def export_html(self, id: str) -> dict:
+    """Export a deck to standalone HTML in {vault}/30_Resources/Published/decks/.
+
+    Embed targets are re-resolved with an export-tier `embed_base` default
+    (`apps.ppt.export_embed_base`) so iframes in the standalone bundle point
+    at a publicly-reachable host rather than the localhost daemon that
+    rendered them. If nothing is configured, embeds fall back to the
+    (unreachable-once-exported) local host and the result carries a
+    `warning` explaining why.
+    """
+    built = await self._render_deck_html(id)
+    if built.get("error"):
+        return built
+    decks_dir = self.vault_config("published_decks_dir", "30_Resources/Published/decks")
+    published_rel = f"{decks_dir}/{id}.html"
+    vault = self.kernel.config.notes_path
+    if not vault:
+        return {"error": "No vault configured"}
+    self.vault_write_at(published_rel, built["html"])
+    result = {"ok": True, "path": str(vault / published_rel), "rel": published_rel}
+    if built.get("warning"):
+        result["warning"] = built["warning"]
+    return result
+
+
+async def export_pdf(self, id: str) -> dict:
+    """Export a deck to a real, multi-page PDF — one page per slide, into
+    {vault}/30_Resources/Published/decks/.
+
+    Flagged in gap analysis (ppt-no-pptx-pdf-export): `export_html` writes
+    standalone HTML only, so a client/employer deliverable that must open
+    outside a browser had no path out of EmptyOS. Renders the same
+    standalone bundle `_render_deck_html` builds for HTML export in
+    headless Chromium (`self.browse`), stepping through every slide via
+    the deck renderer's exposed `window.DECK.goto(i)` and screenshotting
+    each one, then assembles the PNGs into one PDF with Pillow.
+
+    PPTX (a native PowerPoint file) is a separate, larger lift —
+    `python-pptx` is not a project dependency today — and stays open as
+    `ppt-no-pptx-export`.
+    """
+    try:
+        from PIL import Image
+    except ImportError:
+        return {"error": "Pillow is required for PDF export (pip install Pillow)"}
+
+    built = await self._render_deck_html(id)
+    if built.get("error"):
+        return built
+    slide_count = built["slide_count"]
+    if not slide_count:
+        return {"error": "Deck has no slides"}
+
+    import tempfile
+    import uuid
+
+    vault = self.kernel.config.notes_path
+    if not vault:
+        return {"error": "No vault configured"}
+
+    work_dir = Path(tempfile.gettempdir()) / "emptyos-ppt-pdf" / uuid.uuid4().hex
+    work_dir.mkdir(parents=True, exist_ok=True)
+    html_path = work_dir / "deck.html"
+    html_path.write_text(built["html"], encoding="utf-8")
+    context_id = f"ppt-pdf-{uuid.uuid4().hex[:8]}"
+    png_paths: list[Path] = []
+    try:
+        await self.browse("navigate", url=html_path.as_uri(), context_id=context_id)
+        await self.browse("wait_for", selector="#deck .deck-slide", context_id=context_id)
+        for i in range(slide_count):
+            await self.browse(
+                "eval",
+                expression=(
+                    f"(async()=>{{window.DECK.goto({i});"
+                    "await new Promise(r=>setTimeout(r,350));})()"
+                ),
+                context_id=context_id,
+            )
+            png_path = work_dir / f"slide-{i:03d}.png"
+            await self.browse("screenshot", selector="#deck", context_id=context_id, path=str(png_path))
+            png_paths.append(png_path)
+    except Exception as e:  # noqa: BLE001 — surface as an export failure, not a 500
+        return {"error": f"PDF render failed: {e}"}
+    finally:
+        try:
+            await self.browse("close", context_id=context_id)
+        except Exception:
+            pass
+        html_path.unlink(missing_ok=True)
+
+    images = [Image.open(p).convert("RGB") for p in png_paths]
+    try:
+        import io
+
+        buf = io.BytesIO()
+        images[0].save(buf, format="PDF", save_all=True, append_images=images[1:])
+        decks_dir = self.vault_config("published_decks_dir", "30_Resources/Published/decks")
+        published_rel = f"{decks_dir}/{id}.pdf"
+        try:
+            out_path = self._write_vault_binary(published_rel, buf.getvalue())
+        except ValueError as e:
+            return {"error": str(e)}
+    finally:
+        for img in images:
+            img.close()
+        for p in png_paths:
+            p.unlink(missing_ok=True)
+        try:
+            work_dir.rmdir()
+        except OSError:
+            pass
+
+    return {"ok": True, "path": str(out_path), "rel": published_rel, "slides": slide_count}
 
 
 @web_route("POST", "/api/decks/{id}/export")
 async def api_export(self, request):
+    fmt = (request.query_params.get("format") or "html").strip().lower()
+    if fmt == "pdf":
+        return await self.export_pdf(request.path_params["id"])
     return await self.export_html(request.path_params["id"])
 
 

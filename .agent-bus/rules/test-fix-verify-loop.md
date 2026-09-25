@@ -1,3 +1,17 @@
+---
+paths:
+  - "apps/extension/dev/fix-agent/**"
+  - "apps/extension/dev/dogfood-agent/**"
+  - "apps/extension/dev/trace-miner/**"
+  - "apps/extension/dev/kb-butler/**"
+  - "apps/extension/dev/cockpit/**"
+  - "apps/extension/dev/devboard/**"
+  - "emptyos/sdk/fix_queue.py"
+  - "plugins/dogfood-demo/**"
+  - "scripts/ui_walk_promote.py"
+  - ".claude/skills/eos-fix-drain/**"
+---
+
 # Test-Fix-Verify Loop — EmptyOS self-improvement infrastructure
 
 EmptyOS uses its own apps to test, fix, and verify EmptyOS. The loop is not a

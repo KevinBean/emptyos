@@ -30,6 +30,7 @@ The map of the docs. Find the doc for what you're trying to do. Each entry is ta
 | [EOS-MARKDOWN-PROFILE.md](EOS-MARKDOWN-PROFILE.md) | Vault Markdown storage + rendering contract · `[authored] [internal]` |
 | [SOFT-SCHEMA.md](SOFT-SCHEMA.md) | VaultModel soft-typed frontmatter · `[authored] [internal]` |
 | [ENGINEERING-APP-WORKFLOW.md](ENGINEERING-APP-WORKFLOW.md) | Build an engineering calculator end-to-end · `[authored] [internal]` |
+| [TRUST-LOOP.md](TRUST-LOOP.md) | Seven-stage engineering-assurance package contract - `[authored] [internal]` |
 | [ROOMS-V3.md](ROOMS-V3.md) · [app-builder.md](app-builder.md) | Rooms review gate · in-app app generation · `[authored] [internal]` |
 | [AGENT-RUNNER-MIGRATION.md](AGENT-RUNNER-MIGRATION.md) | AgentRunner contract — depend on a runner shape, not Claude Code · `[authored] [internal]` |
 | [VOICE-SATELLITE.md](VOICE-SATELLITE.md) · [PAPER-DASHBOARD.md](PAPER-DASHBOARD.md) | Hardware satellites — voice puck · e-ink display system design · `[authored] [internal]` |

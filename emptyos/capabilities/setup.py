@@ -436,8 +436,13 @@ def _build_think_provider_raw(
         section = config.get_section(f"llm.providers.{name}")
 
     if not section:
-        # Claude CLI needs no config section
-        if name == "claude":
+        # The CLI providers need no config section — their credential is the
+        # CLI's own signed-in session, so there is nothing to configure. Note
+        # this also catches a section that exists but holds ONLY COMMENTS: TOML
+        # parses that to {}, which is falsy, so `[capabilities.think.codex]`
+        # with three comment lines silently produced no provider at all and the
+        # name in the chain resolved to nothing.
+        if name in ("claude", "codex"):
             section = {}
         else:
             return None
@@ -489,11 +494,25 @@ def _build_think_provider_raw(
             timeout=timeout,
         )
 
+    # Codex via CLI (free with its own signed-in session). Deliberately a sibling
+    # of claude-cli rather than of `openai`: it shares OpenAI's models but not
+    # its billing path, so it stays available when the API key's credits are
+    # exhausted — the failure that silently downgraded two reviews to claude-cli
+    # on 2026-09-01.
+    if name == "codex":
+        from emptyos.capabilities.providers.codex_cli import CodexCLIThinkProvider
+
+        return CodexCLIThinkProvider(
+            model=model,
+            timeout=timeout,
+            cwd=section.get("cwd", ""),
+        )
+
     # Claude via CLI (free with Max subscription)
     if name == "claude" and method != "api":
         from emptyos.capabilities.providers.claude_cli import ClaudeCLIThinkProvider
 
-        vault_path = config.get("notes.path", "")
+        vault_path = str(config.notes_path) if config.notes_path else ""
         network_port = int(config.get("network.port", 9000))
         return ClaudeCLIThinkProvider(
             model=model,

@@ -7,12 +7,14 @@ is down (project convention).
 
 from __future__ import annotations
 
+import io
 import re
 from datetime import date
 
 import pytest
 
 from emptyos.sdk import (
+    csv_download_response,
     csv_to_rows,
     fm_scalar,
     format_markdown_table,
@@ -21,9 +23,12 @@ from emptyos.sdk import (
     normalize_clock_time,
     normalize_relative_date,
     parse_markdown_table,
+    read_upload_text,
     rows_to_csv,
     slug_from_path,
     slugify,
+    slugify_unicode,
+    sniff_columns,
     today_iso,
     unique_slug,
 )
@@ -110,6 +115,50 @@ def test_slugify_truncation_before_fallback():
     # a fallback word is never truncated (rag-eval `s[:60] or "case"` shape)
     assert slugify("x" * 80, max_len=48, fallback="braindump") == "x" * 48
     assert slugify("", max_len=2, fallback="braindump") == "braindump"
+
+
+# ── slugify_unicode ────────────────────────────────────────────────────
+
+
+def test_slugify_unicode_keeps_non_ascii():
+    # The whole reason this exists: slugify() drops CJK entirely, so every
+    # Chinese title would collapse onto the fallback word and note ids would
+    # not be unique.
+    assert slugify("机器学习", fallback="untitled") == "untitled"
+    assert slugify_unicode("机器学习", fallback="untitled") == "机器学习"
+    assert slugify_unicode("Café au Lait") == "café-au-lait"
+
+
+def test_slugify_unicode_kebab_cases_like_its_ascii_sibling():
+    assert slugify_unicode("Hello World!") == "hello-world"
+    assert slugify_unicode("  Spaced_Out  Title  ") == "spaced-out-title"
+
+
+def test_slugify_unicode_preserves_dash_runs():
+    # Differs from slugify(), which collapses any non-alphanumeric run.
+    # "-" is inside the kept class, so only the surrounding spaces become
+    # dashes and the literal run survives: " " + "--" + " " → 4 dashes.
+    assert slugify_unicode("a -- b") == "a----b"
+    assert slugify("a -- b") == "a-b"
+    assert slugify_unicode("2026-08-16 Review") == "2026-08-16-review"
+
+
+def test_slugify_unicode_no_truncation_by_default():
+    # Default max_len=None — a note id must not change when its title grows.
+    assert slugify_unicode("a" * 80) == "a" * 80
+    assert slugify_unicode("a" * 80, max_len=60) == "a" * 60
+
+
+def test_slugify_unicode_fallback_on_empty():
+    assert slugify_unicode("", fallback="recipe") == "recipe"
+    assert slugify_unicode("!!!", fallback="untitled") == "untitled"
+    assert slugify_unicode(None, fallback="untitled") == "untitled"
+    # no fallback → empty string (items/places `_to_kebab` shape)
+    assert slugify_unicode("!!!") == ""
+
+
+def test_slugify_unicode_truncation_before_fallback():
+    assert slugify_unicode("", max_len=2, fallback="untitled") == "untitled"
 
 
 # ── safe_path_segment ──────────────────────────────────────────────────
@@ -234,6 +283,21 @@ def test_rows_to_csv_empty_returns_empty_string():
     assert rows_to_csv([]) == ""
 
 
+@pytest.mark.parametrize("payload", ["=cmd|'/c calc'!A1", "+1+1", "-2+3", "@SUM(A1:A9)", "\t=1+1"])
+def test_rows_to_csv_defangs_formula_prefixes(payload):
+    """CSV formula injection (OWASP) — a leading =/+/-/@/tab/CR makes Excel/
+    Sheets/LibreOffice execute the cell as a formula rather than render it
+    as text. Any user-controlled string (a title, an editable label) must
+    come out prefixed with a single quote so it renders as literal text."""
+    out = rows_to_csv([{"text": payload}])
+    assert out.splitlines()[1] == "'" + payload
+
+
+def test_rows_to_csv_leaves_ordinary_text_and_numbers_untouched():
+    out = rows_to_csv([{"a": 1, "b": "ordinary text", "c": -0.0}])
+    assert out.splitlines()[1] == "1,ordinary text,-0.0"
+
+
 def test_csv_to_rows_basic():
     text = "a,b\n1,2\n3,4\n"
     assert csv_to_rows(text) == [{"a": "1", "b": "2"}, {"a": "3", "b": "4"}]
@@ -248,10 +312,173 @@ def test_csv_to_rows_empty():
     assert csv_to_rows("   ") == []
 
 
+_SNIFF_ALIASES = {
+    "date": ["transaction date", "date"],
+    "amount": ["amount", "value"],
+    "description": ["description", "narrative"],
+}
+
+
+def test_sniff_columns_substring_case_insensitive():
+    m = sniff_columns(["TRANSACTION DATE", "Debit Amount (AUD)", "narrative"], _SNIFF_ALIASES)
+    assert m == {"date": "TRANSACTION DATE", "amount": "Debit Amount (AUD)",
+                 "description": "narrative"}
+
+
+def test_sniff_columns_one_header_claims_one_field():
+    # "Amount" contains "amount"; a second field listing the same alias must
+    # not re-claim the column already taken by the first.
+    aliases = {"debit": ["amount"], "amount": ["amount", "value"]}
+    m = sniff_columns(["Amount"], aliases)
+    assert m == {"debit": "Amount"}
+
+
+def test_sniff_columns_alias_order_is_field_order():
+    # A more specific alias listed first wins over the generic one.
+    aliases = {"first_name": ["first name"], "name": ["name"]}
+    m = sniff_columns(["First Name", "Name"], aliases)
+    assert m == {"first_name": "First Name", "name": "Name"}
+    # Reverse the field order and the generic alias swallows the specific column.
+    m2 = sniff_columns(["First Name", "Name"], {"name": ["name"], "first_name": ["first name"]})
+    assert m2 == {"name": "First Name"}
+
+
+def test_sniff_columns_alias_priority_beats_header_position():
+    # The generic header comes FIRST in the file; the field's first alias is
+    # the specific one, so it must still win. A header-major rewrite (first
+    # field with any matching alias, per header) picks "Date" here.
+    m = sniff_columns(["Date", "Transaction Date"], {"date": ["transaction date", "date"]})
+    assert m == {"date": "Transaction Date"}
+
+
+def test_sniff_columns_first_alias_hit_stops_the_field():
+    # Once "transaction date" matched, the field must not go on to its second
+    # alias and also claim "Date" — that header belongs to the next field.
+    aliases = {"date": ["transaction date", "date"], "posted": ["date"]}
+    m = sniff_columns(["Transaction Date", "Date"], aliases)
+    assert m == {"date": "Transaction Date", "posted": "Date"}
+
+
+def test_sniff_columns_missing_fields_absent_and_none_header_tolerated():
+    assert sniff_columns(["Foo", None, ""], _SNIFF_ALIASES) == {}
+    assert sniff_columns([], _SNIFF_ALIASES) == {}
+
+
+class _Upload:
+    def __init__(self, data: bytes):
+        self._data = data
+
+    async def read(self):
+        return self._data
+
+
+class _Req:
+    """The slice of a starlette Request that read_upload_text touches."""
+
+    def __init__(self, ctype, form=None, json=None):
+        self.headers = {"content-type": ctype}
+        self._form, self._json = form, json
+
+    async def form(self):
+        return self._form
+
+    async def json(self):
+        return self._json
+
+
+_MP = "multipart/form-data; boundary=x"
+
+
+@pytest.mark.asyncio
+async def test_read_upload_text_multipart_strips_bom():
+    req = _Req(_MP, form={"file": _Upload(b"\xef\xbb\xbfa,b\n1,2\n")})
+    assert await read_upload_text(req, max_bytes=100) == ("a,b\n1,2\n", "")
+
+
+@pytest.mark.asyncio
+async def test_read_upload_text_multipart_bad_byte_is_replaced_not_raised():
+    # A Latin-1 statement (é as one byte) must import with U+FFFD, not 500.
+    req = _Req(_MP, form={"file": _Upload(b"caf\xe9,1\n")})
+    assert await read_upload_text(req, max_bytes=100) == ("caf�,1\n", "")
+
+
+@pytest.mark.asyncio
+async def test_read_upload_text_multipart_missing_or_non_file():
+    assert await read_upload_text(_Req(_MP, form={}), max_bytes=100) == ("", "no file uploaded")
+    # A plain form field named "file" is not an upload — it has no .read().
+    req = _Req(_MP, form={"file": "not-an-upload"})
+    assert await read_upload_text(req, max_bytes=100) == ("", "no file uploaded")
+
+
+@pytest.mark.asyncio
+async def test_read_upload_text_multipart_empty():
+    req = _Req(_MP, form={"file": _Upload(b"")})
+    assert await read_upload_text(req, max_bytes=100) == ("", "the file is empty")
+
+
+@pytest.mark.asyncio
+async def test_read_upload_text_size_cap_is_inclusive():
+    at_cap = _Req(_MP, form={"file": _Upload(b"x" * 8)})
+    one_over = _Req(_MP, form={"file": _Upload(b"x" * 9)})
+    assert await read_upload_text(at_cap, max_bytes=8) == ("x" * 8, "")
+    assert await read_upload_text(one_over, max_bytes=8) == ("", "file is too large")
+
+
+@pytest.mark.asyncio
+async def test_read_upload_text_json_body():
+    ok = _Req("application/json", json={"csv_content": "a,b\n"})
+    assert await read_upload_text(ok, max_bytes=100) == ("a,b\n", "")
+    for body in ({}, {"csv_content": ""}, {"other": "x"}):
+        req = _Req("application/json", json=body)
+        assert await read_upload_text(req, max_bytes=100) == ("", "csv_content required")
+
+
+@pytest.mark.asyncio
+async def test_read_upload_text_json_key_is_configurable():
+    ics = _Req("application/json", json={"ics_content": "BEGIN:VCALENDAR"})
+    assert await read_upload_text(ics, max_bytes=100, json_key="ics_content") == ("BEGIN:VCALENDAR", "")
+    wrong_key = _Req("application/json", json={"csv_content": "x"})
+    assert await read_upload_text(wrong_key, max_bytes=100, json_key="ics_content") == ("", "ics_content required")
+
+
 def test_markdown_to_csv_round_trip():
     md = "| name | age |\n|------|-----|\n| a    | 1   |\n| b    | 2   |"
     rows = parse_markdown_table(md)
     assert csv_to_rows(rows_to_csv(rows)) == rows
+
+
+def test_csv_download_response_shape():
+    resp = csv_download_response(
+        [{"a": 1, "b": 2}], ["a", "b"], "export.csv")
+    assert resp.media_type == "text/csv"
+    assert resp.headers["content-disposition"] == 'attachment; filename="export.csv"'
+    assert resp.body.decode().splitlines() == ["a,b", "1,2"]
+
+
+def test_csv_download_response_writes_header_when_rows_empty():
+    """Unlike rows_to_csv, an empty download must still open as a valid
+    (header-only) spreadsheet — never a blank/absent file."""
+    resp = csv_download_response([], ["a", "b"], "empty.csv")
+    assert resp.body.decode().splitlines() == ["a,b"]
+
+
+def test_csv_download_response_none_becomes_empty_field():
+    resp = csv_download_response([{"a": 1, "b": None}], ["a", "b"], "x.csv")
+    assert resp.body.decode().splitlines()[1] == "1,"
+
+
+def test_csv_download_response_ignores_extra_row_keys():
+    resp = csv_download_response(
+        [{"a": 1, "b": 2, "extra": "dropped"}], ["a", "b"], "x.csv")
+    assert resp.body.decode().splitlines() == ["a,b", "1,2"]
+
+
+def test_csv_download_response_defangs_formula_prefixes():
+    """csv_download_response hand-rolls its own DictWriter loop rather than
+    calling rows_to_csv, so it needs the same CSV-formula-injection defense
+    independently — this is the direct browser-download path apps use."""
+    resp = csv_download_response([{"label": "=1+1"}], ["label"], "x.csv")
+    assert resp.body.decode().splitlines()[1] == "'=1+1"
 
 
 def test_csv_to_markdown_round_trip():
@@ -498,3 +725,226 @@ def test_parse_json_fence_ignores_unlabelled_fences():
     so only an explicitly ```json-labelled block counts."""
     assert parse_json_fence('```\n{"a": 1}\n```') == {}
     assert parse_llm_json('```\n{"a": 1}\n```') == {"a": 1}  # the fuzzy sibling does
+
+
+def test_an_empty_scalar_reads_as_a_string_wherever_it_sits():
+    """An empty value must not depend on what follows it in the block.
+
+    A key with no inline value opens a pending block list. The mid-loop flush
+    wrote that list back as `[]` while the *final* flush wrote `""`, so the
+    same `key: ""` parsed as a list or a string purely by position — only the
+    last one in the frontmatter came back right. `VaultLibrary._coerce` then
+    ran `str([])` over the earlier ones and produced the *truthy* string
+    "[]", which is how a scenario reached its issuable state carrying an
+    engineer named "[]" while a `if not selected_by` guard watched it happen.
+    """
+    note = ('---\n'
+            'tags:\n  - bid-scenario\n'
+            'selected_by: ""\n'          # quoted empty, followed by more keys
+            'bare_empty:\n'              # bare empty, followed by more keys
+            'title: "Case"\n'
+            'trailing_empty: ""\n'       # the position that always worked
+            '---\nbody\n')
+    fm = parse_frontmatter(note)
+    assert fm["tags"] == ["bid-scenario"], "a real block list must stay a list"
+    assert fm["title"] == "Case"
+    for key in ("selected_by", "bare_empty", "trailing_empty"):
+        assert fm[key] == "", f"{key} parsed as {fm[key]!r}, not an empty string"
+        assert not fm[key], f"{key} is falsy-by-contract; str({fm[key]!r}) must not be truthy"
+
+
+def test_there_is_only_one_frontmatter_parser():
+    """The strongest form this can take: not "they agree", but "there is one".
+
+    There used to be two — this one and `vault_index._parse_fm`, the read path
+    behind `vault_query`. Near-verbatim copies, and they drifted three separate
+    ways, each found only after the previous fix: empty scalars typed by their
+    position in the block, quoted empties, and where the block ends. Every fix
+    was correct and left the copies further apart, because a test asserting
+    equal *output* only covers the inputs someone thought to list, and each
+    drift lived in an input nobody had.
+
+    An identity assertion has no such gap. If a fourth divergence is ever
+    possible, this test fails at import rather than on the one note that
+    happens to trigger it.
+    """
+    from emptyos.frontmatter import parse_frontmatter as canonical
+    from emptyos.runtime.vault_index import _parse_fm
+
+    assert parse_frontmatter is canonical, "sdk.utils must re-export, not redefine"
+    assert _parse_fm is canonical, "vault_index must re-export, not redefine"
+
+
+def test_one_syntax_reads_as_one_type():
+    """The contract the copies kept breaking, stated as a table.
+
+    Each row is a *syntax*, and each syntax has exactly one resulting type
+    regardless of where the key sits in the block. `key:` used to be a list
+    mid-block and a string at the end; `key: []` used to be a string here and
+    a list in the twin, which is the same instability inside one syntax.
+    """
+    def fm(body: str, key: str = "notes"):
+        return parse_frontmatter(f"---\n{body}\n---\nbody\n")[key]
+
+    # Empty scalars — "" wherever they sit.
+    assert fm("notes:\ntitle: x") == ""
+    assert fm("title: x\nnotes:") == ""
+    assert fm('notes: ""\ntitle: x') == ""
+    assert fm('title: x\nnotes: ""') == ""
+    assert fm("notes: ''\ntitle: x") == ""
+
+    # Inline arrays — a list, empty or not. `[]` is an author writing an empty
+    # list on purpose; returning "" for it would reintroduce, inside one
+    # syntax, the type instability this whole contract removes.
+    assert fm("notes: [a, b]\ntitle: x") == ["a", "b"]
+    assert fm("notes: []\ntitle: x") == []
+
+    # Block lists — a list, and a bare key with no children is not one.
+    assert fm("notes:\n  - a\n  - b\ntitle: x") == ["a", "b"]
+
+    # A quoted value that merely looks like an array stays a string.
+    assert fm('notes: "[{\\"x\\": 1}]"\ntitle: x') == '[{"x": 1}]'
+
+    # Every empty form is falsy — what `if not value` guards downstream rely on.
+    for body in ("notes:\ntitle: x", 'notes: ""\ntitle: x', "notes: []\ntitle: x"):
+        assert not fm(body), body
+
+
+def test_a_delimiter_inside_a_value_does_not_end_the_block():
+    """All three frontmatter helpers must agree where the block ends.
+
+    `content.find("---", 3)` matches the delimiter anywhere, including inside a
+    value, so `title: A---B` ended the block mid-value. The three helpers each
+    did their own scan, so fixing one and not the others is worse than leaving
+    all three wrong: read and write then disagree about the splice point.
+
+    The write path is where it stops being a misread and becomes corruption —
+    `set_frontmatter_field` rewrote the note into a malformed block carrying a
+    duplicate of the key it had just set, and destroyed the value that
+    contained the delimiter.
+    """
+    from emptyos.sdk.utils import set_frontmatter_field, strip_frontmatter
+
+    note = "---\ntitle: A---B\nowner: kevin\n---\nreal body\n"
+
+    assert parse_frontmatter(note) == {"title": "A---B", "owner": "kevin"}
+    assert strip_frontmatter(note) == "\nreal body\n"
+
+    out = set_frontmatter_field(note, "owner", "sam")
+    assert out == "---\ntitle: A---B\nowner: sam\n---\nreal body\n"
+    # The round trip is the real assertion: whatever the block boundary is,
+    # every helper must use the same one.
+    assert parse_frontmatter(out) == {"title": "A---B", "owner": "sam"}
+    assert strip_frontmatter(out) == "\nreal body\n"
+    assert out.count("owner:") == 1, "the write duplicated the key it set"
+
+
+# ── image_to_data_url ────────────────────────────────────────────────────────
+# Extracted from operate at its second consumer (nutrition's photo meal log).
+# It is the encode half of the `see` capability contract: the `webcam` provider
+# hands back a file path, `browser-webcam` hands back a data URL, and anything
+# feeding `think(images=[...])` has to end up at the URL form.
+
+
+def _write_png(path, size):
+    from PIL import Image
+
+    Image.new("RGB", size, (120, 30, 30)).save(path, format="PNG")
+    return path
+
+
+def test_image_to_data_url_round_trips_through_parse_data_url(tmp_path):
+    """The two helpers are inverses — encode then decode must give real bytes
+    back, not a string that merely looks like a data URL."""
+    from emptyos.sdk.utils import image_to_data_url, parse_data_url
+
+    src = _write_png(tmp_path / "meal.png", (64, 48))
+    url = image_to_data_url(src)
+    assert url and url.startswith("data:image/")
+    mime, raw = parse_data_url(url)
+    assert mime.startswith("image/")
+    assert len(raw) > 0
+
+
+def test_image_to_data_url_downscales_past_max_width(tmp_path):
+    """Downscaling is the point, not a nicety — an un-resized camera frame is
+    megabytes, and several of them blow a vision request past what providers
+    accept."""
+    from PIL import Image
+
+    from emptyos.sdk.utils import image_to_data_url, parse_data_url
+
+    src = _write_png(tmp_path / "wide.png", (2400, 1200))
+    mime, raw = parse_data_url(image_to_data_url(src, max_width=320))
+    assert mime == "image/jpeg"
+    with Image.open(io.BytesIO(raw)) as im:
+        assert im.width == 320, f"not downscaled: {im.width}"
+        assert im.height == 160, "aspect ratio was not preserved"
+
+
+def test_image_to_data_url_leaves_a_small_image_alone(tmp_path):
+    from PIL import Image
+
+    from emptyos.sdk.utils import image_to_data_url, parse_data_url
+
+    src = _write_png(tmp_path / "small.png", (200, 100))
+    _, raw = parse_data_url(image_to_data_url(src, max_width=1280))
+    with Image.open(io.BytesIO(raw)) as im:
+        assert (im.width, im.height) == (200, 100), "an under-width image was resized"
+
+
+def test_image_to_data_url_returns_none_instead_of_raising(tmp_path):
+    """Callers treat None as "no usable frame" and degrade. If this raised
+    instead, a missing or corrupt capture would 500 the endpoint that captured
+    it rather than reporting a soft failure."""
+    from emptyos.sdk.utils import image_to_data_url
+
+    assert image_to_data_url(tmp_path / "does-not-exist.png") is None
+
+    junk = tmp_path / "notanimage.png"
+    junk.write_bytes(b"this is not a PNG")
+    assert image_to_data_url(junk) is None
+
+
+# --- extract_wikilinks: code is not a link -----------------------------------
+# 11 call sites read this (kb graph, rooms, vault-graph, shadowing, app-builder),
+# and it counted `[[Note]]` inside code samples as real links. Measured on the
+# live vault: the three most-referenced targets overall were `${block.reference}`,
+# `" + block.reference +"` and `${refId}` — JS template literals in fences.
+
+
+def test_extract_wikilinks_finds_prose_links():
+    from emptyos.sdk.utils import extract_wikilinks
+
+    assert extract_wikilinks("see [[Alpha]] and [[b/c/Beta]]") == {"Alpha", "b/c/Beta"}
+
+
+def test_extract_wikilinks_strips_anchor_and_alias():
+    from emptyos.sdk.utils import extract_wikilinks
+
+    assert extract_wikilinks("[[Alpha#Section]] [[Beta|shown]]") == {"Alpha", "Beta"}
+
+
+def test_extract_wikilinks_ignores_fenced_code():
+    from emptyos.sdk.utils import extract_wikilinks
+
+    assert extract_wikilinks("[[Real]]\n```js\nconst q = `[[Fake]]`;\n```\n") == {"Real"}
+
+
+def test_extract_wikilinks_ignores_inline_code():
+    from emptyos.sdk.utils import extract_wikilinks
+
+    assert extract_wikilinks("[[Real]] but not `[[Fake]]`") == {"Real"}
+
+
+def test_extract_wikilinks_ignores_an_unclosed_fence():
+    from emptyos.sdk.utils import extract_wikilinks
+
+    assert extract_wikilinks("[[Real]]\n```\n[[Fake]]\n") == {"Real"}
+
+
+def test_extract_wikilinks_empty_input():
+    from emptyos.sdk.utils import extract_wikilinks
+
+    assert extract_wikilinks("") == set()
+    assert extract_wikilinks(None) == set()

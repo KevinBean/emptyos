@@ -22,10 +22,7 @@ body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-se
 .app-title { font-size:22px; font-weight:700; color:var(--text-heading); display:flex; align-items:center; gap:12px }
 .app-title .icon { font-size:22px }
 .header-actions { display:flex; gap:8px }
-.eos-btn-primary { background:var(--accent); color:var(--accent-ink); border-color:var(--accent) }
 .eos-btn-primary:hover { filter:brightness(1.1) }
-.eos-btn-ghost { background:transparent }
-.eos-btn-icon { padding:8px 12px; font-size:16px; line-height:1 }
 
 .crumbs { font-size:12px; color:var(--text-muted); margin-bottom:16px }
 .crumbs a { color:var(--text-secondary); text-decoration:none; cursor:pointer }
@@ -63,6 +60,16 @@ body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-se
 .tab-btn { background:transparent; border:0; color:var(--text-secondary); padding:8px 16px; cursor:pointer; border-bottom:2px solid transparent; font-size:13px }
 .tab-btn.active { color:var(--accent); border-bottom-color:var(--accent) }
 
+.org-chart-tree, .org-chart-children { list-style:none; margin:0; padding-left:0 }
+.org-chart-children { padding-left:26px; border-left:1px dashed var(--border); margin-top:8px; margin-left:12px }
+.org-chart-node { margin:8px 0 }
+.org-chart-card { display:inline-flex; align-items:center; gap:8px; padding:7px 14px; border:1px solid var(--border); border-radius:8px; background:var(--bg-card); cursor:pointer; font-size:13px; color:var(--text-heading); font-weight:600 }
+.org-chart-card:hover { border-color:var(--accent) }
+.org-chart-card .oc-badge { font-size:10px; padding:2px 8px; border-radius:8px; text-transform:uppercase; letter-spacing:0.05em; font-weight:600 }
+.org-chart-card .oc-badge.human { background:color-mix(in srgb, var(--accent) 15%, transparent); color:var(--accent) }
+.org-chart-card .oc-badge.ai { background:color-mix(in srgb, var(--warning) 18%, transparent); color:var(--warning) }
+.org-chart-card .oc-role { font-size:12px; color:var(--text-muted); font-weight:400 }
+
 .role-row { display:flex; align-items:center; justify-content:space-between; padding:12px 12px; background:var(--bg-card); border:1px solid var(--border); border-radius:8px; margin-bottom:8px }
 .role-row .role-name { font-size:14px; color:var(--text-heading); font-weight:600 }
 .role-row .role-assignments { font-size:12px; color:var(--text-muted) }
@@ -78,7 +85,7 @@ body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-se
 .asset-row .asset-ref { font-size:12px; color:var(--text-muted); margin-bottom:4px }
 .asset-row .asset-ref code { background:var(--bg); padding:2px 8px; border-radius:4px }
 .asset-row .asset-preview { font-size:12px; color:var(--text-secondary); line-height:1.5; margin:8px 0 8px; font-style:italic }
-.asset-row .eos-btn-row { margin-top:4px }
+.asset-row .btn-row { margin-top:4px }
 .warn { color:var(--warning); font-size:12px }
 
 .person-picker-result { padding:8px 12px; cursor:pointer; border-radius:6px }
@@ -137,18 +144,16 @@ body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-se
 .run-row .ts { font-size:11px; color:var(--text-muted) }
 .run-row .prompt-preview { font-size:13px; color:var(--text-secondary); line-height:1.4 }
 
-.empty { text-align:center; padding:40px 24px; color:var(--text-muted) }
+.empty { text-align:center; padding:48px 24px; color:var(--text-muted) }
 .empty .icon { font-size:48px; opacity:0.5; margin-bottom:12px }
 .empty .hint { margin-top:8px; font-size:13px }
 
-.loading { display:flex; align-items:center; justify-content:center; padding:40px; color:var(--text-muted); font-size:14px }
+.loading { display:flex; align-items:center; justify-content:center; padding:48px; color:var(--text-muted); font-size:14px }
 
 .scenario-banner { display:flex; align-items:center; gap:12px; margin-bottom:16px; padding:12px 16px; background:var(--bg-card); border:1px solid var(--border); border-radius:8px; font-size:13px; color:var(--text-secondary) }
 .scenario-banner .e { font-size:18px }
 
-.eos-btn-row { display:flex; gap:8px; flex-wrap:wrap }
-.eos-btn-apply { background:var(--success); color: var(--ink-on-vivid); border-color:var(--success) }
-.eos-btn-reject { background:transparent; border-color:var(--danger); color:var(--danger) }
+.btn-row { display:flex; gap:8px; flex-wrap:wrap }
 </style>
 </head>
 <body>
@@ -340,9 +345,9 @@ async function showOrg(id) {
 }
 
 function renderHero(org) {
-    var kindBadge = org.kind ? '<span class="eos-badge eos-badge-status-neutral" style="margin-left:8px">' + esc(org.kind) + '</span>' : '';
-    var realityBadge = '<span class="eos-badge eos-badge-status-neutral" style="margin-left:6px">' + esc(org.reality || 'real') + '</span>';
-    var scopeBadge = '<span class="eos-badge eos-badge-status-neutral" style="margin-left:6px">' + esc(org.scope || 'member') + '</span>';
+    var kindBadge = org.kind ? '<span class="eos-badge eos-badge-neutral" style="margin-left:8px">' + esc(org.kind) + '</span>' : '';
+    var realityBadge = '<span class="eos-badge eos-badge-neutral" style="margin-left:6px">' + esc(org.reality || 'real') + '</span>';
+    var scopeBadge = '<span class="eos-badge eos-badge-neutral" style="margin-left:6px">' + esc(org.scope || 'member') + '</span>';
     var visionHtml = org.vision
         ? '<p style="font-style:italic;color:var(--text-secondary);border-left:3px solid var(--accent);padding-left:10px;margin:10px 0">"' + esc(org.vision) + '"</p>'
         : '';
@@ -350,7 +355,7 @@ function renderHero(org) {
     if (org.values && org.values.length) {
         valuesHtml = '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">' +
             org.values.map(function(v) {
-                return '<span class="eos-badge eos-badge-status-neutral">' + esc(v) + '</span>';
+                return '<span class="eos-badge eos-badge-neutral">' + esc(v) + '</span>';
             }).join('') +
         '</div>';
     }
@@ -373,6 +378,7 @@ function renderOrg(org, runs) {
     var tabsHtml =
         '<div class="tabs">' +
             '<button class="tab-btn ' + (tab === 'roster' ? 'active' : '') + '" onclick="switchOrgTab(\'roster\')">👥 Roster (' + (org.members || []).length + ')</button>' +
+            '<button class="tab-btn ' + (tab === 'chart' ? 'active' : '') + '" onclick="switchOrgTab(\'chart\')">🌳 Chart</button>' +
             '<button class="tab-btn ' + (tab === 'roles' ? 'active' : '') + '" onclick="switchOrgTab(\'roles\')">🎯 Roles (' + (org.roles || []).length + ')</button>' +
             (hasAI ? '<button class="tab-btn ' + (tab === 'scenarios' ? 'active' : '') + '" onclick="switchOrgTab(\'scenarios\')">🎭 Scenarios</button>' : '') +
             '<button class="tab-btn ' + (tab === 'assets' ? 'active' : '') + '" onclick="switchOrgTab(\'assets\')">📎 Assets (' + assetCount + ')</button>' +
@@ -381,6 +387,7 @@ function renderOrg(org, runs) {
 
     var body;
     if (tab === 'roster') body = renderRoster(org);
+    else if (tab === 'chart') body = renderOrgChart(org);
     else if (tab === 'roles') body = renderRoles(org);
     else if (tab === 'scenarios') body = renderScenarios(org, runs);
     else if (tab === 'assets') body = renderAssets(org);
@@ -449,6 +456,71 @@ function renderRoster(org) {
             '</div>' +
         '</div>' +
         rows +
+    '</div>';
+}
+
+// ── Org Chart (company-no-org-chart) — pure render over org.members,
+// which already carries reports_to; no backend change needed. A member
+// with no reports_to, or one pointing at a nonexistent/self id, becomes
+// a chart root (never dropped). A visited-set guard stops a reporting
+// cycle (A -> B -> A) from recursing forever. ──────────────────────────
+function buildOrgTree(members) {
+    var byId = {};
+    members.forEach(function(m) { byId[m.id] = m; });
+    var childrenOf = {};
+    var roots = [];
+    members.forEach(function(m) {
+        var parent = (m.reports_to || '').trim();
+        if (parent && parent !== m.id && byId[parent]) {
+            (childrenOf[parent] = childrenOf[parent] || []).push(m);
+        } else {
+            roots.push(m);
+        }
+    });
+    return { childrenOf: childrenOf, roots: roots };
+}
+
+function orgChartCardLabel(m) {
+    var mode = m.mode || 'human';
+    var name;
+    if (mode === 'ai') {
+        name = (m.emoji ? m.emoji + ' ' : '') + esc(m.name || m.id);
+    } else {
+        var p = m.person || {};
+        name = esc(p.name || m.person_id || '(unknown)');
+    }
+    var badge = '<span class="oc-badge ' + escAttr(mode) + '">' + (mode === 'ai' ? '🤖' : '👤') + '</span>';
+    var meta = (m.role || m.dept) ? ' <span class="oc-role">' + esc(m.role || '') + (m.dept ? ' · ' + esc(m.dept) : '') + '</span>' : '';
+    return badge + name + meta;
+}
+
+function orgChartNodeHtml(m, tree, seen) {
+    if (seen[m.id]) return '';
+    seen = Object.assign({}, seen);
+    seen[m.id] = true;
+    var kids = tree.childrenOf[m.id] || [];
+    var kidsHtml = kids.length
+        ? '<ul class="org-chart-children">' + kids.map(function(k) { return orgChartNodeHtml(k, tree, seen); }).join('') + '</ul>'
+        : '';
+    return '<li class="org-chart-node">' +
+        '<div class="org-chart-card" onclick="openEditMember(' + escAttr(JSON.stringify(m.id)) + ')" title="Edit">' + orgChartCardLabel(m) + '</div>' +
+        kidsHtml +
+    '</li>';
+}
+
+function renderOrgChart(org) {
+    var members = org.members || [];
+    if (!members.length) {
+        return '<div class="empty">' +
+            '<div>No members yet.</div>' +
+            '<div class="hint">Add members from the Roster tab, then set "Reports to" to build the chart.</div>' +
+        '</div>';
+    }
+    var tree = buildOrgTree(members);
+    var html = tree.roots.map(function(r) { return orgChartNodeHtml(r, tree, {}); }).join('');
+    return '<div class="section">' +
+        '<div class="section-head"><h3>Org Chart</h3></div>' +
+        '<ul class="org-chart-tree">' + html + '</ul>' +
     '</div>';
 }
 
@@ -781,8 +853,8 @@ function renderPending(p) {
     var actions = '';
     if (status === 'pending') {
         actions = '<div class="pending-actions">' +
-            '<button class="eos-btn btn-apply" onclick="applyPending(' + escAttr(JSON.stringify(p.id)) + ')">Apply</button>' +
-            '<button class="eos-btn btn-reject" onclick="rejectPending(' + escAttr(JSON.stringify(p.id)) + ')">Reject</button>' +
+            '<button class="eos-btn eos-btn-success" onclick="applyPending(' + escAttr(JSON.stringify(p.id)) + ')">Apply</button>' +
+            '<button class="eos-btn eos-btn-danger" onclick="rejectPending(' + escAttr(JSON.stringify(p.id)) + ')">Reject</button>' +
         '</div>';
     } else if (status === 'failed') {
         actions = '<div style="color:var(--danger);font-size:12px;margin-top:6px">⚠ ' + esc(p.error || 'failed') + '</div>';

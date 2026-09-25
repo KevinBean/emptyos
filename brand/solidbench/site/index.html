@@ -1,0 +1,235 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>SolidBench — describe a part, get a solid model</title>
+  <meta name="description" content="SolidBench turns a plain-language description into a real, editable 3D solid model — geometry-checked, dimensioned, and exportable to STEP.">
+
+  <!-- Open Graph / social cards — domain + handles are not registered yet.
+       og:image is a relative path for now; the OG spec wants an absolute
+       URL, so swap this to https://<real-domain>/og-image.png once the site
+       has a home, or crawlers will silently ignore it. -->
+  <meta property="og:title" content="SolidBench — describe a part, get a solid model">
+  <meta property="og:description" content="Natural-language parametric CAD: geometry-checked generation, Git-style versioning, real-time multiplayer editing, and STEP/drawing export.">
+  <meta property="og:type" content="website">
+  <meta property="og:image" content="/og-image.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:image" content="/og-image.png">
+
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+
+  <!-- Typography -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@600;700;800&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+
+<header class="tb">
+  <div class="tb-inner">
+    <div class="wordmark">SolidBench <span class="tag">SB&#8209;01</span></div>
+    <nav class="tb-nav">
+      <a href="#how">How it works</a>
+      <a href="#collab">Collaboration</a>
+      <a href="#export">Export</a>
+    </nav>
+    <a class="btn solid" href="#access">Get early access</a>
+  </div>
+</header>
+
+<main>
+  <div class="wrap hero">
+    <div>
+      <span class="eyebrow">Parametric CAD, drafted by description</span>
+      <h1>From a sentence<br>to a <em>solid</em>.</h1>
+      <p class="lede">
+        SolidBench turns a plain-language description into a real,
+        editable 3D solid model — geometry-checked, dimensioned, and
+        exportable to STEP. No CAD degree required to start; nothing
+        held back once you need the precision.
+      </p>
+      <div class="ctas">
+        <a class="btn solid" href="#access">Get early access</a>
+        <a class="btn ghost" href="#how">See how it works</a>
+      </div>
+    </div>
+    <div class="dim-card">
+      <div class="dim-title">Spec sheet</div>
+      <div class="dim-row"><span>Input</span><b>natural language</b></div>
+      <div class="dim-row"><span>Kernel</span><b>B&#8209;Rep solid</b></div>
+      <div class="dim-row"><span>Validation</span><b>gated, retried</b></div>
+      <div class="dim-row"><span>Versioning</span><b>branch / merge</b></div>
+      <div class="dim-row"><span>Editing</span><b>live, multiplayer</b></div>
+      <div class="dim-row"><span>Export</span><b>STEP &middot; DXF &middot; PDF</b></div>
+      <div class="dim-row"><span>Status</span><b style="color:var(--accent)">early access</b></div>
+    </div>
+  </div>
+
+  <section class="sheet" id="how">
+    <div class="wrap">
+      <div class="sheet-head">
+        <div>
+          <span class="sheet-head num">01 &mdash; GENERATION</span>
+        </div>
+        <div>
+          <h2>Not just a render</h2>
+          <p class="desc">
+            Most "AI CAD" stops at a pretty picture. SolidBench compiles every
+            generated part into exact boundary-representation geometry, then
+            checks it before it ever reaches you.
+          </p>
+        </div>
+      </div>
+      <div class="callouts">
+        <div class="callout">
+          <span class="k">GEOMETRY GATE</span>
+          <h3>Nothing broken ships</h3>
+          <p>Every part is checked for non&#8209;manifold surfaces, zero&#8209;volume
+             bodies, and out&#8209;of&#8209;scale geometry before you ever see it.
+             A failed part is regenerated, not handed to you to debug.</p>
+        </div>
+        <div class="callout">
+          <span class="k">VISUAL CHECK</span>
+          <h3>A second opinion, on demand</h3>
+          <p>One click sends the rendered part to a vision model, graded
+             against what you actually asked for &mdash; catching the gap
+             between "compiles fine" and "is what I meant" before you
+             export.</p>
+        </div>
+        <div class="callout">
+          <span class="k">REAL PARAMETERS</span>
+          <h3>Tweak it after</h3>
+          <p>Every generated part keeps its feature tree &mdash; box, hole,
+             fillet, boolean &mdash; so you can adjust a dimension directly
+             instead of re&#8209;prompting from scratch.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="sheet" id="versioning">
+    <div class="wrap row2">
+      <div class="copy">
+        <span class="eyebrow">02 &mdash; Versioning</span>
+        <h3>Git, for solids.</h3>
+        <p>Branch a design before you try something risky. Fork a variant for
+           a client. Merge two people's edits back together &mdash; and when
+           you both touched the same feature, SolidBench tells you exactly
+           where the conflict is instead of silently picking a winner.</p>
+        <ul class="check">
+          <li>Every save is a recorded, restorable revision</li>
+          <li>Branch, fork, and checkout like a real history</li>
+          <li>Structural merge at the feature level &mdash; not a text diff</li>
+        </ul>
+      </div>
+      <div class="diagram">
+        <svg viewBox="0 0 400 300" preserveAspectRatio="xMidYMid meet" aria-hidden="true">
+          <line x1="70" y1="40" x2="70" y2="260" stroke="var(--line-strong)" stroke-width="2"/>
+          <line x1="70" y1="150" x2="230" y2="150" stroke="var(--line-strong)" stroke-width="2"/>
+          <line x1="230" y1="150" x2="230" y2="90" stroke="var(--line-strong)" stroke-width="2"/>
+          <line x1="230" y1="150" x2="230" y2="220" stroke="var(--line-strong)" stroke-width="2"/>
+          <circle cx="70" cy="60" r="7" fill="var(--accent)"/>
+          <circle cx="70" cy="150" r="7" fill="var(--ink)"/>
+          <circle cx="70" cy="240" r="7" fill="var(--ink)"/>
+          <circle cx="230" cy="90" r="7" fill="var(--accent)"/>
+          <circle cx="230" cy="220" r="7" fill="var(--accent)"/>
+          <text x="90" y="65" font-family="IBM Plex Mono" font-size="12" fill="var(--mute)">main</text>
+          <text x="250" y="95" font-family="IBM Plex Mono" font-size="12" fill="var(--mute)">design&#8209;v2</text>
+          <text x="250" y="225" font-family="IBM Plex Mono" font-size="12" fill="var(--mute)">feat/hollow</text>
+        </svg>
+        <span class="cap">Branch history &mdash; SB&#8209;PART&#8209;0442</span>
+      </div>
+    </div>
+  </section>
+
+  <section class="sheet" id="collab">
+    <div class="wrap row2">
+      <div class="diagram">
+        <svg viewBox="0 0 400 300" preserveAspectRatio="xMidYMid meet" aria-hidden="true">
+          <rect x="120" y="90" width="160" height="120" fill="none" stroke="var(--line-strong)" stroke-width="2"/>
+          <rect x="150" y="120" width="100" height="60" fill="none" stroke="var(--mute)" stroke-width="1.5"/>
+          <path d="M60 60 L128 108" stroke="var(--accent)" stroke-width="1.5"/>
+          <circle cx="60" cy="60" r="5" fill="var(--accent)"/>
+          <text x="24" y="46" font-family="IBM Plex Mono" font-size="11" fill="var(--accent)">owner</text>
+          <path d="M340 230 L272 192" stroke="var(--ink)" stroke-width="1.5"/>
+          <circle cx="340" cy="230" r="5" fill="var(--ink)"/>
+          <text x="300" y="252" font-family="IBM Plex Mono" font-size="11" fill="var(--mute)">alice</text>
+        </svg>
+        <span class="cap">Two editors, one live model</span>
+      </div>
+      <div class="copy">
+        <span class="eyebrow">03 &mdash; Collaboration</span>
+        <h3>Work on it together.</h3>
+        <p>Send one link. Whoever opens it is editing the same live model
+           you are &mdash; same viewport, same feature tree, converging in
+           real time. No exporting a file back and forth, no "final_v3" in
+           the filename.</p>
+        <ul class="check">
+          <li>Live cursors and presence for every collaborator</li>
+          <li>Edits converge automatically, in either direction</li>
+          <li>One shareable link grants write access &mdash; nothing to install</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section class="sheet" id="export">
+    <div class="wrap">
+      <div class="sheet-head">
+        <div><span class="sheet-head num">04 &mdash; OUTPUT</span></div>
+        <div>
+          <h2>From model to the shop</h2>
+          <p class="desc">
+            A model that only lives in the browser isn't finished. SolidBench
+            produces the two documents an actual shop or supplier asks for.
+          </p>
+        </div>
+      </div>
+      <div class="callouts">
+        <div class="callout">
+          <span class="k">STEP EXPORT</span>
+          <h3>Exact geometry, not a mesh</h3>
+          <p>The same boundary&#8209;representation solid you designed with
+             &mdash; not an approximated triangle mesh &mdash; ready for any
+             CAD system or CAM package downstream.</p>
+        </div>
+        <div class="callout">
+          <span class="k">2D DRAWINGS</span>
+          <h3>Dimensioned, automatically</h3>
+          <p>Orthographic views generated straight from the solid, with
+             dimensions placed on the real edges &mdash; a drawing you could
+             actually hand to a machinist.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="close" id="access">
+    <div class="wrap">
+      <span class="eyebrow" style="justify-content:center;">Early access</span>
+      <h2 style="margin-top:14px;">Bring a part.<br>Leave with a solid.</h2>
+      <p>SolidBench is in early access. If you design brackets, enclosures,
+         gears, or fasteners for a living &mdash; or just wish you could
+         &mdash; we want you on the bench first.</p>
+      <div class="ctas">
+        <a class="btn solid" href="mailto:hello@plekto.dev?subject=SolidBench%20early%20access">Request early access</a>
+      </div>
+      <div class="note">No credit card. No commitment. Just tell us what you build.</div>
+    </div>
+  </section>
+</main>
+
+<footer class="tb-footer">
+  <div class="wrap">
+    <span class="mono">SOLIDBENCH &nbsp;&middot;&nbsp; DWG SB&#8209;01 &nbsp;&middot;&nbsp; REV A &nbsp;&middot;&nbsp; SCALE N.T.S.</span>
+    <span class="mono">&copy; SolidBench &mdash; early access</span>
+  </div>
+</footer>
+
+</body>
+</html>

@@ -4,10 +4,14 @@ from __future__ import annotations
 
 from unittest.mock import patch
 
+import pytest
+
 from emptyos.sdk.web_search import (
     UNTRUSTED_SOURCE_CLAUSE,
     SourceFencer,
+    crossref_lookup,
     ddg_search,
+    is_public_web_url,
     openalex_search,
     read_web_source,
     site_label,
@@ -15,6 +19,80 @@ from emptyos.sdk.web_search import (
     triage_hits,
     untrusted_block,
 )
+
+
+# ── SSRF guard ───────────────────────────────────────────────────────────
+# Every obfuscated form below was measured reaching the live daemon on
+# 127.0.0.1 (curl HTTP 200) or normalising to it under WHATWG (`new URL()`,
+# i.e. Chromium — the parser every Playwright-backed fetch actually uses)
+# while is_public_web_url still returned True. Keep both directions pinned:
+# the must-allow set is what stops a hardening pass from blocking real feeds.
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "http://127.0.0.1/",
+        "http://localhost:9000/",
+        "http://10.0.0.5/",
+        "http://192.168.1.1/",
+        "http://169.254.169.254/latest/meta-data/",  # cloud metadata
+        "http://metadata.google.internal/",
+        "http://[::1]/",
+        "http://[::ffff:127.0.0.1]/",
+        # Numeric obfuscation: urlparse calls these hostnames, so without
+        # canonicalisation ip_address() raises and the range check is skipped.
+        "http://0x7f.0.0.1/",  # dotted hex
+        "http://127.0.0.001/",  # leading zeros
+        "http://127.1/",  # two-part short form
+        "http://2130706433/",  # bare decimal
+        "http://0x7f000001/",  # bare hex
+        "http://017700000001/",  # bare octal
+        # Trailing dot (RFC 1034 FQDN form) — Chromium strips it, so it must
+        # not be allowed to defeat the literal or local-suffix checks.
+        "http://127.0.0.1./",
+        "http://foo.local./",
+    ],
+)
+def test_is_public_web_url_blocks_internal_targets(url):
+    assert is_public_web_url(url, resolve_dns=False) is False
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        # Backslash in the authority: urlparse reads host "example.com",
+        # WHATWG/Chromium reads "127.0.0.1". Refuse the disagreement.
+        "http://127.0.0.1\\@example.com:9000/x",
+        "http://example.com\\@127.0.0.1/x",
+        "http://example.com\\.127.0.0.1/",
+        # Percent-encoded host is the same disagreement by another route:
+        # WHATWG decodes it (host 127.0.0.1), urlparse hands back the literal
+        # "%31%32%37.0.0.1". IDN travels as punycode, so nothing legitimate
+        # needs %xx in a host — see the xn-- case in the must-allow set.
+        "http://%31%32%37.0.0.1/",
+        "http://%65xample.com/",
+    ],
+)
+def test_is_public_web_url_refuses_ambiguous_authority(url):
+    assert is_public_web_url(url, resolve_dns=False) is False
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://example.com/",
+        "https://example.com./",  # legitimate FQDN form
+        "https://en.wikipedia.org/wiki/Thing",
+        "http://news.ycombinator.com/",
+        "http://xn--fsq.com/",  # punycode IDN — no %xx, must survive the above
+        # Userinfo parses identically here and in the browser, so it is not a
+        # disagreement — an authenticated feed URL must keep working.
+        "https://user:p%40ss@feeds.example.com/rss.xml",
+    ],
+)
+def test_is_public_web_url_allows_real_public_urls(url):
+    assert is_public_web_url(url, resolve_dns=False) is True
 
 
 def test_site_label_extracts_hostname():
@@ -281,3 +359,49 @@ def test_openalex_slash_separated_terms_do_not_fuse():
 
     assert "search=AC+DC+converter" in captured["url"]
     assert "ACDC" not in captured["url"]
+
+
+def test_crossref_lookup_resolves_structured_metadata():
+    def fake_get(url):
+        # DOI slashes are preserved literally (safe="/") — CrossRef's own API
+        # accepts (and documents) the DOI verbatim in the path.
+        assert "10.1109/TPWRS.2019.1234567" in url
+        return {
+            "message": {
+                "title": ["A Great Paper"],
+                "author": [{"given": "Ada", "family": "Lovelace"}, {"given": "Alan", "family": "Turing"}],
+                "published-print": {"date-parts": [[2019, 3]]},
+                "container-title": ["IEEE Trans. Power Systems"],
+                "URL": "https://doi.org/10.1109/TPWRS.2019.1234567",
+            }
+        }
+
+    with patch("emptyos.sdk.web_search._http_get_json", fake_get):
+        meta = crossref_lookup("10.1109/TPWRS.2019.1234567")
+
+    assert meta == {
+        "title": "A Great Paper",
+        "authors": ["Ada Lovelace", "Alan Turing"],
+        "year": "2019",
+        "journal": "IEEE Trans. Power Systems",
+        "doi": "10.1109/TPWRS.2019.1234567",
+        "url": "https://doi.org/10.1109/TPWRS.2019.1234567",
+    }
+
+
+def test_crossref_lookup_empty_doi_returns_none():
+    assert crossref_lookup("") is None
+    assert crossref_lookup("   ") is None
+
+
+def test_crossref_lookup_never_raises_on_failure():
+    def fake_get(url):
+        raise ConnectionError("no network")
+
+    with patch("emptyos.sdk.web_search._http_get_json", fake_get):
+        assert crossref_lookup("10.1/x") is None
+
+
+def test_crossref_lookup_malformed_response_returns_none():
+    with patch("emptyos.sdk.web_search._http_get_json", lambda url: {"message": {}}):
+        assert crossref_lookup("10.1/x") is None  # no title → treated as unresolved

@@ -1,3 +1,9 @@
+---
+paths:
+  - "emptyos/sdk/prompt_registry.py"
+  - "apps/**/prompts.py"
+  - "apps/**/prompts/**"
+---
 # Prompt Management — code defaults, discoverable registry, per-machine overrides
 
 EmptyOS has three kinds of prompt content, each with its own home. Don't blur
@@ -16,6 +22,12 @@ review, and greppability) in favor of a thin **override layer**.
 (`/prompts/` — browse, edit, sweep; personas listed read-only).
 **Store:** `data/prompts/overrides.json` (per-machine, gitignored).
 **Reference adopters:** `apps/public/standard/{agent,publish,voice-assistant}/prompts.py`
+· the English suite, adopted 2026-08-08 — `english/prompts.py` (extracted from a
+14-line **inline f-string at the `self.think` call site**, the rule-12 violation
+this section exists to prevent), `voice-review/prompts.py` (one inline, one class
+attribute), `speaking/speaking_data.py` (declares in place — a prompts module
+need not be named `prompts.py`), `improv/prompts.py` (good constants that simply
+never called `declare_prompts`)
 · `apps/extension/english-learning/dictionary/prompts.py` (the reading layer — its
 header shows the shape worth copying: an override that reintroduces a
 `{"k": str}` pseudo-schema instead of a valid JSON example silently broke the free

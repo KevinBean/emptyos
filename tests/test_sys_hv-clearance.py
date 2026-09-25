@@ -112,3 +112,16 @@ class TestHvClearanceUI:
         page.click('.hv-tab[data-tab="design"]')
         page.wait_for_selector("#hv-svg", state="visible")
         assert page.is_visible("#tab-design")
+
+    def test_shared_escape_preserves_numeric_zero(self, app_page):
+        """An exact clash is 0 m, not an empty value in the infringement text."""
+        page = app_page("hv-clearance")
+        assert page.evaluate("window.esc(0)") == "0"
+
+    def test_calculator_hands_voltage_to_substation_design(self, app_page):
+        page = app_page("hv-clearance")
+        page.select_option("#c-voltage", "132")
+        href = page.get_attribute("#c-substation", "href")
+        assert href is not None
+        assert "layout=substation-design" in href
+        assert "voltage_kv=132" in href

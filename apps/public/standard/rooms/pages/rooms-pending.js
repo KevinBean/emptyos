@@ -216,7 +216,7 @@ async function renderActivityTasksTab() {
     var body = document.getElementById('activity-drawer-body');
     if (!body || !currentAgent) return;
     var subToggle =
-        '<div style="display:flex;gap:4px;background:var(--bg-elevated);padding:3px;border-radius:8px;margin-bottom:14px">' +
+        '<div style="display:flex;gap:4px;background:var(--bg-surface);padding:3px;border-radius:8px;margin-bottom:14px">' +
             '<button class="eos-btn-sm" style="flex:1;background:' + (_taskSubTab === 'attached' ? 'var(--bg-card)' : 'transparent') + ';border:0;font-weight:' + (_taskSubTab === 'attached' ? '600' : '400') + '" onclick="setTaskSubTab(\'attached\')">In this room</button>' +
             '<button class="eos-btn-sm" style="flex:1;background:' + (_taskSubTab === 'all' ? 'var(--bg-card)' : 'transparent') + ';border:0;font-weight:' + (_taskSubTab === 'all' ? '600' : '400') + '" onclick="setTaskSubTab(\'all\')">All vault</button>' +
         '</div>';
@@ -240,7 +240,7 @@ async function _renderAttachedTasksSubview() {
     try {
         tasks = await EOS.api('/rooms/api/rooms/' + encodeURIComponent(currentAgent.id) + '/tasks') || [];
     } catch(e) {
-        sub.innerHTML = '<div style="color:var(--text-muted);font-size:13px;padding:20px;text-align:center">Tasks unavailable (projects app missing).</div>';
+        sub.innerHTML = EOS_UI.errorState({message: 'Tasks unavailable (projects app missing).'});
         return;
     }
     var openCount = tasks.filter(function(t){ return !t.done; }).length;
@@ -287,7 +287,7 @@ async function _renderAllTasksSubview() {
     try {
         tasks = await EOS.api(url) || [];
     } catch(e) {
-        sub.innerHTML = '<div style="color:var(--text-muted);font-size:13px;padding:20px;text-align:center">Task aggregator unavailable. The /task/ app may not be loaded.</div>';
+        sub.innerHTML = EOS_UI.errorState({message: 'Task aggregator unavailable. The /task/ app may not be loaded.'});
         return;
     }
     var today = new Date().toISOString().slice(0, 10);
@@ -316,7 +316,7 @@ async function _renderAllTasksSubview() {
     };
     function chip(name, label) {
         var active = _allTasksFilter === name;
-        return '<button class="eos-btn-sm" style="background:' + (active ? 'var(--accent)' : 'var(--bg-elevated)') + ';color:' + (active ? 'var(--accent-ink)' : 'var(--text)') + ';border:0;font-size:12px" onclick="setAllTasksFilter(\'' + name + '\')">' + label + ' <span style="opacity:0.7">' + counts[name] + '</span></button>';
+        return '<button class="eos-btn-sm" style="background:' + (active ? 'var(--accent)' : 'var(--bg-surface)') + ';color:' + (active ? 'var(--accent-ink)' : 'var(--text)') + ';border:0;font-size:12px" onclick="setAllTasksFilter(\'' + name + '\')">' + label + ' <span style="opacity:0.7">' + counts[name] + '</span></button>';
     }
     var listHtml;
     if (!capped.length) {
@@ -444,7 +444,7 @@ async function renderActivityMemoryTab() {
     if (countEl) countEl.textContent = memory.length ? '(' + memory.length + ')' : '';
     var listHtml;
     if (!memory.length) {
-        listHtml = '<div style="color:var(--text-muted);font-size:13px;padding:14px;text-align:center">No memories yet. Use <code style="background:var(--bg-elevated);padding:1px 5px;border-radius:3px">/remember &lt;fact&gt;</code> to add one.</div>';
+        listHtml = '<div style="color:var(--text-muted);font-size:13px;padding:14px;text-align:center">No memories yet. Use <code style="background:var(--bg-surface);padding:1px 5px;border-radius:4px">/remember &lt;fact&gt;</code> to add one.</div>';
     } else {
         listHtml = memory.map(function(m) {
             var when = m.ts ? new Date(m.ts).toLocaleDateString([], {month:'short', day:'numeric'}) : '';
@@ -463,7 +463,7 @@ async function renderActivityMemoryTab() {
         '<div>' + listHtml + '</div>' +
         '<div style="margin-top:14px;border-top:1px solid var(--border);padding-top:14px">' +
             '<div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px">Add a memory</div>' +
-            '<input id="mem-fact" class="eos-form-input" type="text" placeholder="e.g. Kevin prefers tabs over spaces" style="width:100%">' +
+            '<input id="mem-fact" class="eos-form-input" type="text" placeholder="e.g. prefers tabs over spaces" style="width:100%">' +
             '<button class="eos-btn eos-btn-primary" style="margin-top:10px;width:100%" onclick="submitMemoryFromDrawer()">Remember</button>' +
         '</div>' +
         '<div style="margin-top:14px;font-size:11px;color:var(--text-muted);line-height:1.5">' +
@@ -540,7 +540,7 @@ async function renderActivityKnowledgeTab() {
             '<div id="kb-picker-results" style="max-height:240px;overflow-y:auto;margin-top:8px"></div>' +
         '</div>' +
         '<div style="margin-top:14px;font-size:11px;color:var(--text-muted);line-height:1.5">' +
-            'Tip: every attached note is included in this room\'s LLM context on every turn. For one-off references, type <code style="background:var(--bg-elevated);padding:1px 5px;border-radius:3px">[[</code> in the chat input instead.' +
+            'Tip: every attached note is included in this room\'s LLM context on every turn. For one-off references, type <code style="background:var(--bg-surface);padding:1px 5px;border-radius:4px">[[</code> in the chat input instead.' +
         '</div>';
     // Trigger an empty search to populate the picker with recent notes.
     onKnowledgePickerSearch('');
@@ -566,7 +566,7 @@ function onKnowledgePickerSearch(v) {
         results.innerHTML = files.map(function(f) {
             var path = f.path || '';
             var isAttached = attached.has(path) || attached.has(path.replace(/\.md$/i, ''));
-            return '<div style="cursor:pointer;display:flex;align-items:center;gap:8px;padding:6px 10px;border-radius:6px;font-size:12px;margin-bottom:3px;background:var(--bg-elevated);' + (isAttached ? 'opacity:0.5;cursor:default' : '') + '"' +
+            return '<div style="cursor:pointer;display:flex;align-items:center;gap:8px;padding:6px 10px;border-radius:6px;font-size:12px;margin-bottom:3px;background:var(--bg-surface);' + (isAttached ? 'opacity:0.5;cursor:default' : '') + '"' +
                 (isAttached ? '' : ' onclick="addKnowledgeFromDrawer(\'' + escAttr(path) + '\')"') + '>' +
                 '<span style="flex-shrink:0">📄</span>' +
                 '<div style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' +

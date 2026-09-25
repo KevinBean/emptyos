@@ -7,6 +7,9 @@ topic. Record one of `delta`, `mentioned-no-delta`, `not-present`, or
 `needs-review` in the digest. A digest is comprehensive because it checks every
 domain, not because it creates a note in every domain.
 
+> Specialist-skill column: `vault-info-ripple`, `journal-planner` and `healing-companion` are user-global skills that live in `~/.claude/skills`, not in this repo — a fresh clone will not have them.
+
+
 | Domain | Typical durable content | Default destination | Specialist skill | Evidence rule |
 |---|---|---|---|---|
 | Personal chronology | Event, milestone, location/status change, lived experience | `50_Journal/{year}/{date}.md` plus an existing living note | `journal-planner`, `vault-info-ripple` | User-attested is valid; preserve date and context |

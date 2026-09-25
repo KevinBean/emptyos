@@ -24,6 +24,20 @@ REAL_COURSE_ID = "asnzs-61439-foundations"
 
 # ── API walks ────────────────────────────────────────────────────────────────
 
+@pytest.fixture
+def require_real_course(http_client):
+    """Skip when this daemon's vault does not carry the authored course.
+
+    CI mounts a throwaway vault (./ci-vault, empty PARA dirs), so the course
+    exists only where the real vault is mounted. Same shape as
+    ``require_sim_engine`` in test_sys_sim.py: state the precondition and skip,
+    rather than failing and reading as a regression.
+    """
+    r = http_client.get(f"/learn/api/courses/{REAL_COURSE_ID}")
+    if r.status_code != 200 or (r.json() or {}).get("id") != REAL_COURSE_ID:
+        pytest.skip(f"course '{REAL_COURSE_ID}' is not in this daemon's vault")
+
+
 @pytest.mark.api
 class TestLearnWalkAPI:
     def test_course_catalog_lists_courses(self, http_client):
@@ -31,13 +45,13 @@ class TestLearnWalkAPI:
         data = assert_dict_response(http_client.get("/learn/api/courses"), required_keys=["courses"])
         assert len(data["courses"]) >= 1, "expected at least one course in catalog"
 
-    def test_course_detail_has_lessons(self, http_client):
+    def test_course_detail_has_lessons(self, http_client, require_real_course):
         """1.1 — Course detail includes parsed lessons."""
         data = assert_ok(http_client.get(f"/learn/api/courses/{REAL_COURSE_ID}"))
         assert data.get("id") == REAL_COURSE_ID
         assert isinstance(data.get("lessons"), list) and len(data["lessons"]) > 0
 
-    def test_lesson_renders_citation_buttons(self, http_client):
+    def test_lesson_renders_citation_buttons(self, http_client, require_real_course):
         """1.3 — Lesson body upgrades [[ref]] p.N to eos-pdf-anchor buttons."""
         data = assert_ok(http_client.get(f"/learn/api/courses/{REAL_COURSE_ID}/lessons/3"))
         body = (data.get("source") or {}).get("body_md", "")

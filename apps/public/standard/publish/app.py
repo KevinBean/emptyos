@@ -773,6 +773,11 @@ class PublishApp(BaseApp):
     _append_faq = _chatbot._append_faq
 
     # --- Media: cover generation, podcast embedding (see media.py) ---
+    # Figure receive (viz static-figure export) — publish owns its own
+    # per-site images/ path and the house `![alt|637](name.png)` form.
+    figure_asset_path = _media.figure_asset_path
+    attach_figure = _media.attach_figure
+
     api_podcast_status = _media.api_podcast_status
     api_source_media = _media.api_source_media
     api_source_media_file = _media.api_source_media_file

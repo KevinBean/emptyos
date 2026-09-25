@@ -1,6 +1,6 @@
 ---
 name: env-check
-description: Probe the dev environment for the recurring Windows quirks documented in `.claude/rules/environment.md` — Python version + 3.13 dep gaps, stdout encoding (cp1252 trap, tested by actually writing a non-ASCII char), and daemon reachability on :9000 + :9001. Use when the shell is behaving oddly, when a non-ASCII print just crashed, or when the user says "env-check" / "/env-check".
+description: Probe the dev environment for the recurring Windows quirks documented in `.claude/rules/environment.md` — Python version + 3.13 dep gaps, stdout encoding (cp1252 trap, tested by actually writing a non-ASCII char), and daemon reachability on :9000 + :9001. Use when the shell is behaving oddly, when a non-ASCII print just crashed, or when the user says "env-check" / "/env-check". NOT a git/daemon state check at session start (use preflight) and NOT a diagnosis of why the daemon died (use eos-wedge-postmortem).
 ---
 
 # Env Check
@@ -31,7 +31,7 @@ python -c "import phonemizer" 2>&1 | head -1
 where espeak-ng 2>&1 | head -1
 ```
 
-Known: `g2p_en` has no Python 3.13 wheel as of recent sessions; `espeak-ng` needs a separate Windows install. Apps depending on these (`apps/pronounce`, `apps/voice-assistant` listen path) gate imports behind try/except. Surface gaps; do NOT install.
+Known: `g2p_en` has no Python 3.13 wheel as of recent sessions; `espeak-ng` needs a separate Windows install. Apps depending on these (`apps/pronounce`, `apps/public/standard/voice-assistant` listen path) gate imports behind try/except. Surface gaps; do NOT install.
 
 ### 2. Encoding — actively write a non-ASCII char
 

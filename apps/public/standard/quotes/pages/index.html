@@ -34,6 +34,18 @@ body > .quote-hero, body > * { min-width:0 }
 .hi-star { font-size:16px; color:var(--text-muted); flex-shrink:0 }
 .hi-star.fav { color:var(--amber) }
 .hi-text { flex:1; font-size:13px; color:var(--text-secondary); overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
+
+.mc-row-input { display:flex; gap:8px; margin-bottom:12px }
+.mc-row-input .eos-input { padding-left:14px }
+.mc-list { max-height:280px; overflow-y:auto; margin-top:12px; border-top:1px solid var(--border) }
+.mc-item { display:flex; align-items:center; gap:10px; padding:10px 0; border-bottom:1px solid var(--border) }
+.mc-item-text { flex:1; font-size:13px; color:var(--text-secondary) }
+.mc-item-cat { font-size:11px; color:var(--text-muted); border:1px solid var(--border); border-radius:8px; padding:1px 6px; margin-left:6px }
+.mc-sync-row { display:flex; justify-content:flex-end }
+
+.qc-canvas-wrap { display:flex; flex-direction:column; align-items:center; gap:14px }
+.qc-canvas-wrap canvas { width:100%; max-width:320px; border-radius:12px; box-shadow:0 4px 20px rgba(0,0,0,0.35) }
+.qc-btn-row { display:flex; gap:8px }
 </style>
 </head>
 <body>
@@ -52,6 +64,8 @@ if(window.EOS&&EOS.registerActions){EOS.registerActions({},[],{description:"Dail
         <div class="quote-actions">
             <button class="qa-btn" id="fav-btn" onclick="toggleFavorite()" title="Favorite">&#9734;</button>
             <button class="qa-btn refresh" onclick="loadQuote()" title="New quote">&#x21bb;</button>
+            <button class="qa-btn" onclick="openQuoteCardModal()" title="Create shareable card">&#127912;</button>
+            <button class="qa-btn" onclick="openManageCollection()" title="Manage collection">&#128218;</button>
             <button class="qa-btn" onclick="openAppSettings()" title="Settings">&#9881;</button>
         </div>
     </div>
@@ -116,6 +130,13 @@ function toggleFavorite() {
         favorites.splice(idx, 1);
     } else {
         favorites.push(currentQuote);
+        // Best-effort push to the backend's own favorites store so
+        // `/api/vault-sync` has something real to write — there's no
+        // unfavorite route, so removal stays local-only.
+        EOS.apiSafe('/quotes/api/favorite', {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({quote: currentQuote}),
+        });
     }
     localStorage.setItem('eos-quotes-fav', JSON.stringify(favorites));
 
@@ -144,7 +165,7 @@ function renderHistory() {
     el.innerHTML = quoteHistory.map(function(h) {
         var isFav = favorites.indexOf(h.text) >= 0;
         var q = parseQuote(h.text);
-        return '<div class="history-item" onclick="showFromHistory(\'' + escAttr(h.text.replace(/'/g, "\\'")) + '\')">' +
+        return '<div class="history-item" onclick="showFromHistory(' + EOS_UI.jsArg(h.text) + ')">' +
             '<span class="hi-star ' + (isFav ? 'fav' : '') + '">' + (isFav ? '&#9733;' : '&#9734;') + '</span>' +
             '<span class="hi-text">' + esc(q.text) + '</span>' +
             '</div>';
@@ -158,6 +179,202 @@ function showFromHistory(raw) {
     document.getElementById('quote-author').textContent = q.author;
     updateFavButton();
     window.scrollTo({top: 0, behavior: 'smooth'});
+}
+
+// Manage collection modal — generate / add / delete / sync-to-vault
+// (these routes already existed server-side with no UI affordance at all)
+async function openManageCollection() {
+    var quotes = await EOS.apiSafe('/quotes/api/list');
+    renderManageModal(Array.isArray(quotes) ? quotes : []);
+}
+
+function renderManageModal(quotes) {
+    var rows = quotes.map(function(q) {
+        var text = (q && typeof q === 'object') ? q.text : q;
+        var cat = (q && typeof q === 'object') ? q.category : '';
+        var file = (q && typeof q === 'object') ? q.file : '';
+        var catBadge = (cat && cat !== 'general') ? ' <span class="mc-item-cat">' + esc(cat) + '</span>' : '';
+        return '<div class="mc-item">' +
+            '<span class="mc-item-text">' + esc(text) + catBadge + '</span>' +
+            '<button class="eos-btn eos-btn-sm" onclick="deleteQuoteFile(' + EOS_UI.jsArg(file) + ')">Delete</button>' +
+            '</div>';
+    }).join('') || '<div class="eos-empty">No quotes yet</div>';
+
+    EOS_UI.modal({
+        title: 'Manage collection',
+        width: '480px',
+        body:
+            '<div class="mc-row-input">' +
+                '<input type="text" id="mc-new-quote" class="eos-input" placeholder="Add a quote...">' +
+                '<input type="text" id="mc-new-category" class="eos-input" placeholder="Category (optional)" style="max-width:140px">' +
+                '<button class="eos-btn eos-btn-sm" onclick="addQuoteFromModal()">Add</button>' +
+            '</div>' +
+            '<div class="mc-row-input">' +
+                '<input type="text" id="mc-gen-topic" class="eos-input" placeholder="Generate on a topic...">' +
+                '<input type="text" id="mc-gen-category" class="eos-input" placeholder="Category (optional)" style="max-width:140px">' +
+                '<button class="eos-btn eos-btn-sm" onclick="generateQuoteFromModal()">&#10024; Generate</button>' +
+            '</div>' +
+            EOS_UI.provenanceLine(_lastGenProv, {style: 'margin:2px 0 8px'}) +
+            '<div class="mc-sync-row"><button class="eos-btn eos-btn-sm" onclick="syncQuotesToVault()">Sync to vault</button></div>' +
+            '<div class="mc-list">' + rows + '</div>',
+    });
+}
+
+async function addQuoteFromModal() {
+    var input = document.getElementById('mc-new-quote');
+    var catInput = document.getElementById('mc-new-category');
+    var q = (input.value || '').trim();
+    if (!q) return;
+    var res = await EOS.apiSafe('/quotes/api/add', {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({quote: q, category: (catInput && catInput.value || '').trim()}),
+    });
+    if (res && res.error) { if (window.EOS_UI) EOS_UI.toast(res.error, false); return; }
+    if (window.EOS_UI) EOS_UI.toast('Added', true);
+    openManageCollection();
+}
+
+//: Provenance of the most recent /api/generate, shown under the generate row.
+//: Null until one runs, so provenanceLine() renders nothing.
+var _lastGenProv = null;
+
+async function generateQuoteFromModal() {
+    var input = document.getElementById('mc-gen-topic');
+    var catInput = document.getElementById('mc-gen-category');
+    var topic = (input.value || '').trim() || 'life and growth';
+    if (window.EOS_UI) EOS_UI.toast('Generating…', true);
+    var res = await EOS.apiSafe('/quotes/api/generate', {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({topic: topic, category: (catInput && catInput.value || '').trim()}),
+    });
+    if (res && res.error) { if (window.EOS_UI) EOS_UI.toast(res.error, false); return; }
+    // /api/generate is the only AI path here (/api/quote serves the vault and
+    // carries no provenance). Held across the re-render below, which rebuilds
+    // the whole modal body.
+    _lastGenProv = res.provenance || null;
+    if (window.EOS_UI) EOS_UI.toast('Generated: ' + (res.quote || '').slice(0, 60), true);
+    openManageCollection();
+}
+
+async function deleteQuoteFile(file) {
+    var res = await EOS.apiSafe('/quotes/api/delete', {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({file: file}),
+    });
+    if (res && res.error) { if (window.EOS_UI) EOS_UI.toast(res.error, false); return; }
+    openManageCollection();
+}
+
+async function syncQuotesToVault() {
+    var res = await EOS.apiSafe('/quotes/api/vault-sync', {method: 'POST'});
+    if (res && res.error) { if (window.EOS_UI) EOS_UI.toast(res.error, false); return; }
+    if (window.EOS_UI) EOS_UI.toast('Synced ' + res.synced + ' quotes, ' + res.favorites + ' favorites to vault', true);
+}
+
+// Shareable quote-card export (quotes-no-imagery gap) — a client-side
+// <canvas> render, no capability call / cost / consent gate needed. A
+// styled background + wrapped quote text + author, downloadable as PNG.
+var CARD_GRADIENTS = [
+    ['#1e293b', '#0f172a'],
+    ['#5b21b6', '#1e1b4b'],
+    ['#065f46', '#022c22'],
+    ['#7c2d12', '#3f1509'],
+    ['#0e7490', '#082f3d'],
+];
+var _cardGradIdx = 0;
+
+function wrapCanvasText(ctx, text, maxWidth) {
+    var words = (text || '').split(' ');
+    var lines = [];
+    var cur = '';
+    words.forEach(function(word) {
+        var test = cur ? cur + ' ' + word : word;
+        if (cur && ctx.measureText(test).width > maxWidth) {
+            lines.push(cur);
+            cur = word;
+        } else {
+            cur = test;
+        }
+    });
+    if (cur) lines.push(cur);
+    return lines;
+}
+
+function renderQuoteCard(canvas, text, author, gradIdx) {
+    var ctx = canvas.getContext('2d');
+    var w = canvas.width, h = canvas.height;
+    var g = CARD_GRADIENTS[gradIdx % CARD_GRADIENTS.length];
+    var grad = ctx.createLinearGradient(0, 0, w, h);
+    grad.addColorStop(0, g[0]);
+    grad.addColorStop(1, g[1]);
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, w, h);
+
+    ctx.fillStyle = 'rgba(255,255,255,0.18)';
+    ctx.textAlign = 'left';
+    ctx.font = '220px Georgia, "Times New Roman", serif';
+    ctx.fillText('“', w * 0.06, h * 0.32);
+
+    ctx.fillStyle = '#fff';
+    ctx.textAlign = 'center';
+    ctx.font = 'italic 46px Georgia, "Times New Roman", serif';
+    var lines = wrapCanvasText(ctx, text, w * 0.78);
+    var lineHeight = 62;
+    var startY = h / 2 - (lines.length * lineHeight) / 2;
+    lines.forEach(function(line, i) {
+        ctx.fillText(line, w / 2, startY + i * lineHeight);
+    });
+
+    if (author) {
+        ctx.font = '500 28px -apple-system, "Segoe UI", sans-serif';
+        ctx.fillStyle = 'rgba(255,255,255,0.85)';
+        ctx.fillText('— ' + author, w / 2, startY + lines.length * lineHeight + 56);
+    }
+
+    ctx.font = '22px -apple-system, "Segoe UI", sans-serif';
+    ctx.fillStyle = 'rgba(255,255,255,0.35)';
+    ctx.fillText('EmptyOS', w / 2, h - 44);
+}
+
+function _redrawQuoteCard() {
+    var canvas = document.getElementById('quote-card-canvas');
+    if (!canvas || !currentQuote) return;
+    var q = parseQuote(currentQuote);
+    renderQuoteCard(canvas, q.text, q.author, _cardGradIdx);
+}
+
+function openQuoteCardModal() {
+    if (!currentQuote) { if (window.EOS_UI) EOS_UI.toast('Load a quote first', false); return; }
+    _cardGradIdx = 0;
+    EOS_UI.modal({
+        title: 'Shareable quote card',
+        width: '380px',
+        body:
+            '<div class="qc-canvas-wrap">' +
+                '<canvas id="quote-card-canvas" width="1080" height="1080"></canvas>' +
+                '<div class="qc-btn-row">' +
+                    '<button class="eos-btn eos-btn-sm" onclick="cycleCardStyle()">&#127912; Style</button>' +
+                    '<button class="eos-btn eos-btn-sm eos-btn-primary" onclick="downloadQuoteCard()">&#11015; Download PNG</button>' +
+                '</div>' +
+            '</div>',
+    });
+    _redrawQuoteCard();
+}
+
+function cycleCardStyle() {
+    _cardGradIdx = (_cardGradIdx + 1) % CARD_GRADIENTS.length;
+    _redrawQuoteCard();
+}
+
+function downloadQuoteCard() {
+    var canvas = document.getElementById('quote-card-canvas');
+    if (!canvas) return;
+    var a = document.createElement('a');
+    a.href = canvas.toDataURL('image/png');
+    a.download = 'quote-card.png';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
 }
 
 // App Settings slide-out (shared helper)

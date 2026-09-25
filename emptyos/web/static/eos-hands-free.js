@@ -83,10 +83,9 @@
     var cursorState = { active: false, x: 0, y: 0, emaX: null, emaY: null, lastMoveTs: 0, lastClickTs: 0, pinched: false };
 
 
-    // V3 — TTS read-back. currentUtterance is non-null while speechSynthesis is active;
-    // isTtsSpeaking mirrors it for the chip visual (state machine stays unchanged, speaking
-    // is an overlay effect that can occur during any state).
-    var currentUtterance = null;
+    // V3 — TTS read-back. isTtsSpeaking drives the chip visual (state machine stays
+    // unchanged, speaking is an overlay effect that can occur during any state).
+    // The utterance itself is owned by EOS_UI.speakText under the 'hands-free' key.
     var isTtsSpeaking = false;
     // lastQaAnswer holds the most recent /search/api/ask answer so the "Re-read" button
     // can replay it without re-fetching. V7 also retains lastQaQuestion so follow-up
@@ -112,11 +111,9 @@
 
     // V5 — read-aloud queue. Overlay pulls a feed from an app, reads items with TTS,
     // gestures navigate. readState lives here so gestures can mutate it during the
-    // `reading` state. suppressNextOnEnd is flipped by cancelSpeak so a manually
-    // cancelled utterance doesn't trigger the speakText onEnd callback (e.g. the
-    // auto-advance in read mode).
+    // `reading` state. A manual cancel is reported back through speakText's
+    // onEnd(cancelled) so it doesn't trigger the auto-advance in read mode.
     var readState = {source: null, items: [], index: 0, autoAdvance: true};
-    var suppressNextOnEnd = false;
     var READ_AUTOADVANCE_PAUSE_MS = 900;
     var READ_SOURCES = {
         inbox:   '/quick-action/api/read-feed',
@@ -1003,67 +1000,41 @@
         return (config && config.voice_out) || 'confirm-only';
     }
 
-    function selectVoice(hint) {
-        if (!window.speechSynthesis) return null;
-        var voices = window.speechSynthesis.getVoices() || [];
-        if (!voices.length || !hint) return null;
-        var h = String(hint).toLowerCase();
-        for (var i = 0; i < voices.length; i++) {
-            var v = voices[i];
-            if ((v.name || '').toLowerCase().indexOf(h) >= 0) return v;
-            if ((v.lang || '').toLowerCase().indexOf(h) >= 0) return v;
-        }
-        return null;
+    // Utterance construction, voice-hint selection and the cancel-ownership rule
+    // live in EOS_UI.speakText / EOS_UI.cancelSpeech (eos-components.js). What stays
+    // here is what is genuinely ours: the chip/cheat-panel visual state and the
+    // read-aloud auto-advance, which the shared helper knows nothing about.
+    function ttsState(speaking) {
+        isTtsSpeaking = speaking;
+        renderChip();
+        if (cheatPanel && cheatPanel.style.display !== 'none') renderCheatList();
     }
 
     function speakText(text, opts) {
         opts = opts || {};
-        if (!window.speechSynthesis || !window.SpeechSynthesisUtterance) return false;
-        cancelSpeak();
-        var clean = (window.EOS_UI && EOS_UI.stripMarkdownForTts)
-            ? EOS_UI.stripMarkdownForTts(text)
-            : String(text || '').trim();
-        if (!clean) return false;
-        var utt = new SpeechSynthesisUtterance(clean.substring(0, 3000));
-        utt.rate = (config && Number(config.tts_rate)) || 1.1;
-        var voice = selectVoice((config && config.tts_voice_hint) || '');
-        if (voice) utt.voice = voice;
-        utt.onstart = function() {
-            isTtsSpeaking = true;
-            renderChip();
-            if (cheatPanel && cheatPanel.style.display !== 'none') renderCheatList();
-        };
-        utt.onend = function() {
-            isTtsSpeaking = false;
-            currentUtterance = null;
-            renderChip();
-            if (cheatPanel && cheatPanel.style.display !== 'none') renderCheatList();
-            if (suppressNextOnEnd) { suppressNextOnEnd = false; return; }
-            if (typeof opts.onEnd === 'function') {
-                try { opts.onEnd(); } catch(e) { console.error('[hands-free] onEnd', e); }
-            }
-        };
-        utt.onerror = function() {
-            isTtsSpeaking = false;
-            currentUtterance = null;
-            renderChip();
-            if (cheatPanel && cheatPanel.style.display !== 'none') renderCheatList();
-            suppressNextOnEnd = false;
-        };
-        currentUtterance = utt;
-        window.speechSynthesis.speak(utt);
-        return true;
+        if (!window.EOS_UI || !EOS_UI.speakText) return false;
+        return EOS_UI.speakText(text, {
+            owner: 'hands-free',
+            rate: (config && Number(config.tts_rate)) || 1.1,
+            voiceHint: (config && config.tts_voice_hint) || '',
+            onStart: function() { ttsState(true); },
+            onEnd: function(cancelled) {
+                ttsState(false);
+                // A manual stop must not trigger auto-advance.
+                if (cancelled) return;
+                if (typeof opts.onEnd === 'function') {
+                    try { opts.onEnd(); } catch(e) { console.error('[hands-free] onEnd', e); }
+                }
+            },
+            onError: function() { ttsState(false); },
+        });
     }
 
     function cancelSpeak() {
-        // Suppress the next onEnd so manual cancels don't trigger auto-advance or
-        // other end-of-utterance side effects.
-        suppressNextOnEnd = !!currentUtterance;
-        if (window.speechSynthesis) {
-            try { window.speechSynthesis.cancel(); } catch(e) {}
-        }
-        currentUtterance = null;
-        if (isTtsSpeaking) { isTtsSpeaking = false; renderChip(); }
+        if (window.EOS_UI && EOS_UI.cancelSpeech) EOS_UI.cancelSpeech('hands-free');
+        // Update the chip synchronously rather than waiting on the cancelled
+        // utterance's end event, which browsers do not fire reliably.
+        if (isTtsSpeaking) ttsState(false);
     }
 
     // ──────────────────────────────────────────────────────────── V5 read-aloud queue

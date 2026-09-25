@@ -694,11 +694,21 @@
       });
     }
 
+    // Short text for a task's server-computed staleness tier — used when a
+    // task has no due date (so taskRow's due-chip is empty) but its tier is
+    // still real, e.g. a Focus-view "Someday" task the server flags 'stale'.
+    // Without this, the tier was signalled ONLY by the card's left-border
+    // color. .claude/rules/list-card-density.md — status must never be
+    // color-only.
+    var TIER_SHORT_LABEL = { fresh: 'Fresh', aging: 'Aging', stale: 'Stale', zombie: 'Zombie' };
+
     function taskRow(t, tier, idx) {
       var dueClass = t.due ? 'due-' + tier : 'due-future';
       var dueLabel = t.due
         ? (t.overdue_days > 0 ? t.overdue_days + 'd overdue' : t.due)
         : '';
+      var tierChip = (!t.due && tier && TIER_SHORT_LABEL[tier])
+        ? '<span class="task-due due-' + tier + '">' + TIER_SHORT_LABEL[tier] + '</span>' : '';
       var tierClass = tier !== 'none' ? ' tier-' + tier : '';
       var delay = Math.min(idx * 0.03, 0.3);
       var taskJson = escAttr(JSON.stringify({ file: t.file, line: t.line, text: t.text }));
@@ -718,7 +728,7 @@
               t.blocked_by.map(esc).join(', ') + '</div>'
             : '') +
         '</div>' +
-        (dueLabel ? '<span class="task-due ' + dueClass + '">' + dueLabel + '</span>' : '') +
+        (dueLabel ? '<span class="task-due ' + dueClass + '">' + dueLabel + '</span>' : tierChip) +
         '<div class="task-actions">' +
           '<button onclick="openCompleteNote(' + taskJson + ',this)" title="Mark this task done and add a completion note">Done note</button>' +
           '<button onclick="snoozeTask(' + escAttr(JSON.stringify(t.file)) + ',' + t.line + ',7)" title="Push the due date out 7 days">+7d</button>' +
@@ -733,13 +743,14 @@
     }
 
     // ----- AI suggest (Focus toolbar) -----
-    var _suggestState = null;   // {text} — survives re-renders of the Focus view
+    var _suggestState = null;   // {text, provenance} — survives re-renders of the Focus view
 
     function suggestBoxHtml() {
       if (!_suggestState) return '';
+      var pv = EOS_UI.provenanceLine(_suggestState.provenance, {wrap: false, suffix: ' '});
       return '<div style="background:var(--bg-card);border:1px solid var(--border);' +
         'border-left:3px solid var(--accent);border-radius:10px;padding:10px 14px;' +
-        'font-size:13px;line-height:1.5;margin-bottom:12px">✨ ' + esc(_suggestState.text) + '</div>';
+        'font-size:13px;line-height:1.5;margin-bottom:12px">' + pv + '✨ ' + esc(_suggestState.text) + '</div>';
     }
 
     async function loadSuggest(btn) {
@@ -747,7 +758,7 @@
       try {
         var d = await EOS.api('/task/api/suggest');
         if (d && d.suggestion) {
-          _suggestState = { text: d.suggestion };
+          _suggestState = { text: d.suggestion, provenance: d.provenance || null };
           renderFocusView();
         } else {
           showToast('No suggestion available', 'err');

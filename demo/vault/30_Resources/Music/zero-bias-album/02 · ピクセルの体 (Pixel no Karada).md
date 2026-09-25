@@ -14,10 +14,8 @@ language: ja
 bpm: 78
 duration: "3:11"
 date_created: 2026-04-25
-suno_url: "https://suno.com/song/3826ab3c-47e4-4160-b0e4-04039ab5bb7f"
-suno_song_id: 3826ab3c-47e4-4160-b0e4-04039ab5bb7f
-suno_model: v5.5
-suno_created: 2026-04-25T11:56:00
+model_version: v5.5
+published_at: 2026-04-25T11:56:00
 license: "© 2026 3:30 Channel — All rights reserved"
 ---
 
@@ -90,7 +88,4 @@ Cinematic Trip-hop, Industrial Japanese cyberpunk textures, deep groovy sub-bass
 
 ## 版权证明 / Copyright proof
 
-![[02 · ピクセルの体 (Pixel no Karada)-screenshot.png]]
-
-Suno publication: **April 25, 2026 at 11:56 AM** (v5.5).
-Source: https://suno.com/song/3826ab3c-47e4-4160-b0e4-04039ab5bb7f
+Published: **April 25, 2026 at 11:56 AM** (v5.5).

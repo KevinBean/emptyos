@@ -1,0 +1,16 @@
+[plugin]
+id = "meeting-capture"
+name = "Meeting Capture"
+version = "1.0.0"
+description = "Local system-audio (loopback) + mic capture for meeting notes — provides the meeting-capture service"
+
+[plugin.entry]
+module = "plugin"
+class = "MeetingCapturePlugin"
+
+[provides]
+services = ["meeting-capture"]
+tags = ["audio", "capture", "meeting", "loopback"]
+
+[platforms]
+supports = ["laptop"]

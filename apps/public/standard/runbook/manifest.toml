@@ -17,14 +17,15 @@ commands = ["runbook"]
 prefix = "/runbook"
 
 [provides.events]
-emits = ["runbook:created", "runbook:block_ran", "runbook:run_finished", "runbook:scheduled"]
+emits = ["runbook:created", "runbook:block_ran", "runbook:run_finished", "runbook:scheduled", "runbook:published"]
 # Run lifecycle observability — UI-only, no cross-app listener by design.
-internal = ["runbook:created", "runbook:block_ran", "runbook:run_finished", "runbook:scheduled"]
+internal = ["runbook:created", "runbook:block_ran", "runbook:run_finished", "runbook:scheduled", "runbook:published"]
 
 [requires]
 capabilities = ["read", "write", "think"]
 apps = []
-optional_apps = ["viz", "rooms", "assistant"]
+# kb feeds the starter-template gallery (GET /api/templates); absent → default only.
+optional_apps = ["viz", "rooms", "assistant", "publish", "kb"]
 services = ["notifications"]
 events = []
 

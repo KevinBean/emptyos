@@ -86,6 +86,19 @@
           <div id="replay-status" style="margin-top:12px;"></div>
         </div>
 
+        <div id="d-trigger" style="margin-top:20px; border-top:1px solid var(--border); padding-top:16px;">
+          <h3>&#9200; Scheduled trigger</h3>
+          <p class="meta">Run this recipe automatically on a schedule — every state-changing step still goes through the same review gate.</p>
+          <div style="display:flex; gap:8px; align-items:center; margin-top:8px;">
+            <input id="trigger-cron" placeholder="0 7 * * * (cron)" style="flex:1">
+            <label style="display:flex; align-items:center; gap:4px; white-space:nowrap;">
+              <input type="checkbox" id="trigger-enabled"> Enabled
+            </label>
+            <button class="eos-btn-sm" onclick="saveTrigger()">Save</button>
+          </div>
+          <div id="trigger-status" class="meta" style="margin-top:6px;"></div>
+        </div>
+
         <p class="meta" id="d-source" style="margin-top:16px"></p>
       </div>
     </div>
@@ -191,6 +204,33 @@
               + '<input data-input="' + escAttr(i.name) + '" value="' + escAttr(i.default || '') + '"></div>';
           }).join('')
         : '<p class="meta">No inputs — runs as-is.</p>');
+
+      document.getElementById('trigger-cron').value = r.trigger_cron || '';
+      document.getElementById('trigger-enabled').checked = !!r.trigger_enabled;
+      document.getElementById('trigger-status').textContent = (r.trigger_cron && r.trigger_enabled)
+        ? 'Scheduled: ' + r.trigger_cron : '';
+    }
+
+    async function saveTrigger() {
+      if (!_current) return;
+      var cron = document.getElementById('trigger-cron').value.trim();
+      var enabled = document.getElementById('trigger-enabled').checked;
+      var data = await fetch('/replay/api/recipes/' + encodeURIComponent(_current.id) + '/trigger', {
+        method: 'PATCH', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ cron: cron, enabled: enabled }),
+      }).then(function (r) { return r.json(); });
+      if (!data.ok) { EOS_UI.toast(data.error || 'save failed', 'error'); return; }
+      _current.trigger_cron = data.trigger_cron;
+      _current.trigger_enabled = data.trigger_enabled;
+      var statusEl = document.getElementById('trigger-status');
+      if (data.trigger_enabled && data.trigger_cron) {
+        statusEl.textContent = data.scheduled
+          ? 'Scheduled: ' + data.trigger_cron
+          : 'Not scheduled — check the cron string (' + data.trigger_cron + ')';
+      } else {
+        statusEl.textContent = '';
+      }
+      EOS_UI.toast('Saved', 'info');
     }
 
     function gatherInputs() {

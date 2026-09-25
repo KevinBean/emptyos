@@ -602,6 +602,28 @@ REFACTOR_VERIFY_GATE_MSG = (
     "remains), just confirm that and finish."
 )
 
+# No-action gate: injected once when the model's final response carries neither a
+# visible reply nor a tool call — the user would see nothing. Measured on the local
+# 9.7B model: it read a spec, spent its output on hidden reasoning, and stopped with
+# empty content, so the file was never written (model-bench engineer-calc 0/6;
+# 4/4 with the gate on, where it fired once per run — measured 2026-09-21).
+# Keyed on the empty reply, not on guessing whether the task wanted a change, so a
+# question answered in words never trips it. The message claims only what is known:
+# earlier tool calls in the turn may already have done work, and a weak model told
+# "nothing was done" could repeat a non-idempotent step.
+NO_ACTION_GATE_MSG = (
+    "Your last response was empty — no reply and no tool call. If the task is not "
+    "finished, continue it now with the tool calls it needs. If it is finished, say "
+    "briefly what you did. Do not repeat a step you have already completed."
+)
+
+
+def _is_empty_finish(turn: AgentTurn) -> bool:
+    """True when a finishing turn carries no visible text and no tool call."""
+    if turn.tool_uses:
+        return False
+    return not any(isinstance(b, TextBlock) and b.text.strip() for b in turn.assistant_blocks)
+
 
 @trace.trace_boundary
 async def run_turn(
@@ -618,17 +640,20 @@ async def run_turn(
     temperature: float = DEFAULT_TEMPERATURE,
     edit_path_limit: int = EDIT_PATH_LIMIT,
     orient_plan: dict | None = None,  # pre-turn plan from _orient(); drives nudge
+    user_content: Any = None,  # provider-native parts (text + images) — emptyos/sdk/attachments.py
 ) -> AgentTurn:
     """Run one user turn to completion (stop_reason != tool_use or max_iters).
 
     Mutates `session.messages` in place with the full transcript for this turn.
-    Returns the final AgentTurn (last provider round-trip).
+    Returns the final AgentTurn (last provider round-trip). ``user_content``,
+    when given, is the opening message's content instead of ``user_text`` (a
+    part list carrying images); ``user_text`` still names the turn in events.
     """
     kind = provider.kind
     session.provider_kind = kind
 
     # Append the user message in the provider's native shape
-    session.messages.append({"role": "user", "content": user_text})
+    session.messages.append({"role": "user", "content": user_content if user_content is not None else user_text})
     await _emit(
         events,
         "agent:turn_start",
@@ -658,6 +683,7 @@ async def run_turn(
     _plan_nudge_sent = False  # only inject the plan reminder once per turn
     _made_edits = False  # turn touched files (drives the refactor-verify gate)
     _verify_forced = False  # refactor-verify gate already fired this turn (force once)
+    _no_action_forced = False  # no-action gate already fired this turn (force once)
 
     def _maybe_loop_guard(
         content: str, counter: int, tag: str = ""
@@ -781,6 +807,20 @@ async def run_turn(
                 )
 
         if turn.stop_reason != "tool_use":
+            # No-action gate: an empty finish gets one nudge to actually act.
+            if (
+                not _no_action_forced
+                and _is_empty_finish(turn)
+                and feature_enabled(app_ref, "no-action-gate")
+            ):
+                _no_action_forced = True
+                # Drop the empty assistant message first: Anthropic rejects a
+                # non-final message with empty content, so keeping it would turn
+                # this nudge into a 400 on the next call.
+                session.messages.pop()
+                session.messages.append({"role": "user", "content": NO_ACTION_GATE_MSG})
+                await _emit(events, "agent:no_action_gate", {"session_id": session.id})
+                continue
             # Refactor-verify gate (Option B): if the turn made edits and is about
             # to finish, force ONE re-grep/self-check pass before stopping. Catches
             # "left a call site behind" that the soft hint misses on weak models.

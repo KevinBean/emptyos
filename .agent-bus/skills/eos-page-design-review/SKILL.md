@@ -24,7 +24,7 @@ It does not introduce new fonts, new palettes, brand islands, novel components. 
 
 Ask the user for:
 
-1. **Target** — file path or app id (`apps/radio/pages/index.html`)
+1. **Target** — file path or app id (`apps/extension/english-learning/radio/pages/index.html`)
 2. **Mode** — `review` (output only, propose-don't-edit) or `apply` (edit in place)
 3. **Constraint reminders** (optional) — anything to be especially careful about (e.g. "this is the public/kiosk page")
 
@@ -319,9 +319,9 @@ Most EmptyOS pages are instruments / lists / dashboards / forms, where the marke
 
 For each finding, write a fix. Each fix MUST:
 
-1. **Use only existing tokens** — `var(--accent)` not `#4a90e2`; `var(--radius-md)` not `8px`; `var(--font)` not `'Inter'`
+1. **Use only existing tokens** — `var(--accent)` not `#4a90e2`; `var(--radius)` not `8px`; `var(--font)` not `'Inter'`
 2. **Use only existing helpers** — `EOS_UI.statCards`, `.eos-badge`, `.eos-entity-card`, etc. — not new ones
-3. **Stay on the type/spacing/radius scale** — `{10, 11, 12, 13, 14, 15, 22, 28, 32, 48}px` for type; `{0, 2, 4, 8, 12, 16, 24, 32, 48}px` for spacing; `{0, 4, 6, 8, 14, 999}px` for radius
+3. **Stay on the type/spacing/radius scale** — `{10, 11, 12, 13, 14, 15, 16, 17, 18, 22, 28, 32–48}px` for type; `{0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 24, 32, 48}px` for spacing (plus multiples of 8 above 48: 56/64/80); `{0, 4, 6, 8, 10, 12, 14, 999}px` for radius
 4. **Not introduce a new font, palette, or visual language** — the moment a fix needs that, the right answer is a brand-island review (run `frontend-design` instead, with explicit user approval)
 
 ### Refusal list — auto-reject these proposals

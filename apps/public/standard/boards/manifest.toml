@@ -1,5 +1,6 @@
 [app]
 id = "boards"
+icon_id = "boards"
 store_category = "productivity"
 name = "Boards"
 version = "1.0.0"
@@ -21,6 +22,11 @@ optional_apps = ["people"]
 
 [provides.web]
 prefix = "/boards"
+# The public Form view (.claude/rules/boards-as-view-layer.md) — a stranger
+# with no login opens /boards/f/<id>, reads only the fillable schema, and
+# submits one record. Narrow prefixes only, never /api/boards (the owner's
+# full CRUD/automation surface) — see apps/public/standard/boards/public_form.py.
+public_routes = ["/f", "/api/public"]
 
 [provides.cli]
 commands = ["boards"]
@@ -28,6 +34,10 @@ commands = ["boards"]
 [provides.export]
 enabled = true
 mode = "standalone"
+# Ship only what the pages use — pages load eos-map.js. Undeclared means EVERY bundle
+# (hands-free + assistant + keys + maps + realtime), which put the shared
+# _assets/ at 869 KB against the 800 KB guard in tests/test_sys_export.py.
+assets = ["maps"]
 hook = "export"
 # Standalone distribution targets built by scripts/build_standalone_release.py
 # (.claude/rules/standalone-distribution.md). "extension" requires the export
@@ -64,6 +74,10 @@ emits = [
     "board:attachment_added",
     "board:attachment_deleted",
     "board:planner_imported",
+    # Emitted via BaseApp.emit_assignment() when an assignee/reviewer column
+    # changes (items.py) — the people app listens and rebuilds its workload index.
+    "people:assigned",
+    "people:unassigned",
 ]
 # Auto-slip bookkeeping — the board view is the surface — no cross-app listener by design.
 internal = [

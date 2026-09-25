@@ -298,7 +298,7 @@ async function showDetail(id) {
           <code style="font-family: var(--mono); color: var(--text-secondary);">${esc(fm.repo_path)}</code>
         </div>
       </div>
-      <button class="btn-mini" onclick="history.replaceState(null,'',location.pathname); closeDetail()">✕</button>
+      <button class="btn-mini" onclick="history.replaceState(null,'',location.pathname); closeDetail()" aria-label="Replace state">✕</button>
     </div>
 
     <div class="detail-section">

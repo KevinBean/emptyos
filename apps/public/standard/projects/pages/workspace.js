@@ -46,7 +46,7 @@ async function openProjectWorkspace(id) {
         if (p._vault_path && dv) dv.setAttribute('data-entity-path', p._vault_path);
         renderProjectView();
     } catch(e) {
-        if (dv) dv.innerHTML = '<div class="eos-empty">Failed to load project</div>';
+        if (dv) dv.innerHTML = EOS_UI.errorState({message: 'Failed to load project', onRetry: 'openProjectWorkspace(' + JSON.stringify(id) + ')'});
     }
 }
 

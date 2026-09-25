@@ -1,8 +1,13 @@
+---
+paths:
+  - "apps/**"
+  - "emptyos/web/static/**"
+---
 # Tour Steps Rule — Apps Contribute Walkthrough Stops
 
 The product tour is **not** a static onboarding overlay. It walks the user through real EmptyOS pages: each step navigates to a real route and uses `EOS_UI.spotlight()` to highlight a real DOM element. Apps contribute steps via manifest (`[[contributes.tour.step]]`); the tour orchestrator (`emptyos/web/static/eos-tour.js`) reads them from `/tour/api/steps` and drives the walkthrough.
 
-**Reference implementation:** `apps/tour/` (the orchestrator app), `apps/task/manifest.toml` (`task.capture` step), `apps/journal/manifest.toml` (`journal.write` step).
+**Reference implementation:** `apps/public/standard/tour/` (the orchestrator app), `apps/public/core/task/manifest.toml` (`task.capture` step), `apps/public/standard/journal/manifest.toml` (`journal.write` step).
 
 ## Principles
 

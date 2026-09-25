@@ -209,7 +209,7 @@ class Ledger:
                 "FROM requests WHERE site_id = ? AND ts >= ? GROUP BY branch",
                 (site_id, time.time() - 30 * 86400),
             ).fetchall()
-        # Per-branch conversation counts — the ELEK-style evaluation table.
+        # Per-branch conversation counts — a per-branch evaluation table.
         # Legacy rows carry the branch in `model`; real model ids fold to "model".
         intents: dict[str, int] = {}
         for branch, count in intent_rows:

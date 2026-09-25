@@ -39,6 +39,15 @@ defines one visual thesis, evolving motifs, and literalism guardrails. It must
 not contain a list of shots. Derive `art-direction.md` from that treatment
 before scene planning.
 
+Before bulk still or clip generation, follow **Pre-production reference pack
+→ Multi-angle scene references** in the canonical workflow. Approve the
+furnished master scene, derive the required reverse/side and interior/exterior
+views from that same space, and review them together for fixed layout, prop
+positions, and lighting. Mood cards alone are insufficient. Freeze clean
+individual views and parent hashes, link shots to their approved view/state,
+and reopen affected references when the scene changes. This is a production
+review requirement, not automatic geometry validation by Music Studio.
+
 For every scene, art direction must make these editable choices explicit:
 
 - still composition and subject scale;
@@ -168,6 +177,42 @@ These rules are model- and song-agnostic. The aesthetic answer still comes
 from the current song's lyrics, structure, culture, character, and
 `art-direction.md`; do not impose one protagonist, palette, shot scale, or
 motion vocabulary on every MV.
+
+## MV library: check patterns before directing, record verdicts after review
+
+`{vault}/10_Projects/YouTube-Music-Channel/library/` records every generation
+across MV projects (format in its `SCHEMA.md`).
+
+- **Before writing scene prompts or approving a start frame**, read the
+  `patterns/` notes that apply (locked-off camera, closed-lip performance,
+  adult groove, fixed glass, reference-only-as-role…) and their known failures.
+  A `deprecated` note is a prompt shape not to use.
+- **When you review a still or clip**, or relay Kevin's verdict, update that
+  generation's row from the EmptyOS repo root:
+  `python scripts/mv_library.py record-attempt --update --file row.json` with
+  its `attempt_id`, `output` (path and sha256 — a reviewed verdict without an
+  output is refused), `verdict`, `codes` (from `failure-codes.md`; the
+  art-review codes are the same vocabulary as the art ledger), a one-line
+  `reason` and `evidence.path`: a vault-relative review file that exists (the
+  EmptyOS `data/` art ledger is not a valid evidence path). Kevin's rejection
+  is `rejected-human` quoting him.
+- If the row does not exist yet, write the full row described in
+  `creative-mv-generator` → *MV prompt and asset library*, step 2. A row
+  written after the fact is a backfill: `recorded_by: "backfill"` plus
+  `source.file` (SCHEMA §1).
+- Only a human or model review is a verdict; technical metrics alone leave the
+  row `unreviewed`. Never put lyrics in a row.
+
+## Shot-state continuity for editing
+
+Before storyboarding, selecting coverage, or revising an action montage, read
+[`references/montage-and-mv-editing.md`](references/montage-and-mv-editing.md),
+especially **Shot state and cut-point ledger** and **Action-montage seam review**.
+Plan intended entry/exit states, then annotate actual selected footage with
+travel direction, facing/gaze, camera motion, action phase and perceived speed.
+Judge neighboring actions and emotional intent together: preserve momentum
+when continuity matters, and name the purpose of a deliberate directional reset.
+Do not infer actual movement from prompts or equate technical QA with seam review.
 
 ## Working Modes
 
@@ -553,3 +598,9 @@ Memory file: `mv-art-director-memory.md`
 - `suno-composer`: 创造音乐
 - `mv-art-director`: 为音乐创造视觉
 - 两者结合 = 完整的艺术作品
+
+## Imagery-led MV lessons
+
+For an MV carried by environment, objects and camera rather than a protagonist,
+read `references/imagery-mv-lessons.md` (from 不可說, 2026-09-14) before
+approving the treatment, subject hierarchy or scene references.

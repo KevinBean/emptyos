@@ -1,5 +1,6 @@
 [app]
 id = "assistant"
+icon_id = "assistant"
 store_category = "ai"
 name = "Assistant"
 version = "3.0.0"
@@ -34,4 +35,5 @@ schema = [
     {key = "assistant.use_tools", label = "Use Read-Only Tools for Retrieval", type = "toggle", default = false, hint = "Model drives Read/Grep/Glob itself instead of keyword-search injection. Higher quality, ~3x slower."},
     {key = "assistant.max_history", label = "Max Messages per Session", type = "number", default = 200},
     {key = "assistant.feature.assistant-cross-session-memory.enabled", label = "Recall exported chats in new sessions", type = "toggle", default = false, hint = "Dark by default. Stores a compact Assistant-owned episode when a chat is exported or auto-archived, then recalls up to three relevant episodes on the first turn of a new chat."},
+    {key = "assistant.feature.passage-citations.enabled", label = "Cite the exact passage, not just the note", type = "toggle", default = false, hint = "Dark by default. Names the section of each cited note that matched your question, and lets the citation chip expand that passage inline instead of opening the whole note."},
 ]

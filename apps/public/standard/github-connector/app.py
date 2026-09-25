@@ -1,4 +1,5 @@
-"""GitHub Connector — sync issues and PRs into EmptyOS projects.
+"""GitHub Connector — fetch GitHub issues/PRs, with one-click import into
+EmptyOS tasks.
 
 Declares [provides.project-tools] so it auto-appears in development
 project Tools tabs via manifest-driven discovery.
@@ -57,11 +58,11 @@ class GitHubConnectorApp(BaseApp):
         except Exception as e:
             return {"connected": False, "reason": str(e)}
 
-    @web_route("POST", "/api/sync-issues")
-    async def api_sync_issues(self, request):
-        """Fetch open issues from a GitHub repo."""
-        data = await request.json()
-        repo = data.get("repo", "") or self._default_repo()
+    async def sync_issues(self, repo: str = "") -> dict:
+        """Fetch open issues from a GitHub repo. Pure read — no state mutation
+        on GitHub or in EmptyOS — so it's safe as a ``[[provides.verbs]]``
+        ``stable`` action node (an automation may auto-run it unattended)."""
+        repo = repo or self._default_repo()
         if not repo:
             return {"error": "repo required (owner/repo format)"}
 
@@ -87,11 +88,16 @@ class GitHubConnectorApp(BaseApp):
         except Exception as e:
             return {"error": str(e)}
 
-    @web_route("POST", "/api/pr-status")
-    async def api_pr_status(self, request):
-        """Fetch open PRs from a GitHub repo."""
+    @web_route("POST", "/api/sync-issues")
+    async def api_sync_issues(self, request):
+        """Fetch open issues from a GitHub repo."""
         data = await request.json()
-        repo = data.get("repo", "") or self._default_repo()
+        return await self.sync_issues(data.get("repo", ""))
+
+    async def pr_status(self, repo: str = "") -> dict:
+        """Fetch open PRs from a GitHub repo. Pure read — same eligibility
+        rationale as ``sync_issues`` above."""
+        repo = repo or self._default_repo()
         if not repo:
             return {"error": "repo required (owner/repo format)"}
 
@@ -115,6 +121,50 @@ class GitHubConnectorApp(BaseApp):
             return {"prs": result, "repo": repo}
         except Exception as e:
             return {"error": str(e)}
+
+    @web_route("POST", "/api/pr-status")
+    async def api_pr_status(self, request):
+        """Fetch open PRs from a GitHub repo."""
+        data = await request.json()
+        return await self.pr_status(data.get("repo", ""))
+
+    async def import_issue_as_task(self, repo: str, number: int, project: str = "") -> dict:
+        """Create an EmptyOS project task from one GitHub issue.
+
+        The one write-back path that makes the manifest's "sync into EmptyOS
+        projects" claim real — everything else in this app is a pure read.
+        Idempotent enough for manual use (no dedup check); re-importing the
+        same issue just adds a second task line, same as any other capture.
+        """
+        repo = repo or self._default_repo()
+        if not repo:
+            return {"error": "repo required (owner/repo format)"}
+        project = project or "inbox"
+        try:
+            issue = await self._gh_get(f"/repos/{repo}/issues/{number}")
+        except Exception as e:
+            return {"error": str(e)}
+        if issue.get("pull_request"):
+            return {"error": f"#{number} is a pull request, not an issue"}
+        text = f"[GH #{issue['number']}] {issue['title']} — {issue['html_url']}"
+        result = await self.call_app(
+            "projects", "add_task_to_project", project_id=project, text=text,
+        )
+        if result.get("error"):
+            return result
+        await self.emit("github:issue_imported", {"repo": repo, "number": number, "project": project})
+        return {"ok": True, "project": project, "task": text}
+
+    @web_route("POST", "/api/import-issue")
+    async def api_import_issue(self, request):
+        """Create an EmptyOS project task from one GitHub issue."""
+        data = await request.json()
+        number = data.get("number")
+        if not isinstance(number, int):
+            return {"error": "number (int) required"}
+        return await self.import_issue_as_task(
+            data.get("repo", ""), number, data.get("project", ""),
+        )
 
     @cli_command("github", help="GitHub connector")
     async def cmd_github(self, action: str = "status", repo: str = ""):

@@ -16,9 +16,10 @@ from typing import Any
 from .parser import (
     STATUS_EMOJI,
     append_section,
+    get_section,
     render_notes,
     render_timesheet,
-    render_work,
+    render_work_preserving,
     replace_section,
 )
 
@@ -265,7 +266,13 @@ def apply_merge_to_note(content: str, merged: dict, receipt: dict) -> str:
     """
     if receipt["created"]:
         content = replace_section(content, "Plan", merged["plan"])
-        content = replace_section(content, "Work", render_work(merged["projects"]))
+        # Preserving here too, even though "created" means the note is new and
+        # has nothing to protect: the two renderers are identical on an empty
+        # original, and `created` is really "the read failed", which a transient
+        # error can also produce on a note that DOES exist.
+        content = replace_section(
+            content, "Work",
+            render_work_preserving(get_section(content, "Work"), merged["projects"]))
         content = replace_section(content, "Timesheet", render_timesheet(merged["timesheet"]))
         content = replace_section(content, "Notes", render_notes(merged["notes"]))
         return replace_section(content, "Update", merged["update"])
@@ -273,6 +280,11 @@ def apply_merge_to_note(content: str, merged: dict, receipt: dict) -> str:
     for field in receipt["prose_fields"]:
         content = replace_section(content, field.capitalize(), merged[field])
     if receipt["work_changed"]:
-        content = replace_section(content, "Work", render_work(merged["projects"]))
+        # Preserving, for the same reason Timesheet/Notes are appended below:
+        # this note is the user's own file and `## Work` carries lines the group
+        # model does not (`> Logged time:`, evidence markers).
+        content = replace_section(
+            content, "Work",
+            render_work_preserving(get_section(content, "Work"), merged["projects"]))
     content = append_section(content, "Timesheet", render_timesheet(receipt["timesheet_new"]))
     return append_section(content, "Notes", render_notes(receipt["notes_new"]))

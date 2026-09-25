@@ -38,9 +38,25 @@ class ColumnType:
         return value
 
     def validate(self, value: Any, col_config: dict) -> Any:
-        """Raise or return the value. Called after coerce."""
+        """Raise or return the value. Called after coerce.
+
+        Default body (no ``validate_fn``): a generic required/pattern check
+        driven by ``col_config`` — ``required: bool`` and ``pattern: str`` (a
+        regex the string form of ``value`` must fullmatch). Nothing calls
+        ``validate()`` today (boards ignores it), so this is purely additive;
+        ``emptyos.sdk.collection_app.CollectionLibrary`` is the first caller.
+        """
         if self.validate_fn:
             return self.validate_fn(value, col_config)
+        label = col_config.get("label") or col_config.get("id") or "field"
+        if col_config.get("required") and value in (None, "", []):
+            raise ValueError(f"{label} is required")
+        pattern = col_config.get("pattern")
+        if pattern and value not in (None, ""):
+            import re
+
+            if not re.fullmatch(pattern, str(value)):
+                raise ValueError(f"{label} does not match the required pattern")
         return value
 
     def render_hint(self, col_config: dict) -> dict:
@@ -82,6 +98,38 @@ class ColumnTypeRegistry:
         return tuple(out)
 
 
+def columns_to_form_fields(columns: list[dict]) -> list[dict]:
+    """Map a list of column configs (a manifest `[collection]` schema, or a
+    board's own `columns`) into the `{key,label,type,options,required,value}`
+    shape `EOS_UI.formHtml`/`formValues` (eos-components.js) actually read.
+
+    Second consumer: `emptyos.web.auto_ui._schema_fields_for_collection`
+    (the authenticated add-form) and `apps.public.standard.boards.
+    public_form._public_form_fields` (the anonymous public form) both need
+    this exact mapping — extracted here rather than one importing the
+    other's private helper (CLAUDE.md rule 9: build specific first, extract
+    on the second real caller).
+    """
+    out = []
+    for c in columns:
+        field_id = c.get("id", "")
+        field: dict = {
+            "key": field_id,
+            "label": c.get("label") or field_id.replace("_", " ").title(),
+            "type": c.get("type", "text"),
+            "options": c.get("options"),
+            "required": bool(c.get("required")),
+            "value": c.get("default", ""),
+        }
+        if c.get("type") == "link-record":
+            # No local id sample to preload — the picker fetches its own
+            # option list client-side (EOS_UI.formHtml, eos-components.js).
+            field["target_board"] = c.get("target_board", "")
+            field["multi"] = bool(c.get("multi"))
+        out.append(field)
+    return out
+
+
 # ── Built-in types — matches apps/boards/board_engine.py _TYPE_MAP exactly ──
 
 _register = ColumnTypeRegistry.register
@@ -95,7 +143,7 @@ _register(
     ColumnType("multi-select", storage=list, list_like=True, widget="multi-select", groupable=True)
 )
 _register(ColumnType("date", storage=str, widget="date", groupable=True))
-_register(ColumnType("checkbox", storage=str, widget="checkbox", groupable=True))
+_register(ColumnType("checkbox", storage=bool, widget="checkbox", groupable=True))
 _register(ColumnType("link", storage=str, widget="url"))  # URL — every value unique
 _register(
     ColumnType("formula", storage=str, widget="formula", groupable=True)
@@ -139,13 +187,52 @@ _register(
 _register(ColumnType("skills", storage=list, list_like=True, widget="tags", groupable=True))
 _register(ColumnType("dependencies", storage=list, list_like=True, widget="dependencies"))
 
+def _coerce_link_record(value: Any, col_config: dict) -> list[str]:
+    """Normalize loose link-record input into a clean list of target item ids.
+
+    Before this existed, coerce() was pure pass-through (the dataclass default)
+    for every caller — `CollectionLibrary.coerce_and_validate` would store
+    whatever raw shape a client POSTed (a bare string, `None`, junk) directly
+    into frontmatter with no relation to `storage=list`. Accepts: a list of
+    ids (already-shaped UI transport), a single id string, or `None`/empty.
+    `multi=false` truncates to at most one id, matching the "stored as a
+    1-element list for shape uniformity" convention documented above.
+    """
+    if value is None or value == "":
+        ids: list[str] = []
+    elif isinstance(value, (list, tuple)):
+        ids = [str(v).strip() for v in value if str(v).strip()]
+    else:
+        ids = [str(value).strip()] if str(value).strip() else []
+    if not col_config.get("multi") and len(ids) > 1:
+        ids = ids[:1]
+    return ids
+
+
 # link-record — typed reference to items on another board. Stores a list of
 # item IDs. `multi=false` means single-target (stored as a 1-element list for
 # shape uniformity). `target_board` + optional `inverse` are per-column config.
 # Distinct from the `link` type (URL).
 _register(
-    ColumnType("link-record", storage=list, list_like=True, widget="record-picker", groupable=True)
+    ColumnType(
+        "link-record", storage=list, list_like=True, widget="record-picker",
+        groupable=True, coerce_fn=_coerce_link_record,
+    )
 )
+
+
+def _reject_rollup_write(value: Any, col_config: dict) -> Any:
+    """A rollup is always computed (board_engine.evaluate_formulas re-derives
+    it on every read) — never a value a caller sets directly. Without this,
+    `CollectionLibrary.coerce_and_validate`'s generic validate() would happily
+    accept and store whatever a POST/PUT sent, which then silently vanishes
+    the next time the item is read (evaluate_formulas overwrites it) — a
+    confusing "my edit didn't stick" bug with no error to explain it. Raising
+    here instead gives the caller an actual reason at write time.
+    """
+    label = col_config.get("label") or col_config.get("id") or "field"
+    raise ValueError(f"{label} is a computed field — cannot be set directly")
+
 
 # rollup — aggregate a field across the records a link-record column points to
 # (Notion/Airtable rollup). Structured config instead of a raw formula string:
@@ -153,7 +240,7 @@ _register(
 # where agg ∈ sum/avg/count/min/max/earliest/latest/count_unique/percent_checked/
 # show. board_engine compiles it to the equivalent formula expression and runs
 # it through the same evaluator — read-only computed value, like `formula`.
-_register(ColumnType("rollup", storage=str, widget="formula", groupable=True))
+_register(ColumnType("rollup", storage=str, widget="formula", groupable=True, validate_fn=_reject_rollup_write))
 
 
 def _coerce_checklist(value: Any, col_config: dict) -> Any:

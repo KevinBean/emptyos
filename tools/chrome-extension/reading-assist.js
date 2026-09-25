@@ -177,21 +177,15 @@
     return out.map(entry => entry.item);
   }
 
-  function sourceChip(source) {
-    if (source === "vault") return { text: "yours", title: "From your own saved note" };
-    if (source === "cache") return { text: "saved", title: "A remembered explanation — no model call" };
-    return { text: "new", title: "Freshly generated" };
-  }
-
   function railRow(item) {
     const row = element("li", "eos-rail-row");
     row.dataset.word = item.word;
 
     const head = element("div", "eos-rail-head");
     head.appendChild(element("span", "eos-rail-word", item.word));
-    const chip = sourceChip(item.source);
-    const badge = element("span", "eos-rail-chip eos-rail-chip-" + (item.source || "model"), chip.text);
-    badge.title = chip.title;
+    const source = POLICY.wordSource(item.source);
+    const badge = element("span", "eos-rail-chip eos-rail-chip-" + (item.source || "model"), source.chip);
+    badge.title = source.title;
     head.appendChild(badge);
     row.appendChild(head);
 
@@ -202,23 +196,30 @@
 
     const actions = element("div", "eos-rail-actions");
     if (settings.pronounce) actions.appendChild(pronounceButton(item));
-    const save = element("button", "eos-rail-save", "Save");
-    save.type = "button";
-    save.addEventListener("click", async event => {
-      event.stopPropagation();
-      save.disabled = true;
-      save.textContent = "Saving…";      // a strong model polishes the note first
-      const result = await send({ type: "EOS_READING_SAVE", item, sourceUrl: location.href });
-      save.disabled = false;
-      save.textContent = result && result.ok ? "Saved" : "Failed";
-      if (result && result.ok) {
+    // No Save on a word that is already the reader's. The row is rebuilt from
+    // scratch on every render, so a "Saved" label set on the old button lived for a
+    // single tick before renderRail() put a fresh "Save" back in its place — the
+    // save landed and the rail said otherwise. The chip carries the state instead.
+    if (!source.saved) {
+      const save = element("button", "eos-rail-save", "Save");
+      save.type = "button";
+      save.addEventListener("click", async event => {
+        event.stopPropagation();
+        save.disabled = true;
+        save.textContent = "Saving…";      // a strong model polishes the note first
+        const result = await send({ type: "EOS_READING_SAVE", item, sourceUrl: location.href });
+        const verdict = POLICY.saveVerdict({ action: "save", result });
+        save.textContent = verdict.label;
+        if (!verdict.saved) { save.disabled = false; return; }
         feedback(item, "saved");
         item.source = "vault";           // it is theirs now
-        renderRail();
-      }
-    });
-    actions.appendChild(save);
-    row.appendChild(actions);
+        renderRail();                    // which drops this button entirely
+      });
+      actions.appendChild(save);
+    }
+    // An own word with Speak off has no actions at all, and the row is the only place
+    // that shows — an empty actions strip is 7px of margin under nothing.
+    if (actions.childElementCount) row.appendChild(actions);
 
     // Clicking a row takes the reader to the word, rather than making them hunt.
     row.addEventListener("click", () => {
@@ -525,6 +526,46 @@
     return button;
   }
 
+  // The reader's own 1-5 "how hard is this for me", written onto the saved note.
+  // Offered only for a word already in their vault: an unsaved word has no note to
+  // write into, and a control that silently fails is worse than no control.
+  const DIFF_MAX = 5;
+
+  function paintStars(row, value) {
+    row.dataset.value = String(value);
+    [...row.querySelectorAll("button")].forEach((b, i) => {
+      b.classList.toggle("on", i < value);
+      b.setAttribute("aria-pressed", String(i < value));
+    });
+  }
+
+  function difficultyRow(item) {
+    const row = element("div", "eos-reading-difficulty");
+    row.title = "How hard is this word for you?";
+    for (let n = 1; n <= DIFF_MAX; n++) {
+      const star = element("button", "eos-reading-star", "\u2605");
+      star.type = "button";
+      star.setAttribute("aria-label", `${n} of ${DIFF_MAX}`);
+      star.addEventListener("click", async event => {
+        event.stopPropagation();
+        const current = Number(row.dataset.value) || 0;
+        // Clicking the star you are already on clears it — otherwise a rating can
+        // only ever go up, and "this one is fine now" has no way to be said.
+        const next = current === n ? 0 : n;
+        paintStars(row, next);
+        const result = await send({ type: "EOS_READING_DIFFICULTY", word: item.word, difficulty: next });
+        if (!result || result.error) { paintStars(row, current); row.title = (result && result.error) || "Could not save"; return; }
+        const saved = Number(result.difficulty) || 0;
+        paintStars(row, saved);
+        item.difficulty = saved;
+        row.title = saved ? `Hard for you: ${saved} of ${DIFF_MAX}` : "How hard is this word for you?";
+      });
+      row.appendChild(star);
+    }
+    paintStars(row, Number(item.difficulty) || 0);
+    return row;
+  }
+
   function showCard(item, point, meta = {}) {
     removeCard();
     const card = element("aside");
@@ -538,11 +579,21 @@
     card.style.setProperty("--eos-anchor-x",
       Math.max(12, Math.min(point?.x || 12, innerWidth - 336)) + "px");
 
-    const kicker = meta.loading ? "looking up…" : sourceChip(item.source || meta.tier).title;
-    card.appendChild(element("div", "eos-reading-kicker", kicker));
+    const source = POLICY.wordSource(item.source || meta.tier);
+    const kicker = element("div", "eos-reading-kicker",
+      meta.loading ? "looking up…" : source.title);
+    card.appendChild(kicker);
 
     const title = element("div", "eos-reading-titlebar");
-    title.appendChild(element("h2", "eos-reading-title", item.word || "Word"));
+    const heading = element("h2", "eos-reading-title", item.word || "Word");
+    // Named, so the card announces as the word it is about when focus lands on
+    // it. `role="dialog"` WITHOUT `aria-modal`: this is a non-modal popover over
+    // a page the reader keeps using, so it must not claim to trap focus or to
+    // make the host page inert — neither of which it does.
+    heading.id = CARD_ID + "-title";
+    card.setAttribute("role", "dialog");
+    card.setAttribute("aria-labelledby", heading.id);
+    title.appendChild(heading);
     if (settings.pronounce && !meta.loading) title.appendChild(pronounceButton(item));
     card.appendChild(title);
 
@@ -560,13 +611,29 @@
       return;
     }
 
+    // `let`, not `const`: a word saved from this card gains its rating row below,
+    // and the OTHER verdict buttons close over this same binding — capturing it as
+    // null would insert a second row on the next click.
+    let stars = source.saved ? difficultyRow(item) : null;
+    if (stars) card.appendChild(stars);
+
     const actions = element("div", "eos-reading-actions");
     const close = element("button", "", "Close");
     close.type = "button";
+    // Anchored right by CSS. The anchor used to live on Save, which is REMOVED
+    // once a verdict saves the word (below) — so the element carrying
+    // `margin-left:auto` vanished mid-interaction and Close snapped leftward
+    // across the card. Close outlives every other button, so it holds the anchor.
+    close.dataset.action = "close";
     close.addEventListener("click", () => removeCard());
-    actions.appendChild(close);
 
-    for (const [action, label] of [["known", "I know this"], ["hard", "Still hard"], ["save", "Save word"]]) {
+    // Save is offered only while there is something to save — a word already in the
+    // reader's dictionary is the one case where the button can do nothing, and it was
+    // sitting there under a chip that claimed the word was saved. The verdicts stay:
+    // "I know this" / "Still hard" grade a saved word too.
+    const verdicts = [["known", "I know this"], ["hard", "Still hard"]];
+    if (!source.saved) verdicts.push(["save", "Save word"]);
+    for (const [action, label] of verdicts) {
       const button = element("button", "", label);
       button.type = "button";
       button.dataset.action = action;
@@ -579,26 +646,64 @@
         const result = action === "save"
           ? await send({ type: "EOS_READING_SAVE", item, sourceUrl: location.href })
           : await feedback(item, action);
-        button.disabled = false;
-        const saved = result && (result.ok || result.saved);
-        button.textContent = !saved ? "Save failed"
-          : action === "known" ? "Known · saved"
-          : action === "hard" ? "Hard · saved"
-          : "Saved";
-        if (!saved) return;
-        item.source = "vault";                 // it is theirs now
+        const verdict = POLICY.saveVerdict({ action, result });
+        button.textContent = verdict.label;
+        if (!verdict.judged) { button.disabled = false; return; }
+        // The judgement and the note are separate writes, so they get separate
+        // consequences: a recorded "known" stops the flagging whether or not the
+        // note landed, and only a landed note makes the word theirs.
         if (action === "known") {
           items.delete(item.word.toLowerCase());   // stop flagging it
           renderHighlights();
+        }
+        if (verdict.saved) {
+          item.source = "vault";                 // it is theirs now
+          kicker.textContent = POLICY.wordSource("vault").title;
+          // The word is theirs now, so it has a note to rate — the row appears
+          // without making them close and reopen the card to find it. The number
+          // is REPORTED by the daemon, never moved by it: a verdict routes the
+          // word, and the star row beside it is the only thing that rates it.
+          //
+          // `verdict.rating` is three-valued (see reading-policy.js): null means
+          // the daemon could not read the note, NOT that the word is unrated. Both
+          // branches below have to honour that — an unguarded insert would build a
+          // fresh row from `item.difficulty`, which for a word that opened unsaved
+          // is undefined, and `difficultyRow` paints that as a definite 0. So on a
+          // non-answer we paint nothing and insert nothing: the row shows up on the
+          // next open, carrying whatever the note actually says.
+          const rated = verdict.rating;
+          if (rated !== null) {
+            item.difficulty = rated;
+            if (stars) {
+              paintStars(stars, rated);
+            } else {
+              stars = difficultyRow(item);
+              card.insertBefore(stars, actions);
+            }
+          }
+          // Save now has nothing left to do. The Save button itself stays — disabled,
+          // reading "Saved" — because removing what was just clicked would take the
+          // acknowledgement with it.
+          if (action !== "save") card.querySelector("[data-action='save']")?.remove();
+        } else {
+          button.disabled = false;               // the note is worth another try
         }
         renderRail();
       });
       actions.appendChild(button);
     }
+    // Dismiss last. The verdicts are what the card is FOR; Close sitting first put
+    // the one button that records nothing ahead of both that do.
+    actions.appendChild(close);
     card.appendChild(actions);
     feedback(item, "opened");
     document.documentElement.appendChild(card);
-    close.focus({ preventScroll: true });
+    // Focus the CARD, not a button. Close is now last, so focusing it would put
+    // both verdicts behind a Shift+Tab; focusing the first verdict instead would
+    // arm Enter to record a judgement the reader never chose. From the card, Tab
+    // reaches the verdicts in order and Escape still closes (document handler).
+    card.tabIndex = -1;
+    card.focus({ preventScroll: true });
   }
 
   function showError(word, message, point) {

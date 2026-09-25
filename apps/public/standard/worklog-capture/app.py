@@ -117,8 +117,15 @@ class WorklogCaptureApp(BaseApp):
             "draft": m.get("draft") or {},
         }
 
-    @web_route("GET", "/api/queue")
-    async def api_queue(self, request):
+    async def pending_summary(self) -> dict:
+        """Same shape as ``api_queue`` — the public, call_app-friendly form.
+
+        ``call_app`` invokes ``getattr(instance, method)(**kwargs)``, which
+        can't supply the positional ``request`` a ``@web_route`` handler
+        takes, so a cross-app caller (worklog's ingest lane) needs a plain
+        method. Mirrors the ``month_cells``/``api_month`` split in
+        ``apps/public/standard/worklog/reads.py``.
+        """
         metas = store.iter_metas(self.queue_dir())
         counts: dict[str, int] = {}
         for m in metas:
@@ -141,6 +148,10 @@ class WorklogCaptureApp(BaseApp):
             "last_digest": digest._read_last_digest(self).isoformat()
             if digest._read_last_digest(self) else "",
         }
+
+    @web_route("GET", "/api/queue")
+    async def api_queue(self, request):
+        return await self.pending_summary()
 
     @web_route("GET", "/api/thumb/{id}")
     async def api_thumb(self, request):
@@ -191,6 +202,11 @@ class WorklogCaptureApp(BaseApp):
                         {"id": cid, "project": payload["project"]})
         return {"ok": True, "worklog": res}
 
+    async def apply_capture(self, id: str, **fields) -> dict:
+        """Public wrapper around ``_apply`` — the call_app-friendly form used
+        by worklog's ingest lane (see ``pending_summary`` for why)."""
+        return await self._apply(id, fields)
+
     @web_route("POST", "/api/apply/{id}")
     async def api_apply(self, request):
         cid = request.path_params.get("id", "")
@@ -209,17 +225,21 @@ class WorklogCaptureApp(BaseApp):
         return {"ok": True, "applied": applied, "results": results,
                 "capped": capped, "cap": _APPLY_ALL_CAP}
 
-    @web_route("POST", "/api/dismiss/{id}")
-    async def api_dismiss(self, request):
-        cid = request.path_params.get("id", "")
+    async def dismiss_capture(self, id: str) -> dict:
+        """Public, call_app-friendly form of the dismiss action."""
         queue = self.queue_dir()
-        m = store.read_meta(queue, cid)
+        m = store.read_meta(queue, id)
         if not m:
             return {"error": "not found"}
         m["status"] = store.STATUS_DISMISSED
-        store.write_meta(queue, cid, m)
-        await self.emit("worklog-capture:dismissed", {"id": cid})
+        store.write_meta(queue, id, m)
+        await self.emit("worklog-capture:dismissed", {"id": id})
         return {"ok": True}
+
+    @web_route("POST", "/api/dismiss/{id}")
+    async def api_dismiss(self, request):
+        cid = request.path_params.get("id", "")
+        return await self.dismiss_capture(cid)
 
     # ── config / setup status ─────────────────────────────────────────────────
     @web_route("GET", "/api/config")

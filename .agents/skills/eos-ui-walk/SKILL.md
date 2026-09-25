@@ -1,6 +1,6 @@
 ---
 name: eos-ui-walk
-description: Act as Kevin — the user of EmptyOS — and walk the product by hand through a real browser, performing real use-case workflows end to end (capture a task, write a journal entry, look something up in the KB, add a job application, run a learn session…). Screenshot the meaningful steps, judge each one (works / slow / confusing / broken), and log it all into a self-contained HTML report to show the user. Designed to be re-run on a /loop ("dogfood the UI"). Use when the user says "UI walk", "dogfood the UI", "act as me and use the app", "walk the real use cases", "screenshot the steps", "test it like a user", or loops this skill. NOT for visual/design polish (use eos-page-design-review / eos-design-system-audit), NOT for backend correctness — async-loop wedges, vault read-modify-write races (use eos-bug-audit), NOT for architecture/wiring (use eos-architecture-review).
+description: Act as the user of EmptyOS and walk the product by hand in a real browser, performing real workflows end to end (capture a task, write a journal entry, look something up in the KB, add a job application). Judge BOTH axes at every step — does the flow work (works / slow / confusing / broken), AND is the feature set enough to finish the real job (missing = feature gap). Screenshot the meaningful steps into a self-contained HTML report with a per-use-case sufficiency verdict. Use when the user says "UI walk", "dogfood the UI", "act as me and use the app", "walk the real use cases", "test it like a user", or "is the app enough for my workflow". NOT for visual polish (use eos-page-design-review / eos-design-system-audit), NOT for backend correctness such as async wedges or vault read-modify-write races (use eos-bug-audit), NOT for wiring (use eos-architecture-review), NOT the fix-until-clean loop (use eos-usecase-audit — it wraps this walk).
 ---
 
 # EmptyOS UI Walk — dogfood as the user
@@ -14,8 +14,12 @@ report** the user can open and skim.
 
 This is dogfooding, not a test suite. Your judgment per step is the signal:
 `pass` (it just worked), `slow` (worked but made me wait), `confusing` (worked
-but I had to think / hunt), `fail` (broke / dead end). Be honest — a clean
-report that says "everything worked" is a fine and valuable outcome.
+but I had to think / hunt), `fail` (broke / dead end), `missing` (the real job
+needs a capability that doesn't exist — a feature gap, not a bug). Be honest —
+a clean report that says "everything worked" is a fine and valuable outcome,
+**but only if the real jobs could actually be finished**: "every button works
+and I still couldn't do my work" is a gap report, not a clean pass. The walk
+measures product quality AND product boundaries.
 
 The automated scanners (`check-js-errors.py`, `check-clickable.py`) are NOT the
 job here — they're a 60-second optional pre-pass for crude breakage. The job is
@@ -37,10 +41,35 @@ git status --short                                 # pre-existing drift (leave o
 ```
 
 - **Daemon down** → surface it and stop. NEVER restart `:9000`/`:9001` from a
-  tool (`.Codex/rules/daemon-handling.md`).
+  tool (`.claude/rules/daemon-handling.md`).
 - This is mostly a *read* activity that produces an artifact under `data/`
   (gitignored). You only commit if you actually fix a bug (rare) — and then ONLY
   your own files by explicit path (Step 7).
+
+## Step 0.5 — Pick a browser backend (this walk is NOT bound to any one browser)
+
+The walk drives **generic** browser verbs (`browser_navigate`, `browser_click`,
+`browser_type`, `browser_snapshot`, `browser_take_screenshot`). Any MCP browser
+backend that provides them works:
+
+| Backend | Tools | When |
+|---|---|---|
+| **Playwright MCP** | `mcp__plugin_playwright_playwright__browser_*` | **Default.** Headless, always available, no user setup. |
+| Claude-in-Chrome | `mcp__claude-in-chrome__*` | When the user wants to watch in their own Chrome, or a flow needs their logged-in session. |
+
+**"The Chrome extension isn't connected" is NEVER a valid reason to skip this
+walk.** Fall through to the Playwright MCP and keep going. This walk is the ONLY
+mechanism that catches the perceptual/affordance class of bug — panels that blur
+together, a list you can't tell scrolls, a missing readout, a control that
+doesn't explain itself. Every *automated* rendered check targets a narrower axis
+(`check_readability.py`=contrast, `check-clickable.py`=occlusion,
+`check_ui_affordance.py`=overflow + tab-roles, `check_ui_structure.py`=EOS_UI
+adoption). Skipping the hand-walk silently drops perceptual coverage to **zero**
+— which is exactly how a batch of CAD-workspace UX bugs shipped on 2026-07-11
+behind a green `node --check` + `pytest` + `curl`.
+
+Corollary: **a rendered-UI change is not verified until it has been looked at.**
+Static checks passing is not the same as the surface being usable.
 
 ## Step 1 — Authenticate the live browser (once per run)
 
@@ -67,7 +96,7 @@ data/ui-walk/usecases/<YYYY-MM-DD-HHMM>/steplog.jsonl
 
 For a need-first walk, also write `scenario.md` in the run folder — the real
 user outcome, team/roles, and lifecycle milestones — with the trace identity
-in block-style YAML frontmatter (`.Codex/rules/loop-traceability.md`):
+in block-style YAML frontmatter (`.claude/rules/loop-traceability.md`):
 
 ```yaml
 ---
@@ -108,9 +137,12 @@ Never reshape the user's need to fit what EmptyOS can already provide. The walk
 should reveal both product quality and product boundaries.
 
 Choose **5–8 real workflows** this iteration, weighted toward what Kevin actually
-does. Don't script rigidly — follow curiosity the way a real user would, and let
-one step suggest the next. Starter catalog (rotate across iterations; combine /
-deviate freely):
+does. The committed scenario catalog
+(`apps/extension/dev/dogfood-agent/scenarios/*.md`, authored via
+`eos-new-usecase`) is a ready source of walkable flows — check it before
+inventing one. Don't script rigidly — follow curiosity the way a real user
+would, and let one step suggest the next. Starter catalog (rotate across
+iterations; combine / deviate freely):
 
 - **Capture → task → done** — `/hub/` capture box → type a task → confirm it lands
   in Today / `/task/` → mark it done → confirm it disappears.
@@ -163,7 +195,62 @@ Also opportunistically catch the cheap breakage classes while you're there: a
 visible JS error, a button that 404s, a dead dropdown (route returns nothing) —
 log those as `fail` with the detail.
 
-## Step 4 — Triage (false-positive discipline — `.Codex/rules/audits.md`)
+### Step 3.5 — Failure context bundle: replay GIF + console + network for `fail` / `confusing` steps
+
+A still can't show *how* a flow went wrong — the click that did nothing, the
+state that flashed and vanished, the result that never arrived. And a finding
+without its console/network context makes the fixer re-reproduce what the walk
+already saw. So when a step lands `fail` or `confusing` (and it reproduces —
+triage first, Step 4), attach the same context bundle a good bug-report tool
+(jam.dev shape) auto-collects: **replay clip + console errors + failed
+requests**, all fields the report renders inline.
+
+**Console + network (do this for every `fail` — it's two free tool calls):**
+
+- `browser_console_messages` (filter to errors/warnings — use the `pattern`
+  param or pick out `error` lines) → steplog `"console": ["..."]`.
+- `browser_network_requests` → keep only failed/4xx/5xx entries →
+  `"network": ["GET /task/api/list -> 500"]`.
+- Both render as collapsible blocks under the step note, so the person (or
+  fix-agent) reading the report starts from the error, not from scratch.
+
+**Timing (evidence for `slow`):** when a verdict is `slow`, put the measured
+wait in the steplog as `"ms": 4200` (from your `browser_wait_for` bound or the
+gap you observed) — the report shows it as a chip. A `slow` with a number is a
+perf thread; a `slow` without one is a vibe.
+
+**Replay GIF (for flows where motion is the evidence):**
+
+- **Claude-in-Chrome backend** — use the native `gif_creator` tool: capture
+  extra frames before/after each action while re-driving the flow, save with a
+  meaningful filename (`uc1-fail.gif`) into the run folder.
+- **Playwright MCP backend** (no gif tool) — re-drive the failing flow taking a
+  **frame burst**: one `browser_take_screenshot` after each action, ordered
+  filenames `uc1-f01.png`, `uc1-f02.png`, …. Then stitch:
+
+  ```bash
+  python scripts/ui_walk_gif.py --out data/ui-walk/usecases/<run>/uc1-fail.gif \
+    data/ui-walk/usecases/<run>/uc1-f01.png data/ui-walk/usecases/<run>/uc1-f02.png ...
+  ```
+
+  (Downscales to ≤800px wide, ~0.9s/frame, holds the end state; caps at 12
+  frames. Fail-soft — if Pillow is missing it says so and the still remains
+  the evidence.)
+
+Add the clip to that step's `steplog.jsonl` record as `"gif": "<path>"` — the
+report renders it under the still with a ▶ replay label, autoplaying.
+
+**Discipline (CI-style retain-on-failure):** capture the bundle ONLY for
+`fail` / `confusing` verdicts — a healthy walk records zero clips and zero
+context blocks. Keep a clip to one flow (≤12 frames), not the whole walk.
+Don't blanket-record video: recording is cheap, but artifacts nobody reviews
+are pure litter, and the stills remain the skim layer the report is built on.
+If the friction is *timing* (a `slow` step), a GIF adds nothing — the `ms`
+chip + note is the evidence. Heavier replay media (rrweb DOM-event replay,
+Playwright traces) are deliberately deferred — see `docs/DEFERRED-WORK.md` —
+because they belong to the scripted pytest layer, not this hand-walk.
+
+## Step 4 — Triage (false-positive discipline — `.claude/rules/audits.md`)
 
 Before calling anything a `fail`:
 
@@ -187,10 +274,11 @@ python scripts/ui_walk_report.py \
   --title "EmptyOS UI walk — <date>" --persona Kevin
 ```
 
-It groups by use case (worst-first), base64-embeds every screenshot into one
-self-contained file, badges each step, and rolls up pass/slow/confusing/fail
-counts. Output is under `data/` (gitignored) — an artifact to **show the user**,
-not committed. A missing screenshot renders a placeholder, never a crash.
+It groups by use case (worst-first), base64-embeds every screenshot **and any
+`gif` replay clips** into one self-contained file, badges each step, and rolls
+up pass/slow/confusing/fail counts. Output is under `data/` (gitignored) — an
+artifact to **show the user**, not committed. A missing screenshot or GIF
+renders a placeholder, never a crash.
 
 **Rendering never mutates any queue.** The report is a terminal evidence
 artifact; findings enter the fix loop only through the explicit triage step
@@ -200,7 +288,7 @@ below.
 
 The `fail | confusing | missing` rows are durable in the steplog + report, but
 they do NOT become issues by themselves. When the user wants findings acted
-on, bridge them one by one (`.Codex/rules/loop-traceability.md`):
+on, bridge them one by one (`.claude/rules/loop-traceability.md`):
 
 ```bash
 python scripts/ui_walk_promote.py list --walk data/ui-walk/usecases/<run>
@@ -224,18 +312,18 @@ python scripts/ui_walk_promote.py dismiss|defer|decline --walk <run-dir> --step-
 Most iterations produce a report, not a code change. But if the walk surfaced a
 real, reproducible interactive bug with an obvious root cause:
 
-- Fix at the source (`.Codex/rules/debugging.md`); prefer the platform fix (one
+- Fix at the source (`.claude/rules/debugging.md`); prefer the platform fix (one
   bug in `eos.js` over N pages — `feedback_platform_fix_for_n_app_bugs`).
 - Reuse `EOS_UI` / `EOS.*` helpers; match surrounding code.
 - **Verify**: static change (`pages/*.html`, `static/*.js`, CSS) hot-reloads — re-walk
   the step and confirm. Python change is NOT live until the user restarts `:9000`
-  (you can't) — verify on a leased sandbox (`.Codex/rules/sandbox-driven-testing.md`)
+  (you can't) — verify on a leased sandbox (`.claude/rules/sandbox-driven-testing.md`)
   or `py_compile` + tell the user a restart is needed.
 
 ## Step 7 — Commit a fix (only when you actually changed code)
 
 - Commit ONLY files you changed, by explicit path: `git commit -o path/to/file -m "..."`.
-  NEVER `git add -A` / `git add .` (parallel-session drift — `.Codex/rules/environment.md`).
+  NEVER `git add -A` / `git add .` (parallel-session drift — `.claude/rules/environment.md`).
 - `apps/personal/` is gitignored — a fix there is local-only; say so.
 - Conventional-commit message; end with the `Co-Authored-By` trailer. Then
   `git log --oneline -3` to confirm your commit landed.
@@ -244,9 +332,17 @@ real, reproducible interactive bug with an obvious root cause:
 ## Step 8 — Report + loop decision
 
 Tell the user:
+- **Sufficiency verdict per use case, first** — one line each: `complete` /
+  `complete-with-friction` / `blocked-by-bug` / `blocked-by-gap` /
+  `workaround` (finished only by leaving the system — log the workaround as a
+  `missing` finding too). Judge against the real goal, not against the steps
+  that happened to be walkable; a goal silently skipped because no feature
+  supports it is `blocked-by-gap`, not `complete`.
 - **Where the report is** (the `report.html` path) and how to open it.
-- **Headline findings** — the `fail`/`confusing`/`slow` steps in plain language
-  ("adding a task works but doesn't show in Today without a reload").
+- **Headline findings** — the `fail`/`confusing`/`slow`/`missing` steps in
+  plain language ("adding a task works but doesn't show in Today without a
+  reload"; "there is no way to record a design decision against the project —
+  had to hand-edit the note").
 - **Anything fixed** (with commit hash) and anything **flagged-not-fixed** (the
   data-volume/perf/design class) and why.
 - **Triage summary** — which findings were promoted / dismissed / deferred /
@@ -261,12 +357,15 @@ Otherwise the next iteration rotates to fresh use cases.
 
 - `scripts/ui_walk_report.py` — the use-case step-log → HTML renderer (this skill's artifact half).
 - `scripts/ui_walk_promote.py` — the Step 5b triage bridge (walk finding → fix-prompt queue / disposition).
-- `.Codex/rules/loop-traceability.md` — trace identity + gap lifecycle + learning outcomes.
+- `.claude/rules/loop-traceability.md` — trace identity + gap lifecycle + learning outcomes.
+- `scripts/ui_walk_gif.py` — frame-burst → replay-GIF assembler for the GIF-on-failure step (Playwright backend; claude-in-chrome uses its native `gif_creator`).
 - `scripts/_eos_browser.py` — auth/token + base-URL resolution shared by the walkers.
 - `scripts/check-js-errors.py` / `scripts/check-clickable.py` — the optional crude-breakage pre-pass.
 - `scripts/ui_walk_audit.py` — the older *per-app* screenshot walk (one shot per app); complementary, not this.
-- `.Codex/rules/audits.md` — false-positive discipline.
-- `.Codex/rules/debugging.md` — root-cause-before-fix.
-- `.Codex/rules/daemon-handling.md` — never restart `:9000`/`:9001`.
-- `.Codex/rules/sandbox-driven-testing.md` — verify Python fixes off `:9000`.
+- `.claude/rules/audits.md` — false-positive discipline.
+- `.claude/rules/debugging.md` — root-cause-before-fix.
+- `.claude/rules/daemon-handling.md` — never restart `:9000`/`:9001`.
+- `.claude/rules/sandbox-driven-testing.md` — verify Python fixes off `:9000`.
 - `eos-bug-audit` (backend correctness), `eos-page-design-review` / `eos-design-system-audit` (visual/design) — the adjacent skills this one is deliberately NOT.
+- `eos-usecase-audit` — the orchestrator that adds CLI/bridge lanes and drives the fix→re-walk-until-clean loop on top of this walk's mechanics.
+- `eos-new-usecase` — authors scenarios into the dogfood catalog (the house contract lives in its `scenario-shape.md`).

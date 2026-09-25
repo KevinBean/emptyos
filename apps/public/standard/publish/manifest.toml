@@ -1,5 +1,6 @@
 [app]
 id = "publish"
+icon_id = "publish"
 store_category = "productivity"
 name = "Publish"
 version = "0.1.0"
@@ -25,7 +26,9 @@ module = "prompts"
 emits = ["publish:built", "publish:deployed", "publish:diagrams_rasterized", "publish:updated", "publish:asset_created"]
 
 # internal: build-step + content-edit churn; publish:built/deployed are the milestones
-internal = ["publish:diagrams_rasterized", "publish:updated"]
+# `asset_created` is per-asset bookkeeping for the publish UI — the
+# build/deploy pair already carries the cross-app signal.
+internal = ["publish:diagrams_rasterized", "publish:updated", "publish:asset_created"]
 [provides.settings]
 # Per-site settings are managed in sites.json via the in-app UI.
 # Only the active site selector is exposed as a global setting.

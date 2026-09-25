@@ -7,6 +7,8 @@ An export is a first-class app lifecycle, declared in ``manifest.toml``::
     mode = "standalone"
     fallbacks = ["vault:indexeddb", "think:byok-openai", "events:local-bus", ...]
     hook = "export"              # optional module with export_state / stub_routes / client_overrides
+    entry = "drill.html"         # optional; page promoted to index.html when the
+                                 # export is a focused subset, not the whole UI
 
 The exporter:
 1. Copies the app's ``pages/`` into the output directory.
@@ -362,6 +364,24 @@ class AppExporter:
                 shutil.copytree(entry, dst)
             else:
                 shutil.copy(entry, dst)
+
+        # 1b. Promote the declared entry page to index.html.
+        #
+        # An app may export a focused subset rather than its whole UI — jobs
+        # ships only its rehearsal drill, because its pipeline/coverage/outreach
+        # surfaces are write-heavy and would export as a shell that looks
+        # operable and isn't. Every downstream step (the HTML rewrite, the
+        # single-file collapse, the MV3 shell) addresses index.html by name, so
+        # promoting here means none of them need to know an entry was chosen.
+        entry_page = str(export_cfg.get("entry") or "").strip()
+        if entry_page and entry_page != "index.html":
+            entry_src = self.out_dir / entry_page
+            if not entry_src.is_file():
+                raise ExportConfigError(
+                    f"App '{manifest.id}' declares [provides.export].entry = "
+                    f"'{entry_page}' but pages/{entry_page} does not exist"
+                )
+            shutil.copy(entry_src, self.out_dir / "index.html")
 
         # 2. Copy shared static assets into _assets/.
         assets_dir = self.out_dir / "_assets"

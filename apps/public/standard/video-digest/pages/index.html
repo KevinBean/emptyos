@@ -32,7 +32,7 @@
   .vd-row .vd-meta { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
   .vd-row .vd-url { font-size: 12px; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .vd-status { font-size: 12px; padding: 2px 8px; border-radius: 8px; }
-  .vd-status-queued { background: var(--bg-subtle); color: var(--text-muted); }
+  .vd-status-queued { background: var(--bg-surface); color: var(--text-muted); }
   .vd-status-running { background: color-mix(in srgb, var(--accent) 18%, transparent); color: var(--accent); }
   .vd-status-done { background: color-mix(in srgb, var(--success) 18%, transparent); color: var(--success); }
   .vd-status-failed { background: color-mix(in srgb, var(--danger) 18%, transparent); color: var(--danger); }
@@ -41,7 +41,7 @@
   .vd-empty { padding: 16px; text-align: center; color: var(--text-muted); font-size: 14px; }
   .vd-prov { font-size: 11px; padding: 2px 8px; border-radius: 8px; margin-left: 8px; vertical-align: middle; }
   .vd-prov-app { background: color-mix(in srgb, var(--accent) 18%, transparent); color: var(--accent); }
-  .vd-prov-skill { background: var(--bg-subtle); color: var(--text-muted); }
+  .vd-prov-skill { background: var(--bg-surface); color: var(--text-muted); }
   .vd-prov-app-orphan { background: color-mix(in srgb, var(--warning) 18%, transparent); color: var(--warning); }
   .vd-count { color: var(--text-muted); font-weight: 400; margin-left: 8px; }
   .vd-digest-head { display: flex; align-items: center; gap: 12px; margin: 0 0 8px; }
@@ -60,7 +60,7 @@
     background: color-mix(in srgb, var(--purple) 18%, transparent); color: var(--purple);
     vertical-align: middle;
   }
-  .vd-domain-empty { background: var(--bg-subtle); color: var(--text-muted); }
+  .vd-domain-empty { background: var(--bg-surface); color: var(--text-muted); }
 
   /* Listen mode (Step 5 — active listening) */
   .vd-listen-btn {
@@ -298,12 +298,12 @@ function renderQueue() {
     if (it.status !== 'running') {
       var transcriptFailed = it.status === 'failed' && /transcript/i.test(it.error || '');
       if (transcriptFailed) {
-        actions += '<button class="eos-btn-sm" onclick="openPasteModal(' + JSON.stringify(it.id) + ',' + JSON.stringify(it.url) + ')" title="Paste transcript manually">+ transcript</button>';
+        actions += '<button class="eos-btn-sm" onclick="openPasteModal(' + EOS_UI.jsArg(it.id) + ',' + EOS_UI.jsArg(it.url) + ')" title="Paste transcript manually">+ transcript</button>';
       }
       actions += '<button class="eos-btn-sm" onclick="runOne(\'' + it.id + '\')">'
               + (it.status === 'failed' ? 'Retry' : it.status === 'done' ? 'Re-run' : 'Process')
               + '</button>';
-      actions += '<button class="eos-btn-sm" onclick="removeOne(\'' + it.id + '\')">×</button>';
+      actions += '<button class="eos-btn-sm" onclick="removeOne(\'' + it.id + '\')" aria-label="Remove one">×</button>';
     }
     return '<div class="vd-row">'
       + '<div class="vd-main">'

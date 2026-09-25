@@ -19,7 +19,7 @@
     .space-card { display: block; padding: 24px; color: inherit; text-decoration: none; cursor: pointer; transition: border-color 0.16s, transform 0.16s; }
     .space-card:hover { border-color: var(--accent); color: inherit; transform: translateY(-2px); }
     .space-icon { font-size: 30px; line-height: 1; }
-    .space-card h2 { margin: 13px 0 8px; font-size: 20px; }
+    .space-card h2 { margin: 13px 0 8px; font-size: 22px; }
     .space-card p { margin: 0; color: var(--text-secondary); font-size: 14px; line-height: 1.55; }
     .space-meta { margin-top: 16px; color: var(--text-muted); font-size: 12px; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; }
     /* detail */
@@ -87,6 +87,15 @@
     .member { position: relative; }
     .member-rm { position: absolute; top: 8px; right: 10px; width: 24px; height: 24px; line-height: 20px; text-align: center; padding: 0; font-size: 15px; border: 1px solid var(--border); border-radius: 50%; background: var(--bg-card); color: var(--text-muted); cursor: pointer; }
     .member-rm:hover { border-color: var(--danger); color: var(--danger); }
+    /* A member card can carry up to 3 edit-mode controls (move up/down + remove).
+       .member-ctrl is the one absolutely-positioned group; its .member-rm
+       children lay out side by side via flex instead of each self-positioning. */
+    .member-ctrl { position: absolute; top: 8px; right: 10px; display: flex; gap: 4px; }
+    .member-ctrl .member-rm { position: static; top: auto; right: auto; }
+    .member-mv { font-size: 12px; }
+    .member-mv:hover { border-color: var(--accent); color: var(--accent); }
+    .member-mv[disabled] { opacity: 0.35; cursor: default; }
+    .member-mv[disabled]:hover { border-color: var(--border); color: var(--text-muted); }
     .add-app-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 4px; border-bottom: 1px solid var(--border); }
     @media (max-width: 600px) {
       .ws-wrap { padding: 24px 16px 56px; }
@@ -103,6 +112,12 @@
         <h1>Your Spaces</h1>
         <p>Each Space gathers the apps for one goal into a single place. Open one to find everything you need without hunting through the app list.</p>
         <div class="ws-new-btn"><button class="ws-mini-btn" onclick="openNewSpace()">＋ New Space</button></div>
+      </div>
+      <div class="ws-search-wrap" style="margin:12px 0">
+        <input id="ws-search-input" type="text" placeholder="Search Spaces and apps…" autocomplete="off"
+               style="width:100%;box-sizing:border-box;padding:10px 12px;border:1px solid var(--border);border-radius:8px;background:var(--bg-input);color:var(--text)"
+               oninput="onSearchInput()">
+        <div id="ws-search-results"></div>
       </div>
       <div id="spaces-grid" class="ws-grid"></div>
       <div id="index-empty"></div>
@@ -175,11 +190,51 @@
       grid.innerHTML = STATE.spaces.map(spaceCard).join('');
     }
 
-    function memberCard(m, edit, slug) {
+    // Search across Spaces (workspaces-no-search-across-spaces) — debounced,
+    // cleared results hide the panel so the normal grid shows through.
+    var _searchTimer = null;
+    function onSearchInput() {
+      clearTimeout(_searchTimer);
+      var q = document.getElementById('ws-search-input').value.trim();
+      if (!q) { document.getElementById('ws-search-results').innerHTML = ''; return; }
+      _searchTimer = setTimeout(function() { runSearch(q); }, 250);
+    }
+
+    async function runSearch(q) {
+      var res = await fetch('/workspaces/api/search?q=' + encodeURIComponent(q)).then(function(r) { return r.json(); });
+      var box = document.getElementById('ws-search-results');
+      if (!res.results || !res.results.length) {
+        box.innerHTML = '<div class="ws-search-empty" style="padding:10px;color:var(--text-secondary)">No matches for "' + esc(q) + '"</div>';
+        return;
+      }
+      box.innerHTML = res.results.map(function(r) {
+        if (r.type === 'space') {
+          return '<div class="ws-search-row" style="padding:8px;border-bottom:1px solid var(--border);cursor:pointer" '
+            + 'onclick="openSpace(' + escAttr(JSON.stringify(r.slug)) + ')">'
+            + '<b>' + esc(r.icon || '📁') + ' ' + esc(r.title) + '</b> <span style="color:var(--text-secondary);font-size:12px">Space</span>'
+            + (r.tagline ? '<div style="font-size:12px;color:var(--text-secondary)">' + esc(r.tagline) + '</div>' : '')
+            + '</div>';
+        }
+        return '<div class="ws-search-row" style="padding:8px;border-bottom:1px solid var(--border);cursor:pointer" '
+          + 'onclick="openSpace(' + escAttr(JSON.stringify(r.space_slug)) + ')">'
+          + esc(r.icon || '') + ' <b>' + esc(r.title) + '</b> '
+          + '<span style="color:var(--text-secondary);font-size:12px">in ' + esc(r.space_title) + '</span>'
+          + (r.available ? '' : ' <span style="color:var(--text-secondary);font-size:12px">(not installed)</span>')
+          + '</div>';
+      }).join('');
+    }
+
+    function memberCard(m, edit, slug, idx, total) {
       var ico = m.icon ? '<div class="member-icon">' + esc(m.icon) + '</div>' : '';
       var rm = edit
-        ? '<button class="member-rm" title="Remove from Space" onclick="removeMember(event,'
-            + escAttr(JSON.stringify(slug)) + ',' + escAttr(JSON.stringify(m.id)) + ')">&times;</button>'
+        ? '<span class="member-ctrl">'
+          + '<button class="member-rm member-mv" ' + (idx === 0 ? 'disabled' : '') + ' title="Move up" '
+            + 'onclick="moveMember(event,' + escAttr(JSON.stringify(slug)) + ',' + idx + ',\'up\')">&uarr;</button>'
+          + '<button class="member-rm member-mv" ' + (idx === total - 1 ? 'disabled' : '') + ' title="Move down" '
+            + 'onclick="moveMember(event,' + escAttr(JSON.stringify(slug)) + ',' + idx + ',\'down\')">&darr;</button>'
+          + '<button class="member-rm" title="Remove from Space" onclick="removeMember(event,'
+              + escAttr(JSON.stringify(slug)) + ',' + escAttr(JSON.stringify(m.id)) + ')">&times;</button>'
+          + '</span>'
         : '';
       if (!m.available) {
         return '<div class="ws-card member member-off">' + rm + ico
@@ -204,9 +259,43 @@
         + '</a>';
     }
 
+    // External link/bookmark tiles (workspaces-no-external-links) — a Space
+    // member with no app id, so it renders alongside the app tiles but is
+    // never resolved against the manifest registry. Always "available":
+    // there's nothing here for us to enable/disable, it's just a URL.
+    function linkCard(l, edit, slug, idx, total) {
+      var ico = '<div class="member-icon">' + esc(l.icon || '🔗') + '</div>';
+      var rm = edit
+        ? '<span class="member-ctrl">'
+          + '<button class="member-rm member-mv" ' + (idx === 0 ? 'disabled' : '') + ' title="Move up" '
+            + 'onclick="moveLink(event,' + escAttr(JSON.stringify(slug)) + ',' + idx + ',\'up\')">&uarr;</button>'
+          + '<button class="member-rm member-mv" ' + (idx === total - 1 ? 'disabled' : '') + ' title="Move down" '
+            + 'onclick="moveLink(event,' + escAttr(JSON.stringify(slug)) + ',' + idx + ',\'down\')">&darr;</button>'
+          + '<button class="member-rm" title="Remove from Space" onclick="removeLink(event,'
+              + escAttr(JSON.stringify(slug)) + ',' + idx + ')">&times;</button>'
+          + '</span>'
+        : '';
+      if (edit) {
+        return '<div class="ws-card member">' + rm + ico
+          + '<h3>' + esc(l.title) + '</h3>'
+          + '<p>' + esc(l.href || '') + '</p>'
+          + '<span class="member-state" style="color:var(--text-muted)">External link</span>'
+          + '</div>';
+      }
+      return '<a class="ws-card member" href="' + escAttr(l.href) + '" target="_blank" rel="noopener">'
+        + ico
+        + '<h3>' + esc(l.title) + '</h3>'
+        + '<p>' + esc(l.href || '') + '</p>'
+        + '<span class="member-state" style="color:var(--accent)">Open &#8599;</span>'
+        + '</a>';
+    }
+
     function renderMembersGrid(s) {
+      var arr = s.members || [];
+      var links = s.links || [];
       document.getElementById('member-grid').innerHTML =
-        (s.members || []).map(function (m) { return memberCard(m, EDIT, s.slug); }).join('');
+        arr.map(function (m, i) { return memberCard(m, EDIT, s.slug, i, arr.length); }).join('')
+        + links.map(function (l, i) { return linkCard(l, EDIT, s.slug, i, links.length); }).join('');
     }
 
     function renderEditTools(s) {
@@ -221,14 +310,204 @@
       else if (s.edited) rm = '<button class="ws-mini-btn" onclick="deleteSpace()">&#8634; Reset to default</button>';
       el.innerHTML =
         '<button class="ws-mini-btn" onclick="openAddApp()">&#65291; Add app</button>'
+        + '<button class="ws-mini-btn" onclick="openAddLink()">&#65291; Add link</button>'
+        + '<button class="ws-mini-btn" onclick="openAddWidget()">&#65291; Add widget</button>'
         + '<button class="ws-mini-btn" onclick="exportBundle()">&#11015; Export bundle</button>'
         + rm
         + '<button class="ws-mini-btn" onclick="toggleEdit()">Done</button>';
     }
 
+    // Link CRUD — mirrors the widget CRUD shape above.
+    function openAddLink() {
+      if (!_detail) return;
+      var body =
+        '<label style="display:block;margin-bottom:8px">URL<br>'
+        + '<input id="lk-url" placeholder="https://example.com" style="width:100%;padding:8px;'
+        + 'border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg);color:var(--text)"></label>'
+        + '<label style="display:block;margin-bottom:8px">Title (optional)<br>'
+        + '<input id="lk-title" style="width:100%;padding:8px;border:1px solid var(--border);'
+        + 'border-radius:var(--radius-sm);background:var(--bg);color:var(--text)"></label>'
+        + '<label style="display:block;margin-bottom:8px">Icon (optional emoji)<br>'
+        + '<input id="lk-icon" placeholder="🔗" style="width:100%;padding:8px;border:1px solid var(--border);'
+        + 'border-radius:var(--radius-sm);background:var(--bg);color:var(--text)"></label>'
+        + '<button class="ws-mini-btn" onclick="submitAddLink()">Add link</button>';
+      EOS_UI.modal({ title: 'Add link to ' + (_detail.title || _detail.slug), body: body });
+    }
+
+    async function submitAddLink() {
+      if (!_detail) return;
+      var url = document.getElementById('lk-url').value || '';
+      if (!url.trim()) { EOS_UI.toast('URL is required', false); return; }
+      var payload = {
+        url: url,
+        title: document.getElementById('lk-title').value || '',
+        icon: document.getElementById('lk-icon').value || '',
+      };
+      var r;
+      try {
+        r = await EOS.api('/workspaces/api/spaces/' + encodeURIComponent(_detail.slug) + '/links', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+      } catch (e) { r = { error: 'Request failed' }; }
+      if (r && r.error) { EOS_UI.toast(r.error, false); return; }
+      EOS_UI.closeModal();
+      await refreshDetail(_detail.slug);
+      EOS_UI.toast('Link added', true);
+    }
+
+    async function removeLink(event, slug, index) {
+      if (event) event.stopPropagation();
+      var r;
+      try {
+        r = await EOS.api('/workspaces/api/spaces/' + encodeURIComponent(slug) + '/links/' + index, {
+          method: 'DELETE'
+        });
+      } catch (e) { r = { error: 'Request failed' }; }
+      if (r && r.error) { EOS_UI.toast(r.error, false); return; }
+      await refreshDetail(slug);
+      EOS_UI.toast('Link removed', true);
+    }
+
+    async function moveLink(event, slug, index, direction) {
+      if (event) event.stopPropagation();
+      var r;
+      try {
+        r = await EOS.api('/workspaces/api/spaces/' + encodeURIComponent(slug) + '/links/' + index + '/move', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ direction: direction })
+        });
+      } catch (e) { r = { error: 'Request failed' }; }
+      if (r && r.error) { EOS_UI.toast(r.error, false); return; }
+      await refreshDetail(slug);
+    }
+
+    // Widget CRUD — mirrors openAddApp/addApp's shape. Flagged in gap
+    // analysis (workspaces-no-widget-ui): widgets were config/registry-only.
+    async function openAddWidget() {
+      if (!_detail) return;
+      var apps = [];
+      try {
+        var d = await EOS.api('/workspaces/api/apps-available');
+        apps = d.apps || [];
+      } catch (e) { apps = []; }
+      var appOptions = apps.map(function (a) {
+        return '<option value="' + escAttr(a.id) + '">' + esc(a.name) + '</option>';
+      }).join('');
+      var body =
+        '<label style="display:block;margin-bottom:8px">Type<br>'
+        + '<select id="wg-type" style="width:100%;padding:8px;border:1px solid var(--border);'
+        + 'border-radius:var(--radius-sm);background:var(--bg);color:var(--text)">'
+        + '<option value="embed">Embed (iframe the app)</option>'
+        + '<option value="panel">Panel (a hub-style stat/list)</option>'
+        + '</select></label>'
+        + '<label style="display:block;margin-bottom:8px">App<br>'
+        + '<select id="wg-app" style="width:100%;padding:8px;border:1px solid var(--border);'
+        + 'border-radius:var(--radius-sm);background:var(--bg);color:var(--text)">' + appOptions + '</select></label>'
+        + '<label style="display:block;margin-bottom:8px">Title (optional)<br>'
+        + '<input id="wg-title" style="width:100%;padding:8px;border:1px solid var(--border);'
+        + 'border-radius:var(--radius-sm);background:var(--bg);color:var(--text)"></label>'
+        + '<div id="wg-embed-fields"><label style="display:block;margin-bottom:8px">Height (px)<br>'
+        + '<input id="wg-height" type="number" value="520" style="width:100%;padding:8px;'
+        + 'border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg);color:var(--text)"></label></div>'
+        + '<div id="wg-panel-fields" style="display:none">'
+        + '<label style="display:block;margin-bottom:8px">Panel method (the app\'s own hub-panel method name)<br>'
+        + '<input id="wg-method" placeholder="e.g. panel_summary" style="width:100%;padding:8px;'
+        + 'border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg);color:var(--text)"></label>'
+        + '<label style="display:block;margin-bottom:8px">Renderer<br>'
+        + '<select id="wg-renderer" style="width:100%;padding:8px;border:1px solid var(--border);'
+        + 'border-radius:var(--radius-sm);background:var(--bg);color:var(--text)">'
+        + '<option value="stat-tile">stat-tile</option><option value="plain-list">plain-list</option>'
+        + '<option value="task-list">task-list</option></select></label></div>'
+        + '<button class="ws-mini-btn" onclick="submitAddWidget()">Add widget</button>';
+      EOS_UI.modal({ title: 'Add widget to ' + (_detail.title || _detail.slug), body: body });
+      var typeSel = document.getElementById('wg-type');
+      if (typeSel) {
+        typeSel.addEventListener('change', function () {
+          var isEmbed = typeSel.value === 'embed';
+          document.getElementById('wg-embed-fields').style.display = isEmbed ? '' : 'none';
+          document.getElementById('wg-panel-fields').style.display = isEmbed ? 'none' : '';
+        });
+      }
+    }
+
+    async function submitAddWidget() {
+      if (!_detail) return;
+      var type = document.getElementById('wg-type').value;
+      var app = document.getElementById('wg-app').value;
+      if (!app) { EOS_UI.toast('Choose an app', false); return; }
+      var payload = { type: type, app: app, title: document.getElementById('wg-title').value || '' };
+      if (type === 'embed') {
+        payload.height = parseInt(document.getElementById('wg-height').value, 10) || 520;
+      } else {
+        payload.method = document.getElementById('wg-method').value || '';
+        payload.renderer = document.getElementById('wg-renderer').value || 'stat-tile';
+      }
+      var r;
+      try {
+        r = await EOS.api('/workspaces/api/spaces/' + encodeURIComponent(_detail.slug) + '/widgets', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+      } catch (e) { r = { error: 'Request failed' }; }
+      if (r && r.error) { EOS_UI.toast(r.error, false); return; }
+      EOS_UI.closeModal();
+      await refreshDetail(_detail.slug);
+      EOS_UI.toast('Widget added', true);
+    }
+
+    async function removeWidget(slug, index) {
+      var r;
+      try {
+        r = await EOS.api('/workspaces/api/spaces/' + encodeURIComponent(slug) + '/widgets/' + index, {
+          method: 'DELETE'
+        });
+      } catch (e) { r = { error: 'Request failed' }; }
+      if (r && r.error) { EOS_UI.toast(r.error, false); return; }
+      await refreshDetail(slug);
+      EOS_UI.toast('Widget removed', true);
+    }
+
+    // Reorder — gap workspaces-no-drag-reorder. A simple up/down swap
+    // rather than drag-and-drop: no new JS dependency, works via
+    // keyboard/tap too.
+    async function moveWidget(slug, index, direction) {
+      var r;
+      try {
+        r = await EOS.api('/workspaces/api/spaces/' + encodeURIComponent(slug) + '/widgets/' + index + '/move', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ direction: direction })
+        });
+      } catch (e) { r = { error: 'Request failed' }; }
+      if (r && r.error) { EOS_UI.toast(r.error, false); return; }
+      await refreshDetail(slug);
+    }
+
+    async function moveMember(event, slug, index, direction) {
+      if (event) event.stopPropagation();
+      var arr = (_detail && _detail.members) || [];
+      var target = index + (direction === 'up' ? -1 : 1);
+      if (target < 0 || target >= arr.length) return;
+      var ids = arr.map(function (m) { return m.id; });
+      var tmp = ids[index]; ids[index] = ids[target]; ids[target] = tmp;
+      var r;
+      try {
+        r = await EOS.api('/workspaces/api/spaces/' + encodeURIComponent(slug) + '/members', {
+          method: 'PUT', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ members: ids })
+        });
+      } catch (e) { r = { error: 'Request failed' }; }
+      if (r && r.error) { EOS_UI.toast(r.error, false); return; }
+      await refreshDetail(slug);
+    }
+
     function toggleEdit() {
       EDIT = !EDIT;
-      if (_detail) { renderEditTools(_detail); renderMembersGrid(_detail); }
+      if (_detail) {
+        renderEditTools(_detail);
+        renderMembersGrid(_detail);
+        renderWidgets(_detail.widgets, EDIT, _detail.slug);
+      }
     }
 
     // Generic hero renderer. Today only the academy hero shape is produced
@@ -266,11 +545,20 @@
     }
 
     // Live widgets — embed (iframe a member app) + panel (stat-tile / plain-list).
-    function renderWidgets(widgets) {
+    function renderWidgets(widgets, edit, slug) {
       var mount = document.getElementById('widget-mount');
       if (!Array.isArray(widgets) || !widgets.length) { mount.innerHTML = ''; return; }
-      mount.innerHTML = widgets.map(function (w) {
-        var head = '<div class="ws-widget-head"><h3>' + esc(w.title || '') + '</h3>'
+      mount.innerHTML = widgets.map(function (w, i) {
+        var rm = edit ? (
+          '<button class="ws-mini-btn" style="float:right" '
+            + 'onclick="removeWidget(' + escAttr(JSON.stringify(slug)) + ',' + i + ')" '
+            + 'title="Remove widget">&times;</button>'
+          + '<button class="ws-mini-btn" style="float:right" ' + (i === widgets.length - 1 ? 'disabled' : '')
+            + ' onclick="moveWidget(' + escAttr(JSON.stringify(slug)) + ',' + i + ',\'down\')" title="Move down">&darr;</button>'
+          + '<button class="ws-mini-btn" style="float:right" ' + (i === 0 ? 'disabled' : '')
+            + ' onclick="moveWidget(' + escAttr(JSON.stringify(slug)) + ',' + i + ',\'up\')" title="Move up">&uarr;</button>'
+        ) : '';
+        var head = '<div class="ws-widget-head">' + rm + '<h3>' + esc(w.title || '') + '</h3>'
           + (w.type === 'embed' && w.available && w.src
               ? '<a href="' + escAttr(w.src.replace(/[?&]embed=1/, '')) + '">Open &rarr;</a>' : '')
           + '</div>';
@@ -333,7 +621,7 @@
       document.getElementById('detail-title').textContent = s.title || slug;
       document.getElementById('detail-tagline').textContent = s.tagline || '';
       renderHero(s.hero);
-      renderWidgets(s.widgets);
+      renderWidgets(s.widgets, EDIT, slug);
       document.getElementById('members-title').textContent =
         (Array.isArray(s.widgets) && s.widgets.length) ? 'More in this Space' : 'In this Space';
       EDIT = false;
@@ -414,6 +702,7 @@
       _detail = s;
       renderMembersGrid(s);
       renderEditTools(s);
+      renderWidgets(s.widgets, EDIT, s.slug);
     }
 
     async function removeMember(ev, slug, appId) {

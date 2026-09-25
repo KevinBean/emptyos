@@ -1,18 +1,23 @@
 ---
 name: eos-simplify
-description: Review *changed* code against EmptyOS conventions (CLAUDE.md patterns) for reuse, quality, and efficiency, then apply the fixes — the EmptyOS-aware cousin of the generic simplify skill. Use before committing a meaningful change, before eos-session-wrapup, or when the user says "simplify", "eos-simplify", "review", "clean up", or "check my work". Quality only — NOT a correctness-bug hunt (use /code-review) and NOT a UI/design pass (use eos-design-system-audit / eos-page-design-review).
+description: Review *changed* code against EmptyOS conventions (CLAUDE.md patterns) for reuse, quality, and efficiency, then apply the fixes — the EmptyOS-aware cousin of the generic simplify skill. Use before committing a meaningful change, before eos-session-wrapup, or when the user says "simplify", "eos-simplify", "clean up my changes", "review my changes", or "check my work". Bare "review" is NOT this skill — it names no surface, and eos-architecture-review, eos-page-design-review and /code-review all answer to it. Quality only — NOT a correctness-bug hunt (use /code-review) and NOT a UI/design pass (use eos-design-system-audit / eos-page-design-review).
 ---
+
 # EmptyOS Simplify
 
-Review **changed** code against EmptyOS conventions, then fix what you find. This is the EmptyOS-aware cousin of the generic `simplify` skill: same spirit (reuse, quality, efficiency), but tuned to the patterns in `AGENTS.md` so the review catches things a generic pass would miss.
+Review **changed** code against EmptyOS conventions, then fix what you find. This is the EmptyOS-aware cousin of the generic `simplify` skill: same spirit (reuse, quality, efficiency), but tuned to the patterns in `CLAUDE.md` so the review catches things a generic pass would miss.
 
-Run this **before committing a meaningful change**, or when the user says "simplify", "review", or "clean up".
+Run this **before committing a meaningful change**, or when the user says "simplify", "clean up my changes", or "review my changes".
 
 ## When to Use
 
 - After building or modifying an app, plugin, or shared SDK/frontend code
 - Before `/eos-session-wrapup` or a commit
-- When the user says "simplify", "eos-simplify", "review", "clean this up", "check my work"
+- When the user says "simplify", "eos-simplify", "clean this up", "review my changes", "check my work"
+
+> **Bare "review" is NOT this skill**, in the body as well as the frontmatter — it names no
+> surface, and `eos-architecture-review`, `eos-page-design-review` and `/code-review` all
+> answer to it. Ask which, or route on what the user named.
 
 ## Scope
 
@@ -32,7 +37,7 @@ Work through these in order. For each finding, **fix it in place** unless it's a
 
 ### 1. Capabilities over raw tools (backend)
 
-Apps MUST use capabilities, never direct tools (AGENTS.md §Development Rules 1).
+Apps MUST use capabilities, never direct tools (CLAUDE.md §Development Rules 1).
 
 Grep the changed `app.py` / plugin files for:
 
@@ -79,11 +84,11 @@ Then cross-check the changed page against `docs/FRONTEND-DESIGN-LANGUAGE.md` —
 
 ### 4. Mandatory UI patterns
 
-- Apps with `[provides.settings]` in manifest **must** have a ⚙ Settings button using `EOS_UI.settingsPanel` (AGENTS.md §In-App Settings Panel). If missing, add it.
-- Apps with a `showDetail(id)` pattern **must** use `EOS_UI.hashRoute` so deep links work (AGENTS.md §Deep-linking Detail Views). If missing, add it.
+- Apps with `[provides.settings]` in manifest **must** have a ⚙ Settings button using `EOS_UI.settingsPanel` (`.claude/rules/app-ui-patterns.md` §In-App Settings Panel). If missing, add it.
+- Apps with a `showDetail(id)` pattern **must** use `EOS_UI.hashRoute` so deep links work (CLAUDE.md §Deep-linking Detail Views). If missing, add it.
 - Every POST/GET list API added in this diff should have a UI surface — no backend-only features.
 
-### 5. Prompts are first-class (AGENTS.md §Development Rules 12)
+### 5. Prompts are first-class (CLAUDE.md §Development Rules 12)
 
 For any `self.think(...)` or `think_stream(...)` in the diff:
 
@@ -113,13 +118,15 @@ For each changed app, verify the manifest declares what the code actually does:
 - New `self.call_app("X", ...)` → `"X"` listed in `[requires].apps`
 - New capability used (`self.speak`, `self.draw`, ...) → listed in `[requires].capabilities`
 
-### 8. Extract-shared heuristic (AGENTS.md §Development Rules 9)
+### 8. Extract-shared heuristic (CLAUDE.md §Development Rules 9)
 
 If the diff duplicates a pattern that already exists in another app (session runner, feedback form, metrics ring, SRS scheduler, etc.), flag it. Rule of thumb: **build specific first in one app; extract to `sdk/` when a second app needs it.** If this is the second app, propose the extraction — don't silently copy.
 
 Cheap grep: pick a 3–5 line distinctive fragment from the new code and search other apps for near-duplicates.
 
-### 9. Wellbeing wheel as lens, not feature (AGENTS.md §Development Rules 16)
+**Same heuristic for workflows → skills.** Code-duplication isn't the only repeatable thing. If *you* hand-ran a multi-step workflow this session (a sequence of greps + edits + checks you walked manually, a prompt you typed near-verbatim, a process you narrated step-by-step), and you'd done that same shape before, it's a `.claude/skills/<name>/SKILL.md` candidate — the workflow analogue of an SDK extraction. Same trigger as code: **second occurrence, not first** (don't make a skill for a one-off — that just bloats the library). Same action: **flag it, don't auto-build** — propose "this felt repeatable; want a skill?" so the user decides. Extraction is a build step (`/eos-sdk-extract` for code, hand-writing a `SKILL.md` for workflows), not something simplify does silently.
+
+### 9. Wellbeing wheel as lens, not feature (CLAUDE.md §Development Rules 16)
 
 **Refuse** UI additions that expose the 8-dimension wheel to the user:
 
@@ -150,6 +157,10 @@ Fix violations before continuing.
 - Multi-app change → full `pytest tests/ --ignore=tests/personal -v`
 - New app → ensure `tests/test_sys_<new>.py` exists with 10+ cases
 - Fixed a bug → add a user-story test that would have caught it (`tests/test_user_stories.py`)
+- **Any test added in this diff → prove it fails without the fix.** A test that has only
+  ever been green is not evidence that it pins anything (`.claude/rules/audits.md` §Failure
+  mode 3). Invoke `.claude/skills/eos-mutation-verify` — **don't re-derive the loop by hand**;
+  this checklist item exists because a simplify pass caught exactly that omission.
 
 If tests fail, fix the code (not the test) unless the test itself encodes stale behaviour.
 

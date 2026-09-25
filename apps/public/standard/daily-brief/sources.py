@@ -47,6 +47,7 @@ if TYPE_CHECKING:
 #   api_sources_add      = _sources_mod.api_sources_add
 #   api_sources_remove   = _sources_mod.api_sources_remove
 #   api_sources_toggle   = _sources_mod.api_sources_toggle
+#   api_sources_manage   = _sources_mod.api_sources_manage
 # Adding a new method here? Add a matching binding line in app.py.
 # ─────────────────────────────────────────────────────────────────────
 

@@ -2,12 +2,48 @@
 // Convention: render from STATE (app-conventions-for-export §1); the page
 // computes nothing — every number in the DOM came from the engine's response.
 
-var STATE = { result: null, provenance: null, error: '', inputs: {}, published: null,
-              methods: null, gate: null };
+var STATE = { result: null, provenance: null, error: '', published: null,
+              methods: null, gate: null, schema: null, anchor: null };
 
-var FIELDS = ['u_net', 'i_k_net', 'c', 'r_mv', 'x_mv', 's_n', 'u_2n', 'vk_pct', 'pk_pct', 'r_lv', 'x_lv'];
+// The eleven inputs are NOT declared here. They arrive from GET /api/schema,
+// which serves the same `spec.py` that ALGORITHM.md section 2 is generated
+// from, so a field cannot exist in the form and be missing from the document.
+// `FIELDS` and `FIELD_MAP` are populated once the schema lands.
+var FIELDS = [];
 var FIELD_MAP = {};
-FIELDS.forEach(function (f) { FIELD_MAP[f] = '#' + f; });
+
+// Fields are rendered, so the unit and the domain in the DOM are the ones the
+// specification states rather than the ones a page author retyped.
+function renderForm(schema) {
+  FIELDS = schema.fields.map(function (f) { return f.name; });
+  FIELD_MAP = {};
+  FIELDS.forEach(function (f) { FIELD_MAP[f] = '#' + f; });
+
+  var html = '';
+  schema.groups.forEach(function (g) {
+    var inGroup = schema.fields.filter(function (f) { return f.group === g; });
+    if (!inGroup.length) return;
+    html += '<div class="tl-ingroup"><div class="tl-group">' + esc(g) + '</div>';
+    inGroup.forEach(function (f) {
+      var unit = f['x-eos-unit'];
+      // The unit belongs to the label because a number without one is not an
+      // engineering input (UX-INP-01); the domain becomes `min` so the browser
+      // hints what the engine would refuse (UX-INP-02). The hint is advisory —
+      // a paste or a scripted client walks past it and the engine still says no.
+      var label = esc(f.label) + (unit ? ' (' + esc(unit) + ')' : '');
+      var attrs = ' type="number" step="' + escAttr(String(f.step)) + '"'
+        + ' value="' + escAttr(String(f.default)) + '"';
+      if (f.minimum !== null && f.minimum !== undefined) {
+        attrs += ' min="' + escAttr(String(f.minimum)) + '"';
+      }
+      if (f.description) attrs += ' title="' + escAttr(f.description) + '"';
+      html += '<div class="tl-field"><label for="' + escAttr(f.name) + '">' + label
+        + '</label><input id="' + escAttr(f.name) + '"' + attrs + '></div>';
+    });
+    html += '</div>';
+  });
+  document.getElementById('in-grid').innerHTML = html;
+}
 
 // The seven stages. `ev(state)` returns the card's evidence line — where the
 // running system can answer for itself (the method it resolved, the gate's
@@ -70,7 +106,7 @@ var STAGES = [
       if (!g) return { text: 'not run yet' };
       if (g.error) return { text: 'gate error: ' + g.error, bad: true };
       return g.passed
-        ? { text: '✓ PASS  ' + g.got + ' A vs ' + g.expected + ' A · ' + g.dev + '% ≤ ' + g.tol + '%', ok: true }
+        ? { text: '✓ PASS  ' + g.got + ' A vs ' + g.expected + ' A · ' + (g.tol == null ? 'exact match' : g.dev + '% ≤ ' + g.tol + '%'), ok: true }
         : { text: '✗ FAIL  ' + g.got + ' A vs ' + g.expected + ' A', bad: true };
     },
   },
@@ -112,10 +148,10 @@ var STAGES = [
     ],
     decides: 'the run — red or green',
     // Counted, not rounded — and honest about which of them CI actually runs:
-    // push CI is `-m "api and not llm and not interactive"`, so the 13 API
+    // push CI is `-m "api and not llm and not interactive"`, so the 14 API
     // tests gate every push and the unit + browser suites are local/on-demand.
     // A card on this page above all others must not decorate with test counts.
-    ev: function () { return { text: '35 unit · 15 browser · 13 api gate every push' }; },
+    ev: function () { return { text: '35 unit · 15 browser · 14 api gate every push' }; },
   },
 ];
 
@@ -284,8 +320,11 @@ function renderScene() {
 
   // referral boundary — everything to its left is divided by K squared
   s += '<line x1="290" y1="20" x2="290" y2="' + (H - 8) + '" stroke="var(--border-strong)" stroke-width="1" stroke-dasharray="3 3"/>';
+  // K² comes from the engine (`ratio_squared`), not from squaring `ratio`
+  // here — a render function deriving an engineering quantity is the one thing
+  // the thin-app invariant forbids (UX-RES-04).
   s += '<text x="284" y="14" text-anchor="end" fill="var(--text-muted)" font-size="10">referred by K&#178; = ' +
-       esc(String(Math.round(r.ratio * r.ratio))) + '</text>';
+       esc(String(r.ratio_squared)) + '</text>';
   s += '<text x="296" y="14" fill="var(--text-muted)" font-size="10">LV base</text>';
 
   s += '<line x1="40" y1="' + y + '" x2="536" y2="' + y + '" stroke="var(--text-secondary)" stroke-width="2"/>';
@@ -409,16 +448,16 @@ function render() {
   }
   ik.textContent = r.i_k3_ka + ' kA';
 
-  // Only claim agreement when the inputs really are the published case —
-  // an anchor that follows the user's edits around is not an anchor.
-  var p = STATE.published;
-  if (p && p.inputs && _isPublishedCase(STATE.inputs, p.inputs)) {
-    var dev = Math.abs(r.i_k3_a - p.published_result_a) / p.published_result_a * 100;
-    // Quote the source's printed amps, not our own kA rounding of them: the
-    // paper prints 14 943 A and 14.95 kA, and (14943/1000).toFixed(2) is
-    // 14.94 — a digit the source never wrote.
+  // Whether the anchor applies, and by how much it misses, are both decided by
+  // /api/calc — an anchor that follows the user's edits around is not an
+  // anchor, and deciding that here meant the page held its own tolerance.
+  // Quoted amps are the source's printed 14 943 A rather than a kA rounding of
+  // them: (14943/1000).toFixed(2) is 14.94, a digit the source never wrote.
+  var a = STATE.anchor;
+  if (a && a.applies) {
     verdict.innerHTML = '<span style="color:var(--success)">✓</span> published answer '
-      + esc(String(p.published_result_a)) + ' A · deviation ' + dev.toFixed(3) + '%';
+      + esc(String(a.published_result_a)) + ' A · deviation '
+      + esc(String(a.deviation_pct)) + '%';
   } else {
     verdict.innerHTML = '<span style="color:var(--text-muted)">not the published case · '
       + 'no anchor applies to these inputs</span>';
@@ -435,15 +474,6 @@ function render() {
   renderStrip();
 }
 
-function _isPublishedCase(a, b) {
-  for (var i = 0; i < FIELDS.length; i++) {
-    var k = FIELDS[i];
-    var want = b[k] || 0;
-    if (Math.abs((a[k] || 0) - want) > Math.abs(want || 1) * 1e-9) return false;
-  }
-  return true;
-}
-
 function gatherInputs() {
   var body = {};
   FIELDS.forEach(function (f) { body[f] = parseFloat(document.getElementById(f).value); });
@@ -453,7 +483,6 @@ function gatherInputs() {
 async function calc() {
   var body = gatherInputs();
   if (!(body.u_net > 0) || !(body.s_n > 0) || !(body.u_2n > 0)) return;
-  STATE.inputs = body;
   var data = await EOS.apiSafe('/trust-loop/api/calc', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -461,8 +490,10 @@ async function calc() {
   });
   if (data && data.error) {
     STATE.error = data.error; STATE.result = null; STATE.provenance = null;
+    STATE.anchor = null;
   } else if (data && data.result) {
     STATE.error = ''; STATE.result = data.result; STATE.provenance = data.provenance;
+    STATE.anchor = data.anchor || null;
   }
   render();
 }
@@ -504,6 +535,25 @@ function _summariseGate(gate) {
 
 async function init() {
   renderStrip();
+
+  // The form before anything that reads it. `prefillForm` and `shareLink`
+  // below both take FIELD_MAP, and a deep link that arrived before the inputs
+  // existed would silently fill nothing.
+  STATE.schema = await EOS.apiSafe('/trust-loop/api/schema');
+  if (STATE.schema && STATE.schema.fields) {
+    renderForm(STATE.schema);
+  } else {
+    // A failure, not an empty state — the distinction matters here more than
+    // most places, since a calculator showing no inputs and no complaint reads
+    // as one that has nothing to ask rather than one that is broken.
+    document.getElementById('in-grid').innerHTML = EOS_UI.errorState({
+      message: 'The inputs could not be loaded — GET /trust-loop/api/schema did '
+        + 'not answer. Nothing has been calculated.',
+      onRetry: 'init()',
+    });
+    return;
+  }
+
   FIELDS.forEach(function (f) {
     var el = document.getElementById(f);
     el.addEventListener('input', calcSoon);

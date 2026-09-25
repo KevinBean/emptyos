@@ -12,6 +12,7 @@ import re
 
 from emptyos.sdk.html_artifact import (
     FENCE_RE as _FENCE_RE,
+    artifact_title as _artifact_title,
     extract_html as _extract_html,
     looks_like_html as _looks_like_html,
     looks_truncated as _looks_truncated,
@@ -633,6 +634,29 @@ SHAPE_SUPPORTS_ELEMENT_EDIT = frozenset({
 # See .claude/rules/... (html-record) + project_html_video_borrow_verdict.
 SHAPE_SUPPORTS_RECORD = frozenset({
     "anim-explainer",
+})
+
+
+# Shapes exportable as a STATIC FIGURE — a standalone .svg (+ a rasterized 2x
+# .png) that can be embedded in a KB note or a published article, i.e. the
+# artifact stops being viewable only inside this app.
+#
+# Limited to shapes whose SVG exists in the saved file at rest, because the
+# export is a pure text extraction (emptyos.sdk.html_artifact.extract_svg) with
+# no browser in the loop. Deliberately excluded, each for its own reason:
+#   - mermaid / network-graph — the SVG is produced by JS at runtime, so there
+#     is nothing to lift from scene.html. Needs a headless render pass first.
+#   - chart — Chart.js draws to <canvas>; there is no SVG at any point.
+#   - math-explainer — KaTeX emits styled HTML, not SVG.
+#   - 3d-scene / immersive-scene / game-2d — canvas, and a still frame of an
+#     interactive scene is not the artifact.
+#   - slide-deck — many slides; "the figure" is ambiguous.
+#   - anim-explainer — its value is the timeline; it already has the MP4 path.
+# Same posture as the two frozensets above: this set is the only protection, so
+# stay conservative and let a new shape be an explicit opt-in.
+SHAPE_SUPPORTS_FIGURE = frozenset({
+    "svg-diagram",
+    "schematic",
 })
 
 

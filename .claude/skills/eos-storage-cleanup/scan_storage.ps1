@@ -17,11 +17,13 @@
 
 [CmdletBinding()]
 param(
-    [string[]] $Drives     = @(),   # default: all fixed drives
+    [string[]] $Drives     = @(),   # default: all fixed drives; "C,D" or C,D both work
     [int]      $Top        = 15,    # top-level dirs to report per drive
     [int]      $DrillTop   = 5,     # how many of those to drill one level into
     [int]      $DrillMinGB = 10,    # only drill dirs at least this big
-    [string]   $OutFile    = ""     # default: scratchpad report path
+    [string]   $OutFile    = "",    # default: scratchpad report path
+    [switch]   $ListDrivesOnly,     # resolve -Drives, print the names, exit (diagnostic)
+    [switch]   $ListReservesOnly    # print reserve-file paths, exit (diagnostic)
 )
 
 $ErrorActionPreference = 'SilentlyContinue'
@@ -43,6 +45,86 @@ function To-GB { param([double] $Bytes) return [math]::Round($Bytes / 1GB, 2) }
 $lines = New-Object System.Collections.Generic.List[string]
 function Emit { param([string] $s = "") ; $lines.Add($s) ; Write-Output $s }
 
+# Enumerate, never probe. `Get-Item` opens a handle, which a locked system file
+# refuses, so it returns nothing and the largest consumer on the disk reads as
+# absent - a false negative, not an error. `Get-ChildItem -Force` only reads
+# directory metadata and lists them fine.
+#
+# This lives in a function so `-ListReservesOnly` and the report share ONE
+# implementation. Reading the source for the right cmdlet name cannot prove
+# anything here: the paragraph you are reading contains both names, so a grep
+# is satisfied by the comment even if the code below is deleted
+# (`.claude/rules/audits.md` Failure mode 3). Only executing it proves it.
+function Get-ReserveFiles {
+    param([string] $DriveName)
+    Get-ChildItem -LiteralPath "${DriveName}:\" -File -Force -ErrorAction SilentlyContinue |
+        Where-Object { $_.Name -match '^(pagefile|hiberfil|swapfile)\.sys$' } |
+        Sort-Object Name
+}
+
+# ----------------------------------------------------------------- drives ---
+# Resolved BEFORE the report header is emitted and before $OutFile is defaulted,
+# so that an abort writes no partial report, and -ListDrivesOnly /
+# -ListReservesOnly touch the filesystem not at all.
+#
+# Normalize -Drives first. `powershell -File scan_storage.ps1 -Drives C,D`
+# delivers ONE string "C,D", not a two-element array, so a bare
+# `$Drives -contains $_.Name` matched nothing: every per-drive section was
+# skipped and the script still exited 0, reporting success having measured
+# nothing. Split on commas and strip any ":" or "\" the caller included.
+$wanted = @()
+foreach ($spec in $Drives) {
+    foreach ($part in ([string]$spec -split ',')) {
+        $n = $part.Trim().Trim("\").Trim(":").Trim()
+        if ($n) { $wanted += $n }
+    }
+}
+
+# DriveType=3 is "Local Disk". `Get-PSDrive -PSProvider FileSystem` also returns
+# mapped network drives and SUBST drives, and a default-argument run would then
+# -Recurse a network share - the whole-drive walk this script's header forbids.
+$fixed = @(Get-CimInstance Win32_LogicalDisk -Filter "DriveType=3" -ErrorAction SilentlyContinue |
+           ForEach-Object { $_.DeviceID.TrimEnd(':') })
+$all = @(Get-PSDrive -PSProvider FileSystem |
+         Where-Object { $null -ne $_.Used -and ($_.Used + $_.Free) -gt 1GB -and $fixed -contains $_.Name })
+
+if ($wanted.Count -gt 0) {
+    # `-contains` is case-insensitive in PowerShell, and that is the ONE thing
+    # letting "c" match drive C. Uppercasing either side as well was redundant
+    # AND made the behaviour untestable: each mechanism masked a mutation of
+    # the others, so a case-sensitivity bug could not have been caught here.
+    $all = @($all | Where-Object { $wanted -contains $_.Name })
+}
+
+# Abort loudly on an empty set: an empty report that exits 0 is the failure this
+# whole script exists to avoid.
+#
+# "-Drives was supplied" and "-Drives resolved to something" are DIFFERENT
+# questions, and conflating them left a live bypass: `-Drives ","` (or ":", "",
+# a shell variable that expanded to nothing) produced an empty $wanted, which
+# read as "no filter requested", so the script scanned EVERY drive at exit 0 -
+# the same vacuous pass one input to the left. $Drives.Count answers the first
+# question; $wanted.Count answers the second.
+if ($Drives.Count -gt 0 -and $wanted.Count -eq 0) {
+    [Console]::Error.WriteLine("scan_storage: -Drives was supplied but names no drive letter. Aborting rather than silently scanning every drive.")
+    exit 2
+}
+if ($all.Count -eq 0) {
+    $why = if ($wanted.Count -gt 0) { "no drive matched -Drives " + ($wanted -join ',') } else { "no fixed drive found" }
+    [Console]::Error.WriteLine("scan_storage: nothing to scan ($why). Aborting rather than writing an empty report.")
+    exit 2
+}
+
+if ($ListDrivesOnly) {
+    foreach ($d in $all) { Write-Output $d.Name }
+    exit 0
+}
+
+if ($ListReservesOnly) {
+    foreach ($d in $all) { Get-ReserveFiles $d.Name | ForEach-Object { Write-Output $_.FullName } }
+    exit 0
+}
+
 if (-not $OutFile) {
     $scratch = Join-Path $env:TEMP "claude"
     if (-not (Test-Path $scratch)) { New-Item -ItemType Directory -Path $scratch -Force | Out-Null }
@@ -55,10 +137,6 @@ Emit "# Storage scan - $(Get-Date -Format 'yyyy-MM-dd HH:mm')"
 Emit ""
 Emit "Host: $env:COMPUTERNAME   RAM: $ramGB GB"
 Emit ""
-
-# ----------------------------------------------------------------- drives ---
-$all = Get-PSDrive -PSProvider FileSystem | Where-Object { $null -ne $_.Used -and ($_.Used + $_.Free) -gt 1GB }
-if ($Drives.Count -gt 0) { $all = $all | Where-Object { $Drives -contains $_.Name } }
 
 Emit "## Drives"
 Emit ""
@@ -80,11 +158,8 @@ Emit "## Invisible reserves (no directory scan can see these)"
 Emit ""
 $sys = Get-CimInstance Win32_ComputerSystem
 foreach ($drv in $all) {
-    foreach ($n in @('pagefile.sys', 'hiberfil.sys', 'swapfile.sys')) {
-        $p = "$($drv.Name):\$n"
-        $fi = Get-Item -LiteralPath $p -Force -ErrorAction SilentlyContinue
-        if ($fi) { Emit ("- ``{0}`` = **{1} GB**" -f $p, (To-GB $fi.Length)) }
-    }
+    Get-ReserveFiles $drv.Name |
+        ForEach-Object { Emit ("- ``{0}`` = **{1} GB**" -f $_.FullName, (To-GB $_.Length)) }
 }
 
 $pf = Get-CimInstance Win32_PageFileSetting -ErrorAction SilentlyContinue

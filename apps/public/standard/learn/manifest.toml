@@ -18,10 +18,11 @@ module = "app"
 class = "LearnApp"
 
 [requires]
-capabilities = ["think", "read", "write"]
+capabilities = ["think", "read", "write", "speak"]
 apps = ["kb"]
 # Unified review queue aggregates their SRS decks; absence is tolerated.
-optional_apps = ["dictionary", "media"]
+# viz: animated scenes in lesson videos — without it every scene is a slide.
+optional_apps = ["dictionary", "media", "soundcheck", "read-the-room", "viz"]
 
 [provides.cli]
 commands = ["learn"]
@@ -41,6 +42,7 @@ emits = [
     "learn:tutorial_verified",
     "learn:diagnostic_taken",
     "learn:course_personalized",
+    "learn:video_generated",
 ]
 # Learn-tool internal study lifecycle — course/quiz/srs events are per-app
 # progression observability. (`lesson_completed` is cross-app: the reactor
@@ -55,6 +57,7 @@ internal = [
     "learn:note_saved",
     "learn:course_saved",
     "learn:tutorial_verified",
+    "learn:video_generated",
 ]
 
 [[contributes.hub.panel]]
@@ -64,6 +67,15 @@ renderer = "stat-tile"
 group = "dashboard"
 title = "Review queue"
 priority = 120
+
+# Lesson videos paused for script review or stopped by a failure (dark flag —
+# the method returns None while feature.lesson-video.enabled is off).
+[[contributes.hub.panel]]
+id = "learn-video-runs"
+method = "panel_video_runs"
+renderer = "plain-list"
+title = "Lesson videos waiting"
+priority = 140
 
 [[contributes.voice-assistant.intent]]
 verb = "learn.start_review"

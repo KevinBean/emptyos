@@ -88,10 +88,11 @@ class TestArgDisclosure:
         assert "cat " not in text
 
     def test_secret_shaped_value_is_redacted(self, bridge):
+        # check-secrets: ignore — synthetic fixture; the point is that it IS secret-shaped
         text, _ = bridge.render_card(_action(
-            args={"note": "key is sk-proj-AAAAAAAAAAAAAAAAAAAAAAAAAAAA"},
+            args={"note": "key is sk-proj-AAAAAAAAAAAAAAAAAAAAAAAAAAAA"},  # check-secrets: ignore
         ))
-        assert "sk-proj-AAAAAAAAAAAAAAAAAAAAAAAAAAAA" not in text
+        assert "sk-proj-AAAAAAAAAAAAAAAAAAAAAAAAAAAA" not in text  # check-secrets: ignore
 
     def test_card_stays_small(self, bridge):
         args = {f"k{i}": "v" * 300 for i in range(20)}

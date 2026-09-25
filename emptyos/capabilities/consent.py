@@ -20,6 +20,8 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse
 
+from emptyos.nethost import canonical_hostname
+
 if TYPE_CHECKING:
     from emptyos.kernel.event_bus import EventBus
 
@@ -47,6 +49,11 @@ def host_is_loopback(host: str) -> bool:
         return True
     low = host.strip().lower()
     if low in _LOOPBACK_LITERALS:
+        return True
+    # Numeric spellings and the RFC 1034 trailing dot resolve to loopback too;
+    # canonical_hostname leaves a full URL string untouched (no regex match),
+    # so the substring pass below still sees what it always did.
+    if canonical_hostname(low) in _LOOPBACK_LITERALS:
         return True
     return any(lit in low for lit in _LOOPBACK_IN_URL)
 
@@ -78,6 +85,10 @@ def host_is_local(host: str) -> bool:
         hostname = (parsed.hostname or host).strip().lower()
     except Exception:
         hostname = low
+    # Canonicalise so the literal check + ip_address() below see what the
+    # connecting client resolves: "0x7f.0.0.1" is 127.0.0.1, "foo.local." is
+    # foo.local. Falls back to the raw value on a malformed numeric form.
+    hostname = canonical_hostname(hostname) or hostname
 
     if hostname in ("localhost", "127.0.0.1", "::1", "0.0.0.0"):
         return True

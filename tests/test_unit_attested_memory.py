@@ -193,6 +193,21 @@ def test_fidelity_audit_stale_list_prioritizes_suspect_then_oldest():
     assert paths == ["suspect-old.md", "suspect-new.md", "tentative.md"]
 
 
+def test_fidelity_audit_exposes_source_and_verification_facts():
+    verified = _ago(400)
+    report = fidelity_audit([
+        _row("claim.md", {
+            "author": "ai",
+            "last_verified": verified,
+            "source": "https://example.test/source",
+        })
+    ], now=NOW, stale_days=180)
+    claim = report.stale[0]
+    assert claim["attestation"] == "inferred"
+    assert claim["last_verified"] == verified
+    assert claim["source"] == "https://example.test/source"
+
+
 def test_fidelity_audit_budget_caps_stale_list():
     rows = [_row(f"n{i}.md", {"author": "ai"}) for i in range(50)]
     report = fidelity_audit(rows, now=NOW, budget=10)

@@ -17,6 +17,23 @@
           {
             "type": "command",
             "command": "python \"${CLAUDE_PROJECT_DIR}/scripts/guard_git_safety.py\""
+          },
+          {
+            "type": "command",
+            "command": "python \"${CLAUDE_PROJECT_DIR}/scripts/guard_adversarial_review.py\""
+          },
+          {
+            "type": "command",
+            "command": "python \"${CLAUDE_PROJECT_DIR}/scripts/guard_destructive_delete.py\""
+          }
+        ]
+      },
+      {
+        "matcher": "mcp__.*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python \"${CLAUDE_PROJECT_DIR}/scripts/guard_destructive_delete.py\""
           }
         ]
       }

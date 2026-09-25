@@ -73,6 +73,28 @@ def test_binary_write_hashes_reads_back_and_reuses(tmp_path):
     assert served.status_code == 200
     assert served.content == content
     assert served.headers["content-type"].startswith("image/png")
+    assert "content-disposition" not in served.headers
+
+
+def test_svg_is_served_as_attachment_png_is_not(tmp_path):
+    """SVG can carry a <script> that runs if opened as a top-level
+    navigation (e.g. window.open on a vault attachment chip). Forcing
+    Content-Disposition: attachment on .svg neutralizes that same-origin
+    XSS without touching <img src> embeds, which ignore the header."""
+    client, _events = _client(tmp_path)
+    svg = b'<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>'
+    png = b"\x89PNG\r\n\x1a\nnot-a-real-png"
+    client.post("/api/vault/write-bytes", json=_payload("assets/x.svg", svg))
+    client.post("/api/vault/write-bytes", json=_payload("assets/x.png", png))
+
+    svg_resp = client.get("/api/vault/file", params={"path": "assets/x.svg"})
+    assert svg_resp.status_code == 200
+    assert svg_resp.headers["content-type"].startswith("image/svg+xml")
+    assert svg_resp.headers["content-disposition"] == "attachment"
+
+    png_resp = client.get("/api/vault/file", params={"path": "assets/x.png"})
+    assert png_resp.status_code == 200
+    assert "content-disposition" not in png_resp.headers
 
 
 def test_binary_write_rejects_conflict_without_explicit_overwrite(tmp_path):

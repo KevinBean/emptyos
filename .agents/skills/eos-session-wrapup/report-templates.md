@@ -33,7 +33,7 @@ Or if fixes were needed:
 
 ```
 Safety Checks:
-  Personal data: 2 violations fixed (docs/DESIGN.md, apps/projects/app.py)
+  Personal data: 2 violations fixed (docs/DESIGN.md, apps/public/standard/projects/app.py)
   Branding: CLEAN
 ```
 
@@ -58,6 +58,24 @@ Vault Ripple: no fact changes this session, skipped
 
 ---
 
+## Step 3.5 — Knowledge Capture report
+
+```
+Knowledge: 1 candidate
+  - A rendered-DOM audit must settle animations before measuring
+    -> .claude/rules/audits.md (applied, lands in this session's commit)
+```
+
+Or, the common case:
+
+```
+Knowledge: none this session
+```
+
+Never pad this. One candidate is a good session; zero is the normal one.
+
+---
+
 ## Step 4 — Dev Log entry
 
 Write to `{vault}/10_Projects/emptyos/log/YYYY-MM-DD.md`:
@@ -68,6 +86,8 @@ date: YYYY-MM-DD
 type: dev-session
 tags: [emptyos, dev-log, <affected-apps>]
 skills_used: [eos-session-wrapup, ...]   # every /<skill> invoked this session
+tracks:
+  - <track-slug>   # the track(s) this session advanced — same slug(s) as Step 6
 ---
 
 # YYYY-MM-DD — <Session Title>
@@ -80,6 +100,9 @@ skills_used: [eos-session-wrapup, ...]   # every /<skill> invoked this session
 
 ## Result
 <1-2 sentences on outcome and verification status>
+
+## Learned                       # OMIT entirely when Step 3.5 found nothing
+- <the one-sentence lesson> -> <where it was written>
 ```
 
 ### `skills_used` sourcing
@@ -141,6 +164,7 @@ depends on it). This is the body template.
 ---
 type: next-session-brief
 track: <track-slug>
+purpose: <one line — what this track is FOR, stable across sessions>
 written: <YYYY-MM-DD HH:MM>
 last_session: <YYYY-MM-DD>
 last_session_title: <Session Title>
@@ -175,6 +199,11 @@ threads_carried: <N>
 
 ### Sourcing rules
 
+- **`purpose`**: what the track is FOR — the goal-level "why does this thread
+  exist", NOT what the last session did. **Carry it forward verbatim** from the
+  previous brief; author it once when creating a new track. Only rewrite it if
+  the track's mission genuinely pivoted. Devboard's track detail renders it as
+  the answer to "what is this task for".
 - **Working-tree snapshot**: run `git status --short` and `git log --oneline -1`
   at wrapup time. Paste verbatim (no editing). The next resume's verification
   pass diffs this snapshot against current state to surface "the working tree
@@ -256,6 +285,7 @@ Session Wrapup Complete:
   Docs:   CLAUDE.md updated (apps 63→65, endpoints 687→695)
   Safety: CLEAN (personal + branding)
   Ripple: 2 facts surfaced, 5 vault notes updated  (or: skipped — no fact changes)
+  Know:   1 lesson -> .claude/rules/audits.md  (or: none this session)
   Log:    10_Projects/emptyos/log/2026-04-12.md written
   Site:   regenerated (74 apps, 9 plugins) — rebuild triggered
   Next:   10_Projects/emptyos/log/_next/<track>.md written (3 open threads)

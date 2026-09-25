@@ -1,0 +1,10 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>EmptyOS lecture recorder</title>
+<!--
+  Offscreen document, reason USER_MEDIA. It exists because tab capture needs a
+  page context to call getUserMedia, and because the MV3 service worker is torn
+  down after ~30s idle — which would kill a recording mid-lecture. An offscreen
+  document is not subject to that teardown.
+-->
+<script src="offscreen.js"></script>

@@ -35,12 +35,13 @@ emits = [
     "braindump:transcribed",
     "braindump:proposed",
     "braindump:summary_kept",
+    "braindump:recalled",
 ]
 # Session lifecycle observability — UI-only; kept captures already land in the
 # inbox via the capture path, so no journal ripple needed.
 internal = [
     "braindump:started", "braindump:transcribed", "braindump:proposed",
-    "braindump:summary_kept",
+    "braindump:summary_kept", "braindump:recalled",
 ]
 
 # ── Unified verb registry (single source of truth) ──────────────────────────

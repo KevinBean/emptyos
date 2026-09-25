@@ -14,10 +14,8 @@ language: fr
 bpm: 88
 duration: "3:09"
 date_created: 2026-04-25
-suno_url: "https://suno.com/song/a4216a5e-48d5-41c6-96db-0284efe996e7"
-suno_song_id: a4216a5e-48d5-41c6-96db-0284efe996e7
-suno_model: v5.5
-suno_created: 2026-04-25T11:58:00
+model_version: v5.5
+published_at: 2026-04-25T11:58:00
 license: "© 2026 3:30 Channel — All rights reserved"
 ---
 
@@ -90,7 +88,4 @@ Tu découvres que tu étais toujours dehors
 
 ## 版权证明 / Copyright proof
 
-![[05 · Sans Récursion-screenshot.png]]
-
-Suno publication: **April 25, 2026 at 11:58 AM** (v5.5).
-Source: https://suno.com/song/a4216a5e-48d5-41c6-96db-0284efe996e7
+Published: **April 25, 2026 at 11:58 AM** (v5.5).

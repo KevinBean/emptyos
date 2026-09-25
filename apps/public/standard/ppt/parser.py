@@ -655,7 +655,10 @@ _STANDALONE_HTML = """<!doctype html>
 <script>
 (function() {{
   var slides = {slides_json};
-  EOS_DECK.create(document.getElementById('deck'), {{
+  // Exposed globally so PDF export (headless Chromium) can drive
+  // window.DECK.goto(i) and screenshot each slide in turn — see
+  // ppt/media.py::export_pdf. Harmless for a human viewer.
+  window.DECK = EOS_DECK.create(document.getElementById('deck'), {{
     mode: 'manual',
     slides: slides,
     theme: '{theme}',

@@ -47,6 +47,45 @@ SCREENSHOT_DIR.mkdir(exist_ok=True)
 _DEFAULT_CONTEXT = "_default"
 
 
+def parse_viewport(value) -> dict | None:
+    """Coerce ``"1440x900"`` or ``{"width": …, "height": …}`` to Playwright's shape.
+
+    Returns ``None`` for ``None`` (meaning "leave the context viewport alone").
+
+    Raises ``ValueError`` on anything malformed rather than falling back to the
+    configured default. A silently-ignored viewport yields a capture that looks
+    entirely correct and is the wrong width — the reviewer would be commenting
+    on a desktop layout while the record claims it is mobile. A loud failure is
+    strictly cheaper than that.
+
+    ``device_scale_factor`` is deliberately not handled here: Playwright only
+    accepts it at context-creation time, so it stays a plugin-config concern.
+    """
+    if value is None:
+        return None
+    if isinstance(value, dict):
+        w, h = value.get("width"), value.get("height")
+    elif isinstance(value, str):
+        parts = value.lower().replace("×", "x").strip().split("x")
+        if len(parts) != 2:
+            raise ValueError(f"viewport must look like '1440x900', got {value!r}")
+        w, h = parts
+    else:
+        raise ValueError(
+            f"viewport must be 'WxH' or {{width, height}}, got {type(value).__name__}"
+        )
+    if isinstance(w, bool) or isinstance(h, bool):
+        raise ValueError(f"viewport width/height must be integers, got {value!r}")
+    try:
+        w, h = int(w), int(h)
+    except (TypeError, ValueError):
+        raise ValueError(f"viewport width/height must be integers, got {value!r}") from None
+    if not (0 < w <= 10_000 and 0 < h <= 10_000):
+        raise ValueError(f"viewport out of range (1..10000): {w}x{h}")
+    return {"width": w, "height": h}
+
+
+
 class PlaywrightPlugin(BasePlugin):
     name = "playwright"
 
@@ -176,11 +215,34 @@ class PlaywrightPlugin(BasePlugin):
         wait: str = "load",
         context_id: str | None = None,
         timeout_s: float | None = None,
+        viewport=None,
     ) -> dict:
+        """Navigate, optionally resizing first.
+
+        ``viewport`` ("1440x900" or {width, height}) applies to this page only
+        and persists for the life of the context, so a caller sweeping several
+        widths passes it on each navigate. It exists because the context-level
+        viewport is baked at creation from plugin config, which made capturing
+        the same page at desktop and mobile widths impossible without editing
+        config between runs. The applied size is echoed back so a caller
+        recording a capture cannot misreport the width it shot at.
+        """
         page = await self._get_page(context_id)
+        vp = parse_viewport(viewport)
+        if vp is not None:
+            await page.set_viewport_size(vp)
         timeout_ms = int((timeout_s or self.config("timeout_s", 30)) * 1000)
         await page.goto(url, wait_until=wait, timeout=timeout_ms)
-        return {"url": page.url, "title": await page.title()}
+        # Report the size the page is ACTUALLY at, not the config default.
+        # set_viewport_size persists for the page's lifetime and a context keeps
+        # one page, so after any earlier resize the config value is a lie — and
+        # a caller recording a capture would then claim a width it did not shoot
+        # at, which is the misreporting this parameter exists to prevent.
+        return {
+            "url": page.url,
+            "title": await page.title(),
+            "viewport": vp or getattr(page, "viewport_size", None) or self._viewport(),
+        }
 
     async def click(
         self, selector: str, *, context_id: str | None = None, timeout_s: float | None = None

@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html>
+<head>
+<!-- eos-nav: skip — anonymous public submission page (no login); a stranger
+     filling this form must never see the internal app nav or be one click
+     from the rest of the daemon. See .claude/rules/boards-as-view-layer.md
+     "A public Form view". -->
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Submit</title>
+<!-- Sets <html class="theme-X"> BEFORE theme.css resolves — without this every
+     var(--bg)/var(--text)/var(--border) below falls back to nothing and the
+     page renders as plain unstyled black-on-white. This page is served by a
+     dedicated @web_route (public_form_page in public_form.py), not the normal
+     pages/index.html path server.py auto-injects this into, so it's inlined
+     here instead. Same script emptyos/web/server.py's _inject_theme_bootstrap
+     injects everywhere else — kept byte-compatible (the 'eos-theme' string) so
+     that injector's idempotency check still no-ops if this page is ever routed
+     through it. -->
+<script>try{
+var _t=localStorage.getItem('eos-theme')||'eos';
+if(!/^[a-z][a-z0-9-]{0,31}$/.test(_t))_t='eos';
+document.documentElement.classList.add('theme-'+_t);
+}catch(e){document.documentElement.classList.add('theme-eos');}</script>
+<link rel="stylesheet" href="/static/theme.css">
+<link rel="stylesheet" href="/static/eos-components.css">
+<style>
+  body { max-width: 560px; margin: 48px auto; padding: 0 20px; background: var(--bg); color: var(--text); font-family: system-ui, sans-serif; }
+  h1 { font-size: 22px; margin: 0 0 6px; }
+  .pf-desc { color: var(--text-secondary); font-size: 14px; margin-bottom: 24px; }
+  .pf-status { display: none; padding: 14px; border-radius: 8px; margin-bottom: 16px; font-size: 14px; }
+  .pf-status.ok { display: block; background: color-mix(in srgb, var(--green, #16a34a) 15%, transparent); color: var(--green, #16a34a); }
+  .pf-status.err { display: block; background: color-mix(in srgb, var(--red, #dc2626) 15%, transparent); color: var(--red, #dc2626); }
+  #pf-submit { margin-top: 12px; }
+</style>
+</head>
+<body>
+  <div id="pf-root">
+    <div class="pf-desc">Loading…</div>
+  </div>
+
+<script src="/static/eos-components.js"></script>
+<script>
+(function() {
+  var BOARD_ID = window.EOS_BOARD_ID || decodeURIComponent((location.pathname.split('/f/')[1] || '').replace(/\/$/, ''));
+  var root = document.getElementById('pf-root');
+
+  function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function(c) {
+    return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
+  }); }
+
+  if (!BOARD_ID) {
+    root.innerHTML = '<div class="pf-desc">No form specified.</div>';
+    return;
+  }
+
+  fetch('/boards/api/public/schema/' + encodeURIComponent(BOARD_ID))
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      if (data.error) {
+        root.innerHTML = '<div class="pf-status err" style="display:block">' + esc(data.error) + '</div>';
+        return;
+      }
+      var fields = data.fields || [];
+      root.innerHTML =
+        '<h1>' + esc(data.name || 'Submit') + '</h1>' +
+        (data.description ? '<div class="pf-desc">' + esc(data.description) + '</div>' : '') +
+        '<div id="pf-status" class="pf-status"></div>' +
+        '<div id="pf-form"></div>' +
+        '<button id="pf-submit" class="eos-btn eos-btn-primary">Submit</button>';
+
+      document.getElementById('pf-form').innerHTML = EOS_UI.formHtml(fields);
+
+      document.getElementById('pf-submit').addEventListener('click', function() {
+        var btn = this;
+        var statusEl = document.getElementById('pf-status');
+        statusEl.className = 'pf-status';
+        var values = EOS_UI.formValues(fields);
+        btn.disabled = true;
+        var origText = btn.textContent;
+        btn.textContent = 'Submitting…';
+        fetch('/boards/api/public/submit/' + encodeURIComponent(BOARD_ID), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(values),
+        })
+          .then(function(r) { return r.json(); })
+          .then(function(res) {
+            btn.disabled = false;
+            btn.textContent = origText;
+            if (res.error) {
+              statusEl.className = 'pf-status err';
+              statusEl.textContent = res.error;
+              return;
+            }
+            statusEl.className = 'pf-status ok';
+            statusEl.textContent = 'Submitted — thank you.';
+            document.getElementById('pf-form').style.display = 'none';
+            btn.style.display = 'none';
+          })
+          .catch(function() {
+            btn.disabled = false;
+            btn.textContent = origText;
+            statusEl.className = 'pf-status err';
+            statusEl.textContent = 'Could not submit — try again.';
+          });
+      });
+    })
+    .catch(function() {
+      root.innerHTML = '<div class="pf-status err" style="display:block">Could not load this form.</div>';
+    });
+})();
+</script>
+</body>
+</html>

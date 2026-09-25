@@ -30,14 +30,30 @@ def _load(name: str):
     Both modules resolve the vault at import time; a stubbed ``vault_paths``
     keeps collection working on a clone with no ``emptyos.toml`` (CI runs
     ``--collect-only`` on every push).
+
+    The stub is REMOVED again once the module under test has been executed.
+    Leaving it in ``sys.modules`` leaked it into every test module collected
+    after this one — it is a bare ``ModuleType`` with one attribute and no
+    ``__file__``, so a later ``from vault_paths import vault_root`` failed with
+    ``(unknown location)``. That took out ``test_unit_mv_library`` at
+    COLLECTION, and one collection error aborts the whole run: both the Tests
+    and Dogfood workflows were red from 2026-09-11 on. The modules loaded here
+    keep their own reference in their globals, so restoring costs them nothing.
     """
     stub = types.ModuleType("vault_paths")
     stub.require_vault_root = lambda: Path(".")
+    previous = sys.modules.get("vault_paths")
     sys.modules["vault_paths"] = stub
-    spec = importlib.util.spec_from_file_location(name, REPO / "scripts" / f"{name}.py")
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
+    try:
+        spec = importlib.util.spec_from_file_location(name, REPO / "scripts" / f"{name}.py")
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
+    finally:
+        if previous is None:
+            sys.modules.pop("vault_paths", None)
+        else:
+            sys.modules["vault_paths"] = previous
 
 
 bc = _load("ingest_build_cluster")

@@ -11,6 +11,7 @@ The UI computes nothing; every number it shows came from the engine.
 
 from __future__ import annotations
 
+import tomllib
 from pathlib import Path
 
 from fastapi.responses import PlainTextResponse
@@ -19,6 +20,7 @@ from emptyos.sdk import BaseApp, cli_command, web_route
 from emptyos.sdk.conformance import CalculatorRoutesMixin
 
 from . import fault_current as fc
+from . import spec
 
 # The published worked example — ABB Technical Application Paper No. 2,
 # clause 2.2. Inputs verbatim from the paper; the expected result is its
@@ -48,11 +50,15 @@ class TrustLoopApp(CalculatorRoutesMixin, BaseApp):
         except (TypeError, ValueError) as e:
             return {"error": str(e)}
         try:
-            spec = self.resolve_method("fault", body.get("method"))
-            result = await spec.run(self, payload)
+            method = self.resolve_method("fault", body.get("method"))
+            result = await method.run(self, payload)
         except ValueError as e:
             return {"error": str(e)}
-        return {"result": result, "provenance": self.last_compute_provenance("fault")}
+        return {
+            "result": result,
+            "anchor": _anchor(payload, result),
+            "provenance": self.last_compute_provenance("fault"),
+        }
 
     @web_route("POST", "/api/sensitivity")
     async def api_sensitivity(self, request):
@@ -70,23 +76,66 @@ class TrustLoopApp(CalculatorRoutesMixin, BaseApp):
             return {"error": str(e)}
         return {"element": element, "points": points}
 
+    @web_route("GET", "/api/schema")
+    async def api_schema(self, request):
+        """The inputs, from the declaration `ALGORITHM.md` § 2 is generated from.
+
+        The page builds its form from this rather than declaring the fields a
+        second time, which is what lets a domain stated in the specification
+        reach the browser at all (`UX-INP-02`).
+        """
+        return {"fields": spec.to_schema(), "groups": list(spec.groups())}
+
     @web_route("GET", "/api/published-case")
     async def api_published_case(self, request):
         """The anchor case, so the page can load it in one click."""
         return {"inputs": dict(PUBLISHED_CASE), "published_result_a": PUBLISHED_RESULT_A}
 
+    @web_route("GET", "/api/assurance")
+    async def api_assurance(self, request):
+        """List the controlled Trust Loop package from its manifest declaration."""
+        app_dir = Path(__file__).parent
+        manifest = tomllib.loads((app_dir / "manifest.toml").read_text(encoding="utf-8"))
+        assurance = manifest.get("assurance") or {}
+        doc_keys = (
+            "index", "source_pack", "algorithm", "implementation",
+            "validation", "app_spec", "report_spec", "release_verification",
+        )
+        documents = []
+        for key in doc_keys:
+            filename = assurance.get(key)
+            if filename:
+                documents.append({
+                    "key": key,
+                    "file": filename,
+                    "available": (app_dir / filename).is_file(),
+                    "viewer": f"/api/appdoc?app=trust-loop&file={filename}",
+                })
+        return {
+            "method": assurance.get("method"),
+            "status": assurance.get("status"),
+            "documents": documents,
+        }
+
     # Two handlers, not one with stacked decorators: `@web_route` stamps a
     # single `_eos_web` dict, so stacking silently registers only the outer.
     @web_route("GET", "/api/report")
     async def api_report_get(self, request):
-        """The published case as a markdown calculation report."""
+        """The published case as a markdown calculation report, or a real
+        PDF with ``?format=pdf`` (gap analysis: trust-loop-no-pdf-export)."""
+        if (request.query_params.get("format") or "").strip().lower() == "pdf":
+            return await self._render_report_pdf(dict(PUBLISHED_CASE))
         return self._render_report(dict(PUBLISHED_CASE))
 
     @web_route("POST", "/api/report")
     async def api_report_post(self, request):
-        """A markdown calculation report for the supplied inputs."""
+        """A markdown calculation report for the supplied inputs, or a
+        real PDF with ``?format=pdf``."""
         body = await self.safe_json(request)
-        return self._render_report(body or dict(PUBLISHED_CASE))
+        payload = body or dict(PUBLISHED_CASE)
+        if (request.query_params.get("format") or "").strip().lower() == "pdf":
+            return await self._render_report_pdf(payload)
+        return self._render_report(payload)
 
     def _render_report(self, body: dict):
         """Inputs through to result, in a form that pastes into a document."""
@@ -96,6 +145,41 @@ class TrustLoopApp(CalculatorRoutesMixin, BaseApp):
         except (TypeError, ValueError) as e:
             return PlainTextResponse(f"cannot report: {e}", status_code=400)
         return PlainTextResponse(_report_markdown(result), media_type="text/markdown")
+
+    async def _render_report_pdf(self, body: dict):
+        """Same computation as `_render_report`, delivered as a real PDF —
+        a client/employer deliverable, per the shared PDF profile
+        (`emptyos/sdk/pdf.py`, `.claude/rules/pdf-markdown.md`). Flagged
+        in gap analysis (trust-loop-no-pdf-export): the app already had a
+        markdown report but nothing that opens outside a text editor.
+        """
+        try:
+            payload = _coerce_inputs(body)
+            result = fc.prospective_fault_current(**payload)
+        except (TypeError, ValueError) as e:
+            return {"error": f"cannot report: {e}"}
+
+        import asyncio
+        import tempfile
+        import uuid
+
+        from starlette.responses import FileResponse
+
+        from emptyos.sdk.pdf import render_markdown_pdf
+
+        md = _report_pdf_markdown(result)
+        out_path = Path(tempfile.gettempdir()) / f"trust-loop-{uuid.uuid4().hex[:8]}.pdf"
+        try:
+            # render_markdown_pdf drives Playwright's SYNC API — must run off
+            # the event loop (dev-gotchas.md § "Sync call in async context").
+            await asyncio.to_thread(render_markdown_pdf, md, out_path, style="default")
+        except Exception as e:  # noqa: BLE001 — surface as an export failure, not a 500
+            return {"error": f"PDF render failed: {e}"}
+        return FileResponse(
+            path=str(out_path),
+            media_type="application/pdf",
+            filename="trust-loop-fault-current-report.pdf",
+        )
 
     @web_route("GET", "/api/algorithm")
     async def api_algorithm(self, request):
@@ -172,17 +256,74 @@ def _report_markdown(result: dict) -> str:
     return "\n".join(lines)
 
 
+def _report_pdf_markdown(result: dict) -> str:
+    """`_report_markdown`'s content, prefixed with a masthead for the
+    shared PDF profile — its first fenced code block becomes the title/
+    subtitle/meta block. Without one, the doc's own leading `# ` heading
+    would be treated as unrendered authoring preamble (pdf-markdown.md)."""
+    from datetime import UTC, datetime
+
+    masthead = [
+        "```",
+        "Trust Loop — Fault Current Report",
+        "Three-phase prospective fault current at MV/LV transformer terminals",
+        datetime.now(UTC).strftime("Generated %Y-%m-%d %H:%M UTC"),
+        "```",
+        "",
+    ]
+    return "\n".join(masthead) + _report_markdown(result)
+
+
+#: Relative tolerance for "these inputs *are* the published case". It lives on
+#: this side because whether an anchor applies is a judgement about engineering
+#: inputs, not a rendering decision — the page used to make that call with its
+#: own copy of this constant, which is the thin-app invariant leaking one line
+#: at a time.
+_ANCHOR_REL_TOL = 1e-9
+
+
+def _anchor(payload: dict, result: dict) -> dict:
+    """Whether the published anchor applies to these inputs, and by how much.
+
+    The deviation is derived here for the same reason the page's gate summary
+    reads the gate's own `rel_pct` rather than recomputing it: a second
+    implementation of "how far off is it" is a second answer waiting to
+    disagree with the first (`UX-RES-03`, `UX-RES-04`).
+    """
+    for key, want in PUBLISHED_CASE.items():
+        if abs(payload.get(key, 0.0) - want) > abs(want or 1.0) * _ANCHOR_REL_TOL:
+            return {"applies": False}
+    computed = result.get("i_k3_a", 0.0)
+    return {
+        "applies": True,
+        "published_result_a": PUBLISHED_RESULT_A,
+        "deviation_pct": round(
+            abs(computed - PUBLISHED_RESULT_A) / PUBLISHED_RESULT_A * 100, 3
+        ),
+    }
+
+
+#: What an absent field becomes at the API boundary — deliberately NOT
+#: `spec.FieldSpec.default`, which is the form's initial value. The two look
+#: interchangeable and are not: falling back to the form's value would mean a
+#: POST omitting `u_net` quietly computed the published case, so a caller who
+#: sent nothing would get a confident answer to a question they never asked.
+#: Everything therefore falls back to zero, which the engine refuses for every
+#: field whose domain excludes it. `c` is the one exception because it is a code
+#: factor with a standard value rather than a plant measurement.
+_API_FALLBACK = {"c": 1.1}
+
+
 def _coerce_inputs(body: dict) -> dict:
-    """Normalize the request body at the write boundary; engine re-validates."""
+    """Normalize the request body at the write boundary; engine re-validates.
+
+    The field *set* comes from `spec.py`, so adding an input is one edit rather
+    than four. The fallbacks do not — see `_API_FALLBACK`.
+    """
     if not isinstance(body, dict):
         raise ValueError("body must be a JSON object")
     out = {}
-    for key, default in (
-        ("u_net", 0.0), ("i_k_net", 0.0), ("c", 1.1),
-        ("r_mv", 0.0), ("x_mv", 0.0),
-        ("s_n", 0.0), ("u_2n", 0.0), ("vk_pct", 0.0), ("pk_pct", 0.0),
-        ("r_lv", 0.0), ("x_lv", 0.0),
-    ):
+    for key in spec.field_names():
         raw = body.get(key)
-        out[key] = float(default if raw in (None, "") else raw)
+        out[key] = float(_API_FALLBACK.get(key, 0.0) if raw in (None, "") else raw)
     return out

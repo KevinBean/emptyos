@@ -1,5 +1,6 @@
 [app]
 id = "search"
+icon_id = "search"
 store_category = "core"
 name = "Search"
 version = "1.0.0"
@@ -42,7 +43,10 @@ commands = ["search"]
 prefix = "/search"
 
 [provides.events]
-emits = ["search:query"]
+emits = ["search:query", "search:index_swept"]
+# index_swept is consumed by nothing outside this app today — the
+# sweep report is for the activity log and /api/index/status.
+internal = ["search:index_swept"]
 
 [provides.settings]
 schema = [
@@ -63,6 +67,17 @@ eligibility = "stable"
 surfaces = ["assistant", "agent", "mcp", "voice"]
 voice = { method = "voice_search", example = "search my vault for cable ratings", description = "Find notes in the vault matching a query. Speaks the hit count + top note names.", card = "task-list" }
 assistant = { slash = "/search", method = "_search", arg = "query" }
+
+# AI Fluency tour arc, step 3/4 (Discernment) — see .claude/rules/proposed-action.md,
+# .claude/rules/three-natures-lens.md, .claude/rules/authorship-boundary.md
+[[contributes.tour.step]]
+id = "search.discernment"
+group = "core"
+priority = 450
+route = "/search/"
+spotlight = "#ai-answer"
+title = "An AI answer is a lead, not a verdict"
+body = "Ask a question here and the answer carries a <strong>provenance chip</strong> — which notes it drew from, cloud or local. That's the point: a derived answer is a conditioned appearance, not fixed truth, and it's shown to you exactly so you can check it against the source before you act on it — not so you can skip reading the source."
 
 [[contributes.tour.step]]
 id = "search.try"

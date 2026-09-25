@@ -127,6 +127,8 @@ class RoomsApp(BaseApp):
     _execute_server_actions   = _pending._execute_server_actions
     _summarize_server_actions = _pending._summarize_server_actions
     _gate_server_actions      = _pending._gate_server_actions
+    _pending_push_enabled     = _pending._pending_push_enabled
+    _notify_new_pending       = _pending._notify_new_pending
     save_pending_action       = _pending.save_pending_action
     list_pending              = _pending.list_pending
     get_pending               = _pending.get_pending
@@ -233,6 +235,7 @@ class RoomsApp(BaseApp):
     set_participant_role   = _team.set_participant_role
     team_start_run         = _team.team_start_run
     team_stop_run          = _team.team_stop_run
+    _team_turn_or_timeout  = _team._team_turn_or_timeout
     _team_dispatch_loop    = _team._team_dispatch_loop
     api_team_list          = _team.api_team_list
     api_team_add_task      = _team.api_team_add_task

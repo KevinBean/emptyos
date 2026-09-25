@@ -171,8 +171,12 @@ will use a placeholder if it's missing.
   because only the document's first 8,000 characters were ever read. Each new
   region is analysed once, fingerprinted, and never paid for twice.
 - **Three sources, cheapest and most-owned first:** the reader's own saved note
-  (`yours`) → a cached answer (`saved`) → the model on demand (`new`). Their note
-  outranks any model, and the chip says which one answered.
+  (`yours`) → a cached answer (`cached`) → the model on demand (`new`). Their note
+  outranks any model, and the chip says which one answered. Only `yours` means the
+  word is in the dictionary — the cache chip used to read `saved`, which is a fact
+  about our cost, not about the reader's vocabulary, and it left a Save button under
+  a chip that claimed the word was already saved. `Save` is now offered only on a
+  word that is not yet theirs.
 - **Every verdict is a save.** `I know this` records the word as `known` (not
   drilled — it is already theirs); `Still hard` records it as `learning` and
   enrols it in review; `Save word` does the same. A judged word used to leave no

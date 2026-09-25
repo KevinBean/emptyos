@@ -31,6 +31,13 @@ from emptyos.sdk import BasePlugin
 from . import bridge
 
 
+#: The proactive-gate kind file pushes are metered under. One constant, because
+#: `decide` and `has_own_budget` must name the SAME kind — reading the flag for
+#: one kind while metering another silently splits the gate from its counters.
+#: Registered in the proactive app's KINDS catalog so it can be muted.
+PROACTIVE_KIND = "file"
+
+
 class TelegramPlugin(BasePlugin):
     name = "telegram"
     CLEAR_COMMAND = {"command": "clear", "description": "Start a fresh session"}
@@ -43,6 +50,10 @@ class TelegramPlugin(BasePlugin):
         self._poll_task: asyncio.Task | None = None
         self._bridge_ready = False
         self._state: dict = {}
+        # Created lazily in _proactive_record: an asyncio.Lock built in __init__
+        # binds to whatever loop is current at construction, which is not
+        # necessarily the one the send runs on.
+        self._proactive_lock: asyncio.Lock | None = None
 
     def _api(self, method: str) -> str:
         return f"https://api.telegram.org/bot{self._token}/{method}"
@@ -146,23 +157,178 @@ class TelegramPlugin(BasePlugin):
         ) as resp:
             return await resp.json()
 
-    async def send_photo(self, photo_path: str, caption: str = "", chat_id: str = "") -> dict:
-        """Send a photo."""
+    # --- Send files ---
+    #
+    # Every file method funnels through `_send_file`, so the outbound guard
+    # (outgoing.resolve_outgoing) cannot be bypassed by reaching for a
+    # different method. See outgoing.py for what it refuses and why.
+
+    #: Vault subtrees that hold *generated* artifacts. The whole vault is
+    #: deliberately NOT sendable: a guard over every note the user owns is a
+    #: filter pretending to be a boundary. Anything outside these needs an
+    #: explicit `[plugins.telegram] file_roots` entry.
+    OUTPUT_SUBDIRS = ("70_Media", "30_Resources/EmptyOS", "99_Attachments")
+
+    def _file_roots(self) -> list:
+        """Directories a send may read from — output locations only, plus any
+        `[plugins.telegram] file_roots` the operator adds. A root that does not
+        exist simply never matches, so this is safe on any vault layout."""
+        from pathlib import Path
+
+        roots = []
+        vault = getattr(self.kernel.config, "notes_path", None)
+        if vault:
+            roots.extend(Path(vault) / sub for sub in self.OUTPUT_SUBDIRS)
+        data = getattr(self.kernel.config, "data_dir", None)
+        if data:
+            roots.append(Path(data))
+        for extra in self.config("file_roots", []) or []:
+            roots.append(Path(extra))
+        return roots
+
+    def _proactive_hold(self, dedup_key: str) -> tuple[str, tuple | None]:
+        """Ask the proactive gate whether a push may land right now.
+
+        A file send is a phone notification like any other, so it answers to the
+        same quiet hours / daily cap / minimum gap / dedup as text nudges
+        (.claude/rules/proactive-comms.md). Without this, one app looping over
+        40 clips pushes 40 files at 03:00.
+
+        Returns `(reason, pending)`: a non-empty reason means held. `pending` is
+        this send's OWN record token — it is returned rather than stashed on the
+        plugin, because two concurrent sends sharing one `self._pending` slot
+        lose a record: the second overwrites the first, and the first's delivery
+        is never counted.
+        """
+        try:
+            from emptyos.sdk import proactive
+        except Exception:
+            return "", None  # gate unavailable — never block a send on a missing import
+        try:
+            root = self.kernel.config.data_dir
+            policy = proactive.load_policy(root)
+            if not policy.get("enabled", False):
+                return "", None  # gate off: same posture as every other sender
+            decision = proactive.decide(
+                policy, proactive.load_state(root), kind=PROACTIVE_KIND,
+                dedup_key=dedup_key, urgency="normal")
+            if not decision.deliver:
+                return f"held by the proactive gate: {decision.reason}", None
+            return "", (root, dedup_key, proactive.has_own_budget(policy, PROACTIVE_KIND))
+        except Exception:
+            return "", None
+
+    async def _proactive_record(self, pending: tuple | None) -> None:
+        """Record a delivered file push — only after Telegram accepted it.
+
+        State is re-read here rather than carried from `_proactive_hold`: the
+        upload sat on an `await` in between, and `save_state` rewrites the whole
+        file, so a snapshot taken before it would erase anything recorded during
+        it. The lock serialises this plugin's own sends; a cross-component race
+        with `BaseApp.proactive_notify` (which holds its own per-app lock)
+        remains, and is the pre-existing shape of this store.
+        """
+        if not pending:
+            return
+        root, dedup_key, own_budget = pending
+        try:
+            from emptyos.sdk import proactive
+
+            if self._proactive_lock is None:
+                self._proactive_lock = asyncio.Lock()
+            async with self._proactive_lock:
+                state = proactive.load_state(root)
+                proactive.save_state(root, proactive.record_sent(
+                    state, PROACTIVE_KIND, dedup_key, own_budget=own_budget))
+        except Exception:
+            pass
+
+    async def _send_file(
+        self,
+        method: str,
+        field: str,
+        kind: str,
+        path: str,
+        caption: str = "",
+        chat_id: str = "",
+        extra: dict | None = None,
+    ) -> dict:
+        from emptyos.capabilities.outbound_scan import scan_outbound
+
+        from . import outgoing
+
         cid = chat_id or self._chat_id
         if not cid or not self._token:
             return {"error": "no chat_id or token"}
-        data = aiohttp.FormData()
-        data.add_field("chat_id", cid)
-        # Brief blocking open — aiohttp streams the file from here.
-        data.add_field("photo", open(photo_path, "rb"), filename="photo.jpg")  # noqa: ASYNC230
-        if caption:
-            data.add_field("caption", caption)
-        async with self._session.post(
-            self._api("sendPhoto"),
-            data=data,
-            timeout=aiohttp.ClientTimeout(total=30),
-        ) as resp:
-            return await resp.json()
+
+        caption_reason = outgoing.scan_caption(caption, scan_outbound)
+        if caption_reason:
+            return {"error": caption_reason}
+
+        # The guard hands back an OPEN handle and we upload from that same
+        # handle — re-opening by path here would reintroduce the swap window
+        # every check above exists to close. It runs in a thread because it
+        # stats, opens and content-scans up to 45 MB, and a blocking read on
+        # the event loop is how this daemon wedges (.claude/rules/dev-gotchas).
+        fh, resolved, reason = await asyncio.to_thread(
+            outgoing.open_outgoing,
+            path,
+            roots=self._file_roots(),
+            kind=kind,
+            scan=scan_outbound,
+            # float, not int: `int("0.5")` raises and `int(0.5)` truncates to 0,
+            # which effective_cap reads as "unset" and silently restores the
+            # default — a cap that quietly does nothing.
+            max_bytes=int(float(self.config("max_file_mb", 45)) * outgoing.MB),
+        )
+        if fh is None:
+            return {"error": f"refused to send {path}: {reason}"}
+
+        try:
+            hold, pending = self._proactive_hold(
+                f"tg-file:{resolved}:{resolved.stat().st_mtime_ns}")
+            if hold:
+                return {"error": hold}
+
+            data = aiohttp.FormData()
+            data.add_field("chat_id", cid)
+            for k, v in (extra or {}).items():
+                data.add_field(k, str(v))
+            data.add_field(field, fh, filename=resolved.name)
+            if caption:
+                data.add_field("caption", caption)
+            async with self._session.post(
+                self._api(method),
+                data=data,
+                timeout=aiohttp.ClientTimeout(total=300),
+            ) as resp:
+                result = await resp.json()
+            if result.get("ok"):
+                await self._proactive_record(pending)
+            return result
+        finally:
+            try:
+                fh.close()
+            except Exception:
+                pass
+
+    async def send_photo(self, photo_path: str, caption: str = "", chat_id: str = "") -> dict:
+        """Send a photo (guarded — see `_send_file`)."""
+        return await self._send_file(
+            "sendPhoto", "photo", "photo", photo_path, caption, chat_id)
+
+    async def send_video(self, video_path: str, caption: str = "", chat_id: str = "") -> dict:
+        """Send a video, playable inline on the phone (guarded)."""
+        return await self._send_file(
+            "sendVideo", "video", "video", video_path, caption, chat_id,
+            extra={"supports_streaming": "true"})
+
+    async def send_document(
+        self, file_path: str, caption: str = "", chat_id: str = ""
+    ) -> dict:
+        """Send any allowed file as a document — no re-encoding (guarded)."""
+        return await self._send_file(
+            "sendDocument", "document", "document", file_path, caption, chat_id)
 
     async def edit_message_text(
         self,

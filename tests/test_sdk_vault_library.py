@@ -102,3 +102,39 @@ def test_update_escapes_embedded_quotes(tmp_path):
     lib.update("demo.md", {"status": "x"})
     fm2 = parse_frontmatter(p.read_text(encoding="utf-8"))
     assert fm2["title"] == payload
+
+
+def test_an_empty_str_field_reads_back_falsy(tmp_path):
+    """A str-typed field the note left empty must not read back *truthy*.
+
+    Both frontmatter parsers hand a bare `key:` back as `[]` when another key
+    follows it, and `_coerce` ran a bare `str()` over that — producing the
+    non-empty string "[]". Every `if not value` guard downstream then passed
+    on a field nobody filled in. That is how a bid scenario reached the state
+    an engineer signs with no engineer recorded (D:/prelim-sizing, c5ae9cc).
+
+    The assertion is on *truthiness*, not just equality: "[]" and "" are both
+    "the field is empty" to a reader and opposite to an `if`.
+    """
+    lib = _mk_lib(tmp_path)
+    assert lib._coerce([], str) == ""
+    assert not lib._coerce([], str)          # the whole defect, stated as a bool
+    assert not lib._coerce(None, str)
+    # A non-empty list narrows to its first element rather than "['a', 'b']".
+    assert lib._coerce(["a", "b"], str) == "a"
+    # Genuine values are untouched — 0 and "0" are real content for a str field.
+    assert lib._coerce(0, str) == "0"
+    assert lib._coerce("kevin", str) == "kevin"
+
+
+def test_an_empty_list_field_survives_either_parser_shape(tmp_path):
+    """`""` and `[]` both mean "no items" — a list field must accept both.
+
+    The parsers disagree by position: an empty `tags:` closes as `[]` mid-block
+    and as `""` when it is the last key. A list-typed field sees both shapes.
+    """
+    lib = _mk_lib(tmp_path)
+    assert lib._coerce([], list) == []
+    assert lib._coerce("", list) == []
+    assert lib._coerce(None, list) == []
+    assert lib._coerce("a, b", list) == ["a", "b"]

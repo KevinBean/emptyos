@@ -19,6 +19,8 @@ from __future__ import annotations
 import asyncio
 from dataclasses import dataclass
 
+from emptyos.headless import no_window_flags
+
 
 @dataclass
 class ProcResult:
@@ -46,6 +48,9 @@ async def run_command(argv: list[str], *, timeout: float, cwd: str | None = None
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
             cwd=cwd,
+            # Never let a child of a console-less daemon open a console window
+            # (the Windows console-storm mechanism — emptyos/headless.py).
+            creationflags=no_window_flags(),
         )
     except (FileNotFoundError, OSError) as e:
         return ProcResult(-1, "", str(e))

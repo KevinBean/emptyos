@@ -25,6 +25,7 @@ from __future__ import annotations
 import argparse
 import ast
 import json
+import subprocess
 import sys
 import tomllib
 from pathlib import Path
@@ -104,15 +105,94 @@ def _count_routes(app_dir: Path) -> int:
     return n
 
 
+def _gitignored(dirs: list[Path]) -> set[Path]:
+    """Which of ``dirs`` git ignores — batched into one ``check-ignore`` call.
+
+    A generated catalog is a **tracked** file, so it must not advertise app
+    directories that only exist on the machine running the generator. Local
+    fixtures are gitignored on purpose (``apps/test-app/``,
+    ``apps/extension/others/test-app/`` — .gitignore:33-34), and without this
+    filter every regeneration on such a box re-adds them to docs/APPS.md and
+    bumps the headline count.
+
+    Deliberately NOT pushed down into ``app_layout.iter_app_dirs``: the runtime
+    loader *should* keep loading a local fixture app. Only the published catalog
+    excludes it.
+
+    Degrades open: no git, no repo, or any failure -> nothing filtered, i.e.
+    exactly the previous behaviour. `check-ignore` exits 1 when it matches
+    nothing, which is success, not an error.
+    """
+    if not dirs:
+        return set()
+    # `apps/personal/` is gitignored on purpose — it is a nested repo, not a
+    # throwaway fixture — and a caller reaches it only by asking for it
+    # (include_personal=True). Filtering it here would silently empty the
+    # personal catalogue, so exempt the whole subtree; the fixtures this
+    # function exists to catch all live outside it.
+    personal_root = (APPS_ROOT / "personal").resolve()
+
+    def _is_personal(d: Path) -> bool:
+        try:
+            Path(d).resolve().relative_to(personal_root)
+        except ValueError:
+            return False
+        return True
+
+    dirs = [d for d in dirs if not _is_personal(d)]
+    if not dirs:
+        return set()
+    # Feed git repo-relative POSIX paths. Passing Windows backslash paths makes
+    # git quote its echo ("D:/...") and mis-match some entries, so normalise
+    # both directions and key the result on the same relative form.
+    rel_of: dict[str, Path] = {}
+    for d in dirs:
+        try:
+            rel = Path(d).resolve().relative_to(ROOT)
+        except ValueError:
+            continue
+        rel_of[rel.as_posix()] = d
+    if not rel_of:
+        return set()
+    # Bytes, not text=True: on Windows text mode rewrites "\n" -> "\r\n" on
+    # stdin, and the stray CR makes git fail to match every line but the last
+    # (measured 2026-09-02 — 1 of 2 ignored dirs slipped through).
+    payload = ("\n".join(rel_of) + "\n").encode("utf-8")
+    try:
+        proc = subprocess.run(
+            ["git", "-C", str(ROOT), "check-ignore", "--stdin"],
+            input=payload,
+            capture_output=True,
+            timeout=20,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return set()
+    if proc.returncode not in (0, 1):  # 128 = not a git repo
+        return set()
+    out: set[Path] = set()
+    for line in proc.stdout.decode("utf-8", "replace").splitlines():
+        key = line.strip().strip('"').replace("\\", "/")
+        if key in rel_of:
+            out.add(rel_of[key])
+    return out
+
+
 def scan_apps(*, include_personal: bool = False, include_catalog: bool = False) -> list[dict]:
     """Every app across the track tree (depth-agnostic via app_layout)."""
     sys.path.insert(0, str(ROOT))
     from emptyos.sdk.app_layout import iter_app_dirs, track_of, group_of
 
+    found = list(
+        iter_app_dirs(
+            APPS_ROOT, include_personal=include_personal, include_catalog=include_catalog
+        )
+    )
+    ignored = _gitignored([adir for _, adir in found])
+
     apps: list[dict] = []
-    for aid, adir in iter_app_dirs(
-        APPS_ROOT, include_personal=include_personal, include_catalog=include_catalog
-    ):
+    for aid, adir in found:
+        if adir in ignored:
+            continue
         try:
             with open(adir / "manifest.toml", "rb") as f:
                 data = tomllib.load(f)
@@ -197,6 +277,11 @@ def _resolve_tier(name: str, raw: dict, seen: set | None = None) -> dict:
         "audience": tier.get("audience", ""),
         "private": bool(tier.get("private", False)),
         "description": tier.get("description", ""),
+        # How this tier actually reaches a user. Not inherited through
+        # `extends` — delivery is a property of the tier itself, and a child
+        # silently claiming its parent's target would be the opposite of what
+        # this field exists to expose.
+        "delivery": tier.get("delivery", ""),
         "extends": parent or "",
         "target_platform": tier.get("target_platform", ""),
         "apps": apps,

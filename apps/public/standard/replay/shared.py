@@ -216,6 +216,8 @@ def parse_recipe(detail: dict) -> dict:
         "source_trace": detail.get("source_trace") or "",
         "created": detail.get("created") or "",
         "updated": detail.get("updated") or "",
+        "trigger_cron": detail.get("trigger_cron") or "",
+        "trigger_enabled": bool(detail.get("trigger_enabled")),
         "inputs": spec.get("inputs") or [],
         "steps": spec.get("steps") or [],
         "verify": spec.get("verify") or [],

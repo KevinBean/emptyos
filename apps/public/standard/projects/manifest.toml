@@ -1,5 +1,6 @@
 [app]
 id = "projects"
+icon_id = "projects"
 store_category = "productivity"
 name = "Projects"
 version = "1.0.0"
@@ -22,7 +23,7 @@ class = "ProjectsApp"
 [requires]
 capabilities = ["read", "write", "search", "think", "artifact"]
 apps = ["github-connector", "git", "reports"]
-optional_apps = ["worklog"]
+optional_apps = ["worklog", "staff"]
 
 [provides.cli]
 commands = ["projects"]
@@ -31,7 +32,7 @@ commands = ["projects"]
 prefix = "/projects"
 
 [provides.events]
-emits = ["projects:refreshed", "projects:status_changed", "projects:task_toggled", "projects:task_added", "projects:created", "projects:doc_created", "projects:doc_saved", "projects:stage_changed", "projects:calc_attached", "projects:feature_toggled", "projects:sprint_created", "projects:sprint_closed", "projects:milestone_created", "projects:release_created", "projects:scene_visualized", "projects:dates_cascaded", "project:updated"]
+emits = ["projects:refreshed", "projects:status_changed", "projects:task_toggled", "projects:task_added", "projects:created", "projects:doc_created", "projects:doc_saved", "projects:stage_changed", "projects:calc_attached", "projects:feature_toggled", "projects:sprint_created", "projects:sprint_closed", "projects:milestone_created", "projects:release_created", "projects:scene_visualized", "projects:dates_cascaded", "project:updated", "projects:task_assigned"]
 # UI-render observability — scene_visualized fires when the user opens a
 # visual scene; no cross-app consumer wants per-view notifications.
 # project:updated / projects:doc_saved are high-frequency save signals —
@@ -50,6 +51,10 @@ entity_source = "project_path"
 [provides.export]
 enabled = true
 mode = "standalone"
+# Ship only what the pages use — pages load realtime.js. Undeclared means EVERY bundle
+# (hands-free + assistant + keys + maps + realtime), which put the shared
+# _assets/ at 869 KB against the 800 KB guard in tests/test_sys_export.py.
+assets = ["realtime"]
 fallbacks = ["vault:indexeddb", "think:byok-openai", "events:local-bus", "call_app:bundled", "viewer:none"]
 
 # Assistant slash commands now live in the unified verb registry below

@@ -122,14 +122,14 @@
     async function loadAndMount() {
         var root = document.getElementById('vd-listen-root');
         if (!root) return;
-        root.innerHTML = '<div style="padding:40px;text-align:center;color:var(--text-muted)">Loading transcript…</div>';
+        root.innerHTML = '<div style="padding:48px;text-align:center;color:var(--text-muted)">Loading transcript…</div>';
 
         var payload;
         try {
             var resp = await fetch('/video-digest/api/listen?digest_path=' + encodeURIComponent(state.digestPath));
             payload = await resp.json();
         } catch (e) {
-            root.innerHTML = '<div style="padding:40px;text-align:center;color:var(--danger)">Failed to load: ' + esc(String(e)) + '</div>';
+            root.innerHTML = '<div style="padding:48px;text-align:center;color:var(--danger)">Failed to load: ' + esc(String(e)) + '</div>';
             return;
         }
         if (payload.error) {

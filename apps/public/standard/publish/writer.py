@@ -58,6 +58,8 @@ if TYPE_CHECKING:
 #   api_suggest_topics  = _writer.api_suggest_topics
 #   _voice_block        = _writer._voice_block
 #   api_voice_status    = _writer.api_voice_status
+#   apply_linkedin_playbook = _writer.apply_linkedin_playbook
+#   linkedin_voice_playbook = _writer.linkedin_voice_playbook
 # Adding a new method here? Add a matching binding line in app.py.
 # ────────────────────────────────────────────────────────────────────
 

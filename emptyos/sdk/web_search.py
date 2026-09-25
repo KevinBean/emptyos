@@ -40,8 +40,9 @@ import re
 import socket
 import urllib.request
 import uuid
-from urllib.parse import quote_plus, urlparse
+from urllib.parse import quote, quote_plus, urlparse
 
+from emptyos.nethost import canonical_hostname
 from emptyos.sdk.web_politeness import host_gate, robots_allows
 
 
@@ -142,6 +143,37 @@ def is_http_url(url: str) -> bool:
 
 _LOCAL_NAME_SUFFIXES = (".local", ".internal", ".lan", ".localhost", ".home.arpa")
 
+def _authority_is_ambiguous(url: str) -> bool:
+    """True when this parser and the *connecting* client would disagree on host.
+
+    WHATWG (Chromium, hence every Playwright-backed fetch) treats a backslash
+    in the authority as a path separator; ``urlparse`` treats it as an ordinary
+    character. So ``http://127.0.0.1\\@example.com/`` has host ``example.com``
+    here and host ``127.0.0.1`` in the browser that actually issues the
+    request — measured, not theorised. Refuse rather than pick a winner.
+    """
+    match = re.match(r"^[A-Za-z][A-Za-z0-9+.-]*://([^/?#]*)", url)
+    authority = match.group(1) if match else ""
+    if "\\" in authority or "%5c" in authority.lower():
+        return True
+    # Percent-encoding in the host is the same disagreement by another route:
+    # WHATWG decodes it, so ``http://%31%32%37.0.0.1/`` is host 127.0.0.1 to
+    # the browser and the literal string "%31%32%37.0.0.1" to urlparse. It is
+    # legitimate in *userinfo* (a password containing "@") and IDN travels as
+    # punycode, so nothing real needs %xx in a host. Userinfo is otherwise left
+    # alone: urlparse takes the part after the last "@" exactly as WHATWG does,
+    # so it is not a disagreement, and refusing it would break an
+    # authenticated feed URL.
+    return "%" in authority.rsplit("@", 1)[-1]
+
+
+def _canonical_host(url: str) -> str:
+    """The hostname as the connecting client resolves it, or "" if unusable."""
+    try:
+        return canonical_hostname(urlparse(url).hostname or "")
+    except ValueError:
+        return ""
+
 
 def is_public_web_url(url: str, *, resolve_dns: bool = True) -> bool:
     """SSRF guard: True only for http(s) URLs that point at the public web.
@@ -154,12 +186,20 @@ def is_public_web_url(url: str, *, resolve_dns: bool = True) -> bool:
     subsequent navigation will fail on its own); only a *successful*
     resolution to a non-global address blocks.
 
+    The host is canonicalised first (:func:`_canonical_host`) and ambiguous
+    authorities are refused (:func:`_authority_is_ambiguous`). Both matter
+    because the resolution fallback above is only safe while *this* resolver
+    and the client's agree: ``getaddrinfo("0x7f.0.0.1")`` raises on Windows
+    and falls through to "unresolvable, let navigation fail", while libcurl
+    and Chromium both reach 127.0.0.1. Canonicalising turns those forms into
+    IP literals that never reach the fallback.
+
     Blocking when ``resolve_dns=True`` — call via ``asyncio.to_thread`` from
     async code (``read_web_source`` does this for you).
     """
-    if not is_http_url(url):
+    if not is_http_url(url) or _authority_is_ambiguous(url):
         return False
-    host = (urlparse(url).hostname or "").strip("[]").lower()
+    host = _canonical_host(url)
     if not host:
         return False
     try:
@@ -567,6 +607,60 @@ def openalex_search(query: str, max_results: int, *, mailto: str = "") -> list[d
             bits.append(venue[:48])
         out.append({"url": link, "title": title, "note": " · ".join(bits)})
     return out
+
+
+def crossref_lookup(doi: str, *, mailto: str = "") -> dict | None:
+    """Resolve a bare DOI to full citation metadata via the CrossRef API →
+    ``{title, authors, year, journal, doi, url}`` (``authors`` is a list of
+    "Given Family" strings), or ``None`` on any failure.
+
+    Unlike :func:`openalex_search`/:func:`semantic_scholar_search` (search
+    queries in, ranked candidates out), this takes an exact DOI and resolves
+    one authoritative record — the "click the wand" step of a reference
+    manager's metadata autofill. Pass ``mailto`` to join CrossRef's faster
+    polite pool (same convention as ``openalex_search``'s ``mailto``).
+    Never raises — a missing DOI, a 404, or a malformed response all return
+    ``None`` so the caller falls back to manual entry.
+    """
+    doi = (doi or "").strip()
+    if not doi:
+        return None
+    url = f"https://api.crossref.org/works/{quote(doi, safe='/')}"
+    if mailto:
+        url += f"?mailto={quote_plus(mailto)}"
+    try:
+        data = _http_get_json(url)
+    except Exception:
+        return None
+    msg = data.get("message") if isinstance(data, dict) else None
+    if not isinstance(msg, dict):
+        return None
+    titles = msg.get("title") or []
+    title = " ".join((titles[0] if titles else "").split())
+    if not title:
+        return None
+    authors = []
+    for a in msg.get("author") or []:
+        given = (a.get("given") or "").strip()
+        family = (a.get("family") or "").strip()
+        name = " ".join(p for p in (given, family) if p)
+        if name:
+            authors.append(name)
+    year = ""
+    for key in ("published-print", "published-online", "published", "issued"):
+        parts = ((msg.get(key) or {}).get("date-parts") or [[]])[0]
+        if parts:
+            year = str(parts[0])
+            break
+    journal = " ".join(((msg.get("container-title") or [""]) or [""])[0].split())
+    return {
+        "title": title,
+        "authors": authors,
+        "year": year,
+        "journal": journal,
+        "doi": doi,
+        "url": msg.get("URL") or f"https://doi.org/{doi}",
+    }
 
 
 def wikipedia_search(query: str, max_results: int, *, lang: str = "en") -> list[dict]:

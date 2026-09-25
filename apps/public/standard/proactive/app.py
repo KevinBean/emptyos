@@ -28,9 +28,29 @@ from emptyos.sdk import proactive as pro
 
 # kind → human label for the policy UI (so the frontend doesn't hardcode the
 # vocabulary). The order here is the wellbeing-lens scan order.
+def merge_kind_overrides(existing: dict | None, incoming: dict) -> dict:
+    """Merge per-kind policy overrides instead of replacing the whole map.
+
+    `POST /api/policy` used to assign `kinds` wholesale, so a client setting one
+    kind's `own_budget` silently wiped every mute the user had set through
+    `/api/mute` — which is merge-shaped for exactly this reason. Each kind's
+    config merges key-by-key, so setting `own_budget` leaves `mute` alone.
+    """
+    merged = {k: dict(v) if isinstance(v, dict) else v
+              for k, v in (existing or {}).items()}
+    for kind, cfg in (incoming or {}).items():
+        if isinstance(cfg, dict) and isinstance(merged.get(kind), dict):
+            merged[kind].update(cfg)
+        elif isinstance(cfg, dict):
+            merged[kind] = dict(cfg)
+        else:
+            merged[kind] = cfg
+    return merged
+
+
 KINDS: dict[str, str] = {
     "journaling-gap": "Journaling gap",
-    "budget": "Budget overrun",
+    "budget": "LLM spend budget",
     "deadline": "Deadlines due soon",
     "today-load": "Today's task load",
     "reminder": "Reminders",
@@ -40,10 +60,93 @@ KINDS: dict[str, str] = {
     "wellbeing": "Wellbeing support",
     "milestone": "Milestones & celebrations",
     "system": "System events",
+    # Its own kind so muting "system" never silences it: an agent changing
+    # itself is sent critical and must not be muted by accident.
+    "self-modification": "Agent self-modification",
     # Scheduled runbook notify blocks (interactive runs deliver raw — the
     # user Apply-clicked them in real time):
     "runbook": "Scheduled runbook notifications",
+    # bookme: new-booking notices (upcoming-meeting reminders go to the booker by email).
+    "bookme": "Bookings",
+    # promote: "drafts ready for review" notices.
+    "promote": "Promotion drafts ready",
+    # plugins/telegram file sends (a clip, a report) — a file arriving on the
+    # phone is a push like any other, so it answers to quiet hours and the cap.
+    "file": "Files pushed to your phone",
+    # ── Backfilled 2026-09-16 ────────────────────────────────────────────────
+    # A kind missing from this map still delivers; it just cannot be muted,
+    # because this catalog IS the mute UI and `POST /api/mute` refuses a kind
+    # that is not in it. An audit found 22 kinds pushing without an off switch —
+    # `expense-budget` alone had 251 deliveries. `scripts/check_proactive_kinds.py`
+    # now fails when an emitted kind is missing here.
+    "expense-budget": "Expense budget warnings",
+    "projects-deadline": "Project deadlines",
+    "task-reminder": "Task reminders",
+    "countdown": "Countdowns",
+    "birthday": "Birthdays & anniversaries",
+    "journal-nudge": "Journaling nudges",
+    "focus": "Focus sessions",
+    "daily-brief": "Daily brief",
+    "quotes": "Quote of the day",
+    "vlog": "Video log",
+    "board-automation": "Board automation",
+    "conversation-ingest-backlog": "Conversation ingest backlog",
+    "publish-ready": "Drafts ready to publish",
+    "publish-build-failed": "Site build failures",
+    "rooms-pending": "Actions waiting for review",
+    "staff-workflow": "Scheduled agent workflows",
+    "agent-fleet-blocked": "Agents blocked",
+    "agent-waiting": "An agent is waiting for you",
+    "dev-momentum": "Development momentum",
+    "trace-miner": "Recurring errors found",
+    "model-probe": "Model probe results",
+    "vault-structure": "Vault structure findings",
+    # The operator's own probe (POST /api/test). Metered on its own allowance
+    # (DEFAULT_POLICY) so verifying the setup never spends the day's budget.
+    "test": "Test nudges",
+    # External [[contributes.proactive.source]] contributors (proactive-no-source-slot):
+    "srs-review": "Spaced-repetition reviews due",
+    "fix-queue-backlog": "Fix-prompt queue backlog (devboard)",
 }
+
+# Display grouping for the mute list, by the domain a nudge comes FROM — the
+# axis you reach for when the thought is "quieten the agent stuff", not "which
+# kind was that called again". Backfilling the catalog took it from 16 to 39
+# toggles, at which point one flat column stopped being scannable.
+#
+# The axis is the EMITTING DOMAIN, not the wellbeing wheel — the wheel is a
+# reasoning rubric and never a UI feature (CLAUDE.md rule 16), and the scanner's
+# internal wellbeing-lens ordering of built-in sources stays invisible here.
+# Two labels do coincide with dimension aliases in emptyos/sdk/dimensions.py
+# ("money" -> financial, "learning" -> intellectual); that is the vocabulary
+# overlapping, not the axis. `focus` sits under Learning while the wheel would
+# call a productivity timer occupational, which is the tell.
+#
+# A kind missing from this list is NOT hidden — PROACTIVE_GROUPS.group (the
+# page's sibling .js) returns every catalog key exactly once, with anything
+# unplaced under "Other", so a grouping mistake costs a toggle its section and
+# never its off switch. The partition here is pinned by
+# tests/test_unit_proactive_kind_groups.py; the grouping function itself by
+# tests/js/proactive_groups.test.mjs.
+KIND_GROUPS: list[tuple[str, tuple[str, ...]]] = [
+    ("Time & commitments", (
+        "deadline", "projects-deadline", "task-reminder", "reminder",
+        "countdown", "birthday", "today-load", "bookme")),
+    ("Journal & reflection", (
+        "journaling-gap", "journal-nudge", "eod-wins", "daily-brief",
+        "quotes", "vlog", "milestone", "wellbeing")),
+    ("Agents & automation", (
+        "rooms-pending", "staff-workflow", "agent-fleet-blocked",
+        "agent-waiting", "board-automation", "runbook", "self-modification",
+        "conversation-ingest-backlog")),
+    ("System & development", (
+        "system", "trace-miner", "model-probe", "vault-structure",
+        "dev-momentum", "fix-queue-backlog", "test")),
+    ("Publishing & output", (
+        "publish-ready", "publish-build-failed", "promote", "file")),
+    ("Money", ("budget", "expense-budget")),
+    ("Learning", ("srs-review", "focus")),
+]
 
 JOURNAL_GAP_DAYS = 3  # nudge once you've gone this many days without a journal entry
 
@@ -255,6 +358,14 @@ class ProactiveApp(BaseApp):
                 out.extend(await src())
             except Exception:
                 continue
+        # External sources (proactive-no-source-slot): [[contributes.proactive.source]]
+        # lets an app opt a pull-source in without this file knowing it exists —
+        # the same shape as [[contributes.hub.panel]]. call_contributions is
+        # already fail-soft per contributor, so one broken source can't break
+        # the scan for the rest.
+        for _entry, result in await self.call_contributions("proactive", "source"):
+            if isinstance(result, list):
+                out.extend(c for c in result if isinstance(c, dict))
         return out
 
     async def _deliver(self, cand: dict) -> dict:
@@ -293,6 +404,7 @@ class ProactiveApp(BaseApp):
     async def api_policy(self, request):
         pol = pro.load_policy(self._root())
         pol["_kinds_catalog"] = KINDS  # so the UI can render the per-kind list
+        pol["_kinds_groups"] = [[name, list(keys)] for name, keys in KIND_GROUPS]
         return pol
 
     @web_route("POST", "/api/policy")
@@ -301,9 +413,11 @@ class ProactiveApp(BaseApp):
         async with self.write_lock("proactive-dispatch"):
             pol = pro.load_policy(self._root())
             for k in ("enabled", "quiet_start", "quiet_end", "daily_cap",
-                      "min_gap_sec", "critical_bypasses_quiet", "default_channels", "kinds"):
+                      "min_gap_sec", "critical_bypasses_quiet", "default_channels"):
                 if k in body:
                     pol[k] = body[k]
+            if isinstance(body.get("kinds"), dict):
+                pol["kinds"] = merge_kind_overrides(pol.get("kinds"), body["kinds"])
             pro.save_policy(self._root(), pol)
         return {"ok": True, "policy": pol}
 

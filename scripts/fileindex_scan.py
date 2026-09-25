@@ -136,7 +136,73 @@ def priority_score(path: str, ext: str, cfg: dict, tier: float) -> float:
     return round(score * tier, 2)
 
 
-def cmd_scan(con: sqlite3.Connection, cfg: dict) -> None:
+def scan_corpus(con, top: str, name: str, spec: dict, cfg: dict, *,
+                ex_paths, ex_names, know_ext, ts: str) -> tuple[int, int]:
+    """Index one corpus directory. Returns (knowledge_files, bulk_dir_rows).
+
+    Extracted so a corpus can be reached two ways: as a top-level directory
+    under ``[general] roots`` (keyed by bare name), or by absolute path when
+    the corpus key itself is a path — see cmd_scan. Behaviour is identical
+    either way; only how ``top`` is located differs.
+    """
+    tier = float(spec.get("tier", 1.0))
+    bulk: dict[tuple[str, str], list[int]] = {}
+    skipped: dict[str, int] = {}
+    rows = []
+    for p, sz, mt in iter_entries(top):
+        fn = os.path.basename(p)
+        if fn.startswith("._") or fn.startswith("~$"):
+            continue
+        ext = fn.rsplit(".", 1)[-1].lower() if "." in fn else ""
+        rel = p.replace("\\", "/")
+        hit = next((m for m, _ in ex_paths if m in rel), None)
+        if hit is None and fn.lower() in ex_names:
+            hit = fn.lower()
+        if hit is not None:
+            skipped[hit] = skipped.get(hit, 0) + 1
+            con.execute("DELETE FROM files WHERE path=? AND status='未索引'", (rel,))
+            continue
+        if ext in know_ext:
+            rows.append((rel, name, ext, sz, mt, "knowledge",
+                         priority_score(rel, ext, cfg, tier), ts))
+        else:
+            parts = rel.split("/")
+            d2 = "/".join(parts[:3]) if len(parts) > 3 else "/".join(parts[:-1])
+            k = (d2, "bulk")
+            bulk.setdefault(k, [0, 0])
+            bulk[k][0] += 1
+            bulk[k][1] += sz
+    con.executemany(
+        """INSERT INTO files(path,corpus,ext,size,mtime,class,priority,last_seen,updated)
+           VALUES(?,?,?,?,?,?,?,?,?)
+           ON CONFLICT(path) DO UPDATE SET size=excluded.size, mtime=excluded.mtime,
+             priority=excluded.priority, corpus=excluded.corpus,
+             last_seen=excluded.last_seen""",
+        [(r[0], r[1], r[2], r[3], r[4], r[5], r[6], r[7], r[7]) for r in rows])
+    for (d2, cls), (cnt, b) in bulk.items():
+        con.execute(
+            """INSERT INTO dirs(path,corpus,file_count,bytes,class,status,reason,last_seen)
+               VALUES(?,?,?,?,?,?,?,?)
+               ON CONFLICT(path) DO UPDATE SET file_count=excluded.file_count,
+                 bytes=excluded.bytes, last_seen=excluded.last_seen""",
+            (d2, name, cnt, b, cls, "未索引",
+             "批量类(媒体/数据/其他) — 目录级追踪", ts))
+    reasons = dict(ex_paths) | ex_names
+    for m, cnt in skipped.items():
+        con.execute(
+            """INSERT INTO dirs(path,corpus,file_count,bytes,class,status,reason,last_seen)
+               VALUES(?,?,?,?,?,?,?,?)
+               ON CONFLICT(path) DO UPDATE SET file_count=excluded.file_count,
+                 last_seen=excluded.last_seen, reason=excluded.reason""",
+            (f"{top.replace(chr(92),'/')}  [子路径排除: {m}]", name, cnt, 0,
+             "excluded", "排除", reasons.get(m, ""), ts))
+    skip_n = sum(skipped.values())
+    extra = f", 子路径排除 {skip_n:,}" if skip_n else ""
+    print(f"  语料  {name:<40} {len(rows):>8,} knowledge files  ({len(bulk)} bulk dirs{extra})")
+    return len(rows), len(bulk)
+
+
+def cmd_scan(con: sqlite3.Connection, cfg: dict, only: str | None = None) -> None:
     t0 = time.time()
     roots = cfg.get("general", {}).get("roots", ["D:/"])
     exclude = {e["name"]: e.get("reason", "") for e in cfg.get("exclude", [])}
@@ -160,6 +226,11 @@ def cmd_scan(con: sqlite3.Connection, cfg: dict) -> None:
             top = os.path.join(root, name)
             if not os.path.isdir(top):
                 continue  # loose top-level files: ignore (rare, add corpus if needed)
+            # --only: skip before any file counting. A non-matching name must not
+            # reach the 排除/待定 branches below — both recurse to count files, which
+            # is exactly the cost --only exists to avoid.
+            if only and only.lower() not in name.lower():
+                continue
             if name in exclude:
                 cnt = b = 0
                 for _, sz, _ in iter_entries(top):
@@ -187,63 +258,31 @@ def cmd_scan(con: sqlite3.Connection, cfg: dict) -> None:
                 print(f"  待定  {name:<40} {cnt:>8,} files  (未分类)")
                 continue
 
-            spec = corpora[name]
-            tier = float(spec.get("tier", 1.0))
-            bulk: dict[tuple[str, str], list[int]] = {}
-            skipped: dict[str, int] = {}
-            rows = []
-            for p, sz, mt in iter_entries(top):
-                fn = os.path.basename(p)
-                if fn.startswith("._") or fn.startswith("~$"):
-                    continue
-                ext = fn.rsplit(".", 1)[-1].lower() if "." in fn else ""
-                rel = p.replace("\\", "/")
-                hit = next((m for m, _ in ex_paths if m in rel), None)
-                if hit is None and fn.lower() in ex_names:
-                    hit = fn.lower()
-                if hit is not None:
-                    skipped[hit] = skipped.get(hit, 0) + 1
-                    con.execute("DELETE FROM files WHERE path=? AND status='未索引'", (rel,))
-                    continue
-                if ext in know_ext:
-                    rows.append((rel, name, ext, sz, mt, "knowledge",
-                                 priority_score(rel, ext, cfg, tier), ts))
-                else:
-                    parts = rel.split("/")
-                    d2 = "/".join(parts[:3]) if len(parts) > 3 else "/".join(parts[:-1])
-                    k = (d2, "bulk")
-                    bulk.setdefault(k, [0, 0])
-                    bulk[k][0] += 1
-                    bulk[k][1] += sz
-            con.executemany(
-                """INSERT INTO files(path,corpus,ext,size,mtime,class,priority,last_seen,updated)
-                   VALUES(?,?,?,?,?,?,?,?,?)
-                   ON CONFLICT(path) DO UPDATE SET size=excluded.size, mtime=excluded.mtime,
-                     priority=excluded.priority, corpus=excluded.corpus,
-                     last_seen=excluded.last_seen""",
-                [(r[0], r[1], r[2], r[3], r[4], r[5], r[6], r[7], r[7]) for r in rows])
-            for (d2, cls), (cnt, b) in bulk.items():
-                con.execute(
-                    """INSERT INTO dirs(path,corpus,file_count,bytes,class,status,reason,last_seen)
-                       VALUES(?,?,?,?,?,?,?,?)
-                       ON CONFLICT(path) DO UPDATE SET file_count=excluded.file_count,
-                         bytes=excluded.bytes, last_seen=excluded.last_seen""",
-                    (d2, name, cnt, b, cls, "未索引",
-                     "批量类(媒体/数据/其他) — 目录级追踪", ts))
-            reasons = dict(ex_paths) | ex_names
-            for m, cnt in skipped.items():
-                con.execute(
-                    """INSERT INTO dirs(path,corpus,file_count,bytes,class,status,reason,last_seen)
-                       VALUES(?,?,?,?,?,?,?,?)
-                       ON CONFLICT(path) DO UPDATE SET file_count=excluded.file_count,
-                         last_seen=excluded.last_seen, reason=excluded.reason""",
-                    (f"{top.replace(chr(92),'/')}  [子路径排除: {m}]", name, cnt, 0,
-                     "excluded", "排除", reasons.get(m, ""), ts))
-            n_files += len(rows)
-            n_bulk += len(bulk)
-            skip_n = sum(skipped.values())
-            extra = f", 子路径排除 {skip_n:,}" if skip_n else ""
-            print(f"  语料  {name:<40} {len(rows):>8,} knowledge files  ({len(bulk)} bulk dirs{extra})")
+            f, b = scan_corpus(con, top, name, corpora[name], cfg,
+                               ex_paths=ex_paths, ex_names=ex_names,
+                               know_ext=know_ext, ts=ts)
+            n_files += f
+            n_bulk += b
+
+    # Path-keyed corpora: a corpus whose KEY is an absolute path is scanned
+    # directly, independent of [general] roots. This is how a corpus outside
+    # the roots is reached (e.g. C:/Users/<u>/Downloads) without adding a root
+    # whose other top-level dirs would each get a recursive file-count.
+    # A bare-name key never contains a separator, so existing config is inert.
+    for key, spec in corpora.items():
+        if "/" not in key and "\\" not in key:
+            continue
+        if only and only.lower() not in f"{key} {spec.get('name','')}".lower():
+            continue
+        top = key.replace("\\", "/").rstrip("/")
+        if not os.path.isdir(top):
+            print(f"  !!    {key:<40} not a directory — skipped")
+            continue
+        f, b = scan_corpus(con, top, spec.get("name") or os.path.basename(top),
+                           spec, cfg, ex_paths=ex_paths, ex_names=ex_names,
+                           know_ext=know_ext, ts=ts)
+        n_files += f
+        n_bulk += b
     con.commit()
     print(f"\nscan done in {time.time()-t0:.0f}s — {n_files:,} knowledge files, {n_bulk:,} bulk dir rows")
 
@@ -292,6 +331,15 @@ def cmd_status(con, args) -> None:
         _preview("DRY-RUN")
         print("(no changes written)")
         return
+
+    # Count assertion. A substring that looks specific ("充油电缆") can match a
+    # whole family of same-titled documents from OTHER projects; on 2026-08-28 a
+    # single --force --all --cross-corpus write mis-marked 82 such files. The
+    # operator states the expected count and the write refuses on any mismatch.
+    if args.expect is not None and len(rows) != args.expect:
+        _preview("REFUSED (count mismatch)")
+        sys.exit(f"--expect {args.expect} but {len(rows)} file(s) matched — "
+                 "narrow the substring, or re-run with the true count if intended")
 
     # Refuse an un-narrowed multi-file write unless --all
     if len(rows) > 1 and not args.all:
@@ -350,6 +398,71 @@ def cmd_status(con, args) -> None:
     skipped = f" (skipped {len(overwrite_high)} 完全索引/排除)" if (args.skip_completed and overwrite_high) else ""
     print(f"updated {n_target} file(s) → {args.set}"
           + (f" in {args.corpus}" if args.corpus else "") + skipped)
+
+
+def cmd_precheck(con, args) -> None:
+    """Answer, BEFORE a file is opened: has this exact CONTENT already been judged?
+
+    A filename substring is not enough. The same document is filed under different
+    names in different archives — on 2026-08-28 four 专题报告 were re-numbered
+    between two archives (1/2/3/4 vs 2/3/4/5), so a name-based pre-check reported
+    "new" for reports that already had KB notes, and three of them were written up
+    a second time. Content identity is the only reliable key, so this matches by
+    size first (cheap) and then sha256 within each size group, across every corpus.
+    """
+    import hashlib
+    rows = con.execute(
+        "SELECT path, size, status, COALESCE(vault_ref,'') FROM files WHERE path LIKE ?",
+        (f"%{args.target}%",)).fetchall()
+    if not rows:
+        sys.exit(f"no ledger rows match: {args.target}")
+
+    def _sha(p: str, size: int) -> str:
+        if size > 60_000_000:
+            return "too-big"
+        try:
+            return hashlib.sha256(Path(p).read_bytes()).hexdigest()
+        except Exception as exc:
+            return f"ERR:{type(exc).__name__}"
+
+    targets = {p for p, *_ in rows}
+    sizes = {s for _, s, *_ in rows}
+    verdicts, refs = [], set()
+    for size in sorted(sizes, reverse=True):
+        family = con.execute(
+            "SELECT path, status, COALESCE(vault_ref,'') FROM files WHERE size=?",
+            (size,)).fetchall()
+        groups: dict[str, list] = {}
+        for p, st, vr in family:
+            groups.setdefault(_sha(p, size), []).append((p, st, vr))
+        for sha, group in groups.items():
+            if not (targets & {p for p, _, _ in group}):
+                continue
+            done = [g for g in group if g[1] in ("完全索引", "排除")]
+            # A 部分索引 row can still carry a vault_ref — a prior session wrote a
+            # note from this file without finishing it. That is NOT "new": writing
+            # a second note would duplicate the first. Report it as 🟡.
+            partial_ref = [g for g in group if not done and g[2]]
+            verdicts.append(bool(done))
+            if done:
+                head = f"🔴 ALREADY {done[0][1]}"
+            elif partial_ref:
+                head = "🟡 部分索引 but a note ALREADY EXISTS — read it first"
+            else:
+                head = "🟢 new"
+            print(f"{head}  size={size // 1024}KB  sha={sha[:12]}  copies={len(group)}")
+            for p, st, vr in group:
+                print(f"    [{st}] {p}")
+                if vr:
+                    print(f"        vault_ref: {vr}")
+                    refs.add(vr)
+            print()
+    if refs:
+        print("=== READ THESE NOTES BEFORE WRITING ANYTHING ===")
+        for r in sorted(refs):
+            print("  " + r)
+    # exit-code-as-signal: non-zero when something is already judged
+    sys.exit(1 if any(verdicts) else 0)
 
 
 def cmd_queue(con, args) -> None:
@@ -491,7 +604,10 @@ def main() -> None:
     ap.add_argument("--config", type=Path, default=None)
     ap.add_argument("--db", type=Path, default=DEFAULT_DB)
     sub = ap.add_subparsers(dest="cmd", required=True)
-    sub.add_parser("scan")
+    sc = sub.add_parser("scan")
+    sc.add_argument("--only", metavar="SUBSTR",
+                    help="only scan corpora whose key or name contains SUBSTR "
+                         "(skips the full-drive walk — use to refresh one corpus)")
     s = sub.add_parser("summary")
     s.add_argument("--json", action="store_true")
     q = sub.add_parser("queue")
@@ -511,6 +627,9 @@ def main() -> None:
     st.add_argument("--force", action="store_true", help="allow overwriting existing 完全索引/排除 judgments")
     st.add_argument("--skip-completed", action="store_true", help="coverage mode: mark only unjudged/partial matches, never touch 完全索引/排除 sources")
     st.add_argument("--only-unindexed", action="store_true", help="coverage mode: mark ONLY 未索引 matches, leave all existing judgments (部分/完全/排除) untouched")
+    st.add_argument("--expect", type=int, help="assert the substring matches exactly N files; refuse the write on any mismatch")
+    pc = sub.add_parser("precheck", help="BEFORE opening a file: is this exact CONTENT already judged, under any filename?")
+    pc.add_argument("target", help="a path or a substring")
     sub.add_parser("report")
     sub.add_parser("export")
     sub.add_parser("import-ledger")
@@ -526,7 +645,7 @@ def main() -> None:
     con = open_db(args.db)
 
     if args.cmd == "scan":
-        cmd_scan(con, cfg)
+        cmd_scan(con, cfg, only=getattr(args, "only", None))
     elif args.cmd == "summary":
         cmd_summary(con, args)
     elif args.cmd == "queue":
@@ -541,6 +660,8 @@ def main() -> None:
         cmd_import(con)
     elif args.cmd == "dups":
         cmd_dups(con, args)
+    elif args.cmd == "precheck":
+        cmd_precheck(con, args)
 
 
 if __name__ == "__main__":

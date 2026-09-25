@@ -18,6 +18,8 @@ from pathlib import Path
 
 from emptyos.sdk.utils import parse_frontmatter, strip_frontmatter
 
+from .signoff import merged_approver_rows
+
 from . import tables as tables_mod
 
 # Public so the rest of the package can inspect in tests.
@@ -419,29 +421,18 @@ def _render_toc(entries: list[tuple[str, str]]) -> str:
 
 
 def _render_signoff_block(meta: dict) -> str:
-    approvers = meta.get("approvers") or []
-    if isinstance(approvers, str):
-        # Comma-separated fallback
-        approvers = [a.strip() for a in approvers.split(",") if a.strip()]
-    if not approvers:
+    rows_data = merged_approver_rows(meta.get("approvers") or [], meta.get("signoffs_json", ""))
+    if not rows_data:
         return '<p class="signoff-empty"><em>No approvers configured.</em></p>'
 
     rows = []
-    for a in approvers:
-        if isinstance(a, dict):
-            role = a.get("role", "")
-            name = a.get("name", "")
-            date_s = a.get("date", "")
-            signature = a.get("signature", "")
-        else:
-            role = str(a)
-            name = date_s = signature = ""
+    for r in rows_data:
         rows.append(
             f"<tr>"
-            f'<td class="role">{_html_escape(role)}</td>'
-            f'<td class="name">{_html_escape(name)}</td>'
-            f'<td class="date">{_html_escape(date_s)}</td>'
-            f'<td class="sig">{_html_escape(signature)}</td>'
+            f'<td class="role">{_html_escape(r["role"])}</td>'
+            f'<td class="name">{_html_escape(r["name"])}</td>'
+            f'<td class="date">{_html_escape(r["date"])}</td>'
+            f'<td class="sig">{_html_escape(r["signature"])}</td>'
             f"</tr>"
         )
     return (

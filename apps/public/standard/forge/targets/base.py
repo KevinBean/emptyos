@@ -17,6 +17,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Awaitable, Callable, Protocol
 
+from emptyos.sdk.toolchain import probe_binary_version
+
 LogCallback = Callable[[bytes], None]
 
 
@@ -28,6 +30,26 @@ class Check:
     ok: bool
     detail: str        # version string ("1.78.0") or install hint
     hint_url: str = ""  # optional URL to install instructions
+
+
+def probe_check(
+    binary: str,
+    *,
+    version_args: tuple[str, ...] | list[str],
+    install_hint: str,
+    hint_url: str,
+) -> Check:
+    """Every ``Target.preflight()`` needs the same shape: resolve a binary,
+    read its version, turn that into a ``Check`` row. Bind this onto a Target
+    class as ``_probe = staticmethod(probe_check)`` (see
+    ``.claude/rules/multi-module-apps.md``) so ``self._probe(...)`` call
+    sites need no change. The actual subprocess/timeout/Windows-flag logic
+    lives in ``emptyos.sdk.toolchain.probe_binary_version`` — this just wraps
+    the result in the local ``Check`` type."""
+    found, ver = probe_binary_version(binary, version_args=version_args)
+    if not found:
+        return Check(name=binary, ok=False, detail=install_hint, hint_url=hint_url)
+    return Check(name=binary, ok=True, detail=ver, hint_url=hint_url)
 
 
 @dataclass

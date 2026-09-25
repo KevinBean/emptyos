@@ -60,7 +60,6 @@ class LifeReactionsMixin:
                     msg, priority="warning", kind="budget",
                     dedup_key=f"reactor-expense-month:{date.today().strftime('%Y-%m')}",
                 )
-                await self._telegram(msg)
                 self._log_action("expense:added", f"budget alert: ${total:.0f}")
         except Exception:
             pass
@@ -93,7 +92,6 @@ class LifeReactionsMixin:
                 msg, priority="info", kind="wellbeing",
                 dedup_key=self._daily_dedup("wellbeing"),
             )
-            await self._telegram(msg)
 
     @on_event("healing:dream-logged")
     async def on_dream(self, event):
@@ -204,11 +202,31 @@ class LifeReactionsMixin:
     async def on_reminder_fired(self, event):
         text = event.data.get("text", "")[:40]
         self._log_action("reminders:fired", f"reminder: {text}")
-        await self._notify(f"Reminder: {text}", kind="reminder")
+        # No nudge here: the reminders app already sent this one through the
+        # gate before emitting, so a second _notify only duplicated it.
 
     @on_event("reminders:completed")
     async def on_reminder_completed(self, event):
         self._log_action("reminders:completed", event.data.get("text", "")[:40])
+
+    # ── Countdowns (wired 2026-08-11: were declared-but-unheard) ──
+    # A countdown is a dated commitment the user set by hand — the same shape
+    # as a reminder, so it earns the same breadcrumb.
+
+    @on_event("countdown:created")
+    async def on_countdown_created(self, event):
+        title = (event.data.get("title") or "")[:40]
+        when = event.data.get("date") or "?"
+        self._log_action("countdown:created", f"{title} -> {when}")
+
+    @on_event("countdown:updated")
+    async def on_countdown_updated(self, event):
+        fields = ", ".join(event.data.get("fields") or [])[:40]
+        self._log_action("countdown:updated", f"{event.data.get('file', '')}: {fields}")
+
+    @on_event("countdown:deleted")
+    async def on_countdown_deleted(self, event):
+        self._log_action("countdown:deleted", str(event.data.get("file", ""))[:40])
 
     @on_event("habits:checked")
     async def on_habit_checked(self, event):

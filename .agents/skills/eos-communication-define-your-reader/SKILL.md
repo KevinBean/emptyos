@@ -67,4 +67,4 @@ detail.
 ## Cross-references
 - `feedback-emptyos-blog-dual-audience` (memory) — the EmptyOS-blog instance of this doctrine.
 - `eos-devlog-publish`, `eos-article-diagrams`, `eos-image-edit`, `eos-screenshot` — the *medium* skills this runs before.
-- `life-communication-playbook` / `life-communication-written` — the interpersonal-message cousins (audience = one person, not a readership).
+- `life-communication-playbook` / `life-communication-written` — the interpersonal-message cousins (audience = one person, not a readership) (user-global skill — lives in `~/.claude/skills`, not in the repo).

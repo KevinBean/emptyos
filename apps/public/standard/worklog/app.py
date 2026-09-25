@@ -22,17 +22,21 @@ from emptyos.sdk import (
     web_route,
 )
 
+from . import boards as _boards
+from . import capture_ingest as _capture_ingest
+from . import competency as _competency
 from . import importing as _importing
 from . import reads as _reads
 from . import reporting as _reporting
 from . import search as _search
 from . import surfaces as _surfaces
+from . import timer as _timer
 from .shared import _parse_date
 
 from .parser import (
     STATUS_EMOJI,
     parse_work,
-    render_work,
+    render_work_preserving,
     replace_section,
     split_sections,
 )
@@ -121,13 +125,15 @@ class WorklogApp(BaseApp):
             actual_employer = str(
                 parse_frontmatter(content).get("employer") or ""
             ).strip()
-            groups = parse_work(split_sections(content).get("Work", ""))
+            work_body = split_sections(content).get("Work", "")
+            groups = parse_work(work_body)
             grp = next((g for g in groups if g["project"].lower() == project.lower()), None)
             if grp is None:
                 grp = {"project": project, "items": []}
                 groups.append(grp)
             grp["items"].append({"text": text, "status": None if status == "note" else status})
-            new_content = replace_section(content, "Work", render_work(groups))
+            new_content = replace_section(
+                content, "Work", render_work_preserving(work_body, groups))
             await self.write(str(self._daily_path(d)), new_content)
         await self.emit("worklog:logged",
                         {"date": d.isoformat(), "project": project, "text": text,
@@ -143,7 +149,8 @@ class WorklogApp(BaseApp):
                 content = await self.read(str(self._daily_path(d)))  # noqa: eos-rmw
             except Exception:
                 return {"error": "no worklog for that day"}
-            groups = parse_work(split_sections(content).get("Work", ""))
+            work_body = split_sections(content).get("Work", "")
+            groups = parse_work(work_body)
             hit = False
             for g in groups:
                 if g["project"].lower() != project.lower():
@@ -154,7 +161,8 @@ class WorklogApp(BaseApp):
                         hit = True
             if not hit:
                 return {"error": "item not found"}
-            new_content = replace_section(content, "Work", render_work(groups))
+            new_content = replace_section(
+                content, "Work", render_work_preserving(work_body, groups))
             await self.write(str(self._daily_path(d)), new_content)
         await self.emit("worklog:status-changed",
                         {"date": d.isoformat(), "project": project, "status": status})
@@ -198,6 +206,15 @@ class WorklogApp(BaseApp):
         return await self._set_prose(data.get("date", ""), "Update", data.get("text", ""))
 
     # ── Importing (extracted to importing.py) ──
+    # ── CPEng competency evidence (extracted to competency.py) ──
+    competency_report      = _competency.competency_report
+    api_competency         = _competency.api_competency
+    panel_competency       = _competency.panel_competency
+    suggest_competencies   = _competency.suggest_competencies
+    tag_competency         = _competency.tag_competency
+    api_competency_suggest = _competency.api_competency_suggest
+    api_competency_tag     = _competency.api_competency_tag
+
     portable_payload   = _importing.portable_payload
     api_portable       = _importing.api_portable
     import_portable    = _importing.import_portable
@@ -213,6 +230,7 @@ class WorklogApp(BaseApp):
     timeline_items     = _reads.timeline_items
     api_timeline_items = _reads.api_timeline_items
     api_recent         = _reads.api_recent
+    _project_index     = _reads._project_index
     _project_names     = _reads._project_names
     project_activity   = _reads.project_activity
     project_names      = _reads.project_names
@@ -235,6 +253,7 @@ class WorklogApp(BaseApp):
     api_update_draft  = _reporting.api_update_draft
     api_carryover     = _reporting.api_carryover
     api_timesheet_pdf = _reporting.api_timesheet_pdf
+    api_export_csv    = _reporting.api_export_csv
 
     # ── Search (extracted to search.py) ──
     search_items = _search.search_items
@@ -249,3 +268,26 @@ class WorklogApp(BaseApp):
     voice_set_plan   = _surfaces.voice_set_plan
     voice_set_update = _surfaces.voice_set_update
     cmd_worklog      = _surfaces.cmd_worklog
+
+    # ── Boards-as-view-layer (extracted to boards.py) ──
+    list_all         = _boards.list_all
+    set_field        = _boards.set_field
+    board_presets    = _boards.board_presets
+
+    # ── Capture ingest lane (extracted to capture_ingest.py) ──
+    pending_captures      = _capture_ingest.pending_captures
+    apply_capture_draft   = _capture_ingest.apply_capture_draft
+    dismiss_capture_draft = _capture_ingest.dismiss_capture_draft
+    api_capture_pending   = _capture_ingest.api_capture_pending
+    api_capture_apply     = _capture_ingest.api_capture_apply
+    api_capture_dismiss   = _capture_ingest.api_capture_dismiss
+
+    # ── Timer (extracted to timer.py) ──
+    timer_status     = _timer.timer_status
+    timer_start      = _timer.timer_start
+    timer_stop       = _timer.timer_stop
+    timer_cancel     = _timer.timer_cancel
+    api_timer        = _timer.api_timer
+    api_timer_start  = _timer.api_timer_start
+    api_timer_stop   = _timer.api_timer_stop
+    api_timer_cancel = _timer.api_timer_cancel

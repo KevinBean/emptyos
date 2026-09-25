@@ -2,6 +2,7 @@
 name: eos-fde-engagement
 description: Run a Forward-Deployed-Engineer (FDE) engagement loop end-to-end using EmptyOS as the rapid-prototyping substrate — discovery → engagement brief → thin-slice prototype → touchable demo → measured value-proof → handoff. Use when the user says "FDE engagement", "run an FDE loop", "land an AI solution for <customer>", "prototype a demo for <customer/team>", "prove value for <use case>", or is preparing an FDE-style customer/portfolio piece. The value-proof phase (measured manual-vs-tool before/after) is the differentiator — never invent the numbers. NOT for building a generic EmptyOS app for yourself (use eos-new-app) or for job-posting evaluation (use life-job-evaluator).
 ---
+<!-- skill-refs: ignore — the docs/*.md paths are handoff artifacts this skill CREATES per engagement, not repo files -->
 
 # FDE Engagement Kit
 

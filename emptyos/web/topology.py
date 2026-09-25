@@ -146,8 +146,6 @@ def _build_topology(kernel) -> dict:
                 emits_event, listens_event, has_provider, uses_engine,
                 reads_data, writes_data
     """
-    from emptyos.kernel.app_loader import AppState
-
     nodes = []
     edges = []
     node_ids = set()
@@ -240,7 +238,7 @@ def _build_topology(kernel) -> dict:
 
     # --- Apps ---
     for app_id, manifest in kernel.apps.manifests.items():
-        state = kernel.apps.states.get(app_id, AppState.DISCOVERED).value
+        state = kernel.apps.state_of(app_id).value
         add_node(
             f"app:{app_id}", "app", manifest.name, state=state, description=manifest.description
         )
@@ -361,14 +359,9 @@ def _build_topology(kernel) -> dict:
         "healing",
         "expense",
         "nutrition",
-        "jobmonitor",
         "rooms",
         "reactor",
-        "compose",
-        "lyrics",
-        "mv-creator",
-        "interview-studio",
-        "contacts",
+        "people",
     }
 
     for app_id, keys in DEFAULT_PATHS.items():

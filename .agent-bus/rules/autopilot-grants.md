@@ -1,3 +1,17 @@
+---
+paths:
+  - "emptyos/sdk/autopilot*.py"
+  - "emptyos/cli/commands/autopilot.py"
+  - "emptyos/mcp_outbound_server.py"
+  - "apps/public/standard/rooms/**"
+  - "apps/public/standard/voice-assistant/**"
+  - "apps/public/standard/agent/**"
+  - "apps/public/core/settings/**"
+  - "apps/public/standard/billing/**"
+  - "tests/*autopilot*"
+  - "tests/*mcp_foundry*"
+---
+
 # Autopilot Grants Rule — explicit trust, not implicit mode
 
 > **PIVOT 2026-06-07 — default inverted. Read this first.**
@@ -362,14 +376,15 @@ actor-identity threading (build when a consumer needs the per-job split).
 
 This rule is the design contract; the code lands incrementally on demand.
 Likely order when the first grantable verb has enough Apply-fatigue to
-justify the work:
+justify the work. Steps 1-3, 5, and 6 are done (see § Status) — step 4
+(the Apply-card third button) is the one still open.
 
 1. **Grant store + policy** (foundation) — `data/autopilot/grants.json` +
    `data/autopilot/policy.json` with eligibility list, plus a small
    `emptyos/sdk/autopilot.py` exposing `load_grants()`,
    `match(actor, verb, scope)`, `is_eligible(verb)`, `save_grant()`,
    `revoke(grant_id)`, `reap_expired()`. Reaper runs on daemon boot.
-2. **Gate hook** — `_gate_server_actions` in `apps/rooms/pending.py`
+2. **Gate hook** — `_gate_server_actions` in `apps/public/standard/rooms/pending.py`
    (bound to `RoomsApp` via the multi-module decomposition pattern in
    `.claude/rules/multi-module-apps.md`) consults `match()` before
    persisting a pending entry; on match + eligible, dispatches via
@@ -379,7 +394,7 @@ justify the work:
    (already supports `gate_mode == "gate"` to route agent `[DO:]` into
    the pending queue) — both gain the same `match()` consultation.
 3. **Room toolbar chip + Shift+Tab** (primary surface) — the session-
-   scoped toggle in `apps/rooms/pages/index.html`. POSTs to
+   scoped toggle in `apps/public/standard/rooms/pages/index.html`. POSTs to
    `/rooms/api/autopilot/session` (toggle), `/rooms/api/autopilot/extend`
    (re-arm duration). Server-side handler issues / revokes a
    `scope: "session:<room_id>"` grant covering every eligible verb from
@@ -411,12 +426,12 @@ surface. The foundry honours the same eligibility floor; non-eligible verbs
 (`rooms.write_note`, `publish.deploy`, outbound messages) can never be exposed
 to an external client regardless of grant or manifest opt-in.
 
-## Status (2026-06-05)
+## Status (2026-08-22)
 
 Re-review surface (定期复审) shipped 2026-06-11 — see § Audit. Read-only:
 it flags stale persistent grants but never revokes.
 
-Three consumers exist, at different completeness:
+Four consumers exist, plus the cross-cutting operator surfaces:
 
 - **mcp-client (outbound foundry)** — pieces 1+2+3 live: grant store
   (`emptyos/sdk/autopilot.py`), the per-call `match()` gate inside
@@ -429,15 +444,35 @@ Three consumers exist, at different completeness:
   the grant store (`emptyos/sdk/autopilot.py`), the inline `_is_grant_active`
   check in `voice-assistant/pending.py`, and the `⚡ auto-accept` session
   toggle chip in its `pages/index.html`. This path is fully usable.
-- **rooms** — pieces 1+2 only. `_gate_server_actions` consults `match()`
-  (the auto-apply branch at `rooms/pending.py`), but piece 3 was **not**
-  built: there is no rooms toolbar chip and no `/rooms/api/autopilot/*`
-  endpoint. Combined with the read-only CLI (no `eos autopilot grant`),
-  **nothing can currently issue a `room:<id>` or `global` grant**, so the
-  rooms auto-apply branch is unreachable in practice. This is deliberate
-  — deferred until the rooms `@claude` repetitive-action flow is actually
-  used enough to earn the friction relief (per the "Apply-fatigue" trigger
-  above). The default (review every `[DO:]`) is unaffected; the gate is
-  not blocking any current workflow. **Do not treat the rooms auto-apply
-  branch as a working feature** until piece 3 (chip + `/api/autopilot/session`)
-  or the `eos autopilot grant` CLI lands.
+
+- **rooms** — pieces 1+2+3 are live (landed 2026-07-04, `apps/public/standard/rooms/autopilot.py`):
+  `_gate_server_actions` consults `match()`/`decide()` (`rooms/pending.py`),
+  and the room toolbar carries a working `⚡ auto-accept` / `⏸ pause-auto`
+  chip (`apToggle`/`apRefresh` in `pages/rooms-features.js`) that issues
+  session-scoped grants via `POST /rooms/api/autopilot/session` (or holds via
+  `/api/autopilot/hold` once the global `auto_stable_default` flag is on).
+  **The rooms auto-apply branch is reachable and working** — the caveat
+  below from the prior status entry is resolved; do not re-add it without
+  re-verifying against the live code.
+
+- **CLI** — full issuer, not read-only: `eos autopilot {grant,revoke,hold,
+  unhold,list-grants,list-holds,review,policy,verify,log,budget set/show}`
+  (`emptyos/cli/commands/autopilot.py`). `grant`/`revoke` predate the rooms
+  chip and were built for the MCP foundry case, but work for any actor type.
+
+- **Settings → Autopilot console** (build-order step 5, shipped 2026-08-22)
+  — the operator-facing global view this doc originally speced: a table of
+  every active grant (with status/fire-count from `review_grants()`) +
+  every active hold + every actor's monthly budget, each row revocable, plus
+  a manual "+ Issue grant" form and a "+ Set cap" form. Lives at
+  `apps/public/core/settings/autopilot_panel.py` (bound onto `SettingsApp`)
+  + the "Autopilot" tab in `apps/public/core/settings/pages/index.html`.
+  Read/write surface is global (every room/session/actor at once), unlike
+  the per-room chip. Tests: `tests/test_sys_settings.py::TestAutopilotConsoleAPI`.
+
+**What's still not built** — the Apply-card third button ("Always allow
+this", § How grants are created path 2) that would let a user convert one
+reviewed `[DO:]` action directly into a standing grant from the pending card
+itself, instead of going to the room chip or the Settings console first.
+Low-friction addition once a real "I keep clicking Apply on the same verb"
+pattern shows up — build it then, not speculatively.

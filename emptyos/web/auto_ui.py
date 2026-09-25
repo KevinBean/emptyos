@@ -95,6 +95,19 @@ def _guess_fields(path: str) -> list[dict]:
     return [{"name": "text", "type": "text", "placeholder": "Input..."}]
 
 
+def _schema_fields_for_collection(schema_fields: list[dict]) -> list[dict]:
+    """Build formModal-shaped add-form fields directly from a manifest
+    `[collection]` schema (see `emptyos/sdk/collection_app.py`) instead of
+    guessing from the route path via `_guess_fields()` — real typed fields
+    (label/type/options/required/default), not a regex guess. Note the key
+    is `key` (what `EOS_UI.formHtml`/`formValues` actually read), not `name`
+    like `_fields_to_modal_fields` below produces.
+    """
+    from emptyos.sdk.column_types import columns_to_form_fields
+
+    return columns_to_form_fields(schema_fields)
+
+
 def _fields_to_modal_fields(fields: list[dict]) -> list[dict]:
     """Convert _guess_fields shape -> EOS_UI.formModal field shape."""
     out = []
@@ -259,6 +272,16 @@ def generate_app_page(manifest: "AppManifest", routes: list[dict]) -> str:
         enriched.append(rr)
 
     collections, consumed = _detect_collections(enriched)
+
+    # A manifest-declared [collection] schema (emptyos/sdk/collection_app.py)
+    # always exposes its add-form at POST /api/items — override the guessed
+    # fields with the real typed schema when present.
+    collection_schema = (getattr(manifest, "raw", None) or {}).get("collection", {})
+    schema_fields = collection_schema.get("fields", []) or []
+    if schema_fields:
+        for coll in collections:
+            if coll.get("post_path") == "/api/items":
+                coll["add_fields"] = _schema_fields_for_collection(schema_fields)
 
     stats_routes: list[tuple[str, str]] = []
     standalone_posts: list[dict] = []

@@ -1,6 +1,6 @@
 ---
 name: eos-screenshot
-description: Capture screenshots of EmptyOS UI for blog posts and the marketing site, with privacy + branding redaction baked in. Works against any URL — localhost, demo.binbian.net, an exported bundle. Pre-blurs selectors you specify, then scans visible text against `.eos-personal` and `.eos-branding` patterns and refuses to write the file when a leak is detected (unless `--force`). Outputs to `{vault}/30_Resources/Published/media/<slug>.png` with a sidecar `<slug>.alt.txt` and a manifest entry in `media/.shots.toml`. Use when the user says "screenshot this", "grab a shot of /journal", "shoot the capability inspector", or wants article images for a Published post.
+description: Capture screenshots of EmptyOS UI for blog posts and the marketing site, with privacy + branding redaction baked in. Works against any URL — localhost, demo.binbian.net, an exported bundle. Pre-blurs selectors you specify, then scans visible text against `.eos-personal` and `.eos-branding` patterns and refuses to write the file when a leak is detected (unless `--force`). Outputs to `{vault}/30_Resources/Published/media/<slug>.png` with a sidecar `<slug>.alt.txt` and a manifest entry in `media/.shots.toml`. Use when the user says "screenshot this", "grab a shot of /journal", "shoot the capability inspector", or wants article images for a Published post. NOT for editing an image you already have (use eos-image-edit) and NOT for authoring a diagram (use eos-article-diagrams).
 ---
 
 # EmptyOS Screenshot Skill

@@ -21,6 +21,14 @@ live = "live"          # the CRDT session state on the codoc service
 [provides.web]
 prefix = "/codoc"
 
+[[provides.verbs]]
+verb = "codoc.agent_edit"
+method = "agent_edit"
+summary = "Have an owned agent join a live co-doc session and apply a text edit"
+args = { doc_id = "string", principal = "string", text = "string" }
+eligibility = "gated"
+surfaces = ["agent"]
+
 [provides.events]
 emits = ["codoc:saved", "codoc:agent_edited"]
 # Doc-edit observability — no cross-app listener by design.

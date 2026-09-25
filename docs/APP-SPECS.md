@@ -1,6 +1,20 @@
 # EmptyOS App Specifications
 
-> 12 core apps with deep backends, custom UIs, and rich data models.
+<!-- HAND-AUTHORED. Unlike docs/APPS.md and docs/TIERS.md there is no generator
+     and no `--check` gate behind this file, so it can drift silently and has.
+     Verify a section against the app before trusting it. -->
+
+> Deep-dive specs for 12 apps with substantial backends, custom UIs, and rich
+> data models. **Not "the 12 core apps"** — that phrasing was wrong and is
+> corrected here (2026-08-30): only six are public
+> (`expense`, `journal`, `task`, `hub`, `focus`, `projects`), four are personal
+> and gitignored (`briefing`, `english`, `healing`, `nutrition`), one is an
+> extension app (`dictionary`), and **`contacts` is retired** — it survives only
+> at `apps/personal/_retired/contacts/`. This is a selection, not a tier.
+>
+> For the complete, generated catalog of every app see
+> [APPS.md](APPS.md); for what ships in which bundle see [TIERS.md](TIERS.md).
+>
 > Source of truth: each app's `app.py` + `manifest.toml`.
 
 ---
@@ -209,7 +223,12 @@
 
 ---
 
-## Contacts
+## Contacts — RETIRED
+
+> **This app no longer exists.** It lives only at
+> `apps/personal/_retired/contacts/` and is not loaded. The spec is kept as a
+> record of what it did; the live equivalent is the `people` app
+> (`apps/public/standard/people/`). Do not treat anything below as current.
 
 - **What it does**: CRM from vault `@Person.md` files. Health scoring, contact frequency tracking, AI suggestions, persona chat, quick logging.
 
@@ -358,7 +377,7 @@
 
 ## Dictionary
 
-- **What it does**: English-Chinese word lookup, vault storage, SM-2 SRS flashcards, quiz mode, word-of-day, frequency tracking, explain, spelling suggestions.
+- **What it does**: English-Chinese word lookup, vault storage, level-ladder SRS flashcards, quiz mode, word-of-day, frequency tracking, explain, spelling suggestions.
 
 - **Data**: Vault `30_Resources/Learning/Dictionary/{Word} (en-US).md`. App-local `data/apps/dictionary/` (srs.json, frequency.json). External APIs: Free Dictionary, Datamuse, MyMemory Translation.
 
@@ -382,7 +401,7 @@
 | DELETE | /api/vault/{word} | Delete a vault word |
 | GET | /api/quiz | Generate multiple-choice quiz |
 
-- **Core algorithms**: SM-2 simplified: intervals = [0, 1, 3, 7, 14, 30, 60, 120] days. Quality 1=reset(level 0), 2=no advance, 3=+1 level, 4=+2 levels. Deck: due words (level asc) + new words (shuffled), up to limit. Quiz: random vault words, 1 correct + 3 distractors.
+- **Core algorithms**: Fixed level ladder, intervals = [0, 1, 3, 7, 14, 30, 60, 120] days. Quality 1=reset(level 0), 2=no advance, 3=+1 level, 4=+2 levels. Deliberately **not** the shared `sdk/srs.py` scheduler — the word deck owns this ladder, so the FSRS-4.5 switch did not touch it. (The *weak-phone* deck in the same app is on the shared scheduler.) Deck: due words (level asc) + new words (shuffled), up to limit. Quiz: random vault words, 1 correct + 3 distractors.
 
 - **Events**: Emits `dictionary:word_saved`, `dictionary:word_reviewed`
 

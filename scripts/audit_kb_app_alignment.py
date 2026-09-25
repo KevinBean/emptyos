@@ -37,10 +37,25 @@ VALID_KINDS = {
     "pattern",
     "doc",
     "moc",
+    # A procedure for carrying out a task — distinct from `concept` (what a
+    # thing is) and `lesson` (what people get wrong). See the KINDS comment in
+    # apps/public/standard/kb/shared.py, which is the contract this mirrors;
+    # the two lists are independent, so a kind added there and not here reads
+    # as an invalid_kind finding across the whole corpus.
+    "guide",
 }
 VAULT_EXCLUDED_PREFIXES = {
     ("99_Attachments", "temp-backup"),
 }
+
+# A KB note lives in a KB corpus; an `outputs/` file is an AI-authored REPORT
+# about the corpus (`.claude/rules/authorship-boundary.md` makes that folder the
+# authorship marker). Judging one against the nine `kind`s asks a report to be a
+# note. Both sibling scanners already skip it — `kb_claim_audit.py:40` and
+# `kb_link_audit.py:77` — and CLAUDE.md § KB integrity scans states the rule;
+# this audit was the one that did not, which is why four of its findings on
+# 2026-09-20 were calculator-check reports it had written itself.
+VAULT_EXCLUDED_DIR_NAMES = {"outputs"}
 
 POPOVER_RE = re.compile(
     r"""kbPopover\(\s*['"](?P<slug>[a-z0-9][a-z0-9-]*)['"]"""
@@ -64,7 +79,7 @@ HEADING_RE = re.compile(r"^#{1,6}\s+(.+?)\s*$", re.MULTILINE)
 def _load_config() -> dict[str, Any]:
     path = REPO_ROOT / "emptyos.toml"
     if not path.exists():
-        path = REPO_ROOT / "emptyos.toml.example"
+        path = REPO_ROOT / "emptyos.example.toml"
     with path.open("rb") as fh:
         return tomllib.load(fh)
 
@@ -124,6 +139,19 @@ def _corpus_of(path: str) -> str:
 
 def _is_excluded_vault_path(path: Path, vault_root: Path) -> bool:
     parts = path.relative_to(vault_root).parts
+    # Any dot-dir, `.stversions` above all — Syncthing's version archive. A
+    # finding inside a restore point is unactionable by construction: editing
+    # it corrupts the thing you would restore FROM, so it could only pin this
+    # gate permanently red and get it switched off. Skipped by CLASS (a leading
+    # dot) rather than by name, so the next hidden tooling dir needs no commit —
+    # the same rule `check_vault_structure.py` and `check_vault_test_leak.py`
+    # already apply, and the reason `.claude/rules/vault-operator.md` states it.
+    # Measured 2026-09-20: 3 of this gate's 16 blocking findings were archived
+    # copies of two live notes it was already reporting.
+    if any(part.startswith(".") for part in parts[:-1]):
+        return True
+    if any(part in VAULT_EXCLUDED_DIR_NAMES for part in parts[:-1]):
+        return True
     return any(parts[: len(prefix)] == prefix for prefix in VAULT_EXCLUDED_PREFIXES)
 
 
@@ -376,7 +404,27 @@ def audit() -> dict[str, Any]:
             issues["formula_missing_implementation"].append({"slug": slug, "path": note["path"]})
 
         for target in verify_refs:
-            target_slug = str(target).strip().strip("[]")
+            raw_target = str(target).strip().strip("[]")
+            # `slug#Section` is a valid reference shape across the KB — it is
+            # what `doc` noteRefs use and what `/kb/api/notes/<slug>/section/
+            # <name>` serves. This resolver looked the WHOLE string up in
+            # `notes_by_slug`, so every sectioned anchor read as unresolved.
+            # Both live findings on 2026-09-20 were that: two IEC 60865 formula
+            # notes anchoring their own `## Conformance anchors` section, which
+            # exists in each. Resolve the slug, then require the section to be
+            # real — the fragment is checked rather than discarded, so this is
+            # stricter than simply stripping it.
+            target_slug, _, fragment = raw_target.partition("#")
+            target_slug = target_slug.strip()
+            fragment = fragment.strip()
+            if (target_slug and fragment and target_slug in notes_by_slug
+                    and fragment not in notes_by_slug[target_slug]["headings"]):
+                issues["unresolved_verified_against"].append({
+                    "slug": slug,
+                    "target": f"{raw_target} (no `## {fragment}` in {target_slug})",
+                    "path": note["path"],
+                })
+                continue
             if target_slug and target_slug not in notes_by_slug:
                 issues["unresolved_verified_against"].append({
                     "slug": slug,

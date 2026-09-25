@@ -51,9 +51,44 @@ _LEDGER = ("art_direction", "ledger.jsonl")
 _DATE_PREFIX = re.compile(r"^\d{4}-\d{2}-\d{2}__")
 
 
+_SHA256 = re.compile(r"^[0-9a-f]{64}$")
+
+
 def song_key(song: str) -> str:
     """Collapse the naming variants of one song onto a single identity."""
     return " ".join(_DATE_PREFIX.sub("", str(song or "")).split()).casefold()
+
+
+def song_keys(rows: list[dict]) -> dict[str, str]:
+    """Map every raw ``song`` in ``rows`` to its identity, repairing mangled names.
+
+    A write through a cp1252 console turned `2026-02-23__梦幻泡影` into
+    `2026-02-23__????` — one ``?`` per character. Only a name that is entirely
+    ``?`` is repaired; a partly mangled one stays its own song. The name is gone, but the
+    date prefix and the character count survive, so a mangled name resolves to
+    the one song in the same ledger with that date and that many characters.
+    Two candidates (e.g. two four-character songs on one date) or none leave the
+    row as its own song: a wrong merge would hide a real second song.
+
+    Read-time only; the stored row keeps the bytes it was written with.
+    """
+    by_date_len: dict[tuple[str, int], set[str]] = {}
+    for row in rows:
+        raw = str(row.get("song") or "")
+        m = _DATE_PREFIX.match(raw)
+        name = raw[m.end():] if m else ""
+        if m and name and set(name) != {"?"}:
+            by_date_len.setdefault((m.group(0), len(name)), set()).add(song_key(raw))
+    out: dict[str, str] = {}
+    for row in rows:
+        raw = str(row.get("song") or "")
+        if raw in out:
+            continue
+        m = _DATE_PREFIX.match(raw)
+        name = raw[m.end():] if m else ""
+        candidates = by_date_len.get((m.group(0), len(name))) if m and name and set(name) == {"?"} else None
+        out[raw] = next(iter(candidates)) if candidates and len(candidates) == 1 else song_key(raw)
+    return out
 
 
 def _ledger_path(repo_root) -> Path:
@@ -70,6 +105,8 @@ def log_art_verdict(
     hard_codes: list[str] | None = None,
     contract_clause: str = "",
     note: str = "",
+    attempt_id: str = "",
+    output_sha256: str = "",
 ) -> None:
     """Append one normalized art verdict row.
 
@@ -77,6 +114,11 @@ def log_art_verdict(
     ``subject_scale_mismatch`` says a rule was broken, but not *which* rule, so
     it cannot teach the next run anything. Callers should pass the clause of
     the song's art direction that the still or scene contradicted.
+
+    ``attempt_id`` (the MV library's generation record) and ``output_sha256``
+    (the judged file) are optional links to evidence. They are written only when
+    given — an absent link stays absent rather than an empty string that reads
+    like a value — and a sha that is not 64 hex digits is not written.
     """
     try:
         codes = [str(c) for c in (hard_codes or []) if c]
@@ -92,6 +134,11 @@ def log_art_verdict(
             "contract_clause": str(contract_clause or "")[:400],
             "note": str(note or "")[:400],
         }
+        if str(attempt_id or "").strip():
+            row["attempt_id"] = str(attempt_id).strip()[:200]
+        sha = str(output_sha256 or "").strip().lower()
+        if _SHA256.match(sha):
+            row["output_sha256"] = sha
         with led.open("a", encoding="utf-8") as fh:
             fh.write(json.dumps(row, ensure_ascii=False) + "\n")
     except Exception:
@@ -126,6 +173,7 @@ def recurring_failures(
     exclude_song: str = "",
     min_songs: int = 2,
     limit: int = 6,
+    evidence_limit: int = 3,
 ) -> list[dict]:
     """Failure codes this catalogue keeps repeating, for prompt seeding.
 
@@ -136,21 +184,33 @@ def recurring_failures(
 
     ``exclude_song`` drops the run being reviewed, so a song cannot be graded
     against its own in-progress mistakes.
+
+    Each result carries ``evidence``: the newest ``evidence_limit`` rejections
+    behind the code (the row's ``song`` as written, its ``song_identity``,
+    scene, stage, ts, and ``attempt_id`` / ``output_sha256`` where the row has
+    them), so a reader can open what was rejected instead of trusting the count.
     """
     try:
         by_code_songs: dict[str, set] = {}
         by_code_clause: dict[str, Counter] = {}
-        exclude_key = song_key(exclude_song)
-        for row in read_rows(repo_root):
+        by_code_rows: dict[str, list[dict]] = {}
+        rows = read_rows(repo_root)
+        keys = song_keys(rows)
+        # Resolve the excluded name on its own: adding it to `rows` would make it a
+        # repair candidate and turn a mangled row back into a second song.
+        exclude_key = (song_keys(rows + [{"song": exclude_song}])[str(exclude_song)]
+                       if exclude_song else "")
+        for row in rows:
             if str(row.get("verdict")) == "pass":
                 continue
-            song = song_key(row.get("song") or "")
+            song = keys[str(row.get("song") or "")]
             if exclude_key and song == exclude_key:
                 continue
             clause = str(row.get("contract_clause") or "").strip()
             for code in (row.get("codes") or []):
                 code = str(code)
                 by_code_songs.setdefault(code, set()).add(song)
+                by_code_rows.setdefault(code, []).append({**row, "song_identity": song})
                 if clause:
                     by_code_clause.setdefault(code, Counter())[clause] += 1
 
@@ -159,10 +219,16 @@ def recurring_failures(
             if len(songs) < min_songs:
                 continue
             clauses = by_code_clause.get(code) or Counter()
+            newest = sorted(by_code_rows[code], key=lambda r: str(r.get("ts") or ""), reverse=True)
             out.append({
                 "code": code,
                 "songs": len(songs),
                 "example_clause": clauses.most_common(1)[0][0] if clauses else "",
+                "evidence": [
+                    {k: r[k] for k in ("song", "song_identity", "scene", "stage", "ts",
+                                       "attempt_id", "output_sha256") if k in r}
+                    for r in newest[:max(0, evidence_limit)]
+                ],
             })
         out.sort(key=lambda r: (-r["songs"], r["code"]))
         return out[:limit]

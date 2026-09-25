@@ -96,33 +96,42 @@ Title 格式 / Description 结构 / Tags 策略: `<SKILL_DIR>/templates.md`.
 **Playlist IDs 速查**:
 在专辑笔记或主计划中查找 Playlist ID。
 
-#### Step 2.2: 执行上传
+#### Step 2.2: 执行上传（2026-09-14 起的正式路径）
 
-**脚本位置**: `10_Projects/YouTube-Music-Channel/scripts/youtube_upload.py`
+**脚本**: EmptyOS 仓库的 `scripts/youtube_push_song.py`。它读取 release 文件夹里的 `release-package.md`（标题、描述、标签、置顶留言）。旧的 `10_Projects/YouTube-Music-Channel/scripts/youtube_upload.py` 会直接 `--privacy public`，不要再用。
 
-**单首上传命令**:
 ```bash
-cd "{vault}\10_Projects\YouTube-Music-Channel\scripts"
-python youtube_upload.py \
-  --file "视频路径.mp4" \
-  --title "YouTube 标题" \
-  --description "YouTube 描述" \
-  --tags "tag1,tag2,tag3" \
-  --privacy public \
-  --playlist PLAYLIST_ID
+python scripts/youtube_push_song.py "<歌曲文件夹或 release 文件夹>"         # dry run：连频道、查重名、跑 QA，不上传
+python scripts/youtube_push_song.py "<歌曲文件夹或 release 文件夹>" --yes   # 私享上传 + 缩略图 + 字幕
 ```
 
-**注意**:
-- Description 中的引号需要转义: `\"`
-- 换行用实际换行，不用 `\n`
-- Privacy: `public` 立即公开, `private` 定时发布用
+脚本的设计行为：
+- 只允许 `private` / `unlisted`；**转公开只在 YouTube Studio 手动做**。
+- 频道守卫：连到的频道名必须包含 `Unsaid Signal`（token profile `music`）。
+- 频道上已有同名影片 → 直接 SKIP。
+- 素材按文件夹自动挑选：排序后第一个非 teaser 的 `*.mp4`、第一个 `*.png` 缩略图、第一个 `*.srt` 字幕。
+
+**注意**（《不可说》MV 发布时学到的）：
+- 报 `invalid_grant` 表示 token 失效。请 Kevin 运行 `python scripts/youtube_auth.py --profile music`，在浏览器里选 Unsaid Signal；Claude 不能代为登录。
+- 同一首歌换新版本（例如静态版 → MV）时，新建一个 release 文件夹（例如 `release-v2-mv/`），放新的 `release-package.md` 和母带（硬链接即可）。标题必须和旧影片不同，否则会被查重跳过。旧影片保持私享，删不删由 Kevin 决定。
+- 歌词已烧进画面时，文件夹里不要放 `.srt`，否则字幕会重复。
+- 缩略图只认 `.png`（不超过 2 MB，1280×720 足够）。
+- 上传脚本本身不设置 AI 合成内容声明。上传后可以用 API `videos.update(part=status)` 设 `containsSyntheticMedia: true`（2026-09-15《换班》实测生效）；但读回时这个字段不会出现，必须打开 Studio 确认「AI use: Yes」。
+- 播放清单：用 API 新建清单后马上加影片，可能返回 404（清单尚未生效）。先按标题重新列出、确认只有一个，再加入；不要重复创建。清单 ID 记到专辑笔记。
+- 720p 母带上传前先做 1080p 版，做法见 creative-mv-generator 的 `references/imagery-mv-production-lessons.md`。
 
 #### Step 2.3: 定时发布 (可选)
 
-如需定时发布：
+发布时间照频道计划：**周三或周六 20:00（Australia/Sydney）**。AEST 是 UTC+10；10 月第一个周日起到 4 月第一个周日是 AEDT（UTC+11）。
+
+如需定时发布（Kevin 确认日期后）：
 1. 上传时用 `--privacy private`
-2. 去 YouTube Studio → Content → 选择视频 → Visibility → Schedule
-3. 设定发布时间
+2. 用 API 设定（2026-09-15《换班》实测）：`videos.update(part="status")`，body 里 `privacyStatus: private`、`publishAt: <UTC ISO>`、`containsSyntheticMedia: true`，并把原有的 `license`、`embeddable`、`publicStatsViewable`、`selfDeclaredMadeForKids` 原值带上（`part=status` 会整体替换可写字段）。
+3. API 读回确认 `publishAt`；再打开 Studio 该影片页，确认 Visibility 显示 Scheduled、AI use 为 Yes、没有未保存的修改。
+4. 也可以手动：YouTube Studio → Content → 选择视频 → Visibility → Schedule。
+5. 置顶留言要等影片公开后才能发。
+
+**分享版（给朋友用微信等传）**：从字幕版母带另压 720p。CRF 22 约 41 MB；两遍 950 kbps 约 25 MB，字幕仍清楚。要传到手机端的文件控制在 30 MiB 以下。
 
 ### Phase 3: Post-Upload
 

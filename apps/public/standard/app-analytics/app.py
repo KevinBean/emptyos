@@ -23,6 +23,7 @@ from collections import Counter
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
+import emptyos
 from emptyos.sdk import (
     BaseApp,
     TimeSeriesCounter,
@@ -33,7 +34,26 @@ from emptyos.sdk import (
     web_route,
 )
 
+from .productivity import (
+    CLASSES as PRODUCTIVITY_CLASSES,
+    LABELS as PRODUCTIVITY_LABELS,
+    classify_all,
+    normalize_class,
+    summarize_usage,
+)
 from .vault_mixin import VaultAnalyticsMixin
+
+# The source-tree root that ships scripts/check_vault_structure.py — anchored
+# to the *running* `emptyos` package's own file, NOT to `self.repo_root`
+# (which is "the directory containing THIS daemon's emptyos.toml"). Those
+# differ for a sandbox-pool member: its own toml sits in `sandbox-9002/`,
+# while `scripts/` only exists at the shared repo root every plain-leased
+# member's `emptyos` package is actually imported from. Using self.repo_root
+# here built a script path that didn't exist, so the subprocess spawned,
+# python printed "can't open file" to stderr (redirected to DEVNULL) and
+# exited non-zero, and the daemon silently returned an all-zero envelope —
+# found live while sandbox-verifying this feature (2026-08-23).
+_SOURCE_ROOT = Path(emptyos.__file__).resolve().parent.parent
 
 
 def _iso_week(date_str: str) -> str:
@@ -43,6 +63,59 @@ def _iso_week(date_str: str) -> str:
         return f"{iso[0]}-W{iso[1]:02d}"
     except Exception:
         return ""
+
+
+def vault_structure_record(env: dict, *, ts: str) -> dict:
+    """Pure: turn a check_vault_structure.py `--json` envelope into the state
+    shape the UI reads. Extracted out of `_run_vault_structure` so the
+    envelope-to-state mapping is unit-testable without a daemon — the
+    subprocess call and load_state/save_state I/O stay in the async wrapper.
+    A malformed/empty envelope (subprocess crash, non-JSON stdout) degrades
+    to all-zero counts + `ok: None` rather than raising.
+    """
+    data = env.get("data") or {}
+    return {
+        "ts": ts,
+        "ok": env.get("ok"),
+        "message": env.get("message", ""),
+        "safe_count": data.get("safe_count", 0),
+        "review_count": data.get("review_count", 0),
+        "advisory": data.get("advisory", {}),
+        "purged": data.get("purged"),
+    }
+
+
+def should_notify_vault_structure(record: dict) -> bool:
+    """The weekly-sweep notify gate: only nudge when there's something to
+    act on. A clean vault (0 safe, 0 review) stays silent."""
+    return bool(record.get("safe_count") or record.get("review_count"))
+
+
+def vault_structure_argv(script_path, vault_path, *, purge: bool) -> list[str]:
+    """Pure: the argv (minus the interpreter) for check_vault_structure.py.
+
+    `--vault` MUST always be present — see the long comment on
+    `_run_vault_structure_script`. Pinned here as a standalone function so a
+    future edit that drops the flag fails a fast unit test instead of only
+    being discoverable by scanning a real vault from a sandbox daemon.
+    """
+    args = [str(script_path), "--vault", str(vault_path), "--json"]
+    if purge:
+        args.append("--purge")
+    return args
+
+
+DIGEST_SYSTEM = (
+    "You are a terse personal-usage-analytics narrator. Given a compact "
+    "summary of which apps someone used this week, write 2-3 plain-prose "
+    "sentences highlighting what stands out — a habit forming, a streak, "
+    "or something newly unused.\n\n"
+    "Do NOT:\n"
+    "- Use bullet points, headings, or markdown.\n"
+    "- List every app or number verbatim — pick what's actually notable.\n"
+    "- Invent facts not present in the data.\n"
+    "- Begin with 'This week' or 'Looking at your data'."
+)
 
 
 class AppAnalyticsApp(BaseApp):
@@ -69,41 +142,99 @@ class AppAnalyticsApp(BaseApp):
         if self.usage.total() == 0:
             await self._backfill()
 
-    async def _vault_structure_sweep(self):
-        """Run scripts/check_vault_structure.py --json as a subprocess (never
-        import it into the daemon), record the envelope, and nudge the user
-        through the proactive gate when there's anything to act on."""
-        script = Path(self.config.path).parent / "scripts" / "check_vault_structure.py"
+    async def _run_vault_structure_script(self, *, purge: bool) -> dict:
+        """Run scripts/check_vault_structure.py --json as a subprocess — never
+        import it into the daemon (it's a standalone fs-mutation script by
+        design). `--purge` removes only the content-lossless 'safe' classes;
+        `review` items are never touched by the script itself, so this can't
+        act on them regardless of the caller.
+
+        `--vault` is passed explicitly as THIS daemon's own `self.vault_root`.
+        Without it, the script's own `resolve_vault()` falls back to reading
+        `notes.path` out of `<repo>/emptyos.toml` — the MAIN daemon's config —
+        regardless of which daemon actually spawned the subprocess. Every
+        sandbox-pool member shares the same source tree (and the same
+        `scripts/check_vault_structure.py` file, whose `REPO` constant is
+        derived from `__file__`, not from the caller), so without this flag a
+        scan/purge triggered from a throwaway sandbox vault would silently
+        operate on the REAL user vault instead. Found live while verifying
+        this feature on a leased sandbox member (2026-08-23) — a genuinely
+        dangerous miss for a `--purge`-capable subprocess.
+        """
+        script = _SOURCE_ROOT / "scripts" / "check_vault_structure.py"
+        args = vault_structure_argv(script, self.vault_root, purge=purge)
         proc = await asyncio.create_subprocess_exec(
-            sys.executable, str(script), "--json",
+            sys.executable, *args,
             stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL,
         )
         out, _ = await proc.communicate()
         try:
-            env = json.loads(out.decode("utf-8", errors="ignore").strip() or "{}")
+            return json.loads(out.decode("utf-8", errors="ignore").strip() or "{}")
         except Exception:
-            env = {}
-        data = env.get("data") or {}
-        state = self.load_state({})
-        state["vault_structure"] = {
-            "ts": datetime.now(UTC).isoformat(),
-            "ok": env.get("ok"),
-            "message": env.get("message", ""),
-            "safe_count": data.get("safe_count", 0),
-            "review_count": data.get("review_count", 0),
-            "advisory": data.get("advisory", {}),
-        }
-        self.save_state(state)
-        safe = data.get("safe_count", 0)
-        review = data.get("review_count", 0)
-        if safe or review:
+            return {}
+
+    async def _run_vault_structure(self, *, purge: bool, notify: bool) -> dict:
+        """Run the scan (or scan+purge), persist it as the last-known state,
+        and optionally nudge through the proactive gate. Shared by the weekly
+        cron sweep and the on-demand `/api/vault-structure/{scan,purge}`
+        routes — one subprocess call site, one state shape."""
+        env = await self._run_vault_structure_script(purge=purge)
+        record = vault_structure_record(env, ts=datetime.now(UTC).isoformat())
+        if purge and record.get("purged"):
+            # `--purge --json` is one pass — scan, then act on what THAT scan
+            # found — so its safe_count is the PRE-purge count, not what's
+            # left. Re-scan so the UI shows the true current state instead of
+            # "2 auto-fixable" right after those 2 were just removed.
+            rescan_env = await self._run_vault_structure_script(purge=False)
+            rescanned = vault_structure_record(rescan_env, ts=datetime.now(UTC).isoformat())
+            rescanned["purged"] = record["purged"]
+            record = rescanned
+        # Same lock as the productivity-override writer — one state file,
+        # two read-modify-write paths, so an unlocked save here would drop
+        # whichever key the other writer had just added.
+        async with self.write_lock("state"):
+            state = self.load_state({})
+            state["vault_structure"] = record
+            self.save_state(state)
+        if notify and should_notify_vault_structure(record):
             await self.proactive_notify(
                 "vault-structure",
-                f"Vault structure sweep: {review} item(s) need review, "
-                f"{safe} auto-fixable (run check_vault_structure.py --purge).",
+                f"Vault structure sweep: {record['review_count']} item(s) need review, "
+                f"{record['safe_count']} auto-fixable — open App Analytics → Vault to purge them.",
                 dedup_key=f"vault-structure-{today_utc()}",
                 link={"app": "app-analytics"},
             )
+        return record
+
+    async def _vault_structure_sweep(self):
+        """Weekly cron entry point — scan only, never purges automatically."""
+        await self._run_vault_structure(purge=False, notify=True)
+
+    @web_route("GET", "/api/vault-structure")
+    async def api_vault_structure_status(self, request):
+        """Last saved sweep result (from the cron OR a manual scan/purge),
+        so the UI can render the current picture without re-running the scan
+        on every page load."""
+        state = self.load_state({})
+        return {"sweep": state.get("vault_structure")}
+
+    @web_route("POST", "/api/vault-structure/scan")
+    async def api_vault_structure_scan(self, request):
+        """On-demand, report-only scan — the "check now" button; never
+        mutates the vault."""
+        return await self._run_vault_structure(purge=False, notify=False)
+
+    @web_route("POST", "/api/vault-structure/purge")
+    async def api_vault_structure_purge(self, request):
+        """The one-click fix (app-analytics-vault-structure-purge-action):
+        removes only the auto-fixable 'safe' classes (empty dirs to
+        fixpoint, byte-identical sync-conflict dupes, aged zero-byte files)
+        after taking an fs_snapshot — never the 'review' items, which stay
+        human-only by design (see scripts/check_vault_structure.py). The
+        frontend must show the scanned safe_count and get an explicit
+        confirm before calling this — it's an impact-shaped proposed action
+        (.claude/rules/proposed-action.md), not a silent background purge."""
+        return await self._run_vault_structure(purge=True, notify=False)
 
     async def _backfill(self):
         events = await self.kernel.events.history(limit=5000)
@@ -148,9 +279,7 @@ class AppAnalyticsApp(BaseApp):
 
     # --- New endpoints -------------------------------------------------
 
-    @web_route("GET", "/api/summary")
-    async def api_summary(self, request):
-        days = int(request.query_params.get("days", "30"))
+    def _summary_data(self, days: int = 30) -> dict:
         start = days_ago_utc(days - 1)
         end = today_utc()
 
@@ -178,6 +307,10 @@ class AppAnalyticsApp(BaseApp):
             "total_apps": len(all_apps),
         }
 
+    @web_route("GET", "/api/summary")
+    async def api_summary(self, request):
+        return self._summary_data(int(request.query_params.get("days", "30")))
+
     @web_route("GET", "/api/unused")
     async def api_unused(self, request):
         days = int(request.query_params.get("days", "30"))
@@ -187,10 +320,19 @@ class AppAnalyticsApp(BaseApp):
         active = {r["key"] for r in self.usage.top("app", start=start, end=end, limit=200)}
         unused = sorted(all_apps - active)
 
+        # One grouped statement for every app's last-seen day. This used to be
+        # one full-table range() scan PER unused app on the event loop — 233
+        # sync SQLite calls, ~0.4 s alone, but each one yields the GIL and
+        # under fifteen CPU-bound audit threads that stretched to 37 s and the
+        # watchdog killed the daemon (F-59, evidence 20260906T112242Z). Fewer
+        # round-trips is the lever this handler owns; the loop still pays the
+        # two remaining sync calls (top + last_bucket) — see _streaks_data and
+        # api_errors_vs_usage for the same change.
+        last_seen = self.usage.last_bucket("app")
+
         result = []
         for app_id in unused:
-            last = self.usage.range(where={"app": app_id})
-            last_date = last[-1]["bucket"] if last else None
+            last_date = last_seen.get(app_id)
             days_ago = None
             if last_date:
                 try:
@@ -398,10 +540,15 @@ class AppAnalyticsApp(BaseApp):
         all_apps = self._all_app_ids()
         errors = self._errors_by_app(days)
 
+        # Two grouped statements instead of two total() calls per app (466 sync
+        # SQLite round-trips per page load) — the F-59 shape.
+        views_by_app = self.usage.sums_by("app", start=start, end=end, where={"kind": "view"})
+        events_by_app = self.usage.sums_by("app", start=start, end=end, where={"kind": "event"})
+
         result = []
         for app_id in all_apps:
-            views = self.usage.total(start=start, end=end, where={"app": app_id, "kind": "view"})
-            events = self.usage.total(start=start, end=end, where={"app": app_id, "kind": "event"})
+            views = views_by_app.get(app_id, 0)
+            events = events_by_app.get(app_id, 0)
             errs = errors.get(app_id, 0)
             activity = views + events
             error_rate = errs / max(1, activity)
@@ -429,14 +576,15 @@ class AppAnalyticsApp(BaseApp):
         by_hour = {r["key"]: r["count"] for r in rows}
         return {f"{h:02d}": by_hour.get(f"{h:02d}", 0) for h in range(24)}
 
-    @web_route("GET", "/api/streaks")
-    async def api_streaks(self, request):
+    def _streaks_data(self) -> list[dict]:
         all_apps = self._all_app_ids()
         result = []
         now_week = _iso_week(today_utc())
+        # One grouped statement for every app's active days; this was one
+        # full-table range() scan per app (233 per page load) — the F-59 shape.
+        buckets_by_app = self.usage.buckets_by("app")
         for app_id in all_apps:
-            rows = self.usage.range(where={"app": app_id}, group_by="bucket")
-            weeks = sorted({_iso_week(r["key"]) for r in rows if _iso_week(r["key"])})
+            weeks = sorted({_iso_week(b) for b in buckets_by_app.get(app_id, []) if _iso_week(b)})
             if not weeks:
                 continue
             current = 0
@@ -469,6 +617,156 @@ class AppAnalyticsApp(BaseApp):
             )
         result.sort(key=lambda r: r["current_weeks"], reverse=True)
         return [r for r in result if r["longest_weeks"] > 0]
+
+    @web_route("GET", "/api/streaks")
+    async def api_streaks(self, request):
+        return self._streaks_data()
+
+    # ── Productivity split — which apps are work, which are life ────────
+    # Closes the gap "no productive/distracting classification per app".
+    # The classification + roll-up are pure (productivity.py); everything
+    # here is the manifest walk, the override store, and the routes.
+    #
+    # Dark by default (project_feature_pipeline_flag_default_dark) — flip
+    # [apps.app-analytics] feature.productivity-split.enabled = true. With
+    # the flag off no route computes anything and the tab never renders,
+    # so /api/summary and every other endpoint are byte-identical to
+    # before this feature landed.
+
+    def _productivity_enabled(self) -> bool:
+        return bool(self.app_config("feature.productivity-split.enabled", False))
+
+    def _productivity_overrides(self) -> dict[str, str]:
+        """User reclassifications, keyed by app id. Stored in app state
+        (``data/``) rather than a manifest: the manifest is shared
+        community code, the classification is per-machine taste
+        (CLAUDE.md rule 15). Malformed values are dropped on read so a
+        hand-edited state file can't inject a fourth bucket."""
+        raw = (self.load_state({}) or {}).get("productivity_overrides") or {}
+        if not isinstance(raw, dict):
+            return {}
+        return {
+            str(k): normalize_class(v)
+            for k, v in raw.items()
+            if normalize_class(v)
+        }
+
+    def _classified_apps(self) -> dict[str, dict]:
+        blocks = {
+            app_id: (m.raw.get("app") or {})
+            for app_id, m in self.kernel.apps.manifests.items()
+        }
+        return classify_all(blocks, self._productivity_overrides())
+
+    @web_route("GET", "/api/productivity")
+    async def api_productivity(self, request):
+        """Daily productive/neutral/personal split over `days` (default 30).
+
+        The headline every competitor leads with, computed from the view
+        counters this app already keeps — no new tracking, no new store."""
+        if not self._productivity_enabled():
+            return {
+                "enabled": False,
+                "reason": "Set [apps.app-analytics] feature.productivity-split.enabled = true",
+            }
+        try:
+            days = int(request.query_params.get("days", "30"))
+        except ValueError:
+            days = 30
+        days = max(1, min(days, 365))
+
+        rows = self.usage.range(
+            start=days_ago_utc(days - 1), end=today_utc(), where={"kind": "view"}
+        )
+        classes = self._classified_apps()
+        summary = summarize_usage(rows, classes)
+        names = self.kernel.apps.manifests
+        for row in summary["apps"]:
+            m = names.get(row["app"])
+            row["name"] = (m.name if m else "") or row["app"]
+        return {
+            "enabled": True,
+            "days": days,
+            "classes": list(PRODUCTIVITY_CLASSES),
+            "labels": PRODUCTIVITY_LABELS,
+            **summary,
+        }
+
+    @web_route("POST", "/api/productivity/classify")
+    async def api_productivity_classify(self, request):
+        """Reclassify one app, or clear the override to fall back to
+        inference. Inference is only a starting point — being able to
+        correct it is the feature, not a nicety."""
+        if not self._productivity_enabled():
+            return {"error": "productivity split is disabled"}
+        body = await request.json()
+        app_id = str((body or {}).get("app") or "").strip()
+        if not app_id:
+            return {"error": "app is required"}
+        if app_id not in self.kernel.apps.manifests:
+            return {"error": f"no such app: {app_id}"}
+        wanted = normalize_class((body or {}).get("class"))
+
+        # Persist under the same lock the vault-structure writer takes:
+        # both do read-modify-write on ONE state file, so they must share
+        # a lock or the later save wipes the earlier writer's key.
+        async with self.write_lock("state"):
+            state = self.load_state({}) or {}
+            overrides = state.get("productivity_overrides")
+            if not isinstance(overrides, dict):
+                overrides = {}
+            if wanted:
+                overrides[app_id] = wanted
+            else:
+                overrides.pop(app_id, None)
+            state["productivity_overrides"] = overrides
+            self.save_state(state)
+
+        resolved = self._classified_apps().get(app_id, {})
+        await self.emit(
+            "app-analytics:productivity_classified",
+            {"app": app_id, "class": resolved.get("class"), "source": resolved.get("source")},
+        )
+        return {"ok": True, "app": app_id, **resolved}
+
+    # ── AI digest — the app declares `think` in its manifest but never
+    # called it (found during the 2026-08 gap-analysis pass). This turns
+    # the existing summary/streaks aggregation into a short weekly recap
+    # instead of leaving the capability declared-but-dark.
+
+    async def _build_digest(self) -> str | None:
+        summary = self._summary_data(days=7)
+        streaks = self._streaks_data()
+        if not summary.get("views_7d"):
+            return None
+        top_streaks = ", ".join(
+            f"{r['app']} ({r['current_weeks']}w)" for r in streaks[:3] if r["current_weeks"] > 0
+        )
+        lines = [
+            f"views today: {summary['views_today']}",
+            f"views last 7 days: {summary['views_7d']}",
+            f"active apps (7d): {summary['active_apps_7d']} of {summary['total_apps']}",
+            f"unused apps (30d): {summary['unused_apps_30d']}",
+        ]
+        if top_streaks:
+            lines.append(f"current weekly streaks: {top_streaks}")
+        return await self.think_safe(
+            "\n".join(lines), system=DIGEST_SYSTEM, domain="text", temperature=0.4, fallback=""
+        )
+
+    @web_route("GET", "/api/digest")
+    async def api_digest(self, request):
+        digest = await self._build_digest()
+        if not digest:
+            return {"digest": "", "provenance": None}
+        return {"digest": digest, "provenance": self.last_provenance()}
+
+    async def panel_ai_digest(self) -> dict | None:
+        """Hub: a short AI recap of this week's usage. Lazy — one `think()` call."""
+        digest = await self._build_digest()
+        if not digest:
+            return None
+        return {"title": "This week", "body": digest}
 
     # --- Legacy endpoints (backward compat) ----------------------------
 

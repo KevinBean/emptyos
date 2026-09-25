@@ -11,11 +11,13 @@
 body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif; background:var(--bg); color:var(--text); min-height:100dvh; padding:env(safe-area-inset-top) 16px calc(env(safe-area-inset-bottom) + 80px); -webkit-font-smoothing:antialiased }
 .wrap { max-width:920px; margin:0 auto }
 header { display:flex; align-items:center; gap:12px; padding:16px 0 16px; flex-wrap:wrap }
-header h1 { font-size:20px; font-weight:700 }
+header h1 { font-size:22px; font-weight:700 }
 header .grow { flex:1 }
 .bar { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:16px }
-.eos-btn-accent { background:var(--accent); color:var(--accent-ink); border-color:transparent }
-.eos-btn-rec { background:var(--danger); color: var(--ink-on-vivid); border-color:transparent }
+/* Record is solid red at rest, unlike the shared outline .eos-btn-danger, so it
+   keeps a local rule. It restates itself on :hover because the shared
+   `.eos-btn:hover` (0,2,0) otherwise paints accent text on the red fill. */
+.btn-rec, .btn-rec:hover { background:var(--danger); color: var(--ink-on-vivid); border-color:transparent }
 .date-input { padding:8px 12px; border-radius:8px; border:1px solid var(--border); background:var(--bg-card); color:var(--text); font-size:13px }
 .card { background:var(--bg-card); border:1px solid var(--border); border-radius:14px; padding:16px; margin-bottom:16px }
 .heatmap-wrap { background:var(--bg-card); border:1px solid var(--border); border-radius:14px; padding:16px; margin-bottom:16px }
@@ -75,7 +77,7 @@ header .grow { flex:1 }
       <option value="year">This year</option>
       <option value="all" selected>All time</option>
     </select>
-    <button class="eos-btn btn-accent" id="compile-btn" onclick="compile()">🎬 Compile montage</button>
+    <button class="eos-btn eos-btn-primary" id="compile-btn" onclick="compile()">🎬 Compile montage</button>
   </div>
 
   <div class="bar">
@@ -101,6 +103,7 @@ header .grow { flex:1 }
 
   <!-- Calendar -->
   <div id="calendar">
+    <div id="streak-chip" class="muted" style="margin-bottom:8px;display:none"></div>
     <div class="heatmap-wrap"><div id="heatmap"></div></div>
     <div class="grid" id="grid"></div>
     <div id="empty" class="muted" style="display:none;padding:8px">No clips yet — record or import your first one.</div>
@@ -124,7 +127,7 @@ header .grow { flex:1 }
 <script src="/static/eos.js"></script>
 <script src="/static/eos-components.js"></script>
 <script>
-var STATE = { days:[], heatmap:{}, detail:null, clipIdx:0 };
+var STATE = { days:[], heatmap:{}, streak:0, detail:null, clipIdx:0 };
 var MOODS = [['great','😄'],['good','🙂'],['okay','😐'],['low','😕'],['bad','😞']];
 var REC = { stream:null, rec:null, chunks:[], t0:0, timer:null };
 
@@ -148,9 +151,19 @@ async function loadDays(){
     var data = await EOS.api('/vlog/api/days');
     STATE.days = data.days || [];
     STATE.heatmap = data.heatmap || {};
-  } catch(e){ STATE.days = []; STATE.heatmap = {}; }
+    STATE.streak = data.streak || 0;
+  } catch(e){ STATE.days = []; STATE.heatmap = {}; STATE.streak = 0; }
+  renderStreak();
   renderHeatmap();
   renderGrid();
+}
+
+function renderStreak(){
+  var el = document.getElementById('streak-chip');
+  if (!el) return;
+  if (!STATE.streak) { el.style.display = 'none'; return; }
+  el.style.display = 'block';
+  el.textContent = '🔥 ' + STATE.streak + ' day' + (STATE.streak === 1 ? '' : 's') + ' streak';
 }
 
 function renderHeatmap(){

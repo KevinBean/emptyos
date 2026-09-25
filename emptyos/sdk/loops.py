@@ -188,11 +188,19 @@ LOOPS: list[Loop] = [
         "under attempt/timeout budgets, and auto-reverts on verify-failed. "
         "Its bound stage classifies rather than counts (2026-07-30): a prompt "
         "that fails the same STAGE twice is blocked as repeated_defect, so the "
-        "blocked note says what kept breaking instead of just 'out of attempts'.",
+        "blocked note says what kept breaking instead of just 'out of attempts'. "
+        "Runs unattended on `fix_drain_schedule` since 2026-08-16 — until then "
+        "only the GENERATOR was scheduled, so the queue filled nightly and "
+        "drained only when a human ran it (measured: 15 pending, oldest 34 "
+        "days, 17 of 34 closes done by hand). Two selection guards keep the "
+        "unattended path honest: `source: ui-walk` and `kind: missing` are "
+        "both skipped, because each needs a human decision the cron cannot "
+        "make.",
         stages=(ACT, GATE, REVERT, BOUND),
         status=DARK,
         flag="apps.dogfood-agent.fix_agent_enabled",
         components=("apps/extension/dev/dogfood-agent/drain.py",
+                    "apps/extension/dev/dogfood-agent/scheduled.py",
                     "apps/extension/dev/dogfood-agent/shared.py",
                     "emptyos/sdk/retry_policy.py"),
         family="self-improve",
@@ -360,6 +368,43 @@ LOOPS: list[Loop] = [
         family="self-audit",
     ),
     Loop(
+        id="correction-miner",
+        name="Correction miner",
+        summary="Repeated user corrections mined out of the agent's own "
+        "transcripts, clustered by term-lift, proposed with quoted evidence. "
+        "Accept/dismiss is durable, so a theme is judged once. Proposes only — "
+        "the memory or rule is still hand-written.",
+        stages=(FRICTION, GATE, MEMORY),
+        status=LIVE,
+        components=("scripts/mine_corrections.py",),
+        family="self-audit",
+    ),
+    Loop(
+        id="gate-driven-fix",
+        name="Gate-driven fix loop",
+        summary="Operator loop over the hard-gate scanners: an executable "
+        "objective gate (check_done.sh) names 'done', each iteration fixes one "
+        "gate finding, pins it with a regression test red-proven in BOTH "
+        "directions, and commits citing that test. The gate is two halves on "
+        "purpose — scanners alone can be satisfied by deleting the offending "
+        "code, so it also re-runs every test the loop has added "
+        "(.loop-regression-tests.txt). Bounded by a 15-iteration cap, a .STOP "
+        "sentinel checked at the top of each pass, and the gate reaching 0. "
+        "Receipts append-only via scripts/loop_receipt.sh. Its standing limit "
+        "is ownership, not budget: a gate red because of ANOTHER session's "
+        "uncommitted work is not fixable here and must be reported, not forced "
+        "(CLAUDE.md § Parallel-session staging).",
+        stages=(FRICTION, ACT, GATE, MEMORY, BOUND),
+        status=LIVE,
+        components=(
+            "check_done.sh",
+            "scripts/loop_receipt.sh",
+            "scripts/preflight.py",
+            ".claude/rules/gate-driven-fix-loop.md",
+        ),
+        family="self-audit",
+    ),
+    Loop(
         id="insights-ledger",
         name="Insights ledger",
         summary="Each insights run records its proposals; the next run reads "
@@ -417,6 +462,77 @@ LOOPS: list[Loop] = [
         status=DARK,
         flag="apps.kb-gap-miner.enabled",
         components=("apps/extension/dev/kb-gap-miner/",),
+        family="engineering",
+    ),
+    Loop(
+        id="harness-compile",
+        name="Bounded harness compilation",
+        summary="Model Bench reflects over Hub's deterministic route fast path, "
+        "scores isolated source candidates on frozen train/holdout cases, and "
+        "retains lineage plus the winner for human review; it never hot-loads "
+        "generated code into Hub.",
+        stages=(FRICTION, ACT, GATE, MEMORY, BOUND),
+        status=DARK,
+        flag="apps.model-bench.feature.harness-compile.enabled",
+        components=(
+            "apps/extension/dev/model-bench/harness_compiler.py",
+            "apps/extension/dev/model-bench/behavioural_runner.py",
+        ),
+        family="engineering",
+    ),
+    Loop(
+        id="cad-guard",
+        name="CAD shape-validation guard",
+        summary="eos-cad's own author→validate→repair loop, layered on the "
+        "shared Tier-1 shape-validation gate (see the `shape-ledger` primitive "
+        "loop this rides for its `memory` stage). Friction: a hard shape "
+        "violation (non-manifold, zero-volume) from compiling a proposed part "
+        "through the cadquery venv. Act: `shared.build_cad_repair_user_msg` "
+        "feeds the violations back for one regenerate. Gate: the same check "
+        "runs again on the repaired tree; on the always-on side, "
+        "`compiling.py::api_compile` also now genuinely refuses (`ok: False`) "
+        "on a hard violation at export time, not just at propose time — closing "
+        "the 2026-07-27 gap where the gate computed a verdict nobody read "
+        "(`.claude/rules/model-ability.md` § Validity gate). Bound: "
+        "`max_cad_guard_turns` (default 1 retry). The propose-time repair loop "
+        "is dark (pays a real cadquery-venv compile per turn, unlike the "
+        "pure/cheap 2D draft-guard sibling); the compile-time refusal is "
+        "always on. Registered 2026-08-22 alongside the fix.",
+        stages=(FRICTION, ACT, GATE, MEMORY, BOUND),
+        status=DARK,
+        flag="apps.cad.feature.cad-guard.enabled",
+        components=(
+            "apps/extension/engineering/cad/generate.py",
+            "apps/extension/engineering/cad/compiling.py",
+            "apps/extension/engineering/cad/shared.py",
+            "emptyos/sdk/shape_ledger.py",
+        ),
+        family="engineering",
+    ),
+    Loop(
+        id="cad-visual-critic",
+        name="CAD visual critic",
+        summary="A vision-LLM grades a screenshot of the current viewport "
+        "render against the brief that produced it (topology/proportions/"
+        "placement) — the gate structural validation can't express, since a "
+        "part can be a perfectly valid solid and still be the wrong shape. "
+        "Manual trigger, not an automatic retry loop: unlike robot-modeller's "
+        "compile-time critic (its own `act`/`bound` inside the designer/"
+        "builder loop), eos-cad's propose step has no rendered viewport to "
+        "screenshot until AFTER a proposal is applied — so this is a "
+        "check-against-intent button, gate-only, no wired act/bound. The "
+        "mechanism (message-building, JSON parsing, signal formatting) is "
+        "shared via `emptyos/sdk/visual_critic.py`, extracted from "
+        "robot-modeller's critic.py as the second consumer (CLAUDE.md rule 9). "
+        "Registered 2026-08-22.",
+        stages=(GATE,),
+        status=DARK,
+        flag="apps.cad.feature.visual-critic.enabled",
+        components=(
+            "emptyos/sdk/visual_critic.py",
+            "apps/extension/engineering/cad/generate.py",
+            "apps/personal/robot-modeller/critic.py",
+        ),
         family="engineering",
     ),
     Loop(

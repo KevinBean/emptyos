@@ -16,6 +16,8 @@ from __future__ import annotations
 
 from typing import Any, Iterable
 
+from emptyos.sdk.app_icons import manifest_icon_id
+
 # Canonical store_category -> section presentation. Keys match the set in
 # `.claude/rules/store.md`; "other" is the fallback bucket for apps that
 # declare no (or an unknown) category. `order` drives top-to-bottom layout.
@@ -73,7 +75,7 @@ def sections_from_buckets(
     return sections
 
 
-def _app_entry(manifest: Any) -> dict[str, Any]:
+def _app_entry(manifest: Any, icon_ids: set[str] | frozenset[str] = frozenset()) -> dict[str, Any]:
     raw = getattr(manifest, "raw", None) or {}
     app = raw.get("app", {}) or {}
     provides = getattr(manifest, "provides", None) or {}
@@ -83,6 +85,7 @@ def _app_entry(manifest: Any) -> dict[str, Any]:
         "description": getattr(manifest, "description", "") or "",
         "web_prefix": (provides.get("web", {}) or {}).get("prefix", ""),
         "icon": app.get("icon", ""),
+        "icon_id": manifest_icon_id(manifest, icon_ids),
         # Function-search data layer — lets surfaces filter by what an app does,
         # not just its name (see .claude/rules/user-intent.md).
         "user_intent": app.get("user_intent", []),
@@ -92,6 +95,8 @@ def _app_entry(manifest: Any) -> dict[str, Any]:
 def group_by_category(
     manifests: dict[str, Any] | Iterable[Any],
     reachable_ids: Iterable[str] | None = None,
+    *,
+    icon_ids: set[str] | frozenset[str] = frozenset(),
 ) -> list[dict[str, Any]]:
     """Bucket apps into declared ``store_category`` sections.
 
@@ -115,7 +120,7 @@ def group_by_category(
             continue
         if allow is not None and mid not in allow:
             continue
-        buckets.setdefault(category_of(m), []).append(_app_entry(m))
+        buckets.setdefault(category_of(m), []).append(_app_entry(m, icon_ids))
 
     return sections_from_buckets(
         buckets, app_sort_key=lambda a: (a["name"] or a["id"]).lower()

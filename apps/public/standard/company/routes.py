@@ -36,6 +36,7 @@ if TYPE_CHECKING:
 #   api_list_scenarios      = _routes.api_list_scenarios
 #   api_run_scenario        = _routes.api_run_scenario
 #   api_chain_scenario      = _routes.api_chain_scenario
+#   api_route_to_specialist = _routes.api_route_to_specialist
 #   api_list_runs           = _routes.api_list_runs
 #   api_get_run             = _routes.api_get_run
 #   api_apply_pending       = _routes.api_apply_pending
@@ -207,6 +208,15 @@ async def api_chain_scenario(self, request):
         framing=data.get("framing", ""),
         mode=data.get("mode", "headless"),
     )
+
+
+@web_route("POST", "/api/orgs/{oid}/route")
+async def api_route_to_specialist(self, request):
+    """Route one item to the best-fit AI member of the org — the
+    single-specialist-pick sibling of /api/scenario/run's fan-out-to-all."""
+    oid = request.path_params["oid"]
+    data = await self.read_json(request)
+    return await self.route_to_specialist(oid, data.get("item_text", ""))
 
 
 @web_route("GET", "/api/runs")

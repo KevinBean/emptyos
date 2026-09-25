@@ -180,9 +180,13 @@ class MyApp(BaseApp):
     # ── Event Handlers ───────────────────────────────────
 
     @on_event("task:completed")
-    async def on_task_done(self, data: dict):
+    async def on_task_done(self, event):
         """React when a task is completed."""
-        task_text = data.get("text", "")
+        # The bus passes an Event (type / data / source), NOT the payload dict —
+        # the payload is event.data. Calling .get() on the Event itself raises
+        # AttributeError on every emit, and because handler errors are caught and
+        # logged by the bus the app keeps running with the handler silently dead.
+        task_text = event.data.get("text", "")
         await self.emit("myapp:reacted", {"trigger": task_text})
 
     # ── App-to-App Calls ─────────────────────────────────
@@ -371,7 +375,7 @@ async function popOutWidget() {
 - Must be called from a user-gesture handler (click/keypress).
 - Inline `onclick="…"` re-binds to PiP scope when nodes are *moved* into PiP — prefer `addEventListener` for any element that might be relocated.
 
-**Live reference:** `apps/focus/pages/index.html` `popOutTimer()` — the ⤢ button next to the noise toggle pops the focus timer out as a 260×280 always-on-top widget. Full background notes: `{vault}/30_Resources/Technology/Document-Picture-in-Picture.md`.
+**Live reference:** `apps/public/standard/focus/pages/index.html` `popOutTimer()` — the ⤢ button next to the noise toggle pops the focus timer out as a 260×280 always-on-top widget. Full background notes: `{vault}/30_Resources/Technology/Document-Picture-in-Picture.md`.
 
 ### Keep Screen Awake on Mobile (Wake Lock API)
 
@@ -404,7 +408,7 @@ document.addEventListener('visibilitychange', () => {
 - First acquire must come from a user-gesture context (click / tap). Subsequent re-acquires after visibility-resume are exempt.
 - Listen for the `release` event so you reset your reference when the OS yanks the lock under battery saver.
 
-**Live reference:** `apps/focus/pages/index.html` — `acquireWakeLock()` / `releaseWakeLock()` wired into `startTimer` / `pauseTimer` / `resetTimer` / completion path / `restoreTimer` / `visibilitychange`. Full background notes: `{vault}/30_Resources/Technology/Screen-Wake-Lock.md`.
+**Live reference:** `apps/public/standard/focus/pages/index.html` — `acquireWakeLock()` / `releaseWakeLock()` wired into `startTimer` / `pauseTimer` / `resetTimer` / completion path / `restoreTimer` / `visibilitychange`. Full background notes: `{vault}/30_Resources/Technology/Screen-Wake-Lock.md`.
 
 **Pairs with PiP:** PiP keeps a desktop window visible *across other apps*; Wake Lock keeps a mobile screen *visible at all*. Both can ship in the same app; feature-detection picks the right one per platform.
 
@@ -416,10 +420,11 @@ Apps communicate through the event bus. This is the primary coupling mechanism �
 # Emit
 await self.emit("myapp:item_added", {"id": "123", "title": "New"})
 
-# Listen (decorator)
+# Listen (decorator) — the handler receives an Event, not the payload dict.
+# The payload is `event.data`; `event.type` and `event.source` are also available.
 @on_event("capture:saved")
-async def on_capture(self, data: dict):
-    text = data.get("text", "")
+async def on_capture(self, event):
+    text = event.data.get("text", "")
     # React to a capture event
 ```
 
@@ -566,7 +571,7 @@ EOS.api('/myapp/api/word-addons/' + encodeURIComponent(word)).then(function(r) {
 });
 ```
 
-**Reference implementation:** `apps/dictionary/` `word_addons` slot.
+**Reference implementation:** `apps/extension/english-learning/dictionary/` `word_addons` slot.
 
 **When NOT to use addons:**
 
@@ -667,7 +672,7 @@ Pick the renderer whose data shape matches your intent.
 | `quote` | Footer quote (consumed by chrome) | `{text, author}` |
 | `activity-list` | Icon + title + when log | `[{icon, title, sub, when}]` |
 
-**Need a new shape?** Add a renderer to `apps/hub/pages/index.html` with a documented data contract, then use it. New visual = platform change. New instance of existing visual = app manifest change.
+**Need a new shape?** Add a renderer to `apps/public/core/hub/pages/index.html` with a documented data contract, then use it. New visual = platform change. New instance of existing visual = app manifest change.
 
 ### Group rendering
 
@@ -842,10 +847,10 @@ If an app is borderline — "most of the UI works offline, but a few features ne
 
 ### Reference implementations
 
-- `apps/task/app.py` — `panel_pulse_stats` (tiles-row) + `panel_todays_tasks` (task-list)
-- `apps/projects/app.py` — `panel_upcoming_deadlines` (deadline-row) + `panel_projects_pipeline` (stat-tile in dashboard group)
+- `apps/public/core/task/app.py` — `panel_pulse_stats` (tiles-row) + `panel_todays_tasks` (task-list)
+- `apps/public/standard/projects/app.py` — `panel_upcoming_deadlines` (deadline-row) + `panel_projects_pipeline` (stat-tile in dashboard group)
 - `apps/personal/briefing/extended.py` — `panel_morning_routine` (checklist with toggle endpoint)
-- `apps/hub/app.py` — hub's own panels for priority-alert, score-ring, slot panels, ai-insights (lazy)
+- `apps/public/core/hub/app.py` — hub's own panels for priority-alert, score-ring, slot panels, ai-insights (lazy)
 
 See `.claude/rules/hub-panels.md` for the companion rule when editing apps.
 
@@ -866,7 +871,7 @@ requires = ["read", "write"]         # missing capability → step rewrites to /
 
 Capability-gating is automatic: a step whose `requires` includes a capability with no available provider is auto-rewritten to `/system?capability=<missing>` with a "set this up first" body, so users always land somewhere actionable.
 
-See `.claude/rules/tour-steps.md` for the full contract, priority bands, and selector-stability tips. Reference implementations: `apps/task/manifest.toml` (`task.capture`), `apps/journal/manifest.toml` (`journal.write`), `apps/quick-action/manifest.toml` (`capture.try`).
+See `.claude/rules/tour-steps.md` for the full contract, priority bands, and selector-stability tips. Reference implementations: `apps/public/core/task/manifest.toml` (`task.capture`), `apps/public/standard/journal/manifest.toml` (`journal.write`), `apps/public/core/quick-action/manifest.toml` (`capture.try`).
 
 ## Building view-rich apps (table / kanban / calendar / timeline)
 
@@ -881,21 +886,21 @@ Drop in the shared EOS_UI helpers:
 - `EOS_UI.inlineCellEdit({el, value, type, options, onSave, onCancel})` — replaces a cell with an input/select on click. Type: `text` / `select` / `date` / `number`. `onSave(newValue)` fires on blur or Enter; Esc reverts.
 - `EOS_UI.pillBadge(value, colorMap)` — colored pill (`.eos-pill-blue/amber/green/emerald/red/purple/orange/gray`) for free-form category coloring. Distinct from `.eos-badge-status-*` (semantic).
 
-Reference: `apps/projects/pages/app.js` `renderKanban` uses `kanbanLayout` with `wrapCards: false` so `EOS_UI.entityCard` is the card surface; `onMove` POSTs to `/projects/api/projects/{id}/status`.
+Reference: `apps/public/standard/projects/pages/app.js` `renderKanban` uses `kanbanLayout` with `wrapCards: false` so `EOS_UI.entityCard` is the card surface; `onMove` POSTs to `/projects/api/projects/{id}/status`.
 
 ### Path B — another app owns the data, you want a power view over it
 
 Make your app boards-compatible — boards becomes the view layer:
 
-1. Expose `async list_all() -> list[dict]` returning a flat list with stable per-row `id` (or `file`). See `apps/projects/app.py:591` and `apps/task/app.py` for reference shapes.
-2. Expose `async set_field(id, field, value) -> dict` with a `SETTABLE_FIELDS` whitelist + an event emit on success. Reference: `apps/projects/app.py:629`, `apps/task/app.py` `set_field`.
+1. Expose `async list_all() -> list[dict]` returning a flat list with stable per-row `id` (or `file`). See `apps/public/standard/projects/app.py:591` and `apps/public/core/task/app.py` for reference shapes.
+2. Expose `async set_field(id, field, value) -> dict` with a `SETTABLE_FIELDS` whitelist + an event emit on success. Reference: `apps/public/standard/projects/app.py:629`, `apps/public/core/task/app.py` `set_field`.
 3. Optionally expose `@web_route("POST", "/api/set-field")` that delegates to `set_field` so HTTP clients can write too.
-4. Add a board preset to `apps/boards/presets.py` with `source: {type: "app", app: "<your-id>", method: "list_all"}` and the columns/views you want users to see.
+4. Add a board preset to `apps/public/standard/boards/presets.py` with `source: {type: "app", app: "<your-id>", method: "list_all"}` and the columns/views you want users to see.
 5. Add an "Open as Board" button to your toolbar that POSTs `/boards/api/boards/from-preset` with `{preset_id: "<your-preset>"}` (idempotent — returns existing board if already created), then redirects to `/boards/#<id>`.
 
 The boards engine (`emptyos/sdk/board_engine.py` `DynamicBoardLibrary`) handles source resolution, filtering, sorting, aggregation. Saved per-user view state goes through `emptyos/sdk/view_store.py` `ViewStore`. The view config schema lives in `emptyos/sdk/board_config.py` (`BoardConfig` TypedDict + `COLUMN_TYPES` + `VIEW_TYPES`).
 
-Reference implementations: `project-tracker` and `task-tracker` presets in `apps/boards/presets.py`.
+Reference implementations: `project-tracker` and `task-tracker` presets in `apps/public/standard/boards/presets.py`.
 
 ## Engineering Calculator Apps
 

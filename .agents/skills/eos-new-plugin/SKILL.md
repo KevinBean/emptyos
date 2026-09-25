@@ -2,6 +2,7 @@
 name: eos-new-plugin
 description: Scaffold a new EmptyOS plugin end-to-end in the right shape — service (exposes a named service via self.require), enhancer (injects a capability provider at boot), or both — optionally wiring the external-service launch pattern (auto_start + CREATE_NO_WINDOW) for a local binary like ComfyUI / voice-api / Blender. Use when the user says "new plugin", "create plugin", "scaffold plugin <id>", or "wrap <service> as a plugin". NOT for anything with a UI/page — that is an app (use eos-new-app).
 ---
+
 # EmptyOS New Plugin
 
 Scaffold a new plugin end-to-end with the right shape for its role — **service** (exposes a named service other apps consume), **enhancer** (injects a capability provider at boot), or **both**. Optionally wires the external-service launch pattern (`auto_start` + `CREATE_NO_WINDOW`) when the plugin wraps a local binary like ComfyUI / voice-api / Blender.
@@ -189,7 +190,7 @@ Combine 4a and 4b — named service for apps that want direct access, plus provi
 
 #### 4d. External-binary add-on (if the spec said yes)
 
-Add an `auto_start` method following the pattern in `plugins/comfyui/plugin.py` (AGENTS.md §External Service Launch Pattern):
+Add an `auto_start` method following the pattern in `plugins/comfyui/plugin.py` (CLAUDE.md §External Service Launch Pattern):
 
 ```python
 async def auto_start(self) -> bool:
@@ -234,7 +235,7 @@ async def ensure_available(self) -> bool:
     return await self.auto_start()
 ```
 
-Rules (AGENTS.md §External Service Launch Pattern):
+Rules (CLAUDE.md §External Service Launch Pattern):
 - **Never** `start /min` or `cmd /c start` — both pop windows
 - **Always** set `cwd` to the service directory (launchers use relative paths)
 - Use embedded python directly, not the `.bat` wrapper (the `.bat` spawns windows)
@@ -279,7 +280,7 @@ python scripts/package-release.py --check
 
 ### Step 7: Update `restart.bat` (if external binary)
 
-If the plugin wraps a local service, restart.bat should launch it headless alongside EmptyOS so everything boots together. Follow the `pushd` + `start /b` pattern (AGENTS.md §External Service Launch Pattern):
+If the plugin wraps a local service, restart.bat should launch it headless alongside EmptyOS so everything boots together. Follow the `pushd` + `start /b` pattern (CLAUDE.md §External Service Launch Pattern):
 
 ```batch
 if not exist "D:/Path/To/marker" goto skip_<id>

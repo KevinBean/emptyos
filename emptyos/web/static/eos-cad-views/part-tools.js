@@ -1,23 +1,30 @@
-// eos-cad-views/part-tools.js — the part-editor TOOLBAR as a layout view (the
-// store-mutating subset of the legacy part-workspace, ported onto the layout host).
-// This is stage 5 of the legacy-workspace retirement (.claude/rules/cad-layouts.md):
-// part-workspace.js mutates a local doc + vp.setDocument/rebuild; the layout
-// equivalent is mutate store.doc + store.notifyDoc() — which fires the 'doc' event
-// that the (proven) viewport-3d view re-renders from, IDENTICALLY to the legacy
-// buildScene() path. Used by the additive `part-edit` layout; the working `part`
-// layout + the legacy part-workspace are untouched until full parity is verified.
+// eos-cad-views/part-tools.js — the part-editor TOOLBAR as a layout view for
+// the `part-edit` layout (the legacy-workspace retirement's stage-5 result,
+// .claude/rules/cad-layouts.md — now complete; part-workspace.js is deleted).
+// Mutates store.doc + calls store.notifyDoc(), which fires the 'doc' event
+// the shared viewport-3d view re-renders from.
 //
-// PORTED (pure store mutations, offline node-testable):
-//   • Add primitive (box / sphere / cylinder / cone)
-//   • Add parameter
-// DEFERRED to a daemon-up session (each needs cadApi / WebGL gizmo / Three exporters
-// — untestable offline, so not ported blind): AI draft, STL/glTF export, save/persist,
-// boolean-via-pick (needs the multi-select pick stack), gizmo modes, snap/ortho,
-// tree drag-reorder, the extension dock. Tracked as the remainder of stage 5.
+// Owns: primitives, params, AI draft/edit, boolean-via-pick, gizmo modes,
+// snap/ortho, STL/glTF/STEP export, the 2D-drawing trigger, visual check,
+// hand tracking, live collab, and the extension dock.
+//
+// Does NOT own: Save, Undo, Redo. Those are the layout-host shell's job for
+// this layout (part-edit is one of the layouts where the shell's generic
+// Save/Undo/Redo toolbar is shown — see layout-host.html's `persistent`
+// condition). A panel-local copy of all three used to live here too; removed
+// 2026-08-22 after a UI walk found real drift between the two Save paths
+// (the panel one never cleared the store's dirty flag or updated the URL's
+// `?id=` on a first save) and a worse bug in Undo/Redo — the panel's own
+// document-level Ctrl+Z handler and the shell's window-level one both called
+// store.undo() on the same store for one keypress, so Ctrl+Z silently undid
+// two steps. Don't reintroduce a panel-local Save/Undo/Redo here.
 
 import { defineView } from '/static/eos-cad-view.js';
 import { addPrimitive, addParam } from '/static/eos-cad-part-ops.js';
 import { createAiPanel } from '/static/eos-cad-ai-panel.js';
+import { createHandInput } from '/static/eos-cad-hand-input.js';
+import { createCollabClient } from '/static/eos-cad-collab.js';
+import { isSameOriginWsUrl } from '/static/eos-cad-collab-guard.js';
 import { STLExporter } from 'three/addons/exporters/STLExporter.js';
 import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
 
@@ -51,7 +58,8 @@ function selFeature(vctx) {
 }
 function selLabel(f) { return f ? (f.name || f.id) : ''; }
 let aiPanel = null;
-let _undoKey = null;   // document keydown handler, live only while part-tools is mounted
+let handInput = null;  // Phase F — webcam hand-gesture input, lazy (no camera/model load until toggled on)
+let collabClient = null;  // Phase C — real-time multiplayer, lazy (no Yjs/WS load until toggled on)
 
 // Persist the shared doc through the CAD save API (PUT when it has an id, else POST
 // to create + adopt the new id). vctx.api is bound to /cad/api.
@@ -63,14 +71,19 @@ function downloadText(text, name, mime) {
   URL.revokeObjectURL(url);
 }
 
+function fileBaseName(doc) {
+  return String((doc && doc.name) || 'model').replace(/[^a-z0-9_-]+/gi, '_') || 'model';
+}
+
 // Export the live viewport meshes (the same vp.group the legacy editor exported).
+// Approximate mesh (CSG preview), not exact B-rep — see exportStep for the real solid.
 function exportModel(vctx, fmt) {
   const vp = vctx.store.viewport;
   if (!vp || !vp.group || !vp.group.children.length) {
     if (vctx.setStatus) vctx.setStatus('Nothing to export.', true);
     return;
   }
-  const fname = String(vctx.store.doc.name || 'model').replace(/[^a-z0-9_-]+/gi, '_') || 'model';
+  const fname = fileBaseName(vctx.store.doc);
   try {
     if (fmt === 'stl') {
       downloadText(new STLExporter().parse(vp.group), fname + '.stl', 'model/stl');
@@ -83,6 +96,204 @@ function exportModel(vctx, fmt) {
     }
   } catch (e) {
     if (vctx.setStatus) vctx.setStatus('Export failed: ' + e, true);
+  }
+}
+
+// Render the Tier-1 shape-validation verdict from a /compile response as a
+// small status chip — this is the "✗ weird shape" feedback that was lost when
+// the legacy part-workspace was retired (see .claude/rules/model-ability.md
+// § "Validity gate"). `r` is the raw /compile JSON: {ok, validation, warnings,
+// error}. Shows nothing (clears) when there's no validation data to show.
+function renderShapeStatus(vctx, r) {
+  const el = vctx.pane.querySelector('[data-pt-shape-status]');
+  if (!el) return;
+  el.className = 'pt-shape-status';
+  const validation = r && r.validation;
+  const hard = (validation && validation.violations || []).filter((v) => v.severity === 'hard');
+  const soft = (validation && validation.violations || []).filter((v) => v.severity === 'soft');
+  if (hard.length) {
+    el.classList.add('pt-shape-err');
+    el.textContent = '✗ weird shape — ' + hard.map((v) => v.code + ': ' + v.message).join('; ');
+  } else if (soft.length) {
+    el.classList.add('pt-shape-warn');
+    el.textContent = '⚠ ' + soft.length + ' shape warning' + (soft.length > 1 ? 's' : '') + ' — ' + soft.map((v) => v.code).join(', ');
+  } else if (validation) {
+    el.classList.add('pt-shape-ok');
+    el.textContent = '✓ shape OK';
+  } else {
+    el.textContent = '';
+  }
+}
+
+// Compile the tree to an exact B-rep solid (CadQuery) and download the STEP
+// file. Unlike STL/glTF (approximate mesh from the live viewport), this is a
+// real server-side compile round-trip and needs a saved document id.
+async function exportStep(vctx) {
+  const doc = vctx.store.doc;
+  if (!doc.id) {
+    if (vctx.setStatus) vctx.setStatus('Save the document first, then export STEP.', true);
+    return;
+  }
+  if (vctx.setStatus) vctx.setStatus('Compiling exact geometry…');
+  try {
+    const r = await vctx.api('/documents/' + encodeURIComponent(doc.id) + '/compile', { method: 'POST' });
+    renderShapeStatus(vctx, r);
+    if (r && r.ok) {
+      downloadText(r.step_text || '', fileBaseName(doc) + '.step', 'model/step');
+      const warn = r.warnings && r.warnings.length;
+      if (vctx.setStatus) vctx.setStatus('Exported STEP' + (warn ? ' (see shape check below)' : ''));
+    } else if (vctx.setStatus) {
+      vctx.setStatus('STEP export failed: ' + ((r && r.error) || '?'), true);
+    }
+  } catch (e) {
+    if (vctx.setStatus) vctx.setStatus('STEP export failed: ' + e, true);
+  }
+}
+
+// Generate (or regenerate) the linked 2D orthographic drawing for this part
+// and open it in the 2D drawing editor. Needs a saved document id.
+async function generateDrawing(vctx) {
+  const doc = vctx.store.doc;
+  if (!doc.id) {
+    if (vctx.setStatus) vctx.setStatus('Save the document first, then generate a drawing.', true);
+    return;
+  }
+  if (vctx.setStatus) vctx.setStatus('Generating 2D drawing…');
+  try {
+    const r = await vctx.api('/documents/' + encodeURIComponent(doc.id) + '/draft', { method: 'POST' });
+    if (r && r.ok) {
+      if (vctx.setStatus) vctx.setStatus(r.regenerated ? 'Drawing updated' : 'Drawing generated');
+      window.location.href = r.url;
+    } else if (vctx.setStatus) {
+      vctx.setStatus('Drawing generation failed: ' + ((r && r.error) || '?'), true);
+    }
+  } catch (e) {
+    if (vctx.setStatus) vctx.setStatus('Drawing generation failed: ' + e, true);
+  }
+}
+
+// Toggle webcam hand-gesture input (Phase F — a differentiator beyond
+// CadXStudio, which has no hand/XR input at all). 100% client-side — no
+// webcam frame is ever sent anywhere, see eos-cad-hand-input.js's own
+// docstring. Purely additive: mouse/keyboard/gizmo input is untouched
+// whether this is on or off.
+async function toggleHandInput(vctx) {
+  const btn = vctx.pane.querySelector('[data-pt-hand]');
+  const statusEl = vctx.pane.querySelector('[data-pt-hand-status]');
+  const setHandStatus = (msg, isErr) => {
+    if (statusEl) { statusEl.textContent = msg || ''; statusEl.className = 'pt-shape-status' + (isErr ? ' pt-shape-err' : msg ? ' pt-shape-ok' : ''); }
+  };
+  if (!handInput) {
+    handInput = createHandInput({ store: vctx.store, onStatus: setHandStatus });
+  }
+  if (handInput.isActive()) {
+    handInput.stop();
+    if (btn) { btn.classList.remove('active'); btn.setAttribute('aria-pressed', 'false'); }
+    return;
+  }
+  if (btn) btn.disabled = true;
+  const r = await handInput.start();
+  if (btn) btn.disabled = false;
+  if (r.ok) {
+    if (btn) { btn.classList.add('active'); btn.setAttribute('aria-pressed', 'true'); }
+  }
+}
+
+// Phase C — real-time multiplayer. Toggle: start a live session (as the
+// document owner unless a shared invite link supplied a different principal
+// + ws url) or stop one. Needs a saved document id (the room is 1:1 with
+// the CAD document).
+function setCollabStatus(vctx, msg, isErr) {
+  const el = vctx.pane.querySelector('[data-pt-collab-status]');
+  if (el) { el.textContent = msg || ''; el.className = 'pt-shape-status' + (isErr ? ' pt-shape-err' : msg ? ' pt-shape-ok' : ''); }
+}
+
+function setCollabPeers(vctx, names) {
+  const el = vctx.pane.querySelector('[data-pt-collab-peers]');
+  if (!el) return;
+  const others = (names || []).filter((n) => n && n !== _collabPrincipal);
+  el.textContent = others.length ? others.length + ' also here: ' + others.join(', ') : '';
+}
+
+let _collabPrincipal = null;   // set once a session starts, read by setCollabPeers to exclude self
+
+async function toggleCollab(vctx) {
+  const btn = vctx.pane.querySelector('[data-pt-collab]');
+  const doc = vctx.store.doc;
+  if (collabClient && collabClient.isActive()) {
+    collabClient.stop();
+    if (btn) { btn.classList.remove('active'); btn.setAttribute('aria-pressed', 'false'); }
+    setCollabStatus(vctx, '');
+    setCollabPeers(vctx, []);
+    return;
+  }
+  if (!doc.id) {
+    setCollabStatus(vctx, 'Save the document first, then start a live session.', true);
+    return;
+  }
+  if (btn) btn.disabled = true;
+
+  // A shared invite link carries live_ws + live_principal — join AS that
+  // principal without calling /live/start (which would try to act as the
+  // document owner, the wrong identity for an invited collaborator).
+  const params = new URLSearchParams(window.location.search);
+  const sharedWs = params.get('live_ws');
+  const sharedPrincipal = params.get('live_principal');
+
+  let wsUrl, principal, seed;
+  if (sharedWs && sharedPrincipal) {
+    // A crafted invite link could set live_ws to an attacker-controlled
+    // WebSocket — never connect to a target the query string alone names.
+    // The server only ever mints same-origin URLs, so anything else is forged.
+    if (!isSameOriginWsUrl(sharedWs, window.location.href)) {
+      if (btn) btn.disabled = false;
+      setCollabStatus(vctx, 'Invite link is invalid or points off-site — refusing to join.', true);
+      return;
+    }
+    wsUrl = sharedWs; principal = sharedPrincipal; seed = false;
+  } else {
+    const r = await vctx.api('/documents/' + encodeURIComponent(doc.id) + '/live/start', { method: 'POST' });
+    if (!r || !r.ok) {
+      if (btn) btn.disabled = false;
+      setCollabStatus(vctx, 'Could not start a live session: ' + ((r && r.error) || '?'), true);
+      return;
+    }
+    wsUrl = r.ws_url; principal = r.principal; seed = !!r.created;
+  }
+
+  _collabPrincipal = principal;
+  collabClient = createCollabClient({
+    store: vctx.store, wsUrl, principal, seed,
+    onStatus: (msg, isErr) => setCollabStatus(vctx, msg, isErr),
+    onPeers: (names) => setCollabPeers(vctx, names),
+  });
+  const res = await collabClient.start();
+  if (btn) btn.disabled = false;
+  if (res.ok) {
+    if (btn) { btn.classList.add('active'); btn.setAttribute('aria-pressed', 'true'); }
+  }
+}
+
+async function inviteCollaborator(vctx) {
+  const doc = vctx.store.doc;
+  if (!doc.id) { setCollabStatus(vctx, 'Save the document first.', true); return; }
+  const nameEl = vctx.pane.querySelector('[data-pt-collab-name]');
+  const name = (nameEl && nameEl.value || '').trim();
+  if (!name) { setCollabStatus(vctx, 'Name the collaborator first.', true); return; }
+  const r = await vctx.api('/documents/' + encodeURIComponent(doc.id) + '/live/invite', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ principal: name, level: 'write' }),
+  });
+  const linkEl = vctx.pane.querySelector('[data-pt-collab-link]');
+  if (r && r.ok) {
+    const url = new URL(window.location.href);
+    url.searchParams.set('live_ws', r.ws_url);
+    url.searchParams.set('live_principal', name);
+    if (linkEl) { linkEl.value = url.toString(); linkEl.hidden = false; linkEl.select(); }
+    setCollabStatus(vctx, "Invited '" + name + "' — copy the link below and send it to them.");
+  } else {
+    if (linkEl) linkEl.hidden = true;
+    setCollabStatus(vctx, 'Invite failed: ' + ((r && r.error) || '?'), true);
   }
 }
 
@@ -103,21 +314,57 @@ function selectedToCursor(vctx) {
   vctx.store.notifyDoc();
 }
 
-async function saveDoc(vctx) {
+// Grade the current viewport render against a stated intent via the
+// (dark-flagged) vision-critic endpoint. Manual trigger, not automatic — see
+// generate.py::_visual_critic_enabled's docstring for why this checks the
+// APPLIED viewport, not a not-yet-applied proposal. Off by default: the
+// endpoint itself refuses cleanly and this renders that refusal as the
+// status message, same degrade-and-explain pattern as the CadQuery-missing
+// message on STEP export.
+function renderCritiqueResult(vctx, r) {
+  const el = vctx.pane.querySelector('[data-pt-critique-result]');
+  if (!el) return;
+  if (!r) { el.textContent = ''; return; }
+  if (!r.ok) { el.textContent = r.error || 'Visual check failed.'; el.className = 'pt-shape-status pt-shape-err'; return; }
+  const c = r.critique || {};
+  const bits = ['Score ' + c.score + '/10'];
+  (c.mismatches || []).forEach((m) => bits.push('✗ ' + m));
+  (c.matches || []).forEach((m) => bits.push('✓ ' + m));
+  el.textContent = bits.join(' · ');
+  el.className = 'pt-shape-status ' + (c.score >= 7 ? 'pt-shape-ok' : c.score >= 5 ? 'pt-shape-warn' : 'pt-shape-err');
+}
+
+async function runVisualCheck(vctx) {
   const doc = vctx.store.doc;
+  const vp = vctx.store.viewport;
+  const intentEl = vctx.pane.querySelector('[data-pt-critique-intent]');
+  const intent = (intentEl && intentEl.value || '').trim();
+  if (!doc.id) {
+    if (vctx.setStatus) vctx.setStatus('Save the document first, then run a visual check.', true);
+    return;
+  }
+  if (!intent) {
+    if (vctx.setStatus) vctx.setStatus('Describe what this part is supposed to be first.', true);
+    return;
+  }
+  if (!vp || !vp.renderer || !vp.domElement) {
+    if (vctx.setStatus) vctx.setStatus('Nothing rendered to check.', true);
+    return;
+  }
+  if (vctx.setStatus) vctx.setStatus('Checking against intent…');
+  renderCritiqueResult(vctx, null);
   try {
-    let r;
-    if (doc.id) {
-      r = await vctx.api('/documents/' + encodeURIComponent(doc.id),
-        { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ document: doc }) });
-    } else {
-      r = await vctx.api('/documents',
-        { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: doc.name || 'Untitled', document: doc }) });
-      if (r && r.ok && r.id) doc.id = r.id;
-    }
-    if (vctx.setStatus) vctx.setStatus((r && r.ok) ? 'Saved' : ('Save failed: ' + ((r && r.error) || '?')), !(r && r.ok));
+    vp.renderer.render(vp.scene, vp.camera);  // force a fresh frame before capture
+    const dataUrl = vp.domElement.toDataURL('image/png');
+    const image_b64 = dataUrl.split(',')[1] || '';
+    const r = await vctx.api('/documents/' + encodeURIComponent(doc.id) + '/visual-check', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ image_b64, intent }),
+    });
+    renderCritiqueResult(vctx, r);
+    if (vctx.setStatus) vctx.setStatus(r && r.ok ? 'Visual check done' : ('Visual check failed: ' + ((r && r.error) || '?')), !(r && r.ok));
   } catch (e) {
-    if (vctx.setStatus) vctx.setStatus('Save failed: ' + e, true);
+    if (vctx.setStatus) vctx.setStatus('Visual check failed: ' + e, true);
   }
 }
 
@@ -142,6 +389,10 @@ const STYLES = `
   .cadv-pt .pt-lbl { overflow: hidden; text-overflow: ellipsis; }
   .cadv-pt .pt-gizmos { display: flex; margin-bottom: 16px; }
   .cadv-pt .pt-gizmos .eos-tool-segment { flex: 1; }
+  .cadv-pt .pt-shape-status { font-size: 11px; line-height: 1.5; margin-top: 6px; min-height: 1.5em; }
+  .cadv-pt .pt-shape-status.pt-shape-ok { color: var(--green); }
+  .cadv-pt .pt-shape-status.pt-shape-warn { color: var(--amber); }
+  .cadv-pt .pt-shape-status.pt-shape-err { color: var(--red); }
   @media (max-width: 640px), (pointer: coarse) {
     .cadv-pt [data-pt-pval], .cadv-pt [data-pt-snapstep] { max-width: none !important; }
   }
@@ -149,11 +400,6 @@ const STYLES = `
 
 const MARKUP = `
   <div class="cadv-pt">
-    <div class="pt-row eos-tool-row"><button class="eos-tool-btn eos-tool-btn-primary pt-fill" data-pt-save title="Save this CAD document">Save</button></div>
-    <div class="pt-row eos-tool-row">
-      <button class="eos-tool-btn pt-fill" data-pt-undo title="Undo (Ctrl+Z)" disabled>&#8630; Undo</button>
-      <button class="eos-tool-btn pt-fill" data-pt-redo title="Redo (Ctrl+Shift+Z)" disabled>&#8631; Redo</button>
-    </div>
     <div data-pt-ai></div>
     <div class="pt-sec">Add primitive</div>
     <div class="pt-grid eos-tool-grid" data-pt-prims></div>
@@ -170,11 +416,35 @@ const MARKUP = `
       <button class="eos-tool-btn" data-pt-curselected title="Move the cursor to the selected feature">Cursor&rarr;sel</button>
       <button class="eos-tool-btn" data-pt-seltocur title="Move the selected feature to the cursor">Sel&rarr;cursor</button>
     </div>
+    <div class="pt-row eos-tool-row">
+      <button class="eos-tool-btn pt-fill" data-pt-hand aria-pressed="false" title="Webcam hand tracking: select a feature, then pinch to grab and drag it. Video never leaves your browser.">&#128400; Hand tracking</button>
+    </div>
+    <div class="pt-shape-status" data-pt-hand-status></div>
+    <div class="pt-row eos-tool-row">
+      <button class="eos-tool-btn pt-fill" data-pt-collab aria-pressed="false" title="Real-time multiplayer editing — reuses the same live-collaboration relay other EmptyOS live docs use.">&#127760; Live collab</button>
+    </div>
+    <div class="pt-shape-status" data-pt-collab-status></div>
+    <div class="pt-shape-status" data-pt-collab-peers></div>
+    <div class="pt-row eos-tool-row">
+      <input class="eos-tool-field pt-fill" data-pt-collab-name placeholder="collaborator name" aria-label="collaborator name">
+      <button class="eos-tool-btn" data-pt-collab-invite title="Grant this name write access and get a shareable join link">Invite</button>
+    </div>
+    <input class="eos-tool-field" data-pt-collab-link readonly hidden aria-label="shareable invite link" onclick="this.select()">
     <div class="pt-sec">Export</div>
     <div class="pt-row eos-tool-row">
-      <button class="eos-tool-btn pt-fill" data-pt-stl title="Export the visible model as STL">STL</button>
-      <button class="eos-tool-btn pt-fill" data-pt-gltf title="Export the visible model as glTF">glTF</button>
+      <button class="eos-tool-btn pt-fill" data-pt-stl title="Export the visible model as STL (approximate mesh)">STL</button>
+      <button class="eos-tool-btn pt-fill" data-pt-gltf title="Export the visible model as glTF (approximate mesh)">glTF</button>
+      <button class="eos-tool-btn pt-fill" data-pt-step title="Compile to exact B-rep and export STEP (requires a saved document)">STEP</button>
     </div>
+    <div class="pt-shape-status" data-pt-shape-status></div>
+    <div class="pt-row eos-tool-row">
+      <button class="eos-tool-btn pt-fill" data-pt-drawing title="Generate a dimensioned 2D drawing (front/top/right + isometric) from this part">Generate drawing</button>
+    </div>
+    <div class="pt-row eos-tool-row">
+      <input class="eos-tool-field pt-fill" data-pt-critique-intent placeholder="what was this part meant to be?" aria-label="intended design intent" title="Needs apps.cad.feature.visual-critic.enabled — off by default">
+    </div>
+    <div class="pt-row eos-tool-row"><button class="eos-tool-btn pt-fill" data-pt-critique title="Grade the current render against the intent above via a vision-LLM (dark-flagged, off by default)">Visual check</button></div>
+    <div class="pt-shape-status" data-pt-critique-result></div>
     <div class="pt-sec">Add parameter</div>
     <div class="pt-row eos-tool-row">
       <input class="eos-tool-field" data-pt-pname placeholder="name (e.g. r)" aria-label="parameter name">
@@ -244,9 +514,13 @@ function render(vctx) {
     addPrimitive(vctx.store, op); if (vctx.setStatus) vctx.setStatus('Added ' + label);
   }, { cls: 'pt-prim' });
   fillGizmos(vctx);
-  wire(vctx.pane, '[data-pt-save]', () => saveDoc(vctx));
   wire(vctx.pane, '[data-pt-stl]', () => exportModel(vctx, 'stl'));
   wire(vctx.pane, '[data-pt-gltf]', () => exportModel(vctx, 'gltf'));
+  wire(vctx.pane, '[data-pt-step]', () => exportStep(vctx));
+  wire(vctx.pane, '[data-pt-drawing]', () => generateDrawing(vctx));
+  wire(vctx.pane, '[data-pt-critique]', () => runVisualCheck(vctx));
+  wire(vctx.pane, '[data-pt-collab]', () => toggleCollab(vctx));
+  wire(vctx.pane, '[data-pt-collab-invite]', () => inviteCollaborator(vctx));
   if (!aiPanel) {
     aiPanel = createAiPanel({
       propose: (payload) => vctx.api('/ai/propose', {
@@ -287,6 +561,7 @@ function render(vctx) {
   wire(vctx.pane, '[data-pt-curorigin]', () => { if (vp()) vp().setCursor(0, 0, 0); });
   wire(vctx.pane, '[data-pt-curselected]', () => { if (vp()) vp().cursorToSelectedMesh(); });
   wire(vctx.pane, '[data-pt-seltocur]', () => selectedToCursor(vctx));
+  wire(vctx.pane, '[data-pt-hand]', () => toggleHandInput(vctx));
   const snapEl = vctx.pane.querySelector('[data-pt-snap]');
   if (snapEl && !snapEl._wired) {
     snapEl._wired = true;
@@ -299,42 +574,31 @@ function render(vctx) {
     if (addParam(vctx.store, nameEl.value, valEl.value)) { nameEl.value = ''; valEl.value = ''; }
   });
 
-  // Undo / redo — buttons + Ctrl+Z / Ctrl+Shift+Z (or Ctrl+Y). The store owns the
-  // snapshot history; every part view + the viewport re-render from the restored
-  // 'doc'. Re-runs on the 'history' event to keep the buttons' enabled state live.
-  const undoBtn = vctx.pane.querySelector('[data-pt-undo]');
-  const redoBtn = vctx.pane.querySelector('[data-pt-redo]');
-  if (undoBtn && !undoBtn._wired) {
-    undoBtn._wired = true;
-    undoBtn.addEventListener('click', () => { if (vctx.store.undo() && vctx.setStatus) vctx.setStatus('Undo'); });
-    redoBtn.addEventListener('click', () => { if (vctx.store.redo() && vctx.setStatus) vctx.setStatus('Redo'); });
-  }
-  if (undoBtn) undoBtn.disabled = !vctx.store.canUndo;
-  if (redoBtn) redoBtn.disabled = !vctx.store.canRedo;
-  if (!_undoKey) {
-    _undoKey = (e) => {
-      const tag = e.target && e.target.tagName;
-      if (tag && /^(INPUT|TEXTAREA|SELECT)$/.test(tag)) return;   // don't hijack field editing
-      if (!(e.ctrlKey || e.metaKey)) return;
-      const k = (e.key || '').toLowerCase();
-      if (k === 'z' && !e.shiftKey) { if (vctx.store.undo()) e.preventDefault(); }
-      else if (k === 'y' || (k === 'z' && e.shiftKey)) { if (vctx.store.redo()) e.preventDefault(); }
-    };
-    document.addEventListener('keydown', _undoKey);
-  }
+  // Undo/Redo (buttons + Ctrl+Z/Ctrl+Shift+Z) are the layout-host shell's job
+  // for this layout (layout-host.html's UNDO/REDO toolbar buttons + its own
+  // window keydown handler) — part-edit is one of the 7 "persistent" layouts
+  // that already gets them for free. A second, panel-local Undo/Redo used to
+  // live here too; removed 2026-08-22 (UI-walk finding: on part-edit the
+  // shell's window-level Ctrl+Z handler and this panel's document-level one
+  // both called store.undo() on the same store for a single keypress — one
+  // Ctrl+Z silently undid TWO steps, not one). Don't re-add a panel-local
+  // copy of either — see .claude/rules/cad-layouts.md on the shell's
+  // `persistent` doc-controls condition.
 }
 
 const _v = defineView({
   id: 'part-tools', styles: STYLES, markup: MARKUP,
-  // 'select' keeps the "Editing: X" chip + placeholder live; 'history' keeps the
-  // Undo/Redo buttons' enabled state live.
-  events: ['doc', 'select', 'history'],
+  // 'select' keeps the "Editing: X" chip + placeholder live.
+  events: ['doc', 'select'],
   mount(vctx) { render(vctx); },
   update(vctx) { render(vctx); },
   teardown() {
     if (aiPanel) aiPanel.teardown();
     aiPanel = null;
-    if (_undoKey) { document.removeEventListener('keydown', _undoKey); _undoKey = null; }
+    if (handInput) handInput.stop();   // release the webcam — never leak it across a layout switch
+    handInput = null;
+    if (collabClient) collabClient.stop();   // close the live-collab WebSocket — never leak it across a layout switch
+    collabClient = null;
   },
 });
 

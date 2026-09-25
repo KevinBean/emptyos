@@ -20,13 +20,13 @@ description: Generate and edit AI images through the local ComfyUI API (FLUX) �
 
 ## Prerequisites (前置条件)
 
-- ComfyUI must be running and reachable at `$COMFYUI_HOST` (default `http://localhost:8188`; set it to your ComfyUI host's Tailscale/LAN address if it runs on another machine).
+- ComfyUI must be running on the Home PC (`http://{homepc}:8188`), reachable over Tailscale.
 - Required models installed (FLUX / upscale / AnimateDiff, per the workflow you invoke).
 - Generation scripts live in the vault, not this skill folder — see the paths in each workflow below.
 
 **Probe ComfyUI first — if it is down, STOP and tell the user** (there is no local fallback):
 ```bash
-curl -s "${COMFYUI_HOST:-http://localhost:8188}/system_stats" | head -c 100
+curl -s "http://{homepc}:8188/system_stats" | head -c 100
 ```
 
 ## 可用功能

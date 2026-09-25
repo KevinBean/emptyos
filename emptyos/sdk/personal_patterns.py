@@ -42,7 +42,7 @@ def load(
     Measured before adopting: across 3,647 tracked files this yields exactly one
     additional finding, and it is a true positive. Word-boundary and structural
     controls (`renenerventure`, bare `Kevin`, `binbian.net`) are unaffected —
-    they discriminate on shape, not case (`tests/test_privacy_patterns.py`).
+    they discriminate on shape, not case (`tests/test_unit_privacy_patterns.py`).
     """
     p = Path(path)
     if not p.exists():

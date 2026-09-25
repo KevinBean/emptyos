@@ -26,8 +26,13 @@ textarea:focus { border-color:var(--accent); outline:none }
 </style>
 </head>
 <body>
-<h1>Routing</h1>
-<div class="sub">Multi-stop route planning via OSRM. Cached &amp; rate-limited. Pairs with geocode.</div>
+<div class="row" style="justify-content:space-between;align-items:flex-start">
+  <div>
+    <h1 style="margin-bottom:0">Routing</h1>
+    <div class="sub">Multi-stop route planning via OSRM. Cached &amp; rate-limited. Pairs with geocode.</div>
+  </div>
+  <button class="btn-settings" onclick="openAppSettings()" title="Settings" style="padding:8px 12px;background:var(--bg-card);color:var(--text);border:1px solid var(--border);border-radius:8px;font-size:13px;cursor:pointer">&#9881; Settings</button>
+</div>
 
 <div id="status-banner"></div>
 
@@ -50,10 +55,19 @@ textarea:focus { border-color:var(--accent); outline:none }
 <div class="panel" id="result-panel" style="display:none">
   <h2>Result</h2>
   <div id="route-summary" class="eos-stat-cards"></div>
+  <div class="row" id="save-trip-row" style="display:none">
+    <input type="text" id="trip-name" placeholder="Trip name" style="flex:1;min-width:160px;padding:12px;border:1px solid var(--border);border-radius:8px;background:var(--bg);color:var(--text)">
+    <button onclick="saveTrip()">Save trip</button>
+  </div>
 </div>
 
 <div class="panel" id="empty-panel">
   <div id="empty-state"></div>
+</div>
+
+<div class="panel">
+  <h2>Saved trips</h2>
+  <div id="trips-list"></div>
 </div>
 
 <div class="panel">
@@ -159,12 +173,17 @@ async function planRoute() {
     }).then(r => r.json());
     if (res.error) { showError(res.error); return; }
 
-    EOS_UI.statCards('route-summary', [
+    var cards = [
       { label: 'Stops', value: pts.length },
       { label: 'Distance', value: fmtDistance(res.distance_m || 0) },
       { label: 'Duration', value: fmtDuration(res.duration_s || 0) },
-    ]);
+    ];
+    if (res.cost_estimate !== null && res.cost_estimate !== undefined) {
+      cards.push({ label: 'Est. cost', value: '$' + res.cost_estimate.toFixed(2) });
+    }
+    EOS_UI.statCards('route-summary', cards);
     document.getElementById('result-panel').style.display = '';
+    document.getElementById('save-trip-row').style.display = '';
     hideEmptyState();
 
     var m = ensureMap();
@@ -179,8 +198,70 @@ async function planRoute() {
   } catch(e) { showError(e.message || String(e)); }
 }
 
+// ── Saved trips (routing-no-saved-trips) ──────────────────────────
+async function loadTrips() {
+  var el = document.getElementById('trips-list');
+  try {
+    var d = await fetch('/routing/api/trips').then(r => r.json());
+    var trips = d.trips || [];
+    if (!trips.length) { el.innerHTML = '<div class="hint">No saved trips yet — plan a route above, then "Save trip".</div>'; return; }
+    el.innerHTML = trips.map(function(t) {
+      return '<div class="row" style="justify-content:space-between;margin-top:0">' +
+        '<span><b>' + esc(t.name) + '</b> · ' + esc(t.stop_count) + ' stops · ' + esc(t.profile) + '</span>' +
+        '<span>' +
+          '<button onclick="loadTrip(' + escAttr(JSON.stringify(t.trip_id)) + ')" style="background:var(--bg);color:var(--text);border:1px solid var(--border);padding:6px 10px;font-size:12px;border-radius:6px">Load</button> ' +
+          '<button onclick="deleteTrip(' + escAttr(JSON.stringify(t.trip_id)) + ')" style="background:var(--bg);color:var(--danger);border:1px solid var(--border);padding:6px 10px;font-size:12px;border-radius:6px">Delete</button>' +
+        '</span></div>';
+    }).join('');
+  } catch (e) { el.innerHTML = '<div class="hint">Could not load saved trips.</div>'; }
+}
+
+async function saveTrip() {
+  var name = document.getElementById('trip-name').value.trim();
+  if (!name) { showError('Enter a trip name'); return; }
+  if (!STATE.points.length) { showError('Plan a route first'); return; }
+  var body = {
+    name: name,
+    points: STATE.points.map(function (p) { return [p.lat, p.lon]; }),
+    profile: document.getElementById('profile').value,
+  };
+  var res = await fetch('/routing/api/trips', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+  }).then(r => r.json());
+  if (res.error) { showError(res.error); return; }
+  if (window.EOS_UI && EOS_UI.toast) EOS_UI.toast('Trip saved', true);
+  document.getElementById('trip-name').value = '';
+  loadTrips();
+}
+
+async function loadTrip(tripId) {
+  var t = await fetch('/routing/api/trips/' + encodeURIComponent(tripId)).then(r => r.json());
+  if (t.error) { showError(t.error); return; }
+  var lines = (t.points || []).map(function (p) { return p.lat + ',' + p.lng; });
+  document.getElementById('stops').value = lines.join('\n');
+  document.getElementById('profile').value = t.profile || 'driving';
+  document.getElementById('trip-name').value = t.name || '';
+  await planRoute();
+}
+
+async function deleteTrip(tripId) {
+  try {
+    await fetch('/routing/api/trips/' + encodeURIComponent(tripId), { method: 'DELETE' });
+  } catch (e) {}
+  loadTrips();
+}
+
+// ── Settings (routing-no-cost-estimate) ───────────────────────────
+var _appSettings = EOS_UI.settingsPanel({
+  id: 'routing-settings-panel',
+  title: 'Routing Settings',
+  app: 'routing',
+});
+function openAppSettings() { _appSettings.open(); }
+
 loadStatus();
 renderEmptyState();
+loadTrips();
 </script>
 </body>
 </html>

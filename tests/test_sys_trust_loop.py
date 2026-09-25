@@ -1,4 +1,4 @@
-"""System app tests: Trust Loop — 27 use cases.
+"""System app tests: Trust Loop — 29 use cases.
 
 Acceptance criteria → tests (from apps/public/standard/trust-loop/ALGORITHM.md):
   AC1  POST /api/calc reproduces the published case within 0.5%
@@ -13,6 +13,7 @@ Acceptance criteria → tests (from apps/public/standard/trust-loop/ALGORITHM.md
                                                   → test_conformance_listing
   AC7  POST /api/conformance/run passes the gate  → test_conformance_gate_passes
   AC8  Stage 2 is a live artifact, not a claim    → test_algorithm_document_served
+  AC22 GET /api/assurance lists the controlled package -> test_assurance_package_listing
   AC9  GET /api/published-case returns the anchor → test_published_case_endpoint
   AC10 GET /trust-loop/ renders without JS errors → test_page_loads
   AC11 "Load the published case" fills the form and shows the anchor verdict
@@ -99,6 +100,17 @@ class TestTrustLoopAPI:
         data = assert_dict_response(http_client.get("/trust-loop/api/published-case"))
         assert data["published_result_a"] == pytest.approx(14943.0)
         assert data["inputs"]["s_n"] == pytest.approx(400000.0)
+
+    def test_assurance_package_listing(self, http_client):
+        data = assert_dict_response(http_client.get("/trust-loop/api/assurance"))
+        assert data["method"] == "trust-loop-v1"
+        assert data["status"] == "demonstration"
+        docs = {row["key"]: row for row in data["documents"]}
+        assert set(docs) == {
+            "index", "source_pack", "algorithm", "implementation",
+            "validation", "app_spec", "report_spec", "release_verification",
+        }
+        assert all(row["available"] for row in docs.values())
 
     def test_algorithm_document_served(self, http_client):
         r = http_client.get("/trust-loop/api/algorithm")

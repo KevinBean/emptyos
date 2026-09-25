@@ -13,10 +13,16 @@ class = "NotificationsPlugin"
 services = ["notifications"]
 tags = ["system", "messaging"]
 
-# Fired after a notification is delivered on any channel. No listener today —
-# declared so delivery is visible in the topology graph.
+# Fired after a notification is delivered on any channel, declared so delivery
+# is visible in the topology graph.
+#
+# `internal` because the delivery record already has a home: send() appends
+# every notification to 00_Inbox/_eos-notifications.md before emitting. A
+# reactor handler journalling this would write the same line into a second
+# vault file, so the absence of a listener is the design, not a gap.
 [provides.events]
 emits = ["notification:sent"]
+internal = ["notification:sent"]
 
 [platforms]
 supports = ["laptop", "vps-cpu", "vps-gpu", "docker"]

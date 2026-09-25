@@ -1,5 +1,6 @@
 [app]
 id = "hub"
+icon_id = "hub"
 store_category = "core"
 name = "Home"
 version = "1.0.0"

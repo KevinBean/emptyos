@@ -182,12 +182,10 @@ port = {port}
 [capabilities.think]
 # Local-first; "human" is always the final fallback, so the app is useful with
 # no model configured at all. Add a cloud key in Settings to automate more.
-providers = ["ollama", "human"]
+providers = {think_providers}
 timeout = 30
 
-[capabilities.think.ollama]
-host = "http://localhost:11434"
-model = "llama3.1"
+{ollama_config}
 
 [capabilities.draw]
 providers = ["human"]
@@ -207,12 +205,15 @@ enabled = false
 enabled = false
 
 [plugins.global-hotkey]
-# Needs the `keyboard` package, which isn't in the bundle.
-enabled = false
+# Off in the general desktop product unless its product declaration explicitly
+# bundles the keyboard hook and enables this owner-scoped service.
+enabled = {global_hotkey_enabled}
 """
 
 
-def ensure_config(config_path: Path, *, vault: Path, port: int, display_name: str) -> bool:
+def ensure_config(config_path: Path, *, vault: Path, port: int, display_name: str,
+                  think_providers: tuple[str, ...] = ("ollama", "human"),
+                  enable_plugins: tuple[str, ...] = ()) -> bool:
     """Create the config + vault + data dirs if absent. Never overwrites.
 
     Returns True when this call *created* the config — i.e. this is a first run,
@@ -229,6 +230,16 @@ def ensure_config(config_path: Path, *, vault: Path, port: int, display_name: st
             data_dir=(config_path.parent / "data").as_posix(),
             vault=vault.as_posix(),
             port=port,
+            think_providers=json.dumps(list(think_providers)),
+            ollama_config=(
+                '[capabilities.think.ollama]\n'
+                'host = "http://localhost:11434"\n'
+                'model = "llama3.1"'
+                if "ollama" in set(think_providers) else ""
+            ),
+            global_hotkey_enabled=(
+                "true" if "global-hotkey" in set(enable_plugins) else "false"
+            ),
         ),
         encoding="utf-8",
     )
@@ -532,6 +543,8 @@ class Supervisor:
             vault=default_vault_dir(self.product.appdata_name),
             port=self.port,
             display_name=self.product.display_name,
+            think_providers=self.product.think_providers,
+            enable_plugins=self.product.enable_plugins,
         )
         self.log(f"config={self.config_path} port={self.port} first_run={self.first_run}")
 

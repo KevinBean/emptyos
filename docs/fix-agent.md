@@ -2,7 +2,7 @@
 
 The architectural shape of the test-fix-verify loop lives in `.claude/rules/test-fix-verify-loop.md`. This doc is the **operational contract**: the guarantees `fix-agent` makes (and doesn't make) about the working tree, the runtime invariants the drain orchestrator depends on, and how each failure mode resolves.
 
-Read this before driving a multi-fix drain, before touching `apps/fix-agent/`, or before debugging "why does main have a commit I don't recognise."
+Read this before driving a multi-fix drain, before touching `apps/extension/dev/fix-agent/`, or before debugging "why does main have a commit I don't recognise."
 
 ## Agent runner
 
@@ -18,7 +18,7 @@ authoritative.
 
 ## What worktree-per-fix actually guarantees
 
-`fix-agent` keeps **one** worktree on disk at `.claude/worktrees/fix-agent/` (`apps/fix-agent/app.py:75-76`). The "per-fix" part is the **branch**, not the directory.
+`fix-agent` keeps **one** worktree on disk at `.claude/worktrees/fix-agent/` (`apps/extension/dev/fix-agent/app.py:75-76`). The "per-fix" part is the **branch**, not the directory.
 
 For each fix, `_run_one` resets the worktree (`app.py:758-768`):
 
@@ -37,7 +37,7 @@ This guarantees:
 What it does **NOT** guarantee:
 
 - **No orphan branches.** `git branch -D <branch>` is only called by `api_run_discard` (`app.py:521`). A successful merge leaves the branch in place; an interrupted drain leaves the in-flight branch behind. Run `git branch | grep '^  fix/'` to inventory.
-- **Worktree cleanup on uninstall.** Removing `apps/fix-agent/` doesn't `git worktree remove` the directory. Detach manually if removing.
+- **Worktree cleanup on uninstall.** Removing `apps/extension/dev/fix-agent/` doesn't `git worktree remove` the directory. Detach manually if removing.
 - **Concurrency safety.** Two simultaneous `api_run` calls fight over the same worktree. The drain serializes; ad-hoc UI use must too.
 
 ## How merges land on main
@@ -156,5 +156,5 @@ User actions:
 - `.claude/rules/test-fix-verify-loop.md` — architectural shape: four roles, sandbox plugin contract, when to extract to SDK.
 - `.claude/rules/daemon-handling.md` — why `:9000` is hands-off; why the sandbox approach exists.
 - `.claude/skills/eos-fix-drain/SKILL.md` — operational runner that enforces the pre-flight invariants above and verifies the post-revert state.
-- `apps/fix-agent/app.py` — implementation; line refs in this doc are stable as of 2026-05-16.
-- `apps/dogfood-agent/drain.py` — `_drain_queue` loop (lines 266-436).
+- `apps/extension/dev/fix-agent/app.py` — implementation; line refs in this doc are stable as of 2026-05-16.
+- `apps/extension/dev/dogfood-agent/drain.py` — `_drain_queue` loop (lines 266-436).

@@ -1,8 +1,13 @@
+---
+paths:
+  - "apps/**"
+  - "emptyos/sdk/base_app.py"
+---
 # Addons Rule — Config-Driven Extension Points in Apps
 
 An **addon slot** is a place where an app renders user-provided entries — typically external-site buttons (`YouGlish`, `Forvo`) or URL templates — without hardcoding them. Addons are the "add features without touching app code" mechanism.
 
-**First reference implementation:** `apps/dictionary/` `word_addons` slot (`apps/dictionary/app.py` `api_word_addons` + `apps/dictionary/pages/index.html` fetch-and-render).
+**First reference implementation:** `apps/extension/english-learning/dictionary/` `word_addons` slot — `vocab.py` `api_word_addons` (bound onto the app class in `app.py`, per `.claude/rules/multi-module-apps.md`) + `pages/dictionary.js` fetch-and-render. The backend half moved out of `app.py` in the decomposition; both this file and its `.agent-bus` mirror still named `app.py` until 2026-09-10.
 
 ## Principles
 
@@ -26,31 +31,55 @@ url_template = "https://site.com/...{word}..."
 
 ### Backend route
 
-Every app with an addon slot exposes:
+**The slot name IS the context noun, and it drives three spellings that differ.**
+`<slot>` here is the same `<slot>` as in `[[apps.<app_id>.<slot>_addons]]` above —
+one word, `word` / `place` / `query`, not a separate identifier from the thing
+being substituted. An earlier version of this section wrote the route as
+`/api/<slot>/{ctx}`, which implied they were two names and got all three
+spellings wrong.
+
+| | form | example |
+|---|---|---|
+| config key | `<slot>_addons` — snake_case | `word_addons` |
+| route | `/api/<slot>-addons/{<slot>}` — **kebab**, and it keeps the `-addons` suffix | `/api/word-addons/{word}` |
+| `url_template` placeholder | `{<slot>}` | `{word}` |
+
+The underscore/hyphen split between the config key and the URL is easy to carry
+across wrong, and the path-param name is worse: a route declaring `{word}` while
+the handler reads `path_params.get("ctx")` returns an **empty addon list with no
+error** — the buttons simply never appear, and nothing in the response says why.
 
 ```python
-@web_route("GET", "/api/<slot>/{ctx}")
-async def api_slot(self, request):
-    ctx = (request.path_params.get("ctx") or "").strip()
-    if not ctx:
+@web_route("GET", "/api/word-addons/{word}")
+async def api_word_addons(self, request):
+    word = (request.path_params.get("word") or "").strip()
+    if not word:
         return {"addons": []}
-    raw = self.app_config(f"{slot}_addons", []) or []
+    raw = self.app_config("word_addons", []) or []
     from urllib.parse import quote
     addons = []
     for item in raw:
-        if not isinstance(item, dict): continue
+        if not isinstance(item, dict):
+            continue
         tmpl = item.get("url_template") or ""
-        if not tmpl: continue
+        if not tmpl:
+            continue
         addons.append({
             "id": item.get("id") or item.get("label") or "addon",
             "label": item.get("label") or item.get("id") or "Open",
             "icon": item.get("icon") or "",
-            "url": tmpl.replace("{" + "ctx_var" + "}", quote(ctx, safe="")),
+            "url": tmpl.replace("{word}", quote(word, safe="")),
         })
     return {"addons": addons}
 ```
 
-Substitute `ctx_var` with the actual template variable name (e.g. `word`, `place`, `query`).
+That is the live code, copied from `vocab.py::api_word_addons` rather than
+paraphrased — a template you can paste and rename, with the three spellings
+already consistent.
+
+**Honest scope:** this convention is generalised from **one** implementation, the
+only addon slot in the repo. Treat it as the house style the second slot should
+match, not as a pattern proven across several.
 
 ### UI render
 

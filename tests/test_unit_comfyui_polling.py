@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import importlib.util
+import json
 import types
 from pathlib import Path
 
@@ -289,6 +290,8 @@ def test_generate_music_downloads_audio_to_requested_destination(
         duration=30,
         language="zh",
         bpm=86,
+        keyscale="C major",
+        timesignature="3",
         seed=123,
         dest=str(destination),
     ))
@@ -303,4 +306,104 @@ def test_generate_music_downloads_audio_to_requested_destination(
         "lyrics": "",
         "language": "zh",
         "bpm": 86,
+        "keyscale": "C major",
+        "timesignature": "3",
+        "steps": 40,
     }
+
+
+# --- ACE-Step key / meter (the 2026-08-15 fix) -------------------------------
+# Until 2026-08-15 the shipped workflow pinned `timesignature: "4"` and
+# `keyscale: "E minor"`, so every track EmptyOS composed came out in E minor.
+
+
+def test_steps_are_reachable_and_bounded(mod):
+    """steps was pinned at 8 until 2026-08-15 on a theory the ear disproved.
+
+    40 is audibly better and costs +2.5s on a 60s song, so the caller must be
+    able to reach it. Guard the upper end so a typo cannot queue a huge render.
+    """
+    plugin = _plugin(mod, object())
+    calls = {}
+
+    async def generate_from_workflow(**kwargs):
+        calls.update(kwargs)
+        return ""
+
+    plugin.generate_from_workflow = generate_from_workflow
+    asyncio.run(plugin.generate_music("x", seed=1))
+    assert calls["substitutions"]["steps"] == mod.ACESTEP_DEFAULT_STEPS == 40
+
+    asyncio.run(plugin.generate_music("x", steps=80, seed=1))
+    assert calls["substitutions"]["steps"] == 80
+
+    with pytest.raises(ValueError, match="steps"):
+        asyncio.run(plugin.generate_music("x", steps=0))
+    with pytest.raises(ValueError, match="steps"):
+        asyncio.run(plugin.generate_music("x", steps=mod.ACESTEP_MAX_STEPS + 1))
+
+
+def test_shipped_music_workflow_has_no_hardcoded_key_or_meter():
+    """The regression lock.
+
+    Every other test here builds a synthetic template, so all of them would
+    stay green if someone pasted the literals back into the real file. This
+    one reads the shipped workflow.
+    """
+    wf = json.loads(
+        (PLUGIN.parent / "workflows" / "acestep15_audio.json")
+        .read_text(encoding="utf-8")
+    )
+    node5 = wf["5"]["inputs"]
+    assert node5["keyscale"] == "{keyscale}"
+    assert node5["timesignature"] == "{timesignature}"
+    assert wf["8"]["inputs"]["steps"] == "{steps}"
+
+
+def test_auto_keyscale_is_seed_deterministic_and_spreads(mod):
+    """An empty keyscale draws from the seed — reproducible, but not all one key."""
+    assert mod._resolve_keyscale("", 4242) == mod._resolve_keyscale("", 4242)
+    keys = {mod._resolve_keyscale("", s) for s in range(64)}
+    assert len(keys) >= 8
+    assert keys != {"E minor"}          # the exact pre-fix behaviour
+    assert keys <= set(mod.ACESTEP_KEYSCALES)
+
+
+def test_keyscale_is_case_normalised(mod):
+    assert mod._resolve_keyscale("c MAJOR", 1) == "C major"
+    assert mod._resolve_keyscale("  f# minor  ", 1) == "F# minor"
+
+
+def test_invalid_key_or_meter_raises_before_queueing(mod):
+    """A typo must cost a readable error, not a silent GPU burn.
+
+    ComfyUI rejects an out-of-list COMBO value for the WHOLE prompt and that
+    reaches us only as an opaque "no prompt_id" line, so the domain has to be
+    enforced before anything is submitted.
+    """
+    plugin = _plugin(mod, object())
+
+    async def tripwire(**kwargs):
+        raise AssertionError("generate_from_workflow must not be reached")
+
+    plugin.generate_from_workflow = tripwire
+
+    with pytest.raises(ValueError, match="keyscale"):
+        asyncio.run(plugin.generate_music("x", keyscale="H minor"))
+    with pytest.raises(ValueError, match="timesignature"):
+        asyncio.run(plugin.generate_music("x", timesignature="5"))
+
+
+def test_timesignature_substitutes_as_string_not_int(mod):
+    """ComfyUI COMBO members are strings: 4 != "4" under `val not in options`."""
+    plugin = _plugin(mod, object())
+    calls = {}
+
+    async def generate_from_workflow(**kwargs):
+        calls.update(kwargs)
+        return ""
+
+    plugin.generate_from_workflow = generate_from_workflow
+    asyncio.run(plugin.generate_music("x", timesignature=3, seed=7))
+    assert calls["substitutions"]["timesignature"] == "3"
+    assert isinstance(calls["substitutions"]["timesignature"], str)

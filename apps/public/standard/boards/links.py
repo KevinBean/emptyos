@@ -10,7 +10,7 @@ Do not import from ``.app`` (it imports us, which would cycle).
 
 from __future__ import annotations
 
-from .board_engine import DynamicBoardLibrary
+from .board_engine import DynamicBoardLibrary, evaluate_formulas
 from .link_index import _as_id_list
 from .presets import get_preset
 from typing import TYPE_CHECKING
@@ -30,8 +30,12 @@ def _link_record_columns(config: dict) -> list[dict]:
 #   _rebuild_links           = _links._rebuild_links
 #   _index_board             = _links._index_board
 #   _maintain_link_inverses  = _links._maintain_link_inverses
+#   set_link_field           = _links.set_link_field
+#   evaluate_collection_items = _links.evaluate_collection_items
 #   api_item_backlinks       = _links.api_item_backlinks
 #   api_links_rebuild        = _links.api_links_rebuild
+#   _reindex_link_edges       = _links._reindex_link_edges
+#   _write_inverse_for_column = _links._write_inverse_for_column
 # Adding a new method here? Add a matching binding line in app.py.
 # ─────────────────────────────────────────────────────────────────────
 
@@ -77,24 +81,12 @@ async def _index_board(self, board_id: str) -> None:
                 self._links.register_edge(board_id, item_id, col["id"], target_board, tgt)
 
 
-async def _maintain_link_inverses(
-    self,
-    board_id: str,
-    config: dict,
-    filename: str,
-    old_item: dict,
-    new_item: dict,
-    updates: dict,
-) -> None:
-    """For every link-record column that changed, update the index AND
-    write the inverse field on targets (when the column declares one)."""
-    link_cols = _link_record_columns(config)
-    if not link_cols:
-        return
-
-    # Refresh this item's outgoing entry from the post-write state.
+def _reindex_link_edges(self, board_id: str, filename: str, link_cols: list[dict], new_item: dict) -> None:
+    """Drop this item's stale graph entries and re-register from `new_item`'s
+    post-write state. Shared by `_maintain_link_inverses` (whole-item update,
+    every link column on the item) and `set_link_field` (one column, called
+    by a non-boards writer like `CollectionLibrary`)."""
     new_col_targets = {col["id"]: _as_id_list(new_item.get(col["id"])) for col in link_cols}
-    # Rewrite edges via register_edge with full board info.
     self._links._outgoing.get(board_id, {}).pop(filename, None)
     for tgt_board_items in self._links._incoming.values():
         for tgt_item, refs in list(tgt_board_items.items()):
@@ -110,49 +102,118 @@ async def _maintain_link_inverses(
         for tgt in new_col_targets.get(col["id"], []):
             self._links.register_edge(board_id, filename, col["id"], target_board, tgt)
 
-    # Inverse-field maintenance: for columns with `inverse` declared, make
-    # the target's inverse field point back at us. Only runs on the subset
-    # of link-record columns that were in this update.
+
+async def _write_inverse_for_column(
+    self, col: dict, filename: str, old_ids: list[str], new_ids: list[str]
+) -> None:
+    """Diff `old_ids`/`new_ids` for ONE link-record column and, if it
+    declares an `inverse`, push/pull `filename` onto that field on every
+    added/removed target — the write-through half of reciprocal-link
+    maintenance. Pulled out of `_maintain_link_inverses` so a non-boards
+    writer (`CollectionLibrary.set_link_field` call) can drive the same
+    logic for a single field without needing a whole-item update shape."""
+    inverse = col.get("inverse")
+    target_board = col.get("target_board") or ""
+    if not inverse or not target_board:
+        return
+
+    added = set(new_ids) - set(old_ids)
+    removed = set(old_ids) - set(new_ids)
+    if not added and not removed:
+        return
+
+    tgt_config = self._store.get_board(target_board) or get_preset(target_board)
+    if not tgt_config:
+        return
+    tgt_col = next((c for c in _link_record_columns(tgt_config) if c["id"] == inverse), None)
+    if not tgt_col:
+        self.log_warn(f"inverse column '{inverse}' not found on '{target_board}'")
+        return
+    tgt_lib = DynamicBoardLibrary(self, tgt_config)
+
+    for tgt_id in added:
+        tgt_item = await tgt_lib.get_detail(tgt_id)
+        if not tgt_item:
+            continue
+        current = set(_as_id_list(tgt_item.get(inverse)))
+        current.add(filename)
+        await tgt_lib.set_field(tgt_id, inverse, sorted(current))
+    for tgt_id in removed:
+        tgt_item = await tgt_lib.get_detail(tgt_id)
+        if not tgt_item:
+            continue
+        current = set(_as_id_list(tgt_item.get(inverse)))
+        current.discard(filename)
+        await tgt_lib.set_field(tgt_id, inverse, sorted(current))
+
+
+async def _maintain_link_inverses(
+    self,
+    board_id: str,
+    config: dict,
+    filename: str,
+    old_item: dict,
+    new_item: dict,
+    updates: dict,
+) -> None:
+    """For every link-record column that changed, update the index AND
+    write the inverse field on targets (when the column declares one)."""
+    link_cols = _link_record_columns(config)
+    if not link_cols:
+        return
+
+    self._reindex_link_edges(board_id, filename, link_cols, new_item)
+
+    # Inverse-field maintenance: only runs on the subset of link-record
+    # columns that were in this update.
     for col in link_cols:
         if col["id"] not in updates:
             continue
-        inverse = col.get("inverse")
-        target_board = col.get("target_board") or ""
-        if not inverse or not target_board:
-            continue
+        old_targets = _as_id_list(old_item.get(col["id"]))
+        new_targets = _as_id_list(new_item.get(col["id"]))
+        await self._write_inverse_for_column(col, filename, old_targets, new_targets)
 
-        old_targets = set(_as_id_list(old_item.get(col["id"])))
-        new_targets = set(_as_id_list(new_item.get(col["id"])))
-        added = new_targets - old_targets
-        removed = old_targets - new_targets
-        if not added and not removed:
-            continue
 
-        tgt_config = self._store.get_board(target_board) or get_preset(target_board)
-        if not tgt_config:
-            continue
-        tgt_col = next(
-            (c for c in _link_record_columns(tgt_config) if c["id"] == inverse), None
-        )
-        if not tgt_col:
-            self.log_warn(f"inverse column '{inverse}' not found on '{target_board}'")
-            continue
-        tgt_lib = DynamicBoardLibrary(self, tgt_config)
+async def set_link_field(
+    self, board_id: str, filename: str, col_id: str, new_ids: list[str], old_ids: list[str] | None = None,
+) -> None:
+    """Entry point for a non-boards writer (`CollectionLibrary`) that already
+    wrote `col_id`'s new value to `filename` itself, and now needs the SAME
+    reciprocal-inverse + index maintenance a boards-native PATCH would have
+    triggered via `_maintain_link_inverses`. `old_ids` is the field's value
+    immediately before that write (`[]` for a brand-new item) — the caller
+    must supply it since, unlike the boards PATCH path, this runs *after*
+    the write already landed, so re-reading the target board's stored value
+    here would return the NEW value, not the old one.
 
-        for tgt_id in added:
-            tgt_item = await tgt_lib.get_detail(tgt_id)
-            if not tgt_item:
-                continue
-            current = set(_as_id_list(tgt_item.get(inverse)))
-            current.add(filename)
-            await tgt_lib.set_field(tgt_id, inverse, sorted(current))
-        for tgt_id in removed:
-            tgt_item = await tgt_lib.get_detail(tgt_id)
-            if not tgt_item:
-                continue
-            current = set(_as_id_list(tgt_item.get(inverse)))
-            current.discard(filename)
-            await tgt_lib.set_field(tgt_id, inverse, sorted(current))
+    Fails soft (logs, doesn't raise) on a config/column that can't be
+    resolved — a caller's own vault write already committed; a link-index
+    hiccup here shouldn't turn into a 500 for an otherwise-successful create.
+    """
+    config = self._store.get_board(board_id) or get_preset(board_id)
+    if not config:
+        self.log_warn(f"set_link_field: no board config for '{board_id}'")
+        return
+    col = next((c for c in _link_record_columns(config) if c["id"] == col_id), None)
+    if not col:
+        self.log_warn(f"set_link_field: '{col_id}' isn't a link-record column on '{board_id}'")
+        return
+    old_ids = old_ids or []
+    self._reindex_link_edges(board_id, filename, [col], {col_id: new_ids})
+    await self._write_inverse_for_column(col, filename, old_ids, new_ids)
+
+
+async def evaluate_collection_items(self, config: dict, items: list[dict]) -> list[dict]:
+    """Re-exposure, not new logic — a non-boards reader (`CollectionApp.
+    api_collection_list`/`api_collection_get`) needs the same rollup/formula
+    evaluation `GET /api/boards/{id}/items` already runs, but can't call
+    `evaluate_formulas` directly: that function resolves link-record targets
+    via `getattr(app, "_store", None)`, which only exists on a live BoardsApp
+    instance — a `CollectionApp` calling it on itself would silently fall
+    back to static presets only, missing any dynamically-registered target
+    board (which is exactly the collection-app case). Passing `self` (a real
+    BoardsApp) here is what makes that resolution work."""
+    return await evaluate_formulas(self, config, items)
 
 
 @web_route("GET", "/api/boards/{id}/items/{file}/backlinks")

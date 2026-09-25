@@ -154,6 +154,19 @@ def _provider_with_model(provider, model: str):
     return p
 
 
+#: The CLI runs the CODING loop (full registry, coding prompt, orient). A
+#: restricted conversation — a portal chat — must not be resumed through it,
+#: or it would silently gain Bash / Write and a coding persona.
+_CLI_PROFILE_REFUSAL = (
+    "[yellow]  This is a {profile!r} conversation from the portal — the CLI runs coding "
+    "sessions only. Open it at /portal/ instead.[/yellow]"
+)
+
+
+def _cli_can_run(record: dict) -> bool:
+    return str((record or {}).get("profile") or "").strip() in ("", "coding")
+
+
 @cli_command(
     "chat",
     help="Autonomous coding agent — multi-turn tool-loop REPL (read→edit→test, "
@@ -168,9 +181,14 @@ async def cmd_chat(self, session_id: str = "", initial_mode: str = ""):
     if not session_id:
         rec = self._create_session(name="CLI session")
         session_id = rec["id"]
-    elif not self._get_session(session_id):
-        console.print(f"[red]Session {session_id!r} not found[/red]")
-        return
+    else:
+        existing = self._get_session(session_id)
+        if not existing:
+            console.print(f"[red]Session {session_id!r} not found[/red]")
+            return
+        if not _cli_can_run(existing):
+            console.print(_CLI_PROFILE_REFUSAL.format(profile=existing.get("profile")))
+            return
 
     if (
         initial_mode
@@ -380,7 +398,7 @@ async def cmd_chat(self, session_id: str = "", initial_mode: str = ""):
             if classify(provider.name, model_str) != "strong":
                 console.print(
                     f"[dim yellow]  running on {model_display} — for Claude-quality coding: "
-                    f"[/dim yellow][dim]eos settings set agent.default_provider claude-cli[/dim]"
+                    f"[/dim yellow][dim]eos settings set think.app.agent claude-cli[/dim]"
                 )
         except Exception:
             pass
@@ -688,6 +706,9 @@ async def cmd_chat(self, session_id: str = "", initial_mode: str = ""):
                             )
                         continue
                     target = candidates[0]
+                    if not _cli_can_run(target):
+                        console.print(_CLI_PROFILE_REFUSAL.format(profile=target.get("profile")))
+                        continue
                     session_id = target["id"]
                     session_state["in"] = session_state["out"] = 0
                     session_state["cost"] = 0.0
@@ -939,7 +960,9 @@ async def cmd_chat(self, session_id: str = "", initial_mode: str = ""):
                             persisted = False
                             if settings_svc:
                                 try:
-                                    settings_svc.set("agent.default_provider", provider.name)
+                                    # The one default-provider knob — the /agent/ model
+                                    # pill and settings field write the same key.
+                                    settings_svc.set("think.app.agent", provider.name)
                                     persisted = True
                                 except Exception:
                                     pass
@@ -1101,7 +1124,8 @@ async def cmd_chat(self, session_id: str = "", initial_mode: str = ""):
                 if cmd == "/settings":
                     if settings := self.service("settings"):
                         console.print(
-                            f"  default_provider = [cyan]{settings.get('agent.default_provider') or '(default)'}[/cyan]"
+                            f"  default_provider = [cyan]{self._default_provider_name()}[/cyan] "
+                            f"[dim](think.app.agent — the value in force)[/dim]"
                         )
                         console.print(
                             f"  max_iters        = [cyan]{settings.get('agent.max_iters') or DEFAULT_MAX_ITERS}[/cyan]"
@@ -1257,8 +1281,7 @@ async def cmd_chat(self, session_id: str = "", initial_mode: str = ""):
                 msg = str(e) or type(e).__name__
                 console.print(f"\n[red]Error: {msg}[/red]")
 
-            for m in sess.messages[pre_len:]:
-                self._persist_message(session_id, m, provider_kind)
+            self._persist_turn(session_id, sess.messages[pre_len:], provider_kind, user_text)
 
             # Episodic memory (dark flag): record a cheap, no-LLM session digest.
             # Pass raw user_text so injected blocks don't leak into the episode.

@@ -148,7 +148,7 @@ if(window.EOS&&EOS.registerActions){EOS.registerActions({},[],{description:"Fast
     </div>
 
     <!-- Inbox -->
-    <div class="triage-header">
+    <div class="triage-header" id="triage">
         <span>Inbox</span>
         <span class="pending-badge" id="pending-badge" style="display:none"></span>
         <span class="spacer"></span>
@@ -279,7 +279,7 @@ async function loadTriage() {
             });
         }).join('');
         updateBadge(items.length);
-    } catch(e) { el.innerHTML = '<div class="eos-empty">Failed to load</div>'; }
+    } catch(e) { el.innerHTML = EOS_UI.errorState({message: 'Could not load the inbox.', onRetry: 'loadTriage()'}); }
 }
 
 var triageItems = [];
@@ -288,7 +288,7 @@ function _triageFeedback(card, icon, color, label, text, link) {
     card.style.borderColor = color;
     card.innerHTML =
         '<div style="display:flex;align-items:center;gap:10px">' +
-            '<span style="font-size:20px">' + icon + '</span>' +
+            '<span style="font-size:22px">' + icon + '</span>' +
             '<div style="flex:1">' +
                 '<div style="font-size:13px;color:' + color + ';font-weight:600">' + label + '</div>' +
                 '<div style="font-size:12px;color:var(--text-muted);margin-top:2px">' + esc(text).slice(0, 60) + '</div>' +

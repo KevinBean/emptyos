@@ -14,8 +14,8 @@
   60%  { background: rgba(78, 161, 243, 0.45); box-shadow: 0 0 0 0 transparent; }
   100% { background: transparent; }
 }
-.fade-down { animation:fadeDown 0.4s ease }
-.card-in { animation:cardIn 0.35s ease both }
+.fade-down { animation:fadeDown .3s ease }
+.card-in { animation:cardIn .3s ease both }
 .card-in:nth-child(2){animation-delay:0.05s} .card-in:nth-child(3){animation-delay:0.1s} .card-in:nth-child(4){animation-delay:0.15s}
 /* EOS_UI.flashText() wraps the found text in this mark; the keyframe runs
    once and the JS auto-unwraps the element after the animation. */
@@ -29,7 +29,7 @@ mark.eos-flash {
    Override active color per-app with --mode-active-bg / --mode-active-fg on :root.
 */
 .eos-mode-bar { display:flex; gap:4px; background:var(--bg-card); border:1px solid var(--border); border-radius:12px; padding:3px; margin:0 0 14px }
-.eos-mode-btn { flex:1; text-align:center; padding:10px; font-size:13px; font-weight:600; border-radius:10px; border:none; background:transparent; color:var(--text-muted); cursor:pointer; transition:all 0.15s }
+.eos-mode-btn { flex:1; text-align:center; padding:10px; font-size:13px; font-weight:600; border-radius:10px; border:none; background:transparent; color:var(--text-muted); cursor:pointer; transition:background 0.15s, color 0.15s, border-color 0.15s, box-shadow 0.15s, transform 0.15s }
 .eos-mode-btn.active { background:var(--mode-active-bg,var(--accent)); color:var(--mode-active-fg,var(--accent-ink,#fff)) }
 .eos-panel { display:none }
 .eos-panel.active { display:block; animation:fadeUp 0.25s ease }
@@ -45,8 +45,16 @@ mark.eos-flash {
 .eos-action-links a:hover { text-decoration:underline }
 .eos-action-links-sep { opacity:0.4; margin:0 6px }
 .eos-toast.show { transform:translateX(-50%) translateY(0) }
-.eos-toast-ok { background:rgba(52,211,153,0.92); color:#064e3b; white-space:nowrap }
-.eos-toast-err { background:rgba(248,113,113,0.92); color:#7f1d1d; white-space:normal; line-height:1.45 }
+/* The toast paints its own near-opaque tint, so this pair is self-contained and
+   must NOT become theme tokens: var(--text) over a fixed green would swing with
+   the theme while the ground stayed put. Fixed hex is correct here — it just has
+   to clear AA against that ground. Measured across all 10 themes (the 0.92 alpha
+   lets a little of --bg through, hence a range): ok 5.30–6.47, err 5.04–6.27.
+   The previous values failed — err #7f1d1d was 3.13–3.89, below AA on every
+   theme, and ok #064e3b bottomed out at 4.31. check-contrast.py cannot see this
+   pair; it checks token pairs, and neither side here is a token. */
+.eos-toast-ok { background:rgba(52,211,153,0.92); color:#043f30; white-space:nowrap }
+.eos-toast-err { background:rgba(248,113,113,0.92); color:#450a0a; white-space:normal; line-height:1.45 }
 
 /* === Toast bell (recent notifications) ===
    Top-right corner so it doesn't collide with the bottom-right FAB stack
@@ -78,10 +86,10 @@ mark.eos-flash {
    and right-side action slot — emit via EOS_UI.pageHeader(). All three slots
    are optional; missing slots collapse cleanly.
 */
-.eos-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:16px; animation:fadeDown 0.4s }
+.eos-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:16px; animation:fadeDown .3s }
 .eos-header h1 { font-size:24px; font-weight:700; color:var(--text-heading); letter-spacing:-0.02em }
 
-.eos-page-header { display:flex; align-items:flex-start; justify-content:space-between; gap:16px; margin-bottom:16px; flex-wrap:wrap; animation:fadeDown 0.4s }
+.eos-page-header { display:flex; align-items:flex-start; justify-content:space-between; gap:16px; margin-bottom:16px; flex-wrap:wrap; animation:fadeDown .3s }
 .eos-page-header .eos-ph-titles { flex:1 1 auto; min-width:0 }
 .eos-page-header .eos-ph-title { margin:0; font-size:24px; font-weight:700; color:var(--text-heading); letter-spacing:-0.02em; line-height:1.2 }
 .eos-page-header .eos-ph-sub { font-size:13px; color:var(--text-secondary); margin-top:2px; letter-spacing:0.01em }
@@ -94,7 +102,7 @@ mark.eos-flash {
 
 /* === Hero Stats === */
 .eos-hero { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:16px }
-.eos-hero-card { background:var(--bg-card); border:1px solid var(--border); border-radius:16px; padding:14px; animation:cardIn 0.35s ease both }
+.eos-hero-card { background:var(--bg-card); border:1px solid var(--border); border-radius:16px; padding:14px; animation:cardIn .3s ease both }
 .eos-hero-card:nth-child(2){animation-delay:0.06s}
 .eos-hero-card.wide { grid-column:1/-1 }
 .eos-hero-label { font-size:12px; color:var(--text-secondary); text-transform:uppercase; letter-spacing:0.5px; margin-bottom:4px }
@@ -104,7 +112,7 @@ mark.eos-flash {
 @media(max-width:500px) { .eos-hero{grid-template-columns:1fr} .eos-hero-card.wide{grid-column:auto} }
 
 /* === Quick Input Bar === */
-.eos-input-bar { display:flex; gap:8px; margin-bottom:6px; animation:fadeDown 0.4s ease 0.05s both }
+.eos-input-bar { display:flex; gap:8px; margin-bottom:6px; animation:fadeDown .3s ease 0.05s both }
 .eos-input-wrap { position:relative; flex:1 }
 .eos-input-prefix { position:absolute; left:12px; top:50%; transform:translateY(-50%); color:var(--text-secondary); font-size:18px; font-weight:500; pointer-events:none }
 .eos-input { width:100%; background:var(--bg-card); border:1px solid var(--border); border-radius:14px; padding:14px 14px 14px 30px; font-size:17px; color:var(--text); outline:none; font-family:inherit; transition:border-color 0.2s,box-shadow 0.2s }
@@ -126,6 +134,15 @@ mark.eos-flash {
 .eos-modal-handle { width:40px; height:4px; background:var(--border); border-radius:2px; margin:0 auto 16px }
 .eos-modal h3 { margin-bottom:12px }
 .eos-modal input,.eos-modal select,.eos-modal textarea { width:100%; padding:10px; border:1px solid var(--border); border-radius:10px; background:var(--bg); color:var(--text); font-size:15px; margin-bottom:8px; font-family:inherit }
+/* Re-exempt checkbox/radio. theme.css already exempts them globally
+   (`input[type=checkbox],input[type=radio]{width:auto}`), but that selector has
+   the SAME specificity as `.eos-modal input` and loses on source order — so
+   inside a modal a radio stretched to the full body width (measured 450px),
+   pushing its own label onto the next line and centering the control. Every
+   radio/checkbox group in every EOS_UI.modal was affected, not one app's. */
+.eos-modal input[type="checkbox"],.eos-modal input[type="radio"] {
+  width:auto; padding:0; margin-bottom:0; vertical-align:middle; margin-right:6px
+}
 .eos-modal-actions { display:flex; gap:8px; margin-top:12px }
 .eos-modal-actions button { flex:1; padding:12px; border:none; border-radius:10px; font-size:15px; font-weight:600; cursor:pointer }
 
@@ -133,7 +150,7 @@ mark.eos-flash {
 .eos-ring { position:relative }
 .eos-ring svg { transform:rotate(-90deg) }
 .eos-ring .ring-bg { stroke:var(--border); fill:none; stroke-width:10 }
-.eos-ring .ring-fill { fill:none; stroke-width:10; stroke-linecap:round; transition:stroke-dashoffset 1s ease; animation:ringFill 1s ease }
+.eos-ring .ring-fill { fill:none; stroke-width:10; stroke-linecap:round; transition:stroke-dashoffset .3s ease; animation:ringFill .3s ease }
 .eos-ring-center { position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center }
 
 /* === Donut Chart === */
@@ -145,12 +162,39 @@ mark.eos-flash {
 .eos-legend-val { font-weight:600; color:var(--text-heading) }
 .eos-legend-pct { font-size:12px; color:var(--text-muted); min-width:34px; text-align:right }
 
+/* === Calculator readout strip (EOS_UI.metaRows / EOS_UI.warnList) ===
+   `.eos-warn` is the sibling of `.eos-warning-banner` below, not a duplicate of
+   it: that one is a single iconed notice ABOVE content and prints in --warning;
+   this is a list of caveats BELOW a result, in --text, because three stacked
+   sentences in amber are hard to read. Shared properties (padding, border,
+   radius token, type scale) are kept aligned so they read as one family. */
+.eos-meta div { display:flex; justify-content:space-between; padding:3px 0; font-size:13px; color:var(--text-muted) }
+.eos-meta code { color:var(--text); font-variant-numeric:tabular-nums }
+.eos-warn { background:color-mix(in srgb, var(--warning) 14%, transparent); border:1px solid color-mix(in srgb, var(--warning) 40%, transparent); color:var(--text); border-radius:var(--radius); padding:10px 12px; font-size:13px; margin-top:12px }
+.eos-warn b { color:var(--warning) }
+
+/* === Line Chart legend (EOS_UI.lineChart, multi-series / reference lines) ===
+   Distinct from .eos-legend above: that one is the donut's vertical name/value
+   table, this is a horizontal key of line swatches sitting under the plot. */
+.eos-chart-legend { display:flex; flex-wrap:wrap; gap:18px; font-size:12px; margin-top:6px }
+.eos-chart-legend span { display:inline-flex; align-items:center; gap:6px; color:var(--text-muted) }
+.eos-chart-legend i { width:14px; height:3px; display:inline-block; border-radius:2px; flex-shrink:0 }
+
 /* === Budget Bar === */
-.eos-bar { height:6px; border-radius:3px; background:var(--border); overflow:hidden; margin-top:8px }
-.eos-bar-fill { height:100%; border-radius:3px; transition:width 0.5s; background:var(--accent) }
-.eos-bar-ok { background:#10b981 }
-.eos-bar-warn { background:#f59e0b }
-.eos-bar-over { background:#ef4444 }
+.eos-bar { height:6px; border-radius:4px; background:var(--border); overflow:hidden; margin-top:8px }
+/* `width` stays the sizing API (inline style / .style.width from jobProgress
+   and several apps) but is never animated: FRONTEND-DESIGN-LANGUAGE §5
+   forbids animating width and caps visible motion at 300ms. The reveal is a
+   transform keyframe; later width updates land instantly — the smooth
+   interpolation the old `transition:width 0.5s` gave jobProgress is the
+   deliberate trade (a scaleX sizing API would keep it, at the cost of every
+   consumer). The 2026-09-12 audit counted 28 app pages carrying their own
+   `transition: width` bar copied from this rule. */
+.eos-bar-fill { height:100%; border-radius:4px; background:var(--accent); transform-origin:left; animation:eos-bar-grow .25s ease-out }
+@keyframes eos-bar-grow { from { transform:scaleX(0) } to { transform:none } }
+.eos-bar-ok { background:var(--success) }
+.eos-bar-warn { background:var(--warning) }
+.eos-bar-over { background:var(--danger) }
 
 /* === Sticky Job Progress (long-running async jobs) === */
 .eos-job-progress {
@@ -177,14 +221,14 @@ mark.eos-flash {
 
 /* === Quick Actions Grid === */
 .eos-actions { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin-bottom:16px }
-.eos-action { background:var(--bg-card); border:1px solid var(--border); border-radius:12px; padding:14px 8px; text-align:center; cursor:pointer; text-decoration:none; color:var(--text); transition:all 0.15s }
+.eos-action { background:var(--bg-card); border:1px solid var(--border); border-radius:12px; padding:14px 8px; text-align:center; cursor:pointer; text-decoration:none; color:var(--text); transition:background 0.15s, color 0.15s, border-color 0.15s, box-shadow 0.15s, transform 0.15s }
 .eos-action:active { transform:scale(0.96); border-color:var(--accent) }
 .eos-action-icon { font-size:22px; margin-bottom:4px }
 .eos-action-label { font-size:12px; color:var(--text-secondary) }
 
 /* === Widget Cards === */
 .eos-widgets { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:16px }
-.eos-widget { background:var(--bg-card); border:1px solid var(--border); border-radius:var(--radius-lg); padding:14px; animation:cardIn 0.35s ease both; transition:border-color 0.15s,box-shadow 0.15s }
+.eos-widget { background:var(--bg-card); border:1px solid var(--border); border-radius:var(--radius-lg); padding:14px; animation:cardIn .3s ease both; transition:border-color 0.15s,box-shadow 0.15s }
 .eos-widget:hover { border-color:var(--border-strong) }
 .eos-widget.wide { grid-column:1/-1 }
 .eos-widget-label { font-size:10px; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.8px; margin-bottom:4px; font-weight:500 }
@@ -225,7 +269,7 @@ mark.eos-flash {
 .eos-mg-wrap { background:var(--bg-card); border:1px solid var(--border); border-radius:14px; padding:12px; display:flex; flex-direction:column; gap:8px }
 .eos-mg-header { display:flex; align-items:center; justify-content:space-between; gap:8px }
 .eos-mg-title { flex:1; text-align:center; font-size:14px; font-weight:600; color:var(--text-heading) }
-.eos-mg-nav { background:var(--bg); border:1px solid var(--border); color:var(--text-secondary); width:32px; height:32px; border-radius:8px; font-size:16px; cursor:pointer; display:flex; align-items:center; justify-content:center; transition:all 0.15s }
+.eos-mg-nav { background:var(--bg); border:1px solid var(--border); color:var(--text-secondary); width:32px; height:32px; border-radius:8px; font-size:16px; cursor:pointer; display:flex; align-items:center; justify-content:center; transition:background 0.15s, color 0.15s, border-color 0.15s, box-shadow 0.15s, transform 0.15s }
 .eos-mg-nav:hover { border-color:var(--accent); color:var(--accent) }
 .eos-mg-nav:active { transform:scale(0.93) }
 .eos-mg-weekdays { display:grid; grid-template-columns:repeat(7,1fr); gap:4px; font-size:10px; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.5px }
@@ -325,10 +369,10 @@ blockquote { border-left:3px solid var(--accent); padding:4px 12px; margin:8px 0
 .eos-note-header { display:flex; align-items:center; justify-content:space-between; padding:16px 20px; border-bottom:1px solid var(--border); flex-shrink:0 }
 .eos-note-title { font-size:16px; font-weight:600; color:var(--text-heading); flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
 .eos-note-actions { display:flex; gap:6px; flex-shrink:0 }
-.eos-note-btn { padding:6px 14px; border-radius:8px; border:1px solid var(--border); background:var(--bg); color:var(--text-secondary); font-size:13px; cursor:pointer; transition:all 0.15s; font-family:inherit }
+.eos-note-btn { padding:6px 14px; border-radius:8px; border:1px solid var(--border); background:var(--bg); color:var(--text-secondary); font-size:13px; cursor:pointer; transition:background 0.15s, color 0.15s, border-color 0.15s, box-shadow 0.15s, transform 0.15s; font-family:inherit }
 .eos-note-btn:hover { border-color:var(--accent); color:var(--accent) }
 .eos-note-btn-edit { background:var(--accent); color: var(--accent-ink); border-color:var(--accent) }
-.eos-note-btn-edit:hover { opacity:0.9; color:#fff }
+.eos-note-btn-edit:hover { background:color-mix(in srgb, var(--accent) 88%, var(--text-heading)); color:var(--accent-ink) }  /* was #fff: right only where the ink is white — 1.6:1 on warm-dark's amber */
 .eos-note-btn-close { font-size:18px; line-height:1; padding:4px 10px; font-weight:300 }
 .eos-note-body { flex:1; overflow-y:auto; padding:0 }
 .eos-note-backlinks { padding:8px 20px; border-bottom:1px solid var(--border); flex-shrink:0 }
@@ -370,12 +414,12 @@ blockquote { border-left:3px solid var(--accent); padding:4px 12px; margin:8px 0
 
 /* Rendered markdown: callouts */
 .obs-callout { border-left:3px solid var(--accent); padding:8px 12px; margin:8px 0; border-radius:0 6px 6px 0; background:color-mix(in srgb, var(--accent) 5%, var(--bg)) }
-.obs-callout-warning { border-left-color:#fbbf24; background:rgba(251,191,36,0.05) }
-.obs-callout-danger,.obs-callout-error { border-left-color:#ef4444; background:rgba(239,68,68,0.05) }
-.obs-callout-tip,.obs-callout-success { border-left-color:#22c55e; background:rgba(34,211,153,0.05) }
-.obs-callout-predict { border-left-color:#a78bfa; background:rgba(167,139,250,0.05) }
-.obs-callout-recall { border-left-color:#38bdf8; background:rgba(56,189,248,0.05) }
-.obs-callout-unverified { border-left-color:#fbbf24; background:rgba(251,191,36,0.05) }
+.obs-callout-warning { border-left-color:var(--warning); background:color-mix(in srgb, var(--warning) 5%, transparent) }
+.obs-callout-danger,.obs-callout-error { border-left-color:var(--danger); background:color-mix(in srgb, var(--danger) 5%, transparent) }
+.obs-callout-tip,.obs-callout-success { border-left-color:var(--success); background:color-mix(in srgb, var(--success) 5%, transparent) }
+.obs-callout-predict { border-left-color:var(--purple); background:color-mix(in srgb, var(--purple) 5%, transparent) }
+.obs-callout-recall { border-left-color:var(--info); background:color-mix(in srgb, var(--info) 5%, transparent) }
+.obs-callout-unverified { border-left-color:var(--warning); background:color-mix(in srgb, var(--warning) 5%, transparent) }
 .obs-callout-tag { display:block; font-size:.75rem; letter-spacing:.06em; text-transform:uppercase; opacity:.85; margin-bottom:2px }
 
 /* Rendered markdown: general */
@@ -397,6 +441,16 @@ blockquote { border-left:3px solid var(--accent); padding:4px 12px; margin:8px 0
 }
 
 /* === Stat Cards === */
+/* Row layout used to be left entirely to the caller, under whatever selector it
+   chose (#cal-stats, .vocab-stats, …) — so a caller that styled nothing got a
+   column of full-width cards with no warning (dictionary, 2026-08-30).
+   statCards() now stamps this class on its target as a floor. It is deliberately
+   weak: every caller page loads this sheet BEFORE its own <style> (verified
+   across all 26 callers), so an id rule wins on specificity and a class rule
+   wins on source order. Existing layouts are untouched; only "styled nothing"
+   changes. minmax(140px,1fr) is the codebase's most-used stat/tile track floor
+   (11 call sites), not a fresh number. */
+.eos-stat-cards { display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:8px }
 .eos-stat-card { background:var(--bg-card); border:1px solid var(--border); border-radius:12px; padding:14px 16px; text-align:center; animation:cardIn 0.3s ease both }
 .eos-stat-val { font-size:24px; font-weight:700; color:var(--accent) }
 .eos-stat-lbl { font-size:11px; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.4px; margin-top:2px }
@@ -460,16 +514,32 @@ blockquote { border-left:3px solid var(--accent); padding:4px 12px; margin:8px 0
 .eos-btn:active { transform:scale(0.98) }
 .eos-btn:focus-visible { outline:none; box-shadow:var(--focus-ring) }
 .eos-btn:disabled { opacity:0.45; cursor:default; pointer-events:none }
+/* A FILLED variant restates its ink on :hover. `.eos-btn:hover` above sets
+   `color:var(--accent)` at (0,2,0), which outranks every variant's base rule at
+   (0,1,0) — so a filled button that says nothing about colour on hover shows
+   accent text on its own fill: 1.00:1 on the primary button, label gone,
+   measured 2026-09-21 in tatami, warm-dark and soft-light. Its sibling
+   `.eos-btn-danger:hover` below always restated its colour, which is why only
+   danger escaped.
+   Ink and FILL are restated as a pair, never ink alone: an app stylesheet that
+   restyles `.eos-btn` at (0,1,0) after the bundle (grid-analytics:
+   `select, .eos-btn { background:var(--bg-card) }`) strips the fill at rest,
+   and an ink-only hover then paints white on that card — 1.11:1 in tatami.
+   Hover shifts the fill 12% toward --text-heading instead of fading it.
+   `opacity:0.9` faded the text with the fill: a 4.7:1 success button in
+   soft-light hovered at ~3.97. --text-heading always sits across from
+   --accent-ink (dark on light themes, light on dark), so the shift can only
+   raise contrast: 5.33:1 worst case across all 10 themes. */
 .eos-btn-primary { background:var(--accent); color: var(--accent-ink); border-color:var(--accent) }
-.eos-btn-primary:hover { opacity:0.9 }
+.eos-btn-primary:hover { background:color-mix(in srgb, var(--accent) 88%, var(--text-heading)); color:var(--accent-ink) }
 .eos-btn-secondary { background:var(--bg-card); border:1px solid var(--border); color:var(--text) }
 .eos-btn-secondary:hover { border-color:var(--accent); color:var(--accent) }
 .eos-btn-danger { border-color:var(--danger); color:var(--danger) }
 .eos-btn-danger:hover { background:var(--danger); color:var(--accent-ink) }
 .eos-btn-success { background:var(--success); color:var(--accent-ink); border-color:var(--success) }
-.eos-btn-success:hover { opacity:0.9 }
+.eos-btn-success:hover { background:color-mix(in srgb, var(--success) 88%, var(--text-heading)); color:var(--accent-ink) }
 .eos-btn-warning { background:var(--warning); color:var(--accent-ink); border-color:var(--warning) }
-.eos-btn-warning:hover { opacity:0.9 }
+.eos-btn-warning:hover { background:color-mix(in srgb, var(--warning) 88%, var(--text-heading)); color:var(--accent-ink) }
 .eos-btn-sm { padding:7px 14px; font-size:13px; border-radius:8px; min-height:32px }
 .eos-btn-ghost { background:none; border-color:transparent; color:var(--text-muted) }
 .eos-btn-ghost:hover { color:var(--text); border-color:var(--border) }
@@ -620,8 +690,10 @@ textarea.eos-tool-field { resize:vertical; line-height:1.4 }
 #eos-dict-popup { display:none; position:fixed; background:var(--bg-surface); border:1px solid var(--border); border-radius:12px; padding:16px; z-index:1100; width:300px; box-shadow:0 8px 32px rgba(0,0,0,0.5); max-height:340px; overflow-y:auto; animation:cardIn 0.2s ease }
 #eos-dict-popup.active { display:block }
 .eos-dict-word { font-size:18px; font-weight:700; color:var(--accent) }
-.eos-dict-play { cursor:pointer; font-size:16px; margin-left:6px; opacity:0.6; transition:opacity 0.15s }
+.eos-dict-play { cursor:pointer; font-size:16px; margin-left:6px; opacity:0.6; transition:opacity 0.15s; background:none; border:none; padding:0 2px; color:inherit; line-height:1; vertical-align:baseline }
 .eos-dict-play:hover { opacity:1 }
+.eos-dict-play:focus-visible { outline:2px solid var(--accent); outline-offset:2px; border-radius:8px; opacity:1 }
+.eos-dict-play:disabled { cursor:progress; opacity:0.3 }
 .eos-dict-ipa { font-size:13px; color:var(--text-muted); margin-left:6px }
 .eos-dict-pos { font-size:11px; font-weight:600; color:var(--accent); text-transform:uppercase; margin-top:8px }
 .eos-dict-def { font-size:14px; color:var(--text); margin:3px 0 2px 10px; line-height:1.4 }
@@ -702,8 +774,21 @@ textarea.eos-tool-field { resize:vertical; line-height:1.4 }
 
 /* Buttons: gradient */
 .theme-eos .eos-btn-primary { background:linear-gradient(135deg, #7c6cf0 0%, #5a4bd4 100%); border-color:transparent; box-shadow:0 2px 8px rgba(108,92,231,0.2) }
-.theme-eos .eos-btn-primary:hover { box-shadow:0 4px 16px rgba(108,92,231,0.3); opacity:1; filter:brightness(1.06) }
-.theme-eos .eos-btn:not(.eos-btn-primary):not(.eos-btn-danger):not(.eos-btn-ghost):hover { border-color:var(--accent); color:var(--accent) }
+.theme-eos .eos-btn-primary:hover { box-shadow:0 4px 16px rgba(108,92,231,0.3) }  /* no brightness(): 1.06 took white text at the gradient's midpoint from 4.94 to 4.48:1 */
+/* REMOVED 2026-09-21, do not restore:
+     .theme-eos .eos-btn:not(.eos-btn-primary):not(.eos-btn-danger)
+                        :not(.eos-btn-ghost):hover { border-color:var(--accent); color:var(--accent) }
+   Its declarations were identical to the base `.eos-btn:hover` above, so for
+   an outline button it changed nothing. What it did add was weight: each
+   `:not()` counts as a class, giving (0,6,0), which overrode the correct hover
+   colour of everything it did not name. Its exclusion list missed
+   `eos-btn-success` and `eos-btn-warning` — accent text on a green fill,
+   1.12:1, measured on a live button — and it outranked app rules that had
+   the colour right: an engineering app's active mode button (0,3,0), the KB docs
+   toolbar and the plan-scenarios brief box (both (0,2,0) accent fills),
+   leaving accent on accent in the default theme. An enumeration of exemptions
+   goes stale with the next variant; each filled variant now restates its own
+   ink on hover instead (above). Pinned by tests/test_unit_eos_btn_hover.py. */
 
 /* Toast: warm paper */
 .theme-eos .eos-toast-ok { background:#e8f5e9; color:#1b5e20; box-shadow:0 4px 20px rgba(0,0,0,0.08); border:1px solid #c8e6c9 }
@@ -796,6 +881,10 @@ textarea.eos-tool-field { resize:vertical; line-height:1.4 }
 .saved-empty { color:var(--text-muted, #8b949e); font-size:12px; }
 
 .eos-badge { display:inline-block; padding:2px 8px; border-radius:6px; font-size:11px; font-weight:500; line-height:1.5; white-space:nowrap; }
+/* An author `display` outranks the UA `[hidden]{display:none}`, so without this a
+   badge a page hides between states (synth/workflows' run-status chip) stays on
+   screen as a blank grey pill. Same shape the CAD bundles each solved locally. */
+.eos-badge[hidden] { display:none; }
 
 /* Status variants — project states + generic lifecycle */
 .eos-badge-status-idea      { background:rgba(102,102,102,0.15); color:var(--text-muted); }
@@ -955,7 +1044,7 @@ html.eos-redact #eos-demo-banner {
 
 /* --- Filter Bar --- */
 .eos-filter-bar { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:20px; }
-.eos-filter-pill { padding:7px 18px; border:1px solid var(--border); border-radius:20px; font-size:13px; font-weight:500; color:var(--text-secondary); cursor:pointer; transition:all 0.2s ease; background:transparent; font-family:inherit; letter-spacing:0.01em; display:inline-flex; align-items:center; gap:6px; }
+.eos-filter-pill { padding:7px 18px; border:1px solid var(--border); border-radius:20px; font-size:13px; font-weight:500; color:var(--text-secondary); cursor:pointer; transition:background 0.2s ease, color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease; background:transparent; font-family:inherit; letter-spacing:0.01em; display:inline-flex; align-items:center; gap:6px; }
 .eos-filter-pill:hover { border-color:var(--accent); color:var(--text); }
 .eos-filter-pill.active { background:var(--accent); color: var(--accent-ink); border-color:var(--accent); }
 .eos-filter-pill-count { opacity:0.7; font-weight:500; font-size:12px; }
@@ -966,7 +1055,7 @@ html.eos-redact #eos-demo-banner {
 .eos-card-grid.filtering { opacity:0; transform:translateY(6px); }
 
 /* --- Interactive Card --- */
-.eos-icard { background:var(--bg-card); border:1px solid var(--border); border-radius:var(--radius-lg, 14px); padding:20px; cursor:pointer; transition:transform 0.25s ease, border-color 0.25s ease, box-shadow 0.25s ease; animation:cardIn 0.35s ease both; }
+.eos-icard { background:var(--bg-card); border:1px solid var(--border); border-radius:var(--radius-lg, 14px); padding:20px; cursor:pointer; transition:transform 0.25s ease, border-color 0.25s ease, box-shadow 0.25s ease; animation:cardIn .3s ease both; }
 .eos-icard:hover { transform:translateY(-3px); border-color:var(--card-accent, var(--accent)); box-shadow:0 8px 24px rgba(0,0,0,0.15), 0 0 0 1px var(--card-accent, var(--accent)); }
 .eos-icard-meta { display:flex; align-items:center; justify-content:space-between; margin-bottom:10px; }
 .eos-icard-badge { font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:1px; padding:3px 10px; border-radius:4px; font-family:var(--mono, monospace); }
@@ -977,7 +1066,7 @@ html.eos-redact #eos-demo-banner {
 .eos-icard-tag { font-size:11px; padding:2px 8px; border-radius:4px; background:var(--bg-surface, rgba(255,255,255,0.05)); color:var(--text-muted); font-family:var(--mono, monospace); }
 
 /* --- Slide Panel (full-height detail view) --- */
-.eos-slide-panel { position:fixed; inset:0; z-index:200; transform:translateY(100%); transition:transform 0.35s cubic-bezier(0.4,0,0.2,1); pointer-events:none; }
+.eos-slide-panel { position:fixed; inset:0; z-index:200; transform:translateY(100%); transition:transform .3s cubic-bezier(0.4,0,0.2,1); pointer-events:none; }
 .eos-slide-panel.open { transform:translateY(0); pointer-events:auto; }
 .eos-slide-panel-backdrop { position:absolute; inset:0; background:rgba(0,0,0,0.5); cursor:pointer; -webkit-tap-highlight-color:transparent; }
 .eos-slide-panel-sheet { position:absolute; top:48px; left:0; right:0; bottom:0; background:var(--bg, #1a1d23); border-radius:20px 20px 0 0; overflow-y:auto; }
@@ -1012,7 +1101,7 @@ html.eos-redact #eos-demo-banner {
 .eos-scroll-nav-links a:hover,.eos-scroll-nav-links a.active { color:var(--text-heading); }
 
 /* --- Reveal Animation (IntersectionObserver) --- */
-.eos-reveal { opacity:0; transform:translateY(20px); transition:opacity 0.6s ease, transform 0.6s ease; }
+.eos-reveal { opacity:0; transform:translateY(20px); transition:opacity .3s ease, transform .3s ease; }
 .eos-reveal.revealed { opacity:1; transform:none; }
 
 @media(max-width:768px) {
@@ -1057,13 +1146,23 @@ html.eos-redact #eos-demo-banner {
   cursor: pointer;
   transition: border-color 0.12s, background 0.12s;
   max-width: 260px;
+  /* max-width alone WRAPS a long provider+model instead of truncating it
+     (measured: dictionary pinned to openai-mini/gpt-5.4-mini rendered 260x43px
+     against a ~25px norm). The name/sub rules below carry the ellipsis.
+     Content-conditional, so short chains like claude-cli never showed it. */
+  white-space: nowrap;
 }
 .eos-model-pill:hover { border-color: var(--accent); }
 .eos-model-pill-icon { font-size: 11px; line-height: 1; }
-.eos-model-pill-name { font-family: 'IBM Plex Mono', monospace; }
-.eos-model-pill-sub  { color: var(--muted); font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; }
-.eos-model-pill-caret { color: var(--muted); font-size: 9px; margin-left: 2px; }
-.eos-model-pill-loading { color: var(--muted); cursor: default; }
+/* The provider name is the pill's identity, so it never shrinks — flexbox
+   shrinks every shrinkable child at once (weighting only changes the ratio),
+   so the only way to spend the subtitle first is to take the name out of the
+   shrink pool entirely. min-width:0 lets the subtitle shrink below its content
+   width; without it a flex child refuses to go under it and nothing ellipsises. */
+.eos-model-pill-name { font-family: 'IBM Plex Mono', monospace; flex-shrink: 0; }
+.eos-model-pill-sub  { color: var(--text-muted); font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.eos-model-pill-caret { color: var(--text-muted); font-size: 9px; margin-left: 2px; }
+.eos-model-pill-loading { color: var(--text-muted); cursor: default; }
 .eos-model-pill-free,
 .eos-model-pill-local { /* default look; no tint */ }
 .eos-model-pill-paid  {
@@ -1082,7 +1181,7 @@ html.eos-redact #eos-demo-banner {
   border-bottom: 1px solid var(--border);
   margin-bottom: 8px;
 }
-.eos-model-popover-source { font-size: 11px; color: var(--muted); }
+.eos-model-popover-source { font-size: 11px; color: var(--text-muted); }
 .eos-model-popover-body { display: flex; flex-direction: column; gap: 4px; padding: 0 4px; }
 .eos-model-row {
   display: flex; align-items: center; gap: 8px;
@@ -1104,9 +1203,12 @@ html.eos-redact #eos-demo-banner {
 .eos-model-row-unavail { opacity: 0.5; cursor: not-allowed; }
 .eos-model-row-icon  { font-size: 13px; width: 16px; text-align: center; }
 .eos-model-row-name  { font-family: 'IBM Plex Mono', monospace; font-weight: 500; }
-.eos-model-row-sub   { color: var(--muted); font-family: 'IBM Plex Mono', monospace; font-size: 11px; margin-left: auto; }
+.eos-model-row-sub   { color: var(--text-muted); font-family: 'IBM Plex Mono', monospace; font-size: 11px; margin-left: auto; }
 .eos-model-row-warn  { color: var(--danger, #ef4444); font-size: 10.5px; margin-left: auto; }
-.eos-model-row-clear { color: var(--muted); margin-top: 6px; border-style: dashed; }
+.eos-model-row-tag   { color: var(--accent); font-size: 10.5px; border: 1px solid currentColor; border-radius: 999px; padding: 0 6px; }
+.eos-model-row[disabled] { pointer-events: none; }
+.eos-model-pill-warn { color: var(--danger, #ef4444); font-size: 10.5px; }
+.eos-model-row-clear { color: var(--text-muted); margin-top: 6px; border-style: dashed; }
 .eos-model-row-clear:hover { color: var(--text); }
 
 /* --- FAB pill — shared chrome for floating action chips (capture, assistant,
@@ -1159,7 +1261,7 @@ html.eos-redact #eos-demo-banner {
     border: 1px solid var(--accent); background: var(--bg);
     color: var(--accent);
     font-size: 12px; font-family: inherit; cursor: pointer;
-    transition: all 0.15s;
+    transition:background 0.15s, color 0.15s, border-color 0.15s, box-shadow 0.15s, transform 0.15s;
 }
 .eos-pin-btn:hover { background: color-mix(in srgb, var(--accent) 12%, transparent); }
 .eos-pin-btn:disabled { cursor: default; opacity: 0.7; }
@@ -1282,14 +1384,22 @@ html.eos-redact #eos-demo-banner {
     font-size: 0.76rem; font-weight: 600; letter-spacing: 0.02em;
     white-space: nowrap;
 }
-.eos-pill-blue    { background: rgba(100,149,237,0.15); color: #6495ed; }
-.eos-pill-amber   { background: rgba(255,191,0,0.15);   color: #ffbf00; }
-.eos-pill-green   { background: rgba(80,200,120,0.15);  color: #50c878; }
-.eos-pill-emerald { background: rgba(52,211,153,0.15);  color: var(--success); }
-.eos-pill-red     { background: rgba(220,80,80,0.15);   color: #dc5050; }
-.eos-pill-purple  { background: rgba(168,85,247,0.15);  color: #a855f7; }
-.eos-pill-orange  { background: rgba(251,146,60,0.15);  color: #fb923c; }
-.eos-pill-gray    { background: rgba(160,160,180,0.12); color: #a0a0b4; }
+/* A category palette (§4.1: data names, not state names). Each pill sets one
+   colour `--pc` and derives tint and text from it, so hue and text always
+   agree and every key stays distinguishable from every other — emerald and
+   orange are mixes, not aliases. Fixed brights were ~1.6:1 on the light
+   themes (the 2026-07-11 theme-invariant-palette defect, inside the bundle). */
+.eos-pill-blue, .eos-pill-amber, .eos-pill-green, .eos-pill-emerald, .eos-pill-red,
+.eos-pill-purple, .eos-pill-orange, .eos-pill-gray {
+    background: color-mix(in srgb, var(--pc) 15%, transparent); color: var(--pc); }
+.eos-pill-blue    { --pc: var(--blue); }
+.eos-pill-amber   { --pc: var(--amber); }
+.eos-pill-green   { --pc: var(--green); }
+.eos-pill-emerald { --pc: color-mix(in srgb, var(--green) 65%, var(--blue)); }
+.eos-pill-red     { --pc: var(--red); }
+.eos-pill-purple  { --pc: var(--purple); }
+.eos-pill-orange  { --pc: color-mix(in srgb, var(--amber) 60%, var(--red)); }
+.eos-pill-gray    { --pc: var(--text-muted); }
 
 /* ===== View switcher (table / kanban / timeline / calendar / chart) ===== */
 .eos-view-tabs {
@@ -1571,6 +1681,18 @@ html.eos-redact #eos-demo-banner {
 .eos-method-picker-select:focus { outline: none; border-color: var(--accent); }
 .eos-method-picker-refs { font-size: 11px; color: var(--text-muted);
     font-family: var(--mono); }
+/* A reference is a KB wikilink, rendered as a link into /kb/ by
+   EOS_UI.refLinks. `color: inherit` keeps it in the muted meta tone — a
+   default browser link here is both off-palette and a contrast risk on the
+   dark themes — and the dotted rule carries the affordance rather than colour.
+   Deliberate deviation, recorded rather than silent: FRONTEND-DESIGN-LANGUAGE
+   §1/§4 make accent the link colour, and this renders muted, reaching accent
+   only on hover. Justified by the strip being an 11px mono meta line, not body
+   copy; measured muted/card contrast 3.75 (check-contrast, 0 FAIL). */
+.eos-method-picker-refs a, .eos-conf-refs a { color: inherit;
+    text-decoration: none; border-bottom: 1px dotted var(--border); }
+.eos-method-picker-refs a:hover, .eos-conf-refs a:hover { color: var(--accent);
+    border-bottom-color: var(--accent); }
 .eos-method-picker-error { font-size: 12px; color: var(--danger);
     font-style: italic; }
 
@@ -1597,8 +1719,8 @@ html.eos-redact #eos-demo-banner {
 .eos-conf-case-label { color:var(--text-secondary); }
 .eos-conf-refs { font-size:11px; font-family:var(--mono); color:var(--text-muted); }
 .eos-conf-badge { font-size:11px; font-weight:700; border-radius:6px; padding:1px 7px; }
-.eos-conf-badge.ok { color:#16a34a;
-    background:color-mix(in srgb,#16a34a 14%,transparent); }
+.eos-conf-badge.ok { color:var(--success);
+    background:color-mix(in srgb,var(--success) 14%,transparent); }
 .eos-conf-badge.bad { color:var(--danger);
     background:color-mix(in srgb,var(--danger) 14%,transparent); }
 .eos-conf-diffs { width:100%; border-collapse:collapse; margin-top:6px;
@@ -1606,7 +1728,7 @@ html.eos-redact #eos-demo-banner {
 .eos-conf-diffs th { text-align:left; color:var(--text-muted); font-weight:600;
     padding:2px 8px 2px 0; }
 .eos-conf-diffs td { padding:2px 8px 2px 0; color:var(--text-secondary); }
-.eos-conf-diffs tr.ok td:first-child { color:#16a34a; }
+.eos-conf-diffs tr.ok td:first-child { color:var(--success); }
 .eos-conf-diffs tr.bad td { color:var(--danger); }
 
 /* ── Installation / config chip strip ──────────────────────────────────
@@ -1886,16 +2008,16 @@ html.eos-redact #eos-demo-banner {
 .eos-diff .dl { padding: 0 8px; white-space: pre-wrap; word-break: break-all; }
 .eos-diff .d-add { background: rgba(34,197,94,.14); color: var(--success); }
 .eos-diff .d-del { background: rgba(239,68,68,.14); color: var(--danger); }
-.eos-diff .d-ctx { color: var(--muted); }
+.eos-diff .d-ctx { color: var(--text-muted); }
 .eos-diff .d-hunk { background: rgba(59,130,246,.08); color: var(--accent); }
 
 /* eos-compose.js — draft-a-message modal */
 .eos-compose-row { display: flex; gap: 12px; }
 .eos-compose-row .eos-form-group { flex: 1; }
-.eos-compose-hint { font-size: 12px; color: var(--muted); margin-top: 4px; }
-.eos-compose-dim { font-size: 12px; color: var(--muted); font-weight: 400; }
+.eos-compose-hint { font-size: 12px; color: var(--text-muted); margin-top: 4px; }
+.eos-compose-dim { font-size: 12px; color: var(--text-muted); font-weight: 400; }
 .eos-compose-result { margin-top: 8px; border-top: 1px solid var(--border); padding-top: 12px; }
-.eos-compose-why { font-size: 13px; color: var(--muted); margin: 6px 0; padding: 8px 10px;
+.eos-compose-why { font-size: 13px; color: var(--text-muted); margin: 6px 0; padding: 8px 10px;
   background: var(--bg-surface); border-radius: 8px; }
 .eos-compose-variant { margin: 8px 0; }
 .eos-compose-variant-body { font-size: 13px; color: var(--text); white-space: pre-wrap;
@@ -1932,8 +2054,8 @@ html.eos-redact #eos-demo-banner {
 .eos-diff { font: 12px/1.5 ui-monospace, "IBM Plex Mono", monospace;
   border: 1px solid var(--border, #2a2f3a); border-radius: 8px; overflow: auto; max-height: 50vh; }
 .eos-diff > div { padding: 0 8px; white-space: pre-wrap; word-break: break-word; }
-.eos-diff-add  { background: rgba(52,199,89,.14); color: #2e7d32; }
-.eos-diff-del  { background: rgba(255,107,107,.14); color: #b71c1c; }
+.eos-diff-add  { background: color-mix(in srgb, var(--success) 14%, transparent); color: var(--success); }
+.eos-diff-del  { background: color-mix(in srgb, var(--danger) 14%, transparent);  color: var(--danger); }
 .eos-diff-hunk { background: rgba(127,127,127,.10); color: var(--muted, #8a97a7); }
 .eos-diff-ctx  { color: var(--text, #e6edf3); }
 .eos-diff-empty { color: var(--muted, #8a97a7); font-size: 13px; padding: 8px; }

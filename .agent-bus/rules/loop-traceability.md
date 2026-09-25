@@ -89,6 +89,14 @@ through a **planning decision**, never a pretended fix:
   (printed, never auto-written).
 - Receipts project a dispositioned close as `closed-<disposition>` — never
   `verified`, never `failed`.
+- The autonomous **drain skips `kind: missing` at selection**
+  (`feature_gaps_skipped` in the drain summary), for the same reason it skips
+  `ui-walk`: handing a gap to claude-cli asks it to design an absent
+  capability unattended, then auto-reverts whatever it built when the persona
+  scenario cannot verify something that was never specified. Only a human
+  decides `planned / deferred / declined / shipped`. This was left implicit
+  until 2026-08-16, when scheduling the drain turned it from a hazard a
+  watching operator would catch into a nightly one.
 
 ## Verification for ui-walk-sourced fixes — manual attestation
 

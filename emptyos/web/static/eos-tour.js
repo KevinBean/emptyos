@@ -29,6 +29,12 @@
         try { localStorage.removeItem(STORAGE_KEY); } catch (e) {}
     }
 
+    function genRunId() {
+        // Client-generated so the server can bucket step events into one run
+        // (see apps/tour/app.py /api/analytics) without any server session.
+        return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+    }
+
     async function fetchSteps() {
         var r = await fetch('/tour/api/steps');
         if (!r.ok) throw new Error('tour/api/steps ' + r.status);
@@ -42,24 +48,24 @@
         catch (e) { return route.split('?')[0]; }
     }
 
-    async function showStep(steps, index) {
+    async function showStep(steps, index, runId) {
         if (index < 0 || index >= steps.length) {
-            return finish();
+            return finish(runId);
         }
         var step = steps[index];
         var stepPath = pathFromRoute(step.route);
         // If we're not on the right page, navigate there. The next page load
         // will resume on this step (loadLocal returns {index, ...}).
         if (location.pathname !== stepPath) {
-            saveLocal({active: true, index: index});
+            saveLocal({active: true, index: index, run_id: runId});
             location.href = step.route;
             return;
         }
-        saveLocal({active: true, index: index});
-        // Tell the server (best-effort) for cross-device resume.
+        saveLocal({active: true, index: index, run_id: runId});
+        // Tell the server (best-effort) for cross-device resume + analytics.
         fetch('/tour/api/state', {
             method: 'POST', headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({last_step: step.id}),
+            body: JSON.stringify({last_step: step.id, run_id: runId}),
         }).catch(function() {});
 
         var label = (index + 1) + ' / ' + steps.length;
@@ -67,9 +73,9 @@
             stepLabel: label,
             title: step.title,
             body: step.body,
-            onSkip: function() { dismiss(spot, false); },
-            onPrev: index > 0 ? function() { spot.close(); showStep(steps, index - 1); } : null,
-            onNext: function() { spot.close(); showStep(steps, index + 1); },
+            onSkip: function() { dismiss(spot, false, runId); },
+            onPrev: index > 0 ? function() { spot.close(); showStep(steps, index - 1, runId); } : null,
+            onNext: function() { spot.close(); showStep(steps, index + 1, runId); },
             nextLabel: index === steps.length - 1 ? 'Finish' : 'Next →',
         });
     }
@@ -79,23 +85,23 @@
         try { steps = await fetchSteps(); }
         catch (e) { console.warn('[tour] could not load steps:', e); return; }
         if (!steps.length) return;
-        showStep(steps, 0);
+        showStep(steps, 0, genRunId());
     }
 
-    async function dismiss(spot, completed) {
+    async function dismiss(spot, completed, runId) {
         clearLocal();
         if (spot && spot.close) spot.close();
         try {
             await fetch('/tour/api/dismiss', {
                 method: 'POST', headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({completed: !!completed}),
+                body: JSON.stringify({completed: !!completed, run_id: runId}),
             });
         } catch (e) {}
     }
 
-    function finish() {
+    function finish(runId) {
         // Last step done — clear local + mark completed server-side.
-        dismiss(null, true);
+        dismiss(null, true, runId);
     }
 
     async function maybeMount() {
@@ -107,7 +113,7 @@
         if (!steps.length) { clearLocal(); return; }
         // Clamp index in case steps changed between sessions.
         var idx = Math.max(0, Math.min(local.index || 0, steps.length - 1));
-        showStep(steps, idx);
+        showStep(steps, idx, local.run_id || genRunId());
     }
 
     // Public API

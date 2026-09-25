@@ -1,0 +1,4 @@
+
+
+- **Scope discipline — produce ONLY the artifact that was asked for.** No extra findings reports, matrix entries, renames, summary docs, or "while I was in there" side-artifacts. If an extra artifact looks genuinely valuable, ask in **one line** first and wait. This is not a licence to under-deliver: finish the *whole* requested scope (a feature request still implies the full loop, § EmptyOS Workflow); it forbids widening, not completing.
+- **Facts carry a source or a stop.** Any claim about a person, a company, or repo/vault state you did not read **this session** gets an inline tag: `[verified: <path or URL>]` or `[unverified — guess]`. Never assert a roster, team structure, headcount, or a named person's role from memory. **An unverified claim is a question, not a premise** — do not reason on top of it, do not let it shape a recommendation; surface it and ask. A confident wrong claim is worse than an admitted gap.

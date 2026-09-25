@@ -441,7 +441,13 @@ class ReaderApp(ImportingMixin, BranchingMixin, ScenesMixin, ProductionMixin, Ba
                 domain="text",
                 temperature=0.4,
             )
-            return {"ok": True, "answer": answer, "context": {"book": title, "paragraph": paragraph_index}}
+            return {
+                "ok": True,
+                "answer": answer,
+                "context": {"book": title, "paragraph": paragraph_index},
+                # Auto-provenance chip on #send-result (data-ai-output).
+                "provenance": self.last_provenance(),
+            }
         except Exception as e:
             return {"error": str(e)}
 

@@ -1,3 +1,9 @@
+---
+paths:
+  - "emptyos/sdk/exporter.py"
+  - "emptyos/web/static/eos-export-shim.js"
+  - "apps/**"
+---
 # App conventions that make export painless
 
 These are **defaults**, not mandates. Apps written today work in exported bundles with zero changes thanks to the fetch interceptor in `emptyos/web/static/eos-export-shim.js`. But three small patterns — adopted from the start — make every app cheaper to export, cheaper to test, and honest about what it can and can't do offline.

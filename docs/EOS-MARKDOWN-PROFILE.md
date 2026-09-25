@@ -93,6 +93,17 @@ PDF output has additional presentation behavior for `%%comments%%`,
 `==highlight==`, task glyphs, mastheads, and themes. Those are output rules, not
 new vault storage rules; see `.claude/rules/pdf-markdown.md`.
 
+Diagram-language fenced code (` ```mermaid `, ` ```plantuml `, ` ```graphviz `/
+` ```dot `, ` ```vega `) is ordinary fenced code — part of the portable core
+above, storage-neutral, and readable as plain text with no plugin. EmptyOS's
+own renderers (`markdown_render.py`, `EOS_UI.renderMarkdown()`, the Artifacts
+`mermaid` fence) do not depend on any diagram plugin being installed in the
+vault viewer. A note author who wants these live-rendered *inside* the vault
+app itself (not just when read through EmptyOS) can install a vault-viewer
+plugin such as [docu.md](https://docu.md) (free/OSS, local-first, no EmptyOS
+integration point — see `.claude/rules/plugins.md` § "Obsidian is a dependency,
+not a given"); this is an optional viewer choice, never a storage requirement.
+
 ## Source documents and derived Markdown
 
 For a note written by a person, the Markdown file is the source of truth. For an

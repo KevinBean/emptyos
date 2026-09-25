@@ -136,7 +136,7 @@ async function loadSnaps(){
       (s.mtime ? new Date(s.mtime).toLocaleString() : '');
     return '<div class="vb-snap-row"><span class="name">'+esc(s.name)+'</span>'+
       '<span class="vb-snap-right"><span class="vb-sub">'+esc(meta)+'</span>'+
-      '<button class="eos-btn eos-btn-sm" onclick="restoreSnapshot('+JSON.stringify(s.name).replace(/"/g,'&quot;')+')">Restore</button></span></div>';
+      '<button class="eos-btn eos-btn-sm" onclick="restoreSnapshot('+EOS_UI.jsArg(s.name)+')">Restore</button></span></div>';
   }).join('');
 }
 

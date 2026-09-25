@@ -216,7 +216,7 @@ def _wait_for_syslog_entry(http_client, source: str, contains: str, *, timeout_s
 
 @pytest.mark.api
 class TestAuditMiddleware:
-    def test_bad_token_logs_audit_entry(self, http_client):
+    def test_bad_token_logs_audit_entry(self, http_client, require_auth_enforced):
         """Unauth request to a non-exempt path writes a syslog `auth` entry."""
         import httpx
         # Unique path so this test's entry doesn't collide with the 30s

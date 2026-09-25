@@ -1,3 +1,10 @@
+---
+paths:
+  - "emptyos/sdk/pipeline.py"
+  - "emptyos/sdk/run_registry.py"
+  - "emptyos/sdk/run_budget.py"
+  - "apps/**"
+---
 # Staged Pipeline Rule — resumable, previewable, provider-swappable generation
 
 Long multi-stage generation (podcast, music video, future video/report
@@ -162,6 +169,10 @@ await ctx.app.speak(text, prefer_provider=["kokoro", "openai-tts"])  # TTS chain
 await ctx.app.think(prompt, domain="text")                           # LLM chain
 await ctx.app.footage("sunset over ocean")                           # stock-clip chain
 ```
+
+(`footage` is shown as the shape, not as wiring: the capability and its plugin are
+built but **no app consumes it yet** — verified 2026-08-28. The first staged pipeline
+that wants stock clips is its intended first consumer.)
 
 This is why "providers swappable per stage" needs no pipeline machinery — it's
 already how EmptyOS works (CLAUDE.md Dev Rule 1 + the consent gate, Rule 18).

@@ -14,10 +14,8 @@ language: instrumental
 bpm: 70
 duration: "3:53"
 date_created: 2026-04-25
-suno_url: "https://suno.com/song/be2c4df6-cf98-4a70-986d-bb60f488c664"
-suno_song_id: be2c4df6-cf98-4a70-986d-bb60f488c664
-suno_model: v5.5
-suno_created: 2026-04-25T11:54:00
+model_version: v5.5
+published_at: 2026-04-25T11:54:00
 license: "© 2026 3:30 Channel — All rights reserved"
 ---
 
@@ -57,7 +55,4 @@ Instrumental, Cinematic Trip-hop Intro, Dark Ambient, slow filtered sub-bass, di
 
 ## 版权证明 / Copyright proof
 
-![[01 · 登入 (Log In)-screenshot.png]]
-
-Suno publication: **April 25, 2026 at 11:54 AM** (v5.5).
-Source: https://suno.com/song/be2c4df6-cf98-4a70-986d-bb60f488c664
+Published: **April 25, 2026 at 11:54 AM** (v5.5).

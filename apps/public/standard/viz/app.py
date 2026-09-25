@@ -40,10 +40,13 @@ from pathlib import Path
 
 from emptyos.sdk import BaseApp, cli_command, ndjson_response, web_route
 
+from . import boards as _boards
 from . import editing as _editing
 from . import embeds as _embeds
 from . import examples as _examples
+from . import figures as _figures
 from . import generation as _generation
+from . import math_animation as _math_animation
 from . import refine as _refine
 from . import routes as _routes
 from . import streaming as _streaming
@@ -175,6 +178,11 @@ class VizApp(BaseApp):
     _record_dir        = _generation._record_dir
     _rel_html          = _generation._rel_html
     _rel_record        = _generation._rel_record
+    _versions_dir      = _generation._versions_dir
+    _version_ring_size = _generation._version_ring_size
+    _snapshot_version  = _generation._snapshot_version
+    list_versions      = _generation.list_versions
+    restore_version    = _generation.restore_version
     _system_for        = _generation._system_for
     _think_html        = _generation._think_html
     _check_size        = _generation._check_size
@@ -184,6 +192,27 @@ class VizApp(BaseApp):
     _persist           = _generation._persist
     _think_html_stream = _generation._think_html_stream
     generate           = _generation.generate
+    save_artifact      = _generation.save_artifact
+
+    # ── Precise math/explainer animation via the manim plugin
+    #    (extracted to math_animation.py — separate pipeline shape, NOT a
+    #    PRESETS entry; see the module docstring) ──
+    _math_animation_enabled     = _math_animation._math_animation_enabled
+    generate_math_animation     = _math_animation.generate_math_animation
+    api_generate_math_animation = _math_animation.api_generate_math_animation
+    cli_math_animation          = _math_animation.cli_math_animation
+
+    # ── Board preset (extracted to boards.py) ──
+    list_all               = _boards.list_all
+    board_presets          = _boards.board_presets
+
+    # ── Static figure export (extracted to figures.py) ──
+    _figure_enabled        = _figures._figure_enabled
+    _shape_supports_figure = _figures._shape_supports_figure
+    _parse_figure_target   = _figures._parse_figure_target
+    _rasterize_figure      = _figures._rasterize_figure
+    export_figure          = _figures.export_figure
+    api_figure             = _figures.api_figure
 
     # ── Element-anchored edit loop (extracted to editing.py;
     #    scoped-edit core lives in emptyos.sdk.html_element_edit) ──
@@ -207,7 +236,12 @@ class VizApp(BaseApp):
     api_list      = _routes.api_list
     api_get       = _routes.api_get
     api_html      = _routes.api_html
+    api_source    = _routes.api_source
+    _artifact_headers = _routes._artifact_headers
     api_delete    = _routes.api_delete
+    api_versions  = _routes.api_versions
+    api_version_html = _routes.api_version_html
+    api_restore   = _routes.api_restore
     api_export_mp4 = _routes.api_export_mp4
     api_video      = _routes.api_video
     artifact_path = _routes.artifact_path

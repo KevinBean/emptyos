@@ -52,3 +52,13 @@ route = "/system"
 spotlight = ".cap-card"
 title = "Nine capabilities, swappable providers"
 body = "Every app calls capabilities — <code>think / read / write / search / speak / listen / see / draw / animate</code> — never a specific provider. The chain falls through automatically: cloud LLM unavailable → local model → typed input. <strong>Human is the final fallback.</strong> Apps don't break when a provider goes away; they degrade."
+
+# AI Fluency tour arc, step 4/4 (Diligence) — see .claude/rules/rented-compute.md
+[[contributes.tour.step]]
+id = "system.consent"
+group = "core"
+priority = 470
+route = "/system"
+spotlight = "#consent-area"
+title = "Nothing leaves this machine without asking"
+body = "Any call to a provider that isn't your own hardware — OpenAI, Anthropic, a rented GPU — stops here first. Approve a provider once, or set the policy to <strong>never</strong> and block cloud calls outright. Your vault content is never sent to a cloud model unless a specific feature says so explicitly and you've said yes."

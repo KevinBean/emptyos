@@ -164,3 +164,130 @@ def now_iso() -> str:
 def new_artifact_id() -> str:
     # 8 hex chars — collision-resistant at one user's artifact-output scale.
     return secrets.token_hex(4)
+
+
+# Sentence-ish end of a brief's first clause. Deliberately not a full sentence
+# splitter — a brief's first period is a reliable-enough cut, and over-fitting
+# here would cost more than a slightly-long title.
+#
+# The one case worth encoding: a `.` between two digits is a decimal point, not
+# a sentence end. Engineering briefs are dense with them ("11/0.415 kV",
+# "R2.65 m", "0.6/1 kV"), and cutting there yields a title that looks truncated
+# mid-number — "utility incoming → 11/0" — which reads as a bug in the record
+# rather than a naming choice.
+_TITLE_CUT_RE = re.compile(r"(?<!\d)\.(?!\d)|[.](?=\s)|[!?\n]")
+# Stray quote left over from a nested-quoted YAML scalar: frontmatter parsing
+# strips one layer, so a brief authored as '…' inside "…" keeps an inner quote.
+_TITLE_EDGE_QUOTES = "\"'`“”‘’"
+
+_SVG_OPEN_RE = re.compile(r"<svg\b[^>]*>", re.IGNORECASE)
+_SVG_TOKEN_RE = re.compile(r"<svg\b|</svg\s*>", re.IGNORECASE)
+_STYLE_BLOCK_RE = re.compile(r"<style\b[^>]*>(.*?)</style\s*>", re.IGNORECASE | re.DOTALL)
+_SVG_NS = "http://www.w3.org/2000/svg"
+_XLINK_NS = "http://www.w3.org/1999/xlink"
+
+
+def _outermost_svg_span(html: str) -> tuple[int, int] | None:
+    """(start, end) of the outermost <svg>…</svg>, depth-aware. None if absent.
+
+    Depth-aware because an SVG may nest another <svg> (symbols, foreignObject
+    fallbacks); a non-greedy regex would stop at the first inner `</svg>` and
+    silently return a truncated, unclosed document.
+    """
+    first = _SVG_OPEN_RE.search(html)
+    if not first:
+        return None
+    depth = 0
+    for m in _SVG_TOKEN_RE.finditer(html, first.start()):
+        depth += 1 if m.group(0).lower().startswith("<svg") else -1
+        if depth == 0:
+            return first.start(), m.end()
+    return None  # unbalanced — refuse rather than emit a broken file
+
+
+def extract_svg(html: str, *, background: str | None = "var(--bg, #ffffff)") -> str | None:
+    """Lift a standalone, self-contained `.svg` document out of an artifact page.
+
+    Returns None when the page has no SVG, or when its tags are unbalanced.
+
+    Three things make this more than a substring grab. Each one, left undone,
+    produces a file that is *valid* and *wrong* — the failure is visual, so it
+    passes every structural check:
+
+    1. **`xmlns`.** An inline SVG in HTML needs no namespace (the HTML parser
+       implies it); a standalone `.svg` file that omits it does not render at
+       all. Generated artifacts never carry it.
+    2. **Document CSS.** Artifacts style SVG children from the page's `<style>`
+       block (`.cable{stroke:…}`), not with presentation attributes. Extracted
+       bare, every shape falls back to black-on-nothing. The page's styles are
+       inlined into the SVG root, where `:root` resolves to the `<svg>` element,
+       so custom properties and `prefers-color-scheme` blocks keep working.
+    3. **Background.** The page paints its canvas on `html,body`, which does not
+       come along. Without an explicit rect the figure is transparent, so a dark
+       palette lands invisibly on a dark note. Pass `background=None` to opt out
+       when the artwork already paints its own full-bleed canvas.
+    """
+    if not html:
+        return None
+    span = _outermost_svg_span(html)
+    if not span:
+        return None
+    start, end = span
+    svg = html[start:end]
+
+    open_m = _SVG_OPEN_RE.search(svg)
+    if not open_m:
+        return None
+    open_tag, inner = open_m.group(0), svg[open_m.end():-len("</svg>")]
+
+    if "xmlns=" not in open_tag:
+        open_tag = f'{open_tag[:-1]} xmlns="{_SVG_NS}">'
+    if ("xlink:" in svg or "xlink:" in open_tag) and "xmlns:xlink=" not in open_tag:
+        open_tag = f'{open_tag[:-1]} xmlns:xlink="{_XLINK_NS}">'
+
+    # Styles from the page OUTSIDE the svg (an svg-internal <style> is already
+    # in `inner` and must not be duplicated).
+    outside = html[:start] + html[end:]
+    css = "\n".join(b.strip() for b in _STYLE_BLOCK_RE.findall(outside) if b.strip())
+
+    parts = [open_tag]
+    if css:
+        parts.append(f"<style>\n{css}\n</style>")
+    if background:
+        parts.append(f'<rect width="100%" height="100%" fill="{background}"/>')
+    parts.append(inner)
+    parts.append("</svg>")
+    return "\n".join(parts)
+
+
+def artifact_title(prompt: str, *, fallback: str = "", limit: int = 72) -> str:
+    """A short human label for a generated artifact, derived from its brief.
+
+    Deterministic and free — no model call. It runs on every generation, so an
+    LLM round-trip here would tax the hot path to name something the user can
+    already read off their own prompt.
+
+    Takes the brief's first clause, collapses whitespace, and truncates on a
+    word boundary. Returns ``fallback`` when the prompt yields nothing usable,
+    so a caller can pass e.g. ``f"Viz artifact {rid}"`` and never get "".
+    """
+    raw = (prompt or "").strip().lstrip(_TITLE_EDGE_QUOTES).strip()
+    if not raw:
+        return fallback
+    # Cut BEFORE collapsing whitespace — a newline is a real boundary. Briefs
+    # routinely put the subject on line 1 ("Create a slide deck titled: X\n
+    # Brief: …"); collapsing first would make the `\n` cut point dead and the
+    # title a run-on truncated mid-sentence.
+    head = " ".join((_TITLE_CUT_RE.split(raw, 1)[0] or "").split())
+    if not head:
+        head = " ".join(raw.split())
+    if len(head) > limit:
+        # Cut at the last space inside the budget so we don't split a word;
+        # a single long token with no space falls back to a hard slice.
+        clipped = head[:limit]
+        space = clipped.rfind(" ")
+        head = (clipped[:space] if space > limit // 2 else clipped).rstrip(" ,;:-") + "…"
+    # Trailing punctuation left by the cut. `…` is not in the set — it is the
+    # truncation marker and must survive.
+    head = head.strip().rstrip(_TITLE_EDGE_QUOTES).rstrip(" ,;:-.").strip()
+    return head or fallback

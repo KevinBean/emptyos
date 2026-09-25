@@ -197,11 +197,15 @@ export function svg(tag, attrs, children) {
 
 // Projector world→pixel for a bbox into (w×h) with padding. flipY for plan (world
 // +y up → screen down); no flip for depth sections (depth increases downward).
+// noCenter skips the letterbox centering offset (pad-only origin) for callers
+// whose bbox already carries its own margin — e.g. substation views, which pad
+// their bounds themselves rather than centering within the pane.
 export function makeProjector(bbox, w, h, pad, opts) {
   const o = opts || {};
   const bw = Math.max(1e-6, bbox.maxx - bbox.minx), bh = Math.max(1e-6, bbox.maxy - bbox.miny);
   const s = Math.min((w - 2 * pad) / bw, (h - 2 * pad) / bh) * (o.scaleMul || 1);
-  const ox = pad + ((w - 2 * pad) - bw * s) / 2, oy = pad + ((h - 2 * pad) - bh * s) / 2;
+  const ox = o.noCenter ? pad : pad + ((w - 2 * pad) - bw * s) / 2;
+  const oy = o.noCenter ? pad : pad + ((h - 2 * pad) - bh * s) / 2;
   const project = (x, y) => {
     const px = ox + (x - bbox.minx) * s;
     const py = o.flipY ? (h - (oy + (y - bbox.miny) * s)) : (oy + (y - bbox.miny) * s);

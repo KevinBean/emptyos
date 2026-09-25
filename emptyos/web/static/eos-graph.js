@@ -17,6 +17,18 @@
  *   EOS_GRAPH.wireZoom(svg);                  // wheel-zoom + drag-pan (idempotent)
  *   EOS_GRAPH.zoomBy(svg, 1.2);  EOS_GRAPH.fit(svg);
  *
+ * Editable mode (drag-to-reposition / click-to-connect / add / delete):
+ *   EOS_GRAPH.render(svg, graph, {}, {editable: true, onChange: fn});
+ *   EOS_GRAPH.wireZoom(svg);                  // pan/zoom keep working alongside
+ *   EOS_GRAPH.addNode(svg, {label:'Step', kind:'verb', ref:'task.add'});
+ *   EOS_GRAPH.addEdge(svg, fromId, toId, {label:'→'});
+ *   EOS_GRAPH.removeNode(svg, id);  EOS_GRAPH.removeEdge(svg, fromId, transIndex);
+ * `onChange(graph)` fires after every mutation (drag release, connect, add,
+ * delete) — the caller owns persisting it (e.g. POST to `/api/defs`).
+ * A node's data.action is opaque here — the caller decides what an "add node"
+ * click actually places (a verb ref, a human-decision node, an end node);
+ * this file only knows position/edges/render, never verb semantics.
+ *
  * Network graph usage:
  *   EOS_GRAPH.renderNetwork('#mount', {
  *     center: 'subject',
@@ -62,7 +74,7 @@
     state = state || {};
     ensureDefs(svg);
     Array.prototype.slice.call(svg.children).forEach(function (c) { if (c.tagName !== 'defs') svg.removeChild(c); });
-    svg._eosGraph = graph; svg._eosCfg = cfg;
+    svg._eosGraph = graph; svg._eosCfg = cfg; svg._eosState = state;
 
     var byId = {}; (graph.nodes || []).forEach(function (n) { byId[n.id] = n; });
     var current = state.current;
@@ -80,10 +92,12 @@
     var arrow = svg.querySelector('#eos-graph-arrow path'); if (arrow) arrow.setAttribute('fill', C.muted);
 
     var P = svgEl('g', { class: 'eos-graph-view' });
+    var editable = !!cfg.editable;
+    var connecting = editable ? (svg._eosConnectFrom || null) : null;
     // edges
     (graph.nodes || []).forEach(function (n) {
       var p = pos(n, cfg);
-      (n.transitions || []).forEach(function (t) {
+      (n.transitions || []).forEach(function (t, ti) {
         var tgt = byId[t.to]; if (!tgt) return;
         var q = pos(tgt, cfg);
         var x1 = p.x + cfg.NW, y1 = p.y + cfg.NH / 2, x2 = q.x, y2 = q.y + cfg.NH / 2;
@@ -93,8 +107,18 @@
           stroke: C.muted, 'stroke-width': 1.4, fill: 'none',
           'stroke-dasharray': t.kind === 'auto' ? '4,3' : '', 'marker-end': 'url(#eos-graph-arrow)', opacity: .6
         }));
+        var mx = (x1 + x2) / 2, my = (y1 + y2) / 2;
         if (t.label && t.label !== '→') {
-          P.appendChild(svgText((x1 + x2) / 2, (y1 + y2) / 2 - 3, t.label, { fill: C.muted, 'font-size': 10 }));
+          P.appendChild(svgText(mx, my - 3, t.label, { fill: C.muted, 'font-size': 10 }));
+        }
+        if (editable) {
+          var eg = svgEl('g', {
+            class: 'eos-graph-del-edge', style: 'cursor:pointer',
+            'data-eos-del-from': n.id, 'data-eos-del-idx': String(ti)
+          });
+          eg.appendChild(svgEl('circle', { cx: mx, cy: my, r: 7, fill: C.surface, stroke: C.fail, 'stroke-width': 1.2 }));
+          eg.appendChild(svgText(mx, my + 3, '×', { fill: C.fail, 'font-size': 10 }));
+          P.appendChild(eg);
         }
       });
     });
@@ -108,13 +132,24 @@
         var fail = (n.data && n.data.fail) || FAIL_ENDS.indexOf(n.id) >= 0;
         stroke = fail ? C.fail : C.ok;
       }
-      var g = svgEl('g', {});
-      g.appendChild(svgEl('rect', { x: p.x, y: p.y, width: cfg.NW, height: cfg.NH, rx: 8, fill: fill, stroke: stroke, 'stroke-width': (n.id === current ? 2.5 : 1.4) }));
+      var g = svgEl('g', editable ? { 'data-eos-node': n.id, style: 'cursor:grab' } : {});
+      var strokeW = (n.id === current ? 2.5 : (n.id === connecting ? 2.5 : 1.4));
+      if (n.id === connecting) stroke = C.accent;
+      g.appendChild(svgEl('rect', { x: p.x, y: p.y, width: cfg.NW, height: cfg.NH, rx: 8, fill: fill, stroke: stroke, 'stroke-width': strokeW }));
       g.appendChild(svgText(p.x + cfg.NW / 2, p.y + cfg.NH / 2 + 4, (n.data && n.data.label) || n.id, { fill: tc, 'font-size': 11 }));
       P.appendChild(g);
+      if (editable) {
+        var dg = svgEl('g', {
+          class: 'eos-graph-del-node', style: 'cursor:pointer', 'data-eos-del-node': n.id
+        });
+        dg.appendChild(svgEl('circle', { cx: p.x + cfg.NW - 2, cy: p.y - 2, r: 7, fill: C.surface, stroke: C.fail, 'stroke-width': 1.2 }));
+        dg.appendChild(svgText(p.x + cfg.NW - 2, p.y + 1, '×', { fill: C.fail, 'font-size': 10 }));
+        P.appendChild(dg);
+      }
     });
     svg.appendChild(P);
     applyZoom(svg);
+    if (editable) wireEditing(svg);
   }
 
   // ── pan / zoom (state stashed on the <svg>) ──
@@ -144,6 +179,135 @@
     svg.addEventListener('pointerdown', function (e) { drag = true; last = pt(svg, e); svg.style.cursor = 'grabbing'; svg.setPointerCapture(e.pointerId); });
     svg.addEventListener('pointermove', function (e) { if (!drag) return; var z = zstate(svg), p = pt(svg, e); z.tx += p.x - last.x; z.ty += p.y - last.y; last = p; applyZoom(svg); });
     svg.addEventListener('pointerup', function (e) { drag = false; svg.style.cursor = 'grab'; try { svg.releasePointerCapture(e.pointerId); } catch (_) {} });
+  }
+
+  // ── editable mode: drag-to-reposition / click-to-connect / delete ──
+  // Registered on the CAPTURE phase so a node/delete-glyph hit is claimed
+  // before wireZoom's own (bubble-phase) pan/zoom listener on the same <svg>
+  // sees it — no interference with an already-wired wireZoom(svg), and no
+  // dependency on call order between render()/wireZoom() in the caller.
+  function gridPos(svg, p, cfg) { return { x: (p.x - cfg.OX) / cfg.GX, y: (p.y - cfg.OY) / cfg.GY }; }
+  function snap4(v) { return Math.round(v * 4) / 4; }
+
+  function fireChange(svg) {
+    var cfg = svg._eosCfg;
+    if (cfg && typeof cfg.onChange === 'function') cfg.onChange(svg._eosGraph);
+  }
+
+  function rerender(svg) { render(svg, svg._eosGraph, svg._eosState || {}, svg._eosCfg); }
+
+  function wireEditing(svg) {
+    if (!svg || svg._eosEditWired) return; svg._eosEditWired = true;
+    var drag = null; // {id, p0, moved}
+
+    svg.addEventListener('pointerdown', function (e) {
+      var cfg = svg._eosCfg; if (!cfg || !cfg.editable) return;
+      var delNode = e.target.closest ? e.target.closest('[data-eos-del-node]') : null;
+      if (delNode) { e.stopPropagation(); removeNode(svg, delNode.getAttribute('data-eos-del-node')); return; }
+      var delEdge = e.target.closest ? e.target.closest('[data-eos-del-idx]') : null;
+      if (delEdge) {
+        e.stopPropagation();
+        removeEdge(svg, delEdge.getAttribute('data-eos-del-from'), parseInt(delEdge.getAttribute('data-eos-del-idx'), 10));
+        return;
+      }
+      var nodeEl = e.target.closest ? e.target.closest('[data-eos-node]') : null;
+      if (!nodeEl) return;
+      e.stopPropagation();
+      var graph = svg._eosGraph, id = nodeEl.getAttribute('data-eos-node');
+      var n = (graph.nodes || []).find(function (x) { return x.id === id; });
+      if (!n) return;
+      var p0 = pt(svg, e), np = pos(n, cfg);
+      // offset = where inside the node the pointer grabbed it, so the node
+      // doesn't jump to re-center under the cursor on the first move.
+      drag = { id: id, p0: p0, moved: 0, offset: { x: p0.x - np.x, y: p0.y - np.y } };
+      svg.setPointerCapture(e.pointerId);
+    }, true);
+
+    svg.addEventListener('pointermove', function (e) {
+      if (!drag) return;
+      var cfg = svg._eosCfg, graph = svg._eosGraph;
+      var n = (graph.nodes || []).find(function (x) { return x.id === drag.id; });
+      if (!n) { drag = null; return; }
+      var p = pt(svg, e);
+      drag.moved += Math.abs(p.x - drag.p0.x) + Math.abs(p.y - drag.p0.y);
+      drag.p0 = p;
+      var gp = gridPos(svg, { x: p.x - drag.offset.x, y: p.y - drag.offset.y }, cfg);
+      n.data = n.data || {};
+      n.data.pos = { x: snap4(gp.x), y: snap4(gp.y) };
+      rerender(svg);
+    }, true);
+
+    svg.addEventListener('pointerup', function (e) {
+      if (!drag) return;
+      var id = drag.id, moved = drag.moved;
+      try { svg.releasePointerCapture(e.pointerId); } catch (_) {}
+      drag = null;
+      if (moved < 4) {
+        // A click, not a drag: arm/complete a node-to-node connection.
+        var armed = svg._eosConnectFrom;
+        if (!armed) { svg._eosConnectFrom = id; rerender(svg); return; }
+        svg._eosConnectFrom = null;
+        if (armed === id) { rerender(svg); return; }
+        addEdge(svg, armed, id); // re-renders + fires onChange itself
+        return;
+      }
+      fireChange(svg);
+    }, true);
+
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape' && svg._eosConnectFrom) { svg._eosConnectFrom = null; rerender(svg); }
+    });
+  }
+
+  function addNode(svg, spec) {
+    var graph = svg && svg._eosGraph; if (!graph) return null;
+    spec = spec || {};
+    var id = spec.id || ('node-' + (Date.now ? Date.now() : Math.floor(Math.random() * 1e9)).toString(36));
+    var maxY = -1;
+    (graph.nodes || []).forEach(function (n) { var y = (n.data && n.data.pos && n.data.pos.y) || 0; if (y > maxY) maxY = y; });
+    var pos = spec.pos || { x: 0, y: maxY + 1 };
+    var node = {
+      id: id, kind: spec.kind === 'end' ? 'end' : 'content',
+      data: Object.assign({ label: spec.label || id, pos: pos, human: !!spec.human },
+                          spec.action ? { action: spec.action } : {}),
+      transitions: []
+    };
+    graph.nodes = graph.nodes || [];
+    graph.nodes.push(node);
+    rerender(svg); fireChange(svg);
+    return id;
+  }
+
+  function removeNode(svg, id) {
+    var graph = svg && svg._eosGraph; if (!graph) return false;
+    if (graph.start === id) return false; // refuse to orphan the entry point
+    graph.nodes = (graph.nodes || []).filter(function (n) { return n.id !== id; });
+    (graph.nodes || []).forEach(function (n) {
+      n.transitions = (n.transitions || []).filter(function (t) { return t.to !== id; });
+    });
+    if (svg._eosConnectFrom === id) svg._eosConnectFrom = null;
+    rerender(svg); fireChange(svg);
+    return true;
+  }
+
+  function addEdge(svg, fromId, toId, opts) {
+    var graph = svg && svg._eosGraph; if (!graph) return false;
+    var n = (graph.nodes || []).find(function (x) { return x.id === fromId; });
+    if (!n || fromId === toId) return false;
+    opts = opts || {};
+    n.transitions = n.transitions || [];
+    n.transitions.push({ to: toId, kind: opts.kind || 'choice', label: opts.label || '→' });
+    rerender(svg); fireChange(svg);
+    return true;
+  }
+
+  function removeEdge(svg, fromId, transIndex) {
+    var graph = svg && svg._eosGraph; if (!graph) return false;
+    var n = (graph.nodes || []).find(function (x) { return x.id === fromId; });
+    if (!n || !n.transitions || !n.transitions[transIndex]) return false;
+    n.transitions.splice(transIndex, 1);
+    rerender(svg); fireChange(svg);
+    return true;
   }
 
   // -- generic network graph -------------------------------------------------
@@ -478,6 +642,10 @@
     wireZoom: wireZoom,
     zoomBy: zoomBy,
     fit: fit,
+    addNode: addNode,
+    removeNode: removeNode,
+    addEdge: addEdge,
+    removeEdge: removeEdge,
     normaliseNetwork: normaliseNetwork,
     layoutNetwork: layoutNetwork,
     renderNetwork: renderNetwork

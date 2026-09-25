@@ -12,15 +12,46 @@ from __future__ import annotations
 import re
 from datetime import date as _date
 from datetime import datetime, timezone
+from pathlib import Path
 
-from emptyos.sdk import BaseApp, normalize_relative_date, web_route
-from emptyos.sdk.utils import path_segment_error, safe_path_segment
+from fastapi.responses import FileResponse
+
+from emptyos.sdk import BaseApp, normalize_relative_date, scheduled, web_route
+from emptyos.sdk.ics_parse import parse_ics
+from emptyos.sdk.utils import is_truthy, path_segment_error, read_upload_text, safe_path_segment, slugify
 from emptyos.sdk.vault_library import VaultLibrary
 
 from . import logic
 
 TAG = "countdown"
 FOLDER = f"30_Resources/EmptyOS/{TAG}"
+MAX_ICS_BYTES = 2 * 1024 * 1024
+MAX_ICS_EVENTS = 200  # a sane ceiling on one import
+
+# ── Cover image (countdown-flat-notes-no-photo) ─────────────────────────
+# No schema change — a "cover" is just the first image already embedded in
+# the note's own body, either an Obsidian ![[wikilink]] embed (dropped in by
+# drag-and-drop, the common case) or a plain markdown ![alt](path) image.
+# Raster formats only — deliberately no SVG: an SVG served inline at
+# image/svg+xml executes any embedded <script> if the cover route is ever
+# opened directly (a same-origin, authenticated navigation), not just when
+# used as a CSS background/<img> source. Raster bytes have no script model,
+# so excluding SVG removes the whole risk class rather than mitigating it.
+_COVER_EXT_RE = r"(?:png|jpe?g|gif|webp)"
+_COVER_WIKILINK_RE = re.compile(r"!\[\[([^\]|]+?\." + _COVER_EXT_RE + r")(?:\|[^\]]*)?\]\]", re.IGNORECASE)
+_COVER_MDLINK_RE = re.compile(r"!\[[^\]]*\]\(([^)\s]+\." + _COVER_EXT_RE + r")\)", re.IGNORECASE)
+_COVER_MIME = {
+    "png": "image/png", "jpg": "image/jpeg", "jpeg": "image/jpeg",
+    "gif": "image/gif", "webp": "image/webp",
+}
+
+
+def _first_cover_ref(body: str) -> str:
+    """First embedded-image reference in a note body, or "" if none."""
+    if not body:
+        return ""
+    m = _COVER_WIKILINK_RE.search(body) or _COVER_MDLINK_RE.search(body)
+    return m.group(1).strip() if m else ""
 
 
 class CountdownLibrary(VaultLibrary):
@@ -34,6 +65,7 @@ class CountdownLibrary(VaultLibrary):
         "color": str,
         "pinned": str,     # vault frontmatter is string-typed — "true"/"false"
         "archived": str,
+        "remind_days_before": str,  # "" = no reminder, else a non-negative int
         "created": str,
         "updated": str,
     }
@@ -42,12 +74,7 @@ class CountdownLibrary(VaultLibrary):
 
 
 def _slugify(title: str) -> str:
-    s = re.sub(r"[^a-z0-9]+", "-", (title or "").strip().lower()).strip("-")
-    return s or "event"
-
-
-def _truthy(v) -> bool:
-    return str(v).strip().lower() in ("1", "true", "yes", "on")
+    return slugify(title, max_len=None, fallback="event")
 
 
 def _coerce_field(key: str, val):
@@ -57,7 +84,7 @@ def _coerce_field(key: str, val):
     an edit-and-resave (which repopulates a <select> from the stored value)
     can never silently drift to whichever option happens to sort first."""
     if key in ("pinned", "archived"):
-        return "true" if _truthy(val) else "false"
+        return "true" if is_truthy(val) else "false"
     if key == "date":
         return str(val)[:10]
     if key == "repeat":
@@ -69,6 +96,15 @@ def _coerce_field(key: str, val):
     if key == "category":
         val = str(val or "other").strip().lower()
         return val if val in logic.CATEGORIES else "other"
+    if key == "remind_days_before":
+        val = str(val or "").strip()
+        if not val:
+            return ""
+        try:
+            n = int(val)
+        except ValueError:
+            return ""
+        return str(n) if n >= 0 else ""
     return val
 
 
@@ -85,11 +121,15 @@ def _resolve_filename(raw: str) -> tuple[str, dict | None]:
 
 
 class CountdownApp(BaseApp):
-    SETTABLE_FIELDS = {"title", "date", "repeat", "category", "icon", "color", "pinned", "archived"}
+    SETTABLE_FIELDS = {
+        "title", "date", "repeat", "category", "icon", "color", "pinned", "archived",
+        "remind_days_before",
+    }
 
     async def setup(self):
         await super().setup()
         self.events = CountdownLibrary(self)
+        self._cover_cache: dict[str, Path | None] = {}
 
     # ------------------------------------------------------------------
     # Core verbs
@@ -97,7 +137,7 @@ class CountdownApp(BaseApp):
 
     async def add(self, title: str = "", date: str = "", repeat: str = "none",
                   category: str = "other", icon: str = "", color: str = "accent",
-                  notes: str = "") -> dict:
+                  notes: str = "", remind_days_before: str = "") -> dict:
         """Create a new countdown event. Canonical verb — callable via
         call_app (agent / mcp) and the api_create route below."""
         title = (title or "").strip()
@@ -134,6 +174,7 @@ class CountdownApp(BaseApp):
             "color": color,
             "pinned": "false",
             "archived": "false",
+            "remind_days_before": _coerce_field("remind_days_before", remind_days_before),
             "created": now,
             "updated": now,
         }
@@ -141,15 +182,45 @@ class CountdownApp(BaseApp):
         await self.emit("countdown:created", {"file": filename, "title": title, "date": date})
         return {"ok": True, "file": filename, **fm}
 
+    def _resolve_cover_path(self, ref: str) -> Path | None:
+        """Resolve an embedded-image reference to a real file under the
+        vault. A path-shaped ref (contains a slash — the common markdown
+        ``![]()`` case) resolves directly and is containment-checked. A
+        bare filename (the common ``![[wikilink]]`` embed case — the
+        embed records no folder, the vault viewer resolves it by name) is
+        found via a one-time vault-wide search, cached for the life of this
+        app instance since a countdown roster is small and rarely changes."""
+        if not ref or not self.vault_root:
+            return None
+        vault_root = self.vault_root.resolve()
+        if "/" in ref or "\\" in ref:
+            candidate = (vault_root / ref.lstrip("/\\")).resolve()
+            try:
+                candidate.relative_to(vault_root)
+            except ValueError:
+                return None
+            return candidate if candidate.is_file() else None
+        if ref not in self._cover_cache:
+            self._cover_cache[ref] = next(vault_root.rglob(ref), None)
+        return self._cover_cache[ref]
+
     async def _resolved(self, item: dict) -> dict | None:
         st = logic.event_status(item.get("date", ""), item.get("repeat", "none"))
         if st.get("error"):
             return None
+        cover_ref = ""
+        rel = item.get("path") or ""
+        if rel and self.vault_root:
+            try:
+                cover_ref = _first_cover_ref((self.vault_root / rel).read_text(encoding="utf-8"))
+            except OSError:
+                cover_ref = ""
         return {
             **item,
             **st,
-            "pinned": _truthy(item.get("pinned")),
-            "archived": _truthy(item.get("archived")),
+            "pinned": is_truthy(item.get("pinned")),
+            "archived": is_truthy(item.get("archived")),
+            "has_cover": bool(cover_ref and self._resolve_cover_path(cover_ref)),
         }
 
     async def _all_events(self, include_archived: bool = False) -> list[dict]:
@@ -196,8 +267,96 @@ class CountdownApp(BaseApp):
             title=body.get("title") or "", date=body.get("date") or "",
             repeat=body.get("repeat") or "none", category=body.get("category") or "other",
             icon=body.get("icon") or "", color=body.get("color") or "accent",
-            notes=body.get("notes") or "",
+            notes=body.get("notes") or "", remind_days_before=body.get("remind_days_before") or "",
         )
+
+    # ── Calendar (.ics) import (countdown-no-calendar-import) ──────────
+    async def _existing_identity(self) -> set[tuple[str, str]]:
+        """(title-casefold, date) pairs already in the roster, for
+        duplicate flagging on import."""
+        out = set()
+        for item in self.events.list():
+            title = (item.get("title") or "").strip().casefold()
+            date = (item.get("date") or "").strip()[:10]
+            if title and date:
+                out.add((title, date))
+        return out
+
+    @web_route("POST", "/api/import-ics/preview")
+    async def api_import_ics_preview(self, request):
+        """Parse an .ics file into candidate countdown events (title, date)
+        and flag ones already in the roster. Writes nothing. No RRULE
+        expansion — each VEVENT becomes one one-off countdown, matching
+        the shared parser's scope (`emptyos.sdk.ics_parse`, also used by
+        `calendar`'s own subscription feature).
+        """
+        ics_text, err = await read_upload_text(request, max_bytes=MAX_ICS_BYTES, json_key="ics_content")
+        if err:
+            return {"error": err}
+        try:
+            events = parse_ics(ics_text, source="import")
+        except Exception as e:  # noqa: BLE001 — malformed file, not a 500
+            return {"error": f"could not parse .ics file: {e}"}
+        if not events:
+            return {"error": "no events found in file"}
+
+        warnings = []
+        if len(events) > MAX_ICS_EVENTS:
+            warnings.append(f"file has {len(events)} events — only the first {MAX_ICS_EVENTS} will be imported")
+            events = events[:MAX_ICS_EVENTS]
+
+        existing = await self._existing_identity()
+        rows = []
+        new_count = 0
+        for e in events:
+            title, date = e.get("title", ""), e.get("date", "")
+            duplicate = (title.casefold(), date) in existing
+            if not duplicate:
+                new_count += 1
+            rows.append({"title": title, "date": date, "duplicate": duplicate})
+
+        return {
+            "rows": rows,
+            "warnings": warnings,
+            "summary": {"total": len(rows), "new": new_count, "duplicate": len(rows) - new_count},
+        }
+
+    @web_route("POST", "/api/import-ics/confirm")
+    async def api_import_ics_confirm(self, request):
+        """Write the reviewed rows through the existing `add()` verb. Body:
+        {rows: [{title, date}]}. Re-checks duplicates against the current
+        roster, so a stale confirm can't double-import."""
+        body = await request.json()
+        rows = body.get("rows") or []
+        if not isinstance(rows, list) or not rows:
+            return {"error": "rows required"}
+        if len(rows) > MAX_ICS_EVENTS:
+            return {"error": "too many rows"}
+
+        existing = await self._existing_identity()
+        imported = 0
+        skipped = 0
+        seen: set[tuple[str, str]] = set()
+        for r in rows:
+            if not isinstance(r, dict):
+                skipped += 1
+                continue
+            title = str(r.get("title", "")).strip()
+            date = str(r.get("date", "")).strip()[:10]
+            if not title or not date:
+                skipped += 1
+                continue
+            key = (title.casefold(), date)
+            if key in existing or key in seen:
+                skipped += 1
+                continue
+            res = await self.add(title=title, date=date)
+            if res.get("error"):
+                skipped += 1
+                continue
+            seen.add(key)
+            imported += 1
+        return {"ok": True, "imported": imported, "skipped": skipped}
 
     @web_route("GET", "/api/events/{file}")
     async def api_get(self, request):
@@ -209,6 +368,23 @@ class CountdownApp(BaseApp):
             return {"error": "not found"}
         resolved = await self._resolved(detail)
         return resolved or {"error": "invalid date"}
+
+    @web_route("GET", "/api/events/{file}/cover")
+    async def api_cover(self, request):
+        filename, err = _resolve_filename(request.path_params.get("file", ""))
+        if err:
+            return err
+        detail = self.events.detail(filename)
+        if not detail:
+            return {"error": "not found"}
+        ref = _first_cover_ref(detail.get("body", ""))
+        full = self._resolve_cover_path(ref) if ref else None
+        if not full:
+            return {"error": "no cover image"}
+        mime = _COVER_MIME.get(full.suffix.lower().lstrip("."))
+        if not mime:
+            return {"error": "unsupported image type"}
+        return FileResponse(str(full), media_type=mime)
 
     @web_route("PUT", "/api/events/{file}")
     async def api_update(self, request):
@@ -251,6 +427,36 @@ class CountdownApp(BaseApp):
             "pinned": sum(1 for e in all_events if e["pinned"] and not e["archived"]),
             "archived": sum(1 for e in all_events if e["archived"]),
         }
+
+    # ------------------------------------------------------------------
+    # Pre-event reminders — routes through the shared proactive_notify gate
+    # (quiet-hours + daily-cap + dedup) rather than a bespoke push path.
+    # Found dark during the 2026-08 gap-analysis pass: every countdown app
+    # in the market leads with "notify me N days before"; this one only
+    # ever surfaced on-demand (open the page or glance at the hub tile).
+    # ------------------------------------------------------------------
+
+    @scheduled("0 8 * * *", id="countdown-reminders")
+    async def _check_reminders(self):
+        for item in await self._all_events(include_archived=False):
+            raw = (item.get("remind_days_before") or "").strip()
+            if not raw:
+                continue
+            try:
+                lead = int(raw)
+            except ValueError:
+                continue
+            days = item.get("days")
+            if days is None or days != lead:
+                continue
+            title = item.get("title", "this event")
+            when = "today" if days == 0 else f"in {days} day{'s' if days != 1 else ''}"
+            await self.proactive_notify(
+                "countdown",
+                f"{title} is {when}.",
+                dedup_key=f"countdown:{item.get('title')}:{item.get('target_date', '')}",
+                link={"text": "Open countdown", "href": "/countdown/"},
+            )
 
     # ------------------------------------------------------------------
     # Hub panel

@@ -356,7 +356,12 @@ export class CadViewport {
       if (!enabledFeat(f) || consumed.has(f.id)) return;
       let g; try { g = this._geomForRender(doc, f.id, map); } catch (e) { return; }
       if (!g) return;
-      const mat = new THREE.MeshStandardMaterial({ color: f.color || DEFAULT_COLOR, metalness: 0.1, roughness: 0.7 });
+      const opacity = f.opacity == null ? 1 : Math.max(0, Math.min(1, Number(f.opacity)));
+      const mat = new THREE.MeshStandardMaterial({
+        color: f.color || DEFAULT_COLOR, metalness: 0.1, roughness: 0.7,
+        opacity, transparent: opacity < 1, depthWrite: opacity >= 1,
+        wireframe: !!f.wireframe,
+      });
       const mesh = new THREE.Mesh(g, mat);
       const isBool = (f.op === 'union' || f.op === 'subtract' || f.op === 'intersect');
       if (!isBool || f.at || f.rotate) {
@@ -422,10 +427,21 @@ export class CadViewport {
   // Raycast the pointer to a world point: nearest geometry hit, else the Z=0 plane
   // (null when the ray misses the plane). Shared by hover-readout + measure pick.
   _pointerWorld(ev) {
+    return this.worldFromClient(ev.clientX, ev.clientY);
+  }
+
+  // Public: screen (client-space, same units as PointerEvent.clientX/Y) -> a
+  // world position — raycasts against the visible scene, falling back to the
+  // ground plane. The primitive any INPUT SOURCE needs to place the 3D cursor
+  // from a 2D point; mouse events use it via `_pointerWorld`, and it's the
+  // intended entry point for a non-pointer source (e.g. hand-tracking,
+  // eos-cad-hand-input.js) rather than reaching into `_pointerWorld`'s event
+  // shape or any other private member.
+  worldFromClient(clientX, clientY) {
     if (!this.renderer || !this.raycaster) return null;
     const r = this.renderer.domElement.getBoundingClientRect();
     if (!r.width || !r.height) return null;
-    const mouse = new THREE.Vector2(((ev.clientX - r.left) / r.width) * 2 - 1, -((ev.clientY - r.top) / r.height) * 2 + 1);
+    const mouse = new THREE.Vector2(((clientX - r.left) / r.width) * 2 - 1, -((clientY - r.top) / r.height) * 2 + 1);
     this.raycaster.setFromCamera(mouse, this.camera);
     const hits = this.group ? this.raycaster.intersectObjects(this.group.children, false) : [];
     if (hits.length) return hits[0].point.clone();

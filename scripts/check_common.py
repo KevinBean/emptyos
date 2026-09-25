@@ -20,6 +20,7 @@ Mirrors ``emptyos/cli/_common.py`` (shared envelope for the ``eos`` commands).
 from __future__ import annotations
 
 import importlib.util
+import sys
 from pathlib import Path
 from types import ModuleType
 
@@ -32,10 +33,24 @@ def load_by_path(name: str, rel: str) -> ModuleType:
     Used for leaf modules the scanners genuinely need (``emptyos/sdk/app_layout.py``,
     ``emptyos/sdk/release_tiers.py``). ``name`` must be unique per caller — it
     lands in ``sys.modules``.
+
+    Registered **before** execution, which is not optional and was not obvious:
+    ``@dataclass`` resolves its annotations through ``sys.modules[cls.__module__]``
+    while the module body is still running, so a module executed while absent
+    from it dies with ``AttributeError: 'NoneType' object has no attribute
+    '__dict__'`` raised from inside ``dataclasses`` — nowhere near the cause.
+    The bug was latent until 2026-08-13 only because all six callers happened to
+    load the same two dataclass-free modules. Popped again on failure so a
+    half-executed module cannot be picked up by the next import of that name.
     """
     spec = importlib.util.spec_from_file_location(name, REPO / rel)
     if spec is None or spec.loader is None:  # pragma: no cover — bad path is a bug
         raise ImportError(f"cannot load {rel} as {name!r}")
     mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
+    sys.modules[name] = mod
+    try:
+        spec.loader.exec_module(mod)
+    except BaseException:
+        sys.modules.pop(name, None)
+        raise
     return mod

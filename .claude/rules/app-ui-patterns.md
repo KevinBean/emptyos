@@ -1,6 +1,13 @@
+---
+paths:
+  - "apps/**/pages/**"
+  - "apps/**/manifest.toml"
+  - "emptyos/web/static/eos-components.*"
+---
+
 # App UI Patterns — Mandatory Shared Helpers
 
-Three patterns every app with the relevant surface MUST use. All live in `emptyos/web/static/eos-components.{css,js}`. Reference implementation: `apps/projects/`.
+Three patterns every app with the relevant surface MUST use. All live in `emptyos/web/static/eos-components.{css,js}`. Reference implementation: `apps/public/standard/projects/`.
 
 ## In-App Settings Panel (when app has `[provides.settings]`)
 
@@ -63,7 +70,7 @@ Pass `fields: [...]` instead **only when the manifest can't express them** — o
 // settings-panel-drift: ignore myapp.feature.thing.enabled
 ```
 
-**Per-entity config** (editing one project/record's metadata) is a *different* panel. Reuse the `.eos-settings-panel` class for visual consistency, build the body inline. See `apps/projects/pages/index.html` `openProjectSettings`.
+**Per-entity config** (editing one project/record's metadata) is a *different* panel. Reuse the `.eos-settings-panel` class for visual consistency, build the body inline. See `apps/public/standard/projects/pages/index.html` `openProjectSettings`.
 
 ## Deep-linking Detail Views (when app has `showDetail(id)`)
 
@@ -90,6 +97,20 @@ detail render (and its fetches) **twice per open**. Calling `set` from within yo
 show function → pass `{silent: true}`; using `set` as the click handler itself →
 plain `set(id)`. Legacy pages using the non-silent form inside `showDetail` still
 work (the re-entry self-terminates after one extra pass) — migrate on touch.
+
+**`hashRoute` owns the WHOLE hash, so it cannot express a sub-route.** `read()`
+takes everything after `#`, `set(id)` writes `#<encodeURIComponent(id)>`, and
+`clear()` removes the hash entirely. On a page whose hash already names a tab
+(studio's `#icons`), `clear()` strips the tab too and drops the user back to the
+default tab — and a composite id encodes its slash (`#icons%2Ftask`). So a
+tabbed page with a detail view still owes the *intent* of this section — a
+bookmarkable URL and a working Back button — but implements it against its own
+hash rather than through the helper. Reference: `apps/personal/studio/pages/icons.js`
+(`setIconHash` / `appIdFromHash` / `applyIconHash`, one entry point shared by
+boot, `hashchange` and `popstate`). Two things bite when hand-rolling it: the
+tab's own `replaceState` will erase the sub-route unless it preserves an
+existing `#tab/...`, and the open path must skip writing the hash when it was
+*called from* the hash, or Back pushes a duplicate entry.
 
 ## 4D Timeline Panel (when app has entity detail views with a history + a future)
 
@@ -170,4 +191,4 @@ The drawer is also callable directly — useful for graph node clicks, link prev
 EOS_UI.timeline4D('10_Projects/myproject/myproject.md', { title: 'Timeline' });
 ```
 
-Reference impls: `apps/projects/` (`project_path`), `apps/people/` (`person_path`), `apps/personal/jobs/` (`job_path`), `apps/vault-graph/` (node-click → drawer).
+Reference impls: `apps/public/standard/projects/` (`project_path`), `apps/public/standard/people/` (`person_path`), `apps/personal/jobs/` (`job_path`), `apps/public/standard/vault-graph/` (node-click → drawer).

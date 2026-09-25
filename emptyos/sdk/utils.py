@@ -2,11 +2,24 @@
 
 import json
 import math
+import numbers
 import re
 import uuid
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
+
+# Re-exported, not defined here. These lived in this module and in
+# `runtime/vault_index.py` as near-verbatim copies, and drifted three separate
+# ways before anyone compared them; the single implementation is top-level so
+# both the SDK and the runtime can reach it without an import cycle. Kept
+# exported from here because 184 call sites import them from `emptyos.sdk`.
+from emptyos.frontmatter import (  # noqa: F401
+    fm_end,
+    parse_frontmatter,
+    set_frontmatter_field,
+    strip_frontmatter,
+)
 
 
 def load_json(path: Path, default: Any) -> Any:
@@ -75,6 +88,20 @@ def json_safe(obj: Any) -> Any:
     return obj
 
 
+def contribution_id(contrib: dict) -> str:
+    """The id a `[[contributes.<target>.<slot>]]` entry resolves to.
+
+    One definition because a host that *filters* contributions by id must agree
+    exactly with the id it later *emits* them under. Hub carried two copies of
+    this expression and grew a third when single-panel refresh learned to narrow
+    the list before calling anything; a copy that drifted would silently match
+    nothing and report "not found" for a panel that plainly exists.
+
+    Mirrors the `_app_id` stamped by ``AppLoader.get_contributions``.
+    """
+    return contrib.get("id") or f"{contrib.get('_app_id')}:{contrib.get('method')}"
+
+
 def new_id(prefix: str, n: int = 8) -> str:
     """Generate a short opaque ID like ``"out-3a7c91f2"``.
 
@@ -83,6 +110,28 @@ def new_id(prefix: str, n: int = 8) -> str:
     enough entropy for collision avoidance within a single store.
     """
     return f"{prefix}-{uuid.uuid4().hex[:n]}"
+
+
+_TRUTHY_STRINGS = ("1", "true", "yes", "on")
+
+
+def is_truthy(value: Any) -> bool:
+    """Read a config value or a stored flag as on/off.
+
+    A string is on only when it says so ("1", "true", "yes", "on", any case),
+    so ``"false"`` — a TOML typo or an env override — reads as off rather than
+    as a non-empty string. A number (bool, int, float, Decimal, numpy
+    scalars) is on when non-zero, negatives included; NaN is off. Anything
+    else (None, a list, a dict, a date) is off.
+
+    Not for a switch whose OFF side exposes something: that reader must fail
+    closed and treat an unrecognised value as ON.
+    """
+    if isinstance(value, str):
+        return value.strip().lower() in _TRUTHY_STRINGS
+    if isinstance(value, numbers.Number):
+        return value == value and bool(value)      # NaN != NaN
+    return False
 
 
 # --- Task parsing constants ---
@@ -443,6 +492,25 @@ def parse_json_fence(text: str) -> dict:
 _HR_LINE_RE = re.compile(r"^\s*([-*_])(?:\s*\1){2,}\s*$")
 
 
+def parse_llm_svg(raw: str) -> str:
+    """Pull the outermost ``<svg>…</svg>`` out of an LLM reply, or "" if absent.
+
+    Sibling of `parse_llm_json` / `parse_json_fence`: models wrap the artifact in
+    fences and preamble, and the caller wants only the artifact. Spans the first
+    ``<svg`` to the last ``</svg>`` so nested elements survive.
+
+    NOT `sdk.html_artifact.extract_svg`, which is a different job: that one
+    lifts an SVG out of a rendered HTML page, inlining the page CSS the shapes
+    depend on and returning None when there is none. This one is a naive span
+    over a model reply and returns "".
+    """
+    text = str(raw or "")
+    lo, hi = text.find("<svg"), text.rfind("</svg>")
+    if lo < 0 or hi < lo:
+        return ""
+    return text[lo:hi + len("</svg>")].strip()
+
+
 def first_prose_line(text: str, *, allow_heading: bool = False) -> str:
     """First line of real prose in a markdown body, cleaned for human display.
 
@@ -522,79 +590,6 @@ def strip_markdown(text: str) -> str:
     return text.strip()
 
 
-def parse_frontmatter(content: str) -> dict:
-    """Parse YAML frontmatter from markdown content.
-
-    Extracts key-value pairs from the ``---`` delimited block at the top of a
-    markdown file.  Values are stripped of surrounding quotes.  Handles simple
-    YAML lists (``- item`` lines following a key with no inline value).
-    """
-    if not content.startswith("---"):
-        return {}
-    end = content.find("---", 3)
-    if end < 0:
-        return {}
-    fm: dict = {}
-    current_key = None
-    current_list: list[str] | None = None
-    for line in content[3:end].strip().split("\n"):
-        stripped = line.strip()
-        # YAML list item (indented "- value")
-        if stripped.startswith("- ") and current_key is not None and current_list is not None:
-            current_list.append(stripped[2:].strip().strip('"').strip("'"))
-            continue
-        # Flush any pending list
-        if current_key is not None and current_list is not None:
-            fm[current_key] = current_list
-            current_key = None
-            current_list = None
-        if ":" in line and not stripped.startswith("-"):
-            key, _, val = line.partition(":")
-            key = key.strip()
-            val = val.strip()
-            # Track whether the raw value was wrapped in YAML string quotes
-            # ("..." or '...'). A quote-wrapped value is ALWAYS a string —
-            # never an inline YAML array — even if its inner content starts
-            # with [. This prevents JSON-encoded strings like
-            # `svg_callouts: "[{...}, {...}]"` from being mis-split on
-            # commas into a list of garbage fragments.
-            was_quoted = False
-            if len(val) >= 2 and val[0] == val[-1] and val[0] in ('"', "'"):
-                # YAML double-quoted strings support \" escapes; YAML single-
-                # quoted strings don't, but JSON-encoded values always land
-                # in double quotes from json.dumps. Unescape \" → " inside
-                # double-quoted values so consumers see the real string.
-                quote_char = val[0]
-                val = val[1:-1]
-                if quote_char == '"':
-                    val = val.replace('\\"', '"').replace("\\\\", "\\")
-                was_quoted = True
-            if val:
-                # Inline YAML array: [a, b, c] — only when the raw value
-                # was NOT quote-wrapped. A quoted value like "[...]" is a
-                # string whose content happens to start with [.
-                if not was_quoted and val.startswith("[") and val.endswith("]"):
-
-                    def _unquote(v: str) -> str:
-                        v = v.strip()
-                        if len(v) >= 2 and v[0] == v[-1] and v[0] in ('"', "'"):
-                            return v[1:-1]
-                        return v
-
-                    items = [_unquote(v) for v in val[1:-1].split(",") if v.strip()]
-                    fm[key] = items if items else ""
-                else:
-                    fm[key] = val
-            else:
-                # Could be start of a list
-                current_key = key
-                current_list = []
-    # Flush final list
-    if current_key is not None and current_list is not None:
-        fm[current_key] = current_list if current_list else ""
-    return fm
-
-
 def fm_str(fm: dict, *keys: str, default: str = "") -> str:
     """Get a frontmatter value as a string.
 
@@ -632,39 +627,6 @@ def fm_list(fm: dict, *keys: str) -> list[str]:
         if s:
             return [v.strip() for v in s.split(",") if v.strip()]
     return []
-
-
-def strip_frontmatter(content: str) -> str:
-    """Return markdown content with the YAML frontmatter block removed."""
-    if content.startswith("---"):
-        end = content.find("---", 3)
-        if end > 0:
-            return content[end + 3 :]
-    return content
-
-
-def set_frontmatter_field(content: str, key: str, raw_value: str) -> str:
-    """Insert or replace ``key: <raw_value>`` in the frontmatter block.
-
-    Pure string transform. *raw_value* is written verbatim after ``key: ``;
-    the caller owns YAML encoding (quoting strings, ``[a, b]`` for lists,
-    escaping newlines). If no ``---`` block exists, one is created at the top.
-
-    Use for: simple single-line scalar/array fields. Not for: nested YAML,
-    block-style list values (``key:\\n  - a``) — use a real YAML writer there.
-    """
-    line = f"{key}: {raw_value}"
-    if content.startswith("---"):
-        fm_end = content.find("---", 3)
-        if fm_end > 0:
-            fm_block = content[3:fm_end]
-            pattern = re.compile(rf"(?m)^{re.escape(key)}\s*:.*$")
-            if pattern.search(fm_block):
-                fm_block = pattern.sub(lambda _m: line, fm_block, count=1)
-            else:
-                fm_block = fm_block.rstrip() + "\n" + line + "\n"
-            return "---" + fm_block + content[fm_end:]
-    return f"---\n{line}\n---\n{content}"
 
 
 def fm_scalar(value) -> str:
@@ -711,6 +673,53 @@ def slugify(text: str, max_len: int | None = 60, *, fallback: str = "") -> str:
     return s or fallback
 
 
+_UNICODE_SLUG_STRIP_RE = re.compile(r"[^\w\s-]")
+_UNICODE_SLUG_GAP_RE = re.compile(r"[\s_]+")
+
+
+def slugify_unicode(text: str, max_len: int | None = None, *, fallback: str = "") -> str:
+    """Kebab-case slug that KEEPS non-ASCII word characters.
+
+    Same shape as :func:`slugify` — strip punctuation, lowercase, collapse
+    whitespace/underscore runs to ``-`` — but the character class is unicode
+    ``\\w``, so CJK and accented letters survive::
+
+        slugify("机器学习", fallback="untitled")          # "untitled"  (!)
+        slugify_unicode("机器学习", fallback="untitled")  # "机器学习"
+        slugify_unicode("Café au Lait")                   # "café-au-lait"
+
+    That difference is the whole reason this exists. In a bilingual vault,
+    routing a Chinese title through :func:`slugify` collapses it to nothing
+    and every such note lands on the fallback word — so a note id built that
+    way is not merely ugly, it is *not unique*. Reach for this whenever the
+    slug is derived from a user-authored title that may not be English.
+
+    Two deliberate differences from :func:`slugify`:
+
+    - ``max_len`` defaults to ``None`` (no truncation). Every caller derives a
+      stable note id, and an id must not change when its title grows past a
+      cap. Pass an explicit cap only for display-side slugs.
+    - Embedded dash runs are preserved (``"a -- b"`` → ``"a---b"``), because
+      ``-`` is inside the kept class. :func:`slugify` collapses them.
+
+    Truncation applies before the fallback check, so a fallback word is never
+    truncated (matching :func:`slugify`).
+
+    Not for:
+        - ASCII-only URL slugs where non-ASCII *should* be dropped — use
+          :func:`slugify`.
+        - Human-readable vault *filenames* with collision suffixes — use
+          :func:`safe_note_filename`, which keeps case, spaces and punctuation.
+        - Ids needing a unique suffix on empty input — use :func:`unique_slug`.
+    """
+    # No .strip() on the input: the gap-collapse turns any leading/trailing
+    # whitespace into a dash, which .strip("-") then removes. Verified
+    # equivalent across unicode whitespace (\xa0, U+3000, \x1c-\x1e).
+    s = _UNICODE_SLUG_STRIP_RE.sub("", str(text or "").lower())
+    s = _UNICODE_SLUG_GAP_RE.sub("-", s).strip("-")[:max_len]
+    return s or fallback
+
+
 def slug_from_path(path: str) -> str:
     """Filename stem of a vault path: ``.../foo/bar-baz.md`` → ``bar-baz``.
 
@@ -728,6 +737,21 @@ def slug_from_path(path: str) -> str:
 
 
 _UNIQUE_SLUG_RE = re.compile(r"[^a-z0-9-]+")
+
+
+def is_archived(fm: dict) -> bool:
+    """Is this note's frontmatter marked ``archived`` (soft-deleted)?
+
+    The one reading of the flag every project/study list and
+    ``vault_project_create`` must share. Frontmatter round-trips values as
+    strings, so ``archived: false`` arrives as the truthy string ``"false"`` —
+    a plain ``if fm.get("archived")`` hides that live note from a list while
+    create still treats it as live, leaving a name nobody can see or reuse.
+    """
+    v = fm.get("archived")
+    if isinstance(v, str):
+        return v.strip().lower() in {"true", "yes", "1"}
+    return bool(v)
 
 
 def unique_slug(text: str, *, prefix: str) -> str:
@@ -794,6 +818,28 @@ _WIN_RESERVED_STEMS = (
     | {f"com{i}" for i in range(1, 10)}
     | {f"lpt{i}" for i in range(1, 10)}
 )
+
+
+def contained_path(base: Path, candidate: Path) -> Path | None:
+    """``candidate`` if it stays inside ``base``, else None.
+
+    The sibling of :func:`safe_path_segment` for the case where the caller
+    legitimately supplies a *nested* path (``"<id>/floorplan.json"``) and only
+    escape must be refused. The check has to be on the **resolved** path,
+    because the join is what escapes — ``base / "../x"`` is an ordinary Path
+    right up until you resolve it, and on Windows ``base / "..\\x"`` escapes
+    too (a backslash is a separator there, and route parameters allow it).
+
+    Returns the ORIGINAL candidate, not the resolved form: resolution can
+    change case and expand short names on Windows, and callers compare and
+    display these paths. Contained-ness is the only thing being decided here.
+    """
+    try:
+        if candidate.resolve().is_relative_to(base.resolve()):
+            return candidate
+    except (OSError, ValueError):
+        pass
+    return None
 
 
 def safe_path_segment(raw: str) -> str:
@@ -974,6 +1020,51 @@ def parse_data_url(data_url: str) -> tuple[str, bytes]:
     return mime, raw
 
 
+def image_to_data_url(path, *, max_width: int = 1280, quality: int = 72) -> str | None:
+    """Downscale + JPEG-encode an image file → a ``data:`` URL. None on any error.
+
+    The inverse of :func:`parse_data_url`, and the encode step every consumer of
+    the ``see`` capability needs: the ``webcam`` provider returns a *file path*
+    while ``browser-webcam`` returns a *data URL*, so an app feeding a captured
+    frame to ``think(images=[...])`` has to normalise to the URL form.
+
+    Downscaling is the point, not a nicety — a raw camera frame is megabytes,
+    and several of them in one vision call blow the request past what providers
+    accept. Without PIL the original bytes are passed through, guarded by a 4 MB
+    ceiling so a huge file degrades to None rather than to a failed request.
+
+    Extracted 2026-08-16 from ``apps/public/labs/operate/shared.py`` at its
+    second consumer (nutrition's photo meal log), per CLAUDE.md rule 9. The
+    defaults are operate's, so its behaviour is unchanged.
+    """
+    import base64
+    import io
+    from pathlib import Path
+
+    p = Path(path)
+    try:
+        from PIL import Image
+    except Exception:
+        try:
+            raw = p.read_bytes()
+        except OSError:
+            return None
+        if len(raw) > 4 * 1024 * 1024:
+            return None
+        return "data:image/png;base64," + base64.b64encode(raw).decode("ascii")
+    try:
+        with Image.open(p) as im:
+            im = im.convert("RGB")
+            if im.width > max_width:
+                h = int(im.height * max_width / im.width)
+                im = im.resize((max_width, h), Image.LANCZOS)
+            buf = io.BytesIO()
+            im.save(buf, format="JPEG", quality=quality)
+        return "data:image/jpeg;base64," + base64.b64encode(buf.getvalue()).decode("ascii")
+    except Exception:
+        return None
+
+
 # Wikilinks ------------------------------------------------------------------
 # Canonical pattern for [[Note]] / [[Note|label]] / [[Note#section]] /
 # [[Note#section|label]]. Group 1 is always the bare slug (no label, no anchor).
@@ -1007,14 +1098,52 @@ class FakeRequest:
 WIKILINK_RE = re.compile(r"\[\[([^\]|#]+?)(?:#[^\]|]*)?(?:\|[^\]]*)?\]\]")
 
 
+def normalize_link_target(raw: str) -> str:
+    """A wikilink target reduced to the form a note path can be compared against.
+
+    Strips a ``#heading`` / ``^block`` reference, a trailing ``.md``, wrapping
+    slashes and whitespace, and case. Backslashes fold to ``/`` so a link
+    authored on Windows still matches a vault-relative path (CLAUDE.md rule 20).
+
+    Shared because two apps resolve link targets — ``link`` (the index) and
+    ``vault-graph`` (three sites) — and the copies had already diverged inside a
+    day: only one stripped anchors. That one was correct by accident of its
+    caller, since ``extract_wikilinks`` removes the anchor upstream; anything
+    else feeding it a raw target would have silently failed to resolve.
+    """
+    t = str(raw or "").strip().replace("\\", "/")
+    t = re.split(r"[#^]", t, 1)[0].strip().strip("/")
+    if t.lower().endswith(".md"):
+        t = t[:-3]
+    return t.lower()
+
+
+def note_stem_key(rel_path: str) -> str:
+    """The bare filename of ``rel_path``, in the same comparable form."""
+    return normalize_link_target(str(rel_path or "").replace("\\", "/").rsplit("/", 1)[-1])
+
+
 def extract_wikilinks(text: str) -> set[str]:
     """Return the set of wikilink target slugs in ``text``.
 
     Strips ``#section`` anchors and ``|label`` aliases. Empty input → empty set.
+
+    Ignores anything inside fenced or inline code: a ``[[Note]]`` written in a
+    code sample is a literal the author typed, not a link, and every consumer
+    here (kb graph, rooms, vault-graph, shadowing) wants it that way. Measured
+    on the live vault before this landed — the three most-referenced link
+    targets overall were ``${block.reference}``, ``" + block.reference +"`` and
+    ``${refId}``, JavaScript template literals in fenced examples.
     """
     if not text:
         return set()
-    return {m.group(1).strip() for m in WIKILINK_RE.finditer(text) if m.group(1).strip()}
+    from emptyos.sdk.markdown_render import strip_code
+
+    return {
+        m.group(1).strip()
+        for m in WIKILINK_RE.finditer(strip_code(text))
+        if m.group(1).strip()
+    }
 
 
 # Markdown tables ------------------------------------------------------------
@@ -1100,6 +1229,59 @@ def format_markdown_table(rows: list[dict], columns: list[str] | None = None) ->
     return "\n".join([_fmt(cols), sep, *(_fmt(r) for r in body)])
 
 
+def fmt_num(value, spec: str, unit: str = "", *, absent: str = "—") -> str:
+    """Format a number for a report cell, or ``absent`` when there is no number.
+
+    ``spec`` is a format spec (``".1f"``, ``",.2f"``, ``"g"``); ``unit`` is
+    appended verbatim, so the caller owns the space (``" kV"``) or its absence
+    (``"%"``). The default ``absent`` is an em-dash, which is what every report
+    table in the engineering apps already printed for a missing figure.
+
+    Returns ``absent`` for anything that is not a number — ``None``, a string,
+    a dict — **and for NaN**. Those are two different absences, and a guard
+    that checks only one lets the other through: of the nine hand-rolled
+    copies this replaced, eight guarded ``None`` alone and would print the
+    word ``nan`` into a calculation sheet; only one was NaN-safe. The dash is
+    the one honest answer to either.
+
+    Rules:
+    - Use it wherever a report, table or CLI line prints a figure that may be
+      missing. Do not use it for a value that must exist — a missing number
+      there is a bug to raise, not a dash to print.
+    - It formats; it never converts. A string ``"12"`` renders as ``absent``,
+      not as 12 — coerce at the read boundary (frontmatter is string-typed)
+      before calling. ``inf`` is a number and prints as one, and a ``bool``
+      is an ``int`` to Python and formats as one, exactly as the copies did.
+    - Pass the value itself, or arithmetic that is already None-safe (a unit
+      conversion that returns ``None`` for ``None``). Never ``x * 1000`` on a
+      maybe-``None`` ``x`` — that multiply is what this keeps away from it.
+    """
+    if not isinstance(value, (int, float)) or value != value:
+        return absent
+    return f"{value:{spec}}{unit}"
+
+
+# Leading characters that Excel/Sheets/LibreOffice interpret as "this cell is
+# a formula" rather than literal text (OWASP CSV Injection). Any exported cell
+# built from user-controlled text — a title, a free-text label, a note field —
+# is exposed the moment a human opens the file in a spreadsheet app instead of
+# a text editor, regardless of how the CSV is served.
+_CSV_FORMULA_PREFIXES = ("=", "+", "-", "@", "\t", "\r")
+
+
+def _csv_safe_cell(value):
+    """Prefix a formula-triggering leading character with a single quote so
+    a spreadsheet app renders the cell as literal text. Only strings can
+    carry a formula; numbers/None/other types pass through unchanged. The
+    leading quote is not stripped back out by :func:`csv_to_rows` — that's
+    correct for the read side too, since a quote there also came from a
+    defanged export, not from data EmptyOS itself produced.
+    """
+    if isinstance(value, str) and value.startswith(_CSV_FORMULA_PREFIXES):
+        return "'" + value
+    return value
+
+
 def rows_to_csv(rows: list[dict], columns: list[str] | None = None) -> str:
     """Serialize a list-of-dicts as CSV (RFC 4180-ish, via stdlib :mod:`csv`).
 
@@ -1108,6 +1290,11 @@ def rows_to_csv(rows: list[dict], columns: list[str] | None = None) -> str:
     ``columns`` if given, otherwise the first row's insertion order. ``None``
     cell values render as empty fields. Returns an empty string when ``rows``
     is empty. Uses ``\\r\\n`` line endings (RFC 4180 default from stdlib csv).
+
+    String cells are defanged against CSV formula injection (see
+    :func:`_csv_safe_cell`) — this function is the shared choke-point for
+    every CSV export in the codebase, so the fix lives here once rather than
+    per-caller.
     """
     if not rows:
         return ""
@@ -1119,7 +1306,7 @@ def rows_to_csv(rows: list[dict], columns: list[str] | None = None) -> str:
     writer = csv.DictWriter(buf, fieldnames=cols, extrasaction="ignore")
     writer.writeheader()
     for r in rows:
-        writer.writerow({c: ("" if r.get(c) is None else r.get(c)) for c in cols})
+        writer.writerow({c: _csv_safe_cell("" if r.get(c) is None else r.get(c)) for c in cols})
     return buf.getvalue()
 
 
@@ -1136,6 +1323,108 @@ def csv_to_rows(text: str) -> list[dict]:
     import io
 
     return [dict(row) for row in csv.DictReader(io.StringIO(text))]
+
+
+def sniff_columns(headers: list[str], aliases: dict[str, list[str]]) -> dict[str, str]:
+    """Best-effort map of canonical field → the actual CSV header that carries it.
+
+    ``aliases`` is the caller's ``{field: [header substrings, ...]}`` vocabulary —
+    domain knowledge that stays with the app (bank statements, contact exports,
+    word lists); only the matching is shared. Headers are compared lowercased
+    and stripped, by **substring**, so ``"Debit Amount (AUD)"`` still matches
+    ``"debit"``. Fields are visited in ``aliases`` order, so a field whose alias
+    is a substring of another field's header (``name`` vs ``first_name``) must
+    come *after* it. Within a field the aliases are tried in order and the
+    first hit wins regardless of header position, so put the more specific
+    alias first (``"transaction date"`` before ``"date"``). A header is claimed
+    by the first field whose alias it contains, so one column can never fill
+    two roles.
+
+    Returns only the fields that matched — a missing field is absent, not ``""``.
+    Not for exact-key matching (cable_network's rating import normalises keys
+    and compares whole); this is the ordered-substring shape.
+    """
+    normalized = [(h, (h or "").strip().lower()) for h in headers]
+    claimed: set[str] = set()
+    mapping: dict[str, str] = {}
+    for field, field_aliases in aliases.items():
+        for alias in field_aliases:
+            hit = next(
+                (h for h, low in normalized if h not in claimed and alias in low),
+                None,
+            )
+            if hit is not None:
+                mapping[field] = hit
+                claimed.add(hit)
+                break
+    return mapping
+
+
+def csv_download_response(rows: list[dict], columns: list[str], filename: str):
+    """Build a downloadable CSV ``starlette.responses.Response`` — the shared
+    tail behind every ``@web_route`` CSV export (list-of-dicts → a browser
+    download with the right content-type + filename).
+
+    Unlike :func:`rows_to_csv`, ``columns`` is required and the header line is
+    always written even when ``rows`` is empty — a download must open as a
+    valid (if empty) spreadsheet, not silently return nothing.
+
+    String cells are defanged against CSV formula injection the same way
+    :func:`rows_to_csv` is — see :func:`_csv_safe_cell`.
+    """
+    import csv
+    import io
+
+    from starlette.responses import Response
+
+    buf = io.StringIO()
+    writer = csv.DictWriter(buf, fieldnames=columns, extrasaction="ignore")
+    writer.writeheader()
+    for r in rows:
+        writer.writerow({c: _csv_safe_cell("" if r.get(c) is None else r.get(c)) for c in columns})
+    return Response(
+        content=buf.getvalue(), media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+
+
+async def read_upload_text(
+    request, *, max_bytes: int, json_key: str = "csv_content",
+) -> tuple[str, str]:
+    """Read one text payload from a ``@web_route`` request → ``(text, error)``.
+
+    Accepts either a multipart upload under the form field ``file`` or a JSON
+    body carrying ``json_key`` — the import-preview counterpart of
+    :func:`csv_download_response`. Branch on ``error``, not on ``text``: on
+    success ``error`` is ``""``; on the failures it names (no / non-file /
+    empty / oversize upload, absent or empty JSON value) ``text`` is ``""`` and
+    ``error`` is the short message the route returns in-band as
+    ``{"error": ...}`` — so a user mistake stays a 200-with-error, never a 500
+    (`.claude/rules/dev-gotchas.md` § route 500). ``text`` can still be empty
+    with no error — a BOM-only file, the 3 bytes a spreadsheet writes for an
+    empty sheet — which every caller then reports as "no rows found". A
+    malformed JSON body still raises out of ``request.json()``, as every
+    caller did before.
+
+    ``max_bytes`` has no default on purpose — the ceiling is the app's domain
+    claim ("a contact list is never 2 MB", "a statement is never 10 MB"). Bytes
+    decode as ``utf-8-sig`` with replacement, so a spreadsheet export's BOM is
+    dropped and one stray byte cannot abort the whole import.
+    """
+    ctype = request.headers.get("content-type", "")
+    if "multipart/form-data" in ctype:
+        form = await request.form()
+        upload = form.get("file")
+        if upload is None or not hasattr(upload, "read"):
+            return "", "no file uploaded"
+        data = await upload.read()
+        if not data:
+            return "", "the file is empty"
+        if len(data) > max_bytes:
+            return "", "file is too large"
+        return data.decode("utf-8-sig", "replace"), ""
+    body = await request.json()
+    text = body.get(json_key, "")
+    return (text, "") if text else ("", f"{json_key} required")
 
 
 def sweep_values(
@@ -1180,3 +1469,47 @@ def sweep_values(
     out[0] = float(start)
     out[-1] = float(end)
     return [float(v) for v in out]
+
+
+# --- Speech language routing -------------------------------------------------
+# Re-exported, not defined here: tts_cache needs the same rule and must stay
+# stdlib-only, so the implementation lives at top level (emptyos/speechlang.py)
+# like frontmatter.py. Kept exported from here because callers import it from
+# emptyos.sdk.
+from emptyos.speechlang import detect_speech_language  # noqa: E402,F401
+
+CJK_TTS_PROVIDER = "edge-tts"
+
+
+def speak_provider_preference(
+    text: str,
+    *,
+    prefer_provider=None,
+    only_provider: str | None = None,
+) -> list[str] | str | None:
+    """Steer a Chinese line to a provider that can pronounce it.
+
+    Applies ONLY when the caller expressed no preference. A caller that named
+    providers is left exactly alone, because a pinned chain encodes
+    constraints this function cannot see: voice-assistant pins kokoro to get
+    **WAV** for thin clients that have no MP3 decoder, and edge-tts returns
+    mp3 — an earlier draft of this function reordered that chain and turned a
+    garbled-but-audible Chinese reply into a silent one written under a .wav
+    name. Correcting a chain therefore needs the caller's own knowledge of
+    format and locality, not a guess from here.
+
+    Consequence worth stating: a caller that pins a kokoro-led chain still
+    gets unintelligible Chinese. podcast does (``tts_providers`` defaults to
+    ``["kokoro", "openai-tts"]``), so Chinese podcast audio needs that config
+    changed rather than a silent override from here.
+
+    Note the routed provider is a CLOUD one (edge-tts is Microsoft's
+    endpoint, declared ``trust = "service"``), so this steer sends the text
+    off-machine and passes the consent gate. That is the real trade: on this
+    machine intelligible Mandarin is not available locally.
+    """
+    if only_provider or prefer_provider:
+        return prefer_provider
+    if detect_speech_language(text) == "zh":
+        return [CJK_TTS_PROVIDER]
+    return None

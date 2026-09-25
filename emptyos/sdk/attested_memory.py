@@ -240,6 +240,12 @@ def fidelity_audit(
         v = classify_trust(props, now=now, stale_days=stale_days)
         counts[v.level] = counts.get(v.level, 0) + 1
         if v.level in _STALE_PRIORITY:
+            source = props.get("source") or props.get("source_ref") or ""
+            if not source:
+                refs = props.get("references") or []
+                if isinstance(refs, str):
+                    refs = [refs]
+                source = refs[0] if refs else ""
             candidates.append(
                 {
                     "path": r.get("path", ""),
@@ -247,6 +253,8 @@ def fidelity_audit(
                     "attestation": v.attestation,
                     "reasons": v.reasons,
                     "age_days": v.age_days,
+                    "last_verified": props.get("last_verified") or props.get("as_of") or "",
+                    "source": str(source),
                 }
             )
 

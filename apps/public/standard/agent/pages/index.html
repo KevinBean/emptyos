@@ -9,6 +9,7 @@
 <link rel="stylesheet" href="/static/eos-chat-shell.css">
 <script src="/static/realtime.js"></script>
 <script src="/static/eos-components.js"></script>
+<script src="/static/eos-agent-view.js"></script>
 <style>
   :root { --agent-sidebar-w: 260px; --agent-topnav-h: 46px; }
   body {
@@ -150,7 +151,7 @@
     background: var(--bg);
   }
   #empty-state {
-    padding: 56px 32px 40px; text-align: center;
+    padding: 56px 32px 48px; text-align: center;
     color: var(--text-secondary); font-size: 13px;
     max-width: 620px; margin: 0 auto; line-height: 1.65;
   }
@@ -527,10 +528,10 @@
     id: 'agent-settings-panel',
     title: 'Agent Settings',
     fields: [
-      {key: 'agent.default_provider', label: 'Default Provider', type: 'select',
+      {key: 'think.app.agent', label: 'Default Provider', type: 'select',
        options: ['openai-nano', 'openai-mini', 'openai', 'anthropic_sdk', 'ollama', 'claude-cli'],
        default: 'openai-mini',
-       hint: 'Standard = openai-mini (gpt-5.4-mini) · Fast = openai-nano · Pro = openai (full gpt-5.4). Or pick a specific backend.'},
+       hint: 'Same setting as the model pill in the header. Standard = openai-mini (gpt-5.4-mini) · Fast = openai-nano · Pro = openai (full gpt-5.4). Or pick a specific backend.'},
       {key: 'agent.max_iters', label: 'Max Iterations per Turn', type: 'number',
        default: 25,
        hint: 'Safety cap on tool-use loop iterations.'},

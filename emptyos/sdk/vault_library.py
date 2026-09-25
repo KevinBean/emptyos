@@ -32,7 +32,7 @@ import re
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from emptyos.sdk.utils import parse_frontmatter, strip_frontmatter
+from emptyos.sdk.utils import contained_path as _contained, parse_frontmatter, strip_frontmatter
 
 # Verbatim leading frontmatter block (delimiters included). Used by
 # write_body to preserve frontmatter byte-for-byte — unlike update(),
@@ -41,21 +41,6 @@ _FM_BLOCK_RE = re.compile(r"^---\n.*?\n---\n", re.S)
 
 if TYPE_CHECKING:
     from emptyos.sdk.base_app import BaseApp
-
-
-def _contained(base: Path, candidate: Path) -> Path | None:
-    """``candidate`` resolved, but only if it stays inside ``base``.
-
-    The join is what escapes, so the check has to be on the *resolved* path —
-    ``base / "../x"`` is a perfectly ordinary Path until you resolve it.
-    Returns None rather than raising: a lookup for something outside the
-    library is a lookup that found nothing, matching find_file's contract.
-    """
-    try:
-        resolved = candidate.resolve()
-        return resolved if resolved.is_relative_to(base.resolve()) else None
-    except (OSError, ValueError):
-        return None
 
 
 class VaultLibrary:
@@ -285,8 +270,28 @@ class VaultLibrary:
     def _coerce(self, val: Any, ftype: type) -> Any:
         """Coerce a value to the declared type."""
         if val is None:
-            return "" if ftype is str else 0 if ftype in (int, float) else []
+            return "" if ftype is str else False if ftype is bool else 0 if ftype in (int, float) else []
+        if ftype is bool:
+            # Frontmatter round-trips a Python bool as the capitalized
+            # str(True)/str(False) (emptyos/frontmatter.py has no YAML bool
+            # resolver — it's a stdlib-only line-based parser), so the value
+            # read back here is the STRING "True"/"False", not a real bool.
+            # Without this branch every checkbox-typed field (ColumnType
+            # "checkbox") reads back as a non-empty string — truthy in any
+            # `if item.field` check regardless of which way it was set.
+            if isinstance(val, bool):
+                return val
+            return str(val).strip().lower() in ("true", "1", "yes", "on")
         if ftype is str:
+            # A bare `str()` here is how a str-typed field reads back *truthy*
+            # when the note left it empty. The frontmatter parsers hand an
+            # empty `key:` back as `[]` when another key follows it, and
+            # `str([])` is the non-empty string "[]" — which satisfies every
+            # `if not value` guard meant to catch a missing value. Mirror
+            # `VaultModel._coerce_loose_str_fields`, which already reads this
+            # shape correctly: a list is its first element, or "" when empty.
+            if isinstance(val, (list, tuple)):
+                return str(val[0]) if val else ""
             return str(val)
         if ftype is int:
             try:

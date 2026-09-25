@@ -1,8 +1,16 @@
-"""Edge TTS plugin — in-process text-to-speech via Microsoft Edge voices.
+"""Edge TTS plugin — text-to-speech via Microsoft's Edge voices.
 
-No subprocess, no external service, no API key. Uses the `edge-tts` pip
-package directly. Registers at priority 0 (tried first in the speak chain)
-because it's the fastest cold-start option and always available offline-free.
+No subprocess and no API key: the `edge-tts` pip package runs in-process. But
+the SYNTHESIS is not local — `Communicate` opens a WSS connection to
+Microsoft's speech endpoint and the text is sent there, so this provider
+declares `trust = "service"` and answers to the cloud-consent gate. An earlier
+version of this docstring said "no external service ... always available
+offline-free", which is false in both halves and is very likely why nobody
+declared `trust` for so long: `is_cloud` reads an undeclared, hostless provider
+as LOCAL, so every line of text sent here bypassed the gate.
+
+Registers at priority 0, which orders it within whatever chain the machine
+configures; `[capabilities.speak] providers` decides the actual order.
 """
 
 from __future__ import annotations
@@ -29,14 +37,10 @@ DEFAULT_VOICES = {
 }
 
 
-def _detect_language(text: str) -> str:
-    cjk = sum(1 for c in text if "\u4e00" <= c <= "\u9fff")
-    ja = sum(1 for c in text if "\u3040" <= c <= "\u30ff")
-    if ja > len(text) * 0.1:
-        return "ja"
-    if cjk > len(text) * 0.1:
-        return "zh"
-    return "en"
+# One rule, shared with BaseApp.speak's provider routing. If the two disagree,
+# speak() can steer a Chinese line here and this module then picks an English
+# voice for it \u2014 the same garbled output, one layer further on.
+from emptyos.speechlang import detect_speech_language as _detect_language  # noqa: E402
 
 
 class EdgeTTSPlugin(BasePlugin):
@@ -48,9 +52,20 @@ class EdgeTTSPlugin(BasePlugin):
 
 
 class EdgeTTSProvider(Provider):
-    """Microsoft Edge TTS — in-process, free, no API key."""
+    """Microsoft Edge TTS — free, no API key, but NOT local.
+
+    ``in-process`` describes where the client library runs, not where the
+    synthesis happens: ``edge_tts.Communicate`` opens a WSS connection to
+    Microsoft's speech endpoint and the text is sent there. Declaring
+    ``trust`` is what makes ``is_cloud`` say so — the inference path reads an
+    empty ``host`` as ``False`` (local), so without this line every line of
+    text sent here skipped the consent gate, and ``tts_cache._speak_local``
+    (whose whole contract is "never send this text off the box") would happily
+    pick this provider. See CLAUDE.md rule 18 and rented-compute.md.
+    """
 
     name = "edge-tts"
+    trust = "service"
 
     async def available(self) -> bool:
         try:

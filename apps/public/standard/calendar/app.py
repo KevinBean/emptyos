@@ -12,6 +12,7 @@ import datetime
 import hashlib
 
 from emptyos.sdk import BaseApp, web_route
+from emptyos.sdk.utils import clamp_days
 
 from . import ics as _ics
 
@@ -223,6 +224,31 @@ class CalendarApp(BaseApp):
             for it in items
         ]
 
+    async def timeline_items(self, days: int = 1) -> list[dict]:
+        """Life-suite timeline contribution ([[contributes.life.timeline]]).
+
+        Flagged in gap analysis (life-three-contributors): `calendar` owns
+        day-shaped events but declared nothing. One item per agenda entry
+        over the last ``days`` days (today's events + recent history), most
+        recent first. Item shape (suite contract,
+        docs/suites/life-cohesion.md): {ts, title, kind, href}.
+        """
+        n = clamp_days(days)
+        today = datetime.date.today()
+        items: list[dict] = []
+        for i in range(n):
+            d = today - datetime.timedelta(days=i)
+            for it in await self.get_agenda(d.isoformat()):
+                t = it.get("time") or ""
+                hhmm = t if len(t) == 5 and t[2] == ":" else "00:00"
+                items.append({
+                    "ts": f"{d.isoformat()}T{hhmm}:00",
+                    "title": it.get("title", ""),
+                    "kind": f"calendar-{it.get('type', 'event')}",
+                    "href": "/calendar/",
+                })
+        return items
+
     async def busy_intervals(self, date: str = "", default_min: int = 0) -> list[dict]:
         """Time ranges on ``date`` where the owner is genuinely occupied.
 
@@ -375,6 +401,48 @@ class CalendarApp(BaseApp):
         if not date_str:
             date_str = datetime.date.today().isoformat()
         return {"date": date_str, "items": await self.get_agenda(date_str)}
+
+    @web_route("POST", "/api/quick-add")
+    async def api_quick_add(self, request):
+        """Create a dated item without leaving the calendar.
+
+        Calendar-quick-add (calendar-quick-add gap): the app itself never
+        writes — this **routes** the create to the owning app (task.add /
+        reminders.add), preserving the read-only-aggregator posture exactly.
+        Body: {kind: "task"|"reminder", text, due, time?}.
+        """
+        body = await request.json()
+        kind = (body.get("kind") or "reminder").strip().lower()
+        text = (body.get("text") or "").strip()
+        due = (body.get("due") or "").strip()
+        time_ = (body.get("time") or "").strip()
+        if not text:
+            return {"error": "text is required"}
+        if not due:
+            return {"error": "a date is required"}
+
+        if kind == "task":
+            try:
+                await self.call_app("task", "add", text=text, due=due)
+            except (KeyError, AttributeError):
+                return {"error": "the task app is not installed"}
+            except Exception as exc:
+                return {"error": str(exc) or "could not create the task"}
+            return {"ok": True, "type": "task"}
+
+        if kind == "reminder":
+            due_value = f"{due}T{time_}:00" if time_ else due
+            try:
+                result = await self.call_app("reminders", "add", text=text, due=due_value, time=time_)
+            except (KeyError, AttributeError):
+                return {"error": "the reminders app is not installed"}
+            except Exception as exc:
+                return {"error": str(exc) or "could not create the reminder"}
+            if isinstance(result, dict) and result.get("error"):
+                return {"error": result["error"]}
+            return {"ok": True, "type": "reminder"}
+
+        return {"error": f"unknown kind '{kind}' — use 'task' or 'reminder'"}
 
     @web_route("GET", "/api/export.ics")
     async def api_export_ics(self, request):

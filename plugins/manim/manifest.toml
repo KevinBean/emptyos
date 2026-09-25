@@ -1,0 +1,13 @@
+[plugin]
+id = "manim"
+name = "Manim"
+version = "0.1.0"
+description = "Precise, frame-accurate, deterministically-timed programmatic animation (ManimCommunity/manim) via a user-home Python 3.12 venv. Complements viz's LLM-improvised WAAPI/Three.js shapes where exact timing/interpolation matters."
+
+[plugin.entry]
+module = "plugin"
+class = "ManimPlugin"
+
+[provides]
+services = ["manim"]
+tags = ["animation", "math", "video"]

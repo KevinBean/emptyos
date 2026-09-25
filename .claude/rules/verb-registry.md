@@ -1,3 +1,13 @@
+---
+paths:
+  - "emptyos/sdk/verb_registry.py"
+  - "emptyos/kernel/app_loader.py"
+  - "emptyos/cli/commands/verb.py"
+  - "apps/**/manifest.toml"
+  - "apps/public/standard/assistant/slash.py"
+  - "apps/public/standard/voice-assistant/**"
+---
+
 # Verb Registry — one declaration per invokable app verb
 
 `[[provides.verbs]]` is the single source of truth for "which app methods are

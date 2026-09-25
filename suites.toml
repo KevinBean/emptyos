@@ -18,7 +18,20 @@
 #   id       — stable slug (also the contribution-slot namespace for its surface
 #              app, e.g. [[contributes.life.timeline]])
 #   name     — user-facing name (descriptive, per brand voice: specific over grand)
-#   line     — "consumer" | "engineer"
+#   line     — "consumer" | "engineer" | "builder" (who the chapter is for;
+#              descriptive metadata, read by no code today)
+#   private  — true when every member is pruned from the public snapshot, so
+#              shipping the catalog would advertise uninstallable software.
+#              LOAD-BEARING: filter_suites_toml (scripts/release-public.py)
+#              keys on exactly this field. A suite over a held track without it
+#              leaks the member ids. NOT SUFFICIENT for a MIXED suite: the flag
+#              is per-suite, membership is per-app, so a public suite still
+#              ships its held members' ids (studio, automation — 7 today).
+#              check_suites.py reports those as an advisory.
+#   NOTE       a suite id doubles as a contribution-slot namespace, so it can
+#              collide with an app id — `english` and `life` both do. Latent:
+#              no call_contributions("english", ...) exists. Prefer a suite id
+#              that is not also an app id unless the app IS the surface.
 #   pitch    — one line, EN;  pitch_zh — one line, 中文 (never mixed on a surface)
 #   surface  — app id of the suite's front door ("" until one exists; prefer
 #              promoting an existing member over creating a new app)
@@ -88,6 +101,16 @@ apps = [
     "scroll",
     "garden",
     "commons",
+    "library",
+    "conversation-ingest",
+    # Both are knowledge-integrity apps rather than project trackers:
+    # `requirements` traces to the standards that live in kb as `clause` notes,
+    # and `trust-loop` gates a live calculation against an openly-published
+    # worked example. They are siblings of the assurance discipline in
+    # docs/TRUST-LOOP.md, and both ship publicly — so neither can go in the
+    # private `engineer` suite without vanishing from the public catalog.
+    "requirements",
+    "trust-loop",
 ]
 
 [[suite]]
@@ -105,6 +128,7 @@ apps = [
     "quotes",
     "worklog",
     "worklog-capture",
+    "countdown",
 ]
 
 [[suite]]
@@ -137,6 +161,7 @@ surface = ""
 apps = [
     "writing-editor",
     "designer",
+    "markitup",
     "viz",
     "ppt",
     "publish",

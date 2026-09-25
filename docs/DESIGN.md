@@ -109,7 +109,7 @@ Two layers. Apps on top, platform underneath. Apps declare what they need, the p
 │  ┌──────────────────────────────────────────────────┐    │
 │  │  Connectors (plugins)                            │    │
 │  │  ollama, comfyui, voice-api, telegram,           │    │
-│  │  google-maps, acestep, weather                   │    │
+│  │  google-maps, weather                            │    │
 │  └──────────────────────────────────────────────────┘    │
 ├──────────────────────────────────────────────────────────┤
 │                        Kernel                            │
@@ -396,7 +396,7 @@ icon = "🎧"
 url_template = "https://example.com/pronounce/{word}/english"
 ```
 
-Dictionary defines the slot (how/where `word_addons` render); it knows nothing about which external sites the user has plugged in. `apps/` stays generic; per-machine integrations live in user config. Graduation paths (SDK helper, manifest `[contributes]` for addons that need logic) are described in `.claude/rules/addons.md`. Reference implementation: `apps/dictionary/` `word_addons` slot.
+Dictionary defines the slot (how/where `word_addons` render); it knows nothing about which external sites the user has plugged in. `apps/` stays generic; per-machine integrations live in user config. Graduation paths (SDK helper, manifest `[contributes]` for addons that need logic) are described in `.claude/rules/addons.md`. Reference implementation: `apps/extension/english-learning/dictionary/` `word_addons` slot.
 
 ### App Capabilities
 
@@ -1148,7 +1148,7 @@ Each of the six lifecycle verbs is backed by multiple mechanism layers. The inte
 | **App** | Runtime service with API endpoints | HTTP requests, `call_app()` | `apps/`, `plugins/` |
 | **Agent** | Autonomous AI with OBSERVE→DECIDE→ACT pipeline | APScheduler cron trigger | `apps/personal/staff/` |
 | **Scheduled** | Periodic execution (cron expression) | Time-based (APScheduler) | Agent configs, `@scheduled` |
-| **Events** | Reactive wiring (emit → listen → act) | EventBus pub/sub | `apps/reactor/`, `@on_event` |
+| **Events** | Reactive wiring (emit → listen → act) | EventBus pub/sub | `apps/public/standard/reactor/`, `@on_event` |
 | **API** | Programmatic access for other components | HTTP GET/POST | FastAPI `@web_route` |
 
 ### Staff Agents (Autonomous)

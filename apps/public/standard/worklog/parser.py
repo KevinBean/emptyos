@@ -8,12 +8,12 @@ Canonical day-note (written by the importer and by the app):
     …prose…
 
     ## Work
-    ### AI Insights
+    ### Data Insights
     - ✅ Wire feed endpoint
     - 🔄 Tune ranking weights
 
     ## Timesheet
-    - AI Insights: 4h
+    - Data Insights: 4h
 
     ## Notes
     - …
@@ -199,7 +199,7 @@ _URL_ITEM = re.compile(r"^https?://", re.I)
 # Length alone is not enough: `emptyos/runtime/vault_index.py` is 30 characters
 # with no spaces and is a perfectly good work item. What separates debris is
 # URL/query *syntax* — a query or fragment character, several path segments, or
-# an opaque identifier run (`price_1IsedpI6TomuV1PdK0LFaAc6`).
+# an opaque identifier run (`price_1AbcdeFGhijKLmnoPQrsTuvw`).
 _DEBRIS_SYNTAX = re.compile(r"[=&%?#]")
 _OPAQUE_ID = re.compile(r"[A-Za-z0-9]{16,}")
 
@@ -311,6 +311,12 @@ def append_section(content: str, header: str, extra_body: str) -> str:
     return replace_section(content, header, merged)
 
 
+def _render_item(it: dict) -> str:
+    """One `- ` line. Shared so the two renderers cannot drift apart."""
+    emoji = STATUS_EMOJI.get(it.get("status") or "", "")
+    return f"- {emoji} {it['text']}" if emoji else f"- {it['text']}"
+
+
 def render_work(groups: list[dict]) -> str:
     """[{project, items}] → ``## Work`` body markdown (re-rendered on each write)."""
     out: list[str] = []
@@ -318,11 +324,135 @@ def render_work(groups: list[dict]) -> str:
         if not g.get("items"):
             continue
         out.append(f"### {g['project']}")
-        for it in g["items"]:
-            emoji = STATUS_EMOJI.get(it.get("status") or "", "")
-            prefix = f"{emoji} " if emoji else ""
-            out.append(f"- {prefix}{it['text']}")
+        out.extend(_render_item(it) for it in g["items"])
         out.append("")
+    return "\n".join(out).strip()
+
+
+# ── preserving render ────────────────────────────────────────────────────────
+# `parse_work` models a `## Work` section as headings + items and NOTHING else,
+# so `parse_work -> render_work` deletes every other line in that section. That
+# is not hypothetical: `timer_stop` writes `> Logged time: 09:00-17:30` into
+# `## Work` via append_section, and 138 of this vault's 227 day notes carry that
+# hand-written convention — so stopping the timer and then logging one more item
+# silently destroyed the day's recorded hours. The corpus also carries
+# `<!-- ai-conversation-evidence:... -->` markers in the same section.
+#
+# `apply_merge_to_note` already protects Timesheet and Notes from exactly this
+# ("a parse/render round trip would silently delete all three from the user's
+# own file"); Work was the one section the lesson was never applied to.
+#
+# Callers that build groups from scratch (a brand-new note) can keep using
+# `render_work` — there is nothing to preserve. Anything rewriting an EXISTING
+# note goes through here.
+
+def _is_heading(line: str) -> bool:
+    """Mirror ``parse_work`` exactly: a heading must start at column 0."""
+    return line.rstrip().startswith("### ")
+
+
+def _is_item(line: str) -> bool:
+    """Mirror ``parse_work`` exactly: an item may be indented."""
+    return line.lstrip().startswith("- ")
+
+
+def _trim(lines: list[str]) -> list[str]:
+    """Drop leading/trailing blank lines so a re-render cannot accumulate them."""
+    out = list(lines)
+    while out and not out[0].strip():
+        out.pop(0)
+    while out and not out[-1].strip():
+        out.pop()
+    return out
+
+
+def work_extras(work_body: str) -> dict:
+    """Lines in `## Work` the group model does not carry, keyed by where they sit.
+
+    ``{"preamble": [...], "headings": [project_lower], "tails": {project_lower:
+    [...]}, "tail": [...]}`` — `preamble` precedes the first group, a group's
+    `tails` entry follows its items, and `tail` trails the last group (the
+    day-level position the `> Logged time:` convention actually uses).
+
+    ``headings`` exists so the renderer can keep a heading that has no items
+    under it. The corpus has 9 such notes (`### 54 day safe projects`), and
+    dropping the heading does not merely lose one line — it silently
+    re-attributes the prose beneath it to the group above.
+
+    The two predicates mirror ``parse_work`` character for character. They used
+    to differ on indentation (`  ### X` was structural here and unmodelled
+    there), which made that line belong to neither side and vanish.
+    """
+    preamble: list[str] = []
+    headings: list[str] = []
+    tails: dict[str, list[str]] = {}
+    buf: list[str] = []
+    current = ""
+    for raw in (work_body or "").split("\n"):
+        line = raw.rstrip("\r")     # a CRLF note must not emit mixed endings
+        if _is_heading(line):
+            if current:
+                # extend, never assign: two groups sharing a name would
+                # otherwise destroy the first one's extras.
+                tails.setdefault(current, []).extend(_trim(buf))
+            else:
+                preamble.extend(_trim(buf))
+            buf = []
+            current = line.strip()[4:].strip().lower()
+            headings.append(current)
+        elif _is_item(line):
+            # Outside any group an item closes the preamble. INSIDE a group the
+            # buffer keeps accumulating, so prose sitting between two items is
+            # re-emitted after both — a reordering, never a loss, and absent
+            # from the corpus. Modelling it would need a per-item position.
+            if not current and buf:
+                preamble.extend(_trim(buf))
+                buf = []
+        else:
+            buf.append(line)
+    return {"preamble": preamble, "headings": headings,
+            "tails": tails, "tail": _trim(buf)}
+
+
+def render_work_preserving(original_work_body: str, groups: list[dict]) -> str:
+    """Render *groups* keeping every unmodelled line from *original_work_body*.
+
+    Position is preserved by project name. Extras belonging to a group that has
+    since been renamed or removed are appended rather than dropped.
+
+    Measured against the real 227-note corpus (209 with a `## Work`): the plain
+    `render_work` round trip loses lines on **145** of them; this loses none.
+    Three fidelity limits remain, all rooted in `parse_work` itself and none of
+    them a *loss*: a nested bullet is flattened to column 0; prose sitting
+    BETWEEN two items of one group is re-emitted after both; and a fenced code
+    block is not understood as a fence, so `### x` inside one has always been
+    read as a real heading (this moves the fence lines rather than fixing that).
+    None occurs in the corpus. Fixing any would mean giving `parse_work` a
+    per-item position model, which changes the `/api/day` and portable payloads.
+    """
+    extras = work_extras(original_work_body)
+    tails = dict(extras["tails"])
+    known = set(extras["headings"])
+    out: list[str] = list(extras["preamble"])
+    if out:
+        out.append("")
+    for g in groups:
+        name = g.get("project") or ""
+        key = name.lower()
+        items = g.get("items") or []
+        # An empty group the ORIGINAL carried keeps its heading; one invented by
+        # a caller does not, which is what `render_work` has always done.
+        if not items and key not in known:
+            continue
+        out.append(f"### {name}")
+        out.extend(_render_item(it) for it in items)
+        tail = tails.pop(key, [])
+        if tail:
+            out.append("")      # the blank line that separated items from extras
+            out.extend(tail)
+        out.append("")
+    orphaned = [l for lines in tails.values() for l in lines]
+    out.extend(orphaned + extras["tail"])
     return "\n".join(out).strip()
 
 

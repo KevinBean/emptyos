@@ -1,11 +1,11 @@
 ---
 name: eos-orgs-create
-description: Create a Real Org in `apps/company/` by extracting details from the current Claude Code conversation and confirming once. Use when the user says "create an org", "new org", "add a company", "make a team for X", or names a concrete organisation (employer, client, side-project group) that doesn't exist in the system yet. Wraps `POST /orgs/api/orgs` so the same vault note + `orgs:org_created` event fire that the web UI produces.
+description: Create a Real Org in `apps/public/standard/company/` by extracting details from the current Claude Code conversation and confirming once. Use when the user says "create an org", "new org", "add a company", "make a team for X", or names a concrete organisation (employer, client, side-project group) that doesn't exist in the system yet. Wraps `POST /orgs/api/orgs` so the same vault note + `orgs:org_created` event fire that the web UI produces. NOT for adding a person to an org that already exists (use eos-orgs-member-add), listing orgs (use eos-orgs-list), or running a scenario against one (use eos-orgs-run-scenario).
 ---
 
 # EmptyOS Orgs — Create
 
-Create a new Real Org under `apps/company/`. Unlike the web UI's AI-form-fill modal, this skill has the current conversation as context — it should pre-fill every field it can infer from chat history, then ask the user to confirm once instead of grilling field-by-field.
+Create a new Real Org under `apps/public/standard/company/`. Unlike the web UI's AI-form-fill modal, this skill has the current conversation as context — it should pre-fill every field it can infer from chat history, then ask the user to confirm once instead of grilling field-by-field.
 
 The skill writes through the HTTP API (`POST /orgs/api/orgs`) so the vault note, frontmatter shape, and downstream events match the web UI exactly. **Do not write vault notes directly** — that bypasses validation + event emission.
 

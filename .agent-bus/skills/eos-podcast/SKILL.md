@@ -21,8 +21,9 @@ Generate two-host conversational podcasts via the EmptyOS Podcast app on `localh
 EmptyOS daemon must be running:
 
 ```bash
-curl -s -o /dev/null -w "%{http_code}\n" http://localhost:9000/podcast/
-# Expect 200. If not: python -m emptyos start
+curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:9000/podcast/
+# Expect 200. If not, ask Kevin to run restart.bat — never start :9000 from a
+# session (.claude/rules/daemon-handling.md).
 ```
 
 Voice pairs, duration presets, and image styles are discoverable:

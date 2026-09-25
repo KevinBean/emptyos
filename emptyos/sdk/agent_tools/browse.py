@@ -37,10 +37,10 @@ Safety posture (mirrors Screenshot/Fetch):
 
 from __future__ import annotations
 
-import ipaddress
 import json
 from urllib.parse import urlparse
 
+from emptyos.nethost import host_is_loopback_or_private
 from emptyos.sdk.agent_tools.base import Tool, ToolResult
 from emptyos.sdk.web_search import untrusted_block
 
@@ -67,18 +67,10 @@ def _is_local_host(host: str) -> bool:
     hostnames (anything not an IP or 'localhost') are treated as non-local so
     they go through the permission gate.
 
-    NOTE: copied from screenshot.py / fetch.py — third occurrence. If a fourth
-    appears, extract to agent_tools/base.py (CLAUDE.md rule 9)."""
-    if not host:
-        return False
-    h = host.lower().strip("[]")  # strip IPv6 brackets
-    if h in ("localhost",):
-        return True
-    try:
-        ip = ipaddress.ip_address(h)
-    except ValueError:
-        return False
-    return ip.is_loopback or ip.is_private
+    Canonicalises first, so `0x7f.0.0.1` and `127.0.0.1.` are recognised as the
+    loopback they resolve to rather than mistaken for DNS names.
+    """
+    return host_is_loopback_or_private(host)
 
 
 class BrowseTool(Tool):

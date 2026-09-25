@@ -14,6 +14,7 @@ Storage: `{vault}/30_Resources/EmptyOS/reports/{doc-id}/` with:
 
 from __future__ import annotations
 
+import json
 import re
 from datetime import datetime
 from pathlib import Path
@@ -400,6 +401,57 @@ class ReportsApp(BaseApp):
         await self.emit("reports:section-updated", {"id": doc_id, "field": "meta"})
         return {"ok": True}
 
+    @web_route("POST", "/api/reports/{doc_id}/signoff")
+    async def api_signoff(self, request):
+        """POST /api/reports/{doc_id}/signoff {role, name, signature?} —
+        records an approval fact (reports-no-signoff-tracking). `approvers`
+        itself stays a plain role-string list (see signoff.py for why a
+        list of dicts can't be written directly); the actual signed facts
+        live in a separate `signoffs_json` scalar field that the signoff-
+        block renderers merge in. Also appends a permanent, timestamped
+        line to a `## Signoff Log` section — an audit trail that survives
+        even if a role gets re-signed later.
+
+        `role` must be one of the report's own configured `approvers` — a
+        signoff for an undefined role would fabricate an "approval" for a
+        role nobody was ever asked to review, and would pollute the audit
+        trail with junk that never even renders (the render path only ever
+        looks up a signoff by an approver role that actually exists)."""
+        doc_id = request.path_params["doc_id"]
+        if not self._report_dir(doc_id).exists():
+            return _not_found(doc_id)
+        body = await request.json()
+        role = str(body.get("role") or "").strip()
+        name = str(body.get("name") or "").strip()
+        if not role or not name:
+            return {"error": "role and name are required"}
+        signature = str(body.get("signature") or "").strip() or name
+
+        path = self._rel(doc_id, "_meta.md")
+        today = datetime.now().strftime("%Y-%m-%d")
+        async with self.note_lock(path):
+            meta = self._load_meta(doc_id)
+            approvers = meta.get("approvers") or []
+            if isinstance(approvers, str):
+                approvers = [a.strip() for a in approvers.split(",") if a.strip()]
+            approver_roles = {a.get("role", "") if isinstance(a, dict) else str(a) for a in approvers}
+            if role not in approver_roles:
+                return {"error": f"'{role}' is not a configured approver role for this report"}
+            try:
+                signoffs = json.loads(meta.get("signoffs_json") or "[]")
+            except (TypeError, ValueError):
+                signoffs = []
+            if not isinstance(signoffs, list):
+                signoffs = []
+            signoffs = [s for s in signoffs if not (isinstance(s, dict) and s.get("role") == role)]
+            signoffs.append({"role": role, "name": name, "date": today, "signature": signature})
+            self.vault_update(path, {"signoffs_json": json.dumps(signoffs)})
+            log_role = _safe_signoff_text(role)
+            log_name = _safe_signoff_text(name)
+            self.vault_append_section(path, "Signoff Log", f"- {today} — **{log_role}** approved by {log_name}")
+        await self.emit("reports:signed-off", {"id": doc_id, "role": role, "name": name, "date": today})
+        return {"ok": True, "signoffs": signoffs}
+
     @web_route("DELETE", "/api/reports/{doc_id}")
     async def api_delete_report(self, request):
         doc_id = request.path_params["doc_id"]
@@ -718,3 +770,17 @@ def _mtime(p: Path) -> str:
 
 def _not_found(doc_id: str) -> dict:
     return {"error": f"Report not found: {doc_id}"}
+
+
+def _safe_signoff_text(text: str) -> str:
+    """Markdown-safe single line for the Signoff Log (reports-no-signoff-
+    tracking): collapses whitespace/newlines so a caller-supplied role/name
+    can't break out of the one-line bullet or inject a fake frontmatter/
+    heading delimiter, and neutralises the markdown/HTML-active characters
+    (`[ ] < >`) so it can never become a live link, image, or tag when the
+    vault note is viewed."""
+    collapsed = " ".join((text or "").split())
+    return (
+        collapsed.replace("[", "(").replace("]", ")")
+        .replace("<", "‹").replace(">", "›")
+    )

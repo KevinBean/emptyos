@@ -14,6 +14,14 @@ This skill is the *verification* half. Finding candidates is
 `scripts/check_path_builders.py`; fixing the class broadly is
 `.claude/rules/` work. Here you prove one instance, or clear it.
 
+
+## Prerequisites
+
+A canary needs a live route, so the daemon must be up — but never `:9000`. Lease a
+sandbox member (`.claude/rules/sandbox-driven-testing.md`) and canary there: the whole
+point of this skill is to find out whether a path reaches `unlink`, and finding out on
+the real vault is the outcome it exists to prevent.
+
 ## Why this needs a skill: the failure is a FALSE ALL-CLEAR
 
 A traversal probe that comes back "not found" looks exactly like a working

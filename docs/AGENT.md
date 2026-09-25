@@ -41,8 +41,9 @@ The tool registry lives in `emptyos/sdk/agent_tools/` — one file per tool, a s
 | `Screenshot` | Capture a UI screenshot via the playwright plugin (flagged `readonly` for plan mode). |
 | `Skill` | Run a registered skill (flagged `readonly` for plan mode). |
 | `RestartDaemon` | Privileged — restart a sandbox daemon (not `:9000`/`:9001`). |
+| `CreateArtifact` | Save a standalone HTML page the model wrote as an artifact, through viz (`viz.save_artifact` → the same record note + version ring a generated artifact gets). Auto-approved: it hands HTML to viz and chooses no path of its own, so the only reachable write is an artifact under viz's outputs, and a revision keeps the render it replaced. Dark-flagged `[apps.agent] feature.artifacts.enabled`; with the flag off it is removed from the registry, so no surface is offered it. |
 
-The read-only v1 set (Read/Grep/Glob/Bash) plus the v1.5 mutating set (Write/Edit/CallApp/VaultQuery/SubAgent) have all shipped; the 17-tool `V1_TOOLS` registry above is the live set.
+The read-only v1 set (Read/Grep/Glob/Bash) plus the v1.5 mutating set (Write/Edit/CallApp/VaultQuery/SubAgent) have all shipped; the `V1_TOOLS` registry above is the live set (`CreateArtifact` is in it only while its flag is on).
 
 ## Providers
 
@@ -69,13 +70,33 @@ The web UI and `eos chat` both surface a banner when a native-agent session is r
 
 ### Provider selection
 
-Per-session `provider` field → settings `agent.default_provider` → first agent-capable provider found (tool-capable preferred, then natively agentic). Resolved at turn start; switching mid-session isn't supported in v1.
+A new session takes its `provider` from settings `think.app.agent` — the single knob that the `/agent/` model pill, the settings-panel "Default Provider" field and `eos chat`'s `/model … save` all write — then the legacy `agent.default_provider`, then `openai`. A stored value counts only if it names a provider the agent loop can drive (a pill can list others, e.g. `codex`). An existing session keeps its own `provider`; at turn start an unavailable one falls back to the first agent-capable provider.
 
 **Default on this machine:** `ollama` with `qwen3.5:latest` (9.7B). For Claude-quality agent runs without paying API, pick `claude-cli`:
 
 ```bash
-eos settings set agent.default_provider claude-cli
+eos settings set think.app.agent claude-cli
 ```
+
+`GET /agent/api/providers` lists the agent-capable providers for a picker — `{name, kind, model, available, chat_ok, is_cloud}` plus `default` and `chat_default`. `kind` is the wire family (`anthropic` / `openai` / `json`) or `native`. `GET /agent/api/sessions/{sid}` adds `history_kind`, read from each stored message's `provider_kind`: OpenAI tool-call history and Anthropic block history fail on the next turn if replayed to the other family, so `PATCH … {provider}` refuses a switch out of it. Native and handoff messages are plain strings any provider replays, and a native provider flattens whatever history it gets, so neither locks a session.
+
+### Session profiles
+
+A session's `profile` column says what kind of conversation it is (`profiles.py`). Blank — every session `/agent/` and `eos chat` create — is **coding**: the default prompt, the whole tool registry, the orient pass, the app-scaffold and skill auto-trigger blocks, episodic recall, the plan-mode banner, CLAUDE.md and the repo map. An unknown stored value is refused, never read as coding. **chat** (the portal's chat-first home, `POST /agent/api/sessions {"profile": "chat"}`) swaps in `CHAT_SYSTEM_PROMPT` and skips all of those passes; it keeps the app catalog, the skills catalog and a `/mode` persona if one is set. Its tools are VaultQuery, Locate, WebSearch, Skill, ContextRef, the flagged CreateArtifact (below) and three **narrowed** ones (`emptyos/sdk/agent_tools/restricted.py`) — hiding a schema does not bound what an offered tool can reach: **Fetch** is public-web GET only with every redirect re-checked; **CallApp** runs only declared `[[provides.verbs]]` on the agent / assistant / mcp surfaces and never an eligibility-`never` verb; **Read** is confined to the vault and the configured file roots, never the repo (whose `emptyos.toml` holds the credentials). A `connectors` column is reserved for per-chat MCP tools (B5); nothing sets it yet; `project_id` is covered below. A chat is refused on a natively-agentic provider (it runs its own tools past this registry and the consent gate); one created without a provider takes `chat_default` — the usual default if the loop can drive it, else the first local tool-capable provider. A chat turn on a cloud provider passes the cloud-consent gate first (`AgentApp._cloud_turn_allowed`); `eos chat` refuses to resume a chat session.
+
+### Chat projects and search
+
+A **project** (`projects.py`, stored in `ChatSessionStore`'s opt-in projects table) is a name plus standing instructions. A session's `project_id` puts it in one; every turn of that session gets the project's instructions in its system prompt (built once per turn, so the prompt prefix stays stable). Routes: `GET/POST /agent/api/projects`, `PATCH/DELETE /agent/api/projects/{pid}` (deleting a project keeps its chats, detached). `POST /agent/api/sessions` and `PATCH …/sessions/{sid}` refuse a `project_id` that names no project. Two plain verbs for other apps: `create_chat_project(name, instructions)` and `assign_chat_project(session_id, project_id)` — portal's `POST /portal/api/folders/migrate` uses them to copy its folders into projects (re-runnable, backs up `folders.json` first, moves only `agent:` threads).
+
+`GET /agent/api/search?q=…[&project=…][&profile=chat]` searches what was said — the user's typed text and the assistant's replies, never tool output — plus session names, one row per session (the filter and grouping run in SQL, so a busy session cannot crowd a match out), ordered by latest activity. Injected orient/memory context and loop nudges are left out for messages stored since 2026-09-12, when turns began recording `display_text` / `origin`; older sessions are indexed as they were stored, injected blocks included. The index is SQLite FTS5 with the trigram tokenizer, so CJK substrings match (a `LIKE` over `content_json` cannot: `json.dumps` escapes them to `\uXXXX`). Queries under three characters, and a SQLite without FTS5, fall back to a substring scan. The first boot with search on indexes every stored message, inline in `setup()` (41 ms for 1,580 on the author's machine, about 26 µs a message); bumping `SEARCH_INDEX_VERSION` rebuilds it. The projects table, the index and `delete_session` removing a session's messages are part of the agent's store whatever the portal flag says — only the portal UI for them is dark.
+
+### Attachments and vault context
+
+A WS `message` may carry `attachments` (vault-relative paths, capped at `MAX_ATTACHMENTS`), `vault_context: true` ("ground this in my notes"), and `cloud_ok: true`. `turn_inputs.py` turns them into what the model reads: images become provider-native parts (`emptyos/sdk/attachments.py` — OpenAI `image_url`, Anthropic `image` blocks; the OpenAI-compat normalizer used to flatten a part list to its text, so an attached screenshot never arrived), documents (pdf / docx / txt / md) become fenced extracted text after the user's words, and the vault block goes first. Every path is confined to the vault, and anything unusable is reported as `agent:attachment_problems` rather than dropped.
+
+Two refusals come first. An image for a model that cannot read it is an error naming the model, never a silent reroute (`provider_reads_images`). And vault-derived content — attachments or the vault block — is never sent to a **cloud** provider without `cloud_ok` for that message: the turn is refused with `agent:needs_confirmation` (CLAUDE.md rule 19). That holds on later turns too, which is where it is easy to lose: **every** message the turn appends is stored marked (the reply quotes the file; the tool results carry it), and a replay to a cloud model that was not approved for it shows the user's own typed words plus a withheld note instead. An approval is recorded against the provider it was given for, so the same model replays that content without asking again and a different one does not.
+
+History stores an image as `{"type": "eos_image", "path": …}`, not base64; `hydrate_messages` turns it back into the current provider's part on each turn and strips every `eos_*` key before the provider sees the message. A file that has since moved, a model that cannot read images, and anything past the per-turn image budget (`MAX_REPLAY_IMAGE_BYTES`) each replay as a short note rather than a failed request. A send that is only attachments is recorded as `📎 <names>`, so the transcript and the chat search show that rather than the extracted text.
 
 ## Permission Manager
 
@@ -217,6 +238,38 @@ url = "http://127.0.0.1:19790/mcp"
 ```
 
 Dark default: with the flag off (or no `mcp_servers` rows) the registry is byte-identical. A server that fails to start is dropped (boot never breaks). Servers stop on app teardown.
+
+**Connectors — the same thing, managed at runtime (B5).** `agent/connectors.py`
+adds what a chat home needs on top of those config rows: a **store** the user
+writes from the UI (`data/apps/agent/mcp_servers.json`, listed alongside the
+toml rows, which stay read-only because the file is the user's), **connect and
+disconnect without a restart**, and a **per-chat** enabled set (the session's
+`connectors` column, read by `profiles.select_session_tools` — a connected
+server's tools exist, which is not the same as every conversation being offered
+them).
+
+Three properties worth keeping:
+
+- **Adding a stdio server is propose → confirm.** `POST /agent/api/connectors`
+  answers `needs_confirmation` with the exact command line and spawns nothing;
+  `confirm: true` is what writes it. A `url` row is added directly — a URL we
+  call is not a process we spawn.
+- **Secrets are referenced, never stored.** A header or env value written
+  `${NAME}` is expanded from the daemon's environment at connect time, so the
+  store keeps the *name*. A missing name refuses the connection and says which,
+  rather than connecting without the credential and reporting "unauthorized".
+  A literal value a user pasted is masked before the page ever sees it.
+- **Refused in public mode**, on every path including boot: connecting an MCP
+  server is local execution or an outbound call made on the daemon's behalf.
+
+MCP output is fenced as untrusted data (`.claude/rules/untrusted-content.md`)
+behind `feature.untrusted-wrap.enabled` — a server's text lands verbatim in the
+model's context and nobody here audited that server.
+
+Routes: `GET /agent/api/connectors`, `POST /agent/api/connectors`,
+`POST /agent/api/connectors/{id}/connect` (`{"connect": false}` disconnects),
+`POST /agent/api/connectors/{id}/remove`,
+`POST /agent/api/sessions/{sid}/connectors`.
 
 An HTTP server is one we reach but never spawn, so it is simply **absent** when it is not running — the normal state for a desktop app, and deliberately silent rather than an error on every boot. Reaching the host is bounded separately from the call (`sock_connect`), because a URL, unlike a local `command`, can name a machine that swallows the connection rather than refusing it — and this runs inside the agent app's `setup()`.
 

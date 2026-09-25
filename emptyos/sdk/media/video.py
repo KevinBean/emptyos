@@ -228,6 +228,117 @@ async def concat_clips(
         raise RuntimeError(f"ffmpeg concat failed: {err}")
 
 
+# Burned-in caption look shared by every assembler that takes an SRT.
+_SRT_STYLE = "FontSize=13,PrimaryColour=&Hffffff&,OutlineColour=&H000000&,Outline=2,MarginV=25"
+
+
+def _subtitles_filter(srt_path: str) -> str:
+    """ffmpeg ``subtitles=`` filter for ``srt_path`` — the path escaping is the
+    part that goes wrong on Windows (a drive-letter colon ends the option)."""
+    srt_esc = str(srt_path).replace("\\", "/").replace(":", "\\:")
+    return f"subtitles='{srt_esc}':force_style='{_SRT_STYLE}'"
+
+
+async def still_to_clip(
+    image: str | Path,
+    out: str | Path,
+    duration_s: float,
+    *,
+    resolution: tuple[int, int] = (1280, 720),
+    fit: str = "contain",
+    pad_color: str = "black",
+    gpu: bool = False,
+) -> None:
+    """Hold one image for ``duration_s`` as a silent CFR clip at ``resolution``.
+
+    The per-scene building block for a narrated video that mixes stills with
+    recorded clips: every piece becomes a uniform clip first, so the final
+    ``concat_clips`` never meets the mixed-size demuxer trap. Raises
+    RuntimeError on ffmpeg failure.
+    """
+    if duration_s <= 0:
+        raise RuntimeError(f"still_to_clip needs a positive duration, got {duration_s}")
+    out = Path(out)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    w, h = resolution
+    codec = await video_args_resolved(crf=23, preset="fast", gpu=gpu, pix_fmt=None)
+    rc, err = await _run([
+        "ffmpeg", "-y", "-loop", "1", "-i", str(image),
+        "-vf", _scene_fit_filter(w, h, fit, pad_color),
+        "-an", *codec, "-t", f"{duration_s:.3f}",
+        "-movflags", "+faststart", str(out),
+    ])
+    if rc != 0 or not out.exists():
+        raise RuntimeError(f"ffmpeg still→clip failed: {err}")
+
+
+async def fit_clip_to_duration(
+    clip: str | Path,
+    out: str | Path,
+    duration_s: float,
+    *,
+    resolution: tuple[int, int] = (1280, 720),
+    pad_color: str = "black",
+    gpu: bool = False,
+) -> None:
+    """Re-encode ``clip`` to exactly ``duration_s`` at ``resolution``, silent.
+
+    A shorter clip holds its final frame (``tpad`` clone) rather than being
+    time-stretched, so a recorded animation ends on its finished state while
+    the narration for that scene plays out; a longer one is trimmed. Raises
+    RuntimeError on ffmpeg failure.
+    """
+    if duration_s <= 0:
+        raise RuntimeError(f"fit_clip_to_duration needs a positive duration, got {duration_s}")
+    out = Path(out)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    w, h = resolution
+    vf = (
+        f"{_scene_fit_filter(w, h, 'contain', pad_color)},"
+        f"tpad=stop_mode=clone:stop_duration={duration_s:.3f}"
+    )
+    codec = await video_args_resolved(crf=23, preset="fast", gpu=gpu, pix_fmt=None)
+    rc, err = await _run([
+        "ffmpeg", "-y", "-i", str(clip), "-vf", vf,
+        "-an", *codec, "-t", f"{duration_s:.3f}",
+        "-movflags", "+faststart", str(out),
+    ])
+    if rc != 0 or not out.exists():
+        raise RuntimeError(f"ffmpeg clip fit failed: {err}")
+
+
+async def mux_audio(
+    video: str | Path,
+    audio: str | Path,
+    out: str | Path,
+    *,
+    srt_path: str = "",
+    gpu: bool = False,
+) -> None:
+    """Lay ``audio`` under ``video`` (optionally burning in ``srt_path``).
+
+    Without subtitles the video stream is copied untouched; with them it is
+    re-encoded through the shared caption style. The output ends with the
+    shorter stream. Raises RuntimeError on ffmpeg failure.
+    """
+    out = Path(out)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    cmd: list[str] = ["ffmpeg", "-y", "-i", str(video), "-i", str(audio)]
+    if srt_path and Path(srt_path).exists():
+        codec = await video_args_resolved(crf=23, preset="fast", gpu=gpu, pix_fmt=None)
+        cmd += ["-vf", f"{_subtitles_filter(srt_path)},format=yuv420p", *codec]
+    else:
+        cmd += ["-c:v", "copy"]
+    cmd += [
+        "-map", "0:v:0", "-map", "1:a:0",
+        "-c:a", "aac", "-b:a", "192k",
+        "-shortest", "-movflags", "+faststart", str(out),
+    ]
+    rc, err = await _run(cmd)
+    if rc != 0 or not out.exists():
+        raise RuntimeError(f"ffmpeg mux failed: {err}")
+
+
 def _scene_fit_filter(w: int, h: int, fit: str, pad_color: str) -> str:
     """Per-image ffmpeg filter to a uniform WxH frame.
 
@@ -298,11 +409,7 @@ async def assemble_video(
     fc.append("".join(f"[v{i}]" for i in range(n)) + f"concat=n={n}:v=1:a=0[cat]")
 
     if srt_path and Path(srt_path).exists():
-        srt_esc = srt_path.replace("\\", "/").replace(":", "\\:")
-        fc.append(
-            f"[cat]subtitles='{srt_esc}':force_style="
-            f"'FontSize=13,PrimaryColour=&Hffffff&,OutlineColour=&H000000&,Outline=2,MarginV=25'[v]"
-        )
+        fc.append(f"[cat]{_subtitles_filter(srt_path)}[v]")
         vmap = "[v]"
     else:
         vmap = "[cat]"

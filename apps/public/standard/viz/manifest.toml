@@ -1,5 +1,6 @@
 [app]
 id = "viz"
+icon_id = "viz"
 store_category = "creative"
 name = "Viz"
 version = "1.0.0"
@@ -13,11 +14,22 @@ class = "VizApp"
 [requires]
 capabilities = ["think", "read", "write"]
 apps = ["kb"]
+# publish receives static figures (export_figure -> figure_asset_path /
+# attach_figure) but must not be a load-time dependency: the export refuses
+# cleanly when it is absent, which is the graceful-fallback shape.
+optional_apps = ["publish"]
 # agent-runtime is OPTIONAL, not required: iterate prefers it (claude-cli with
 # Read+Edit tools, surgical edits — see _iterate_stream_events) but falls back
 # to a `think`-based whole-file rewrite when it's absent (cloud/demo). Declaring
 # it required only printed a misleading "unmet deps" warning where iterate works
 # fine. The plugin is still discovered + used wherever it loads.
+# manim is likewise a soft dependency (same as robot-modeller's `cadquery` —
+# a plugin declaration warns at boot when the user-home venv isn't set up,
+# never blocks it). Only the dark-flagged `generate_math_animation` verb
+# touches it; every other shape/route is unaffected by its absence. See
+# .claude/rules/environment.md + docs/OPEN-SOURCE-BORROWING-PLAN.md §
+# ManimCommunity/manim (2026-08-22).
+plugins = ["manim"]
 services = []
 events = []
 
@@ -26,6 +38,45 @@ commands = ["viz"]
 
 [provides.web]
 prefix = "/viz"
+
+# ── Unified verb registry (single source of truth) ──────────────────────────
+# One declaration per invokable verb; the voice/assistant/mcp/agent surfaces
+# and the autopilot eligibility floor are views over this. See
+# .claude/rules/verb-registry.md. `method` is the canonical call_app handler.
+# `eligibility = "gated"` (never "stable" — a free-text generation prompt is
+# exactly the CLAUDE.md autopilot example of content that must stay reviewed,
+# same class as rooms.write_note). `surfaces = ["mcp"]` opts this verb into
+# the outbound MCP foundry (emptyos/mcp_outbound_server.py) so an external
+# client (Claude Desktop, Cursor, Codex) can ask EmptyOS's own viz pipeline to
+# generate an artifact — the closest real analogue to Spline's "Spline MCP"
+# (see docs/OPEN-SOURCE-BORROWING-PLAN.md § Spline V2, 2026-08-22). NOTE: a
+# "gated" verb is declared + drift-tracked but not yet reachable through the
+# standalone foundry process out of the box — it re-checks eligibility
+# against the legacy `policy.json` floor (DEFAULT_ELIGIBLE_VERBS, stable-only)
+# because that subprocess never boots the kernel. Reaching it via MCP needs an
+# explicit `eos autopilot` / policy.json `operator_eligible` widen — the same
+# state `task.note` (also gated + mcp) is already in. That's intentional, not
+# a bug: MCP-with-review is a stronger default than MCP-with-none.
+[[provides.verbs]]
+verb = "viz.generate"
+method = "generate"
+summary = "Generate a standalone single-file HTML/JS artifact (3D scene, diagram, chart, slide deck, etc.) from a text prompt"
+args = { prompt = "string", shape = "string?" }
+eligibility = "gated"
+surfaces = ["mcp"]
+
+# Precise, frame-accurate math/explainer animation via the manim plugin —
+# a separate pipeline from the PRESETS-driven HTML shapes above (see
+# math_animation.py's module docstring). Dark by default
+# (viz.feature.math-animation.enabled); the verb is declared regardless so
+# drift-tracking sees it once the flag is flipped.
+[[provides.verbs]]
+verb = "viz.generate_math_animation"
+method = "generate_math_animation"
+summary = "Generate a precise, frame-accurate Manim animation (LaTeX-free shapes/text) from a text prompt, returns a video record"
+args = { prompt = "string", quality = "string?" }
+eligibility = "gated"
+surfaces = ["mcp"]
 
 # ✨ AI field-suggest — vault-grounded prompt ideas (see .claude/rules/field-suggest.md)
 [[provides.field_suggest]]
@@ -45,6 +96,8 @@ emits = [
     "viz:embed_resynced",
     "viz:refine_paused",
     "viz:refine_done",
+    "viz:figure_exported",
+    "viz:restored",
 ]
 listens = []
 # Generator internal: artifact CRUD + render are per-app, not life signals.
@@ -56,7 +109,16 @@ internal = [
     "viz:embed_resynced",
     "viz:refine_paused",
     "viz:refine_done",
+    # A version-ring restore is a UI-driven state change on the artifact, the
+    # same class as created/updated above; only this app's own page reacts.
+    "viz:restored",
 ]
+
+# Read-only table/kanban over the artifact corpus. The `viz` tag has been
+# written on every record since day one; this is the first thing to read it.
+[[contributes.boards.preset]]
+id = "viz-artifacts"
+method = "board_presets"
 
 [provides.timeline]
 entity_source = "artifact_path"
@@ -66,6 +128,8 @@ schema = [
     {key = "viz.default_shape", label = "Default shape preset", type = "select", default = "3d-scene", options = ["3d-scene", "immersive-scene", "svg-diagram", "schematic", "network-graph", "chart", "anim-explainer", "slide-deck", "math-explainer", "mermaid"], hint = "Which artifact shape the LLM defaults to when the prompt doesn't specify."},
     {key = "viz.think_domain", label = "Think domain", type = "select", default = "code", options = ["code", "text", "reason"], hint = "Routing hint passed to the think capability — `code` favours providers tuned for code output (LLM writes HTML/JS)."},
     {key = "viz.max_html_kb", label = "Max HTML size (KB)", type = "number", default = 256, hint = "Refuse to save artifacts larger than this. Guards against runaway generation."},
+    {key = "viz.feature.figure-export.enabled", label = "Static figure export", type = "boolean", default = false, hint = "Allow exporting an SVG-shaped artifact (svg-diagram, schematic) as a standalone .svg + 2x .png into a KB note or a published article. Off by default."},
+    {key = "viz.feature.math-animation.enabled", label = "Precise math animation (Manim)", type = "boolean", default = false, hint = "Generate frame-accurate, deterministically-timed animations (LaTeX-free shapes/text) via the manim plugin instead of LLM-improvised WAAPI timing. Needs the manim plugin's user-home venv set up first (.claude/rules/environment.md). Off by default."},
 ]
 
 [provides.welcome]
@@ -81,6 +145,16 @@ icon = "🎞"
 description = "A presentation deck generated as a standalone HTML artifact."
 method = "deliver_work"
 iterate = "iterate"
+
+# AI Fluency tour arc, step 2/4 (Description) — see .claude/rules/prompt-management.md
+[[contributes.tour.step]]
+id = "viz.description"
+group = "core"
+priority = 430
+route = "/viz/"
+spotlight = "#prompt"
+title = "Description is the whole interface"
+body = "A vague brief gets a vague scene — <strong>'sun at centre, four inner planets orbiting at scaled distances, labelled'</strong> beats 'the solar system'. Subject, composition, what matters: that's the instruction. Click the ✨ for AI-suggested briefs grounded in your own notes if you'd rather start from something than a blank box."
 
 [[contributes.work.deliverable]]
 id = "infographic"

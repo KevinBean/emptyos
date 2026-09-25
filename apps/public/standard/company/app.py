@@ -163,11 +163,12 @@ class CompanyApp(BaseApp):
     set_field = _boards.set_field
 
     # ── Dispatch (extracted to dispatch.py) ──
-    run_scenario       = _dispatch.run_scenario
-    _CHAIN_FRAMINGS    = _dispatch._CHAIN_FRAMINGS
-    chain_scenario     = _dispatch.chain_scenario
-    _run_in_room       = _dispatch._run_in_room
-    _append_run_memory = _dispatch._append_run_memory
+    run_scenario         = _dispatch.run_scenario
+    _CHAIN_FRAMINGS      = _dispatch._CHAIN_FRAMINGS
+    chain_scenario       = _dispatch.chain_scenario
+    _run_in_room         = _dispatch._run_in_room
+    _append_run_memory   = _dispatch._append_run_memory
+    route_to_specialist  = _dispatch.route_to_specialist
 
     # ── Members (extracted to members.py) ──
     list_members                  = _members.list_members
@@ -205,6 +206,7 @@ class CompanyApp(BaseApp):
     api_list_scenarios     = _routes.api_list_scenarios
     api_run_scenario       = _routes.api_run_scenario
     api_chain_scenario     = _routes.api_chain_scenario
+    api_route_to_specialist = _routes.api_route_to_specialist
     api_list_runs          = _routes.api_list_runs
     api_get_run            = _routes.api_get_run
     api_apply_pending      = _routes.api_apply_pending

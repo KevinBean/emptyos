@@ -23,6 +23,7 @@ from .render_html import (
     TABLE_TOKEN_RE,
     WIKILINK_REQ_RE,
 )
+from .signoff import merged_approver_rows
 
 
 class PythonDocxMissing(RuntimeError):
@@ -386,10 +387,8 @@ def _add_structured_table(doc, table_name: str, rows: list[dict]) -> None:
 
 
 def _add_signoff_table(doc, meta: dict) -> None:
-    approvers = meta.get("approvers") or []
-    if isinstance(approvers, str):
-        approvers = [a.strip() for a in approvers.split(",") if a.strip()]
-    if not approvers:
+    rows_data = merged_approver_rows(meta.get("approvers") or [], meta.get("signoffs_json", ""))
+    if not rows_data:
         p = doc.add_paragraph()
         p.add_run("No approvers configured.").italic = True
         return
@@ -399,12 +398,9 @@ def _add_signoff_table(doc, meta: dict) -> None:
     )
     h = table.rows[0].cells
     h[0].text, h[1].text, h[2].text, h[3].text = "Role", "Name", "Date", "Signature"
-    for a in approvers:
+    for r in rows_data:
         row = table.add_row()
-        if isinstance(a, dict):
-            row.cells[0].text = str(a.get("role", ""))
-            row.cells[1].text = str(a.get("name", ""))
-            row.cells[2].text = str(a.get("date", ""))
-            row.cells[3].text = str(a.get("signature", ""))
-        else:
-            row.cells[0].text = str(a)
+        row.cells[0].text = r["role"]
+        row.cells[1].text = r["name"]
+        row.cells[2].text = r["date"]
+        row.cells[3].text = r["signature"]

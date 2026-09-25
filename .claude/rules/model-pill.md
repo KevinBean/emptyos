@@ -1,8 +1,14 @@
+---
+paths:
+  - "apps/**"
+  - "emptyos/web/static/**"
+  - "emptyos/web/server.py"
+---
 # Model Pill Rule — Visible, Switchable Provider on Every Think Surface
 
 `EOS_UI.modelPill()` is the shared toolbar chip that shows which `think` provider is about to spend the user's budget, with click-to-switch. Input-side mirror of `EOS_UI.provenance()`: the latter shows where bytes flowed (cloud/local), the pill shows who's paying for the compute.
 
-**Reference implementation:** `apps/viz/pages/index.html` (header `.right`).
+**Reference implementation:** `apps/public/standard/viz/pages/index.html` (header `.right`).
 **Component source:** `emptyos/web/static/eos-components.js` (`EOS_UI.modelPill`, `EOS_UI.MODEL_COSTS`, helpers `_modelCostFor` + `_modelCostIcon`).
 **Backend:** `GET /api/capabilities/think/effective?app=<id>&domain=<d>` in `emptyos/web/server.py`.
 **Settings keys it reads/writes:** `think.app.<id>` (single-provider override).

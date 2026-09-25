@@ -1,6 +1,6 @@
 ---
 name: eos-devlog-publish
-description: Turn EmptyOS session devlogs into DRAFT posts on the EmptyOS site (eos.binbian.net). Reads session sections from `{vault}/10_Projects/emptyos/log/YYYY-MM-DD.md`, writes them as draft post notes (unpublished by default) under the EmptyOS site source. Posts show up in the Publish app's Drafts tab for review — user flips the publish flag to true when ready. Pass `--publish` to skip the draft step. Checks discrepancies vs what's already published, triggers local rebuild, never auto-deploys. Use when the user says "publish devlog", "draft session", "save session as draft", "blog this session", or wants to surface session work publicly after `/eos-session-wrapup`.
+description: Turn EmptyOS session devlogs into DRAFT posts on the EmptyOS site (eos.binbian.net). Reads session sections from `{vault}/10_Projects/emptyos/log/YYYY-MM-DD.md`, writes them as draft post notes (unpublished by default) under the EmptyOS site source. Posts show up in the Publish app's Drafts tab for review — user flips the publish flag to true when ready. Pass `--publish` to skip the draft step. Checks discrepancies vs what's already published, triggers local rebuild, never auto-deploys. Use when the user says "publish devlog", "draft session", "save session as draft", "blog this session", or wants to surface session work publicly after `/eos-session-wrapup`. NOT for writing the session log itself (use eos-session-wrapup, which this reads) and NOT for diagrams or screenshots in the post (use eos-article-diagrams / eos-screenshot).
 ---
 
 # EmptyOS Devlog Publish
@@ -21,12 +21,12 @@ Session logs live in the vault at `10_Projects/emptyos/log/YYYY-MM-DD.md`. The l
 
 ## Prerequisites
 
-- Vault connected (`.Codex/vault-connection.json` → connected: true)
+- Vault connected (`.claude/vault-connection.json` → connected: true)
 - EmptyOS daemon running on `localhost:9000` (for the rebuild trigger)
 - Session log exists at `{vault}/10_Projects/emptyos/log/YYYY-MM-DD.md`
 - EmptyOS site configured in Publish app (id: `emptyos`, source: `30_Resources/EmptyOS-Site`)
 
-Read vault path from `.Codex/vault-connection.json`. Read site source folder from the publish sites.json or via `curl http://localhost:9000/publish/api/sites`.
+Read vault path from `.claude/vault-connection.json`. Read site source folder from the publish sites.json or via `curl http://localhost:9000/publish/api/sites`.
 
 ## Arguments
 
@@ -193,7 +193,7 @@ Devlog Publish:
 The source log is a developer's private record. Most of what it contains — specific dollar amounts, account names, personal domains, employer references, contract details, body-metrics, dated life events, retirement targets — must never appear on the public site. Before writing any post:
 
 1. **Only core/community work is eligible.** Filter sessions by what they touched:
-   - **Eligible (publish):** changes under `emptyos/` (kernel, SDK, web, runtime, cli, capabilities), `apps/<non-personal>/` (capture, note, task, search, link, settings, system-log, run, git, reactor, app-gen, plugin-gen, release, tests, assistant, publish, music-studio, web-analytics, app-analytics, model-bench, billing, ai-queue, tmpl), `plugins/`, `scripts/`, `docs/`, `.Codex/skills/`, `restart.*`, `release.toml`, `AGENTS.md`, architecture concepts.
+   - **Eligible (publish):** changes under `emptyos/` (kernel, SDK, web, runtime, cli, capabilities), `apps/<non-personal>/` (capture, note, task, search, link, settings, system-log, run, git, reactor, app-gen, plugin-gen, release, tests, assistant, publish, music-studio, web-analytics, app-analytics, model-bench, billing, ai-queue, tmpl), `plugins/`, `scripts/`, `docs/`, `.claude/skills/`, `restart.*`, `release.toml`, `CLAUDE.md`, architecture concepts.
    - **Not eligible (skip or strip):** anything under `apps/personal/` — finance, net-worth, retirement, cable, healing, jobs, job-scout, reader, media, contacts, places, items, habits, workout, sleep, reminders, bookmarks, weather, recipes, nutrition, english, speaking, voice-review, shadowing, hub, staff, briefing, digest, reflect, integrity, sheath-voltage, phone_agent, hdd-estimator, music-studio-before-it-moved.
    - Even when a personal app is mentioned as *context* for a core pattern (e.g. "VaultLibrary was extracted after five apps hand-rolled the same pattern"), name the pattern, don't enumerate the personal apps.
 
@@ -234,6 +234,7 @@ The source log is a developer's private record. Most of what it contains — spe
 
 ## Relationship to Other Skills
 
+- `eos-communication-define-your-reader` runs **before** Step 3 (Build Post Frontmatter + Body) whenever the session is genuinely dense or dual-audience (an architecture change, a design tradeoff) — name the reader persona first, then write the reflection to them. Skip it for straightforward "here's what shipped" sessions where the voice guidelines below already cover the calibration.
 - `/eos-session-wrapup` writes the devlog; this skill **reads** it. Keep them separate — wrapup is always-on hygiene, publish is optional promotion.
 - `scripts/generate_emptyos_site.py` regenerates the inventory pages (`apps.md`, `plugins.md`, `capabilities.md`). This skill writes posts only; it doesn't touch inventory pages.
 - Reactor's journal ripple adds breadcrumbs to `50_Journal/`. That's private journal flavour, not public.
@@ -245,7 +246,7 @@ Three layers:
 
 ## Known Gaps
 
-- Reflective rewriting is Codex's job inside the skill call — there is no deterministic parser that can do this. That means quality varies with how well the session log captured motivation, not just actions. Logs that only list files changed produce thinner posts.
+- Reflective rewriting is Claude's job inside the skill call — there is no deterministic parser that can do this. That means quality varies with how well the session log captured motivation, not just actions. Logs that only list files changed produce thinner posts.
 - No automatic linking between consecutive sessions. Each post stands alone, though the voice guidelines encourage mentioning the prior decision when natural.
 - Build endpoint currently only targets the active site, so the skill flips active→build→flip-back. Fix when `/publish/api/build` learns an optional `site_id` body param.
 - Per-session tag inference: posts currently inherit the log file's frontmatter tags. A smarter version would infer 1–2 topic tags from the session content.

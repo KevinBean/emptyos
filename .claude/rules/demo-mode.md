@@ -1,3 +1,10 @@
+---
+paths:
+  - "demo/**"
+  - "emptyos/kernel/**"
+  - "scripts/release-public.py"
+  - "scripts/check-personal.py"
+---
 # Demo Mode + Privacy Contract
 
 EmptyOS has three orthogonal knobs that together decide what's deployed, what's gated, and what's never shipped. They are independent — combine them as needed; don't conflate them in code or docs.

@@ -105,26 +105,61 @@ def optional_read(
 ) -> str | None:
     try:
         return reader(path)
+    except FileNotFoundError:
+        # Direct-vault mode must match the API reader's 404 semantics so
+        # first_existing() can continue through legacy path candidates.
+        return None
     except urllib.error.HTTPError as error:
         if error.code == 404:
             return None
         raise
 
 
+def _split_frontmatter(text: str) -> tuple[str, str] | None:
+    """Return (frontmatter_block, body) or None when there is no frontmatter.
+
+    LINE-ANCHORED. `text.split("---", 2)` is not: a `---` appearing anywhere
+    inside a YAML *value* — an asset filename, a title, an alias — terminates the
+    block early, and every downstream reader then hashes the wrong body. That was
+    a live defect here, and it was patched by sanitizing one input so it could
+    not contain `---`, which left the parser wrong for every other input.
+
+    This mirrors `emptyos/frontmatter.py::fm_end`, which exists in the main tree
+    for exactly this reason. These skill scripts are standalone and cannot import
+    it, so the rule is restated rather than shared — but it is the same rule, and
+    both public helpers below go through this one function, so the parser and the
+    body splitter cannot disagree about where the block ends.
+    """
+    norm = text.replace("\r\n", "\n").replace("\r", "\n")
+    lines = norm.split("\n")
+    if not lines or lines[0].strip() != "---":
+        return None
+    for i in range(1, len(lines)):
+        if lines[i].strip() == "---":
+            return "\n".join(lines[1:i]), "\n".join(lines[i + 1:])
+    return None
+
+
 def frontmatter(text: str) -> str:
-    if not text.startswith("---"):
-        return ""
-    parts = text.split("---", 2)
-    return parts[1] if len(parts) == 3 else ""
+    split = _split_frontmatter(text)
+    return split[0] if split else ""
 
 
 def body(text: str) -> str:
-    if not text.startswith("---"):
-        return text.replace("\r\n", "\n").replace("\r", "\n")
-    parts = text.split("---", 2)
-    if len(parts) != 3:
-        return ""
-    return parts[2].lstrip("\r\n").replace("\r\n", "\n").replace("\r", "\n")
+    split = _split_frontmatter(text)
+    if split is not None:
+        return split[1].lstrip("\n")
+
+    norm = text.replace("\r\n", "\n").replace("\r", "\n")
+    # `_split_frontmatter` returns None for two different documents: one with no
+    # opening fence at all, and one that opens a fence and never closes it. Only
+    # the second has no trustworthy body. Distinguish them with the SAME opening
+    # test the splitter uses — an earlier version asked `startswith("---")`,
+    # which is also true of a document opening with a `----` horizontal rule, and
+    # returned "" for it. That is content loss on a document that simply has no
+    # frontmatter, and it feeds the content hash.
+    first = norm.split("\n", 1)[0]
+    return "" if first.strip() == "---" else norm
 
 
 def field_value(text: str, field: str) -> str:
@@ -539,8 +574,8 @@ def superseded_provider_ids(markdown: str) -> set[str]:
         match.group(1).lower()
         for match in re.finditer(
             r"(?i)\bsuperseded-provider-id\s+"
-            r"([0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-"
-            r"[89ab][0-9a-f]{3}-[0-9a-f]{12})\b",
+            r"([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-"
+            r"[0-9a-f]{4}-[0-9a-f]{12})\b",
             markdown,
         )
     }

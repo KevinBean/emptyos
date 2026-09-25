@@ -25,6 +25,84 @@ from dataclasses import dataclass
 from pathlib import Path
 
 
+# Repo subtrees that are git-tracked in the private repo but can never reach a
+# public snapshot: both release paths prune `apps/personal/` via `drop_tracks`,
+# `release-public.py` additionally prunes `tests/personal/` via `drop_test_dirs`,
+# and no release tier lists a personal app or engine.
+#
+# This tuple exists because three safety scanners were written under the
+# assumption "git-tracked ⇒ ships publicly" — true while these paths were
+# gitignored, false from 2026-08-16 when the private repo started tracking them.
+# `check-personal.py`, `check-branding.py` and `release-public.py`'s
+# `check_no_private_apps` all consult it, so the exemption is one definition
+# rather than three drifting lists. `assert_never_published_absent` is the
+# receipt: it proves the claim against a built snapshot instead of trusting it.
+#
+# Adding a path here EXEMPTS it from those scanners, so it must be matched by an
+# actual prune. Never add one without the corresponding drop.
+#
+# `apps/personal/` is a nested git repository (remote: emptyos-personal) and so
+# is not tracked by this repo at all — it is listed anyway because a snapshot
+# must not carry it either, and because the exemption should already be correct
+# on the day someone flattens that repo into this one.
+NEVER_PUBLISHED_PATHS = (
+    "apps/personal/",
+    "engines/personal/",
+    "tests/personal/",
+)
+
+
+def is_never_published(rel_path: str) -> bool:
+    """True if ``rel_path`` lives in a subtree that no public snapshot carries.
+
+    Takes a repo-relative path in either separator style; callers hand these in
+    straight from ``git ls-files`` (posix) or ``Path`` walks (native).
+    """
+    # `removeprefix`, not `lstrip("./")` — lstrip takes a character SET, so it
+    # would eat every leading dot and slash and turn "../x" into "x".
+    normalised = str(rel_path).replace("\\", "/").removeprefix("./")
+    return normalised.startswith(NEVER_PUBLISHED_PATHS)
+
+
+def prune_never_published(root: Path) -> list[str]:
+    """Strictly remove every :data:`NEVER_PUBLISHED_PATHS` subtree from a snapshot.
+
+    Exists because the per-kind gates each cover only one leg and a caller has to
+    remember all three: ``drop_tracks`` handles ``apps/`` only, ``drop_test_dirs``
+    handles ``tests/`` only, and the engine allowlist is *disabled*
+    (``allowed_engines=None``) for the private daemon targets — which left
+    ``engines/personal/`` with nothing between it and a dist once it became
+    git-tracked. One call that removes exactly what the constant names cannot
+    forget a leg. Idempotent: already-absent paths are skipped.
+    """
+    root = Path(root)
+    removed: list[str] = []
+    for rel in NEVER_PUBLISHED_PATHS:
+        target = root / rel
+        if target.is_dir():
+            _rmtree_strict(target)
+            removed.append(rel)
+    return removed
+
+
+def assert_never_published_absent(root: Path) -> None:
+    """Raise :class:`PruneError` if a never-published subtree survived pruning.
+
+    The scanners above stop looking at these paths, so their absence from the
+    snapshot has to be *proved* rather than inferred from the prune arguments
+    having been passed. Cheap, and it fails the release rather than shipping.
+    """
+    root = Path(root)
+    survivors = [p for p in NEVER_PUBLISHED_PATHS if (root / p).exists()]
+    if survivors:
+        joined = ", ".join(survivors)
+        raise PruneError(
+            f"never-published paths survived into the snapshot: {joined}. "
+            "These are exempt from the personal-data and branding scanners, so "
+            "shipping them would ship unscanned personal content."
+        )
+
+
 def _load_iter_app_dirs():
     """Resolve ``iter_app_dirs`` without forcing ``emptyos.sdk.__init__``.
 
@@ -116,6 +194,7 @@ def prune_snapshot(
     allowed_plugins: Iterable[str],
     allowed_engines: Iterable[str] | None,
     drop_tracks: Iterable[str] = (),
+    drop_test_dirs: Iterable[str] = (),
 ) -> PruneReport:
     """Prune a collected release snapshot to resolved tier membership.
 
@@ -124,8 +203,14 @@ def prune_snapshot(
     targets pass ``None`` because their engines ship wholesale; public releases
     pass an explicit allowlist.
 
-    Raises :class:`PruneError` if a track, plugin, or engine that had to go is
-    still on disk afterwards.
+    ``drop_test_dirs`` removes whole subdirectories of ``tests/`` by name. It
+    exists because :func:`drop_tests_bound_to` globs ``tests/test_*.py``
+    non-recursively and so cannot see ``tests/personal/`` at all — harmless
+    while that path was gitignored (``git archive`` never collected it), a leak
+    from the moment the private repo started tracking it.
+
+    Raises :class:`PruneError` if a track, test dir, plugin, or engine that had
+    to go is still on disk afterwards.
     """
     root = Path(root)
     app_allowlist = set(allowed_apps)
@@ -163,6 +248,14 @@ def prune_snapshot(
                     directory.rmdir()
             except OSError:
                 pass
+
+    tests_dir = root / "tests"
+    if tests_dir.is_dir():
+        for name in drop_test_dirs:
+            candidate = tests_dir / name
+            if candidate.is_dir():
+                _rmtree_strict(candidate)
+                dropped_apps.append(f"tests/{name}/")
 
     dropped_plugins: list[str] = []
     plugins_dir = root / "plugins"

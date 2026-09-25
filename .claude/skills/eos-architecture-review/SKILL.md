@@ -1,6 +1,6 @@
 ---
 name: eos-architecture-review
-description: Architecture-level system review (check mode) or growth/repair (fix mode), driven by missing connections and underused capabilities rather than a checklist. Use when the user says "check", "audit", "review the system", or "system health" (check mode), or "fix", "grow", "improve", "what's next", "prune events", or "fix wiring" (fix mode). NOT for per-file code review (use eos-simplify), environment/daemon probing (use env-check / preflight), or KB note↔calculator/reference consistency (use eos-kb-audit).
+description: Architecture-level system review (check mode) or growth/repair (fix mode), driven by missing connections and underused capabilities rather than a checklist. Use when the user says "review the system", "system health", "architecture review", or "audit the architecture" (check mode), or "grow the system", "prune events", "fix wiring", or "wire the orphans" (fix mode). Bare "check" / "audit" / "review" / "fix" / "what's next" are NOT this skill — they belong to whichever surface the user actually named, or to eos-session-resume for "what's next". NOT for per-file code review (use eos-simplify), environment/daemon probing (use env-check / preflight), or KB note↔calculator/reference consistency (use eos-kb-audit).
 ---
 
 # EmptyOS System Check & Fix
@@ -9,8 +9,13 @@ Two modes: **check** (thorough step-by-step architecture review) and **fix** (id
 
 ## When to Use
 
-- User says "check", "audit", "review the system", "how's the OS", "system health" → **check mode**
-- User says "fix", "grow", "improve", "what's next" → **fix mode**
+- User says "review the system", "system health", "how's the OS", "architecture review", "audit the architecture" → **check mode**
+- User says "grow the system", "wire the orphans", "what should merge" → **fix mode**
+
+> **Bare "check" / "audit" / "review" / "fix" / "improve" / "what's next" are NOT this skill**,
+> in the body as well as the frontmatter. They name no surface, and every other audit skill
+> answers to them too. Route them to whichever surface the user actually named — or to
+> `eos-session-resume` for "what's next". Being already loaded is not a reason to claim them.
 - User says "check connections", "prune events", "fix wiring", "topology health" → **fix mode (connections)**
 - Periodic check-in on system health and completeness
 - After adding new apps, plugins, or external services
@@ -29,18 +34,39 @@ EmptyOS grows organically. Growth is not a checklist — it's driven by:
 
 ---
 
+## Reference files (read on demand)
+
+| File | Read when |
+|---|---|
+| `<SKILL_DIR>/completeness-scan.md` | Check mode Step 2.5 — the paste-and-run app-completeness script |
+| `<SKILL_DIR>/growth-dimensions.md` | Fix mode Phase 2/3 — the 6 growth dimensions, REGROW, and the absorption path |
+
 ## Check Mode — Thorough Step-by-Step Architecture Review
 
 When the user asks to "check" the system, run a structured diagnostic that walks through each layer. **Complete each step fully before moving to the next.** Present findings at each step, don't batch everything into one summary.
 
 ### Prerequisites
 
-EmptyOS daemon must be running on localhost:9000. If not:
+The EmptyOS daemon must already be running on `:9000`. Probe it:
+
 ```bash
-cd D:\emptyos && python -m emptyos start &
-# Wait for startup, verify with:
-curl -s http://localhost:9000/api/apps | python -c "import sys,json; print(f'Apps: {len(json.load(sys.stdin))}')"
+curl -s -m 5 http://127.0.0.1:9000/api/apps | python -c "import sys,json; print(f'Apps: {len(json.load(sys.stdin))}')"
 ```
+
+**If it is down, do NOT start it.** `python -m emptyos start`, `restart.bat`, and
+`taskkill` against `:9000` are forbidden from a Claude session
+(`.claude/rules/daemon-handling.md`) — the daemon is user-owned, and one spawned
+from a tool inherits that tool's process group and dies with it, which is why the
+backgrounded `&` form this section used to recommend never actually worked. Ask
+Kevin to run `restart.bat`, then re-probe.
+
+**A leased sandbox member is only a partial substitute here** — unusually for this
+codebase, that escape hatch does not fully apply to *this* skill. `integrity`
+resolves paths from `config.path.parent`, which on a pool member is
+`sandbox-900N/` with no `.eos-personal` and no `tests/`, so **P1/P2/P5/P10/P12
+collapse**. Only the source-derived dimensions (P3, P4, P6, P7, P9, P13) are
+comparable off `:9000`. If you review on a sandbox, say which dimensions the
+scores actually cover.
 
 ### Step 1: Scale & Vitals
 
@@ -73,94 +99,13 @@ Report:
 
 ### Step 2.5: App Completeness Scan
 
-Filesystem-only check (runs even if the daemon is down). Verifies every app has the canonical file set.
+Filesystem-only check (runs even if the daemon is down). Verifies every app has the
+canonical file set — manifest, app.py, pages/, a smoke test — and flags any `README.md`
+inside an app dir (Rule 6: apps self-document via `eos app info`).
 
-```bash
-PYTHONIOENCODING=utf-8 python -c "
-import sys
-sys.stdout.reconfigure(encoding='utf-8')
-from pathlib import Path
-
-# Page-less by design: backend/rooms-integration apps + scaffolds with no UI.
-NO_PAGE_OK = {'tour', 'repo', 'skill', 'test-app', 'test-app-wiring'}
-NO_TEST_OK = {'_example', 'tmpl', 'tests', 'test-app', 'test-app-wiring'}
-
-def find_test(app_id, scope):
-    norm = app_id.replace('-', '_')
-    # Check both core tests/ and tests/personal/ regardless of scope —
-    # engineering personal apps (cer-hosting etc.) put tests in core dir.
-    cands = [
-        f'test_sys_{app_id}.py', f'test_sys_{norm}.py',
-        f'personal/test_{norm}.py', f'personal/test_sys_{norm}.py',
-    ]
-    for c in cands:
-        if (Path('tests') / c).exists(): return True
-    for p in Path('tests').rglob('*.py'):
-        n = p.name
-        if n.startswith(f'test_sys_{norm}_') or n.startswith(f'test_{norm}_') or n.startswith(f'test_dogfood_{norm}'):
-            return True
-    return False
-
-# Depth-agnostic discovery via the canonical loader helper: handles the
-# public/<tier>/ + extension/<group>/ nesting, and excludes _retired/_archive
-# (a shallow iterdir missed nested apps AND counted retired apps as gaps).
-from emptyos.sdk.app_layout import iter_app_dirs
-
-def info(name, d, scope):
-    return {
-        'id': name,
-        'core_ok': (d/'app.py').exists(),
-        'page': (d/'pages'/'index.html').exists(),
-        'test': find_test(name, scope),
-        'seed': (d/'demo'/'seed.py').exists(),
-        'readme': (d/'README.md').exists(),
-    }
-
-core, personal, seen = [], [], set()
-for name, d in iter_app_dirs(Path('apps'), include_personal=True):
-    if name in seen: continue
-    seen.add(name)
-    rel = str(d).replace(chr(92), '/')
-    (personal if ('/personal/' in rel or rel.endswith('/personal')) else core).append(
-        info(name, d, 'personal' if '/personal/' in rel else 'core'))
-
-def fmt_section(name, apps):
-    n = len(apps); t = sum(a['test'] for a in apps); r = sum(a['readme'] for a in apps)
-    print(f'{name}: {n} apps · {t} with smoke test · {r} with README')
-
-print('=== App Completeness ===')
-fmt_section('Core', core)
-fmt_section('Personal', personal)
-print()
-
-gaps = []
-for a in core + personal:
-    if not a['core_ok']:
-        gaps.append(f'- {a[\"id\"]}: missing app.py')
-    if not a['page'] and a['id'] not in NO_PAGE_OK:
-        gaps.append(f'- {a[\"id\"]}: missing pages/index.html')
-    if not a['test'] and a['id'] not in NO_TEST_OK:
-        norm = a['id'].replace('-', '_')
-        gaps.append(f'- {a[\"id\"]}: missing test_sys_{norm}.py')
-    if a['readme']:
-        gaps.append(f'- {a[\"id\"]}: README.md present (anti-pattern, Rule 6)')
-
-if gaps:
-    print('Real gaps:')
-    for g in gaps: print(g)
-else:
-    print('Real gaps: none')
-print()
-print('(Templates/scaffolding excluded:', ', '.join(sorted(NO_TEST_OK)) + ')')
-"
-```
-
-If the user asks for the **full per-app table** (`--full-table` or "show the full app table"), expand the script to print one row per app with columns `id | core | page | test | seed | readme` for both `apps/` and `apps/personal/`. Default output stays scannable.
-
-Report:
-- Counts (apps, smoke-test coverage, README count)
-- "Real gaps" — entries that fail the contract and aren't in the intentional-exception allowlist
-- Anti-pattern: any `README.md` inside an app dir — Rule 6 says apps self-document via `eos app info`, not READMEs
+**Read `<SKILL_DIR>/completeness-scan.md` and run the script there.** It is a single
+paste-and-run block; the test discovery inside it is index-based for a reason the file
+explains, so do not simplify it into a per-app grep.
 
 ### Step 3: Capability Utilization
 
@@ -299,6 +244,9 @@ curl -s "http://localhost:9000/api/vault/reconcile?folder={vault_folder}&tags={e
 
 ### Phase 2: Identify Growth Opportunities
 
+**Read `<SKILL_DIR>/growth-dimensions.md` now** — Phases 2 and 3 classify every
+opportunity by dimension, and the definitions live there.
+
 Based on the API responses, classify:
 
 | Type | Signal | Example |
@@ -364,6 +312,11 @@ For each fix:
 
 ### Verify After Fixes
 
+> **Health-probe safety rule.** Against a running daemon use
+> `curl -s http://127.0.0.1:9000/api/health`; offline use `python scripts/preflight.py`.
+> **Never `python -m emptyos health`** — it boots a kernel and opens a syslog SQLite
+> handle while the user's daemon holds the same files (`.claude/rules/daemon-handling.md`).
+
 ```bash
 # Re-check improvements — count should drop
 curl -s http://localhost:9000/api/topology/improvements | python -c "import sys,json; d=json.load(sys.stdin); print(f'Remaining: {d[\"total\"]} ({d[\"by_priority\"]})')"
@@ -374,60 +327,12 @@ curl -s http://localhost:9000/integrity/api/audit | python -c "import sys,json; 
 
 ---
 
-## Growth Dimensions
+## Growth Dimensions, REGROW, and absorption
 
-6 dimensions the system grows along. **UI grows FROM every other dimension** — not separate.
-
-```
-1. BREADTH  — More apps
-2. DEPTH    — Richer backends (more endpoints, deeper features)
-3. LINKS    — More event connections (fewer unheard events, fewer orphans)
-4. INFRA    — Shared platform services (VaultIndex, data layer, SDK modules, components)
-5. ABSORB   — External services → plugins → native
-6. REGROW   — Rethink from root, consolidate fragmented apps, simplify
-```
-
-Each growth session should:
-- Touch at least 2 dimensions
-- Prioritize daily-use apps
-- Leave the system testable (`python -m emptyos health`)
-
----
-
-## Dimension 6: REGROW — Rethink from Root
-
-Sometimes the right growth move isn't adding features — it's questioning whether the current structure is right.
-
-### When to Regrow
-
-- **User switches between 3+ apps for one workflow** — the apps should be one
-- **Data is duplicated across apps** — same vault folder read by multiple apps
-- **Composition app exists just to glue others** — the glue layer signals a missing unified app
-- **The data structure changed** — vault-first data means the app should follow the data
-
-### Regrow Process
-
-1. **Notice friction** — "why do I need 4 apps for job applications?"
-2. **Question structure** — "if I grew this from scratch, would it look the same?"
-3. **Follow the data** — vault folders are the natural unit. One folder = one view in the app.
-4. **Build infrastructure first** — if the regrow reveals a platform gap, build that before the app
-5. **Consolidate** — merge apps into one with modules. Keep all endpoints, reorganize by user workflow.
-6. **Retire old apps** — remove the fragments, redirect URLs
-
----
-
-## Absorption Process
-
-When absorbing an external service:
-1. Audit the external service (endpoints, features, data)
-2. Compare with existing EmptyOS apps (gap table)
-3. Classify: absorb concepts vs keep external
-4. Execute: enhance existing apps or create thin wrappers
-5. Document the boundary in CLAUDE.md
-
-Evolution path: WRAP → ABSORB → REPLACE → SHED
-
----
+The 6 dimensions the system grows along (UI grows FROM every other dimension,
+never separately), the REGROW decision, and the WRAP → ABSORB → REPLACE → SHED
+evolution path all live in `<SKILL_DIR>/growth-dimensions.md`. Phase 2 above
+points you there at the moment you need them; this heading is the back-reference.
 
 ## Key APIs (localhost:9000)
 

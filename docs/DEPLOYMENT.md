@@ -174,7 +174,7 @@ git clone https://github.com/KevinBean/emptyos.git
 cd emptyos
 
 # Copy the example config and edit it
-cp emptyos.toml.example emptyos.toml
+cp emptyos.example.toml emptyos.toml
 ```
 
 Edit `emptyos.toml` for private mode:
@@ -466,7 +466,7 @@ The `--no-cache` is the load-bearing bit — without it, Docker may reuse the ca
 
 ### Step 7 — Cost ceiling (defense in depth)
 
-`demo/emptyos.toml` ships with `[billing.budgets]` set to $5/month for OpenAI + Anthropic. Even though you're not shipping a server-side cloud key, this guarantees that if you (or a fork) ever does, the spend is capped. `apps/billing/` disables the provider when the budget trips.
+`demo/emptyos.toml` ships with `[billing.budgets]` set to $5/month for OpenAI + Anthropic. Even though you're not shipping a server-side cloud key, this guarantees that if you (or a fork) ever does, the spend is capped. `apps/public/standard/billing/` disables the provider when the budget trips.
 
 If you want to fund a server-side cloud fallback (so visitors get quality without BYOK), set the provider's API key in `.env.demo`:
 
@@ -507,12 +507,12 @@ Hosts that *also* expect the chatbot widget meta tags assume Lane 1 (chatbot ser
 
 ### Per-site config
 
-Site profiles live in `data/apps/publish/sites.json`. Each site declares its source folder, theme, deploy target, and (optionally) chatbot integration. See `apps/publish/app.py` `_DEFAULT_SITE`.
+Site profiles live in `data/apps/publish/sites.json`. Each site declares its source folder, theme, deploy target, and (optionally) chatbot integration. See `apps/public/standard/publish/app.py` `_DEFAULT_SITE`.
 
 ### When to use Lane 3 alone
 
 - Read-only blog, marketing, docs
-- Exported portfolio SPA (interactive but data-baked, no backend) — `apps/publish/portfolio_template.html` pattern
+- Exported portfolio SPA (interactive but data-baked, no backend) — `apps/public/standard/publish/portfolio_template.html` pattern
 
 ### When to compose Lane 3 + Lane 1
 

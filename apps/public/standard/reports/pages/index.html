@@ -86,6 +86,9 @@
 .aside-card .field textarea { width:100%; background:var(--bg); border:1px solid var(--border); border-radius:6px; padding:4px 8px; color:var(--text); font-size:12px; font-family:inherit }
 .aside-card .field textarea { min-height:50px }
 
+.signoff-btn { padding:3px 10px; font-size:11px; border-radius:6px; border:1px solid var(--border); background:var(--bg); color:var(--text); cursor:pointer }
+.signoff-btn:hover { border-color:var(--accent); color:var(--accent) }
+
 .export-list { list-style:none; padding:0; margin:0 }
 .export-list li { padding:8px 0; border-bottom:1px solid var(--border); font-size:12px; display:flex; justify-content:space-between; gap:8px; align-items:center }
 .export-list li:last-child { border-bottom:none }
@@ -94,7 +97,7 @@
 /* Structured table editor */
 .table-editor { overflow-x:auto; margin-top:8px }
 .table-editor table { width:100%; border-collapse:collapse; font-size:12px }
-.table-editor th { text-align:left; padding:4px 8px; background:var(--bg); color:var(--text-muted); font-size:10.5px; text-transform:uppercase; border-bottom:1px solid var(--border) }
+.table-editor th { text-align:left; padding:4px 8px; background:var(--bg); color:var(--text-muted); font-size:10.5px; text-transform:uppercase; letter-spacing:var(--tracking-meta); border-bottom:1px solid var(--border) }
 .table-editor td { padding:4px 4px; border-bottom:1px solid var(--border); vertical-align:top }
 .table-editor input,
 .table-editor select,
@@ -207,6 +210,11 @@
           <div class="field"><label>Project ID</label><input id="meta-project" onchange="saveMetaField('project_id', this.value)" placeholder="(optional)"></div>
           <div class="field"><label>Authors (comma-separated)</label><input id="meta-authors" onchange="saveMetaFieldList('authors', this.value)"></div>
           <div class="field"><label>Approvers (one role per line)</label><textarea id="meta-approvers" onchange="saveMetaFieldLines('approvers', this.value)"></textarea></div>
+        </div>
+
+        <div class="aside-card">
+          <h4>Signoff</h4>
+          <div id="signoff-list" style="display:flex;flex-direction:column;gap:6px"></div>
         </div>
 
         <div class="aside-card">
@@ -413,6 +421,7 @@ function renderDetail() {
   document.getElementById("meta-authors").value = Array.isArray(meta.authors) ? meta.authors.join(", ") : (meta.authors || "");
   const approversText = (meta.approvers || []).map(a => typeof a === "string" ? a : (a.role || "")).join("\n");
   document.getElementById("meta-approvers").value = approversText;
+  renderSignoff(meta);
 
   // Exports
   const exports = r.exports || [];
@@ -518,6 +527,49 @@ async function saveMetaFieldList(key, text) {
 async function saveMetaFieldLines(key, text) {
   const list = text.split("\n").map(s => s.trim()).filter(Boolean);
   await saveMetaField(key, list);
+}
+
+// --- Signoff (reports-no-signoff-tracking) ----------------------------------
+// approvers stays a plain list of role strings; the actual signed facts
+// (who/when/signature) live in a separate signoffs_json field the backend
+// merges in for rendering — see apps/public/standard/reports/signoff.py.
+function renderSignoff(meta) {
+  const el = document.getElementById("signoff-list");
+  const roles = (meta.approvers || []).map(a => typeof a === "string" ? a : (a.role || "")).filter(Boolean);
+  if (!roles.length) {
+    el.innerHTML = `<div style="color:var(--text-muted);font-style:italic;font-size:13px">No approver roles configured.</div>`;
+    return;
+  }
+  let signed = [];
+  try { signed = JSON.parse(meta.signoffs_json || "[]"); } catch (e) { signed = []; }
+  const byRole = {};
+  signed.forEach(s => { if (s && s.role) byRole[s.role] = s; });
+  el.innerHTML = roles.map(role => {
+    const s = byRole[role];
+    if (s) {
+      return `<div style="font-size:13px"><strong>${esc(role)}</strong> — ✓ ${esc(s.name)} (${esc(s.date)})</div>`;
+    }
+    return `<div style="display:flex;align-items:center;justify-content:space-between;font-size:13px">
+      <span><strong>${esc(role)}</strong> — <span style="color:var(--text-muted)">not yet signed</span></span>
+      <button class="eos-btn signoff-btn" onclick="openSignoff(${EOS_UI.jsArg(role)})">Sign</button>
+    </div>`;
+  }).join("");
+}
+
+function openSignoff(role) {
+  EOS_UI.formModal(`Sign off — ${role}`, [
+    { key: "name", label: "Your name", type: "text" },
+    { key: "signature", label: "Signature text (optional — defaults to your name)", type: "text" },
+  ], async function(vals) {
+    if (!vals.name || !vals.name.trim()) { toast("Name is required"); return; }
+    const res = await api("POST", `/reports/api/reports/${encodeURIComponent(State.activeId)}/signoff`, {
+      role: role, name: vals.name, signature: vals.signature || "",
+    });
+    if (res && res.error) { toast(res.error); return; }
+    State.activeReport.meta.signoffs_json = JSON.stringify(res.signoffs || []);
+    renderSignoff(State.activeReport.meta);
+    toast("Signed off");
+  });
 }
 
 // --- Tables tab -------------------------------------------------------------

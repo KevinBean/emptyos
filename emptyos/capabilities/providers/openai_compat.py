@@ -34,6 +34,32 @@ def _cached_tokens(usage: dict) -> int:
         return 0
 
 
+def _reported_cost(usage: dict) -> float | None:
+    """The USD cost the endpoint itself reports for this call, or None.
+
+    OpenRouter puts the charged amount in `usage.cost`. It is the only price
+    that is right for every model it routes. `PRICING` below is keyed by bare
+    OpenAI model names, so a slug like "deepseek/deepseek-v4-flash" priced
+    through it came out as $0, and billing and budget caps could not see the
+    spend. Absent, non-numeric, negative or non-finite values mean "not
+    reported", and the caller falls back to the table.
+
+    Not handled: with OpenRouter BYOK (your own upstream key), `usage.cost` is
+    only OpenRouter's fee and the model spend is billed to the upstream
+    account. EmptyOS does not use BYOK.
+    """
+    value = usage.get("cost")
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    value = float(value)
+    if value < 0 or value != value or value == float("inf"):
+        return None
+    # Returned unrounded. Billing still rounds each add to 6 dp
+    # (`round(cost + ?, 6)`), so a call under ~$0.0000005 is lost there; an Aura
+    # turn on deepseek-v4-flash is ~$0.0003, far above that.
+    return value
+
+
 def _chat_messages(
     prompt: str,
     system: str,
@@ -84,12 +110,27 @@ _VISION_MODEL_PATTERNS = (
     "gpt-4o", "gpt-4.1", "gpt-5", "o3", "o4",  # OpenAI
     "llava", "bakllava", "vision", "qwen2.5vl", "qwen2-vl",
     "llama3.2-vision", "llama-3.2-vision", "minicpm-v", "moondream",
+    # Gemma is multimodal from 3 onward and the IT tags read document scans
+    # well — measured 2026-08-15 on `gemma4:12b-it-qat`, which transcribed a
+    # bilingual textbook page (headers, track numbers, tables) at ~1.8 s/page.
+    # Omitting it made the provider raise "does not support vision" and fall
+    # through, so a locally available vision model looked absent.
+    "gemma3", "gemma4",
 )
 
 
-def _model_supports_vision(model: str) -> bool:
+def model_supports_vision(model: str) -> bool:
+    """Whether this model name is one of the multimodal families above.
+
+    Public because it is the single place that judgement lives: the SDK's
+    attachment layer asks it before sending an image (emptyos/sdk/attachments.py
+    provider_reads_images), so a chat refuses with a clear message instead of
+    the provider answering 400."""
     m = (model or "").lower()
     return any(pat in m for pat in _VISION_MODEL_PATTERNS)
+
+
+_model_supports_vision = model_supports_vision   # pre-existing internal name
 
 
 def _attach_ollama_images(msgs: list[dict], images: list[str] | None) -> None:
@@ -120,6 +161,24 @@ def _attach_ollama_images(msgs: list[dict], images: list[str] | None) -> None:
             msgs[i] = dict(msgs[i])
             msgs[i]["images"] = bare
             break
+
+
+def _openai_image_part(block: dict) -> dict | None:
+    """One image block → an OpenAI ``image_url`` part, or ``None``.
+
+    Accepts the OpenAI shape as-is and converts an Anthropic ``image`` block
+    (base64 or url source), so a history written for either family replays
+    here. Ollama's ``/v1`` endpoint takes the same shape (base64 data URLs).
+    """
+    if block.get("type") == "image_url":
+        url = (block.get("image_url") or {}).get("url") if isinstance(block.get("image_url"), dict) else block.get("image_url")
+    else:
+        src = block.get("source") or {}
+        if src.get("type") == "base64" and src.get("data"):
+            url = f"data:{src.get('media_type') or 'image/png'};base64,{src['data']}"
+        else:
+            url = src.get("url")
+    return {"type": "image_url", "image_url": {"url": url}} if url else None
 
 
 def _ollama_options(kwargs: dict) -> dict:
@@ -405,7 +464,7 @@ class OpenAICompatThinkProvider(ToolCapableProvider):
                         "completion_tokens": ct,
                         "cached_tokens": cached,
                         "total_tokens": usage.get("total_tokens", pt + ct),
-                        "cost": self._calc_cost_with_cache(pt, ct, cached),
+                        "cost": self._usage_cost(usage, pt, ct, cached),
                     }
 
                 return data["choices"][0]["message"]["content"]
@@ -517,12 +576,16 @@ class OpenAICompatThinkProvider(ToolCapableProvider):
                         yield {"text": "", "done": True}
                         return
 
-                # Stream closed without content AND without a done marker — something
-                # went wrong upstream. Raise so the capability chain falls through.
-                if not got_content and not got_done:
+                # Stream closed without a done marker — the connection dropped
+                # mid-generation. Any content already yielded is a TRUNCATED
+                # reply, not a complete one — raise unconditionally (not just
+                # when content is also empty) so the capability chain falls
+                # through instead of silently persisting a cut-off answer.
+                if not got_done:
                     raise RuntimeError(
-                        f"{self.name} stream produced no content "
-                        f"(model={self.model}, host={self.host})"
+                        f"{self.name} stream ended without a completion marker "
+                        f"(model={self.model}, host={self.host}, "
+                        f"got_content={got_content})"
                     )
 
     async def _diagnose_error(self, session, headers, error):
@@ -557,6 +620,16 @@ class OpenAICompatThinkProvider(ToolCapableProvider):
     def _calc_cost(self, prompt_tokens: int, completion_tokens: int) -> float:
         pricing = self.PRICING.get(self.model, (0, 0))
         return round((prompt_tokens * pricing[0] + completion_tokens * pricing[1]) / 1_000_000, 6)
+
+    def _usage_cost(
+        self, usage: dict, prompt_tokens: int, completion_tokens: int, cached_tokens: int
+    ) -> float:
+        """Cost of one call: the endpoint's own figure when it reports one,
+        else the PRICING table (see `_reported_cost`)."""
+        reported = _reported_cost(usage)
+        if reported is not None:
+            return reported
+        return self._calc_cost_with_cache(prompt_tokens, completion_tokens, cached_tokens)
 
     def _calc_cost_with_cache(
         self, prompt_tokens: int, completion_tokens: int, cached_tokens: int
@@ -659,12 +732,17 @@ class OpenAICompatThinkProvider(ToolCapableProvider):
                     except (json.JSONDecodeError, KeyError, IndexError):
                         continue
 
-                # No content AND no [DONE] marker — upstream failed mid-stream.
-                # Raise so the capability chain falls through to the next provider.
-                if not got_content and not got_done:
+                # No [DONE] marker — the connection dropped mid-stream (network
+                # hiccup, gateway timeout, proxy cutting an idle response).
+                # Whatever content already arrived is a TRUNCATED reply, not a
+                # complete one — raise unconditionally (not just when content is
+                # also empty) so the capability chain falls through to the next
+                # provider instead of silently persisting a cut-off answer.
+                if not got_done:
                     raise RuntimeError(
-                        f"{self.name} stream produced no content "
-                        f"(model={self.model}, host={self.host})"
+                        f"{self.name} stream ended without a completion marker "
+                        f"(model={self.model}, host={self.host}, "
+                        f"got_content={got_content})"
                     )
 
                 # Emit usage info if captured
@@ -679,7 +757,7 @@ class OpenAICompatThinkProvider(ToolCapableProvider):
                         "completion_tokens": ct,
                         "cached_tokens": cached,
                         "total_tokens": usage_data.get("total_tokens", pt + ct),
-                        "cost": self._calc_cost_with_cache(pt, ct, cached),
+                        "cost": self._usage_cost(usage_data, pt, ct, cached),
                     }
                     # Stash on the provider so callers that don't read stream
                     # chunks (billing path) can still see final usage.
@@ -792,9 +870,17 @@ class OpenAICompatThinkProvider(ToolCapableProvider):
                 # blocks, drop tool_use (already represented via tool_calls
                 # which we expect the caller to include separately).
                 text_parts = []
+                image_parts = []
                 for b in content:
                     if isinstance(b, dict) and b.get("type") == "text":
                         text_parts.append(b.get("text", ""))
+                    elif isinstance(b, dict) and b.get("type") in ("image_url", "image"):
+                        # An attached image. Dropping it here (the old
+                        # behaviour) sent the model the text alone, so it
+                        # answered as if nothing were attached.
+                        part = _openai_image_part(b)
+                        if part:
+                            image_parts.append(part)
                     elif isinstance(b, dict) and b.get("type") == "tool_result":
                         tool_call_id = b.get("tool_use_id", "")
                         if tool_call_id:
@@ -806,7 +892,11 @@ class OpenAICompatThinkProvider(ToolCapableProvider):
                                 }
                             )
                             seen_tool_parent = True
-                if text_parts:
+                if image_parts and role == "user":
+                    # OpenAI's multimodal shape: text part, then image_url parts.
+                    text = "".join(text_parts)
+                    out.append({"role": "user", "content": ([{"type": "text", "text": text}] if text else []) + image_parts})
+                elif text_parts:
                     msg = {"role": role, "content": "".join(text_parts)}
                     # Preserve any tool_calls on assistant turns
                     if m.get("tool_calls"):
@@ -929,7 +1019,7 @@ class OpenAICompatThinkProvider(ToolCapableProvider):
                 "completion_tokens": ct,
                 "cached_tokens": cached,
                 "total_tokens": usage.get("total_tokens", pt + ct),
-                "cost": self._calc_cost_with_cache(pt, ct, cached),
+                "cost": self._usage_cost(usage, pt, ct, cached),
             }
             if usage
             else {}

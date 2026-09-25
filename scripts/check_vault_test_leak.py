@@ -66,8 +66,45 @@ from pathlib import Path
 
 DEFAULT_PREFIX = "PLAYWRIGHT-TEST-"
 
-# Dirs never walked.
-_SKIP_DIRS = {".git", ".obsidian", ".trash", ".stfolder", "node_modules"}
+# Dirs never walked, plus every dot-dir (see ``_skipped_dir`` below).
+#
+# ``.stversions`` is Syncthing's version ARCHIVE; ``.stfolder`` — which WAS
+# skipped — is only its marker dir, so the one holding files was the one being
+# walked. Two consequences, and they are not the same size:
+#
+#   * The gate could not pass. A finding in a restore point is unactionable by
+#     construction (editing it corrupts what you would restore from), and the
+#     exit code IS the review count, so it sat at 8 — measured, not theoretical —
+#     and an audit that can never go green gets switched off.
+#   * ``purge`` runs off this same walk, and the danger is NOT the archived
+#     fixture whose filename carries the prefix (deleting a backup of junk costs
+#     nothing). It is an archived copy of a REAL note that a test polluted: a
+#     ``- [ ] PLAYWRIGHT-TEST-…`` line classifies as ``strip``, so ``purge``
+#     REWRITES the restore point — unattended, via conftest's session-end
+#     backstop. Latent only because today's five archived hits all land in
+#     ``review``; one polluted daily journal being versioned is the whole
+#     distance to real data loss.
+#
+# Note the archiving happens on the SYNC PEERS, not here: a local ``unlink``
+# propagates outward, and Syncthing versions a file when it replaces or deletes
+# one on receiving that change. So the self-destructive cycle needs the sweep
+# running on the peer too — real on a multi-device vault, and not reproducible
+# on one machine.
+#
+# ``check_vault_structure.py`` already skips dot-dirs generically, so after this
+# nothing in EmptyOS reports on ``.stversions`` at all. That is deliberate —
+# Syncthing's own versioning-cleanup config is what bounds that tree — but do not
+# read a clean exit as "the archive is clean".
+#
+# **The five dotted names below are EXPLICIT, not load-bearing.** ``_skipped_dir``
+# skips any leading-dot component, so removing them changes no verdict and no test
+# can pin them — the dot rule fires first, always. They are kept because each one
+# records a decision a reader needs (``.stversions`` above all), and because a
+# future narrowing of the dot rule would otherwise silently drop five protections
+# at once. Same treatment as ``emptyos/basepath.py``'s explicit branches: stated
+# here so nobody deletes them as dead code, and so nobody ADDS a dotted name
+# expecting it to do something. ``node_modules`` is the only entry doing work.
+_SKIP_DIRS = {".git", ".obsidian", ".trash", ".stfolder", ".stversions", "node_modules"}
 
 # Path fragments (forward-slash) under which a prefix mention is documentation,
 # not a leak. Devlogs + session briefs describe the incident verbatim.
@@ -117,6 +154,28 @@ _STRIP_LINE = re.compile(r"^\s*(?:[-*]|\d+\.)\s")
 # speaking/dictionary tests were found appending rows to a real practice log,
 # where every row could only be reported for manual review forever.
 _STRIP_TABLE_ROW = re.compile(r"^\s*\|.*\|\s*$")
+
+
+def _skipped_dir(rel_parts: tuple[str, ...]) -> bool:
+    """True when a vault-RELATIVE path sits under a dir we never walk.
+
+    Two things here are load-bearing, and the enumeration alone had neither.
+
+    **Relative, not absolute.** The old check ran over ``p.parts`` — every
+    component including the ones ABOVE the vault root. A vault living under
+    ``~/.local/share/vault`` or any path with a ``node_modules``/``.git``
+    component scanned zero files and printed "no leaks" with exit 0: the whole
+    guard silently off, in the shape ``.claude/rules/audits.md`` warns about.
+
+    **A class rule, not a list of names.** ``check_vault_structure.py`` skips
+    dot-dirs generically for exactly this reason — viewer config, search
+    indexes, trash, sync archives. Enumerating names meant every new hidden dir
+    a plugin drops in the vault (``.smart-env``, ``.datacore``, a second sync
+    folder's archive) stayed walked AND purgeable until someone noticed and
+    added one more name. The dot rule subsumes five of the six entries; only
+    ``node_modules`` needs naming.
+    """
+    return any(part in _SKIP_DIRS or part.startswith(".") for part in rel_parts)
 
 
 def _is_strippable_line(line: str) -> bool:
@@ -202,7 +261,8 @@ def scan(vault: Path, prefix: str = DEFAULT_PREFIX) -> Leaks:
     pl = prefix.lower()
 
     for p in vault.rglob("*"):
-        if any(part in _SKIP_DIRS for part in p.parts):
+        rel_parts = p.relative_to(vault).parts
+        if _skipped_dir(rel_parts):
             continue
         rel = str(p.relative_to(vault))
         # Doc/report paths: narrative prefix mentions are expected — but a

@@ -4,7 +4,7 @@ name = "Vlog"
 version = "0.1.0"
 description = "Daily video diary — record or import a clip a day, auto-transcribed and laid out on a calendar, with an optional compile-to-montage."
 icon = "📹"
-store_category = "personal"
+store_category = "productivity"
 dimensions = ["emotional", "social"]
 user_intent = [
     "record a video of my day",

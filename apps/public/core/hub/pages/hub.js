@@ -17,101 +17,14 @@ function esc(s) {
   });
 }
 
-// Reject javascript:/data:/vbscript: hrefs from panel contributors — escAttr
-// escapes quotes but does NOT neuter a dangerous scheme. Allow relative URLs
-// and explicit http(s) only. Used by hrefAttr + the direct-href call sites.
-function safeUrl(url) {
-  if (!url) return '';
-  var s = String(url);
-  if (/^(\.\/|#|\?)/.test(s)) return s;               // ./relative, fragment, query
-  // Root-relative — but NOT protocol-relative (//host) or backslash-tricked
-  // (/\host), which leave the origin while masquerading as a local path.
-  if (s.charAt(0) === '/' && s.charAt(1) !== '/' && s.charAt(1) !== '\\') return s;
-  try {
-    var u = new URL(s, location.origin);
-    // Only bless an *explicitly* http(s)-schemed absolute URL. The literal
-    // scheme check rejects //host and /\host (which new URL would otherwise
-    // resolve to the origin's https scheme) and every non-web scheme.
-    if ((u.protocol === 'http:' || u.protocol === 'https:') && /^https?:\/\//i.test(s)) return s;
-  } catch (e) { /* unparseable, non-relative → reject */ }
-  return '';
-}
-
-function hrefAttr(url) {
-  var safe = safeUrl(url);
-  return safe ? ' href="' + escAttr(safe) + '"' : '';
-}
-
-// Collapse/expand a store_category section in the app-grid launcher panel.
-// Large sections default to collapsed so the launcher stays scannable (the
-// full app set is 180+ cards); the user's per-section choice persists so a
-// reload doesn't re-collapse what they opened.
-var _LAUNCHER_COLLAPSE_THRESHOLD = 15;  // sections with more apps start collapsed
-
-function _launcherCollapsePrefs() {
-  try { return JSON.parse(localStorage.getItem('eos.hub.launcher.collapsed') || '{}') || {}; }
-  catch (e) { return {}; }
-}
-function _launcherIsCollapsed(key, count) {
-  var prefs = _launcherCollapsePrefs();
-  if (key && Object.prototype.hasOwnProperty.call(prefs, key)) return !!prefs[key];
-  return count > _LAUNCHER_COLLAPSE_THRESHOLD;  // default: collapse large sections
-}
-function hubToggleSection(hdr) {
-  var sec = hdr.closest('.r-app-section');
-  if (!sec) return;
-  var collapsed = sec.classList.toggle('collapsed');
-  var key = sec.getAttribute('data-sec-key');
-  if (!key) return;
-  try {
-    var prefs = _launcherCollapsePrefs();
-    prefs[key] = collapsed;
-    localStorage.setItem('eos.hub.launcher.collapsed', JSON.stringify(prefs));
-  } catch (e) {}
-}
-
-// Scrub app-contributed SVG before innerHTML insertion. Panels can come from
-// third-party marketplace apps (.claude/rules/store.md), so treat their SVG as
-// semi-trusted. A regex scrub is bypassable (entity-encoded `&#x6a;avascript:`,
-// whitespace-split `java&#9;script:`) because the browser decodes those when
-// the markup hits innerHTML — so parse instead: DOMParser entity-decodes
-// attribute values for us, we drop disallowed elements + on*= handlers, and
-// run every href/xlink:href through the same safeUrl() gate as panel links.
-// No DOMPurify dependency. Anything malformed or not <svg>-rooted is dropped.
-var _SVG_BAD_EL = {
-  script: 1, foreignobject: 1, style: 1, set: 1, handler: 1, listener: 1,
-  animate: 1, animatetransform: 1, animatemotion: 1, animatecolor: 1,
-};
-function sanitizeSvg(svg) {
-  if (!svg) return '';
-  try {
-    var doc = new DOMParser().parseFromString(String(svg), 'image/svg+xml');
-    var root = doc.documentElement;
-    // Malformed XML yields a <parsererror> root; non-<svg> root → reject whole.
-    if (!root || root.nodeName.toLowerCase().replace(/^.*:/, '') !== 'svg') return '';
-    var walker = doc.createTreeWalker(root, NodeFilter.SHOW_ELEMENT, null);
-    var drop = [];
-    var node = root;
-    do {
-      var tag = node.nodeName.toLowerCase().replace(/^.*:/, '');
-      if (_SVG_BAD_EL[tag]) { drop.push(node); continue; }
-      for (var i = node.attributes.length - 1; i >= 0; i--) {
-        var attr = node.attributes[i];
-        var nm = attr.name.toLowerCase();
-        var local = nm.replace(/^.*:/, '');
-        if (local.indexOf('on') === 0) { node.removeAttribute(attr.name); continue; }
-        if (local === 'href') {
-          // attr.value is already entity-decoded by the parser.
-          if (!safeUrl(attr.value)) node.removeAttribute(attr.name);
-        }
-      }
-    } while ((node = walker.nextNode()));
-    drop.forEach(function(n) { if (n.parentNode) n.parentNode.removeChild(n); });
-    return new XMLSerializer().serializeToString(root);
-  } catch (e) {
-    return '';  // anything unexpected → drop rather than risk it
-  }
-}
+// safeUrl / hrefAttr / sanitizeSvg / the app-grid collapse-state helpers /
+// hubToggleSection / hubQuickAdd now live in the shared
+// /static/eos-hub-renderers.js (loaded before this file in index.html) —
+// extracted 2026-08-24 at the 2nd consumer (hub-life) so a security fix to
+// the SVG sanitizer or the URL scheme gate can't miss one copy. They're
+// still plain globals (`safeUrl`, `hrefAttr`, `sanitizeSvg`,
+// `hubToggleSection`, `hubQuickAdd`) — the generated HTML's onclick=/
+// onsubmit= strings call them by bare name, same as before.
 
 // Pick the first non-null/non-empty field from an object. Tolerates field-name
 // drift between panel contributors and renderer contracts (label vs name,
@@ -140,24 +53,7 @@ function flatItems(items) {
 // ── panel renderers (⑥ Explore) ───────────────────────────────────────────
 var RENDERERS = {
 
-  'quick-add': function(items){
-    var d = items[0].data;
-    var hint = d.hint ? '<div class="r-qa-hint">' + esc(d.hint) + '</div>' : '';
-    var head = (d.icon || d.title || d.href)
-      ? '<div class="r-qa-head">' +
-          '<span class="r-qa-title">' + esc((d.icon ? d.icon + ' ' : '') + (d.title || '')) + '</span>' +
-          (d.href ? '<a class="r-qa-open"' + hrefAttr(d.href) + '>Open →</a>' : '') +
-        '</div>'
-      : '';
-    return '<form class="panel r-qa" onsubmit="return hubQuickAdd(event,this,' + escAttr(JSON.stringify(d.endpoint)) + ',' + escAttr(JSON.stringify(d.field || 'text')) + ')">' +
-      head +
-      '<div class="r-qa-row">' +
-        '<input class="r-qa-input" name="' + escAttr(d.field || 'text') + '" type="text" autocomplete="off" placeholder="' + escAttr(d.placeholder || '') + '">' +
-        '<button class="r-qa-btn" type="submit" title="Add this entry">Add</button>' +
-      '</div>' +
-      hint +
-    '</form>';
-  },
+  'quick-add': EOS_HUB_RENDERERS.quickAdd,
 
   // outcome-box — the outcome-first front door (docs/WORK-SURFACE-PIVOT.md
   // Phase 3). Same r-qa chrome as quick-add but NAVIGATES to the owning app
@@ -219,9 +115,12 @@ var RENDERERS = {
     var tiles = items.map(function(p){
       var d = p && p.data;
       if (d == null) return '';  // null/lazy contributor — skip its tile
+      // `icon` is part of the documented contract (BaseApp.stat_tile) and the
+      // personal hub renders it; this renderer never did, while 14 of the 40
+      // live dashboard tiles were passing one (2026-09-03).
       return '<a class="r-stat-tile"' + hrefAttr(d.href) + '>' +
         '<div class="r-stat-val">' + esc(d.value) + '</div>' +
-        '<div class="r-stat-label">' + esc(d.label) + '</div>' +
+        '<div class="r-stat-label">' + esc((d.icon ? d.icon + ' ' : '') + (d.label || '')) + '</div>' +
         (d.sub ? '<div class="r-stat-sub">' + esc(d.sub) + '</div>' : '') +
       '</a>';
     }).join('');
@@ -282,42 +181,7 @@ var RENDERERS = {
     return '<div class="panel">' + hdr + '<div class="r-list">' + rows + '</div></div>';
   },
 
-  'app-grid': function(items, block){
-    var d = items[0].data;
-    if (!Array.isArray(d) || !d.length) return '';
-    var hdr = block.title ? '<div class="panel-title">' + esc(block.title) + '</div>' : '';
-    var renderCard = function(c){
-      var desc = c.description ? '<div class="r-app-card-desc">' + esc((c.description || '').slice(0, 90)) + '</div>' : '';
-      return '<a class="r-app-card"' + hrefAttr(c.href) + '>' +
-        '<div class="r-app-card-name">' + esc(c.title || c.id) + '</div>' +
-        desc +
-      '</a>';
-    };
-    // panel_launcher now returns store_category-grouped sections:
-    // [{key,label,icon,count,apps:[{id,title,href,description}]}]. Each renders
-    // as a collapsible block. (Defensive: a flat [{id,...}] list — older shape —
-    // renders as one unlabelled grid.)
-    var grouped = d[0] && Array.isArray(d[0].apps);
-    var sections = grouped ? d : [{label: '', icon: '', apps: d, count: d.length}];
-    var body = sections.map(function(s){
-      var count = Number(s.count) || (s.apps || []).length;
-      var cards = (s.apps || []).map(renderCard).join('');
-      // Only grouped (labelled) sections collapse; the flat fallback stays open.
-      var collapsed = s.label ? _launcherIsCollapsed(s.key, count) : false;
-      var head = s.label
-        ? '<div class="r-app-sec-hdr" onclick="hubToggleSection(this)">' +
-            '<span class="r-app-sec-icon">' + esc(s.icon || '') + '</span>' +
-            '<span class="r-app-sec-name">' + esc(s.label) + '</span>' +
-            '<span class="r-app-sec-count">' + count + '</span>' +
-            '<span class="r-app-sec-toggle">&#9654;</span>' +
-          '</div>'
-        : '';
-      return '<div class="r-app-section' + (collapsed ? ' collapsed' : '') + '"' +
-        (s.key ? ' data-sec-key="' + escAttr(s.key) + '"' : '') + '>' +
-        head + '<div class="r-app-grid">' + cards + '</div></div>';
-    }).join('');
-    return '<div class="panel hub-app-launcher">' + hdr + body + '</div>';
-  },
+  'app-grid': EOS_HUB_RENDERERS.appGrid,
 
   'chips': function(items, block){
     var all = flatItems(items);
@@ -470,35 +334,10 @@ var RENDERERS = {
     '</a>';
   },
 
-  'entity-card': function(items, block){
-    var d = items[0].data;
-    if (!d) return '';
-    var fields = (Array.isArray(d.fields) ? d.fields : []).map(function(f){
-      if (!f || (f.value == null || f.value === '')) return '';
-      return '<div class="r-entity-card-field">' +
-        '<div class="r-entity-card-field-label">' + esc(f.label || '') + '</div>' +
-        '<div class="r-entity-card-field-value">' + esc(f.value) + '</div>' +
-      '</div>';
-    }).filter(function(s){ return s; }).join('');
-    var hdr = block.title ? '<div class="panel-title">' + esc(block.title) + '</div>' : '';
-    var href = d.link || d.href;
-    return hdr + '<a class="r-entity-card"' + hrefAttr(href) + '>' +
-      '<div class="r-entity-card-title">' + esc(d.title || '') + '</div>' +
-      (d.subtitle ? '<div class="r-entity-card-subtitle">' + esc(d.subtitle) + '</div>' : '') +
-      (fields ? '<div class="r-entity-card-fields">' + fields + '</div>' : '') +
-    '</a>';
-  },
+  'entity-card': EOS_HUB_RENDERERS.entityCard,
 
   // garden-mini — contributed by apps/garden/. Pre-rendered SVG.
-  'garden-mini': function(items, block){
-    var d = items[0].data;
-    if (!d || !d.svg) return '';
-    var hdr = block.title ? '<div class="panel-title">' + esc(block.title) + '</div>' : '';
-    var sub = (d.total_plants != null) ? '<div class="panel-sub" style="font-size:11px;opacity:0.6;margin-top:4px;">' + d.total_plants + ' growing</div>' : '';
-    return '<a class="panel"' + hrefAttr(d.href || '/garden/') + ' style="display:block;text-decoration:none;color:inherit;">' +
-      hdr + sanitizeSvg(d.svg) + sub +
-    '</a>';
-  },
+  'garden-mini': EOS_HUB_RENDERERS.gardenMini,
 };
 
 // ── quick-add / checklist handlers (used by renderers above) ───────────────
@@ -507,32 +346,6 @@ function hubOutcomeGo(ev, formEl, href){
   var val = (formEl.querySelector('.r-qa-input').value || '').trim();
   var sep = href.indexOf('?') >= 0 ? '&' : '?';
   window.location.href = val ? href + sep + 'ask=' + encodeURIComponent(val) : href;
-  return false;
-}
-
-async function hubQuickAdd(ev, formEl, endpoint, fieldName){
-  ev.preventDefault();
-  var input = formEl.querySelector('.r-qa-input');
-  var btn = formEl.querySelector('.r-qa-btn');
-  var val = (input.value || '').trim();
-  if (!val) { input.focus(); return false; }
-  var payload = {}; payload[fieldName] = val;
-  btn.disabled = true; btn.textContent = '…';
-  try {
-    var res = await fetch(endpoint, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)});
-    var json = await res.json();
-    if (json && json.error) {
-      EOS_UI.toast(json.error, false);
-    } else {
-      EOS_UI.toast('Added', true);
-      input.value = '';
-      refreshAll();
-    }
-  } catch (e) {
-    EOS_UI.toast('Failed: ' + e, false);
-  } finally {
-    btn.disabled = false; btn.textContent = 'Add';
-  }
   return false;
 }
 
@@ -952,14 +765,14 @@ function openAppChooser(q, matches) {
       +     esc(m.name)
       + '    <span class="eos-badge ' + badgeClass + '">' + conf + ' · ' + Math.round(m.score * 100) + '%</span>'
       + '  </div>'
-      + '  <div style="font-size:13px;color:var(--text-soft);margin-top:4px">' + esc(m.reason) + '</div>'
+      + '  <div style="font-size:13px;color:var(--text-muted);margin-top:4px">' + esc(m.reason) + '</div>'
       + '</div>'
       + '<a class="eos-btn eos-btn-sm"' + hrefAttr(m.href || ('/' + encodeURIComponent(m.id) + '/')) + ' style="text-decoration:none;flex-shrink:0">Open</a>';
     results.appendChild(card);
   });
   if (allWeak) {
     var fallback = document.createElement('div');
-    fallback.style.cssText = 'padding:12px;border:1px dashed var(--border);border-radius:8px;font-size:13px;color:var(--text-soft);display:flex;justify-content:space-between;align-items:center;gap:12px';
+    fallback.style.cssText = 'padding:12px;border:1px dashed var(--border);border-radius:8px;font-size:13px;color:var(--text-muted);display:flex;justify-content:space-between;align-items:center;gap:12px';
     fallback.innerHTML = ''
       + '<div>None of these fit. Want to describe a new app for this?</div>'
       + '<a class="eos-btn eos-btn-sm" href="/app-builder/?intent=' + encodeURIComponent(q) + '" style="text-decoration:none;flex-shrink:0">Build a new app</a>';
@@ -975,12 +788,25 @@ function openAppChooser(q, matches) {
   document.addEventListener('keydown', function(e) {
     if (e.key === 'Escape') { try { window.close(); } catch (_) {} }
   });
-  var hide = ['#eos-nav', '#hub-tour-btn', '.eos-page-header', '.hub-modes',
+  // 'body > nav.nav' is eos.js's own globally auto-injected nav bar — was
+  // previously hidden for free by the generic body.launcher-mode CSS rule;
+  // now that hub opts out of that generic hide (data-own-launcher-mode, see
+  // eos-keys.js), this list must hide it explicitly. It's injected via a
+  // dynamically-created <script> (async by default), so it can still be
+  // absent on the first pass — a short MutationObserver window catches it
+  // whenever it actually lands.
+  var hide = ['body > nav.nav', '#eos-nav', '#hub-tour-btn', '.eos-page-header', '.hub-modes',
               '#hub-quick', '#hub-next', '#hub-now', '#hub-today', '#hub-continue'];
-  hide.forEach(function(sel) {
-    var el = document.querySelector(sel);
-    if (el) el.style.display = 'none';
-  });
+  function hideLauncherChrome() {
+    hide.forEach(function(sel) {
+      var el = document.querySelector(sel);
+      if (el) el.style.display = 'none';
+    });
+  }
+  hideLauncherChrome();
+  var launcherChromeObserver = new MutationObserver(hideLauncherChrome);
+  launcherChromeObserver.observe(document.body, {childList: true});
+  setTimeout(function() { launcherChromeObserver.disconnect(); }, 3000);
   setTimeout(function() {
     var inp = document.querySelector('#hub-search-mount input');
     if (inp) inp.focus();

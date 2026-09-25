@@ -17,4 +17,9 @@ capabilities = []
 prefix = "/routing"
 
 [provides.events]
-emits = ["routing:planned"]
+emits = ["routing:planned", "routing:trip_saved", "routing:trip_deleted"]
+
+[provides.settings]
+schema = [
+    {key = "routing.cost_per_km", label = "Cost estimate ($/km)", type = "number", default = 0.15, hint = "Fuel/running-cost estimate applied to a planned route's distance. Set to 0 to hide cost estimates."},
+]

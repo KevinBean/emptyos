@@ -98,7 +98,7 @@ These sit between kernel and apps. They're NOT apps (users don't open them) and 
 - Format conversion utilities
 - Media file serving (streaming audio/video)
 
-**Lives in**: `emptyos/media/` (audio.py, image.py, video.py)
+**Lives in**: `emptyos/sdk/media/` (audio.py, image.py, video.py)
 
 **Apps that need it**: TalkBuddy, podcast, compose, applio, mv-creator, voice-review, tts
 
@@ -131,7 +131,7 @@ These sit between kernel and apps. They're NOT apps (users don't open them) and 
 | `voice-api` | Voice API (localhost:8601) | audio, tts, stt |
 | `telegram` | Telegram Bot API | messaging |
 | `google-maps` | Google Maps API | geo |
-| `acestep` | ACE-Step music generation | gpu, music |
+| ~~`acestep`~~ | ACE-Step music generation — **there is no such plugin.** It lives inside `comfyui` as `generate_music()` + `plugins/comfyui/workflows/acestep15_audio.json` | gpu, music |
 | `weather` | Weather API | data |
 
 ### Capability Providers (make core verbs smarter)
@@ -190,7 +190,7 @@ All apps are first-class. No tiers. They just declare what they need.
 | interview-studio | think, read | voice_api | — | frontend, media | — | TODO |
 | interview-briefing | think, read | — | — | frontend | — | TODO |
 | studio | think | comfyui | compute | frontend | — | TODO |
-| compose | — | acestep, comfyui | compute | frontend, media | — | TODO |
+| compose | — | comfyui | compute | frontend, media | — | DONE (ACE-Step is inside the comfyui plugin) |
 | mv-creator | think_stream | comfyui | compute | frontend, media | — | TODO |
 | podcast | — | voice_api | compute | frontend, media | — | TODO |
 | tts | — | voice_api | — | frontend, media | — | TODO |
@@ -243,7 +243,7 @@ All apps are first-class. No tiers. They just declare what they need.
 - [ ] Job queue + worker management
 - [ ] GPU coordination
 - [ ] Audio/image/video processing chains
-- [ ] Build ComfyUI, Voice API, ACE-Step connectors
+- [x] Build ComfyUI, Voice API connectors (ACE-Step ships inside `comfyui`, not as its own connector)
 
 ### Phase 6: Apps that need compute + media + connectors
 - [ ] studio, compose, mv-creator, podcast, tts

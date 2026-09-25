@@ -17,6 +17,8 @@ assets never leave the workspace between stages.
 | Image editing (same surface) | free |
 | Omni Flash video, 10 s | 15 credits |
 | Veo 3.1 Quality video | 100 credits |
+| Veo 3.1 Fast video, 8 s x1, 720p (measured 2026-09-22) | 10 credits |
+| Video download: 720p / 1080p upscale / 4K upscale (menu, 2026-09-22) | free / free / **50 credits** |
 
 **Because stills are free, review-and-regenerate is the cheap half of the
 pipeline.** Do not try to nail a perfect first pass — generate, look, and
@@ -129,6 +131,71 @@ Why this phrasing matters:
 - **"tell me which ones you completed"** — you get an explicit manifest back
   instead of having to audit the grid. **But see the next section: the manifest is
   a claim, not evidence.**
+
+### 🚨 Agent mode REWRITES your prompt — turn the Agent pill OFF for anything geometric
+
+Measured on 說得太急, 2026-09-21. The project chat does not send what you typed. It
+**paraphrases the prompt** and the paraphrase drops constraints — silently, with no
+indication that the prompt which ran is not the prompt you wrote.
+
+A blockout-reference prompt containing two geometry clauses —
+
+> *"…reproduce exactly what is and is not visible from this camera"* and *"Do not add,
+> move or remove any **wall, opening**, furniture or object that is not in the blockout,
+> and **do not invent any view, room or background that the blockout does not show**"*
+
+— reached the model as only:
+
+> *"Do not add, move, or remove any **furniture or object** not in the blockout."*
+
+The model then obeyed it exactly: it added no furniture and no object, and it added a
+**window and a wall corner** into a flat wall. The defect reads as "the reference
+doesn't control geometry" when the real cause is that the instruction never arrived.
+
+**The pill is a toggle beside `+` in the composer.** Off, the bar shows the model chip
+(`Nano Banana 2 · 16:9 · x3`) and your prompt goes to the model verbatim — and you get
+x2/x3 variants free, which agent mode does not give. On, it shows `Agent`.
+
+- Use **direct mode** whenever the prompt carries constraints that must survive
+  literally: blockout/layout references, negative lists, "do not add X", exact framing.
+- Keep **agent mode** for what it is genuinely good at — batch edits across many
+  existing assets (the section above), and loose creative briefs.
+- If you must use agent mode, **read the rewritten prompt back** from the asset's detail
+  panel afterwards and check your constraints survived. That is where the rewrite is
+  visible; nowhere else.
+
+### ⚠ A featureless proxy figure in a blockout renders as a SCULPTURE
+
+Same session, and it is the other half of making blockouts work. With the prompt
+reaching the model verbatim the geometry came out right — and all three variants
+rendered the grey stand-in **as a real object**: the sphere head became a bronze ball,
+the torso boxes became a stone plinth, and the actual man was painted sitting behind
+them.
+
+Flow cannot distinguish "grey box standing in for a person" from "grey box". The
+blockout's own docs may call the figure a placeholder; the model never reads those.
+**Declare it in the prompt**, and name the objects it must not become:
+
+> The grey blocky figure in the centre of IMAGE 1 is a PLACEHOLDER marking where the man
+> sits — it marks his seat position, his body scale and his head height, and it is NOT an
+> object in the room. Replace it entirely with the real man from IMAGE 2, seated in that
+> exact position at that exact scale with his head at that exact height. There is no
+> statue, no sculpture, no sphere, no ball, no plinth, no pedestal and no stone block
+> anywhere in this photograph.
+
+That one clause took the shot from unusable to gated-pass with nothing else changed.
+
+### ⚠ A blockout constrains what it SHOWS, not what it CROPS
+
+Third finding from the same session. A camera that cuts a wall feature off above the
+frame edge leaves that feature unconstrained, and Flow fills it in from style — a framed
+picture appeared in a corner where the blockout has bare wall, because the real picture
+sits just above the top edge.
+
+Harmless when the invention is scene-appropriate, and a continuity break when it is not.
+**If a landmark has to be in the right place, frame it.** Verify what the blockout
+actually shows by brightening a crop of the region rather than assuming from the model —
+a dark render hides a lot.
 
 ### ⚠⚠ The completion manifest can be FABRICATED — always verify by search
 
@@ -582,6 +649,128 @@ This is the same error as judging a still from a loading placeholder, and it is 
 make on video because progress percentages *look* like evidence of success.
 
 **Wait for terminal state, then count the `Videos` list.**
+
+## ⚠ Image-to-video (Veo 3.1 Fast): what the start frame invites, the model does
+
+Measured on 不可說, 2026-09-13/14: 59 video generations, 8 s 720p x1 at 10
+credits on Ultra. Every row below cost at least one regeneration.
+
+| Start frame / prompt | What Veo did | What worked |
+|---|---|---|
+| Casement window with an opening sash in frame + any camera move | Rotated the sash. A later version slid a timber post as a separate object; another invented a new frame bar crossing the image (3 shots) | Edit the still to fixed glazing with no hinge in frame. For "static except water", use the **same image as first and last frame** and describe water-only motion |
+| Curtain asked to billow | Lifted high and revealed an invented gold multi-globe lamp | Cap the motion ("small hem sway, no lift") and clean ambiguous blur behind the curtain first |
+| Quiet paper-on-desk shot | Flipped the page and the pencil vanished; another version added a finger | First+last frame lock; state "no page turn, no hands" |
+| Single water drop | A second drop appeared mid-clip | First+last frame; or select the range before the second event |
+| Dawn lake ending | A fishing rod entered frame | Regenerate; check frame edges through the whole clip, not samples |
+| Moonlit sky, lateral move | Sky drifted green across the clip | Regenerate; grading could not clean a progressive colour drift |
+| "Lateral truck" prompts | Often weak displacement, or rotation instead | Reliable here: tilt-up, push-in / dolly-back, rack focus, and lateral moves with a near foreground (reeds, branches) for parallax |
+
+Rules:
+
+- **The start frame is the prompt.** Remove anything you do not want animated
+  (hinges, lamps, loose pages) from the still before spending credits. Rewording
+  is the weaker lever, the same lesson as the content gate above.
+- **Output was 1280×720, 24 fps, 192 frames.** Plan 1080p delivery as a post
+  step: upscale a textless master and render text natively at 1080p.
+- **A connection drop during *Start generation* may or may not have
+  submitted.** Check the project's job list before resubmitting.
+- **Real text never survives generation.** Clean fake glyphs in the still,
+  composite the lyric afterwards (Blender, planar), and re-overlay the paper
+  if animated reflections cross it.
+
+## ⚠ Flow UI traps measured on 換班 (2026-09-15)
+
+- **The frame picker's preview follows a CLICK, not a hover.** Hovering a
+  second option left the preview on the first one (the previous start frame).
+  Click the option, confirm the preview is the intended still, then press
+  *Add to prompt*. Options sort by recent use, so reference images you just
+  attached float above the new generation.
+- **"Extension not connected" does not mean the JS did not run.** An ingredient
+  attach + prompt fill reported a disconnect and had in fact completed. Read the
+  prompt box (text length, attached thumbnails) before retrying, or the retry
+  attaches everything twice.
+- **Video mode reopens on Ingredients.** Switching Image → Video selected
+  Ingredients; Frames had to be picked explicitly before the Start/End slots
+  appeared. Confirm the quote reads 10 credits for Veo 3.1 Fast 8 s x1.
+- **Downloaded zip names are the prompt truncated by words.** "The camera slowly
+  pushes toward her…" arrived as `The_camera_slowly_pushes_toward_<timestamp>.mp4`;
+  a prefix one word longer matched nothing. Match on a short word prefix, then
+  bind by content hash.
+- **A shared Downloads folder carries other sessions' zips.** Accept only files
+  newer than your baseline whose inner name starts with your prompt.
+
+## Direct-mode video, measured on 說得太急 (2026-09-22)
+
+The agent-session approval traps above belong to **agent mode**. With the
+Agent pill off, three Veo clips went out back to back with **no approval
+widget at all**, ran concurrently (~1–2 min each), and the balance dropped by
+exactly the quote (3 × 10).
+
+> ⚠ **Direct mode has no credit gate.** Clicking `Start generation` spends the
+> quote immediately — nothing asks. So the human approval has to happen
+> *before* that click: get a yes from the user for the batch (shots, count,
+> credits) in chat, and never send a paid generation the user has not approved.
+
+The working loop:
+
+1. Settings pill → **Video** → **Frames** → `Veo 3.1 - Fast` → 8s → x1; zoom the
+   popup and confirm *"Generating will use 10 credits"*.
+2. Clipboard-paste the start image into the composer: in Frames mode it lands
+   in the **Start** slot (not as an ingredient). Wait until the slot shows the
+   thumbnail, not a grey placeholder — pasting the prompt early is fine, but
+   sending before the upload finishes is not.
+3. Paste the prompt, zoom the composer (Start thumbnail + full text), send via
+   the `Start generation` button — found by reference, since the composer
+   moves when the popup or a long prompt resizes it.
+4. Count the **Videos** tab. Open a clip: the detail view's download icon is at
+   the top right beside the trash; choose **720p Original size** (free).
+   1080p is an upscale; **4K costs 50 credits** — never click it by habit.
+5. Downloads arrive as `<Flow title>_<timestamp>.mp4`, where the title is
+   either the prompt truncated by words (換班) or a short caption Flow writes
+   itself ("Two men sitting in cafe", 說得太急) — so neither is a key. Bind
+   files by timestamp order to what you submitted, then by content hash.
+
+Read the balance from the avatar menu (`N Google Flow credits`) after the batch
+and reconcile it against the quotes before the next one.
+
+**The start frame decides what gets animated** (see also the Veo table above). A
+subject already at the end of his action made Veo invent a second man; a
+painted shadow stayed painted; a lean became a bow. Stage the still for the
+*beginning* of the motion — `tool-blender-scene-reference` § Staging a start
+frame for video.
+
+**Do not buy Veo for “almost nothing”.** On 說得太急 (2026-09-23), prompts
+for a three-centimetre hand lift, a frozen raised hand and a tiny posture change
+reliably escalated into lowering, clasping, reaching, drinking or visible
+speech. Keep a clean segment if one exists; otherwise use controlled local
+still drift. Reserve Veo for motion whose continuity matters (walking through
+space, a bus crossing the window), and let bar-led reuse cover repeated chorus
+material.
+
+## Record every Flow submission in the MV library
+
+`{vault}/10_Projects/YouTube-Music-Channel/library/` holds one row per
+generation (format: its `SCHEMA.md`). For MV work in Flow:
+
+1. **Before prompting**, read the matching `patterns/` notes — for edits
+   `edit-keep-composition-one-change`, for new angles `reference-only-as-role`,
+   for Veo `locked-off-camera`, `closed-lip-performance`,
+   `single-motion-nothing-else-moves` — and their known failures.
+2. **On each submission**, record a row with `verdict: "unreviewed"`: exact
+   prompt, `platform: google-flow`, model and mode from the SCHEMA table, input
+   hashes, quoted credits, `pattern_ids`. An x2 request is two rows sharing a
+   `batch_id`, with distinct `attempt` numbers.
+   From the EmptyOS repo root:
+   `python scripts/mv_library.py record-attempt --file row.json`
+3. **After download and review**, update the same `attempt_id` with `--update`:
+   output path and sha256, `verdict`, `codes` from `failure-codes.md`,
+   `reason`, `evidence.path` (a vault-relative file that exists). A tile that says *Failed* is
+   `generation-failed` with `output: null` and the charge as shown. A stale
+   version bound as start frame is code `stale_version_bound`.
+4. Finish with `python scripts/check_mv_library.py`.
+
+Flow output carries SynthID: approved stills recorded with `record-asset`
+(required fields: SCHEMA §2) get `rights.watermark: "synthid"`. Never copy lyrics into a row.
 
 ## Review at full size, never from thumbnails
 

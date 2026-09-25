@@ -48,6 +48,13 @@ jobs:
           mode = "local"
           port = 9000
 
+          # Same reason as tests.yml: "never" returns immediately, the default
+          # "ask" waits 120s for a consent modal nobody can answer headlessly.
+          # Dogfood is green today only because its scenarios happen not to
+          # reach a cloud provider; one that did would hang the job.
+          [cloud]
+          consent = "never"
+
           [scheduler]
           enabled = true
           timezone = "UTC"
@@ -86,7 +93,15 @@ jobs:
         # jobs, fiction-engine) skip themselves via the _app_required
         # fixture when their routes return 404. CI exercises the 4 core
         # apps (projects, reports, music-studio, publish) end-to-end.
-        run: pytest -m "dogfood and not llm" -v --tb=short
+        #
+        # --ignore=tests/personal, matching tests.yml. `tests/personal/` is
+        # TRACKED but the `apps/personal/` modules it imports are gitignored,
+        # so on a clone those files raise at COLLECTION — and one collection
+        # error aborts the run whatever `-m` selects. That is why this job had
+        # not executed a single dogfood test since at least 2026-09-09 while
+        # still reporting as a configured gate: 16 errors, 17 skipped,
+        # 19478 deselected, exit 2.
+        run: pytest tests/ --ignore=tests/personal -m "dogfood and not llm" -v --tb=short
 
       - name: Shut down daemon
         if: always()

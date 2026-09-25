@@ -6,11 +6,13 @@ import { defineView } from '/static/eos-cad-view.js';
 import * as inspector from '/static/eos-cad-views/inspector.js';
 import * as params from '/static/eos-cad-views/params.js';
 import * as extensions from '/static/eos-cad-views/part-extensions.js';
+import * as history from '/static/eos-cad-views/history.js';
 
 const TABS = [
   { id: 'inspector', label: 'Inspector', title: 'Show selected feature properties', mod: inspector },
   { id: 'params', label: 'Parameters', title: 'Show named parameters', mod: params },
   { id: 'extensions', label: 'Extensions', title: 'Show CAD extension panels', mod: extensions },
+  { id: 'history', label: 'History', title: 'Branches, fork, merge, revision history ("Git for CAD")', mod: history },
 ];
 
 const STYLES = `
@@ -21,7 +23,7 @@ const STYLES = `
   .cadv-prt-body { flex: 1; min-height: 0; min-width: 0; position: relative; }
   .cadv-prt-panel { height: 100%; min-height: 0; min-width: 0; }
   .cadv-prt-panel[hidden] { display: none; }
-  .cadv-prt .cadv-insp, .cadv-prt .cadv-params, .cadv-prt .cadv-pext {
+  .cadv-prt .cadv-insp, .cadv-prt .cadv-params, .cadv-prt .cadv-pext, .cadv-prt .cadv-hist {
     border-left: 0; border-right: 0;
   }
 `;

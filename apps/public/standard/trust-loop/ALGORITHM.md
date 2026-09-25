@@ -16,6 +16,33 @@ Implemented in: `fault_current.py` · Gated by: `[[provides.conformance.fault]]`
 
 ---
 
+## Document control
+
+| Field | Value |
+|---|---|
+| Specification id | `trust-loop-fault-current` |
+| Version | `2.0.0` |
+| Status | implemented demonstration; formal approval receipt pending |
+| Source package | `SOURCE-PACK.md` |
+| Implementation record | `IMPLEMENTATION.md` |
+| Validation plan | `VALIDATION.md` |
+
+## Requirement index
+
+| ID | Contract |
+|---|---|
+| `ALG-REF-01` | refer upstream impedances to the LV base by the square of the voltage ratio |
+| `ALG-NET-01` | calculate source impedance with the reviewed current form |
+| `ALG-NET-02` | split source impedance using the source-stated R/X relationships |
+| `ALG-TR-01` | derive transformer R, X, and Z from rated and test data |
+| `ALG-SUM-01` | sum R and X separately and derive total magnitude |
+| `ALG-RESULT-01` | calculate the three-phase current from voltage factor and total impedance |
+| `LIM-01` | disclose the simplified-method applicability boundary |
+| `REFUSE-01`, `REFUSE-02`, `REFUSE-03` | refuse non-positive domain data, negative impedance, and inconsistent transformer data |
+| `VAL-ABB-01` | reproduce the ABB worked answer within the reviewed 0.5% tolerance |
+| `PROP-DOM-01`, `PROP-MONO-01`, `PROP-LIN-01`, `PROP-PYTH-01` | preserve dominance, monotonicity, voltage-factor linearity, and impedance geometry |
+| `REPORT-01` | return a checkable derivation from the same execution as the result |
+
 ## 1. Scope
 
 A fault at the low-voltage terminals of an MV/LV transformer is fed through
@@ -28,26 +55,62 @@ whether anything survives it — that is a different calculation entirely.
 
 ## 2. Inputs
 
-| Symbol | Meaning | Units |
-|---|---|---|
-| `U_net` | supply network nominal voltage | V |
-| `I_k_net` | network fault current (or `S_k_net`, converted) | A |
-| `c` | voltage factor | — |
-| `R_mv`, `X_mv` | MV cable, at MV potential | Ω |
-| `S_n` | transformer rated power | VA |
-| `U_2n` | transformer secondary rated voltage | V |
-| `vk_pct` | transformer voltage drop on test | % |
-| `pk_pct` | transformer load loss on test | % |
-| `R_lv`, `X_lv` | LV cable, at LV potential | Ω |
+The table below is **generated** from `spec.py`, which is also what
+`GET /api/schema` serves to the form and what `app.py::_coerce_inputs` reads at
+the request boundary. Before that declaration existed these eleven inputs were
+written down four times and agreed by hand; the `Field` column in particular
+appeared nowhere, so the wire format of the only endpoint was undocumented.
+
+`Domain` is the same rule `fault_current.py::_validate` refuses on. The form
+hints it as an `<input min>`, and the hint is advisory — a paste or a scripted
+client walks past it and the engine still refuses.
+
+<!-- generated:inputs — from apps/public/standard/trust-loop/spec.py -->
+
+| Symbol | Field | Meaning | Unit | Domain | Group |
+|---|---|---|---|---|---|
+| `U_net` | `u_net` | Nominal voltage | `V` | > 0 | Supply network |
+| `I_k_net` | `i_k_net` | Fault current — or S_k_net, converted | `A` | > 0 | Supply network |
+| `c` | `c` | Voltage factor c | — | > 0 | Supply network |
+| `R_CMV` | `r_mv` | R — at MV potential; referred by K² | `Ω` | ≥ 0 | MV cable |
+| `X_CMV` | `x_mv` | X — at MV potential; referred by K² | `Ω` | ≥ 0 | MV cable |
+| `S_n` | `s_n` | Rated power | `VA` | > 0 | Transformer |
+| `U_2n` | `u_2n` | Secondary | `V` | > 0 | Transformer |
+| `v_k` | `vk_pct` | vₖ — voltage drop on test | `%` | > 0 | Transformer |
+| `p_k` | `pk_pct` | pₖ — load loss on test | `%` | ≥ 0 | Transformer |
+| `R_CLV` | `r_lv` | R — at LV potential; not referred | `Ω` | ≥ 0 | LV cable |
+| `X_CLV` | `x_lv` | X — at LV potential; not referred | `Ω` | ≥ 0 | LV cable |
+
+<!-- /generated:inputs -->
 
 ## 3. Outputs
 
-| Symbol | Meaning | Units |
-|---|---|---|
-| `i_k3_a` | three-phase prospective fault current | A |
-| `r_total`, `x_total`, `z_total` | summed impedance at the LV base | Ω |
-| `contributions` | per-element R and X at the LV base, and share of `z_total` | Ω, % |
-| `ratio` | referral ratio `K = U_net / U_2n` | — |
+Also generated. `Derived from` is the input set that actually reached each
+number, not every input to the call: `ratio` rests on two of the eleven, and a
+reader who has just changed an LV impedance is owed the fact that it cannot have
+moved.
+
+`contributions` and `steps` are not in the table. They are structures rather
+than scalars — the per-element R and X at the LV base with each element's share
+of `z_total`, and the calculation report of section 6 — and a column of units
+would describe neither.
+
+<!-- generated:outputs — from apps/public/standard/trust-loop/spec.py -->
+
+| Field | Symbol | Unit | Meaning | Derived from |
+|---|---|---|---|---|
+| `i_k3_ka` · | `I_k3` | — | Three-phase prospective fault current (kA) | every input |
+| `i_k3_a` | `I_k3` | `A` | Three-phase prospective fault current | every input |
+| `r_total_ohm` | `R_Tk` | `Ω` | Total resistance at the LV base | every input |
+| `x_total_ohm` | `X_Tk` | `Ω` | Total reactance at the LV base | every input |
+| `z_total_ohm` | `Z_Tk` | `Ω` | Total impedance at the LV base | every input |
+| `ratio` | `K` | — | Referral coefficient U_net / U_2n | `u_net`, `u_2n` |
+| `ratio_squared` | `K²` | — | Referral divisor applied upstream of the LV base | `u_net`, `u_2n` |
+| `transformer_i_2n_a` | `I_2n` | `A` | Transformer rated secondary current | `s_n`, `u_2n` |
+
+`·` marks the headline result the interface leads with.
+
+<!-- /generated:outputs -->
 
 ## 4. Method
 

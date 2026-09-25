@@ -10,21 +10,32 @@ are variously RTF, Word97 OLE, or even docx).
 
 Formats: .docx/.xlsx/.pptx (zip+xml), RTF (brace state machine, \\'xx→gbk,
 \\uN→unicode), Word97-family OLE incl. .wps (FIB → Clx piece table via
-olefile), .pdf (pypdf), plain text. Legacy .xls/.ppt are refused loudly
-(open+resave, or markitdown) instead of dumping binary noise.
+olefile), legacy .ppt (PowerPoint 97 record tree via olefile), .pdf (pypdf),
+plain text. Legacy .xls is refused loudly instead of dumping binary noise --
+it is covered by the markitdown plugin (needs its `[xls]` extra).
 
 Coverage boundary vs the read-capability plugins: markitdown handles the
-MODERN formats (.docx/.xlsx/.pptx/...), the ocr plugin handles SCANNED
-PDFs; this script covers the LEGACY slice (.doc/.rtf/.wps) neither does.
-Graduation target if a daemon-side consumer appears: a `legacy-doc` read
-enhancer plugin beside them (not an app), per CLAUDE.md rule 9.
+zip-based formats (.docx/.xlsx/.pptx/...) plus legacy .xls via xlrd, the ocr
+plugin handles SCANNED PDFs; this script covers the LEGACY slice
+(.doc/.rtf/.wps/.ppt) neither does -- markitdown refuses a binary .ppt too.
 
-Stdlib + olefile (Word97 path) + pypdf (PDF path); both degrade gracefully.
+That graduation has since happened: `plugins/legacy-doc/` is the read enhancer
+this docstring used to predict, serving the same slice over the `read`
+capability. The two coexist deliberately and do not compete -- a script is not
+a capability provider, so no priority-0 shadowing applies, and on `.ppt` they
+fail differently (this walker pulls more text where the record tree parses;
+anydoc opens decks it cannot). `_ppt97_text` falls back to anydoc rather than
+exiting, which is what makes the pair complete.
+
+Stdlib + olefile (Word97/.ppt paths) + pypdf (PDF path) + anydoc (optional .ppt
+fallback, shared with plugins/legacy-doc/); all three degrade gracefully.
 """
 from __future__ import annotations
 
 import argparse
+import codecs
 import re
+import struct
 import sys
 import zipfile
 from pathlib import Path
@@ -88,18 +99,47 @@ _RTF_SKIP = {
 _RTF_BREAK = {"par", "line", "sect", "row", "pard"}
 
 
+def _rtf_codec(s: str) -> str:
+    """Codec for \\'xx bytes: the document's declared \\ansicpgN, else gbk.
+
+    gbk stays the DEFAULT rather than the RTF-spec cp1252 because this corpus
+    is Chinese-dominant and declares nothing (0 of 943 files carry \\ansicpg or
+    \\fcharset). A declaration, when present, always wins.
+    """
+    m = re.search(r"\\ansicpg(\d+)", s[:4096])
+    if not m:
+        return "gbk"
+    cp = int(m.group(1))
+    known = {936: "gbk", 950: "big5", 932: "shift_jis", 949: "euc_kr", 65001: "utf-8"}
+    if cp in known:
+        return known[cp]
+    try:
+        codecs.lookup(f"cp{cp}")
+    except LookupError:
+        return "gbk"
+    return f"cp{cp}"
+
+
 def from_rtf(raw: bytes) -> str:
     """Minimal RTF reader: walk groups, skip metadata/binary groups entirely."""
-    s = raw.decode("latin-1")  # byte-transparent; \'xx resolved against gbk below
+    s = raw.decode("latin-1")  # byte-transparent; \'xx resolved against the codec below
+    codec = _rtf_codec(s)
     out: list[str] = []
-    buf = bytearray()          # pending \'xx bytes, flushed as gbk
+    buf = bytearray()          # pending \'xx bytes, flushed as `codec`
     depth = 0
     skip_at: int | None = None  # depth at which we entered a skipped group
+    # \ucN: fallback chars trailing each \uN (spec default 1). The spec scopes
+    # \uc to the enclosing group and restores it on exit; this reader keeps one
+    # global value, matching how it already ignores group state elsewhere (no
+    # font/charset stack). Harmless here -- across 943 corpus files \uc is never
+    # written at all, so the default of 1 holds throughout. Revisit only if a
+    # document turns up that sets \uc inside a group and relies on the restore.
+    uc = 1
     i, n = 0, len(s)
 
     def flush() -> None:
         if buf:
-            out.append(buf.decode("gbk", "ignore"))
+            out.append(buf.decode(codec, "ignore"))
             buf.clear()
 
     while i < n:
@@ -141,13 +181,30 @@ def from_rtf(raw: bytes) -> str:
             param = s[k:m]
             if m < n and s[m] == " ":
                 m += 1
-            if word == "u" and param:
+            if word == "uc" and param:
+                uc = max(0, int(param))
+            elif word == "u" and param:
                 if skip_at is None:
                     flush()
                     out.append(chr(int(param) % 65536))
-                # \uN is followed by a fallback char to discard
-                if m < n and s[m] not in "\\{}":
-                    m += 1
+                # \uN is trailed by `uc` ANSI fallback units, which must be
+                # DISCARDED. A unit is a \'xx escape, a \-escaped literal, or one
+                # plain char. Missing the \'xx form is what fed Western quote
+                # bytes to the gbk decoder and produced CJK mojibake.
+                skipped = 0
+                while skipped < uc and m < n:
+                    if s[m] == "\\" and m + 1 < n:
+                        if s[m + 1] == "'" and m + 3 < n:
+                            m += 4
+                        elif not s[m + 1].isalpha():
+                            m += 2
+                        else:
+                            break  # a control word is content, not a fallback
+                    elif s[m] in "{}":
+                        break
+                    else:
+                        m += 1
+                    skipped += 1
             elif word in _RTF_SKIP:
                 if skip_at is None:
                     skip_at = depth
@@ -215,6 +272,96 @@ def _word97_pieces(path: Path) -> str:
                .replace("\x01", "").replace("\x08", ""))
 
 
+def _anydoc_text(path: Path) -> str:
+    """Optional fallback through anydoc -- the same library `plugins/legacy-doc/` uses.
+
+    Returns "" when anydoc is absent or cannot read the file, so every caller keeps
+    its own error path and a fresh clone without it behaves exactly as before
+    (matching the stdlib-plus-optional-deps posture in the module docstring).
+
+    NEVER passes `ocr=`. That argument ships document pages to a third-party host,
+    bypassing the cloud-consent gate (CLAUDE.md rules 18/19). Without it anydoc makes
+    no network call at all and simply raises on a scanned page.
+    """
+    try:
+        import anydoc
+    except Exception:
+        return ""
+    try:
+        return anydoc.to_markdown(str(path)) or ""
+    except Exception:
+        return ""
+
+
+def _ppt97_text(path: Path) -> str:
+    """Text from a legacy PowerPoint 97-2003 (.ppt) OLE container.
+
+    Walks the record tree in the ``PowerPoint Document`` stream and collects
+    ``TextBytesAtom`` (0x0FA0) and ``TextCharsAtom`` (0x0FA8) payloads.  A
+    record whose version nibble is 0xF is a container, so we descend into it
+    rather than skipping its length.
+
+    The spec says TextBytesAtom holds the *low bytes* of UTF-16 (i.e. Latin-1
+    only) and CJK text belongs in TextCharsAtom.  Real decks written by
+    Chinese PowerPoint put UTF-16LE in TextBytesAtom anyway, and the file
+    carries no flag to distinguish them, so each payload is decoded both ways.
+    An all-ASCII single-byte reading wins outright (see below); otherwise the
+    two candidates are scored and the better one kept.  Guessing wrong is the
+    difference between a readable slide and a page of mojibake.
+    """
+    import olefile
+    with olefile.OleFileIO(str(path)) as ole:
+        data = ole.openstream("PowerPoint Document").read()
+
+    def looks_like_text(s: str) -> float:
+        if not s:
+            return -1.0
+        printable = sum(1 for c in s if c.isprintable() or c in "\r\n\t\x0b")
+        cjk = sum(1 for c in s if "一" <= c <= "鿿")
+        return printable / len(s) + cjk / len(s)
+
+    def all_ascii(s: str) -> bool:
+        return bool(s) and all(c.isascii() and (c.isprintable() or c in "\r\n\t\x0b")
+                               for c in s)
+
+    out: list[str] = []
+    i = 0
+    while i + 8 <= len(data):
+        ver_inst, rtype, rlen = struct.unpack_from("<HHI", data, i)
+        body = i + 8
+        if rlen > len(data) - body:
+            break
+        if rtype in (0x0FA0, 0x0FA8):
+            payload = data[body:body + rlen]
+            cands = []
+            if len(payload) % 2 == 0:
+                cands.append(payload.decode("utf-16-le", "replace"))
+            single = payload.decode("cp1252", "replace")
+            # A clean all-ASCII single-byte reading settles it, because UTF-16LE
+            # can never produce one -- for two different reasons, and both are
+            # load-bearing: CJK carries high bytes (55 53 fb 51), and ASCII
+            # carries NUL bytes (4f 00 4b 00), which all_ascii rejects since
+            # '\x00'.isprintable() is False.  Without this shortcut the CJK
+            # reward in looks_like_text wins on short numeric cells ("12.5kN")
+            # and turns table values into mojibake while body text stays fine.
+            if all_ascii(single):
+                out.append(single)
+            else:
+                out.append(max(cands + [single], key=looks_like_text))
+        i = body if (ver_inst & 0x0F) == 0x0F else body + rlen
+
+    if not out:
+        # The record walk found nothing -- an image-only deck, or a container
+        # shape this reader does not descend. anydoc opens some of those (it
+        # read 8,936 chars from a deck this path returns zero for), so try it
+        # before giving up. Measured 2026-08-30; see plugins/legacy-doc/.
+        fallback = _anydoc_text(path)
+        if fallback:
+            return fallback
+        sys.exit("legacy .ppt carried no text atoms (image-only deck?)")
+    return "\n".join(out)
+
+
 def from_ole(path: Path, raw: bytes) -> str:
     try:
         return _word97_pieces(path)
@@ -227,10 +374,11 @@ def from_ole(path: Path, raw: bytes) -> str:
         with olefile.OleFileIO(str(path)) as ole:
             streams = {"/".join(e) for e in ole.listdir()}
         if "Workbook" in streams or "Book" in streams:
-            sys.exit(f"legacy .xls (BIFF) not supported — open in Excel and "
-                     f"save as .xlsx, or use markitdown. Streams: {sorted(streams)[:5]}")
+            sys.exit(f"legacy .xls (BIFF) not supported here — use the markitdown "
+                     f"plugin (its venv needs the [xls] extra -> xlrd), or open in "
+                     f"Excel and save as .xlsx. Streams: {sorted(streams)[:5]}")
         if "PowerPoint Document" in streams:
-            sys.exit("legacy .ppt not supported — save as .pptx, or use markitdown")
+            return _ppt97_text(path)
         sys.exit(f"unrecognised OLE document (streams: {sorted(streams)[:8]})")
     except SystemExit:
         raise

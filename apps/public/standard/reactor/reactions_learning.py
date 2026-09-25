@@ -23,7 +23,6 @@ class LearningReactionsMixin:
         if turns >= 10:
             msg = f"🎤 Great speaking session! {turns} turns, {duration}s"
             await self._notify(msg, kind="milestone")
-            await self._telegram(msg)
 
     @on_event("shadowing:perfect")
     async def on_shadowing_perfect(self, event):
@@ -51,7 +50,6 @@ class LearningReactionsMixin:
         self._log_action("english:level_up", "level up!")
         msg = "🎉 English level up! Keep going!"
         await self._notify(msg, priority="info", kind="milestone")
-        await self._telegram(msg)
 
     @on_event("speak-sharper:analyzed")
     async def on_sharper(self, event):
@@ -80,6 +78,14 @@ class LearningReactionsMixin:
     @on_event("dictionary:word_reviewed")
     async def on_word_reviewed(self, event):
         self._log_action("dictionary:word_reviewed", event.data.get("word", "")[:30])
+
+    @on_event("dictionary:pack_created")
+    async def on_dictionary_pack_created(self, event):
+        self._log_action("dictionary:pack_created", event.data.get("pack_id", "")[:30])
+
+    @on_event("dictionary:picture_word_saved")
+    async def on_dictionary_picture_word_saved(self, event):
+        self._log_action("dictionary:picture_word_saved", event.data.get("word", "")[:30])
 
     @on_event("reader:opened")
     async def on_reader_opened(self, event):
@@ -128,3 +134,124 @@ class LearningReactionsMixin:
         title = event.data.get("title") or event.data.get("slug", "")
         self._log_action("reader:book_imported", str(title)[:50])
         await self._journal_ripple("📖", f"Added to the library: {str(title)[:60]}", dim="intellectual")
+
+    # ── Wired 2026-08-16 — previously declared-but-unheard (architecture review) ──
+
+    @on_event("soundcheck:session_started")
+    async def on_soundcheck_started(self, event):
+        # Quiet log, matching speaking:session_started — starting a drill is
+        # not a milestone, and a per-start ripple would bury the daily note.
+        mode = event.data.get("mode", "")
+        self._log_action("soundcheck:session_started", str(mode)[:30])
+
+    @on_event("soundcheck:session_completed")
+    async def on_soundcheck_completed(self, event):
+        # Keys are soundcheck.engine.progress(): asked / right / accuracy.
+        # A breadcrumb reading "rounds: ?" every time is worse than none.
+        right = event.data.get("right", 0)
+        asked = event.data.get("asked", 0)
+        self._log_action("soundcheck:session_completed", f"{right}/{asked} correct")
+        score = f" — {right}/{asked}" if asked else ""
+        await self._journal_ripple(
+            "🗣️", f"Finished a pronunciation session{score}", dim="intellectual"
+        )
+
+    @on_event("soundcheck:contrast_cleared")
+    async def on_soundcheck_contrast_cleared(self, event):
+        """An earned win: a contrast that was previously being failed.
+
+        soundcheck computes `cleared` against the worst-list from *before* this
+        session (see soundcheck/sessions.py::_summarise), so this fires only on
+        a real improvement — which is what makes it worth a nudge.
+        """
+        cleared = [str(c) for c in (event.data.get("cleared") or []) if c]
+        if not cleared:
+            return
+        label = ", ".join(cleared[:3]) + ("…" if len(cleared) > 3 else "")
+        self._log_action("soundcheck:contrast_cleared", label[:50])
+        msg = f"🎯 Cleared a sound contrast you were failing: {label}"
+        await self._journal_ripple("🎯", f"Cleared sound contrast: {label}", dim="intellectual")
+        await self._notify(msg, kind="milestone")
+
+    @on_event("audio-course:course_added")
+    async def on_audio_course_added(self, event):
+        """A course joined the shelf — same shape as reader:book_imported."""
+        course = event.data.get("course_id", "")
+        chapters = event.data.get("chapters", "?")
+        self._log_action("audio-course:course_added", f"{str(course)[:40]} ({chapters} ch)")
+        await self._journal_ripple(
+            "🎧", f"Added an audio course: {str(course)[:60]}", dim="intellectual"
+        )
+
+    @on_event("audio-course:exercise_cleared")
+    async def on_audio_course_exercise_cleared(self, event):
+        # Quiet log only — fires once per exercise transition, and a course has
+        # many exercises, so a ripple each time would be per-drill chatter.
+        self._log_action(
+            "audio-course:exercise_cleared",
+            f"{str(event.data.get('exercise', ''))[:30]} @ {event.data.get('score', '?')}",
+        )
+
+    @on_event("kb:figure_attached")
+    async def on_kb_figure_attached(self, event):
+        # Quiet log, matching kb:viewed — the figure is already visible in the
+        # note it was attached to, so a journal line would just duplicate it.
+        slug = event.data.get("slug", "")
+        self._log_action("kb:figure_attached", str(slug)[:50])
+
+    # ── library: the reference manager ────────────────────────────────
+    # Six emits that had no listener at all (P3, 2026-09-03) — a third of
+    # the whole unheard-event finding came from this one app. Two earn a
+    # journal ripple (adding a paper and finishing with it are real
+    # intellectual events worth seeing in the daily note); the rest are
+    # quiet logs, because a field edit or an SRS grade is bookkeeping and a
+    # ripple per highlight would be per-page chatter.
+
+    @on_event("library:paper_added")
+    async def on_library_paper_added(self, event):
+        title = str(event.data.get("title", "") or event.data.get("citekey", ""))[:60]
+        self._log_action("library:paper_added", title)
+        await self._journal_ripple(
+            "📄", f"Added to the library: {title or 'a paper'}", dim="intellectual"
+        )
+
+    @on_event("library:sent_to_kb")
+    async def on_library_sent_to_kb(self, event):
+        citekey = str(event.data.get("citekey", ""))[:50]
+        self._log_action("library:sent_to_kb", citekey)
+        await self._journal_ripple(
+            "🔖", f"Distilled {citekey or 'a paper'} into the knowledge base",
+            dim="intellectual",
+        )
+
+    @on_event("library:highlight_added")
+    async def on_library_highlight_added(self, event):
+        # Quiet: highlighting is per-page and would flood the daily note.
+        page = event.data.get("page")
+        citekey = str(event.data.get("citekey", ""))[:50]
+        self._log_action(
+            "library:highlight_added", f"{citekey} p{page}" if page else citekey
+        )
+
+    @on_event("library:highlight_reviewed")
+    async def on_library_highlight_reviewed(self, event):
+        # Quiet: one row per SRS grade, same shape as the other drill events.
+        self._log_action(
+            "library:highlight_reviewed",
+            f"{str(event.data.get('id', ''))[:30]} @ {event.data.get('rating', '?')}",
+        )
+
+    @on_event("library:paper_updated")
+    async def on_library_paper_updated(self, event):
+        # Quiet: a metadata edit / PDF attach is bookkeeping, not an event.
+        # Two emit shapes reach here — `field` (single set_field / PDF upload)
+        # and `updates` (a bulk edit) — so report whichever is present.
+        data = event.data
+        changed = data.get("field") or ", ".join(data.get("updates") or []) or "?"
+        self._log_action(
+            "library:paper_updated", f"{str(data.get('citekey', ''))[:40]}: {changed}"[:80]
+        )
+
+    @on_event("library:paper_deleted")
+    async def on_library_paper_deleted(self, event):
+        self._log_action("library:paper_deleted", str(event.data.get("citekey", ""))[:50])

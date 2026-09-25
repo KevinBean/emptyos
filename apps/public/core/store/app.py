@@ -401,16 +401,24 @@ class StoreApp(BaseApp):
     async def api_restart_required(self, request) -> dict:
         """Cheap heuristic — `last_change` after daemon boot ⇒ restart pending.
 
-        Daemon boot time is wall-clock at module import (close enough). The
+        Daemon boot time is wall-clock at module import (close enough — see
+        `_BOOT_TS`, which is stamped at import rather than on first call). The
         UI uses this to surface a sticky banner after the user clicks
         install/uninstall.
         """
-        boot_ts = _boot_ts()
+        # Floor to whole seconds: `store_state` writes `isoformat(timespec="seconds")`,
+        # so the stored side is truncated while `_boot_ts()` carries sub-second
+        # precision. Comparing them raw loses an install that lands in the same
+        # second as boot — the change reads up to 1s *earlier* than it happened.
+        # `>=` at second resolution then means "same second as boot counts as
+        # after": a needless restart prompt is cheap, a missed one leaves the app
+        # the user just installed dark.
+        boot_ts = int(_boot_ts())
         apps_change = store_state.last_change(self.kernel.config.data_dir, "apps")
         plugins_change = store_state.last_change(self.kernel.config.data_dir, "plugins")
         pending = False
         for change in (apps_change, plugins_change):
-            if change and _iso_to_ts(change) > boot_ts:
+            if change and _iso_to_ts(change) >= boot_ts:
                 pending = True
                 break
         return {"restart_required": pending}
@@ -602,20 +610,34 @@ class StoreApp(BaseApp):
 
 # ── Module-level helpers (not on the class — pure functions) ─────────────
 
-_BOOT_TS_CACHE: list[float] = []
+# Stamped at module import — i.e. when the app loader imports this app during
+# daemon boot. It must NOT be filled lazily on first call: the only caller is
+# `api_restart_required`, so a lazy value is the time of the first *poll*, and
+# any install made between boot and that poll would compare as pre-boot and
+# never raise the banner.
+_BOOT_TS: float = time.time()
 
 
 def _boot_ts() -> float:
-    """Process start time, cached. Used as the restart-required cutoff."""
-    if not _BOOT_TS_CACHE:
-        _BOOT_TS_CACHE.append(time.time())
-    return _BOOT_TS_CACHE[0]
+    """Module-import time, i.e. daemon boot. The restart-required cutoff."""
+    return _BOOT_TS
 
 
 def _iso_to_ts(iso: str) -> float:
-    """Parse an ISO timestamp to epoch seconds. Tolerant — returns 0 on failure."""
+    """Parse an ISO timestamp to epoch seconds. Tolerant — returns 0 on failure.
+
+    `store_state` writes `datetime.utcnow().isoformat()` — naive, but UTC. A bare
+    `fromisoformat(...).timestamp()` reads a naive value as LOCAL, understating
+    every install by the UTC offset: in UTC+10 an install registered 10h in the
+    past, so `last_change > boot_ts` was False and the restart-required banner
+    never fired. Assume UTC when the value carries no offset; honour one when it
+    does, so a future tz-aware writer needs no change here.
+    """
     try:
-        from datetime import datetime
-        return datetime.fromisoformat(iso).timestamp()
+        from datetime import datetime, timezone
+        dt = datetime.fromisoformat(iso)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.timestamp()
     except (ValueError, TypeError):
         return 0.0

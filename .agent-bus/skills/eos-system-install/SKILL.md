@@ -196,7 +196,12 @@ Or use `restart.bat` for manual start (also checks/starts Ollama and ComfyUI).
 If developing or verifying the install thoroughly:
 
 ```bash
-# EmptyOS must be running on localhost:9000
+# EmptyOS must be running on localhost:9000.
+# Run this in YOUR OWN terminal, not from an agent tool call: a daemon spawned
+# from a tool inherits that tool's process group and dies when the call returns,
+# so the tests below would then fail against nothing. (Starting a daemon is fine
+# in *this* skill — a fresh install has no user-owned :9000 to protect — the
+# backgrounding is the part that bites.)
 python -m emptyos start &
 
 # Run smoke tests (every app page loads)

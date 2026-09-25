@@ -167,3 +167,13 @@ class CreativeReactionsMixin:
     async def on_vlog_montage_ready(self, event):
         title = event.data.get("title") or event.data.get("id", "")
         self._log_action("vlog:montage_ready", str(title)[:50])
+
+    # ── Wired 2026-08-16 — previously declared-but-unheard (architecture review) ──
+
+    @on_event("viz:figure_exported")
+    async def on_viz_figure_exported(self, event):
+        # Quiet log, matching ppt:exported — the artifact records its own
+        # `used_in` provenance at the emit site, so the breadcrumb here is for
+        # observability, not for the daily note.
+        target = event.data.get("target") or event.data.get("id", "")
+        self._log_action("viz:figure_exported", str(target)[:50])

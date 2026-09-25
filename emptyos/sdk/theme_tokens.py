@@ -68,6 +68,29 @@ def load(path: Path = THEME_CSS) -> str:
     return path.read_text(encoding="utf-8") if path.exists() else ""
 
 
+def global_token_prefixes(css: str | None = None) -> frozenset[str]:
+    """Token families theme.css itself owns — `bg`, `accent`, `text`, `space`…
+
+    Read from theme.css rather than hardcoded, for the same reason the T3 token
+    set is: a literal list drifts the moment a family is added, and the drift is
+    silent in both directions.
+
+    The consumer is brand-island detection (`scanner_lib.is_brand_island`),
+    which asks "does this file declare a *private* namespace". Answering that by
+    prefix length alone is wrong in both directions, and the two scanners that
+    tried it were wrong differently: theme.css owns 13 families of >=3 tokens,
+    so `--accent-ink/-dim/-bg` reads as a private `accent-*` namespace at a
+    6-char bound, and `--bg-*` / `--text-*` / `--fs-*` do so even at 4.
+    """
+    if css is None:
+        css = load()
+    return frozenset(
+        m.group(1).split("-", 1)[0].lower()
+        for m in _VAR.finditer(blank_comments(css))
+        if "-" in m.group(1)
+    )
+
+
 #: Tokens a standalone export needs, in the snake_case shape those consumers use.
 #: Every one is a literal hex/rgba in every theme — a static site has no daemon to
 #: resolve `var()` against, so a token that became an indirection would silently

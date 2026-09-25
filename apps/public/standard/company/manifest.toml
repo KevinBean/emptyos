@@ -41,6 +41,7 @@ emits = [
     "company:run_complete",
     "company:action_applied",
     "company:action_rejected",
+    "company:specialist_routed",
 ]
 # Scenario-sim run lifecycle — drives the persona-sim UI's run records
 # and review-gate cards. Names retained from the persona-sim era for
@@ -50,6 +51,7 @@ internal = [
     "company:run_complete",
     "company:action_applied",
     "company:action_rejected",
+    "company:specialist_routed",
     "orgs:member_added",
     "orgs:member_removed",
     "orgs:member_updated",
@@ -57,6 +59,15 @@ internal = [
     "orgs:org_created",
     "orgs:org_updated",
 ]
+
+# ── Unified verb registry — see .claude/rules/verb-registry.md ──
+[[provides.verbs]]
+verb = "company.route_to_specialist"
+method = "route_to_specialist"
+summary = "Route one item to the best-fit AI specialist on an org"
+args = { org_id = "string", item_text = "string" }
+eligibility = "gated"
+surfaces = ["agent", "mcp"]
 
 [provides.settings]
 schema = [

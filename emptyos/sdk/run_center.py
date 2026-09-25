@@ -27,6 +27,7 @@ app-local method wins over the mixin in MRO order — rather than widening the m
 
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime, timezone
 
 from emptyos.sdk.decorators import web_route
@@ -73,7 +74,21 @@ class RunCenterMixin:
                 binary = runtime.resolve_claude_binary()
             except Exception:
                 binary = ""
-        rc, current_branch, _ = git_run(["rev-parse", "--abbrev-ref", "HEAD"], cwd=repo)
+        # Off the event loop: this is polled every 4-5 s by every open
+        # fix-agent / app-builder page, and a sync subprocess in an async
+        # handler pins the whole bus for the spawn (dev-gotchas: sync call in
+        # async context). Resolved by name at call time so tests can stub it.
+        rc, current_branch, _ = await asyncio.to_thread(
+            git_run, ["rev-parse", "--abbrev-ref", "HEAD"], cwd=repo
+        )
+        # Today's think-cost for this app (billing bills per-app/per-day, not
+        # per-run, so an aggregate "spent today" figure is the honest grain —
+        # a per-run number would double-count same-day runs). Empty
+        # since_iso resolves to billing's own local "today". `None` when
+        # billing is absent/disabled.
+        cost_today, _err = await self.try_call_app(
+            "billing", "cost_for_app_since", app_id=self.manifest.id, since_iso="",
+        )
         return {
             "repo_root": str(repo),
             "worktree_path": str(wt),
@@ -83,4 +98,5 @@ class RunCenterMixin:
             "claude_available": bool(binary),
             "runs": self._list_runs(),
             "busy": self._lock.locked(),
+            "cost_today": cost_today,
         }

@@ -10,7 +10,7 @@
   .we-wrap { max-width: 980px; margin: 0 auto; padding: 24px 24px; }
   .we-header { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 24px; }
   .we-title { font-size: 22px; font-weight: 700; }
-  .we-meta { font-size: 13px; color: var(--text-soft); margin-top: 4px; }
+  .we-meta { font-size: 13px; color: var(--text-muted); margin-top: 4px; }
   .we-tabs { display: flex; gap: 8px; margin-bottom: 16px; }
   .we-tab { padding: 12px 24px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-card); color: var(--text); font-size: 15px; cursor: pointer; }
   /* --accent-text does not exist (it was a typo for --accent-ink), so this fell
@@ -18,34 +18,34 @@
   .we-tab.active { background: var(--accent); color: var(--accent-ink, #fff); border-color: var(--accent); }
   .we-pickers { display: flex; flex-wrap: wrap; gap: 24px; margin-bottom: 16px; }
   .we-picker-group { display: flex; flex-direction: column; gap: 8px; }
-  .we-picker-label { font-size: 12px; color: var(--text-soft); text-transform: uppercase; letter-spacing: 0.5px; }
+  .we-picker-label { font-size: 12px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; }
   .we-chip-row { display: flex; gap: 8px; flex-wrap: wrap; }
   .we-chip { padding: 8px 12px; border: 1px solid var(--border); border-radius: 999px; background: var(--bg-card); color: var(--text); font-size: 13px; cursor: pointer; transition: all 0.12s; }
   .we-chip:hover { border-color: var(--accent); }
   .we-chip.active { background: var(--accent); color: var(--ink-on-vivid); border-color: var(--accent); }
   .we-draft { width: 100%; min-height: 180px; padding: 16px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-card); color: var(--text); font: inherit; resize: vertical; }
   .we-actions { display: flex; gap: 12px; align-items: center; margin-top: 12px; margin-bottom: 24px; }
-  .we-status { font-size: 12px; color: var(--text-soft); }
+  .we-status { font-size: 12px; color: var(--text-muted); }
   .we-result { display: none; flex-direction: column; gap: 16px; }
   .we-result.show { display: flex; }
-  .we-section-label { font-size: 12px; color: var(--text-soft); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px; }
+  .we-section-label { font-size: 12px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px; }
   .we-revised { width: 100%; min-height: 180px; padding: 16px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-card); color: var(--text); font: inherit; }
   .we-edits { display: flex; flex-direction: column; gap: 8px; }
   .we-edit { padding: 12px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-card); font-size: 13px; }
-  .we-edit-strike { color: var(--text-soft); text-decoration: line-through; }
+  .we-edit-strike { color: var(--text-muted); text-decoration: line-through; }
   .we-edit-add { color: var(--text); }
-  .we-edit-rationale { color: var(--text-soft); margin-top: 4px; font-style: italic; }
+  .we-edit-rationale { color: var(--text-muted); margin-top: 4px; font-style: italic; }
   .we-edit-head { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; }
   .we-edit-body { flex: 1; min-width: 0; }
   .we-edit-actions { display: flex; gap: 6px; flex-shrink: 0; }
-  .we-edit-chip { padding: 4px 10px; border: 1px solid var(--border); border-radius: 999px; background: var(--bg); color: var(--text-soft); font-size: 12px; cursor: pointer; line-height: 1.2; }
+  .we-edit-chip { padding: 4px 10px; border: 1px solid var(--border); border-radius: 999px; background: var(--bg); color: var(--text-muted); font-size: 12px; cursor: pointer; line-height: 1.2; }
   .we-edit-chip.on-accept { background: var(--accent); color: var(--accent-ink, #fff); border-color: var(--accent); }
   .we-edit-chip.on-reject { background: var(--danger); color: var(--ink-on-vivid); border-color: var(--danger); }
   .we-edit.rejected .we-edit-body { opacity: 0.45; }
   .we-edit.notfound { opacity: 0.6; }
   .we-edit-note { color: var(--danger); font-size: 12px; margin-top: 6px; }
   .we-edit-controls { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 4px; }
-  .we-edit-count { font-size: 12px; color: var(--text-soft); margin-left: auto; }
+  .we-edit-count { font-size: 12px; color: var(--text-muted); margin-left: auto; }
   .we-pattern { padding: 12px 16px; border: 1px dashed var(--border); border-radius: 8px; background: var(--bg); font-size: 13px; }
   .we-pattern-title { font-weight: 600; margin-bottom: 4px; }
   .we-lint { display: none; flex-direction: column; gap: 8px; margin-bottom: 24px; }
@@ -56,9 +56,9 @@
   .we-finding.sev-style { border-left-color: var(--border-strong); }
   .we-finding-head { display: flex; gap: 8px; align-items: baseline; }
   .we-finding-sev { font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600; }
-  .we-finding-rule { color: var(--text-soft); font-size: 12px; }
+  .we-finding-rule { color: var(--text-muted); font-size: 12px; }
   .we-finding-span { margin-top: 4px; font-family: var(--font-mono); color: var(--text); }
-  .we-finding-fix { margin-top: 4px; color: var(--text-soft); font-style: italic; }
+  .we-finding-fix { margin-top: 4px; color: var(--text-muted); font-style: italic; }
 
   /* ── Documents mode (large-print, built for non-technical users) ── */
   .doc-new-btn { width: 100%; padding: 16px; font-size: 18px; border: 2px dashed var(--border); border-radius: 14px; background: var(--bg-card); color: var(--text); cursor: pointer; margin-bottom: 16px; }
@@ -66,8 +66,8 @@
   .doc-cards { display: flex; flex-direction: column; gap: 12px; }
   .doc-card { padding: 16px 16px; border: 1px solid var(--border); border-radius: 14px; background: var(--bg-card); cursor: pointer; }
   .doc-card:hover { border-color: var(--accent); }
-  .doc-card-title { font-size: 20px; font-weight: 600; }
-  .doc-card-meta { font-size: 13px; color: var(--text-soft); margin-top: 4px; }
+  .doc-card-title { font-size: 22px; font-weight: 600; }
+  .doc-card-meta { font-size: 13px; color: var(--text-muted); margin-top: 4px; }
   .doc-toolbar { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin: 12px 0; }
   .doc-btn { min-height: 48px; padding: 12px 16px; font-size: 16px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-card); color: var(--text); cursor: pointer; }
   .doc-btn:hover { border-color: var(--accent); }
@@ -75,7 +75,7 @@
   .doc-btn:disabled { opacity: 0.5; cursor: default; }
   .doc-title-input { width: 100%; padding: 12px 16px; font-size: 22px; font-weight: 600; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-card); color: var(--text); }
   .doc-body { width: 100%; min-height: 50vh; padding: 16px; margin-top: 12px; border: 1px solid var(--border); border-radius: 14px; background: var(--bg-card); color: var(--text); line-height: 1.7; resize: vertical; font-family: inherit; }
-  .doc-save-chip { font-size: 13px; color: var(--text-soft); }
+  .doc-save-chip { font-size: 13px; color: var(--text-muted); }
   .rec-dot { display: inline-block; width: 12px; height: 12px; border-radius: 50%; background: var(--border); vertical-align: middle; }
   .rec-dot.on { background: var(--danger); animation: doc-pulse 1s infinite; }
   @keyframes doc-pulse { 50% { opacity: 0.3; } }
@@ -427,7 +427,7 @@ async function polishArticle() {
     var html = ''
       + '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">'
       +   '<span class="eos-badge eos-badge-provenance eos-badge-provenance-cloud"><span class="eos-badge-provenance-icon">&#10024;</span> AI</span>'
-      +   '<span style="font-size:13px;color:var(--text-soft)">Take the whole rewrite, or accept edits one at a time.</span>'
+      +   '<span style="font-size:13px;color:var(--text-muted)">Take the whole rewrite, or accept edits one at a time.</span>'
       + '</div>'
       + '<textarea id="polish-preview" style="width:100%;min-height:32vh;padding:14px;border:1px solid var(--border);border-radius:10px;background:var(--bg-card);color:var(--text);line-height:1.7;font-family:inherit;font-size:' + STATE.fontSize + 'px"></textarea>'
       + '<div class="we-edits" id="polish-edits" style="margin-top:12px"></div>'

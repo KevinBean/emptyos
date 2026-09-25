@@ -30,6 +30,10 @@
  *
  * Coordinate convention: GeoJSON [lon, lat] (RFC 7946). Leaflet uses
  * [lat, lng]; Geoman handles the conversion via toGeoJSON().
+ *
+ * ed.addPoint(lat, lon, props) adds one Point feature programmatically —
+ * e.g. from EOS.geocode()'s address lookup — without a Geoman draw
+ * interaction. Fires onFeatureChange like a hand-drawn feature would.
  */
 (function() {
   // Leaflet-Geoman free, MIT-licensed. SRI deferred — pin on first
@@ -221,6 +225,22 @@
       return _featureCollection(self._layer);
     };
 
+    // geo-cad-no-geocode-integration: add one point feature programmatically
+    // (e.g. from EOS.geocode's address lookup) without going through
+    // Geoman's draw-tool interaction. lat/lon are plain WGS84 decimal
+    // degrees; internally GeoJSON wants [lon, lat] (RFC 7946) — callers
+    // never have to think about the axis order.
+    self.addPoint = function(lat, lon, props) {
+      var feature = {
+        type: 'Feature',
+        properties: Object.assign({}, props || {}),
+        geometry: {type: 'Point', coordinates: [lon, lat]},
+      };
+      self._layer.addData(feature);
+      fireChange();
+      return self;
+    };
+
     self.fitBounds = function(opt) {
       try {
         var b = self._layer.getBounds();
@@ -319,6 +339,10 @@
     };
     instance.fitBounds = function(opt) {
       if (instance._attached) instance._attached.fitBounds(opt);
+      return instance;
+    };
+    instance.addPoint = function(lat, lon, props) {
+      if (instance._attached) instance._attached.addPoint(lat, lon, props);
       return instance;
     };
     instance.saveToServer = function() {

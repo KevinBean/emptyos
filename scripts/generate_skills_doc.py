@@ -43,21 +43,29 @@ PROJECT_AGENTS = ROOT / ".agents" / "skills"
 PROJECT_CLAUDE = ROOT / ".claude" / "skills"
 BUNDLED = ROOT / "skills"
 
-# Theme buckets for the project (eos-*) tree — curated here so a new skill
-# lands visibly in "other" until someone files it. Bundled skills derive
-# their family from the name prefix instead.
+# Theme buckets for the project tree — curated here so a new skill lands
+# visibly in "other" until someone files it. Mostly `eos-*`, but not only:
+# a skill authored under a product prefix and later moved into the project
+# tree keeps its prefix and still needs a row here, or it silently reads
+# "other" in the matrix (four did, 2026-09-12). Bundled skills derive their
+# family from the name prefix instead.
 PROJECT_THEMES: dict[str, str] = {
     "preflight": "session lifecycle",
     "env-check": "session lifecycle",
     "eos-session-resume": "session lifecycle",
     "eos-session-wrapup": "session lifecycle",
     "eos-devlog-publish": "session lifecycle",
+    "geo-spatial-analyst": "geo / spatial",
+    "growth-content-strategist": "growth / distribution",
+    "growth-hacker": "growth / distribution",
+    "growth-seo-specialist": "growth / distribution",
     "eos-architecture-review": "audit / review",
     "eos-bug-audit": "audit / review",
     "eos-kb-audit": "audit / review",
     "eos-simplify": "audit / review",
     "eos-design-system-audit": "audit / review",
     "eos-page-design-review": "audit / review",
+    "eos-artifact-render-check": "audit / review",
     "eos-security-review": "audit / review",
     "eos-geo-audit": "audit / review",
     "eos-ui-walk": "audit / review",
@@ -253,8 +261,11 @@ def render() -> str:
     known = {d.name for d in project_dirs} | {d.name for d in bundled_dirs}
     # user-global-only siblings referenced in routing (kept minimal + name-only,
     # so the committed doc stays machine-independent):
+    # Several of these are bundled as of 2026-09-12 and so are already in
+    # `known`; the set is a union, so a duplicate is harmless and the name
+    # stays listed in case the bundled copy is ever dropped again.
     known |= {
-        "vault-source-digest", "vault-yt-digest",
+        "vault-source-digest", "vault-yt-digest", "vault-ai-conversation-digest",
         "vault-info-ripple", "vault-semantic-search", "tool-academic-search",
         "tool-pdf-reader", "tool-youtube-transcript", "creative-suno-archive",
         "life-communication-written", "life-communication-speaking",
@@ -286,6 +297,13 @@ def render() -> str:
         " docstring): frontmatter `name` == dir slug; single-line `description` with no"
         " colon-space, shaped as *what-it-does — Use when \"trigger\", \"trigger\" — NOT for X"
         " (use other-skill)*. The routing column below is parsed from those NOT-for clauses.",
+        ">",
+        "> **The frontmatter selects; the body governs what happens next.** They are"
+        " different contracts and editing one is not editing the other. Narrowing a"
+        " description so a skill stops claiming a bare verb does nothing if the skill's"
+        " own `## When to Use` table still lists it — the moment the skill is loaded for"
+        " any reason, that table re-claims everything the description gave away. Change"
+        " both, or neither (measured 2026-09-12 on two skills at once).",
         ">",
         "> **Progressive disclosure** (not machine-checked — judgment): the harness loads only"
         " `SKILL.md`. Past ~250 lines, move templates, example outputs, lookup tables, and"

@@ -17,11 +17,11 @@ from __future__ import annotations
 import asyncio
 import os
 import re
-import shutil
-import subprocess
 import time
 from datetime import datetime
 from pathlib import Path
+
+from emptyos.sdk.toolchain import resolve_binary
 
 from .base import (
     BuildResult,
@@ -31,6 +31,7 @@ from .base import (
     ReleaseResult,
     ScaffoldCtx,
     ScaffoldResult,
+    probe_check,
 )
 
 
@@ -45,8 +46,7 @@ _PYPROJECT_VERSION_RE = re.compile(
 )
 
 
-def _resolve_binary(name: str) -> str | None:
-    return shutil.which(name)
+_resolve_binary = resolve_binary
 
 
 def _package_name(project_id: str) -> str:
@@ -93,24 +93,7 @@ class CliTarget:
         ]
         return checks
 
-    @staticmethod
-    def _probe(binary: str, *, version_args, install_hint: str, hint_url: str) -> Check:
-        path = _resolve_binary(binary)
-        if not path:
-            return Check(name=binary, ok=False, detail=install_hint, hint_url=hint_url)
-        try:
-            flags = getattr(subprocess, "CREATE_NO_WINDOW", 0) if os.name == "nt" else 0
-            out = subprocess.run(
-                [path, *version_args],
-                capture_output=True,
-                text=True,
-                timeout=5,
-                creationflags=flags,
-            )
-            ver = (out.stdout or out.stderr).strip().splitlines()[0] if out.returncode == 0 else "?"
-        except Exception:
-            ver = "?"
-        return Check(name=binary, ok=True, detail=ver, hint_url=hint_url)
+    _probe = staticmethod(probe_check)
 
     # ── Scaffold ────────────────────────────────────────────────────────────
 

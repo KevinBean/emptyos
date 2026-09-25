@@ -1,3 +1,9 @@
+---
+paths:
+  - "emptyos/sdk/tabular.py"
+  - "emptyos/sdk/utils.py"
+  - "apps/**"
+---
 # Text-First Data Rule — SQL as an ephemeral calculator over text
 
 EmptyOS processes data in **text form** (markdown tables, frontmatter, CSV)
@@ -16,7 +22,7 @@ unit-tested without a daemon (`tests/test_sdk_tabular.py`). **App surface:**
 shape on the text side. **First consumer:** `apps/public/standard/expense/`
 `_sql_breakdown` (dark: `[apps.expense] feature.sql-analytics.enabled`).
 
-## The three principles
+## Principles and carve-outs
 
 1. **Process data in text format as much as possible.** Markdown tables,
    frontmatter, and CSV are the source of truth — human-readable,
@@ -26,10 +32,19 @@ shape on the text side. **First consumer:** `apps/public/standard/expense/`
    app may adopt it (or any new DB) as its store just because querying got
    easy — vault notes and the existing small per-app SQLite/JSON telemetry
    stores remain the only persistence layers.
-3. **Sole carve-out: read-only ATTACH of existing SQLite.** Machine-telemetry
+3. **Carve-out: read-only ATTACH of existing SQLite.** Machine-telemetry
    files that already exist (`TimeSeriesCounter` DBs, syslog) may be ATTACHed
    `READ_ONLY` for querying. Never read-write, never a new `.db` created for
    query convenience.
+4. **Carve-out: a shipped, read-only reference pack.** A build may ship a
+   SQLite file of reference data every user reads and nobody writes at runtime
+   — the dictionary's definition pack
+   (`apps/extension/english-learning/dictionary/definition_pack.py`) is the one
+   instance. It is a build asset, not a store: it holds no user data, is opened
+   `mode=ro`, and is replaced by building a new file. SQLite rather than text
+   because one learner daemon runs per user, and a point lookup reads one row
+   where loading a text pack would hold the whole thing in every daemon's
+   memory. Anything a user writes still goes to the vault.
 
 ## The ephemeral-only rule (load-bearing)
 

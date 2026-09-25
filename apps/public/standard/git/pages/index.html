@@ -58,12 +58,24 @@ body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-se
 .branch-item.current .branch-dot { background:var(--accent) }
 
 .empty { padding:24px; text-align:center; color:var(--text-secondary); font-size:13px }
+
+.summary-card { padding:14px 16px; font-size:13px; line-height:1.6; color:var(--text-secondary) }
 </style>
 </head>
 <body>
 <div class="repo-switcher" id="repo-switcher"></div>
 
 <div class="stats-row" id="stats"></div>
+
+<div class="section" id="status-section">
+  <div class="section-hdr" onclick="toggleSection('status')">
+    <h3>Changed files</h3><span class="toggle open" id="tog-status">&#9654;</span>
+  </div>
+  <div class="card" id="sec-status">
+    <div style="padding:8px 16px"><label style="font-size:13px"><input type="checkbox" id="status-select-all" checked onchange="toggleAllStatusFiles(this.checked)"> Select all</label></div>
+    <div id="status-file-list"></div>
+  </div>
+</div>
 
 <div class="action-bar">
   <input type="text" id="commit-msg" placeholder="Commit message..." />
@@ -73,6 +85,12 @@ body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-se
   <button class="eos-btn eos-btn-secondary eos-btn-sm" onclick="doAction('push')">Push</button>
   <button class="eos-btn eos-btn-secondary eos-btn-sm" onclick="doAction('pull')">Pull</button>
   <button class="eos-btn eos-btn-secondary eos-btn-sm" onclick="loadAll()">Refresh</button>
+  <button class="eos-btn eos-btn-secondary eos-btn-sm" onclick="loadSummary()">&#10024; Summarize</button>
+  <span id="git-model-pill" style="margin-left:auto"></span>
+</div>
+
+<div class="section" id="summary-section" style="display:none">
+  <div class="card summary-card" id="git-summary-text"></div>
 </div>
 
 <div class="section">
@@ -194,23 +212,82 @@ async function loadBranches() {
   } catch(e) { console.error('branches', e); }
 }
 
-function loadData() { loadStats(); loadLog(); loadDiff(); }
+// Selective staging (git-no-selective-staging): status-file-list holds one
+// checkbox per changed file, defaulting all-checked so an unmodified commit
+// behaves exactly as before (all-selected -> no `paths` sent -> `git add -A`).
+var statusFiles = [];
+
+async function loadStatus() {
+  try {
+    const d = await EOS.api('/git/api/status' + q());
+    statusFiles = d.files || [];
+    const el = document.getElementById('status-file-list');
+    if (!statusFiles.length) { el.innerHTML = EOS_UI.emptyState({message:'No changes'}); return; }
+    el.innerHTML = statusFiles.map((f, i) =>
+      `<div style="display:flex;align-items:center;gap:8px;padding:4px 16px;font-size:13px;font-family:var(--mono)">` +
+      `<input type="checkbox" class="status-file-check" data-idx="${i}" checked onchange="onStatusFileToggle()">` +
+      `<span style="color:var(--text-secondary)">${esc(f.code)}</span> ${esc(f.path)}</div>`
+    ).join('');
+    document.getElementById('status-select-all').checked = true;
+  } catch(e) { console.error('status', e); }
+}
+
+function toggleAllStatusFiles(checked) {
+  document.querySelectorAll('.status-file-check').forEach(cb => { cb.checked = checked; });
+}
+
+function onStatusFileToggle() {
+  const boxes = document.querySelectorAll('.status-file-check');
+  const allChecked = Array.prototype.every.call(boxes, cb => cb.checked);
+  document.getElementById('status-select-all').checked = allChecked;
+}
+
+function selectedStatusPaths() {
+  const boxes = document.querySelectorAll('.status-file-check');
+  const checked = Array.prototype.filter.call(boxes, cb => cb.checked);
+  // All selected (the common case) -> null, preserving the exact prior
+  // `git add -A` behavior instead of an equivalent-but-different explicit list.
+  if (!statusFiles.length || checked.length === boxes.length) return null;
+  return checked.map(cb => statusFiles[parseInt(cb.getAttribute('data-idx'), 10)].path);
+}
+
+function loadData() { loadStats(); loadLog(); loadDiff(); loadStatus(); }
 function loadAll() { loadData(); loadBranches(); }
 
 async function doCommit() {
   const input = document.getElementById('commit-msg');
   const msg = input.value.trim();
   if (!msg) { EOS_UI.toast('Enter a commit message', false); return; }
+  const paths = selectedStatusPaths();
+  if (statusFiles.length && paths !== null && !paths.length) {
+    EOS_UI.toast('Select at least one file to commit', false); return;
+  }
   const btn = document.getElementById('btn-commit');
   btn.disabled = true;
   try {
-    const d = await EOS.post('/git/api/save', { message: msg, repo: currentRepo });
+    const body = { message: msg, repo: currentRepo };
+    if (paths) body.paths = paths;
+    const d = await EOS.post('/git/api/save', body);
     if (d.error) { EOS_UI.toast(d.error, false); return; }
     EOS_UI.toast('Committed!');
     input.value = '';
     loadData();
   } catch(e) { EOS_UI.toast('Commit failed', false); }
   finally { btn.disabled = false; }
+}
+
+async function loadSummary() {
+  const sec = document.getElementById('summary-section');
+  const box = document.getElementById('git-summary-text');
+  sec.style.display = '';
+  box.textContent = 'Summarizing recent commits…';
+  try {
+    const d = await EOS.api('/git/api/summary' + q() + '&count=20');
+    box.textContent = d.summary || 'No summary available.';
+  } catch(e) {
+    box.textContent = 'Could not generate a summary — an AI provider may be unavailable.';
+    EOS_UI.toast('Summary failed', false);
+  }
 }
 
 async function doAction(action) {
@@ -225,6 +302,7 @@ document.getElementById('commit-msg').addEventListener('keydown', e => { if (e.k
 
 loadRepos();
 loadAll();
+EOS_UI.modelPill({app: 'git', mount: '#git-model-pill', domain: 'text'});
 
 // Live refresh on git events
 if (window.EOS_RT) {

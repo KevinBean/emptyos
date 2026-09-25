@@ -33,7 +33,7 @@ Or if fixes were needed:
 
 ```
 Safety Checks:
-  Personal data: 2 violations fixed (docs/DESIGN.md, apps/projects/app.py)
+  Personal data: 2 violations fixed (docs/DESIGN.md, apps/public/standard/projects/app.py)
   Branding: CLEAN
 ```
 
@@ -55,6 +55,24 @@ Or if skipped:
 ```
 Vault Ripple: no fact changes this session, skipped
 ```
+
+---
+
+## Step 3.5 — Knowledge Capture report
+
+```
+Knowledge: 1 candidate
+  - A rendered-DOM audit must settle animations before measuring
+    -> .claude/rules/audits.md (applied, lands in this session's commit)
+```
+
+Or, the common case:
+
+```
+Knowledge: none this session
+```
+
+Never pad this. One candidate is a good session; zero is the normal one.
 
 ---
 
@@ -82,6 +100,9 @@ tracks:
 
 ## Result
 <1-2 sentences on outcome and verification status>
+
+## Learned                       # OMIT entirely when Step 3.5 found nothing
+- <the one-sentence lesson> -> <where it was written>
 ```
 
 ### `skills_used` sourcing
@@ -264,6 +285,7 @@ Session Wrapup Complete:
   Docs:   CLAUDE.md updated (apps 63→65, endpoints 687→695)
   Safety: CLEAN (personal + branding)
   Ripple: 2 facts surfaced, 5 vault notes updated  (or: skipped — no fact changes)
+  Know:   1 lesson -> .claude/rules/audits.md  (or: none this session)
   Log:    10_Projects/emptyos/log/2026-04-12.md written
   Site:   regenerated (74 apps, 9 plugins) — rebuild triggered
   Next:   10_Projects/emptyos/log/_next/<track>.md written (3 open threads)

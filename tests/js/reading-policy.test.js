@@ -154,6 +154,93 @@ test("an ordinary article is untouched by any of it", () => {
     settings: { mode: "flow" }, hostname: "theatlantic.com", isPrivateHost: isPrivate }), "flow");
 });
 
+// ── wordSource: only one tier means the word is the reader's ───────────────
+
+test("a remembered answer is not a saved word", () => {
+  // The bug (2026-08-17): `cache` labelled itself "saved", which is a claim about
+  // OUR cost, not about the reader's dictionary. The reader saw a chip reading
+  // "saved" with a Save button beside it and read the button as broken.
+  assert.equal(P.wordSource("cache").saved, false);
+  assert.notEqual(P.wordSource("cache").chip, "saved",
+    "the cache chip must not use the word the vault tier owns");
+  assert.notEqual(P.wordSource("cache").chip, P.wordSource("vault").chip,
+    "the two tiers a reader confuses must not share a word");
+  assert.equal(P.wordSource("vault").saved, true, "only the vault tier is theirs");
+  assert.equal(P.wordSource("model").saved, false);
+});
+
+test("an unknown or missing source is treated as freshly generated", () => {
+  assert.equal(P.wordSource("").chip, P.wordSource("model").chip);
+  assert.equal(P.wordSource(undefined).saved, false);
+  assert.equal(P.wordSource("something-new").saved, false,
+    "an unrecognised tier must never claim the word is saved");
+});
+
+// ── saveVerdict: the judgement and the note are two different writes ───────
+
+test("a verdict whose note failed does not claim it saved", () => {
+  // /api/reading/feedback answers ok:true for the PROFILE write and reports the
+  // vault note separately in `saved`. `ok || saved` made the second unreachable,
+  // so "Known · saved" appeared over a note that was never written.
+  const failed = P.saveVerdict({ action: "known", result: { ok: true, saved: false } });
+  assert.equal(failed.saved, false);
+  assert.equal(failed.judged, true,
+    "the judgement DID land — it must still stop the word being flagged");
+  assert.match(failed.label, /not saved/, "the label must say the note did not land");
+
+  const landed = P.saveVerdict({ action: "hard", result: { ok: true, saved: true } });
+  assert.equal(landed.saved, true);
+  assert.equal(landed.label, "Hard · saved");
+
+  const nothing = P.saveVerdict({ action: "known", result: null });
+  assert.equal(nothing.judged, false, "no answer is not a judgement");
+  assert.equal(nothing.saved, false);
+});
+
+test("save is the one action where ok IS the note", () => {
+  assert.deepEqual(P.saveVerdict({ action: "save", result: { ok: true } }),
+    { judged: true, saved: true, rating: null, label: "Saved" });
+  assert.equal(P.saveVerdict({ action: "save", result: { error: "boom" } }).saved, false);
+  assert.equal(P.saveVerdict({ action: "save", result: null }).saved, false,
+    "a torn-down worker answers nothing; that is not a save");
+});
+
+test("a rating the daemon did not report is not a rating of zero", () => {
+  // A verdict ROUTES a word; only the star row rates it. So the daemon reports
+  // the number the note already holds and OMITS the key when it could not read
+  // the note. Collapsing that absence to 0 repaints a 3-star row empty, which
+  // looks exactly like the click having eaten the rating — and the note still
+  // holds the 3, so it comes back on the next open.
+  //
+  // This lived inline in reading-assist.js for one commit and was got wrong
+  // there: one of the two paint branches was guarded and the other built a fresh
+  // row from an undefined rating, rendering a definite 0. That is the whole
+  // reason the rule belongs here, where it can be executed.
+  const absent = P.saveVerdict({ action: "hard", result: { ok: true, saved: true } });
+  assert.equal(absent.rating, null, "no key reported is 'not told', never 0");
+
+  const zero = P.saveVerdict({ action: "hard", result: { ok: true, saved: true, difficulty: 0 } });
+  assert.equal(zero.rating, 0, "0 is a real value — the reader cleared the rating");
+
+  const three = P.saveVerdict({ action: "known", result: { ok: true, saved: true, difficulty: 3 } });
+  assert.equal(three.rating, 3);
+
+  // A save reports it too — the row is inserted on the same click.
+  assert.equal(P.saveVerdict({ action: "save", result: { ok: true, difficulty: 4 } }).rating, 4);
+
+  // Nothing usable came back at all: there is no note to have read.
+  assert.equal(P.saveVerdict({ action: "known", result: null }).rating, null);
+  assert.equal(P.saveVerdict({ action: "hard", result: { error: "boom" } }).rating, null);
+
+  // A non-number must never be believed — a string "3" would paint through
+  // Number() and a stray true would paint 1. NaN and Infinity are the ones that
+  // slip a bare `typeof === "number"` check and then paint as a definite 0.
+  for (const junk of ["3", true, [3], {}, NaN, Infinity]) {
+    assert.equal(P.saveVerdict({ action: "hard", result: { ok: true, saved: true, difficulty: junk } }).rating,
+      null, "a non-number rating is not told, not coerced");
+  }
+});
+
 // ── acceptResponse ─────────────────────────────────────────────────────────
 
 test("an answer a newer scan superseded is not the one the rail awaits", () => {

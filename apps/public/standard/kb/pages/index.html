@@ -47,7 +47,7 @@ body { font-family:var(--font); background:var(--bg); color:var(--text); min-hei
   .kb-actions { width:100%; justify-content:flex-start; flex-wrap:wrap; row-gap:8px }
   .kb-tiles { gap:8px }
   .kb-tile { padding:10px 12px; border-radius:12px }
-  .kb-tile-n { font-size:20px }
+  .kb-tile-n { font-size:22px }
   .kb-result-controls { width:100%; margin-left:0 }
   .kb-result-controls select { flex:1 1 auto }
 }
@@ -91,7 +91,7 @@ body { font-family:var(--font); background:var(--bg); color:var(--text); min-hei
 .kbrev-row-head { display:flex; align-items:center; gap:8px; flex-wrap:wrap }
 /* Status color arrives inline from revisions.js as a tint + text color pair
    (tint-don't-flood, matching the .kind-* badge language). */
-.kbrev-badge { font-size:11px; padding:1px 7px; border-radius:9px; font-weight:600 }
+.kbrev-badge { font-size:11px; padding:1px 7px; border-radius:10px; font-weight:600 }
 .kbrev-refs { font-family:var(--mono,monospace); font-size:12px; color:var(--text-muted) }
 .kbrev-title { font-size:13px; font-weight:600 }
 .kbrev-conf { font-size:11px; color:var(--accent); border:1px solid var(--accent); border-radius:8px; padding:0 5px }
@@ -146,7 +146,7 @@ body { font-family:var(--font); background:var(--bg); color:var(--text); min-hei
 .kind-empty { background:color-mix(in srgb,var(--text-muted) 12%,transparent); color:var(--text-muted) }
 .note-name { flex:1; font-size:14px; color:var(--text); font-weight:500 }
 .note-domain { font-size:12px; color:var(--text-muted) }
-.empty { text-align:center; padding:40px 24px; color:var(--text-muted); font-size:14px }
+.empty { text-align:center; padding:48px 24px; color:var(--text-muted); font-size:14px }
 
 /* Detail view */
 .detail-wrap { display:none }
@@ -215,7 +215,7 @@ body { font-family:var(--font); background:var(--bg); color:var(--text); min-hei
 .ft-toc-link.ft-l3, .ft-op-link.ft-l3 { padding-left:24px; color:color-mix(in srgb,var(--text-muted) 85%,transparent); font-size:11.5px }
 .ft-op-link.active { color:var(--accent); border-left-color:var(--accent); font-weight:600 }
 .ft-chapter { margin-bottom:8px; scroll-margin-top:14px }
-.ft-ch-head { font-size:20px; font-weight:700; color:var(--text-heading); margin:18px 0 10px; padding-bottom:6px; border-bottom:1px solid var(--border) }
+.ft-ch-head { font-size:22px; font-weight:700; color:var(--text-heading); margin:18px 0 10px; padding-bottom:6px; border-bottom:1px solid var(--border) }
 .ft-chapter:first-child .ft-ch-head { margin-top:0 }
 .ft-sec { font-size:14.5px; font-weight:700; color:var(--text-heading); margin:18px 0 6px; padding-left:9px; border-left:3px solid color-mix(in srgb,var(--accent) 32%,transparent); scroll-margin-top:14px }
 .ft-p { font-size:13.5px; color:var(--text); margin:7px 0; white-space:pre-wrap }
@@ -268,7 +268,7 @@ body { font-family:var(--font); background:var(--bg); color:var(--text); min-hei
 .kb-mini-btn:hover { border-color:var(--accent); color:var(--accent) }
 .kb-actions-menu { position:relative }
 .kb-actions-pop { position:absolute; right:0; top:calc(100% + 4px); z-index:30; background:var(--bg-card); border:1px solid var(--border); border-radius:10px; padding:4px; min-width:168px; box-shadow:0 6px 18px var(--shadow,rgba(0,0,0,.14)) }
-.kb-actions-pop button, .kb-actions-pop a { display:block; width:100%; text-align:left; padding:7px 10px; background:transparent; border:0; border-radius:7px; color:var(--text); font-size:13px; font-family:inherit; cursor:pointer; text-decoration:none; box-sizing:border-box }
+.kb-actions-pop button, .kb-actions-pop a { display:block; width:100%; text-align:left; padding:7px 10px; background:transparent; border:0; border-radius:8px; color:var(--text); font-size:13px; font-family:inherit; cursor:pointer; text-decoration:none; box-sizing:border-box }
 .kb-actions-pop button:hover, .kb-actions-pop a:hover { background:color-mix(in srgb,var(--accent) 10%,transparent); color:var(--accent) }
 .kb-sup-chip { display:inline-flex; align-items:center; gap:5px; font-size:12px; padding:3px 10px; border-radius:999px; background:color-mix(in srgb,var(--warning) 12%,transparent); color:var(--warning); border:1px solid color-mix(in srgb,var(--warning) 30%,transparent); margin-top:8px }
 .kb-sup-chip a { color:inherit; text-decoration:underline; text-underline-offset:2px }
@@ -393,12 +393,12 @@ body { font-family:var(--font); background:var(--bg); color:var(--text); min-hei
 .kb-health-foot { margin-top:16px; padding-top:12px; border-top:1px solid var(--border); text-align:right }
 .kb-coverage-intro { margin:0 0 14px; color:var(--text-muted); font-size:13px; line-height:1.5 }
 .kb-coverage-stats { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:8px; margin-bottom:16px }
-.kb-coverage-stat { padding:10px; border:1px solid var(--border); border-radius:9px; background:var(--bg-card) }
+.kb-coverage-stat { padding:10px; border:1px solid var(--border); border-radius:10px; background:var(--bg-card) }
 .kb-coverage-stat strong { display:block; color:var(--text-heading); font-size:19px; line-height:1.1 }
 .kb-coverage-stat span { display:block; margin-top:4px; color:var(--text-muted); font-size:11px }
 .kb-coverage-section { margin-top:16px }
 .kb-coverage-section h3 { margin:0 0 8px; color:var(--text-heading); font-size:12px; text-transform:uppercase; letter-spacing:.06em }
-.kb-coverage-list { border:1px solid var(--border); border-radius:9px; overflow:hidden }
+.kb-coverage-list { border:1px solid var(--border); border-radius:10px; overflow:hidden }
 .kb-coverage-row { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:10px; padding:9px 11px; border-bottom:1px solid var(--border); color:var(--text); text-decoration:none }
 .kb-coverage-row:last-child { border-bottom:0 }
 a.kb-coverage-row:hover { background:color-mix(in srgb,var(--accent) 5%,var(--bg-card)) }

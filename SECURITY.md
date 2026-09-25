@@ -63,6 +63,7 @@ These are documented design choices, not bugs:
 - **Plugins are trusted.** Same caveat as apps.
 - **Vault content is trusted.** Markdown notes can include arbitrary HTML; the renderer doesn't sandbox it. Don't open a vault from someone you don't trust.
 - **No rate limiting in private mode.** Origin check + auth token + audit log only. If you expose private mode beyond a small trusted group, put a rate-limiting reverse proxy in front of it.
+- **DNS rebinding against the browser-backed fetch path.** `is_public_web_url` canonicalises the host and resolves it, but Playwright/Chromium resolves again itself when it navigates, so a hostile name with a short TTL can return a public address to the check and a private one to the browser. Subresource requests are not checked at all. Closing this needs a Playwright `route()` handler re-validating each resolved request IP — deferred (see `docs/DEFERRED-WORK.md`), because aborting subresources risks breaking legitimate page loads and the pre-flight already blocks every non-rebinding form.
 
 ## Hardening checklist for self-hosters
 

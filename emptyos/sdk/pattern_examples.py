@@ -68,6 +68,49 @@ def _extract_blocks(body: str, langs) -> list[str]:
     return out
 
 
+async def resolve_pattern_examples_detail(
+    app,
+    names,
+    *,
+    langs=None,
+    intro: str | None = None,
+    heading: str = "Reference patterns",
+) -> tuple[str, list[str]]:
+    """`resolve_pattern_examples`, plus the slugs that actually landed.
+
+    Returns ``(block, resolved_slugs)``. A requested name is in
+    ``resolved_slugs`` only when it resolved to a note AND that note yielded
+    at least one fence in an accepted language — i.e. only when its code is
+    genuinely in the system prompt.
+
+    That distinction is the whole point of this variant: a caller recording
+    provenance ("this artifact was built from pattern X") must record what the
+    model was actually shown, not what the request asked for. A name that
+    404s, or whose fences are all in the wrong language for this shape, is
+    silently skipped during assembly — writing it down anyway would reify a
+    request as a fact.
+    """
+    names = [n for n in (names or []) if n]
+    if not names:
+        return "", []
+    chunks: list[str] = []
+    resolved: list[str] = []
+    for name in names:
+        res = await _resolve_note(app, name)
+        if not res:
+            continue
+        title, body = res
+        blocks = _extract_blocks(body, langs)
+        if not blocks:
+            continue
+        chunks.append(f"## Example: {title}\n\n" + "\n\n".join(blocks))
+        resolved.append(name)
+    if not chunks:
+        return "", []
+    block = f"\n\n# {heading}\n\n{intro or _DEFAULT_INTRO}\n\n" + "\n\n".join(chunks)
+    return block, resolved
+
+
 async def resolve_pattern_examples(
     app,
     names,
@@ -86,20 +129,10 @@ async def resolve_pattern_examples(
         heading: the section title (rendered as `# <heading>`).
 
     Returns "" when nothing resolves — callers append unconditionally.
+    Use `resolve_pattern_examples_detail` when you also need to record which
+    patterns landed.
     """
-    names = [n for n in (names or []) if n]
-    if not names:
-        return ""
-    chunks: list[str] = []
-    for name in names:
-        res = await _resolve_note(app, name)
-        if not res:
-            continue
-        title, body = res
-        blocks = _extract_blocks(body, langs)
-        if not blocks:
-            continue
-        chunks.append(f"## Example: {title}\n\n" + "\n\n".join(blocks))
-    if not chunks:
-        return ""
-    return f"\n\n# {heading}\n\n{intro or _DEFAULT_INTRO}\n\n" + "\n\n".join(chunks)
+    block, _resolved = await resolve_pattern_examples_detail(
+        app, names, langs=langs, intro=intro, heading=heading
+    )
+    return block

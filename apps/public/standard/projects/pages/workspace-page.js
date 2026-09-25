@@ -108,7 +108,7 @@ async function loadWsWorklog(id) {
             '</div>' + (d.employer ? '<div class="ws-muted">Company: ' + esc(d.employer) + '</div>' :
                 '<div class="ws-muted">Company not set; new entries use the Worklog default.</div>') + rows;
     } catch(e) {
-        el.innerHTML = '<div class="ws-panel-head">Worklog</div><div class="ws-muted">Failed to load</div>';
+        el.innerHTML = '<div class="ws-panel-head">Worklog</div>' + EOS_UI.errorState({message: 'Failed to load worklog', onRetry: 'loadWsWorklog(' + JSON.stringify(id) + ')'});
     }
 }
 
@@ -167,7 +167,7 @@ async function loadWsOverview(id) {
             '<div class="ws-panel-head">📊 Overview' +
                 '<button class="eos-btn-sm eos-btn-ghost" style="float:right;font-size:11px;padding:2px 8px" onclick="wsHealth(\'' + escAttr(id) + '\')">Health</button>' +
             '</div>' +
-            '<div class="ws-ov-row"><span>Status</span><span class="eos-badge eos-badge-' + EOS_UI.statusVariant(o.status) + '">' + esc(o.status) + '</span></div>' +
+            '<div class="ws-ov-row"><span>Status</span>' + EOS_UI.statusBadge(o.status) + '</div>' +
             employerHtml +
             deadlineHtml +
             '<div class="ws-ov-row"><span>Progress</span><span>' + o.progress + '%</span></div>' +
@@ -186,7 +186,7 @@ async function loadWsOverview(id) {
             '<div id="detail-activity"></div>';
         loadActivityHeatmap(id);
     } catch(e) {
-        el.innerHTML = '<div class="ws-panel-head">📊 Overview</div><div class="ws-muted">Failed to load</div>';
+        el.innerHTML = '<div class="ws-panel-head">📊 Overview</div>' + EOS_UI.errorState({message: 'Failed to load overview', onRetry: 'loadWsOverview(' + JSON.stringify(id) + ')'});
     }
 }
 
@@ -202,6 +202,9 @@ async function wsHealth(id) {
         }
         el.innerHTML = '<div class="ws-health-box">' + esc(r.health || 'No assessment') + prov + '</div>';
     } catch(e) {
+        // error-state: intentional — capability-gated, not a failure. The think
+        // provider being absent is a distinct DL-8 state ("offline / cloud-gated");
+        // an errorState card with a Retry button would imply a transient fault.
         el.innerHTML = '<div class="ws-muted">AI unavailable</div>';
     }
 }
@@ -316,7 +319,7 @@ async function loadWsTimeline(id) {
             '<div class="ws-tl-sub">Past</div>' + items(t.past) +
             '<div class="ws-tl-sub">Upcoming</div>' + items(t.future);
     } catch(e) {
-        el.innerHTML = '<div class="ws-panel-head">🕑 Timeline</div><div class="ws-muted">—</div>';
+        el.innerHTML = '<div class="ws-panel-head">🕑 Timeline</div>' + EOS_UI.errorState({message: 'Failed to load timeline', onRetry: 'loadWsTimeline(' + JSON.stringify(id) + ')'});
     }
 }
 
@@ -335,7 +338,7 @@ async function loadWsRelated(id) {
         var body = (projs || links) ? (projs + links) : '<div class="ws-muted">No related notes yet. Add a <code>related:</code> field or [[wikilinks]] in the project note.</div>';
         el.innerHTML = '<div class="ws-panel-head">🔗 Related</div><div class="ws-links">' + body + '</div>';
     } catch(e) {
-        el.innerHTML = '<div class="ws-panel-head">🔗 Related</div><div class="ws-muted">—</div>';
+        el.innerHTML = '<div class="ws-panel-head">🔗 Related</div>' + EOS_UI.errorState({message: 'Failed to load related notes', onRetry: 'loadWsRelated(' + JSON.stringify(id) + ')'});
     }
 }
 
@@ -358,7 +361,7 @@ async function openDocInline(projectId, rel, name) {
             '<textarea class="ws-doc-edit" id="ws-doc-body">' + esc(r.body || '') + '</textarea>' +
             '<div class="ws-doc-preview" id="ws-doc-preview" style="display:none"></div>';
     } catch(e) {
-        tc.innerHTML = '<div class="eos-empty">Failed to load document</div>';
+        tc.innerHTML = EOS_UI.errorState({message: 'Failed to load document'});
     }
 }
 

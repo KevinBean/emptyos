@@ -37,6 +37,15 @@ These belong to the user, not to EmptyOS:
 | LLM output (`think` capability results) | Owned by the user per OpenAI / Anthropic / etc. terms. Local-LLM (Ollama) output has no provider claim — trivially the user's. |
 | Audio recordings (`{vault}/**/recordings/`, `data/apps/**/audio/`) | The user's voice + speech. EmptyOS stores; the user owns. |
 
+## Bundled data
+
+Third-party datasets redistributed inside this repository, as opposed to
+downloaded at runtime.
+
+| Dataset | License | Where | Notes |
+|---|---|---|---|
+| CMU Pronouncing Dictionary | [BSD-2-Clause](http://www.speech.cs.cmu.edu/cgi-bin/cmudict) | `apps/extension/english-learning/soundcheck/bank/` | Word/phone data derived by `scripts/build_soundcheck_bank.py`. The notice travels with it in `bank/CMUDICT-LICENSE.txt`, as clause 1 requires. The generator reads `cmudict.dict` as a file and never imports the GPL-3.0 PyPI wrapper, so nothing links against it and no runtime dependency is added. |
+
 ## Model weights
 
 Downloaded at runtime from the upstream registry — not bundled in this

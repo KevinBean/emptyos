@@ -13,11 +13,13 @@ Do not import from ``.app`` (it imports us, which would cycle).
 
 from __future__ import annotations
 
+import re
 from datetime import date, timedelta
 from pathlib import Path
 from emptyos.sdk import parse_frontmatter, web_route
 from emptyos.sdk.utils import clamp_days
 from .parser import STATUS_TONE, dominant_status, parse_day
+from .shared import COMPETENCY_FOCUS, parse_competencies, strip_competency_tags
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -32,6 +34,7 @@ if TYPE_CHECKING:
 #   timeline_items      = _reads.timeline_items
 #   api_timeline_items  = _reads.api_timeline_items
 #   api_recent          = _reads.api_recent
+#   _project_index      = _reads._project_index
 #   _project_names      = _reads._project_names
 #   project_activity    = _reads.project_activity
 #   project_names       = _reads.project_names
@@ -46,6 +49,44 @@ if TYPE_CHECKING:
 #   api_employers       = _reads.api_employers
 # Adding a new method here? Add a matching binding line in app.py.
 # ─────────────────────────────────────────────────────────────────────
+
+
+# ── card-density helpers (.claude/rules/list-card-density.md) ──────
+# One-line skim preview for the timeline card — stripped of the markdown
+# markup the Plan/Update sections are authored in, since the card is plain
+# text, not a rendered prose view.
+_MD_LEAD_RE = re.compile(r"^[\-\*\d\.\)]+\s+")
+_MD_EMPH_RE = re.compile(r"\*\*|\*|__|_")
+
+
+def _first_line(text: str) -> str:
+    for raw in (text or "").splitlines():
+        line = _MD_EMPH_RE.sub("", _MD_LEAD_RE.sub("", raw)).strip()
+        if line:
+            return line
+    return ""
+
+
+def _truncate(text: str, limit: int = 110) -> str:
+    text = " ".join(text.split())
+    if len(text) <= limit:
+        return text
+    cut = text[:limit].rsplit(" ", 1)[0]
+    return (cut or text[:limit]) + "…"
+
+
+def _card_snippet(parsed: dict) -> str:
+    """update > plan > first logged item — whatever the user would skim first."""
+    for section in (parsed.get("update", ""), parsed.get("plan", "")):
+        line = _first_line(section)
+        if line:
+            return _truncate(line)
+    for g in parsed.get("projects", []):
+        for it in g.get("items", []):
+            line = _first_line(it.get("text", ""))
+            if line:
+                return _truncate(line)
+    return ""
 
 
 # ── reads ─────────────────────────────────────────────────────────
@@ -105,7 +146,33 @@ def _summarize(self, day: dict) -> dict:
         "dominant": dominant_status(groups),
         "has_plan": bool(day["parsed"]["plan"]),
         "hours": day["parsed"].get("hours", 0.0),
+        "snippet": _card_snippet(day["parsed"]),
     }
+
+
+def _decorate_competencies(groups: list[dict]) -> list[dict]:
+    """Add `competencies` + `text_clean` + `focus` to every work item.
+
+    The page used to re-derive this from a JS copy of ``COMPETENCY_TAG_RE`` and
+    a hardcoded ``[11, 13]``. Two regexes over one convention disagreed on
+    out-of-range tags (`#c17` vanished server-side, showed as prose client-side)
+    and on ordering against attachment stripping, so an item could be COUNTED as
+    evidence while rendering with no chip. And `COMPETENCY_FOCUS` is generated
+    from the vault (scripts/gen_competency_focus.py) — a JS constant cannot
+    follow it, so a closed gap would stay red forever. One parser, one answer.
+    """
+    out = []
+    for g in groups:
+        items = []
+        for it in g.get("items") or []:
+            text = it.get("text") or ""
+            els = parse_competencies(text)
+            items.append({**it, "competencies": els,
+                          "text_clean": strip_competency_tags(text),
+                          "focus": {str(n): COMPETENCY_FOCUS[n]
+                                    for n in els if n in COMPETENCY_FOCUS}})
+        out.append({**g, "items": items})
+    return out
 
 
 @web_route("GET", "/api/day")
@@ -127,7 +194,8 @@ async def api_day(self, request):
         vault_rel = ""
     p = day["parsed"]
     return {"date": day["date"], "weekday": day["weekday"], "exists": True,
-            "employer": day["employer"], "_vault_path": vault_rel, **p}
+            "employer": day["employer"], "_vault_path": vault_rel,
+            **{**p, "projects": _decorate_competencies(p.get("projects") or [])}}
 
 
 async def timeline_items(self, days: int = 1) -> list[dict]:
@@ -185,9 +253,21 @@ async def api_recent(self, request):
     return {"days": out, "count": len(out)}
 
 
-async def _project_names(self, employer: str = "") -> list[tuple[str, int]]:
-    """Known projects ranked by item count — shared by the picker + smart-parse."""
+async def _project_index(
+    self, employer: str = "",
+) -> tuple[list[tuple[str, int]], dict[str, str]]:
+    """Ranked ``(project, item_count)`` plus ``{name.lower(): project_id}``.
+
+    One pass, one ``call_app`` — the id map is collected from the same
+    ``list_projects`` response the name union already reads, so the picker and
+    the project deep-link never disagree and never cost a second vault scan.
+
+    The map covers **every** live project the projects app knows, not only the
+    ones absent from worklog history: a heading logged months ago against a
+    project that still exists is exactly the case that should link.
+    """
     names: dict[str, int] = {}
+    ids: dict[str, str] = {}
     for day in await self._all_days(employer):
         for g in day["parsed"]["projects"]:
             if g["items"]:
@@ -204,10 +284,27 @@ async def _project_names(self, employer: str = "") -> list[tuple[str, int]]:
             project_employer = str(project.get("employer") or "").strip()
             if employer and project_employer.lower() != employer.lower():
                 continue
-            if name and name.lower() not in known_lower:
+            if not name:
+                continue
+            project_id = str(project.get("id") or "").strip()
+            if project_id:
+                ids[name.lower()] = project_id
+            if name.lower() not in known_lower:
                 names[name] = 0
                 known_lower.add(name.lower())
-    return sorted(names.items(), key=lambda kv: kv[1], reverse=True)
+    return sorted(names.items(), key=lambda kv: kv[1], reverse=True), ids
+
+
+async def _project_names(self, employer: str = "") -> list[tuple[str, int]]:
+    """Known projects ranked by item count — shared by the picker + smart-parse.
+
+    Thin wrapper over :func:`_project_index`. The ``(name, count)`` tuple shape
+    is load-bearing: ``reporting.py`` unpacks it as ``for n, _ in ...`` and
+    ``project_names`` re-exports it as a cross-app contract, so neither may
+    grow a third element.
+    """
+    ranked, _ = await self._project_index(employer)
+    return ranked
 
 
 async def project_activity(
@@ -264,9 +361,19 @@ async def project_names(self, employer: str = "") -> list[tuple[str, int]]:
 
 @web_route("GET", "/api/projects")
 async def api_projects(self, request):
+    """Picker vocabulary + the deep-link map.
+
+    ``project_id`` is additive and is ``""`` for a name the projects app does
+    not know — most worklog headings are history-only labels ("General",
+    a site name) with no project note, and the page renders those as plain
+    text rather than a dead link.
+    """
     employer = request.query_params.get("employer", "")
-    ranked = await self.project_names(employer)
-    return {"projects": [{"name": n, "items": c} for n, c in ranked]}
+    ranked, ids = await self._project_index(employer)
+    return {"projects": [
+        {"name": n, "items": c, "project_id": ids.get(n.lower(), "")}
+        for n, c in ranked
+    ]}
 
 
 @web_route("GET", "/api/by-project")
@@ -304,8 +411,15 @@ async def month_cells(self, month: str = "", employer: str = "") -> dict:
     """Month-grid cells for a given ``YYYY-MM`` — the ``api_month`` payload.
 
     Public so other apps (calendar) can aggregate a worklog layer via
-    ``call_app("worklog", "month_cells", ...)``. Response shape must stay
-    byte-identical to what /api/month always returned.
+    ``call_app("worklog", "month_cells", ...)``. The shape is **append-only**:
+    ``calendar/app.py`` reads ``label`` and ``tone``, so a new key is safe but
+    a renamed or removed one is not.
+
+    ``status`` carries the day's dominant status as a *word*. ``tone`` alone
+    is lossy (review and in-progress both collapse to ``today``) and is a
+    colour, so a grid rendered from it communicates status by colour only —
+    which `.claude/rules/list-card-density.md` forbids. The word is what lets
+    a cell say what it means.
     """
     month = month or date.today().strftime("%Y-%m")
     cells = []
@@ -313,8 +427,12 @@ async def month_cells(self, month: str = "", employer: str = "") -> dict:
         if not day["date"].startswith(month):
             continue
         groups = [g for g in day["parsed"]["projects"] if g["items"]]
-        tone = STATUS_TONE.get(dominant_status(day["parsed"]["projects"]) or "", "")
-        items = [{"id": g["project"], "label": g["project"], "tone": tone} for g in groups[:4]]
+        status = dominant_status(day["parsed"]["projects"]) or ""
+        tone = STATUS_TONE.get(status, "")
+        items = [
+            {"id": g["project"], "label": g["project"], "tone": tone, "status": status}
+            for g in groups[:4]
+        ]
         cells.append({"date": day["date"], "items": items})
     return {"month": month, "cells": cells}
 

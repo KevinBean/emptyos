@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Mark It Up</title>
+<link rel="stylesheet" href="/static/theme.css">
+<link rel="stylesheet" href="/static/eos-components.css">
+<link rel="stylesheet" href="/markitup/pages/markitup.css">
+</head>
+<body>
+<div id="eos-nav"></div>
+
+<div class="mk-wrap">
+
+  <header class="mk-head">
+    <div class="mk-head-left">
+      <h1 id="mk-title">Mark It Up</h1>
+      <p class="mk-sub" id="mk-sub">Capture a surface, comment on what you see, pin every note to the thing it is about.</p>
+    </div>
+    <div class="mk-head-right">
+      <span id="model-pill"></span>
+      <button class="eos-btn eos-btn-primary" id="mk-new">+ New review</button>
+      <button class="eos-btn" id="mk-settings" title="Settings">&#9881;</button>
+    </div>
+  </header>
+
+  <!-- ── list view ────────────────────────────────────────────────── -->
+  <section id="mk-list-view">
+    <div id="mk-list" class="mk-list"></div>
+  </section>
+
+  <!-- ── detail view ──────────────────────────────────────────────── -->
+  <section id="mk-detail" hidden>
+    <div class="mk-detail-bar">
+      <button class="eos-btn eos-btn-sm" id="mk-back">&larr; All reviews</button>
+      <div class="mk-detail-id">
+        <strong id="mk-d-title"></strong>
+        <span class="mk-muted" id="mk-d-meta"></span>
+      </div>
+      <div class="mk-detail-actions">
+        <button class="eos-btn eos-btn-sm" data-export="markdown">Export .md</button>
+        <button class="eos-btn eos-btn-sm" data-export="pdf">Export PDF</button>
+        <button class="eos-btn eos-btn-sm" data-act="upload">Upload proposal</button>
+        <a class="eos-btn eos-btn-sm" id="mk-view-proposal" hidden target="_blank"
+           rel="noopener">View proposal</a>
+        <button class="eos-btn eos-btn-sm" id="mk-rereview" hidden
+                data-act="rereview">Re-review proposal</button>
+      </div>
+      <input type="file" id="mk-proposal-file" accept=".html,text/html" hidden>
+    </div>
+
+    <!-- approval gate: shown when a run paused after discover -->
+    <div id="mk-approve" class="mk-approve" hidden></div>
+
+    <p class="mk-anchor-health" id="mk-anchor-health" hidden></p>
+
+    <!-- review-level summary: the argument no pin can carry -->
+    <section class="mk-summary" id="mk-summary" hidden>
+      <div class="mk-summary-head">
+        <strong>General comments</strong>
+        <button class="eos-btn eos-btn-sm" id="mk-summary-edit">Edit</button>
+      </div>
+      <div class="mk-summary-body" id="mk-summary-body"></div>
+      <div class="mk-summary-form" id="mk-summary-form" hidden>
+        <label class="mk-muted" for="mk-summary-text">Markdown (### for headings). Printed first in every export.</label>
+        <textarea id="mk-summary-text" rows="9"
+                  placeholder="The themes, the order to tackle them, and how the review was made."></textarea>
+        <div class="mk-summary-actions">
+          <button class="eos-btn eos-btn-primary eos-btn-sm" id="mk-summary-save">Save</button>
+          <button class="eos-btn eos-btn-sm" id="mk-summary-cancel">Cancel</button>
+        </div>
+      </div>
+    </section>
+
+    <div class="mk-filters" id="mk-filters"></div>
+
+    <div class="mk-stage">
+      <aside class="mk-rail" id="mk-rail"></aside>
+      <div class="mk-canvas-wrap">
+        <div class="mk-canvas" id="mk-canvas"></div>
+      </div>
+      <aside class="mk-gutter" id="mk-gutter"></aside>
+    </div>
+  </section>
+
+</div>
+
+<script src="/static/eos.js"></script>
+<script src="/static/eos-components.js"></script>
+<script src="/markitup/pages/markitup.js"></script>
+</body>
+</html>

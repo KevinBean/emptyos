@@ -50,9 +50,12 @@ class RunbookApp(BaseApp):
     # ── routes (routes.py) ──
     api_list = _routes.api_list
     api_get = _routes.api_get
+    api_templates = _routes.api_templates
     api_create = _routes.api_create
     api_run = _routes.api_run
     api_run_block = _routes.api_run_block
+    api_block_output = _routes.api_block_output
+    api_publish = _routes.api_publish
     api_schedule = _routes.api_schedule
     api_from_session = _routes.api_from_session
     api_from_confirm = _routes.api_from_confirm

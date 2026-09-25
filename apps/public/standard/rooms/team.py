@@ -54,6 +54,7 @@ if TYPE_CHECKING:
 #   set_participant_role      = _team.set_participant_role
 #   team_start_run            = _team.team_start_run
 #   team_stop_run             = _team.team_stop_run
+#   _team_turn_or_timeout     = _team._team_turn_or_timeout
 #   _team_dispatch_loop       = _team._team_dispatch_loop
 #   api_team_list             = _team.api_team_list
 #   api_team_add_task         = _team.api_team_add_task
@@ -439,6 +440,27 @@ def _team_lead_nudge(self, task: dict, result: str) -> str:
     )
 
 
+async def _team_turn_or_timeout(self, room: dict, participant: dict,
+                                text: str) -> tuple[dict, bool]:
+    """Run ONE team turn under `TEAM_TURN_TIMEOUT_S`; return (result, timed_out).
+
+    Every team turn goes through here so a new turn type cannot silently ship
+    without the guard — which is exactly how the lead turn was awarded a bare
+    `await` and froze runs indefinitely. The recovery policy stays with the
+    caller: the two turn types deliberately differ in what they do on timeout.
+    """
+    try:
+        res = await asyncio.wait_for(
+            self._run_participant_turn(
+                room, participant, text, source="team", apply_team_tokens=True,
+            ),
+            timeout=TEAM_TURN_TIMEOUT_S,
+        )
+        return (res or {}), False
+    except (TimeoutError, asyncio.TimeoutError):
+        return {}, True
+
+
 async def _team_dispatch_loop(self, room_id: str) -> None:
     """Bounded, stoppable orchestrator. Dispatches the next actionable task's
     worker, then a lead turn to react, until no actionable tasks remain, the
@@ -481,14 +503,8 @@ async def _team_dispatch_loop(self, room_id: str) -> None:
                 f"[DO:rooms.team_set_status({{\"task_id\":\"{task['id']}\","
                 "\"status\":\"done\",\"result\":\"<one-line result>\"}})]."
             )
-            try:
-                res = await asyncio.wait_for(
-                    self._run_participant_turn(
-                        room, worker, worker_text, source="team", apply_team_tokens=True,
-                    ),
-                    timeout=TEAM_TURN_TIMEOUT_S,
-                )
-            except (TimeoutError, asyncio.TimeoutError):
+            res, timed_out = await self._team_turn_or_timeout(room, worker, worker_text)
+            if timed_out:
                 # A hung worker turn (slow model / human-think) must not freeze
                 # the run. Block the task so it isn't retried, and halt — the
                 # next turn would likely hang the same way.
@@ -520,9 +536,17 @@ async def _team_dispatch_loop(self, room_id: str) -> None:
                 room = self._load_agent(room_id)
                 done_task = self._team_find_task(room, task["id"]) or task
                 nudge = self._team_lead_nudge(done_task, done_task.get("result") or "")
-                await self._run_participant_turn(
-                    room, lead, nudge, source="team", apply_team_tokens=True,
-                )
+                _, timed_out = await self._team_turn_or_timeout(room, lead, nudge)
+                if timed_out:
+                    # A hung lead turn must not freeze the run either. Unlike
+                    # the worker branch above we do NOT touch the task: the
+                    # worker's turn has already concluded and settled its
+                    # status/result (via its own [DO:] token or the fallback
+                    # above), so overwriting it here would discard real work.
+                    # Only the lead's reaction is lost. Distinct reason so the
+                    # surfaced "(last run: ...)" says which side hung.
+                    reason = "lead_turn_timeout"
+                    break
         self._team_finish_run(room_id, reason)
     except Exception as e:  # never let the loop crash silently
         try:

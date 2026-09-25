@@ -38,7 +38,7 @@ async function renderActivityTeamTab() {
     try {
         _teamData = await EOS.api('/rooms/api/rooms/' + encodeURIComponent(currentAgent.id) + '/team');
     } catch (e) {
-        body.innerHTML = '<div style="color:var(--text-muted);font-size:13px;padding:20px;text-align:center">Team data unavailable.</div>';
+        body.innerHTML = EOS_UI.errorState({message: 'Team data unavailable.', onRetry: 'renderActivityTeamTab()'});
         return;
     }
     if (!_teamData || _teamData.error) {

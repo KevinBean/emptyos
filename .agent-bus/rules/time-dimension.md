@@ -166,7 +166,7 @@ projects or jobs detail page), then extract once a second app wants
 the same shape.
 
 Existing time-shaped surface to unify with when extracting:
-`apps/projects/extended.py::api_timeline` — Gantt view across all
+`apps/public/standard/projects/extended.py::api_timeline` — Gantt view across all
 projects (a "many entities at once" cut). The per-entity `timeline()`
 aggregator is the orthogonal cut; both should pull from the same source
 list in this file when the SDK helper lands.

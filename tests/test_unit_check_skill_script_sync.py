@@ -52,7 +52,16 @@ class TestStaysQuiet:
             _skill(root, "demo", {"scripts/run.py": "x = 1\n"})
         r = mod.scan(a, c)
         assert r["findings"] == []
-        assert r["pairs"] == 1
+        # 2, not 1: the fixture writes a SKILL.md alongside run.py, and markdown
+        # became a mirrored file type on 2026-08-14 (see `_synced_files`).
+        assert r["pairs"] == 2
+
+    def test_memory_sidecar_may_differ(self, mod, tmp_path):
+        """`*-memory.md` is per-machine living state, never mirrored."""
+        a, c = tmp_path / "agents", tmp_path / "claude"
+        _skill(a, "demo", {"demo-memory.md": "seen on this box\n"})
+        _skill(c, "demo", {"demo-memory.md": "different machine entirely\n"})
+        assert mod.scan(a, c)["findings"] == []
 
     def test_line_endings_alone_are_not_drift(self, mod, tmp_path):
         """CRLF vs LF is a checkout artefact, not a behavioural difference.
@@ -86,6 +95,26 @@ class TestStaysQuiet:
 
 
 class TestFires:
+    def test_diverged_skill_markdown_is_reported(self, mod, tmp_path):
+        """The 2026-08-14 gap: 43 SKILL.md files drifted while the py check was green.
+
+        `.agents/` had been produced by a naive Claude->Codex word swap that
+        rewrote real `.claude/rules/...` references into `.Codex/rules/...`
+        paths that do not exist. Markdown was not compared, so nothing saw it.
+        """
+        a, c = tmp_path / "agents", tmp_path / "claude"
+        _skill(a, "demo", {})
+        _skill(c, "demo", {})
+        (a / "demo" / "SKILL.md").write_text(
+            "---\nname: demo\n---\n\nsee `.Codex/rules/daemon-handling.md`\n", encoding="utf-8"
+        )
+        (c / "demo" / "SKILL.md").write_text(
+            "---\nname: demo\n---\n\nsee `.claude/rules/daemon-handling.md`\n", encoding="utf-8"
+        )
+        f = mod.scan(a, c)["findings"]
+        assert [x["file"] for x in f] == ["SKILL.md"]
+        assert f[0]["problem"] == "differs"
+
     def test_diverged_content_is_reported(self, mod, tmp_path):
         a, c = tmp_path / "agents", tmp_path / "claude"
         _skill(a, "demo", {"scripts/run.py": "def repair(): pass\n"})

@@ -1,0 +1,261 @@
+/* markitup — review surface.
+ *
+ * Theme tokens only: no literal colour for text, surface or status anywhere
+ * (scripts/check-text-tokens.py gates T1–T4). Tag colours come from
+ * EOS_UI.statusBadge via the rubric's `variant`, and the pin swatches below
+ * alias the same semantic tokens rather than freezing a hex — so a tag reads
+ * correctly in all six themes instead of only the one it was authored in.
+ *
+ * The print palette is deliberately NOT here: exporting.py carries its own
+ * literal colours, because a printed page has no theme to adapt to.
+ */
+
+.mk-wrap { max-width: var(--max-app); margin: 0 auto; padding: var(--space-4); }
+
+/* ── header ─────────────────────────────────────────────────────── */
+
+.mk-head {
+  display: flex; justify-content: space-between; align-items: flex-start;
+  gap: var(--space-4); margin-bottom: var(--space-5); flex-wrap: wrap;
+}
+.mk-head h1 { margin: 0 0 var(--space-1); font-size: var(--fs-h1); }
+.mk-sub { margin: 0; color: var(--text-muted); font-size: var(--fs-small); max-width: 52ch; }
+.mk-head-right { display: flex; align-items: center; gap: var(--space-2); }
+.mk-muted { color: var(--text-muted); }
+.mk-pad { padding: var(--space-3); }
+
+/* ── review list ────────────────────────────────────────────────── */
+
+.mk-list {
+  display: grid; gap: var(--space-3);
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+}
+.mk-card {
+  background: var(--bg-card); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: var(--space-3); cursor: pointer;
+  transition: background var(--dur-fast) var(--ease);
+}
+.mk-card:hover { background: var(--bg-card-hover); }
+.mk-card h3 { margin: 0 0 var(--space-1); font-size: var(--fs-body); }
+.mk-card p { margin: 0 0 var(--space-2); font-size: var(--fs-meta);
+             overflow-wrap: anywhere; }
+.mk-card footer {
+  display: flex; flex-wrap: wrap; gap: var(--space-2);
+  font-size: var(--fs-meta); color: var(--text-muted);
+}
+.mk-open { color: var(--amber); font-weight: var(--fw-emphasis); }
+.mk-when { margin-left: auto; }
+
+/* ── detail chrome ──────────────────────────────────────────────── */
+
+.mk-detail-bar {
+  display: flex; align-items: center; gap: var(--space-3);
+  margin-bottom: var(--space-3); flex-wrap: wrap;
+}
+.mk-detail-id { display: flex; flex-direction: column; min-width: 0; }
+.mk-detail-id .mk-muted { font-size: var(--fs-meta); overflow-wrap: anywhere; }
+.mk-detail-actions { margin-left: auto; display: flex; gap: var(--space-2); }
+
+.mk-filters {
+  display: flex; flex-wrap: wrap; gap: var(--space-2);
+  margin-bottom: var(--space-3);
+}
+.mk-chip {
+  border: 1px solid var(--border); background: var(--bg-surface);
+  color: var(--text-muted); border-radius: var(--radius-pill);
+  padding: 2px var(--space-2); font-size: var(--fs-meta); cursor: pointer;
+}
+.mk-chip.on { color: var(--text); border-color: var(--border-strong);
+              background: var(--bg-card); }
+.mk-chip em { font-style: normal; opacity: .7; margin-left: 3px; }
+
+/* ── approval gate ──────────────────────────────────────────────── */
+
+.mk-approve {
+  border: 1px solid var(--border-strong); border-radius: var(--radius);
+  background: var(--accent-tint-weak); padding: var(--space-4);
+  margin-bottom: var(--space-4);
+}
+.mk-approve h3 { margin: 0 0 var(--space-1); font-size: var(--fs-h2); }
+.mk-approve > p { margin: 0 0 var(--space-3); font-size: var(--fs-small); }
+.mk-views { list-style: none; margin: 0 0 var(--space-3); padding: 0;
+            display: grid; gap: var(--space-2); }
+.mk-views label { display: flex; gap: var(--space-2); align-items: flex-start;
+                  cursor: pointer; }
+.mk-views strong { display: block; font-size: var(--fs-small); }
+.mk-views em, .mk-views span span {
+  display: block; font-style: normal; color: var(--text-muted);
+  font-size: var(--fs-meta); overflow-wrap: anywhere;
+}
+
+/* ── stage: rail | canvas | gutter ──────────────────────────────── */
+
+.mk-stage {
+  display: grid; gap: var(--space-3);
+  grid-template-columns: 148px minmax(0, 1fr) 320px;
+  align-items: start;
+}
+@media (max-width: 1100px) {
+  .mk-stage { grid-template-columns: 120px minmax(0, 1fr); }
+  .mk-gutter { grid-column: 1 / -1; }
+}
+@media (max-width: 700px) {
+  .mk-stage { grid-template-columns: 1fr; }
+  .mk-rail { display: flex; overflow-x: auto; max-height: none; }
+  .mk-thumb { flex: 0 0 130px; }
+}
+
+.mk-rail {
+  display: flex; flex-direction: column; gap: var(--space-2);
+  max-height: 78vh; overflow-y: auto;
+}
+.mk-thumb {
+  display: block; width: 100%; text-align: left; cursor: pointer;
+  background: var(--bg-card); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); padding: 4px; color: var(--text);
+}
+.mk-thumb.on { border-color: var(--accent); }
+.mk-thumb img {
+  display: block; width: 100%; height: 62px; object-fit: cover;
+  object-position: top; border-radius: var(--radius-sm); background: var(--bg-surface);
+}
+.mk-thumb-t { display: block; font-size: var(--fs-meta); margin-top: 3px;
+              overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mk-thumb-m { display: block; font-size: var(--fs-meta); color: var(--text-muted); }
+
+.mk-canvas-wrap { overflow-x: auto; }
+.mk-figure { position: relative; display: inline-block; max-width: 100%; }
+.mk-figure img { display: block; max-width: 100%; height: auto;
+                 border: 1px solid var(--border); border-radius: var(--radius-sm); }
+
+/* Pins: percent-positioned, so the same geometry prints. */
+.mk-pin {
+  position: absolute; transform: translate(-50%, -50%);
+  min-width: 22px; height: 22px; padding: 0 4px;
+  border-radius: var(--radius-pill); border: 2px solid var(--bg);
+  color: var(--ink-on-vivid); background: var(--muted);
+  font: var(--fw-emphasis) var(--fs-meta) / 18px var(--font);
+  cursor: grab; box-shadow: var(--shadow);
+  /* Without this a touch drag scrolls the canvas instead of moving the pin —
+     the browser claims the gesture before pointermove ever fires. */
+  touch-action: none;
+}
+.mk-pin.on { outline: 2px solid var(--text); outline-offset: 1px; }
+/* Held: lift it off the shot so the drop point stays readable under the cursor. */
+.mk-pin.dragging {
+  cursor: grabbing; z-index: 2;
+  transform: translate(-50%, -50%) scale(1.15);
+}
+/* A dashed border marks a pin whose position was estimated rather than
+   measured. The signal is the border STYLE, not colour — so it survives a
+   greyscale print and a colour-blind reader (.claude/rules/list-card-density.md
+   on never conveying state by colour alone). The gutter row carries the word
+   "estimated" too; this is the at-a-glance half of the same fact. */
+.mk-pin.est { border-style: dashed; }
+
+.mk-pin.v-pass, .mk-num.v-pass { background: var(--green); }
+.mk-pin.v-fail, .mk-num.v-fail { background: var(--red); }
+.mk-pin.v-idea, .mk-num.v-idea { background: var(--amber); }
+.mk-pin.v-blocked, .mk-num.v-blocked { background: var(--amber); }
+.mk-pin.v-active, .mk-num.v-active { background: var(--blue); }
+.mk-pin.v-running, .mk-num.v-running { background: var(--blue); }
+.mk-pin.v-shelved, .mk-num.v-shelved { background: var(--purple); }
+.mk-pin.v-draft, .mk-num.v-draft { background: var(--muted); }
+.mk-pin.v-neutral, .mk-num.v-neutral { background: var(--muted); }
+
+/* ── gutter ─────────────────────────────────────────────────────── */
+
+.mk-gutter { max-height: 78vh; overflow-y: auto; }
+.mk-gutter-head { padding: 0 0 var(--space-2); border-bottom: 1px solid var(--border); }
+.mk-gutter-head p { margin: 2px 0 0; font-size: var(--fs-meta); overflow-wrap: anywhere; }
+
+.mk-note {
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  background: var(--bg-card); padding: var(--space-2);
+  margin-top: var(--space-2); cursor: pointer;
+}
+.mk-note.on { border-color: var(--accent); }
+.mk-note.done { opacity: .58; }
+.mk-note header { display: flex; align-items: center; gap: 6px; }
+.mk-note-sp { flex: 1; }
+.mk-note h4 { margin: var(--space-1) 0 0; font-size: var(--fs-small); }
+.mk-note p { margin: 4px 0 0; font-size: var(--fs-meta); color: var(--text-muted); }
+.mk-num {
+  flex: 0 0 auto; width: 20px; height: 20px; border-radius: var(--radius-pill);
+  color: var(--ink-on-vivid); background: var(--muted);
+  font: var(--fw-emphasis) var(--fs-meta) / 20px var(--font); text-align: center;
+}
+.mk-est {
+  font-size: var(--fs-meta); color: var(--text-muted);
+  border: 1px dashed var(--border-strong); border-radius: var(--radius-pill);
+  padding: 0 6px;
+}
+.mk-state {
+  display: inline-block; margin-top: 4px; font-size: var(--fs-meta);
+  color: var(--text-muted); text-transform: uppercase;
+  letter-spacing: var(--tracking-meta);
+}
+.mk-mini {
+  border: 1px solid var(--border); background: var(--bg-surface);
+  color: var(--text-muted); border-radius: var(--radius-sm);
+  width: 22px; height: 22px; cursor: pointer; font-size: var(--fs-meta);
+}
+.mk-mini:hover { color: var(--text); border-color: var(--border-strong); }
+
+/* Honest failure: an unanchored review is reported, never disguised as normal.
+   errorState's vocabulary is wrong here (the review is not broken), so this is
+   its own advisory treatment — amber, not red. */
+.mk-anchor-health {
+  border: 1px solid var(--border-strong); border-left: 3px solid var(--amber);
+  border-radius: var(--radius-sm); background: var(--bg-card);
+  padding: var(--space-2) var(--space-3); margin: 0 0 var(--space-3);
+  font-size: var(--fs-small); color: var(--text-muted);
+}
+.mk-anchor-health strong { color: var(--text); }
+
+/* The review-level argument — themes, order, method. Sits above the filters so
+   it reads before any pin; neutral border (it is content, not an advisory). */
+.mk-summary {
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  background: var(--bg-card); padding: var(--space-2) var(--space-3);
+  margin: 0 0 var(--space-3); font-size: var(--fs-small);
+}
+.mk-summary-head { display: flex; align-items: center; gap: var(--space-2);
+                   margin-bottom: var(--space-1); }
+.mk-summary-head strong { flex: 1; }
+.mk-summary-body p, .mk-summary-body ul, .mk-summary-body ol { margin: 0 0 var(--space-2); }
+.mk-summary-body > :last-child { margin-bottom: 0; }
+/* EOS_UI.renderMarkdown splits paragraphs on blank lines BEFORE it builds
+   lists, so a list that follows a blank line gets a stray </p> inside its first
+   <li>; the parser materialises that as an empty <p>, which the paragraph
+   margin above then spaces. Zeroing it here is a per-page patch over a shared
+   renderer quirk every paintMarkdown consumer inherits. */
+.mk-summary-body li p { margin: 0; }
+.mk-summary-form label { display: block; font-size: var(--fs-meta); margin-bottom: var(--space-1); }
+/* Proportional on purpose: the summary is prose for a client, not source, so it
+   is edited in the face it is read in rather than theme.css's mono textarea. */
+.mk-summary-form textarea {
+  width: 100%; box-sizing: border-box; font: inherit;
+  margin-bottom: var(--space-2);
+}
+.mk-summary-actions { display: flex; gap: var(--space-2); }
+
+/* ── touch targets ───────────────────────────────────────────────
+   FRONTEND-DESIGN-LANGUAGE.md: >=44px on phones. The pin keeps its visual
+   size — a 44px disc would swallow the screenshot it is annotating — and
+   grows an invisible hit area instead, which is the honest way to satisfy a
+   touch floor without redesigning the thing being touched. */
+@media (max-width: 640px) {
+  .mk-mini { width: 44px; height: 44px; font-size: var(--fs-small); }
+  .mk-chip { min-height: 44px; padding: 0 var(--space-3); display: inline-flex;
+             align-items: center; }
+  .mk-pin::after {
+    content: ""; position: absolute; left: 50%; top: 50%;
+    width: 44px; height: 44px; transform: translate(-50%, -50%);
+  }
+  .mk-thumb { min-height: 44px; }
+}
+
+/* A run that stopped and needs a decision — distinguished by a border, not by
+   colour alone; the footer says "needs you" in words. */
+.mk-card-stopped { border-left: 3px solid var(--amber); }

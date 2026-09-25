@@ -271,7 +271,7 @@ class Kernel:
 
         Enabled, not running: apps only reach STARTED via the `apps.autostart`
         list, and a deployment that doesn't set one (the live demo doesn't —
-        `emptyos.toml.example` even calls an empty list "start all", which the
+        `emptyos.example.toml` even calls an empty list "start all", which the
         loop above does not do) leaves `apps.running` empty at this point. That
         silently made the whole seed feature a no-op — every seeded app looked
         healthy afterwards because apps lazy-load on their first HTTP request,
@@ -316,6 +316,16 @@ class Kernel:
                 self.syslog.info("kernel", f"demo seed: {app_id} OK")
             except Exception as e:
                 self.syslog.warn("kernel", f"demo seed '{app_id}': {e}")
+
+    @property
+    def started(self) -> bool:
+        """True once `start()` has finished its whole boot sequence.
+
+        Public because loaders need to tell "during boot" from "after boot":
+        a re-entrant `discover()` is routine while booting and noteworthy
+        afterwards. See `AppLoader.discover`.
+        """
+        return self._started
 
     async def start(self):
         """Boot the kernel: runtime services -> plugins -> apps."""

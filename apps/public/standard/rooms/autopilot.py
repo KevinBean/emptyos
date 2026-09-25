@@ -62,11 +62,7 @@ def _room_scope(room_id: str) -> str:
 def _eligible_set(self):
     """Registry-derived effective floor (None → legacy policy.json). Same source
     the gate uses, so save-time and fire-time eligibility agree."""
-    fn = getattr(self.kernel, "autopilot_eligible_set", None)
-    elig = fn() if callable(fn) else None
-    if elig is None:
-        elig = set(_autopilot.load_policy(_autopilot_root(self)).get("eligible_verbs") or [])
-    return elig
+    return _autopilot.eligible_set_for_kernel(self.kernel)
 
 
 @web_route("GET", "/api/autopilot")

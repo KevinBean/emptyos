@@ -1,6 +1,6 @@
 ---
 name: eos-security-review
-description: Review an EmptyOS app for defensive security posture — cloud-consent compliance, vault-to-cloud data leaks, XSS via wrong escapers, PII/secrets in tracked code, and auth assumptions — bounded by the existing AGENTS.md security rules and scripts/check-*.py scanners. Use when the user says "security review", "audit this app for security", "check the security posture", "is this app safe to ship", or before opening an app to a public/demo deployment. DEFENSIVE / AUDIT ONLY — refuses offensive use (writing exploits, evasion, attacking third parties). DO NOT use for — a full design audit (use eos-page-design-review / eos-design-system-audit), per-file code cleanup (use eos-simplify), or correctness bugs (use /code-review).
+description: Review an EmptyOS app for defensive security posture — cloud-consent compliance, vault-to-cloud data leaks, XSS via wrong escapers, PII/secrets in tracked code, and auth assumptions — bounded by the existing CLAUDE.md security rules and scripts/check-*.py scanners. Use when the user says "security review", "audit this app for security", "check the security posture", "is this app safe to ship", or before opening an app to a public/demo deployment. DEFENSIVE / AUDIT ONLY — refuses offensive use (writing exploits, evasion, attacking third parties). DO NOT use for — a full design audit (use eos-page-design-review / eos-design-system-audit), per-file code cleanup (use eos-simplify), or correctness bugs (use /code-review).
 ---
 
 # EmptyOS Security Review
@@ -43,13 +43,13 @@ If only an app id is given, scan its `manifest.toml`, `app.py` (+ helper modules
 ## Phase 1 — Read the app
 
 Load the manifest, the Python, and the pages. Cross-reference the contract:
-- AGENTS.md rule 18 — cloud consent mandatory (non-localhost providers).
-- AGENTS.md rule 19 — no vault data to cloud by default.
-- AGENTS.md rule 13 — no PII / personal paths / secrets in tracked code (`.eos-personal`).
-- AGENTS.md rule 14 — no third-party branding in user-facing strings (`.eos-branding`).
-- `.Codex/rules/shared-frontend.md` — `esc()` / `escAttr()` XSS discipline.
+- CLAUDE.md rule 18 — cloud consent mandatory (non-localhost providers).
+- CLAUDE.md rule 19 — no vault data to cloud by default.
+- CLAUDE.md rule 13 — no PII / personal paths / secrets in tracked code (`.eos-personal`).
+- CLAUDE.md rule 14 — no third-party branding in user-facing strings (`.eos-branding`).
+- `.claude/rules/shared-frontend.md` — `esc()` / `escAttr()` XSS discipline.
 - `docs/AUTH.md` — single-user pin; no per-user identity inside the daemon.
-- `.Codex/rules/autopilot-grants.md` — verbs that are never autopilot-eligible.
+- `.claude/rules/autopilot-grants.md` — verbs that are never autopilot-eligible.
 
 ## Phase 2 — The checklist (map every finding to a rule + a scanner)
 
@@ -85,13 +85,13 @@ In `apply` mode, fix only what's unambiguous (wrong escaper → right escaper; a
 ## Phase 4 — Wire back (optional)
 
 If the review surfaces a *recurring* class of issue (same hole in ≥3 apps), that's a
-platform fix, not a per-app one (AGENTS.md feedback `platform_fix_for_n_app_bugs`): graduate
-it into a `scripts/check-*.py` scanner per `.Codex/rules/audits.md`, and add it to the
+platform fix, not a per-app one (CLAUDE.md feedback `platform_fix_for_n_app_bugs`): graduate
+it into a `scripts/check-*.py` scanner per `.claude/rules/audits.md`, and add it to the
 defensive-checks index (`30_Resources/EmptyOS/kb/notes/moc-defensive-security-checks.md`).
 
 ## Cross-references
 
-- `.Codex/skills/eos-page-design-review/SKILL.md` — the shape this skill mirrors.
+- `.claude/skills/eos-page-design-review/SKILL.md` — the shape this skill mirrors.
 - `scripts/check-personal.py`, `check-branding.py`, `check-attr-escaper.py` — the scanners.
 - `30_Resources/EmptyOS/kb/notes/moc-defensive-security-checks.md` — the defensive index.
 - `docs/OPEN-SOURCE-BORROWING-PLAN.md` — why this skill exists (cybersecurity-skills borrow).

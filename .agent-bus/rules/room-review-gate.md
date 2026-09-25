@@ -1,3 +1,9 @@
+---
+paths:
+  - "apps/**/rooms/**"
+  - "apps/**/voice-assistant/**"
+  - "emptyos/sdk/pending_claim.py"
+---
 # Room Review Gate Rule — pending [DO:] actions awaiting Apply / Reject
 
 The review gate is the "with you, not for you" mechanism for room CLI
@@ -7,12 +13,12 @@ allowed) and is instructed via system prompt to emit
 Those tokens land as **pending action cards** the user reviews. Apply
 dispatches via `call_app`; Reject leaves them logged but un-executed.
 
-**Reference implementation:** `apps/rooms/pending.py` —
+**Reference implementation:** `apps/public/standard/rooms/pending.py` —
 `_gate_server_actions`, `apply_pending`, `reject_pending`, `list_pending`
 (module-level functions bound onto `RoomsApp` via the multi-module
 decomposition pattern; see `.claude/rules/multi-module-apps.md`).
 UI: `renderPendingCard`, `applyAction`, `rejectAction` in
-`apps/rooms/pages/index.html`. See also `docs/ROOMS-V3.md` Phase 5.
+`apps/public/standard/rooms/pages/index.html`. See also `docs/ROOMS-V3.md` Phase 5.
 
 ## Why this exists
 
@@ -160,7 +166,7 @@ audit trail.
 The third intervention verb between Apply and Reject (the AG-UI "modify
 params" borrow, 2026-06-11): a slightly-wrong payload no longer forces
 Reject → re-prompt. `POST /api/pending/{id}/edit` body `{"args": {...}}`
-(`edit_pending` in `apps/rooms/pending.py`; ✎ Edit button → JSON textarea
+(`edit_pending` in `apps/public/standard/rooms/pending.py`; ✎ Edit button → JSON textarea
 in `pages/rooms-pending.js`).
 
 Guards, in order:

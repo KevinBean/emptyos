@@ -28,6 +28,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from emptyos.sdk import web_route
+from emptyos.sdk.utils import parse_llm_svg
 from emptyos.sdk.svg_raster import rasterize_svgs
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -245,7 +246,7 @@ async def api_assets_diagram_propose(self, request):
         )
     except Exception as e:
         return {"error": f"generation failed: {e}"}
-    svg = _extract_svg(raw)
+    svg = parse_llm_svg(raw)
     if not svg:
         return {"error": "model did not return valid SVG"}
     pid = uuid.uuid4().hex[:12]
@@ -427,15 +428,6 @@ async def api_assets_preview(self, request):
 
 # ── Module-local pure helpers ─────────────────────────────────────────
 
-def _extract_svg(raw: str) -> str:
-    """Pull the <svg>…</svg> block out of an LLM reply (fences/preamble safe)."""
-    if not raw:
-        return ""
-    lo = raw.find("<svg")
-    hi = raw.rfind("</svg>")
-    if lo == -1 or hi == -1 or hi < lo:
-        return ""
-    return raw[lo:hi + len("</svg>")].strip()
 
 
 def _authed_url(self, url: str) -> str:

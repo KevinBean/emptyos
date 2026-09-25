@@ -559,7 +559,9 @@ function openCreateNote(slug){
       {key:'title', label:'Title', type:'text', value:prettyTitle},
       // options are plain strings (EOS_UI.formHtml) — value === label === kind slug
       {key:'kind', label:'Kind', type:'select', value:'concept',
-        options:['concept','formula','reference','case','lesson','pattern','moc']},
+        // A subset of KINDS on purpose: `clause` is written by the atomizer and
+        // `doc` by create_doc, so neither is offered on the generic create form.
+        options:['concept','formula','reference','case','lesson','guide','pattern','moc']},
       {key:'domain', label:'Domain (optional)', type:'text', value:STATE.filter.domain||''},
     ],
     onSubmit: async function(vals){
@@ -609,7 +611,7 @@ function _sourcePdfBody(data){
           '<div style="font-size:11px;color:var(--text-muted);word-break:break-all">' + esc(r.path) + '</div>' +
         '</div>' +
         '<button onclick="openLocalFile(' + escAttr(JSON.stringify(r.path)) + ', this)"' +
-          ' style="flex-shrink:0;font-size:12px;padding:5px 12px;border:1px solid var(--accent);border-radius:7px;background:transparent;color:var(--accent);cursor:pointer">Open</button>' +
+          ' style="flex-shrink:0;font-size:12px;padding:5px 12px;border:1px solid var(--accent);border-radius:8px;background:transparent;color:var(--accent);cursor:pointer">Open</button>' +
       '</div>';
   }).join('');
 }
@@ -1318,6 +1320,9 @@ var HEALTH_CATEGORIES = [
     if(b.state === 'malformed') return 'unparseable review_due: '+(b.review_due||'');
     return (b.days_overdue||0)+'d overdue (due '+(b.review_due||'?')+')';
   }},
+  {key:'stale_note',                  sev:'warn',  label:'Untouched for a long time',           detail:function(b){
+    return (b.days_since_touched||0)+'d since last update (last: '+(b.anchor_date||'?')+')';
+  }},
 ];
 
 function _healthBody(r){
@@ -1465,15 +1470,12 @@ async function _runDigest(){
     + (skipped.length? '<p style="font-size:12px;color:var(--text-muted)">Skipped: '+skipped.map(function(s){return esc(s.title)+' ('+esc(s.reason)+')';}).join('; ')+'</p>':'');
 }
 
-// Settings — mirrors [provides.settings] in manifest.toml. The keys are
-// guideline-scoped today (guidelines absorbed from the retired guideline app).
+// Settings — fields derived from [provides.settings] in manifest.toml
+// (app: 'kb') so a new schema key can't silently go missing from this panel.
 var _kbSettings = EOS_UI.settingsPanel({
   id: 'kb-settings-panel',
   title: 'Knowledge Base Settings',
-  fields: [
-    { key: 'kb.guideline_default_category', label: 'Default category for new guidelines', type: 'text', default: 'general' },
-    { key: 'kb.guideline_hub_panel_enabled', label: 'Show daily guideline clause on hub', type: 'boolean', default: true },
-  ],
+  app: 'kb',
 });
 document.getElementById('kb-settings-btn').addEventListener('click', function(){ _kbSettings.open(); });
 

@@ -42,7 +42,7 @@
   }
   .viz-preview {
     flex: 1;
-    background: #0d1117;
+    background: var(--bg-card, #0d1117);
     border: 0;
     width: 100%;
     height: 100%;
@@ -175,8 +175,12 @@
               title="Click elements in the preview to edit them">✎ Edit elements</button>
       <button id="record-mp4" class="eos-btn-sm" onclick="exportMp4()" style="display:none"
               title="Record this animation to an MP4 (local, no GPU)">🎬 Export MP4</button>
+      <button id="export-figure" class="eos-btn-sm" onclick="openExportFigure()" style="display:none"
+              title="Export as a standalone SVG + 2x PNG into a KB note or an article">🖼 Export figure</button>
       <button id="send-to-note" class="eos-btn-sm" onclick="openSendToNote()" style="display:none"
               title="Embed this artifact into a note (snapshot copy, or a live reference)">📌 Send to note</button>
+      <button id="version-btn" class="eos-btn-sm" onclick="openVersions()" style="display:none"
+              title="Restore an earlier render of this artifact">⌚ History</button>
       <button class="eos-btn-sm" onclick="reloadPreview()" title="Force-refresh the preview iframe">↻ Reload</button>
       <button class="btn-settings eos-btn-sm" onclick="openAppSettings()">⚙ Settings</button>
     </div>
@@ -197,6 +201,7 @@
         <option value="math-explainer">Math explainer (KaTeX)</option>
         <option value="mermaid">Mermaid diagram</option>
         <option value="game-2d">2D game (Kaboom.js)</option>
+        <option value="math-animation" id="shape-math-animation" disabled>Precise math animation (Manim)</option>
       </select>
     </div>
 
@@ -291,6 +296,7 @@ var STATE = { items: [], currentId: null, currentShape: '', editMode: false, pic
 var _edit = { enabled: false, supports: {} };  // filled by applyAbilityGate
 var _record = { enabled: false, supports: {} };  // html→mp4 export (filled by applyAbilityGate)
 var _embed = { enabled: false };  // send-to-note artifact embed (filled by applyAbilityGate)
+var _figure = { enabled: false, supports: {} };  // static figure export (filled by applyAbilityGate)
 
 // ── Shape intros — what each preset is + one starter brief ────────
 var SHAPE_INTROS = {
@@ -351,6 +357,11 @@ var SHAPE_INTROS = {
         desc: 'A playable top-down game in one shot — tile map, a movable character, wall collision, a goal. Click the game to focus it, then move with Arrows / WASD. Best for prototypes, interactive learning, and tiny adventures.',
         example: 'Top-down lighthouse keeper game: you (a 🧍 emoji) start at the dock, walk through a stone maze avoiding the water tiles, reach the 🗼 lighthouse to win. Walls are dark granite, floor is sand. Show the objective in the corner.',
     },
+    'math-animation': {
+        title: 'Precise math animation (Manim)',
+        desc: 'A separately-rendered mp4 (ManimCommunity/manim), not an HTML artifact — exact interpolation/easing and deterministic timing, unlike the LLM-improvised Animated explainer. No LaTeX typesetting yet (shapes + plain text only). Rendering takes longer than the other shapes.',
+        example: 'Show a circle transforming into a square over two seconds, then fade out.',
+    },
 };
 
 function renderShapeIntro() {
@@ -398,31 +409,16 @@ function openCadDraft(link) {
 }
 
 // ── Settings panel ────────────────────────────────────────────────
+// Fields derive from the manifest `[provides.settings] schema` — the same
+// source /settings renders from — rather than a hand-written `fields: [...]`.
+// That list was a second declaration and had already drifted twice: it offered
+// 5 of the 10 shapes, and a newly-declared setting reached /settings while
+// staying invisible here. One declaration cannot drift.
+// See .claude/rules/app-ui-patterns.md.
 var _appSettings = EOS_UI.settingsPanel({
     id: 'viz-settings-panel',
     title: 'Viz Settings',
-    fields: [
-        {key: 'viz.default_shape', label: 'Default shape preset', type: 'select',
-         options: [
-            {value: '3d-scene', label: '3D scene'},
-            {value: 'immersive-scene', label: 'Immersive 3D scene'},
-            {value: 'svg-diagram', label: 'SVG diagram'},
-            {value: 'chart', label: 'Chart'},
-            {value: 'anim-explainer', label: 'Animated explainer'},
-         ],
-         default: '3d-scene',
-         hint: 'Used when the prompt does not specify a shape.'},
-        {key: 'viz.think_domain', label: 'Think domain', type: 'select',
-         options: [
-            {value: 'code', label: 'code (preferred for HTML/JS)'},
-            {value: 'text', label: 'text'},
-            {value: 'reason', label: 'reason'},
-         ],
-         default: 'code'},
-        {key: 'viz.max_html_kb', label: 'Max HTML size (KB)', type: 'number',
-         default: 256,
-         hint: 'Refuse to save artifacts larger than this.'},
-    ],
+    app: 'viz',
 });
 function openAppSettings() { _appSettings.open(); }
 
@@ -490,8 +486,10 @@ function showArtifact(id) {
     document.getElementById('prompt').placeholder = 'move the camera closer and add an orbit indicator on Earth';
     document.getElementById('prompt').value = '';
     renderList();
+    refreshVersionToggle();
     refreshEditToggle();
     refreshRecordToggle();
+    refreshFigureToggle();
     refreshEmbedToggle();
 }
 
@@ -507,8 +505,10 @@ function cancelIterate() {
     document.getElementById('prompt').placeholder = '3D scene of the solar system — sun + inner four planets, labelled…';
     _route.clear();
     renderList();
+    refreshVersionToggle();
     refreshEditToggle();
     refreshRecordToggle();
+    refreshFigureToggle();
     refreshEmbedToggle();
 }
 
@@ -614,6 +614,7 @@ async function generate() {
     var shape = document.getElementById('shape').value;
     var examples = selectedExamples();
     if (!prompt) { EOS_UI.toast && EOS_UI.toast('Brief is empty', 'warn'); return; }
+    if (shape === 'math-animation') { return generateMathAnimation(prompt); }
     setWorking(true);
     var pane = openStreamPane();
     var statsChip = document.getElementById('stream-stats');
@@ -661,6 +662,33 @@ async function generate() {
     } finally {
         setWorking(false);
         // On failure keep the pane visible so the user sees partial output + error.
+    }
+}
+
+// math-animation is a single-shot render (no NDJSON stream — the LLM's Manim
+// script is small, the wait is the render, not the generation), so this
+// skips the stream pane entirely and just shows a working toast.
+async function generateMathAnimation(prompt) {
+    setWorking(true);
+    EOS_UI.toast && EOS_UI.toast('Rendering (this can take a minute)…', 'warn');
+    try {
+        var res = await fetch('/viz/api/generate-math-animation', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({prompt: prompt}),
+        });
+        var data = await res.json();
+        if (!data.ok) {
+            EOS_UI.toast && EOS_UI.toast('Render failed: ' + (data.error || 'unknown error'), 'err');
+            return;
+        }
+        await loadList();
+        _route.set(data.id);
+        EOS_UI.toast && EOS_UI.toast('✓ Rendered', 'ok');
+    } catch (e) {
+        EOS_UI.toast && EOS_UI.toast('Render error: ' + e.message, 'err');
+    } finally {
+        setWorking(false);
     }
 }
 
@@ -752,11 +780,14 @@ async function applyAbilityGate() {
         _edit.supports = {};
         _record.enabled = !!d.record_enabled;
         _record.supports = {};
+        _figure.enabled = !!d.figure_enabled;
+        _figure.supports = {};
         _embed.enabled = !!d.embed_enabled;
         (d.shapes || []).forEach(function(s){
             _ability.map[s.shape] = s.min_ability;
             _edit.supports[s.shape] = !!s.supports_edit;
             _record.supports[s.shape] = !!s.supports_record;
+            _figure.supports[s.shape] = !!s.supports_figure;
         });
         Array.prototype.forEach.call(sel.options, function(opt){
             var min = _ability.map[opt.value];
@@ -765,6 +796,16 @@ async function applyAbilityGate() {
             opt.text = opt.text.replace(/\s+·\s+needs .*$/, '');
             if (!ok) opt.text += ' · needs ' + (EOS_UI.ABILITY_LABELS[min] || min) + ' model';
         });
+        // math-animation is a separate pipeline (see math_animation.py), not
+        // in PRESETS, so the loop above never touches it — gate it here off
+        // the dedicated flag instead of an ability tier.
+        var maOpt = document.getElementById('shape-math-animation');
+        if (maOpt) {
+            var maOk = !!d.math_animation_enabled;
+            maOpt.disabled = !maOk;
+            maOpt.text = maOpt.text.replace(/\s+·\s+needs .*$/, '');
+            if (!maOk) maOpt.text += ' · needs setup (dark flag off)';
+        }
         // If the current pick just became gated, fall back to the first allowed shape.
         if (sel.selectedOptions[0] && sel.selectedOptions[0].disabled) {
             var firstOk = Array.prototype.filter.call(sel.options, function(o){ return !o.disabled; })[0];
@@ -796,6 +837,80 @@ function refreshEditToggle() {
     if (!ok && STATE.editMode) { STATE.editMode = false; closeEditPanel(); }
 }
 
+// ── Version ring: restore an earlier render ──────────────────────────
+// `history` in the record carries prompts only; the ring carries the renders.
+// Empty until something has been overwritten, so a freshly generated artifact
+// legitimately shows nothing — that is not an error state.
+function refreshVersionToggle() {
+    var btn = document.getElementById('version-btn');
+    if (!btn) return;
+    btn.style.display = STATE.currentId ? '' : 'none';
+}
+
+async function openVersions() {
+    if (!STATE.currentId) return;
+    var id = STATE.currentId;
+    var data = await EOS.apiSafe('/viz/api/versions/' + encodeURIComponent(id));
+    if (!data || data.error || !data.ok) {
+        EOS_UI.toast((data && data.error) || 'could not load versions', false);
+        return;
+    }
+    var versions = data.versions || [];
+    var body;
+    if (!versions.length) {
+        body = EOS_UI.emptyState({
+            icon: '⌚',
+            message: 'No earlier renders yet. A version is kept each time an '
+                   + 'iterate or an element edit replaces this artifact — '
+                   + 'nothing has replaced it so far.',
+        });
+    } else {
+        body = '<div class="row-list">' + versions.map(function(v) {
+            var when = v.ts ? String(v.ts).replace('T', ' ').slice(0, 16) : 'unknown time';
+            var why = v.prompt ? EOS_UI.esc(v.prompt) : '<em>no prompt recorded</em>';
+            return '<div class="row" style="display:flex; gap:8px; align-items:center;">'
+                 + '<div style="flex:1; min-width:0;">'
+                 + '<div><strong>v' + v.n + '</strong> '
+                 + '<span style="color:var(--muted); font-size:12px;">' + EOS_UI.esc(when)
+                 + ' · ' + (v.size_kb || 0) + ' KB</span></div>'
+                 + '<div style="color:var(--muted); font-size:12px; overflow:hidden; '
+                 + 'text-overflow:ellipsis; white-space:nowrap;">replaced by: ' + why + '</div>'
+                 + '</div>'
+                 + '<a class="eos-btn-sm" target="_blank" rel="noopener" href="/viz/api/versions/'
+                 + encodeURIComponent(id) + '/' + v.n + '">Preview</a>'
+                 + '<button class="eos-btn-sm" onclick="restoreVersion(' + EOS_UI.jsArg(id)
+                 + ', ' + v.n + ')">Restore</button>'
+                 + '</div>';
+        }).join('') + '</div>';
+    }
+    EOS_UI.modal({
+        title: 'Render history — ' + versions.length + ' earlier version'
+               + (versions.length === 1 ? '' : 's'),
+        body: body,
+    });
+}
+
+async function restoreVersion(id, n) {
+    var ok = await EOS_UI.confirm({
+        title: 'Restore v' + n + '?',
+        body: 'The current render is kept as a new version first, so this is undoable.',
+        confirmLabel: 'Restore',
+    });
+    if (!ok) return;
+    var res = await EOS.apiSafe('/viz/api/restore', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({id: id, n: n}),
+    });
+    if (!res || res.error || !res.ok) {
+        EOS_UI.toast((res && res.error) || 'restore failed', false);
+        return;
+    }
+    EOS_UI.closeModal();
+    EOS_UI.toast('Restored v' + n + (res.saved_as ? ' (previous kept as v' + res.saved_as + ')' : ''));
+    reloadPreview();
+}
+
 // ── HTML→MP4 export (html-video borrow: emptyos.sdk.media.html_record) ──
 function refreshRecordToggle() {
     var btn = document.getElementById('record-mp4');
@@ -804,6 +919,95 @@ function refreshRecordToggle() {
     // recordable (anim-explainer — CSS-keyframe pages the recorder can seek).
     var ok = _record.enabled && STATE.currentId && !!_record.supports[STATE.currentShape];
     btn.style.display = ok ? '' : 'none';
+}
+
+// ── Static figure export (standalone .svg + 2x .png into KB / an article) ──
+function refreshFigureToggle() {
+    var btn = document.getElementById('export-figure');
+    if (!btn) return;
+    // Visible only when the flag is on, an artifact is loaded, and its shape
+    // has an SVG at rest to lift (svg-diagram / schematic). Canvas and
+    // JS-rendered shapes have nothing to extract from the saved file.
+    var ok = _figure.enabled && STATE.currentId && !!_figure.supports[STATE.currentShape];
+    btn.style.display = ok ? '' : 'none';
+}
+
+async function openExportFigure() {
+    if (!STATE.currentId) return;
+    var notes = [];
+    try {
+        var d = await fetch('/kb/api/notes').then(function(r){ return r.json(); });
+        notes = (d.notes || d || []);
+    } catch (e) { /* KB may be absent — the article target still works */ }
+    var opts = notes.map(function(n){
+        return '<option value="' + escapeHtml(n.slug || '') + '">'
+             + escapeHtml(n.title || n.slug || '') + '</option>';
+    }).join('');
+    var kbBlock = opts
+        ? '<select id="fig-slug" style="width:100%;margin-top:4px;padding:6px;border:1px solid var(--border);border-radius:8px;background:var(--panel);color:var(--text)">' + opts + '</select>'
+        : '<div style="color:var(--muted);font-size:12px">No notes yet — create one in <a href="/kb/" target="_blank">the KB</a> first.</div>';
+    var body = '<div style="display:flex;flex-direction:column;gap:12px">'
+        + '<div style="display:flex;flex-direction:column;gap:6px">'
+        + '<label style="font-size:13px"><input type="radio" name="fig-target" value="kb" checked onchange="onFigureTargetChange()"> '
+        + 'KB note <span style="color:var(--muted)">— writes the figure and embeds it</span></label>'
+        + '<label style="font-size:13px"><input type="radio" name="fig-target" value="publish" onchange="onFigureTargetChange()"> '
+        + 'Article <span style="color:var(--muted)">— writes it to images/ and returns the body line to place</span></label>'
+        + '</div>'
+        + '<div id="fig-kb"><label style="font-size:13px">Target note' + kbBlock + '</label></div>'
+        + '<div id="fig-publish" style="display:none;flex-direction:column;gap:8px">'
+        + '<label style="font-size:13px">Post shortname'
+        + '<input id="fig-post" placeholder="ai-access" style="width:100%;margin-top:4px;padding:6px;border:1px solid var(--border);border-radius:8px;background:var(--panel);color:var(--text)"></label>'
+        + '<label style="font-size:13px">Concept'
+        + '<input id="fig-concept" placeholder="safety-line" style="width:100%;margin-top:4px;padding:6px;border:1px solid var(--border);border-radius:8px;background:var(--panel);color:var(--text)"></label>'
+        + '</div>'
+        + '<div style="text-align:right"><button onclick="submitExportFigure()" '
+        + 'style="padding:6px 16px;border-radius:8px;border:1px solid var(--accent);background:var(--accent);color: var(--accent-ink, #fff);cursor:pointer">Export</button></div>'
+        + '</div>';
+    EOS_UI.modal({ title: '🖼 Export figure', body: body, width: 520 });
+}
+
+function onFigureTargetChange() {
+    var el = document.querySelector('input[name="fig-target"]:checked');
+    var isKb = !el || el.value === 'kb';
+    var kb = document.getElementById('fig-kb');
+    var pub = document.getElementById('fig-publish');
+    if (kb) kb.style.display = isKb ? '' : 'none';
+    if (pub) pub.style.display = isKb ? 'none' : 'flex';
+}
+
+async function submitExportFigure() {
+    var el = document.querySelector('input[name="fig-target"]:checked');
+    var target;
+    if (!el || el.value === 'kb') {
+        var sel = document.getElementById('fig-slug');
+        if (!sel || !sel.value) { EOS_UI.toast('Pick a note', false); return; }
+        target = 'kb:' + sel.value;
+    } else {
+        var post = ((document.getElementById('fig-post') || {}).value || '').trim();
+        var concept = ((document.getElementById('fig-concept') || {}).value || '').trim();
+        if (!post || !concept) { EOS_UI.toast('Post and concept are required', false); return; }
+        target = 'publish:' + post + '/' + concept;
+    }
+    var res;
+    try {
+        res = await fetch('/viz/api/figure', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ id: STATE.currentId, target: target }),
+        }).then(function(r){ return r.json(); });
+    } catch (e) { EOS_UI.toast('Export failed', false); return; }
+    if (!res || !res.ok) { EOS_UI.toast((res && res.error) || 'Export failed', false); return; }
+    EOS_UI.closeModal();
+    // The article target deliberately does NOT place the line — position and
+    // alt text are editorial — so surface it instead of implying it landed.
+    if (res.markdown) {
+        EOS_UI.modal({ title: 'Figure written', width: 560, body:
+            '<div style="display:flex;flex-direction:column;gap:8px">'
+            + '<div style="color:var(--muted);font-size:13px">Place this line in the post, and rewrite the alt as the diagram takeaway:</div>'
+            + '<code style="display:block;padding:8px;border:1px solid var(--border);border-radius:8px;background:var(--bg);font-size:12px;word-break:break-all">'
+            + escapeHtml(res.markdown) + '</code></div>' });
+    } else {
+        EOS_UI.toast('Figure exported → ' + res.target, true);
+    }
 }
 
 // ── Send-to-note (durable artifact embed: snapshot + reference) ──
@@ -831,7 +1035,7 @@ async function openSendToNote() {
     }).join('');
     var body = '<div style="display:flex;flex-direction:column;gap:10px">'
         + '<label style="font-size:13px">Target KB note'
-        + '<select id="stn-note" style="width:100%;margin-top:4px;padding:6px;border:1px solid var(--border);border-radius:7px;background:var(--panel);color:var(--text)">'
+        + '<select id="stn-note" style="width:100%;margin-top:4px;padding:6px;border:1px solid var(--border);border-radius:8px;background:var(--panel);color:var(--text)">'
         + opts + '</select></label>'
         + '<div style="display:flex;flex-direction:column;gap:6px">'
         + '<label style="font-size:13px"><input type="radio" name="stn-mode" value="snapshot" checked> '
@@ -1024,8 +1228,10 @@ async function boot() {
     renderShapeIntro();
     await Promise.all([loadList(), loadExamples(), applyAbilityGate()]);
     _route.init();
+    refreshVersionToggle();
     refreshEditToggle();
     refreshRecordToggle();
+    refreshFigureToggle();
     refreshEmbedToggle();
 }
 boot();

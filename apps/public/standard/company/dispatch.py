@@ -22,11 +22,12 @@ if TYPE_CHECKING:
 
 
 # ─── Bind to CompanyApp class as ────────────────────────────────
-#   run_scenario        = _dispatch.run_scenario
-#   _CHAIN_FRAMINGS     = _dispatch._CHAIN_FRAMINGS
-#   chain_scenario      = _dispatch.chain_scenario
-#   _run_in_room        = _dispatch._run_in_room
-#   _append_run_memory  = _dispatch._append_run_memory
+#   run_scenario         = _dispatch.run_scenario
+#   _CHAIN_FRAMINGS      = _dispatch._CHAIN_FRAMINGS
+#   chain_scenario       = _dispatch.chain_scenario
+#   _run_in_room         = _dispatch._run_in_room
+#   _append_run_memory   = _dispatch._append_run_memory
+#   route_to_specialist  = _dispatch.route_to_specialist
 # Adding a new method here? Add a matching binding line in app.py.
 # ─────────────────────────────────────────────────────────────────────
 
@@ -254,3 +255,75 @@ async def _append_run_memory(self, org: dict, members: list[dict], record: dict)
             self.vault_append_section(_vault_rel_member(oid, mid), "Scenarios", line)
         except Exception:
             continue
+
+
+# Single-consumer prompt (CLAUDE.md rule 12) — stays local to dispatch.py rather
+# than shared.py per .claude/rules/multi-module-apps.md Rule 5/6 (shared.py is
+# for constants two or more helpers need; only route_to_specialist uses this).
+ROUTE_SYSTEM = (
+    "You are routing a single item to the best-fit AI specialist on a team. "
+    "Read the item and each candidate's role + system prompt, then choose the "
+    "one who should own it. Do not explain your reasoning."
+)
+
+
+async def route_to_specialist(self, org_id: str, item_text: str) -> dict:
+    """Pick exactly ONE best-fit AI member of the org and dispatch the item
+    to them — the "expert-pool" dispatcher `run_scenario` doesn't provide
+    (that one fans a prompt out to every AI member). See
+    docs/AGENT-TEAM-PATTERNS.md and .claude/rules/verb-registry.md."""
+    org = await self.get_org(org_id)
+    if not org:
+        return {"error": f"org '{org_id}' not found"}
+    ai_members = [m for m in (org.get("members") or []) if (m.get("mode") or "human") == "ai"]
+    if not ai_members:
+        return {"error": "org has no AI members — add one to route"}
+    item_text = (item_text or "").strip()
+    if not item_text:
+        return {"error": "item_text required"}
+
+    if len(ai_members) == 1:
+        chosen = ai_members[0]
+    else:
+        choices = {
+            m["id"]: f"{m.get('role') or 'member'} — {(m.get('system_prompt') or '')[:200]}"
+            for m in ai_members
+        }
+        chosen_id = await self.select(
+            item_text, choices, system=ROUTE_SYSTEM, default=ai_members[0]["id"],
+        )
+        chosen = next((m for m in ai_members if m.get("id") == chosen_id), ai_members[0])
+
+    if self.over_budget("company"):
+        return {"error": "over monthly budget", "member_id": chosen.get("id")}
+
+    sys_prompt = (chosen.get("system_prompt") or "").strip()
+    if not sys_prompt:
+        sys_prompt = (self.vault_read_section(
+            _vault_rel_member(org_id, chosen["id"]), "System Prompt",
+        ) or "").strip()
+
+    self.cite("member", chosen["id"])
+    kwargs: dict = {"domain": "text", "system": sys_prompt}
+    if chosen.get("model"):
+        kwargs["model"] = chosen["model"]
+    response = await self.think(item_text, **kwargs)
+
+    await self.emit("company:specialist_routed", {
+        "org_id": org_id, "member_id": chosen["id"], "role": chosen.get("role") or "",
+    })
+    try:
+        self.vault_append_section(
+            _vault_rel_member(org_id, chosen["id"]), "Scenarios",
+            f"- {_now()} — routed — _{item_text[:80]}_",
+        )
+    except Exception:
+        pass
+
+    return {
+        "member_id": chosen["id"],
+        "member_name": chosen.get("name") or chosen["id"],
+        "role": chosen.get("role") or "",
+        "response": response if isinstance(response, str) else str(response),
+        "provenance": self.last_provenance(),
+    }

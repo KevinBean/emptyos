@@ -145,4 +145,5 @@ Lead with what the agent got *right* when it beat the plan. It calibrates the re
 - `.claude/rules/audits.md` — false-positive discipline: test a heuristic against 3 healthy cases.
 - `.claude/rules/daemon-handling.md` + `.claude/rules/sandbox-driven-testing.md` — where it is safe to execute.
 - `.claude/rules/deep-research.md` — "read the primary source, don't infer from the tally" is the same move, applied to prose.
+- `.claude/rules/dev-cli-dispatch.md` — the *upstream* decision (when to hand work to another CLI in the first place); this skill is the downstream review once it's done.
 - Memory: `feedback_review_codex_output_by_executing`.

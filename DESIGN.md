@@ -212,7 +212,13 @@ Soft shadows over hard borders. Floating layers (cards on hover, drawers, modals
 - `rounded.lg` (14px) — cards, modals, panels
 - `rounded.pill` (999px) — FAB pills, pill badges
 
-If you reach for a radius that isn't in this scale, the language is being broken.
+Three bare literals are also sanctioned where no token fits: `4px` for small
+chips and tight inline tags, `10px` and `12px` for elements sitting visually
+between an input and a card (button-shaped tags, embedded chips). Prefer a token
+when one applies.
+
+Anything outside `{4, 6, 8, 10, 12, 14, 999}` — `3/5/7/9/11/13`, `16px`+ — is
+drift, and the language is being broken.
 
 ## Components
 
@@ -239,7 +245,7 @@ Motion is a whisper, not a performance.
 - Honor every state — default, loading, empty, error, offline.
 
 **Don't**
-- No second accent color. No gradient backgrounds. No off-scale radius (8/14/999 only).
+- No second accent color. No gradient backgrounds. No off-scale radius (tokens are `6/8/14/999`; bare `4/10/12` only for chips and between-input-and-card elements).
 - No `alert()` / `confirm()` / `prompt()` — use `EOS_UI.confirm` / `EOS_UI.toast` / `EOS_UI.formModal`.
 - No modal AI takeovers. AI chrome docks (right drawer, bottom-right FAB), never blocks.
 - No hidden-cost cloud calls — visible *before* sending.

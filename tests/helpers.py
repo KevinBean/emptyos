@@ -41,7 +41,7 @@ def app_path(app_id: str) -> Path:
     return d
 
 
-def requires_app(app_id: str, *, file: str = ""):
+def requires_app(app_id: str, *, file: "str | tuple[str, ...]" = ""):
     """Module-level skip marker for a test that needs a possibly-absent app.
 
     ``apps/personal/`` is gitignored, so those apps exist only on the authoring
@@ -59,8 +59,13 @@ def requires_app(app_id: str, *, file: str = ""):
     and they never cover a test whose dependency is a ``read_text()`` rather
     than a fixture.
 
-    ``file`` narrows the check to one artifact inside the app (a module, a
-    page) for tests that read it directly.
+    ``file`` narrows the check to an artifact inside the app (a module, a page)
+    for tests that read it directly. Pass a **tuple to name every artifact the
+    test loads** — naming only one is the same partial guard in miniature: the
+    named file can be present while another is absent, so the module does not
+    skip and errors instead. That is exactly how this test module failed::
+
+        pytestmark = requires_app("music-studio", file=("compose.py", "audio_gen.py"))
     """
     import pytest
 
@@ -68,9 +73,86 @@ def requires_app(app_id: str, *, file: str = ""):
         app_dir = app_path(app_id)
     except FileNotFoundError:
         return pytest.mark.skipif(True, reason=f"app '{app_id}' is not installed")
-    present = (app_dir / file).exists() if file else True
-    what = f"{app_id}/{file}" if file else app_id
-    return pytest.mark.skipif(not present, reason=f"'{what}' is not installed")
+    names = (file,) if isinstance(file, str) else tuple(file)
+    missing = [n for n in names if n and not (app_dir / n).exists()]
+    what = f"{app_id}/{', '.join(missing)}" if missing else app_id
+    return pytest.mark.skipif(bool(missing), reason=f"'{what}' is not installed")
+
+
+def requires_dep(*mods: str):
+    """Skip marker for a test whose app or engine needs an optional third-party
+    dependency that CI does not install.
+
+    Sibling of :func:`requires_app`, for the other reason a tracked test cannot
+    pass in a bare container. CI runs `pip install -e .` and nothing else, so
+    numpy / scipy / tomlkit / openpyxl are absent there and present on the
+    authoring machines — the same test then fails in CI and passes locally,
+    which reads as a regression.
+
+    Name the ROOT CAUSE, not the symptom. An app whose entry module imports
+    numpy does not load at all, so its routes 404 and the test fails on
+    ``Expected 200, got 404`` — ``requires_dep("numpy")`` says why. This
+    deliberately does NOT skip on the 404 itself: an app that fails to load for
+    any OTHER reason must still fail the test, which a "skip if the route is
+    missing" guard would mask.
+
+    The check runs in the TEST process, which is the same box and interpreter as
+    the daemon under test in CI and on the dev machines — so it is a faithful
+    proxy for what the daemon could import.
+
+    Use per test or per class, never per module unless every test in the module
+    needs the dep::
+
+        @requires_dep("scipy")
+        def test_the_emt_method_runs(self, http_client): ...
+    """
+    import importlib.util
+
+    import pytest
+
+    missing = []
+    for m in mods:
+        try:
+            if importlib.util.find_spec(m) is None:
+                missing.append(m)
+        except (ImportError, ValueError):
+            missing.append(m)
+    return pytest.mark.skipif(
+        bool(missing),
+        reason=f"optional dependency not installed: {', '.join(missing)}",
+    )
+
+
+_BROWSER_OK: "bool | None" = None
+
+
+def requires_browser():
+    """Skip marker for a test that needs Playwright's Chromium BINARY.
+
+    Third sibling of :func:`requires_app` / :func:`requires_dep`, for the case
+    neither covers: the ``playwright`` PACKAGE is installed in CI (it comes with
+    pytest-playwright) but the browser is not — CI never runs
+    ``playwright install``. So an import check passes and the launch fails, and
+    anything rendering a PDF goes through Chromium (``emptyos/sdk/pdf.py``).
+
+    Probed once per process and cached; the probe spawns Playwright's driver,
+    which is far too slow to repeat per test.
+    """
+    import pytest
+
+    global _BROWSER_OK
+    if _BROWSER_OK is None:
+        try:
+            from playwright.sync_api import sync_playwright
+
+            with sync_playwright() as pw:
+                _BROWSER_OK = Path(pw.chromium.executable_path).exists()
+        except Exception:
+            _BROWSER_OK = False
+    return pytest.mark.skipif(
+        not _BROWSER_OK,
+        reason="Playwright Chromium is not installed (CI never runs `playwright install`)",
+    )
 
 
 def load_app_module(app_id: str, module: str, *, preload: tuple[str, ...] = ()):
@@ -109,6 +191,38 @@ def load_app_module(app_id: str, module: str, *, preload: tuple[str, ...] = ()):
     for name in preload:
         _load(name)
     return _load(module)
+
+
+def fake_reactor(log_calls, ripple_calls):
+    """A stand-in ``self`` for driving one reactor handler without a kernel.
+
+    Reactor handlers are ``async def h(self, event)`` on a mixin, so a test can
+    call ``Mixin.handler(fake, event)`` directly. This captures the two sinks a
+    handler is allowed to touch: ``_log_action`` appends ``(event_type, action)``
+    to ``log_calls``, ``_journal_ripple`` appends ``(emoji, text, dim)`` to
+    ``ripple_calls``.
+
+    Not the only reactor double in the suite, and deliberately so:
+    ``test_unit_reactor_journal_ripple.py`` stubs ``call_app`` instead (it tests
+    the ripple helper itself, so it must capture what the ripple *calls*), and
+    ``test_unit_reactor_cables.py`` subclasses the mixin and records ripples as
+    dicts with ``**kw`` tolerance. Both answer different questions; folding
+    either in here would need a mode flag that exists only because the callers
+    disagree. Extend this one only for a handler-drives-log-and-ripple test.
+    """
+    fake = types.SimpleNamespace()
+    fake._log_action = lambda event_type, action: log_calls.append((event_type, action))
+
+    async def _journal_ripple(emoji, text, dim=""):
+        ripple_calls.append((emoji, text, dim))
+
+    fake._journal_ripple = _journal_ripple
+    return fake
+
+
+def fake_event(**data):
+    """An event object shaped the way a handler reads it: ``event.data``."""
+    return types.SimpleNamespace(data=data)
 
 
 # Allow override so tests can target a sandbox-pool member (`:9002+`) or the
@@ -295,3 +409,37 @@ def assert_ok(resp):
     """Assert status 200 and return JSON body."""
     assert resp.status_code == 200, f"Expected 200, got {resp.status_code}: {resp.text[:300]}"
     return resp.json()
+
+
+def read_text_normalised(path: Path) -> str:
+    """File content with line endings normalised, for cross-tree comparison.
+
+    EmptyOS keeps byte-mirrors of the same file in more than one tree
+    (`.claude/skills` vs `.agents/skills`, `.agent-bus/` vs its source).
+    Comparing those as BYTES reports false drift: `.gitattributes`
+    normalises some paths while `core.autocrlf` rewrites others on
+    checkout, so the two copies can hold identical text with different
+    newline bytes. That is not drift -- a reader of either file sees the
+    same content -- and it produced two false positives on a healthy tree
+    before this existed (`.claude/rules/audits.md`: tune the heuristic,
+    do not fix the tree).
+
+    Extracted at the second consumer per CLAUDE.md rule 9. The one line of
+    code is not the point; the reason above is, and two copies of it drift.
+    """
+    return path.read_text(encoding="utf-8").replace("\r\n", "\n")
+
+
+def assert_within_pct(ours, published, label, tol=1.5):
+    """Assert a computed value matches a PUBLISHED one within a percentage band.
+
+    For conformance tests against a standard's worked example, where the
+    published intermediates are rounded to 3 significant figures at every step —
+    so an exact match is unachievable and a tighter band fails on the standard's
+    rounding rather than on our arithmetic. The message names the label, both
+    values and the actual error, so a failure says which quantity drifted.
+    """
+    err = abs(ours - published) / published * 100.0
+    assert err <= tol, (
+        f"{label}: {ours:.6g} vs published {published:.6g} ({err:.2f} %)"
+    )

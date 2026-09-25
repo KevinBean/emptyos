@@ -1,3 +1,8 @@
+---
+paths:
+  - "emptyos/sdk/web_search.py"
+  - "apps/**"
+---
 # Untrusted-Content Fencing — fetched text is data, not instructions
 
 Any pipeline that interpolates **fetched external text** (web pages, search
@@ -19,9 +24,9 @@ both no-op when disabled). Underneath: `untrusted_block(content, label="")`
 (pure fence + defang) + `UNTRUSTED_SOURCE_CLAUSE` (the system-prompt clause).
 All re-exported from `emptyos.sdk`. Tests: `tests/test_sdk_web_search.py`.
 
-**Consumers (all dark-flagged):** `apps/assistant/research.py`,
-`apps/voice-assistant/research.py`, `apps/explore/` (`_source_prompt_block`
-takes the fencer — synthesize, digest, stance), `apps/daily-brief/`
+**Consumers (all dark-flagged):** `apps/public/standard/assistant/research.py`,
+`apps/public/standard/voice-assistant/research.py`, `apps/explore/` (`_source_prompt_block`
+takes the fencer — synthesize, digest, stance), `apps/public/standard/daily-brief/`
 (`_distill` headline block).
 
 ## The four moves (all required together)

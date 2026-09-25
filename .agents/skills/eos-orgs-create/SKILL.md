@@ -1,11 +1,11 @@
 ---
 name: eos-orgs-create
-description: Create a Real Org in `apps/company/` by extracting details from the current Codex conversation and confirming once. Use when the user says "create an org", "new org", "add a company", "make a team for X", or names a concrete organisation (employer, client, side-project group) that doesn't exist in the system yet. Wraps `POST /orgs/api/orgs` so the same vault note + `orgs:org_created` event fire that the web UI produces.
+description: Create a Real Org in `apps/public/standard/company/` by extracting details from the current Claude Code conversation and confirming once. Use when the user says "create an org", "new org", "add a company", "make a team for X", or names a concrete organisation (employer, client, side-project group) that doesn't exist in the system yet. Wraps `POST /orgs/api/orgs` so the same vault note + `orgs:org_created` event fire that the web UI produces. NOT for adding a person to an org that already exists (use eos-orgs-member-add), listing orgs (use eos-orgs-list), or running a scenario against one (use eos-orgs-run-scenario).
 ---
 
 # EmptyOS Orgs — Create
 
-Create a new Real Org under `apps/company/`. Unlike the web UI's AI-form-fill modal, this skill has the current conversation as context — it should pre-fill every field it can infer from chat history, then ask the user to confirm once instead of grilling field-by-field.
+Create a new Real Org under `apps/public/standard/company/`. Unlike the web UI's AI-form-fill modal, this skill has the current conversation as context — it should pre-fill every field it can infer from chat history, then ask the user to confirm once instead of grilling field-by-field.
 
 The skill writes through the HTTP API (`POST /orgs/api/orgs`) so the vault note, frontmatter shape, and downstream events match the web UI exactly. **Do not write vault notes directly** — that bypasses validation + event emission.
 
@@ -15,6 +15,14 @@ The skill writes through the HTTP API (`POST /orgs/api/orgs`) so the vault note,
 - Conversation has surfaced a real-world organisation (employer, client, side-project, study group) that's worth tracking in the system
 - **Not** for Persona Sims — those are scenario sandboxes, created via the web UI's Persona tab
 - **Not** for adding members to an existing org — use `eos-orgs-member-add` instead
+
+## Pre-flight
+
+This skill writes through the daemon HTTP API, so the daemon must be reachable first:
+
+- **Daemon up** — `curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:9000/orgs/` should print `200`. If not, ask the user to run `restart.bat` — never start/restart the daemon yourself (`.claude/rules/daemon-handling.md`).
+- **Auth (private mode)** — read `auth_token` from `emptyos.toml` `[network]` and send `Authorization: Bearer <token>` on every request (`.claude/rules/environment.md`).
+- **Non-ASCII bodies** — POST via Python `urllib`, not `curl -d` (Windows cp1252 mangles em-dash / CJK).
 
 ## Schema (Real Org, v1)
 

@@ -44,8 +44,13 @@ var _bulkEditCol = null;   // col object currently chosen in bulk modal
 var groupByField = '';
 var collapsedGroups = {};
 var currentDetailFile = null;
+var _boardUrlSyncReady = false;   // suppress URL writes during the initial board load
 var PILL_COLORS = {blue:'eos-pill-blue',amber:'eos-pill-amber',green:'eos-pill-green',emerald:'eos-pill-emerald',red:'eos-pill-red',purple:'eos-pill-purple',orange:'eos-pill-orange',gray:'eos-pill-gray'};
-var CHART_COLORS = ['#7c6af7','#50c878','#ffbf00','#dc5050','#a855f7','#fb923c','#6495ed','#34d399'];
+// Same tokens as .eos-pill-* so a category renders one colour in its pill, its
+// bar and its donut slice, on every theme. Used in inline `style=` only —
+// var()/color-mix() do not resolve in a bare SVG presentation attribute.
+var CHART_COLORS = ['var(--accent)','var(--green)','var(--amber)','var(--red)','var(--purple)',
+    'color-mix(in srgb, var(--amber) 60%, var(--red))','var(--blue)','color-mix(in srgb, var(--green) 65%, var(--blue))'];
 
 // ── Navigation ──
 function goHome() { window.location.hash = ''; }
@@ -204,9 +209,51 @@ function showBoard() {
     renderBulkChip();
     var views = boardConfig.views || [{type:'table'}];
     var def = views.find(function(v){return v.default}) || views[0];
-    switchView(def.type);
+    // A `?v=` param (written by syncViewToUrl, below) reproduces a specific
+    // filtered/grouped/sorted view; fall back to the board's own default.
+    _boardUrlSyncReady = false;
+    if (!restoreViewFromUrl()) switchView(def.type);
+    _boardUrlSyncReady = true;
     // Load saved views list for the dropdown (non-blocking).
     loadSavedViews();
+}
+
+// ── URL-synced view state ──
+// Mirrors the idea behind circle's (github.com/ln-dev7/circle) `nuqs` usage —
+// "filters/sort/group-by live in the URL, not component state" — so a board
+// URL is shareable/bookmarkable and reproduces the exact view on open. Reuses
+// applyView()'s existing shape (the same one saved views already persist
+// server-side); this just carries it in the address bar instead.
+function restoreViewFromUrl() {
+    try {
+        var qp = new URLSearchParams(window.location.search);
+        var raw = qp.get('v');
+        if (!raw) return false;
+        var state = JSON.parse(raw);
+        if (!state || typeof state !== 'object') return false;
+        applyView(state);
+        return true;
+    } catch (e) { return false; }
+}
+
+function syncViewToUrl() {
+    if (!_boardUrlSyncReady || !currentBoardId || window.EOS_IS_EXPORT) return;
+    var state = {
+        view_type: currentView,
+        search: searchQuery || '',
+        filters: ACTIVE_FILTERS,
+        filter_conjunction: FILTER_CONJUNCTION,
+        hidden_columns: Object.keys(HIDDEN_COLUMNS),
+        sort_col: sortCol || '',
+        sort_desc: !!sortDesc,
+        group_by: groupByField || '',
+        kanban_group_by: (boardConfig && boardConfig.kanban_group_by) || '',
+        person_filter: personFilter || '',
+    };
+    var qp = new URLSearchParams(window.location.search);
+    qp.set('v', JSON.stringify(state));
+    var qs = qp.toString();
+    history.replaceState(null, '', window.location.pathname + (qs ? '?' + qs : '') + window.location.hash);
 }
 
 // ── Saved views ──
@@ -1319,6 +1366,7 @@ function switchView(view) {
     else if (view === 'summary') renderSummary();
     else if (view === 'map') renderMap();
     else if (view === 'pivot') renderPivot();
+    syncViewToUrl();
 }
 
 // ── Gallery View ── (cover-grid card view; configurable image / title / subtitle / badge / meta fields)
@@ -1601,6 +1649,7 @@ function onGroupByChange() {
     groupByField = document.getElementById('board-groupby').value || '';
     collapsedGroups = {};
     if (currentView === 'table') renderTable();
+    syncViewToUrl();
 }
 function toggleGroup(name) {
     collapsedGroups[name] = !collapsedGroups[name];
@@ -1685,7 +1734,7 @@ function renderTable() {
             if (!sum) return '';
             return '<span class="group-agg">Σ '+esc(c.label)+': '+sum.toFixed(1).replace(/\.0$/,'')+'</span>';
         }).filter(Boolean).join('');
-        var header = '<tr class="group-header" onclick="toggleGroup('+JSON.stringify(g)+')">' +
+        var header = '<tr class="group-header" onclick="toggleGroup('+EOS_UI.jsArg(g)+')">' +
             '<td colspan="'+(cols.length+1)+'">' +
             '<span class="group-chevron">'+(collapsed?'▸':'▾')+'</span>' +
             '<span class="eos-pill '+(PILL_COLORS[color]||'eos-pill-gray')+'">'+esc(g)+'</span>' +
@@ -1773,9 +1822,9 @@ var COLUMN_RENDERERS = {
     'select': function(item, col, val) {
         if (col.color_map) {
             var color = col.color_map[val] || 'gray';
-            return '<span class="eos-pill '+(PILL_COLORS[color]||'eos-pill-gray')+' cell-editable" onclick="editSelectCell(this,\''+item.file+'\',\''+col.id+'\','+JSON.stringify(col.options||[])+')">'+esc(String(val))+'</span>';
+            return '<span class="eos-pill '+(PILL_COLORS[color]||'eos-pill-gray')+' cell-editable" onclick="editSelectCell(this,'+EOS_UI.jsArg(item.file)+','+EOS_UI.jsArg(col.id)+','+EOS_UI.jsArg(col.options||[])+')">'+esc(String(val))+'</span>';
         }
-        return '<span class="cell-editable" onclick="editSelectCell(this,\''+item.file+'\',\''+col.id+'\','+JSON.stringify(col.options||[])+')">'+esc(String(val))+'</span>';
+        return '<span class="cell-editable" onclick="editSelectCell(this,'+EOS_UI.jsArg(item.file)+','+EOS_UI.jsArg(col.id)+','+EOS_UI.jsArg(col.options||[])+')">'+esc(String(val))+'</span>';
     },
     'number': function(item, col, val) {
         var display = (col.prefix||'') + val + (col.suffix||'');
@@ -1931,6 +1980,7 @@ function sortTable(colId) {
     if (sortCol === colId) sortDesc = !sortDesc;
     else { sortCol = colId; sortDesc = false; }
     renderTable();
+    syncViewToUrl();
 }
 
 function sortItems(items) {
@@ -2016,6 +2066,7 @@ function renderKanbanAxisSelect() {
 function onKanbanAxisChange() {
     boardConfig.kanban_group_by = document.getElementById('kanban-axis-select').value;
     renderKanban();
+    syncViewToUrl();
 }
 
 function _kanbanGroupsFor(col) {
@@ -2103,9 +2154,15 @@ function renderKanban() {
     var dateField = _kanbanDateField();
     var todayIso = new Date().toISOString().slice(0,10);
     // Per-column Σ badge — declared via `agg_field` on a kanban view config.
-    var kanCfg = (boardConfig.views||[]).find(function(v){return v.type==='kanban' && v.agg_field;});
-    var aggField = kanCfg ? kanCfg.agg_field : '';
+    var kanViewCfg = (boardConfig.views||[]).find(function(v){return v.type==='kanban';}) || {};
+    var aggField = kanViewCfg.agg_field || '';
     var aggCol = aggField ? (boardConfig.columns||[]).find(function(c){return c.id===aggField;}) : null;
+    // Opt-in explicit meta-field override (mirrors gallery's `meta_fields`,
+    // .claude/rules/list-card-density.md — a preset author picks which
+    // columns matter; absent falls back to the positional default below).
+    var metaFieldCols = kanViewCfg.meta_fields
+        ? kanViewCfg.meta_fields.map(function(id){ return (boardConfig.columns||[]).find(function(c){return c.id===id;}); }).filter(Boolean)
+        : null;
 
     EOS_UI.kanbanLayout({
         mountId: 'kanban-board',
@@ -2115,7 +2172,7 @@ function renderKanban() {
         getItemId: function(it) { return it.file; },
         renderCard: function(item) {
             var title = item[nameCol ? nameCol.id : 'name'] || item.file;
-            var meta = visibleCols().slice(1, 4)
+            var meta = (metaFieldCols || visibleCols().slice(1, 4))
                 .filter(function(c) { return c.id !== groupBy && c.id !== dateField && item[c.id]; })
                 .map(function(c) {
                     var v = item[c.id];
@@ -2347,7 +2404,7 @@ async function renderChart() {
     entries.forEach(function(e, i) {
         var pct = e[1]/sumVal*100;
         var color = CHART_COLORS[i % CHART_COLORS.length];
-        donutHtml += '<circle cx="21" cy="21" r="'+radius+'" fill="none" stroke="'+color+'" stroke-width="5" stroke-dasharray="'+pct+' '+(100-pct)+'" stroke-dashoffset="'+(-offset)+'" />';
+        donutHtml += '<circle cx="21" cy="21" r="'+radius+'" fill="none" style="stroke:'+color+'" stroke-width="5" stroke-dasharray="'+pct+' '+(100-pct)+'" stroke-dashoffset="'+(-offset)+'" />';
         offset += pct;
     });
     donutHtml += '</svg><div class="donut-legend">';
@@ -2642,11 +2699,7 @@ async function runSmartAdd() {
         if (!data.ok) { EOS_UI.toast(data.error || 'Could not parse', false); return; }
         var fields = data.fields || {};
         var host = document.getElementById('add-item-fields');
-        var pv = data.provenance
-            ? '<div class="muted" style="margin:4px 0 8px">' +
-              EOS_UI.provenance({mode: data.provenance.mode, provider: data.provenance.provider, model: data.provenance.model}) +
-              ' · review &amp; edit</div>'
-            : '';
+        var pv = EOS_UI.provenanceLine(data.provenance, {suffix: ' · review &amp; edit'});
         host.innerHTML = pv + (boardConfig.columns||[]).map(function(c) {
             var v = (c.id in fields) ? fields[c.id] : '';
             return '<div class="form-group"><label>'+esc(c.label)+'</label>'+renderFormInput(c, v)+'</div>';
@@ -3136,7 +3189,7 @@ async function loadItemActivity(file) {
                    '<span class="activity-time">'+esc(t)+'</span></div>';
         }).join('');
     } catch (e) {
-        out.innerHTML = '<p style="color:var(--board-text-dim)">Activity unavailable in offline mode.</p>';
+        out.innerHTML = EOS_UI.errorState({message: 'Activity unavailable in offline mode.'});
     }
 }
 

@@ -75,7 +75,11 @@ if(window.EOS&&EOS.registerActions){EOS.registerActions({},[],{description:"Vaul
     <div class="link-list" id="og-list"></div>
   </div>
 
-  <div class="section-title">&#128683; Orphan Notes <span class="badge" id="orphan-badge">0</span></div>
+  <div class="section-title">&#128683; Orphan Notes <span class="badge" id="orphan-badge">0</span>
+    <button class="eos-btn eos-btn-sm" id="orphan-why" onclick="loadOrphanInsights()"
+            style="margin-left:auto" title="Ask why these notes are orphaned">&#10024; Why?</button>
+  </div>
+  <div id="orphan-insights" style="display:none"></div>
   <div class="link-list" id="orphan-list"></div>
   <div class="empty-msg" id="orphan-empty" style="display:none">No orphan notes found</div>
 </div>
@@ -86,10 +90,14 @@ var blTimer = null;
 async function loadStats() {
   try {
     var data = await EOS.api('/link/api/stats');
+    // `orphan_count` is the field the endpoint actually returns. This read
+    // was `data.total_orphans || data.orphans`, neither of which ever existed,
+    // so the Orphans tile displayed 0 for the life of the app.
     EOS_UI.statCards('link-stats', [
-      {value: data.total_notes || data.notes || 0, label: 'Notes'},
-      {value: data.total_links || data.links || 0, label: 'Links'},
-      {value: data.total_orphans || data.orphans || 0, label: 'Orphans'},
+      {value: data.total_notes || 0, label: 'Notes'},
+      {value: data.total_links || 0, label: 'Links'},
+      {value: data.orphan_count || 0, label: 'Orphans'},
+      {value: data.broken_target_count || 0, label: 'Broken links'},
     ]);
   } catch(e) {}
 }
@@ -115,7 +123,34 @@ async function loadOrphans() {
         + '</div>';
     }).join('');
   } catch(e) {
-    document.getElementById('orphan-list').innerHTML = '<div class="empty-msg">Failed to load orphans</div>';
+    document.getElementById('orphan-list').innerHTML = EOS_UI.errorState({message: 'Failed to load orphans', onRetry: 'loadOrphans()'});
+  }
+}
+
+// `/link/api/orphan-insights` existed server-side with no caller at all, so its
+// think() was unreachable and the provenance it returns was computed and thrown
+// away. Wired here rather than deleted: the app already advertises "Orphans to
+// adopt" as a registerActions quick-action, so the intent was there.
+async function loadOrphanInsights() {
+  var box = document.getElementById('orphan-insights');
+  var btn = document.getElementById('orphan-why');
+  box.style.display = 'block';
+  // Measured 363s end-to-end on a 9,746-orphan vault, of which the model was
+  // only 16.6s — the wait is orphans() rebuilding the link index, not the LLM.
+  // Say so, rather than showing a bare spinner for minutes.
+  box.innerHTML = '<div class="muted">Scanning the vault for orphans, then asking. '
+    + 'On a large vault this can take several minutes.</div>';
+  if (btn) btn.disabled = true;
+  try {
+    var data = await EOS.api('/link/api/orphan-insights');
+    var prov = (window.EOS_UI && EOS_UI.provenanceLine)
+      ? EOS_UI.provenanceLine(data.provenance) : '';
+    box.innerHTML = prov + '<div>' + esc(data.insights || '') + '</div>';
+  } catch(e) {
+    box.innerHTML = EOS_UI.errorState({
+      message: 'Could not generate orphan insights', onRetry: 'loadOrphanInsights()'});
+  } finally {
+    if (btn) btn.disabled = false;
   }
 }
 

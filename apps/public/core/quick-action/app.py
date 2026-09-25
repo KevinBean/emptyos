@@ -169,8 +169,19 @@ class QuickActionApp(BaseApp):
                 await self.call_app(
                     "canvas", "add_node", board_id=board_id, text=text, source="capture"
                 )
-            except Exception:
-                pass  # canvas may not be loaded; capture still persists
+            except Exception as e:
+                # Swallowing is right (the capture must survive a failed board
+                # append); swallowing SILENTLY is not. This was `pass  # canvas
+                # may not be loaded`, which left no trace in the response, the
+                # syslog or the daemon log — and was false besides, canvas being
+                # a declared hard dep that loaded fine in CI. The routing test
+                # sat parked as "precondition NOT identified" for a week because
+                # this line ate the evidence.
+                self.log_warn(
+                    f"canvas routing failed for board {board_id!r}: "
+                    f"{type(e).__name__}: {e}",
+                    data={"board_id": board_id, "tag": norm, "error": repr(e)},
+                )
         return entry
 
     async def voice_capture(self, text: str) -> dict:
@@ -314,6 +325,24 @@ class QuickActionApp(BaseApp):
             if d in by_dim:
                 by_dim[d] += 1
         return {"total": len(captures), "by_tag": tags, "by_dimension": by_dim}
+
+    async def panel_inbox_count(self) -> dict | None:
+        """Hub stat-tile: captures waiting to be triaged.
+
+        Counts the whole file, uncapped — `list_captures` truncates at its
+        caller's `limit`, and a truncated number on a tile reads as exact.
+        None at inbox zero (an empty inbox is not a call to action) and None
+        when the file cannot be read, so a vault hiccup drops the tile rather
+        than breaking the hub.
+        """
+        try:
+            content = await self.read(self._capture_path())
+        except Exception:
+            return None
+        n = len(parse_captures(content))
+        if not n:
+            return None
+        return self.stat_tile("📥", n, "Inbox to triage", "/quick-action/#triage")
 
     @web_route("GET", "/api/recent")
     async def api_recent(self, request):

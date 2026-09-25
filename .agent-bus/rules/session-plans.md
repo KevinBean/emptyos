@@ -85,7 +85,10 @@ Decisions, corrections, links. Free prose.
   narrative history.
 - A `blocked` row carries its reason **inline in the task cell** with the tag
   vocabulary the briefs already use and devboard already parses:
-  `[blocked-human]` · `[decision-Kevin]` · `[open-code]`.
+  `[blocked-human]` · `[decision-Kevin]` · `[open-code]`. The **task** cell is
+  the place: a tag on the *status* cell (`blocked [decision-Kevin]`) parses, but
+  is reported as `bad_status` drift — the status column holds one of the four
+  words and nothing else.
 - `depends_on` is a comma-separated list of ids, or `—`. Cycles are an authoring
   error; the staleness scanner reports them.
 
@@ -208,6 +211,17 @@ the check is in `/eos-session-resume` Step 1.)
   disposition). Advisory — a plan is a human artifact, so the scanner surfaces
   and never rewrites.
 
+  **Closure advice is withheld whenever the table did not fully parse** (added
+  2026-09-12). `unclosed_plan` is the only finding here whose advice is
+  destructive — it says "archive this" — so it must never rest on a row nobody
+  read. Two shapes suppress it, and both were live in this directory:
+  an **unreadable row** (no recognisable status cell) and `table_truncated`,
+  where a row's own content wraps onto a line with no leading `|` and the walk
+  stops there. The second is the one to watch when authoring: a task cell is
+  prose and grows, and `conversation-ingest-backlog` reached a 19,483-character
+  cell spilling onto a continuation line — so a 13-row table reported **2 rows,
+  `open: 0`**, i.e. "finished". Keep each row on one line.
+
   It runs *before* the claim in Step 0, not after: `stale_claim` is precisely
   the judgment the claim protocol above otherwise asks a human to make.
   A status outside the four words still parses (aliases like `in-progress` are
@@ -222,7 +236,7 @@ the check is in `/eos-session-resume` Step 1.)
 - **Unbounded / exploratory work.** "Improve the KB", "keep dogfooding" — those
   are tracks. A plan you can't finish can't close, which reintroduces the exact
   drift this exists to fix.
-- **Human task management.** `apps/task/` + `apps/projects/` own the human side;
+- **Human task management.** `apps/public/core/task/` + `apps/public/standard/projects/` own the human side;
   plans are agent-facing session coordination. Don't merge them.
 - **A queue that already exists.** Fix-prompts, deferred rows, and gap-registry
   items have their own lifecycles. A plan may *reference* them; it must not

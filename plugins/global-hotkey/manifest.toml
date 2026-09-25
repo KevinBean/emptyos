@@ -1,8 +1,8 @@
 [plugin]
 id = "global-hotkey"
 name = "Global Hotkey"
-version = "1.0.0"
-description = "Listens for global OS keyboard shortcuts and emits them to the EventBus"
+version = "1.1.0"
+description = "Registers owner-scoped global OS shortcuts and emits them to the EventBus without unhooking unrelated bindings"
 
 [plugin.entry]
 module = "plugin"

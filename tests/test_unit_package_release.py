@@ -89,28 +89,59 @@ class TestGitignored:
 class TestVersionIsOneNumber:
     """release.toml is the single source of truth for the version.
 
-    It was fragmented across three places: release.toml (0.5.6, authoritative —
+    It was fragmented across three places: release.toml (authoritative —
     package-release.py stamps it into every MANIFEST.json), pyproject.toml (0.1.0,
     stale), and the macOS build script (0.1.0, hardcoded, bumped by nobody). The
     product's About panel shows the user a version number, so "which one is real"
     stopped being an academic question.
+
+    Asserted here since that collapse — but nothing ran it on the release path,
+    so the two drifted apart again across seven consecutive releases
+    (v0.5.7 -> v0.6.4) with this test red the whole time. The assertion now lives
+    in `scripts/check_version_sync.py`, registered in preflight's `always` +
+    `release` scopes so it fires where the bump happens; this delegates to it
+    rather than keeping a second copy that could disagree.
     """
 
-    def _release_version(self) -> str:
-        import tomllib
+    def _check(self):
+        import importlib.util
 
-        with open(ROOT / "release.toml", "rb") as f:
-            return tomllib.load(f)["release"]["version"]
+        path = ROOT / "scripts" / "check_version_sync.py"
+        spec = importlib.util.spec_from_file_location("check_version_sync", path)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        return mod
 
     def test_pyproject_matches_release_toml(self):
-        import tomllib
-
-        with open(ROOT / "pyproject.toml", "rb") as f:
-            pyproject = tomllib.load(f)["project"]["version"]
-
-        assert pyproject == self._release_version(), (
-            "pyproject.toml version drifted from release.toml — bump both"
+        hits = self._check().findings()
+        assert hits == [], (
+            "pyproject.toml version drifted from release.toml — bump both: "
+            + "; ".join(h["detail"] for h in hits)
         )
+
+    def test_checker_detects_drift(self):
+        """Both directions — the pin must actually fail on a drifted tree."""
+        import tempfile
+
+        cvs = self._check()
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "release.toml").write_text(
+                '[release]\nversion = "9.9.9"\n', encoding="utf-8"
+            )
+            (root / "pyproject.toml").write_text(
+                '[project]\nname = "x"\nversion = "1.1.1"\n', encoding="utf-8"
+            )
+            hits = cvs.findings(root)
+            assert len(hits) == 1
+            assert hits[0]["issue"] == "drift"
+            assert hits[0]["found"] == "1.1.1"
+            assert hits[0]["expected"] == "9.9.9"
+
+            (root / "pyproject.toml").write_text(
+                '[project]\nname = "x"\nversion = "9.9.9"\n', encoding="utf-8"
+            )
+            assert cvs.findings(root) == []
 
     def test_macos_build_reads_the_version_rather_than_hardcoding_it(self):
         src = (ROOT / "products" / "desktop-macos" / "build_app.py").read_text(encoding="utf-8")

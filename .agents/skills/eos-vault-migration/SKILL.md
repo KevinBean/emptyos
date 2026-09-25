@@ -2,9 +2,10 @@
 name: eos-vault-migration
 description: Migrate one app at a time from legacy vault access (vault_config + Path.glob + manual frontmatter parse) to the VaultIndex-backed pattern (vault_query / vault_update / vault_get_properties / vault_read_section). Use when the user says "migrate <app>", "modernise <app>'s vault access", "move <app> to VaultIndex", or when eos-simplify flags legacy access on a changed app. Hard rule — never silently return empty data — add tags first if notes aren't queryable. NOT for moving the vault's location on disk (use eos-external-vault-connector).
 ---
+
 # EmptyOS Vault Migration
 
-Migrate one app at a time from the **legacy** vault access pattern (`vault_config()` → `Path.glob()` → manual frontmatter parse) to the **target** pattern (`VaultIndex`-backed `vault_query` / `vault_update` / `vault_get_properties` / `vault_read_section`). AGENTS.md §Vault Data Layer names this as ongoing drift work: "Apps migrate when touched."
+Migrate one app at a time from the **legacy** vault access pattern (`vault_config()` → `Path.glob()` → manual frontmatter parse) to the **target** pattern (`VaultIndex`-backed `vault_query` / `vault_update` / `vault_get_properties` / `vault_read_section`). CLAUDE.md §Vault Data Layer names this as ongoing drift work: "Apps migrate when touched."
 
 The only hard rule: **never silently return empty data**. If the notes aren't queryable yet (no tags, missing frontmatter fields), **add tags first via a vault script**, then refactor — never the other way around.
 
@@ -153,7 +154,7 @@ Now — and only now — translate legacy patterns in `apps/<id>/app.py`:
 Behaviour-preservation rules:
 
 - Keep the returned dict shape **identical** to what the app previously returned — callers (`self.call_app(...)`, API consumers, UI) must not break. If the legacy code returned `{"id": ..., "title": ..., "status": ...}`, the migrated code produces the same dict from `note["properties"]`.
-- Handle missing fields with `.get("key", <sensible-default>)` — the vault is unenforced (AGENTS.md §Vault Data Layer "Convention (not enforced)"). Never assume a key exists.
+- Handle missing fields with `.get("key", <sensible-default>)` — the vault is unenforced (CLAUDE.md §Vault Data Layer "Convention (not enforced)"). Never assume a key exists.
 - If the app wrote *absolute* paths, convert to rel_path (relative to vault root) — VaultIndex is rel-path-keyed.
 - **Do not** change public API signatures in this pass. Migration is a behind-the-scenes swap; any signature change belongs in a separate commit.
 
@@ -209,7 +210,7 @@ Next:
 - **Read before write.** Phase 3's reconcile is read-only; never skip it.
 - **Never mass-modify vault notes without user confirmation.** Phase 4 is explicit, with a visible plan.
 - **Count parity is the single hardest gate.** If the migrated app returns fewer items, the migration is wrong — roll back and fix the contract.
-- **`vault_enrich` is additive only.** AGENTS.md §Vault Data Layer: "Safe — never overwrites." Don't write a replacement that overwrites — respect the contract.
+- **`vault_enrich` is additive only.** CLAUDE.md §Vault Data Layer: "Safe — never overwrites." Don't write a replacement that overwrites — respect the contract.
 - **One app per migration pass.** Don't batch multiple apps; the failure modes compound and the count-parity check becomes useless.
 - **Don't change public shapes in this pass.** Migration swaps the plumbing; a schema or API change is a separate commit.
 - **`apps/personal/` apps are fair game** — same rules. But `emptyos.toml` and `data/` are out of scope: this skill touches vault notes + one app file, nothing else.

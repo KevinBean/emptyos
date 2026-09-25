@@ -1,3 +1,9 @@
+---
+paths:
+  - "apps/**"
+  - "emptyos/web/static/**"
+  - "emptyos/sdk/base_app.py"
+---
 # Field-Suggest Rule — ✨ vault-grounded AI suggestions on a form input
 
 A **field-suggest** is a small ✨ button beside a form input that, on click, asks an

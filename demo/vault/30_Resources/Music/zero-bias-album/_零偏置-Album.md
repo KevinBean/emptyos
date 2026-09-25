@@ -11,8 +11,6 @@ genre: Cinematic Trip-hop / Dark Ambient / Industrial
 language: multilingual
 created: 2026-04-25
 track_count: 8
-suno_playlist_url: "https://suno.com/playlist/d76b6e96-1724-4ce9-b900-8b5e376407c0"
-suno_playlist_id: d76b6e96-1724-4ce9-b900-8b5e376407c0
 captured: 2026-04-26
 license: "© 2026 3:30 Channel — All rights reserved"
 ---
@@ -32,10 +30,9 @@ license: "© 2026 3:30 Channel — All rights reserved"
 | 曲风 | Cinematic Trip-hop / Dark Ambient / Industrial / Future Bass / Ambient Drone |
 | 语言 | 中文 · 日本語 · Deutsch · Français · English · संस्कृत |
 | 频道 | 3:30 Channel |
-| 状态 | 已发布 (Suno) |
+| 状态 | 已发布 |
 | 发行日期 | 2026-04-25 |
 | 总时长 | 25:09 |
-| 平台 | [Suno playlist](https://suno.com/playlist/d76b6e96-1724-4ce9-b900-8b5e376407c0) |
 | 版权 | © 2026 3:30 Channel — All rights reserved |
 
 ## 曲目
@@ -57,8 +54,4 @@ license: "© 2026 3:30 Channel — All rights reserved"
 
 ## 版权证明 / Copyright proof
 
-每首歌的 Suno 发布页都在 2026-04-26 截图存档，时间戳证明发布时间即著作权优先日。
-
-![[zero-bias-playlist-screenshot.png]]
-
-每首歌的截图见对应歌曲笔记。
+每首歌的发布时间见对应歌曲笔记，发布时间即著作权优先日。

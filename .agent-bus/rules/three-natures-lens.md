@@ -1,3 +1,9 @@
+---
+paths:
+  - "docs/DESIGN.md"
+  - "scripts/check_memory_rot.py"
+---
+
 # Three-Natures Lens — spotting 遍計所執 (reified appearances)
 
 A **reasoning lens**, not a feature. Borrowed from 唯识's three natures (三性,

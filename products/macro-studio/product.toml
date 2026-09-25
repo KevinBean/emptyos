@@ -1,0 +1,73 @@
+# Macro Studio — focused, fully local Windows desktop macro builder.
+
+[product]
+id = "macro-studio"
+display_name = "Macro Studio"
+exe_name = "MacroStudio"
+tier = "macro-studio"
+start_url = "/operate/?mode=macro"
+appdata_name = "MacroStudio"
+
+[product.window]
+width = 1180
+height = 820
+
+[runtime]
+# No model provider and no external service. The built-in human fallback keeps
+# the dormant Demonstrations backend harmless while product mode exposes only
+# the deterministic macro surface.
+think_providers = ["human"]
+enable_plugins = ["global-hotkey"]
+
+[build]
+# Operate loads desktop plugins dynamically from the packaged tier tree, so
+# PyInstaller cannot infer these imports from the launcher entrypoint.
+collect_packages = [
+    "pyautogui",
+    "pywinauto",
+    "pynput",
+    "keyboard",
+    "psutil",
+    "win32api",
+    "win32con",
+    "win32gui",
+    "win32process",
+    "win32security",
+]
+
+# Macro Studio never calls a model, emits telemetry, or loads data/scientific
+# engines. Excluding these keeps the frozen app focused and makes their absence
+# explicit instead of depending on whichever packages happen to be installed on
+# the build machine.
+exclude_packages = [
+    "anthropic",
+    "openai",
+    "sentry_sdk",
+    "wandb",
+    "gradio",
+    "datasets",
+    "huggingface_hub",
+    "tokenizers",
+    "safetensors",
+    "numpy",
+    "scipy",
+    "pandas",
+    "matplotlib",
+    "sklearn",
+    "skimage",
+    "statsmodels",
+    "plotly",
+    "altair",
+    "geopandas",
+    "pyproj",
+    "pyogrio",
+    "shapely",
+    "folium",
+    "branca",
+    "boto3",
+    "botocore",
+    "grpc",
+    "librosa",
+    "soundfile",
+    "sounddevice",
+]

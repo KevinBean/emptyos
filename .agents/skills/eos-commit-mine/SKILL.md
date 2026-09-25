@@ -1,6 +1,6 @@
 ---
 name: eos-commit-mine
-description: Commit ONLY your own changes when they're entangled — intermixed in the same files — with another session's (or the user's) uncommitted work-in-progress. Produces a clean, single-purpose commit of just your hunks while leaving the parallel WIP byte-for-byte untouched and uncommitted. Use when `git status` shows files you edited that ALSO carry changes you didn't make, and `git add <file>` would bundle both. Codifies AGENTS.md §Git ("stage/commit only files scoped to the current task; never `git add -A`") down to hunk granularity. NOT for the simple case where your changes are in their own files (just `git add` those) — this is only for the entangled-same-file case.
+description: Commit ONLY your own changes when they're entangled — intermixed in the same files — with another session's (or the user's) uncommitted work-in-progress. Produces a clean, single-purpose commit of just your hunks while leaving the parallel WIP byte-for-byte untouched and uncommitted. Use when `git status` shows files you edited that ALSO carry changes you didn't make, and `git add <file>` would bundle both. Codifies CLAUDE.md §Git ("stage/commit only files scoped to the current task; never `git add -A`") down to hunk granularity. NOT for the simple case where your changes are in their own files (just `git add` those) — this is only for the entangled-same-file case.
 ---
 
 # EmptyOS Commit-Mine
@@ -23,7 +23,7 @@ Origin: shipped the publish SSG-gap + ranked-search work while a parallel
 All of these hold:
 
 - `git status --short` shows a file **you edited** that also carries changes
-  **you didn't make** (another Codex session, the user, a linter, a background
+  **you didn't make** (another Claude session, the user, a linter, a background
   track).
 - You want a commit of **just your work**, and the other changes to **stay
   uncommitted** (their owner will commit them).
@@ -36,7 +36,7 @@ All of these hold:
 - The parallel changes are **yours too** and ready → commit both together
   (`git add <files>`); simpler and honest.
 - You're unsure whose the other changes are → **stop and ask the user** (per
-  AGENTS.md §Git: "decline to commit unfamiliar uncommitted changes"). This
+  CLAUDE.md §Git: "decline to commit unfamiliar uncommitted changes"). This
   skill assumes you've already established the split; it does not decide
   ownership for you.
 
@@ -51,9 +51,71 @@ Goal: a commit = `HEAD + YOUR changes`, and a working tree left at
 `HEAD + YOUR changes + THEIR WIP` (so `git diff HEAD` afterwards = THEIR WIP
 only), byte-identical to what it was before.
 
-## Method — patch-classifier (preferred when hunks separate cleanly)
+## Method — index-only (preferred; never removes their WIP from disk)
 
-Use when your hunks and theirs live in **different regions** (the common case).
+Both methods below reset the file with `git checkout HEAD -- F` and rely on a
+backup to put their WIP back. That opens a window in which their uncommitted
+work exists **only** in your scratchpad — if anything dies in between, it is
+gone, because uncommitted work is in no git object. `git apply --cached` writes
+to the **index only**, so the working tree is never touched, there is no backup,
+no restore, and no window.
+
+```bash
+git diff -- F > "$SP/full.patch"          # working tree vs index/HEAD
+# …build "$SP/mine.patch" (see step 3 below for the classifier)
+git apply --cached --check "$SP/mine.patch" && git apply --cached "$SP/mine.patch"
+git add <your-own-untouched-files>
+```
+
+Because the working tree still carries their WIP, you cannot test your isolated
+change there. Materialise **exactly what is staged** somewhere else and test it
+there — also non-destructive:
+
+```bash
+rm -rf "$SP/idx" && mkdir -p "$SP/idx"
+git checkout-index -a --prefix="$SP/idx/"
+(cd "$SP/idx" && python -m pyflakes <your files> && python -m pytest <your test> -q)
+```
+
+This is the step that catches a split which *applies* cleanly but does not
+*stand alone* — an import you kept whose only user was in their hunks, or a
+manifest entry left pointing at a method that landed on their side.
+
+Then commit, and confirm the split held:
+
+```bash
+git diff --cached | grep -ci "<THEIRS-marker>"   # MUST be 0 before committing
+git diff --stat -- F                              # their WIP, still unstaged
+```
+
+### Selecting hunks: prefer `@@` identity over markers
+
+The classifier below keys on **marker strings**, and markers mis-assign more
+often than they look like they will: most lines of a feature never mention the
+feature's name. A first pass keyed on "every added line in this hunk carries
+their marker" classified **zero** of their hunks as theirs, because their code
+was mostly plumbing with neutral names.
+
+Worse, the classifier's fallback for a hunk carrying **neither** marker is
+`WARN neutral hunk kept` — it keeps it as yours. That is **fail-open**: an
+unrecognised hunk of theirs lands silently in your commit.
+
+When you can enumerate your own hunks (you just wrote them), select by `@@`
+header instead — it needs no guessing and cannot fail open:
+
+```python
+KEEP = ("@@ -18,7", "@@ -38,6", "@@ -378,7")   # your hunks, read off the diff
+...
+cur, take = [line], line.startswith(KEEP)
+```
+
+Print every hunk header with its added-line count first and decide by eye; on a
+handful of hunks that is faster and safer than tuning markers.
+
+## Method — patch-classifier (when you must reset the working tree)
+
+Use when your hunks and theirs live in **different regions** and you need the
+file itself reset — otherwise prefer the index-only method above.
 Fully deterministic; the backup + md5 check is the safety net.
 
 Let `$SP` = your scratchpad dir. For each entangled file `F`:
@@ -138,7 +200,7 @@ python -m py_compile F            # or the relevant fast check
 ```bash
 git status --short --untracked-files=no | grep "^[MA]"   # confirm ONLY your files staged
 git add F [other-of-your-files]
-git commit -m "..."   # end with the Co-Authored-By trailer per AGENTS.md
+git commit -m "..."   # end with the Co-Authored-By trailer per CLAUDE.md
 git log -1 --stat --oneline    # verify HEAD is yours
 ```
 
@@ -172,7 +234,7 @@ so **their WIP integrity is guaranteed** regardless:
 
 ## Load-bearing safety rules
 
-- **Never touch `data/*.db*`, `emptyos.toml`, `apps/personal/`** (AGENTS.md
+- **Never touch `data/*.db*`, `emptyos.toml`, `apps/personal/`** (CLAUDE.md
   §Daemon/Git). This skill only rewrites tracked source files you edited.
 - **The backup is ground truth.** `cp BAK F` restores the parallel WIP exactly;
   the md5 check proves it. If anything goes sideways, `cp BAK F` returns the
@@ -200,9 +262,9 @@ so **their WIP integrity is guaranteed** regardless:
 
 ## Cross-references
 
-- AGENTS.md §Git / Version Control — "stage/commit only files scoped to the
+- CLAUDE.md §Git / Version Control — "stage/commit only files scoped to the
   current task; never `git add -A`; verify HEAD is yours."
-- `.Codex/rules/environment.md` §Parallel-session staging — the rule this
+- `.claude/rules/environment.md` §Parallel-session staging — the rule this
   operationalises at hunk granularity.
 - memory `feedback_parallel_commit_race_steals_staged` — the failure mode
   (parallel auto-add bundling unrelated files) this prevents.

@@ -17,7 +17,7 @@ from __future__ import annotations
 
 from datetime import date, timedelta
 from emptyos.sdk import web_route
-from emptyos.sdk.utils import parse_llm_json
+from emptyos.sdk.utils import csv_download_response, parse_llm_json
 from .parser import STATUS_EMOJI
 from .shared import _parse_date, _unfence
 from typing import TYPE_CHECKING
@@ -72,6 +72,15 @@ SMART_LOG_SYSTEM = (
 # Statuses that carry over to the next workday (anything not finished).
 CARRYOVER_STATUSES = ("in-progress", "blocked", "waiting", "todo", "next")
 
+# How far back carryover may reach for the last day that actually recorded
+# something. A blank day note (created but never filled) and a missing day are
+# both "nothing was logged" — stopping at either loses the live open set, which
+# is exactly what happened 2026-09-02 → 2026-09-07: 3 Sep held a project
+# heading and no items,
+# 4 Sep had no note, and four open items went invisible. The bound keeps a
+# dormant month from resurrecting stale work.
+CARRYOVER_LOOKBACK_DAYS = 14
+
 # Ceiling on how many work items one AI rollup may summarise. The trailing
 # ?days= window is capped at 92, but an explicit ?from=&to= range is not, so
 # without this an all-time rollup would push the whole corpus into one prompt.
@@ -92,6 +101,7 @@ _PROJECT_CELL_CHARS = 58
 #   api_update_draft   = _reporting.api_update_draft
 #   api_carryover      = _reporting.api_carryover
 #   api_timesheet_pdf  = _reporting.api_timesheet_pdf
+#   api_export_csv     = _reporting.api_export_csv
 # Adding a new method here? Add a matching binding line in app.py.
 # ─────────────────────────────────────────────────────────────────────
 
@@ -292,12 +302,29 @@ async def api_update_draft(self, request):
 
 @web_route("GET", "/api/carryover")
 async def api_carryover(self, request):
-    """Open items from the most recent logged day before today — the
-    standup opener. The client offers to re-log them onto today."""
+    """Open items from the most recent day that actually LOGGED something
+    before today — the standup opener. The client offers to re-log them.
+
+    "Most recent day" is not the same as "most recent day with a note": an
+    empty day note is skipped (``skipped_blank_days`` reports which), because
+    stopping there reports "nothing open" while the live set sits one day
+    further back. Bounded by ``CARRYOVER_LOOKBACK_DAYS``."""
     employer = request.query_params.get("employer", "")
-    today_s = date.today().isoformat()
+    today = date.today()
+    today_s = today.isoformat()
+    floor_s = (today - timedelta(days=CARRYOVER_LOOKBACK_DAYS)).isoformat()
+    skipped: list[str] = []
     for day in await self._all_days(employer):
         if day["date"] >= today_s:
+            continue
+        if day["date"] < floor_s:
+            break
+        logged = [it for g in day["parsed"]["projects"] for it in g["items"]]
+        if not logged:
+            # Nothing was RECORDED that day — keep looking. A day whose items
+            # are all complete is different: the work really is done, so it
+            # falls through below and correctly carries nothing over.
+            skipped.append(day["date"])
             continue
         items = [
             {"project": g["project"], "text": it["text"], "status": it["status"]}
@@ -305,8 +332,13 @@ async def api_carryover(self, request):
             for it in g["items"]
             if it["status"] in CARRYOVER_STATUSES
         ]
-        return {"from": day["date"], "weekday": day["weekday"], "items": items}
-    return {"from": "", "items": []}
+        return {"from": day["date"], "weekday": day["weekday"], "items": items,
+                "skipped_blank_days": skipped, "lookback_exhausted": False}
+    # An exhausted bound is NOT the same answer as "nothing is open" — after
+    # long leave the two look identical to the caller, which is the very false
+    # negative this function was fixed to stop producing.
+    return {"from": "", "items": [], "skipped_blank_days": skipped,
+            "lookback_exhausted": True}
 
 
 @web_route("GET", "/api/timesheet.pdf")
@@ -418,3 +450,29 @@ async def api_timesheet_pdf(self, request):
         return {"error": f"PDF render failed: {e}"}
     return self.serve_data_file("exports", fname, media_type="application/pdf",
                                 download_name=fname)
+
+
+@web_route("GET", "/api/export.csv")
+async def api_export_csv(self, request):
+    """Flat CSV of every work item in the shared window — one row per item
+    (date, weekday, employer, project, status, text). Spreadsheet-native
+    sibling of the PDF timesheet: a reader who wants to pivot/filter in
+    Excel has no way in today besides re-typing from the PDF table.
+    """
+    win = self._window(request)
+    if win.get("error"):
+        return win
+    employer, start, end = win["employer"], win["start"], win["end"]
+    cols = ["date", "weekday", "employer", "project", "status", "text"]
+    rows = [
+        {"date": day["date"], "weekday": day["weekday"], "employer": day["employer"],
+         "project": g["project"], "status": it["status"] or "note", "text": it["text"]}
+        for day in reversed([d for d in await self._all_days(employer)
+                             if start <= d["date"] <= end])
+        for g in day["parsed"]["projects"]
+        for it in g["items"]
+    ]
+    if not rows:
+        rows = [{"date": "", "weekday": "", "employer": "", "project": "",
+                 "status": "", "text": "(no work items in this window)"}]
+    return csv_download_response(rows, cols, f"worklog-{start}-to-{end}.csv")

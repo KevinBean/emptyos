@@ -27,9 +27,9 @@ services = []
 prefix = "/sheet"
 
 [provides.events]
-emits = ["sheet:created", "sheet:cell_changed", "sheet:deleted"]
+emits = ["sheet:created", "sheet:cell_changed", "sheet:cells_changed", "sheet:deleted", "sheet:imported"]
 # Sheet CRUD observability — UI-only, no cross-app listener by design.
-internal = ["sheet:created", "sheet:cell_changed", "sheet:deleted"]
+internal = ["sheet:created", "sheet:cell_changed", "sheet:cells_changed", "sheet:deleted", "sheet:imported"]
 
 [provides.settings]
 fields = [

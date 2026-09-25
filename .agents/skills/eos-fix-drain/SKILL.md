@@ -1,6 +1,6 @@
 ---
 name: eos-fix-drain
-description: Run the dogfood-agent fix drain end-to-end with the pre-flight + post-revert safety gates that `apps/fix-agent` itself doesn't enforce. Use when the user says "drain the fix queue", "run the fix drain", "process pending fix-prompts", "fix-drain", or wants to apply N queued fixes overnight / in one batch. Wraps `POST /dogfood-agent/api/fix-drain/start` with the invariants documented in `docs/fix-agent.md` — refuses to launch on dirty state, verifies main is linear + free of orphan branches after each revert, surfaces 529/interrupt fallout for manual triage.
+description: Run the dogfood-agent fix drain end-to-end with the pre-flight + post-revert safety gates that `apps/extension/dev/fix-agent` itself doesn't enforce. Use when the user says "drain the fix queue", "run the fix drain", "process pending fix-prompts", "fix-drain", or wants to apply N queued fixes overnight / in one batch. Wraps `POST /dogfood-agent/api/fix-drain/start` with the invariants documented in `docs/fix-agent.md` — refuses to launch on dirty state, verifies main is linear + free of orphan branches after each revert, surfaces 529/interrupt fallout for manual triage. NOT for queueing the fix-prompts (use eos-usecase-audit or the dogfood agent) and NOT for reviewing what a drained fix changed (use eos-agent-diff-review).
 ---
 
 # EmptyOS Fix Drain
@@ -51,8 +51,8 @@ Refuse if any exist — they're leftovers from a previous crashed drain. Ask bef
 ### 3. No leftover worktree state
 
 ```bash
-git -C .Codex/worktrees/fix-agent status --short 2>/dev/null
-git -C .Codex/worktrees/fix-agent rev-parse --abbrev-ref HEAD 2>/dev/null
+git -C .claude/worktrees/fix-agent status --short 2>/dev/null
+git -C .claude/worktrees/fix-agent rev-parse --abbrev-ref HEAD 2>/dev/null
 ```
 
 If the worktree directory exists but isn't on a `fix/*` branch (or doesn't exist as a worktree at all), fix-agent's reset cycle will recreate it cleanly — no action needed. Don't `git worktree remove` unless the path is corrupt.
@@ -64,7 +64,7 @@ curl -fsS http://127.0.0.1:9000/api/health
 curl -fsS http://127.0.0.1:9001/api/health
 ```
 
-Refuse on either failure. `:9000` runs fix-agent; `:9001` is the verify sandbox. Don't try to restart them from this skill — daemon handling rule (`.Codex/rules/daemon-handling.md`) forbids it.
+Refuse on either failure. `:9000` runs fix-agent; `:9001` is the verify sandbox. Don't try to restart them from this skill — daemon handling rule (`.claude/rules/daemon-handling.md`) forbids it.
 
 ### 5. orchestrator_dirty flag clear
 
@@ -171,13 +171,13 @@ git log main --since="$(date -d '4 hours ago' --iso=seconds)" --name-only --pret
   grep -E '^(apps|plugins|emptyos)/.+\.py$' | sort -u
 ```
 
-If non-empty, tell the user to run `restart.bat`. Don't run it from a Codex tool — daemon-handling rule forbids it.
+If non-empty, tell the user to run `restart.bat`. Don't run it from a Claude tool — daemon-handling rule forbids it.
 
 ## When something fails mid-drain
 
 The three failure windows (per `docs/fix-agent.md`):
 
-1. **Codex-cli phase fails** — fix-agent records `error`/`timeout`/`no-changes`. Branch may have partial edits; next iteration's reset wipes them. **Main untouched.** Drain continues with next pending.
+1. **claude-cli phase fails** — fix-agent records `error`/`timeout`/`no-changes`. Branch may have partial edits; next iteration's reset wipes them. **Main untouched.** Drain continues with next pending.
 2. **Merged but verify didn't kick off** — rare race; merge commit on main, no verify attempted. Drain marks `stuck` and proceeds. **Manual revert needed.** Surface in post-drain triage.
 3. **Verify polled past timeout OR returned `target_fixed: false`** — drain auto-reverts (`drain.py:408-414`). Verify the revert landed cleanly per post-drain check #1.
 
@@ -206,8 +206,8 @@ If the user wants harder abort: there isn't one. Killing the daemon (which they 
 ## Cross-references
 
 - `docs/fix-agent.md` — full operational contract: worktree semantics, merge gates, revert mechanics, failure modes
-- `.Codex/rules/test-fix-verify-loop.md` — architectural shape
-- `.Codex/rules/daemon-handling.md` — why this skill never restarts daemons
-- `apps/fix-agent/app.py:347-507` — merge, verify, revert handlers
-- `apps/dogfood-agent/drain.py:266-436` — the `_drain_queue` loop
+- `.claude/rules/test-fix-verify-loop.md` — architectural shape
+- `.claude/rules/daemon-handling.md` — why this skill never restarts daemons
+- `apps/extension/dev/fix-agent/app.py:347-507` — merge, verify, revert handlers
+- `apps/extension/dev/dogfood-agent/drain.py:266-436` — the `_drain_queue` loop
 - Memory `feedback_drain_preflight_verify` — the lesson behind pre-flight gate #6

@@ -25,7 +25,8 @@ class GitApp(BaseApp):
         return str(self.kernel.config.path.parent)
 
     def _vault_dir(self) -> str | None:
-        return self.kernel.config.get("notes.path", None)
+        p = self.kernel.config.notes_path
+        return str(p) if p else None
 
     def _repos(self) -> list[dict]:
         repos = [{"id": "emptyos", "label": "EmptyOS", "path": self._project_dir()}]
@@ -57,6 +58,23 @@ class GitApp(BaseApp):
             proc.returncode or 0,
         )
 
+    def _parse_status_files(self, output: str) -> list[dict]:
+        """Parse `git status --short` porcelain output into per-file entries
+        (git-no-selective-staging). Each line is `XY path` (index status,
+        worktree status); a rename shows as `old -> new` — the new path is
+        what `git add` needs. `staged` reflects the index column only (a
+        file already staged, before any UI selection)."""
+        files = []
+        for line in (output or "").split("\n"):
+            if not line or len(line) < 4:
+                continue
+            code = line[:2]
+            path = line[3:].strip()
+            if " -> " in path:
+                path = path.split(" -> ", 1)[1]
+            files.append({"path": path, "code": code, "staged": code[0] not in (" ", "?")})
+        return files
+
     def _parse_branches(self, output: str) -> list[dict]:
         branches = []
         for line in output.strip().split("\n"):
@@ -74,6 +92,10 @@ class GitApp(BaseApp):
         out, err, _ = await self._git_at(repo_path, "status", "--short")
         return out or err
 
+    async def status_files_at(self, repo_path: str) -> list[dict]:
+        out, _, _ = await self._git_at(repo_path, "status", "--short")
+        return self._parse_status_files(out)
+
     async def log_at(self, repo_path: str, count: int = 10) -> str:
         out, _, _ = await self._git_at(repo_path, "log", "--oneline", f"-{count}")
         return out
@@ -87,9 +109,14 @@ class GitApp(BaseApp):
 
     # --- Actions ---
 
-    async def save(self, message: str, repo_id: str | None = None) -> str:
+    async def save(self, message: str, repo_id: str | None = None, paths: list[str] | None = None) -> str:
+        """Commit. Stages only `paths` when given (git-no-selective-staging)
+        — `git add -A` (every changed file) otherwise, unchanged default."""
         path = self._resolve_repo(repo_id)
-        await self._git_at(path, "add", "-A")
+        if paths:
+            await self._git_at(path, "add", "--", *paths)
+        else:
+            await self._git_at(path, "add", "-A")
         out, err, code = await self._git_at(path, "commit", "-m", message)
         if code != 0:
             return err or "Nothing to commit"
@@ -134,7 +161,8 @@ class GitApp(BaseApp):
 
     @web_route("GET", "/api/status")
     async def api_status(self, request):
-        return {"status": await self.status_at(self._repo_path(request))}
+        path = self._repo_path(request)
+        return {"status": await self.status_at(path), "files": await self.status_files_at(path)}
 
     @web_route("GET", "/api/log")
     async def api_log(self, request):
@@ -162,7 +190,9 @@ class GitApp(BaseApp):
         message = body.get("message", "")
         if not message:
             return {"error": "message is required"}
-        return {"result": await self.save(message, body.get("repo"))}
+        paths = body.get("paths")
+        paths = [str(p) for p in paths if str(p or "").strip()] if isinstance(paths, list) else None
+        return {"result": await self.save(message, body.get("repo"), paths=paths or None)}
 
     @web_route("GET", "/api/branches")
     async def api_branches(self, request):

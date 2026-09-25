@@ -123,6 +123,47 @@ class TestRoutingLive:
             assert len(r.get("legs", [])) == 2
 
 
+@pytest.mark.api
+class TestRoutingCostEstimate:
+    """routing-no-cost-estimate: distance-derived $/km estimate."""
+
+    def test_settings_schema_declares_cost_per_km(self, http_client):
+        data = assert_ok(http_client.get("/settings/api/schema"))
+        section = next(
+            (s for s in data.get("sections", []) if s.get("app_id") == "routing"), None,
+        )
+        assert section is not None, "routing has no [provides.settings] schema section"
+        keys = {f["key"] for f in section.get("settings", [])}
+        assert "routing.cost_per_km" in keys
+
+    def test_cost_estimate_present_at_default_rate(self, http_client):
+        r = assert_ok(_post(http_client, {
+            "points": [[-33.86, 151.21], [-33.87, 151.22]], "profile": "driving",
+        }, timeout=30))
+        if "error" in r:
+            pytest.skip(f"routing/geocode service unavailable: {r['error']}")
+        assert "cost_per_km" in r
+        assert "cost_estimate" in r
+        assert r["cost_estimate"] == round((r["distance_m"] / 1000.0) * r["cost_per_km"], 2)
+
+    def test_cost_estimate_follows_settings_override(self, http_client):
+        try:
+            assert_ok(http_client.post(
+                "/settings/api/set",
+                json={"key": "routing.cost_per_km", "value": 0},
+            ))
+            r = assert_ok(_post(http_client, {
+                "points": [[-33.86, 151.21], [-33.87, 151.22]], "profile": "driving",
+            }, timeout=30))
+            if "error" in r:
+                pytest.skip(f"routing/geocode service unavailable: {r['error']}")
+            # A zero rate hides the estimate rather than reporting $0.00.
+            assert r["cost_per_km"] == 0
+            assert r["cost_estimate"] is None
+        finally:
+            http_client.post("/settings/api/reset", json={"key": "routing.cost_per_km"})
+
+
 @pytest.mark.interactive
 class TestRoutingUI:
     def test_ui_loads(self, app_page, page_errors):

@@ -46,6 +46,8 @@ from pathlib import Path
 
 import pytest
 
+from helpers import requires_browser
+
 # iPhone 14 Pro logical viewport — Dynamic Island device, worst-case top inset
 IPHONE_VIEWPORT = {"width": 393, "height": 852}
 
@@ -74,6 +76,14 @@ def _slug(s: str) -> str:
     return "".join(c if c.isalnum() else "-" for c in s).strip("-").lower()
 
 
+# The `playwright` PACKAGE is installed in CI (pytest-playwright pulls it in)
+# but the BROWSER is not — CI never runs `playwright install`. So the import
+# check passes and `BrowserType.launch` fails, which is an ERROR, not a skip,
+# and it failed the whole Dogfood job even though the other 50 dogfood tests
+# passed. `requires_browser()` probes `chromium.executable_path` (once, cached)
+# and is the sanctioned guard for exactly this — see `.claude/rules/testing.md`
+# § precondition guards.
+@requires_browser()
 @pytest.mark.dogfood
 @pytest.mark.interactive
 def test_phone_day_walkthrough(page, base_url, http_client):

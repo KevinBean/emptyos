@@ -24,6 +24,8 @@
   .gate { border:1px solid var(--accent); }
   iframe.preview { width:100%; height:340px; border:1px solid var(--border); border-radius:8px; background:#fff; }
   .log { font-size:12px; color: var(--text-muted); max-height:150px; overflow:auto; }
+  /* Navigation chips only. A *status* renders as .eos-badge with a variant
+     from EOS_UI.statusVariant() — see STATUS_VARIANT_MAP below. */
   .pill { display:inline-block; font-size:11px; padding:2px 8px; border-radius:8px; background:var(--bg); border:1px solid var(--border); }
   .runs a { display:block; padding:8px 0; font-size:12px; color:var(--text); text-decoration:none; border-bottom:1px solid var(--border); }
   .muted { color: var(--text-muted); }
@@ -46,17 +48,17 @@
           <div><label>Ship ≥</label><input id="f-thresh" type="number" value="0.8" min="0" max="1" step="0.05"></div>
         </div>
         <div style="margin-top:14px"><button class="eos-btn eos-btn-primary" id="run-btn" onclick="startRun()">Run refine loop</button></div>
-        <div id="form-err" class="muted" style="margin-top:8px;color:#c0392b"></div>
+        <div id="form-err" class="muted" style="margin-top:8px;color:var(--danger)"></div>
       </div>
       <div class="card"><h3>Recent runs</h3><div class="runs" id="runs">—</div></div>
     </div>
     <div>
       <div class="card">
         <h3>Loop <span style="float:right;display:flex;gap:6px;align-items:center">
-          <span id="status-pill" class="pill"></span>
-          <button class="zbtn" onclick="EOS_GRAPH.zoomBy(SVG(),0.83)">&minus;</button>
-          <button class="zbtn" onclick="EOS_GRAPH.zoomBy(SVG(),1.2)">+</button>
-          <button class="zbtn" onclick="EOS_GRAPH.fit(SVG())">&#9633;</button>
+          <span id="status-pill" class="eos-badge eos-badge-neutral"></span>
+          <button class="zbtn" onclick="EOS_GRAPH.zoomBy(SVG(),0.83)" aria-label="Zoom out">&minus;</button>
+          <button class="zbtn" onclick="EOS_GRAPH.zoomBy(SVG(),1.2)" aria-label="Zoom in">+</button>
+          <button class="zbtn" onclick="EOS_GRAPH.fit(SVG())" aria-label="Fit to view">&#9633;</button>
         </span></h3>
         <svg id="canvas" viewBox="0 0 860 250" preserveAspectRatio="xMidYMid meet"></svg>
         <div class="muted" id="vars" style="margin-top:10px"></div>
@@ -111,17 +113,26 @@ async function startRun(){
   if(res.error){ err.textContent=res.error; return; }
   RUN_ID=res.run_id; hideGate(); document.getElementById('done-card').style.display='none'; poll();
 }
+// This loop's own vocabulary -> the shared status set. Anything unmapped
+// falls through to 'neutral' rather than emitting a class with no styling,
+// which is the failure EOS_UI.statusBadge* exist to prevent.
+var STATUS_VARIANT_MAP = { running:'running', human:'blocked', ended:'completed', error:'fail' };
+function setStatusBadge(el, status){
+  if(!el) return;
+  el.className = EOS_UI.statusBadgeClass(status, STATUS_VARIANT_MAP);
+  el.textContent = status || '';
+}
 function poll(){ if(POLL)clearInterval(POLL); tick(); POLL=setInterval(tick,1800); }
 async function tick(){
   if(!RUN_ID)return;
   var st=await fetch('/viz/api/refine/runs/'+encodeURIComponent(RUN_ID)).then(r=>r.json());
   if(st.error)return;
-  document.getElementById('status-pill').textContent=st.status||'';
+  setStatusBadge(document.getElementById('status-pill'), st.status);
   EOS_GRAPH.render(SVG(), GRAPH, st);
   renderVars(st.vars||{}); renderLog(st.log||[]);
   if(st.status==='human'){ clearInterval(POLL); showGate(st); }
   else if(st.status==='ended'){ clearInterval(POLL); showDone(st); }
-  else if(st.status==='error'){ clearInterval(POLL); document.getElementById('log').innerHTML+='<div style="color:#c0392b">error: '+esc(st.error||'')+'</div>'; }
+  else if(st.status==='error'){ clearInterval(POLL); document.getElementById('log').innerHTML+='<div style="color:var(--danger)">error: '+esc(st.error||'')+'</div>'; }
   loadRuns();
 }
 function renderVars(v){
@@ -168,7 +179,7 @@ async function loadRuns(){
   var d=await fetch('/viz/api/refine/runs').then(r=>r.json());
   var box=document.getElementById('runs');
   if(!d.runs||!d.runs.length){ box.textContent='None yet.'; return; }
-  box.innerHTML=d.runs.map(function(r){ return '<a href="#" onclick="openRun(\''+escAttr(r.run_id)+'\');return false;"><span class="pill">'+esc(r.status||'')+'</span> '+esc(r.title||r.run_id)+'</a>'; }).join('');
+  box.innerHTML=d.runs.map(function(r){ return '<a href="#" onclick="openRun(\''+escAttr(r.run_id)+'\');return false;">'+EOS_UI.statusBadge(r.status||'', r.status||'', STATUS_VARIANT_MAP)+' '+esc(r.title||r.run_id)+'</a>'; }).join('');
 }
 function openRun(id){ RUN_ID=id; document.getElementById('done-card').style.display='none'; hideGate(); poll(); }
 

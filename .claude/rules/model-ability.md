@@ -1,3 +1,9 @@
+---
+paths:
+  - "apps/**"
+  - "emptyos/capabilities/**"
+  - "emptyos/web/static/**"
+---
 # Model-Ability Gating — features visible by model strength
 
 EmptyOS gates features by capability **presence** (is there a `think` provider?
@@ -9,7 +15,7 @@ reasoning). Without ability-gating, a weak deployment exposes those and they loo
 broken — which is exactly what made viz's 3D option a liability on the mini-only
 portfolio.
 
-**Reference implementation:** `apps/viz/` (shape picker). Taxonomy:
+**Reference implementation:** `apps/public/standard/viz/` (shape picker). Taxonomy:
 `emptyos/capabilities/ability.py`. Frontend: `EOS_UI.abilityGate` /
 `abilityBannerHtml` / `abilityMeets` in `eos-components.js`.
 
@@ -99,27 +105,41 @@ physically implausible geometry ("weird shapes") after compile. Wired into the
 eos-cad part path (`apps/extension/engineering/cad/compile_cq.py`) and the articulated
 path (`engines/articulated/testing.py` `TestContext.check_assembly`).
 
-**Wiring status, corrected 2026-07-27 — on these two paths the gate is
-observe-and-ledger only.** The claim that findings "flow through
+**Wiring status, corrected 2026-08-21 — the CAD part path now gates too; only
+the articulated (robot-modeller) path is still observe-and-ledger-only.**
+Original finding (2026-07-27) was that "findings flow through
 `CompileReport.errors`/`warnings` so the compile-retry loop regenerates on hard
-violations" described an intended capability, not code:
+violations" described an intended capability, not code. That's now closed on
+the CAD part path:
 
-- `ValidationReport.errors()` / `.warnings()` (`report.py:64-76`) exist and are
-  shaped for `CompileReport`, but have **zero production call sites**.
-- The CAD compile route decides `ok` from `res.get("ok")` +the `CAD_COMPILE_OK`
-  marker (`cad/compiling.py:116`), never from `validation["ok"]` — a hard
-  `INVALID_BREP` / `ZERO_VOLUME` still returns `ok: True` with the report
-  attached. It is written to the ledger (`compiling.py:161`) and nothing gates.
-- `TestContext.check_assembly` maps *every* violation to `severity="warning"`
-  (`engines/articulated/testing.py:162`), so shape findings can never fail a
-  compile on the articulated path. (Sound today, since `validate_assembly` is
-  soft-only — but the mapping is hard-coded, not driven by `.errors()`.)
+- `cad/compiling.py::api_compile` reads `validation["violations"]` after a
+  successful compile and refuses (`ok: False`, hard-violation codes in
+  `error`) when any are `severity: "hard"` — a hard `INVALID_BREP` /
+  `ZERO_VOLUME` no longer returns `ok: True`. It is still written to the
+  ledger (`compiling.py`'s `_log_validation_ledger`) either way.
+- `cad/generate.py::api_ai_propose` gained a **dark-flagged**
+  (`apps.cad.feature.cad-guard.enabled`, default off) propose-time
+  validate-and-repair loop: on the flag, a proposal is compiled through the
+  cadquery venv into a scratch temp dir purely for the verdict, and on a hard
+  violation the tree regenerates once with the violations fed back
+  (`shared.build_cad_repair_user_msg`) — the 3D analogue of the 2D draft-guard
+  loop below. Off by default because — unlike the 2D gate, which is pure and
+  cheap — this one pays a real cadquery-venv compile per turn.
+- `TestContext.check_assembly` (the articulated / robot-modeller path) still
+  maps *every* violation to `severity="warning"` (`engines/articulated/testing.py:162`),
+  so shape findings still can't fail a compile there. (Sound today, since
+  `validate_assembly` is soft-only — but the mapping is hard-coded, not driven
+  by `.errors()`.) Unchanged by the CAD-part-path fix above; wire it the same
+  way if the gate should bite on articulated models too.
+- The **UI** side is also closed on the CAD part path: `part-tools.js` renders
+  a "✗ weird shape" / "⚠ N shape warning(s)" / "✓ shape OK" status chip from
+  `/compile`'s `validation` field (`renderShapeStatus`) — previously invisible
+  ("lost in the layouts migration") on every 3D surface.
 
-The one path where a hard violation genuinely fails a response and drives a
+The other path where a hard violation genuinely fails a response and drives a
 regenerate is the 2D sibling `cad/draft_validate.py` — it imports
 `ValidationReport` directly and its loop ANDs `geo_rep.ok` into the result
-(`cad/generate.py:242-258`). Wire the 3D paths the same way if the gate should
-bite there; until then, don't rely on it.
+(`cad/generate.py`). Same shape, independently arrived at on the 3D part path.
 
 The second is the **media validity gate** (`emptyos/sdk/media/review.py`,
 `review_audio`/`review_video` → `MediaVerdict{ok, hard, soft}`): deterministic

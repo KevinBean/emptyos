@@ -76,28 +76,34 @@ def filter_noqa(findings: list[dict], token: str) -> list[dict]:
     return keep
 
 
-def git_tracked() -> list[Path]:
-    """Absolute paths of every file tracked by git."""
+def _git_paths(*args: str) -> list[Path]:
+    """Run a git command that lists paths; return them as absolute Paths.
+
+    `-z` is load-bearing twice over. Without it git C-quotes any path holding a
+    non-ASCII byte (`"products/writedesk/\\345…txt"`), and reading stdout with
+    `text=True` decodes through the Windows locale (cp1252). Either alone turns
+    the path into one that does not exist, and every scanner here skips a file it
+    cannot open — silently. Measured 2026-09-25: 26 tracked files were invisible
+    to check-personal, check-branding and the UI scanners this way. NUL-separated
+    raw bytes, decoded as UTF-8, is the one form git never rewrites.
+    """
     out = subprocess.run(
-        ["git", "ls-files"],
+        ["git", *args, "-z"],
         cwd=REPO_ROOT,
         check=True,
         capture_output=True,
-        text=True,
     )
-    return [REPO_ROOT / line for line in out.stdout.splitlines() if line]
+    return [REPO_ROOT / p for p in out.stdout.decode("utf-8").split("\0") if p]
+
+
+def git_tracked() -> list[Path]:
+    """Absolute paths of every file tracked by git."""
+    return _git_paths("ls-files")
 
 
 def git_staged() -> list[Path]:
     """Absolute paths of files staged for commit (filter ACM = added/copied/modified)."""
-    out = subprocess.run(
-        ["git", "diff", "--cached", "--name-only", "--diff-filter=ACM"],
-        cwd=REPO_ROOT,
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-    return [REPO_ROOT / line for line in out.stdout.splitlines() if line]
+    return _git_paths("diff", "--cached", "--name-only", "--diff-filter=ACM")
 
 
 def git_untracked() -> list[Path]:
@@ -112,14 +118,7 @@ def git_untracked() -> list[Path]:
 
     ``--exclude-standard`` honours .gitignore, so scratch dirs stay out.
     """
-    out = subprocess.run(
-        ["git", "ls-files", "--others", "--exclude-standard"],
-        cwd=REPO_ROOT,
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-    return [REPO_ROOT / line for line in out.stdout.splitlines() if line]
+    return _git_paths("ls-files", "--others", "--exclude-standard")
 
 
 def install_pre_commit_hook(

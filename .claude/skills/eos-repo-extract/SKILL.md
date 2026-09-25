@@ -1,6 +1,6 @@
 ---
 name: eos-repo-extract
-description: Study an external repo and mine it on two axes — the *code axis* (extract its discipline as the smallest honest abstraction over existing primitives, proven by >=2 real consumers plus a first-consumer implementation) and the *workflow axis* (does its sequencing expose a stage OUR pipeline never emits?). Build-nothing is a first-class outcome and still lands a logged verdict + memory + a triggered deferred row. Use when the user says "study/mine this repo", "borrow from <project>", "repo review", "extract the pattern from <external codebase>", "is this worth borrowing", "check this" over a foreign project, or pastes a foreign repo to learn from — and equally when what they paste is a **technique claim** rather than a codebase — a trending post saying a model / LoRA / prompt trick / workflow "can do X". A capability claim is still a borrow decision, but its verdict needs an **experiment on our own stack**, not just a read. Sibling of eos-sdk-extract (which dedupes *within* the codebase); NOT for porting a foreign app wholesale.
+description: Study an external repo and mine it on two axes — the code axis (extract its discipline as the smallest honest abstraction over existing primitives, proven by two real consumers plus a first-consumer implementation) and the workflow axis (does its sequencing expose a stage our pipeline never emits?). Build-nothing is a first-class outcome and still lands a logged verdict, a memory, and a triggered deferred row. Use when the user says "study this repo", "borrow from X", "repo review", "extract the pattern from X", "is this worth borrowing", or pastes a foreign repo to learn from — and equally when they paste a technique claim rather than a codebase, a post saying a model, LoRA, prompt trick or workflow "can do X". A capability claim is still a borrow decision, but its verdict needs an experiment on our own stack, not just a read. NOT deduplication within this codebase (use eos-sdk-extract) and NOT porting a foreign app wholesale.
 ---
 
 # EmptyOS Repo Extract
@@ -48,6 +48,24 @@ EmptyOS decision attached (that's `deep-research` or a repo-review note —
 review belongs **here**, not in `deep-research`.
 
 ## The Pipeline
+
+> **Standing constraint — the study and audit agents are read-only.** Steps 1
+> and 2 fan out subagents whose entire job is to *report*. Say so in the prompt
+> explicitly: **explore and report findings only — no file writes, no edits, no
+> commits.** A subagent left with default tools will happily "helpfully" write
+> the digest to a file or fix something it noticed, and a background fork has
+> already clobbered docs that way. You are synthesising the verdict; they hand
+> you evidence.
+>
+> **Enforce it with the agent type, not the prompt.** Pass
+> `subagent_type: "Explore"` — that type has no `Edit` / `Write` /
+> `NotebookEdit` at all, so a write is impossible rather than merely
+> discouraged. Same lesson as step 0's executable gate: an instruction that
+> *asks* for read-only is one a subagent can talk itself out of.
+>
+> **Step 1b is the deliberate exception** — falsifying a capability claim *is* an
+> experiment and it writes render outputs. Scope it to its own output dir, and
+> never let it touch tracked source.
 
 ### 0. Check for a closed verdict — *don't re-derive*
 
@@ -210,6 +228,8 @@ than the code is worthless (`.claude/rules/deep-research.md`).
 - Greenfielding a module that duplicates an existing SDK primitive because you
   didn't grep first.
 - Extracting on one consumer "because it'll obviously be reused" — premature.
+- Fanning out a study/audit agent without pinning it read-only, then finding it
+  edited the tree while you were reading its report.
 - Flipping the first-consumer flag on by default in the same change.
 - Skipping the sandbox E2E because the unit tests pass — unit tests don't catch
   boot-path / provider-availability reality.

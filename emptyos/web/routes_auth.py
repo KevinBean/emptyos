@@ -198,6 +198,17 @@ def register_auth(server: FastAPI, kernel: Kernel):
     # Either alone activates the gate; both work simultaneously.
     _auth_token: str = kernel.config.auth_token
     _login_password: str = kernel.config.login_password
+    # Desktop-shell login exchange (dark). Needs a token to be worth anything:
+    # the mint leg is bearer-only, so with no auth_token there is nothing to
+    # exchange and the routes are not registered at all.
+    # config_flag, not bool(): Config.get returns an ENV override as a string,
+    # so bool() turns "false" and "0" into True. A dark flag any string
+    # switches on is not a dark flag — and this one opens an auth-exempt route.
+    from emptyos.sdk.utils import config_flag as _config_flag
+
+    _shell_exchange_on: bool = _config_flag(
+        kernel.config, "network.feature.shell-exchange.enabled"
+    ) and bool(_auth_token)
     if _auth_token or _login_password:
         import hmac
 
@@ -213,6 +224,15 @@ def register_auth(server: FastAPI, kernel: Kernel):
             "/offline.html",
             "/api/health",
         }
+        # The shell exchange's REDEEM leg is exempt by necessity: it is the
+        # route that makes you authenticated, so it cannot require a session.
+        # Everything it accepts is checked inside it — an unexpired single-use
+        # code, a peer on the loopback SOCKET, a local `next` — and it is only
+        # registered when [network] feature.shell-exchange.enabled is on.
+        # An exact path, not a prefix: a subtree exemption would silently
+        # unauthenticate anything ever mounted beneath it.
+        if _shell_exchange_on:
+            _AUTH_EXEMPT_PATHS.add("/auth/shell-exchange")
 
         # Apps may publish a "public face" via [provides.web].public_routes.
         # Each entry is appended to the app's prefix and added to the bypass
@@ -324,6 +344,18 @@ def register_auth(server: FastAPI, kernel: Kernel):
                 if first:
                     return first
             return (request.client.host if request.client else "") or "unknown"
+
+        def _peer_ip(request: Request) -> str:
+            """The address the connection actually came FROM.
+
+            Deliberately not ``_client_ip``: that prefers ``X-Forwarded-For``,
+            which is correct for rate-limiting behind a proxy and catastrophic
+            for a locality decision — the header is set by the caller, so
+            "loopback only" would mean "claims to be loopback". A proxied
+            deployment terminates TCP at the proxy, so a real remote peer can
+            never present a loopback socket address here.
+            """
+            return (request.client.host if request.client else "") or ""
 
         def _login_check_lock(ip: str) -> float:
             import time as _t
@@ -558,6 +590,82 @@ EmptyOS — a mind companion. Think and create with you, not for you.<br>
                 max_age=60 * 60 * 24 * 30,
             )
             return resp
+
+        if _shell_exchange_on:
+            from emptyos.web.auth_exchange import CodeStore, request_is_local, safe_next
+
+            _shell_codes = CodeStore()
+
+            @server.post("/api/auth/shell-exchange")
+            async def shell_exchange_mint(request: Request):
+                """Bearer token in, one-shot code out. NEVER cookie-authenticated.
+
+                The auth middleware would already admit a valid session cookie
+                to any /api/ route, so this re-checks the Authorization header
+                itself: a cookie is what a PAGE holds, and an XSS anywhere in
+                the daemon could otherwise mint a code and carry a working
+                login off the machine. A caller holding the bearer already
+                holds the token, so the code grants it nothing new.
+                """
+                if not request_is_local(_peer_ip(request)):
+                    return JSONResponse({"error": "not local"}, status_code=403)
+                header = request.headers.get("authorization", "")
+                if not (
+                    header.lower().startswith("bearer ")
+                    and _check_bearer(header[7:].strip())
+                ):
+                    return JSONResponse(
+                        {"error": "shell exchange requires the machine token, not a session"},
+                        status_code=403,
+                    )
+                return {"code": _shell_codes.mint(), "expires_in": _shell_codes.ttl_s}
+
+            @server.get("/auth/shell-exchange")
+            async def shell_exchange_redeem(request: Request):
+                """Spend a code for the session cookie, then go to `next`.
+
+                Auth-exempt, so this is the whole gate: loopback only, the code
+                must be live and unused, and `next` is clamped to a path on this
+                daemon (safe_next) so the cookie we just set cannot be carried
+                to another origin.
+                """
+                if not request_is_local(_peer_ip(request)):
+                    return JSONResponse({"error": "not local"}, status_code=403)
+                # Rate-limit key: the socket address too. _client_ip would let
+                # a caller choose their own key — escaping their lockout, and
+                # pinning the real loopback key into permanent cooldown.
+                ip = _peer_ip(request)
+                # Wrong codes count against the same per-IP limit as /login:
+                # the code is short-lived but it is still a guessable secret.
+                remaining = _login_check_lock(ip)
+                if remaining > 0:
+                    return JSONResponse(
+                        {"error": "too many failed attempts",
+                         "retry_after_seconds": int(remaining) + 1},
+                        status_code=429,
+                        headers={"Retry-After": str(int(remaining) + 1)},
+                    )
+                offered = request.query_params.get("code", "")
+                if not offered:
+                    # No attempt was made, so nothing failed. Counting this
+                    # would let any page the user visits lock them out of
+                    # /login with five <img src="/auth/shell-exchange">.
+                    return JSONResponse({"error": "no code"}, status_code=400)
+                if not _shell_codes.redeem(offered):
+                    _login_record_fail(ip)
+                    return JSONResponse({"error": "expired or unknown code"}, status_code=403)
+                _login_record_success(ip)
+                resp = RedirectResponse(
+                    url=safe_next(request.query_params.get("next", "/")), status_code=302
+                )
+                resp.set_cookie(
+                    _AUTH_COOKIE,
+                    _auth_token,
+                    httponly=True,
+                    samesite="lax",
+                    max_age=60 * 60 * 24 * 30,
+                )
+                return resp
 
         @server.get("/logout")
         async def logout():

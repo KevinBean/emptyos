@@ -2,7 +2,7 @@
 
 The architectural shape of the autonomous app-creation loop lives in a local Claude Code plan note and in `.claude/rules/test-fix-verify-loop.md` (the friction→fix→verify pattern this loop adapts). This doc is the **operational contract**: what `app-builder` guarantees, what it refuses, and how its gates compose with daemon-handling and autopilot-grants rules.
 
-Read this before driving a scaffold run, before touching `apps/app-builder/`, or before extending the autonomous wiring.
+Read this before driving a scaffold run, before touching `apps/extension/dev/app-builder/`, or before extending the autonomous wiring.
 
 ## What app-builder is for
 
@@ -62,7 +62,7 @@ This guarantees:
 What it does **NOT** guarantee:
 
 - **No orphan branches.** Discard explicitly deletes; merge leaves the branch in place; interrupted runs leave the in-flight branch behind.
-- **Worktree cleanup on uninstall.** Removing `apps/app-builder/` doesn't `git worktree remove` the directory.
+- **Worktree cleanup on uninstall.** Removing `apps/extension/dev/app-builder/` doesn't `git worktree remove` the directory.
 
 ## Gate 1 — the merge guard
 
@@ -165,9 +165,9 @@ After Phase 3, the loop fires end-to-end without a human starting it: flip a pro
 
 ## Phase 3 — autonomous drafting
 
-The drafter lives in `app-builder` itself (not in `apps/staff/`) because it's pure: project markdown + linked KB → LLM call → spec note write. It owns no state.
+The drafter lives in `app-builder` itself (not in `apps/personal/staff/`) because it's pure: project markdown + linked KB → LLM call → spec note write. It owns no state.
 
-**Trigger.** Reactor handler `on_project_status_changed` (in `apps/reactor/reactions_system.py`) filters `projects:status_changed` events for `new == "spec-ready"`. When matched, it fires `call_app("app-builder", "api_draft_from_project", project_id)` via `self.spawn_background(...)` so the reactor handler returns immediately (per memory `feedback_long_handler_in_http_request` — synchronous handlers blocking on LLM calls break the event chain). It was a bare `asyncio.create_task` until 2026-08-06; that detaches but keeps no strong reference, so the drafter could be garbage-collected before it ran.
+**Trigger.** Reactor handler `on_project_status_changed` (in `apps/public/standard/reactor/reactions_system.py`) filters `projects:status_changed` events for `new == "spec-ready"`. When matched, it fires `call_app("app-builder", "api_draft_from_project", project_id)` via `self.spawn_background(...)` so the reactor handler returns immediately (per memory `feedback_long_handler_in_http_request` — synchronous handlers blocking on LLM calls break the event chain). It was a bare `asyncio.create_task` until 2026-08-06; that detaches but keeps no strong reference, so the drafter could be garbage-collected before it ran.
 
 **Input.** `POST /app-builder/api/draft_from_project {"project_id": "<slug>"}`. The endpoint:
 1. Reads `10_Projects/<project_id>/<project_id>.md`
@@ -177,13 +177,13 @@ The drafter lives in `app-builder` itself (not in `apps/staff/`) because it's pu
 5. Writes to `30_Resources/EmptyOS/grill/draft-<project_id>-<ts>.md`
 6. Emits `app-builder:draft_ready {project_id, spec_path}`
 
-**Drafter system prompt** (`apps/app-builder/prompts.py:_DRAFTER_SYSTEM_PROMPT`) instructs the LLM to produce exactly the spec shape `app-builder` consumes — same frontmatter keys, same body sections. The prompt explicitly tells the model to land assumptions in `## Open questions` rather than hiding them in prose, so the human reviewer sees what was guessed.
+**Drafter system prompt** (`apps/extension/dev/app-builder/prompts.py:_DRAFTER_SYSTEM_PROMPT`) instructs the LLM to produce exactly the spec shape `app-builder` consumes — same frontmatter keys, same body sections. The prompt explicitly tells the model to land assumptions in `## Open questions` rather than hiding them in prose, so the human reviewer sees what was guessed.
 
 **Why not autopilot the human review?** Per `.claude/rules/autopilot-grants.md`, free-form vault writes (specs, code, KB notes) are never autopilot-eligible. The diff IS the value of the gate. Auto-approving spec drafts → auto-firing app-builder → auto-merging would be a "Maximizer mode" anti-pattern — the user would only see the result, not the decisions. The draft is the input the human needs; the gate is non-negotiable.
 
 ## Phase 3 — dogfood-driven verify (alternative to Python smoke)
 
-`apps/dogfood-agent/scenarios/scaffold-smoke.md` is a persona-driven scenario that walks the app's home page + smokes every endpoint listed in the spec's acceptance criteria. Use it when:
+`apps/extension/dev/dogfood-agent/scenarios/scaffold-smoke.md` is a persona-driven scenario that walks the app's home page + smokes every endpoint listed in the spec's acceptance criteria. Use it when:
 
 - The Python smoke (`api_run_verify`) passes but you want a "would a user be confused" check
 - The app's acceptance criteria include behaviour beyond raw HTTP status codes (page renders, UI affordances visible, etc.)

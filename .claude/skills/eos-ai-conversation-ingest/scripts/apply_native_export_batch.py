@@ -91,9 +91,12 @@ def apply_source_gap_overrides(
         + "\n\n"
     )
     if "## Unavailable payloads\n" not in body:
-        marker = "## Messages\n"
-        if marker not in body:
-            raise ValueError("Rendered source is missing the Messages section")
+        marker = next(
+            (heading for heading in ("## Messages\n", "## Conversation\n") if heading in body),
+            None,
+        )
+        if marker is None:
+            raise ValueError("Rendered source is missing the conversation section")
         body = body.replace(marker, gap_section + marker, 1)
     normalized_body = body.rstrip() + "\n"
     content_hash = hashlib.sha256(normalized_body.encode("utf-8")).hexdigest()
@@ -174,7 +177,7 @@ def repair_source_capture_metadata(
     old_body = old_parts[2].lstrip("\n")
     new_body = new_parts[2].lstrip("\n")
     repaired_body, removed = re.subn(
-        r"(?ms)^## Unavailable payloads\n\n(?:- [^\n]*\n)+\n(?=## Messages\n)",
+        r"(?ms)^## Unavailable payloads\n\n(?:- [^\n]*\n)+\n(?=## (?:Messages|Conversation)\n)",
         "",
         old_body,
         count=1,
@@ -602,6 +605,11 @@ def planned_chatgpt_assets(
         safe_name = re.sub(
             r"[^A-Za-z0-9._-]+", "-", Path(original_name).name
         ).strip("-")
+        # A source note lists archived asset paths in YAML frontmatter.  Names
+        # such as ``"260610 - P530678"`` otherwise sanitize to ``260610---P530678``;
+        # the generic evidence reader then mistakes that run for the closing
+        # frontmatter delimiter and hashes the wrong body.
+        safe_name = re.sub(r"-{2,}", "-", safe_name)
         if not safe_name:
             safe_name = f"{identifier}.dat"
         path = (
@@ -717,6 +725,21 @@ def apply_item(
             archived_assets=render_assets,
         )
     rendered = apply_source_gap_overrides(rendered, spec)
+    source_path_override = spec.get("source_path_override")
+    if source_path_override:
+        override = str(source_path_override).replace("\\", "/")
+        expected_root = f"40_Archive/AI Conversations/originals/{provider}/"
+        expected_suffix = f"--{provider_id[:8]}.md"
+        if (
+            not override.startswith(expected_root)
+            or not override.endswith(expected_suffix)
+            or ".." in Path(override).parts
+        ):
+            raise ValueError(
+                "source_path_override must stay in the provider originals root "
+                "and retain the provider-ID suffix"
+            )
+        rendered = {**rendered, "path": override}
     source_path = str(rendered["path"])
     digest_path = str(rendered["digest_path"])
     current_source = APPLY.api_read(base_url, headers, source_path)

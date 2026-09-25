@@ -231,3 +231,181 @@ class TestAuraNextMove:
         payload = json.loads(fake.captured["prompt"].split("Digest:\n", 1)[1])
         assert payload["due_titles"] == 2          # count, not the strings
         assert payload["next_events"] == 1
+
+
+# ── resolve_panels(only=...) — single-panel refresh must stay single ──
+
+
+class TestSinglePanelScope:
+    """``/hub/api/panel/<id>`` must run one contributor, not all of them.
+
+    Regression for 2026-08-16: ``api_panel`` called
+    ``resolve_panels(include_lazy=True)`` and filtered the *result*, so
+    refreshing one panel executed all 114 contributors — including every lazy
+    one, the set ``/api/panels`` defers precisely because they are slow — then
+    discarded 113. Two unrelated panels timed identically (~4.1s idle) because
+    neither number was about the panel asked for.
+
+    Asserting the returned id is right would pass against the broken version
+    too; what distinguishes them is *which contributors ran*, so that is what
+    this records.
+    """
+
+    @staticmethod
+    def _hub(called: list):
+        contribs = [
+            {"_app_id": "task", "method": "panel_a", "id": "task-a"},
+            {"_app_id": "rooms", "method": "panel_b", "id": "rooms-b"},
+            {"_app_id": "kb", "method": "panel_c", "id": "kb-c", "lazy": True},
+        ]
+
+        class _Apps:
+            @staticmethod
+            def get_contributions(target, slot):
+                return list(contribs)
+
+        class _Kernel:
+            apps = _Apps()
+
+        async def fake_call_app(app_id, method, **kw):
+            called.append(f"{app_id}.{method}")
+            return [{"title": "x"}]
+
+        inst = object.__new__(HubApp)
+        inst.kernel = _Kernel()
+        inst.call_app = fake_call_app
+        return inst
+
+    def test_only_runs_the_requested_contributor(self):
+        called: list = []
+        hub = self._hub(called)
+        panels = asyncio.run(hub.resolve_panels(include_lazy=True, only="rooms-b"))
+
+        assert [p["id"] for p in panels] == ["rooms-b"]
+        assert called == ["rooms.panel_b"], (
+            f"expected only the requested panel to run, but {called} did — "
+            "a single-panel refresh is executing the whole hub again"
+        )
+
+    def test_lazy_panel_can_still_be_forced_alone(self):
+        called: list = []
+        hub = self._hub(called)
+        panels = asyncio.run(hub.resolve_panels(include_lazy=True, only="kb-c"))
+
+        assert [p["id"] for p in panels] == ["kb-c"]
+        assert called == ["kb.panel_c"], f"lazy force pulled in extras: {called}"
+
+    def test_unknown_id_runs_nothing(self):
+        called: list = []
+        hub = self._hub(called)
+        assert asyncio.run(hub.resolve_panels(include_lazy=True, only="nope")) == []
+        assert called == [], f"a miss should cost nothing, but ran {called}"
+
+    def test_unfiltered_still_runs_everything(self):
+        called: list = []
+        hub = self._hub(called)
+        panels = asyncio.run(hub.resolve_panels(include_lazy=True))
+        assert {p["id"] for p in panels} == {"task-a", "rooms-b", "kb-c"}
+        assert len(called) == 3
+
+
+# ── /api/panel/{id}: "nothing to show" is not "no such panel" ──────────────
+class TestSinglePanelEmptyVsUnknown:
+    """A contributor returning None is the documented empty state, and the
+    aggregator drops its row — so the route saw an empty list and called it
+    "not found". Measured 2026-09-12 on the live board: the debug page's reload
+    button reported a working panel as nonexistent, because the two causes were
+    reported with the same words."""
+
+    @staticmethod
+    def _hub(*, returns):
+        contribs = [{"_app_id": "repo", "method": "panel_c", "id": "repo-c"}]
+
+        class _Apps:
+            @staticmethod
+            def get_contributions(target, slot):
+                return list(contribs)
+
+        class _Kernel:
+            apps = _Apps()
+            syslog = types.SimpleNamespace(warn=lambda *a, **k: None)
+
+        async def fake_call_app(app_id, method, **kw):
+            return returns
+
+        inst = object.__new__(HubApp)
+        inst.kernel = _Kernel()
+        inst.call_app = fake_call_app
+        inst.app_config = lambda key, default=None: default
+        return inst
+
+    @staticmethod
+    def _get(hub, panel_id):
+        req = types.SimpleNamespace(path_params={"panel_id": panel_id})
+        return asyncio.run(hub.api_panel(req))
+
+    def test_registered_contributor_with_nothing_to_show(self):
+        out = self._get(self._hub(returns=None), "repo-c")
+        assert out.get("empty") is True, out
+        assert "error" not in out, out
+
+    def test_genuinely_unknown_id_is_still_not_found(self):
+        out = self._get(self._hub(returns=None), "no-such-panel")
+        assert out.get("error") == "not found", out
+        assert not out.get("empty"), out
+
+    def test_a_contributor_with_data_returns_its_row(self):
+        out = self._get(self._hub(returns=[{"title": "x"}]), "repo-c")
+        assert out["id"] == "repo-c"
+        assert out["data"] == [{"title": "x"}]
+        assert not out.get("empty"), out
+
+
+# ── _strip_rationale_prefix — the model echoes the UI's own prefix ──────────
+class TestRationalePrefix:
+    """2026-09-06 (system-check walk 9): the home screen read
+    'Suggested because: Suggested because: 11 items are waiting…' because the
+    model echoed the prefix the prompt describes and hub.js prepends it again.
+    Pinned at the parse boundary AND through `_aura_next_move`, so the helper
+    cannot be unwired without this going red."""
+
+    @pytest.mark.parametrize("raw,expected", [
+        ("Suggested because: 11 items are waiting", "11 items are waiting"),
+        ("suggested because — you journaled", "you journaled"),
+        ("  Suggested because 3 tasks slipped", "3 tasks slipped"),
+        ("11 items are waiting", "11 items are waiting"),
+        ("Suggested because: Suggested because: 11 items", "11 items"),
+        ("", ""),
+        ("because it matters", "because it matters"),
+    ])
+    def test_helper(self, raw, expected):
+        from apps.hub.app import _strip_rationale_prefix
+        assert _strip_rationale_prefix(raw) == expected
+
+    def test_aura_next_move_strips_it_at_the_boundary(self):
+        """Drive the real method with a stubbed think() that echoes the
+        prefix; the move it returns must not carry it."""
+        app = object.__new__(HubApp)
+        cfg = {"companion.enabled": True, "companion.include_titles": False, "companion.cadence": 60}
+        app.app_config = lambda key, default=None: cfg.get(key, default)
+        app.kernel = types.SimpleNamespace(syslog=types.SimpleNamespace(warn=lambda *a, **k: None))
+        app.last_provenance = lambda: {}
+        app._companion_cache = None
+
+        async def ability_meets(level, domain):
+            return True
+
+        async def think(prompt, **kw):
+            return json.dumps({
+                "title": "Clear the overdue backlog",
+                "why": "Suggested because: 11 items are waiting",
+                "action_label": "Triage tasks",
+                "action_href": "/task/",
+            })
+
+        app.ability_meets = ability_meets
+        app.think = think
+        move = asyncio.run(app._aura_next_move(_digest(overdue=11)))
+        assert move is not None and move["source"] == "aura"
+        assert move["why"] == "11 items are waiting", move["why"]
+        assert move["title"] == "Clear the overdue backlog"

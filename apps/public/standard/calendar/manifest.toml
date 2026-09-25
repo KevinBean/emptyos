@@ -40,6 +40,11 @@ id = "todays-agenda"
 method = "assistant_context"
 priority = 70
 
+# Life-suite day timeline (suite contract: docs/suites/life-cohesion.md)
+[[contributes.life.timeline]]
+id = "calendar-timeline"
+method = "timeline_items"
+
 # ── Verb registry — voice surface only (calendar is a read-only aggregator;
 # creating items belongs to the source apps, e.g. reminders.add / task.add).
 [[provides.verbs]]

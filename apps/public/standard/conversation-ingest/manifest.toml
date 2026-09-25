@@ -22,6 +22,7 @@ prefix = "/conversation-ingest"
 [provides.settings]
 schema = [
     {key = "conversation-ingest.import_root", label = "Import root", type = "text", default = "", hint = "Optional absolute directory containing conversation export folders. Empty uses the active EmptyOS data/imports directory."},
+    {key = "conversation-ingest.backlog_threshold", label = "Backlog nudge threshold", type = "number", default = 20, hint = "Proactively nudge when an import's pending count reaches this many conversations. Requires the backlog-nudge feature flag on (dark by default) and the proactive-notifications master toggle enabled in Settings."},
 ]
 
 [requires]

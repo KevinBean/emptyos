@@ -129,7 +129,7 @@ def test_live_tree_is_clean(checker):
     """The real repo must stay in sync — this is the regression net.
 
     Needs a configured vault: a fresh clone has no emptyos.toml (it ships
-    emptyos.toml.example), so `check()` returns the "no vault configured"
+    emptyos.example.toml), so `check()` returns the "no vault configured"
     finding and this read as drift rather than as an unconfigured machine.
     The no-vault behaviour is pinned by its own test above.
     """

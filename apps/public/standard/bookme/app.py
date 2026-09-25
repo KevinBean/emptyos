@@ -35,7 +35,7 @@ import json
 import secrets
 from pathlib import Path
 
-from emptyos.sdk import BaseApp, web_route
+from emptyos.sdk import BaseApp, scheduled, web_route
 
 try:
     from zoneinfo import ZoneInfo
@@ -80,6 +80,7 @@ DEFAULT_CONFIG = {
     "email_templates": {
         "confirmed": {"subject": "", "body": ""},
         "cancelled": {"subject": "", "body": ""},
+        "reminder": {"subject": "", "body": ""},
     },
 }
 
@@ -102,7 +103,22 @@ DEFAULT_EMAIL_TEMPLATES = {
             "{sign_off}"
         ),
     },
+    "reminder": {
+        "subject": "Reminder · {event_name} · {when}",
+        "body": (
+            "Hi {name},\n\n"
+            "Just a reminder that your {event_name} is coming up: {when} ({tz}).\n\n"
+            "If you need to reschedule or cancel, just reply to this email.\n\n"
+            "{sign_off}"
+        ),
+    },
 }
+
+# T-24h / T-1h reminder thresholds (hours before start) → vault flag name.
+# A booking's reminder fires exactly once per threshold, gated by the flag —
+# so the 15-min scan cadence can neither double-send nor skip one (both
+# windows are far wider than the scan interval).
+REMINDER_THRESHOLDS = ((24, "reminded_24h"), (1, "reminded_1h"))
 
 VAULT_FOLDER_DEFAULT = "30_Resources/EmptyOS/bookme"
 
@@ -421,13 +437,16 @@ class BookMeApp(BaseApp):
     # ── post-booking side effects ───────────────────────────────────────
     async def _after_book(self, b: dict) -> None:
         try:
-            notif = self.kernel.services.get_optional("notifications")
-            if notif:
-                await notif.send(
-                    f"New booking: {b['name']} — {b['event_name']} on {_format_when(b.get('start', ''))}",
-                    priority="success",
-                    source="bookme",
-                )
+            await self.proactive_notify_or_raw(
+                "bookme",
+                f"New booking: {b['name']} — {b['event_name']} on {_format_when(b.get('start', ''))}",
+                dedup_key=f"bookme:{b.get('id', '')}:booked",
+                # Nothing retries a held one-off notice, and the owner must
+                # hear about a booking even when it lands in quiet hours.
+                urgency="critical",
+                priority="success",
+                source="bookme",
+            )
         except Exception:
             pass
 
@@ -439,14 +458,14 @@ class BookMeApp(BaseApp):
         )
 
     async def _send_booking_email(self, b: dict, cfg: dict, *, kind: str) -> None:
-        """Email the booker — used for both confirmation and cancellation.
+        """Email the booker — used for confirmation, cancellation, and reminder.
 
         Templates come from cfg.email_templates[kind]; blank fields fall back
         to DEFAULT_EMAIL_TEMPLATES. Variables: {name}, {event_name}, {when},
         {tz}, {owner_name}, {date}, {time}, {duration_min}, {sign_off}.
         Degrades gracefully if no `send` provider is wired or the call raises.
         """
-        if kind not in ("confirmed", "cancelled"):
+        if kind not in ("confirmed", "cancelled", "reminder"):
             return
         owner = (b.get("owner_name") or cfg.get("owner_name") or "").strip()
         start = b.get("start", "")
@@ -482,6 +501,60 @@ class BookMeApp(BaseApp):
                 f"booking {kind} email FAILED for {b['email']}: {type(e).__name__}: {e}",
                 data={"booking_id": b.get("id"), "kind": kind, "error": str(e), "exc": type(e).__name__},
             )
+
+    @scheduled("*/15 * * * *", id="bookme-reminders")
+    async def _check_reminders(self) -> dict:
+        """T-24h / T-1h reminders for confirmed upcoming bookings.
+
+        Flagged in gap analysis (bookme-no-reminders): a booking made weeks
+        out was confirmed once and then silent until the meeting itself.
+        Emails the booker (same template machinery as confirm/cancel) and
+        pings the owner via `proactive_notify`.
+
+        Fires at most ONE reminder per booking per scan — the narrowest
+        (most urgent) threshold that's newly crossed and not yet flagged —
+        then marks every threshold at-or-inside that one as done. Found live
+        while unit-verifying the math (not caught by inspection): a naive
+        "check both thresholds independently" loop double-fires for any
+        booking made LESS than 24h before its own start (a same-day booking
+        crosses both the 24h and 1h windows in its very first scan), sending
+        a "24h" and a "1h" reminder back to back. Normal, well-spaced
+        bookings are unaffected — each threshold still fires in its own
+        separate scan, 23 hours apart, exactly as before.
+        """
+        cfg = self._load_config()
+        now = self._now_local(cfg)
+        sent = 0
+        for b in self._list_bookings(status="confirmed"):
+            start = b.get("start", "")
+            if not start:
+                continue
+            try:
+                start_dt = _parse_iso(start)
+            except ValueError:
+                continue
+            hours_until = (start_dt - now).total_seconds() / 3600
+            if hours_until < 0:
+                continue  # already started or passed
+            due = [
+                flag for threshold, flag in REMINDER_THRESHOLDS
+                if hours_until <= threshold and not b.get(flag)
+            ]
+            if not due:
+                continue
+            fire_flag = due[-1]  # REMINDER_THRESHOLDS is widest-first; last = narrowest unflagged
+            await self._send_booking_email(b, cfg, kind="reminder")
+            await self.proactive_notify(
+                "bookme",
+                f"Reminder: {b.get('name', 'Someone')} — {b.get('event_name', 'Meeting')} "
+                f"at {_format_when(start)}",
+                dedup_key=f"bookme:{b.get('id', '')}:{fire_flag}",
+                link={"text": "Open bookings", "href": "/bookme/"},
+            )
+            if b.get("_vault_path"):
+                self.vault_update(b["_vault_path"], {flag: True for flag in due})
+            sent += 1
+        return {"sent": sent}
 
     # ── calendar integration ────────────────────────────────────────────
     async def list_day(self, target_date: str) -> list[dict]:
@@ -542,6 +615,8 @@ def _normalize_booking(p: dict) -> dict:
         "timezone": (p.get("timezone") or "UTC"),
         "status": (p.get("status") or "confirmed"),
         "created": (p.get("created") or ""),
+        "reminded_24h": bool(p.get("reminded_24h")),
+        "reminded_1h": bool(p.get("reminded_1h")),
     }
 
 

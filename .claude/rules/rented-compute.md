@@ -1,3 +1,9 @@
+---
+paths:
+  - "emptyos/capabilities/**"
+  - "plugins/**"
+  - "scripts/check_provider_trust.py"
+---
 # Rented Compute Without Compromising Privacy
 
 Written 2026-07-25 after the RTX 5090 analysis concluded "rent, don't buy" for MV
@@ -8,7 +14,7 @@ host/trust exposure, and `scripts/check_provider_trust.py` (preflight, `always` 
 ## The problem this exists to prevent
 
 EmptyOS classifies providers as local-or-cloud by **inspecting the host address**
-(`Provider.is_cloud` → `host_is_local()`, `emptyos/capabilities/consent.py:30`).
+(`Provider.is_cloud` → `emptyos/capabilities/consent.py::host_is_local`).
 That works for the two cases it was designed for — your own machine, or a public
 API endpoint.
 

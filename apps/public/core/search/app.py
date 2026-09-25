@@ -12,6 +12,8 @@ import re
 from pathlib import Path
 
 from emptyos.sdk import BaseApp, cli_command, web_route
+
+from . import indexer as _indexer
 from emptyos.sdk.agent_tools.base import Tool, ToolResult
 
 QUERY_EXPAND_SYSTEM = """You are a search query expander. Given a user's search query, generate alternative search terms to improve recall.
@@ -128,11 +130,31 @@ class _VaultSearchTool(Tool):
 
 
 # Directories that never hold answerable notes.
-_EMBED_SKIP_DIRS = {".obsidian", ".trash", "node_modules", "_attachments"}
+#
+# ``temp-backup`` is the retention dir declared in the vault-structure contract
+# (``_vault-structure.toml`` [retention]) — pre-edit "-before-" snapshots of live
+# notes. Excluded rather than merely ranked cold: a snapshot embeds almost
+# identically to the note it copies, so once indexed it competes head-to-head
+# with the original and can outrank it. Widening the candidate cap put two such
+# copies in the top four for a career query.
+_EMBED_SKIP_DIRS = {".obsidian", ".trash", "node_modules", "_attachments", "temp-backup"}
 
 # Folders whose notes are real but are rarely the answer to a live question.
 # Ranked last so a capped candidate set spends its budget on active work.
-_EMBED_COLD_PREFIXES = ("40_archive/", "99_attachments/", "70_media/")
+#
+# ``conversations/originals/`` holds the raw provider dumps that the ingest
+# skill digests into canonical notes beside them. Indexing both spends the cap
+# twice on one conversation and lets the verbose original outrank its own digest.
+#
+# Per-machine additions go in ``[apps.search] embed_cold_prefixes`` — bulk
+# app-generated output under ``30_Resources/EmptyOS/<app>/`` is vault-specific,
+# so it is config rather than code (CLAUDE.md rule 15).
+_EMBED_COLD_PREFIXES = (
+    "40_archive/",
+    "99_attachments/",
+    "70_media/",
+    "30_resources/conversations/originals/",
+)
 
 # Question scaffolding adds no retrieval value and makes an OR keyword search
 # noisy. Keep this deliberately small and English-only: non-English tokens pass
@@ -176,6 +198,7 @@ def _grep_query_terms(query: str) -> list[str]:
 
 def _embed_candidate_order(
     rels: list[tuple[str, float]],
+    cold_prefixes: tuple[str, ...] = _EMBED_COLD_PREFIXES,
 ) -> list[tuple[str, float]]:
     """Rank vault notes for a capped embedding candidate set.
 
@@ -192,7 +215,7 @@ def _embed_candidate_order(
     def _key(item: tuple[str, float]) -> tuple[int, float]:
         rel, mtime = item
         low = rel.lower()
-        cold = any(low.startswith(p) for p in _EMBED_COLD_PREFIXES)
+        cold = any(low.startswith(p) for p in cold_prefixes)
         return (1 if cold else 0, -mtime)
 
     return sorted(rels, key=_key)
@@ -202,12 +225,25 @@ class SearchApp(BaseApp):
     # Embedding-based vault search tuning. Used by _embed_search; lifted to
     # class-top so reviewers see them next to the docstring rather than
     # mid-class between methods.
+    # ── Background embedding index (extracted to indexer.py) ──
+    sweep_embed_index         = _indexer.sweep_embed_index
+    api_embed_index_status    = _indexer.api_embed_index_status
+    api_embed_index_build     = _indexer.api_embed_index_build
+    _index_manifest_path      = _indexer._index_manifest_path
+    _load_index_manifest      = _indexer._load_index_manifest
+    _save_index_manifest      = _indexer._save_index_manifest
+    _background_index_on      = _indexer._background_index_on
+    _run_index_sweep          = _indexer._run_index_sweep
+    _candidates_from_manifest = _indexer._candidates_from_manifest
+    _scan_vault_files         = _indexer._scan_vault_files
+    _read_changed             = _indexer._read_changed
+
     _MAX_EMBED_NOTES = 5000          # cap candidate set; vault index already filters
     _EMBED_TEXT_LIMIT = 1500         # chars per note fed to embedding (title + head)
     _EMBED_MIN_SCORE = 0.30          # filter visibly-unrelated hits
 
     def _vault_path(self) -> str:
-        return self.kernel.config.get("notes.path", "") or "."
+        return str(self.kernel.config.notes_path or ".")
 
     @cli_command("search", help="Search the vault")
     async def cmd_search(self, query: str = "", mode: str = "search", top: str = "10"):
@@ -263,6 +299,11 @@ class SearchApp(BaseApp):
                     # much of the vault embeddings can see at all.
                     "truncated": meta["truncated"],
                     "indexed": meta["indexed"],
+                    # Which path served this: "manifest" (background index, no
+                    # file reads) or absent (live filesystem walk). Same reason
+                    # `truncated` is surfaced — a silent fallback to the slow
+                    # path would look identical to a working fast one.
+                    "source": meta.get("source", "walk"),
                     "total": meta["total"],
                 }
             except Exception:
@@ -638,6 +679,28 @@ class SearchApp(BaseApp):
         if not vault.exists():
             return [], [], "embed", empty_meta
 
+        cap = int(self.app_config("embed_max_notes", self._MAX_EMBED_NOTES) or self._MAX_EMBED_NOTES)
+        cap = max(1, cap)  # a 0/negative override must not silently index nothing
+        extra = self.app_config("embed_cold_prefixes", []) or []
+        cold = _EMBED_COLD_PREFIXES + tuple(
+            str(x).strip().lower().rstrip("/") + "/" for x in extra if str(x).strip()
+        )
+
+        # Fast path: answer from the background-maintained manifest, touching no
+        # files at all. ~86% of a warm search was re-reading notes to hash them
+        # for a cache lookup the manifest already recorded. Returns None when the
+        # manifest cannot serve the request, so this degrades to the walk below
+        # rather than to no results.
+        if self._background_index_on():
+            served = self._candidates_from_manifest(cap, cold)
+            if served:
+                items, embs, meta = served
+                from emptyos.sdk.embeddings import EmbeddingIndex
+
+                index = EmbeddingIndex(items, embs, self._embedder())
+                hits = await index.search(query, top_k=top, min_score=self._EMBED_MIN_SCORE)
+                return ([h[0]["path"] for h in hits], [h[1] for h in hits], "embed", meta)
+
         # Discover cheaply (stat only), rank, then read just the notes we keep.
         discovered: list[tuple[str, float]] = []
         for p in vault.rglob("*.md"):
@@ -655,7 +718,7 @@ class SearchApp(BaseApp):
 
         cap = int(self.app_config("embed_max_notes", self._MAX_EMBED_NOTES) or self._MAX_EMBED_NOTES)
         cap = max(1, cap)  # a 0/negative override must not silently index nothing
-        ordered = _embed_candidate_order(discovered)
+        ordered = _embed_candidate_order(discovered, cold)
 
         candidates: list[dict] = []
         scanned = 0

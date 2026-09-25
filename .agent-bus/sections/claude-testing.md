@@ -1,6 +1,6 @@
 
 
-Tests (pytest + Playwright) cover apps, UI components (modal/sidebar/chat), user stories, accessibility, visual baselines, edge cases. System suite is CI-safe; personal tests gitignored. See `tests/conftest.py` for fixtures and `tests/helpers.py` for shared assertions.
+Tests (pytest + Playwright + `node --test` for browser JS) cover apps, UI components, user stories, accessibility, visual baselines. When to run what: `.claude/rules/testing.md`; how to write tests: `.claude/rules/test-authoring.md`. Fixtures in `tests/conftest.py`, assertions in `tests/helpers.py`.
 
 ```bash
 python -m pytest tests/ --ignore=tests/personal -v    # CI / release-safe
@@ -9,21 +9,8 @@ python -m pytest tests/ -k "not test_ui" -v           # API-only fast path
 python -m pytest -m "dogfood and not llm" -v          # dogfood — "is it usable?"
 ```
 
-Always invoke as `python -m pytest`, never bare `pytest` — the `pytest` binary may resolve to a different Python than the one running the daemon (common on Windows with multiple Python installs), causing pytest-playwright plugin discovery to fail silently (`fixture 'page' not found`).
-
-Requires daemon at `localhost:9000`. One-time setup: `pip install playwright pytest-playwright pytest-timeout pytest-rerunfailures httpx && playwright install chromium`. Test data uses `TEST_PREFIX = "PLAYWRIGHT-TEST-"`, cleaned by session autouse fixture. Pass `--timeout=60 --reruns 2` on release / CI runs: `--timeout` kills hung tests, `--reruns 2` retries UI flakes that surface when the daemon is under heavy parallel load — 1 retry isn't always enough because the immediate retry runs while the daemon is still swamped; 2 retries gives the daemon a chance to catch up.
-
-### Four layers, four questions
-
-| Layer | Files | Answers |
-|---|---|---|
-| **System** | `test_sys_<app>.py` | Does each button/endpoint work? (smoke) |
-| **User story** | `test_user_stories.py` | Does one deep per-app flow work end-to-end? |
-| **Journey** | `test_journeys.py` | Do cross-app event chains ripple? |
-| **Dogfood** | `test_dogfood.py` + `test_dogfood_<app>.py` | Could I use this for a week/month without noticing something broken? |
-
-Don't conflate or duplicate across layers. Dogfood is narrative + ordered + state-threading; earns its keep when it spans ≥2 apps or catches aggregation bugs endpoint tests miss. Below that bar, `test_user_stories.py` is the right home. LLM-hitting steps use `@pytest.mark.llm` so `-m "dogfood and not llm"` stays fast and free. CI runs the non-LLM dogfood suite on every push. Full workflow: `.claude/rules/testing.md`.
-
-### Test-fix-verify loop
-
-EmptyOS tests/fixes/verifies itself by composing four roles via the event bus: **friction source** (today `dogfood-agent`) → **fix-driver** (`apps/fix-agent/`, worktree-per-fix, py_compile-gated merge) → **sandbox** (`:9001` via `plugins/dogfood-demo/`, restarted between merge + verify) → **verifier** (dogfood-agent re-runs scenario, auto-reverts on failure). Main daemon never restarted by the loop. Contract + safety invariants: `.claude/rules/test-fix-verify-loop.md`.
+- **Always `python -m pytest`, never bare `pytest`** — the binary may resolve to a different Python and silently lose the playwright plugin.
+- Daemon-backed tests need `:9000`. Test data uses `TEST_PREFIX = "PLAYWRIGHT-TEST-"`, cleaned by a session autouse fixture. Release/CI runs pass `--timeout=60 --reruns 2`.
+- Four layers, four questions — **system** (`test_sys_<app>.py`: does each endpoint work?), **user story** (`test_user_stories.py`: one deep per-app flow), **journey** (`test_journeys.py`: cross-app event chains), **dogfood** (`test_dogfood*.py`: usable for a week?; LLM steps marked `@pytest.mark.llm`). Don't duplicate across layers: dogfood is narrative + ordered + state-threading and earns its keep only when it spans ≥2 apps or catches aggregation bugs endpoint tests miss — below that bar, `test_user_stories.py` is the home.
+- A tracked test must never import a gitignored `apps/personal/` module at module scope — CI's bare `--collect-only` aborts the whole run.
+- Test-fix-verify loop (dogfood-agent → fix-agent → sandbox `:9001` → verifier): `.claude/rules/test-fix-verify-loop.md`.

@@ -1,3 +1,13 @@
+---
+paths:
+  - "scripts/check_vault_*.py"
+  - "scripts/kb_*.py"
+  - "tests/conftest.py"
+  - "emptyos/runtime/vault_*.py"
+  - ".claude/vault-connection.json"
+  - "tests/test_unit_vault_structure.py"
+---
+
 # Vault Operator — External Vault Connection
 
 EmptyOS mounts an external markdown vault (Obsidian/Logseq) as its "hard drive".
@@ -73,11 +83,29 @@ The guard so it can't recur is two pieces:
   | `strip` | a single self-contained list line carrying the prefix (`- [ ] …`, `- **05:46** 🙂 …`, `1. …`) appended into a real note | strip the line (auto) |
   | `review` | prefix on a **non-list** line — heading, prose, or a `>` quote / indented-insight pair under a clean bullet header (KB "## Reader notes" pollution) | report only, **never auto-edited** |
 
+  Two exclusions, and the second is a safety boundary rather than a filter.
   Incident documentation under `10_Projects/emptyos/log/` (devlogs + session
-  briefs that *describe* the leak) is excluded entirely. Run modes:
-  `--purge` (delete owned + strip lines), `--owned-only` (delete files, leave
-  real notes), `--json`. Exit code = count of `review` items, so a release/CI
-  gate can treat "needs a human" as a hard failure.
+  briefs that *describe* the leak) is excluded entirely. And **every dot-dir is
+  skipped** — `.stversions` above all, Syncthing's version archive. A finding in
+  a restore point is unactionable by construction (editing it corrupts what you
+  would restore from), so it could only pin the exit code permanently non-zero
+  and get the gate switched off; and `--purge` runs off the same walk, so an
+  archived copy of a real note a test polluted would have its `- [ ]` line
+  **rewritten** — the backup edited by the sweep, unattended via the conftest
+  backstop below. Skipping by class (any leading dot) rather than by name
+  matches `check_vault_structure.py` and covers the next hidden tooling dir
+  without another commit. Consequence worth knowing: **nothing in EmptyOS
+  reports on `.stversions` at all** — Syncthing's own versioning-cleanup config
+  is what bounds it, so don't read a clean exit as "the archive is clean".
+
+  The skip is matched against the **vault-relative** path. Matching the absolute
+  one meant a vault living under any path with a dot or `node_modules` component
+  scanned zero files and printed "no leaks" with exit 0 — the whole guard off,
+  reporting success.
+
+  Run modes: `--purge` (delete owned + strip lines), `--owned-only` (delete
+  files, leave real notes), `--json`. Exit code = count of `review` items, so a
+  release/CI gate can treat "needs a human" as a hard failure.
 
 - **conftest session-end backstop** — the tail of `cleanup_after_all` runs the
   scanner against the daemon's vault after the per-app sweep and auto-purges

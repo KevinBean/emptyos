@@ -26,8 +26,16 @@ NOTE_TAG_SYSTEM = (
 
 class NoteApp(BaseApp):
     def _notes_dir(self) -> Path:
-        p = self.kernel.config.get("notes.path", "")
-        return Path(p) if p else self.kernel.config.data_dir / "notes"
+        # `config.notes_path`, never the raw `get("notes.path")`: the property
+        # resolves to an ABSOLUTE path precisely so a path built here cannot be
+        # double-prefixed when it is handed back to `read`/`write`, whose
+        # `base_path` is also vault-rooted. Reading it raw reintroduces that bug
+        # whenever the configured value is relative — `find()` searches a
+        # relative root, grep returns `./<vault>/x.md`, and `read` resolves that
+        # under the absolute base to `<vault>/<vault>/x.md`, so `append` raised
+        # FileNotFoundError and the route 500'd. Invisible on any machine with an
+        # absolute `notes.path`; CI uses `./ci-vault` and failed there only.
+        return self.kernel.config.notes_path or self.kernel.config.data_dir / "notes"
 
     def _resolve(self, title: str, folder: str = "") -> Path:
         """Resolve a title to a file path. Kebab-case, .md extension."""

@@ -32,6 +32,13 @@ class WorkReactionsMixin:
     async def on_project_task_added(self, event):
         self._log_action("projects:task_added", event.data.get("text", "")[:40])
 
+    @on_event("projects:task_assigned")
+    async def on_project_task_assigned(self, event):
+        pid = event.data.get("id", "")
+        line = event.data.get("line", "?")
+        agent = event.data.get("agent_id", "?")
+        self._log_action("projects:task_assigned", f"{pid} line {line} -> {agent}")
+
     @on_event("projects:task_toggled")
     async def on_project_task(self, event):
         self._log_action("projects:task_toggled", "project task toggled")
@@ -188,6 +195,32 @@ class WorkReactionsMixin:
             "📦", f"Assembled design package ({n} sections)", dim="occupational"
         )
 
+    # Wired 2026-09-05 — previously declared-but-unheard (architecture review).
+    # Both halves ripple deliberately: design-package's manifest notes that a
+    # breadcrumb recording the check but not its withdrawal would lie, so these
+    # two handlers must be added and removed together.
+    @on_event("design-package:verified")
+    async def on_design_package_verified(self, event):
+        role = event.data.get("role", "?")
+        # verification.one_line strips controls but does not cap length, so the
+        # name reaching here is still unbounded free text from an HTTP body.
+        name = (event.data.get("name") or "unnamed")[:50]
+        pkg = event.data.get("id", "")
+        self._log_action("design-package:verified", f"{pkg} {role} <- {name}")
+        await self._journal_ripple(
+            "🔏", f"Design package {pkg} {role} by {name}", dim="occupational"
+        )
+
+    @on_event("design-package:verification_withdrawn")
+    async def on_design_package_verification_withdrawn(self, event):
+        role = event.data.get("role", "?")
+        pkg = event.data.get("id", "")
+        self._log_action("design-package:verification_withdrawn", f"{pkg} {role}")
+        await self._journal_ripple(
+            "↩️", f"Withdrew {role} verification on design package {pkg}",
+            dim="occupational",
+        )
+
     @on_event("briefing:generated")
     async def on_briefing(self, event):
         self._log_action("briefing:generated", "morning briefing")
@@ -290,6 +323,23 @@ class WorkReactionsMixin:
         doc_id = event.data.get("id", "")
         self._log_action("reports:exported", f"{doc_id} -> {fmt}")
         await self._journal_ripple("📤", f"Exported report {doc_id} as {fmt.upper()}")
+
+    @on_event("reports:signed-off")
+    async def on_report_signed_off(self, event):
+        doc_id = event.data.get("id", "")
+        role = event.data.get("role", "?")
+        self._log_action("reports:signed-off", f"{doc_id}: {role}")
+        await self._journal_ripple("✍️", f"Signed off report {doc_id} as {role}")
+
+    @on_event("markitup:exported")
+    async def on_markitup_exported(self, event):
+        fmt = str(event.data.get("format", "?"))
+        rid = event.data.get("id", "")
+        self._log_action("markitup:exported", f"{rid} -> {fmt}")
+        # markitup names its formats "markdown" / "pdf"; only the acronym reads
+        # right upper-cased.
+        label = "Markdown" if fmt == "markdown" else fmt.upper()
+        await self._journal_ripple("📤", f"Exported markup review {rid} as {label}")
 
     @on_event("board:created")
     async def on_board_created(self, event):
@@ -502,6 +552,16 @@ class WorkReactionsMixin:
     async def on_routing_planned(self, event):
         stops = event.data.get("stops") or event.data.get("count") or "?"
         self._log_action("routing:planned", f"{stops} stops")
+
+    @on_event("routing:trip_saved")
+    async def on_routing_trip_saved(self, event):
+        name = str(event.data.get("name", ""))[:40]
+        stops = event.data.get("stops", "?")
+        self._log_action("routing:trip_saved", f"{name}: {stops} stops")
+
+    @on_event("routing:trip_deleted")
+    async def on_routing_trip_deleted(self, event):
+        self._log_action("routing:trip_deleted", str(event.data.get("trip_id", ""))[:40])
 
     @on_event("drone-flight:route_planned")
     async def on_drone_route(self, event):
@@ -749,3 +809,22 @@ class WorkReactionsMixin:
         """A requirement passed verification — an engineering milestone."""
         rid = event.data.get("id") or event.data.get("title", "")
         self._log_action("requirements:verified", str(rid)[:50])
+
+    # ── Workplace-dynamics log (wired 2026-08-11: were declared-but-unheard) ──
+
+    @on_event("read-the-room:incident_logged")
+    async def on_room_incident_logged(self, event):
+        """A workplace incident was filed — a real event worth a breadcrumb."""
+        band = event.data.get("au_band") or "?"
+        tail = " (escalate)" if event.data.get("escalate") else ""
+        self._log_action(
+            "read-the-room:incident_logged",
+            f"{str(event.data.get('file', ''))[:40]} [{band}]{tail}",
+        )
+
+    @on_event("read-the-room:reviewed")
+    async def on_room_reviewed(self, event):
+        self._log_action(
+            "read-the-room:reviewed",
+            f"{str(event.data.get('id', ''))[:30]} q={event.data.get('quality', '?')}",
+        )

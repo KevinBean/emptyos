@@ -40,7 +40,8 @@ class RunResult:
 class RunApp(BaseApp):
     async def execute(self, command: str, timeout: int = 60, cwd: str = "") -> RunResult:
         """Run a shell command. Returns stdout, stderr, exit code."""
-        work_dir = cwd or self.kernel.config.get("notes.path", None)
+        vault = self.kernel.config.notes_path
+        work_dir = cwd or (str(vault) if vault else None)
         proc = await asyncio.create_subprocess_shell(
             command,
             stdout=asyncio.subprocess.PIPE,

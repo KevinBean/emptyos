@@ -80,6 +80,7 @@ DEFAULT_SPACES = [
             },
             {"app": "dictionary", "title": "Vocabulary", "icon": "🔤", "blurb": "Look up words and review your vocabulary deck."},
             {"app": "speaking", "title": "Conversation", "icon": "🗣️", "blurb": "Practice speaking with guided feedback."},
+            {"app": "speaking-practice", "title": "Speaking Practice", "icon": "🎙️", "blurb": "Practise timed image descriptions, read-aloud passages, and repeated sentences."},
             {"app": "lessons", "title": "Topical lessons", "icon": "📝", "blurb": "Work through focused English lesson material."},
             {"app": "shadowing", "title": "Shadowing", "icon": "🔁", "blurb": "Build rhythm and pronunciation by repeating audio."},
             {"app": "voice-review", "title": "Voice review", "icon": "🎧", "blurb": "Review recorded speaking practice and feedback."},
@@ -155,6 +156,7 @@ class WorkspacesApp(BaseApp):
                 **s,
                 "members": list(s.get("members", [])),
                 "widgets": list(s.get("widgets", [])),
+                "links": list(s.get("links", [])),
                 "context": dict(s.get("context", {})),
                 "_source": "default",
             }
@@ -178,6 +180,7 @@ class WorkspacesApp(BaseApp):
                     "hero_app": w.get("hero_app") or "",
                     "members": [],
                     "widgets": [],
+                    "links": [],
                     "context": {},
                     "_source": "manifest",
                 }
@@ -207,6 +210,8 @@ class WorkspacesApp(BaseApp):
                 sp["members"] = [str(x) for x in e["members"]]
             if isinstance(e.get("widgets"), list):
                 sp["widgets"] = e["widgets"]
+            if isinstance(e.get("links"), list):
+                sp["links"] = e["links"]
             if isinstance(e.get("context"), dict):
                 sp["context"] = e["context"]
             sp.setdefault("title", slug.replace("-", " ").title())
@@ -216,6 +221,7 @@ class WorkspacesApp(BaseApp):
             sp.setdefault("hero_app", "")
             sp.setdefault("members", [])
             sp.setdefault("widgets", [])
+            sp.setdefault("links", [])
             sp.setdefault("context", {})
             spaces[slug] = sp
 
@@ -233,7 +239,7 @@ class WorkspacesApp(BaseApp):
                     continue
                 sp = spaces.get(slug)
                 if sp is None:
-                    sp = {"slug": slug, "members": [], "widgets": [],
+                    sp = {"slug": slug, "members": [], "widgets": [], "links": [],
                           "context": {}, "_source": "override"}
                     spaces[slug] = sp
                 for k in ("title", "icon", "tagline"):
@@ -241,6 +247,14 @@ class WorkspacesApp(BaseApp):
                         sp[k] = o[k]
                 if isinstance(o.get("members"), list):
                     sp["members"] = list(o["members"])
+                if isinstance(o.get("widgets"), list):
+                    sp["widgets"] = list(o["widgets"])
+                # links follows the exact same override-merge shape as widgets —
+                # the widgets bug (workspaces-no-widget-ui) was this line missing
+                # for widgets, so a written widget never resolved. Getting links
+                # right here from the start avoids repeating it.
+                if isinstance(o.get("links"), list):
+                    sp["links"] = list(o["links"])
                 sp["_edited"] = True
                 if o.get("created"):
                     sp["_user_created"] = True
@@ -250,6 +264,7 @@ class WorkspacesApp(BaseApp):
                 sp.setdefault("order", 100)
                 sp.setdefault("hero_app", "")
                 sp.setdefault("widgets", [])
+                sp.setdefault("links", [])
                 sp.setdefault("context", {})
 
         return spaces
@@ -348,6 +363,192 @@ class WorkspacesApp(BaseApp):
     def remove_member(self, slug: str, app_id: str) -> dict:
         target = (app_id or "").strip()
         return self.set_members(slug, [i for i in self._current_member_ids(slug) if i != target])
+
+    def _current_widgets(self, slug: str) -> list:
+        sp = self._registry().get(slug) or {}
+        return [w for w in (sp.get("widgets") or []) if isinstance(w, dict)]
+
+    def add_widget(self, slug: str, widget: dict) -> dict:
+        """Flagged in gap analysis (workspaces-no-widget-ui): widgets were
+        declared only in the space registry/config, no CRUD endpoint. Mirrors
+        add_member/set_members's shape — write into the same runtime-override
+        layer, keyed by list position (a widget has no natural unique id the
+        way a member app_id is).
+        """
+        slug = (slug or "").strip()
+        base = self._registry(apply_overrides=False).get(slug)
+        ov = self._load_overrides()
+        existing = ov["spaces"].get(slug)
+        if base is None and existing is None:
+            return {"error": "space not found"}
+        widget = widget or {}
+        wtype = str(widget.get("type") or "").strip()
+        app_id = str(widget.get("app") or "").strip()
+        if wtype not in ("embed", "panel"):
+            return {"error": "widget type must be 'embed' or 'panel'"}
+        if not app_id:
+            return {"error": "widget app is required"}
+        new_widget = {"type": wtype, "app": app_id}
+        if widget.get("title"):
+            new_widget["title"] = str(widget["title"]).strip()
+        if wtype == "embed":
+            if widget.get("height"):
+                new_widget["height"] = _as_int(widget.get("height"), 520)
+        else:
+            if widget.get("method"):
+                new_widget["method"] = str(widget["method"]).strip()
+            if widget.get("renderer"):
+                new_widget["renderer"] = str(widget["renderer"]).strip()
+        # First write for this space carries forward whatever widgets already
+        # existed (override if present, else the base registry's), so adding
+        # one widget can never silently drop a config-declared one.
+        current = list((existing or {}).get("widgets") or (base or {}).get("widgets") or [])
+        current.append(new_widget)
+        sp = ov["spaces"].setdefault(slug, {})
+        sp["widgets"] = current
+        self._save_overrides(ov)
+        return {"ok": True, "slug": slug, "widgets": current}
+
+    def remove_widget(self, slug: str, index: int) -> dict:
+        slug = (slug or "").strip()
+        base = self._registry(apply_overrides=False).get(slug)
+        ov = self._load_overrides()
+        existing = ov["spaces"].get(slug)
+        if base is None and existing is None:
+            return {"error": "space not found"}
+        current = list((existing or {}).get("widgets") or (base or {}).get("widgets") or [])
+        if not (0 <= index < len(current)):
+            return {"error": f"widget index {index} out of range (0..{len(current) - 1})"}
+        current.pop(index)
+        sp = ov["spaces"].setdefault(slug, {})
+        sp["widgets"] = current
+        self._save_overrides(ov)
+        return {"ok": True, "slug": slug, "widgets": current}
+
+    def move_widget(self, slug: str, index: int, direction: str) -> dict:
+        """Swap a widget with its neighbor — the reorder mechanism for
+        gap workspaces-no-drag-reorder. A simple up/down swap rather than
+        drag-and-drop: no new JS dependency, and works via keyboard/tap
+        too. A move past either edge is a no-op (not an error) so a
+        caller doesn't need to special-case the boundary.
+        """
+        slug = (slug or "").strip()
+        base = self._registry(apply_overrides=False).get(slug)
+        ov = self._load_overrides()
+        existing = ov["spaces"].get(slug)
+        if base is None and existing is None:
+            return {"error": "space not found"}
+        current = list((existing or {}).get("widgets") or (base or {}).get("widgets") or [])
+        if not (0 <= index < len(current)):
+            return {"error": f"widget index {index} out of range (0..{len(current) - 1})"}
+        delta = {"up": -1, "down": 1}.get(direction)
+        if delta is None:
+            return {"error": "direction must be 'up' or 'down'"}
+        target = index + delta
+        if 0 <= target < len(current):
+            current[index], current[target] = current[target], current[index]
+            sp = ov["spaces"].setdefault(slug, {})
+            sp["widgets"] = current
+            self._save_overrides(ov)
+        return {"ok": True, "slug": slug, "widgets": current}
+
+    # ── External links (workspaces-no-external-links) ────────────────────
+    # A Space's members are all app ids resolved against the manifest
+    # registry; there was no way to point a tile at an arbitrary external
+    # URL/bookmark, which every self-hosted-dashboard competitor (Homepage,
+    # Dashy) treats as first-class alongside a linked service. Stored as
+    # its own list (like widgets), not interleaved into `members` — a link
+    # has no app id to resolve, so keeping it out of `_member_app_id` /
+    # `_current_member_ids` / `set_members` means the existing app-only
+    # member editor needs zero changes.
+    def _current_links(self, slug: str) -> list:
+        sp = self._registry().get(slug) or {}
+        return [x for x in (sp.get("links") or []) if isinstance(x, dict)]
+
+    @staticmethod
+    def _link_meta(entry: dict, index: int) -> dict:
+        url = str(entry.get("url") or "").strip()
+        return {
+            "id": f"link:{index}",
+            "type": "link",
+            "index": index,
+            "title": str(entry.get("title") or url or "Link"),
+            "description": "",
+            "href": url,
+            "icon": str(entry.get("icon") or "🔗"),
+            "available": True,  # external — nothing here for us to enable/disable
+        }
+
+    def _resolve_links(self, space: dict) -> list[dict]:
+        raw = space.get("links") or []
+        if not isinstance(raw, list):
+            return []
+        return [self._link_meta(x, i) for i, x in enumerate(raw) if isinstance(x, dict)]
+
+    def add_link(self, slug: str, url: str, title: str = "", icon: str = "") -> dict:
+        slug = (slug or "").strip()
+        url = (url or "").strip()
+        if not url:
+            return {"error": "url required"}
+        if not (url.startswith("http://") or url.startswith("https://")):
+            return {"error": "url must start with http:// or https://"}
+        base = self._registry(apply_overrides=False).get(slug)
+        ov = self._load_overrides()
+        existing = ov["spaces"].get(slug)
+        if base is None and existing is None:
+            return {"error": "space not found"}
+        new_link = {"url": url}
+        if title.strip():
+            new_link["title"] = title.strip()
+        if icon.strip():
+            new_link["icon"] = icon.strip()
+        # First write for this space carries forward whatever links already
+        # existed (override if present, else the base registry's), same
+        # discipline as add_widget — adding one link can never silently
+        # drop a config-declared one.
+        current = list((existing or {}).get("links") or (base or {}).get("links") or [])
+        current.append(new_link)
+        sp = ov["spaces"].setdefault(slug, {})
+        sp["links"] = current
+        self._save_overrides(ov)
+        return {"ok": True, "slug": slug, "links": current}
+
+    def remove_link(self, slug: str, index: int) -> dict:
+        slug = (slug or "").strip()
+        base = self._registry(apply_overrides=False).get(slug)
+        ov = self._load_overrides()
+        existing = ov["spaces"].get(slug)
+        if base is None and existing is None:
+            return {"error": "space not found"}
+        current = list((existing or {}).get("links") or (base or {}).get("links") or [])
+        if not (0 <= index < len(current)):
+            return {"error": f"link index {index} out of range (0..{len(current) - 1})"}
+        current.pop(index)
+        sp = ov["spaces"].setdefault(slug, {})
+        sp["links"] = current
+        self._save_overrides(ov)
+        return {"ok": True, "slug": slug, "links": current}
+
+    def move_link(self, slug: str, index: int, direction: str) -> dict:
+        slug = (slug or "").strip()
+        base = self._registry(apply_overrides=False).get(slug)
+        ov = self._load_overrides()
+        existing = ov["spaces"].get(slug)
+        if base is None and existing is None:
+            return {"error": "space not found"}
+        current = list((existing or {}).get("links") or (base or {}).get("links") or [])
+        if not (0 <= index < len(current)):
+            return {"error": f"link index {index} out of range (0..{len(current) - 1})"}
+        delta = {"up": -1, "down": 1}.get(direction)
+        if delta is None:
+            return {"error": "direction must be 'up' or 'down'"}
+        target = index + delta
+        if 0 <= target < len(current):
+            current[index], current[target] = current[target], current[index]
+            sp = ov["spaces"].setdefault(slug, {})
+            sp["links"] = current
+            self._save_overrides(ov)
+        return {"ok": True, "slug": slug, "links": current}
 
     def delete_space(self, slug: str) -> dict:
         slug = (slug or "").strip()
@@ -626,6 +827,7 @@ class WorkspacesApp(BaseApp):
         manifests = self.kernel.apps.manifests
         payload = self._space_payload(space, enabled, manifests)
         payload["widgets"] = await self._resolve_widgets(space, enabled, manifests)
+        payload["links"] = self._resolve_links(space)
 
         # Optional rich hero from the space's hero_app (e.g. academy.dashboard).
         hero = None
@@ -676,6 +878,35 @@ class WorkspacesApp(BaseApp):
     @web_route("GET", "/api/spaces")
     async def api_spaces(self, request):
         return {"spaces": await self.list_spaces()}
+
+    @web_route("GET", "/api/search")
+    async def api_search(self, request):
+        """Search across every Space's title/tagline and member app
+        id/title/description (workspaces-no-search-across-spaces) — the
+        user often doesn't already know which Space holds a given app,
+        which is exactly the situation this app otherwise requires."""
+        query = (request.query_params.get("q") or "").strip().lower()
+        if not query:
+            return {"results": [], "query": ""}
+        results = []
+        for sp in await self.list_spaces():
+            if query in sp["title"].lower() or query in (sp.get("tagline") or "").lower():
+                results.append({
+                    "type": "space", "slug": sp["slug"], "title": sp["title"],
+                    "icon": sp.get("icon", ""), "tagline": sp.get("tagline", ""),
+                })
+            for m in sp.get("members", []):
+                if (
+                    query in m["title"].lower()
+                    or query in m["id"].lower()
+                    or query in (m.get("description") or "").lower()
+                ):
+                    results.append({
+                        "type": "member", "space_slug": sp["slug"], "space_title": sp["title"],
+                        "id": m["id"], "title": m["title"], "href": m["href"],
+                        "icon": m.get("icon", ""), "available": m["available"],
+                    })
+        return {"results": results, "query": query}
 
     @web_route("GET", "/api/spaces/{slug}")
     async def api_space(self, request):
@@ -728,6 +959,56 @@ class WorkspacesApp(BaseApp):
         slug = (request.path_params.get("slug") or "").strip()
         app_id = (request.path_params.get("app_id") or "").strip()
         return self.remove_member(slug, app_id)
+
+    @web_route("POST", "/api/spaces/{slug}/widgets")
+    async def api_add_widget(self, request):
+        slug = (request.path_params.get("slug") or "").strip()
+        b = await self.safe_json(request) or {}
+        return self.add_widget(slug, b)
+
+    @web_route("DELETE", "/api/spaces/{slug}/widgets/{index}")
+    async def api_remove_widget(self, request):
+        slug = (request.path_params.get("slug") or "").strip()
+        try:
+            index = int(request.path_params.get("index", ""))
+        except (TypeError, ValueError):
+            return {"error": "widget index must be an integer"}
+        return self.remove_widget(slug, index)
+
+    @web_route("POST", "/api/spaces/{slug}/widgets/{index}/move")
+    async def api_move_widget(self, request):
+        slug = (request.path_params.get("slug") or "").strip()
+        try:
+            index = int(request.path_params.get("index", ""))
+        except (TypeError, ValueError):
+            return {"error": "widget index must be an integer"}
+        b = await self.safe_json(request) or {}
+        return self.move_widget(slug, index, str(b.get("direction") or ""))
+
+    @web_route("POST", "/api/spaces/{slug}/links")
+    async def api_add_link(self, request):
+        slug = (request.path_params.get("slug") or "").strip()
+        b = await self.safe_json(request) or {}
+        return self.add_link(slug, str(b.get("url") or ""), str(b.get("title") or ""), str(b.get("icon") or ""))
+
+    @web_route("DELETE", "/api/spaces/{slug}/links/{index}")
+    async def api_remove_link(self, request):
+        slug = (request.path_params.get("slug") or "").strip()
+        try:
+            index = int(request.path_params.get("index", ""))
+        except (TypeError, ValueError):
+            return {"error": "link index must be an integer"}
+        return self.remove_link(slug, index)
+
+    @web_route("POST", "/api/spaces/{slug}/links/{index}/move")
+    async def api_move_link(self, request):
+        slug = (request.path_params.get("slug") or "").strip()
+        try:
+            index = int(request.path_params.get("index", ""))
+        except (TypeError, ValueError):
+            return {"error": "link index must be an integer"}
+        b = await self.safe_json(request) or {}
+        return self.move_link(slug, index, str(b.get("direction") or ""))
 
     @web_route("DELETE", "/api/spaces/{slug}")
     async def api_delete_space(self, request):

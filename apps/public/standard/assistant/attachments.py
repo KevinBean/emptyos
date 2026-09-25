@@ -12,7 +12,6 @@ Do not import from ``.app`` (it imports us, which would cycle).
 
 from __future__ import annotations
 
-from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -100,6 +99,11 @@ async def api_image(self, request):
     mime, _ = _mt.guess_type(str(full))
     if not mime or not mime.startswith("image/"):
         return JSONResponse({"error": "not an image"}, status_code=415)
+    if mime == "image/svg+xml":
+        # An SVG is a document that can run script, and this serves it from
+        # the daemon's own origin — anyone who can drop a file in the vault
+        # (the chat composer's upload now can) could otherwise script the page.
+        return JSONResponse({"error": "SVG is not served inline"}, status_code=415)
     return FileResponse(str(full), media_type=mime)
 
 
@@ -107,9 +111,10 @@ async def api_image(self, request):
 async def api_upload(self, request):
     """Accept a file upload, save to vault inbox attachments, return its vault path.
 
-    Pattern mirrors apps/reports/app.py api_upload_figure: starlette form parsing.
+    The save is ``emptyos.sdk.attachments.store_upload`` (shared with the
+    agent's chat composer): timestamped, sanitised name, confined to the vault.
     """
-    import re
+    from emptyos.sdk.attachments import store_upload
 
     form = await request.form()
     upload = form.get("file")
@@ -118,27 +123,16 @@ async def api_upload(self, request):
 
     max_mb = int(self.app_config("upload_max_mb", 50))
     data = await upload.read()
-    if not data:
-        return {"error": "empty file"}
-    if len(data) > max_mb * 1024 * 1024:
-        return {"error": f"file too large ({len(data) // (1024 * 1024)}MB > {max_mb}MB cap)"}
-
-    vault_root = self.kernel.config.notes_path
-    if not vault_root:
-        return {"error": "no vault configured"}
-
-    rel_dir = self.vault_config("attachments", "00_Inbox/_attachments")
-    ts = datetime.now().strftime("%Y%m%d-%H%M%S")
-    raw_name = upload.filename or "upload.bin"
-    safe_name = re.sub(r"[^A-Za-z0-9._-]+", "-", raw_name).strip("-") or "upload.bin"
-    rel_path = f"{rel_dir}/{ts}-{safe_name}"
-
-    abs_path = Path(vault_root) / rel_path
-    try:
-        abs_path.parent.mkdir(parents=True, exist_ok=True)
-        abs_path.write_bytes(data)
-    except Exception as e:
-        return {"error": f"write failed: {e}"}
+    saved = store_upload(
+        self.kernel.config.notes_path,
+        self.vault_config("attachments", "00_Inbox/_attachments"),
+        upload.filename or "upload.bin",
+        data,
+        max_bytes=max_mb * 1024 * 1024,
+    )
+    if "error" in saved:
+        return saved
+    rel_path = saved["path"]
 
     # Re-index if it's markdown so VaultIndex picks it up immediately.
     if rel_path.endswith(".md"):
@@ -151,7 +145,7 @@ async def api_upload(self, request):
 
     return {
         "path": rel_path,
-        "name": raw_name,
-        "size": len(data),
+        "name": saved["name"],
+        "size": saved["size"],
         "mime": getattr(upload, "content_type", "") or "",
     }

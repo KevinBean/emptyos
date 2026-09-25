@@ -61,6 +61,9 @@ const MARKUP = `<div class="cadv-se">
   <div class="sec">Placed <span data-se-count class="muted"></span></div><div data-se-roster></div>
   <div class="sec">Selected</div><div data-se-insp></div>
   <div data-se-ai></div>
+  <div class="muted" style="padding:8px;border:1px solid var(--warning);border-radius:8px">Preliminary AS 2067 design screening - not final design certification.</div>
+  <div class="sec">Design basis</div><div data-se-basis></div>
+  <div class="sec">Linked bay modules</div><div data-se-assemblies></div>
   <div class="sec">Engineering inputs</div><div data-se-enginputs></div>
   <div class="sec">Connections</div><div data-se-cableform></div><div data-se-cablelist></div>
   <div class="sec">Checks & deliverables</div><div data-se-checks></div>
@@ -184,19 +187,19 @@ function renderInspector(vctx, st) {
   if (!el) return;
   const inst = ((st.scene && st.scene.instances) || []).find((x) => x.id === st.selected);
   if (!inst) { el.innerHTML = '<div class="muted">Nothing selected.</div>'; return; }
-  const tpl = st.templates[inst.type] || {};
-  const xyz = inst.xyz || [0, 0, 0];
+  const tpl = st.templates[inst.type] || {}, xyz = inst.xyz || [0, 0, 0], locked=!!inst.assembly_id;
+  const dis=locked?' disabled':'';
   el.innerHTML =
     '<label>Label</label><input class="eos-tool-field" data-se-label value="' + escAttr(inst.label || '') + '">'
     + '<label>Type</label><input class="eos-tool-field" value="' + escAttr(tpl.label || inst.type) + '" disabled>'
+    + (locked?'<div class="muted" data-se-lock-note>Geometry owned by linked module '+esc(inst.assembly_id)+'. Edit origin, yaw, or spacing above.</div>':'')
     + '<label>Position [x, y, z] m</label><div class="xyz">'
-    + '<input class="eos-tool-field" data-se-x value="' + escAttr(xyz[0]) + '"><input class="eos-tool-field" data-se-y value="' + escAttr(xyz[1]) + '"><input class="eos-tool-field" data-se-z value="' + escAttr(xyz[2]) + '"></div>'
+    + '<input class="eos-tool-field" data-se-x value="' + escAttr(xyz[0]) + '"'+dis+'><input class="eos-tool-field" data-se-y value="' + escAttr(xyz[1]) + '"'+dis+'><input class="eos-tool-field" data-se-z value="' + escAttr(xyz[2]) + '"'+dis+'></div>'
     + '<label>Linked electrical node</label><select class="eos-tool-field" data-se-ref>' + nodeOptions(st, inst.domain_ref) + '</select>'
-    + '<div class="row"><button class="eos-tool-btn" data-se-apply title="Apply selected equipment changes">Apply</button><button class="eos-tool-btn eos-tool-btn-danger" data-se-del title="Delete selected equipment">Delete</button></div>';
+    + '<div class="row"><button class="eos-tool-btn" data-se-apply>Apply label/link</button><button class="eos-tool-btn eos-tool-btn-danger" data-se-del'+dis+'>Delete</button></div>';
   el.querySelector('[data-se-apply]').addEventListener('click', () => applyInstance(vctx, st));
-  el.querySelector('[data-se-del]').addEventListener('click', () => deleteEquip(vctx, st, inst.id));
+  if(!locked)el.querySelector('[data-se-del]').addEventListener('click', () => deleteEquip(vctx, st, inst.id));
 }
-
 function cableLen(st, c) {
   const insts = (st.scene && st.scene.instances) || [];
   const a = insts.find((i) => i.id === c.from_instance), b = insts.find((i) => i.id === c.to_instance);
@@ -206,36 +209,109 @@ function cableLen(st, c) {
 }
 
 function renderCables(vctx, st) {
-  const form = vctx.pane.querySelector('[data-se-cableform]');
-  const list = vctx.pane.querySelector('[data-se-cablelist]');
+  const form = vctx.pane.querySelector('[data-se-cableform]'), list = vctx.pane.querySelector('[data-se-cablelist]');
   if (!form || !list) return;
   const insts = ((st.scene && st.scene.instances) || []).filter((i) => i.type !== 'fence' && i.type !== 'poc_marker');
   const optI = insts.map((i) => '<option value="' + escAttr(i.id) + '">' + esc(i.label || i.id) + '</option>').join('');
   const optC = Object.keys(st.cableTypes).map((k) => '<option value="' + escAttr(k) + '">' + esc(st.cableTypes[k].label || k) + '</option>').join('');
   const optF = FORMATIONS.map((f) => '<option value="' + f + '">' + f + '</option>').join('');
-  form.innerHTML = insts.length < 2
-    ? '<div class="muted">Add at least two equipment items to make a connection.</div>'
+  form.innerHTML = insts.length < 2 ? '<div class="muted">Add at least two equipment items to make a connection.</div>'
     : '<label>From</label><select class="eos-tool-field" data-se-cfrom>' + optI + '</select>'
+      + '<label>From terminal group</label><select class="eos-tool-field" data-se-cfromterm></select>'
       + '<label>To</label><select class="eos-tool-field" data-se-cto>' + optI + '</select>'
+      + '<label>To terminal group</label><select class="eos-tool-field" data-se-ctoterm></select>'
       + '<label>Kind</label><select class="eos-tool-field" data-se-ckind><option value="cable">Cable</option><option value="rigid_busbar">Rigid busbar</option><option value="flexible_conductor">Flexible conductor</option></select>'
       + '<label>Cable type</label><select class="eos-tool-field" data-se-ctype>' + optC + '</select>'
       + '<label>Formation</label><select class="eos-tool-field" data-se-cfmt>' + optF + '</select>'
-      + '<div class="xyz"><div><label>Voltage kV</label><input class="eos-tool-field" data-se-ckv value="132"></div><div><label>Spacing m</label><input class="eos-tool-field" data-se-cspacing value="2.5"></div><div><label>Elevation m</label><input class="eos-tool-field" data-se-celev value="4"></div></div>'
+      + '<div class="xyz"><div><label>Voltage kV</label><input class="eos-tool-field" data-se-ckv value="132"></div><div><label>Spacing m</label><input class="eos-tool-field" data-se-cspacing value="2.5"></div><div><label>Sag/elevation m</label><input class="eos-tool-field" data-se-celev value="0.6"></div></div>'
       + '<label>Manual Isc kA (blank = linked Power Study)</label><input class="eos-tool-field" data-se-cisc value="">'
-      + '<div class="row"><button class="eos-tool-btn" data-se-caddbtn title="Add connection">+ Connection</button></div>';
-  const addBtn = form.querySelector('[data-se-caddbtn]');
-  if (addBtn) addBtn.addEventListener('click', () => addCable(vctx, st));
-  const cables = (st.scene && st.scene.connections) || ((st.scene && st.scene.cables) || []).map((c) => ({ ...c, kind:'cable' }));
+      + '<div class="row"><button class="eos-tool-btn" data-se-caddbtn>+ Connection</button></div>';
+  const groups=(id)=>{const inst=insts.find((i)=>i.id===id),tpl=inst&&(st.templates[inst.type]||{}),frames=(tpl&&tpl.terminal_frames)||{};return [...new Set(Object.entries(frames).filter(([,f])=>f.phase).map(([name])=>name.replace(/-[abc]$/,'')))];};
+  const fill=(instSel,termSel)=>{const target=form.querySelector(termSel),source=form.querySelector(instSel);if(!target||!source)return;target.innerHTML=groups(source.value).map((g)=>'<option value="'+escAttr(g)+'">'+esc(g)+'</option>').join('');};
+  if(insts.length>=2){const fr=form.querySelector('[data-se-cfrom]'),to=form.querySelector('[data-se-cto]');to.selectedIndex=1;const refresh=()=>{fill('[data-se-cfrom]','[data-se-cfromterm]');fill('[data-se-cto]','[data-se-ctoterm]');};fr.addEventListener('change',refresh);to.addEventListener('change',refresh);refresh();}
+  const addBtn = form.querySelector('[data-se-caddbtn]'); if (addBtn) addBtn.addEventListener('click', () => addCable(vctx, st));
+  const cables = (st.scene && st.scene.connections) || [];
   list.innerHTML = '';
   cables.forEach((c) => {
     const row = document.createElement('div'); row.className = 'eq-row';
     const lbl = document.createElement('span'); lbl.className = 'nm';
-    lbl.textContent = (c.kind || 'cable').replaceAll('_', ' ') + ': ' + c.from_instance + ' to ' + c.to_instance + ' / ' + cableLen(st, c) + ' m';
-    const del = document.createElement('button'); del.className = 'se-del eos-tool-icon-btn'; del.textContent = 'x'; del.title = 'Delete connection';
-    del.addEventListener('click', () => deleteCable(vctx, st, c.id));
-    row.append(lbl, del);
+    lbl.textContent = (c.kind || 'cable').replaceAll('_', ' ') + ': ' + c.from_instance + '/' + (c.from_terminal||'legacy') + ' to ' + c.to_instance + '/' + (c.to_terminal||'legacy');
+    const del = document.createElement('button'); del.className = 'se-del eos-tool-icon-btn'; del.textContent = 'x';
+    if(c.assembly_id){del.disabled=true;del.title='Owned by linked module';}else del.addEventListener('click', () => deleteCable(vctx, st, c.id));
+    row.append(lbl, del); list.appendChild(row);
+  });
+}
+function renderBasis(vctx, st) {
+  const el=vctx.pane.querySelector('[data-se-basis]'); if(!el)return;
+  const b=(st.scene&&st.scene.design_basis)||{};
+  el.innerHTML='<div class="xyz"><div><label>Primary kV</label><input class="eos-tool-field" data-se-basis-kv value="'+escAttr(b.voltage_kv==null?132:b.voltage_kv)+'"></div>'
+    +'<div><label>Secondary kV</label><input class="eos-tool-field" data-se-basis-secondary value="'+escAttr(b.secondary_voltage_kv==null?33:b.secondary_voltage_kv)+'"></div>'
+    +'<div><label>Altitude m</label><input class="eos-tool-field" data-se-basis-altitude value="'+escAttr(b.altitude_m==null?0:b.altitude_m)+'"></div></div>'
+    +'<label>Geometry condition</label><select class="eos-tool-field" data-se-basis-geometry><option value="rod-structure">Rod-to-structure</option><option value="conductor-structure">Conductor-to-structure</option></select>'
+    +'<div class="muted">AS 2067:2016 / preliminary-design-screening</div>'
+    +'<div class="row"><button class="eos-tool-btn" data-se-basis-save>Save basis</button></div>';
+  const geom=el.querySelector('[data-se-basis-geometry]');if(geom)geom.value=b.geometry_condition||'rod-structure';
+  el.querySelector('[data-se-basis-save]').addEventListener('click',()=>saveBasis(vctx,st));
+}
+
+async function saveBasis(vctx,st){
+  const number=(sel)=>Number(vctx.pane.querySelector(sel).value);
+  const basis={
+    voltage_kv:number('[data-se-basis-kv]'),
+    secondary_voltage_kv:number('[data-se-basis-secondary]'),
+    altitude_m:number('[data-se-basis-altitude]'),
+    geometry_condition:vctx.pane.querySelector('[data-se-basis-geometry]').value,
+    governing_standard:'AS 2067:2016',assurance:'preliminary-design-screening'
+  };
+  if(![basis.voltage_kv,basis.secondary_voltage_kv,basis.altitude_m].every(Number.isFinite)){vctx.setStatus&&vctx.setStatus('Design basis values must be numeric',true);return;}
+  st.scene.design_basis=basis;
+  const r=await api('PUT',PREFIX+'/scenes/'+encodeURIComponent(sceneId()),{scene:st.scene});
+  if(!r||!r.ok){vctx.setStatus&&vctx.setStatus('Save basis failed: '+((r&&r.error)||'?'),true);return;}
+  st.scene=r.scene;await reloadCaddoc(vctx,st);renderAll(vctx,st);vctx.setStatus&&vctx.setStatus('Design basis saved');
+}
+
+function renderAssemblies(vctx,st){
+  const el=vctx.pane.querySelector('[data-se-assemblies]');if(!el)return;
+  el.innerHTML='<div class="row"><button class="eos-tool-btn" data-se-add-line-bay>+ 132 kV line bay</button><button class="eos-tool-btn" data-se-add-transformer-bay>+ 132/33 kV transformer bay</button></div><div data-se-assembly-list></div>';
+  el.querySelector('[data-se-add-line-bay]').addEventListener('click',()=>addAssembly(vctx,st,'line_bay_132kv'));
+  el.querySelector('[data-se-add-transformer-bay]').addEventListener('click',()=>addAssembly(vctx,st,'transformer_bay_132_33kv'));
+  const list=el.querySelector('[data-se-assembly-list]');
+  ((st.scene&&st.scene.assemblies)||[]).forEach((a)=>{
+    const row=document.createElement('div');row.className='check-row review';
+    const p=a.params||{},o=a.origin||[0,0,0];
+    row.innerHTML='<b>'+esc(a.label||a.type)+'</b><div class="muted">'+esc(a.id)+' / '+esc(a.generator_revision||'legacy')+'</div>'
+      +'<div class="xyz"><div><label>Origin X</label><input class="eos-tool-field" data-a-x value="'+escAttr(o[0])+'"></div><div><label>Origin Y</label><input class="eos-tool-field" data-a-y value="'+escAttr(o[1])+'"></div><div><label>Yaw deg</label><input class="eos-tool-field" data-a-yaw value="'+escAttr(a.yaw_deg||0)+'"></div></div>'
+      +'<label>Phase spacing m</label><input class="eos-tool-field" data-a-spacing value="'+escAttr(p.phase_spacing_m||2.5)+'">'
+      +'<div class="row"><button class="eos-tool-btn" data-a-update>Regenerate</button><button class="eos-tool-btn eos-tool-btn-danger" data-a-delete>Delete module</button></div>';
+    row.querySelector('[data-a-update]').addEventListener('click',()=>updateAssembly(vctx,st,a.id,row));
+    row.querySelector('[data-a-delete]').addEventListener('click',()=>deleteAssembly(vctx,st,a.id));
     list.appendChild(row);
   });
+}
+
+async function addAssembly(vctx,st,type){
+  const basis=(st.scene&&st.scene.design_basis)||{};
+  const same=((st.scene&&st.scene.assemblies)||[]).length;
+  const origin=type==='line_bay_132kv'?[same*4,0,0]:[42+same*4,0,0];
+  const payload={type,origin,yaw_deg:0,params:{voltage_kv:Number(basis.voltage_kv||132),secondary_voltage_kv:Number(basis.secondary_voltage_kv||33),phase_spacing_m:2.5}};
+  const r=await api('POST',PREFIX+'/scenes/'+encodeURIComponent(sceneId())+'/assemblies',payload);
+  if(!r||!r.ok){vctx.setStatus&&vctx.setStatus('Add bay failed: '+((r&&r.error)||'?'),true);return;}
+  st.scene=r.scene;await reloadCaddoc(vctx,st);renderAll(vctx,st);vctx.setStatus&&vctx.setStatus('Linked bay placed');
+}
+
+async function updateAssembly(vctx,st,id,row){
+  const value=(sel)=>Number(row.querySelector(sel).value);
+  const basis=(st.scene&&st.scene.design_basis)||{};
+  const payload={origin:[value('[data-a-x]'),value('[data-a-y]'),0],yaw_deg:value('[data-a-yaw]'),params:{voltage_kv:Number(basis.voltage_kv||132),secondary_voltage_kv:Number(basis.secondary_voltage_kv||33),phase_spacing_m:value('[data-a-spacing]')}};
+  const r=await api('PUT',PREFIX+'/scenes/'+encodeURIComponent(sceneId())+'/assemblies/'+encodeURIComponent(id),payload);
+  if(!r||!r.ok){vctx.setStatus&&vctx.setStatus('Regenerate failed: '+((r&&r.error)||'?'),true);return;}
+  st.scene=r.scene;await reloadCaddoc(vctx,st);renderAll(vctx,st);vctx.setStatus&&vctx.setStatus('Bay regenerated with stable child IDs');
+}
+
+async function deleteAssembly(vctx,st,id){
+  const r=await api('DELETE',PREFIX+'/scenes/'+encodeURIComponent(sceneId())+'/assemblies/'+encodeURIComponent(id));
+  if(!r||!r.ok){vctx.setStatus&&vctx.setStatus('Delete module failed',true);return;}
+  st.scene=r.scene;st.selected=null;await reloadCaddoc(vctx,st);renderAll(vctx,st);
 }
 
 function renderEngineeringInputs(vctx, st) {
@@ -272,7 +348,7 @@ function renderChecks(vctx, st) {
 }
 
 function renderAll(vctx, st) {
-  renderPalette(vctx, st); renderRoster(vctx, st); renderInspector(vctx, st); renderEngineeringInputs(vctx, st); renderCables(vctx, st); renderChecks(vctx, st);
+  renderBasis(vctx, st); renderAssemblies(vctx, st); renderPalette(vctx, st); renderRoster(vctx, st); renderInspector(vctx, st); renderEngineeringInputs(vctx, st); renderCables(vctx, st); renderChecks(vctx, st);
   if (st.aiPanel) st.aiPanel.refresh();
 }
 
@@ -333,12 +409,15 @@ async function addCable(vctx, st) {
   if (fr === to) { if (vctx.setStatus) vctx.setStatus('Pick two different items', true); return; }
   const kind = vctx.pane.querySelector('[data-se-ckind]').value;
   const isc = parseFloat(vctx.pane.querySelector('[data-se-cisc]').value);
+  const sag=parseFloat(vctx.pane.querySelector('[data-se-celev]').value);
   const payload = { kind, from_instance: fr, to_instance: to,
+    from_terminal:vctx.pane.querySelector('[data-se-cfromterm]').value,
+    to_terminal:vctx.pane.querySelector('[data-se-ctoterm]').value,
     cable_type: vctx.pane.querySelector('[data-se-ctype]').value,
     formation: vctx.pane.querySelector('[data-se-cfmt]').value,
     voltage_kv: parseFloat(vctx.pane.querySelector('[data-se-ckv]').value),
     phase_spacing_m: parseFloat(vctx.pane.querySelector('[data-se-cspacing]').value),
-    elevation_m: parseFloat(vctx.pane.querySelector('[data-se-celev]').value) };
+    preliminary_sag_m:kind==='flexible_conductor'?sag:null };
   if (!isNaN(isc) && isc > 0) payload.fault_override = { isc_3ph_ka: isc };
   const r = await api('POST', PREFIX + '/scenes/' + encodeURIComponent(id) + '/connections', payload);
   if (!r || !r.ok) { if (vctx.setStatus) vctx.setStatus('Add connection failed: ' + ((r && r.error) || '?'), true); return; }
@@ -487,11 +566,12 @@ async function applyInstance(vctx, st) {
   const id = sceneId();
   const num = (sel) => { const v = parseFloat(vctx.pane.querySelector(sel).value); return isNaN(v) ? 0 : v; };
   const refEl = vctx.pane.querySelector('[data-se-ref]');
+  const inst=((st.scene&&st.scene.instances)||[]).find((item)=>item.id===st.selected);
   const payload = {
     label: vctx.pane.querySelector('[data-se-label]').value.trim() || undefined,
-    xyz: [num('[data-se-x]'), num('[data-se-y]'), num('[data-se-z]')],
     domain_ref: refEl ? (refEl.value || null) : undefined,
   };
+  if(!inst||!inst.assembly_id)payload.xyz=[num('[data-se-x]'),num('[data-se-y]'),num('[data-se-z]')];
   const r = await api('PUT', PREFIX + '/scenes/' + encodeURIComponent(id) + '/instances/' + encodeURIComponent(st.selected), payload);
   if (!r || !r.ok) { if (vctx.setStatus) vctx.setStatus('Apply failed', true); return; }
   st.scene = r.scene;

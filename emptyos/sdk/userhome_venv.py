@@ -16,13 +16,24 @@ say "failed to launch CadQuery interpreter" while markitdown says "...markitdown
 interpreter"); the helpers own only the identical ``create_subprocess_exec`` +
 ``wait_for`` + decode plumbing that was otherwise copy-pasted per plugin.
 
+``run_json_script`` is the second layer, for the "write a spec.json, run a
+runner.py against it, parse its JSON stdout into a structured envelope" shape
+— extracted at the second consumer (``plugins/manim`` mirroring
+``plugins/cadquery``'s ``_run_subprocess``, both writing byte-identical
+launch-failed / timed-out / empty-stdout / bad-json envelopes with only the
+domain word and the in-flight verb differing). Same statelessness rule
+applies: it never touches the caller's ``_launch_ok``/``_launch_err`` — it
+returns the raw ``RunResult`` alongside the parsed payload so the caller
+updates its own state exactly as it did before extraction.
+
 Consumers: ``plugins/cadquery`` (cadquery-3.12), ``plugins/markitdown``
-(markitdown-3.13).
+(markitdown-3.13), ``plugins/manim`` (manim-3.12, ``run_json_script`` only).
 """
 
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 import sys
 from dataclasses import dataclass
@@ -129,3 +140,91 @@ async def run_venv(
         out_b.decode("utf-8", errors="replace").strip(),
         err_b.decode("utf-8", errors="replace").strip(),
     )
+
+
+async def run_json_script(
+    python_exe: str,
+    runner_path: str,
+    spec_path,
+    spec: dict,
+    *,
+    timeout: float = 120.0,
+    domain_label: str = "interpreter",
+    action_label: str = "run",
+) -> tuple[dict, RunResult]:
+    """Write ``spec`` to ``spec_path`` and run
+    ``python_exe runner_path spec_path``, parsing the runner's JSON stdout
+    into a structured envelope.
+
+    The caller owns the temp-dir lifecycle (it already needs one for the
+    script/source file the spec references) — this only owns the
+    write-spec + run + parse-or-envelope-error plumbing that was duplicated
+    byte-for-byte between ``plugins/cadquery``'s ``_run_subprocess`` and
+    ``plugins/manim``'s ``render_scene``.
+
+    Returns ``(payload, result)``:
+      - ``payload`` is always a dict — either the runner's own JSON stdout
+        verbatim, or a ``{"ok": False, "stage": "plugin", "error": "..."}``
+        envelope for any subprocess-level failure (didn't launch, timed out,
+        empty stdout, invalid JSON). ``domain_label`` / ``action_label``
+        customise the two wordings that differ per plugin (e.g. "CadQuery
+        interpreter" / "compile" vs "Manim interpreter" / "render") — every
+        other word in the four error shapes is intentionally identical
+        across every consumer, so a caller reading `.claude/rules/
+        environment.md` for one plugin recognises the shape in another.
+      - ``result`` is the raw ``RunResult``. This helper never touches the
+        caller's own ``_launch_ok``/``_launch_err`` (same statelessness rule
+        as the rest of this module) — the caller reads
+        ``result.launch_failed`` and updates its own state exactly as before
+        extraction.
+    """
+    from pathlib import Path
+
+    spec_path = Path(spec_path)
+    spec_path.write_text(json.dumps(spec), encoding="utf-8")
+
+    result = await run_venv(
+        python_exe, [runner_path, str(spec_path)], timeout=timeout,
+    )
+
+    if result.launch_failed:
+        return (
+            {
+                "ok": False, "stage": "plugin",
+                "error": f"failed to launch {domain_label}: {result.launch_exc}",
+            },
+            result,
+        )
+    if result.timed_out:
+        return (
+            {
+                "ok": False, "stage": "plugin",
+                "error": f"{action_label} timeout after {timeout}s",
+            },
+            result,
+        )
+    if not result.stdout:
+        return (
+            {
+                "ok": False, "stage": "plugin",
+                "error": (
+                    f"runner produced no stdout (exit={result.returncode}); "
+                    f"stderr={result.stderr[:500]}"
+                ),
+            },
+            result,
+        )
+    try:
+        payload = json.loads(result.stdout)
+    except json.JSONDecodeError as exc:
+        return (
+            {
+                "ok": False, "stage": "plugin",
+                "error": (
+                    f"runner stdout is not JSON: {exc}; raw={result.stdout[:500]}; "
+                    f"stderr={result.stderr[:500]}"
+                ),
+            },
+            result,
+        )
+    return payload, result

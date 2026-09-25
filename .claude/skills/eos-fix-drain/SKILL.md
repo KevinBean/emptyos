@@ -1,6 +1,6 @@
 ---
 name: eos-fix-drain
-description: Run the dogfood-agent fix drain end-to-end with the pre-flight + post-revert safety gates that `apps/fix-agent` itself doesn't enforce. Use when the user says "drain the fix queue", "run the fix drain", "process pending fix-prompts", "fix-drain", or wants to apply N queued fixes overnight / in one batch. Wraps `POST /dogfood-agent/api/fix-drain/start` with the invariants documented in `docs/fix-agent.md` — refuses to launch on dirty state, verifies main is linear + free of orphan branches after each revert, surfaces 529/interrupt fallout for manual triage.
+description: Run the dogfood-agent fix drain end-to-end with the pre-flight + post-revert safety gates that `apps/extension/dev/fix-agent` itself doesn't enforce. Use when the user says "drain the fix queue", "run the fix drain", "process pending fix-prompts", "fix-drain", or wants to apply N queued fixes overnight / in one batch. Wraps `POST /dogfood-agent/api/fix-drain/start` with the invariants documented in `docs/fix-agent.md` — refuses to launch on dirty state, verifies main is linear + free of orphan branches after each revert, surfaces 529/interrupt fallout for manual triage. NOT for queueing the fix-prompts (use eos-usecase-audit or the dogfood agent) and NOT for reviewing what a drained fix changed (use eos-agent-diff-review).
 ---
 
 # EmptyOS Fix Drain
@@ -208,6 +208,6 @@ If the user wants harder abort: there isn't one. Killing the daemon (which they 
 - `docs/fix-agent.md` — full operational contract: worktree semantics, merge gates, revert mechanics, failure modes
 - `.claude/rules/test-fix-verify-loop.md` — architectural shape
 - `.claude/rules/daemon-handling.md` — why this skill never restarts daemons
-- `apps/fix-agent/app.py:347-507` — merge, verify, revert handlers
-- `apps/dogfood-agent/drain.py:266-436` — the `_drain_queue` loop
+- `apps/extension/dev/fix-agent/app.py:347-507` — merge, verify, revert handlers
+- `apps/extension/dev/dogfood-agent/drain.py:266-436` — the `_drain_queue` loop
 - Memory `feedback_drain_preflight_verify` — the lesson behind pre-flight gate #6

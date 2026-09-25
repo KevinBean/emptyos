@@ -68,6 +68,11 @@ def FakeAppClass(drain_module):
         "_attempts_path", "_load_attempts", "_save_attempts",
         "_bump_attempt", "_clear_attempt", "_attempt_count",
         "_blocked_dir", "_move_to_blocked",
+        # _fm_block is the shared frontmatter-block reader the field readers
+        # delegate to (added 2026-08-16). It must stay in this tuple for the
+        # same reason app.py binds it — an unbound helper reached via self.X
+        # raises at call time, not import time.
+        "_fm_block",
         "_prompt_frontmatter_key", "_dedupe_pending_by_key",
         "_git_repo", "_auto_stash_push", "_auto_stash_pop",
         "_list_pending_fix_prompts",

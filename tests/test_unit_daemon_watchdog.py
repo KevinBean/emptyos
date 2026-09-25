@@ -257,3 +257,170 @@ def test_find_daemon_pids_survives_a_failed_probe(dw, monkeypatch):
     """A broken/absent process lister must not break evidence capture."""
     monkeypatch.setattr(dw, "run_cmd", lambda *a, **k: "--- exception: TimeoutExpired ---")
     assert dw.find_daemon_pids() == []
+
+
+# ── console-storm census ────────────────────────────────────────────────────
+# Both machine-killing incidents (2026-08-01, 2026-08-15) were console-host
+# storms. Pin BOTH directions against the shape of a real tasklist: it must
+# fire on a storm and stay silent on a healthy box, or it is noise that gets
+# ignored the one night it matters.
+
+_TASKLIST_HEAD = (
+    "\r\nImage Name                     PID Session Name        Session#    Mem Usage\r\n"
+    "========================= ======== ================ =========== ============\r\n"
+)
+
+
+def _tasklist(rows: list[tuple[str, int]]) -> str:
+    """Render a tasklist /FO TABLE body from (image, count) pairs."""
+    out = [_TASKLIST_HEAD]
+    pid = 1000
+    for name, count in rows:
+        for _ in range(count):
+            pid += 4
+            out.append(f"{name:<25} {pid:>8} Console                    1     10,240 K\r\n")
+    return "".join(out)
+
+
+def test_console_census_counts_hosts_and_processes(dw):
+    text = _tasklist([("conhost.exe", 5), ("OpenConsole.exe", 3), ("chrome.exe", 7)])
+    c = dw.console_census(text)
+    assert c["conhost"] == 5
+    assert c["openconsole"] == 3
+    assert c["console_hosts"] == 8
+    assert c["processes"] == 15
+
+
+def test_console_census_silent_on_a_healthy_box(dw):
+    """Measured baseline on the dev box is 26-51 console hosts across ~200 snapshots."""
+    text = _tasklist([("conhost.exe", 42), ("OpenConsole.exe", 9), ("svchost.exe", 100)])
+    assert dw.console_census(text)["console_hosts"] < dw.CONSOLE_STORM_THRESHOLD
+
+
+def test_console_census_fires_on_a_storm(dw):
+    """2026-08-15 shape: 1069 conhost + 749 OpenConsole."""
+    text = _tasklist([("conhost.exe", 1069), ("OpenConsole.exe", 749)])
+    assert dw.console_census(text)["console_hosts"] >= dw.CONSOLE_STORM_THRESHOLD
+
+
+def test_console_census_ignores_header_and_junk(dw):
+    """Header rules and a truncated trailing line must not count as processes."""
+    assert dw.console_census(_TASKLIST_HEAD + "not a process line\r\n")["processes"] == 0
+
+
+def test_console_census_is_case_insensitive(dw):
+    """tasklist casing has varied across Windows builds; don't miss a storm on it."""
+    text = _tasklist([("CONHOST.EXE", 4), ("openconsole.exe", 2)])
+    assert dw.console_census(text)["console_hosts"] == 6
+
+
+def test_memory_pressure_shape_or_empty(dw):
+    """Never raises; either a full reading or {} where unavailable."""
+    m = dw.memory_pressure()
+    assert isinstance(m, dict)
+    if m:
+        assert 0 < m["commit_pct"] <= 100
+        assert m["commit_used_mb"] <= m["commit_limit_mb"]
+
+
+# ── recovery_verdict: which failures earn a kill ─────────────────────────────
+
+class TestRecoveryVerdict:
+    """The watchdog killed a healthy, listening daemon ~235 times.
+
+    Measured across 244 captured snapshots on the Windows box: 96% ended at the
+    two-poll detection floor (median seconds_wedged 35.0), netstat showed :9000
+    LISTENING on the very PID that was then killed, and py-spy showed the main
+    thread idle in `select`. Only 7 were alive-but-not-listening — the genuine
+    shape. A distribution pinned at the detection floor means the threshold set
+    the number, not the fault.
+    """
+
+    def test_a_dead_daemon_recovers_immediately(self, dw):
+        go, why = dw.recovery_verdict(None, [], 1.0, 120.0)
+        assert go and why == "dead"
+
+    def test_alive_but_not_listening_recovers_immediately(self, dw):
+        """The 7-of-244 genuine case: process up, serving nothing. Unambiguous,
+        so it must NOT be delayed by the sustained-failure bar."""
+        go, why = dw.recovery_verdict(None, [4242], 1.0, 120.0)
+        assert go and why == "not-listening"
+
+    def test_a_listening_daemon_that_missed_two_probes_is_not_killed(self, dw):
+        """The 96% case. 35s is the median of every snapshot on the box."""
+        go, why = dw.recovery_verdict(1234, [], 35.0, 120.0)
+        assert not go
+        assert "1234" in why and "35s of 120s" in why
+
+    def test_a_listening_daemon_still_failing_much_later_is_killed(self, dw):
+        go, why = dw.recovery_verdict(1234, [], 130.0, 120.0)
+        assert go and "unresponsive for 130s" in why
+
+    def test_the_bar_is_inclusive_at_the_boundary(self, dw):
+        assert dw.recovery_verdict(1234, [], 120.0, 120.0)[0] is True
+        assert dw.recovery_verdict(1234, [], 119.9, 120.0)[0] is False
+
+    def test_recover_after_zero_restores_the_old_behaviour(self, dw):
+        """The escape hatch has to actually escape, or nobody can get the
+        aggressive behaviour back on a box that needs it."""
+        go, why = dw.recovery_verdict(1234, [], 0.1, 0.0)
+        assert go and why == "unresponsive"
+
+    def test_the_delay_never_applies_to_a_daemon_that_is_not_serving(self, dw):
+        """Both unambiguous shapes recover at once at any recover_after."""
+        for after in (0.0, 120.0, 86400.0):
+            assert dw.recovery_verdict(None, [], 0.0, after)[0] is True
+            assert dw.recovery_verdict(None, [9], 0.0, after)[0] is True
+
+
+class TestRecoveryVerdictIsActuallyWired:
+    """A tested pure helper proves the helper works, never that anything calls
+    it (.claude/rules/audits.md). The kill lives in main(); these read the AST
+    of main() so a comment mentioning the helper cannot satisfy them.
+    """
+
+    @staticmethod
+    def _main_fn(dw):
+        import ast
+        src = (REPO / "scripts" / "daemon_watchdog.py").read_text(encoding="utf-8")
+        tree = ast.parse(src)
+        fn = next((n for n in ast.walk(tree)
+                   if isinstance(n, ast.FunctionDef) and n.name == "main"), None)
+        assert fn is not None, "main() is gone — this test cannot see the kill path"
+        return fn
+
+    def test_main_calls_recovery_verdict(self, dw):
+        import ast
+        calls = [n for n in ast.walk(self._main_fn(dw))
+                 if isinstance(n, ast.Call) and isinstance(n.func, ast.Name)
+                 and n.func.id == "recovery_verdict"]
+        assert len(calls) == 1, (
+            f"main() calls recovery_verdict {len(calls)}x; the kill path must "
+            "consult it exactly once")
+
+    def test_the_call_is_given_the_operator_flag_not_a_literal(self, dw):
+        """Passing a literal would make --recover-after inert: the flag would
+        parse, appear in --help, and change nothing."""
+        import ast
+        call = next(n for n in ast.walk(self._main_fn(dw))
+                    if isinstance(n, ast.Call) and isinstance(n.func, ast.Name)
+                    and n.func.id == "recovery_verdict")
+        assert len(call.args) == 4, f"recovery_verdict called with {len(call.args)} args"
+        last = call.args[3]
+        assert isinstance(last, ast.Attribute) and last.attr == "recover_after", (
+            "the sustained-failure bar is not read from args.recover_after — "
+            f"got {ast.dump(last)[:80]}")
+
+    def test_a_false_verdict_short_circuits_before_any_kill(self, dw):
+        """The verdict must GUARD the kill, not merely be computed next to it."""
+        import ast
+        fn = self._main_fn(dw)
+        guards = [n for n in ast.walk(fn)
+                  if isinstance(n, ast.If) and isinstance(n.test, ast.UnaryOp)
+                  and isinstance(n.test.op, ast.Not)
+                  and isinstance(n.test.operand, ast.Name)
+                  and n.test.operand.id == "go"]
+        assert guards, "no `if not go:` guard — the verdict is computed and ignored"
+        bodies = [ast.dump(ast.Module(body=g.body, type_ignores=[])) for g in guards]
+        assert any("Continue" in b for b in bodies), (
+            "the guard does not `continue` — execution falls through to the kill")

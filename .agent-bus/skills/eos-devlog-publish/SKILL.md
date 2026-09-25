@@ -1,6 +1,6 @@
 ---
 name: eos-devlog-publish
-description: Turn EmptyOS session devlogs into DRAFT posts on the EmptyOS site (eos.binbian.net). Reads session sections from `{vault}/10_Projects/emptyos/log/YYYY-MM-DD.md`, writes them as draft post notes (unpublished by default) under the EmptyOS site source. Posts show up in the Publish app's Drafts tab for review — user flips the publish flag to true when ready. Pass `--publish` to skip the draft step. Checks discrepancies vs what's already published, triggers local rebuild, never auto-deploys. Use when the user says "publish devlog", "draft session", "save session as draft", "blog this session", or wants to surface session work publicly after `/eos-session-wrapup`.
+description: Turn EmptyOS session devlogs into DRAFT posts on the EmptyOS site (eos.binbian.net). Reads session sections from `{vault}/10_Projects/emptyos/log/YYYY-MM-DD.md`, writes them as draft post notes (unpublished by default) under the EmptyOS site source. Posts show up in the Publish app's Drafts tab for review — user flips the publish flag to true when ready. Pass `--publish` to skip the draft step. Checks discrepancies vs what's already published, triggers local rebuild, never auto-deploys. Use when the user says "publish devlog", "draft session", "save session as draft", "blog this session", or wants to surface session work publicly after `/eos-session-wrapup`. NOT for writing the session log itself (use eos-session-wrapup, which this reads) and NOT for diagrams or screenshots in the post (use eos-article-diagrams / eos-screenshot).
 ---
 
 # EmptyOS Devlog Publish
@@ -234,6 +234,7 @@ The source log is a developer's private record. Most of what it contains — spe
 
 ## Relationship to Other Skills
 
+- `eos-communication-define-your-reader` runs **before** Step 3 (Build Post Frontmatter + Body) whenever the session is genuinely dense or dual-audience (an architecture change, a design tradeoff) — name the reader persona first, then write the reflection to them. Skip it for straightforward "here's what shipped" sessions where the voice guidelines below already cover the calibration.
 - `/eos-session-wrapup` writes the devlog; this skill **reads** it. Keep them separate — wrapup is always-on hygiene, publish is optional promotion.
 - `scripts/generate_emptyos_site.py` regenerates the inventory pages (`apps.md`, `plugins.md`, `capabilities.md`). This skill writes posts only; it doesn't touch inventory pages.
 - Reactor's journal ripple adds breadcrumbs to `50_Journal/`. That's private journal flavour, not public.

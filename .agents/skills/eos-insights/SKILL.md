@@ -1,11 +1,11 @@
 ---
 name: eos-insights
-description: Periodic cross-corpus reflection on EmptyOS development — "what is the system becoming". Aggregates the last 30 days (or a custom window) of the ARTIFACT corpus — git log, the devlog under 10_Projects/emptyos/log/ and its _next/ track briefs, the app/plugin inventory, the dark-flag inventory (scripts/check_dark_flags.py), the deferred-feature registry readiness recheck (docs/DEFERRED-WORK.md — has any deferred feature's trigger fired?), trace-miner syslog-error clusters, and kb-gap-miner / KB-audit output — into a standalone AI-authored report at 30_Resources/EmptyOS/insights/outputs/YYYY-MM-DD-eos.md. Surfaces build velocity per track, growing vs dormant apps, dark-flags built-but-never-enabled (the "abandoned threads" analogue), top friction signatures, KB growth + gaps, and candidate AGENTS.md rules / skills / KB lessons distilled from recurring patterns — as PROPOSALS only, never auto-written. Use when the user says "eos insights", "/eos-insights", "what is the system becoming", "dev trends", "what have I been building", "system reflection", or "where is EmptyOS drifting". Distinct from Codex's own /insights (that reads your coding-CONVERSATION history; this reads the EmptyOS artifacts). Distinct from eos-session-wrapup (logs ONE session). Distinct from the one-off code-health audits eos-architecture-review / eos-bug-audit / eos-kb-audit / eos-simplify (point-in-time scans; this is a cross-corpus trend synthesis that aggregates over their outputs).
+description: Periodic cross-corpus reflection on EmptyOS development — where the system is heading. Aggregates a 30-day (or custom) window of the ARTIFACT corpus — git log, devlogs and _next/ track briefs, the app/plugin inventory, dark flags, the deferred-feature readiness recheck, trace-miner error clusters, KB-gap output — into a standalone AI-authored report. Surfaces build velocity per track, growing vs dormant apps, flags built-but-never-enabled, top friction signatures, and candidate rules / skills / lessons, as PROPOSALS only. Use when the user says "eos insights", "what is the system becoming", "dev trends", "what have I been building", "system reflection", or "where is EmptyOS drifting". NOT Claude Code's own /insights (that reads conversation history; this reads artifacts), NOT one session's log (use eos-session-wrapup), and NOT a point-in-time code-health scan (use eos-architecture-review, eos-bug-audit, eos-kb-audit or eos-simplify — this synthesises trends over their outputs).
 ---
 
 # EmptyOS Insights
 
-A "knowledgeable engineering manager reading the whole project" report. Reflect on a window of EmptyOS development across every artifact source, surface the trends no single audit sees, and write a durable report — proposing, never auto-applying. This is the EmptyOS self-audit-loop (`.Codex/rules/self-audit-loops.md`) turned into a periodic synthesis, and the system-side analogue of Codex's `/insights`.
+A "knowledgeable engineering manager reading the whole project" report. Reflect on a window of EmptyOS development across every artifact source, surface the trends no single audit sees, and write a durable report — proposing, never auto-applying. This is the EmptyOS self-audit-loop (`.claude/rules/self-audit-loops.md`) turned into a periodic synthesis, and the system-side analogue of Claude Code's `/insights`.
 
 ## When to use
 
@@ -15,7 +15,7 @@ A "knowledgeable engineering manager reading the whole project" report. Reflect 
 Do **NOT** use this for:
 - One dev session's housekeeping → `/eos-session-wrapup`.
 - A point-in-time code-health scan → `/eos-architecture-review`, `/eos-bug-audit`, `/eos-kb-audit`, `/eos-simplify`.
-- How *you* use Codex (conversation history, tool usage) → that's Codex's built-in `/insights`, a different corpus.
+- How *you* use Claude Code (conversation history, tool usage) → that's Claude Code's built-in `/insights`, a different corpus.
 - Personal life → `/eos-life-insights`.
 
 The line: this skill is the **aggregator** the codebase was missing — it reads *across* sources and *over time*, and it reads the *outputs* of `trace-miner` / `kb-gap-miner` rather than re-mining.
@@ -24,7 +24,7 @@ The line: this skill is the **aggregator** the codebase was missing — it reads
 
 Mostly read-only static + git + scripts. A couple of enrichments hit the daemon — only then:
 
-- **Daemon up** (optional, for `eos app list` proxy / miner endpoints) — `curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:9000/` → `200`. If down, read manifests + script output directly; never restart the daemon (`.Codex/rules/daemon-handling.md`).
+- **Daemon up** (optional, for `eos app list` proxy / miner endpoints) — `curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:9000/` → `200`. If down, read manifests + script output directly; never restart the daemon (`.claude/rules/daemon-handling.md`).
 - **SDK/script shell is safe** — `scripts/check_dark_flags.py`, `scripts/kb_claim_audit.py`, `scripts/kb_link_audit.py` are pure file I/O (no kernel boot), safe to run while the daemon is up.
 - **Vault root** — `[notes] path` in `emptyos.toml` (read it from there; don't hardcode the path).
 
@@ -33,7 +33,7 @@ Mostly read-only static + git + scripts. A couple of enrichments hit the daemon 
 - **Window** — default last 30 days from today; custom on request.
 - **Artifact corpus** — git history + devlog notes + manifests + dark-flag state + miner output + KB. NOT the conversation history.
 - **Track** — a work lane named in `{vault}/10_Projects/emptyos/log/_next/_index.md`, each with a `_next/<track>.md` on-deck brief, last-touched date.
-- **Report path** — `{vault}/30_Resources/EmptyOS/insights/outputs/YYYY-MM-DD-eos.md` (today). `outputs/` ⇒ AI-authored (`.Codex/rules/authorship-boundary.md`); set `author: ai` explicitly.
+- **Report path** — `{vault}/30_Resources/EmptyOS/insights/outputs/YYYY-MM-DD-eos.md` (today). `outputs/` ⇒ AI-authored (`.claude/rules/authorship-boundary.md`); set `author: ai` explicitly.
 
 ## Process
 
@@ -49,7 +49,7 @@ A proposal **recurring** across reports without being acted on is a stronger sig
 
 ### Step 1 — Deep-research loop (read, don't just count)
 
-Apply the **deep-research method** (`.Codex/rules/deep-research.md`) to the EmptyOS artifact corpus — the four passes below are that method's moves 2–5 (the v1 failure mode was **tabulating without reading**; statistics dressed as insight):
+Apply the **deep-research method** (`.claude/rules/deep-research.md`) to the EmptyOS artifact corpus — the four passes below are that method's moves 2–5 (the v1 failure mode was **tabulating without reading**; statistics dressed as insight):
 
 **1a — First pass (breadth).** The cheap inventory:
 - git: `git log --since="30 days ago" --pretty=format:"%h %ad %s" --date=short`; `git log --since="30 days ago" --name-only --pretty=format: | sort | uniq -c | sort -rn | head -30` (hot files); commit-type split; per-`apps/<group>`/`emptyos/`/`engines/` churn.
@@ -59,6 +59,7 @@ Apply the **deep-research method** (`.Codex/rules/deep-research.md`) to the Empt
 - `docs/DEFERRED-WORK.md` — the deferred-feature registry: each `deferred` row's trigger + `Added` age (the "is it ready to build/deploy yet?" recheck input).
 - `trace-miner` top issues by score (`data/apps/trace-miner/issues.json`) — aggregate, do NOT re-mine.
 - `python scripts/kb_claim_audit.py` + `kb_link_audit.py` (+ kb-gap-miner output).
+- `python scripts/check_gap_freshness.py` + `python scripts/insights_ledger.py scorecard gap` — market gap-analysis registry coverage (stale/unanalyzed apps, gaps recurring unaddressed → surface as candidates for a `/eos-app-gap-analysis` run or promotion).
 
 **1b — Gap pick.** Name the **3-5 load-bearing or uncertain claims** — the ones a decision hangs on ("is `engineering-pilot` actually stalled?", "is the boot-import failure real and *current*?", "are the dormant tracks dead or just parked?"). These, not the easy counts, are what to deepen.
 
@@ -69,11 +70,11 @@ Apply the **deep-research method** (`.Codex/rules/deep-research.md`) to the Empt
 - for each `deferred` row in `docs/DEFERRED-WORK.md`, a cheap readiness check (judgment, not regex — triggers are prose): did a consumer/caller appear (grep), does the named engine/app now exist, did a blocking dependency land, or has it aged past `Added` while the need recurs in friction / KB-gap signals?
 **Triangulate** — every headline claim rests on ≥2 independent sources (a stall = quiet git churn AND a parked devlog note, not one alone).
 
-**1d — Adversarial pass (kill overconfidence).** Before writing, try to **refute** each top finding ("the dormant track is dead, not parked — prove it isn't"; "the healthy feat:fix ratio hides revert churn — check"). Test each heuristic against 3 known-healthy cases (`.Codex/rules/audits.md`). Drop or downgrade anything that doesn't survive; a claim you couldn't verify is graded `inferred`, never asserted as fact.
+**1d — Adversarial pass (kill overconfidence).** Before writing, try to **refute** each top finding ("the dormant track is dead, not parked — prove it isn't"; "the healthy feat:fix ratio hides revert churn — check"). Test each heuristic against 3 known-healthy cases (`.claude/rules/audits.md`). Drop or downgrade anything that doesn't survive; a claim you couldn't verify is graded `inferred`, never asserted as fact.
 
 ### Step 2 — Synthesize the report
 
-**Forecast, don't just describe.** Thoroughness = a quantitative spine + narrative, not prose alone (the Codex `/insights` standard).
+**Forecast, don't just describe.** Thoroughness = a quantitative spine + narrative, not prose alone (the Claude `/insights` standard).
 
 **Quantitative spine (required):**
 - A `## Stats` section right after Headline — a 2-col `Metric | Value` table (commits, files changed, lines +/−, tests touched, net-new KB, dark-flags soaking/ON). The renderer turns it into the stat-tile row.
@@ -91,7 +92,7 @@ Sections (markdown `##` — keep these names so the renderer themes them right):
 7. **Top friction signatures** — ranked AFTER flooring noise (auth-probe etc.); code-bug vs external; each confirmed real-and-current from the 1c read.
 8. **KB growth + gaps** — net new, broken-link/claim count, top unanswered clusters.
 9. **Deferred-feature readiness (proposals)** — walk `docs/DEFERRED-WORK.md`'s `deferred` rows; for any whose trigger now shows signs of being met (per the 1c readiness check), surface a *Candidate to promote: `<feature>` — trigger may be met because `<signal>`*. **PROPOSAL ONLY** — never flip a row's Status or build/enable anything; the human edits the row (`deferred → triggered`). Omit the section if nothing looks ready.
-10. **Suggested next steps (proposals)** — candidate **AGENTS.md rules / skills / KB lessons**, each with a rationale. **PROPOSALS ONLY.**
+10. **Suggested next steps (proposals)** — candidate **CLAUDE.md rules / skills / KB lessons**, each with a rationale. **PROPOSALS ONLY.**
 
 **Evidence grading** — tag every non-trivial finding with how it was derived: `[counted]` (a tally), `[read-verified]` (confirmed against a primary source in 1c), `[inferred]` (a judgment that survived 1d but isn't directly evidenced). The grade is the honesty signal that separates this from v1's statistics-dressed-as-insight.
 
@@ -121,11 +122,11 @@ Section-heading discipline (the renderer themes cards by keyword in the `##` tit
 python scripts/render_insights_html.py "{vault}/30_Resources/EmptyOS/insights/outputs/YYYY-MM-DD-eos.md"
 ```
 
-This writes a styled `…-eos.html` sibling (the Codex-`/insights`-style report: hero + TOC + stat tiles + themed cards + tables). The markdown stays the vault-native source of truth; the HTML is a generated view. `scripts/render_insights_html.py` is pure stdlib (no kernel boot) — safe to run anytime. Add `--open` to pop it in the browser. Give the user the `file:///…/YYYY-MM-DD-eos.html` URL.
+This writes a styled `…-eos.html` sibling (the Claude-Code-`/insights`-style report: hero + TOC + stat tiles + themed cards + tables). The markdown stays the vault-native source of truth; the HTML is a generated view. `scripts/render_insights_html.py` is pure stdlib (no kernel boot) — safe to run anytime. Add `--open` to pop it in the browser. Give the user the `file:///…/YYYY-MM-DD-eos.html` URL.
 
 ### Step 4 — Feedback-loop posture (load-bearing)
 
-eos-insights **surfaces** rule/skill/KB proposals; it does **NOT** auto-write rules, skills, or KB notes. The human decides whether a later session acts on any of them (`.Codex/rules/proposed-action.md`, `.Codex/rules/self-audit-loops.md`, "with you, not for you"). This is the EmptyOS-correct version of the [yahav10/Codex-insights] "insights → auto-generate skills/rules" loop — propose, don't auto-apply. If the user picks a proposal, that's a separate explicit action in a follow-up turn.
+eos-insights **surfaces** rule/skill/KB proposals; it does **NOT** auto-write rules, skills, or KB notes. The human decides whether a later session acts on any of them (`.claude/rules/proposed-action.md`, `.claude/rules/self-audit-loops.md`, "with you, not for you"). This is the EmptyOS-correct version of the [yahav10/claude-insights] "insights → auto-generate skills/rules" loop — propose, don't auto-apply. If the user picks a proposal, that's a separate explicit action in a follow-up turn.
 
 **Record the proposals** so the next run's Step-0 scorecard can grade them:
 
@@ -156,18 +157,18 @@ This is `emptyos/sdk/deep_loop.py`'s gap→deepen→merge realized as fan-out. T
 
 ## Cross-references
 
-- `.Codex/skills/eos-life-insights/SKILL.md` — the personal-vault sibling.
+- `.claude/skills/eos-life-insights/SKILL.md` — the personal-vault sibling.
 - `scripts/insights_ledger.py` — the prediction ledger (Step 0 scorecard + Step 4 record).
 - `emptyos/sdk/deep_loop.py` / `emptyos/sdk/miner_state.py` — deepen pattern + dedup/score primitives.
-- `.Codex/skills/eos-session-wrapup/SKILL.md` — single-session log; eos-insights aggregates over many.
-- `.Codex/rules/self-audit-loops.md` — the umbrella pattern (turn EmptyOS's tools on EmptyOS); this is its periodic-synthesis instance.
-- `.Codex/rules/proposed-action.md` — propose, don't auto-apply (the Step 4 rule).
+- `.claude/skills/eos-session-wrapup/SKILL.md` — single-session log; eos-insights aggregates over many.
+- `.claude/rules/self-audit-loops.md` — the umbrella pattern (turn EmptyOS's tools on EmptyOS); this is its periodic-synthesis instance.
+- `.claude/rules/proposed-action.md` — propose, don't auto-apply (the Step 4 rule).
 - `apps/extension/dev/trace-miner/` + `apps/extension/dev/kb-gap-miner/` — friction + KB-gap outputs aggregated here.
 - `scripts/check_dark_flags.py`, `scripts/kb_claim_audit.py`, `scripts/kb_link_audit.py` — pure inputs (safe to shell).
 - `docs/DEFERRED-WORK.md` — the deferred-feature registry; the §9 readiness recheck reads it and proposes promotions (the periodic "has a trigger fired?" pass lives here).
 - `{vault}/10_Projects/emptyos/log/_next/_index.md` — track index + last-touched.
 - `project_feature_pipeline_flag_default_dark` (memory) — why a long-dark flag is a signal.
-- `.Codex/rules/authorship-boundary.md` — `author: ai` + `outputs/`.
+- `.claude/rules/authorship-boundary.md` — `author: ai` + `outputs/`.
 
 ## When NOT to use
 
@@ -175,4 +176,4 @@ This is `emptyos/sdk/deep_loop.py`'s gap→deepen→merge realized as fan-out. T
 - A focused code-quality pass → the one-off audit skills.
 - The window has almost no commits/devlog (quiet period) → say so and skip; thin data makes a step-back report misleading (the `/insights` "skews on intensive sessions / variable between runs" failure mode).
 
-[yahav10/Codex-insights]: https://github.com/yahav10/Codex-insights
+[yahav10/claude-insights]: https://github.com/yahav10/claude-insights

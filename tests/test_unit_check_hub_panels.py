@@ -169,11 +169,75 @@ class TestRendererMapParsing:
         assert chk.hub_renderers(tmp_path / "nope.js") == set()
 
 
+class TestHubLifeCrossCheck:
+    """The 2026-08-05 blind spot: a `hub.panel` renderer that core hub.js
+    knows but hub-life's own RENDERERS map doesn't paints a red box on
+    hub-life while passing a checker that only ever looked at hub.js."""
+
+    def test_missing_from_hub_life_is_a_violation_when_resolvable(self, tmp_path):
+        _app(tmp_path, "public/core", "alpha", _panel("a", "stat-tile"))
+        violations, _ = chk.analyze(
+            chk.collect(tmp_path), RENDERERS, hub_life_renderers_=set()  # resolvable, empty
+        )
+        assert [v["kind"] for v in violations] == ["unknown_renderer_hub_life"]
+        assert "hub-life" in violations[0]["fix"]
+
+    def test_present_in_both_maps_is_silent(self, tmp_path):
+        _app(tmp_path, "public/core", "alpha", _panel("a", "stat-tile"))
+        violations, _ = chk.analyze(
+            chk.collect(tmp_path), RENDERERS, hub_life_renderers_={"stat-tile"}
+        )
+        assert violations == []
+
+    def test_unresolvable_hub_life_skips_the_check_entirely(self, tmp_path):
+        """`None` (gitignored/absent, e.g. a fresh clone) must degrade to
+        unchecked, never to a silent pass counted as a real verification."""
+        _app(tmp_path, "public/core", "alpha", _panel("a", "stat-tile"))
+        violations, _ = chk.analyze(
+            chk.collect(tmp_path), RENDERERS, hub_life_renderers_=None
+        )
+        assert violations == []
+
+    def test_hub_life_panel_namespace_never_cross_checked(self, tmp_path):
+        """`[[contributes.hub-life.panel]]` is its own opt-out (TestSilentOnHealthy
+        already pins this against hub.js); confirm it holds against a
+        non-None hub-life map too — the namespace is what exempts it, not
+        just an unresolvable map."""
+        _app(tmp_path, "public/standard", "alpha", _panel("x", "hero-alert", ns="hub-life"))
+        violations, _ = chk.analyze(
+            chk.collect(tmp_path), RENDERERS, hub_life_renderers_=set()
+        )
+        assert violations == []
+
+
+class TestHubLifeRendererMapParsing:
+    def test_reads_the_real_hub_life_index(self):
+        found = chk.hub_life_renderers()
+        if found is None:
+            pytest.skip("apps/personal/hub-life/ absent — personal, gitignored")
+        assert "stat-tile" in found
+        assert len(found) > 10, "RENDERERS regex stopped matching — the map moved"
+
+    def test_missing_file_returns_none_not_empty_set(self, tmp_path):
+        assert chk.hub_life_renderers(tmp_path / "nope.html") is None
+
+    def test_unparseable_file_returns_none(self, tmp_path):
+        p = tmp_path / "index.html"
+        p.write_text("<html>no RENDERERS map here</html>", encoding="utf-8")
+        assert chk.hub_life_renderers(p) is None
+
+
 class TestLiveTree:
     def test_live_tree_has_no_gating_violations(self):
-        """Asserts the gating class only — never the advisory count."""
+        """Asserts the gating class only — never the advisory count.
+
+        Passes ``hub_life_renderers()`` too (``None`` on a fresh clone
+        without the personal app degrades to unchecked, never a false
+        pass) so this test can't go green while a `hub.panel` renderer
+        is missing from hub-life's own map — the exact 2026-08-05 gap.
+        """
         panels = chk.collect(REPO / "apps")
-        violations, _ = chk.analyze(panels, chk.hub_renderers())
+        violations, _ = chk.analyze(panels, chk.hub_renderers(), chk.hub_life_renderers())
         assert violations == [], f"real hub.panel violations: {violations}"
 
     def test_live_tree_actually_has_panels(self):

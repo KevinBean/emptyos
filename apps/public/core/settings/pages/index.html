@@ -31,6 +31,26 @@ body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-se
 .s-input { padding:8px 12px; border:1px solid var(--border); border-radius:8px; background:var(--bg); color:var(--text); font-size:13px; width:120px; text-align:right; font-family:var(--mono) }
 .s-input:focus,.s-select:focus { outline:none; border-color:var(--accent) }
 
+/* Theme specimen desk — each card owns a local theme scope, so the same three
+   drawings preview that palette without changing the page until selected. */
+.setting-row.theme-setting-row { display:block; padding:16px; }
+.theme-setting-row > div:first-child { margin-bottom:12px; }
+.theme-picker { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:9px; }
+.theme-choice { appearance:none; width:100%; min-width:0; padding:11px 12px; border:1px solid var(--border-strong); border-radius:10px; background:var(--bg); color:var(--text); font:inherit; text-align:left; cursor:pointer; transition:border-color .15s, transform .15s; }
+.theme-choice:hover { border-color:var(--app-icon-accent); transform:translateY(-1px); }
+.theme-choice[aria-pressed="true"] { border-color:var(--app-icon-accent); box-shadow:inset 0 0 0 1px var(--app-icon-accent); }
+.theme-choice:focus-visible { outline:2px solid var(--app-icon-accent); outline-offset:2px; }
+.theme-choice-top { display:flex; align-items:center; justify-content:space-between; gap:8px; }
+.theme-choice-name { color:var(--text-heading); font-size:12px; font-weight:650; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.theme-choice-check { color:var(--app-icon-accent); font-size:11px; opacity:0; }
+.theme-choice[aria-pressed="true"] .theme-choice-check { opacity:1; }
+.theme-choice-icons { display:flex; align-items:flex-end; gap:7px; height:36px; margin-top:8px; }
+.theme-choice-icon { display:block; width:32px; height:32px; }
+.theme-choice-icon:nth-child(2) { width:26px; height:26px; }
+.theme-choice-icon:nth-child(3) { width:22px; height:22px; }
+@media (max-width:640px) { .theme-picker { grid-template-columns:1fr; } }
+@media (prefers-reduced-motion:reduce) { .theme-choice { transition:none; } }
+
 /* Toggle switch */
 .toggle { position:relative; width:44px; height:24px; cursor:pointer }
 .toggle input { display:none }
@@ -57,7 +77,7 @@ body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-se
 
 /* Search bar */
 .settings-search { position:relative; margin-bottom:12px }
-.settings-search input { width:100%; box-sizing:border-box; padding:12px 40px 12px 16px; background:var(--bg-card); border:1px solid var(--border); border-radius:8px; color:var(--text); font-size:14px; font-family:inherit }
+.settings-search input { width:100%; box-sizing:border-box; padding:12px 48px 12px 16px; background:var(--bg-card); border:1px solid var(--border); border-radius:8px; color:var(--text); font-size:14px; font-family:inherit }
 .settings-search input:focus { outline:none; border-color:var(--accent) }
 .settings-search-count { position:absolute; right:14px; top:50%; transform:translateY(-50%); font-size:11px; color:var(--text-muted); pointer-events:none }
 .section.hidden-by-search { display:none }
@@ -102,6 +122,7 @@ if(window.EOS&&EOS.registerActions){EOS.registerActions({},[],{description:"Syst
         <div class="eos-tab" onclick="switchTab('apps')">Apps</div>
         <div class="eos-tab" onclick="switchTab('shortcuts')">Shortcuts</div>
         <div class="eos-tab" onclick="switchTab('system')">System</div>
+        <div class="eos-tab" onclick="switchTab('autopilot')">Autopilot</div>
         <div class="eos-tab" id="tab-btn-demo" onclick="switchTab('demo')" style="display:none">Demo</div>
     </div>
 
@@ -121,6 +142,10 @@ if(window.EOS&&EOS.registerActions){EOS.registerActions({},[],{description:"Syst
         <div id="system-content"></div>
     </div>
 
+    <div class="eos-tab-content" id="tab-autopilot">
+        <div id="autopilot-content"></div>
+    </div>
+
     <div class="eos-tab-content" id="tab-demo">
         <div id="demo-content"></div>
     </div>
@@ -130,7 +155,7 @@ if(window.EOS&&EOS.registerActions){EOS.registerActions({},[],{description:"Syst
 var currentValues = {};
 
 function switchTab(name) {
-    var tabs = ['preferences','apps','shortcuts','system','demo'];
+    var tabs = ['preferences','apps','shortcuts','system','autopilot','demo'];
     tabs.forEach(function(t, i) {
         var el = document.querySelectorAll('.eos-tab')[i];
         if (el) el.classList.toggle('active', t === name);
@@ -138,6 +163,7 @@ function switchTab(name) {
     document.querySelectorAll('.eos-tab-content').forEach(function(t) { t.classList.remove('active'); });
     document.getElementById('tab-' + name).classList.add('active');
     if (name === 'shortcuts' && !shortcutsRendered) loadShortcutsTab();
+    if (name === 'autopilot') loadAutopilotTab();
     if (name === 'demo') loadDemoTab();
     // Re-apply the current search filter so it targets the newly visible tab.
     filterSettings();
@@ -299,7 +325,7 @@ async function loadNetwork() {
             '</div>';
     } catch(e) {
         document.getElementById('network-section').innerHTML =
-            '<div class="setting-row"><div class="setting-label" style="color:var(--text-muted)">Network info unavailable</div></div>';
+            EOS_UI.errorState({message: 'Could not load network settings.', onRetry: 'loadNetwork()'});
     }
 }
 
@@ -332,26 +358,62 @@ async function applyNetwork() {
 }
 
 async function saveSetting(key, value) {
+    var previous = currentValues[key];
+    if (key === 'system.theme') {
+        EOS.setTheme(value);
+        updateThemeChoiceState(value);
+    }
     try {
         await EOS.post('/settings/api/set', {key: key, value: value});
         currentValues[key] = value;
         showSaved();
 
         // Apply side effects for settings that need immediate action
-        if (key === 'system.theme') {
-            localStorage.setItem('eos-theme', value);
-            document.documentElement.className = 'theme-' + value;
-        }
         if (key === 'system.language') {
             localStorage.setItem('eos-language', value);
         }
-    } catch(e) { EOS_UI.toast('Error saving', false); }
+    } catch(e) {
+        if (key === 'system.theme') {
+            EOS.setTheme(previous || 'eos');
+            updateThemeChoiceState(previous || 'eos');
+        }
+        EOS_UI.toast('Error saving', false);
+    }
+}
+
+function updateThemeChoiceState(theme) {
+    document.querySelectorAll('.theme-choice').forEach(function(card) {
+        card.setAttribute('aria-pressed', card.getAttribute('data-theme') === theme ? 'true' : 'false');
+    });
+}
+
+function chooseTheme(theme) {
+    if (EOS.THEMES.indexOf(theme) < 0) return;
+    saveSetting('system.theme', theme);
+}
+
+function renderThemePicker(val) {
+    return '<div class="theme-picker" id="ctrl-system-theme" role="group" aria-label="Choose a theme">' +
+        EOS.THEMES.map(function(theme) {
+            var selected = String(val) === theme;
+            return '<button type="button" class="theme-choice theme-' + escAttr(theme) + '" data-theme="' + escAttr(theme) +
+                '" title="Use ' + escAttr(EOS.THEME_LABELS[theme] || theme) + ' theme" aria-pressed="' + (selected ? 'true' : 'false') + '" onclick="chooseTheme(\'' + escAttr(theme) + '\')">' +
+                '<span class="theme-choice-top"><span class="theme-choice-name">' + esc(EOS.THEME_LABELS[theme] || theme) +
+                '</span><span class="theme-choice-check" aria-hidden="true">Selected</span></span>' +
+                '<span class="theme-choice-icons" aria-hidden="true">' +
+                    '<span class="theme-choice-icon">' + EOS.appIcon('task') + '</span>' +
+                    '<span class="theme-choice-icon">' + EOS.appIcon('kb') + '</span>' +
+                    '<span class="theme-choice-icon">' + EOS.appIcon('studio') + '</span>' +
+                '</span></button>';
+        }).join('') + '</div>';
 }
 
 function renderControl(s) {
     var val = currentValues[s.key];
     if (val === undefined || val === null) val = s.default;
     var id = 'ctrl-' + s.key.replace(/\./g, '-');
+
+    if (s.key === 'system.theme') return renderThemePicker(val);
 
     if (s.type === 'select') {
         var opts = (s.options || []).map(function(o) {
@@ -418,7 +480,7 @@ async function loadSettings() {
                              (sec.title || sec.app_id || '?') + '":', s);
                 return false;
             }).map(function(s) {
-                return '<div class="setting-row" data-row-label="' + escAttr((s.label||'').toLowerCase()) +
+                return '<div class="setting-row' + (s.key === 'system.theme' ? ' theme-setting-row' : '') + '" data-row-label="' + escAttr((s.label||'').toLowerCase()) +
                     '" data-row-key="' + escAttr((s.key||'').toLowerCase()) + '">' +
                     '<div><div class="setting-label">' + esc(s.label) + '</div><div class="setting-key">' + esc(s.key) + '</div></div>' +
                     renderControl(s) + '</div>';
@@ -456,7 +518,7 @@ async function loadSettings() {
 
     } catch(e) {
         console.error('Settings load error:', e);
-        document.getElementById('settings-content').innerHTML = '<div class="eos-empty">Error loading settings: ' + (e.message || e) + '</div>';
+        document.getElementById('settings-content').innerHTML = EOS_UI.errorState({message: 'Could not load settings: ' + (e.message || e), onRetry: 'loadSettings()'});
     }
 }
 
@@ -703,7 +765,10 @@ async function loadShortcutsTab() {
             '</div></div>';
 
     } catch(e) {
-        document.getElementById('shortcuts-content').innerHTML = '<div class="eos-empty">Error loading shortcuts</div>';
+        // The flag flips true before the fetch; a failure must give it back,
+        // or re-entering the tab (and Retry) would be a no-op forever.
+        shortcutsRendered = false;
+        document.getElementById('shortcuts-content').innerHTML = EOS_UI.errorState({message: 'Could not load keyboard shortcuts.', onRetry: 'loadShortcutsTab()'});
     }
 }
 
@@ -729,6 +794,179 @@ function editGoKey(key) {
             shortcutsRendered = false;
             loadShortcutsTab();
         } catch(e) { EOS_UI.toast('Error saving shortcut', false); }
+    });
+}
+
+// --- Autopilot tab ---
+// The director's console: every standing grant/hold/budget across every
+// actor and scope in the system, in one place. Room/voice-assistant chips
+// and the outbound MCP foundry each issue grants from their own surface;
+// this is where you see (and revoke, or manually widen) all of them at once.
+// Data changes as grants fire/expire, so this re-fetches on every visit
+// rather than caching like the mostly-static Shortcuts tab.
+var AP_STATUS_MAP = {stale: 'shelved', expiring: 'blocked', fresh: 'draft', active: 'active'};
+var AP_STATUS_HINT = {
+    stale: 'persistent, unfired for a while — consider revoking',
+    expiring: 'will stop auto-running soon',
+    fresh: 'persistent, too new to judge — never fired yet',
+    active: 'in regular use',
+};
+
+async function loadAutopilotTab() {
+    var el = document.getElementById('autopilot-content');
+    el.innerHTML = '<div class="eos-empty">Loading…</div>';
+    try {
+        var data = await EOS.api('/settings/api/autopilot');
+        renderAutopilotTab(data);
+    } catch (e) {
+        el.innerHTML = EOS_UI.errorState({message: 'Could not load autopilot state: ' + (e.message || e), onRetry: 'loadAutopilotTab()'});
+    }
+}
+
+function renderAutopilotTab(data) {
+    var grants = data.grants || [];
+    var holds = data.holds || [];
+    var budgets = data.budgets || [];
+    var week = data.week || {};
+
+    var grantRows = grants.length ? grants.map(function(g) {
+        var actor = (g.actor || {});
+        var actorStr = actor.type + '/' + (actor.id || '*');
+        var badge = (window.EOS_UI && EOS_UI.statusBadge)
+            ? EOS_UI.statusBadge(g.status, g.status, AP_STATUS_MAP)
+            : esc(g.status || '');
+        return '<tr title="' + escAttr(AP_STATUS_HINT[g.status] || '') + '">' +
+            '<td>' + esc(actorStr) + '</td>' +
+            '<td><code>' + esc(g.verb_pattern) + '</code></td>' +
+            '<td>' + esc(g.scope) + '</td>' +
+            '<td>' + esc(_apExpiryLabel(g.expires_at)) + '</td>' +
+            '<td>' + (g.fire_count || 0) + '×</td>' +
+            '<td>' + badge + '</td>' +
+            '<td><button class="s-tiny-btn" onclick="apConsoleRevoke(' + EOS_UI.jsArg(g.id) + ')">Revoke</button></td>' +
+            '</tr>';
+    }).join('') : '<tr><td colspan="7" style="color:var(--text-muted)">No active grants.</td></tr>';
+
+    var holdRows = holds.length ? holds.map(function(h) {
+        var actor = (h.actor || {});
+        var actorStr = actor.type + '/' + (actor.id || '*');
+        return '<tr>' +
+            '<td>' + esc(actorStr) + '</td>' +
+            '<td><code>' + esc(h.verb_pattern) + '</code></td>' +
+            '<td>' + esc(h.scope) + '</td>' +
+            '<td>' + esc(_apExpiryLabel(h.expires_at)) + '</td>' +
+            '<td><button class="s-tiny-btn" onclick="apConsoleResumeHold(' + EOS_UI.jsArg(h.id) + ')">Resume</button></td>' +
+            '</tr>';
+    }).join('') : '<tr><td colspan="5" style="color:var(--text-muted)">No active holds — nothing is paused.</td></tr>';
+
+    var budgetRows = budgets.length ? budgets.map(function(b) {
+        var cap = b.monthly_cap_usd;
+        return '<tr' + (b.over ? ' style="color:var(--warning)"' : '') + '>' +
+            '<td>' + esc(b.actor_id) + '</td>' +
+            '<td>' + (cap != null ? '$' + cap.toFixed(2) : '—') + '</td>' +
+            '<td>$' + (b.spent_usd || 0).toFixed(2) + '</td>' +
+            '<td>' + (b.remaining_usd != null ? '$' + b.remaining_usd.toFixed(2) : '—') + '</td>' +
+            '<td><button class="s-tiny-btn" onclick="apConsoleSetBudget(' + EOS_UI.jsArg(b.actor_id) + ',' + EOS_UI.jsArg(cap) + ')">Edit</button></td>' +
+            '</tr>';
+    }).join('') : '<tr><td colspan="5" style="color:var(--text-muted)">No actors tracked yet.</td></tr>';
+
+    var verbPills = (data.eligible_verbs || []).map(function(v) {
+        return '<code style="margin:2px 4px 2px 0;display:inline-block">' + esc(v) + '</code>';
+    }).join('');
+
+    document.getElementById('autopilot-content').innerHTML =
+        '<div class="section"><div class="section-hdr"><span class="section-icon">⚡</span><span class="section-name">Active grants</span>' +
+        '<span style="font-size:12px;color:var(--text-muted);margin-left:auto">' + (week.fired || 0) + ' fired this week</span></div>' +
+        '<div class="setting-group" style="padding:4px 0"><table class="shortcut-table">' +
+        '<tr><th>Actor</th><th>Verb</th><th>Scope</th><th>Expires</th><th>Fires</th><th>Status</th><th></th></tr>' +
+        grantRows + '</table></div>' +
+        '<div style="padding:10px 4px"><button class="eos-btn eos-btn-sm" onclick="apConsoleIssueGrant()">+ Issue grant</button></div></div>' +
+
+        '<div class="section"><div class="section-hdr"><span class="section-icon">⏸</span><span class="section-name">Holds (paused verbs)</span></div>' +
+        '<div class="setting-group" style="padding:4px 0"><table class="shortcut-table">' +
+        '<tr><th>Actor</th><th>Verb</th><th>Scope</th><th>Expires</th><th></th></tr>' +
+        holdRows + '</table></div></div>' +
+
+        '<div class="section"><div class="section-hdr"><span class="section-icon">💰</span><span class="section-name">Monthly spend caps</span></div>' +
+        '<div class="setting-group" style="padding:4px 0"><table class="shortcut-table">' +
+        '<tr><th>Actor</th><th>Cap/month</th><th>Spent</th><th>Remaining</th><th></th></tr>' +
+        budgetRows + '</table></div>' +
+        '<div style="padding:10px 4px"><button class="eos-btn eos-btn-sm" onclick="apConsoleSetBudget(\'\', null)">+ Set cap</button></div></div>' +
+
+        '<div class="section"><div class="section-hdr"><span class="section-icon">🛡</span><span class="section-name">Eligibility floor</span></div>' +
+        '<div class="setting-group" style="padding:12px 16px;font-size:12px;line-height:1.8">' +
+        '<div style="color:var(--text-muted);margin-bottom:8px">Verbs a grant may ever cover — no grant above can widen past this list.</div>' +
+        (verbPills || '<span style="color:var(--text-muted)">none</span>') +
+        '</div></div>';
+}
+
+function _apExpiryLabel(iso) {
+    if (!iso) return 'never';
+    var ms = new Date(iso).getTime() - Date.now();
+    if (ms <= 0) return 'expired';
+    var mins = Math.round(ms / 60000);
+    if (mins < 60) return mins + 'm';
+    var hrs = Math.round(mins / 60);
+    if (hrs < 48) return hrs + 'h';
+    return Math.round(hrs / 24) + 'd';
+}
+
+async function apConsoleRevoke(grantId) {
+    try {
+        var r = await EOS.post('/settings/api/autopilot/revoke', {grant_id: grantId});
+        if (!r || !r.ok) { EOS_UI.toast('Revoke failed', false); return; }
+        EOS_UI.toast('Grant revoked');
+        loadAutopilotTab();
+    } catch (e) { EOS_UI.toast('Error: ' + (e.message || e), false); }
+}
+
+async function apConsoleResumeHold(holdId) {
+    try {
+        var r = await EOS.post('/settings/api/autopilot/hold/revoke', {hold_id: holdId});
+        if (!r || !r.ok) { EOS_UI.toast('Resume failed', false); return; }
+        EOS_UI.toast('Hold resumed — this verb auto-runs again');
+        loadAutopilotTab();
+    } catch (e) { EOS_UI.toast('Error: ' + (e.message || e), false); }
+}
+
+function apConsoleIssueGrant() {
+    EOS_UI.formModal('Issue autopilot grant', [
+        {key: 'actor_type', label: 'Actor type', type: 'select', options: ['agent', 'cli', 'mcp-client'], value: 'cli'},
+        {key: 'actor_id', label: 'Actor id (blank = any actor of this type)', placeholder: 'e.g. claude-cli'},
+        {key: 'verb_pattern', label: 'Verb pattern', placeholder: 'task.add or task.*', required: true},
+        {key: 'scope', label: 'Scope', placeholder: 'global, room:<id>, session:<id>, mcp:<id>', required: true},
+        {key: 'ttl_s', label: 'Expires after (seconds, blank = until revoked)', type: 'number'},
+        {key: 'rationale', label: 'Rationale (optional)', type: 'textarea'},
+    ], async function(vals) {
+        try {
+            var r = await EOS.post('/settings/api/autopilot/grant', {
+                actor_type: vals.actor_type,
+                actor_id: vals.actor_id || '',
+                verb_pattern: vals.verb_pattern,
+                scope: vals.scope,
+                ttl_s: vals.ttl_s || null,
+                rationale: vals.rationale || '',
+            });
+            if (!r || !r.ok) { EOS_UI.toast(r && r.error ? r.error : 'Grant refused', false); return; }
+            EOS_UI.toast('Grant issued');
+            loadAutopilotTab();
+        } catch (e) { EOS_UI.toast('Error: ' + (e.message || e), false); }
+    });
+}
+
+function apConsoleSetBudget(actorId, currentCap) {
+    EOS_UI.formModal('Set monthly spend cap', [
+        {key: 'actor_id', label: 'Actor id (app id, e.g. staff)', value: actorId || '', required: true},
+        {key: 'monthly_usd', label: 'Monthly cap in USD (0 clears the cap)', type: 'number', value: currentCap || ''},
+    ], async function(vals) {
+        try {
+            var r = await EOS.post('/settings/api/autopilot/budget', {
+                actor_id: vals.actor_id,
+                monthly_usd: parseFloat(vals.monthly_usd) || 0,
+            });
+            if (!r || !r.ok) { EOS_UI.toast(r && r.error ? r.error : 'Failed', false); return; }
+            EOS_UI.toast('Budget saved');
+            loadAutopilotTab();
+        } catch (e) { EOS_UI.toast('Error: ' + (e.message || e), false); }
     });
 }
 

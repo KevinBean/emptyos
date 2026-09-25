@@ -1,3 +1,11 @@
+---
+paths:
+  - "skills/tool-*/**"
+  - ".claude/skills/tool-*/**"
+  - "plugins/playwright/**"
+  - "apps/public/labs/operate/**"
+---
+
 # Web-Tool Operation — driving a site that has no API and no MCP server
 
 Some of the most capable tools available to EmptyOS have **no API, no MCP
@@ -78,6 +86,22 @@ agent that browses; we already have the agent. Adding one would duplicate the
 plugin and re-introduce credential handling that the Chrome extension exists to
 avoid. Revisit only if a genuine need appears for unattended authenticated
 automation with no human present — which today it does not.
+
+## Anthropic's own computer-use / browser-use tool (evaluated 2026-08-22)
+
+Anthropic's *officially hosted* computer-use tool (GA'd multi-action-per-turn) and its new
+browser-use tool are a different thing from the third-party frameworks rejected above — WE
+still execute every action locally through our own executor; the tool only lets the model
+batch several actions into one response instead of round-tripping per click. So the verdict
+above doesn't directly rule it out. It's still not adopted: `apps/public/labs/operate/` already
+grounds actions the way this tool is catching up to — its executor sends a screenshot **plus**
+a UIA/uiautomator accessibility-tree snapshot, the model picks a stable `ref` from that tree
+(never a raw coordinate when one exists), and only Android falls back to pixels. Adopting the
+official schema would only cut round-trips on Anthropic-backed runs and would lock the loop to
+one provider, with no felt need today. Deferred with a trigger, not rejected — see
+`docs/DEFERRED-WORK.md` "operate executor: adopt Anthropic's official computer-use tool schema
+for multi-action batching" and `docs/OPEN-SOURCE-BORROWING-PLAN.md` § Anthropic Claude Platform
+(2026-08-22) for the full verdict.
 
 ## Generalising to other no-MCP sites
 

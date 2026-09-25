@@ -867,3 +867,61 @@ async def api_diagrams_rasterize(self, request):
             {"site": (site or self._active_site())["id"], "files": result["rasterized"]},
         )
     return result
+
+
+# ── Figure receive (viz static-figure export) ────────────────────────────
+#
+# The producing app asks publish where its diagrams live and what the body line
+# should be; publish owns both answers because `source_folder` is per-site and
+# settings-driven, and the `![alt|637](name.png)` form is this site's house
+# rule. Bind on PublishApp as `figure_asset_path` / `attach_figure`.
+
+# Display width every article diagram is referenced at (house standard).
+FIGURE_DISPLAY_WIDTH = 637
+
+
+def figure_asset_path(self, post: str = "", concept: str = "") -> str:
+    """Vault-relative `.svg` path for an article diagram, or "".
+
+    Naming is `<post-shortname>-<concept>.svg` under the site's `images/`, so
+    one article's assets share a prefix and sort as a block. The build hook
+    (`_rasterize_stale`) derives the shipped 2x PNG on the next build, which is
+    why nothing here writes a PNG.
+    """
+    p, c = (post or "").strip(), (concept or "").strip()
+    if not p or not c:
+        return ""
+    return f"{self._source_folder()}/images/{p}-{c}.svg"
+
+
+async def attach_figure(
+    self, post: str = "", concept: str = "", asset: str = "", png: str = "",
+    alt: str = "", viz_id: str = "",
+) -> dict:
+    """Hand back the body line for an already-written figure. Places nothing.
+
+    Deliberately does NOT splice the line into the post. Two reasons, both from
+    the house standard: *where* a diagram belongs is editorial (it illustrates
+    a structure the prose walks through, and only the author knows which
+    paragraph that is), and the alt text is the article's text fallback —
+    the takeaway a screen reader and an RSS reader get instead of the image.
+    Auto-writing either would produce a figure in the wrong place carrying a
+    prompt fragment as its alt, which is worse than no figure.
+
+    So: `embedded` is False by design, and `markdown` is a ready line to place.
+    """
+    if not asset:
+        return {"ok": False, "error": "asset is required"}
+    name = Path(png or asset).with_suffix(".png").name
+    # The builder resolves bare filenames recursively, so reference the name
+    # only. Square brackets inside the alt would truncate the embed at the
+    # first `]` and render the whole line as literal text.
+    caption = (alt or f"{post} {concept}".strip()).replace("[", "(").replace("]", ")")
+    return {
+        "ok": True,
+        "embedded": False,
+        "markdown": f"![{caption}|{FIGURE_DISPLAY_WIDTH}]({name})",
+        "asset": asset,
+        "png": png,
+        "note": "Place this line yourself, and rewrite the alt as the diagram's takeaway.",
+    }

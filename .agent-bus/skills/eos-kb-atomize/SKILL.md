@@ -1,6 +1,6 @@
 ---
 name: eos-kb-atomize
-description: Turn a KB `kind:reference` standard (IEC/IEEE/Transgrid PDF archive) into atomic `kind:clause` notes — audit which references are undigested, reformat PyMuPDF-split or bilingual archives so they're section-addressable, then atomize with a throttled write that won't storm the vault watcher. Use when the user says "atomize this standard", "digest the KB references", "this full text needs proper md / sections", or asks to make a stored standard's clauses individually indexable. Case-by-case per document; this is the decision tree + the safe write procedure.
+description: Turn a KB `kind:reference` standard (IEC/IEEE/Transgrid PDF archive) into atomic `kind:clause` notes — audit which references are undigested, reformat PyMuPDF-split or bilingual archives so they're section-addressable, then atomize with a throttled write that won't storm the vault watcher. Use when the user says "atomize this standard", "digest the KB references", "this full text needs proper md / sections", or asks to make a stored standard's clauses individually indexable. Case-by-case per document; this is the decision tree + the safe write procedure. NOT for digesting a fresh PDF into the KB (use vault-source-digest) and NOT for checking KB consistency afterwards (use eos-kb-audit).
 ---
 
 # EmptyOS KB Atomize

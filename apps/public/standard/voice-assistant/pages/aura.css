@@ -11,7 +11,7 @@
     --graphite-deep: var(--bg);
     --graphite:      var(--bg-card);
     --graphite-soft: var(--bg-card);
-    --graphite-hover:var(--bg-hover);
+    --graphite-hover:var(--bg-card-hover);
     --rule:          var(--border);
     --rule-strong:   var(--border-strong);
     --cream:         var(--text);

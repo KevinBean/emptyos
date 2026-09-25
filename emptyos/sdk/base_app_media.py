@@ -17,8 +17,6 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from emptyos.sdk.utils import now_iso
-
 if TYPE_CHECKING:
     from .base_app import BaseApp  # noqa: F401 — for type hints only
 

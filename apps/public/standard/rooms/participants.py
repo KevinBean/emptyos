@@ -112,31 +112,49 @@ def _resolve_responder_id(self, text: str, agent_parts: list[dict]) -> str | Non
     return agent_parts[0].get("id")
 
 
-def _resolve_responder(self, text: str, parts: list[dict]) -> dict | None:
-    """Pick a responder participant (agent OR cli). Returns the
-    participant dict so the caller can branch on `type`.
+async def _resolve_responder(
+    self, text: str, parts: list[dict], room: dict | None = None,
+) -> "tuple[dict | None, dict | None]":
+    """Pick a responder participant (agent OR cli). Returns
+    ``(participant, auto_meta)`` so the caller can branch on `type` and
+    knows whether the pick was an explicit @mention/single-responder
+    resolution (``auto_meta is None``) or an LLM auto-route (``auto_meta``
+    carries a short reason — never silent, per CLAUDE.md's north star).
 
     Same @mention rules as `_resolve_responder_id` but also matches
-    cli participants by id.
+    cli participants by id. When 2+ responders exist, no @mention
+    matches, and `room["auto_route"]` is truthy, classifies the message
+    via `self.select()` against each responder's `specialty`/`role`
+    instead of blindly defaulting to the first participant.
     """
     responders = [p for p in parts if p.get("type") in ("agent", "cli")]
     if not responders:
-        return None
+        return None, None
     if len(responders) == 1:
-        return responders[0]
+        return responders[0], None
     for m in re.finditer(r"@([A-Za-z0-9_\-]+)", text or ""):
         mention = m.group(1).strip().lower()
         for p in responders:
             pid = (p.get("id") or "").lower()
             if pid == mention or pid.replace("-", "") == mention.replace("-", ""):
-                return p
+                return p, None
             if p.get("type") == "agent":
                 a = self._load_agent(p["id"])
                 if a:
                     name = (a.get("name") or "").lower()
                     if name == mention or name.replace(" ", "-") == mention:
-                        return p
-    return responders[0]
+                        return p, None
+    if room and room.get("auto_route"):
+        choices = {
+            p["id"]: p.get("specialty") or p.get("role") or f"{p['type']} participant"
+            for p in responders
+        }
+        chosen_id = await self.select(
+            text, choices, default=responders[0]["id"], min_ability="weak",
+        )
+        chosen = next((p for p in responders if p["id"] == chosen_id), responders[0])
+        return chosen, {"reason": f"auto-routed to {chosen_id}"}
+    return responders[0], None
 
 
 def _new_room_id(self, prefix: str = "room") -> str:
@@ -568,6 +586,10 @@ async def add_participant(self, room_id: str, participant: dict | str) -> dict:
         for k in ("cwd", "allowed_tools", "timeout_s", "model", "effort"):
             if k in participant:
                 clean[k] = participant[k]
+    # Applies to agent AND cli participants — it's a routing hint for
+    # room["auto_route"], not CLI config.
+    if participant.get("specialty"):
+        clean["specialty"] = participant["specialty"]
     parts = self._normalize_participants(room)
     # No-op if already present (matched by type + id).
     for p in parts:

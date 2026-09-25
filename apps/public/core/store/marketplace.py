@@ -76,6 +76,7 @@ if TYPE_CHECKING:  # for type hints only
 #   _mkt_sweep_pending         = _marketplace._mkt_sweep_pending
 #   _resolve_source            = _marketplace._resolve_source
 #   _fetch_registry_index      = _marketplace._fetch_registry_index
+#   _mkt_tmp_base              = _marketplace._mkt_tmp_base
 # Adding a new method here? Add a matching binding line in app.py.
 # ─────────────────────────────────────────────────────────────────────────
 
@@ -497,7 +498,7 @@ async def _resolve_registry(self: "StoreApp", source: dict, kind: str = "apps") 
         return None, {}, f"'{item_id}' not found in the registry"
     gh = entry.get("source", {}) or {}
     if gh.get("type") != "github":
-        return None, {}, f"registry entry '{app_id}' has an unsupported source type"
+        return None, {}, f"registry entry '{item_id}' has an unsupported source type"
     # carry the registry version + declared category forward
     gh = {**gh, "_registry_version": entry.get("version", ""),
           "_registry_category": entry.get("category", "")}

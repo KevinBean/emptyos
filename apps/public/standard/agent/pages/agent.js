@@ -305,7 +305,7 @@
             appendTurn('assistant',
                 s.turns + ' turn' + (s.turns === 1 ? '' : 's') + ' · ' +
                 s.in.toLocaleString() + ' in · ' + s.out.toLocaleString() + ' out · ' +
-                _fmtCost(s.cost)
+                EOS_AGENT_VIEW.fmtCost(s.cost)
             );
             return;
         }
@@ -708,55 +708,37 @@
             console.warn('[agent] session', sid, 'expected', expected, 'messages but got 0 — data-layer bug?');
         }
         if (sess.messages && sess.messages.length) {
-            sess.messages.forEach(renderHistoricalMessage);
+            renderHistory(sess.messages);
         } else {
-            $transcript.innerHTML = '<div id="empty-state" style="padding:40px 20px;text-align:center;color:var(--text-secondary);font-size:13px">Send a message, or type <code>/help</code> for commands.</div>';
+            $transcript.innerHTML = '<div id="empty-state" style="padding:48px 20px;text-align:center;color:var(--text-secondary);font-size:13px">Send a message, or type <code>/help</code> for commands.</div>';
         }
 
         openWS(sid);
         loadStatus(sid);
     }
 
-    function renderHistoricalMessage(msg) {
-        var role = msg.role;
-        var content = msg.content;
-        if (role === 'user') {
-            if (typeof content === 'string') {
-                appendTurn('user', content);
-            } else if (Array.isArray(content)) {
-                // tool_result blocks — render as a separator
-                var toolResults = content.filter(function (b) { return b && b.type === 'tool_result'; });
-                if (toolResults.length) {
-                    toolResults.forEach(function (r) {
-                        renderToolResultBlock(r.tool_use_id, r.content, !!r.is_error);
-                    });
-                }
-            }
-        } else if (role === 'assistant') {
-            if (typeof content === 'string') {
-                // Historical string content — render as markdown.
+    // History replay — EOS_AGENT_VIEW.walkHistory normalises the three stored
+    // encodings (string, block list, full-message dict); this only draws.
+    function renderHistory(messages) {
+        EOS_AGENT_VIEW.walkHistory(messages, {
+            user: function (text) { appendTurn('user', text); },
+            assistant: function (segments) {
                 var turn = startAssistantTurn();
-                finalizeAssistantTurn(turn, content);
-            } else if (Array.isArray(content)) {
-                var turn = startAssistantTurn();
-                // Accumulate text across blocks so markdown boundaries (code fences,
-                // lists) that span segments render correctly.
-                var buf = '';
-                content.forEach(function (b) {
-                    if (b.type === 'text') {
-                        buf += (b.text || '');
-                    } else if (b.type === 'tool_use') {
-                        // Flush accumulated text, then insert tool-call inline
-                        if (buf) { finalizeAssistantTurn(turn, buf, {append: true}); buf = ''; }
-                        appendToolCall(turn, b.id, b.name, b.input);
+                var painted = false;
+                segments.forEach(function (s) {
+                    if (s.type === 'text') {
+                        finalizeAssistantTurn(turn, s.text, {append: painted});
+                        painted = true;
+                    } else {
+                        appendToolCall(turn, s.id, s.name, s.input);
                     }
                 });
-                if (buf) finalizeAssistantTurn(turn, buf, {append: true});
-                state.currentAssistantEl = null; // historical turn complete
-            }
-        } else if (role === 'tool') {
-            renderToolResultBlock(msg.tool_call_id, content, false);
-        }
+                if (!painted) finalizeAssistantTurn(turn, '');  // clears the streaming state
+            },
+            toolResult: function (id, text, isError) { markToolResult(id, isError, text); },
+            notice: function (text) { addInlineNotice(text, 'notice-compaction'); },
+        });
+        state.currentAssistantEl = null;
     }
 
     function finalizeAssistantTurn(turnEl, text, opts) {
@@ -831,54 +813,6 @@
         $transcript.scrollTop = $transcript.scrollHeight;
     }
 
-    function renderDiffHtml(diff) {
-        // Colorize a unified-diff string. Each line gets a CSS class so theme
-        // tokens control the palette. Falls back to plain <pre> if empty.
-        if (!diff) return '';
-        var out = diff.split('\n').map(function (line) {
-            var cls = 'd-ctx';
-            if (line.startsWith('+++') || line.startsWith('---')) cls = 'd-hdr';
-            else if (line.startsWith('@@')) cls = 'd-hunk';
-            else if (line.startsWith('+')) cls = 'd-add';
-            else if (line.startsWith('-')) cls = 'd-del';
-            return '<span class="' + cls + '">' + esc(line) + '</span>';
-        }).join('\n');
-        return '<pre class="diff">' + out + '</pre>';
-    }
-
-    function renderToolDisplayExtras(display) {
-        // Build tool-specific rich views (diff, preview, bash exit/stderr).
-        // Returns HTML appended above the raw output <pre>.
-        if (!display || typeof display !== 'object') return '';
-        var parts = [];
-        if (display.diff) {
-            parts.push('<div class="tc-section"><div class="tc-section-label">diff</div>' +
-                renderDiffHtml(display.diff) + '</div>');
-        }
-        if (display.preview) {
-            parts.push('<div class="tc-section"><div class="tc-section-label">preview</div>' +
-                '<pre class="diff">' + esc(display.preview) + '</pre></div>');
-        }
-        if (display.path && (display.bytes_delta !== undefined || display.action)) {
-            var meta = esc(display.path);
-            if (display.bytes_delta !== undefined) {
-                var d = display.bytes_delta;
-                meta += ' · ' + (d >= 0 ? '+' : '') + d + ' bytes';
-            }
-            if (display.action) meta += ' · ' + esc(display.action);
-            if (display.replacements !== undefined) meta += ' · ' + display.replacements + ' replacement(s)';
-            parts.push('<div class="tc-meta">' + meta + '</div>');
-        }
-        if (display.exit_code !== undefined) {
-            var ok = display.exit_code === 0;
-            parts.push('<div class="tc-meta">' +
-                '<span class="tc-exit ' + (ok ? 'ok' : 'bad') + '">exit ' + display.exit_code + '</span>' +
-                (display.command ? ' <code>' + esc(display.command) + '</code>' : '') +
-                '</div>');
-        }
-        return parts.join('');
-    }
-
     function markToolResult(id, isError, resultText, display) {
         var tc = state.toolCallEls[id];
         if (!tc) return;
@@ -890,23 +824,19 @@
             registerFileTouch(display.path);
         }
 
-        var extras = renderToolDisplayExtras(display);
+        var extras = EOS_AGENT_VIEW.toolExtrasHtml(display);
         var result = tc.querySelector('.tc-result');
         result.style.display = '';
-        // Replace the wrapper with extras + (optional) raw output
+        // Replace the wrapper with extras + (optional) raw output. The live WS
+        // sends a string; history replay already flattened — resultText just
+        // tolerates any shape rather than printing "[object Object]".
+        var text = EOS_AGENT_VIEW.resultText(resultText);
         var inner = extras;
-        if (resultText) {
+        if (text) {
             inner += '<details' + (extras ? '' : ' open') + '><summary>output</summary>' +
-                '<pre>' + esc(resultText) + '</pre></details>';
+                '<pre>' + esc(text) + '</pre></details>';
         }
         result.innerHTML = inner;
-    }
-
-    function renderToolResultBlock(toolUseId, content, isError, display) {
-        // Used for historical replay
-        var text = typeof content === 'string' ? content :
-                   (Array.isArray(content) ? content.map(function (b) { return b && b.text || ''; }).join('') : JSON.stringify(content));
-        markToolResult(toolUseId, isError, text, display);
     }
 
     // ── WebSocket ──────────────────────────────────────────
@@ -929,48 +859,23 @@
 
     // ── Per-turn footer + inline notices ──────────────────
 
-    // Pricing tables live on the server (openai_compat.PRICING +
-    // anthropic_sdk.PRICING) — every tool-capable provider populates
-    // `usage.cost` server-side so the client doesn't need its own
-    // per-model rate table (which would drift independently — see the
-    // bug that prompted this cleanup). If `usage.cost` is missing we
-    // just show the footer without a cost number — never fabricate one.
-
-    function _fmtCost(c) {
-        if (!c || c <= 0) return '$0';
-        if (c < 0.0001) return '<$0.0001';
-        return '$' + c.toFixed(4);
-    }
-
+    // Cost comes from the server (usage.cost, priced per provider); the shared
+    // footerParts shows no $ column when it is missing rather than guessing.
     function renderTurnFooter(usage) {
         if (!state.currentAssistantEl) return;
-        var pt = parseInt(usage.prompt_tokens || usage.input_tokens || 0, 10) || 0;
-        var ct = parseInt(usage.completion_tokens || usage.output_tokens || 0, 10) || 0;
-        var cached = parseInt(usage.cached_tokens || usage.cache_read_input_tokens || 0, 10) || 0;
-        var elapsed = state.turn.start ? (Date.now() - state.turn.start) / 1000 : 0;
-
-        // Server is single source of truth for cost (handles cache discounts
-        // + provider-specific rate tables). Missing cost → omit the $ column
-        // rather than fabricating; never show a wrong number.
-        var cost = parseFloat(usage.cost);
-        if (!isFinite(cost) || cost < 0) cost = 0;
-
-        state.session.in += pt;
-        state.session.out += ct;
-        state.session.cost += cost;
+        var f = EOS_AGENT_VIEW.footerParts(usage, {
+            elapsedS: state.turn.start ? (Date.now() - state.turn.start) / 1000 : 0,
+            tools: state.turn.tools,
+            planMode: state.planMode,
+        });
+        state.session.in += f.prompt;
+        state.session.out += f.completion;
+        state.session.cost += f.cost;
         state.session.turns += 1;
-
-        var parts = [elapsed.toFixed(1) + 's'];
-        var total = pt + ct;
-        if (total > 0) parts.push(total.toLocaleString() + ' tokens');
-        if (cached > 0 && pt > 0) parts.push(Math.round(100 * cached / pt) + '% cache');
-        if (state.turn.tools > 0) parts.push(state.turn.tools + ' tool' + (state.turn.tools === 1 ? '' : 's'));
-        if (cost > 0) parts.push(_fmtCost(cost));
-        if (state.planMode) parts.push('plan mode');
 
         var footer = document.createElement('div');
         footer.className = 'turn-footer';
-        footer.innerHTML = '· ' + parts.map(esc).join('<span class="sep">·</span>');
+        footer.innerHTML = '· ' + f.parts.map(esc).join('<span class="sep">·</span>');
         state.currentAssistantEl.appendChild(footer);
         updateSessionCostBadge();
         scrollToBottom();
@@ -983,7 +888,7 @@
         if (!el || !val) return;
         if (cost <= 0) { el.style.display = 'none'; return; }
         el.style.display = '';
-        val.textContent = _fmtCost(cost);
+        val.textContent = EOS_AGENT_VIEW.fmtCost(cost);
         el.title = state.session.turns + ' turn' + (state.session.turns === 1 ? '' : 's') +
             ' · ' + (state.session.in + state.session.out).toLocaleString() + ' tokens total';
     }

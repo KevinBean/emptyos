@@ -133,8 +133,31 @@ class TestBookMeManagement:
         r = http_client.post("/bookme/api/bookings/bk-nope/cancel").json()
         assert r.get("error")
 
-    def test_hub_panel_registered(self, http_client):
-        data = assert_ok(http_client.get("/hub/api/panels/all"))
-        panels = data.get("panels", data) if isinstance(data, dict) else data
-        ids = [p.get("id") for p in panels] if isinstance(panels, list) else []
-        assert "bookme-upcoming" in ids
+    def test_hub_panel_registered(self, http_client, seeded_config):
+        # Ask for this one panel, not /api/panels/all: that endpoint hydrates
+        # every lazy contributor at once and swings from 12 s to >90 s under
+        # load, which timed this test out on a healthy tree (2026-09-12).
+        # /api/panel/{id} narrows before anything is called (sdk.panels `only=`).
+        #
+        # The panel answers None ("nothing to show") without an upcoming
+        # confirmed booking, and the aggregator drops None rows — so book one
+        # here rather than depend on test order. The session fixture cleans it.
+        date = _next_weekday(0)   # the weekday seeded_config guarantees has windows
+        slots = assert_ok(http_client.get(f"/bookme/api/public/slots/{TEST_TYPE}?date={date}"))["slots"]
+        if not slots:
+            pytest.skip("no open slots to book")
+        booked = assert_ok(http_client.post(
+            "/bookme/api/public/book",
+            json={"type": TEST_TYPE, "date": date, "time": slots[0],
+                  "name": f"{TEST_PREFIX}panel-booker", "email": "test@example.com", "note": ""},
+        ))
+        assert booked["ok"], booked
+        data = assert_ok(http_client.get("/hub/api/panel/bookme-upcoming", timeout=30))
+        assert isinstance(data, dict)
+        # Registration is the claim: the row exists with its declared shape. Its
+        # rows are the owner's next five bookings, so the fixture's own entry is
+        # not asserted — with five earlier real bookings it would legitimately
+        # fall outside the panel's `limit`.
+        assert data.get("id") == "bookme-upcoming", data
+        assert "lazy" in data and "renderer" in data
+        assert isinstance(data.get("data"), list) and data["data"], data

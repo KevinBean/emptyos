@@ -16,7 +16,13 @@ from emptyos.sdk.media.subtitles import (
     generate_srt,
     proportional_timings,
 )
-from emptyos.sdk.media.video import assemble_video, frames_to_mp4
+from emptyos.sdk.media.video import (
+    assemble_video,
+    fit_clip_to_duration,
+    frames_to_mp4,
+    mux_audio,
+    still_to_clip,
+)
 
 __all__ = [
     "stitch_audio",
@@ -29,6 +35,9 @@ __all__ = [
     "audio_duration_ms",
     "generate_srt",
     "assemble_video",
+    "still_to_clip",
+    "fit_clip_to_duration",
+    "mux_audio",
     "frames_to_mp4",
     "record_html_to_mp4",
     "review_audio",

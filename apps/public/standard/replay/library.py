@@ -26,6 +26,8 @@ class RecipeLibrary(VaultLibrary):
         "created": str,
         "updated": str,
         "steps_count": int,  # machine spec lives in the body json fence, not frontmatter
+        "trigger_cron": str,  # e.g. "0 7 * * *"; empty = no scheduled trigger
+        "trigger_enabled": bool,  # pause without clearing the cron string
     }
     sort_key = "updated"
     sort_reverse = True

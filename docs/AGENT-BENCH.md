@@ -1,8 +1,8 @@
 # Agent Bench — findings and methodology
 
-Tool-use benchmark for the EmptyOS agent. Lives inside `apps/model-bench/` as a parallel surface to the text-bench that already existed. Scores multi-turn tool-use loops with **deterministic verifiers**, not vibes.
+Tool-use benchmark for the EmptyOS agent. Lives inside `apps/extension/dev/model-bench/` as a parallel surface to the text-bench that already existed. Scores multi-turn tool-use loops with **deterministic verifiers**, not vibes.
 
-For how to build, run, and extend it, see code at `apps/model-bench/agent_bench.py` and `apps/model-bench/agent_scenarios.py`. The UI is at `/model-bench/` → Agent tab.
+For how to build, run, and extend it, see code at `apps/extension/dev/model-bench/agent_bench.py` and `apps/extension/dev/model-bench/agent_scenarios.py`. The UI is at `/model-bench/` → Agent tab.
 
 ## Four subjects
 
@@ -108,7 +108,7 @@ Most verify functions are string-match, count-based, or AST-walk — determinist
 
 ### The opt-in surface
 
-`agent_bench.behavioural_compare(...)` runs the model's module in a **subprocess** (`apps/model-bench/behavioural_runner.py`), calls a named symbol with each case's inputs, compares against an expected return value or an expected exception class name. Subprocess isolation buys:
+`agent_bench.behavioural_compare(...)` runs the model's module in a **subprocess** (`apps/extension/dev/model-bench/behavioural_runner.py`), calls a named symbol with each case's inputs, compares against an expected return value or an expected exception class name. Subprocess isolation buys:
 
 - **Per-batch timeout** (default 5s) — a model's infinite loop can't hang the bench.
 - **Crash protection** — `SyntaxError`, `sys.exit()`, `BaseException` all surface as structured results; the parent process never imports the model's code.
@@ -146,7 +146,7 @@ The `eos+*` subjects can route their verify step through a leased sandbox-pool m
 
 ### Wire shape
 
-Host bench (`apps/model-bench/agent_bench.py:_verify_via_sandbox`):
+Host bench (`apps/extension/dev/model-bench/agent_bench.py:_verify_via_sandbox`):
 
 ```
 1. call_app("sandbox", "lease",
@@ -172,7 +172,7 @@ Host bench (`apps/model-bench/agent_bench.py:_verify_via_sandbox`):
 5. call_app("sandbox", "release", lease_id)
 ```
 
-Member endpoint (`apps/model-bench/app.py:api_sandbox_verify`):
+Member endpoint (`apps/extension/dev/model-bench/app.py:api_sandbox_verify`):
 
 - Resolves `scratch_subpath` against `self.vault_root / model-bench-scratch`.
 - Rejects path-escape attempts via `relative_to(vault_root)`.

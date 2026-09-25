@@ -19,6 +19,116 @@ import aiohttp
 
 from emptyos.sdk import BasePlugin
 
+# --- ACE-Step 1.5 conditioning domains ---
+# Verbatim from GET /object_info/TextEncodeAceStepAudio1.5 (ComfyUI 0.33.0).
+# These are strict ComfyUI COMBOs: an out-of-list value — including "" or
+# "auto" — makes /prompt reject the ENTIRE workflow with `value_not_in_list`
+# (ComfyUI execution.py), which reaches us only as an opaque "no prompt_id"
+# syslog line and a "" return. So the domain is enforced here, before anything
+# is queued, and a typo costs a readable error instead of a silent no-op.
+#
+# Note the asymmetry: `language` DOES have an "unknown" member, so "let the
+# model decide" is delegable there. `keyscale` has no such member — every one
+# of its 34 options is a concrete key — which is why auto is resolved locally
+# in _resolve_keyscale() rather than passed through.
+#
+# The enum is a NUMERATOR ONLY — the denominator is implicitly 4, so "6" means
+# 6/4, not 6/8, and compound duple cannot be requested directly. Express 6/8 as
+# timesignature="3" at DOUBLE the bpm instead: 6/8 is two dotted-quarter beats,
+# so a 76 bpm 6/8 lullaby is `timesignature="3", bpm=152`. Measured 2026-08-15
+# against a Suno master of the same song: meter=6/bpm=76 detected 95.7 bpm
+# (wrong feel), meter=3/bpm=152 detected 152.0 — identical to the reference.
+ACESTEP_TIME_SIGNATURES = ("2", "3", "4", "6")
+
+# 8 is what acestep_v1.5_turbo is distilled for, and the workflow pinned it
+# there until 2026-08-15 on the theory that a distilled model is converged and
+# exposing steps could only hurt. Tested by ear: 40 is audibly better, and it
+# costs +2.5s on a 60s song (0.65s -> 3.10s of sampling, both ~12.5 it/s), so
+# the cost the pin was protecting against does not exist. Worth remembering
+# that the spectral proxy backed the wrong side — rolloff moved only 3.8k->4.3k
+# across 8->40 steps, which read as "no difference" and was not.
+ACESTEP_DEFAULT_STEPS = 40
+ACESTEP_MAX_STEPS = 200
+
+# Repaint runs on a DIFFERENT model than compose: ACE-Step 1.0 3.5B via the MW
+# custom-node pack, because that pack owns every studio verb and core ComfyUI
+# ships no 1.5 repaint node. Its own defaults are not reusable here.
+#
+# 60 rather than ACESTEP_DEFAULT_STEPS: 40 is tuned for the *distilled turbo*
+# 1.5 checkpoint, and 1.0 is not distilled — 60 is what the pack's own example
+# and its pipeline default both use.
+ACESTEP_REPAINT_DEFAULT_STEPS = 60
+# The pipeline skips every step before `n_min = int(infer_step * (1 - variance))`,
+# so variance IS the strength dial. Measured 2026-08-15, repainting 20-40s of a
+# 60s take, as log-mel correlation against the source (phase-invariant; see the
+# metric warning in repaint_music). Only the WITHIN-run gap is controlled —
+# absolute values shift between runs because lag alignment does:
+#
+#   variance   kept(before/after)   window    separation   runtime
+#     0.01        0.878 / 0.928      0.891      -0.013       10s   <- no-op
+#     0.50        0.974 / 0.978      0.829      +0.145       30s
+#     0.95        0.876 / 0.927      0.548      +0.329       15s
+#
+# At the pack's own 0.01 default the window correlates no differently than the
+# untouched audio — that is failure mode one, "a repaint that changes nothing",
+# and it is the shipped default, so it must not be inherited.
+#
+# THE CEILING IS SET BY VOCALS, NOT BY THE MUSIC, and log-mel cannot see it.
+# Measured 2026-08-16 on a take with known lyrics, repainting 20-40s, scored by
+# transcribing the window and comparing words against the source's own
+# transcript (`scripts/check_repaint_lyrics.py`):
+#
+#   variance   word-similarity   what the window sings
+#     0.15         0.612         right words, smeared
+#     0.30         0.778         right words, right place
+#     0.50         0.235         RESTARTS the verse from line 1
+#
+# Above ~0.3 the model stops inheriting the take's lyric alignment and re-derives
+# it, so the window sings real lyrics from the wrong part of the song. Every
+# spectral metric rates that a healthy repaint (log-mel r=0.83) because the
+# pitch and rhythm are unchanged — only a listener or a transcript catches it.
+# Hence 0.3: the highest value measured to still hold the vocal line. Raise it
+# only for an INSTRUMENTAL window, where there is no alignment to lose.
+ACESTEP_REPAINT_DEFAULT_VARIANCE = 0.3
+# The variance above which lyric alignment was observed to break. Not a hard
+# limit — an instrumental section is free to exceed it — but crossing it with
+# lyrics present earns a warning, because the failure is inaudible to the gate
+# and obvious to the listener.
+ACESTEP_REPAINT_LYRIC_SAFE_VARIANCE = 0.35
+ACESTEP_KEYSCALES = (
+    "C major", "C# major", "Db major", "D major",
+    "D# major", "Eb major", "E major", "F major",
+    "F# major", "Gb major", "G major", "G# major",
+    "Ab major", "A major", "A# major", "Bb major",
+    "B major", "C minor", "C# minor", "Db minor",
+    "D minor", "D# minor", "Eb minor", "E minor",
+    "F minor", "F# minor", "Gb minor", "G minor",
+    "G# minor", "Ab minor", "A minor", "A# minor",
+    "Bb minor", "B minor",
+)
+_ACESTEP_KEYSCALE_LOOKUP = {k.casefold(): k for k in ACESTEP_KEYSCALES}
+
+
+def _resolve_keyscale(keyscale: str, seed: int) -> str:
+    """Map a caller's keyscale onto a valid ACE-Step COMBO member.
+
+    An empty request draws from the seed rather than falling back to a fixed
+    key: same seed -> same key, so a track stays reproducible, while different
+    tracks stop all landing in one. (Before 2026-08-15 the workflow hardcoded
+    "E minor", so every track EmptyOS composed was in E minor.)
+    """
+    want = (keyscale or "").strip()
+    if not want:
+        return random.Random(seed).choice(ACESTEP_KEYSCALES)
+    canonical = _ACESTEP_KEYSCALE_LOOKUP.get(want.casefold())
+    if canonical is None:
+        raise ValueError(
+            f"unknown ACE-Step keyscale {keyscale!r}; expected one of "
+            + ", ".join(ACESTEP_KEYSCALES)
+        )
+    return canonical
+
+
 # --- Style Presets (from AI Phone Agent) ---
 STYLE_PRESETS = {
     "photo": {
@@ -873,6 +983,9 @@ class ComfyUIPlugin(BasePlugin):
         lyrics: str = "",
         language: str = "en",
         bpm: int = 120,
+        keyscale: str = "",
+        timesignature: str = "4",
+        steps: int = ACESTEP_DEFAULT_STEPS,
         seed: int = 0,
         dest: str = "",
     ) -> str:
@@ -881,6 +994,18 @@ class ComfyUIPlugin(BasePlugin):
         The exact API workflow lives in ``music_workflow`` rather than being
         assembled ad hoc in Music Studio. A zero seed preserves the service's
         historical random-by-default convention.
+
+        ``keyscale=""`` means auto — a key is drawn from the seed, because
+        ACE-Step's COMBO has no "auto" member (see ``_resolve_keyscale``).
+        ``timesignature`` is a STRING, not an int: the COMBO members are
+        "2".."6" and ComfyUI compares by identity, so 4 != "4".
+
+        Negative prompts are NOT supported by this workflow: its KSampler runs
+        at ``cfg 1.0``, and ComfyUI skips the uncond branch entirely at cfg 1.0
+        (``comfy/samplers.py``), so a negative prompt could not affect a single
+        sample. Node 6 exists only to satisfy KSampler's required ``negative``
+        input. Enabling it means raising cfg AND replacing node 6 with a second
+        text encode — a different workflow, not a parameter.
         """
         from pathlib import Path
 
@@ -890,6 +1015,26 @@ class ComfyUIPlugin(BasePlugin):
         bpm = max(10, min(300, int(bpm)))
         if seed == 0:
             seed = random.randint(1, 2**32 - 1)
+
+        # After the seed block on purpose: an explicit seed gives a stable
+        # auto-key, seed=0 varies it per track.
+        timesignature = str(timesignature).strip() or "4"
+        if timesignature not in ACESTEP_TIME_SIGNATURES:
+            raise ValueError(
+                "ACE-Step timesignature must be one of "
+                + ", ".join(ACESTEP_TIME_SIGNATURES)
+            )
+        steps = int(steps)
+        if not 1 <= steps <= ACESTEP_MAX_STEPS:
+            raise ValueError(f"ACE-Step steps must be 1..{ACESTEP_MAX_STEPS}")
+        keyscale = _resolve_keyscale(keyscale, seed)
+        # Logged because an auto-resolved key is otherwise invisible — it is
+        # the only record of what the track was actually conditioned on.
+        self.kernel.syslog.info(
+            "comfyui",
+            f"ACE-Step: key={keyscale} meter={timesignature}/4 "
+            f"bpm={bpm} dur={duration:.0f}s steps={steps} seed={seed}",
+        )
 
         filename = await self.generate_from_workflow(
             workflow_key="music",
@@ -901,6 +1046,279 @@ class ComfyUIPlugin(BasePlugin):
                 "lyrics": lyrics,
                 "language": language,
                 "bpm": bpm,
+                "keyscale": keyscale,
+                "timesignature": timesignature,
+                "steps": steps,
+            },
+            output_keys=("audio", "audios"),
+            preflight_kind="audio",
+        )
+        if not filename or not dest:
+            return filename
+        destination = Path(dest)
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        ok = await self.download_image(filename, destination)
+        return str(destination) if ok else ""
+
+    async def repaint_music(
+        self,
+        src_audio: str,
+        *,
+        repaint_start: float,
+        repaint_end: float,
+        prompt: str,
+        lyrics: str,
+        negative_prompt: str = "",
+        variance: float = ACESTEP_REPAINT_DEFAULT_VARIANCE,
+        steps: int = ACESTEP_REPAINT_DEFAULT_STEPS,
+        guidance_scale: float = 15.0,
+        cpu_offload: bool = False,
+        seed: int = 0,
+        dest: str = "",
+    ) -> str:
+        """Regenerate seconds ``[repaint_start, repaint_end]`` of an existing
+        take and keep the rest. The audio-to-audio sibling of
+        ``generate_music`` — this one starts from your audio, not from noise.
+
+        ``src_audio`` is a LOCAL path; it is uploaded into ComfyUI's input/
+        (``/upload/image`` is the generic upload endpoint and accepts audio).
+
+        THE MODEL IS NOT THE ONE ``generate_music`` USES. Compose runs ACE-Step
+        1.5 turbo through core ComfyUI; every studio verb belongs to the
+        ComfyUI_ACE-Step (MW) pack, which loads ACE-Step 1.0 3.5B from
+        ``models/TTS/ACE-Step-v1-3.5B``. There is no 1.5 repaint node on this
+        install, so the window is voiced by a different model than the track
+        around it and the seam is a listening call, not a parameter.
+
+        The region OUTSIDE the window is preserved but NOT bit-identical: the
+        pipeline encodes the whole track to latents, replaces only the masked
+        frames, then decodes everything, so the kept audio is a VAE round-trip
+        of the original.
+
+        VERIFYING THAT COSTS MORE CARE THAN IT LOOKS. A hash mismatch on the
+        kept region is the expected result, not a bug — but so is a *waveform*
+        correlation of ~0. The round-trip reconstructs the waveform without
+        preserving phase, and it shifted this file by 197 samples (4.1 ms), and
+        raw-waveform Pearson r collapses to zero on either. Measured 2026-08-15:
+        waveform r on the untouched head read -0.25 (which reads as "the whole
+        track was destroyed") while log-mel r on the same audio read +0.97.
+        Compare magnitude spectrograms, per-second, and read the profile rather
+        than a segment average — the profile is what shows the edit landing on
+        the seconds you asked for.
+
+        ``prompt`` and ``lyrics`` are REQUIRED, and must be the ones the take
+        was generated with — the whole song's, not the window's. They have no
+        defaults because an empty ``lyrics`` is not a neutral choice: the model
+        regenerates the window with no lyric conditioning and invents new
+        vocals over it. Measured 2026-08-16, repainting 20-40s of a take whose
+        words were known: empty lyrics scored 0.149 word-similarity against the
+        source (pure gibberish), the correct lyrics scored 0.778. Pass "" only
+        for a genuinely instrumental section, as a deliberate act.
+
+        Even with correct lyrics the vocal is only held below
+        ``ACESTEP_REPAINT_LYRIC_SAFE_VARIANCE``; above it the model re-derives
+        lyric alignment and sings a different part of the song inside the
+        window. That failure is invisible to every spectral check, so this
+        method warns rather than trusting the measurement.
+
+        ``variance`` is the strength dial and the thing most worth getting
+        right; see ``ACESTEP_REPAINT_DEFAULT_VARIANCE``. Returns the ComfyUI
+        filename, or the local path when ``dest`` is given, or "" on failure.
+        """
+        from pathlib import Path
+
+        src = Path(src_audio)
+        if not src.exists():
+            raise FileNotFoundError(f"repaint source not found: {src}")
+
+        repaint_start = float(repaint_start)
+        repaint_end = float(repaint_end)
+        if repaint_start < 0:
+            raise ValueError("repaint_start must be >= 0")
+        if repaint_end <= repaint_start:
+            raise ValueError(
+                f"repaint window is empty or inverted: "
+                f"[{repaint_start}, {repaint_end}]"
+            )
+        if not 0.01 <= variance <= 1.0:
+            raise ValueError("repaint variance must be between 0.01 and 1.0")
+        steps = int(steps)
+        if not 1 <= steps <= ACESTEP_MAX_STEPS:
+            raise ValueError(f"repaint steps must be 1..{ACESTEP_MAX_STEPS}")
+
+        if seed == 0:
+            seed = random.randint(1, 2**32 - 1)
+
+        # Warn, don't refuse: an instrumental window legitimately goes higher,
+        # and only the caller knows whether this span has a vocal in it.
+        if lyrics.strip() and variance > ACESTEP_REPAINT_LYRIC_SAFE_VARIANCE:
+            self.kernel.syslog.warning(
+                "comfyui",
+                f"repaint variance {variance} is above "
+                f"{ACESTEP_REPAINT_LYRIC_SAFE_VARIANCE} with lyrics present — "
+                "the window will likely sing a different part of the song. "
+                "Spectral checks cannot see this; listen to the window.",
+            )
+
+        uploaded = await self.upload_image(src)
+        if not uploaded:
+            self.kernel.syslog.error(
+                "comfyui", f"repaint: failed to upload {src.name} to ComfyUI",
+            )
+            return ""
+
+        # The window is what the caller is paying for, and it is silently
+        # clamped to the source duration deeper in the node, so log it.
+        self.kernel.syslog.info(
+            "comfyui",
+            f"ACE-Step repaint: {uploaded} window=[{repaint_start:.1f}s, "
+            f"{repaint_end:.1f}s] variance={variance} steps={steps} seed={seed}",
+        )
+
+        filename = await self.generate_from_workflow(
+            workflow_key="music_repaint",
+            prompt=prompt,
+            seed=seed,
+            # Config wins, bundled template is the fallback, so a fresh clone
+            # works without a toml entry (as generate_dialogue does).
+            template_path=self.config("music_repaint_workflow", "") or str(
+                Path(__file__).parent / "workflows" / "acestep_repaint.json"
+            ),
+            substitutions={
+                "src_audio": uploaded,
+                "lyrics": lyrics,
+                "negative_prompt": negative_prompt,
+                "repaint_start": int(repaint_start),
+                "repaint_end": int(repaint_end),
+                "repaint_variance": float(variance),
+                "steps": steps,
+                "guidance_scale": float(guidance_scale),
+                "cpu_offload": bool(cpu_offload),
+                # NOT `seed`: GenerationParameters only converts this into
+                # `manual_seeds` when it is nonzero, and a literal 0 survives
+                # into pipeline.__call__ — which has no `seed` parameter — so
+                # the run dies with a TypeError *after* loading 7.6GB of
+                # weights. Reuse the resolved seed; it is already nonzero.
+                "param_seed": seed,
+            },
+            output_keys=("audio", "audios"),
+            preflight_kind="audio",
+        )
+        if not filename or not dest:
+            return filename
+        destination = Path(dest)
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        ok = await self.download_image(filename, destination)
+        return str(destination) if ok else ""
+
+    async def extend_music(
+        self,
+        src_audio: str,
+        *,
+        prompt: str,
+        lyrics: str,
+        left_seconds: float = 0.0,
+        right_seconds: float = 0.0,
+        negative_prompt: str = "",
+        steps: int = ACESTEP_REPAINT_DEFAULT_STEPS,
+        guidance_scale: float = 15.0,
+        cpu_offload: bool = False,
+        seed: int = 0,
+        dest: str = "",
+    ) -> str:
+        """Grow an existing take at its head and/or tail — the intro/outro verb.
+
+        Sibling of ``repaint_music``: same model, same upload path, same
+        required ``prompt``/``lyrics`` contract and the same reason for it
+        (an empty ``lyrics`` makes the model invent vocals).
+
+        Three ways it is NOT repaint, all of which have bitten:
+
+        * **No ``variance``.** ``ACEStepExtend`` exposes none, so there is no
+          strength dial to pass and none to warn about. The mask covers only
+          new territory, so the original audio is not at risk the way a
+          repaint window is.
+        * **The duration changes.** Output length is roughly
+          ``source + left + right``. Any check that assumes equal length —
+          ``scripts/measure_repaint.py`` does — must compare only the
+          overlapping original span.
+        * **The new material still draws from the WHOLE song's lyrics, and it
+          REPEATS rather than continues.** Measured 2026-08-16, +15s on a 60s
+          take whose words were known: the grown tail sang verse lines 3-4
+          again — audio already present at 20-30s of the source. The original
+          span was genuinely preserved (log-mel r=+0.950 across all 60s), so
+          this is a lyric-selection behaviour, not a re-render. Treat extend as
+          "grow more of this song", never "write the next section"; if the
+          outro needs different words, that is an ``ACEStepEdit`` job.
+
+        Cost note: a run is 10-20s when the ACE weights are already resident
+        and ~280s when they are not. The first extend after any other model has
+        used the GPU pays the reload, which is worth knowing before attributing
+        it to the verb.
+
+        Lengths are seconds added OUTSIDE the source; the node converts them
+        to ``repaint_start=-left`` / ``repaint_end=duration+right`` internally.
+        Returns the ComfyUI filename, the local path when ``dest`` is given,
+        or "" on failure.
+        """
+        from pathlib import Path
+
+        src = Path(src_audio)
+        if not src.exists():
+            raise FileNotFoundError(f"extend source not found: {src}")
+
+        left_seconds = float(left_seconds)
+        right_seconds = float(right_seconds)
+        if left_seconds < 0 or right_seconds < 0:
+            raise ValueError("extend lengths must be >= 0")
+        if left_seconds <= 0 and right_seconds <= 0:
+            raise ValueError(
+                "extend needs a nonzero left_seconds or right_seconds — "
+                "otherwise it would re-render the take without growing it"
+            )
+        # The node's own ceiling; beyond it ComfyUI rejects the prompt after
+        # the upload has already been paid for.
+        if left_seconds > 1000 or right_seconds > 1000:
+            raise ValueError("extend lengths must be <= 1000 seconds")
+        steps = int(steps)
+        if not 1 <= steps <= ACESTEP_MAX_STEPS:
+            raise ValueError(f"extend steps must be 1..{ACESTEP_MAX_STEPS}")
+
+        if seed == 0:
+            seed = random.randint(1, 2**32 - 1)
+
+        uploaded = await self.upload_image(src)
+        if not uploaded:
+            self.kernel.syslog.error(
+                "comfyui", f"extend: failed to upload {src.name} to ComfyUI",
+            )
+            return ""
+
+        self.kernel.syslog.info(
+            "comfyui",
+            f"ACE-Step extend: {uploaded} +{left_seconds:.0f}s head "
+            f"+{right_seconds:.0f}s tail steps={steps} seed={seed}",
+        )
+
+        filename = await self.generate_from_workflow(
+            workflow_key="music_extend",
+            prompt=prompt,
+            seed=seed,
+            template_path=self.config("music_extend_workflow", "") or str(
+                Path(__file__).parent / "workflows" / "acestep_extend.json"
+            ),
+            substitutions={
+                "src_audio": uploaded,
+                "lyrics": lyrics,
+                "negative_prompt": negative_prompt,
+                "left_extend_length": int(left_seconds),
+                "right_extend_length": int(right_seconds),
+                "steps": steps,
+                "guidance_scale": float(guidance_scale),
+                "cpu_offload": bool(cpu_offload),
+                # Same trap as repaint: a literal 0 here reaches a pipeline
+                # with no `seed` argument and dies after the models load.
+                "param_seed": seed,
             },
             output_keys=("audio", "audios"),
             preflight_kind="audio",

@@ -1,6 +1,7 @@
 // Background service worker — context menus, badge poller, badge-update fan-in.
 
-importScripts("reading-config.js", "daemon-client.js", "browser-session.js");
+importScripts("reading-config.js", "daemon-client.js", "browser-session.js",
+              "lecture-capture.js");
 const { getConfig, authHeaders } = globalThis.EOS_DAEMON;
 
 globalThis.EOS_BROWSER_SESSION.init().catch(error => {
@@ -86,6 +87,15 @@ const MENU_SPECS = [
   { app: "jobs", spec: { id: "eval-job-sel", title: "Evaluate selection as a job (vs my CV)", contexts: ["selection"] } },
   { app: "jobs", spec: { id: "eval-job-page", title: "Evaluate this job posting (vs my CV)", contexts: ["page"], documentUrlPatterns: JOB_SITE_PATTERNS } },
   { app: "jobs", spec: { id: "capture-job", title: "Capture job posting (LinkedIn / Seek)", contexts: ["page"], documentUrlPatterns: JOB_SITE_PATTERNS } },
+  // Nested: two lecture verbs at top level read as near-duplicates of
+  // quick-action's "Capture page to EmptyOS", which does something else
+  // entirely. The parent must be created before its children — _refreshMenus
+  // walks this list in order.
+  { app: "academy", spec: { id: "lecture-menu", title: "EmptyOS lecture", contexts: ["page"] } },
+  { app: "academy", spec: { id: "lecture-record", parentId: "lecture-menu",
+                            title: "Record audio  (Ctrl+Shift+L)", contexts: ["page"] } },
+  { app: "academy", spec: { id: "lecture-page", parentId: "lecture-menu",
+                            title: "Save this slide  (Ctrl+Shift+U)", contexts: ["page"] } },
   { app: "video-digest", spec: { id: "digest-video", title: "Digest this video", contexts: ["page"], documentUrlPatterns: ["https://*.youtube.com/watch*", "https://youtu.be/*"] } },
 ];
 
@@ -405,6 +415,15 @@ async function handleReadingMessage(message, sender) {
       source_url: String(message.sourceUrl || sender?.tab?.url || "").slice(0, 1000),
     });
   }
+  if (message.type === "EOS_READING_DIFFICULTY") {
+    // The reader's own 1-5 "how hard is this for me", written straight onto the
+    // saved note. Only meaningful for a word already in the vault — the daemon
+    // answers `{error}` for anything else and the card says so.
+    return readingFetch("/dictionary/api/difficulty", {
+      word: String(message.word || "").slice(0, 64),
+      difficulty: Number(message.difficulty) || 0,
+    });
+  }
   if (message.type === "EOS_READING_PRONOUNCE") {
     return readingPronounce(String(message.word || "").slice(0, 64));
   }
@@ -480,6 +499,26 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   const { host, token } = await getConfig();
 
   try {
+    if (info.menuItemId === "lecture-page") {
+      const r = await globalThis.EOS_LECTURE_PAGE.capturePage({ tabId: tab.id });
+      flashBadge(!r?.error);
+      if (r?.error) console.warn("lecture page:", r.error);
+      return;
+    }
+
+    if (info.menuItemId === "lecture-record") {
+      // Reads the label the side panel last typed; falls back to the page title.
+      const { lectureLabel, lectureFolder } = await chrome.storage.local.get(
+        { lectureLabel: "", lectureFolder: "" });
+      const label = (lectureLabel || "").trim() ||
+        (tab.title || "lecture").toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 48);
+      const r = await globalThis.EOS_LECTURE.start({ tabId: tab.id });
+      if (r?.error) { flashBadge(false); console.warn("lecture start:", r.error); return; }
+      await chrome.storage.local.set({ lectureLabel: label, lectureFolder: lectureFolder || "" });
+      flashBadge(true);
+      return;
+    }
+
     if (info.menuItemId === "capture-page") {
       const r = await fetch(host + "/quick-action/api/add", {
         method: "POST", headers: authHeaders(token),
@@ -702,4 +741,28 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     .then(() => sendResponse({ ok: true }))
     .catch(e => sendResponse({ error: e?.message || "menu refresh failed" }));
   return true;
+});
+
+// A keyboard command is an extension invocation, so it grants activeTab for the
+// focused tab — the same reason the context menu works and a side-panel button
+// does not. This is the one-keystroke way to start a capture.
+chrome.commands.onCommand.addListener(async (command) => {
+  if (command === "capture-lecture-page") {
+    const [t] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (!t?.id) return;
+    const r = await globalThis.EOS_LECTURE_PAGE.capturePage({ tabId: t.id });
+    flashBadge(!r?.error);
+    if (r?.error) console.warn("lecture page (shortcut):", r.error);
+    return;
+  }
+  if (command !== "start-lecture-capture") return;
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  if (!tab?.id) return;
+  const { lectureLabel } = await chrome.storage.local.get({ lectureLabel: "" });
+  const label = (lectureLabel || "").trim() ||
+    (tab.title || "lecture").toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 48);
+  await chrome.storage.local.set({ lectureLabel: label });
+  const r = await globalThis.EOS_LECTURE.start({ tabId: tab.id });
+  flashBadge(!r?.error);
+  if (r?.error) console.warn("lecture start (shortcut):", r.error);
 });

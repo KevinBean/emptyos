@@ -1,4 +1,17 @@
-"""System Tray Plugin — puts EmptyOS in the native taskbar tray."""
+"""System Tray Plugin — puts EmptyOS in the native taskbar tray.
+
+Stands down while an EmptyOS Desktop shell's own tray icon is up for this
+daemon's port (``emptyos/desktop_presence.py``): two icons — one of them
+offering a Quit that ends the *daemon* — is exactly the confusion the shell's
+tray exists to remove. The shell claims that only once its tray is running, so
+a shell without one never hides this icon. It comes back within
+``DEFER_POLL_S`` of the shell's tray going away, crash included.
+
+While it stands down, this icon's **Capture Thought** (the only emitter of
+``tray:capture_clicked``) and **Restart** are not on screen; the shell's tray
+offers neither. ``[plugins.system-tray] defer_to_shell = false`` keeps this icon
+visible regardless, for anyone who relies on them.
+"""
 
 from __future__ import annotations
 
@@ -9,7 +22,11 @@ import threading
 import webbrowser
 from pathlib import Path
 
+from emptyos.desktop_presence import shell_tray_present
 from emptyos.sdk import BasePlugin
+
+#: How often the icon re-checks for an attached desktop shell.
+DEFER_POLL_S = 5.0
 
 try:
     import pystray
@@ -28,6 +45,8 @@ class SystemTrayPlugin(BasePlugin):
         self._icon = None
         self._thread = None
         self._loop = None
+        self._stop = threading.Event()
+        self._deferring = False
 
     async def connect(self):
         if not HAS_TRAY:
@@ -42,6 +61,7 @@ class SystemTrayPlugin(BasePlugin):
         print("[Tray] System tray icon spawned")
 
     async def disconnect(self):
+        self._stop.set()
         if self._icon:
             self._icon.stop()
 
@@ -64,7 +84,33 @@ class SystemTrayPlugin(BasePlugin):
             pystray.MenuItem("Quit", self._on_quit),
         )
         self._icon = pystray.Icon("EmptyOS", self._create_image(), "EmptyOS", menu)
-        self._icon.run()
+        # setup= runs on its own thread once the icon exists, and replaces
+        # pystray's default (which just makes it visible).
+        self._icon.run(setup=self._visibility_loop)
+
+    def _should_show(self) -> bool:
+        """Visible unless a desktop shell's tray is up for this daemon's port."""
+        if not bool(self.config("defer_to_shell", True)):
+            return True
+        port = int(self.kernel.config.get("network.port", 9000) or 9000)
+        return not shell_tray_present(port)
+
+    def _sync_visibility(self, icon) -> None:
+        show = self._should_show()
+        deferring = not show
+        if deferring != self._deferring:  # log the change once, not every poll
+            self._deferring = deferring
+            print("[Tray] desktop shell attached — hiding the daemon tray icon" if deferring
+                  else "[Tray] desktop shell gone — showing the daemon tray icon")
+        icon.visible = show
+
+    def _visibility_loop(self, icon) -> None:
+        while not self._stop.is_set():
+            try:
+                self._sync_visibility(icon)
+            except Exception:
+                icon.visible = True  # a broken probe must never make the tray vanish
+            self._stop.wait(DEFER_POLL_S)
 
     def _on_open(self):
         # Open the chromeless --app window (the daily driver) rather than a
@@ -91,6 +137,7 @@ class SystemTrayPlugin(BasePlugin):
         return Path(__file__).resolve().parents[2]
 
     def _shutdown(self, relaunch: bool = False):
+        self._stop.set()
         if self._icon:
             try:
                 self._icon.stop()

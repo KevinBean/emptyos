@@ -2,6 +2,7 @@
 name: eos-fde-engagement
 description: Run a Forward-Deployed-Engineer (FDE) engagement loop end-to-end using EmptyOS as the rapid-prototyping substrate — discovery → engagement brief → thin-slice prototype → touchable demo → measured value-proof → handoff. Use when the user says "FDE engagement", "run an FDE loop", "land an AI solution for <customer>", "prototype a demo for <customer/team>", "prove value for <use case>", or is preparing an FDE-style customer/portfolio piece. The value-proof phase (measured manual-vs-tool before/after) is the differentiator — never invent the numbers. NOT for building a generic EmptyOS app for yourself (use eos-new-app) or for job-posting evaluation (use life-job-evaluator).
 ---
+<!-- skill-refs: ignore — the docs/*.md paths are handoff artifacts this skill CREATES per engagement, not repo files -->
 
 # FDE Engagement Kit
 
@@ -31,7 +32,7 @@ The whole game is the *speed of the loop*: vague pain → working thing they can
 
 Run in order. The discipline at each gate: **don't advance until the prior gate's artifact exists.** The classic FDE failure is skipping discovery to start building, then building the wrong thing fast.
 
-All engagement artifacts live in one project dir (project standard, AGENTS.md § Project standard):
+All engagement artifacts live in one project dir (project standard, CLAUDE.md § Project standard):
 
 ```
 {vault}/10_Projects/fde-<slug>/
@@ -128,7 +129,7 @@ Build path:
 - Reuse → wire an existing app / contribute a hub-panel or voice-intent.
 - One-shot visual → `viz` / `designer` directly, no app needed.
 
-**Speed discipline:** if it takes more than a day or two, the slice is too wide — cut it. A working narrow thing beats a broad half-thing every time. Verify it runs (AGENTS.md Dev Rule 10: testable from `localhost:9000` or it's not done). Use a leased sandbox member to verify Python changes without touching `:9000` (`.Codex/rules/sandbox-driven-testing.md`).
+**Speed discipline:** if it takes more than a day or two, the slice is too wide — cut it. A working narrow thing beats a broad half-thing every time. Verify it runs (CLAUDE.md Dev Rule 10: testable from `localhost:9000` or it's not done). Use a leased sandbox member to verify Python changes without touching `:9000` (`.claude/rules/sandbox-driven-testing.md`).
 
 ---
 
@@ -190,7 +191,7 @@ Update the brief frontmatter: `status: proven`, fill `baseline` + `target` with 
 
 Make it the customer's, not yours. Two artifacts under `docs/`:
 
-1. **`eos app info <id>`** output (self-documenting — AGENTS.md Dev Rule 6) → save as `docs/app-info.md`.
+1. **`eos app info <id>`** output (self-documenting — CLAUDE.md Dev Rule 6) → save as `docs/app-info.md`.
 2. **`docs/handoff.md`** — a customer-facing one-pager: what was built, how to run it, what it costs (cloud/compute), what's deliberately out of scope, and the obvious next slice. Use `render_pdf` (SDK) if they want a branded PDF.
 
 Set brief `status: handed-off`. If this was a portfolio piece, suggest `/eos-devlog-publish` to surface it (after a leak/branding check — never expose customer identity without consent).
@@ -221,9 +222,9 @@ Read these before a real engagement — especially the "when it fits" prerequisi
 - `capture` / `projects` — discovery notes + the engagement project dir.
 - `emptyos.sdk.pdf.render_markdown_pdf` — branded handoff PDFs.
 - `eos-devlog-publish` — surface a portfolio engagement publicly (consent + leak check first).
-- `.Codex/rules/sandbox-driven-testing.md` — verify prototype code without touching `:9000`.
+- `.claude/rules/sandbox-driven-testing.md` — verify prototype code without touching `:9000`.
 - FDE-transition track (career) — completed engagements are the strongest portfolio evidence for the pivot.
 
 ## Vault connection
 
-Requires vault connection for the brief + value-proof notes. Check `.Codex/vault-connection.json`. Engagement root: `{vault}/10_Projects/fde-<slug>/`.
+Requires vault connection for the brief + value-proof notes. Check `.claude/vault-connection.json`. Engagement root: `{vault}/10_Projects/fde-<slug>/`.

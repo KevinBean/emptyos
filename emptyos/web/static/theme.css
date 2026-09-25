@@ -118,12 +118,33 @@
      `#fff` there is the bug this replaces — it reads 1.6-2.3:1 on the dark
      themes, whose status colours are bright (mint #34d399, rose #f87171). */
   --ink-on-vivid: var(--accent-ink, #fff);
+
+  /* Compatibility alias, same shape as --ink-on-vivid above: declared once here,
+     substituted against the *computed* --text-muted, so it follows whichever
+     .theme-* is active without being repeated in all ten.
+     `--muted` was never a declared token, yet 241 references across 38 files
+     (eos-cad-views, learn, viz, designer, cable_network) already used it — 190
+     of them as `color:`, which therefore resolved to nothing and inherited at
+     full --text strength instead of reading as muted.
+     It belongs at :root and NOWHERE else: a theme block would bind it to one
+     theme, and a component sheet redefining it at :root wins on load order and
+     freezes it page-wide (what eos-flipbook.css did until --ex-muted).
+     Prefer --text-muted in new code; this makes the existing rules mean what
+     they already say. */
+  --muted: var(--text-muted);
+
+  /* Adaptive app-icon paint roles. The first three follow the active theme's
+     structural palette; every theme supplies its own editorial second ink. */
+  --app-icon-ink: var(--text-heading);
+  --app-icon-paper: var(--bg-card);
+  --app-icon-accent: var(--accent);
 }
 
 /* ── eos — the EmptyOS signature theme ──
    Warm stone paper, quiet ink, violet accent.
    Calm like a zen garden in daylight.                  */
 .theme-eos {
+  --app-icon-accent-2: #d49a27;
   --bg:             #ede9e3;
   --bg-surface:     #e4e0d8;
   --bg-card:        #f8f6f2;
@@ -156,6 +177,7 @@
 
 /* ── void-dark — pure black, minimal ── */
 .theme-void-dark {
+  --app-icon-accent-2: #55c2d9;
   --bg: #08080f; --bg-surface: #0c0c14;
   --bg-card: rgba(255,255,255,0.025); --bg-card-hover: rgba(255,255,255,0.05);
   --bg-input: rgba(255,255,255,0.04);
@@ -170,6 +192,7 @@
 
 /* ── warm-dark — amber lantern ── */
 .theme-warm-dark {
+  --app-icon-accent-2: #d9806f;
   --bg: #151520; --bg-surface: #1a1a28;
   --bg-card: rgba(232,197,71,0.03); --bg-card-hover: rgba(232,197,71,0.06);
   --bg-input: rgba(232,197,71,0.04);
@@ -183,6 +206,7 @@
 
 /* ── nord — arctic twilight ── */
 .theme-nord {
+  --app-icon-accent-2: #d08770;
   --bg: #242933; --bg-surface: #2a303c;
   --bg-card: rgba(59,66,82,0.5); --bg-card-hover: rgba(59,66,82,0.7);
   --bg-input: rgba(59,66,82,0.6);
@@ -209,6 +233,7 @@
    amber warning — acceptable because status colour never appears alone; it
    appears as a chip on its own tint, next to a label saying what it means. */
 .theme-forest {
+  --app-icon-accent-2: #d2a85a;
   --bg: #0e1712; --bg-surface: #131e18;
   --bg-card: rgba(179,201,182,0.035); --bg-card-hover: rgba(179,201,182,0.07);
   --bg-input: rgba(179,201,182,0.05);
@@ -227,6 +252,7 @@
    late rather than as arctic daylight. Sampled from BLACK IS BACK.
    --info is pushed to cyan so it stays legible beside the blue accent. */
 .theme-deep-sea {
+  --app-icon-accent-2: #61c1b4;
   --bg: #0d111a; --bg-surface: #141b2b;
   --bg-card: rgba(143,172,203,0.04); --bg-card-hover: rgba(143,172,203,0.08);
   --bg-input: rgba(143,172,203,0.05);
@@ -249,6 +275,7 @@
    colour in the theme that leans warm. Verify error states by eye before
    trusting this theme in a workflow where missing an error is expensive. */
 .theme-vino {
+  --app-icon-accent-2: #d8a657;
   --bg: #1a0d10; --bg-surface: #241318;
   --bg-card: rgba(188,120,141,0.045); --bg-card-hover: rgba(188,120,141,0.09);
   --bg-input: rgba(188,120,141,0.055);
@@ -264,6 +291,7 @@
 
 /* ── soft-light — paper daylight ── */
 .theme-soft-light {
+  --app-icon-accent-2: #d97352;
   --bg: #f8f8f4; --bg-surface: #f0f0ec;
   --bg-card: #fff; --bg-card-hover: #fff;
   --bg-input: #fff;
@@ -271,8 +299,10 @@
   --text-muted: #83838a; --border: #e4e4e0; --border-strong: #d0d0cc;
   --accent: #5b5fd0; --accent-dim: #4548a0; --accent-bg: rgba(91,95,208,0.06); --accent-ink: #ffffff;
   /* success was the dark-theme mint #34d399 (1.9:1 on white); warning was #d97706
-     (2.99:1). Both now clear 3.0:1 on --bg AND on their own tint. */
-  --success: #0c8955; --warning: #c26800; --danger: #dc2626; --info: #0284c7;
+     (2.99:1). Both now clear 3.0:1 on --bg AND on their own tint.
+     Darkened again 2026-09-21, same hue: a filled success/warning button puts
+     --accent-ink on these, and #0c8955 / #c26800 gave 4.44 / 3.98:1 under white. */
+  --success: #0c8452; --warning: #b05e00; --danger: #dc2626; --info: #0284c7;
   --shadow: rgba(0,0,0,0.03); --glow: none;
   --focus-ring: 0 0 0 2px var(--bg), 0 0 0 4px color-mix(in srgb, var(--accent) 60%, transparent);
 }
@@ -283,6 +313,7 @@
    is the only one where the accent is *cooler* than the paper, which is what
    makes dense forms feel calm rather than busy. Sampled from TATAMI TAN. */
 .theme-tatami {
+  --app-icon-accent-2: #a05a3a;
   --bg:             #ebe3d8;
   --bg-surface:     #e2d8ca;
   --bg-card:        #f7f2ea;
@@ -316,6 +347,7 @@
    UI). Lowest-contrast-risk of the five garden palettes. Pilot before the
    other four (ink-wash / botanical-scroll / victorian / edo) port over. */
 .theme-digital-garden {
+  --app-icon-accent-2: #58704a;
   --bg:             #e8dec8;
   --bg-surface:     #ded2b6;
   --bg-card:        #f2ebda;
@@ -335,8 +367,8 @@
   --accent-dim:     #c89548;
   --accent-bg:      rgba(143,78,39,0.10);
   --accent-ink:     #fdf8ee;
-  --success:        #5f7d3c;
-  --warning:        #9c6f1e;  /* ≥3.0 on --bg-card (was #b8852e @ 2.8:1) */
+  --success:        #5c7a3a;  /* was #5f7d3c: 4.42:1 under --accent-ink on a filled button */
+  --warning:        #93691c;  /* ≥3.0 on --bg-card (was #b8852e @ 2.8:1); was #9c6f1e: 4.22:1 under --accent-ink */
   --danger:         #b0492f;
   --info:           #5a7a8a;
   --shadow:         rgba(61,40,23,0.08);
@@ -417,8 +449,21 @@ html.eos-redact .nav a { filter: none !important; }
 .nav-home { font-weight: 600; flex-shrink: 0; }
 .nav-crumb { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; padding: 4px 4px; flex-shrink: 0; max-width: 38vw; }
 .nav-crumb-sep { color: var(--text-muted); font-weight: 400; opacity: 0.6; }
-.nav-crumb-icon { font-size: 14px; line-height: 1; }
+.nav-crumb-icon { width:16px; height:16px; font-size:14px; line-height:1; flex:0 0 16px; }
 .nav-crumb-name { color: var(--accent); font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Adaptive app-identity icons. The sprite holds geometry only; themes own all
+   four paints, so already-rendered icons recolor in place. */
+.eos-app-icon { display:block; width:100%; height:100%; overflow:visible; }
+.eos-app-icon-paper { color:var(--app-icon-paper); }
+.eos-app-icon-accent { color:var(--app-icon-accent); }
+.eos-app-icon-accent-2 { color:var(--app-icon-accent-2); }
+.eos-app-icon-ink { color:var(--app-icon-ink); }
+.eos-app-icon-fallback { display:inline-flex; width:100%; height:100%; align-items:center; justify-content:center; line-height:1; }
+.eos-app-icon-monogram-bg { fill: color-mix(in srgb, var(--text) 8%, transparent); }
+/* 520 of the 1024 viewBox ~= half the tile, which matches the drawn icons'
+   optical weight; both paints are theme tokens so the monogram follows the
+   active theme exactly as a real icon does. */
+.eos-app-icon-monogram-text { fill: var(--text-muted); font-size: 520px; font-weight: 600; font-family: inherit; letter-spacing: 0; }
 /* Search + assistant buttons — peers of the existing nav icon buttons */
 .nav-search-btn, .nav-assistant { color: var(--text-muted); cursor: pointer; padding: 4px 8px; border-radius: 6px; font-size: 15px; line-height: 1; flex-shrink: 0; user-select: none; min-width: 36px; min-height: 36px; display: inline-flex; align-items: center; justify-content: center; }
 .nav-search-btn:hover, .nav-assistant:hover { color: var(--text); background: color-mix(in srgb, var(--text) 5%, transparent); }
@@ -459,9 +504,11 @@ body { padding-bottom: max(80px, calc(env(safe-area-inset-bottom) + 16px)); }
 .ads-toggle { margin-left:auto; font-size:9px; color:var(--text-muted); transition:transform 0.2s; }
 .app-drawer-section.collapsed .app-drawer-grid { display:none; }
 .app-drawer-section:not(.collapsed) .ads-toggle { transform:rotate(90deg); }
-.app-drawer-item { background:var(--bg-card); border:1px solid var(--border); border-radius:8px; padding:10px; cursor:pointer; text-decoration:none; color:var(--text); transition:border-color 0.12s; display:block; }
+.app-drawer-item { background:var(--bg-card); border:1px solid var(--border); border-radius:8px; padding:10px; cursor:pointer; text-decoration:none; color:var(--text); transition:border-color 0.12s; display:flex; align-items:center; gap:9px; min-width:0; }
 .app-drawer-item:hover { border-color:var(--accent); }
-.app-drawer-item .adi-name { font-size:12px; font-weight:600; color:var(--text-heading); }
+.app-drawer-item .adi-icon { width:32px; height:32px; flex:0 0 32px; }
+.app-drawer-item .adi-copy { min-width:0; display:block; }
+.app-drawer-item .adi-name { display:block; font-size:12px; font-weight:600; color:var(--text-heading); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .app-drawer-item .adi-desc { font-size:10px; color:var(--text-muted); margin-top:2px; line-height:1.2; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
 
 @media (max-width: 640px) {
@@ -647,13 +694,19 @@ tr:hover td { background: color-mix(in srgb, var(--accent) 3%, transparent); }
 .theme-eos h2 { font-weight: 600; letter-spacing: -0.015em; }
 
 /* Links: animated underline reveal */
-.theme-eos a:not(.nav a):not(.ac):not(.qa):not(.obs-link):not(.eos-note-link a) {
+/* `:not(.eos-btn)`: a link styled as a button is a button, not a link. This rule
+   sets background-image and a 0%×1px background-size, and at (0,6,2) it beat
+   `.theme-eos .eos-btn-primary`'s gradient — so every <a class="eos-btn
+   eos-btn-primary"> rendered as white text on the page with no fill at all, at
+   rest and on hover (app-builder, bookme, gesture, drone-flight; found
+   2026-09-21). Pinned by tests/test_unit_eos_btn_hover.py. */
+.theme-eos a:not(.nav a):not(.ac):not(.qa):not(.obs-link):not(.eos-note-link a):not(.eos-btn) {
   opacity: 1; text-decoration: none;
   background-image: linear-gradient(var(--accent), var(--accent));
   background-size: 0% 1px; background-position: 0 100%; background-repeat: no-repeat;
   transition: background-size 0.25s ease;
 }
-.theme-eos a:not(.nav a):not(.ac):not(.qa):not(.obs-link):not(.eos-note-link a):hover {
+.theme-eos a:not(.nav a):not(.ac):not(.qa):not(.obs-link):not(.eos-note-link a):not(.eos-btn):hover {
   opacity: 1; background-size: 100% 1px;
 }
 

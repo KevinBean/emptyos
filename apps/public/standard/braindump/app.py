@@ -30,6 +30,7 @@ from emptyos.sdk import BaseApp, on_event, slugify, web_route
 
 from . import meeting as _meeting
 from . import pipeline as _pipeline
+from . import recall as _recall
 
 
 def _slugify(text: str) -> str:
@@ -61,6 +62,15 @@ class BrainDumpApp(BaseApp):
     api_meeting_status = _meeting.api_meeting_status
     api_meeting_stop = _meeting.api_meeting_stop
 
+    # ── Recall across the KEPT corpus (extracted to recall.py) ──
+    # Reads only applied keep-summary notes under outputs/ — never a run dir,
+    # so a discarded dump is unreachable by construction. Dark by default.
+    _recall_enabled = _recall._recall_enabled
+    _recall_corpus = _recall._recall_corpus
+    _recall_search = _recall._recall_search
+    api_recall_status = _recall.api_recall_status
+    api_recall = _recall.api_recall
+
     # ── Dark-default flag gate ───────────────────────────────────────────
     def _enabled(self) -> bool:
         # Settings service first (⚙ panel toggle, live), then emptyos.toml.
@@ -71,9 +81,12 @@ class BrainDumpApp(BaseApp):
 
     @web_route("GET", "/api/config")
     async def api_config(self, request):
-        """Dark-default flag the page reads on load. When false the page shows
-        an 'enable in Settings' panel and fetches nothing."""
-        return {"enabled": self._enabled()}
+        """Dark-default flags the page reads on load. When ``enabled`` is false
+        the page shows an 'enable in Settings' panel and fetches nothing.
+
+        ``recall`` is the separate, darker flag for corpus recall — carried here
+        so a daemon with it off costs the page no extra request."""
+        return {"enabled": self._enabled(), "recall": self._recall_enabled()}
 
     # ── Start a session (the only trigger that records) ──────────────────
     @web_route("POST", "/api/start")

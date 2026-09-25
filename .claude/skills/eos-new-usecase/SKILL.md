@@ -15,6 +15,18 @@ rotation, and the audit/walk skills can hand-walk it.
 Authoring only — no walking, no fixing, no report. If the user wants the flow
 walked and findings fixed, that's `/eos-usecase-audit`.
 
+
+## Prerequisites
+
+The daemon on `:9000` must be reachable, because the scenario is validated against the
+live app list at `GET /api/apps` — the endpoint the Inputs table below names. Probe
+**that** route, not `/api/health`: `/api/health` is auth-exempt, so it answers 200 in
+exactly the state where `/api/apps` returns `{"error":"unauthorized"}` and the real
+dependency is unusable. In `network.mode = "private"` pass the bearer token from
+`emptyos.toml`. If the app list is unreachable, say so and stop rather than authoring
+a scenario against a guess — and never start or restart the daemon yourself
+(`.claude/rules/daemon-handling.md`).
+
 ## Two modes — coverage AND discovery
 
 A use case is not only a test of what exists; it is a statement of what the

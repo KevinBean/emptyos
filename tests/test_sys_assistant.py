@@ -149,6 +149,14 @@ class TestAssistantPhases:
         names = [c.get("command") for c in cmds]
         assert "/research" in names, f"/research not registered (have: {names[:10]}…)"
 
+    def test_worklog_log_in_slash_commands(self, http_client):
+        """worklog.log_work's [[provides.verbs]] assistant surface
+        (.claude/rules/verb-registry.md) — a quick '/log <text>' capture
+        without leaving the assistant chat."""
+        cmds = assert_ok(http_client.get("/assistant/api/slash-commands"))
+        names = [c.get("command") for c in cmds]
+        assert "/log" in names, f"/log not registered (have: {names[:10]}…)"
+
     def test_image_endpoint_requires_path(self, http_client):
         resp = http_client.get("/assistant/api/image")
         assert resp.status_code == 400

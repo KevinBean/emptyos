@@ -1,5 +1,6 @@
 [app]
 id = "focus"
+icon_id = "focus"
 store_category = "productivity"
 name = "Focus"
 version = "1.0.0"

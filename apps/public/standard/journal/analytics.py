@@ -13,7 +13,7 @@ from __future__ import annotations
 from datetime import date, timedelta
 from typing import TYPE_CHECKING
 
-from emptyos.sdk import web_route
+from emptyos.sdk import scheduled, web_route
 
 from .parser import MOOD_SCORE, parse_entries
 
@@ -28,6 +28,9 @@ if TYPE_CHECKING:
 #   api_export      = _analytics.api_export
 #   api_streak      = _analytics.api_streak
 #   api_word_count  = _analytics.api_word_count
+#   _streak_as_of   = _analytics._streak_as_of
+#   _nudge_enabled  = _analytics._nudge_enabled
+#   scheduled_no_entry_nudge = _analytics.scheduled_no_entry_nudge
 #   _heatmap        = _analytics._heatmap
 #   _mood_trend     = _analytics._mood_trend
 # Adding a new method here? Add a matching binding line in app.py.
@@ -94,11 +97,12 @@ async def api_export(self, request):
     return {"markdown": "\n".join(lines), "days": days}
 
 
-@web_route("GET", "/api/streak")
-async def api_streak(self, request):
-    """Journaling streak — consecutive days with entries."""
+async def _streak_as_of(self, start) -> int:
+    """Consecutive journaled days counting backward from `start`
+    (inclusive). Factored out of `api_streak` so the nudge below can ask
+    "what's the streak as of yesterday" without duplicating the loop."""
     streak = 0
-    d = date.today()
+    d = start
     while True:
         path = self._daily_path(d)
         try:
@@ -111,7 +115,62 @@ async def api_streak(self, request):
         except Exception:
             pass
         break
-    return {"streak": streak}
+    return streak
+
+
+@web_route("GET", "/api/streak")
+async def api_streak(self, request):
+    """Journaling streak — consecutive days with entries."""
+    return {"streak": await self._streak_as_of(date.today())}
+
+
+def _nudge_enabled(self) -> bool:
+    """Evening no-entry-today nudge toggle (dark default)."""
+    return bool(self.setting_or_config(
+        "journal.feature.journal-no-entry-nudge.enabled",
+        False,
+        config_key="feature.journal-no-entry-nudge.enabled",
+    ))
+
+
+@scheduled("0 20 * * *", id="journal-no-entry-nudge")
+async def scheduled_no_entry_nudge(self):
+    """Evening nudge if today has no journal entry yet — protects the streak.
+
+    Flagged in gap analysis (adoption of the shared proactive_notify_or_raw
+    pattern already used by countdown/vlog/quotes/task/people this pass):
+    journal has a real streak concept (`api_streak`) but nothing ever
+    surfaces "you haven't written today" before the day ends.
+    """
+    if not self._nudge_enabled():
+        return {"enabled": False, "sent": False}
+    today = date.today()
+    try:
+        content = await self.read(str(self._daily_path(today)))
+        entries = parse_entries(content)
+    except Exception:
+        entries = []
+    if entries:
+        return {"enabled": True, "sent": False, "reason": "already journaled today"}
+
+    streak = await self._streak_as_of(today - timedelta(days=1))
+    text = (
+        f"No journal entry yet today — write one to keep your {streak}-day streak alive."
+        if streak > 0 else
+        "No journal entry yet today."
+    )
+    # A brand-new nudge source (nothing delivered before this feature
+    # existed) — call proactive_notify() directly rather than the _or_raw
+    # migration shim, which doesn't accept `link` and exists only for
+    # pushers that worked before the gate did.
+    await self.proactive_notify(
+        kind="journal-nudge",
+        text=text,
+        dedup_key=f"journal-nudge:{today.isoformat()}",
+        priority="info",
+        link={"text": "Open journal", "href": "/journal/"},
+    )
+    return {"enabled": True, "sent": True, "streak": streak}
 
 
 @web_route("GET", "/api/word-count")

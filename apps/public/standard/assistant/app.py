@@ -24,6 +24,7 @@ Concerns split out:
   - files.py          attached-file extraction
   - vision.py         vault image → data URL resolution
   - research.py       /research engine
+  - passages.py       passage-level citation anchors + the passage reader
 """
 
 from __future__ import annotations
@@ -37,6 +38,7 @@ from . import api_sessions as _api_sessions
 from . import attachments as _attachments
 from . import chat_ws as _chat_ws
 from . import context as _context
+from . import passages as _passages
 from . import reconcile as _reconcile_mod
 from . import research_ws as _research_ws
 from . import slash as _slash
@@ -109,6 +111,11 @@ class AssistantApp(SessionsMixin, BaseApp):
     _note_date             = _context._note_date
     _provenance            = _context._provenance
     _provenance_items      = _context._provenance_items
+
+    # ── Passage citations (extracted to passages.py) ─────────────────
+    _passage_citations_enabled = _passages._passage_citations_enabled
+    _passage_for               = _passages._passage_for
+    api_passage                = _passages.api_passage
 
     # ── Tools (extracted to tools.py) ────────────────────────────────
     _use_tools_default     = _tools._use_tools_default

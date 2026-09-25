@@ -41,15 +41,39 @@ something out of a pattern's reach; use a word boundary or a more specific shape
 
 | Layer | Trigger | What it does | Where |
 |---|---|---|---|
-| **L1. Release-time scan** | `git commit` / push / PR / `release-public.py` | Scans every tracked file for `.eos-personal` + `.eos-branding` matches; aborts on hit | `scripts/check-personal.py`, `scripts/check-branding.py`, `scripts/release-public.py`, `.github/workflows/release-safe.yml` |
+| **L1. Release-time scan** | `git commit` / push / PR / `release-public.py` | Scans every tracked file for `.eos-personal` + `.eos-branding` matches **and for credential shapes** (`SECRET_PATTERNS`, the same vocabulary L2/L4 use); aborts on hit. Secrets are scanned in *every* file — the `ALLOWLIST` mutes the personal class only, since the files most likely to hold a real token (`.claude/settings.local.json`, `data/personal-defaults.json`) are on it. Exempt a fixture line with an inline `check-secrets: ignore`. Findings print a redacted preview, never the matched text | `scripts/check-personal.py`, `scripts/check-branding.py`, `scripts/release-public.py`, `.github/workflows/release-safe.yml` |
+| **L1b. Pre-staging scan** | `/preflight` (scopes `always` / `security` / `release`) | Same two scanners with `--include-untracked`, so a leak is caught in a **written-but-not-yet-staged** file. Tracked-only reported CLEAN while a new file held personal data (2026-08-14). `apps/personal/` stays excluded because it is a nested repo this one does not track; `engines/personal/` + `tests/personal/` became tracked on 2026-08-16 and are excluded **by explicit exemption** instead (`is_never_published`) — personal data legitimately lives in all three. The exemption is PERSONAL-class only: secrets are still scanned there | `scripts/preflight.py` `CHECKS[]` `args: ["--include-untracked"]` |
 | **L2. Demo-vault content scan** | `release-public.py` | Runs `outbound_scan` (secrets + personal patterns) over every file in `demo/vault/`; aborts on hit | `scripts/release-public.py:scan_demo_vault` |
-| **L3. Tier filter at release** | `release-public.py` | Drops apps/plugins/engines not in `core` + `standard` tiers; drops tests that bind to dropped apps; **aborts if a held track/plugin/engine survives its removal** (a partial delete is never reported as a clean drop); aborts if any tracked app declares `[app] private = true` — note no `apps/extension/` app sets that flag, so the tier filter itself is what holds them back | `scripts/release-public.py:filter_to_tiers`, `emptyos/sdk/release_filter.py:prune_snapshot` |
-| **L4. Pre-cloud scan** | Every `Capability.execute()` against a cloud provider | Scans the outbound text for 7 secret patterns + `.eos-personal`; optional local-LLM classifier/redactor; surfaces to the cloud-consent gate | `emptyos/capabilities/outbound_scan.py`, `emptyos/capabilities/__init__.py:_consent_allows` |
+| **L3. Tier filter at release** | `release-public.py` | Drops apps/plugins/engines not in `core` + `standard` tiers; drops tests that bind to dropped apps; drops whole `tests/` subdirs via `drop_test_dirs` (`drop_tests_bound_to` globs `tests/test_*.py` NON-recursively, so `tests/personal/` had no pruning at all until 2026-08-16); **aborts if a held track/plugin/engine survives its removal** (a partial delete is never reported as a clean drop); **asserts the never-published subtrees are absent from the built snapshot** — the receipt that makes L1b's exemption safe, since a scanner that skips a path must be paired with a prune that removes it; aborts if any tracked app declares `[app] private = true`, except inside a never-published subtree (15 personal manifests set it and the snapshot never carries them) | `scripts/release-public.py:filter_to_tiers`, `emptyos/sdk/release_filter.py:prune_snapshot` + `assert_never_published_absent` |
+| **L4. Pre-cloud scan** | Every `Capability.execute()` against a cloud provider | Scans the outbound text for the 9 `SECRET_PATTERNS` + `.eos-personal`; optional local-LLM classifier/redactor; surfaces to the cloud-consent gate | `emptyos/capabilities/outbound_scan.py`, `emptyos/capabilities/__init__.py:_consent_allows` |
 | **L5. Cloud-consent gate** | Before any cloud call | User must opt in (or has set a policy) before personal/secret patterns leave the machine | `emptyos/capabilities/consent.py:CloudConsentManager` |
 | **L6. Runtime response scrubber** | Every HTTP response when `presentation.enabled` (auto-on in demo) | Replaces `.eos-personal` matches with `***` in JSON + HTML bodies | `emptyos/web/server.py:PresentationMiddleware` |
 | **L7. Syslog write-time scrubber** | Every `kernel.syslog.{info,warn,error,debug}` call | Replaces `.eos-personal` matches with `***` in the message + data dict before SQLite insert | `emptyos/kernel/syslog.py:_scrub` |
 | **L8. Demo reset/seed cycle** | Every demo container restart | Wipes `data/` (per-visitor state) and re-seeds clean sample content; runs daily on the VPS | `emptyos.toml` `[demo]`, `apps/<id>/demo/seed.py` |
 | **L9. App-level gates** | Manifest + filesystem | `apps/personal/` is gitignored; `[app] private = true` blocks release; `demo.hide_apps` filters at boot | `apps/personal/`, `apps/*/manifest.toml`, `demo/emptyos.toml` |
+
+> [!note] The patterns file is itself disclosure — and is no longer published
+> `.eos-personal` contains, by construction, the literal strings it guards, so
+> shipping it published that list. Two other tracked files carried the same
+> strings: the pattern-coverage test (its example inputs) and
+> `sync_user_skills.py` (its substitution table). Raised 2026-08-14; closed
+> 2026-09-24:
+>
+> - `.eos-personal` and the new `.eos-personal-subs` (the substitution table,
+>   moved out of the script) are in `release-public.py`'s `CRUFT_PATHS`.
+> - The test's real examples moved to `tests/personal/privacy_examples.py`, a
+>   subtree no public snapshot carries; in a public clone those cases skip.
+> - The release scans the snapshot with the **private** pattern file and the
+>   allowlist **off** (`check-personal.py --patterns … --no-allowlist`), so no
+>   allowlisted file can carry personal data into a release again. An empty
+>   pattern set there fails instead of reporting clean. The scan covers the
+>   repo's tracked files as they exist in the snapshot; a public clone's own
+>   `release-safe.yml` run has no personal patterns, so only its secret class
+>   is live there.
+>
+> Earlier public releases still contain those files in their history; that was
+> accepted rather than rewritten. A later step is to ship a redacted
+> `.eos-personal.example` so a fork gets a working template.
 
 ## Threat scenarios
 
@@ -58,11 +82,28 @@ something out of a pattern's reach; use a word boundary or a more specific shape
 docstring or sample config; commits and pushes.
 **Caught by.** L1 (pre-commit hook if installed; CI on every push;
 release-public.py refuses to snapshot a dirty tree). Pattern coverage is
-tested by `tests/test_privacy_patterns.py` so a broken regex doesn't
+tested by `tests/test_unit_privacy_patterns.py` so a broken regex doesn't
 silently turn off the gate.
 **Residual risk.** Patterns might miss a new shape; that's why the
 pattern file is editable and `outbound_scan` provides a second-pass at
 demo-vault scope.
+
+### T1b. Accidental credential commit
+**Scenario.** A developer pastes a real API key into a config default,
+a test, or a docstring; commits and pushes.
+**Caught by.** L1 — since 2026-08-14 `check-personal.py` also runs
+`SECRET_PATTERNS`. Before that it loaded `.eos-personal` only, which holds
+identity/path/coordinate patterns and **zero credential shapes**, so a real
+`sk-ant-...` passed the commit gate cleanly while this doc and the
+`eos-security-review` / `eos-release` skills already advertised API-key
+coverage. Both directions are pinned by
+`tests/test_unit_check_personal_secrets.py`.
+**Residual risk.** Detection is prefix/format-based, so a bare
+high-entropy token with no recognisable prefix (a database password, an
+internal service key) is not matched — this is a known-shape gate, not an
+entropy scanner. And the gate stops the *commit*, not the *exposure*: a key
+that reached a push is already compromised and must be rotated at the
+provider, since deleting the line leaves it in git history.
 
 ### T2. Seed-data contamination
 **Scenario.** A future script copies the operator's real vault content
@@ -119,7 +160,9 @@ pin in `docs/AUTH.md` reinforces this.
 
 | You want to | Edit |
 |---|---|
-| Add a new personal-pattern shape | `.eos-personal` — one regex per line, then run `python -m pytest tests/test_privacy_patterns.py` |
+| Add a new personal-pattern shape | `.eos-personal` — one regex per line, then run `python -m pytest tests/test_unit_privacy_patterns.py` |
+| Add a new **credential** shape | `SECRET_PATTERNS` in `emptyos/capabilities/outbound_scan.py` — one entry serves L1 (commit gate), L2 (demo vault) and L4 (pre-cloud) at once. Do **not** put key regexes in `.eos-personal`: it is git-tracked and allowlisted, so a pattern there is disclosed and unenforced against itself. Calibrate first (`.claude/rules/audits.md`) — this class gates |
+| Exempt a secret-shaped test fixture | Inline `check-secrets: ignore` on the matching line or the one above it — never a file-level allowlist entry |
 | Add a personal pattern to a specific app's hidden state | `[app] private = true` in `apps/<id>/manifest.toml` |
 | Hide an app from the public demo only | `demo.hide_apps` in `demo/emptyos.toml` |
 | Add a third-party brand to the user-facing strings ban | `.eos-branding` — one regex per line |
@@ -140,5 +183,7 @@ The full audit was performed manually 2026-05-16 and came back clean across
 38 KB of user-data endpoints + 12 patterns + 4 extra paranoia patterns
 (employer, email, neighbouring cities).
 
-The pattern coverage itself is asserted in `tests/test_privacy_patterns.py`
-on every CI run via the `@pytest.mark.api` marker.
+The pattern coverage itself is asserted in `tests/test_unit_privacy_patterns.py`,
+which needs no daemon. It runs in CI's offline architecture-guards step, so a
+daemon that fails to boot cannot suppress it; the `@pytest.mark.api` marker also
+keeps it in the daemon-up job.

@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import asyncio
-import re
 from pathlib import Path
 
-from emptyos.sdk import BaseApp, cli_command, web_route
+from emptyos.sdk import BaseApp, cli_command, on_event, web_route
 
-WIKILINK = re.compile(r"\[\[([^\]|]+)(?:\|[^\]]+)?\]\]")
+from . import linkindex
+
+# Kept as a module-level alias: other code and tests referenced link.WIKILINK.
+WIKILINK = linkindex.WIKILINK
 
 
 ORPHAN_INSIGHT_SYSTEM = """You are a vault librarian helping a knowledge worker connect orphaned notes.
@@ -33,53 +35,137 @@ ORPHAN_INSIGHT_USER_TMPL = (
 
 
 class LinkApp(BaseApp):
+    _index: dict | None = None
+    # Bumped on every vault:changed. Lets the invalidation be lock-free (see
+    # on_vault_changed) while still stopping a rebuild that started before the
+    # change from publishing its pre-change result afterwards.
+    _index_gen: int = 0
+
     def _notes_dir(self) -> Path:
-        p = self.kernel.config.get("notes.path", "")
-        return Path(p) if p else self.kernel.config.data_dir / "notes"
+        return self.kernel.config.notes_path or self.kernel.config.data_dir / "notes"
 
-    async def outgoing(self, path: str) -> list[str]:
-        """Find all wikilinks in a note."""
-        content = await self.read(path)
-        return list(set(WIKILINK.findall(content)))
+    # ── the link index ───────────────────────────────────────────────────
+    # One inverted index answers every question this app asks. It used to walk
+    # and re-read the whole vault per request (~20s over 23.5k notes), which is
+    # also why `api_stats` carried a comment about not scanning twice — the real
+    # fix was to stop scanning per request at all.
 
-    async def backlinks(self, title: str) -> list[str]:
-        """Find all notes that link TO a given title."""
-        results = await self.search(f"[[{title}]]", path=str(self._notes_dir()))
-        return [r.get("path", r) if isinstance(r, dict) else r for r in results]
+    def _read_all(self) -> dict[str, str]:
+        """``{rel_path: text}`` for every vault note.
 
-    def _scan_links(self) -> tuple[dict[str, str], set[str], int]:
-        """One full-vault pass → (notes by stem, linked titles, total link count).
+        BLOCKING BY DESIGN — an rglob plus a read_text per note. Callers hand
+        this to ``asyncio.to_thread``: neither ``read_text`` nor ``self.read()``
+        yields (the filesystem read provider is an ``async def`` wrapping a
+        synchronous read), so running it inline pins the event loop and the
+        daemon stops answering /api/health. Reading files directly rather than
+        through the ``read`` capability is deliberate, as in the task indexer:
+        this is one bulk scan, not N app-level reads.
 
-        BLOCKING BY DESIGN — an rglob plus a read_text per note. Every caller
-        must hand this to ``asyncio.to_thread``: on a large vault it runs for
-        seconds to minutes, and neither ``read_text`` nor ``self.read()`` yields
-        (the filesystem read provider is an ``async def`` around a synchronous
-        read), so running it inline pins the event loop and the daemon stops
-        answering /api/health. Reading files directly rather than through the
-        ``read`` capability is deliberate here for the same reason the task
-        indexer does: this is one bulk scan, not N app-level reads.
+        Any dot-**segment** excludes the note, not just a dot filename — the
+        rule `VaultIndex` already applies (`vault_index.py`), so the two agree
+        on what "the vault" is. Checking only `p.name` admitted 609 notes here
+        (2.2%): `.claude/` rules, `.agent-bus/` ripple output, `.claude_backup/`,
+        `.pytest_cache/`, and `.stversions/` — Syncthing's version store, i.e.
+        stale copies of real notes that can carry phantom links to them. Those
+        notes link to nothing by construction, so they sorted straight to the
+        top of the orphan report: the first screenful of a list whose whole
+        premise is "these are worth connecting" was machine config nobody can.
         """
-        notes_dir = self._notes_dir()
-        if not notes_dir.exists():
-            return {}, set(), 0
-
-        all_notes = {p.stem: str(p) for p in notes_dir.rglob("*.md") if not p.name.startswith(".")}
-        linked: set[str] = set()
-        total_links = 0
-        for path in all_notes.values():
+        root = self._notes_dir()
+        if not root.exists():
+            return {}
+        notes: dict[str, str] = {}
+        for p in root.rglob("*.md"):
+            rel_parts = p.relative_to(root).parts
+            if any(part.startswith(".") for part in rel_parts):
+                continue
             try:
-                content = Path(path).read_text(encoding="utf-8")
+                notes["/".join(rel_parts)] = p.read_text(encoding="utf-8")
             except Exception:
                 continue
-            found = WIKILINK.findall(content)
-            total_links += len(found)
-            linked.update(found)
-        return all_notes, linked, total_links
+        return notes
+
+    async def index(self, rebuild: bool = False) -> dict:
+        """The cached link index, built on first use.
+
+        Cached because the scan is expensive and the vault changes far less
+        often than these endpoints are called. `vault:changed` invalidates it,
+        so a stale answer is not possible — and the whole scan is no longer on
+        the request path.
+        """
+        async with self.write_lock("link:index"):
+            if rebuild or self._index is None:
+                # Deliberately not retained: the index is derived from the
+                # text and nothing reads the text again. Keeping it pinned
+                # 834MB of markdown on this vault for no reader.
+                gen = self._index_gen
+                notes = await asyncio.to_thread(self._read_all)
+                built = await asyncio.to_thread(linkindex.build_index, notes)
+                # Publish only if the vault held still. A change during those
+                # two awaits means `built` describes notes that no longer
+                # exist, so caching it would swallow the invalidation and serve
+                # a wrong orphan list until the next edit. Return it anyway —
+                # that is the same answer the caller got before this guard,
+                # when it held the lock across the whole build — but let the
+                # next reader rebuild.
+                if gen == self._index_gen:
+                    self._index = built
+                return built
+            return self._index
+
+    @on_event("vault:changed")
+    async def on_vault_changed(self, data: dict):
+        """Drop the cache; the next reader rebuilds.
+
+        Deliberately not an incremental patch of one file: a single edit can
+        resolve or break links *in both directions*, so a correct incremental
+        update has to revisit every note that referenced the old target. Getting
+        that subtly wrong yields a wrong orphan list, which is exactly the class
+        of bug this rewrite exists to remove. Invalidate, rebuild on demand.
+
+        NO LOCK, AND NO AWAIT — both load-bearing. This used to take
+        `write_lock("link:index")`, which `index()` holds across the whole
+        rebuild, so these two lines waited out a 100-345s scan (measured in
+        syslog on a 9,746-orphan vault). `EventBus.emit()` awaits handlers
+        serially in one task, so that pinned the entire bus, not just this app
+        — the long-handler shape in `.claude/rules/debugging.md`.
+
+        Dropping the lock is only safe because of `_index_gen`: with no await
+        between the read and the write, the loop cannot interleave, so the bump
+        and the clear are atomic, and a rebuild already in flight checks the
+        generation before publishing. Do not add an `await` here.
+        """
+        self._index_gen += 1
+        self._index = None
+
+    async def outgoing(self, path: str) -> list[str]:
+        """Raw wikilink targets in a note (unresolved, as authored)."""
+        content = await self.read(path)
+        return sorted(set(linkindex.WIKILINK.findall(content)))
+
+    async def backlinks(self, title: str) -> list[str]:
+        """Notes linking TO ``title`` — a stem, a path, or a rel_path.
+
+        Exact. This used to delegate to the ``search`` capability with
+        `[[title]]` as the query; search tokenizes, so on the live vault it
+        returned 200 rows — the result cap — for a query whose real answer is 23.
+
+        A bare stem can name several notes (3,081 stems collide in this vault),
+        in which case this unions their backlinks. `ambiguous_stem_count` on
+        /api/stats is how that stays visible; pass a path to disambiguate.
+        """
+        ix = await self.index()
+        return linkindex.backlinks_for(ix, title)
 
     async def orphans(self) -> list[str]:
-        """Find notes with no incoming links."""
-        all_notes, linked, _ = await asyncio.to_thread(self._scan_links)
-        return sorted(path for stem, path in all_notes.items() if stem not in linked)
+        """Genuinely disconnected notes — degree 0, nothing in **or** out.
+
+        The old definition was "no incoming links", which reported a note
+        linking out to fifty others as an orphan and flagged 82% of the vault.
+        `orphan_report` keeps the other populations addressable.
+        """
+        ix = await self.index()
+        return linkindex.orphan_report(ix)["orphans"]
 
     @cli_command("link", help="Manage note links")
     async def cmd_link(self, action: str = "show", title: str = ""):
@@ -124,17 +210,89 @@ class LinkApp(BaseApp):
 
     @web_route("GET", "/api/orphans")
     async def api_orphans(self, request):
-        return await self.orphans()
+        """Kept returning a bare list for existing readers, but capped.
+
+        Pre-existing: this returned every orphan, which on the live vault was
+        thousands of paths per request. `?limit=0` for the unbounded list.
+        """
+        try:
+            limit = max(0, int(request.query_params.get("limit") or 500))
+        except ValueError:
+            limit = 500
+        rows = await self.orphans()
+        return rows[:limit] if limit else rows
+
+    async def orphan_report(self, limit: int = 500) -> dict:
+        """The three populations the single `orphans` number used to conflate.
+
+        `orphans` (degree 0), `unreferenced` (links out, nothing links in), and
+        `broken_only` (links out, but every target is missing — the action is
+        fixing a link, not writing one).
+
+        A plain method, not just the route body, because `vault-graph` calls
+        this via `call_app` — a cross-app caller has no request object to hand
+        a route handler, and fabricating one to reach the computation would be
+        the wrong shape. This app owns the index; the other renders it.
+        """
+        ix = await self.index()
+        rep = linkindex.orphan_report(ix)
+        # Capped, with exact counts alongside. On this vault the orphan list is
+        # ~9,200 paths — returning it whole was a 700KB response nobody reads,
+        # and the counts are the actionable part. `limit=0` opts into the lot.
+        limit = max(0, int(limit or 0))
+        return {
+            **{k: (v[:limit] if limit else v) for k, v in rep.items()},
+            "counts": {k: len(v) for k, v in rep.items()},
+            "truncated": bool(limit) and any(len(v) > limit for v in rep.values()),
+            "limit": limit,
+            "total_notes": len(ix["paths"]),
+        }
+
+    @web_route("GET", "/api/orphan-report")
+    async def api_orphan_report(self, request):
+        try:
+            limit = max(0, int(request.query_params.get("limit") or 500))
+        except ValueError:
+            limit = 500
+        return await self.orphan_report(limit=limit)
+
+    @web_route("GET", "/api/broken-links")
+    async def api_broken_links(self, request):
+        """Link targets that resolve to nothing, most-referenced first.
+
+        One typo repeated across twenty notes matters more than twenty one-off
+        dead ends, so the ranking is by source count rather than alphabetical.
+        """
+        try:
+            limit = max(0, int(request.query_params.get("limit") or 100))
+        except ValueError:
+            limit = 100
+        ix = await self.index()
+        rows = linkindex.broken_links(ix, limit=limit)
+        return {"broken": rows, "total": len(ix["unresolved"])}
+
+    @web_route("POST", "/api/reindex")
+    async def api_reindex(self, request):
+        """Force a rebuild. `vault:changed` handles this normally; this is for
+        an external edit the watcher did not see."""
+        ix = await self.index(rebuild=True)
+        return {"ok": True, "notes": len(ix["paths"]), "links": ix["total_links"]}
 
     @web_route("GET", "/api/stats")
     async def api_stats(self, request):
-        # One scan, not two: this used to count links itself and then call
-        # orphans(), walking and re-reading the whole vault a second time.
-        all_notes, linked, total_links = await asyncio.to_thread(self._scan_links)
+        ix = await self.index()
+        rep = linkindex.orphan_report(ix)
         result = {
-            "total_notes": len(all_notes),
-            "total_links": total_links,
-            "orphan_count": sum(1 for stem in all_notes if stem not in linked),
+            "total_notes": len(ix["paths"]),
+            "total_links": ix["total_links"],
+            # Three populations, not one number that conflated them. The old
+            # `orphan_count` was "notes with no incoming link" — 82% of this
+            # vault — and is kept only so existing readers do not break.
+            "orphan_count": len(rep["orphans"]),
+            "unreferenced_count": len(rep["unreferenced"]),
+            "broken_only_count": len(rep["broken_only"]),
+            "broken_target_count": len(ix["unresolved"]),
+            "ambiguous_stem_count": len(ix["ambiguous"]),
         }
         await self.emit("link:scan_completed", result)
         return result

@@ -19,7 +19,8 @@ Usage:
     python scripts/daemon_watchdog.py --restart         # + auto-recover on wedge/crash
     python scripts/daemon_watchdog.py --port 9001       # watch the dogfood sidecar
     python scripts/daemon_watchdog.py --interval 15     # poll every 15s (default 30)
-    python scripts/daemon_watchdog.py --probe-timeout 3 # 3s probe timeout (default 5)
+    python scripts/daemon_watchdog.py --probe-timeout 3 # 3s probe timeout (default 15)
+    python scripts/daemon_watchdog.py --recover-after 0 # kill on first confirmed wedge (old behaviour)
 
 Recovery tuning (only with --restart):
     --restart-grace 240     # wait this long for health after a respawn (default 240s)
@@ -41,8 +42,23 @@ and kills any earlier boot of its own before starting another.
 Run in a separate terminal — keeps running until Ctrl+C. Restart-survival:
 re-run after restart.bat.
 
+Console-storm watch (on by default, --no-storm-watch to disable): every cycle it
+counts conhost/OpenConsole processes, independent of daemon health. Twice — on
+2026-08-01 and 2026-08-15 — thousands of console hosts appeared in minutes, each
+one a terminal window, together holding 21-45 GB until the box ran out of commit
+and froze. The spawner is STILL UNIDENTIFIED: its children exit too fast to land
+in a process snapshot, and three hypotheses were tested and disproven after the
+fact. So the watchdog now shouts while it is happening rather than leaving a cold
+process list to be re-read weeks later. Pair with scripts/enable_process_auditing.ps1
+(Event 4688), which records parentage at spawn time and is what will finally name it.
+
+Recovery declines rather than compounds. It will NOT respawn when :PORT is still
+held (the old daemon is alive; a second one cannot help) or when system commit is
+at --max-commit-pct. On 2026-08-15 "respawning anyway" added a 1.1 GB daemon while
+commit was already 11 GB past physical RAM, and was the last line written to disk.
+
 Evidence captured per wedge event (under data/wedge-evidence/<iso-ts>/):
-    summary.json       — wedge metadata (first-seen, last-healthy, port, pid)
+    summary.json       — wedge metadata + memory pressure + console census
     netstat.txt        — netstat -ano snapshot (connection table at hang)
     tasklist.txt       — process list with memory
     pyspy_dump.txt     — py-spy dump --pid <daemon> (if py-spy installed)
@@ -85,6 +101,145 @@ def utc_iso() -> str:
 def log(msg: str) -> None:
     ts = datetime.now().strftime("%H:%M:%S")
     print(f"[{ts}] {msg}", flush=True)
+
+
+# A console-host count above this is not a busy machine, it is a storm. Healthy
+# baselines on this box sit at 26-42 (measured across ~200 wedge snapshots); the
+# two machine-killing incidents hit 1818 and 4307.
+CONSOLE_STORM_THRESHOLD = 300
+
+
+def memory_pressure() -> dict:
+    """System-wide commit + physical headroom, or ``{}`` where unavailable.
+
+    One syscall, so the respawn path can consult it every cycle.
+
+    This exists because of 2026-08-15: the watchdog respawned a 1.1 GB daemon
+    while system commit was already 11 GB *past* physical RAM and climbing
+    ~5 GB/min. A restart cannot help a box in that state — the new process is
+    pure additional pressure, and it was the last thing written to disk before
+    the machine died. Recovery has to be able to decline.
+
+    ctypes rather than psutil, deliberately, for two reasons: this module is
+    stdlib-only so the watchdog still runs when the daemon's environment is the
+    thing that is broken; and psutil reports *physical* memory, while the number
+    that actually ran out here is the Windows **commit charge**, which only
+    MEMORYSTATUSEX exposes as a limit/used pair.
+    """
+    if sys.platform != "win32":
+        return {}
+    try:
+        import ctypes
+
+        class _MemStatus(ctypes.Structure):
+            _fields_ = [
+                ("dwLength", ctypes.c_ulong),
+                ("dwMemoryLoad", ctypes.c_ulong),
+                ("ullTotalPhys", ctypes.c_ulonglong),
+                ("ullAvailPhys", ctypes.c_ulonglong),
+                ("ullTotalPageFile", ctypes.c_ulonglong),
+                ("ullAvailPageFile", ctypes.c_ulonglong),
+                ("ullTotalVirtual", ctypes.c_ulonglong),
+                ("ullAvailVirtual", ctypes.c_ulonglong),
+                ("ullAvailExtendedVirtual", ctypes.c_ulonglong),
+            ]
+
+        st = _MemStatus()
+        st.dwLength = ctypes.sizeof(_MemStatus)
+        if not ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(st)):
+            return {}
+        mb = 1024 * 1024
+        # ullTotalPageFile is the *commit limit*, ullAvailPageFile the free
+        # commit — not the pagefile size, despite the names.
+        used = st.ullTotalPageFile - st.ullAvailPageFile
+        return {
+            "commit_pct": round(100.0 * used / st.ullTotalPageFile, 1),
+            "commit_used_mb": used // mb,
+            "commit_limit_mb": st.ullTotalPageFile // mb,
+            "avail_phys_mb": st.ullAvailPhys // mb,
+            "mem_load_pct": st.dwMemoryLoad,
+        }
+    except Exception:
+        return {}
+
+
+def console_census(tasklist_text: str) -> dict:
+    """Console-host counts parsed from an already-captured tasklist.
+
+    Free — it re-reads text the snapshot already paid for.
+
+    Both machine-killing incidents (2026-08-01, 2026-08-15) were console-host
+    storms: conhost/OpenConsole appearing at ~7/sec with their clients exiting
+    too fast to ever appear in a snapshot, 21 GB and 45 GB of RAM in console
+    hosts alone. Nothing recorded the count at the time, so both post-mortems
+    had to rediscover it by hand from the raw process list. Record it up front.
+    """
+    counts = {"processes": 0, "conhost": 0, "openconsole": 0}
+    for line in tasklist_text.splitlines():
+        # Case-insensitive: tasklist casing has varied across Windows builds,
+        # and a case-sensitive match drops the row entirely rather than just
+        # mis-labelling it — i.e. it would miss the storm, not just miscount.
+        m = re.match(r"^(\S+\.exe)\s+\d+\s", line, re.IGNORECASE)
+        if not m:
+            continue
+        counts["processes"] += 1
+        name = m.group(1).lower()
+        if name == "conhost.exe":
+            counts["conhost"] += 1
+        elif name == "openconsole.exe":
+            counts["openconsole"] += 1
+    counts["console_hosts"] = counts["conhost"] + counts["openconsole"]
+    return counts
+
+
+SPAWNER_SCRIPT = REPO_ROOT / "scripts" / "find_console_spawner.ps1"
+
+
+def capture_console_parents() -> str:
+    """Group live console hosts by parent — the output that names a storm's culprit.
+
+    Delegates to ``scripts/find_console_spawner.ps1`` rather than re-implementing
+    the grouping: that script already resolves parents, and it adds the verdict
+    line and the elevation state, so the captured evidence reads the same as
+    what a human would get running it by hand.
+
+    Its LIVE half needs no elevation, which is what makes it usable from here —
+    the watchdog runs as the user, so the Security-log/4688 half will simply
+    report ``elevated: False`` and stop. That is the right trade: during a storm
+    thousands of console hosts are alive at once, so the live view is the
+    informative one anyway.
+
+    Measured baseline for contrast (2026-08-16, healthy box): 2055 console hosts
+    created per hour = 0.57/sec, yet only ~36 alive at any instant because they
+    exit in milliseconds. A storm is 6.6/sec AND they stop exiting — 1818 alive.
+    """
+    if not SPAWNER_SCRIPT.exists():
+        return f"(missing {SPAWNER_SCRIPT} — cannot resolve console-host parents)\n"
+    return run_cmd(
+        [
+            "powershell", "-NoProfile", "-ExecutionPolicy", "Bypass",
+            "-File", str(SPAWNER_SCRIPT), "-Top", "25",
+        ],
+        timeout=90,
+    )
+
+
+def live_console_hosts() -> int:
+    """Console-host count right now, or ``-1`` when it can't be determined.
+
+    Filtered per image so it stays fast on a box that already has thousands of
+    processes — the unfiltered list took the full 30s timeout at the
+    2026-08-01 peak, which is precisely the moment the number matters.
+    """
+    total = 0
+    for image in ("conhost.exe", "OpenConsole.exe"):
+        out = run_cmd(["tasklist", "/FI", f"IMAGENAME eq {image}", "/NH"], timeout=15)
+        if "exception:" in out or "TimeoutExpired" in out:
+            return -1
+        total += sum(
+            1 for ln in out.splitlines() if re.match(r"^\S+\.exe\s+\d+\s", ln, re.IGNORECASE)
+        )
+    return total
 
 
 def probe_health(port: int, timeout: float) -> tuple[bool, str]:
@@ -173,6 +328,46 @@ def parse_pid_list(text: str) -> list[int]:
     return out
 
 
+def recovery_verdict(
+    listening_pid: int | None,
+    daemon_pids: list[int],
+    seconds_failing: float,
+    recover_after: float,
+) -> tuple[bool, str]:
+    """Should we kill now, and why? Pure — the whole decision, no I/O.
+
+    Three cases, and only one of them is ambiguous:
+
+    - **dead** (no listener, no daemon process): the daemon is gone. Waiting
+      helps nobody; recover at once.
+    - **not-listening** (daemon alive, port unheld): unambiguous failure — the
+      process is up but serving nothing. Recover at once.
+    - **unresponsive** (the port IS held by a live daemon, health just did not
+      answer): ambiguous, and measured to be nearly always transient. Across
+      244 captured snapshots on this box, 235 (96%) ended at the two-poll
+      detection floor — median 35s — with netstat showing the port LISTENING on
+      the very PID that was then killed and py-spy showing the event loop idle
+      in ``select``. A distribution pinned at the detection floor is the
+      signature of a threshold that is too tight, not of a daemon that hangs:
+      a real wedge does not heal, so its duration would grow and vary. Only 7
+      of those 244 were alive-but-not-listening, i.e. genuine.
+
+      So this case must prove itself by PERSISTING for ``recover_after``
+      seconds. A full restart costs more than the ~35s blip it was replacing.
+
+    ``recover_after <= 0`` restores the old behaviour for every case.
+    """
+    if listening_pid is None:
+        return True, ("not-listening" if daemon_pids else "dead")
+    if recover_after <= 0:
+        return True, "unresponsive"
+    if seconds_failing >= recover_after:
+        return True, f"unresponsive for {seconds_failing:.0f}s"
+    return False, (
+        f"port still held by pid {listening_pid} and failing for only "
+        f"{seconds_failing:.0f}s of {recover_after:.0f}s — not killing yet")
+
+
 def find_daemon_pids(limit: int = 4) -> list[int]:
     """Live EmptyOS daemon PIDs, found by command line rather than by port.
 
@@ -211,6 +406,16 @@ def capture_evidence(
     # daemon_pids is who is actually running.
     daemon_pids = find_daemon_pids()
 
+    (out / "netstat.txt").write_text(run_cmd(["netstat", "-ano"]), encoding="utf-8")
+    # No /V: verbose resolves a window title + user per process and reliably blew
+    # the timeout on a loaded box, so every snapshot's process list read
+    # "TimeoutExpired" instead of naming the processes.
+    tasks = run_cmd(["tasklist", "/FO", "TABLE"], timeout=30)
+    (out / "tasklist.txt").write_text(tasks, encoding="utf-8")
+
+    # Written AFTER the process list so the census can go in the summary rather
+    # than waiting to be rediscovered by hand two post-mortems later.
+    census = console_census(tasks)
     summary = {
         "captured_at_utc": ts,
         "port": port,
@@ -221,16 +426,23 @@ def capture_evidence(
         "last_healthy": datetime.fromtimestamp(last_healthy).isoformat() if last_healthy else None,
         "seconds_wedged": round(time.time() - first_seen, 1),
         "watchdog_pid": os.getpid(),
+        "memory": memory_pressure(),
+        "console": census,
+        "console_storm": census["console_hosts"] >= CONSOLE_STORM_THRESHOLD,
     }
     (out / "summary.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
 
-    (out / "netstat.txt").write_text(run_cmd(["netstat", "-ano"]), encoding="utf-8")
-    # No /V: verbose resolves a window title + user per process and reliably blew
-    # the timeout on a loaded box, so every snapshot's process list read
-    # "TimeoutExpired" instead of naming the processes.
-    (out / "tasklist.txt").write_text(
-        run_cmd(["tasklist", "/FO", "TABLE"], timeout=30), encoding="utf-8"
-    )
+    if summary["console_storm"]:
+        # Say it in the log too: a storm is a *machine* emergency, not a daemon
+        # one, and the daemon wedge it shows up alongside is the symptom.
+        msg = (
+            f"CONSOLE STORM: {census['console_hosts']} console hosts "
+            f"({census['conhost']} conhost + {census['openconsole']} OpenConsole) "
+            f"of {census['processes']} processes — this is what killed the box on "
+            f"2026-08-01 and 2026-08-15. Evidence: {out.name}"
+        )
+        log(f"  *** {msg}")
+        _append_restart_log(msg)
 
     # Dump every candidate, not just the listener — see find_daemon_pids.
     targets: list[int] = ([pid] if pid else []) + [p for p in daemon_pids if p != pid]
@@ -442,6 +654,18 @@ def start_daemon_detached(start_cmd: list[str]) -> int | None:
     so the next restart.bat (`taskkill /IM python.exe`) remains the clean master
     reset. Output goes to data/watchdog-respawn.log (detached procs have no
     console to inherit).
+
+    That last clause is load-bearing, and it cuts both ways: a daemon with no
+    console passes the condition to every console child it spawns, and Windows
+    allocates each one a fresh, VISIBLE console (a Windows Terminal tab). Three
+    hard freezes and a fourth storm caught live (2026-08-01, 08-15, 09-06 01:33
+    and 02:07) each followed one of these respawns — by 17, 4, 75 and 3
+    minutes — and on 09-06 Event 4688 traced 2,960 of the storm's resolved
+    console clients (a quarter; ChatGPT.exe's git polling was most of the
+    rest) to the respawned daemon's pid. The daemon now installs the
+    process-level guard in emptyos/headless.py as the first thing `eos start`
+    does, so the DETACHED respawn is safe again — do not "fix" this by giving
+    the daemon a console.
     """
     try:
         DATA_DIR.mkdir(parents=True, exist_ok=True)
@@ -627,12 +851,30 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--port", type=int, default=9000)
     ap.add_argument("--interval", type=float, default=30.0, help="poll interval seconds")
-    ap.add_argument("--probe-timeout", type=float, default=5.0)
+    ap.add_argument(
+        "--probe-timeout",
+        type=float,
+        default=15.0,
+        help="seconds to wait for /api/health. A daemon that answers within "
+             "this window is not wedged; 5s was low enough that a box at "
+             "75-94%% commit missed it while healthy.",
+    )
     ap.add_argument(
         "--fail-threshold",
         type=int,
         default=2,
         help="consecutive failures before capturing evidence",
+    )
+    ap.add_argument(
+        "--recover-after",
+        type=float,
+        default=120.0,
+        help="seconds of SUSTAINED failure before killing a daemon that still "
+             "holds the port. Evidence is still captured at --fail-threshold; "
+             "this gates only the kill. Does not apply when the daemon is dead "
+             "or alive-but-not-listening, which are unambiguous and recover at "
+             "once. Set 0 for the old behaviour (kill as soon as evidence is "
+             "captured).",
     )
     ap.add_argument(
         "--telegram-token",
@@ -698,6 +940,32 @@ def main() -> int:
         "WinError 10048 on bind (default 20s)",
     )
     ap.add_argument(
+        "--held-port-limit",
+        type=int,
+        default=3,
+        help="consecutive respawns to decline while :PORT stays held before giving "
+        "up and alerting. The old code respawned anyway, stacking a second daemon "
+        "on a wedged one (default 3)",
+    )
+    ap.add_argument(
+        "--max-commit-pct",
+        type=float,
+        default=95.0,
+        help="decline to respawn when system commit charge is at or above this "
+        "percent of the commit limit — a restart cannot help a box out of memory "
+        "and only adds pressure. This is an EMERGENCY line, not a busy-box line: "
+        "idle baseline on the dev box already sits near 86%%, so a lower value "
+        "would decline healthy restarts (default 95; set 100 to disable)",
+    )
+    ap.add_argument(
+        "--no-storm-watch",
+        dest="storm_watch",
+        action="store_false",
+        help="disable the per-cycle console-host storm check (two filtered tasklist "
+        "calls per interval). On by default: it is the only thing watching the "
+        "failure mode that actually killed the machine twice",
+    )
+    ap.add_argument(
         "--no-notify",
         action="store_true",
         help="suppress Telegram wedge/give-up alerts (still writes the local "
@@ -748,10 +1016,56 @@ def main() -> int:
                                        # tell "still booting" from "crashed"
     gave_up = False                    # storm budget exhausted; in back-off cooldown
     gave_up_at = 0.0                   # epoch we entered back-off (for --giveup-cooldown)
+    held_port_skips = 0                # consecutive respawns declined (port never freed)
+    storm_alerted = False              # console-storm alert is edge-triggered
 
     while True:
         ok, detail = probe_health(args.port, args.probe_timeout)
         now = time.time()
+
+        # Console-storm early warning, checked regardless of daemon health: the
+        # storm is a *machine* failure that the daemon merely witnesses, and on
+        # 2026-08-15 it ran 4+ minutes with the daemon still answering before
+        # the box died. Nothing was watching, so the only record was a process
+        # list captured for an unrelated reason. Edge-triggered so a sustained
+        # storm doesn't spam, re-armed once it drains below half the threshold.
+        if args.storm_watch:
+            hosts = live_console_hosts()
+            if hosts >= CONSOLE_STORM_THRESHOLD and not storm_alerted:
+                mem = memory_pressure()
+                where = f" commit {mem['commit_pct']}%" if mem else ""
+                msg = (
+                    f"CONSOLE STORM: {hosts} console hosts (conhost/OpenConsole)"
+                    f"{where} — this pattern killed the box on 2026-08-01 and "
+                    f"2026-08-15. Find the parent NOW (Get-CimInstance Win32_Process "
+                    f"-Filter \"Name='conhost.exe'\" | Select ParentProcessId)."
+                )
+                log(f"*** {msg}")
+                _append_restart_log(msg)
+                # Capture parentage WHILE the hosts are still alive. This is the
+                # whole ballgame: both previous storms were unattributable purely
+                # because nothing sampled the parents during the event, and by
+                # the time anyone looked the children were gone.
+                try:
+                    out = EVIDENCE_ROOT / f"{utc_iso()}-console-storm"
+                    out.mkdir(parents=True, exist_ok=True)
+                    (out / "console_parents.txt").write_text(
+                        capture_console_parents(), encoding="utf-8"
+                    )
+                    (out / "tasklist.txt").write_text(
+                        run_cmd(["tasklist", "/FO", "TABLE"], timeout=30), encoding="utf-8"
+                    )
+                    log(f"    parent breakdown → {out}")
+                    _append_restart_log(f"console-storm parents captured: {out.name}")
+                except Exception as e:
+                    log(f"    parent capture failed: {e!r}")
+                try:
+                    _notify_wedge(args, EVIDENCE_ROOT, None, now, last_healthy)
+                except Exception:
+                    pass
+                storm_alerted = True
+            elif 0 <= hosts < CONSOLE_STORM_THRESHOLD // 2:
+                storm_alerted = False
 
         if ok:
             if awaiting_recovery:
@@ -854,7 +1168,19 @@ def main() -> int:
                 _flag_give_up(args, restart_times)
             else:
                 pid = find_listening_pid(args.port)
-                state = "wedged" if pid else "dead"
+                # A daemon that still holds the port and merely missed a health
+                # probe has to prove it is actually stuck; dead and
+                # alive-but-not-listening do not. See recovery_verdict.
+                go, state = recovery_verdict(
+                    pid,
+                    find_daemon_pids() if pid is None else [],
+                    now - first_wedge_seen,
+                    args.recover_after,
+                )
+                if not go:
+                    log(f"holding off: {state}")
+                    time.sleep(args.interval)
+                    continue
                 log(f"RECOVERY: daemon {state} (pid={pid}) — restarting")
                 _append_restart_log(f"recovery: {state} pid={pid} port={args.port}")
                 # Listener + any earlier respawn of ours still alive; see pids_to_clear.
@@ -870,12 +1196,52 @@ def main() -> int:
                     time.sleep(3.0)  # let SQLite WAL handles release (daemon-handling rule)
                 # Block on the port actually freeing so the respawn can't hit
                 # WinError 10048 binding a still-held :PORT.
+                # A still-held port means the old daemon did NOT die. Respawning
+                # onto it stacks a second full daemon on top of a wedged one.
+                # On 2026-08-15 that line ("respawning anyway") was the last
+                # thing written to disk before the machine died: it added a
+                # 1.1 GB process while system commit was already 11 GB past
+                # physical RAM. Recovery must be able to decline.
                 if not wait_for_port_free(args.port, args.port_free_timeout):
+                    held_port_skips += 1
                     log(
-                        f"  WARNING :{args.port} still held after "
-                        f"{args.port_free_timeout:.0f}s — respawning anyway (may 10048)"
+                        f"  :{args.port} still held after {args.port_free_timeout:.0f}s — "
+                        f"NOT respawning (declined {held_port_skips}/{args.held_port_limit}); "
+                        f"the old daemon is still alive, a second one cannot help"
                     )
-                    _append_restart_log(f"port {args.port} still held after wait; respawning anyway")
+                    _append_restart_log(
+                        f"port {args.port} still held after wait; declined respawn "
+                        f"({held_port_skips}/{args.held_port_limit})"
+                    )
+                    if held_port_skips >= args.held_port_limit:
+                        log("GIVING UP — port never released; manual restart.bat needed.")
+                        _flag_give_up(args, restart_times)
+                        gave_up = True
+                        gave_up_at = now
+                        held_port_skips = 0
+                    time.sleep(args.interval)
+                    continue
+                held_port_skips = 0
+
+                # Same reasoning, one level up: when the *box* is out of commit
+                # there is nothing a restart can fix, and the new daemon is pure
+                # added pressure. Decline and keep shouting — the wedge evidence
+                # is already captured, and a human (or restart.bat) can act.
+                mem = memory_pressure()
+                if mem and mem.get("commit_pct", 0) >= args.max_commit_pct:
+                    log(
+                        f"  MEMORY EMERGENCY: commit {mem['commit_pct']}% "
+                        f"({mem['commit_used_mb']}/{mem['commit_limit_mb']} MB, "
+                        f"{mem['avail_phys_mb']} MB phys free) — NOT respawning; "
+                        f"a restart cannot help a box this far past physical RAM"
+                    )
+                    _append_restart_log(
+                        f"declined respawn: commit {mem['commit_pct']}% >= "
+                        f"{args.max_commit_pct}% (memory emergency)"
+                    )
+                    time.sleep(args.interval)
+                    continue
+
                 new_pid = start_daemon_detached(args.start_cmd)
                 _append_restart_log(f"respawned detached pid={new_pid}")
                 log(f"respawned daemon (detached pid={new_pid}); grace {args.restart_grace:.0f}s")

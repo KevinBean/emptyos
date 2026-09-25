@@ -1,8 +1,8 @@
 """Learn — SRS (spaced repetition) review loop on top of KB-sourced quizzes.
 
 Extracted from app.py to keep the core spine atomic (P4 Atomic, CLAUDE.md
-rule 4). Owns: SRS state file (`data/apps/learn/srs.json`), score→quality
-mapping, sm2_schedule wrapper, review queue endpoints, streak math,
+rule 4). Owns: SRS state file (`data/apps/learn/srs.json`), score→rating
+mapping, fsrs_schedule wrapper, review queue endpoints, streak math,
 hub panel + voice intent methods, and the `_generate_quiz_for_slug`
 helper that backs both lesson-side quiz generation and per-review
 card regeneration.
@@ -18,12 +18,17 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
-from datetime import date, datetime
+from datetime import date
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from emptyos.sdk import parse_llm_json, web_route
-from emptyos.sdk.srs import sm2_schedule, streak_days
+from emptyos.sdk.srs import (
+    fsrs_schedule,
+    repair_legacy_schedule,
+    score_to_rating,
+    streak_days,
+)
 
 if TYPE_CHECKING:
     from .app import LearnApp  # noqa: F401 — for type hints only
@@ -88,9 +93,15 @@ def _load_srs(self) -> dict:
     if not f.exists():
         return {}
     try:
-        return json.loads(f.read_text(encoding="utf-8"))
+        data = json.loads(f.read_text(encoding="utf-8"))
     except Exception:
         return {}
+    # A pre-FSRS entry booked past the horizon never comes due, so it would
+    # never reach the re-anchor in fsrs_schedule. Repaired in memory here; the
+    # next grade persists it through _save_srs.
+    if isinstance(data, dict):
+        repair_legacy_schedule(data.values())
+    return data
 
 
 async def _save_srs(self, data: dict) -> None:
@@ -101,20 +112,7 @@ async def _save_srs(self, data: dict) -> None:
         f.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
-# ─── Score → SM-2 quality + scheduling ──────────────────────────────
-
-
-def _score_to_quality(score: int) -> int:
-    """Map quiz score (0-100) → SM-2 quality (0-5)."""
-    if score < 33:
-        return 0
-    if score < 51:
-        return 2
-    if score < 76:
-        return 3
-    if score < 91:
-        return 4
-    return 5
+# ─── Score → FSRS rating + scheduling ───────────────────────────────
 
 
 async def _srs_schedule(self, slug: str, score: int) -> dict:
@@ -125,19 +123,19 @@ async def _srs_schedule(self, slug: str, score: int) -> dict:
         return {}
     srs = self._load_srs()
     entry = srs.get(slug) or {
-        "ease": 2.5,
         "review_count": 0,
         "next_review": date.today().isoformat(),
     }
-    quality = _score_to_quality(score)
-    sm2_schedule(entry, quality)
+    rating = score_to_rating(score)
+    # A legacy entry (ease/review_count, no `s`) takes the first-exposure branch
+    # and re-anchors here; its old next_review was never retroactively moved.
+    fsrs_schedule(entry, rating)
     entry["last_score"] = int(score)
-    entry["last_reviewed"] = date.today().isoformat()
-    entry["last_quality"] = quality
+    entry["last_rating"] = rating
     srs[slug] = entry
     await self._save_srs(srs)
     self.spawn_background(self.emit("learn:srs_scheduled", {
-        "slug": slug, "score": score, "quality": quality,
+        "slug": slug, "score": score, "rating": rating,
         "next_review": entry["next_review"],
     }))
     return entry
@@ -202,8 +200,10 @@ def _enrich_due_card(self, slug: str, entry: dict) -> dict:
         "kind": kind,
         "source_path": source_path,
         "next_review": entry.get("next_review", ""),
-        "ease": entry.get("ease", 2.5),
+        "stability": entry.get("s"),
+        "difficulty": entry.get("d"),
         "review_count": entry.get("review_count", 0),
+        "lapses": entry.get("lapses", 0),
         "last_score": entry.get("last_score"),
         "last_reviewed": entry.get("last_reviewed"),
     }
@@ -273,7 +273,8 @@ async def api_review_grade(self, request):
             return {"error": "quality must be an integer 0-5"}
         if q < 0 or q > 5:
             return {"error": "quality must be 0-5"}
-        # Inverse of _score_to_quality (rough; for emission/logging only).
+        # Rough inverse of score_to_rating, chosen so each quality lands on the
+        # same rating `quality_to_rating` would give it.
         approx_score = {0: 10, 1: 25, 2: 45, 3: 65, 4: 85, 5: 100}[q]
         entry = await self._srs_schedule(slug, approx_score)
         entry["graded_quality"] = q

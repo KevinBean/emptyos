@@ -18,7 +18,10 @@
             <h1>GitHub Connector</h1>
             <div style="font-size:13px;color:var(--text-secondary)" id="status-line">Checking connection...</div>
         </div>
-        <div>
+        <div style="display:flex;gap:8px;align-items:center">
+            <input type="text" id="repo-override" placeholder="owner/repo (optional)"
+                   style="padding:6px 10px;border-radius:8px;border:1px solid var(--border);background:var(--bg-card);color:var(--text);font-size:12px;width:180px">
+            <button class="eos-btn-sm" onclick="switchRepo()">View</button>
             <button class="eos-btn-sm eos-btn-ghost" onclick="openAppSettings()" title="Settings">&#9881;</button>
         </div>
     </div>
@@ -40,11 +43,24 @@
 </div>
 
 <script>
+// Repo override — the backend already accepts a `repo` param on every sync
+// route, but the UI only ever showed the configured default. Empty override
+// falls back to `github.default_repo` (existing behavior unchanged).
+var repoOverride = '';
+
+function switchRepo() {
+    repoOverride = (document.getElementById('repo-override').value || '').trim();
+    checkStatus();
+    document.getElementById('issues-list').textContent = 'Not loaded';
+    document.getElementById('prs-list').textContent = 'Not loaded';
+}
+
 async function checkStatus() {
     try {
         var r = await EOS.api('/github-connector/api/status');
         if (r.connected) {
-            document.getElementById('status-line').textContent = 'Connected as ' + r.user + (r.default_repo ? ' | ' + r.default_repo : '');
+            var activeRepo = repoOverride || r.default_repo;
+            document.getElementById('status-line').textContent = 'Connected as ' + r.user + (activeRepo ? ' | ' + activeRepo : '');
             document.getElementById('stats').innerHTML =
                 '<div class="eos-hero-card card-in"><div class="eos-hero-label">Status</div><div class="eos-hero-val" style="color:var(--success)">Connected</div></div>' +
                 '<div class="eos-hero-card card-in"><div class="eos-hero-label">User</div><div class="eos-hero-val" style="font-size:18px">' + esc(r.user) + '</div></div>' +
@@ -63,14 +79,17 @@ async function loadIssues() {
     var el = document.getElementById('issues-list');
     el.innerHTML = 'Loading...';
     try {
-        var r = await EOS.post('/github-connector/api/sync-issues', {});
+        var r = await EOS.post('/github-connector/api/sync-issues', {repo: repoOverride});
         if (r.error) { el.innerHTML = '<span style="color:var(--danger)">' + esc(r.error) + '</span>'; return; }
         if (!r.issues.length) { el.innerHTML = 'No open issues'; return; }
         el.innerHTML = r.issues.map(function(i) {
-            return '<div style="padding:6px 0;border-bottom:1px solid var(--border)">' +
+            return '<div style="padding:6px 0;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px">' +
+                '<span style="flex:1;min-width:0">' +
                 '<a href="' + escAttr(i.url) + '" target="_blank" style="color:var(--accent);text-decoration:none">#' + i.number + '</a> ' +
                 esc(i.title) +
                 (i.labels.length ? ' <span style="font-size:10px;color:var(--text-muted)">' + i.labels.join(', ') + '</span>' : '') +
+                '</span>' +
+                '<button class="eos-btn-sm eos-btn-ghost" onclick="importIssueAsTask(' + EOS_UI.jsArg(i.number) + ')" title="Import as task">&#8594; Task</button>' +
             '</div>';
         }).join('');
         EOS_UI.toast('Synced ' + r.issues.length + ' issues');
@@ -79,11 +98,17 @@ async function loadIssues() {
     }
 }
 
+async function importIssueAsTask(number) {
+    var r = await EOS.post('/github-connector/api/import-issue', {number: number});
+    if (r.error) { EOS_UI.toast(r.error, false); return; }
+    EOS_UI.toast('Added to ' + r.project + ' as a task');
+}
+
 async function loadPRs() {
     var el = document.getElementById('prs-list');
     el.innerHTML = 'Loading...';
     try {
-        var r = await EOS.post('/github-connector/api/pr-status', {});
+        var r = await EOS.post('/github-connector/api/pr-status', {repo: repoOverride});
         if (r.error) { el.innerHTML = '<span style="color:var(--danger)">' + esc(r.error) + '</span>'; return; }
         if (!r.prs.length) { el.innerHTML = 'No open PRs'; return; }
         el.innerHTML = r.prs.map(function(p) {

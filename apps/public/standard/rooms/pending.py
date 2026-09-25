@@ -86,6 +86,10 @@ def _has_always_gate_token(response: str) -> bool:
 #   api_apply_pending          = _pending.api_apply_pending
 #   api_reject_pending         = _pending.api_reject_pending
 #   api_edit_pending           = _pending.api_edit_pending
+#   _notify_new_pending        = _pending._notify_new_pending
+#   _pending_push_enabled      = _pending._pending_push_enabled
+#   _registry_signature        = _pending._registry_signature
+#   get_pending                = _pending.get_pending
 # Adding a new method here? Add a matching binding line in app.py.
 # ─────────────────────────────────────────────────────────────────────
 
@@ -304,6 +308,13 @@ def _save_pending(self, action: dict) -> None:
     # survives a crash, which a torn write would defeat — the record would
     # fail to parse, read back as None, and vanish from the queue instead of
     # surfacing as `approving` for `resolve_unknown` to adjudicate.
+    #
+    # Deliberately does NOT push a notification here even though every
+    # newly-created pending action passes through this function — it is
+    # also the save path for `edit_pending` (status stays "pending" across
+    # an args edit, by design) and other in-place status writes, so a save
+    # is not the same event as a creation. Notify only at the two actual
+    # creation points (`_gate_server_actions`, `save_pending_action`).
     self._pending_store().save(action)
 
 
@@ -668,7 +679,35 @@ async def _gate_server_actions(
             "app": action["app"], "method": action["method"],
             "grant_id": grant_id, "reason": decision.get("reason"), "ok": ok,
         }))
+
+    still_pending = [a for a in pending if a.get("status") == "pending"]
+    if still_pending:
+        self.spawn_background(self._notify_new_pending(still_pending, room_id))
     return cleaned, pending
+
+
+def _pending_push_enabled(self) -> bool:
+    """Push-on-new-pending-action toggle (dark default). Flagged in gap
+    analysis (pocket-no-push-notification): the review queue was pull-only
+    — nothing told you a `[DO:]` landed until you opened the page."""
+    return bool(self.setting_or_config(
+        "rooms.feature.pending-push.enabled", False,
+        config_key="feature.pending-push.enabled",
+    ))
+
+
+async def _notify_new_pending(self, actions: list[dict], room_id: str) -> None:
+    if not self._pending_push_enabled():
+        return
+    verbs = "; ".join(f"{a['app']}.{a['method']}" for a in actions[:3])
+    label = f"{len(actions)} action{'s' if len(actions) != 1 else ''} awaiting review"
+    await self.proactive_notify(
+        kind="rooms-pending",
+        text=f"{label}: {verbs}",
+        dedup_key="rooms-pending:" + "-".join(a["id"] for a in actions),
+        priority="info",
+        link={"text": "Review", "href": "/rooms/"},
+    )
 
 
 async def save_pending_action(
@@ -726,10 +765,36 @@ async def save_pending_action(
             },
         )
     )
+    if action.get("status") == "pending":
+        self.spawn_background(self._notify_new_pending([action], room_id))
     return action
 
 
-def list_pending(self, room_id: str = "", status: str = "pending") -> list[dict]:
+def _scan_pending(pending_dir: Path, room_id: str, want: set[str]) -> list[dict]:
+    """The blocking half of ``list_pending`` — one read per action file.
+
+    Module-level and free of ``self`` so it can be handed to a worker thread
+    whole. Every action ever proposed stays in this directory (resolved ones
+    keep their status for the audit trail), so the scan is O(all history) even
+    when the answer is "18 are open" — which is what makes running it on the
+    event loop untenable rather than merely wasteful.
+    """
+    out: list[dict] = []
+    for f in pending_dir.glob("act-*.json"):
+        try:
+            a = json.loads(f.read_text(encoding="utf-8"))
+        except Exception:
+            continue
+        if room_id and a.get("room_id") != room_id:
+            continue
+        if want and a.get("status") not in want:
+            continue
+        out.append(a)
+    out.sort(key=lambda x: x.get("ts", ""))
+    return out
+
+
+async def list_pending(self, room_id: str = "", status: str = "pending") -> list[dict]:
     """List pending actions, optionally filtered by room and status.
 
     ``status="open"`` selects everything still waiting on the user: `pending`
@@ -743,6 +808,17 @@ def list_pending(self, room_id: str = "", status: str = "pending") -> list[dict]
     "failed", asserting failure about something that may have succeeded.
 
     Sorted by timestamp ascending.
+
+    **Async because the scan blocks.** This was a plain ``def``, and
+    ``call_app`` invokes a sync target inline, so every caller — two hub
+    panels, two routes, the page-companion context builder — read the whole
+    directory on the event loop. On 2026-08-15 that wedged the daemon for 50s
+    and the watchdog killed it; py-spy caught the main thread inside ``open()``
+    under ``panel_pending_count``. The hub fans its panels out 114 ways, so the
+    home screen paid the scan twice per load. It is a pure read with no
+    check-then-act, so offloading introduces no TOCTOU (the ``def`` → ``async
+    def`` hazard in ``.claude/rules/dev-gotchas.md`` is about read-modify-write,
+    which this is not).
     """
     if status == "open":
         want = {"pending", CLAIMED}
@@ -750,19 +826,7 @@ def list_pending(self, room_id: str = "", status: str = "pending") -> list[dict]
         want = {status}
     else:
         want = set()
-    out: list[dict] = []
-    for f in self._pending_dir().glob("act-*.json"):
-        try:
-            a = json.loads(f.read_text(encoding="utf-8"))
-        except Exception:
-            continue
-        if room_id and a.get("room_id") != room_id:
-            continue
-        if want and a.get("status") not in want:
-            continue
-        out.append(a)
-    out.sort(key=lambda x: x.get("ts", ""))
-    return out
+    return await asyncio.to_thread(_scan_pending, self._pending_dir(), room_id, want)
 
 
 def _append_pending_decision(
@@ -1035,7 +1099,7 @@ async def api_room_pending(self, request):
     status = request.query_params.get("status", "open")
     if status == "all":
         status = ""
-    return self.list_pending(room_id, status=status)
+    return await self.list_pending(room_id, status=status)
 
 
 @web_route("GET", "/api/pending")
@@ -1046,7 +1110,7 @@ async def api_global_pending(self, request):
     status = request.query_params.get("status", "open")
     if status == "all":
         status = ""
-    return self.list_pending(room_id="", status=status)
+    return await self.list_pending(room_id="", status=status)
 
 
 async def resolve_unknown(

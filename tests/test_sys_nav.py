@@ -35,17 +35,24 @@ def _pick_deep_app(app_list):
 
 @pytest.mark.api
 class TestNavApi:
-    def test_apps_expose_icon_field(self, http_client):
-        """/api/apps surfaces the manifest icon (default '') for every app."""
+    def test_apps_expose_icon_fields(self, http_client):
+        """/api/apps surfaces adaptive ids plus the legacy emoji fallback."""
         apps = http_client.get("/api/apps").json()
         assert isinstance(apps, list) and apps
         for a in apps:
             assert "icon" in a, f"/api/apps missing 'icon' for {a.get('id')}"
+            assert "icon_id" in a, f"/api/apps missing 'icon_id' for {a.get('id')}"
 
     def test_default_nav_apps_have_seeded_icons(self, http_client):
         apps = {a["id"]: a for a in http_client.get("/api/apps").json() if a.get("id")}
         seeded = [i for i in DEFAULT_NAV if apps.get(i, {}).get("icon")]
         assert seeded, "no default-nav app exposes a seeded icon (daemon restart needed?)"
+
+    def test_first_family_ids_propagate(self, http_client):
+        apps = {a["id"]: a for a in http_client.get("/api/apps").json() if a.get("id")}
+        for app_id in ("hub", "settings", "task", "search", "kb", "worklog"):
+            if app_id in apps:
+                assert apps[app_id]["icon_id"] == app_id
 
 
 @pytest.mark.interactive
@@ -75,6 +82,82 @@ class TestNavShell:
             timeout=6000,
         )
         assert page.locator(".nav-crumb-name").inner_text().strip() == target["name"]
+
+    def test_breadcrumb_uses_registered_svg_icon(self, app_page):
+        page = app_page("settings")
+        page.locator(".nav-crumb-icon .eos-app-icon").wait_for(state="visible", timeout=6000)
+        assert page.locator(".nav-crumb-icon use").count() == 4
+        box = page.locator(".nav-crumb-icon").bounding_box()
+        assert box and round(box["width"]) == 16 and round(box["height"]) == 16
+
+    def test_drawer_uses_icons_without_replacing_labels(self, app_page):
+        page = app_page("task")
+        page.locator(".nav-more").click()
+        page.locator("#app-drawer.open").wait_for(state="visible", timeout=4000)
+        page.locator(".app-drawer-item .adi-icon").first.wait_for(state="visible", timeout=6000)
+        assert page.locator(".app-drawer-item .adi-name").count() > 0
+        assert page.locator(".app-drawer-item .eos-app-icon").count() > 0
+        box = page.locator(".app-drawer-item .adi-icon").first.bounding_box()
+        assert box and round(box["width"]) == 32 and round(box["height"]) == 32
+
+    def test_unregistered_icon_uses_legacy_fallback_without_svg(self, app_page):
+        page = app_page("task")
+        result = page.evaluate(
+            """() => {
+                var host = document.createElement('div');
+                host.innerHTML = EOS.appIcon('../not-registered', '🧪');
+                return {svg: host.querySelectorAll('svg').length, text: host.textContent};
+            }"""
+        )
+        assert result == {"svg": 0, "text": "🧪"}
+
+    def test_iconless_app_gets_a_letter_monogram_not_a_bare_box(self, app_page):
+        """An app with no icon and no emoji draws its initial, not a lone box.
+
+        187 of 230 apps have no icon yet, so this is the common case rather than
+        the edge one; in the drawer's dense two-column list a bare box reads as
+        an unchecked checkbox, which is what the monogram replaces.
+        """
+        page = app_page("task")
+        result = page.evaluate(
+            """() => {
+                var host = document.createElement('div');
+                host.innerHTML = EOS.appIcon('../not-registered', '', 'Command Runner');
+                var t = host.querySelector('.eos-app-icon-monogram-text');
+                return {
+                    svg: host.querySelectorAll('svg.eos-app-icon-monogram').length,
+                    letter: t ? t.textContent : null,
+                    bareBox: host.textContent.indexOf('▢') >= 0,
+                };
+            }"""
+        )
+        assert result == {"svg": 1, "letter": "C", "bareBox": False}
+
+    def test_icon_fallback_order_is_real_icon_then_emoji_then_monogram(self, app_page):
+        """A monogram must never shadow a registered icon or a manifest emoji."""
+        page = app_page("task")
+        result = page.evaluate(
+            """(emoji) => {
+                var probe = function(id, e, label) {
+                    var host = document.createElement('div');
+                    host.innerHTML = EOS.appIcon(id, e, label);
+                    return {
+                        real: host.querySelectorAll('use').length > 0,
+                        mono: host.querySelectorAll('.eos-app-icon-monogram').length > 0,
+                        text: host.textContent.trim(),
+                    };
+                };
+                return {
+                    registered: probe('task', '', 'Task Manager'),
+                    emoji: probe('../nope', emoji, 'Test App'),
+                    neither: probe('../nope', '', 'Zebra'),
+                };
+            }""",
+            '🧪',
+        )
+        assert result["registered"]["real"] and not result["registered"]["mono"]
+        assert result["emoji"]["text"] == '🧪' and not result["emoji"]["mono"]
+        assert result["neither"]["mono"] and result["neither"]["text"] == "Z"
 
     def test_slash_opens_search_overlay_and_focuses(self, app_page):
         page = app_page("task")

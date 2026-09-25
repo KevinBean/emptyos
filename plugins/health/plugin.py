@@ -228,6 +228,12 @@ class HealthPlugin(BasePlugin):
                     f"{problem['type']}: {problem.get('id', '')} — {diagnosis.get('diagnosis', '')}",
                     priority="warning",
                     source="health",
+                    # A connector that is simply off (Applio, Blender, the voice
+                    # API) alerts once per daemon start and again whenever it
+                    # flaps. With frequent restarts that came to 159 alerts in
+                    # the vault notifications inbox from 2026-09-12 to 09-15,
+                    # about a dozen connectors per start. Those stay off the phone.
+                    telegram=problem["type"] != "connector_down",
                 )
 
     # ──────────────────────────────────────────────

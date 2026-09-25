@@ -141,14 +141,17 @@
 .type-fields.hidden { display: none; }
 
 /* Timeline view */
-.timeline-container { overflow-x: auto; padding: 8px 0; }
+/* One source of truth for the label gutter: the CSS below, the axis offset and
+   the JS that positions the "today" marker all have to agree, and they were
+   three separate hardcoded 160px. */
+.timeline-container { overflow-x: auto; padding: 8px 0; --tl-label: 200px; }
 .timeline-row { display: flex; align-items: center; margin-bottom: 4px; height: 28px; }
-.timeline-label { width: 160px; flex-shrink: 0; font-size: 12px; color: var(--text-heading); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding-right: 8px; cursor: pointer; }
+.timeline-label { width: var(--tl-label); flex-shrink: 0; font-size: 12px; color: var(--text-heading); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding-right: 8px; cursor: pointer; }
 .timeline-bar-area { flex: 1; position: relative; height: 20px; }
 .timeline-bar { position: absolute; height: 16px; border-radius: 4px; top: 2px; cursor: pointer; transition: opacity 0.15s; min-width: 4px; }
 .timeline-bar:hover { opacity: 0.8; }
 .timeline-fill { height: 100%; border-radius: 4px; opacity: 0.4; }
-.timeline-axis { display: flex; border-bottom: 1px solid var(--border); margin-bottom: 8px; padding-left: 160px; }
+.timeline-axis { display: flex; border-bottom: 1px solid var(--border); margin-bottom: 8px; padding-left: var(--tl-label); }
 .timeline-month { flex: 1; font-size: 10px; color: var(--text-muted); text-align: center; }
 .timeline-today { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--danger); opacity: 0.6; z-index: 1; }
 
@@ -236,13 +239,136 @@
 
 /* Kanban layout responsive behavior is owned by .eos-kanban in eos-components.css. */
 
-/* ── Mobile / touch (≤640px) ──
-   Bump padding-block on every interactive control to land ≥44 px tall
-   (WCAG / iOS HIG). The toolbar already has 8 controls — they need to be
-   thumb-tappable on mobile, not desktop-click-precise. */
-@media (max-width: 640px) {
+/* ─────────────────────────────────────────────────────────────────────────
+   Index-page shell (index.html only). The board/timeline/calendar views need
+   real width — .page is 900px in theme.css, which left ~2.5 kanban columns of
+   a 6-column board inside a horizontal scroller while a third of the viewport
+   sat empty. Matches .ws-page, this app's own precedent for a wide surface.
+   ───────────────────────────────────────────────────────────────────────── */
+.pj-page { max-width: 1400px; }
+
+/* Toolbar — three tiers so the primary action is not one of eight equals:
+   view switcher (segmented) | secondary icon buttons | + New. */
+.pj-toolbar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.pj-toolbar-sec { display: flex; gap: 4px; align-items: center; padding-left: 10px; border-left: 1px solid var(--border); }
+.pj-toolbar-sec .eos-btn-sm { font-size: 11px; }
+.pj-toolbar-sec .eos-btn-sm[aria-pressed="true"] { background: var(--accent-bg); color: var(--accent); border-color: var(--accent); }
+/* Scoped to this page: `.view-btn` / `.view-toggle` is a cross-app convention
+   (lightning, finance, music-studio, places, kb, eos-deck all use it) and this
+   sheet is shared with workspace.html, so an unscoped restyle would be a trap
+   for anything that grows a view toggle there later.
+   theme.css already supplies :focus-visible globally — no local copy needed. */
+.pj-page .view-toggle { background: var(--bg-card); border: 1px solid var(--border); border-radius: 10px; padding: 4px; gap: 2px; }
+.pj-page .view-btn { border: 1px solid transparent; background: transparent; padding: 6px 12px; font: inherit; font-size: 12px; }
+.pj-page .view-btn.active { background: var(--accent-bg); color: var(--accent); border-color: transparent; font-weight: 600; }
+
+/* Compact stat strip — replaces the 2-column .eos-hero grid, which turned five
+   cards into three rows (~310px) of chrome above the first project. */
+.pj-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(112px, 1fr)); gap: 8px; margin-bottom: 14px; }
+.pj-stats .eos-stat-card { padding: 10px 12px; }
+.pj-stats .eos-stat-val { font-size: 22px; }   /* on the type scale; 20 is not */
+.pj-stats .eos-stat-card--click.is-on { border-color: var(--accent); background: var(--accent-bg); }
+
+/* Filter row — search + sort + the active quick-filter, which must be visible
+   or a stat-card click becomes invisible state the user cannot undo. */
+.pj-filters { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 10px; }
+/* theme.css sets a global `input, textarea, select { width: 100% }`, which puts
+   the search box and the sort picker on two full-width rows of their own. */
+.pj-filters .pj-search { flex: 1 1 240px; width: auto; min-width: 0; border-radius: 14px; padding: 12px 16px; }
+.pj-sort { flex: 0 0 auto; width: auto; border-radius: 10px; padding: 10px 12px; font-size: 13px; }
+.pj-active-filter { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; padding: 6px 10px; border-radius: 999px; background: var(--accent-bg); color: var(--accent); border: 1px solid var(--accent); cursor: pointer; }
+.pj-active-filter::after { content: "\00d7"; font-size: 14px; line-height: 1; opacity: 0.7; }
+
+/* Category chips. Most of this vault's tags are used exactly once, so all of
+   them open as several wrapped rows of chrome between the search box and the
+   first project; only tags shared by 2+ projects stay open by default. (No
+   count quoted here on purpose — it moves every time a project is tagged.) */
+.pj-chipbar { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 14px; }
+.pj-chip { cursor: pointer; padding: 4px 10px; border-radius: 999px; font-size: 12px; font-family: inherit; background: var(--bg-card); color: var(--text-secondary); border: 1px solid var(--border); transition: border-color 0.15s, color 0.15s; }
+.pj-chip:hover { border-color: var(--accent); color: var(--accent); }
+.pj-chip.active { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.pj-chip .pj-chip-n { opacity: 0.65; }
+.pj-chip-more { background: transparent; border-style: dashed; }
+
+/* Card meta — the summary row has to answer "does this need me?" before the
+   click (.claude/rules/list-card-density.md); status colour alone never does. */
+.pj-stale { color: var(--warning); }
+.pj-stale.cold { color: var(--danger); }
+.pj-quiet { color: var(--text-muted); }
+
+/* Kanban, scoped to this board only — the shared .eos-kanban stays as-is.
+   Two things this board needs that a generic one does not:
+
+   1. Columns share the width instead of sitting at a fixed 280-320px.
+
+      The width budget is exact and worth writing down, because the first
+      attempt at this got it wrong by 40px and still shipped a scrollbar:
+      .pj-page is 1400px with 20px padding either side, so the content box is
+      1360px at ANY viewport >= 1400 (a wider monitor does not help). With
+      .eos-kanban's 1rem gap, six columns cost 6c + 5*16, so c <= 213px.
+      min-width was 220 -> 1400px of demand against 1360 -> a permanent 40px
+      overflow with "Done" clipped. 200px fits with room to spare, and columns
+      still flex up to ~213px each.
+
+      Seven columns (Archived on) need c <= 180 and DO still scroll: 180px is
+      too narrow to read a project card, so that state is a deliberate scroll,
+      not an oversight.
+
+   2. Each column scrolls on its own. Active holds 37 projects and Ideas holds
+      4; with the whole board growing to its tallest column, comparing them
+      meant scrolling past thirty cards to see whether Ideas had anything in it.
+      A column that scrolls itself keeps every status on one screen.
+
+      Its height is set by sizeKanbanColumns() in app.js, not by a constant
+      here: the chrome above the board is not a fixed height (expanding the tag
+      chips moves it 64px, the toolbar wraps at narrow widths) and body carries
+      80px of FAB-dock padding a constant cannot know about. --pj-col-max is the
+      measured value; the fallback only applies before the first paint. */
+.pj-page .eos-kanban { padding-inline: 0; }
+#projects-kanban-mount .eos-kanban-col { flex: 1 1 0; min-width: 200px; max-width: none; }
+#projects-kanban-mount .eos-kanban-items {
+    max-height: var(--pj-col-max, 60vh);
+    min-height: 120px;
+    overflow-y: auto;
+    padding-right: 2px;   /* room for the scrollbar so it never sits over a card */
+}
+
+/* ── Mobile / touch ──
+   LAST in the file on purpose: these are cascade overrides, and at equal
+   specificity source order decides. A later `.view-btn { padding: ... }`
+   elsewhere in this sheet silently undoes the touch target below.
+
+   Gated on `(pointer: coarse)` as well as width, matching how the platform
+   itself gates (eos-components.css). Width alone missed a touch tablet at
+   768px, which is precisely where .eos-header's nowrap row plus the platform's
+   44px buttons collide.
+
+   NOTE on touch targets: eos-components.css already applies
+   `@media(pointer:coarse) { button, .eos-btn, select, [onclick] { min-height:44px } }`,
+   and every control added here is a real <button>, so the floor is already in
+   place on any touch device. No min-height is repeated below — an earlier
+   revision did, on the strength of a 36px/33px measurement taken in a narrow
+   desktop window WITHOUT touch emulation, where `pointer:coarse` never matched
+   and the thumb-target rationale does not apply. What follows is the layout,
+   which the platform does not supply. */
+@media (max-width: 640px), (pointer: coarse) {
     .view-btn         { padding-block: 13px; }
     .detail-tab       { padding-block: 14px; }
     .cal-nav          { padding-block: 12px; }
     .feat-toggle      { padding-block: 12px; }
+
+    /* .eos-header is a no-wrap space-between flex row, so at phone width the
+       title and an eight-control toolbar fight over the same line. */
+    .pj-page .eos-header { flex-wrap: wrap; gap: 10px; }
+    .pj-page .pj-toolbar { width: 100%; }
+    .pj-page .view-toggle { flex: 1 1 100%; }
+    .pj-page .view-btn { flex: 1; text-align: center; }
+
+    /* Four columns of stats on a phone is four unreadable columns. */
+    .pj-stats { grid-template-columns: repeat(auto-fit, minmax(92px, 1fr)); }
+
+    /* The board is a horizontal scroller here; a per-column scroller nested
+       inside it is two scroll axes fighting for the same thumb. Let the
+       columns grow and let the page scroll. */
+    #projects-kanban-mount .eos-kanban-items { max-height: none; overflow-y: visible; }
 }

@@ -27,8 +27,9 @@ from emptyos.sdk.markdown_tasks import text_matches as _mt_text_matches
 
 from . import reading as _reading
 # Re-exported into the spine namespace so sibling helpers can reach them as
-# ``_core.PROJECT_STRUCTURE`` / ``_core.META_PREFIXES`` / ``_core._META_RE``
-# (operations.py) — keep all five even though the spine only references some.
+# ``_core.PROJECT_STRUCTURE`` / ``_core.META_PREFIXES`` / ``_core._META_RE`` /
+# ``_core.scan_task_meta_block`` (operations.py) — keep all six even though
+# the spine only references some.
 from .shared import (
     META_PREFIXES,
     PROJECT_FEATURES,
@@ -36,6 +37,8 @@ from .shared import (
     PROJECT_STRUCTURE,
     PROJECT_TYPES,
     _META_RE,
+    insert_task_line,
+    scan_task_meta_block,
 )
 
 from . import dev_features as _dev
@@ -242,6 +245,120 @@ class ProjectsApp(BaseApp):
             date_s=data.get("date", ""),
             employer=data.get("employer", ""),
         )
+
+    # ── Task assignee — soft bridge to staff's workflow-agent dispatch engine
+    # (optional_apps=["staff"]; absence tolerated, same shape as the worklog
+    # integration above). No new task lifecycle here — this only wires a UI
+    # entry point + a task-line backlink onto staff's existing
+    # queued/running/done/error job engine. See
+    # 30_Resources/EmptyOS/insights or docs/OPEN-SOURCE-BORROWING-PLAN.md
+    # for the Multica borrow verdict this came from. ──
+
+    async def assignable_agents(self) -> list[dict]:
+        """Workflow-mode staff agents available to assign a task to.
+
+        Returns [] (not an error) when staff isn't installed, so the
+        frontend can hide the "assign" affordance cleanly.
+        """
+        data, err = await self.try_call_app("staff", "list_workflow_agents")
+        if err:
+            return []
+        return data or []
+
+    @web_route("GET", "/api/assignable-agents")
+    async def api_assignable_agents(self, request):
+        return {"agents": await self.assignable_agents()}
+
+    async def assign_task_to_agent(self, project_id: str, line: int, agent_id: str) -> dict:
+        """Assign one project task to a staff workflow agent and dispatch it now.
+
+        Reuses staff.dispatch_workflow's existing job engine verbatim — this
+        method only wires the entry point (read task text, call staff, write
+        the backlink) and never invents a parallel task/run state machine.
+        """
+        agent_id = (agent_id or "").strip()
+        if not agent_id:
+            return {"error": "agent_id required"}
+        target = self._find_project_file(project_id)
+        if not target:
+            return {"error": "Project not found"}
+
+        async with self.write_lock(f"projects:{project_id}"):
+            content = target.read_text(encoding="utf-8")
+            lines = content.split("\n")
+            if line < 0 or line >= len(lines) or not re.match(r"\s*- \[[ xX]\] ", lines[line]):
+                return {"error": "Invalid task line"}
+            task_text = re.sub(r"^\s*- \[[ xX]\]\s*", "", lines[line]).strip()
+            scan = scan_task_meta_block(lines, line)
+
+            result, err = await self.try_call_app(
+                "staff", "dispatch_workflow", agent_id=agent_id, input_text=task_text,
+                source={"app": "projects", "project_id": project_id, "task_line": line},
+            )
+            if err:
+                return {"error": err}
+            job_id = (result or {}).get("job_id", "")
+            if not job_id:
+                return {"error": "dispatch failed — no job_id returned"}
+
+            # A task carries at most one live `assigned:` line — reassigning
+            # replaces it in place rather than stacking a second one.
+            meta_line = f"  - assigned: {agent_id}:{job_id}"
+            existing_idx = scan["by_type"].get("assigned")
+            if existing_idx is not None:
+                lines[existing_idx] = meta_line
+            else:
+                lines.insert(scan["insert_at"], meta_line)
+            target.write_text("\n".join(lines), encoding="utf-8")
+
+        await self.emit(
+            "projects:task_assigned",
+            {"id": project_id, "line": line, "agent_id": agent_id, "job_id": job_id},
+        )
+        return {"ok": True, "job_id": job_id}
+
+    @web_route("POST", "/api/projects/{id}/tasks/{line}/assign")
+    async def api_assign_task(self, request):
+        project_id = request.path_params.get("id", "")
+        line = int(request.path_params.get("line", -1))
+        data = await self.read_json(request)
+        return await self.assign_task_to_agent(project_id, line, data.get("agent_id", ""))
+
+    async def task_assignment_status(self, project_id: str, line: int) -> dict:
+        """Read a task's `assigned:` meta line and resolve live job status."""
+        target = self._find_project_file(project_id)
+        if not target:
+            return {"assigned": False}
+        content = target.read_text(encoding="utf-8")
+        lines = content.split("\n")
+        if line < 0 or line >= len(lines):
+            return {"assigned": False}
+        existing_idx = scan_task_meta_block(lines, line)["by_type"].get("assigned")
+        if existing_idx is None:
+            return {"assigned": False}
+        raw = _META_RE.match(lines[existing_idx]).group(2).strip()
+        agent_id, _, job_id = raw.partition(":")
+        if not job_id:
+            return {"assigned": True, "agent_id": agent_id, "status": "unknown"}
+        job, err = await self.try_call_app("staff", "get_job", job_id=job_id)
+        if err or not job:
+            # staff absent, or the job aged out of its 200-job retention window.
+            return {"assigned": True, "agent_id": agent_id, "job_id": job_id, "status": "unknown"}
+        return {
+            "assigned": True,
+            "agent_id": agent_id,
+            "job_id": job_id,
+            "status": job.get("status", "unknown"),
+            "result_preview": job.get("result_preview"),
+            "output_path": job.get("output_path"),
+            "error": job.get("error"),
+        }
+
+    @web_route("GET", "/api/projects/{id}/tasks/{line}/assignment")
+    async def api_task_assignment(self, request):
+        project_id = request.path_params.get("id", "")
+        line = int(request.path_params.get("line", -1))
+        return await self.task_assignment_status(project_id, line)
 
     @web_route("POST", "/api/refresh")
     async def api_refresh(self, request):
@@ -490,20 +607,7 @@ class ProjectsApp(BaseApp):
                 target = self._bootstrap_project(project_id)
 
             content = await self.read(str(target))
-
-            # Find Tasks section
-            if "## Tasks" in content:
-                idx = content.index("## Tasks")
-                end_of_heading = content.index("\n", idx)
-                # Find end of tasks section (next heading or end of file)
-                next_section = content.find("\n## ", end_of_heading + 1)
-                if next_section > 0:
-                    content = content[:next_section] + task_line + "\n" + content[next_section:]
-                else:
-                    content = content.rstrip() + "\n" + task_line + "\n"
-            else:
-                content = content.rstrip() + "\n\n## Tasks\n" + task_line + "\n"
-
+            content = insert_task_line(content, task_line)
             await self.write(str(target), content)
 
         await self.emit("projects:task_added", {
@@ -635,6 +739,10 @@ class ProjectsApp(BaseApp):
     api_all_tasks        = _aggregations.api_all_tasks
 
     api_tasks_for_room   = _aggregations.api_tasks_for_room
+
+    _deadline_nudge_enabled  = _aggregations._deadline_nudge_enabled
+
+    scheduled_deadline_nudge = _aggregations.scheduled_deadline_nudge
 
     @web_route("GET", "/api/type-config")
     async def api_type_config(self, request):

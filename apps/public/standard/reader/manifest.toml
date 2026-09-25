@@ -41,7 +41,7 @@ emits = [
 internal = [
     "reader:progress",
     # Story/production lifecycle — UI-only; reading life-signal already ripples
-    # via reader:session_logged / highlight events.
+    # via media:session_logged / media:highlight_added (owned by the media app).
     "reader:story_started", "reader:story_ended", "reader:story_to_game",
     "reader:production_edited", "reader:production_section_built",
 ]

@@ -27,8 +27,8 @@ separate sections below — they are **never mixed on a rendered surface**.
 3. **Accuracy is the rule.** Every number is verified against the codebase and
    drifts over time — re-check before reuse:
    - Public-clone apps (`core` + `standard`):
-     `find apps/public/core apps/public/standard -name manifest.toml | wc -l` → **57**
-   - Plugins: `find plugins -maxdepth 2 -name manifest.toml | wc -l` → **26**
+     `find apps/public/core apps/public/standard -name manifest.toml | wc -l` → **71** (checked 2026-08-22)
+   - Plugins: `find plugins -maxdepth 2 -name manifest.toml | wc -l` → **36** (checked 2026-08-22)
    - Capabilities: **16** (CLAUDE.md § 16 Capabilities)
    - The live full system (demo / your machine) carries more apps than a public
      clone — the project site's auto-stats block shows that larger number. Use
@@ -137,7 +137,7 @@ The differentiator, in five words: **own a workspace, not rent an agent.**
 **Feature-line pitch** (scannable form — one emoji per line, no more)
 
 > 🧠 A markdown vault is the hard drive — your data stays human-readable, portable, and usable even without the system.
-> ⚙️ 57 built-in apps + a plugin system — tasks, projects, journal, search, AI assistant, publishing, and creative workflows in one place.
+> ⚙️ 71 built-in apps + a plugin system — tasks, projects, journal, search, AI assistant, publishing, and creative workflows in one place.
 > 🔁 An event bus + scheduler drive automation — capture → organize → review → self-fix closes the loop.
 > 🤖 Ollama / OpenAI / Claude / any OpenAI-compatible provider — route models per task.
 > 🔒 Cloud calls pass a consent gate — by default your raw vault never leaves the machine.
@@ -184,7 +184,7 @@ EmptyOS 是一个你自己拥有的本地优先 AI 操作系统：把任务、�
 **特性列表**（可扫读形式 —— 每行至多一个 emoji）
 
 > 🧠 markdown vault 作为硬盘，数据人可读、可迁移、可脱离系统继续使用。
-> ⚙️ 57 个标准 app + 插件系统，任务、项目、日记、搜索、AI 助手、发布、创作工作流一体化。
+> ⚙️ 71 个标准 app + 插件系统，任务、项目、日记、搜索、AI 助手、发布、创作工作流一体化。
 > 🔁 event bus + scheduler 驱动自动化，捕获、整理、回顾、修复形成闭环。
 > 🤖 支持 Ollama / OpenAI / Claude / OpenAI-compatible provider，可按任务路由模型。
 > 🔒 云模型调用走 consent gate，默认不把 vault 原文发到云端。
@@ -246,3 +246,8 @@ chain changed), update this file first, then propagate to the surfaces above.
 Re-run the count commands before reusing any number. Keep the two language
 sections in sync in *meaning*, not word-for-word — each is curated copy, not a
 machine translation of the other.
+
+**Last accuracy check: 2026-08-22** (`eos-recency-check` — counts had drifted
+from 57/26 to 71/36 since the last check on 2026-06-29; `README.md`'s copy of
+the feature-line pitch updated in step.) Re-run before the next reuse rather
+than trusting this note past its date.

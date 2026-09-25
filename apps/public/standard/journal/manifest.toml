@@ -1,5 +1,6 @@
 [app]
 id = "journal"
+icon_id = "journal"
 store_category = "productivity"
 name = "Journal"
 version = "1.0.0"

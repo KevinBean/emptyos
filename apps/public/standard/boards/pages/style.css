@@ -337,7 +337,7 @@ body.board-readonly .cell-editable:hover { background: transparent; }
 .calendar-month-label {
     font-size: 1rem;
     font-weight: 700;
-    color: var(--text-primary);
+    color: var(--text);
     min-width: 10rem;
     text-align: center;
 }
@@ -554,7 +554,7 @@ body.board-readonly .cell-editable:hover { background: transparent; }
 
 .pivot-table tbody th { text-align: left; }
 .pivot-table .pivot-corner { text-align: left; }
-.pivot-table .pivot-total { font-weight: 700; color: var(--text-primary); }
+.pivot-table .pivot-total { font-weight: 700; color: var(--text); }
 .pivot-table .pivot-total-row th,
 .pivot-table .pivot-total-row td { background: var(--bg-card-hover); font-weight: 700; }
 
@@ -1482,7 +1482,7 @@ body.embed-mode.embed-no-chrome #view-tabs { display: none; }
    ═══════════════════════════════════════════════════════════ */
 .comment-row { padding: 0.45rem 0; border-bottom: 1px solid var(--border); }
 .comment-head { display: flex; align-items: center; gap: 0.5rem; font-size: 0.74rem; }
-.comment-author { font-weight: 600; color: var(--text-primary); }
+.comment-author { font-weight: 600; color: var(--text); }
 .comment-time { color: var(--text-muted); flex: 1; }
 .comment-actions { display: none; gap: 0.2rem; }
 .comment-row:hover .comment-actions { display: inline-flex; }

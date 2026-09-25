@@ -30,7 +30,9 @@ DEFAULT_PATHS = {
     "task": {
         "scan_folders": ["00_Inbox,20_Areas", "Inbox,Areas"],
     },
-    "contacts": {
+    # contacts retired — absorbed into people app; DEFAULT_PATHS key must match
+    # manifest.id ("people"), which is what self.vault_config() looks up
+    "people": {
         "people_dir": ["30_Resources/People", "People", "Contacts", "20_Areas/People"],
         "me_file": ["20_Areas/Personal-Info/_me.md"],
         "work_style": ["20_Areas/Personal-Dev/Work-Style-Assessment.md"],
@@ -52,8 +54,14 @@ DEFAULT_PATHS = {
             "Vocabulary",
         ],
     },
-    "music": {
-        "songs_dir": ["10_Projects/YouTube-Music-Channel/songs", "Music/songs", "Songs"],
+    # music retired — superseded by music-studio (its own inline default;
+    # no DEFAULT_PATHS entry yet) and music-library ("Music/Songs", a
+    # separate personal collection — do not conflate the two)
+    # library = the paper/reference manager. `papers_dir` holds both the
+    # `<citekey>.md` notes and their `attachments/` PDFs, so a machine that
+    # relocates the folder moves the whole corpus in one setting.
+    "library": {
+        "papers_dir": ["30_Resources/Library", "Library", "30_Resources/Papers"],
     },
     "places": {
         "places_dir": ["30_Resources/Places", "Places"],
@@ -83,12 +91,7 @@ DEFAULT_PATHS = {
     "timeline": {
         "career": ["20_Areas/Career/Career-Development-Plan.md"],
     },
-    "interview-studio": {
-        "jobs_dir": ["20_Areas/Career/Job-Applications", "Career/Job-Applications"],
-    },
-    "interview-briefing": {
-        "jobs_dir": ["20_Areas/Career/Job-Applications", "Career/Job-Applications"],
-    },
+    # interview-studio + interview-briefing retired — superseded by jobs
     "jobs": {
         "jobs_dir": ["20_Areas/Career/Job-Applications", "Career/Job-Applications"],
     },
@@ -101,22 +104,14 @@ DEFAULT_PATHS = {
     "canvas": {
         "boards_dir": ["10_Projects/canvas", "Canvas"],
     },
-    "lyrics": {
-        "songs_dir": ["10_Projects/YouTube-Music-Channel/songs", "Music/songs", "Songs"],
-    },
-    "mv-creator": {
-        "songs_dir": ["10_Projects/YouTube-Music-Channel/songs", "Music/songs", "Songs"],
-    },
-    "compose": {
-        "songs_dir": ["10_Projects/YouTube-Music-Channel/songs", "Music/songs", "Songs"],
-    },
+    # lyrics + mv-creator + compose retired — superseded by music-studio
     "model-bench": {
         "areas_dir": ["20_Areas", "Areas"],
     },
     "briefing": {
         "nutrition_log": ["20_Areas/Health/nutrition-log.md"],
     },
-    "review": {},
+    # review retired — no live successor
     "staff": {
         "research_dir": ["30_Resources/Research", "Research"],
         "people_dir": ["30_Resources/People", "People"],
@@ -144,11 +139,12 @@ DEFAULT_PATHS = {
         "exports_dir": ["30_Resources/EmptyOS/geo-cad/_exports"],
         "imports_dir": ["30_Resources/EmptyOS/geo-cad/_imports"],
     },
-    "actions": {
-        "workflows_dir": ["30_Resources/EmptyOS/workflows"],
-    },
+    # actions retired — no live successor (workflows_dir concept unabsorbed)
     "forge": {
         "vault_dir": ["30_Resources/EmptyOS/forge"],
+    },
+    "operate": {
+        "macros": ["30_Resources/EmptyOS/desktop-macros"],
     },
 }
 

@@ -49,7 +49,7 @@
 .lesson-row .lesson-meta .title { font-weight: 500; }
 .lesson-row .lesson-meta .sub { font-size: .75rem; color: var(--muted); margin-top: 2px; }
 .lesson-row .kind-tag { font-size: .7rem; padding: 2px 8px; border-radius: 8px; background: var(--border); text-transform: uppercase; letter-spacing: .04em; }
-.lesson-row .kind-tag.quiz { background: var(--amber); color: #1a1a1a; }
+.lesson-row .kind-tag.quiz { background: var(--amber); color: #1a1a1a; } /* design-hex: ignore - inverse ink on an already-tinted badge */
 .lesson-row .kind-tag.case { background: var(--purple); color: var(--ink-on-vivid); }
 .lesson-row .kind-tag.read { background: var(--learn-accent); color: var(--accent-ink, #fff); }
 
@@ -146,6 +146,13 @@
   margin-bottom: 16px;
 }
 .card-front .phonetic { display: block; font-size: .9rem; color: var(--muted); margin-top: 8px; }
+/* Picture-dictionary cards: the photograph is the prompt. object-fit:contain so
+   nothing is cropped away — a cropped animal can be a different animal. */
+.card-image {
+  display: block; width: 100%; max-height: 260px; object-fit: contain;
+  background: var(--bg-surface); border: 1px solid var(--border);
+  border-radius: 8px; margin-bottom: 16px;
+}
 .card-back {
   padding: 20px 24px; background: var(--bg-card); border: 1px solid var(--border);
   border-radius: 8px; margin-bottom: 16px; white-space: pre-wrap; line-height: 1.6;
@@ -289,6 +296,34 @@
    accents live in eos-components.css. Only the reading-flow margin is local. */
 .player-content .obs-callout { margin: 1em 0; }
 
+/* Lesson video panel (lesson-video.js) */
+.lv-panel { border: 1px solid var(--border); border-radius: 8px; padding: 12px 16px; margin-bottom: 16px; }
+.lv-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.lv-head .lv-actions { margin-left: auto; display: flex; gap: 8px; }
+.lv-player { display: block; width: 100%; aspect-ratio: 16 / 9; margin-top: 12px; border-radius: 8px; background: var(--bg); }
+.lv-meta { margin-top: 8px; font-size: .85rem; }
+.lv-muted { color: var(--muted); font-size: .85rem; }
+.lv-warnings { margin: 8px 0 0; padding-left: 20px; font-size: .85rem; color: var(--muted); }
+.lv-table { width: 100%; border-collapse: collapse; margin-top: 12px; font-size: .9rem; }
+.lv-table th { text-align: left; font-weight: 500; color: var(--muted); padding: 8px; width: 96px; vertical-align: top; }
+.lv-table td { padding: 8px; border-top: 1px solid var(--border); }
+.lv-table tr:first-child td { border-top: 0; }
+.lv-bar { margin-top: 8px; }
+/* AI draft treatment (FRONTEND-DESIGN-LANGUAGE §6): accent-tinted + "✨ draft" chip. */
+.lv-script { margin-top: 16px; padding: 12px 16px; border-radius: 8px; background: color-mix(in srgb, var(--accent) 8%, var(--bg-card)); }
+.lv-script-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.lv-script h4 { margin: 4px 0 8px; }
+.lv-ai-chip { display: inline-block; font-size: .75rem; padding: 2px 8px; border-radius: 999px; color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent); white-space: nowrap; }
+.lv-scene { border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px 12px; margin: 0 0 12px; }
+.lv-scene legend { font-size: .85rem; color: var(--muted); padding: 0 4px; }
+.lv-scene label { display: block; font-size: .8rem; color: var(--muted); margin-top: 8px; }
+.lv-scene-top { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 8px; }
+.lv-scene-top label { margin-top: 0; }
+.lv-scene-top .lv-grow-label { margin-left: 8px; }
+.lv-scene-top .lv-grow { flex: 1; min-width: 200px; margin-top: 0; }
+.lv-scene input, .lv-scene textarea, .lv-scene select { box-sizing: border-box; width: 100%; font: inherit; margin-top: 4px; }
+.lv-scene select { width: auto; margin-top: 0; }
+
 @media (max-width: 800px) {
   .player-shell { grid-template-columns: 1fr; }
   .course-header { flex-direction: column; }
@@ -323,5 +358,6 @@
 </div>
 
 <script src="/learn/pages/learn.js"></script>
+<script src="/learn/pages/lesson-video.js"></script>
 </body>
 </html>

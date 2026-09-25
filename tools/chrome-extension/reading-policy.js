@@ -50,6 +50,22 @@
     empty: "Nothing flagged yet.",
   };
 
+  // What a word's SOURCE entitles the UI to claim, and — the part that was wrong —
+  // whether it is in the reader's dictionary. Only `vault` means that. `cache` means
+  // an answer was remembered, which is a fact about OUR cost and nothing about the
+  // reader's vocabulary; it labelled itself "saved" and so a word the reader had
+  // never saved sat under a chip reading "saved" with a Save button beside it, which
+  // reads as a broken button rather than as an unsaved word (2026-08-17).
+  // Only `vault` speaks about the READER; the other two speak about the ANSWER, and
+  // keeping that line clean is the whole rule. "seen" was tried and rejected for
+  // crossing it — seen by whom? It reads as "I have met this word", which is a claim
+  // about the reader's vocabulary and so the same category error in a new word.
+  const WORD_SOURCE = {
+    vault: { chip: "yours", title: "From your own saved note", saved: true },
+    cache: { chip: "cached", title: "A remembered explanation — no model call", saved: false },
+    model: { chip: "new", title: "Freshly generated", saved: false },
+  };
+
   // ── when to scan ────────────────────────────────────────────────────────
 
   // Settling is worth waiting for; waiting forever is not. Past MAX_SCAN_DEFER from
@@ -101,6 +117,44 @@
     if (itemCount > 0) return { kind: "none-here", message: RAIL_TEXT["none-here"] };
     if (tooLittleText) return { kind: "too-little", message: RAIL_TEXT["too-little"] };
     return { kind: "empty", message: RAIL_TEXT.empty };
+  }
+
+  // ── what a word's source means ──────────────────────────────────────────
+
+  function wordSource(source) {
+    return WORD_SOURCE[String(source || "")] || WORD_SOURCE.model;
+  }
+
+  // A verdict click writes two things and they can disagree: the judgement always
+  // lands in the profile (`ok`), while the vault note is a separate write that can
+  // fail (`saved`). Reporting the first as if it were the second told the reader
+  // "Known · saved" over a note that was never written. Save is the one action whose
+  // whole point IS the note, so there `ok` and `saved` are the same claim.
+  //
+  // Both flags come back because both have consequences: `judged` is what stops the
+  // word being flagged again, `saved` is what makes it the reader's.
+  //
+  // `rating` is the third answer, and it is three-valued on purpose. A verdict
+  // ROUTES a word; only the star row rates it, so the daemon reports the number
+  // the note already holds and OMITS the key when it could not read the note.
+  // `null` therefore means "not told", which is not `0` ("the reader looked and
+  // said it is fine") — repainting a 3-star row to empty on a non-answer looks
+  // exactly like the click having eaten the rating, and the note still holds the
+  // 3, so it returns on the next open. `0` is a real value and must survive.
+  function saveVerdict({ action, result }) {
+    const reply = result || {};
+    const ok = Boolean(reply.ok) && !reply.error;
+    // `Number.isFinite`, not `typeof === "number"`: NaN and Infinity pass the
+    // typeof check and would paint through `Number(x) || 0` as a definite 0.
+    // It coerces nothing, so a string "3" is still refused.
+    const rating = Number.isFinite(reply.difficulty) ? reply.difficulty : null;
+    if (action === "save") {
+      return { judged: ok, saved: ok, rating, label: ok ? "Saved" : "Save failed" };
+    }
+    const word = action === "known" ? "Known" : "Hard";
+    if (!ok) return { judged: false, saved: false, rating: null, label: "Failed" };
+    if (!reply.saved) return { judged: true, saved: false, rating, label: word + " · not saved" };
+    return { judged: true, saved: true, rating, label: word + " · saved" };
   }
 
   // ── what a settings change means ────────────────────────────────────────
@@ -160,7 +214,7 @@
     MIN_SCAN_INTERVAL, MAX_SCAN_DEFER, MODEL_TIMEOUT_MS, MIN_TEXT_CHARS,
     SKIP, PROSE, RESCAN_KEYS, RAIL_TEXT,
     scanDelay, acceptResponse, hasEnoughText, railState, shouldRestart,
-    effectiveMode, linkIsProse, fingerprint,
+    wordSource, saveVerdict, effectiveMode, linkIsProse, fingerprint,
   };
 
   globalThis.EOS_READING_POLICY = POLICY;

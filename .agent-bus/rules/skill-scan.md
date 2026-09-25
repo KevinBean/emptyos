@@ -1,3 +1,9 @@
+---
+paths:
+  - "emptyos/sdk/skill_scan.py"
+  - "apps/**/store/**"
+  - "scripts/check_skill_security.py"
+---
 # Skill Scan Rule — static risk scan of untrusted skill/app payloads
 
 `emptyos/sdk/skill_scan.py` is a pure-stdlib static scanner for third-party

@@ -68,10 +68,17 @@ class TestProactiveAPI:
         assert r["reason"] == "quiet-hours"
 
     def test_mute_toggle_persists(self, http_client):
-        r = http_client.post("/proactive/api/mute", json={"kind": "today-load", "mute": True}).json()
-        assert r["ok"] is True
-        p = http_client.get("/proactive/api/policy").json()
-        assert p["kinds"]["today-load"]["mute"] is True
+        # Unmute explicitly rather than leaning on _restore_policy: the restore
+        # posts a snapshot that LACKS this kind, and /api/policy merges `kinds`
+        # per kind, so it cannot remove one. Without this the suite would leave a
+        # real kind permanently muted on the live daemon.
+        try:
+            r = http_client.post("/proactive/api/mute", json={"kind": "today-load", "mute": True}).json()
+            assert r["ok"] is True
+            p = http_client.get("/proactive/api/policy").json()
+            assert p["kinds"]["today-load"]["mute"] is True
+        finally:
+            http_client.post("/proactive/api/mute", json={"kind": "today-load", "mute": False})
 
     def test_mute_unknown_kind_rejected(self, http_client):
         r = http_client.post("/proactive/api/mute", json={"kind": "nonsense"}).json()

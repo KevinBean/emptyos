@@ -1,9 +1,17 @@
 """System app tests: Work Log — API + UI smoke.
 
-Every test that WRITES targets ``WORKLOG_TEST_DATE``, never ``date.today()``.
-A worklog day note is a real user file and ``/api/plan`` + ``/api/update``
-*replace* their section, so writing to today destroys whatever was written that
-morning. Read-only shape checks may still use today.
+Every test that WRITES targets ``WORKLOG_TEST_DATE``, never ``date.today()``,
+UNLESS the write is additive (append a bullet via ``/api/log``, flip one
+item's status) rather than the destructive ``/api/plan``/``/api/update``
+section-replace. A worklog day note is a real user file and those two routes
+*replace* their section, so a test on today's note would destroy whatever was
+written that morning — that's the one thing this file must never risk.
+Additive writes are safe: TEST_PREFIX-tagged, and covered by the leak
+backstop (.claude/rules/vault-operator.md) if a test forgets its own
+cleanup. ``TestWorklogBoards`` uses today deliberately, because ``list_all``'s
+90-day window is relative to ``date.today()`` and would never see an item
+logged at 1990's ``WORKLOG_TEST_DATE``. Read-only shape checks may always use
+today.
 """
 
 from uuid import uuid4
@@ -14,9 +22,30 @@ from helpers import (
     WORKLOG_EMPLOYER_TEST_DATE,
     WORKLOG_TEST_DATE,
     assert_dict_response,
+    assert_list_response,
     assert_ok,
+    requires_browser
 )
 from page_helpers import assert_no_js_errors, wait_briefly
+
+
+def _sibling_scripts(page) -> str:
+    """Concatenated source of every same-app `<script src>` the page loads.
+
+    A page's own JS may be inline or extracted to a sibling file; both are the
+    same global scope and the same served code. Tests that assert on the page's
+    script text must look at both, or they pin a file layout instead of a
+    behaviour.
+    """
+    srcs = page.eval_on_selector_all(
+        "script[src]", "els => els.map(e => e.getAttribute('src'))"
+    )
+    out = []
+    for s in srcs:
+        if "/pages/" not in s:      # skip /static/ platform bundles
+            continue
+        out.append(page.evaluate("u => fetch(u).then(r => r.text())", s))
+    return "\n".join(out)
 
 
 @pytest.mark.api
@@ -151,6 +180,7 @@ class TestWorklogAPI:
         for summary in data.get("days", [])[:5]:
             assert "hours" in summary, summary
 
+    @requires_browser()
     def test_timesheet_pdf_renders(self, http_client):
         resp = http_client.get("/worklog/api/timesheet.pdf?days=7", timeout=120)
         assert resp.status_code == 200, resp.text[:200]
@@ -166,6 +196,7 @@ class TestWorklogAPI:
         got = [r["year"] for r in data["years"]]
         assert got == sorted(got, reverse=True), "newest first"
 
+    @requires_browser()
     def test_timesheet_pdf_accepts_an_explicit_range(self, http_client):
         resp = http_client.get(
             "/worklog/api/timesheet.pdf?from=2024-01-01&to=2024-12-31", timeout=180)
@@ -177,6 +208,7 @@ class TestWorklogAPI:
         disposition = resp.headers.get("content-disposition", "")
         assert "timesheet-2024-01-01-to-2024-12-31.pdf" in disposition, disposition
 
+    @requires_browser()
     def test_timesheet_header_names_employers_from_the_window(self, http_client):
         """Not the configured default: an unfiltered FY2024 export was headed
         with the CURRENT employer while every day in it belonged to a previous
@@ -206,6 +238,34 @@ class TestWorklogAPI:
         export a different period than the one asked for."""
         data = assert_dict_response(
             http_client.get("/worklog/api/timesheet.pdf?from=not-a-date"))
+        assert data.get("error"), data
+
+    def test_export_csv_shape(self, http_client):
+        """Spreadsheet-native sibling of the PDF timesheet — one row per
+        work item, header + rows, correct download headers."""
+        resp = http_client.get(
+            "/worklog/api/export.csv?from=2024-01-01&to=2024-12-31", timeout=60)
+        assert resp.status_code == 200, resp.text[:200]
+        assert resp.headers.get("content-type", "").startswith("text/csv")
+        disposition = resp.headers.get("content-disposition", "")
+        assert "worklog-2024-01-01-to-2024-12-31.csv" in disposition, disposition
+        lines = resp.text.splitlines()
+        assert lines[0] == "date,weekday,employer,project,status,text", lines[0]
+        assert len(lines) > 1, "expected at least one data row for 2024"
+
+    def test_export_csv_empty_window_still_downloads(self, http_client):
+        """An empty window must still be a valid, openable CSV — a header-only
+        file with no rows silently discards the fact that nothing matched."""
+        resp = http_client.get(
+            "/worklog/api/export.csv?from=1900-01-01&to=1900-01-02", timeout=60)
+        assert resp.status_code == 200, resp.text[:200]
+        lines = resp.text.splitlines()
+        assert lines[0] == "date,weekday,employer,project,status,text"
+        assert "no work items" in lines[1]
+
+    def test_export_csv_rejects_a_malformed_bound(self, http_client):
+        data = assert_dict_response(
+            http_client.get("/worklog/api/export.csv?from=not-a-date"))
         assert data.get("error"), data
 
     def test_portable_export_shape(self, http_client):
@@ -352,7 +412,7 @@ class TestWorklogAPI:
             http_client.get(f"/worklog/api/day?date={WORKLOG_TEST_DATE}"))
         assert TEST_PREFIX + "end of day note" in day.get("update", "")
 
-    def test_update_draft_proposes_without_writing(self, http_client):
+    def test_update_draft_proposes_without_writing(self, http_client, require_llm):
         """Draft returns prose for review and must leave ## Update untouched."""
         proj = TEST_PREFIX + "DraftProj"
         assert_ok(http_client.post("/worklog/api/log", json={
@@ -392,6 +452,115 @@ class TestWorklogAPI:
         day = assert_dict_response(http_client.get(f"/worklog/api/day?date={WORKLOG_TEST_DATE}"))
         st = [it.get("status") for g in day["projects"] for it in g["items"] if it["text"] == text]
         assert st and st[0] == "complete"
+
+
+@pytest.mark.api
+class TestWorklogBoards:
+    """boards-as-view-layer integration (.claude/rules/boards-as-view-layer.md).
+
+    list_all()'s 90-day window is relative to date.today(), so — unlike the
+    rest of this file — these tests target today's real day note rather than
+    WORKLOG_TEST_DATE (which is 1990, always outside the window). Safe by the
+    same reasoning conftest.py documents for the leak backstop: /api/log and a
+    status flip are ADDITIVE (append a bullet / flip one emoji), never the
+    destructive /api/plan|/api/update section-replace this file otherwise
+    avoids on today. TEST_PREFIX-tagged so the leak backstop
+    (.claude/rules/vault-operator.md) can identify and strip it.
+    """
+
+    def test_preset_registered(self, http_client):
+        data = assert_dict_response(http_client.get("/boards/api/boards/worklog-boards"))
+        assert data.get("source", {}).get("app") == "worklog"
+        assert data.get("source", {}).get("method") == "list_all"
+
+    def test_list_all_includes_recent_item_with_composite_id(self, http_client):
+        text = TEST_PREFIX + "boards round trip item " + uuid4().hex[:8]
+        project = TEST_PREFIX + "BoardsProj"
+        logged = assert_dict_response(
+            http_client.post("/worklog/api/log",
+                             json={"project": project, "text": text, "status": "todo"}))
+        assert logged.get("ok"), logged
+        items = assert_list_response(http_client.get("/boards/api/boards/worklog-boards/items"))
+        mine = [r for r in items if r.get("project") == project and r.get("text") == text]
+        assert mine, "logged item not present in list_all"
+        row = mine[0]
+        assert row["status"] == "todo"
+        assert "\x1f" in row["id"], "composite id should carry the unit-separator delimiter"
+
+    def test_set_field_status_round_trip_via_boards_route(self, http_client):
+        from urllib.parse import quote
+
+        text = TEST_PREFIX + "boards set_field item " + uuid4().hex[:8]
+        project = TEST_PREFIX + "BoardsProj2"
+        assert_ok(http_client.post("/worklog/api/log",
+                                   json={"project": project, "text": text, "status": "todo"}))
+        items = assert_list_response(http_client.get("/boards/api/boards/worklog-boards/items"))
+        mine = [r for r in items if r.get("project") == project and r.get("text") == text]
+        assert mine
+        item_id = mine[0]["id"]
+        patched = assert_dict_response(http_client.patch(
+            f"/boards/api/boards/worklog-boards/items/{quote(item_id, safe='')}",
+            json={"status": "blocked"}))
+        assert patched.get("ok"), patched
+        day = assert_dict_response(http_client.get("/worklog/api/day"))
+        hit = [it for g in day["projects"] if g["project"] == project
+               for it in g["items"] if it["text"] == text]
+        assert hit and hit[0]["status"] == "blocked", hit
+
+
+@pytest.mark.api
+class TestWorklogTimer:
+    """Start/stop timer. Only the SAFE, non-destructive paths run here — the
+    timer always targets date.today() (no override), and the real write on
+    stop can't be pointed at WORKLOG_TEST_DATE. Every test ends by cancelling
+    (state-only, never touches the vault), so the global single-timer state
+    is never left running across test runs."""
+
+    def test_idle_shape(self, http_client):
+        assert_ok(http_client.post("/worklog/api/timer/cancel"))  # ensure clean slate
+        data = assert_dict_response(http_client.get("/worklog/api/timer"))
+        assert data.get("running") is False
+
+    def test_start_status_double_start_refused_then_cancel(self, http_client):
+        assert_ok(http_client.post("/worklog/api/timer/cancel"))
+        project = TEST_PREFIX + "TimerProj"
+        started = assert_dict_response(
+            http_client.post("/worklog/api/timer/start", json={"project": project}))
+        assert started.get("ok"), started
+        try:
+            status = assert_dict_response(http_client.get("/worklog/api/timer"))
+            assert status.get("running") is True
+            assert status.get("project") == project
+            again = assert_dict_response(
+                http_client.post("/worklog/api/timer/start", json={"project": "Other"}))
+            assert again.get("error"), "double-start should refuse"
+        finally:
+            cancelled = assert_dict_response(http_client.post("/worklog/api/timer/cancel"))
+            assert cancelled.get("ok"), cancelled
+        idle = assert_dict_response(http_client.get("/worklog/api/timer"))
+        assert idle.get("running") is False
+
+    def test_stop_when_not_running_refuses(self, http_client):
+        assert_ok(http_client.post("/worklog/api/timer/cancel"))
+        data = assert_dict_response(http_client.post("/worklog/api/timer/stop"))
+        assert data.get("error")
+
+
+@pytest.mark.api
+class TestWorklogCaptureIngest:
+    """Ingest lane over worklog-capture's queue — read-only shape check.
+    Degrades to {"available": False} when worklog-capture isn't installed
+    (.claude/rules/boards-as-view-layer.md-style soft dependency); tolerant
+    of either state so this test doesn't assume the sibling app is present."""
+
+    def test_pending_shape(self, http_client):
+        data = assert_dict_response(http_client.get("/worklog/api/capture/pending"))
+        assert "available" in data
+        if data["available"]:
+            assert isinstance(data.get("flagged"), list)
+            assert "unflagged_count" in data
+            assert "unflagged" not in data, \
+                "the full unflagged card list should be trimmed before reaching this endpoint"
 
 
 @pytest.mark.api
@@ -445,7 +614,13 @@ class TestWorklogUI:
     def test_companion_actions_registered(self, app_page, page_errors):
         # The page wires itself into the page-assistant sidebar.
         page = app_page("worklog")
-        src = page.content()
+        # The wiring lives in the page's own script, which may be inline OR in a
+        # sibling .js the page loads (.claude/rules/multi-module-apps.md §
+        # "Frontend counterpart"). Grepping page.content() alone therefore broke
+        # the moment worklog was split, while the wiring it checks had not
+        # changed. Fetch the siblings too, over HTTP, so this asserts what is
+        # actually SERVED rather than what happens to be inline today.
+        src = page.content() + _sibling_scripts(page)
         assert "EOS.registerActions" in src
         for name in ("wlSetStatus", "applyProse", "wlLogFromDraft", "getPageMetrics"):
             assert name in src, f"missing companion wiring: {name}"
@@ -468,8 +643,17 @@ class TestWorklogUI:
         wait_briefly(page)
 
         page.goto(page.url.split("#")[0] + "#" + WORKLOG_TEST_DATE)
-        wait_briefly(page)
         assert page.locator("#view-detail:not(.hidden)").count() == 1
+        # showDetail un-hides the view SYNCHRONOUSLY and only then awaits
+        # /day, and the boot IIFE awaits employers + projects before it even
+        # resolves the deep link. So "visible" is not "rendered", and a fixed
+        # 500ms sleep raced that chain — it went red the moment the page's JS
+        # moved to a sibling file and cost one more HTTP round-trip. Wait for
+        # the content itself; the assertion below is unchanged.
+        page.wait_for_function(
+            "() => (document.getElementById('detail-body')||{}).innerText.trim().length > 0",
+            timeout=15000,
+        )
         body = page.locator("#detail-body").inner_text()
         assert item in body, f"logged item missing from detail: {body[:200]}"
         assert WORKLOG_TEST_DATE in page.url  # hash-route deep link set

@@ -1,7 +1,7 @@
 """Knowledge Base — vault-resident, domain-general note browser.
 
 Every KB note carries `kb` in its `tags:` list and is typed by `kind`:
-  concept / formula / reference / clause / case / lesson / doc / moc
+  concept / formula / reference / clause / case / lesson / guide / doc / moc
 
 The corpus is queried by tag (not folder) and partitioned by `domain`
 (power-systems, cable-thermal, ...). Backlinks are computed from frontmatter
@@ -38,6 +38,7 @@ from . import guidelines as _guidelines
 from . import indexes as _indexes
 from . import fulltext as _fulltext
 from . import boards as _boards
+from . import figures as _kbfigures
 from . import notes as _notes
 from . import revisions as _revisions
 from . import reference_coverage as _reference_coverage
@@ -267,6 +268,10 @@ class KBApp(_FlipbookGenerationMixin, _FlipbookIOMixin, BaseApp):
     # ── Notes (extracted to notes.py) ──
     _docs_dir             = _notes._docs_dir
     _doc_path             = _notes._doc_path
+    # ── Figure receive (extracted to figures.py) ──
+    figure_asset_path     = _kbfigures.figure_asset_path
+    attach_figure         = _kbfigures.attach_figure
+
     _notes_dir            = _notes._notes_dir
     _note_path            = _notes._note_path
     # Boards-as-view-layer contract (read-only) — see boards.py.

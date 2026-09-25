@@ -19,10 +19,17 @@ from .prompts import PROMPTS
 SKILL_PLAYBOOK_MARKER = "--- BEGIN SKILL ---"
 
 
-def runtime_info_block(app, provider, is_native: bool) -> str:
+def runtime_info_block(
+    app, provider, is_native: bool, *, tool_count: int | None = None, coding: bool = True
+) -> str:
+    """``coding=False`` (the chat profile) drops the two repo-shaped blocks —
+    the CLAUDE.md excerpt and the repo map — which are coding doctrine, cost
+    tokens on every turn, and would steer a chat toward the codebase.
+    ``tool_count`` reports the profile's narrowed tool set, not the registry."""
     model = getattr(provider, "model", "") or ""
     kind = "native" if is_native else getattr(provider, "kind", "") or ""
-    tool_count = 0 if is_native else len(app._tools)
+    if tool_count is None:
+        tool_count = 0 if is_native else len(app._tools)
     lines = [
         "Runtime (factual, for self-reference — don't recite unprompted):",
         f"• provider: {provider.name}" + (f" ({kind} wire protocol)" if kind else ""),
@@ -31,12 +38,13 @@ def runtime_info_block(app, provider, is_native: bool) -> str:
         + (" (native agent manages its own tools)" if is_native else ""),
         "When the user asks which model you are, tell them this provider+model directly.",
     ]
-    for extra in (
-        app_catalog_block(app, is_native),
-        claude_md_block(app, is_native),
-        skills_info_block(app, is_native),
-        repo_map_block(app, is_native),
-    ):
+    blocks = [app_catalog_block(app, is_native)]
+    if coding:
+        blocks.append(claude_md_block(app, is_native))
+    blocks.append(skills_info_block(app, is_native))
+    if coding:
+        blocks.append(repo_map_block(app, is_native))
+    for extra in blocks:
         if extra:
             lines.append("")
             lines.append(extra)

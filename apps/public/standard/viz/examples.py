@@ -57,11 +57,16 @@ _VIZ_INTRO = (
 )
 
 
-async def _build_examples_block(self, examples: list[str], shape: str) -> str:
-    """Few-shot block for the named pattern notes, filtered to this shape's langs."""
-    from emptyos.sdk.pattern_examples import resolve_pattern_examples
+async def _build_examples_block(self, examples: list[str], shape: str) -> tuple[str, list[str]]:
+    """Few-shot block for the named pattern notes, filtered to this shape's langs.
+
+    Returns ``(block, resolved_slugs)``. The second half is what `_persist`
+    writes to the record's ``related:`` — only patterns the model was actually
+    shown, never merely the ones requested.
+    """
+    from emptyos.sdk.pattern_examples import resolve_pattern_examples_detail
     langs = self._SHAPE_LANGS.get(shape, {"javascript", "js", "html"})
-    return await resolve_pattern_examples(self, examples, langs=langs, intro=_VIZ_INTRO)
+    return await resolve_pattern_examples_detail(self, examples, langs=langs, intro=_VIZ_INTRO)
 
 
 @web_route("GET", "/api/examples")

@@ -54,6 +54,8 @@ __all__ = [
     "check_dry_run",
     "run_status",
     "detect_native_divergence",
+    "content_differs",
+    "list_bus_entries",
     "assemble_boot_file",
     "load_section",
     "load_rule",
@@ -636,7 +638,7 @@ def _build_import(
                 dest_skill = skills_dest_dir / item.name
                 if dest_skill.exists():
                     shutil.rmtree(dest_skill)
-                shutil.copytree(item, dest_skill)
+                shutil.copytree(item, dest_skill, ignore=_IGNORE_BUILD_ARTIFACTS)
 
     manifest["original_rules_dir"] = rel_posix(src_rules_dir, root)
     manifest["original_skills_dir"] = rel_posix(src_skills_dir, root)
@@ -655,6 +657,65 @@ def _build_import(
     manifest_path = bus_dir / "manifest.toml"
     atomic_write_text(manifest_path, dump_toml(manifest))
     log(f"[OK] Import complete. Manifest written to {rel_posix(manifest_path, root)}\n")
+
+
+def content_differs(a: Path, b: Path) -> bool:
+    """True when two files differ in CONTENT, ignoring line endings.
+
+    Comparing raw bytes reports a false positive whenever ``.gitattributes``
+    normalises one path and ``core.autocrlf`` rewrites the other: identical
+    text, different newline bytes. Measured on
+    ``.claude/skills/eos-session-wrapup/docs-sync-commands.md`` — same
+    normalised sha256, size delta exactly one byte per line — which blocked
+    every ripple in the workspace. The two remedies the CLI then offers are
+    both wrong for a phantom: re-import rewrites the store from native, and
+    ``--force`` discards real native edits to clear a difference that was never
+    there.
+
+    ``read_text`` opens in universal-newline mode, so *every* newline convention
+    arrives as ``\\n`` — CRLF, LF, and a lone CR alike. That is why the rules
+    branch below never produced this false positive and the skills branch did —
+    they had drifted into comparing different things, which is the reason both
+    now call this.
+
+    Falls back to bytes for anything that is not UTF-8 text: a skill may ship a
+    png or a zip fixture, where a newline is not a newline.
+    """
+    try:
+        return a.read_text(encoding="utf-8") != b.read_text(encoding="utf-8")
+    except ValueError:  # UnicodeDecodeError is a ValueError subclass
+        return a.read_bytes() != b.read_bytes()
+
+
+_BUILD_ARTIFACT_DIRS = {"__pycache__", ".pytest_cache", ".mypy_cache", ".ruff_cache"}
+
+# Keep compiled/cached junk out of the store in the first place. Without this
+# the import copies a skill's ``__pycache__`` into ``.agent-bus/`` and every
+# later ripple writes that stale bytecode back into ``.claude/skills/`` — which
+# is why the store carries .pyc files that git ignores and nobody authored.
+# _is_build_artifact below only silences the *report*; this is the cause.
+_IGNORE_BUILD_ARTIFACTS = shutil.ignore_patterns(*_BUILD_ARTIFACT_DIRS, "*.pyc", "*.pyo")
+
+
+def _is_build_artifact(rel: Path) -> bool:
+    """True for a compiled/cached file that is regenerated, never authored.
+
+    A ``.pyc`` under a skill's ``__pycache__`` is rewritten by whichever
+    interpreter last imported it, so the two sides differ for reasons no human
+    caused. Reporting that as a "native edit" blocks the ripple and offers only
+    the two remedies that are wrong for a phantom — re-import rewrites the store
+    from native, ``--force`` discards real native edits. Measured on
+    ``eos-ai-conversation-ingest``: 4 of its 25 canonical ``.pyc`` files differ
+    from their native counterpart, which was enough to block every ripple.
+
+    Takes the skill-RELATIVE path, never the absolute one. An absolute path
+    carries ancestors nobody here chose — ``run_transpile`` accepts an arbitrary
+    workspace root, and a checkout under a directory that happens to be named
+    ``__pycache__`` would match on that ancestor and silently skip *every* file
+    in the tree. Skipping fails open (no divergence reported, ripple proceeds,
+    native edits overwritten), so the wrong argument is not a cosmetic slip.
+    """
+    return any(part in _BUILD_ARTIFACT_DIRS for part in rel.parts) or rel.suffix == ".pyc"
 
 
 def detect_native_divergence(manifest: dict, root, bus_dir) -> list[str]:
@@ -677,8 +738,11 @@ def detect_native_divergence(manifest: dict, root, bus_dir) -> list[str]:
             if not (native.is_file() and native.suffix == ".md"):
                 continue
             canonical = rules_src_dir / native.name
-            if canonical.exists():
-                if native.read_text(encoding="utf-8") != canonical.read_text(encoding="utf-8"):
+            # .is_file(), not .exists(): a directory passes .exists() and then
+            # raises OSError out of content_differs, turning an actionable
+            # RippleError into a raw traceback.
+            if canonical.is_file():
+                if content_differs(native, canonical):
                     divergences.append(
                         f"native edit: {rel_posix(native, root)} differs from "
                         f"{rel_posix(canonical, root)}"
@@ -695,10 +759,12 @@ def detect_native_divergence(manifest: dict, root, bus_dir) -> list[str]:
                 if not canonical_file.is_file():
                     continue
                 rel = canonical_file.relative_to(canonical_skill)
-                native_file = native_skill / rel
-                if not native_file.exists():
+                if _is_build_artifact(rel):
                     continue
-                if canonical_file.read_bytes() != native_file.read_bytes():
+                native_file = native_skill / rel
+                if not native_file.is_file():
+                    continue
+                if content_differs(canonical_file, native_file):
                     divergences.append(
                         f"native edit: {rel_posix(native_file, root)} differs from canonical"
                     )
@@ -783,7 +849,7 @@ def run_transpile(workspace_path, *, force: bool = False, log=print) -> None:
                 dest_skill = skills_native / item.name
                 if dest_skill.exists():
                     shutil.rmtree(dest_skill)
-                shutil.copytree(item, dest_skill)
+                shutil.copytree(item, dest_skill, ignore=_IGNORE_BUILD_ARTIFACTS)
                 copied.add(item.name)
         for old in existing - copied:
             if old == "_retired":

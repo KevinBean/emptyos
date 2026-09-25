@@ -36,9 +36,12 @@ Deleting a 40 GB model cache the user is mid-project on costs more than the disk
 | `pixi` refuses to run: *"found pyproject.toml without tool.pixi section"* | pixi inspects the **current directory**. | `Push-Location $env:USERPROFILE` first. |
 | `Remove-Item` blocked by a path-safety hook on a harmless command | A format string like `"{0:N2}" -f ($b/1GB)` reads as a path `/1GB`. | Assign `$GB = 1073741824` and divide by the variable. |
 | DISM / pagefile / `vssadmin` fail | Not elevated. | These four need admin. Hand the user the exact commands rather than half-doing it. |
-| `Get-Item -Force 'C:\pagefile.sys'` returns nothing, so you conclude the file is gone | `Get-Item` opens a handle; locked system files refuse it. `Get-ChildItem -Force` only reads directory metadata and lists them fine. | Always enumerate reserve files with `Get-ChildItem`, never probe them with `Get-Item`. Concluding "the pagefile is gone" from this is a false negative. |
-| A resized pagefile still shows its old size on disk | `Win32_PageFileSetting` is the **pending** config; the file only shrinks on reboot. `Win32_PageFileUsage` reports the **running** allocation. | Report the setting and the on-disk size separately, and say a reboot is required. Never claim reclaimed space before the reboot. |
+| `Get-Item -Force 'C:\pagefile.sys'` returns nothing, so you conclude the file is gone | `Get-Item` opens a handle; locked system files refuse it. `Get-ChildItem -Force` only reads directory metadata and lists them fine. | Always enumerate reserve files with `Get-ChildItem`, never probe them with `Get-Item`. Concluding "the pagefile is gone" from this is a false negative. **The scanner itself had this bug until 2026-09-23**, missing ~75 GB of reserves on C: while listing D:'s — a rule written down is not a rule enforced. Verify with `-ListReservesOnly`, never by reading the source. |
+| A resized pagefile still shows its old size on disk | `Win32_PageFileSetting` is the **pending** config; `Win32_PageFileUsage` reports the **running** allocation. | Report the setting and the on-disk size separately. A reboot is needed to reach the new *initial* size — but "only shrinks on reboot" is too strong: measured 2026-09-23, `C:\pagefile.sys` walked 49.10 → 31.25 GB with no reboot once the cap was lowered, because Windows trims toward the new initial when memory pressure is low. Quote the on-disk size you just measured, never the one you predicted. |
+| `Set-CimInstance` on `Win32_PageFileSetting` appears to silently no-op | Almost always the two lines ran in the **wrong order**, so `$pf` was still `$null` — it raises `Cannot bind argument to parameter 'InputObject'`, it does not fail silently. Multi-line paste into PowerShell reorders easily (watch for a `>>` continuation prompt). | Use one line with no intermediate variable: `(Get-CimInstance Win32_PageFileSetting \| Where-Object Name -eq 'c:\pagefile.sys') \| Set-CimInstance -Property @{InitialSize=16384; MaximumSize=32768}`. Verify the **registry** (`PagingFiles`) changed before rebooting — a successful write shows immediately, reboot or not. |
 | Loose files in a drive root are missed entirely | Top-level scans enumerate *directories*. | Sum `Get-ChildItem <root> -File -Force` too — this found 63 GB at `D:\` (a pagefile, a 19.5 GB zip, a stray 10.9 GB archive). |
+| An NSIS/electron-builder uninstaller run with `/S` exits 0 having removed nothing | It copies itself to temp and runs from there, so the launcher returns **immediately**; the real work finishes seconds later. | Never read the result off the exit code. Re-check the paths after a few seconds. And it will **not** touch the app's user-data directory — that is usually where the bulk is (79 GB of models vs a 0.39 GB app, measured 2026-09-23). |
+| A second pagefile on another drive that nothing uses | Windows keeps the *file* when a pagefile is de-configured. | `PagingFiles` in `HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management` and `Win32_PageFileUsage` are the two authorities on what is live. A `pagefile.sys` named in neither is an orphan — 32 GB of one had sat on `D:\` since 2024. Deleting it needs elevation. |
 
 ## Phase 1 — Scan (tiered, never whole-drive)
 
@@ -47,7 +50,45 @@ Run the scanner:
 ```powershell
 powershell -File .claude/skills/eos-storage-cleanup/scan_storage.ps1
 powershell -File .claude/skills/eos-storage-cleanup/scan_storage.ps1 -Drives C,D -Top 20 -DrillTop 6
+
+# Two diagnostics. Both resolve, print, and exit before any walking or any
+# file write; stdout carries the payload and nothing else.
+powershell -File .claude/skills/eos-storage-cleanup/scan_storage.ps1 -Drives C,D -ListDrivesOnly
+powershell -File .claude/skills/eos-storage-cleanup/scan_storage.ps1 -ListReservesOnly
 ```
+
+`-Drives` accepts `C`, `c`, `C:`, `C:\` and the comma-joined `"C,D"` that a
+`-File` invocation actually delivers. **Two distinct aborts, both exit 2**: a
+letter matching no drive, and `-Drives` supplied while naming no letter at all
+(`","`, `":"`, `""`, or a shell variable that expanded to nothing). The second
+is not pedantry — an empty resolve used to read as "no filter requested", so the
+script scanned *every* drive at exit 0, which is the vacuous pass of
+`.claude/rules/audits.md` § Failure mode 3 wearing a different input.
+
+Only **local disks** are scanned (`Win32_LogicalDisk DriveType=3`).
+`Get-PSDrive -PSProvider FileSystem` also returns mapped network and SUBST
+drives, and a default run would have `-Recurse`d a network share — the
+whole-drive walk this script's own header forbids.
+
+Pinned by `tests/test_unit_storage_scan_args.py`, whose mutation table is
+committed at `tests/mutations/storage_scan_args.py` so the claim is
+**re-runnable from a clone** rather than asserted:
+
+```bash
+python .claude/skills/eos-mutation-verify/run_mutations.py tests/mutations/storage_scan_args.py
+```
+
+11 mutations, all red-proven (2026-09-23). That file also records the two
+behaviours it could **not** prove and why — an unproven row omitted from the
+table is how "all red-proven" becomes a lie by arithmetic.
+
+> The first version of the reserve test **grepped the source** for
+> `Get-ChildItem`. The explanatory comment beside the code contains that string,
+> so deleting the entire reserve pipeline kept the test green — and a mutation
+> pass reported RED only because the mutation was a *textual* revert that
+> reintroduced the searched-for literal. `audits.md` names this exactly: stop
+> reading the file and execute the thing. `-ListReservesOnly` exists so the test
+> can.
 
 It writes a markdown report to the scratchpad and prints a summary. Three findings-classes come out of it, and the **third is the one hand-rolled scans always miss**.
 

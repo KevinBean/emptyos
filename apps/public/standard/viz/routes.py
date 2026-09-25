@@ -28,6 +28,8 @@ if TYPE_CHECKING:
 #   api_list             = _routes.api_list
 #   api_get              = _routes.api_get
 #   api_html             = _routes.api_html
+#   api_source           = _routes.api_source
+#   _artifact_headers    = _routes._artifact_headers
 #   api_delete           = _routes.api_delete
 #   api_export_mp4       = _routes.api_export_mp4
 #   api_video            = _routes.api_video
@@ -37,6 +39,12 @@ if TYPE_CHECKING:
 #   _output_review_enabled = _routes._output_review_enabled
 #   cli_list             = _routes.cli_list
 #   cli_generate         = _routes.cli_generate
+#   api_restore            = _routes.api_restore
+#   api_version_html       = _routes.api_version_html
+#   api_versions           = _routes.api_versions
+#   deliver_work           = _routes.deliver_work
+#   deliver_work_infographic = _routes.deliver_work_infographic
+#   iterate                = _routes.iterate
 # Adding a new method here? Add a matching binding line in app.py.
 # ─────────────────────────────────────────────────────────────────────
 
@@ -77,6 +85,7 @@ async def api_shapes(self, request) -> dict:
             "min_ability": SHAPE_META[s]["min_ability"],
             "supports_edit": self._shape_supports_edit(s),
             "supports_record": self._shape_supports_record(s),
+            "supports_figure": self._shape_supports_figure(s),
         }
         for s in PRESETS
         if s in SHAPE_META
@@ -89,6 +98,12 @@ async def api_shapes(self, request) -> dict:
         "edit_enabled": self._edit_enabled(),
         "record_enabled": self._html_record_enabled(),
         "embed_enabled": self._embed_enabled(),
+        "figure_enabled": self._figure_enabled(),
+        # math-animation is a separate pipeline, not a PRESETS entry (see
+        # math_animation.py's module docstring) — reported alongside the
+        # other *_enabled flags so the picker can show/gate its option
+        # without a second round-trip.
+        "math_animation_enabled": self._math_animation_enabled(),
     }
 
 
@@ -283,7 +298,18 @@ async def api_html(self, request):
     """
     from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 
+    from emptyos.sdk.utils import path_segment_error
+
     rid = request.path_params.get("rid", "")
+    # The id becomes a directory name. A path param never contains "/", but on
+    # Windows a BACKSLASH traverses just as well and is not excluded — so an
+    # unguarded id here was a real escape from the outputs tree, not a
+    # theoretical one. In-band error (not the raising helper): this route
+    # already answers a merely-unknown id with a body, and one user mistake
+    # must not wear two shapes.
+    bad = path_segment_error(rid, "artifact id")
+    if bad:
+        return JSONResponse({"ok": False, "error": bad}, status_code=400)
     html_path = self._record_dir(rid) / "scene.html"
     if not html_path.exists():
         return JSONResponse({"ok": False, "error": "not found"}, status_code=404)
@@ -293,13 +319,84 @@ async def api_html(self, request):
         return FileResponse(
             html_path,
             media_type="text/html",
-            headers={"Cache-Control": "no-store"},
+            headers=_artifact_headers(self),
         )
 
     html = html_path.read_text(encoding="utf-8")
     shim = '<script src="/static/eos-edit-shim.js"></script>'
     html = html.replace("</body>", shim + "</body>", 1) if "</body>" in html else html + shim
-    return HTMLResponse(html, headers={"Cache-Control": "no-store"})
+    return HTMLResponse(html, headers=_artifact_headers(self))
+
+
+def _artifact_headers(self) -> dict:
+    """Headers for a served artifact — model-written HTML on our own origin.
+
+    An artifact reached through the chat panel or a note embed is framed with
+    ``sandbox="allow-scripts"`` (``EOS_UI.sandboxFrame``). This is the other
+    door: opening ``/viz/api/html/<rid>`` as a top-level page — an "open in new
+    tab" link, a bookmark, a redirect, "open frame in new tab" — runs the same
+    scripts in the daemon's real origin. ``Content-Security-Policy: sandbox
+    allow-scripts`` gives the document an opaque origin either way: scripts
+    still run, storage and same-origin READS do not.
+
+    What it does not do, and should not be read as doing: an opaque origin
+    stops a script reading a response, not issuing a request. A simple POST is
+    not preflighted, so in ``network.mode = "local"`` — where there is no
+    credential to withhold and every ``/api/`` route is open to the machine —
+    a blind write is still reachable. That is a CSRF question for the daemon,
+    not something a per-response header can close (see the local-mode note in
+    the B4 devlog).
+
+    Applies to both routes that serve artifact HTML — this one and
+    ``api_version_html``. Two of them is exactly how the version route came to
+    be served with no CSP at all.
+
+    Behind ``[apps.viz] feature.html-csp-sandbox.enabled`` because it is a real
+    behaviour change for anything that opens an artifact directly and expects
+    same-origin powers; off, the response is byte-for-byte what it was.
+    Shape copied from cockpit/serving.py and markitup, which reached the same
+    header independently.
+    """
+    headers = {"Cache-Control": "no-store"}
+    if self.app_config("feature.html-csp-sandbox.enabled", False):
+        headers["Content-Security-Policy"] = "sandbox allow-scripts"
+        headers["X-Content-Type-Options"] = "nosniff"
+    return headers
+
+
+@web_route("GET", "/api/source/{rid}")
+async def api_source(self, request):
+    """The artifact's HTML as TEXT, for a "Source" tab beside the preview.
+
+    Deliberately not ``text/html``: this endpoint exists so a reader can look
+    at the markup, and serving it as html would be a second way to run it —
+    the one ``_artifact_headers`` above is closing.
+
+    ``?v=<n>`` reads a ring version instead of the live render, so a Source tab
+    shows the markup of whatever the Preview beside it is showing. Without it
+    the two panes silently disagree the moment a user picks an old version.
+    """
+    from fastapi.responses import JSONResponse, PlainTextResponse
+
+    from emptyos.sdk.utils import path_segment_error
+
+    rid = request.path_params.get("rid", "")
+    bad = path_segment_error(rid, "artifact id")
+    if bad:
+        return JSONResponse({"ok": False, "error": bad}, status_code=400)
+    version = str(request.query_params.get("v") or "").strip()
+    if version and not version.isdigit():
+        return JSONResponse({"ok": False, "error": "version must be a number"}, status_code=400)
+    if version:
+        html_path = self._versions_dir(rid) / version / "scene.html"
+    else:
+        html_path = self._record_dir(rid) / "scene.html"
+    if not html_path.exists():
+        return JSONResponse({"ok": False, "error": "not found"}, status_code=404)
+    return PlainTextResponse(
+        html_path.read_text(encoding="utf-8"),
+        headers={"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"},
+    )
 
 
 @web_route("POST", "/api/export-mp4")
@@ -447,3 +544,65 @@ async def cli_generate(self, prompt: str, shape: str = "3d-scene") -> None:
     """eos viz generate "<prompt>" [shape]"""
     result = await self.generate(prompt, shape=shape)
     print(json.dumps(result, indent=2))
+
+
+@web_route("GET", "/api/versions/{rid}")
+async def api_versions(self, request) -> dict:
+    """Ring contents for an artifact, newest first.
+
+    Empty until something has been overwritten — a freshly generated artifact
+    has no prior render to keep, so an empty list is the honest answer, not an
+    error.
+    """
+    rid = request.path_params.get("rid", "")
+    if not self.vault_get_properties(self._rel_record(rid)):
+        return {"ok": False, "error": f"no artifact with id '{rid}'"}
+    return {"ok": True, "id": rid, "versions": self.list_versions(rid)}
+
+
+@web_route("GET", "/api/versions/{rid}/{n}")
+async def api_version_html(self, request):
+    """Serve one ring version's HTML, for previewing before restoring.
+
+    The SAME model-written HTML as ``api_html``, so it carries the same
+    headers. It had its own hardcoded header dict until 2026-09-12, which
+    meant an artifact opened through the version picker was served with no
+    CSP at all — the one route the flag was supposed to cover, missed.
+    """
+    from fastapi.responses import FileResponse, JSONResponse
+
+    from emptyos.sdk.utils import path_segment_error
+
+    rid = request.path_params.get("rid", "")
+    bad = path_segment_error(rid, "artifact id")
+    if bad:
+        return JSONResponse({"ok": False, "error": bad}, status_code=400)
+    raw = str(request.path_params.get("n", ""))
+    if not raw.isdigit():
+        return JSONResponse({"ok": False, "error": "version must be a number"}, status_code=400)
+    path = self._versions_dir(rid) / raw / "scene.html"
+    if not path.exists():
+        return JSONResponse({"ok": False, "error": "not found"}, status_code=404)
+    return FileResponse(path, media_type="text/html", headers=_artifact_headers(self))
+
+
+@web_route("POST", "/api/restore")
+async def api_restore(self, request) -> dict:
+    """Put a ring version back as the live render.
+
+    Snapshots the render it replaces first, so a mistaken restore is itself
+    undoable — this must never become the destructive op the ring prevents.
+    """
+    data = await request.json()
+    rid = str(data.get("id") or "").strip()
+    n = data.get("n")
+    if not rid:
+        return {"ok": False, "error": "id required"}
+    try:
+        n = int(n)
+    except (TypeError, ValueError):
+        return {"ok": False, "error": "n must be a version number"}
+    res = self.restore_version(rid, n)
+    if res.get("ok"):
+        await self.emit("viz:restored", {"id": rid, "version": n})
+    return res

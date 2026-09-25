@@ -36,6 +36,45 @@ def _flatten_content(content) -> str:
     return str(content or "")
 
 
+def turn_display_marks(new_messages: list, typed: str) -> list[tuple[str, str]]:
+    """``(display_text, origin)`` for each message one turn appended.
+
+    What the model saw and what the user typed differ in two ways, and a
+    replayed transcript must show the user's side, not the model's:
+
+    - The turn's opening user message may carry context the server prepended
+      (the orient block, episodic recall) or a skill playbook a ``/skill`` slash
+      expanded into. The stored content must stay exactly what the model saw —
+      rewriting a past turn would break the provider's prefix cache
+      (.claude/rules/prompt-prefix-cache.md) — so the typed text is recorded
+      beside it: ``display_text`` = ``typed`` whenever the two differ.
+    - Later user-role messages with plain-string content are the loop's own
+      nudges (plan reminder, refactor-verify gate): ``origin`` = ``"system"``,
+      so a page can show them as a notice instead of words the user said.
+      User messages with block content are tool-result carriers: unmarked.
+
+    Relies on the loop appending the user's message first (``run_turn`` /
+    ``run_native_turn`` both do).
+    """
+    marks: list[tuple[str, str]] = []
+    opened = False
+    for m in new_messages:
+        role = m.get("role") if isinstance(m, dict) else None
+        content = m.get("content") if isinstance(m, dict) else None
+        if role == "user" and not opened:
+            opened = True
+            # Compared as text: an opening message with images is a part list
+            # (turn_inputs.py), and its text part carries the attached
+            # documents — the typed words are still what the user said.
+            shown = typed if typed and _flatten_content(content) != typed else ""
+            marks.append((shown, "user"))
+        elif role == "user" and isinstance(content, str):
+            marks.append(("", "system"))
+        else:
+            marks.append(("", ""))
+    return marks
+
+
 class SessionMixin:
     """Session storage + archive + edit-stack for AgentApp.
 
@@ -51,12 +90,18 @@ class SessionMixin:
         name: str = "",
         provider: str = "",
         initial_user_message: str = "",
+        profile: str = "",
+        project_id: str = "",
     ) -> dict:
         default_provider = provider or self._default_provider_name()
-        session = self._sessions.create_session(
-            name=name,
-            extras={"provider": default_provider},
-        )
+        extras = {"provider": default_provider}
+        # Only a non-default profile is written, so /agent/'s sessions keep the
+        # legacy blank value — profiles.profile_for("") is coding.
+        if profile and profile != "coding":
+            extras["profile"] = profile
+        if project_id:
+            extras["project_id"] = project_id
+        session = self._sessions.create_session(name=name, extras=extras)
         initial = (initial_user_message or "").strip()
         if initial:
             self._sessions.append_message(
@@ -73,6 +118,54 @@ class SessionMixin:
     def _get_session(self, sid: str) -> dict | None:
         return self._sessions.get_session(sid)
 
+    # ── Provider kinds (a conversation's storage format) ──────────
+
+    @staticmethod
+    def _provider_kind_of(provider) -> str | None:
+        """``native`` for a natively-agentic provider, its wire kind
+        (anthropic / openai / json) for a tool-capable one, ``None`` otherwise."""
+        from emptyos.capabilities.providers._tool_capable import (
+            NativelyAgenticProvider,
+            ToolCapableProvider,
+        )
+
+        if isinstance(provider, NativelyAgenticProvider):
+            return "native"
+        if isinstance(provider, ToolCapableProvider):
+            return getattr(provider, "kind", "") or "openai"
+        return None
+
+    def _provider_kind(self, name: str) -> str | None:
+        """Kind of the provider named ``name``; ``None`` when no agent-capable
+        provider has that name (strict: never substitutes another)."""
+        if not name:
+            return None
+        return self._provider_kind_of(self._resolve_provider(name, strict=True))
+
+    def _chat_default_provider(self) -> str:
+        """The provider a new chat gets when none is named, or ``""`` when no
+        provider can drive a chat at all.
+
+        The usual default when our own tool loop can drive it; else the first
+        tool-capable LOCAL provider in the chain (a chat reads the vault, and
+        rule 19 keeps vault content off cloud models by default); else the
+        first tool-capable cloud one — whose every turn still passes the
+        cloud-consent gate. A native default (claude-cli) runs its own tools,
+        which a chat must not.
+        """
+        preferred = self._default_provider_name()
+        if self._provider_kind(preferred) not in (None, "native"):
+            return preferred
+        try:
+            chain = self.kernel.capability("think").all_providers()
+        except Exception:
+            chain = []
+        drivable = [p for p in chain if self._provider_kind_of(p) not in (None, "native")]
+        for p in drivable:
+            if not getattr(p, "is_cloud", False):
+                return p.name
+        return drivable[0].name if drivable else ""
+
     def _append_message(self, sid: str, role: str, content, provider_kind: str):
         self._sessions.append_message(
             sid,
@@ -81,11 +174,16 @@ class SessionMixin:
             extras={"provider_kind": provider_kind},
         )
 
-    def _persist_message(self, sid: str, message: dict, provider_kind: str):
+    def _persist_message(
+        self, sid: str, message: dict, provider_kind: str, display_text: str = "", origin: str = ""
+    ):
         """Persist the FULL message dict (role + content + any provider-specific
         fields like `tool_calls` or `tool_call_id`). Needed because OpenAI requires
         matching tool_calls ↔ tool messages across turn boundaries — dropping those
         fields on save causes a 400 on the next user turn.
+
+        ``display_text`` / ``origin`` are display metadata in their own columns
+        (see ``turn_display_marks``); the provider never sees them.
         """
         role = message.get("role", "")
         rest = {k: v for k, v in message.items() if k != "role"}
@@ -93,8 +191,13 @@ class SessionMixin:
             sid,
             role,
             rest,
-            extras={"provider_kind": provider_kind},
+            extras={"provider_kind": provider_kind, "display_text": display_text, "origin": origin},
         )
+
+    def _persist_turn(self, sid: str, new_messages: list, provider_kind: str, typed: str) -> None:
+        """Persist one turn's appended messages with their display marks."""
+        for m, (shown, origin) in zip(new_messages, turn_display_marks(new_messages, typed)):
+            self._persist_message(sid, m, provider_kind, display_text=shown, origin=origin)
 
     def _load_provider_messages(self, sid: str) -> list[dict]:
         return self._sessions.load_provider_messages(sid)

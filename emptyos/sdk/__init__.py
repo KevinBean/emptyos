@@ -80,7 +80,7 @@ from emptyos.sdk.schema import (
     to_jsonschema,
     validate,
 )
-from emptyos.sdk.scoring import lcs_score, word_accuracy
+from emptyos.sdk.scoring import alignment_to_events, lcs_score, word_accuracy
 from emptyos.sdk.session import HistoryStore, SessionStore
 from emptyos.sdk.srs import (
     due_items as srs_due_items,
@@ -89,6 +89,10 @@ from emptyos.sdk.srs import (
     review_stats as srs_review_stats,
 )
 from emptyos.sdk.srs import (
+    fsrs_schedule,
+    quality_to_rating,
+    repair_legacy_schedule,
+    score_to_rating,
     sm2_schedule,
 )
 from emptyos.sdk.stats import daily_counts, practice_stats, progress_percent, rolling_average
@@ -106,6 +110,7 @@ from emptyos.sdk.tabular import (
     query_rows,
 )
 from emptyos.sdk.time_series import TimeSeriesCounter, days_ago_utc, today_utc
+from emptyos.sdk.toolchain import probe_binary_version, resolve_binary
 from emptyos.sdk.utils import (
     CAPTURE_LINE_RE,
     DONE_PATTERN,
@@ -118,11 +123,15 @@ from emptyos.sdk.utils import (
     config_flag,
     ensure_column,
     extract_due,
+    csv_download_response,
     csv_to_rows,
+    sniff_columns,
+    read_upload_text,
     extract_wikilinks,
     fm_list,
     fm_scalar,
     fm_str,
+    fmt_num,
     format_markdown_table,
     load_json,
     new_id,
@@ -133,18 +142,21 @@ from emptyos.sdk.utils import (
     parse_frontmatter,
     parse_json_fence,
     parse_llm_json,
+    parse_llm_svg,
     parse_markdown_table,
     rows_to_csv,
     save_json,
     set_frontmatter_field,
     slug_from_path,
     slugify,
+    slugify_unicode,
     first_prose_line,
     strip_frontmatter,
     strip_markdown,
     task_tier,
     today_iso,
     unique_slug,
+    is_archived,
 )
 from emptyos.sdk.music_library import (
     AUDIO_EXTS,
@@ -170,6 +182,7 @@ from emptyos.sdk.web_search import (
     SourceFencer,
     arxiv_search,
     clean_page_text,
+    crossref_lookup,
     ddg_search,
     github_search,
     hn_search,
@@ -191,6 +204,7 @@ from emptyos.sdk.deep_loop import (
     deepen,
 )
 from emptyos.sdk.worktree import ensure_worktree, git_run, py_compile_files
+from emptyos.sdk.google_auth import PermanentAuthLatch, is_permanent_auth_error
 
 __all__ = [
     "DONE_PATTERN",
@@ -260,17 +274,24 @@ __all__ = [
     "parse_frontmatter",
     "parse_json_fence",
     "parse_llm_json",
+    "parse_llm_svg",
     "set_frontmatter_field",
     "slug_from_path",
     "slugify",
+    "slugify_unicode",
     "unique_slug",
+    "is_archived",
     "strip_frontmatter",
     "WIKILINK_RE",
     "extract_wikilinks",
     "parse_markdown_table",
     "format_markdown_table",
+    "fmt_num",
     "rows_to_csv",
     "csv_to_rows",
+    "csv_download_response",
+    "sniff_columns",
+    "read_upload_text",
     "QueryUnavailable",
     "duckdb_available",
     "query_rows",
@@ -292,6 +313,7 @@ __all__ = [
     "JsonRecordStore",
     "lcs_score",
     "word_accuracy",
+    "alignment_to_events",
     "practice_stats",
     "rolling_average",
     "progress_percent",
@@ -311,12 +333,18 @@ __all__ = [
     "ColumnType",
     "ColumnTypeRegistry",
     "formulas",
+    "fsrs_schedule",
+    "quality_to_rating",
+    "repair_legacy_schedule",
+    "score_to_rating",
     "sm2_schedule",
     "srs_due_items",
     "srs_review_stats",
     "TimeSeriesCounter",
     "today_utc",
     "days_ago_utc",
+    "probe_binary_version",
+    "resolve_binary",
     "NDJSON_MEDIA",
     "ndjson_response",
     "stream_claude_run_events",
@@ -349,6 +377,8 @@ __all__ = [
     "git_run",
     "ensure_worktree",
     "py_compile_files",
+    "PermanentAuthLatch",
+    "is_permanent_auth_error",
     "normalize_run_status",
     "RunCenterMixin",
     "RUN_PHASES",
@@ -359,6 +389,7 @@ __all__ = [
     "arxiv_search",
     "semantic_scholar_search",
     "openalex_search",
+    "crossref_lookup",
     "wikipedia_search",
     "site_label",
     "is_http_url",

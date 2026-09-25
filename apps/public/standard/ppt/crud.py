@@ -47,6 +47,7 @@ if TYPE_CHECKING:
 #   api_delete   = _crud.api_delete
 #   api_save     = _crud.api_save
 #   api_preview  = _crud.api_preview
+#   api_update_fields = _crud.api_update_fields
 # Adding a new method here? Add a matching binding line in app.py.
 # ─────────────────────────────────────────────────────────────────────
 

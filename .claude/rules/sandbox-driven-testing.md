@@ -1,3 +1,11 @@
+---
+paths:
+  - "plugins/sandbox-pool/**"
+  - "apps/extension/dev/sandbox/**"
+  - "tests/fixtures/sandbox/**"
+  - ".claude/skills/eos-sandbox-verify/**"
+---
+
 # Sandbox-Driven Testing — Claude's restart loop without touching `:9000`
 
 Companion to `.claude/rules/sandbox-usage.md` (the HTTP API spec) and
@@ -46,13 +54,25 @@ session binding or not.)
 > habit "to load my code edit" — the member reboots from its **base config**
 > (`think = ["human"]`) and every `think()` silently fails with
 > `No available provider for capability 'think'` (and `generate`/`summarize`
-> return `ok: False`). When you passed `think_providers` (or the member was
-> dead), the lease *already* restarted with fresh code, so a second restart
-> is both redundant and harmful. If you genuinely need to restart later (you
-> leased an already-running member and then edited code), re-apply the override
-> by **re-issuing the lease with `think_providers`** — a bare `/restart` won't
-> carry it. Always re-confirm with the `/api/capabilities` check below after
-> any restart.
+> return `ok: False`). When the member was dead, or `think_providers` changed
+> its providers, the lease *already* restarted with fresh code, so a second
+> restart is both redundant and harmful. If you genuinely need to restart later
+> (you leased an already-running member and then edited code), re-apply the
+> override by **re-issuing the lease with `think_providers`** — a bare
+> `/restart` won't carry it. Always re-confirm with the `/api/capabilities`
+> check below after any restart.
+
+> **Gotcha — a lease can hand you a live member without restarting it.** If
+> the member is already running and its toml already lists the `think_providers`
+> you pass, the override is a no-op and **nothing restarts** — so an edit to the
+> member's `emptyos.toml` (a feature flag) or to Python made after that process
+> started is **not loaded**. Measured 2026-09-21: a flag added to
+> `sandbox-9002/emptyos.toml` never reached the running member, and a whole
+> verification batch ran with the gate under test switched off. Before trusting
+> a run, compare the member's process start time with your last edit
+> (`Get-NetTCPConnection -LocalPort <port> -State Listen` → `Get-Process -Id … |
+> Select StartTime`); if the process is older, restart it and re-check
+> `/api/capabilities`.
 
 ```
 GET  <host>/api/capabilities | jq '.think[].name'
@@ -180,25 +200,35 @@ Everything else: use the sandbox.
 
 ## Quick reference
 
+The sandbox API is an app of the **main** daemon, so in `network.mode = "private"`
+every `/sandbox/api/*` call needs the bearer token. The member's own routes do
+not. Omitting it fails badly rather than loudly: `curl -s` swallows the
+`{"error":"unauthorized"}`, `jq -r .host` then yields the string `null`, and
+every later call in the script reports something that looks like a broken route.
+
 ```
 # Session bootstrap
-status=$(curl -s http://127.0.0.1:9000/sandbox/api/status)
-lease=$(curl -s -X POST http://127.0.0.1:9000/sandbox/api/lease \
+TOK=$(python -c "import tomllib;print(tomllib.load(open('emptyos.toml','rb'))['network'].get('auth_token',''))")
+A="Authorization: Bearer $TOK"
+
+status=$(curl -s -H "$A" http://127.0.0.1:9000/sandbox/api/status)
+lease=$(curl -s -X POST -H "$A" http://127.0.0.1:9000/sandbox/api/lease \
   -H 'Content-Type: application/json' \
   -d '{"purpose":"my-test","ttl_s":1800,"think_providers":["openai-mini"]}')
 host=$(echo "$lease" | jq -r .host)
 lease_id=$(echo "$lease" | jq -r .lease_id)
+[ "$host" = "null" ] && { echo "lease failed: $lease"; exit 1; }
 python tests/fixtures/sandbox/orgs_marketing.py "$host"
 
 # Edit cycle
 # (edit files in D:/emptyos/...)
-curl -s -X POST "http://127.0.0.1:9000/sandbox/api/lease/$lease_id/restart"
-curl -s "$host/orgs/api/orgs"
+curl -s -X POST -H "$A" "http://127.0.0.1:9000/sandbox/api/lease/$lease_id/restart"
+curl -s "$host/orgs/api/orgs"          # the member — no auth header
 
 # Session end
-curl -s -X DELETE "http://127.0.0.1:9000/sandbox/api/lease/$lease_id"
+curl -s -X DELETE -H "$A" "http://127.0.0.1:9000/sandbox/api/lease/$lease_id"
 ```
 
 Reference impl: `plugins/sandbox-pool/plugin.py` (lease + override +
-restart), `apps/sandbox/app.py` (HTTP routes),
+restart), `apps/extension/dev/sandbox/app.py` (HTTP routes),
 `tests/fixtures/sandbox/orgs_marketing.py` (first fixture).

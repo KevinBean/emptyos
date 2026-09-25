@@ -21,7 +21,7 @@ from emptyos.sdk.formulas import format_result
 from emptyos.sdk.utils import safe_note_filename
 from emptyos.sdk.vault_library import VaultLibrary
 
-from engines.sheet import Grid, parse_table, recompute, serialize_table
+from engines.sheet import Grid, parse_table, recompute, serialize_table, to_a1
 
 MAX_DIM = 50  # light sheet — cap rows/cols so the markdown table stays sane
 
@@ -174,6 +174,78 @@ class SheetApp(BaseApp):
             "computed_grid": _computed_display(grid),
         }
 
+    @web_route("POST", "/api/sheets/{id}/cells")
+    async def api_set_cells(self, request):
+        """Write a rectangle of cells in one read-modify-write.
+
+        Backs paste-a-range. Doing it as N×M calls to ``/cell`` would be N×M
+        round trips, each re-parsing and re-serialising the whole markdown
+        table, and would interleave with any other writer between cells — so a
+        half-applied paste would be the normal outcome under contention rather
+        than the rare one.
+
+        Grows the sheet to fit, capped at ``MAX_DIM``. Anything past the cap is
+        dropped and REPORTED (``clipped``) rather than silently truncated —
+        a silent truncation reads as "it pasted" when it did not.
+        """
+        filename = request.path_params.get("id", "")
+        if not filename.endswith(".md"):
+            filename += ".md"
+        data = await self.safe_json(request)
+        anchor = (data.get("anchor") or "").strip().upper()
+        rows = data.get("rows")
+        if not anchor:
+            return {"error": "anchor is required"}
+        if not isinstance(rows, list) or not rows:
+            return {"error": "rows must be a non-empty list of lists"}
+        try:
+            a_col, a_row = _parse_cell(anchor)
+        except ValueError:
+            return {"error": f"bad cell reference: {anchor}"}
+
+        # An anchor past the cap can never receive anything. Refusing here beats
+        # falling through: the growth below would otherwise expand the sheet to
+        # MAX_DIM and then clip every single cell, leaving the user with a much
+        # bigger sheet and nothing pasted into it.
+        if a_col >= MAX_DIM or a_row > MAX_DIM:
+            return {"error": f"anchor {anchor} is outside the {MAX_DIM}x{MAX_DIM} limit"}
+
+        async with self.write_lock(f"sheet:{filename}"):
+            item, grid = self._load_grid(filename)
+            if not item:
+                return {"error": "sheet not found"}
+
+            need_rows = a_row + len(rows) - 1
+            need_cols = a_col + max(len(r) if isinstance(r, list) else 0 for r in rows)
+            grid.rows = max(grid.rows, min(MAX_DIM, need_rows))
+            grid.cols = max(grid.cols, min(MAX_DIM, need_cols))
+
+            written, clipped = 0, 0
+            for dr, row in enumerate(rows):
+                if not isinstance(row, list):
+                    continue
+                for dc, val in enumerate(row):
+                    c, r = a_col + dc, a_row + dr
+                    if c >= grid.cols or r > grid.rows:
+                        clipped += 1
+                        continue
+                    grid.set(to_a1(c, r), str(val if val is not None else ""))
+                    written += 1
+            self._save_body(filename, grid)
+
+        await self.emit("sheet:cells_changed", {
+            "id": filename, "anchor": anchor, "written": written,
+        })
+        return {
+            "ok": True,
+            "anchor": anchor,
+            "written": written,
+            "clipped": clipped,
+            "rows": grid.rows,
+            "cols": grid.cols,
+            "computed_grid": _computed_display(grid),
+        }
+
     @web_route("POST", "/api/sheets/{id}/resize")
     async def api_resize(self, request):
         filename = request.path_params.get("id", "")
@@ -208,6 +280,87 @@ class SheetApp(BaseApp):
         self._reindex(filename)
         await self.emit("sheet:deleted", {"id": filename})
         return {"ok": True}
+
+    @web_route("POST", "/api/sheets/{id}/import/preview")
+    async def api_import_preview(self, request):
+        """Parse pasted/uploaded CSV and report shape — writes nothing.
+
+        Flagged in gap analysis (sheet-csv-import): export existed with no
+        way back in. Follows the propose/preview/confirm recipe
+        (.claude/rules/proposed-action.md) — an impact-shaped preview since
+        there's no per-row validation to fail (a cell holds any string).
+        """
+        import csv
+        import io
+
+        filename = request.path_params.get("id", "")
+        if not filename.endswith(".md"):
+            filename += ".md"
+        item, _grid = self._load_grid(filename)
+        if not item:
+            return {"error": "sheet not found"}
+        data = await self.safe_json(request)
+        csv_text = data.get("csv", "")
+        if not csv_text.strip():
+            return {"error": "csv is required"}
+        rows = list(csv.reader(io.StringIO(csv_text)))
+        source_rows = len(rows)
+        source_cols = max((len(r) for r in rows), default=0)
+        return {
+            "ok": True,
+            "source_rows": source_rows,
+            "source_cols": source_cols,
+            "import_rows": min(source_rows, MAX_DIM),
+            "import_cols": min(source_cols, MAX_DIM),
+            "truncated": source_rows > MAX_DIM or source_cols > MAX_DIM,
+            "preview": rows[:10],
+        }
+
+    @web_route("POST", "/api/sheets/{id}/import/apply")
+    async def api_import_apply(self, request):
+        """Commit the CSV previewed above into the sheet, starting at A1.
+
+        Existing cells in the overlapping region are overwritten; cells
+        outside the CSV's extent are left untouched. Silently caps at
+        MAX_DIM (reported in the preview, per the "no silent caps" rule —
+        the truncation is surfaced before the user confirms, not after).
+        """
+        import csv
+        import io
+
+        from engines.sheet.grid import to_a1
+
+        filename = request.path_params.get("id", "")
+        if not filename.endswith(".md"):
+            filename += ".md"
+        data = await self.safe_json(request)
+        csv_text = data.get("csv", "")
+        if not csv_text.strip():
+            return {"error": "csv is required"}
+        rows = list(csv.reader(io.StringIO(csv_text)))[:MAX_DIM]
+        n_rows = len(rows)
+        n_cols = min(max((len(r) for r in rows), default=0), MAX_DIM)
+
+        async with self.write_lock(f"sheet:{filename}"):
+            item, grid = self._load_grid(filename)
+            if not item:
+                return {"error": "sheet not found"}
+            grid.rows = min(MAX_DIM, max(grid.rows, n_rows))
+            grid.cols = min(MAX_DIM, max(grid.cols, n_cols))
+            for r_idx, row in enumerate(rows, start=1):
+                for c_idx, val in enumerate(row[:MAX_DIM]):
+                    if val != "":
+                        grid.set(to_a1(c_idx, r_idx), val)
+            self._save_body(filename, grid)
+
+        await self.emit("sheet:imported", {"id": filename, "rows": n_rows, "cols": n_cols})
+        return {
+            "ok": True,
+            "rows": grid.rows,
+            "cols": grid.cols,
+            "raw_grid": grid.raw_grid(),
+            "computed_grid": _computed_display(grid),
+        }
 
     @web_route("GET", "/api/sheets/{id}/export.csv")
     async def api_export_csv(self, request):

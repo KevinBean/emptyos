@@ -4,7 +4,7 @@
 # Usage: python scripts/package-release.py <tier> [--check] [--platform=<name>]
 
 [release]
-version = "0.6.4"
+version = "0.7.0"
 
 # ── Platforms ─────────────────────────────────────────────────
 # Named deployment profiles. Plugins declare compatibility in
@@ -38,6 +38,10 @@ caps = []
 
 [tiers.core]
 kind = "platform"
+# Deliberately does NOT enumerate the tiers that extend core: this file ships in
+# the public snapshot (see the engines note below), and naming held tiers here
+# would leak them exactly as the tier inventory leaked in v0.4.5-v0.5.0.
+delivery = "extended-by only (union base for the tiers that extend it)"
 display_name = "EmptyOS Core"
 audience = "Kernel-level EmptyOS install"
 description = "Minimum OS — vault basics, task management, search, generic home"
@@ -77,6 +81,7 @@ engines = [
 # Packaging/documentation tier only; the kernel never reads tiers at runtime.
 [tiers.demo]
 kind = "operational"
+delivery = "none - documentation only; the live demo ships via targets.public then demo.hide_apps"
 display_name = "Demo"
 audience = "Public VPS showcase"
 description = "VPS showcase — core + narrative apps, cloud LLM only"
@@ -94,7 +99,6 @@ apps = [
     "projects",
     "publish",
     "quotes",
-    "radio",
     "reactor",
     "rooms",
     "tour",
@@ -102,6 +106,12 @@ apps = [
     "vault-graph",
     "voice-assistant",
 ]
+# tier-plugin-reach: ignore rooms agent-runtime — deliberate, and NOT because
+# the demo lacks coding CLIs: this tier packages nothing. Its `delivery` says so
+# — the live demo ships from `targets.public` (tier `standard`, which now DOES
+# carry agent-runtime) and then hides apps via `demo.hide_apps`. So no snapshot
+# is ever pruned against this list and the finding is unreachable. If this tier
+# ever gains a `[targets.*]` binding, delete this waiver and re-decide.
 plugins = [
     "ollama",
 ]
@@ -109,6 +119,7 @@ skills = []
 
 [tiers.standard]
 kind = "platform"
+delivery = "targets.public, targets.desktop, products/desktop-windows, products/desktop-macos"
 display_name = "EmptyOS Standard"
 audience = "Default public/community install"
 description = "Full community OS — productivity, AI, creative (end-user value)"
@@ -141,7 +152,9 @@ apps = [
     "journal",
     "kb",
     "learn",
+    "library",
     "life",
+    "markitup",
     "music-library",
     "people",
     "portal",
@@ -172,20 +185,38 @@ apps = [
     "workspaces",
     "writing-editor",
 ]
+# A plugin NOT listed in a tier is deleted from that tier's snapshot
+# (`release_filter.prune_snapshot`), so this list is "what ships", not "what
+# runs" — the Store is what decides enablement per user, and every plugin here
+# except the essentials arrives installed-but-off. Nine were added 2026-09-20
+# after `check_tier_plugin_reach.py` found public-tier apps naming plugins the
+# public snapshot dropped: `rooms`/`forge` declare `agent-runtime` as a
+# REQUIRED service and `viz` declares `manim` in `[requires].plugins`, so those
+# features were dead in every public install while the manifests said otherwise.
 plugins = [
+    "agent-runtime",     # rooms + forge [requires].services; viz's iterate loop
     "applio",
     "blender",
+    "command-launcher",  # a consumer of `global-hotkey`, which already shipped
+                         # (operate is the other, and macro-studio carries it)
     "comfyui",
     "dogfood-demo",
     "edge-tts",
     "email-smtp",
     "global-hotkey",
+    "legacy-doc",        # read enhancer (DOC/RTF/WPS/PPT/ODF) — injected, so no app names it
+    "manim",             # viz [requires].plugins
+    "markitdown",        # reader's document import
+    "meeting-capture",   # braindump
     "obsidian",
+    "ocr",               # reader + worklog-capture
     "ollama",
     "openai-image",
     "playwright",
     "system-tray",
+    "tailscale",         # hub's tailnet panel
     "telegram",
+    "translate",         # voice-assistant [requires].capabilities; the local NLLB path
     "voice-api",
     "webcam",
 ]
@@ -201,7 +232,7 @@ skills = [
     "vault-semantic-search",
     "vault-task-aggregator",
     "dev-app-optimizer",
-    "dev-new-app",
+    "eos-new-app",
     "dev-project-builder",
     "tool-pdf-reader",
     "tool-chm-reader",
@@ -210,72 +241,6 @@ skills = [
     "tool-google-maps",
     "tool-comfyui-image",
 ]
-
-# Packaging/documentation tier only; the kernel never reads tiers at runtime.
-[tiers.labs]
-kind = "operational"
-display_name = "Labs"
-audience = "Experimental app staging"
-description = "Experimental / pre-1.0 apps — visible in dev environments, never in public OSS release."
-extends = "core"
-apps = [
-    "canvas",         # moderate (2/4 aff, 1/4 emit) — brainstorm board, validate before public
-    "gesture",        # 1/2 aff, 0/1 emit — research/demo surface, no clear user use case yet
-    "jianpu",         # numbered-notation composer — not ready for standard (2026-07-10)
-    "feedback",       # PM feedback loop — intake/dedupe/votes/roadmap/changelog; validate public-write posture before standard
-    "model-serving",  # local model-serving surface — labs-track public app, validate before public
-    "synth",          # LLM data-synthesiser closed loop (graph_pipeline driver demo) — validate before public
-    "workflows",      # generic graph-over-verbs builder (eligibility-gated) — validate before public
-    "work",           # outcome-first deliverable production (work-surface pivot centerpiece) — validate before public
-    "engagements",    # v0.1 FDE-portfolio view-layer — generic mechanism, niche framing; prove (real measured rows) before public/standard
-    "business-case",  # value-proof ROI one-pager (deterministic calc + PDF) — engineering-pilot monetization tool; validate before public
-]
-plugins = []
-skills = []
-
-[tiers.dev]
-kind = "operational"
-display_name = "Developer"
-audience = "EmptyOS builders"
-description = "Meta / developer tooling — extends standard with app-gen, benchmarks, release tooling"
-extends = "standard"
-apps = [
-    "app-builder",
-    "chatbot-studio",
-    "app-gen",
-    "architecture-map",
-    "devboard",
-    "dogfood-agent",
-    "eink-bridge",
-    "feature-pipeline",
-    "fix-agent",
-    "grill",
-    "kb-butler",
-    "kb-gap-miner",
-    "memory-fidelity",
-    "model-bench",
-    "pattern-harvester",
-    "pocket",
-    "progress",
-    "promote",
-    "prompts",
-    "rag-eval",
-    "release",
-    "repo",
-    "run-center",
-    "agent_fleet",
-    "sandbox",
-    "site-lab",
-    "skill",
-    "tests",
-    "tiers",
-    "tmpl",
-    "trace-miner",
-    "web-analytics",
-]
-plugins = ["agent-runtime", "cadquery", "sandbox-pool", "external-lab-host"]
-skills = []
-services = ["chatbot", "external_lab"]
 
 # ── Release targets ───────────────────────────────────────────
 # Declarative bindings consumed by `scripts/release.py <target>`. Each target

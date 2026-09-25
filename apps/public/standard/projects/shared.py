@@ -101,9 +101,37 @@ PROJECT_FEATURES = {
 }
 
 # Task metadata prefixes (indented lines under a task)
-META_PREFIXES = {"info", "need", "calc", "ref", "depends_on", "blocks", "sprint", "milestone"}
+META_PREFIXES = {
+    "info", "need", "calc", "ref", "depends_on", "blocks", "sprint", "milestone",
+    "assigned",  # "<agent_id>:<job_id>" — set by assign_task_to_agent (dispatch bridge to staff)
+}
 
 _META_RE = re.compile(r"\s+- (" + "|".join(META_PREFIXES) + r"):\s*(.+)")
+
+
+def scan_task_meta_block(lines: list[str], line_num: int) -> dict:
+    """Scan the indented metadata lines directly under task `line_num`.
+
+    Shared by every task-meta writer/reader (add-meta, task-assignee) so
+    "where does this task's metadata block end" and "which line already
+    holds type X" are answered once, not re-scanned per call site.
+
+    Returns {"insert_at": <index past the last meta line — append here for
+    a NEW line of any type>, "by_type": {<type>: <last line index seen for
+    that type>}}. Multiple lines of the same type are legal (e.g. several
+    `info:` notes); `by_type` deliberately keeps only the last, which is
+    exactly what a caller enforcing "at most one live line" (task-assignee's
+    `assigned:`) wants to find and replace.
+    """
+    insert_at = line_num + 1
+    by_type: dict[str, int] = {}
+    while insert_at < len(lines):
+        m = _META_RE.match(lines[insert_at])
+        if not m:
+            break
+        by_type[m.group(1)] = insert_at
+        insert_at += 1
+    return {"insert_at": insert_at, "by_type": by_type}
 
 
 # ── Markdown section parsing (shared by dev_features + workspace) ──
@@ -159,3 +187,38 @@ def _parse_sprints(content: str) -> list[dict]:
     if current:
         sprints.append(current)
     return sprints
+
+
+def insert_task_line(content: str, task_line: str) -> str:
+    """Return *content* with *task_line* placed at the end of its `## Tasks` section.
+
+    Three shapes, and the third is the one that used to 500. The section is
+    found, and:
+
+    - another `## ` heading follows it -> insert just before that heading, so a
+      new task lands inside Tasks rather than at the bottom of the note;
+    - nothing follows it -> append at the end;
+    - **the heading is the last line and carries no trailing newline** -> also
+      append at the end. `add_task_to_project` used to reach for
+      ``content.index("\\n", idx)`` here, which raises ``ValueError: substring
+      not found`` on a note ending exactly `## Tasks`. That is not a
+      hypothetical: `54-day-safe-projects.md` is an 8-byte note of precisely
+      that shape, and being alphabetically first it is `items[0]` of
+      `/projects/api/list` — so every test that grabs the first project hit a
+      500 (`tests/test_sys_projects.py`, red since at least 2026-08-30).
+
+    No `## Tasks` at all -> the section is created. Pure: no `self`, no I/O.
+    """
+    if "## Tasks" not in content:
+        return content.rstrip() + "\n\n## Tasks\n" + task_line + "\n"
+
+    idx = content.index("## Tasks")
+    end_of_heading = content.find("\n", idx)
+    # `find`, not `index` — a missing newline is a shape to handle, not an
+    # error. Guard the next-section search too: with end_of_heading == -1 the
+    # `+ 1` would restart the scan at 0 and could match a heading *above*
+    # Tasks, splicing the task into an earlier section.
+    next_section = content.find("\n## ", end_of_heading + 1) if end_of_heading >= 0 else -1
+    if next_section > 0:
+        return content[:next_section] + task_line + "\n" + content[next_section:]
+    return content.rstrip() + "\n" + task_line + "\n"

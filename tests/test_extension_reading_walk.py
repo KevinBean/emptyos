@@ -688,6 +688,12 @@ def test_own_words_appear_without_waiting_for_the_model(tmp_path):
             page.locator("#eos-reading-rail .eos-rail-row").first.wait_for(timeout=4000)
             assert "obviate" in rail.inner_text(), rail.inner_text()
             assert "yours" in rail.inner_text(), "an own word must be marked as the reader's"
+            # A word already in the dictionary has nothing to save, and offering it
+            # made a working rail look broken: the row is rebuilt on every render, so
+            # the "Saved" acknowledgement lived one tick and a fresh "Save" replaced it.
+            own = page.locator("#eos-reading-rail .eos-rail-row", has_text="obviate")
+            assert own.locator(".eos-rail-save").count() == 0, \
+                "a vault-sourced word must not offer Save"
             assert "sesquipedalian" not in rail.inner_text(), "the model has not answered yet"
 
             # ...and the model's words join it when they arrive.

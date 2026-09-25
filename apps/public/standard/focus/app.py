@@ -58,12 +58,17 @@ class FocusApp(BaseApp):
     def start_session(self, minutes: int = 25, task: str = "") -> dict:
         """Record a session start (server-side stamp used to validate the
         real duration at completion). Shared by the /api/start route and the
-        focus.start voice verb."""
+        focus.start voice verb. Also schedules a durable time's-up ping
+        (`_schedule_focus_ping`) so a web-started session's completion
+        survives a closed/backgrounded tab, not just a browser Notification
+        that needs the tab open — mirrors what the voice path already did.
+        """
         state = self.load_state({})
         state["active_session"] = {
             "started_at": datetime.now(UTC).isoformat(),
             "minutes": int(minutes),
             "task": task or "",
+            "ping_job_id": self._schedule_focus_ping(int(minutes)),
         }
         self.save_state(state)
         return state["active_session"]
@@ -74,6 +79,13 @@ class FocusApp(BaseApp):
         active = state.pop("active_session", None)
         if active:
             self.save_state(state)
+            ping_job_id = active.get("ping_job_id")
+            if ping_job_id:
+                # Cancel the pending time's-up ping — completing early (or
+                # right on time) shouldn't leave a stale "time's up" firing
+                # after the user has already moved on. Fail-soft: a job that
+                # already fired or was never registered is a benign no-op.
+                self.remove_cron_job(ping_job_id)
             if active.get("started_at"):
                 try:
                     started = datetime.fromisoformat(active["started_at"])
@@ -129,11 +141,14 @@ class FocusApp(BaseApp):
     # the ability existed only as page-local rail buttons, so "start a
     # 25-minute focus session" spoken to Aura got "no tool for that".
 
-    def _schedule_focus_ping(self, minutes: int) -> None:
-        """One-shot time's-up ping for a voice-started session (the page has
-        its own on-screen countdown; a voice user has nothing — this is the
-        payoff of starting by voice). In-memory job: lost on daemon restart,
-        which is acceptable for a ≤60-min timer. Fail-soft throughout."""
+    def _schedule_focus_ping(self, minutes: int) -> str:
+        """One-shot time's-up ping, shared by every session-start path (web
+        page, voice). Delivered via proactive_notify so it survives a
+        closed/backgrounded tab — unlike the page's own browser Notification,
+        which needs the tab open. In-memory job: lost on daemon restart,
+        which is acceptable for a ≤60-min timer. Fail-soft throughout.
+        Returns the job id so the caller can cancel it on early completion
+        (see complete_session)."""
         job_id = f"focus-ping-{datetime.now(UTC).strftime('%H%M%S%f')}"
 
         async def _ping():
@@ -149,6 +164,7 @@ class FocusApp(BaseApp):
                 pass
 
         self.add_once_job(job_id, _ping, run_at=datetime.now(UTC) + timedelta(minutes=minutes))
+        return job_id
 
     async def voice_start_focus(self, minutes: int = 0) -> dict:
         try:
@@ -161,7 +177,6 @@ class FocusApp(BaseApp):
             except Exception:
                 mins = 25
         self.start_session(mins)
-        self._schedule_focus_ping(mins)
         return {
             "say": f"Focus session started — {mins} minutes. I'll let you know when time's up.",
             "link": {"text": "Open Focus", "href": "/focus/"},
@@ -203,7 +218,12 @@ class FocusApp(BaseApp):
 
     @web_route("POST", "/api/start")
     async def api_start_session(self, request):
-        """Record session start time for server-side duration validation."""
+        """Record session start time for server-side duration validation.
+
+        `start_session` also schedules a durable proactive_notify ping
+        (previously only the client-side browser Notification fired, which
+        needs the tab open and unthrottled).
+        """
         data = await request.json()
         self.start_session(int(data.get("minutes", 25)), data.get("task", ""))
         return {"ok": True}

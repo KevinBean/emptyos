@@ -47,6 +47,16 @@ CREDENTIAL_MARKERS = ("TELEGRAM", "OPENAI", "ANTHROPIC", "TOKEN", "API_KEY",
 BOOT_DEADLINE_S = 300.0
 
 
+def json_request(base: str, path: str, *, method: str = "GET", body: dict | None = None):
+    payload = None if body is None else json.dumps(body).encode("utf-8")
+    request = urllib.request.Request(
+        base + path, data=payload, method=method,
+        headers={"Content-Type": "application/json"} if payload is not None else {},
+    )
+    with urllib.request.urlopen(request, timeout=15) as response:
+        return response.status, json.loads(response.read().decode("utf-8"))
+
+
 def clean_env(sandbox: Path) -> dict[str, str]:
     env = {k: v for k, v in os.environ.items()
            if not any(m in k.upper() for m in CREDENTIAL_MARKERS)}
@@ -159,6 +169,48 @@ def main() -> int:
         except Exception as e:
             print(f"FAIL: GET /settings/api/product -> {e}")
             failures += 1
+
+        if product.id == "macro-studio":
+            # Product-specific acceptance: the dynamically loaded Windows
+            # libraries survived freezing, and the product can persist the
+            # same versioned note format used by full EmptyOS. No input is
+            # injected during this smoke.
+            try:
+                _, config = json_request(base, "/operate/api/macro/config")
+                services = config.get("services") or {}
+                required = ("desktop_control", "actuation", "point_picker", "global_hotkey")
+                missing = [name for name in required if not services.get(name)]
+                if missing:
+                    print("FAIL: Macro Studio desktop dependencies unavailable: "
+                          + ", ".join(missing))
+                    failures += 1
+                else:
+                    print("PASS: Macro Studio desktop dependencies loaded")
+
+                macro = {
+                    "version": 1,
+                    "name": "Packaged smoke macro",
+                    "target": {"process": "notepad.exe", "title_contains": "Untitled"},
+                    "repeat": {"mode": "count", "count": 1, "interval_seconds": 3},
+                    "steps": [{"id": "s1", "action": "press", "key": "right"}],
+                }
+                status, created = json_request(
+                    base, "/operate/api/macros", method="POST", body=macro,
+                )
+                macro_id = (created.get("macro") or {}).get("id", "")
+                if status != 201 or not created.get("ok") or not macro_id:
+                    print(f"FAIL: packaged macro persistence returned {created}")
+                    failures += 1
+                else:
+                    _, detail = json_request(base, f"/operate/api/macros/{macro_id}")
+                    if (detail.get("macro") or {}).get("name") != macro["name"]:
+                        print("FAIL: packaged macro did not round-trip")
+                        failures += 1
+                    else:
+                        print(f"PASS: packaged macro persisted ({macro_id})")
+            except Exception as e:
+                print(f"FAIL: Macro Studio product smoke -> {e}")
+                failures += 1
     else:
         print(f"FAIL: never served in {BOOT_DEADLINE_S:.0f}s — see {app_dir/'daemon.log'}")
         failures += 1

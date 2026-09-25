@@ -249,3 +249,105 @@ def arc_ring(
     return [[cx + r * math.cos(math.radians(a0 + (a1 - a0) * i / n)),
              cy + r * math.sin(math.radians(a0 + (a1 - a0) * i / n))]
             for i in range(n + 1)]
+
+
+# ── Measuring GeoJSON geometry ────────────────────────────────────────
+# The transforms above put a drawing on the map. These read a length or a
+# position back off it, which is what lets an engineering model reference a
+# drawn route instead of carrying a typed-in length.
+
+_EARTH_R_M = 6_371_008.8  # IUGG mean radius
+
+
+def haversine_m(a: Sequence[float], b: Sequence[float]) -> float:
+    """Great-circle distance between two ``[lon, lat]`` points, metres.
+
+    Spherical, not ellipsoidal: about 0.3% worst-case against WGS84, and well
+    under that at the span of a transmission line. An engineering length wants
+    the surveyed route anyway — this measures what was drawn, and the drawing
+    is the coarser input.
+    """
+    lon1, lat1 = float(a[0]), float(a[1])
+    lon2, lat2 = float(b[0]), float(b[1])
+    p1, p2 = math.radians(lat1), math.radians(lat2)
+    dp = p2 - p1
+    dl = math.radians(lon2 - lon1)
+    h = math.sin(dp / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(dl / 2) ** 2
+    return 2.0 * _EARTH_R_M * math.asin(min(1.0, math.sqrt(h)))
+
+
+def _coords_length_m(coords: Sequence[Sequence[float]]) -> float:
+    return sum(haversine_m(coords[i], coords[i + 1])
+               for i in range(len(coords) - 1))
+
+
+def geometry_length_m(geometry: dict) -> float | None:
+    """Length of a GeoJSON LineString / MultiLineString, metres.
+
+    Returns None for a geometry with no length — a Point, a Polygon, anything
+    unrecognised. None rather than 0.0 deliberately: a caller asking for a
+    route length needs to tell "this is not a route" from "this route is
+    zero-length", and 0.0 is a plausible-looking answer for the wrong question.
+    """
+    if not isinstance(geometry, dict):
+        return None
+    kind = geometry.get("type")
+    coords = geometry.get("coordinates")
+    if not isinstance(coords, (list, tuple)) or not coords:
+        return None
+
+    if kind == "LineString":
+        if len(coords) < 2:
+            return None
+        return _coords_length_m(coords)
+    if kind == "MultiLineString":
+        parts = [_coords_length_m(part) for part in coords
+                 if isinstance(part, (list, tuple)) and len(part) >= 2]
+        return sum(parts) if parts else None
+    return None
+
+
+def geometry_point(geometry: dict) -> list[float] | None:
+    """A representative ``[lon, lat]`` for any GeoJSON geometry.
+
+    A Point returns itself; a line returns its midpoint *along the route*
+    rather than the mean of its vertices, because a route with clustered
+    vertices at one end has a vertex-mean nowhere near its middle. A polygon
+    returns its first ring's vertex mean, which is adequate for a label anchor
+    and is not claimed to be a centroid.
+    """
+    if not isinstance(geometry, dict):
+        return None
+    kind = geometry.get("type")
+    coords = geometry.get("coordinates")
+    if not isinstance(coords, (list, tuple)) or not coords:
+        return None
+
+    if kind == "Point":
+        return [float(coords[0]), float(coords[1])]
+    if kind == "MultiPoint":
+        return [float(coords[0][0]), float(coords[0][1])]
+    if kind in ("LineString", "MultiLineString"):
+        line = coords if kind == "LineString" else coords[0]
+        if not isinstance(line, (list, tuple)) or len(line) < 2:
+            return None
+        total = _coords_length_m(line)
+        if total <= 0:
+            return [float(line[0][0]), float(line[0][1])]
+        walked = 0.0
+        for i in range(len(line) - 1):
+            step = haversine_m(line[i], line[i + 1])
+            if walked + step >= total / 2.0:
+                f = (total / 2.0 - walked) / step if step else 0.0
+                return [float(line[i][0]) + (float(line[i + 1][0]) - float(line[i][0])) * f,
+                        float(line[i][1]) + (float(line[i + 1][1]) - float(line[i][1])) * f]
+            walked += step
+        return [float(line[-1][0]), float(line[-1][1])]
+    if kind in ("Polygon", "MultiPolygon"):
+        ring = coords[0] if kind == "Polygon" else coords[0][0]
+        if not isinstance(ring, (list, tuple)) or not ring:
+            return None
+        n = len(ring)
+        return [sum(float(p[0]) for p in ring) / n,
+                sum(float(p[1]) for p in ring) / n]
+    return None

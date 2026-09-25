@@ -195,3 +195,52 @@ class TestExpenseAPI:
     def test_import_confirm_rejects_empty(self, http_client):
         r = http_client.post("/expense/api/import/confirm", json={"rows": []})
         assert "error" in r.json()
+
+
+@pytest.mark.interactive
+class TestExpenseHomeReadsHeatmap:
+    """The home tab's 7-day sparkline and no-spend chips must show the same
+    daily amounts `/expense/api/heatmap` reports.
+
+    Regression for 2026-09-06 (system-check walk 9): the API answers
+    ``{"start", "data": {date: amount}}`` while the page read ``.dates`` and
+    fell back to the whole envelope, so every day rendered as $0 and the
+    no-spend chips counted spend days as no-spend days — on any vault, since
+    at least 2026-05-30. Executes the real page against the real payload;
+    a source grep would be satisfied by the comment that now explains it.
+    """
+
+    def test_sparkline_and_chips_match_heatmap_api(self, app_page, http_client, page_errors):
+        from page_helpers import assert_no_js_errors
+
+        from decimal import ROUND_HALF_UP, Decimal
+
+        def js_fixed0(v):
+            # JS toFixed(0) rounds half up; Python round() is banker's.
+            return int(Decimal(str(v)).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
+
+        hm = assert_ok(http_client.get("/expense/api/heatmap"))
+        daily = hm.get("data") or {}
+        today = date.today()   # local — the page keys by local date too
+        window = [(today - timedelta(days=i)).isoformat() for i in range(6, -1, -1)]
+        if not any(daily.get(d, 0) >= 0.5 for d in window):
+            # < $0.50 would render "$0" on both the fixed and the broken page.
+            pytest.skip("no spend >= $0.50 in the last 7 days on this vault — the assertion would be vacuous")
+
+        page = app_page("expense")
+        page.wait_for_selector(".sparkline-bar", timeout=8000)
+        titles = page.locator(".sparkline-bar").evaluate_all("els => els.map(e => e.title)")
+        assert len(titles) == 7, titles
+        shown = {t.split(": $")[0]: int(t.split(": $")[1]) for t in titles}
+        assert set(shown) == set(window), (sorted(shown), window)   # local-date keys, not UTC
+        for d in window:
+            assert shown[d] == js_fixed0(daily.get(d, 0)), (d, shown[d], daily.get(d))
+
+        # The chips derive from the same payload: spend days this month.
+        month_days = [d for d in daily if d.startswith(today.strftime("%Y-%m")) and d <= today.isoformat()]
+        expect_spend_days = sum(1 for d in month_days if daily[d] > 0)
+        chip = page.locator("#spend-chips").inner_text().lower()   # labels are CSS-uppercased
+        assert "spend days this month" in chip, chip
+        value = chip.split("spend days this month")[0].strip().split()[-1]
+        assert int(value) == expect_spend_days, (value, expect_spend_days, chip)
+        assert_no_js_errors(page_errors)

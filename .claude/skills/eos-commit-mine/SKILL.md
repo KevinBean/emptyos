@@ -51,9 +51,71 @@ Goal: a commit = `HEAD + YOUR changes`, and a working tree left at
 `HEAD + YOUR changes + THEIR WIP` (so `git diff HEAD` afterwards = THEIR WIP
 only), byte-identical to what it was before.
 
-## Method — patch-classifier (preferred when hunks separate cleanly)
+## Method — index-only (preferred; never removes their WIP from disk)
 
-Use when your hunks and theirs live in **different regions** (the common case).
+Both methods below reset the file with `git checkout HEAD -- F` and rely on a
+backup to put their WIP back. That opens a window in which their uncommitted
+work exists **only** in your scratchpad — if anything dies in between, it is
+gone, because uncommitted work is in no git object. `git apply --cached` writes
+to the **index only**, so the working tree is never touched, there is no backup,
+no restore, and no window.
+
+```bash
+git diff -- F > "$SP/full.patch"          # working tree vs index/HEAD
+# …build "$SP/mine.patch" (see step 3 below for the classifier)
+git apply --cached --check "$SP/mine.patch" && git apply --cached "$SP/mine.patch"
+git add <your-own-untouched-files>
+```
+
+Because the working tree still carries their WIP, you cannot test your isolated
+change there. Materialise **exactly what is staged** somewhere else and test it
+there — also non-destructive:
+
+```bash
+rm -rf "$SP/idx" && mkdir -p "$SP/idx"
+git checkout-index -a --prefix="$SP/idx/"
+(cd "$SP/idx" && python -m pyflakes <your files> && python -m pytest <your test> -q)
+```
+
+This is the step that catches a split which *applies* cleanly but does not
+*stand alone* — an import you kept whose only user was in their hunks, or a
+manifest entry left pointing at a method that landed on their side.
+
+Then commit, and confirm the split held:
+
+```bash
+git diff --cached | grep -ci "<THEIRS-marker>"   # MUST be 0 before committing
+git diff --stat -- F                              # their WIP, still unstaged
+```
+
+### Selecting hunks: prefer `@@` identity over markers
+
+The classifier below keys on **marker strings**, and markers mis-assign more
+often than they look like they will: most lines of a feature never mention the
+feature's name. A first pass keyed on "every added line in this hunk carries
+their marker" classified **zero** of their hunks as theirs, because their code
+was mostly plumbing with neutral names.
+
+Worse, the classifier's fallback for a hunk carrying **neither** marker is
+`WARN neutral hunk kept` — it keeps it as yours. That is **fail-open**: an
+unrecognised hunk of theirs lands silently in your commit.
+
+When you can enumerate your own hunks (you just wrote them), select by `@@`
+header instead — it needs no guessing and cannot fail open:
+
+```python
+KEEP = ("@@ -18,7", "@@ -38,6", "@@ -378,7")   # your hunks, read off the diff
+...
+cur, take = [line], line.startswith(KEEP)
+```
+
+Print every hunk header with its added-line count first and decide by eye; on a
+handful of hunks that is faster and safer than tuning markers.
+
+## Method — patch-classifier (when you must reset the working tree)
+
+Use when your hunks and theirs live in **different regions** and you need the
+file itself reset — otherwise prefer the index-only method above.
 Fully deterministic; the backup + md5 check is the safety net.
 
 Let `$SP` = your scratchpad dir. For each entangled file `F`:

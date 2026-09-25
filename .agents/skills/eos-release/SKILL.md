@@ -2,6 +2,7 @@
 name: eos-release
 description: Cut a clean, verified tier-scoped distribution into dist/ — tier validation, personal-data + branding scans, full test suite, packaging, version bump, and git tag, reusing package-release.py / check-personal.py / check-branding.py. Use when the user says "release", "cut a release", "package <tier>", or "ship <tier>". NOT for routine commits (this is a coordinated gate), and distinct from eos-release-public, which promotes the working tree to the public repo + demo VPS.
 ---
+
 # EmptyOS Release
 
 Cut a clean, verified release for a given tier — orchestrate tier validation, safety scans, full test suite, distribution packaging, version bump, and git tag. Uses the existing tooling (`scripts/package-release.py`, `check-personal.py`, `check-branding.py`) rather than reinventing it.
@@ -141,7 +142,7 @@ For each app in the tier scope, include `tests/test_sys_<app>.py`. Also **always
 - `tests/test_keyboard.py` — keyboard shortcuts
 - `tests/test_journeys.py` — cross-app event chains
 - `tests/test_edge_cases.py` — boundary conditions
-- `tests/test_provider_fallback.py` — capability fallback chain
+- `tests/test_unit_provider_fallback.py` — capability fallback chain
 - `tests/test_sys_home.py`, `tests/test_sys_hub.py`, `tests/test_sys_pwa.py` — platform surfaces
 
 **Exclude** unless you have a specific reason:
@@ -204,12 +205,27 @@ After packaging:
 ls -la dist/emptyos-<tier>-v<version>/ | head -20
 
 # Smoke test: does the packaged version boot?
-cd dist/emptyos-<tier>-v<version>/
-python -m emptyos health 2>&1 | head -20
-cd -
+python scripts/check_snapshot_boot.py dist/emptyos-<tier>-v<version>/
 ```
 
-Health check must show the expected app count for the tier. If it crashes on import, some shared dep isn't packaged — file an issue against `package-release.py`, don't paper over it here.
+It must print `OK: daemon healthy in Ns (N apps)` with the expected app count for
+the tier, and exit 0. If it crashes on import, some shared dep isn't packaged —
+file an issue against `package-release.py`, don't paper over it here.
+
+**Use the script, not `cd dist/… && python -m emptyos health`** (what this step
+used to say). Two reasons, and the second is why the old form was actively
+misleading:
+
+- A bare `python -m emptyos health` boots a kernel and opens a syslog SQLite
+  handle in the process — the thing `.claude/rules/daemon-handling.md` tells
+  sessions not to do. `check_snapshot_boot.py` is the sanctioned carve-out: it
+  owns the child it spawns, binds an **ephemeral** port (never 9000-9009), puts
+  `data_dir` and vault in a scratch temp dir, and terminates in a `finally`.
+- It proves more. `health` answers from whatever the process could import;
+  the script fails if the daemon never answers **or** answers with apps in an
+  error state — the case where a snapshot boots but half its apps didn't load.
+  It also compiles every module first, catching a bad `eos_apps.<id>` relative
+  import that a running daemon would only surface on first request.
 
 ---
 
@@ -277,4 +293,4 @@ Next:
 - Before a release, do a pass → `/eos-simplify` on recent commits catches convention slips that would otherwise ride along
 - Before a release, periodic health → `/eos-architecture-review` check mode finds structural drift (dead connections, dormant capabilities)
 - New app/plugin joining a tier → was scaffolded with `/eos-new-app` or `/eos-new-plugin` which wires the tier entry
-- After a release → `/eos-session-wrapup` logs it and refreshes AGENTS.md counts
+- After a release → `/eos-session-wrapup` logs it and refreshes CLAUDE.md counts

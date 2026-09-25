@@ -76,7 +76,7 @@ BOUNDARY_RE = re.compile(
     r"when not to use|do ?n.?t use|not for\b|distinct from|skip if|skip:|\bNOT\b", re.I
 )
 PREFLIGHT_RE = re.compile(
-    r"pre-?flight|prerequisite|pre-?requisite|^##+\s*setup|^##+\s*inputs|"
+    r"pre-?flight|prerequisite|pre-?requisite|precondition|^##+\s*setup|^##+\s*inputs|"
     r"daemon must|must be running|installed:",
     re.I | re.M,
 )

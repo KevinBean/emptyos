@@ -38,17 +38,36 @@ if TYPE_CHECKING:
 # ─────────────────────────────────────────────────────────────────────
 
 
-SOURCES = ("learn", "dictionary", "media")
-OPTIONAL_SOURCES = ("dictionary", "media")
+SOURCES = ("learn", "dictionary", "media", "soundcheck", "read-the-room")
+OPTIONAL_SOURCES = ("dictionary", "media", "soundcheck", "read-the-room")
+
+# Four silos implement `srs_due`/`srs_grade`, which looks like a duplication
+# worth extracting into the SDK. It was measured (2026-08) and deliberately left
+# alone: what they share is ~6 lines — the count-only guard, a date filter, a
+# sort — while what differs is real. soundcheck additionally filters on
+# `trials > 0`; each keys its rows differently (word / contrast / item_id);
+# state lives in a flat dict, a nested one, and a separate file. A shared
+# helper would need three parameters that exist *only* because the callers
+# disagree, which is two functions wearing a trenchcoat. The genuinely common
+# part — the schedule itself — is already shared, via `emptyos/sdk/srs.py`.
+#
+# `dictionary` serves TWO decks through its one contract (vocabulary words and
+# the picture packs it absorbed from picture-dict on 2026-08-19). That is the
+# app's own business — it tags each row with `kind` and owns the `pic:` id
+# prefix that routes a grade back to the right store — so it stays one silo here.
+#
+# What was missing was not an abstraction but enforcement: the contract is
+# pinned by `tests/test_unit_learn_srs_contract.py`, statically, because only
+# one of the four exposes it over HTTP.
 
 # Anki-style ratings, mapped onto each silo's native scale.
-# sm2_schedule treats quality < 3 as a failure, so "hard" must be >= 3 to pass
-# without growing ease — which is exactly Anki's semantics.
-RATING_TO_Q5 = {"again": 1, "hard": 3, "good": 4, "easy": 5}  # learn + media (SM-2 0-5)
+# The 0-5 scale round-trips through `sdk.srs.quality_to_rating` (<3 again,
+# 3 hard, 4 good, 5 easy), so these values land back on the rating they name.
+RATING_TO_Q5 = {"again": 1, "hard": 3, "good": 4, "easy": 5}  # media (0-5 quality)
 RATING_TO_Q4 = {"again": 1, "hard": 2, "good": 3, "easy": 4}  # dictionary (1-4 ladder)
 
 # learn grades through _srs_schedule, which takes a 0-100 score. Rough inverse
-# of _score_to_quality — same table api_review_grade already uses.
+# of `sdk.srs.score_to_rating` — same table api_review_grade already uses.
 RATING_TO_SCORE = {"again": 25, "hard": 65, "good": 85, "easy": 100}
 
 
@@ -68,7 +87,7 @@ def _learn_card(card: dict) -> dict:
         "meta": {
             "kind": card.get("kind", ""),
             "source_path": card.get("source_path", ""),
-            "ease": card.get("ease"),
+            "stability": card.get("stability"),
             "review_count": card.get("review_count"),
             "last_score": card.get("last_score"),
         },
@@ -76,6 +95,37 @@ def _learn_card(card: dict) -> dict:
 
 
 def _dictionary_card(card: dict) -> dict:
+    """Dictionary serves two decks through one contract: saved vocabulary words
+    and picture cards from its shipped packs (absorbed from the retired
+    picture-dict app, 2026-08-19). The row says which via ``kind``.
+
+    A picture card is answered *from the photograph* — the image is the prompt,
+    not decoration. It rides in ``meta.image`` and ``front`` carries the name
+    only as the fallback for a client that cannot render an image; the renderer
+    hides the name until reveal so the answer is not sitting next to the
+    question. Its ``id`` keeps the ``pic:`` prefix the app assigned, because
+    that is what routes the grade back to the picture store rather than to a
+    vocabulary word that happens to share the name.
+    """
+    if card.get("kind") == "picture":
+        back = card.get("chinese", "") or ""
+        if card.get("hint"):
+            back = f"{back}\n\n{card['hint']}" if back else card["hint"]
+        return {
+            "app": "dictionary",
+            "id": card.get("word", ""),
+            "kind": "picture",
+            "front": card.get("name", ""),
+            "back": back,
+            "due": card.get("next_review", ""),
+            "meta": {
+                "image": card.get("image", ""),
+                "emoji": card.get("emoji", ""),
+                "category": card.get("category", ""),
+                "chinese": card.get("chinese", ""),
+                "review_count": card.get("review_count", 0),
+            },
+        }
     back = card.get("definition", "") or ""
     if card.get("example"):
         back = f"{back}\n\n{card['example']}" if back else card["example"]
@@ -88,7 +138,6 @@ def _dictionary_card(card: dict) -> dict:
         "due": card.get("next_review", ""),
         "meta": {
             "level": card.get("level", 0),
-            "streak": card.get("streak", 0),
             "phonetic": card.get("phonetic", ""),
             "chinese": card.get("chinese", ""),
         },
@@ -119,7 +168,78 @@ def _media_card(card: dict) -> dict:
     }
 
 
-_MAPPERS = {"learn": _learn_card, "dictionary": _dictionary_card, "media": _media_card}
+def _soundcheck_card(card: dict) -> dict:
+    """A soundcheck card is a *contrast*, not an item.
+
+    With hundreds of items nothing would ever come due at item level, and the
+    memory being tested is "can I still hear these two apart" rather than any
+    one word pair. The examples are illustrations of the contrast, so they may
+    differ from the pair that was actually missed.
+    """
+    back = card.get("note", "") or ""
+    if card.get("examples"):
+        joined = " · ".join(card["examples"])
+        back = f"{back}\n\n{joined}" if back else joined
+    return {
+        "app": "soundcheck",
+        "id": card.get("contrast", ""),
+        "kind": "sound",
+        "front": card.get("label", "") or card.get("contrast", ""),
+        "back": back,
+        "due": card.get("next_review", ""),
+        "meta": {
+            "misses": card.get("misses", 0),
+            "trials": card.get("trials", 0),
+        },
+    }
+
+
+def _read_the_room_card(card: dict) -> dict:
+    """A workplace remark, front; how to read it, back.
+
+    ``id`` must be ``file or id`` — that is the key the app's own SRS store uses
+    (``_merged`` builds it that way), so anything else grades a row that does not
+    exist. The AU reading leads because that is the calibration being drilled;
+    the US read is appended only when it was actually annotated and differs, since
+    a missing US band means "not annotated" and must never render as agreement.
+    """
+    reading = card.get("reading") or {}
+    au = reading.get("au") or {}
+    us = reading.get("us") or {}
+
+    au_label = au.get("label") or card.get("au_band", "")
+    parts = []
+    if au_label:
+        parts.append(f"AU: {au_label}")
+    if au.get("why"):
+        parts.append(au["why"])
+    if au.get("your_move"):
+        parts.append(f"Your move: {au['your_move']}")
+    us_label = us.get("label") or card.get("us_band", "")
+    if us_label and us_label != au_label:
+        parts.append(f"US read: {us_label}")
+
+    srs = card.get("srs") or {}
+    return {
+        "app": "read-the-room",
+        "id": card.get("file") or card.get("id", ""),
+        "kind": "remark",
+        "front": card.get("utterance", ""),
+        "back": "\n\n".join(parts),
+        "due": srs.get("next_review", ""),
+        "meta": {
+            "setting": card.get("setting", ""),
+            "au_band": card.get("au_band", ""),
+            "us_band": card.get("us_band", ""),
+            "origin": card.get("origin", ""),
+            "review_count": srs.get("review_count", 0),
+        },
+    }
+
+
+_MAPPERS = {"learn": _learn_card, "dictionary": _dictionary_card,
+            "media": _media_card, "soundcheck": _soundcheck_card,
+            "read-the-room": _read_the_room_card}
 
 
 def _interleave(by_source: dict, limit: int) -> list[dict]:
@@ -270,6 +390,16 @@ async def api_review_grade_item(self, request):
     if app == "dictionary":
         res, err = await self.try_call_app(
             "dictionary", "srs_grade", word=item_id, quality=RATING_TO_Q4[rating]
+        )
+    elif app == "read-the-room":
+        # sm2_schedule, so the 0-5 quality scale — same as media, not the
+        # dictionary's 1-4 ladder.
+        res, err = await self.try_call_app(
+            "read-the-room", "srs_grade", id=item_id, quality=RATING_TO_Q5[rating]
+        )
+    elif app == "soundcheck":
+        res, err = await self.try_call_app(
+            "soundcheck", "srs_grade", contrast=item_id, quality=RATING_TO_Q4[rating]
         )
     else:
         res, err = await self.try_call_app(

@@ -465,12 +465,26 @@ class BillingApp(BaseApp):
 
     # ── API ───────────────────────────────────────────────────
 
+    # Zero-filled shape for a day with no usage. Mirrors the daily_stats
+    # column defaults; `date` is filled per-call.
+    _EMPTY_DAY = {
+        "calls": 0, "prompt_tokens": 0, "completion_tokens": 0,
+        "total_tokens": 0, "cost": 0.0, "images": 0, "image_cost": 0.0,
+    }
+
     def _get_day(self, day: str) -> dict:
-        """Get a day's stats as a dict (for API compatibility)."""
+        """Get a day's stats as a dict (for API compatibility).
+
+        Always returns the FULL shape. A day with no usage has no daily_stats
+        row, and returning ``{}`` made every field vanish from
+        ``GET /billing/api/today`` — so a consumer reading ``cost`` (or
+        ``calls``, or ``by_provider``) broke on any quiet day and on every
+        fresh install, while working fine once some usage existed. Both
+        callers already read through ``.get(..., 0)``, so neither depended on
+        the empty dict being falsy.
+        """
         row = self.db.execute("SELECT * FROM daily_stats WHERE date = ?", (day,)).fetchone()
-        if not row:
-            return {}
-        result = dict(row)
+        result = {**self._EMPTY_DAY, "date": day, **(dict(row) if row else {})}
         result["by_provider"] = {
             r["provider"]: {"calls": r["calls"], "tokens": r["tokens"], "cost": r["cost"]}
             for r in self.db.execute(
@@ -482,6 +496,30 @@ class BillingApp(BaseApp):
             for r in self.db.execute("SELECT * FROM app_stats WHERE date = ?", (day,)).fetchall()
         }
         return result
+
+    def _counterfactual_saved(self, by_provider: dict) -> float:
+        """What today's usage would have cost if every call had run on the
+        reference cloud rate instead — the value delivered by running local
+        (found dark during the 2026-08 gap-analysis pass: with claude-cli and
+        ollama both at $0.00, the dashboard showed $0 for a day of real work,
+        which is exactly the number the local-first thesis should surface).
+
+        `reference_provider` defaults to "openai" (the cheapest metered cloud
+        rate already in `_cost_rates()`), overridable via
+        `billing.reference_provider` for a different comparison point.
+        """
+        rates = self._cost_rates()
+        reference = str(self.app_config("billing.reference_provider", "openai"))
+        ref_rate = rates.get(reference, 0)
+        if ref_rate <= 0:
+            return 0.0
+        saved = 0.0
+        for stats in by_provider.values():
+            tokens = stats.get("tokens", 0) or 0
+            actual = stats.get("cost", 0) or 0
+            counterfactual = tokens / 1000 * ref_rate
+            saved += max(0.0, counterfactual - actual)
+        return round(saved, 4)
 
     async def today_summary(self) -> dict:
         """Today's usage summary — safe to call via call_app()/[DO:]."""
@@ -496,6 +534,7 @@ class BillingApp(BaseApp):
             "cache_hit_pct": _cache_hit_pct(
                 today.get("cached_tokens", 0), today.get("prompt_tokens", 0)
             ),
+            "saved_today": self._counterfactual_saved(today.get("by_provider", {})),
             "budget": budget,
             "over_budget": budget > 0 and total_cost > budget,
             "hard_limit": hard_limit,
@@ -626,6 +665,27 @@ class BillingApp(BaseApp):
             "by_app": by_app,
             "daily": daily,
         }
+
+    async def cost_for_app_since(self, app_id: str, since_iso: str) -> dict:
+        """Total cost/tokens for one app since a given ISO date/datetime.
+
+        A plain cross-app helper (not a `@web_route`) so callers can reach it
+        via `call_app` without a `request` object — `api_usage`'s ``days=N``
+        shape doesn't fit a caller that knows an exact start time, not a
+        lookback window. Day-granularity like the rest of `daily_stats`/
+        `app_stats`; a brief spanning part of a day is billed from that
+        day's start.
+        """
+        since_date = (since_iso or "")[:10] or date.today().isoformat()
+        row = self.db.execute(
+            """
+            SELECT COALESCE(SUM(calls),0) as calls, COALESCE(SUM(tokens),0) as tokens,
+                   COALESCE(SUM(cost),0) as cost
+            FROM app_stats WHERE app = ? AND date >= ?
+            """,
+            (app_id, since_date),
+        ).fetchone()
+        return {"calls": row["calls"], "tokens": row["tokens"], "cost": round(row["cost"], 6)}
 
     @web_route("GET", "/api/rates")
     async def api_rates(self, request):

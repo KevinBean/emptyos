@@ -6,7 +6,10 @@ uses the same portable JSON contract as the live importer.
 """
 from __future__ import annotations
 
+import json
 from typing import TYPE_CHECKING
+
+from .shared import COMPETENCIES, COMPETENCY_AREAS, COMPETENCY_FOCUS
 
 if TYPE_CHECKING:
     from .app import WorklogApp
@@ -25,8 +28,32 @@ def stub_routes() -> dict:
     return {}
 
 
+def _competency_consts() -> str:
+    """The EA competency standard, injected into the browser bundle.
+
+    A standalone export has no server, so the element names have to travel
+    inside the file. Rather than hand-copying them (the drift trap in
+    `.claude/rules/self-audit-loops.md` — an inlined copy of generated data
+    goes quietly wrong), this reads `shared.py` at export time: the exporter
+    runs in-process with the source of truth, so the two cannot disagree.
+    """
+    return (
+        "  var CP_NAMES = %s;\n"
+        "  var CP_AREAS = %s;\n"
+        "  var CP_FOCUS = %s;\n"
+        % (
+            json.dumps({str(k): v for k, v in COMPETENCIES.items()}, ensure_ascii=False),
+            json.dumps({k: list(v) for k, v in COMPETENCY_AREAS.items()}, ensure_ascii=False),
+            json.dumps({str(k): v for k, v in COMPETENCY_FOCUS.items()}, ensure_ascii=False),
+        )
+    )
+
+
 def client_overrides() -> str:
-    return r"""
+    return _CLIENT_JS.replace("//__CPENG_CONSTS__", _competency_consts().strip())
+
+
+_CLIENT_JS = r"""
 // Work Log export — the same route-shaped UI, backed by one persisted day list.
 (function(){
   if (!window.EOS_EXPORT) return;
@@ -206,6 +233,63 @@ def client_overrides() -> str:
     var employer=query(req).get('employer')||'', days=filtered(await loadDays(),employer), open=['in-progress','blocked','waiting','todo','next'];
     for(var i=0;i<days.length;i++){if(days[i].date>=today())continue;var items=[];days[i].projects.forEach(function(g){g.items.forEach(function(it){if(open.indexOf(it.status)>=0)items.push({project:g.project,text:it.text,status:it.status});});});return {from:days[i].date,weekday:weekday(days[i].date),items:items};}return {from:'',items:[]};
   });
+  // ── CPEng competency evidence (mirrors competency.py) ──
+  // Offline is the case that matters most here: the office is where element 11
+  // (judgement) and 13 (local engineering knowledge) actually happen, and
+  // neither can be back-filled from a CV later.
+  //__CPENG_CONSTS__
+  // A fresh regex per call on purpose: one shared /g literal carries lastIndex
+  // between cpParse and cpStrip, so the second caller starts mid-string and
+  // silently misses tags — a bug that only shows on items with two tags.
+  function cpRe(){ return /(?<![\w#])#c(\d{1,2})\b/g; }
+  function cpParse(text){
+    var out = [], re = cpRe(), m;
+    while((m = re.exec(String(text||'')))){
+      var n = parseInt(m[1], 10);
+      if(CP_NAMES[String(n)] && out.indexOf(n) < 0) out.push(n);
+    }
+    return out.sort(function(a,b){ return a-b; });
+  }
+  function cpStrip(text){
+    return String(text||'').replace(cpRe(), '').replace(/\s{2,}/g,' ').trim();
+  }
+  window.EOS_EXPORT.registerRoute('GET','/worklog/api/competency',async function(req){
+    var p = query(req), employer = p.get('employer')||'';
+    var win = parseInt(p.get('window_days')||'180', 10); if(!(win > 0)) win = 180;
+    var until = p.get('until') || today();
+    var since = p.get('since') || daysAgo(win);
+    var hits = {}, total = 0, tagged = 0;
+    Object.keys(CP_NAMES).forEach(function(k){ hits[k] = []; });
+    filtered(await loadDays(), employer).forEach(function(d){
+      if(d.date < since || d.date > until) return;
+      d.projects.forEach(function(g){
+        g.items.forEach(function(it){
+          total++;
+          var els = cpParse(it.text);
+          if(!els.length) return;
+          tagged++;
+          els.forEach(function(n){
+            hits[String(n)].push({date:d.date, project:g.project||'General',
+                                  text:cpStrip(it.text), status:it.status||null});
+          });
+        });
+      });
+    });
+    var areas = Object.keys(CP_AREAS).map(function(area){
+      return {area:area, elements:CP_AREAS[area].map(function(n){
+        var k = String(n), rows = hits[k].slice().sort(function(a,b){ return b.date.localeCompare(a.date); });
+        return {n:n, name:CP_NAMES[k], focus:CP_FOCUS[k]||'', count:rows.length, items:rows.slice(0,8)};
+      })};
+    });
+    var covered = Object.keys(hits).filter(function(k){ return hits[k].length; }).length;
+    var openFocus = Object.keys(CP_FOCUS).filter(function(k){
+      return CP_FOCUS[k] === 'gap' && !hits[k].length;
+    }).map(Number).sort(function(a,b){ return a-b; });
+    return {since:since, until:until, employer:employer, areas:areas, covered:covered,
+            total_elements:Object.keys(CP_NAMES).length, tagged_items:tagged,
+            total_items:total, open_focus:openFocus, focus:CP_FOCUS, offline:true};
+  });
+
   window.EOS_EXPORT.registerRoute('GET','/worklog/api/portable',async function(){return {format:FORMAT,version:VERSION,exported_at:new Date().toISOString(),days:await loadDays()};});
 
   window.EOS_EXPORT.registerRoute('POST','/worklog/api/log',async function(req){

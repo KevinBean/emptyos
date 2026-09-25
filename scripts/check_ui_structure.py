@@ -21,6 +21,14 @@ Brand islands (own `:root` token namespace) are exempt — they are deliberate
 visual islands, not drift (see the island table in
 .claude/skills/eos-design-system-audit/SKILL.md).
 
+CSS is read from inline `<style>` blocks **and** sibling `pages/*.css`
+(2026-08-16). Reading only the inline block made every app that extracts its
+CSS to a sibling file structurally invisible — its hand-rolled cells scored
+`none`, so the `in_use >= 3` composite could never fire. Since
+`.claude/rules/multi-module-apps.md` actively recommends that extraction, the
+blind spot widened each time an app followed the convention (22/250 pages when
+found). Widening it left the tree clean and corrected island detection 7 -> 8.
+
 Duplication signals (2026-07-10 frontend design audit, `--duplication`) are
 *informational only* and never affect the exit code:
 
@@ -48,10 +56,13 @@ from __future__ import annotations
 
 import argparse
 import re
+import shutil
 import sys
-from collections import Counter
+import tempfile
 from pathlib import Path
 
+import scanner_lib
+import theme_css
 from check_base import REPO_ROOT as ROOT, git_tracked
 
 SKIP_FRAGMENTS = ("/_retired/", "/_example/", "/_catalog/")
@@ -70,21 +81,29 @@ ISLAND_SUFFIXES = (
 )
 
 STYLE_BLOCK_RE = re.compile(r"<style[^>]*>(.*?)</style>", re.S | re.I)
-ROOT_BLOCK_RE = re.compile(r":root\s*\{([^}]*)\}")
-PRIVATE_TOKEN_RE = re.compile(r"--([a-z]{1,4})-[\w-]+\s*:")
 CLASS_ATTR_RE = re.compile(r'class="([^"]*)"')
+
+#: Families theme.css owns, so `--accent-ink/-dim/-bg` never reads as a private
+#: `accent-*` namespace. Derived, not listed — see global_token_prefixes().
+_GLOBAL_PREFIXES = theme_css.global_token_prefixes()
 
 
 def is_island(path: Path, css: str) -> bool:
+    """A deliberate visual island — its own palette, not drift.
+
+    The mechanical rule moved to `scanner_lib.is_brand_island` when
+    check-text-tokens grew a second copy (2026-08-17). Sharing it also fixed
+    this one: the local version looked only inside `:root {}` at a 4-char
+    prefix bound, so it missed a namespace declared under a scoped selector and
+    any longer prefix. That hid four real islands — `--boards-*` (17 tokens),
+    `--series-*`, Aura and the device simulator — all of which the island table
+    in .claude/skills/eos-design-system-audit/SKILL.md already lists. 8 -> 12,
+    with nothing dropped.
+    """
     rel = path.as_posix()
     if any(rel.endswith(suf) for suf in ISLAND_SUFFIXES):
         return True
-    # Mechanical rule: a :root block declaring >=3 same-prefix private tokens.
-    for m in ROOT_BLOCK_RE.finditer(css):
-        prefixes = Counter(PRIVATE_TOKEN_RE.findall(m.group(1)))
-        if any(c >= 3 for c in prefixes.values()):
-            return True
-    return False
+    return scanner_lib.is_brand_island(css, global_prefixes=_GLOBAL_PREFIXES)
 
 
 def fingerprint(full: str, css: str) -> dict[str, str]:
@@ -133,19 +152,43 @@ def duplication_signals(full: str) -> dict[str, bool]:
     }
 
 
-def page_files(path: Path) -> tuple[str, str, str]:
-    """Return (html_text, css_of_first_style_blocks, html+sibling_js)."""
-    text = path.read_text(encoding="utf-8", errors="replace")
-    css = "\n".join(STYLE_BLOCK_RE.findall(text))
-    js = ""
-    for sib in path.parent.glob("*.js"):
-        if sib.name.endswith(".min.js"):
+def _sibling_text(path: Path, suffix: str) -> str:
+    out = ""
+    for sib in path.parent.glob(f"*{suffix}"):
+        if sib.name.endswith((f".min{suffix}", f".legacy{suffix}")):
             continue
         try:
-            js += sib.read_text(encoding="utf-8", errors="replace")
+            out += sib.read_text(encoding="utf-8", errors="replace") + "\n"
         except OSError:
             pass
-    return text, css, text + "\n" + js
+    return out
+
+
+def read_page_sources(path: Path) -> tuple[str, str, str]:
+    """Return (html_text, css_of_inline_blocks_plus_sibling_css, html+sibling_js).
+
+    Named ``read_page_sources``, not ``page_files``: ``scanner_lib.page_files``
+    is a *tree walker* returning paths, and two scanner modules exporting one
+    name with two shapes is a trap. This reads ONE page's sources.
+
+    ``_scan_pages`` below deliberately does not adopt ``scanner_lib.page_files``
+    either — it walks ``git_tracked()``, so gitignored personal apps stay out of
+    scope. Switching to the filesystem walk would move the denominator from 171
+    to ~250 pages and start reporting on personal apps, which is a behaviour
+    change rather than a cleanup (`.claude/rules/agent-cli.md`: adopt on touch).
+
+    The css slot MUST include sibling ``pages/*.css``. It feeds both
+    ``is_island`` (private :root namespace) and ``fingerprint`` (the ``hand``
+    detection for modal/toast/stats), so reading only inline ``<style>`` made
+    every app that extracts its CSS to a sibling file structurally invisible:
+    its hand-rolled cells scored ``none``, and since ``is_outlier`` requires
+    ``in_use >= 3`` the rule could never fire. That is the exact shape
+    ``.claude/rules/multi-module-apps.md`` recommends, so the blind spot widened
+    every time an app followed the convention (22/250 pages at 2026-08-16).
+    """
+    text = path.read_text(encoding="utf-8", errors="replace")
+    css = "\n".join(STYLE_BLOCK_RE.findall(text)) + "\n" + _sibling_text(path, ".css")
+    return text, css, text + "\n" + _sibling_text(path, ".js")
 
 
 def _scan_pages() -> list[Path]:
@@ -188,7 +231,7 @@ def main() -> int:
     islands = 0
 
     for page in pages:
-        text, css, full = page_files(page)
+        text, css, full = read_page_sources(page)
         if is_island(page, css):
             islands += 1
             continue
@@ -205,9 +248,10 @@ def main() -> int:
                 toks = [t for m in CLASS_ATTR_RE.finditer(full) for t in m.group(1).split()]
                 if len(toks) >= 20:
                     ratios.append(sum(1 for t in toks if t.startswith("eos-")) / len(toks))
-            blocks = STYLE_BLOCK_RE.findall(text)
-            if blocks:
-                css_lines.append(blocks[0].count("\n"))
+            # Total page CSS, not just the first inline block — an extracted
+            # sibling stylesheet is the same budget, just in another file.
+            if css.strip():
+                css_lines.append(css.count("\n"))
 
     if args.stats and ratios:
         ratios.sort()
@@ -215,8 +259,9 @@ def main() -> int:
         mid = ratios[len(ratios) // 2]
         print(f"info: S-1 eos-class adoption over {len(ratios)} pages — "
               f"median {mid:.2f}, min {ratios[0]:.2f}, max {ratios[-1]:.2f}")
-        print(f"info: S-2 first-<style> lines over {len(css_lines)} pages — "
-              f"median {css_lines[len(css_lines)//2]}, max {css_lines[-1]}")
+        print(f"info: S-2 total page CSS lines (inline + sibling) over "
+              f"{len(css_lines)} pages — median {css_lines[len(css_lines)//2]}, "
+              f"max {css_lines[-1]}")
 
     # S-4 / S-5 — informational worklists for migration-on-touch. Never gate,
     # and stay silent by default so preflight's advisory output stays terse.
@@ -283,6 +328,32 @@ def _selftest() -> int:
     if not is_island(Path("apps/x/pages/index.html"), island_css):
         fails.append("private-token :root not detected as island")
 
+    # Sibling-CSS blind spot (2026-08-16). A page with NO inline <style> whose
+    # component CSS lives in pages/*.css must still classify. Before the fix the
+    # cells scored `none`, so `in_use >= 3` never held and the rule could not
+    # fire — silently exempting every app that follows multi-module-apps.md.
+    # NB: this rewrites x.css in place, so _sibling_text must stay uncached.
+    _d = Path(tempfile.mkdtemp()) / "pages"
+    _d.mkdir(parents=True)
+    try:
+        (_d / "index.html").write_text(
+            '<link rel="stylesheet" href="x.css">\n<button class="btn-primary">Go</button>\n',
+            encoding="utf-8")
+        (_d / "x.css").write_text(
+            ".modal-bg{position:fixed}\n.toast{position:fixed}\n"
+            ".hero-card{padding:8px}\n.btn-primary{color:#fff}\n", encoding="utf-8")
+        _, _css, _full = read_page_sources(_d / "index.html")
+        if not is_outlier(fingerprint(_full, _css)):
+            fails.append("sibling-CSS hand-rolled page not flagged (S-2/S-3 blind spot)")
+        (_d / "x.css").write_text(
+            ":root{--zz-bg:#000;--zz-text:#fff;--zz-blue:#00f}\n.modal-bg{position:fixed}\n",
+            encoding="utf-8")
+        _, _css2, _ = read_page_sources(_d / "index.html")
+        if not is_island(_d / "index.html", _css2):
+            fails.append("sibling-CSS private-token :root not detected as island")
+    finally:
+        shutil.rmtree(_d.parent, ignore_errors=True)
+
     # S-4 / S-5 duplication classifier
     for src, want, why in (
         ("function esc(s) { return s; }", True, "function esc() not detected"),
@@ -306,7 +377,7 @@ def _selftest() -> int:
         for f in fails:
             print(f"SELFTEST FAIL: {f}")
         return 1
-    print("selftest ok — 11 classifier cases pass")
+    print("selftest ok — 13 classifier cases pass")
     return 0
 
 

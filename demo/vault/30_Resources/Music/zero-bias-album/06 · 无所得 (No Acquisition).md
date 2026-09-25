@@ -13,10 +13,8 @@ genre: Ambient / Drone / Granular Synthesis
 language: instrumental
 duration: "3:19"
 date_created: 2026-04-25
-suno_url: "https://suno.com/song/e0d8d892-76fc-48fb-9120-12ffb1424953"
-suno_song_id: e0d8d892-76fc-48fb-9120-12ffb1424953
-suno_model: v5.5
-suno_created: 2026-04-25T11:58:00
+model_version: v5.5
+published_at: 2026-04-25T11:58:00
 license: "© 2026 3:30 Channel — All rights reserved"
 ---
 
@@ -54,7 +52,4 @@ Instrumental, Ambient, Drone, Granular Synthesis, deep evolving sub-bass, sparse
 
 ## 版权证明 / Copyright proof
 
-![[06 · 无所得 (No Acquisition)-screenshot.png]]
-
-Suno publication: **April 25, 2026 at 11:58 AM** (v5.5).
-Source: https://suno.com/song/e0d8d892-76fc-48fb-9120-12ffb1424953
+Published: **April 25, 2026 at 11:58 AM** (v5.5).

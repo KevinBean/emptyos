@@ -43,6 +43,8 @@ if TYPE_CHECKING:
 #   artifact_path  = _routes.artifact_path
 #   cli_list       = _routes.cli_list
 #   cli_generate   = _routes.cli_generate
+#   deliver_work   = _routes.deliver_work
+#   iterate        = _routes.iterate
 # Adding a new method here? Add a matching binding line in app.py.
 # ────────────────────────────────────────────────────────────────────
 

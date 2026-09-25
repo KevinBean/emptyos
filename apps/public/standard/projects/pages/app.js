@@ -23,6 +23,13 @@ function collectCategories() {
     return counts;
 }
 
+// Chips are <button>s wired by delegation (no inline handler), and the tail of
+// single-use tags folds behind "+N more": this vault carries 36 tags, 24 of
+// them used exactly once, which rendered as five wrapped rows of chrome between
+// the search box and the first project.
+var _chipsExpanded = false;
+var CHIP_MIN_COUNT = 2;
+
 function renderCategoryBar() {
     var bar = document.getElementById('category-bar');
     if (!bar) return;
@@ -31,17 +38,41 @@ function renderCategoryBar() {
     var total = (showArchived ? allProjects : allProjects.filter(function(p){return p.status!=='archived'})).length;
     if (!tags.length) { bar.innerHTML = ''; bar.style.display = 'none'; return; }
     bar.style.display = 'flex';
+
+    // The selected tag stays visible even when it lives in the folded tail —
+    // otherwise picking one from the expanded list and then collapsing hides
+    // the only clue about why the board just emptied out.
+    var core = tags.filter(function(t) { return counts[t] >= CHIP_MIN_COUNT || t === currentCategory; });
+    var shown = _chipsExpanded ? tags : core;
+    var foldable = tags.length - core.length;
+
     function chip(label, value, count, active) {
-        var bg = active ? 'var(--accent)' : 'var(--bg-card)';
-        var fg = active ? 'var(--accent-ink)' : 'var(--text-secondary)';
-        var bd = active ? 'var(--accent)' : 'var(--border)';
-        return '<span onclick="setCategory(\'' + escAttr(value) + '\')" style="cursor:pointer;padding:4px 10px;border-radius:999px;font-size:12px;background:' + bg + ';color:' + fg + ';border:1px solid ' + bd + '">' +
-               esc(label) + ' <span style="opacity:0.7">(' + count + ')</span></span>';
+        return '<button type="button" class="pj-chip' + (active ? ' active' : '') +
+               '" data-tag="' + escAttr(value) + '">' + esc(label) +
+               ' <span class="pj-chip-n">' + count + '</span></button>';
     }
     var html = chip('All', '', total, currentCategory === '');
-    tags.forEach(function(t) { html += chip(t, t, counts[t], currentCategory === t); });
+    shown.forEach(function(t) { html += chip(t, t, counts[t], currentCategory === t); });
+    if (foldable > 0) {
+        html += '<button type="button" class="pj-chip pj-chip-more" data-chip-more="1">' +
+                (_chipsExpanded ? 'Fewer' : '+' + foldable + ' more') + '</button>';
+    }
     bar.innerHTML = html;
 }
+
+// One delegated listener for the whole bar, so it survives every re-render.
+document.addEventListener('click', function(e) {
+    var bar = document.getElementById('category-bar');
+    var btn = (bar && e.target.closest) ? e.target.closest('.pj-chip') : null;
+    if (!btn || !bar.contains(btn)) return;
+    if (btn.hasAttribute('data-chip-more')) {
+        _chipsExpanded = !_chipsExpanded;
+        renderCategoryBar();
+        sizeKanbanColumns();   // the bar just changed height above the board
+        return;
+    }
+    setCategory(btn.getAttribute('data-tag') || '');
+});
 
 function setCategory(tag) {
     currentCategory = tag || '';
@@ -49,6 +80,8 @@ function setCategory(tag) {
     filterProjects();
 }
 var currentView = localStorage.getItem('eos-projects-view') || 'kanban';
+var currentSort = 'recent';   // validated against SORTS below, once it exists
+var quickFilter = '';          // '' | key of QUICK_FILTERS - driven by the stat strip
 var showArchived = false;
 var filteredProjects = [];
 var typeConfig = {};
@@ -59,9 +92,80 @@ var featureRegistry = {};
 var STATUS_LABELS = { idea: 'Ideas', active: 'Active', 'spec-ready': 'Spec Ready', blocked: 'Blocked', shelved: 'Shelved', completed: 'Done', archived: 'Archived' };
 function getStatusOrder() { return showArchived ? ALL_STATUSES : ALL_STATUSES.filter(function(s){return s!=='archived'}); }
 
+// Undated projects must sort LAST under "deadline first"; this sentinel is
+// above every ISO date string, so it does that without a null branch.
+var NO_DEADLINE = '\uffff';
+
+// Sorting. 100 projects, 55 of them untouched for over a month - alphabetical
+// is the least useful order this data admits, so "recently active" leads. The
+// choice persists per machine.
+var SORTS = {
+    recent:   function(a, b) { return (a.stale_days || 0) - (b.stale_days || 0) || a.name.localeCompare(b.name); },
+    stale:    function(a, b) { return (b.stale_days || 0) - (a.stale_days || 0) || a.name.localeCompare(b.name); },
+    progress: function(a, b) { return (b.progress || 0) - (a.progress || 0) || a.name.localeCompare(b.name); },
+    name:     function(a, b) { return a.name.localeCompare(b.name); },
+    deadline: function(a, b) {
+        var A = a.deadline || NO_DEADLINE, B = b.deadline || NO_DEADLINE;
+        return A < B ? -1 : A > B ? 1 : a.name.localeCompare(b.name);
+    },
+};
+
+// Assigning a <select>.value with no matching <option> sets selectedIndex = -1
+// and renders an empty control, so the stored value is validated on the way IN,
+// not only on the way out.
+currentSort = SORTS[localStorage.getItem('eos-projects-sort')] ? localStorage.getItem('eos-projects-sort') : 'recent';
+
+function setSort(v) {
+    currentSort = SORTS[v] ? v : 'recent';
+    localStorage.setItem('eos-projects-sort', currentSort);
+    filterProjects();
+}
+
+// Quick filters. Each is also a stat card, and card and filter read the SAME
+// predicate - so the number shown and the rows it reveals cannot drift apart.
+//
+// Every "needs attention" signal is scoped to live projects. The API's own
+// `overdue` is purely date-based, so 26 finished projects were counted overdue
+// and stale alongside the live ones — a count nothing can act on.
+function isLive(p) { return p.status !== 'completed' && p.status !== 'archived'; }
+function isStale(p) { return isLive(p) && (p.stale_days || 0) > 30; }
+
+var QUICK_FILTERS = {
+    active:  {label: 'Active',     test: function(p) { return p.status === 'active'; }},
+    overdue: {label: 'Overdue',    test: function(p) { return isLive(p) && !!p.overdue; }},
+    stale:   {label: 'Stale 30d+', test: isStale},
+    notasks: {label: 'No tasks',   test: function(p) { return isLive(p) && !p.total_tasks; }},
+};
+
+function setQuickFilter(key) {
+    quickFilter = (quickFilter === key) ? '' : (QUICK_FILTERS[key] ? key : '');
+    renderStats();
+    filterProjects();
+}
+
+// A stat-card click that only changed the result set would be invisible state
+// with no way back - this pill is the off switch.
+function renderActiveFilter() {
+    var el = document.getElementById('active-filter');
+    if (!el) return;
+    var f = QUICK_FILTERS[quickFilter];
+    el.innerHTML = f
+        ? '<button type="button" class="pj-active-filter" onclick="setQuickFilter(' +
+          EOS_UI.jsArg(quickFilter) + ')" title="Clear this filter">' + esc(f.label) + '</button>'
+        : '';
+}
+
 function toggleArchived() {
     showArchived = !showArchived;
-    document.getElementById('btn-archive').textContent = showArchived ? 'Hide Archived' : 'Show Archived';
+    var btn = document.getElementById('btn-archive');
+    if (btn) {
+        // The button is a toggle, so it names the thing it governs and reports
+        // its own state — a label that flips between "Show"/"Hide" leaves the
+        // reader deducing the current state from the verb.
+        btn.classList.toggle('active', showArchived);
+        btn.setAttribute('aria-pressed', showArchived ? 'true' : 'false');
+        btn.title = showArchived ? 'Hide archived projects' : 'Include archived projects';
+    }
     renderCategoryBar();
     filterProjects();
 }
@@ -86,18 +190,26 @@ function setView(v) {
     localStorage.setItem('eos-projects-view', v);
     ['kanban','list','timeline','calendar'].forEach(function(b) {
         var el = document.getElementById('btn-' + b);
-        if (el) el.classList.toggle('active', v === b);
+        if (!el) return;
+        el.classList.toggle('active', v === b);
+        el.setAttribute('aria-pressed', v === b ? 'true' : 'false');
     });
     renderView();
 }
 
 function deadlineLabel(p) {
     if (!p.deadline) return '';
+    // A finished project's date is history: keep it, drop the urgency. Marking a
+    // completed project "Overdue 122d" is the same false alarm as calling it
+    // stale — it demands attention nothing can act on.
+    if (!isLive(p)) {
+        return '<span class="project-deadline pj-quiet">' + esc(p.deadline) + '</span>';
+    }
     var d = p.days_until_deadline;
     if (d === null) return '';
     if (d < 0) return '<span class="project-deadline overdue">Overdue ' + Math.abs(d) + 'd</span>';
     if (d <= 7) return '<span class="project-deadline soon">Due in ' + d + 'd</span>';
-    return '<span class="project-deadline">' + p.deadline + '</span>';
+    return '<span class="project-deadline">' + esc(p.deadline) + '</span>';
 }
 
 // progressBar() and typeBadge() live in workspace.js (loaded before this file).
@@ -108,19 +220,49 @@ function stageLabel(p) {
     return '<span style="font-size:10px;color:var(--text-muted)">' + (tc[p.stage] || p.stage) + '</span>';
 }
 
+// A summary card exists to answer "does this need me?" BEFORE the click
+// (.claude/rules/list-card-density.md). The kanban card carried a bare
+// "0/8 tasks" and a 4px bar, so a project with no tasks rendered as a title and
+// nothing else, and every card read as equally urgent.
+function taskMeta(p) {
+    if (p.total_tasks > 0) {
+        return '<span>' + p.done_tasks + '/' + p.total_tasks + ' tasks &middot; ' + p.progress + '%</span>';
+    }
+    return '<span class="pj-quiet">No tasks yet</span>';
+}
+
+// Staleness is the loudest signal in this vault, but it is meaningless on a
+// finished project: "Stale 141d" on a completed one is noise, not a nudge.
+// COLD_DAYS is the app's own existing "long dead" boundary, not a new
+// invention: projects/reading.py scores staleness against 90 and 180 days, and
+// panels.py treats 90+ as the neglected band. Reusing 90 keeps the card's red
+// tier aligned with what the backend already calls cold.
+var COLD_DAYS = 90;
+
+function staleLabel(p) {
+    if (!isStale(p)) return '';
+    var d = p.stale_days || 0;
+    return '<span class="pj-stale' + (d > COLD_DAYS ? ' cold' : '') + '">Stale ' + d + 'd</span>';
+}
+
+// One meta builder for both views, so kanban and list cannot end up describing
+// the same project differently.
+function cardMeta(p) {
+    var bits = [taskMeta(p)];
+    var sl = stageLabel(p); if (sl) bits.push(sl);
+    var dl = deadlineLabel(p); if (dl) bits.push(dl);
+    var st = staleLabel(p); if (st) bits.push(st);
+    return bits.join('');
+}
+
 function projectCardHtml(p) {
-    var metaBits = [];
-    if (p.total_tasks > 0) metaBits.push('<span>' + p.done_tasks + '/' + p.total_tasks + ' tasks</span>');
-    var sl = stageLabel(p); if (sl) metaBits.push(sl);
-    var dl = deadlineLabel(p); if (dl) metaBits.push(dl);
     var badges = [];
     if (p.type && p.type !== 'personal') badges.push({label: p.type, variant: 'neutral'});
-    var body = progressBar(p);
     return EOS_UI.entityCard({
         title: p.name,
         badges: badges,
-        meta: metaBits.join(''),
-        body: body || undefined,
+        meta: cardMeta(p),
+        body: progressBar(p) || undefined,
         onClick: "openProject(" + JSON.stringify(p.id) + ")",
     });
 }
@@ -133,12 +275,16 @@ var STATUS_COLORS = {
 };
 
 function renderKanban(projects) {
+    var mountEl = document.getElementById('main-view');
+    // EOS_UI.kanbanLayout has no empty state of its own — it maps over `groups`
+    // unconditionally. Without this branch the explained empty states below were
+    // unreachable in the one view that is default on a fresh browser.
+    if (!projects.length) { mountEl.innerHTML = emptyStateHtml(); return; }
     var order = getStatusOrder();
     var groups = order.map(function(s) {
         return {key: s, label: STATUS_LABELS[s], color: STATUS_COLORS[s] || 'gray'};
     });
-    var mount = document.getElementById('main-view');
-    mount.innerHTML = '<div id="projects-kanban-mount"' + (showArchived ? ' data-show-archived="true"' : '') + '></div>';
+    mountEl.innerHTML = '<div id="projects-kanban-mount"' + (showArchived ? ' data-show-archived="true"' : '') + '></div>';
     EOS_UI.kanbanLayout({
         mountId: 'projects-kanban-mount',
         items: projects,
@@ -159,27 +305,71 @@ function renderKanban(projects) {
             }
         },
     });
+    sizeKanbanColumns();
 }
 
+// R2-#2: the per-column scroll height used to be `calc(100dvh - 330px)`, a
+// constant standing in for chrome that is not constant — expanding the tag
+// chips moves the board down 64px (measured), the toolbar wraps at narrow
+// widths, and the 330 accounted for none of body's 80px FAB-dock padding, so
+// the scroller's bottom edge landed exactly under the dock. Measure instead.
+function sizeKanbanColumns() {
+    var mount = document.getElementById('projects-kanban-mount');
+    if (!mount) return;
+    // Measure the SCROLLER, not the mount. .eos-kanban-items starts ~69px below
+    // .eos-kanban (the board's own padding-top plus the column header), so
+    // measuring the mount overshoots by exactly that much and the max-height
+    // lets the column run past the FAB dock.
+    var box = mount.querySelector('.eos-kanban-items') || mount;
+    var dock = parseFloat(getComputedStyle(document.body).paddingBottom) || 0;
+    var h = window.innerHeight - box.getBoundingClientRect().top - dock - 12;
+    mount.style.setProperty('--pj-col-max', Math.max(220, Math.round(h)) + 'px');
+}
+
+window.addEventListener('resize', sizeKanbanColumns);
+
 function renderList(projects) {
-    var html = '<div class="project-list">';
-    html += projects.map(function(p) {
-        var metaBits = [];
-        if (p.total_tasks > 0) metaBits.push('<span>' + p.done_tasks + '/' + p.total_tasks + ' tasks (' + p.progress + '%)</span>');
-        else metaBits.push('<span>No tasks</span>');
-        var dl = deadlineLabel(p); if (dl) metaBits.push(dl);
-        if (p.stale_days > 30) metaBits.push('<span style="color:var(--warning)">Stale ' + p.stale_days + 'd</span>');
+    var mount = document.getElementById('main-view');
+    if (!projects.length) { mount.innerHTML = emptyStateHtml(); return; }
+    mount.innerHTML = '<div class="project-list">' + projects.map(function(p) {
         return EOS_UI.entityCard({
             title: p.name,
-            badges: [{label: p.status, variant: 'status-' + p.status}],
-            meta: metaBits.join(''),
+            badges: [{label: p.status, variant: EOS_UI.statusVariant(p.status, {'spec-ready': 'draft'})}],
+            meta: cardMeta(p),
             body: progressBar(p) || undefined,
             onClick: "openProject(" + JSON.stringify(p.id) + ")",
             className: 'list-card',
         });
-    }).join('');
-    html += '</div>';
-    document.getElementById('main-view').innerHTML = html || '<div class="eos-empty">No projects</div>';
+    }).join('') + '</div>';
+}
+
+// "Nothing here" has to say WHY. A search miss, a quick filter, a tag filter
+// and a genuinely empty vault are four situations with four different next
+// moves, and the old single "No projects" line answered none of them.
+function emptyStateHtml() {
+    var q = ((document.getElementById('search') || {}).value || '').trim();
+    if (q) {
+        return EOS_UI.emptyState({icon: '&#128269;', message: 'No project matches "' + q + '".',
+                                  actionLabel: 'Clear search', onAction: 'clearSearch()'});
+    }
+    if (quickFilter) {
+        var f = QUICK_FILTERS[quickFilter] || {};
+        return EOS_UI.emptyState({icon: '&#10003;', message: 'Nothing is ' + (f.label || '') + ' right now.',
+                                  actionLabel: 'Clear filter',
+                                  onAction: 'setQuickFilter(' + EOS_UI.jsArg(quickFilter) + ')'});
+    }
+    if (currentCategory) {
+        return EOS_UI.emptyState({icon: '&#127991;', message: 'No projects tagged "' + currentCategory + '".',
+                                  actionLabel: 'Show all tags', onAction: "setCategory('')"});
+    }
+    return EOS_UI.emptyState({icon: '&#128193;', message: 'No projects yet.',
+                              actionLabel: '+ New project', onAction: 'openCreate()'});
+}
+
+function clearSearch() {
+    var el = document.getElementById('search');
+    if (el) el.value = '';
+    filterProjects();
 }
 
 function renderView() {
@@ -193,18 +383,29 @@ function renderView() {
 var _timelineData = null;
 
 async function loadTimeline() {
+    // The payload is the whole portfolio and does not depend on the filters —
+    // only the rows we draw from it do. Re-fetching per keystroke blanked the
+    // chart to a loading state on every character typed into the search box.
+    if (_timelineData) { renderTimeline(_timelineData); return; }
     var mv = document.getElementById('main-view');
     mv.innerHTML = '<div class="eos-empty">Loading timeline...</div>';
     try {
         _timelineData = await EOS.api('/projects/api/timeline');
         renderTimeline(_timelineData);
     } catch(e) {
-        mv.innerHTML = '<div class="eos-empty">Failed to load timeline</div>';
+        mv.innerHTML = EOS_UI.errorState({message: 'Failed to load timeline', onRetry: 'loadTimeline()'});
     }
 }
 
 function renderTimeline(data) {
-    var projects = data.projects;
+    // /api/timeline returns the whole portfolio. Left as-is, filtering to
+    // "Overdue" and then switching to Timeline silently restored all 77 rows
+    // while the heading still read "7 of 100" — the views disagreed about what
+    // the user had asked for.
+    var visible = {};
+    filteredProjects.forEach(function(p) { visible[p.id] = true; });
+    var projects = data.projects.filter(function(p) { return visible[p.id]; });
+    if (!projects.length) { document.getElementById('main-view').innerHTML = emptyStateHtml(); return; }
     var rangeMin = new Date(data.range.min + 'T00:00:00');
     var rangeMax = new Date(data.range.max + 'T00:00:00');
     var today = new Date(data.today + 'T00:00:00');
@@ -230,9 +431,17 @@ function renderTimeline(data) {
     var html = '<div class="timeline-container">';
     html += '<div class="timeline-axis">' + months.map(function(m) { return '<div class="timeline-month">' + m + '</div>'; }).join('') + '</div>';
     html += '<div style="position:relative">';
-    html += '<div class="timeline-today" style="left:calc(160px + ' + todayX + '% * (100% - 160px) / 100)"></div>';
+    // `X% * (100% - 160px) / 100` multiplies two lengths, which calc() rejects,
+    // so the whole declaration was dropped and the marker fell back to left:auto
+    // -> the container's left edge. A red line pinned to x=0 does not read as
+    // broken, it reads as a border, so a Gantt chart has been claiming for
+    // months that today precedes every project in it. Multiplying a length by a
+    // unitless number is the valid form.
+    html += '<div class="timeline-today" style="left:calc(var(--tl-label) + ' +
+            '(100% - var(--tl-label)) * ' + todayX.toFixed(2) + ' / 100)" ' +
+            'title="Today (' + escAttr(data.today) + ')"></div>';
 
-    projects.sort(function(a,b) { return a.start < b.start ? -1 : 1; });
+    projects.sort(function(a, b) { return a.start < b.start ? -1 : 1; });
     projects.forEach(function(p) {
         var left = dateToX(p.start);
         var right = dateToX(p.end);
@@ -241,12 +450,12 @@ function renderTimeline(data) {
         var borderColor = typeColors[p.type] || 'var(--accent)';
 
         html += '<div class="timeline-row">' +
-            '<div class="timeline-label" onclick="openProject(\'' + escAttr(p.id) + '\')" title="' + escAttr(p.name) + '">' +
+            '<div class="timeline-label" onclick="openProject(' + EOS_UI.jsArg(p.id) + ')" title="' + escAttr(p.name) + '">' +
                 typeBadge(p) + esc(p.name) +
             '</div>' +
             '<div class="timeline-bar-area">' +
                 '<div class="timeline-bar" style="left:' + left + '%;width:' + width + '%;background:' + color + ';border:1px solid ' + borderColor + '" ' +
-                    'onclick="openProject(\'' + escAttr(p.id) + '\')" title="' + escAttr(p.name) + ' (' + p.progress + '%)">' +
+                    'onclick="openProject(' + EOS_UI.jsArg(p.id) + ')" title="' + escAttr(p.name) + ' (' + p.progress + '%)">' +
                     '<div class="timeline-fill" style="width:' + p.progress + '%;background:' + color + '"></div>' +
                 '</div>' +
             '</div>' +
@@ -266,11 +475,24 @@ async function loadCalendar() {
         var data = await EOS.api('/projects/api/calendar?month=' + _calendarMonth);
         renderCalendar(data);
     } catch(e) {
-        mv.innerHTML = '<div class="eos-empty">Failed to load calendar</div>';
+        mv.innerHTML = EOS_UI.errorState({message: 'Failed to load calendar', onRetry: 'loadCalendar()'});
     }
 }
 
 function renderCalendar(data) {
+    // Same disagreement as the timeline: the month grid is built from every
+    // project's tasks, so a filtered board became an unfiltered calendar.
+    var visible = {};
+    filteredProjects.forEach(function(p) { visible[p.id] = true; });
+    var calendar = {};
+    Object.keys(data.calendar || {}).forEach(function(day) {
+        var kept = data.calendar[day].filter(function(t) { return visible[t.project_id]; });
+        if (kept.length) calendar[day] = kept;
+    });
+    // Replace only the calendar map; a wholesale rebuild would silently drop
+    // any other field api_calendar returns now or later.
+    data = Object.assign({}, data, {calendar: calendar});
+
     var parts = _calendarMonth.split('-');
     var year = parseInt(parts[0]), month = parseInt(parts[1]);
     var firstDay = new Date(year, month - 1, 1);
@@ -283,9 +505,9 @@ function renderCalendar(data) {
     var typeColors = {personal:'var(--accent)',engineering:'var(--warning)',development:'#3b82f6'};
 
     var html = '<div class="cal-header">' +
-        '<button class="cal-nav" onclick="calNav(-1)">&lt;</button>' +
+        '<button class="cal-nav" onclick="calNav(-1)" aria-label="Previous month">&lt;</button>' +
         '<div style="font-size:16px;font-weight:600">' + monthLabel + '</div>' +
-        '<button class="cal-nav" onclick="calNav(1)">&gt;</button>' +
+        '<button class="cal-nav" onclick="calNav(1)" aria-label="Next month">&gt;</button>' +
     '</div>';
 
     html += '<div class="cal-grid">';
@@ -305,7 +527,12 @@ function renderCalendar(data) {
         tasks.slice(0, 3).forEach(function(t) {
             var color = typeColors[t.type] || 'var(--accent)';
             var cls = 'cal-task' + (t.is_deadline ? ' is-deadline' : '');
-            html += '<div class="' + cls + '" onclick="openProject(\'' + escAttr(t.project_id) + '\')">' +
+            // A cell is ~130px wide, so every entry is cut at 25 chars and
+            // the half that matters is often the half that got cut. The
+            // tooltip carries the whole task and the project it belongs to.
+            var full = t.task + ' \u2014 ' + (t.project || t.project_id || '');
+            html += '<div class="' + cls + '" title="' + escAttr(full) + '"' +
+                ' onclick="openProject(' + EOS_UI.jsArg(t.project_id) + ')">' +
                 '<span class="cal-dot" style="background:' + color + '"></span>' +
                 esc(t.task.substring(0, 25)) +
             '</div>';
@@ -330,73 +557,136 @@ function calNav(delta) {
 }
 
 var _portfolioStats = null;
+var _healthScore = null;
+var _statsFetched = false;   // set only on SUCCESS, so a failure still retries
 
-async function renderStats(projects) {
-    var total = projects.length;
-    var active = projects.filter(function(p) { return p.status === 'active'; }).length;
-    var overdue = projects.filter(function(p) { return p.overdue; }).length;
+// The five .eos-hero cards wrapped into three rows (~310px) because .eos-hero
+// is a hard two-column grid, so the first project sat below the fold on a
+// 1200px screen. statCards is the dense sibling; the four that name a subset of
+// the portfolio are also the filters for it, so a number is a door.
+function statItems() {
+    // Same base as the board — see visibleBase().
+    var projects = visibleBase();
+    var counts = {total: projects.length};
+    ['active', 'overdue', 'stale', 'notasks'].forEach(function(k) {
+        counts[k] = projects.filter(QUICK_FILTERS[k].test).length;
+    });
     var totalTasks = projects.reduce(function(s, p) { return s + p.total_tasks; }, 0);
     var doneTasks = projects.reduce(function(s, p) { return s + p.done_tasks; }, 0);
     var pct = totalTasks > 0 ? Math.round(doneTasks / totalTasks * 100) : 0;
 
-    var byType = {};
-    projects.forEach(function(p) { var t = p.type || 'personal'; byType[t] = (byType[t]||0) + 1; });
-    var typeStr = Object.keys(byType).map(function(t) { return t + ': ' + byType[t]; }).join(', ');
+    function filterCard(key, label, variant) {
+        return {
+            key: key, label: label, value: counts[key],
+            // A zero count is not a state worth colouring; muted keeps the
+            // strip from crying "danger" when nothing is overdue.
+            variant: counts[key] ? variant : 'muted',
+            onClick: function() { setQuickFilter(key); },
+        };
+    }
+    return [
+        {key: '', label: 'Projects', value: counts.total, variant: 'accent',
+         onClick: function() { setQuickFilter(''); }},
+        filterCard('active',  'Active',     'success'),
+        filterCard('overdue', 'Overdue',    'danger'),
+        filterCard('stale',   'Stale 30d+', 'warning'),
+        filterCard('notasks', 'No tasks',   'muted'),
+        {key: null, label: 'Tasks done', value: pct + '%', variant: 'muted'},
+        {key: null, label: 'Health', value: _healthScore == null ? '\u2014' : _healthScore,
+         variant: _healthScore == null ? 'muted'
+                  : _healthScore > 70 ? 'success' : _healthScore > 40 ? 'warning' : 'danger'},
+        {key: null, label: 'Done / 7d',
+         value: _portfolioStats && typeof _portfolioStats.velocity_7d === 'number'
+                ? _portfolioStats.velocity_7d : '\u2014',
+         variant: 'muted'},
+    ];
+}
 
-    document.getElementById('stats-row').innerHTML =
-        '<div class="eos-hero-card card-in"><div class="eos-hero-label">Portfolio Health</div><div id="health-ring" style="height:60px;display:flex;align-items:center;justify-content:center"><span class="eos-hero-val">...</span></div></div>' +
-        '<div class="eos-hero-card card-in"><div class="eos-hero-label">Projects</div><div class="eos-hero-val">' + total + '</div><div class="eos-hero-sub">' + active + ' active · ' + typeStr + '</div></div>' +
-        '<div class="eos-hero-card card-in"><div class="eos-hero-label">Tasks</div><div class="eos-hero-val">' + doneTasks + '<span style="font-size:16px;color:var(--text-muted)">/' + totalTasks + '</span></div><div class="eos-hero-sub">' + pct + '% complete</div></div>' +
-        '<div class="eos-hero-card card-in"><div class="eos-hero-label">Overdue</div><div class="eos-hero-val" style="color:' + (overdue > 0 ? 'var(--danger)' : 'var(--success)') + '">' + overdue + '</div></div>' +
-        '<div class="eos-hero-card card-in"><div class="eos-hero-label">Velocity</div><div class="eos-hero-val" id="velocity-val">...</div><div class="eos-hero-sub">tasks / 7 days</div></div>';
+function paintStats() {
+    var items = statItems();
+    EOS_UI.statCards('stats-row', items);
+    // statCards has no per-card class hook, so mark the armed filter after
+    // render — without it, a clicked card gives no sign it is the one filtering.
+    var host = document.getElementById('stats-row');
+    if (!host) return;
+    items.forEach(function(it, i) {
+        if (!quickFilter || it.key !== quickFilter) return;
+        var card = host.querySelector('[data-stat-index="' + i + '"]');
+        if (card) card.classList.add('is-on');
+    });
+}
 
+async function renderStats() {
+    paintStats();
+    renderActiveFilter();
+    if (_statsFetched) return;
     try {
-        var [health, stats] = await Promise.all([
+        var res = await Promise.all([
             EOS.api('/projects/api/portfolio-health'),
             EOS.api('/projects/api/stats'),
         ]);
-        _portfolioStats = stats;
-        var ring = document.getElementById('health-ring');
-        if (health && typeof health.score === 'number') {
-            if (ring) {
-                // #health-ring is a plain div — EOS_UI.ring targets an SVG circle
-                // (sets stroke-dashoffset), so calling it here is a silent no-op
-                // that left the "..." glyph forever. Render the score numerically.
-                var hcol = health.score > 70 ? 'var(--success)' : health.score > 40 ? 'var(--warning)' : 'var(--danger)';
-                ring.innerHTML = '<span class="eos-hero-val" style="color:' + hcol + '">' + health.score + '</span>';
-            }
-        } else if (ring) {
-            // Endpoint reachable but no score (e.g. no projects yet) — show a
-            // neutral placeholder, never the permanent "..." loading glyph.
-            ring.innerHTML = '<span class="eos-hero-val" style="color:var(--text-muted)" title="No projects to score yet">—</span>';
-        }
-        document.getElementById('velocity-val').textContent = stats && typeof stats.velocity_7d === 'number' ? stats.velocity_7d : 0;
-    } catch(e) {
-        // Fetch failed (daemon down, AI/index error) — replace the "..."
-        // loading glyphs with an explicit error marker so the cards don't
-        // hang forever.
-        var ring = document.getElementById('health-ring');
-        if (ring) ring.innerHTML = '<span class="eos-hero-val" style="color:var(--text-muted)" title="Could not load portfolio health">—</span>';
-        var vel = document.getElementById('velocity-val');
-        if (vel) vel.textContent = '—';
+        _healthScore = (res[0] && typeof res[0].score === 'number') ? res[0].score : null;
+        _portfolioStats = res[1] || {};
+        _statsFetched = true;      // only a SUCCESS closes the door
+    } catch (e) {
+        // Deliberately do NOT set _statsFetched: these two endpoints are
+        // LLM/index-backed and fail transiently, and latching the flag here made
+        // a single 500 permanent for the session — the `r` refresh key and the
+        // post-drag reload both returned early and repainted the same em dash.
+        _portfolioStats = _portfolioStats || {};
     }
+    paintStats();
+}
+
+// The set every count in this page is measured against. Archived projects are
+// out of scope unless the toggle says otherwise, and the stat strip, the
+// subtitle and the board all have to agree about that or the numbers contradict
+// each other on screen (the Projects card read 100 beside a board of 77).
+function visibleBase() {
+    return showArchived ? allProjects : allProjects.filter(function(p) { return p.status !== 'archived'; });
 }
 
 function filterProjects(q) {
-    q = q || document.getElementById('search').value.toLowerCase();
-    var base = showArchived ? allProjects : allProjects.filter(function(p){return p.status!=='archived'});
+    // An explicit '' from a caller (EOS.registerActions dispatches filter(""))
+    // means "clear the search", so clear the box too — otherwise the input still
+    // reads `acme` beside an unfiltered board.
+    var box = document.getElementById('search');
+    if (q === undefined || q === null) {
+        q = (box || {}).value || '';
+    } else if (box && box.value !== q) {
+        box.value = q;
+    }
+    q = String(q).toLowerCase();
+    var base = visibleBase();
     if (currentCategory) {
         base = base.filter(function(p) { return projectTags(p).indexOf(currentCategory) !== -1; });
     }
-    if (!q) { filteredProjects = base; }
-    else {
-        filteredProjects = base.filter(function(p) {
+    var qf = QUICK_FILTERS[quickFilter];
+    if (qf) base = base.filter(qf.test);
+    if (q) {
+        base = base.filter(function(p) {
             return p.name.toLowerCase().includes(q) ||
                 projectTags(p).join(' ').includes(q) ||
                 p.status.toLowerCase().includes(q);
         });
     }
+    // Copy before sorting: allProjects is the shared source every other view
+    // reads, and Array.prototype.sort mutates in place.
+    filteredProjects = base.slice().sort(SORTS[currentSort] || SORTS.recent);
+    renderActiveFilter();
+    updateSubtitle();
     renderView();
+}
+
+// The heading is the one place that can honestly say "you are looking at 8 of
+// 100" — without it a filtered board looks like a vault that lost its projects.
+function updateSubtitle() {
+    var el = document.getElementById('subtitle');
+    if (!el) return;
+    var shown = filteredProjects.length, total = visibleBase().length;
+    el.textContent = shown === total
+        ? total + ' projects'
+        : shown + ' of ' + total + ' projects';
 }
 
 // Opening a project navigates to its full-page workspace (the one project
@@ -416,14 +706,14 @@ async function load() {
             EOS.api('/projects/api/type-config'),
             loadTemplates(),
         ]);
+        _timelineData = null;      // portfolio changed; the cached chart is stale
         allProjects = projects;
         typeConfig = tc.types || {};
         toolsByType = tc.tools || {};
         featureRegistry = tc.features || {};
         ALL_STATUSES = tc.statuses || ALL_STATUSES;
         filteredProjects = allProjects;
-        document.getElementById('subtitle').textContent = allProjects.length + ' projects';
-        renderStats(allProjects);
+        renderStats();
         renderCategoryBar();
         filterProjects();
     } catch(e) {
@@ -434,8 +724,16 @@ async function load() {
 // Init
 ['kanban','list','timeline','calendar'].forEach(function(v) {
     var el = document.getElementById('btn-' + v);
-    if (el) el.classList.toggle('active', currentView === v);
+    if (!el) return;
+    el.classList.toggle('active', currentView === v);
+    el.setAttribute('aria-pressed', currentView === v ? 'true' : 'false');
 });
+(function () {
+    // The sort is restored from localStorage, so the control has to be told —
+    // otherwise the list is sorted one way and the picker claims another.
+    var sel = document.getElementById('sort');
+    if (sel) sel.value = currentSort;
+})();
 if (EOS.keys) { EOS.keys.register('n', 'New project', function() { openCreate(); }); EOS.keys.register('r', 'Refresh', function() { load(); }); }
 
 // Hash redirect for legacy /projects/#<id> deep-links → the workspace page.

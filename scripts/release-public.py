@@ -86,6 +86,11 @@ CRUFT_PATHS = [
     # Engineering-only utility script — sole public consumer of the held
     # engines/models (cable specs). Drop it so models stays private.
     "scripts/import_nexans_library.py",
+    # The personal-pattern files. Each is by construction a list of the strings
+    # it protects, so shipping it disclosed them. The snapshot scan below reads
+    # the private copies instead (run_scans → --patterns).
+    ".eos-personal",
+    ".eos-personal-subs",
 ]
 # Glob patterns (vs. exact paths) for cruft that varies by port/instance.
 CRUFT_GLOBS = [
@@ -139,19 +144,41 @@ PUBLIC_DOC_DROP = [
     # Internal triage over a scraped feed — names a private individual and cites
     # held engines. Never a contributor/user doc.
     "docs/MAX-OLIVER-REPO-CHECK-2026-06-28.md",
+    # Not a doc: a one-off 2026-04 migration of the maintainer's own vault. Its
+    # rename table names personal notes (visa, medical, relocation, a former
+    # employer's review), so it is personal data, not a contributor tool.
+    "scripts/standardize_projects.py",
+    # Dated internal audit reports (2026-08/09). Each is a findings ledger over
+    # the WHOLE tree — engineering apps and engines included, by path — written
+    # for the maintainer, not a contributor. First reached this gate at v0.7.0,
+    # the first release since they were written. Their only inbound links are
+    # each other, two `.claude/rules` mentions and a held engine's test, so
+    # dropping them strands no shipped user/contributor doc.
+    "docs/APPS-MATRIX-AUDIT-2026-08-28.md",
+    "docs/DESIGN-SYSTEM-AUDIT-2026-09-12.md",
+    "docs/FRONTEND-AUDIT-2026-09-03.md",
+    "docs/SYSTEM-AUDIT-2026-09-05.md",
     # The generated skill matrix documents EVERY skill, including the private
     # engineering ones (their names AND descriptions). Unlike APPS.md there is no
     # --public-only mode on generate_skills_doc.py, so the snapshot cannot filter
     # it and the whole matrix would ship. Drop it until the generator learns to
     # emit a public-only catalog, then serve the public subset instead.
     "docs/SKILLS.md",
-    # Same shape, worse payload: the generated tier matrix lists EVERY tier —
-    # including the private distributions, their audiences, app counts, and
-    # descriptions (paid/premium plans and unannounced commercial branding).
-    # generate_tiers_doc.py has no --public-only mode either, so it cannot be
-    # filtered; it must not ship. It leaked publicly v0.4.5 → v0.5.0 because the
-    # held-IP gate skipped it as "generated, trusted" — see check_docs_no_held_refs.
-    "docs/TIERS.md",
+    # docs/TIERS.md is NO LONGER dropped (2026-08-30). generate_tiers_doc.py
+    # grew a --public-only mode and the snapshot regenerates it on the normal
+    # path, the same way APPS.md is handled — so the public repo gets a real,
+    # filtered tier matrix instead of nothing. It is NOT added to the held-IP
+    # gate's skip list, so it is scanned like any other file.
+    #
+    # Two honest limits on that, because the scan is weaker than it looks:
+    #   * PUBLIC_DOC_HELD_TOKENS holds engine paths and ENGINEERING app ids. It
+    #     contains no tier names or product brands, so it cannot catch a slip on
+    #     `plekto` / `plus` / `english-learning` / `englishos-cloud`. For those,
+    #     `private = true` is the ONLY defence — there is one, not two.
+    #   * Under `--all`, neither this regeneration nor filter_docs runs, so the
+    #     unfiltered private matrix ships. That was equally true when the file
+    #     was on the drop list (filter_docs is inside the same branch); `--all`
+    #     is the deliberate "ship everything" escape hatch, not a public path.
 ]
 # Section-level public hold: wrap engineering/internal prose in a shared doc (one
 # that legitimately stays public) between these markers; the release strips the
@@ -182,6 +209,15 @@ VERSION_RE = re.compile(r"^v\d+\.\d+\.\d+(?:-[a-z0-9]+)?$")
 # (and their `extends` chain) ship to the public repo. Dev/personal/uncategorized
 # apps stay private. Override per-invocation with --all.
 PUBLIC_TIERS = ("core", "standard")
+
+# Whole `apps/<track>/` subtrees `prune_snapshot` removes from every public
+# snapshot. Named here rather than inline at the call site because the
+# working-tree pre-checks need the same answer: a manifest under one of these
+# cannot reach the public repo, so flagging it pre-emptively blocks a release
+# over a file the snapshot would never carry. `check_no_private_apps`'s own
+# docstring already states that principle for UNTRACKED paths; a dropped track
+# is the same argument one level up.
+PUBLIC_DROP_TRACKS = ("extension", "personal", "installed", "private", "_catalog")
 
 # Gates that degraded to a warning instead of running. Two of them skip when the
 # machine lacks a live daemon / mounted vault, which means a release can ship
@@ -246,7 +282,13 @@ def run_scans(target_dir: Path | None = None) -> None:
         # Scripts live in ROOT/scripts/ — invoke with absolute path so they
         # can run inside the snapshot dir which has its own copy.
         path = ROOT / "scripts" / script
-        run([sys.executable, str(path)], cwd=cwd)
+        cmd = [sys.executable, str(path)]
+        if target_dir is not None and script == "check-personal.py":
+            # The snapshot's own `.eos-personal` was swept as cruft, so point the
+            # scan at the private copy and ignore the allowlist: no file in a
+            # public snapshot may carry personal data.
+            cmd += ["--patterns", str(ROOT / ".eos-personal"), "--no-allowlist"]
+        run(cmd, cwd=cwd)
     check_no_private_apps(cwd)
     if target_dir is None:
         # Static dispatch audit — working tree, public-source scope. Catches
@@ -402,6 +444,12 @@ def report_skipped_gates() -> None:
     print("  " + "=" * 66)
 
 
+def _in_dropped_track(rel_posix: str) -> bool:
+    """True for a path under an `apps/<track>/` subtree the snapshot drops."""
+    parts = rel_posix.split("/")
+    return len(parts) > 2 and parts[0] == "apps" and parts[1] in PUBLIC_DROP_TRACKS
+
+
 def check_no_private_apps(cwd: Path) -> None:
     """Refuse the release if any tracked app under apps/ declares `[app] private = true`.
 
@@ -411,11 +459,28 @@ def check_no_private_apps(cwd: Path) -> None:
     deployments. Both layers read the same manifest field — one source of
     truth.
 
-    Only consults git-tracked manifests — gitignored paths (e.g. apps/personal/)
-    never enter the snapshot, so flagging them here is a false positive that
-    blocks releases the snapshot itself would never carry. Inside a snapshot
-    dir (no `.git`), falls back to filesystem glob because every file there
-    is by definition tracked.
+    Only consults git-tracked manifests — untracked paths never enter the
+    snapshot, so flagging them here is a false positive that blocks releases the
+    snapshot itself would never carry. Inside a snapshot dir (no `.git`), falls
+    back to filesystem glob because every file there is by definition tracked.
+
+    A whole dropped TRACK is the same argument one level up, and is why this
+    gate first fired on 2026-09-20 against `apps/extension/english-learning/
+    speaking-practice` — tracked, `private = true` since 2026-08-30, and held
+    three times over (the `extension` track is in `PUBLIC_DROP_TRACKS`, its
+    tier is private, and the tier is not in `PUBLIC_TIERS`). The flag is
+    correct there and not redundant: its OTHER enforcement point is runtime,
+    where `app_loader` hides it from any demo deployment that has the code
+    (`.claude/rules/demo-mode.md`). So the exemption is the fix, not the flag.
+    It applies only in a working tree — inside a snapshot the tracks are
+    already gone, so a manifest still present IS the leak, and skipping by
+    track name there would disarm the gate.
+
+    The same reasoning now has to cover paths that ARE tracked but are pruned
+    from every snapshot: `apps/personal/` became tracked on 2026-08-16 and 15 of
+    its manifests declare `private = true`, which would abort every release for
+    apps the snapshot never carries. `is_never_published` is that exemption, and
+    `assert_never_published_absent` is what keeps it honest.
     """
     import tomllib
 
@@ -425,7 +490,8 @@ def check_no_private_apps(cwd: Path) -> None:
 
     # In a git working tree, restrict to tracked manifests. In a snapshot
     # (no .git), every file present is part of the snapshot, so glob it.
-    if (cwd / ".git").exists():
+    in_working_tree = (cwd / ".git").exists()
+    if in_working_tree:
         try:
             out = subprocess.run(
                 ["git", "ls-files", "apps/**/manifest.toml"],
@@ -437,15 +503,29 @@ def check_no_private_apps(cwd: Path) -> None:
     else:
         manifests = list(apps_dir.rglob("manifest.toml"))
 
+    from emptyos.sdk.release_filter import is_never_published
+
     offenders: list[str] = []
     for manifest_path in manifests:
+        try:
+            rel = manifest_path.relative_to(cwd)
+        except ValueError:
+            continue
+        # Tracked, but pruned from every snapshot — see the docstring.
+        if is_never_published(rel.as_posix()):
+            continue
+        # Same exemption, one level up: a whole track `prune_snapshot` drops.
+        # Applied ONLY in the working tree. Inside a snapshot the tracks are
+        # already gone, so a manifest still present there IS the leak this gate
+        # exists to catch — skipping by track name there would disarm it.
+        if in_working_tree and _in_dropped_track(rel.as_posix()):
+            continue
         try:
             with open(manifest_path, "rb") as f:
                 data = tomllib.load(f)
         except (OSError, tomllib.TOMLDecodeError):
             continue
         if data.get("app", {}).get("private", False):
-            rel = manifest_path.relative_to(cwd)
             offenders.append(str(rel))
     if offenders:
         joined = "\n      ".join(offenders)
@@ -522,14 +602,22 @@ def filter_to_tiers(temp_dir: Path, tier_names: tuple[str, ...]) -> None:
         f"{len(allowed_plugins)} plugins, {len(allowed_engines)} engines"
     )
 
-    from emptyos.sdk.release_filter import drop_tests_bound_to, prune_snapshot
+    from emptyos.sdk.release_filter import (
+        assert_never_published_absent,
+        drop_tests_bound_to,
+        prune_snapshot,
+    )
 
     report = prune_snapshot(
         temp_dir,
         allowed_apps=allowed_apps,
         allowed_plugins=allowed_plugins,
         allowed_engines=allowed_engines,
-        drop_tracks=("extension", "personal", "installed", "private", "_catalog"),
+        drop_tracks=PUBLIC_DROP_TRACKS,
+        # `tests/personal/` became git-tracked in the private repo on 2026-08-16,
+        # so `git archive` now collects it. `drop_tests_bound_to` globs
+        # `tests/test_*.py` non-recursively and cannot see it.
+        drop_test_dirs=("personal",),
     )
 
     if report.dropped_apps:
@@ -547,6 +635,13 @@ def filter_to_tiers(temp_dir: Path, tier_names: tuple[str, ...]) -> None:
         for d in dropped:
             print(f"    {d}")
 
+    # Receipt, not an inference. The personal-data and branding scanners now
+    # SKIP these paths (they are tracked-but-never-published), so their absence
+    # here is what makes that exemption safe — prove it rather than trusting the
+    # prune arguments above to have been passed correctly.
+    assert_never_published_absent(temp_dir)
+    step("Verified: no never-published subtree survived into the snapshot")
+
 
 def filter_release_toml(temp_dir: Path) -> None:
     """Strip private tiers (+ the targets that reference them) from the shipped release.toml.
@@ -561,6 +656,12 @@ def filter_release_toml(temp_dir: Path) -> None:
     so remove it here, along with any [targets.*] that packages it. Comments
     immediately above a dropped section are dropped with it — they carry the
     rationale prose (premium/commercial plans) that is the point of removing it.
+
+    NOT SUFFICIENT ON ITS OWN. `private` is a flag someone remembers to set;
+    `PUBLIC_TIERS` is what actually ships. Six tiers are non-private and still
+    ship nothing, so this pass leaves their app lists intact and naming software
+    the snapshot no longer holds. `prune_release_toml_to_snapshot` runs straight
+    after and closes that; keep them paired.
     """
     path = temp_dir / "release.toml"
     if not path.is_file():
@@ -600,6 +701,336 @@ def filter_release_toml(temp_dir: Path) -> None:
         out.extend(pending)  # trailing comments after a kept section
     path.write_text("".join(out), encoding="utf-8")
     print(f"    dropped {len(private)} private tier(s): {', '.join(sorted(private))}")
+    if dead_targets:
+        print(f"    dropped {len(dead_targets)} target(s): {', '.join(sorted(dead_targets))}")
+
+
+# Every array a tier can declare. `services` is here because
+# package-release.py resolves ("apps", "plugins", "skills", "services") and
+# `engines` because release_filter prunes engines/<name>/ — between them that is
+# every id a tier names. The regexes are BUILT from this tuple so a key can
+# never be added to one and missed by the other.
+_ARRAY_KEYS = ("apps", "plugins", "skills", "engines", "services")
+_KEY_ALT = "|".join(_ARRAY_KEYS)
+_INLINE_ARRAY = re.compile(rf"^(\s*)({_KEY_ALT})\s*=\s*\[(.*)\]\s*$")
+_OPEN_ARRAY = re.compile(rf"^(\s*)({_KEY_ALT})\s*=\s*\[\s*$")
+_QUOTED_ID = re.compile(r'"([^"]+)"')
+_SECTION = re.compile(r"^\s*(\[[^\]]+\])\s*$")
+
+
+def _snapshot_inventory(temp_dir: Path) -> dict[str, set[str]]:
+    """What the snapshot actually contains, by tier-array kind."""
+    app_ids: set[str] = set()
+    apps_dir = temp_dir / "apps"
+    if apps_dir.is_dir():
+        for mf in apps_dir.rglob("manifest.toml"):
+            try:
+                aid = (tomllib.loads(mf.read_text(encoding="utf-8")).get("app") or {}).get("id")
+            except Exception:
+                continue
+            if aid:
+                app_ids.add(aid)
+    plugins = {
+        mf.parent.name for mf in (temp_dir / "plugins").glob("*/manifest.toml")
+    } if (temp_dir / "plugins").is_dir() else set()
+    skills: set[str] = set()
+    for base in (temp_dir / "skills", temp_dir / ".agents" / "skills"):
+        if base.is_dir():
+            skills |= {d.name for d in base.iterdir() if d.is_dir()}
+    engines = {
+        d.name for d in (temp_dir / "engines").iterdir() if d.is_dir()
+    } if (temp_dir / "engines").is_dir() else set()
+    # `filter_commercial_services` runs AFTER this pass, so the held commercial
+    # services are still on disk right now. Reading the directory alone would
+    # therefore report `earthing-calc` (paid calc SaaS) and
+    # `englishos-control-plane` as present, keep them in a surviving tier's
+    # `services` array, and pass the post-write ghost check — which validates
+    # against this same dict. Subtract what is already condemned.
+    #
+    # The docstring's "the tree on disk is the authority" holds for apps,
+    # plugins and engines, whose deletions all precede this pass. It does not
+    # hold for services, and `skills` are never pruned from the tree at all.
+    held_services = {
+        rel.split("/", 1)[1] for rel in PUBLIC_SERVICE_DROP if rel.startswith("services/")
+    }
+    services = ({
+        d.name for d in (temp_dir / "services").iterdir() if d.is_dir()
+    } - held_services) if (temp_dir / "services").is_dir() else set()
+    inv = {
+        "apps": app_ids,
+        "plugins": plugins,
+        "skills": skills,
+        "engines": engines,
+        "services": services,
+    }
+    # A key here but not in _ARRAY_KEYS (or vice versa) would KeyError deep in
+    # the rewrite loop on a release run. Fail at the top instead — as a real
+    # check, not an `assert`, which `python -O` / PYTHONOPTIMIZE strips.
+    if set(inv) != set(_ARRAY_KEYS):
+        fail(f"inventory/key drift: {sorted(set(inv) ^ set(_ARRAY_KEYS))}")
+    return inv
+
+
+def _assert_prunable_shape(text: str) -> None:
+    """Refuse to rewrite a release.toml whose syntax this pass cannot handle.
+
+    The rewrite below is line-based, not a TOML parser — deliberately, because
+    it must preserve comments and `tomlkit` is not a declared dependency. That
+    trade is only safe if the shapes it cannot handle ABORT rather than being
+    silently mis-edited. Each check below corresponds to a demonstrated
+    corruption:
+
+      * a section header with a trailing comment is not recognised as a header,
+        so a preceding dropped section keeps swallowing lines — measured to
+        delete every remaining tier;
+      * a nested `[tiers.x.sub]` table is not in the drop set, so it resurrects
+        a tier that was meant to disappear;
+      * an inline array with a trailing comment matches neither array regex and
+        passes through UNPRUNED, while the receipt still reports success — the
+        exact leak this function exists to prevent.
+
+    A comment line INSIDE a multi-line array is deliberately NOT refused: the
+    real release.toml already uses that style four times (`# End-user
+    calculators`, `# Flagship surface`), so rejecting it would abort every
+    release over the file's own established convention — a checker that fires on
+    a healthy target, which `.claude/rules/audits.md` calls a checker bug. The
+    rewrite handles it instead, holding the comment until an entry it annotates
+    survives.
+
+    `.claude/rules/audits.md`: assert the shape of the input up front and let an
+    unexpected one fail loudly, rather than reporting a clean run over input the
+    scanner did not understand.
+    """
+    problems: list[str] = []
+    in_array = False
+    for n, line in enumerate(text.splitlines(), 1):
+        s = line.strip()
+        if in_array:
+            if s.startswith("]"):
+                in_array = False
+            continue
+        if s.startswith("[") and not _SECTION.match(line):
+            problems.append(f"line {n}: section header with trailing content — {s[:60]}")
+            continue
+        m = _SECTION.match(line)
+        if m:
+            head = m.group(1)
+            if head.startswith("[tiers.") and head.count(".") > 1:
+                problems.append(f"line {n}: nested tier sub-table — {head}")
+            continue
+        if _OPEN_ARRAY.match(line):
+            in_array = True
+            continue
+        # An array key whose line is neither a clean inline array nor a clean
+        # opener: e.g. `apps = ["a", "b"]  # note`, which would ship unpruned.
+        if re.match(rf"^\s*({_KEY_ALT})\s*=", line) and not _INLINE_ARRAY.match(line):
+            problems.append(f"line {n}: array this pass cannot rewrite — {s[:60]}")
+    if problems:
+        fail(
+            "release.toml uses TOML shapes prune_release_toml_to_snapshot cannot "
+            "rewrite safely:\n    " + "\n    ".join(problems)
+            + "\n  Reformat those lines, or teach the rewriter the shape. Refusing "
+            "to edit rather than silently corrupt the shipped file."
+        )
+
+
+def prune_release_toml_to_snapshot(temp_dir: Path) -> None:
+    """Prune surviving tiers' id lists to what the snapshot actually contains.
+
+    `filter_release_toml` drops tiers marked `private = true`. That is the wrong
+    question to ask on its own, because `PUBLIC_TIERS = ("core", "standard")` —
+    a tier can be perfectly non-private and still ship nothing. Measured on
+    2026-08-30, the public release.toml carried `[tiers.dev]`, `[tiers.labs]`,
+    `[tiers.macro-studio]` and `[tiers.demo]`, between them naming **46 apps
+    that filter_to_tiers had already deleted from the tree**.
+
+    This is the same defect shape as the TIERS.md leak of v0.4.5-v0.5.0: a file
+    was held while the SOURCE it derives from shipped. The rule earned there was
+    "when holding a generated doc, check whether its source ships"; the rule
+    here is its sibling — the criterion must be *does this ship*, not *is this
+    flagged*, because only the first one stays true when someone adds a tier.
+
+    Runs AFTER filter_to_tiers (which does the actual deletion), so the tree on
+    disk is the authority. A tier that had apps and now has none is dropped
+    whole, along with any [targets.*] that packages it.
+    """
+    path = temp_dir / "release.toml"
+    if not path.is_file():
+        return
+    text = path.read_text(encoding="utf-8")
+    data = tomllib.loads(text)
+    tiers = data.get("tiers") or {}
+    if not tiers:
+        return
+
+    # Order dependency, enforced rather than merely documented: this must run
+    # AFTER filter_to_tiers, whose deletions are the authority for what "ships".
+    # Reordered, the tree is still complete, nothing looks absent, and the pass
+    # prunes zero ids while printing a success line — a silent no-op that reads
+    # exactly like a healthy run.
+    if (temp_dir / "apps" / "extension").exists():
+        fail(
+            "prune_release_toml_to_snapshot ran before filter_to_tiers "
+            "(apps/extension/ is still present) — it would prune nothing and "
+            "report success. Fix the call order in main()."
+        )
+    _assert_prunable_shape(text)
+    present = _snapshot_inventory(temp_dir)
+
+    # A tier that declared apps but retains none of them ships nothing.
+    emptied = {
+        n
+        for n, t in tiers.items()
+        if (t.get("apps") or []) and not (set(t["apps"]) & present["apps"])
+    }
+    dead_targets = {
+        n for n, t in (data.get("targets") or {}).items() if t.get("tier") in emptied
+    }
+    drop = {f"[tiers.{n}]" for n in emptied} | {f"[targets.{n}]" for n in dead_targets}
+
+    step("Prune release.toml to the shipped set")
+    out: list[str] = []
+    pending: list[str] = []
+    skipping = False
+    in_tier = False
+    array_key: str | None = None
+    removed = 0
+
+    def keep_ids(raw: str, kind: str) -> list[str]:
+        return [i for i in _QUOTED_ID.findall(raw) if i in present[kind]]
+
+    def pending_starts_next_block() -> bool:
+        # Mirrors filter_suites_toml: a run that opens with a blank line is
+        # section separation and belongs to what follows; a comment butted
+        # straight against the previous key is that section's own prose.
+        return bool(pending and not pending[0].strip())
+
+    for line in text.splitlines(keepends=True):
+        s = line.strip()
+        # Reuse the guard's own definition of a header rather than a looser
+        # startswith/endswith test — two definitions of "section" is how a line
+        # like `["a", "b"]` gets read as a header inside an array.
+        if _SECTION.match(line):
+            was_skipping = skipping
+            skipping = s in drop
+            in_tier = s.startswith("[tiers.")
+            array_key = None
+            if not skipping:
+                # Carry the buffer across only if it is separation, or if the
+                # section it trailed was itself kept.
+                if not was_skipping or pending_starts_next_block():
+                    out.extend(pending)
+                out.append(line)
+            pending = []
+            continue
+        if skipping:
+            # Inside a dropped section: swallow its body. A comment/blank run may
+            # still belong to whatever comes NEXT — clearing it unconditionally
+            # destroyed the 11-line `[targets.*]` banner in the shipped file,
+            # because that banner follows a tier this pass drops.
+            #
+            # But buffering it unconditionally leaks the other way: a comment run
+            # sitting immediately after a dropped tier's last key is THAT tier's
+            # rationale prose, and re-emitting it attributes commercial notes to
+            # a surviving section. filter_suites_toml already settled this —
+            # a run STARTING WITH A BLANK LINE is separation belonging to the
+            # next block; a comment butted straight against a key rides with the
+            # current one. Same rule here rather than a third variant.
+            if not s or s.startswith("#"):
+                pending.append(line)
+            else:
+                pending = []
+            continue
+        if array_key is not None:
+            # Inside a multi-line array belonging to a tier. A comment here is a
+            # grouping header ("# End-user calculators") annotating the entries
+            # below it, so hold it and emit it only once one of those entries
+            # survives — otherwise the prose naming a held app ships while the
+            # id it names is pruned. Comments still pending when the array closes
+            # annotated only pruned entries, so they go with them.
+            if s.startswith("]"):
+                array_key = None
+                out.append(line)
+                pending = []
+                continue
+            if not s or s.startswith("#"):
+                pending.append(line)
+                continue
+            found = _QUOTED_ID.findall(s)
+            if found and found[0] not in present[array_key]:
+                removed += 1
+                continue
+            out.extend(pending)
+            out.append(line)
+            pending = []
+            continue
+        if in_tier:
+            m = _INLINE_ARRAY.match(line)
+            if m:
+                indent, key, body = m.groups()
+                kept = keep_ids(body, key)
+                removed += len(_QUOTED_ID.findall(body)) - len(kept)
+                rendered = ", ".join(f'"{i}"' for i in kept)
+                out.extend(pending)
+                out.append(f"{indent}{key} = [{rendered}]\n")
+                pending = []
+                continue
+            m = _OPEN_ARRAY.match(line)
+            if m:
+                array_key = m.group(2)
+                out.extend(pending)
+                out.append(line)
+                pending = []
+                continue
+        if not s or s.startswith("#"):
+            pending.append(line)
+            continue
+        out.extend(pending)
+        out.append(line)
+        pending = []
+    out.extend(pending)  # trailing comments after the last kept section
+    rewritten = "".join(out)
+
+    # Re-read what we just produced and assert the contract. The rewrite is
+    # line-based; this is the only step that checks it actually did what the
+    # receipt is about to claim. Without it, every failure mode above is a
+    # silent success message — the shape audits.md calls "green because it
+    # checks nothing".
+    try:
+        after = tomllib.loads(rewritten)
+    except tomllib.TOMLDecodeError as e:
+        fail(f"prune produced invalid TOML ({e}) — refusing to ship it")
+    expected = set(tiers) - emptied
+    if set(after.get("tiers") or {}) != expected:
+        got = set(after.get("tiers") or {})
+        fail(
+            "prune changed the tier set unexpectedly: "
+            f"lost {sorted(expected - got)}, gained {sorted(got - expected)}"
+        )
+    ghosts = {
+        f"[tiers.{n}].{kind}: {ident}"
+        for n, t in (after.get("tiers") or {}).items()
+        for kind in _ARRAY_KEYS
+        for ident in (t.get(kind) or [])
+        if ident not in present[kind]
+    }
+    if ghosts:
+        fail("prune left ids naming absent software: " + ", ".join(sorted(ghosts)))
+    # A surviving tier must not `extends` one we just dropped: both resolvers
+    # return an empty set for a missing parent rather than raising, so the
+    # result would be a silently under-populated bundle.
+    orphaned = {
+        n
+        for n, t in (after.get("tiers") or {}).items()
+        if t.get("extends") and t["extends"] not in after["tiers"]
+    }
+    if orphaned:
+        fail(f"prune orphaned `extends` for tier(s): {sorted(orphaned)}")
+
+    path.write_text(rewritten, encoding="utf-8")
+    print(f"    pruned {removed} id(s) naming software absent from the snapshot")
+    if emptied:
+        print(f"    dropped {len(emptied)} tier(s) that ship nothing: {', '.join(sorted(emptied))}")
     if dead_targets:
         print(f"    dropped {len(dead_targets)} target(s): {', '.join(sorted(dead_targets))}")
 
@@ -707,6 +1138,22 @@ HELD_REF_CODE_ALLOWLIST = {
     # The checks view dispatches to engineering-scene's live API by route
     # prefix — same accepted app-id exposure as the other cad-views files.
     "emptyos/web/static/eos-cad-views/checks.js",
+    # Same accepted exposure as checks.js: the substation views read the
+    # document extension namespace `doc.ext['engineering-scene']`, keyed by the
+    # app id that writes it. substation-common.js names it only in its header
+    # comment, but is the shared helper of the two that read the key.
+    "emptyos/web/static/eos-cad-views/substation-common.js",
+    "emptyos/web/static/eos-cad-views/substation-elevation.js",
+    "emptyos/web/static/eos-cad-views/substation-plan.js",
+    # The trusted app-icon sprite registry, mirrored front (EOS.APP_ICON_IDS)
+    # and back (app_icons.py). A manifest may only SELECT an id from this list,
+    # so an id absent here has its icon refused; `cable-network` is one entry.
+    "emptyos/web/static/eos.js",
+    "emptyos/sdk/app_icons.py",
+    # "short-circuit calculation" is the published title of the ABB technical
+    # paper this source pack cites, and the KB slugs built from it — domain
+    # vocabulary, the same basis as eos-cad-checks-core.js above.
+    "apps/public/standard/trust-loop/SOURCE-PACK.md",
     # "short-circuit" is a domain keyword in the T2 queue classifier's
     # vocabulary list — data, not a reference to the held app.
     "scripts/ingest_build_t2_queue.py",
@@ -1286,6 +1733,11 @@ def main() -> None:
             # release.toml ships, and it is the SOURCE docs/TIERS.md is generated
             # from — so holding the doc while shipping the source is cosmetic.
             filter_release_toml(temp_dir)
+            # `private = true` is not the same question as "does this ship".
+            # Six tiers are non-private and still ship nothing under
+            # PUBLIC_TIERS, so the private filter alone left 46 held app names
+            # in the public release.toml. Prune against the tree on disk.
+            prune_release_toml_to_snapshot(temp_dir)
             # Same reasoning one level up: suites.toml catalogs the held
             # engineering apps by id, so holding the apps while shipping the
             # catalog that names them is cosmetic.
@@ -1303,6 +1755,13 @@ def main() -> None:
             # public APPS.md doesn't reference extension/labs apps absent here.
             step("Regenerate APPS.md (public-only) in snapshot")
             run([sys.executable, str(temp_dir / "scripts" / "generate_apps_doc.py"), "--public-only"], cwd=temp_dir)
+            # Same treatment for the tier matrix. Must run AFTER
+            # prune_release_toml_to_snapshot, because it reads the snapshot's
+            # release.toml — which by now contains only tiers that ship.
+            # Previously TIERS.md was dropped wholesale (PUBLIC_DOC_DROP), so
+            # the public repo carried no tier matrix at all.
+            step("Regenerate TIERS.md (public-only) in snapshot")
+            run([sys.executable, str(temp_dir / "scripts" / "generate_tiers_doc.py"), "--public-only"], cwd=temp_dir)
         run_scans(temp_dir)  # snapshot
         if not args.all:
             check_docs_no_held_refs(temp_dir)  # prose-IP gate (after doc filter)

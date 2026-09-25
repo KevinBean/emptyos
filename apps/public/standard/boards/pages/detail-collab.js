@@ -50,7 +50,7 @@ COLUMN_RENDERERS['checklist'] = function(item, col, val) {
     var pct = Math.round(done / items.length * 100);
     return '<span class="cell-editable checklist-cell" onclick="openItemDetail(' + escAttr(JSON.stringify(key)) + ')" ' +
         'title="' + escAttr(done + ' of ' + items.length + ' done') + '" style="display:inline-flex;align-items:center;gap:0.35rem">' +
-        '<span class="checklist-bar" style="width:42px;height:5px;border-radius:3px;background:var(--border);overflow:hidden;display:inline-block">' +
+        '<span class="checklist-bar" style="width:42px;height:5px;border-radius:4px;background:var(--border);overflow:hidden;display:inline-block">' +
         '<span style="display:block;height:100%;width:' + pct + '%;background:var(--success)"></span></span>' +
         '<span style="font-size:0.74rem;color:var(--text-secondary)">' + done + '/' + items.length + '</span></span>';
 };
@@ -144,7 +144,7 @@ async function loadItemComments(file) {
         var data = await r.json();
         renderComments(data.comments || []);
     } catch (e) {
-        host.innerHTML = '<p style="color:var(--text-muted);font-size:0.78rem">Comments unavailable.</p>';
+        host.innerHTML = EOS_UI.errorState({message: 'Comments unavailable.'});
     }
 }
 
@@ -278,7 +278,7 @@ async function loadItemAttachments(file) {
                 '<span class="attachment-size">' + kb + '</span>' + del + '</div>';
         }).join('');
     } catch (e) {
-        host.innerHTML = '<p style="color:var(--text-muted);font-size:0.78rem">Attachments unavailable offline.</p>';
+        host.innerHTML = EOS_UI.errorState({message: 'Attachments unavailable offline.'});
     }
 }
 
@@ -374,7 +374,7 @@ loadItemActivity = async function(file) {
                 '<span class="activity-time">' + esc(t) + '</span></div>';
         }).join('');
     } catch (e) {
-        out.innerHTML = '<p style="color:var(--board-text-dim)">Activity unavailable in offline mode.</p>';
+        out.innerHTML = EOS_UI.errorState({message: 'Activity unavailable in offline mode.'});
     }
 };
 

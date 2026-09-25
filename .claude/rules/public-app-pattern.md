@@ -1,3 +1,9 @@
+---
+paths:
+  - "apps/**"
+  - "emptyos/sdk/base_app.py"
+  - "services/**"
+---
 # Public-App Pattern — one app, two faces (anonymous vs authenticated)
 
 A general, reusable architecture for serving an app **differently before and
@@ -112,9 +118,16 @@ owns what a caller may read (F9) or write (F10).
   middleware's *validated* `request.state.public_face`), not from "is there a
   bearer/cookie". Presence is forgeable; validity is not. (F9)
 - **Escape every anonymous value for the format it lands in.** A `public_routes`
-  route MAY be a write (bookme's booking form is one), but attacker text then
-  flows into sinks — vault frontmatter (`_serialize_fm` / `_parse_fm` are
-  line-based → newline/`---` injection), `.ics` (CRLF injection), HTML, SQL.
+  route MAY be a write (bookme's booking form is one; boards' public Form view —
+  `apps/public/standard/boards/public_form.py`, 2026-08-22 — is the second: it
+  strips any submitted key that isn't a real fillable column on that board
+  before it ever reaches `coerce()`, so a stranger can't smuggle a `tags`/
+  `created`/computed-field value through), but attacker text then
+  flows into sinks — vault frontmatter (`vault_index._serialize_fm` and
+  `emptyos/frontmatter.py` are line-based → newline/`---` injection; the
+  block-end scan is line-anchored, so a `---` *inside* a value no longer
+  truncates the block, but an injected `---` on its own line still ends it),
+  `.ics` (CRLF injection), HTML, SQL.
   Escape at each sink AND reject control chars at the write boundary. (F10)
 - Handlers must **default to the public (lesser) face** and only widen when
   `is_public_request` is False — fail closed.

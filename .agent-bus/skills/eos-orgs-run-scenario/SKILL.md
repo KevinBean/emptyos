@@ -1,6 +1,6 @@
 ---
 name: eos-orgs-run-scenario
-description: Run a Persona Sim or Real Org scenario (critique / workshop / interview) and get back a multi-lens decision digest. Use when the user says "run a critique with <org>", "what would <team> think about X", "workshop this with <org>", "interview my <team> about <topic>", "get a team digest on X", "ask my panel", "run a scenario on <org>". Wraps `POST /orgs/api/scenario/run` in `mode="in-room"`, which now produces a synthesized digest in one LLM call via `multi_lens_analyze` (cheap default) and leaves the room open for follow-up via `rooms.run_panel` if the user wants turn-by-turn debate.
+description: Run a Persona Sim or Real Org scenario (critique / workshop / interview) and get back a multi-lens decision digest. Use when the user says "run a critique with <org>", "what would <team> think about X", "workshop this with <org>", "interview my <team> about <topic>", "get a team digest on X", "ask my panel", "run a scenario on <org>". Wraps `POST /orgs/api/scenario/run` in `mode="in-room"`, which now produces a synthesized digest in one LLM call via `multi_lens_analyze` (cheap default) and leaves the room open for follow-up via `rooms.run_panel` if the user wants turn-by-turn debate. NOT for creating the org or its members (use eos-orgs-create / eos-orgs-member-add) and NOT for dogfood use-case scenarios (use eos-new-usecase).
 ---
 
 # EmptyOS Orgs — Run Scenario
@@ -40,7 +40,7 @@ This skill writes through the daemon HTTP API, so the daemon must be reachable f
 
 ## Scenario semantics
 
-Pulled from `apps/company/scenarios/`:
+Pulled from `apps/public/standard/company/scenarios/`:
 
 - **critique** — Members react to a proposal from their roles. Best for "tear this apart" / "what's wrong with this." May emit `[DO:]` revision tasks (review-gated).
 - **workshop** — Members co-develop or push something forward. Best for "help me improve this" / "what should I add."

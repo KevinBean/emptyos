@@ -1,3 +1,9 @@
+---
+paths:
+  - "emptyos/sdk/prompt_registry.py"
+  - "apps/**/prompts.py"
+  - "apps/**/prompts/**"
+---
 # Prompt Management — code defaults, discoverable registry, per-machine overrides
 
 EmptyOS has three kinds of prompt content, each with its own home. Don't blur

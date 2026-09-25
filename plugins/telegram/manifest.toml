@@ -2,7 +2,7 @@
 id = "telegram"
 name = "Telegram"
 version = "1.0.0"
-description = "Push notifications via Telegram + a dark-flagged two-way rooms bridge (feature.telegram-two-way.enabled)"
+description = "Push notifications + guarded file sends (photo/video/document) via Telegram, plus a dark-flagged two-way rooms bridge (feature.telegram-two-way.enabled)"
 
 [plugin.entry]
 module = "plugin"
@@ -17,3 +17,6 @@ tags = ["messaging", "mobile", "notifications", "connector"]
 # the bridge's activity is visible in the topology graph rather than absent.
 [provides.events]
 emits = ["telegram:inbound", "telegram:action_resolved"]
+# Bridge-internal: both are consumed inside the plugin (routed into the
+# telegram-bridge room / resolved from a tap). No cross-app listener by design.
+internal = ["telegram:inbound", "telegram:action_resolved"]

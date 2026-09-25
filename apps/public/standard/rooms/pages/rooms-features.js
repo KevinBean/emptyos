@@ -227,10 +227,10 @@ async function inspectRoomContext() {
             '<summary style="cursor:pointer;display:flex;align-items:center;gap:6px;font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;color:var(--text-muted);margin-bottom:6px">' +
                 esc(label) + (extras ? '<span style="color:var(--text);font-weight:500;text-transform:none;font-size:12px">' + extras + '</span>' : '') + k +
             '</summary>' +
-            '<pre style="margin:0;padding:10px 12px;background:var(--bg-elevated);border-radius:6px;font-size:12px;line-height:1.5;white-space:pre-wrap;font-family:var(--font-mono,monospace);max-height:240px;overflow-y:auto">' + esc(body || '(empty)') + '</pre>' +
+            '<pre style="margin:0;padding:10px 12px;background:var(--bg-surface);border-radius:6px;font-size:12px;line-height:1.5;white-space:pre-wrap;font-family:var(--font-mono,monospace);max-height:240px;overflow-y:auto">' + esc(body || '(empty)') + '</pre>' +
             '</details>';
     }
-    var meta = '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px;margin-bottom:14px;padding:10px;border:1px solid var(--border);border-radius:6px;background:var(--bg-elevated);font-size:11px">' +
+    var meta = '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px;margin-bottom:14px;padding:10px;border:1px solid var(--border);border-radius:6px;background:var(--bg-surface);font-size:11px">' +
         '<div><div style="color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px">Responder</div><div style="font-weight:500">' + esc(data.responder_name) + '</div></div>' +
         '<div><div style="color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px">Model</div><div style="font-weight:500">' + esc(data.model) + '</div></div>' +
         '<div><div style="color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px">Effort</div><div style="font-weight:500">' + esc(data.effort) + '</div></div>' +
@@ -620,7 +620,7 @@ async function openSnippetsLibrary() {
     catch(e) { EOS_UI.toast('Failed to load library', false); return; }
     var rows;
     if (!snippets.length) {
-        rows = '<div style="color:var(--text-muted);font-size:13px;padding:30px;text-align:center">No snippets yet. Type a prompt in any room\'s input, then run <code style="background:var(--bg-elevated);padding:1px 5px;border-radius:3px">/save name</code>.</div>';
+        rows = '<div style="color:var(--text-muted);font-size:13px;padding:30px;text-align:center">No snippets yet. Type a prompt in any room\'s input, then run <code style="background:var(--bg-surface);padding:1px 5px;border-radius:4px">/save name</code>.</div>';
     } else {
         rows = snippets.map(function(s) {
             var preview = (s.body || '').replace(/\s+/g, ' ').slice(0, 100);
@@ -629,21 +629,21 @@ async function openSnippetsLibrary() {
             return '<div style="display:flex;align-items:flex-start;gap:8px;padding:10px;border:1px solid var(--border);border-radius:6px;margin-bottom:6px">' +
                 '<div style="flex:1;min-width:0">' +
                     '<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">' +
-                        '<code style="background:var(--bg-elevated);padding:2px 6px;border-radius:4px;font-size:12px;font-weight:600">/' + esc(s.name) + '</code>' +
+                        '<code style="background:var(--bg-surface);padding:2px 6px;border-radius:4px;font-size:12px;font-weight:600">/' + esc(s.name) + '</code>' +
                         '<span style="font-size:11px;color:var(--text-muted)">' + esc(meta) + '</span>' +
                     '</div>' +
                     '<div style="font-size:12px;color:var(--text);line-height:1.4;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical">' + esc(preview) + '</div>' +
                 '</div>' +
                 '<div style="display:flex;gap:4px;flex-shrink:0">' +
                     '<button class="eos-btn-sm" onclick="useSnippetFromLibrary(\'' + escAttr(s.name) + '\')" style="background:var(--accent);color:var(--accent-ink);border:0;font-size:11px">Use</button>' +
-                    '<button class="eos-btn-sm eos-btn-ghost" onclick="deleteSnippetFromLibrary(\'' + escAttr(s.name) + '\')" style="font-size:11px">×</button>' +
+                    '<button class="eos-btn-sm eos-btn-ghost" onclick="deleteSnippetFromLibrary(\'' + escAttr(s.name) + '\')" style="font-size:11px" aria-label="Delete snippet from library">×</button>' +
                 '</div>' +
                 '</div>';
         }).join('');
     }
     EOS_UI.modal({
         title: '📋 Snippets',
-        body: '<div style="font-size:12px;color:var(--text-muted);margin-bottom:12px">Saved prompt fragments — type <code style="background:var(--bg-elevated);padding:1px 5px;border-radius:3px">/snip name</code> in any chat input to drop one in.</div>' + rows,
+        body: '<div style="font-size:12px;color:var(--text-muted);margin-bottom:12px">Saved prompt fragments — type <code style="background:var(--bg-surface);padding:1px 5px;border-radius:4px">/snip name</code> in any chat input to drop one in.</div>' + rows,
         width: '600px',
     });
 }
@@ -825,7 +825,7 @@ async function openForkPicker(prefilledEntryId) {
         var label = isHead ? ' (current head)' : '';
         return '<div class="fork-row" data-entry-id="' + escAttr(n.entry_id) + '"' +
             ' style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:8px 10px;border:1px solid var(--border);border-radius:8px;margin-bottom:6px;background:var(--bg-card);font-size:13px;cursor:pointer"' +
-            ' onmouseover="this.style.background=\'var(--bg-hover)\'"' +
+            ' onmouseover="this.style.background=\'var(--bg-card-hover)\'"' +
             ' onmouseout="this.style.background=\'var(--bg-card)\'"' +
             ' onclick="_acceptFork(\'' + escAttr(n.entry_id) + '\')">' +
             '<div style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + _previewChip(n) + label + '</div>' +

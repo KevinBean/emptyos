@@ -199,7 +199,7 @@ function _row(v, seeded) {
       + '" onclick="toggleProvider(' + escAttr(JSON.stringify(v.id)) + ')">'
       + (v.enabled ? 'ON' : 'OFF') + '</button></td>';
     actionsCell = '<td class="v-actions">'
-      + '<button class="eos-btn eos-btn-xs" onclick="editProvider(' + JSON.stringify(JSON.stringify(v)).slice(1,-1) + ')">Edit</button>'
+      + '<button class="eos-btn eos-btn-xs" onclick="editProvider(' + EOS_UI.jsArg(v) + ')">Edit</button>'
       + '<button class="eos-btn eos-btn-xs" onclick="deleteProvider(' + escAttr(JSON.stringify(v.id)) + ')">Delete</button>'
       + '</td>';
   }
@@ -246,7 +246,7 @@ async function loadProviders() {
     }
     el.innerHTML = html;
   } catch (e) {
-    el.innerHTML = '<div class="empty" style="padding:12px">Error: ' + EOS_UI.esc(e.message) + '</div>';
+    el.innerHTML = EOS_UI.errorState({message: 'Could not load providers: ' + (e.message || e), onRetry: 'loadProviders()'});
   }
 }
 
@@ -257,9 +257,12 @@ function resetForm() {
   document.getElementById('provider-form-title').textContent = 'Add provider';
   _pf('id').disabled = false;
 }
-function editProvider(jsonStr) {
-  var v;
-  try { v = JSON.parse(jsonStr); } catch (e) { return; }
+// Takes the provider object itself. It used to take a JSON string built by
+// double-stringifying, which emitted backslash-escaped quotes into the onclick
+// attribute — the handler never bound and Edit did nothing. The parse it needed
+// also swallowed that failure in a bare catch.
+function editProvider(v) {
+  if (!v || typeof v !== 'object') return;
   _pf('id').value = v.id || '';
   _pf('id').disabled = true;
   _pf('provider-type').value = v.provider_type || 'openai_compat';
@@ -328,7 +331,7 @@ async function discoverOllama() {
     }).join('');
     panel.innerHTML = '<div style="margin-top:12px"><b>Ollama models at ' + EOS_UI.esc(data.host) + '</b><div class="discover-list">' + rows + '</div></div>';
   } catch (e) {
-    panel.innerHTML = '<div class="empty" style="padding:12px">Error: ' + EOS_UI.esc(e.message) + '</div>';
+    panel.innerHTML = EOS_UI.errorState({message: 'Could not reach Ollama: ' + (e.message || e), onRetry: 'discoverOllama()'});
   }
 }
 async function addDiscovered(id, model, host) {
@@ -378,7 +381,7 @@ async function loadCapabilities() {
       + '</div>';
     }).join('');
   } catch (e) {
-    el.innerHTML = '<div class="empty">Error: ' + EOS_UI.esc(e.message) + '</div>';
+    el.innerHTML = EOS_UI.errorState({message: 'Could not load capability chains: ' + (e.message || e), onRetry: 'loadCapabilities()'});
   }
 }
 
@@ -400,7 +403,7 @@ async function loadLive() {
     html += '</div>';
     el.innerHTML = html;
   } catch (e) {
-    el.innerHTML = '<div class="empty">Error: ' + EOS_UI.esc(e.message) + '</div>';
+    el.innerHTML = EOS_UI.errorState({message: 'Could not load the live provider chain: ' + (e.message || e), onRetry: 'loadLive()'});
   }
 }
 

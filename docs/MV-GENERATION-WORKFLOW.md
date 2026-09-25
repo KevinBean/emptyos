@@ -4,6 +4,19 @@ This is the canonical production workflow for AI music videos in EmptyOS.
 Music Studio is the execution engine. Claude Code's `creative-mv-generator`
 skill must drive this workflow rather than maintain a parallel renderer.
 
+For project retrospectives, action-montage repair, animated lyric labels, or
+delivery planning, read [MV production lessons](MV-PRODUCTION-LESSONS.md).
+It records the human editorial and post-production checks learned from
+《算了吧》, including preserving readable action during seam repairs, testing
+the complete sticker lifecycle, and distinguishing upscale proposals from
+measured gains. These are skill-side review practices, not additional runtime
+stages or universal requirements for a song's visual style.
+
+For Blender-authored motion and compositing, use the dedicated
+[Blender animation guide](BLENDER-ANIMATION-GUIDE.md): blocking, action timing,
+paper deformation, attachment, lighting, rendering, and separate art/technical
+review. This is production guidance, not a new runtime stage.
+
 ## Source-audio contract
 
 An MV run is synchronized to the existing, user-selected song. Music Studio
@@ -19,8 +32,8 @@ source analysis
   -> song treatment
   -> art direction
   -> reference design
-  -> character reference card + scene/look reference cards
-  -> art/identity review and approval
+  -> character reference + scene master views and required alternate angles
+  -> art/identity/spatial-continuity review and approval
   -> plan
   -> creative-basis validation
   -> plan-review            (pre-GPU: plan vs art-direction)
@@ -180,13 +193,15 @@ style drift appears.
   with readable face, hairline, age, and core wardrobe. A multi-view contact
   sheet may be kept for human review, but do not feed a small tiled sheet to a
   face adapter when a clean canonical portrait is available.
-- `scene-references/` contains two to four approved look cards spanning the
-  project's recurring environments, palette, light, material language, and
-  subject scale. Environment cards should omit the protagonist unless they
-  were generated from the approved character reference.
+- `scene-references/` contains approved look cards for palette, light,
+  materials, and subject scale, plus a multi-angle continuity pack for each
+  recurring location as specified below. Two to four mood cards alone do not
+  establish spatial continuity. Environment cards should omit the protagonist
+  unless they were generated from the approved character reference.
 - `reference-pack.json` records each approved asset's source, prompt, provider,
   approval mode, and SHA-256. Changing an approved reference invalidates only
-  downstream character/style-dependent stills and clips.
+  downstream stills and clips that depend on the changed identity, style,
+  layout, furnishing, or lighting state.
 
 Candidate cards may be generated locally with FLUX or created through
 ChatGPT's image-generation subscription and imported. EmptyOS cannot silently
@@ -203,6 +218,56 @@ for that project. Reject face corruption, inconsistent identity across views,
 extra/fused fingers, malformed limbs, wrong cultural direction, incoherent
 palette, and scene cards that contradict the song's art direction. Do not begin
 bulk still generation while a required reference remains missing or rejected.
+
+### Multi-angle scene references
+
+This is a required art-director production check within reference design,
+not a new runtime stage or a claim that software verifies scene geometry.
+Apply it to each location reused across shots or shown from multiple angles.
+A single-view location needs only its approved master; record that scope and
+expand the pack before adding another view.
+
+1. **Lock the master scene first.** Approve composition, appropriate visual
+   richness, furnishings, materials, and lighting before deriving angles.
+   Record a simple layout in `scene-bible.md`: fixed walls/landmarks, doors,
+   windows, important furniture/props, and interior/exterior relationships.
+   Give directions stable scene coordinates, not only screen-left/right.
+   Sparse scenery is an artistic choice, not an automatic cost-saving default.
+2. **Cover the intended camera positions.** Keep a clean master/wide view and
+   the reverse or side views required by the treatment. Include paired
+   interior/exterior views when shots cross that boundary, and detail views
+   when a recurring prop matters. Do not generate a fixed quota of redundant
+   angles. Recheck coverage once the storyboard specifies exact camera views.
+3. **Derive views from the same approved space.** Use approved images as
+   conditioning/edit references, or render the same controlled 3D scene.
+   Repeating a text prompt independently does not establish the same location.
+   If the provider cannot preserve a new angle, repair it or revise the shot
+   before spending on its motion.
+4. **Review angles together.** Check door/window counts and wall placement,
+   openings and proportions, furniture/prop identity and position, sightlines,
+   exterior landmarks, materials, and motivated light direction. Objects
+   outside the frame remain in their original positions; do not move them to
+   make the reverse shot resemble the master. Mark obscured details unknown
+   and resolve them before a shot depends on them. Document intentional
+   changes of time or motif state rather than treating them as drift.
+5. **Freeze usable files and provenance.** A contact sheet is for comparison;
+   supply clean individual views to generation. Record location/view IDs,
+   source paths and SHA-256 values, parent-reference hashes, provider/prompt,
+   review verdict, and approved scene state in `reference-pack.json` or a
+   linked sidecar. These are production records, not assumed API fields.
+   Each shot identifies the approved view/state it uses.
+6. **Verify motion before expanding.** After reference approval, make a small
+   representative motion proof, including a change of viewpoint if planned.
+   Review actual outputs for both animation and continuity before batching.
+   Reference consistency improves control but does not guarantee consistent
+   generated video. Layout or furnishing revisions reopen affected views and
+   dependent shots for review; keep superseded assets as history, not approved
+   inputs. Do not regenerate unaffected work automatically.
+
+Do not enter bulk still or clip generation while a required angle is missing,
+rejected, or inconsistent. Use the existing manual/explicit-auto approval
+policy above; a request to standardize this process is not approval of any
+particular project's candidate images.
 
 ## Stage contract
 
@@ -224,6 +289,8 @@ bulk still generation while a required reference remains missing or rejected.
 
 1. **Reference design**
    - Derive the character and visual-language contracts from the current song.
+   - Lock scene masters and required alternate angles under the multi-angle
+     scene-reference contract above; review spatial continuity before bulk work.
    - Generate several low-cost candidates with the selected provider, review
      them, promote only approved assets, and persist the reference manifest.
    - Character-bearing generation uses the canonical identity image through a

@@ -158,3 +158,13 @@ summary = "Set the status of a team-mode task"
 args = { room_id = "string", task_id = "string", status = "string", result = "string?" }
 eligibility = "stable"
 surfaces = ["agent"]
+
+# AI Fluency tour arc, step 1/4 (Delegation) — see .claude/rules/autopilot-grants.md
+[[contributes.tour.step]]
+id = "rooms.autopilot"
+group = "core"
+priority = 410
+route = "/rooms/"
+spotlight = "#btn-autopilot"
+title = "Delegation is specific, not a mode"
+body = "This chip lets a room's agents auto-run <strong>reversible, low-risk</strong> actions (adding a task, saving a capture) without an Apply click each time — scoped to this room, timed, still logged. Anything irreversible or outbound (publishing, sending, spending) can never be auto-granted, no matter what. Delegating well means naming exactly what you trust, not flipping one big switch."

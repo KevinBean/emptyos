@@ -342,10 +342,20 @@ async function sendTo(target) {
         ], async function(values) {
             var q = values.q;
             if (!q) { if (out) out.textContent = ''; return; }
-            if (out) out.textContent = 'Thinking…';
+            // The auto-provenance sink lives INSIDE #send-result and is created per
+            // ask, so the chip (its next sibling) dies with it the moment any other
+            // Send-to result repaints the box — it can never outlive the answer.
+            var ans = null;
+            if (out) {
+                out.textContent = '';
+                ans = document.createElement('div');
+                ans.setAttribute('data-ai-output', '/reader/api/send/ask');
+                ans.textContent = 'Thinking…';
+                out.appendChild(ans);
+            }
             var res = await fetch('/reader/api/send/ask', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(Object.assign({}, payload, {question:q}))}).then(function(r){return r.json();});
-            if (res.ok && out) out.innerHTML = '<div class="ans">' + esc(res.answer) + '</div>';
-            else if (out) out.textContent = res.error || 'Ask failed';
+            if (!res.ok) { if (out) out.textContent = res.error || 'Ask failed'; return; }
+            if (ans) ans.innerHTML = '<div class="ans">' + esc(res.answer) + '</div>';
         });
         return;
     }
@@ -985,7 +995,7 @@ function renderWordPop(pop, word, res) {
         (syns.length ? '<div class="syn">' + syns.map(function(s){ return '<span>' + esc(s) + '</span>'; }).join('') + '</div>' : '') +
         '<div class="actions">' +
             '<span class="src">' + esc(src) + '</span>' +
-            (res.cached ? '' : '<button onclick="event.stopPropagation();saveLookupToVault(' + JSON.stringify(word).replace(/"/g, '&quot;') + ')">Save to vocabulary</button>') +
+            (res.cached ? '' : '<button onclick="event.stopPropagation();saveLookupToVault(' + EOS_UI.jsArg(word) + ')">Save to vocabulary</button>') +
         '</div>';
     pop.innerHTML = html;
     pop._lookup = res;

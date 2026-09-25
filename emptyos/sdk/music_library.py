@@ -14,6 +14,7 @@ When NOT to use:
 
 from __future__ import annotations
 
+import asyncio
 from typing import TYPE_CHECKING
 
 from emptyos.sdk.vault_library import VaultLibrary
@@ -146,14 +147,21 @@ class LibraryMixin:
     async def list_songs(self, status_filter: str = "") -> list[dict]:
         filters = {"status": status_filter} if status_filter else {}
         items = self.songs.list(**filters)
-        return self._enrich(items)
+        # _enrich is one stat per song plus one directory walk per unique
+        # parent, all blocking file I/O. On the loop it pinned :9000 — the
+        # wedge lasted 37.0 s with a py-spy sample inside _enrich (evidence
+        # 20260906T105449Z; 277 rows across 59 parents on that vault) — and the
+        # watchdog killed the daemon. Keep it in a worker thread.
+        return await asyncio.to_thread(self._enrich, items)
 
     def _enrich(self, items: list[dict]) -> list[dict]:
         """Add has_lyrics, has_audio, audio_count, modified, provenance per row.
 
-        Single pass with per-directory audio cache so 200 songs cost ~one stat
-        per song + one dir scan per unique parent. Idempotent — if a row already
-        has these fields they're left alone.
+        Single pass: one stat per song, and ONE directory walk per unique
+        parent that yields both the audio files and the .md count (it used to
+        walk twice — the audio scan was cached, the .md count was re-run per
+        song). Blocking file I/O — call through ``asyncio.to_thread`` from the
+        loop. Idempotent — if a row already has these fields they're left alone.
         """
         from pathlib import Path
 
@@ -162,22 +170,30 @@ class LibraryMixin:
             return items
 
         dir_audio_cache: dict[str, list] = {}
+        dir_md_cache: dict[str, int] = {}
 
         def _audio_for_song(song_path: Path) -> tuple[bool, int]:
             parent = song_path.parent
             key = str(parent)
             if key not in dir_audio_cache:
+                audio: list = []
+                md_count = 0
                 try:
-                    dir_audio_cache[key] = [
-                        f
-                        for f in parent.iterdir()
-                        if f.is_file() and f.suffix.lower() in AUDIO_EXTS
-                    ]
+                    for f in parent.iterdir():
+                        if not f.is_file():
+                            continue
+                        suf = f.suffix.lower()
+                        if suf == ".md":
+                            md_count += 1
+                        elif suf in AUDIO_EXTS:
+                            audio.append(f)
                 except OSError:
-                    dir_audio_cache[key] = []
+                    audio, md_count = [], 1  # same fallback as _md_count
+                dir_audio_cache[key] = audio
+                dir_md_cache[key] = md_count
             stem_l = song_path.stem.lower()
             files = dir_audio_cache[key]
-            md_count_in_dir = _md_count(parent) if parent.is_dir() else 0
+            md_count_in_dir = dir_md_cache[key]
             # Dated-folder layout — note inside its own subdir alongside its audio.
             # All audio in that subdir belongs to the song, regardless of file stem
             # (e.g. ``无所住.md`` + ``无所住.mp3`` + ``no_vocals.mp3`` + ``vocals.mp3``).
@@ -476,14 +492,24 @@ class LibraryMixin:
     async def all_covers(self) -> dict[str, str | None]:
         """Find cover art for all songs in one pass, grouped by directory.
 
-        Per-directory image scan is cached; per-song selection then filters
-        by song stem when the dir is shared (album folder), so each song
-        in an album gets its own screenshot rather than all sharing one.
+        The music-library page requests this in parallel with ``list_songs``
+        (``Promise.all``), so it is the same event-loop hazard: the walk runs
+        in a worker thread, never on the loop.
         """
         vault = self.app.kernel.config.notes_path
         if not vault:
             return {}
         songs = self.songs.list()
+        return await asyncio.to_thread(self._all_covers_sync, vault, songs)
+
+    @staticmethod
+    def _all_covers_sync(vault, songs: list[dict]) -> dict[str, str | None]:
+        """Blocking half of ``all_covers``: ONE directory walk per unique
+        parent yields both the candidate images and the .md count; per-song
+        selection then filters by song stem when the dir is shared (album
+        folder), so each song in an album gets its own screenshot rather than
+        all sharing one.
+        """
         img_exts = {".png", ".jpg", ".jpeg", ".webp"}
         result: dict[str, str | None] = {}
         dir_cache: dict[str, tuple[bool, list]] = {}
@@ -497,9 +523,16 @@ class LibraryMixin:
             dir_key = str(full.parent)
             if dir_key not in dir_cache:
                 images: list = []
+                md_count = 0
                 try:
                     for f in full.parent.iterdir():
-                        if not f.is_file() or f.suffix.lower() not in img_exts:
+                        if not f.is_file():
+                            continue
+                        suf = f.suffix.lower()
+                        if suf == ".md":
+                            md_count += 1
+                            continue
+                        if suf not in img_exts:
                             continue
                         name_l = f.name.lower()
                         is_cover = (
@@ -511,8 +544,8 @@ class LibraryMixin:
                         rank = (0 if "final" in name_l else 1) if is_cover else 5
                         images.append((rank, name_l, f))
                 except Exception:
-                    pass
-                dir_cache[dir_key] = (_md_count(full.parent) > 1, images)
+                    md_count = 1  # same fallback as _md_count
+                dir_cache[dir_key] = (md_count > 1, images)
 
             is_shared, images = dir_cache[dir_key]
             song_stem = full.stem.lower()

@@ -9,11 +9,15 @@ import time
 from collections.abc import Callable, Sequence
 from datetime import UTC
 from functools import cached_property
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import TYPE_CHECKING, Any
 
 from emptyos.sdk.trace import stamp_trace
-from emptyos.sdk.utils import now_iso, slug_from_path as _slug_from_path
+from emptyos.sdk.utils import (
+    now_iso,
+    slug_from_path as _slug_from_path,
+    speak_provider_preference,
+)
 
 from . import base_app_context as _ctx
 from . import base_app_media as _media
@@ -33,6 +37,7 @@ from .base_app_vault import (  # noqa: F401 — re-exported; used by scoped_retr
 if TYPE_CHECKING:
     from emptyos.kernel import Kernel
     from emptyos.kernel.app_loader import AppManifest
+    from emptyos.sdk.scoped_retrieval import ScopedResult
 
 
 # Default system prompt for ``BaseApp.propose_kb_extractions`` — distils a
@@ -206,6 +211,11 @@ class BaseApp:
         garbage-collected mid-flight — silently, and more often under memory
         pressure, which is exactly when a boot is already struggling. Failures
         are logged instead of vanishing into a never-retrieved exception.
+
+        The returned task never carries the coroutine's return value (it
+        completes with ``None``; a failure is logged, not raised). Need the
+        value? Use ``asyncio.ensure_future`` and await it (see
+        .claude/rules/dev-gotchas.md).
         """
         from emptyos.sdk.background import spawn_tracked
 
@@ -1112,7 +1122,22 @@ class BaseApp:
     # --- Non-text modalities (available when platform provides them) ---
 
     async def speak(self, text: str, **kwargs) -> bytes | str:
-        """Text to speech. Returns audio data or file path."""
+        """Text to speech. Returns audio data or file path.
+
+        A Chinese line is steered to edge-tts unless the caller named a
+        provider themselves. The chain is pinned kokoro-first on some machines
+        and kokoro's Mandarin is unintelligible (see
+        ``speak_provider_preference``), so without this a Chinese line plays as
+        audio a listener cannot follow — and it fails silently, because the
+        waveform is fine and only a human or a Whisper round-trip can tell.
+        """
+        pref = speak_provider_preference(
+            text,
+            prefer_provider=kwargs.get("prefer_provider"),
+            only_provider=kwargs.get("only_provider"),
+        )
+        if pref is not None:
+            kwargs["prefer_provider"] = pref
         result = await self.kernel.capability("speak").execute(text=text, **kwargs)
         return result.value
 
@@ -1773,10 +1798,10 @@ class BaseApp:
 
     # --- Embedding helpers (semantic search, related-item discovery) ---
     #
-    # Backed by emptyos.sdk.embeddings.Embedder. Cache lives at
-    # data/embeddings/<app>.json so every app that uses embeddings shares
-    # the OpenAI cost-per-content-hash regardless of which app embedded
-    # it first (the underlying vec is keyed on text hash, not app id).
+    # Backed by emptyos.sdk.embeddings.Embedder. The cache is a per-model
+    # binary store under data/embeddings/ (see Embedder), shared by every app
+    # that embeds: vectors are keyed on text hash, not app id, so no text is
+    # embedded twice regardless of which app got there first.
 
     def _embedder(self):
         """The daemon's shared Embedder.
@@ -2025,7 +2050,13 @@ class BaseApp:
                 urgency=urgency, now=now, requested_channels=channels,
             )
             if decision.deliver:
-                _pro.record_sent(state, kind, dedup_key, now)
+                # A nudge that bypasses the cap and gap must not spend them: it
+                # would hold the ordinary nudges it never waited behind.
+                _pro.record_sent(
+                    state, kind, dedup_key, now,
+                    spends_budget=not _pro.bypasses_budget(policy, urgency),
+                    own_budget=_pro.has_own_budget(policy, kind),
+                )
                 _pro.save_state(root, state)
 
         entry = {
@@ -2099,9 +2130,14 @@ class BaseApp:
             kind, text, urgency=urgency, dedup_key=dedup_key, priority=priority,
         )
         if not result.get("delivered") and result.get("reason") == "disabled":
+            # ``raw_sent`` says whether the fallback really went out: with no
+            # notifications service it did not, though the verdict is the same
+            # "disabled". A sender that records "sent" must read this, not the
+            # reason (.claude/rules/proactive-comms.md).
             notif = self.service("notifications")
             if notif:
                 await notif.send(text, priority=priority, source=source or self.manifest.id)
+            result = {**result, "raw_sent": bool(notif)}
         return result
 
     # --- Proposed-action helpers (review-gate paradigm) ---
@@ -2467,7 +2503,8 @@ class BaseApp:
     def safe_repo_path(self, rel: str) -> Path | None:
         """Resolve ``rel`` under :py:meth:`_resolved_root` with a traversal
         guard. Returns the resolved Path on success or None when ``rel``
-        escapes the root (or the resolution itself errors).
+        escapes the root, is absolute under either platform's convention, or
+        the resolution itself errors.
 
         Single source of truth for the path-safety pattern duplicated across
         apps that work with the repo or a configurable subtree: apps/repo,
@@ -2476,6 +2513,17 @@ class BaseApp:
         root = self._resolved_root()
         if not rel:
             return root
+        # Refuse anything absolute under EITHER convention, before joining.
+        # ``root / rel`` DISCARDS root when rel is absolute, and what counts as
+        # absolute is platform-dependent: "C:/Windows/System32/cmd.exe" is
+        # absolute on Windows (the join escapes, and relative_to below catches
+        # it) but a plain relative name on POSIX, where it lands at
+        # ``<root>/C:/Windows/...`` and passes the guard. That asymmetry is the
+        # bug — the same caller input was accepted on Linux and rejected on
+        # Windows, planting a ``C:`` directory Windows cannot check out.
+        # Checked here because relative_to by construction cannot see it.
+        if PurePosixPath(rel).is_absolute() or PureWindowsPath(rel).is_absolute():
+            return None
         try:
             candidate = (root / rel).resolve()
         except (OSError, ValueError):
@@ -2835,9 +2883,20 @@ class BaseApp:
         substitutes it for a sandboxed iframe.
 
         Returns ``{ok, embed_id, mode, source_viz_id, shape, heavy, height}`` or
-        ``{ok: False, error}``. Serialised under ``write_lock(note_rel)`` (notes
-        are reactor-touched — the vault read-modify-write race rule); the emit is
-        outside the lock.
+        ``{ok: False, error}``. Serialised under ``note_lock(note_rel)``; the
+        emit is outside the lock.
+
+        The lock choice is load-bearing and was wrong until 2026-08-15. This is
+        a *shared cross-app* writer — kb, note and journal all call it — and
+        ``write_lock`` is per-app-**instance**, so two apps embedding into the
+        same note take two different lock objects and do not exclude each other
+        at all: exactly the read-modify-write race the lock was there to
+        prevent. ``note_lock`` is the kernel-wide registry keyed by normalized
+        vault-relative path, so it excludes across apps (CLAUDE.md § vault
+        read-modify-write races). It also normalizes the key, which matters on
+        Windows: ``write_lock`` keyed the raw string, so an absolute path and a
+        backslashed relative path to the same note produced different locks
+        even within one app.
         """
         res = await self.call_app("viz", "bake_embed", viz_id=viz_id, mode=mode, height=height)
         if not res.get("ok"):
@@ -2855,7 +2914,7 @@ class BaseApp:
         }
         marker = res["marker"]
 
-        async with self.write_lock(note_rel):
+        async with self.note_lock(note_rel):
             props = self.vault_get_properties(note_rel) or {}
             embeds = self.vault_decode_json(props.get("viz_embeds"), [])
             if not isinstance(embeds, list):
@@ -2908,6 +2967,75 @@ class BaseApp:
             if vault:
                 p = vault / out_path
         return await asyncio.to_thread(render_markdown_pdf, markdown_text, p, style=style)
+
+    async def report_response(
+        self,
+        markdown_text: str,
+        *,
+        name: str,
+        request=None,
+        fmt: str | None = None,
+        style: str = "default",
+    ):
+        """The one response shape for an app report. Contract: ``.claude/rules/app-reports.md``.
+
+        An app declaring ``[provides.report]`` builds **markdown** and hands it
+        here; this owns format negotiation, the PDF render, the temp file and the
+        download filename. It exists because nine hand-rolled report routes had
+        already drifted into five output shapes (markdown, PDF, HTML, JSON, and a
+        second PDF spelled ``/api/export-pdf``), with three apps copying the same
+        five lines of tempfile + ``to_thread`` + ``FileResponse`` — comment
+        included.
+
+        ``fmt`` wins if given, else ``?format=`` on the request, else ``md``.
+
+        Note this deliberately does NOT go through :meth:`render_pdf`: that one
+        resolves a relative path against the vault, which is right for a saved
+        artifact and wrong for a transient download. A report is bytes handed to
+        the browser, not a note.
+
+        Returns a Starlette response, or an in-band ``{"error": ...}`` dict on an
+        unknown format or a failed render — never an exception that becomes a 500
+        (`.claude/rules/dev-gotchas.md` § route 500).
+        """
+        import asyncio
+        import tempfile
+        import uuid
+
+        from starlette.responses import FileResponse, PlainTextResponse
+
+        from emptyos.sdk.pdf import render_markdown_pdf
+        from emptyos.sdk.utils import safe_path_segment
+
+        slug = safe_path_segment(str(name or "").strip())
+        if not slug:
+            return {"error": f"invalid report name: {name!r}"}
+
+        chosen = (fmt or "").strip().lower()
+        if not chosen and request is not None:
+            chosen = (request.query_params.get("format") or "").strip().lower()
+        chosen = chosen or "md"
+        if chosen == "markdown":
+            chosen = "md"
+        if chosen not in ("md", "pdf"):
+            return {"error": f"unsupported report format {chosen!r} — expected md or pdf"}
+
+        if chosen == "md":
+            # Inline, not an attachment: REPORT-SPEC's contract is that the sheet
+            # "renders in the browser" so a reviewer can read it without a download.
+            return PlainTextResponse(markdown_text, media_type="text/markdown")
+
+        out_path = Path(tempfile.gettempdir()) / f"{slug}-{uuid.uuid4().hex[:8]}.pdf"
+        try:
+            # render_markdown_pdf drives Playwright's SYNC API — must run off the
+            # event loop (dev-gotchas.md § "Sync call in async context").
+            await asyncio.to_thread(render_markdown_pdf, markdown_text, out_path, style=style)
+        except Exception as e:  # noqa: BLE001 — an export failure, not a 500
+            return {"error": f"PDF render failed: {e}"}
+        return FileResponse(
+            path=str(out_path), media_type="application/pdf",
+            filename=f"{slug}.pdf",
+        )
 
     def memory_audit(
         self,

@@ -25,14 +25,17 @@
     window.__EOS_KEYS_LOADED = true;
 
     // --- Launcher mode ---
-    // Active when the page was opened by plugins/command-launcher in a borderless
-    // Chrome/Edge --app= window. In this mode: the palette is the entire UI,
-    // selecting an app opens it in the user's main browser then closes our window,
-    // and Esc closes the launcher rather than just hiding the palette.
-    var IS_LAUNCHER = (function() {
-        try { return new URLSearchParams(location.search).get('launcher') === '1'; }
-        catch (_) { return false; }
-    })();
+    // Active when the page is showing in a small transient window — either
+    // plugins/command-launcher's borderless Chrome `--app=` window or the
+    // desktop shell's frameless quick panel. In this mode: the palette is the
+    // entire UI, selecting an app opens it in the FULL-SIZE window rather than
+    // inside this 720x480 one, and Esc puts the window away.
+    //
+    // Both spellings and both hosts are EOS.quickHost's business (eos.js) —
+    // this used to read `launcher=1` itself, which meant the shell's `?quick=1`
+    // window fell through to the ordinary palette and "open app" navigated the
+    // little always-on-top panel to a full app page.
+    var IS_LAUNCHER = (window.EOS && EOS.quickHost) ? EOS.quickHost.active() : false;
 
     // Next theme in the cycle, read from the live registry rather than a copy.
     // The two call sites below each carried their own hardcoded list, both
@@ -48,9 +51,18 @@
     }
 
     function launcherDismiss() {
-        // Chrome --app= windows allow window.close() from script; this is the
-        // dismiss path (press hotkey, type, Enter, gone).
+        // Chrome --app= windows allow window.close() from script; the desktop
+        // shell's window does not close, it hides (it is preloaded and reused).
+        // EOS.quickHost knows which host this is.
+        if (window.EOS && EOS.quickHost) return EOS.quickHost.dismiss();
         try { window.close(); } catch (_) {}
+    }
+
+    // Open a same-origin path in the full-size window. In the shell that is the
+    // main window; in a browser launcher window it is the user's real browser.
+    function launcherOpenMain(path) {
+        if (window.EOS && EOS.quickHost) return EOS.quickHost.openMain(path);
+        try { window.open(path, '_blank', 'noopener'); } catch (_) {}
     }
 
     // --- State ---
@@ -181,7 +193,14 @@
     function hidePalette() {
         if (palette) palette.classList.remove('show');
         paletteVisible = false;
-        if (IS_LAUNCHER) launcherDismiss();
+        // Dismiss the window only when the palette IS the window. A page with
+        // its own launcher chrome (portal's composer, hub's grid) has content
+        // behind the overlay and owns its own Esc — closing the window from
+        // under the palette would discard the draft the user was returning to,
+        // which is exactly what portal-quick's ESC_OWNERS list stands down to
+        // let us avoid. Hub closes itself (hub.js Escape handler), so neither
+        // page is left stranded.
+        if (IS_LAUNCHER && !hasOwnLauncherChrome()) launcherDismiss();
     }
 
     var selectedIdx = 0;
@@ -268,8 +287,11 @@
                 if (query) {
                     var searchUrl = '/search/?q=' + encodeURIComponent(query);
                     if (IS_LAUNCHER) {
-                        window.open(searchUrl, '_blank', 'noopener');
-                        launcherDismiss();
+                        // launcherOpenMain, not a raw window.open: in the shell's
+                        // quick window the bridge is the only route to the main
+                        // window, and it dismisses us itself. A bare window.open
+                        // there drops the query on the floor.
+                        launcherOpenMain(searchUrl);
                     } else {
                         hidePalette();
                         location.href = searchUrl;
@@ -322,11 +344,11 @@
                     return;
                 }
                 // shortcuts/reload/restart-daemon don't make sense in a transient
-                // launcher window — open the canonical page in main browser instead.
+                // launcher window — open the canonical page full-size instead.
                 var fallback = action.id === 'vault-search' ? '/search/' : '/';
-                window.open(fallback, '_blank', 'noopener');
+                launcherOpenMain(fallback);
             } else if (action.path) {
-                window.open(action.path, '_blank', 'noopener');
+                launcherOpenMain(action.path);
             }
             launcherDismiss();
             return;
@@ -372,7 +394,7 @@
             }
             // Show a sticky banner because the page can't update much else now.
             var banner = document.createElement('div');
-            banner.style.cssText = 'position:fixed;top:12px;left:50%;transform:translateX(-50%);z-index:9999;padding:12px 18px;background:#eab308;color:#000;border-radius:10px;font-size:13px;font-weight:600;box-shadow:0 4px 12px rgba(0,0,0,.3);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;';
+            banner.style.cssText = 'position:fixed;top:12px;left:50%;transform:translateX(-50%);z-index:9999;padding:12px 18px;background:var(--warning);color:#000;border-radius:10px;font-size:13px;font-weight:600;box-shadow:0 4px 12px rgba(0,0,0,.3);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;';
             banner.textContent = 'Daemon restarting… polling for recovery';
             document.body.appendChild(banner);
 
@@ -422,7 +444,7 @@
         }
 
         content.innerHTML =
-            '<div class="help-header"><h2>Keyboard Shortcuts</h2><button onclick="EOS.keys.hideHelp()">&times;</button></div>' +
+            '<div class="help-header"><h2>Keyboard Shortcuts</h2><button onclick="EOS.keys.hideHelp()" aria-label="Hide help">&times;</button></div>' +
             '<div class="help-section">' +
                 '<h3>Global</h3>' +
                 '<table>' +
@@ -500,7 +522,11 @@
             var target = GO_MAP[e.key];
             if (target) {
                 e.preventDefault();
-                location.href = target.path;
+                // Same rule as selectAction: a quick window is 360px wide with
+                // no title bar and no nav, so navigating IT to a full app page
+                // strands the user. Hand the path to the main window instead.
+                if (IS_LAUNCHER) launcherOpenMain(target.path);
+                else location.href = target.path;
             }
             return;
         }
@@ -549,20 +575,36 @@
     });
 
     // --- Launcher mode boot ---
-    // Auto-mount the palette + hide chrome + close on focus loss.
+    // Auto-mount the palette + hide chrome + close on focus loss — UNLESS the
+    // page declares its own launcher chrome via `<body data-own-launcher-mode>`.
+    // A plain HTML attribute (not a JS flag) so the check is race-free: this
+    // script loads asynchronously (eos.js injects it as a dynamic <script>,
+    // async by default), so its execution order relative to the page's own
+    // bottom-of-body launcher IIFE (hub.js/portal.js) is not guaranteed — but
+    // the attribute is part of the initial `<body ...>` markup, present the
+    // instant the element exists, before any script runs. Found while wiring
+    // Portal into the global-hotkey launcher (gap analysis,
+    // portal-not-in-global-launcher): hub's own targeted-hide launcher chrome
+    // (hub.js applyLauncherMode) was ALSO silently superseded by this palette
+    // every time — confirmed live, hub and portal rendered byte-identical
+    // full-screen palettes. Not a portal-only bug; a platform one.
+    function hasOwnLauncherChrome() {
+        return !!(document.body && document.body.hasAttribute('data-own-launcher-mode'));
+    }
     if (IS_LAUNCHER) {
         // Set body class as early as possible so launcher-mode CSS can hide chrome
         // before paint. Document might not be ready yet — use readystatechange.
         function applyLauncherBody() {
-            if (document.body) document.body.classList.add('launcher-mode');
+            if (document.body && !hasOwnLauncherChrome()) document.body.classList.add('launcher-mode');
         }
         if (document.readyState === 'loading') {
             document.addEventListener('DOMContentLoaded', applyLauncherBody);
         } else {
             applyLauncherBody();
         }
-        // Show the palette as soon as the page is ready and actions have loaded.
-        var bootShow = function() { applyLauncherBody(); showPalette(); };
+        // Show the palette as soon as the page is ready and actions have loaded —
+        // skipped when the page renders its own launcher chrome instead.
+        var bootShow = function() { applyLauncherBody(); if (!hasOwnLauncherChrome()) showPalette(); };
         if (document.readyState === 'loading') {
             document.addEventListener('DOMContentLoaded', bootShow);
         } else {

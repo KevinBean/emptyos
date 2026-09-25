@@ -289,7 +289,16 @@ def register_vault_file_routes(server: FastAPI, kernel: Kernel) -> None:
             "ogg": "audio/ogg",
             "pdf": "application/pdf",
         }
-        return FileResponse(str(full), media_type=media_types.get(ext, "application/octet-stream"))
+        # SVG can carry a <script> that executes when this response is opened
+        # as a top-level navigation (e.g. window.open on a vault attachment
+        # chip) — same-origin stored XSS. Forcing a download instead of a
+        # render neutralizes it; `<img src>` embeds still work fine (a
+        # download-disposition resource still rasterizes in <img>/<object>
+        # contexts, it just won't execute if navigated to directly).
+        headers = {"Content-Disposition": "attachment"} if ext == "svg" else None
+        return FileResponse(
+            str(full), media_type=media_types.get(ext, "application/octet-stream"), headers=headers
+        )
 
     @server.post("/api/vault/write")
     async def vault_write(request: Request):

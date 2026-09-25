@@ -47,7 +47,7 @@ async def search_items(
 
     AND over whitespace-separated terms, case-insensitive substring — the
     corpus is ~1.5k short items, so a real index would be machinery without
-    a payoff, and substring beats stemming on strings like "45007" or
+    a payoff, and substring beats stemming on strings like "12345" or
     "TB 908". Prose is searched too: the Plan is written on 80% of days and
     is often the only place a decision is recorded.
 
@@ -83,7 +83,7 @@ async def search_items(
                 st = it.get("status") or ""
                 if status and (bool(st) if want_untagged else st != status):
                     continue
-                # Project name counts as haystack: "cablehv modelling" should
+                # Project name counts as haystack: "toolx modelling" should
                 # find an item whose text alone says only "modelling".
                 if not _matches(it["text"], proj):
                     continue

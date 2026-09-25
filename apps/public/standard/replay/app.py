@@ -33,6 +33,7 @@ from emptyos.sdk import BaseApp
 from . import distill as _distill
 from . import replay as _replay
 from . import routes as _routes
+from . import trigger as _trigger
 from .library import RecipeLibrary
 
 
@@ -74,9 +75,21 @@ class ReplayApp(BaseApp):
     api_run_status = _routes.api_run_status
     api_resume = _routes.api_resume
 
+    # ── Scheduled triggers (trigger.py) ──
+    _recipe_scheduler = _trigger._recipe_scheduler
+    _register_recipe_jobs = _trigger._register_recipe_jobs
+    _unregister_recipe_jobs = _trigger._unregister_recipe_jobs
+    _sync_recipe_job = _trigger._sync_recipe_job
+    api_set_trigger = _trigger.api_set_trigger
+
     async def setup(self):
         await super().setup()
         self.recipes = RecipeLibrary(self)
+        self._register_recipe_jobs()
+
+    async def teardown(self):
+        self._unregister_recipe_jobs()
+        await super().teardown()
 
     def _enabled(self) -> bool:
         # Settings service first (⚙ panel toggle, live), then emptyos.toml.

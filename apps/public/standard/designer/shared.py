@@ -17,6 +17,7 @@ generation/routes helper modules import them unchanged.
 from __future__ import annotations
 
 from emptyos.sdk.html_artifact import (
+    artifact_title as _artifact_title,
     extract_html as _extract_html,
     looks_like_html as _looks_like_html,
     looks_truncated as _looks_truncated,

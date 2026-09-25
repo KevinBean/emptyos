@@ -138,7 +138,7 @@ class EmptyOSRealtime {
         // here, not on a server).
         const indicator = document.createElement("div");
         indicator.className = "eos-capture-mic";
-        indicator.style.cssText = "position:fixed;bottom:20px;right:20px;background:#dc2626;color:white;padding:10px 16px;border-radius:24px;font-size:13px;z-index:10000;box-shadow:0 2px 8px rgba(0,0,0,0.2);font-family:system-ui,sans-serif;display:flex;align-items:center;gap:8px";
+        indicator.style.cssText = "position:fixed;bottom:20px;right:20px;background:var(--danger);color:var(--ink-on-vivid);padding:10px 16px;border-radius:24px;font-size:13px;z-index:10000;box-shadow:0 2px 8px rgba(0,0,0,0.2);font-family:system-ui,sans-serif;display:flex;align-items:center;gap:8px";
         indicator.innerHTML = '<span style="display:inline-block;width:8px;height:8px;background:white;border-radius:50%;animation:eos-pulse 1s ease-in-out infinite"></span>Listening' + (req.prompt ? ': ' + req.prompt : '...');
         document.body.appendChild(indicator);
         if (!document.getElementById("eos-capture-style")) {
@@ -184,7 +184,7 @@ class EmptyOSRealtime {
         const indicator = document.createElement("div");
         indicator.className = "eos-capture-cam";
         indicator.style.cssText = "position:fixed;bottom:20px;right:20px;background:#111;color:white;padding:12px 16px;border-radius:12px;font-size:13px;z-index:10000;box-shadow:0 2px 12px rgba(0,0,0,0.4);font-family:system-ui,sans-serif;display:flex;align-items:center;gap:10px";
-        indicator.innerHTML = '<span style="display:inline-block;width:8px;height:8px;background:#10b981;border-radius:50%"></span>' +
+        indicator.innerHTML = '<span style="display:inline-block;width:8px;height:8px;background:var(--success);border-radius:50%"></span>' +
             '<span>Camera: ' + (req.prompt || 'capturing snapshot') + '</span>';
         document.body.appendChild(indicator);
 

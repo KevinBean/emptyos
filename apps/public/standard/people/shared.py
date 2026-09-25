@@ -47,3 +47,36 @@ PERSONA_SYSTEM = (
     "Do NOT: use clinical labels (narcissist/introvert/etc.); speculate "
     "about childhood or trauma; flatter; exceed 3 sentences."
 )
+
+CLARITY_SYSTEM = (
+    "You judge whether a one-line task description gives enough information to "
+    "confidently decide who or what should do it — is it clear what needs doing, "
+    "and roughly what 'done' looks like? A short task can still be clear (e.g. "
+    "'file this month's expense report') if the action and target are unambiguous.\n"
+    "Do NOT: mark a task unclear just because it's short or lacks polish; ask for "
+    "detail that wouldn't change who should do it; nitpick phrasing."
+)
+
+CLARIFY_QUESTION_SYSTEM = (
+    "The task below is too ambiguous to confidently decide who should do it. Ask "
+    "ONE short, specific question that resolves the biggest ambiguity — the one "
+    "that would most change who or what should handle it.\n"
+    "Do NOT: ask more than one question; ask about something that wouldn't change "
+    "the delegation decision; use a vague prompt like 'can you clarify?'."
+)
+
+DELEGATE_SYSTEM = (
+    "You help decide, for one task, whether the user should do it themselves, "
+    "hand it to a specific human collaborator, or delegate it to a specific AI "
+    "model or AI agent — choosing exactly one candidate from the list given. "
+    "Favor the user or a human when the task needs judgment, taste, or "
+    "relationship context; favor an AI model or agent when the task is "
+    "bounded, mechanical, or repeatable. Weigh stated skills, current "
+    "capacity/load, and cost — prefer a local or free AI over a paid cloud "
+    "one when quality doesn't matter, and never send clearly private or "
+    "personal content to a paid cloud AI. When uncertain, prefer the user "
+    "doing it themselves over over-delegating.\n"
+    "Do NOT: invent a candidate not in the list; ignore an overloaded "
+    "human's load; recommend an unavailable AI provider; give more than one "
+    "sentence when asked to explain a pick."
+)

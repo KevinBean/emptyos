@@ -1,11 +1,11 @@
 ---
 name: eos-orgs-member-add
-description: Add a member (human or persona) to an existing Real Org in `apps/company/`. Extracts the person's name, role, and reporting line from the current conversation, links to an existing `apps/people/` person record when one matches by name, and POSTs to `/orgs/api/members`. Use when the user says "add <person> to <org>", "<name> joined <org>", "<name> is now <role> at <org>", or "make <name> a member of <org>".
+description: Add a member (human or persona) to an existing Real Org in `apps/public/standard/company/`. Extracts the person's name, role, and reporting line from the current conversation, links to an existing `apps/public/standard/people/` person record when one matches by name, and POSTs to `/orgs/api/members`. Use when the user says "add <person> to <org>", "<name> joined <org>", "<name> is now <role> at <org>", or "make <name> a member of <org>". NOT for creating the org first (use eos-orgs-create) and NOT for the vault person record itself (use life-people-manager).
 ---
 
 # EmptyOS Orgs — Add Member
 
-Link a person (or persona) to an existing org via `POST /orgs/api/members`. The skill prefers linking to an existing `apps/people/` record by name match, so the org member and the people-app contact share a single source of truth. Falls back to `mode=human` with a bare name when no people record exists.
+Link a person (or persona) to an existing org via `POST /orgs/api/members`. The skill prefers linking to an existing `apps/public/standard/people/` record by name match, so the org member and the people-app contact share a single source of truth. Falls back to `mode=human` with a bare name when no people record exists.
 
 This skill does **not** create the org — use `eos-orgs-create` first if the org doesn't exist. It also does **not** create the person in the people app — that's `life-people-manager`'s job. The skill is a *linker*.
 
@@ -15,13 +15,21 @@ This skill does **not** create the org — use `eos-orgs-create` first if the or
 - Conversation has surfaced a person joining or being newly tracked under an org
 - **Not** for re-roling an existing member — the v1 API doesn't have an update-role endpoint; advise the user to remove + re-add, or edit via the web UI
 
+## Pre-flight
+
+This skill writes through the daemon HTTP API, so the daemon must be reachable first:
+
+- **Daemon up** — `curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:9000/orgs/` should print `200`. If not, ask the user to run `restart.bat` — never start/restart the daemon yourself (`.claude/rules/daemon-handling.md`).
+- **Auth (private mode)** — read `auth_token` from `emptyos.toml` `[network]` and send `Authorization: Bearer <token>` on every request (`.claude/rules/environment.md`).
+- **Non-ASCII bodies** — POST via Python `urllib`, not `curl -d` (Windows cp1252 mangles em-dash / CJK).
+
 ## Schema (`POST /orgs/api/members`)
 
 | Field | Type | Required | Default | Notes |
 |---|---|---|---|---|
 | `org_id` | string | **yes** | — | Must already exist. |
-| `mode` | enum | no | `human` | `human` (links to `apps/people/`) or `ai` (AI persona — discouraged from this skill) |
-| `person_id` | string | **yes (mode=human)** | — | `apps/people/` person id. **API does not validate**; the skill must verify it exists before POSTing to avoid dangling links. |
+| `mode` | enum | no | `human` | `human` (links to `apps/public/standard/people/`) or `ai` (AI persona — discouraged from this skill) |
+| `person_id` | string | **yes (mode=human)** | — | `apps/public/standard/people/` person id. **API does not validate**; the skill must verify it exists before POSTing to avoid dangling links. |
 | `name` | string | **yes (mode=ai)** | — | Display name. Only used when `mode=ai`. Ignored when `mode=human`. |
 | `role` | string | no | `""` | Job title or function. |
 | `dept` | string | no | `""` | Department / squad. |

@@ -5,7 +5,6 @@ keyboard shortcuts) so individual tests stay focused on the workflow under test.
 """
 
 import re
-import time
 
 
 def wait_for_toast(page, expected_substring=None, timeout=3000):
@@ -108,6 +107,28 @@ def visible_search_input(page, timeout=3000):
     loc = page.locator(
         "input[type='search'], input[placeholder*='earch' i]"
     ).locator("visible=true")
+    try:
+        loc.first.wait_for(state="visible", timeout=timeout)
+    except Exception:
+        return None
+    return loc.first if loc.count() else None
+
+
+def visible_text_input(page, timeout=3000):
+    """The app's OWN first typing surface, skipping shared page chrome.
+
+    Sibling of `visible_search_input`, and the same trap: the universal search
+    overlay (`.eos-search-overlay`) also matches the obvious
+    `textarea, input[type='text']` selector and sorts FIRST in DOM order, so a
+    plain `.first` grabs a decoy inside a `display:none` subtree and `fill()`
+    times out on a page whose real input was visible the whole time. This broke
+    three app tests at once (studio / podcast / tts) rather than one, because
+    the decoy is shared chrome — every page has it.
+
+    Returns a visible locator, or None when the app genuinely has no text
+    input (callers skip in that case).
+    """
+    loc = page.locator("textarea, input[type='text']").locator("visible=true")
     try:
         loc.first.wait_for(state="visible", timeout=timeout)
     except Exception:
@@ -245,3 +266,59 @@ def app_loaded(http_client, app_path):
 def wait_briefly(page, ms=500):
     """Short wait to let the UI settle (animations, debounce)."""
     page.wait_for_timeout(ms)
+
+
+# ── Shared calculator-surface assertions ─────────────────────────────
+# These exist because the engineering calculators' charts and readout strips are
+# rendered by shared EOS_UI helpers, and the per-app tests only ever asserted the
+# headline number. That is green on a chart with no tick labels, a readout strip
+# that rendered nothing, and a warning list that silently swallowed a bad mount
+# — all of which happened. Assert the surface, not just the number.
+
+def assert_chart(page, selector, *, series=1, ref_lines=0, legend=None, ticks=True):
+    """A lineChart actually drew at `selector`.
+
+    `series` is the minimum polyline count (a series breaks into several
+    polylines across gaps, so this is a floor, not an equality). `ticks=True`
+    requires at least one numeric tick label — the assertion that catches a log
+    axis whose domain contains no power of ten, which renders as bare rules.
+    `legend` is the expected entry count, or None to not check.
+    """
+    svg = page.locator(f"{selector} svg")
+    assert svg.count() == 1, f"{selector}: expected one <svg>, found {svg.count()}"
+    polys = page.locator(f"{selector} svg polyline").count()
+    assert polys >= series, f"{selector}: expected >= {series} polyline(s), found {polys}"
+    if ref_lines:
+        dashed = page.locator(f"{selector} svg line[stroke-dasharray]").count()
+        assert dashed >= ref_lines, (
+            f"{selector}: expected >= {ref_lines} reference line(s), found {dashed}")
+    if ticks:
+        # Per AXIS, not per svg. "The chart has some tick text somewhere" is
+        # satisfied by the other axis, so a completely unlabelled axis passes —
+        # measured: that exact assertion went green on a build with a blank y
+        # axis because the x axis still carried a decade. Hence .eos-tick-x/-y.
+        for axis in ("x", "y"):
+            # all_text_contents, not all_inner_texts: an SVG <text> node has no
+            # innerText, so the inner_text accessor raises rather than returning "".
+            labels = [t.strip() for t in
+                      page.locator(f"{selector} svg .eos-tick-{axis}").all_text_contents()]
+            numeric = [t for t in labels if any(c.isdigit() for c in t)]
+            assert numeric, (
+                f"{selector}: {axis} axis carries no numeric tick labels (got {labels})")
+    if legend is not None:
+        n = page.locator(f"{selector} .eos-chart-legend span").count()
+        assert n == legend, f"{selector}: expected {legend} legend entries, found {n}"
+
+
+def assert_readout(page, selector, *, min_rows=1):
+    """A metaRows strip rendered, and carries the shared class that styles it."""
+    cls = page.get_attribute(selector, "class") or ""
+    assert "eos-meta" in cls, f"{selector}: missing .eos-meta (class={cls!r})"
+    rows = page.locator(f"{selector} > div").count()
+    assert rows >= min_rows, f"{selector}: expected >= {min_rows} row(s), found {rows}"
+
+
+def assert_warnings(page, selector, *, min_count=1):
+    """A warnList rendered its caveats as shared .eos-warn notes."""
+    n = page.locator(f"{selector} .eos-warn").count()
+    assert n >= min_count, f"{selector}: expected >= {min_count} .eos-warn, found {n}"

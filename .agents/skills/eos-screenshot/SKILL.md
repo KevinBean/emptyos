@@ -1,6 +1,6 @@
 ---
 name: eos-screenshot
-description: Capture screenshots of EmptyOS UI for blog posts and the marketing site, with privacy + branding redaction baked in. Works against any URL — localhost, demo.binbian.net, an exported bundle. Pre-blurs selectors you specify, then scans visible text against `.eos-personal` and `.eos-branding` patterns and refuses to write the file when a leak is detected (unless `--force`). Outputs to `{vault}/30_Resources/Published/media/<slug>.png` with a sidecar `<slug>.alt.txt` and a manifest entry in `media/.shots.toml`. Use when the user says "screenshot this", "grab a shot of /journal", "shoot the capability inspector", or wants article images for a Published post.
+description: Capture screenshots of EmptyOS UI for blog posts and the marketing site, with privacy + branding redaction baked in. Works against any URL — localhost, demo.binbian.net, an exported bundle. Pre-blurs selectors you specify, then scans visible text against `.eos-personal` and `.eos-branding` patterns and refuses to write the file when a leak is detected (unless `--force`). Outputs to `{vault}/30_Resources/Published/media/<slug>.png` with a sidecar `<slug>.alt.txt` and a manifest entry in `media/.shots.toml`. Use when the user says "screenshot this", "grab a shot of /journal", "shoot the capability inspector", or wants article images for a Published post. NOT for editing an image you already have (use eos-image-edit) and NOT for authoring a diagram (use eos-article-diagrams).
 ---
 
 # EmptyOS Screenshot Skill
@@ -19,14 +19,14 @@ This skill closes those gaps with the smallest possible workflow: navigate, blur
 - After drafting a post in `30_Resources/Published/` that references `media/...png` files that don't exist yet
 - When refreshing stale screenshots on the live site
 
-Skip if: the asset is a chart/SVG (those come from data, not screenshots) or a non-UI photo (cover images, etc.).
+Skip if: the asset is a chart/SVG (those come from data, not screenshots — use `eos-article-diagrams`), a non-UI photo (cover images, etc.), or an **already-captured image with no live DOM** — a phone screenshot the user AirDropped, an exported photo. This skill blurs *CSS selectors on a live page*; to blur pixel regions + crop chrome on an existing image file, use `eos-image-edit` (`scripts/redact_screenshot.py`).
 
 ## Prerequisites
 
 - Playwright installed: `pip install playwright pytest-playwright && playwright install chromium`
 - Pillow installed: `pip install pillow` (for selector-region cropping)
 - A reachable target URL — typically `http://localhost:9000` (default) or `https://demo.binbian.net/?token=...`
-- Vault connected (`.Codex/vault-connection.json`) so output paths resolve
+- Vault connected (`.claude/vault-connection.json`) so output paths resolve
 
 ## Arguments
 
@@ -49,7 +49,7 @@ Skip if: the asset is a chart/SVG (those come from data, not screenshots) or a n
 
 ```python
 import json
-with open(".Codex/vault-connection.json") as f:
+with open(".claude/vault-connection.json") as f:
     vault = json.load(f)["vault_path"]
 media_dir = f"{vault}/30_Resources/Published/media"
 ```

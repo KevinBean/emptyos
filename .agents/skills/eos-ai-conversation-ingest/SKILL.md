@@ -1,6 +1,6 @@
 ---
 name: eos-ai-conversation-ingest
-description: Canonical EmptyOS workflow for inspecting Claude, ChatGPT, Gemini, or Codex conversation lists; copying complete source conversations into the Main Vault; fact-checking and digesting them; routing durable personal, emotional, knowledge, calculation, calculator, project, and relationship updates; deduplicating previously processed chats; resuming the ingestion ledger; and auditing or backfilling legacy conversation notes. Use whenever the user asks to archive, copy, digest, import, review, migrate, sort, or continue processing AI chats—even if they only mention a provider chat list or “the conversations we saved before.”
+description: Canonical EmptyOS workflow for inspecting Claude, ChatGPT, Gemini, or Codex conversation lists; copying complete source conversations into the Main Vault; fact-checking and digesting them; routing durable personal, emotional, knowledge, calculation, calculator, project, and relationship updates; deduplicating previously processed chats; resuming the ingestion ledger; and auditing or backfilling legacy conversation notes. Use whenever the user asks to archive, copy, digest, import, review, migrate, sort, or continue processing AI chats—even if they only mention a provider chat list or “the conversations we saved before.” This is the canonical conversation-ingest workflow. NOT for a source PDF (use vault-source-digest) and NOT for study notes over standards the KB already holds (use eos-study-notes-digest).
 ---
 
 # EmptyOS AI conversation ingestion

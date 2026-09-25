@@ -24,6 +24,7 @@
     hl.id = HL_ID;
     hl.style.cssText = [
       'position:fixed', 'pointer-events:none', 'z-index:2147483646',
+      // text-tokens: ignore — sandboxed artifact iframe, no theme.css loaded.
       'border:2px solid #3b82f6', 'background:rgba(59,130,246,.10)',
       'border-radius:4px', 'transition:all .04s linear', 'display:none',
       'box-shadow:0 0 0 1px rgba(255,255,255,.6)'

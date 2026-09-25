@@ -33,7 +33,7 @@ from pathlib import Path
 from typing import Any
 
 from emptyos.sdk import BaseApp, on_event, web_route
-from emptyos.sdk.utils import extract_wikilinks
+from emptyos.sdk.utils import extract_wikilinks, normalize_link_target
 
 
 # Frontmatter fields whose value(s) are wikilink-shaped (a note title or
@@ -51,6 +51,11 @@ FRONTMATTER_REF_FIELDS = [
     "source",
     "supersedes",
     "superseded_by",
+    # Where a generated artifact ended up being used ("kb/<slug>",
+    # "publish/<post>-<concept>"). This is the only reliably-resolvable
+    # direction for an artifact record: its own filename is a fixed
+    # `record.md` under a per-id folder, so nothing can point *at* it by slug.
+    "used_in",
 ]
 
 
@@ -155,6 +160,40 @@ class VaultGraphApp(BaseApp):
             return {"total": 0, "cached_views": 0}
         return {"total": vi.file_count(), "cached_views": len(self._cache)}
 
+    @web_route("GET", "/api/orphans")
+    async def api_orphans(self, request):
+        """Disconnected notes — fetched from `link`, never re-derived here.
+
+        `link` owns the vault-wide inverted link index, so this is one call
+        rather than a second scan of the same 27.8k notes carrying a second
+        definition of "orphan" to drift from the first.
+
+        Not cached here on purpose — `link` already caches, and a second cache
+        would have to guess when the first went stale. Its cost profile is
+        bimodal and worth knowing before wiring this anywhere hot: 0.1s warm,
+        but 36-57s whenever a vault write has invalidated the index (measured
+        2026-08-17 on :9000). The panel is lazy for that reason.
+
+        Deliberately *not* computed from ``_build_graph``'s slice. The graph
+        draws at most 2000 most-recent notes, so a degree-0 count taken from it
+        answers "isolated among the notes I happened to draw" while reading as
+        "isolated in your vault" — a different, smaller, and misleading number
+        (the graph's own cap-honesty gap, made worse by dressing it up as an
+        orphan list). Vault-wide counts ride along so the panel can say which
+        one it is.
+
+        Degrades rather than 500s when `link` is absent: it is an
+        ``optional_apps`` integration, and the graph is fine without it.
+        """
+        try:
+            limit = min(500, max(1, int(request.query_params.get("limit") or 100)))
+        except ValueError:
+            limit = 100
+        rep, err = await self.try_call_app("link", "orphan_report", limit=limit)
+        if err:
+            return {"available": False, "error": err}
+        return {"available": True, **(rep or {})}
+
     # ── Graph build ───────────────────────────────────────────────────────
 
     async def _build_graph(
@@ -190,13 +229,20 @@ class VaultGraphApp(BaseApp):
                 if any((e.get("folder") or "").startswith(f) for f in folders)
             ]
 
-        # Sort by recency; cap
+        # Sort by recency; cap. `matched` is the pool the filters selected,
+        # BEFORE the cap — the only honest denominator for "showing N of M".
+        # `total_indexed` is the wrong one whenever a filter is active: with
+        # `kinds=kb` the graph draws 800 of the KB notes, not 800 of the vault,
+        # and quoting the vault total there is a different wrong number rather
+        # than a fix. The UI needs both, so both ship.
+        matched = len(entries)
         entries.sort(key=lambda e: e.get("modified", 0), reverse=True)
         entries = entries[:limit]
 
         # Build name→path index for wikilink resolution
         name_to_path: dict[str, str] = {}
         slug_to_path: dict[str, str] = {}
+        path_to_path: dict[str, str] = {}
         for e in entries:
             n = (e.get("name") or "").lower()
             if n and n not in name_to_path:
@@ -204,6 +250,7 @@ class VaultGraphApp(BaseApp):
             stem = Path(e["path"]).stem.lower()
             if stem and stem not in slug_to_path:
                 slug_to_path[stem] = e["path"]
+            path_to_path[self._path_key(e["path"])] = e["path"]
 
         # Nodes
         nodes: list[dict] = []
@@ -213,7 +260,7 @@ class VaultGraphApp(BaseApp):
             nodes.append(
                 {
                     "id": e["path"],
-                    "label": (e.get("name") or "").replace("-", " "),
+                    "label": self._node_label(e),
                     "kind": primary_kind,
                     "folder": e.get("folder", ""),
                     "modified": e.get("modified", 0),
@@ -238,8 +285,10 @@ class VaultGraphApp(BaseApp):
 
             # 1. Wikilinks
             for target in extract_wikilinks(body):
-                key = target.lower()
-                target_path = name_to_path.get(key) or slug_to_path.get(key)
+                key = self._link_key(target)
+                # Path form first: it is the more specific of the two.
+                target_path = (path_to_path.get(key) or name_to_path.get(key)
+                               or slug_to_path.get(key))
                 if not target_path or target_path == path:
                     continue
                 ek = (path, target_path, "wikilink")
@@ -356,6 +405,15 @@ class VaultGraphApp(BaseApp):
             "stats": {
                 "total_indexed": vi.file_count(),
                 "in_slice": len(nodes),
+                # The cap-honesty triple. `in_slice` counts *nodes*, which
+                # includes folder pseudo-nodes when `folder_edges=1` — so it
+                # overstates how much of the vault is drawn and can't be the
+                # numerator. These three can:
+                "notes_drawn": len(entries),
+                "matched": matched,
+                "capped": matched > len(entries),
+                "limit": limit,
+                "filtered": bool(kinds or folders),
                 "wikilink_edges": sum(1 for e in edges if e["kind"] == "wikilink"),
                 "frontmatter_edges": sum(
                     1 for e in edges if e["kind"] == "frontmatter_ref"
@@ -379,6 +437,7 @@ class VaultGraphApp(BaseApp):
         # Build minimal indexes from whole vault (single-shot — small data)
         name_to_path: dict[str, str] = {}
         slug_to_path: dict[str, str] = {}
+        path_to_path: dict[str, str] = {}
         for p, e in vi._files.items():
             n = (e.get("name") or "").lower()
             if n and n not in name_to_path:
@@ -386,11 +445,13 @@ class VaultGraphApp(BaseApp):
             stem = Path(p).stem.lower()
             if stem and stem not in slug_to_path:
                 slug_to_path[stem] = p
+            path_to_path[self._path_key(p)] = p
         out: list[dict] = []
         seen_targets: set[tuple[str, str]] = set()
         for target in extract_wikilinks(body):
-            key = target.lower()
-            tp = name_to_path.get(key) or slug_to_path.get(key)
+            key = self._link_key(target)
+            tp = (path_to_path.get(key) or name_to_path.get(key)
+                  or slug_to_path.get(key))
             if not tp or tp == path:
                 continue
             if (tp, "wikilink") in seen_targets:
@@ -415,9 +476,19 @@ class VaultGraphApp(BaseApp):
                 out.append({"path": tp, "kind": "frontmatter_ref", "field": field})
         return out
 
+
+    # Path form is this vault's most common shape — 855 of 1362 links in a
+    # 400-note sample — and resolving stems only made ~63% of real links
+    # invisible to the graph. `link` had the identical defect and was fixed
+    # 2026-08-17; both now share one normaliser so they cannot drift apart
+    # again (the local copies had already diverged over `#anchor` handling).
+    _link_key = staticmethod(normalize_link_target)
+    _path_key = staticmethod(normalize_link_target)
+
     async def _incoming_for(self, path: str, vi: Any) -> list[dict]:
         target_stem = Path(path).stem.lower()
         target_name = ((vi._files.get(path) or {}).get("name") or "").lower()
+        target_path = self._path_key(path)
         notes_dir = self.vault_root
         if not notes_dir:
             return []
@@ -430,12 +501,26 @@ class VaultGraphApp(BaseApp):
                 body = await self.read(str(notes_dir / src_path))
             except Exception:
                 continue
-            wl = {t.lower() for t in extract_wikilinks(body)}
-            if target_stem in wl or (target_name and target_name in wl):
+            wl = {self._link_key(t) for t in extract_wikilinks(body)}
+            if (target_path in wl or target_stem in wl
+                    or (target_name and target_name in wl)):
                 if src_path not in seen_sources:
                     seen_sources.add(src_path)
                     out.append({"path": src_path, "kind": "wikilink"})
         return out
+
+    @staticmethod
+    def _node_label(entry: dict) -> str:
+        """Display label for a graph node — declared `title`, else the stem.
+
+        The stem is a poor label whenever a note lives in a per-entity folder
+        under a fixed filename: every `<app>/outputs/<id>/record.md` renders as
+        a node labelled "record", indistinguishable across an app's entire
+        output history. The label is display + search-filter only
+        (pages/index.html), so preferring the note's own human name is safe.
+        """
+        title = str((entry.get("properties") or {}).get("title") or "").strip()
+        return title or (entry.get("name") or "").replace("-", " ")
 
     @staticmethod
     def _resolve_ref(value: str, name_to_path: dict[str, str], slug_to_path: dict[str, str]) -> str | None:
@@ -454,7 +539,15 @@ class VaultGraphApp(BaseApp):
         # Strip ".md" suffix
         if v.endswith(".md"):
             v = v[:-3]
-        return name_to_path.get(v) or slug_to_path.get(v)
+        hit = name_to_path.get(v) or slug_to_path.get(v)
+        if hit or "/" not in v:
+            return hit
+        # Path-ish value ("kb/cse-thrust", "30_Resources/.../note"): both index
+        # maps are keyed by bare name/stem, so a qualified reference misses on
+        # the exact lookup even though the note is right there. Retry on the
+        # last segment. Tried only after the exact form so a note literally
+        # named "kb/cse-thrust" still wins.
+        return slug_to_path.get(v.rsplit("/", 1)[-1])
 
     # ── Timeline contract (also wired) ──
     # vault-graph itself doesn't carry per-entity detail views, so it

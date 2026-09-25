@@ -10,6 +10,18 @@ store_category = "engineering"
 module = "app"
 class = "TrustLoopApp"
 
+[assurance]
+method = "trust-loop-v1"
+status = "demonstration"
+index = "ASSURANCE.md"
+source_pack = "SOURCE-PACK.md"
+algorithm = "ALGORITHM.md"
+implementation = "IMPLEMENTATION.md"
+validation = "VALIDATION.md"
+app_spec = "INTENT.md"
+report_spec = "REPORT-SPEC.md"
+release_verification = "RELEASE-VERIFICATION.md"
+
 [provides.cli]
 commands = ["trust-loop"]
 

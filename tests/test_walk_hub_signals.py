@@ -52,10 +52,20 @@ class TestHubSignalsWalk:
         ), f"learn-review-due panel data must have value/count/label: {panel_data}"
 
     def test_hub_debug_panels_endpoint(self, http_client):
-        """7.2 — /hub/debug/panels lists panels with id + data."""
-        r = http_client.get("/hub/debug/panels")
+        """7.2 — the panel listing returns panels with id + data.
+
+        `/hub/debug/panels` is the HUMAN page and has been since 2026-09-12,
+        when it became one shared `panel-debug.html` for every panel host
+        rather than a copy per app. It serves HTML, so `r.json()` raised
+        JSONDecodeError here — the route was fine and the test was pointed at
+        it. `/hub/api/panels/all` is the JSON behind that page (the route the
+        HTML fallback itself names) and runs lazy contributors too, which is
+        what makes this a listing of every contribution rather than of the
+        eagerly-rendered subset.
+        """
+        r = http_client.get("/hub/api/panels/all")
         if r.status_code == 404:
-            pytest.skip("/hub/debug/panels not available")
+            pytest.skip("/hub/api/panels/all not available")
         data = r.json()
         panels = data.get("panels", data) if isinstance(data, dict) else data
         assert isinstance(panels, list), "debug panels must return a list"
