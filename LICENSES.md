@@ -113,6 +113,7 @@ Classifier metadata) and `scripts/check-licenses.py`.
 | Package | Version pin | Source |
 |---------|-------------|--------|
 | [uvicorn](https://github.com/encode/uvicorn) | `>=0.30` | ASGI server |
+| [websockets](https://github.com/python-websockets/websockets) | `>=13` | WebSocket support for uvicorn (realtime `/ws`) |
 | [typer](https://github.com/tiangolo/typer) | `>=0.12` | CLI framework |
 | [rich](https://github.com/Textualize/rich) | `>=13` | Terminal rendering |
 | [torch](https://github.com/pytorch/pytorch) | (pronounce) | Tensor library / wav2vec2 inference (modified BSD) |

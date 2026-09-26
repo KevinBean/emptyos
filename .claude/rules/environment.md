@@ -10,6 +10,10 @@ Two machines, two shells, and the difference bites: the **Windows** box (homepc,
 - **Fix in place:** `.claude/settings.json` sets `env.PYTHONIOENCODING=utf-8` so Claude-spawned `python` subprocesses inherit UTF-8 stdout. Verify with `python -c "import sys; print(sys.stdout.encoding)"` → should read `utf-8`.
 - **If the hook isn't active:** write non-ASCII output via `open(path, "w", encoding="utf-8")` rather than `print()`. Don't reach for `chcp 65001` — fragile across PowerShell vs cmd vs Bash tools.
 
+## Line endings
+
+`.gitattributes` pins `*.py` and `*.sh` to `eol=lf`, which overrides the system-wide `core.autocrlf=true` for those types. Other text files (`.md`) follow autocrlf, which is why their warning reads "LF will be replaced by CRLF". Even so, **about a third of tracked `.py` working copies are CRLF**: `git ls-files --eol -- '*.py'` measured 1029 `w/crlf` against 2105 `w/lf` on 2026-09-26, left over from checkouts that predate the attribute or from tools that write CRLF. Every commit normalises them to LF, so a CRLF `.py` shows no content diff, and "CRLF will be replaced by LF" is only a warning. Before blaming the last tool that touched a file, run `git ls-files --eol -- <path>` and check an untouched sibling. On 2026-09-26 this was nearly written up as a mutation-runner bug: the runner restores bytes exactly, and the file had been CRLF before the run.
+
 ## Python 3.13 dep gaps
 
 - `g2p_en` has no Python 3.13 wheel as of recent sessions. Used by the pronounce stack.

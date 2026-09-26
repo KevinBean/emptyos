@@ -1,6 +1,6 @@
 ---
 name: creative-shortdrama
-description: Make a Chinese 短劇 (short drama) scene end to end on the local stack — stills in Flow, edge-tts dialogue, Wan 2.1 i2v + InfiniteTalk lip-sync in ComfyUI, and a measured assembly. Use when the user says "make a short drama", "短劇", or "shoot this dialogue scene", or wants to continue or re-run the short-drama capability test. NOT for music videos (use creative-mv-generator), NOT for a podcast or slideshow, and NOT for driving Flow itself (use tool-flow-stills).
+description: Make a Chinese 短劇 (short drama) scene end to end on the local stack — stills in Flow, edge-tts dialogue, Wan 2.1 i2v + InfiniteTalk lip-sync in ComfyUI, and a measured assembly. Use when the user says "make a short drama", "短劇", or "shoot this dialogue scene", or wants to continue or re-run the short-drama capability test. NOT for music videos (use creative-mv-director, which owns MV lip-sync), NOT for a podcast or slideshow, and NOT for driving Flow itself (use tool-flow-stills).
 vault_sync: true
 ---
 

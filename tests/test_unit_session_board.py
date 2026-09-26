@@ -105,6 +105,31 @@ def test_claimed_plan_makes_track_live_over_kevin(log):
     assert b["plans"][0]["tasks"] == {"done": 1, "active": 1, "blocked": 1}
 
 
+def test_plan_rows_are_read_whatever_the_id_prefix(log):
+    # The board used to count only `T<n>` ids by column index, so a plan
+    # numbered P1..Pn showed no tasks at all. It now shares check_plan_staleness'
+    # row parser, which anchors on the status cell.
+    (log / "_plans" / "p.md").write_text(
+        "---\nplan: p\ntrack: t\nactive_task: \"\"\n---\n\n## Tasks\n\n"
+        "| id | task | depends_on | status | session | disposition |\n|---|---|---|---|---|---|\n"
+        "| P1 | a `x | y` pipe | — | done | s | shipped |\n| P2 | b | P1 | queued | | |\n",
+        encoding="utf-8")
+    assert board(log)["plans"][0]["tasks"] == {"done": 1, "queued": 1}
+
+
+def test_unreadable_and_cut_off_rows_are_counted_not_guessed(log):
+    # A row with no status word is "?", not whatever sits in column 3; rows
+    # below a wrapped row are "unseen" rather than silently dropped.
+    (log / "_plans" / "p.md").write_text(
+        "---\nplan: p\ntrack: t\n---\n\n## Tasks\n\n"
+        "| id | task | depends_on | status |\n|---|---|---|---|\n"
+        "| T1 | a | — | done |\n| T2 | b | — | shipped-ish |\n"
+        "| T3 | c starts\nand wraps here | — | queued |\n| T4 | d | — | queued |\n| T5 | e | — | queued |\n",
+        encoding="utf-8")
+    # T2 has no status word; T3's status wrapped onto the next line. Both are "?".
+    assert board(log)["plans"][0]["tasks"] == {"done": 1, "?": 2, "unseen": 2}
+
+
 def test_live_session_names_track_and_stale_transcript_is_ignored(log):
     write(log, "cable", brief("cable", "2026-09-20", ["**[open-code]** T7"]))
     write(log, "cable-pulling", brief("cable-pulling", "2026-09-20", ["**[open-code]** T7"]))

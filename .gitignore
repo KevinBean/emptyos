@@ -16,6 +16,10 @@ __pycache__/
 *.egg-info/
 dist/
 build/
+# Where package-release.py puts the generated dictionary definition pack in the
+# englishos-cloud artifact (release.toml `definition_pack`). A copy placed in the
+# repo for local testing must never ride along in another tier's collection.
+englishos-cloud/definitions.sqlite
 # Generated PDFs/reports (report_response output dir)
 output/
 .venv/

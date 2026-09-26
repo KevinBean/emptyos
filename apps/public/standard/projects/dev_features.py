@@ -32,13 +32,16 @@ from datetime import date
 
 from emptyos.sdk import web_route
 
+# The milestone parser lives in the SDK (emptyos/sdk/project_meta.py) so readers
+# outside this app share it. Re-exported under its old name for this module.
+from emptyos.sdk.project_meta import milestones as _parse_milestones  # noqa: F401
+
 # Section parsing primitives live in shared.py so workspace.py can reuse
 # _parse_sprints without a helper-to-helper import (multi-module-apps §4/§6).
 from .shared import _KV_LINE, _NEXT_H2, _parse_section, _parse_sprints  # noqa: F401
 
-# --- Parsers (milestone/release headings stay here; only used in this module) ---
+# --- Parsers (release headings stay here; only used in this module) ---
 
-_MILESTONE_HEADING = re.compile(r"###\s+(v?\S+)\s*[—–-]\s*(.+)")
 _RELEASE_HEADING = re.compile(r"###\s+(v?\S+)\s*\((\d{4}-\d{2}-\d{2})\)")
 
 
@@ -54,38 +57,6 @@ def _append_to_section(content: str, section_name: str, block: str) -> str:
             return content[:insert_pos] + block + "\n" + content[insert_pos:]
         return content.rstrip() + "\n" + block
     return content.rstrip() + f"\n\n{header}\n" + block
-
-
-def _parse_milestones(content: str) -> list[dict]:
-    """Parse ## Milestones section into structured milestone objects."""
-    section = _parse_section(content, "Milestones")
-    if not section:
-        return []
-
-    milestones = []
-    current = None
-
-    for line in section.split("\n"):
-        m = _MILESTONE_HEADING.match(line.strip())
-        if m:
-            if current:
-                milestones.append(current)
-            current = {
-                "id": m.group(1).strip(),
-                "name": m.group(2).strip(),
-                "target": "",
-                "status": "open",
-            }
-        elif current:
-            kv = _KV_LINE.match(line)
-            if kv:
-                key, val = kv.group(1), kv.group(2).strip()
-                if key in ("target", "status"):
-                    current[key] = val
-
-    if current:
-        milestones.append(current)
-    return milestones
 
 
 def _parse_releases(content: str) -> list[dict]:

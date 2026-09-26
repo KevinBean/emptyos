@@ -15,7 +15,7 @@ import asyncio
 import ipaddress
 import time
 import uuid
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Iterable
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse
@@ -146,8 +146,22 @@ class CloudConsentManager:
     # How long to wait for an approval before giving up (and denying).
     DEFAULT_TIMEOUT_SECONDS = 120
 
-    def __init__(self, policy: str = "ask", events: EventBus | None = None, kernel: Any = None):
+    def __init__(
+        self,
+        policy: str = "ask",
+        events: EventBus | None = None,
+        kernel: Any = None,
+        allowed: Iterable[str] | None = None,
+        locked: bool = False,
+    ):
+        # Operator-set policy (`[cloud] locked`): set_policy() refuses changes.
+        self.locked = bool(locked)
         self.policy = policy if policy in ("ask", "always", "never") else "ask"
+        # Providers the operator allowed in config (`[cloud] allow`). They pass
+        # without a prompt under any policy, including "never" — which is what
+        # lets a hosted build allow exactly the services it ships and refuse
+        # every other cloud provider. The spend guard still runs first.
+        self.config_allowed: frozenset[str] = frozenset(allowed or ())
         self.events = events
         # Kernel ref — only used for the optional local-LLM scan path
         # (reads settings + picks a local think provider). Safe to leave None.
@@ -186,9 +200,13 @@ class CloudConsentManager:
         """
         self._spend_guard = fn
 
-    def set_policy(self, policy: str):
-        if policy in ("ask", "always", "never"):
-            self.policy = policy
+    def set_policy(self, policy: str) -> bool:
+        """Change the policy; False (and no change) when the operator locked it
+        or the value is not a policy."""
+        if self.locked or policy not in ("ask", "always", "never"):
+            return False
+        self.policy = policy
+        return True
 
     def reset_approvals(self):
         """Clear the session cache — next cloud call will re-prompt (in 'ask' mode)."""
@@ -273,6 +291,15 @@ class CloudConsentManager:
                         # only the user-facing toast is lost.
                         self._log("warn", f"spend-blocked emit failed for {provider}: {e}")
                 return False
+
+        if provider in self.config_allowed:
+            self._last_decision[provider] = {
+                "decision": "allowed",
+                "reason": "allowed in config ([cloud] allow)",
+                "at": time.time(),
+            }
+            await self._emit_scan_findings(provider, capability, findings, "config_allowed")
+            return True
 
         if self.policy == "never":
             self._last_decision[provider] = {
@@ -390,7 +417,7 @@ class CloudConsentManager:
         scheduled jobs, batch comparisons). Returns False when a modal would
         fire or the policy is `never`.
         """
-        if self.policy == "always":
+        if self.policy == "always" or provider in self.config_allowed:
             return True
         if self.policy == "never":
             return False
@@ -412,6 +439,7 @@ class CloudConsentManager:
     def status(self) -> dict:
         return {
             "policy": self.policy,
+            "config_allowed": sorted(self.config_allowed),
             "approved": sorted(self._session_approved),
             "pending": self.pending_list(),
             "last_decisions": dict(self._last_decision),

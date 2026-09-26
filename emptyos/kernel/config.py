@@ -187,5 +187,27 @@ class Config:
         val = (self.get("cloud.consent", "ask") or "ask").lower().strip()
         return val if val in ("ask", "always", "never") else "ask"
 
+    @property
+    def cloud_locked(self) -> bool:
+        """True when the operator's cloud settings (consent policy, think
+        models) cannot be changed from Settings — ``[cloud] locked = true``
+        or ``EOS_CLOUD_LOCKED=true``. For a hosted build whose users must not
+        widen what may leave the machine or what it costs.
+
+        An unrecognised value reads as locked: a typo in the lock must not
+        silently unlock a hosted build."""
+        return self._as_bool(self.get("cloud.locked", False), default=True)
+
+    @property
+    def cloud_allow(self) -> tuple[str, ...]:
+        """Cloud providers allowed without a prompt under any policy.
+
+        ``[cloud] allow = ["openrouter", "edge-tts"]``, or the env override
+        ``EOS_CLOUD_ALLOW=openrouter,edge-tts`` (a string, so comma-separated).
+        """
+        raw = self.get("cloud.allow", ()) or ()
+        items = raw.split(",") if isinstance(raw, str) else raw
+        return tuple(s for s in (str(i).strip() for i in items if i is not None) if s)
+
     def __repr__(self) -> str:
         return f"Config({self.path})"

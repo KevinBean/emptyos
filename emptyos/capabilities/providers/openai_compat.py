@@ -19,6 +19,11 @@ from emptyos.capabilities.providers._tool_capable import (
 )
 
 
+# Request keys `extra_body` may not set: each changes what kind of request this
+# is, and the provider sets it on some paths only.
+_SHAPE_KEYS = frozenset({"model", "messages", "stream", "stream_options", "tools", "tool_choice"})
+
+
 def _cached_tokens(usage: dict) -> int:
     """Pull OpenAI's `prompt_tokens_details.cached_tokens` (subset of prompt_tokens).
 
@@ -216,13 +221,27 @@ class OpenAICompatThinkProvider(ToolCapableProvider):
         api_key_env: str = "OPENAI_API_KEY",
         provider_name: str = "",
         timeout: int = 0,
+        extra_body: dict | None = None,
     ):
         self.host = host.rstrip("/")
         self.model = model
         self.api_key_env = api_key_env
         self.timeout = timeout or 60
+        # Operator-set request fields the endpoint understands but this class
+        # does not model, e.g. OpenRouter's upstream routing
+        # ({"provider": {"order": [...]}}). Never overrides a field the
+        # provider sets on a request. Keys that change the request's shape are
+        # dropped outright, because the provider sets them only on some paths:
+        # `stream` on a plain call returns SSE that .json() cannot read, and
+        # `tools` would turn a plain call into a tool call.
+        extra = dict(extra_body) if isinstance(extra_body, dict) else {}
+        self.extra_body = {k: v for k, v in extra.items() if k not in _SHAPE_KEYS}
         if provider_name:
             self.name = provider_name
+
+    def _apply_extra_body(self, payload: dict) -> None:
+        for key, value in self.extra_body.items():
+            payload.setdefault(key, value)
 
     def _api_key(self) -> str:
         # BYOK first: if the current request supplied a user key for this
@@ -413,6 +432,7 @@ class OpenAICompatThinkProvider(ToolCapableProvider):
         if not self._wants_max_completion_tokens:
             payload["temperature"] = kwargs.get("temperature", 0.7)
         self._apply_token_limit(payload, kwargs)
+        self._apply_extra_body(payload)
         return headers, payload
 
     # Last usage data — captured for billing
@@ -799,6 +819,7 @@ class OpenAICompatThinkProvider(ToolCapableProvider):
             # "auto" lets the model decide; the loop relies on tool_calls being
             # present to continue. Force-tool is not supported in v1.
             payload["tool_choice"] = kwargs.get("tool_choice", "auto")
+        self._apply_extra_body(payload)
 
         # Use a generous timeout: local Ollama on a multi-KB prompt + tool schemas
         # can take longer than 60s. Matches streaming paths (self.timeout * 3).

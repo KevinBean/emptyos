@@ -81,7 +81,11 @@ class TestParseDuration:
         ],
     )
     def test_parses(self, raw, minutes):
-        assert cal_ics._parse_duration(raw) == minutes
+        # The parser moved to emptyos/sdk/ics_parse.py when countdown became its
+        # second consumer (37c28680); calendar/ics.py now imports only parse_ics.
+        from emptyos.sdk.ics_parse import _parse_duration
+
+        assert _parse_duration(raw) == minutes
 
 
 class TestEventEnd:

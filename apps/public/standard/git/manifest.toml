@@ -18,9 +18,12 @@ prefix = "/git"
 
 [provides.project-tools]
 tools = [
-    {id = "git-status", label = "Git Status", method = "status_at", type = "development"},
-    {id = "git-log", label = "Recent Commits", method = "log_at", type = "development"},
-    {id = "git-branches", label = "Branches", method = "branches_at", type = "development"},
+    # The request handlers, not the *_at helpers: projects' run-tool only calls
+    # a tool that takes a request, and these routes carry the repo allowlist
+    # (_repo_path -> emptyos | vault). params: {"repo": "vault", "count": 10}.
+    {id = "git-status", label = "Git Status", method = "api_status", type = "development"},
+    {id = "git-log", label = "Recent Commits", method = "api_log", type = "development"},
+    {id = "git-branches", label = "Branches", method = "api_branches", type = "development"},
 ]
 
 [provides.events]

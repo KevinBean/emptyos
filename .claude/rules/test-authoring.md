@@ -19,6 +19,28 @@ When a new app is created under `apps/`, follow the pattern from existing `test_
 5. Register all created test data using `TEST_PREFIX` — it will be cleaned up by `cleanup_after_all` in conftest.py. If the app stores data somewhere new, add a cleanup block to conftest.py.
 6. Personal apps (gitignored) go in `tests/personal/test_<app>.py` and use the `require_app` fixture to skip gracefully when the app isn't installed.
 
+### `assert_ok` checks the status, not the body — check a seed call's body too
+
+`assert_ok` asserts HTTP 200 and nothing else, and EmptyOS routes answer most
+failures in-band: `{"error": "..."}` **with a 200**. So a seed call wrapped in
+`assert_ok` (or not asserted at all) can fail silently, and the test then fails
+later, on the thing it was actually about, with a misleading message.
+
+Measured 2026-09-26 on `test_sys_earthing.py::test_soil_import_takes_only_wenner_rows`:
+the soil `PUT /soundings` seed answered `{"error": "soil engine not available"}`
+with a 200 because CI lacks numpy/scipy. Nothing checked it, so earthing saw an
+empty project, and its own error surfaced as `KeyError: 'imported'` — which reads
+as an earthing bug and was not one.
+
+Any call that **sets up** state the test depends on gets its body checked:
+
+```python
+seeded = assert_ok(http_client.put(url, json=payload))
+assert "error" not in seeded, seeded
+```
+
+The assertion then fails at the seed and prints the real cause.
+
 ## Ongoing deepening (Option 3 practice)
 
 After the initial test file is in place, keep growing coverage where real bugs appear:

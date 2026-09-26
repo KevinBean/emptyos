@@ -5,6 +5,8 @@ description: Generate, review and repair still images in Google Flow (Nano Banan
 
 # Flow Stills Skill
 
+For an MV, start at `creative-mv-director`: free Flow stills can fill living-master slots from v0 onward (after the treatment is approved); it swaps each reviewed still into the living master, and no paid video is made before the user approves v0.
+
 Operating manual for Google Flow's image side, learned the expensive way on
 无所住 (2026-08-07). Flow does **both** stills and video in one project, so
 assets never leave the workspace between stages.

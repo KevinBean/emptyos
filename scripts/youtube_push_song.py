@@ -27,6 +27,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))  # sibling scripts/ mod
 
 import youtube_common as yt  # noqa: E402
 
+sys.path.insert(0, str(Path(__file__).resolve().parent / "mv"))
+import living_master  # noqa: E402
+
 MUSIC_PROFILE = "music"
 
 
@@ -153,6 +156,16 @@ def main() -> int:
     if not pkg["title"]:
         print("Package has no **Title:** bullet — refusing to guess one.")
         return 1
+
+    # A living-master review render carries PLACEHOLDER slots and must never
+    # ship. Matched by sha256 against the render sidecars, so a hardlink under
+    # a release name is caught. Deliberately outside --skip-qa and --force.
+    blocked = living_master.release_block_reason(
+        assets["master"],
+        search_roots=[assets["master"].resolve().parent.parent, song_dir.resolve()])
+    if blocked:
+        print(f"REFUSING: {blocked}")
+        return 5
 
     client = yt.load_client()
     creds = yt.connect(client, args.profile)

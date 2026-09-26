@@ -782,7 +782,9 @@ async function showQuiz(id, idx) {
   document.getElementById('quiz-view').innerHTML = '<div class="quiz-shell"><p style="text-align:center;color:var(--muted)">Generating quiz…</p></div>';
   var res = await fetch('/learn/api/courses/' + encodeURIComponent(id) + '/lessons/' + idx + '/quiz', { method: 'POST' }).then(function(r) { return r.json(); });
   if (res.error) {
-    document.getElementById('quiz-view').innerHTML = '<div class="quiz-shell"><p>Quiz generation failed: ' + esc(res.error) + '</p></div>';
+    // A spent monthly AI limit is not a failure — show its own message.
+    var lead = (res.limit_reached || res.needs_opt_in) ? '' : 'Quiz generation failed: ';
+    document.getElementById('quiz-view').innerHTML = '<div class="quiz-shell"><p>' + lead + esc(res.error) + '</p></div>';
     return;
   }
   STATE.quiz = res;
@@ -1123,8 +1125,12 @@ async function renderQuizCard(card) {
     .catch(function(e) { return { error: String(e) }; });
 
   if (quiz.error) {
+    // A spent monthly AI limit is not a failure: plain text, not the danger colour.
+    var quizNote = (quiz.limit_reached || quiz.needs_opt_in)
+      ? '<p style="padding:20px">' + esc(quiz.error) + '</p>'
+      : '<p style="color:var(--danger);padding:20px">Couldn\'t build a quiz for this card: ' + esc(quiz.error) + '</p>';
     reviewShell(card,
-      '<p style="color:var(--danger);padding:20px">Couldn\'t build a quiz for this card: ' + esc(quiz.error) + '</p>' +
+      quizNote +
       '<div style="display:flex;gap:8px">' +
         '<button class="eos-btn" style="flex:1" onclick="nextCard()">Skip</button>' +
         '<button class="eos-btn eos-btn-primary" style="flex:1" onclick="renderUnifiedCard()">Try again</button>' +

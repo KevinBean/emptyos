@@ -18,7 +18,9 @@ import sys
 import types
 from pathlib import Path
 
-from helpers import app_path
+import pytest
+
+from helpers import app_path, public_snapshot
 
 _KB = app_path("kb")
 
@@ -368,7 +370,12 @@ class TestHealthBucketWiring:
     def test_butler_severity_mirror_has_not_drifted(self):
         """kb-butler hand-copies the bucket map. A bucket added to kb and not
         mirrored there is silently ignored by every butler cycle."""
-        butler_path = app_path("kb-butler") / "app.py"
+        try:
+            butler_path = app_path("kb-butler") / "app.py"  # release-filter: optional
+        except FileNotFoundError:
+            if not public_snapshot():
+                raise
+            pytest.skip("kb-butler app absent (public snapshot)")
         spec = importlib.util.spec_from_file_location("kb_butler_app_mirror", butler_path)
         butler = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(butler)

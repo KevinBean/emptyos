@@ -6,14 +6,56 @@ Methods are bound to ProjectsApp via attribute assignment.
 
 from __future__ import annotations
 
+import inspect
 import json
 import re
 from datetime import date, datetime
 from pathlib import Path
 
 from emptyos.sdk import set_frontmatter_field, web_route
+from emptyos.sdk.utils import FakeRequest
 
 from . import app as _core
+
+
+def _tool_request(fn, params: dict) -> FakeRequest | None:
+    """The request a declared project tool is called with, or None to refuse.
+
+    Only the `@web_route` shape (a `request` parameter) is callable: the tool
+    then applies the same input validation it applies to HTTP. A plain method
+    is refused rather than handed `**params`, because a helper's arguments are
+    whatever the caller sends — git's `log_at(repo_path, ...)` takes any
+    directory as its working tree, where git's routes allow only the
+    configured repos. The shim answers `.json()` and `.body()` alike, so a
+    tool decoding via `read_json`/`safe_json` works.
+    """
+    try:
+        takes_request = "request" in inspect.signature(fn).parameters
+    except (TypeError, ValueError):
+        takes_request = True
+    if not takes_request:
+        return None
+    return FakeRequest(body=params, path_params=params, query_params=params)
+
+
+def _project_id_error(project_id: str) -> str | None:
+    """Why a project id cannot address a project, or None.
+
+    Structural, not an allowlist: projects take their id from a folder or file
+    name, so spaces and CJK are real ids (`path_segment_error` refused 3 of 94
+    on a live vault). What is refused is anything that could leave the
+    projects folder or the calcs folder: a separator, `.`/`..`, a leading or
+    trailing dot (Windows strips the trailing one), a control character.
+    """
+    if not isinstance(project_id, str) or not project_id.strip():
+        return "project id required"
+    if (
+        "/" in project_id or "\\" in project_id
+        or project_id.startswith(".") or project_id.endswith(".")
+        or any(ord(c) < 32 for c in project_id)
+    ):
+        return f"invalid project id {project_id!r}"
+    return None
 
 # ------------------------------------------------------------------
 # Ready Tasks & Dependency Graph
@@ -79,43 +121,73 @@ async def api_dependency_graph(self, request):
 @web_route("POST", "/api/projects/{id}/run-tool")
 async def api_run_tool(self, request):
     """Run a discovered project tool and optionally attach result to a task."""
+    # Every input is checked before the tool runs: a bad one must not
+    # surface as a 500 after the tool has already executed and saved.
     project_id = request.path_params.get("id", "")
-    data = await request.json()
+    bad_id = _project_id_error(project_id)
+    if bad_id:
+        return {"error": bad_id}
+    target = self._find_project_file(project_id)
+    if not target:
+        return {"error": "Project not found"}
+
+    data = await self.safe_json(request)
     app_id = data.get("app", "")
     method = data.get("method", "")
     params = data.get("params", {})
     task_line = data.get("task_line")
 
-    if not app_id or not method:
+    if not (isinstance(app_id, str) and isinstance(method, str) and app_id and method):
         return {"error": "app and method required"}
+    if not isinstance(params, dict):
+        return {"error": "params must be an object"}
+    if task_line is not None and (
+        isinstance(task_line, bool) or not isinstance(task_line, int) or task_line < 0
+    ):
+        return {"error": "task_line must be a non-negative integer"}
+    if task_line is not None and task_line >= len(target.read_text(encoding="utf-8").split("\n")):
+        return {"error": f"task_line {task_line} is past the end of the project note"}
+
+    calcs_root = (Path(self.data_dir) / "calcs").resolve()
+    calcs_dir = (calcs_root / project_id).resolve()
+    if calcs_dir.parent != calcs_root:   # second layer behind _project_id_error
+        return {"error": f"invalid project id {project_id!r}"}
 
     providers = self.kernel.apps.get_providers("project-tools")
-    declared = providers.get(app_id, {}).get("tools", [])
-    if not any(t["method"] == method for t in declared):
+    declared = (providers.get(app_id) or {}).get("tools") or []
+    if not any(isinstance(t, dict) and t.get("method") == method for t in declared):
         return {"error": f"Tool method '{method}' not declared by app '{app_id}'"}
 
     try:
-        result = await self.call_app(app_id, method, request=_core._FakeRequest(params))
+        instance = self.kernel.apps.instances.get(app_id) or await self.kernel.apps.load(app_id)
+        fn = getattr(instance, method, None)
+        if fn is None:
+            return {"error": f"Tool method '{method}' not found on app '{app_id}'"}
+        tool_request = _tool_request(fn, params)
+        if tool_request is None:
+            return {"error": f"Tool method '{method}' on app '{app_id}' is not a request "
+                             "handler; project tools must take a request"}
+        result = await self.call_app(app_id, method, request=tool_request)
     except Exception as e:
         return {"error": f"Tool execution failed: {e}"}
+    # Routes answer failure in-band; that is not a result to save or attach.
+    if isinstance(result, dict) and result.get("error"):
+        return {"error": f"Tool execution failed: {result['error']}"}
 
-    calcs_dir = Path(self.data_dir) / "calcs" / project_id
     calcs_dir.mkdir(parents=True, exist_ok=True)
     timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     result_file = calcs_dir / f"{timestamp}-{app_id}-{method}.json"
     result_file.write_text(json.dumps(result, indent=2, default=str), encoding="utf-8")
 
     if task_line is not None:
-        target = self._find_project_file(project_id)
-        if target:
-            # Shared-note RMW lock (see api_bulk_tasks).
-            async with self.write_lock(f"projects:{project_id}"):
-                content = target.read_text(encoding="utf-8")
-                lines = content.split("\n")
-                if 0 <= task_line < len(lines):
-                    meta_line = f"  - calc: {app_id}/{method} \u2192 {result_file.name}"
-                    lines.insert(task_line + 1, meta_line)
-                    target.write_text("\n".join(lines), encoding="utf-8")
+        # Shared-note RMW lock (see api_bulk_tasks).
+        async with self.write_lock(f"projects:{project_id}"):
+            content = target.read_text(encoding="utf-8")
+            lines = content.split("\n")
+            if task_line < len(lines):
+                meta_line = f"  - calc: {app_id}/{method} \u2192 {result_file.name}"
+                lines.insert(task_line + 1, meta_line)
+                target.write_text("\n".join(lines), encoding="utf-8")
 
     await self.emit(
         "projects:calc_attached",

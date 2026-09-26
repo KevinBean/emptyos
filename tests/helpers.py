@@ -41,6 +41,16 @@ def app_path(app_id: str) -> Path:
     return d
 
 
+def public_snapshot() -> bool:
+    """True in the public release snapshot, which drops the whole extension track.
+
+    A test that skips when something the public release drops is absent must
+    ALSO require this, or a private rename turns a red test into a silent skip.
+    The private tree always carries `apps/extension/`; a public clone never does.
+    """
+    return not (_REPO_ROOT / "apps" / "extension").is_dir()
+
+
 def requires_app(app_id: str, *, file: "str | tuple[str, ...]" = ""):
     """Module-level skip marker for a test that needs a possibly-absent app.
 

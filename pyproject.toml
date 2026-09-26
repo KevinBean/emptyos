@@ -7,7 +7,7 @@ name = "emptyos"
 # Keep in step with release.toml [release].version — that is the single source of
 # truth (package-release.py stamps it into every artifact's MANIFEST.json, and the
 # product's About panel reads it back). Pinned by tests/test_unit_package_release.py.
-version = "0.7.0"
+version = "0.7.1"
 description = "A mind companion. Think and create with you, not for you. A personal AI-powered operating system — empty by default, infinite by design."
 license = "AGPL-3.0-or-later"
 license-files = ["LICENSE"]
@@ -18,6 +18,10 @@ requires-python = ">=3.12"
 dependencies = [
     "fastapi>=0.115",
     "uvicorn>=0.30",
+    # uvicorn serves WebSockets only when a WS library is importable; without
+    # one it answers /ws as plain HTTP and every realtime connection fails.
+    # Bare `uvicorn` does not bring one (its [standard] extra does).
+    "websockets>=13",
     "python-multipart>=0.0.9",
     "edge-tts>=6.1",
     "typer>=0.12",

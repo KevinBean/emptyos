@@ -92,6 +92,10 @@ def test_the_extractor_actually_finds_declarations():
     # The named half now lives in the sibling those declarations were split
     # into — same identifiers, same guarantee, a file that cannot be split again.
     page = APPS / "extension/english-learning/dictionary/pages/index.html"
+    from helpers import public_snapshot
+
+    if not page.exists() and public_snapshot():
+        pytest.skip("dictionary app absent (public snapshot); the inline half above ran")
     moved = _globals((page.parent / "dictionary.js").read_text(encoding="utf-8"))
     assert {"switchTab", "loadVocab", "setDifficulty"} <= moved, sorted(moved)[:20]
     assert {"vocabFilter", "_vocabAll"} <= moved, "top-level `var`s must be seen too"

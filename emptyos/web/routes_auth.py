@@ -865,7 +865,12 @@ def register_cloud_routes(server: FastAPI, kernel: Kernel) -> None:
         policy = str(body.get("policy", "")).lower().strip()
         if policy not in ("ask", "always", "never"):
             return JSONResponse({"error": "policy must be ask | always | never"}, status_code=400)
-        cm.set_policy(policy)
+        if not cm.set_policy(policy):
+            # [cloud] locked: the operator set this build's policy.
+            return JSONResponse(
+                {"error": "the cloud consent policy is set by the operator", "policy": cm.policy},
+                status_code=409,
+            )
         kernel.settings.set("cloud.consent", policy)
         return {"ok": True, "policy": cm.policy}
 

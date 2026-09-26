@@ -295,6 +295,71 @@ _PATHLIB_APPS_RE = re.compile(
 # Sibling-module shim used by dogfood-agent tests after a sys.path insert.
 _SIBLING_BEHAVIOR_RE = re.compile(r"^\s*import\s+behavior\b", re.MULTILINE)
 
+# The shapes below are what v0.7.0 still shipped: 21 test files that could not
+# even be collected in the public snapshot, each bound to dropped code in a way
+# none of the regexes above sees. Measured on a public snapshot, 2026-09-26.
+#
+# `app_path("explore")` / `load_app_module("grill", "app")` — the tests/helpers.py
+# resolvers, which take an app ID rather than a path.
+_APP_HELPER_RE = re.compile(
+    r"""\b(?:app_path|load_app_module)\(\s*['"]([a-z][a-z0-9_-]*)['"]"""
+)
+# A quoted tree path of any depth: "plugins/desktop-control/actuate.py",
+# "apps/extension/dev/agent_fleet/reducer.py". Resolved against the snapshot
+# on disk rather than parsed for an id, because a nested track path has no
+# fixed position for the id. `{` is outside the class, so an f-string
+# template ("apps/{app_id}/x") never matches.
+_TREE_PATH_RE = re.compile(r"""['"]((?:apps|plugins)/[\w./-]+)['"]""")
+# The same path spelled as quoted segments, joined by `/` (pathlib) or `,`
+# (os.path.join): `"plugins" / "gmail" / "client.py"`,
+# `os.path.join(..., "apps", "public", "labs", "synth", "workflow.py")`.
+_TREE_SEGMENTS_RE = re.compile(
+    r"""['"](apps|plugins)['"]((?:\s*[,/]\s*['"][\w.-]+['"])+)"""
+)
+_QUOTED_SEGMENT_RE = re.compile(r"""['"]([\w.-]+)['"]""")
+_OPTIONAL_MARKER = "release-filter: optional"
+# A Python bridge naming the node test it runs: `... / "js" / "cad_live.test.mjs"`.
+_JS_TEST_RE = re.compile(r"""['"]([\w.-]+\.test\.mjs)['"]""")
+# One test importing another (`from test_unit_music_studio_frames import ...`).
+# When the imported test was dropped, the importer cannot collect either — which
+# is why dropping runs to a fixed point below.
+_SIBLING_TEST_IMPORT_RE = re.compile(
+    r"^\s*(?:from|import)\s+(test_[A-Za-z0-9_]+)\b", re.MULTILINE
+)
+
+
+def _removed_tree_refs(source: str, root: Path, source_root: Path) -> set[str]:
+    """Quoted `apps/…` / `plugins/…` paths that exist in `source_root` but not in `root`.
+
+    Absence alone is not binding: tests build fixture trees with paths such as
+    `apps/foo/app.py` that never existed anywhere. Measured 2026-09-26: absence
+    alone flagged 65 test files on the full private tree, where nothing is
+    dropped. A path the source repo has and the snapshot lacks is real code the
+    release removed, and only that binds.
+
+    Two exclusions, each a measured false positive. A never-published path
+    (`"apps/personal"` as a string fixture in the commit-gate tests) is pruned by
+    its own rule, and tests that bind to it are caught by the `apps.personal` and
+    `"apps" / "personal"` rules above. And a line carrying
+    `release-filter: optional` names a path the test tolerates being absent (a
+    scan list that skips a missing file), which no static rule can tell apart
+    from a hard binding.
+    """
+    refs: set[str] = set()
+    for line in source.splitlines():
+        if _OPTIONAL_MARKER in line:
+            continue
+        refs.update(m.group(1).rstrip("/") for m in _TREE_PATH_RE.finditer(line))
+        for match in _TREE_SEGMENTS_RE.finditer(line):
+            parts = [match.group(1), *_QUOTED_SEGMENT_RE.findall(match.group(2))]
+            refs.add("/".join(parts))
+    return {
+        rel for rel in refs
+        if not is_never_published(rel + "/")
+        and (source_root / rel).exists()
+        and not (root / rel).exists()
+    }
+
 # A system test binds to an app through its HTTP ROUTE, not a Python import:
 # test_sys_grill.py never imports the app, it just GETs /grill/api/*. Every regex
 # above is import-shaped, so those tests sailed into the public snapshot and could
@@ -336,6 +401,7 @@ def drop_tests_bound_to(
     root: Path,
     allowed_apps: Iterable[str],
     allowed_engines: Iterable[str] | None,
+    source_root: Path | None = None,
 ) -> list[str]:
     """Drop tests that hard-bind to apps or engines absent from a snapshot.
 
@@ -345,80 +411,141 @@ def drop_tests_bound_to(
     altogether, which is only correct when the snapshot kept every engine. That
     is the lenient shape, so a caller must ask for it rather than inherit it by
     omission — pair it with ``prune_snapshot(allowed_engines=None)``.
+
+    ``source_root`` is the tree the snapshot was cut from. With it, a quoted
+    `apps/…` or `plugins/…` path that exists there and not in the snapshot also
+    binds; without it, that check is off.
     """
     app_allowlist = set(allowed_apps)
     engine_allowlist = None if allowed_engines is None else set(allowed_engines)
-    tests_dir = Path(root) / "tests"
+    root = Path(root)
+    tests_dir = root / "tests"
     if not tests_dir.is_dir():
         return []
 
     dropped: list[str] = []
-    for test_file in sorted(tests_dir.glob("test_*.py")):
-        try:
-            source = test_file.read_text(encoding="utf-8")
-        except Exception:
-            continue
-
-        reasons: set[str] = set()
-        if _PERSONAL_IMPORT_RE.search(source):
-            reasons.add("apps.personal")
-        if (
-            _SIBLING_BEHAVIOR_RE.search(source)
-            and "dogfood-agent" not in app_allowlist
-        ):
-            reasons.add("behavior (dogfood-agent shim)")
-        for match in _APP_IMPORT_RE.finditer(source):
-            if match.group(1) not in app_allowlist:
-                reasons.add(f"apps.{match.group(1)}")
-        for match in _PATH_LOAD_RE.finditer(source):
-            if match.group(1) not in app_allowlist:
-                reasons.add(f"apps/{match.group(1)}/...")
-        for match in _PATHLIB_APPS_RE.finditer(source):
-            if match.group(1) not in app_allowlist:
-                reasons.add(f'"apps" / "{match.group(1)}"')
-        # A route reference alone is NOT binding — test_journeys.py and
-        # test_edge_cases.py legitimately touch many apps (the latter pokes
-        # /zzz-no-such-app/ on purpose), and dropping them would delete real public
-        # coverage. Measured: the bare-route signal drops 113 files and takes
-        # test_sys_kb.py — a PUBLIC app — with it.
-        #
-        # Bound means the absent app is the test's own SUBJECT, which its filename
-        # declares: test_sys_grill.py ↔ /grill/, test_dogfood_jobs.py ↔ /jobs/.
-        # Require both, and the signal is exact.
-        stem = test_file.stem  # e.g. test_sys_bess_analyser, test_sys_cable_rating_report
-        # An app-scoped test (test_sys_*) that never names a SHIPPED app in its
-        # filename is a test for an app that does not ship — whatever routes it
-        # happens to call. test_sys_cable_rating_report.py hits /cable-network/,
-        # so a filename↔route match alone would have missed it.
-        # test_sys_* usually means "system test FOR an app", but a few test the
-        # PLATFORM and merely poke an app's route while doing so (auth exercises a
-        # public-face route; snapshot_boot boots a synthetic tree). Measured as real
-        # false positives — they must not be treated as app-bound.
-        app_scoped = (
-            stem.startswith("test_sys_") and stem not in _PLATFORM_TEST_STEMS
-        )
-        names_public_app = any(
-            ("_" + app.replace("-", "_")) in stem for app in app_allowlist
-        )
-        for match in _HTTP_ROUTE_RE.finditer(source):
-            prefix = match.group(1)
-            if prefix in _PLATFORM_ROUTE_PREFIXES or prefix in app_allowlist:
+    # Node tests (`tests/js/*.test.mjs`) load app files by quoted path, so the
+    # removed-path rule applies to them too. They go first: a Python bridge that
+    # runs one of them is dropped below once its target is gone.
+    if source_root is not None:
+        for js_test in sorted((tests_dir / "js").glob("*.test.mjs")):
+            try:
+                source = js_test.read_text(encoding="utf-8")
+            except Exception:
                 continue
-            # Containment, not endswith: test_sys_cable_rating_report.py IS a
-            # cable-rating test — the suffix names the aspect, not another subject.
-            bound_by_name = ("_" + prefix.replace("-", "_")) in stem
-            if bound_by_name or (app_scoped and not names_public_app):
-                reasons.add(f"/{prefix}/ (route of an absent app)")
+            removed = _removed_tree_refs(source, root, Path(source_root))
+            if removed:
+                js_test.unlink()
+                dropped.append(
+                    f"js/{js_test.name} ({', '.join(f'{r} (removed)' for r in sorted(removed))})"
+                )
 
-        if engine_allowlist is not None:
-            for match in _ENGINE_IMPORT_RE.finditer(source):
-                if match.group(1) not in engine_allowlist:
-                    reasons.add(f"engines.{match.group(1)}")
-
-        if reasons:
-            test_file.unlink()
-            dropped.append(
-                f"{test_file.name} ({', '.join(sorted(reasons))})"
+    # A fixed point, because dropping one test can strand another that imports
+    # it. Every pass after the first re-reads the survivors; only the sibling
+    # rule can newly fire there.
+    changed = True
+    while changed:
+        changed = False
+        for test_file in sorted(tests_dir.glob("test_*.py")):
+            reason = _bound_reasons(
+                test_file, root, source_root, tests_dir, app_allowlist, engine_allowlist
             )
-
+            if reason:
+                test_file.unlink()
+                dropped.append(f"{test_file.name} ({', '.join(sorted(reason))})")
+                changed = True
     return dropped
+
+
+def _bound_reasons(
+    test_file: Path,
+    root: Path,
+    source_root: Path | None,
+    tests_dir: Path,
+    app_allowlist: set[str],
+    engine_allowlist: set[str] | None,
+) -> set[str]:
+    """Why `test_file` is bound to code absent from the snapshot at `root` (empty = kept)."""
+    reasons: set[str] = set()
+    try:
+        source = test_file.read_text(encoding="utf-8")
+    except Exception:
+        return reasons
+    # Every rule added for v0.7.0 is behind `source_root`, so release.py (which
+    # does not pass it) keeps exactly its old behaviour.
+    if source_root is not None:
+        for line in source.splitlines():
+            if _OPTIONAL_MARKER in line:
+                continue
+            for match in _APP_HELPER_RE.finditer(line):
+                if match.group(1) not in app_allowlist:
+                    reasons.add(f'app_path/load_app_module("{match.group(1)}")')
+        for rel in _removed_tree_refs(source, root, Path(source_root)):
+            reasons.add(f"{rel} (removed)")
+        # A bridge that runs a node test (`tests/js/<name>.test.mjs`) whose
+        # target was removed, by the scrub or by the node-test pass above.
+        for match in _JS_TEST_RE.finditer(source):
+            name = match.group(1)
+            if (Path(source_root) / "tests" / "js" / name).exists() and not (
+                tests_dir / "js" / name
+            ).exists():
+                reasons.add(f"js/{name} (removed)")
+        for match in _SIBLING_TEST_IMPORT_RE.finditer(source):
+            if not (tests_dir / f"{match.group(1)}.py").exists():
+                reasons.add(f"{match.group(1)} (dropped test)")
+    if _PERSONAL_IMPORT_RE.search(source):
+        reasons.add("apps.personal")
+    if (
+        _SIBLING_BEHAVIOR_RE.search(source)
+        and "dogfood-agent" not in app_allowlist
+    ):
+        reasons.add("behavior (dogfood-agent shim)")
+    for match in _APP_IMPORT_RE.finditer(source):
+        if match.group(1) not in app_allowlist:
+            reasons.add(f"apps.{match.group(1)}")
+    for match in _PATH_LOAD_RE.finditer(source):
+        if match.group(1) not in app_allowlist:
+            reasons.add(f"apps/{match.group(1)}/...")
+    for match in _PATHLIB_APPS_RE.finditer(source):
+        if match.group(1) not in app_allowlist:
+            reasons.add(f'"apps" / "{match.group(1)}"')
+    # A route reference alone is NOT binding — test_journeys.py and
+    # test_edge_cases.py legitimately touch many apps (the latter pokes
+    # /zzz-no-such-app/ on purpose), and dropping them would delete real public
+    # coverage. Measured: the bare-route signal drops 113 files and takes
+    # test_sys_kb.py — a PUBLIC app — with it.
+    #
+    # Bound means the absent app is the test's own SUBJECT, which its filename
+    # declares: test_sys_grill.py ↔ /grill/, test_dogfood_jobs.py ↔ /jobs/.
+    # Require both, and the signal is exact.
+    stem = test_file.stem  # e.g. test_sys_bess_analyser, test_sys_cable_rating_report
+    # An app-scoped test (test_sys_*) that never names a SHIPPED app in its
+    # filename is a test for an app that does not ship — whatever routes it
+    # happens to call. test_sys_cable_rating_report.py hits /cable-network/,
+    # so a filename↔route match alone would have missed it.
+    # test_sys_* usually means "system test FOR an app", but a few test the
+    # PLATFORM and merely poke an app's route while doing so (auth exercises a
+    # public-face route; snapshot_boot boots a synthetic tree). Measured as real
+    # false positives — they must not be treated as app-bound.
+    app_scoped = (
+        stem.startswith("test_sys_") and stem not in _PLATFORM_TEST_STEMS
+    )
+    names_public_app = any(
+        ("_" + app.replace("-", "_")) in stem for app in app_allowlist
+    )
+    for match in _HTTP_ROUTE_RE.finditer(source):
+        prefix = match.group(1)
+        if prefix in _PLATFORM_ROUTE_PREFIXES or prefix in app_allowlist:
+            continue
+        # Containment, not endswith: test_sys_cable_rating_report.py IS a
+        # cable-rating test — the suffix names the aspect, not another subject.
+        bound_by_name = ("_" + prefix.replace("-", "_")) in stem
+        if bound_by_name or (app_scoped and not names_public_app):
+            reasons.add(f"/{prefix}/ (route of an absent app)")
+
+    if engine_allowlist is not None:
+        for match in _ENGINE_IMPORT_RE.finditer(source):
+            if match.group(1) not in engine_allowlist:
+                reasons.add(f"engines.{match.group(1)}")
+
+    return reasons

@@ -1,6 +1,6 @@
 ---
 name: creative-youtube-channel
-description: Manage the 3-30 Channel YouTube MUSIC channel — create song notes, check the release pipeline, generate videos, track releases. Use when the user says "3:30 channel", "song pipeline", "release status", or music-channel work. NOT for the AI-Engineering tutorial channel (use creative-youtube-ai-engineering) or generating the MV itself (use creative-mv-generator).
+description: Manage the 3-30 Channel YouTube MUSIC channel — create song notes, check the release pipeline, generate videos, track releases. Use when the user says "3:30 channel", "song pipeline", "release status", or music-channel work. NOT for the AI-Engineering tutorial channel (use creative-youtube-ai-engineering) or making the MV itself (use creative-mv-director, the MV entry point).
 ---
 
 # YouTube Music Channel Manager

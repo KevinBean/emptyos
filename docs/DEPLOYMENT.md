@@ -580,8 +580,9 @@ vhost = "cable.client.com"
 `englishos-cloud/` is the first concrete bundled-product profile. It packages
 English Academy as one isolated learner daemon per learner:
 
-1. `python scripts/package-release.py englishos-cloud` creates a filtered
-   distribution from the direct allowlist tier.
+1. `python scripts/package-release.py englishos-cloud --definition-pack=<file>`
+   creates a filtered distribution from the direct allowlist tier, with the
+   dictionary's generated definition pack (see `englishos-cloud/README.md`).
 2. `englishos-cloud/Dockerfile` builds the learner image from that filtered
    distribution.
 3. `englishos-cloud/docker-compose.yml` starts one loopback-only learner

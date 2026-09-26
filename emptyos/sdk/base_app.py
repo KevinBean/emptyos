@@ -12,6 +12,7 @@ from functools import cached_property
 from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import TYPE_CHECKING, Any
 
+from emptyos.capabilities import cloud_gate
 from emptyos.sdk.trace import stamp_trace
 from emptyos.sdk.utils import (
     now_iso,
@@ -1110,13 +1111,15 @@ class BaseApp:
 
         if provider_name:
             for p in cap.providers:
-                if p.name == provider_name and await p.available():
+                if (p.name == provider_name and not cloud_gate.check(self.kernel, p, cap_name, self.manifest.id)
+                        and await p.available()):
                     return await _call_direct(p)
             for domain_providers in getattr(cap, "_domains", {}).values():
                 for p in domain_providers:
-                    if p.name == provider_name and await p.available():
+                    if (p.name == provider_name and not cloud_gate.check(self.kernel, p, cap_name, self.manifest.id)
+                        and await p.available()):
                         return await _call_direct(p)
-        result = await cap.execute(**kwargs)
+        result = await cap.execute(caller_app=self.manifest.id, **kwargs)
         return result.value
 
     # --- Non-text modalities (available when platform provides them) ---

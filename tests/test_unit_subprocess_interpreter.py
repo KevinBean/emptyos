@@ -30,7 +30,7 @@ ROOT = Path(__file__).resolve().parents[1]
 GATE_FILES = [
     ROOT / "emptyos/sdk/worktree.py",
     ROOT / "scripts/release-public.py",
-    ROOT / "apps/extension/dev/fix-agent/regression.py",
+    ROOT / "apps/extension/dev/fix-agent/regression.py",  # release-filter: optional
 ]
 
 

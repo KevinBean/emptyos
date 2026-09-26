@@ -65,3 +65,48 @@ def test_the_target_is_restored_byte_for_byte(newline):
 
         assert rc == 0, "the mutation must apply and be caught"
         assert target.read_bytes() == before
+
+
+def test_an_anchor_matching_twice_is_ambiguous_not_a_survivor(capsys):
+    # `return 1` appears in two functions and the test only calls the second;
+    # mutating the first match would read as SURVIVED for a line never touched.
+    with tempfile.TemporaryDirectory() as tmp:
+        target = pathlib.Path(tmp) / "target_mod.py"
+        target.write_bytes(b"def other():\n    return 1\n\n\ndef value():\n    return 1\n")
+        tests = pathlib.Path(tmp) / "test_target_mod.py"
+        tests.write_bytes(_TEST_BODY.encode("utf-8"))
+        before = target.read_bytes()
+
+        rc = _runner().verify(str(target), str(tests),
+                              [("returns two", "    return 1", "    return 2", "value_is_one")])
+        out = capsys.readouterr().out
+        assert "AMBIGUOUS" in out and "SURVIVED" not in out, out
+        assert rc == 1 and target.read_bytes() == before
+
+        # A CRLF target with a multi-line anchor matching three times: the count
+        # must be taken after the anchor is translated to CRLF, or it reads 0
+        # and the first match is mutated anyway.
+        target.write_bytes(b"def a():\r\n    return 1\r\n\r\n\r\ndef b():\r\n    return 1\r\n\r\n\r\n"
+                           b"def value():\r\n    return 1\r\n")
+        crlf_before = target.read_bytes()
+        rc = _runner().verify(str(target), str(tests),
+                              [("returns two", "():\n    return 1", "():\n    return 2", "value_is_one")])
+        out = capsys.readouterr().out
+        assert "AMBIGUOUS" in out and "matches 3 places" in out, out
+        assert rc == 1 and target.read_bytes() == crlf_before
+        target.write_bytes(before)
+
+        # Widened to the one occurrence, the same mutation is caught.
+        rc = _runner().verify(
+            str(target), str(tests),
+            [("returns two", "def value():\n    return 1", "def value():\n    return 2",
+              "value_is_one")])
+        assert rc == 0 and target.read_bytes() == before
+
+
+def test_overlapping_anchor_matches_are_counted():
+    # str.count skips overlaps: 'a=1\na=1' occurs twice in three repeated lines.
+    occ = _runner()._occurrences
+    assert occ("a=1\na=1\na=1", "a=1\na=1") == 2
+    assert occ("x = 1\n", "x = 1") == 1
+    assert occ("nothing here", "x") == 0

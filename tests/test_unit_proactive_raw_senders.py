@@ -226,10 +226,10 @@ def _kinds_catalog() -> set[str]:
 
 MIGRATED = [
     "apps/public/standard/bookme/app.py",
-    "apps/extension/dev/promote/app.py",
-    "apps/extension/dev/promote/distribution.py",
-    "apps/extension/dev/pattern-harvester/app.py",
-    "apps/extension/dev/dogfood-agent/friction.py",
+    "apps/extension/dev/promote/app.py",  # release-filter: optional
+    "apps/extension/dev/promote/distribution.py",  # release-filter: optional
+    "apps/extension/dev/pattern-harvester/app.py",  # release-filter: optional
+    "apps/extension/dev/dogfood-agent/friction.py",  # release-filter: optional
 ]
 
 
@@ -245,6 +245,10 @@ def _notify_kinds(rel: str) -> list[str]:
 
 @pytest.mark.parametrize("rel", MIGRATED)
 def test_migrated_senders_use_a_mutable_kind(rel):
+    from helpers import public_snapshot
+
+    if not (REPO / rel).exists() and public_snapshot():
+        pytest.skip(f"{rel} absent (public snapshot)")
     kinds = _notify_kinds(rel)
     assert kinds, f"{rel} no longer calls the gate"
     missing = [k for k in kinds if k not in _kinds_catalog()]

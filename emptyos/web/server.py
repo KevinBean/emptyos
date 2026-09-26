@@ -299,17 +299,7 @@ def create_server(kernel: Kernel) -> FastAPI:
         except Exception:
             pass
 
-        available = []
-        for p in cap.providers:
-            try:
-                if await p.available():
-                    available.append({"name": p.name, "is_cloud": getattr(p, "is_cloud", False)})
-            except Exception:
-                continue
-
-        if not available:
-            return {"available": False, "reason": "no think provider is currently available"}
-        return {"available": True, "providers": available}
+        return await _think_status_body(cap)
 
     # --- AI form-fill / i18n / 4D timeline / field-suggest
     # (extracted to routes_sdk.py) ---
@@ -1262,25 +1252,9 @@ def create_server(kernel: Kernel) -> FastAPI:
         try:
             return await call_next(request)
         except RuntimeError as e:
-            msg = str(e)
-            if "No available provider for capability" in msg or "simulate offline" in msg:
-                cap = "think"
-                if "capability '" in msg:
-                    try:
-                        cap = msg.split("capability '", 1)[1].split("'", 1)[0]
-                    except Exception:
-                        pass
-                return JSONResponse(
-                    {
-                        "error": "ai_offline" if cap == "think" else "capability_offline",
-                        "capability": cap,
-                        "message": (
-                            "AI is offline. The feature you clicked needs a think provider — "
-                            "it will return when one is available."
-                        ),
-                    },
-                    status_code=503,
-                )
+            body = _ai_offline_body(e)
+            if body is not None:
+                return JSONResponse(body, status_code=503)
             raise
 
     # --- Home redirect + static files ---
@@ -1482,6 +1456,69 @@ _I18N_BOOTSTRAP_TAG = '<script src="/static/eos-i18n.js" defer></script>'
 # issue its request against the unwrapped fetch and never get a chip. The runtime
 # touches no DOM at execution time; its observer self-defers on readyState.
 _PROVENANCE_TAG = '<script src="/static/eos-provenance.js"></script>'
+
+
+async def _think_status_body(cap) -> dict:
+    """Which think providers can answer right now. A provider the monthly spend
+    cap has stopped does not count — otherwise the page would re-enable AI after
+    every "limit reached" reply and the learner would hit it on each click."""
+    available, capped = [], False
+    for p in cap.providers:
+        try:
+            if not await p.available():
+                continue
+        except Exception:
+            continue
+        spend_cap = getattr(cap, "spend_cap", None)
+        if spend_cap is not None and spend_cap.blocks("think", p):
+            capped = True
+            continue
+        available.append({"name": p.name, "is_cloud": getattr(p, "is_cloud", False)})
+
+    if available:
+        return {"available": True, "providers": available}
+    if capped:
+        return {"available": False, "reason": "spend_cap",
+                "message": "This month's AI limit is reached."}
+    return {"available": False, "reason": "no think provider is currently available"}
+
+
+def _ai_offline_body(e: RuntimeError) -> dict | None:
+    """The 503 body for a capability that had no provider to run, or None
+    when `e` is some other error (which then propagates unchanged)."""
+    msg = str(e)
+    if "No available provider for capability" not in msg and "simulate offline" not in msg:
+        return None
+    cap = "think"
+    if "capability '" in msg:
+        try:
+            cap = msg.split("capability '", 1)[1].split("'", 1)[0]
+        except Exception:
+            pass
+    from emptyos.capabilities.note_scope import NOTES_SETTING_LABEL, NotesToCloudOff
+    from emptyos.capabilities.spend_cap import SpendCapReached
+
+    body = {
+        "error": "ai_offline" if cap == "think" else "capability_offline",
+        "capability": cap,
+        "message": (
+            "AI is offline. The feature you clicked needs a think provider — "
+            "it will return when one is available."
+        ),
+    }
+    if isinstance(e, SpendCapReached):
+        # Same code, so the offline banner still shows, but say why: this does
+        # not come back when a provider does.
+        body["reason"] = "spend_cap"
+        body["message"] = "This month's AI limit is reached. Features that need AI resume next month."
+    elif isinstance(e, NotesToCloudOff):
+        # Not offline at all: this feature needs the learner's permission.
+        body["reason"] = "notes_opt_in"
+        body["message"] = (
+            f"AI features in this app can read your notes, so they are off until "
+            f"you turn on '{NOTES_SETTING_LABEL}' in Settings."
+        )
+    return body
 
 
 def _auto_provenance_enabled(kernel) -> bool:

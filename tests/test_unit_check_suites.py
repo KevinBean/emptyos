@@ -117,6 +117,10 @@ def test_a_public_suite_of_public_apps_is_not_reported():
 def test_it_finds_the_known_violations_on_the_real_tree():
     """Anchored to reality, not just to fixtures. Update the expectation when
     the leak is actually closed — do not loosen it to make a change pass."""
+    from helpers import public_snapshot
+
+    if public_snapshot():
+        pytest.skip("public snapshot: the extension track and its suite entries are dropped")
     out = cs.held_ids_in_public_suites(cs.load_catalog(), cs.collect_apps())
     suites = {line.split("'")[1] for line in out}
     assert suites == {"studio", "automation"}, out

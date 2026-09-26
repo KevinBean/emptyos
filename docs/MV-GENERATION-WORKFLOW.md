@@ -1,8 +1,18 @@
 # MV Generation Workflow
 
-This is the canonical production workflow for AI music videos in EmptyOS.
-Music Studio is the execution engine. Claude Code's `creative-mv-generator`
-skill must drive this workflow rather than maintain a parallel renderer.
+This is the canonical production workflow for AI music videos generated
+**locally** in EmptyOS. Music Studio is the execution engine for that route.
+Claude Code's `creative-mv-generator` skill must drive this workflow rather
+than maintain a parallel renderer.
+
+MVs whose footage is generated **outside** EmptyOS (Google Flow / Veo, then
+Blender and local post) follow the route-agnostic
+[MV production guide](MV-PRODUCTION-GUIDE.md), entered through the
+`creative-mv-director` skill. That route's single editorial assembler is
+`scripts/mv/living_master.py`, which assembles through the same
+frame-native EDL assembler as this workflow's rough cut
+(`emptyos/sdk/media/edl.py`; Music Studio's `assembler.py` delegates to it). It never generates footage
+and never approves it, so it is not a second production pipeline.
 
 For project retrospectives, action-montage repair, animated lyric labels, or
 delivery planning, read [MV production lessons](MV-PRODUCTION-LESSONS.md).
@@ -988,6 +998,12 @@ not a second workflow.
 - **Claude Code skill:** plans, inspects, diagnoses, and drives the Music Studio
   run. It may use scratch scripts only for bounded diagnostics or repair, never
   as a second default production pipeline.
+- **External-generation (Flow/Veo) route:** generation happens outside
+  EmptyOS and no Music Studio stage ingests it. `scripts/mv/living_master.py`
+  is that route's only editorial assembler (it shares the rough cut's
+  frame-native assembler, `emptyos/sdk/media/edl.py`); the `scripts/mv/` post tools only finish a locked cut.
+  None of them generates footage, and approval is a human setting a slot's
+  `production_approved`. See [MV production guide](MV-PRODUCTION-GUIDE.md).
 - **Codex skill:** follows this same stage and edit contract. Harness-specific
   wording may differ, but cut priority, approvals, persisted artifacts, and
   Music Studio run-state authority must not drift.

@@ -99,6 +99,10 @@ class CodexCLIThinkProvider(Provider):
     def is_cloud(self) -> bool:
         return True
 
+    # Billed to a subscription, not per call: the monthly spend cap
+    # (emptyos/capabilities/spend_cap.py) does not count or block it.
+    metered = False
+
     @property
     def auth_mode(self) -> str:
         return "login"

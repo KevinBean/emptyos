@@ -124,6 +124,16 @@ def main() -> int:
 
     rel = str(ARTIFACT.relative_to(ROOT)).replace("\\", "/")
 
+    # The public snapshot drops the whole dictionary app, and with it both the
+    # module and the artifact. There is nothing to drift, so skip rather than
+    # fail. A present app with a missing artifact is still a failure, below.
+    app_dir = ARTIFACT.parents[1]
+    if not app_dir.is_dir():
+        app_rel = str(app_dir.relative_to(ROOT)).replace("\\", "/")
+        msg = f"app absent at {app_rel} — nothing to check"
+        return emit_json(True, "skipped", msg, {"artifact": rel}) if args.json \
+            else _plain(f"skip  {msg}", 0)
+
     if not ARTIFACT.exists():
         return emit_json(False, "missing", f"artifact source missing at {rel}",
                          {"artifact": rel}) if args.json else _plain(

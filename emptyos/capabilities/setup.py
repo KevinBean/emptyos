@@ -454,7 +454,9 @@ def _build_think_provider_raw(
     # Settings overlay: user-configured model beats emptyos.toml, but a domain/bucket
     # override still wins so per-task routing stays authoritative.
     settings_model = None
-    if settings is not None:
+    # A locked build ([cloud] locked) keeps the operator's model: a user-set
+    # model could be any price, and the spend cap only bounds spend after it.
+    if settings is not None and not getattr(config, "cloud_locked", False):
         try:
             settings_model = settings.get(f"think.{name}.model")
         except Exception:
@@ -547,11 +549,13 @@ def _build_think_provider_raw(
 
     # Generic OpenAI-compatible endpoint
     if host:
+        extra_body = section.get("extra_body")
         return OpenAICompatThinkProvider(
             host=host,
             model=model or "default",
             api_key_env=section.get("api_key_env", ""),
             provider_name=name,
+            extra_body=extra_body if isinstance(extra_body, dict) else None,
         )
 
     return None

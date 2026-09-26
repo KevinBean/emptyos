@@ -77,13 +77,15 @@ class Kernel:
         saved_policy = self.settings.get("cloud.consent")
         effective_policy = (
             saved_policy
-            if saved_policy in ("ask", "always", "never")
+            if saved_policy in ("ask", "always", "never") and not self.config.cloud_locked
             else self.config.cloud_consent
         )
         self.cloud_consent = CloudConsentManager(
             policy=effective_policy,
             events=self.events,
             kernel=self,
+            allowed=self.config.cloud_allow,
+            locked=self.config.cloud_locked,
         )
         # In demo mode, pre-approve cloud providers (users opt in via BYOK)
         if self.config.demo_enabled:
@@ -95,6 +97,44 @@ class Kernel:
             if self.settings.get("presentation.enabled") is None:
                 self.settings.set("presentation.enabled", True)
         self.capabilities.set_consent_manager(self.cloud_consent)
+
+        # Monthly spend cap on paid model calls — off unless
+        # [spend] monthly_cap_usd (env EOS_SPEND_MONTHLY_CAP_USD) is above 0.
+        # A kernel concern, not an app's: the hosted learner build ships without
+        # the billing app. See emptyos/capabilities/spend_cap.py.
+        from emptyos.capabilities.spend_cap import SpendCap
+
+        def _think_provider(name: str):
+            return next(
+                (p for p in self.capabilities.get("think").all_providers() if p.name == name),
+                None,
+            )
+
+        try:
+            self.spend_cap = SpendCap.from_config(
+                self.config,
+                warn=lambda message: self.syslog.warn("spend_cap", message),
+                find_provider=_think_provider,
+            )
+            if self.spend_cap is None:
+                SpendCap.clear_stale(self.config.data_dir)
+        except Exception as e:
+            # A ledger that cannot be written must not stop the daemon booting,
+            # but running with no cap when one was configured must not be quiet.
+            self.spend_cap = None
+            self.syslog.error("spend_cap", f"monthly spend cap NOT active: {e}")
+        if self.spend_cap is not None:
+            self.capabilities.set_spend_cap(self.spend_cap)
+            self.events.on("think:executed", self.spend_cap.on_think_executed)
+
+        # Apps whose AI calls send the learner's notes may use a cloud provider
+        # only once the learner allows it — off unless [cloud] note_apps is set.
+        # See emptyos/capabilities/note_scope.py.
+        from emptyos.capabilities.note_scope import NoteScope
+
+        self.note_scope = NoteScope.from_config(self.config, self.settings)
+        if self.note_scope is not None:
+            self.capabilities.set_note_scope(self.note_scope)
 
         # Tool consent manager — permission gate for agent tool calls
         from emptyos.capabilities.tool_consent import ToolConsentManager
@@ -327,6 +367,27 @@ class Kernel:
         """
         return self._started
 
+    def _warn_unmatched_cloud_allow(self) -> list[str]:
+        """Log `[cloud] allow` names that match no provider once plugins have
+        registered theirs. Matching is exact, so a typo ("Edge-TTS") or a
+        renamed provider is silently refused under consent = "never" — this is
+        the only place that would say so. Returns the unmatched names."""
+        allowed = getattr(self.cloud_consent, "config_allowed", frozenset())
+        if not allowed:
+            return []
+        names = {
+            p.name
+            for cap in self.capabilities.list().values()
+            for p in cap.all_providers()
+        }
+        missing = sorted(allowed - names)
+        if missing:
+            self.syslog.warn(
+                "cloud_consent",
+                f"[cloud] allow names no registered provider: {', '.join(missing)}",
+            )
+        return missing
+
     async def start(self):
         """Boot the kernel: runtime services -> plugins -> apps."""
         if self._started:
@@ -365,6 +426,7 @@ class Kernel:
         # 2. Discover and load plugins (register as services)
         self.plugins.discover()
         await self.plugins.load_all()
+        self._warn_unmatched_cloud_allow()
 
         # 3. Discover and load engines (shared computation libraries)
         self.engines.discover()

@@ -1075,8 +1075,9 @@ class FakeRequest:
     """Minimal Request shim for cross-app `call_app` invocations.
 
     `@web_route` handlers on the called app expect a Starlette-shaped request:
-    `request.path_params["..."]` for path vars, `await request.json()` for the
-    body, `request.query_params.get(...)` for query args. When invoked via
+    `request.path_params["..."]` for path vars, `await request.json()` — or
+    `BaseApp.read_json` / `safe_json`, which read `await request.body()` — for
+    the body, `request.query_params.get(...)` for query args. When invoked via
     `call_app` instead of an HTTP round-trip, callers construct one of these to
     satisfy that contract.
 
@@ -1093,6 +1094,11 @@ class FakeRequest:
 
     async def json(self):
         return self._body
+
+    async def body(self) -> bytes:
+        # `BaseApp.read_json` / `safe_json` decode `request.body()`, not
+        # `.json()` — without this a routed call_app raises AttributeError.
+        return json.dumps(self._body, ensure_ascii=False).encode("utf-8") if self._body else b""
 
 
 WIKILINK_RE = re.compile(r"\[\[([^\]|#]+?)(?:#[^\]|]*)?(?:\|[^\]]*)?\]\]")

@@ -143,6 +143,7 @@ class GenerationMixin:
         result = await self.kernel.capabilities.get("think").execute(
             messages=msgs, domain="cloud-explicit",
             temperature=0.1, max_tokens=800,
+            caller_app=self.manifest.id,
         )
         raw = result.value if hasattr(result, "value") else result
         data = parse_llm_json(raw) or {}
@@ -433,6 +434,7 @@ class GenerationMixin:
         path and copy bytes into the vault asset slot."""
         result = await self.kernel.capabilities.get("draw").execute(
             prompt=prompt, domain="cloud-explicit",
+            caller_app=self.manifest.id,
         )
         src = Path(result.value)
         if not src.exists():

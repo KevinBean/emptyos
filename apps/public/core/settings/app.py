@@ -555,6 +555,22 @@ class SettingsApp(BaseApp):
         """
         sections = list(self.SYSTEM_SETTINGS)
 
+        # Only when this build keeps notes local by default ([cloud] note_apps):
+        # the learner's switch for sending note text to the cloud AI service.
+        if getattr(self.kernel, "note_scope", None) is not None:
+            from emptyos.capabilities.note_scope import NOTES_SETTING, NOTES_SETTING_LABEL
+
+            sections.append({
+                "title": "Privacy",
+                "icon": "gear",
+                "settings": [{
+                    "key": NOTES_SETTING,
+                    "label": f"{NOTES_SETTING_LABEL} (note text is sent to an outside AI service)",
+                    "type": "toggle",
+                    "default": False,
+                }],
+            })
+
         # Collect from all app manifests
         for app_id, manifest in self.kernel.apps.manifests.items():
             app_settings = manifest.provides.get("settings", {})

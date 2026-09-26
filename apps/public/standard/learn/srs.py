@@ -22,7 +22,8 @@ from datetime import date
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from emptyos.sdk import parse_llm_json, web_route
+from emptyos.capabilities.note_scope import NOTES_SETTING_LABEL, NotesToCloudOff
+from emptyos.sdk import SpendCapReached, parse_llm_json, web_route
 from emptyos.sdk.srs import (
     fsrs_schedule,
     repair_legacy_schedule,
@@ -32,6 +33,20 @@ from emptyos.sdk.srs import (
 
 if TYPE_CHECKING:
     from .app import LearnApp  # noqa: F401 — for type hints only
+
+# Shown when the daemon's monthly spend cap stops a paid model call.
+LIMIT_REACHED_MESSAGE = (
+    "This month's AI limit is reached, so a new quiz can't be generated. "
+    "Quizzes already made still work, and new ones resume next month."
+)
+# Shown when a quiz would send the lesson note to a cloud AI service and the
+# learner has not allowed that (emptyos/capabilities/note_scope.py).
+NOTES_OPT_IN_MESSAGE = (
+    "A quiz is made from your lesson note, and this build does not send your "
+    "notes to an AI service unless you allow it. Turn on "
+    f"'{NOTES_SETTING_LABEL}' "
+    "in Settings to generate quizzes."
+)
 
 
 # ─── Bind to LearnApp class as ───────────────────────────────────────
@@ -162,7 +177,12 @@ async def _generate_quiz_for_slug(self, slug: str) -> dict:
         except Exception:
             pass  # fall through and regenerate
     prompt = QUIZ_PROMPT_TEMPLATE.format(title=source.get("title", slug), body=body[:6000])
-    raw = await self.think(prompt, system=QUIZ_SYSTEM, domain="text", temperature=0.4)
+    try:
+        raw = await self.think(prompt, system=QUIZ_SYSTEM, domain="text", temperature=0.4)
+    except SpendCapReached:
+        return {"error": LIMIT_REACHED_MESSAGE, "limit_reached": True}
+    except NotesToCloudOff:
+        return {"error": NOTES_OPT_IN_MESSAGE, "needs_opt_in": True}
     parsed = parse_llm_json(raw) or {}
     questions = parsed.get("questions") or []
     if not isinstance(questions, list) or not questions:

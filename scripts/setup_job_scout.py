@@ -1,5 +1,6 @@
 """Set up the Job Scout agent — research agent that runs nightly and
-emits [DO:task.add] lead proposals into the rooms pending review queue.
+emits [DO:jobs.add_listing] leads into the jobs listing store (and a
+[DO:system-log.add] breadcrumb on an empty run) — never the human task inbox.
 
 Usage:
     python scripts/setup_job_scout.py            # create agent + schedule (idempotent)
@@ -50,20 +51,21 @@ seniority before emitting.
 — OUTPUT VERBS —
 For each plausible posting, emit ONE line of the form:
 
-[DO:task.add({"text":"[JOB] <Role> at <Company> (Sydney) — $<salary or 'salary not stated'> — <one-line why-fit> — <URL>"})]
+[DO:jobs.add_listing({"title":"<Role>","company":"<Company>","url":"<URL>","location":"Sydney","salary":"<salary or 'salary not stated'>","notes":"<one-line why-fit>"})]
 
-That is the only verb you may emit. Do not emit task.add for anything
-other than a job lead. Do not emit any other [DO:] verb.
+jobs.add_listing is for job leads only. The only other verb you may emit
+is the empty-run breadcrumb below. Do not emit task.add or any other
+[DO:] verb.
 
 — BUDGET —
 Hard cap: 10 [DO:] emissions per run. If you find more, pick the 10
 strongest fits; mention the count of skipped leads in your closing prose.
 
 — EMPTY-RUN BREADCRUMB —
-Every run MUST emit at least one [DO:task.add(...)] line. If you found no
-plausible leads, emit exactly one task in this form:
+Every run MUST emit at least one [DO:] line. If you found no plausible
+leads, emit exactly one breadcrumb in this form:
 
-[DO:task.add({"text":"[JOB SCOUT] No fresh fits tonight; sources checked: <list>; next try: <plan>"})]
+[DO:system-log.add({"text":"[JOB SCOUT] No fresh fits tonight; sources checked: <list>; next try: <plan>","source":"job-scout"})]
 
 The breadcrumb is the morning signal that the scout ran and what it
 covered. Radio silence is not acceptable — it is indistinguishable from
@@ -75,20 +77,20 @@ ones are thin.
 
 — FORBIDDEN —
 • No outbound contact (Telegram, email, application submission).
-• No edits to the vault. Tasks via [DO:] only.
+• No edits to the vault. Listings and the breadcrumb via [DO:] only.
 • No commentary on Kevin's career strategy. Just the leads.
 • No fabricated URLs. If a posting doesn't have a real listing page, skip it.
 
 — OUTPUT SHAPE —
 A short prose paragraph stating what you searched (sources, query terms),
-followed by your [DO:task.add(...)] lines, followed by a one-line closing
+followed by your [DO:jobs.add_listing(...)] lines, followed by a one-line closing
 ("Found X plausible, emitted Y, skipped Z because: ...").
 """
 
 TRIGGER_PROMPT = (
     "It is your nightly scout run. Find fresh Sydney-based software / IT / "
     "data engineering postings at energy companies. Use WebSearch first, "
-    "WebFetch to verify 1-2 candidates, emit [DO:task.add(...)] for each "
+    "WebFetch to verify 1-2 candidates, emit [DO:jobs.add_listing(...)] for each "
     "plausible fit (max 10), then close with the count summary."
 )
 

@@ -57,6 +57,7 @@ from emptyos.frontmatter import set_frontmatter_field  # noqa: E402
 from emptyos.runtime.atomic_io import atomic_write_text  # noqa: E402
 from emptyos.sdk import dev_tracks as dt  # noqa: E402
 from md_frontmatter import parse_frontmatter  # noqa: E402
+from plan_table import parse_tasks as parse_task_table  # noqa: E402
 from reconcile_tracks import _is_conflict  # noqa: E402
 from scanner_lib import emit_json  # noqa: E402
 
@@ -212,18 +213,20 @@ def plans(plans_dir: Path) -> list[dict]:
     for f in sorted(plans_dir.glob("*.md")):
         if f.name.startswith("_") or _is_conflict(f):
             continue
-        fm, body = parse_frontmatter(f.read_text(encoding="utf-8", errors="replace"))
+        text = f.read_text(encoding="utf-8", errors="replace")
+        fm, body = parse_frontmatter(text)
+        # The same row reading check_plan_staleness uses: any task id, anchored
+        # on the status cell. An unreadable row counts as "?", never as a status.
+        # A row whose text wraps onto a line without a leading `|` ends the
+        # table; the rows below it count as "unseen", status unknown, until the
+        # plan file is repaired (the staleness checker reports `table_truncated`).
+        rows, _, _, left = parse_task_table(body, 0)
         counts: dict[str, int] = {}
-        in_tasks = False
-        for ln in body.splitlines():
-            if ln.startswith("## "):
-                in_tasks = ln.strip() == "## Tasks"
-                continue
-            cells = [c.strip() for c in ln.strip().strip("|").split("|")]
-            if in_tasks and ln.startswith("|") and len(cells) >= 4 and re.fullmatch(r"T\d+", cells[0]):
-                m = re.match(r"[a-z-]+", cells[3].lower())
-                st = m.group(0) if m else "?"
-                counts[st] = counts.get(st, 0) + 1
+        for r in rows:
+            st = r["status"] or "?"
+            counts[st] = counts.get(st, 0) + 1
+        if left:
+            counts["unseen"] = left
         out.append({
             "plan": fm.get("plan") or f.stem, "track": fm.get("track", ""),
             "problem": fm.get("problem", ""), "active_task": str(fm.get("active_task") or "").strip(),

@@ -558,7 +558,12 @@ class TestReaderSkillContract:
 
     @pytest.mark.parametrize("skill_id", SKILL_IDS)
     def test_documented_in_skills_doc(self, skill_id):
-        doc = (REPO / "docs" / "SKILLS.md").read_text(encoding="utf-8")
+        path = REPO / "docs" / "SKILLS.md"
+        from helpers import public_snapshot
+
+        if not path.exists() and public_snapshot():
+            pytest.skip("docs/SKILLS.md absent (the public snapshot drops it)")
+        doc = path.read_text(encoding="utf-8")
         assert skill_id in doc, "run scripts/generate_skills_doc.py"
 
     @pytest.mark.parametrize("mod,verbs", [

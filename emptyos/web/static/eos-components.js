@@ -4018,8 +4018,10 @@ var EOS_UI = {
                     .then(function(r) { return r.json(); })
                     .then(function(data) {
                         if (data.error) {
+                            // A spent monthly AI limit is not a missing word — say which.
+                            var note = data.limit_reached ? data.message : 'No definition found';
                             popup.innerHTML = '<div class="eos-dict-word">' + EOS_UI.esc(word) + '</div>' +
-                                '<div style="color:var(--text-muted);margin-top:8px">No definition found</div>';
+                                '<div style="color:var(--text-muted);margin-top:8px">' + EOS_UI.esc(note) + '</div>';
                             return;
                         }
                         EOS_UI._renderDict(popup, {
@@ -4118,7 +4120,12 @@ var EOS_UI = {
 
     _dictSave: function(word) {
         fetch(EOS.base + '/dictionary/api/lookup?word=' + encodeURIComponent(word), {method: 'GET'})
-            .then(function() {
+            .then(function(r) { return r.json().catch(function() { return {}; }); })
+            .then(function(data) {
+                if (data && data.limit_reached) {
+                    EOS_UI.toast(data.message, false);
+                    return;
+                }
                 EOS_UI.toast('Saved: ' + word);
                 document.getElementById('eos-dict-popup').classList.remove('active');
             })
@@ -4935,7 +4942,9 @@ var EOS_UI = {
             var reason = j.reason || 'AI providers are offline';
             var text = j.simulated
                 ? 'AI is simulated offline. Enhancement features will show this banner instead of results.'
-                : 'AI is offline — ' + reason + '. CRUD features still work; AI-powered buttons are disabled.';
+                : j.reason === 'spend_cap'
+                    ? "This month's AI limit is reached. AI features resume next month; everything else still works."
+                    : 'AI is offline — ' + reason + '. CRUD features still work; AI-powered buttons are disabled.';
             if (existing) {
                 var span = existing.querySelector('.eos-think-banner-text');
                 if (span) span.textContent = text;

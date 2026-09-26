@@ -160,12 +160,16 @@ class TestNoAppReadsTheRawKey:
     [
         ("apps/public/core/note/app.py", "_notes_dir"),
         ("apps/public/core/link/app.py", "_notes_dir"),
-        ("apps/extension/dev/rag-eval/app.py", "_vault_root"),
+        ("apps/extension/dev/rag-eval/app.py", "_vault_root"),  # release-filter: optional
         ("apps/public/core/search/app.py", "_vault_path"),
     ],
 )
 def test_the_known_vault_root_helpers_use_the_property(rel, attr):
     """One row per helper, so trimming the set produces one red each."""
+    from helpers import public_snapshot
+
+    if not (ROOT / rel).exists() and public_snapshot():
+        pytest.skip(f"{rel} absent (public snapshot)")
     src = (ROOT / rel).read_text(encoding="utf-8", errors="replace")
     tree = ast.parse(src)
     fn = next(

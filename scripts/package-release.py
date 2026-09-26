@@ -10,9 +10,11 @@ Usage:
     python scripts/package-release.py standard                  # full community OS
     python scripts/package-release.py demo                      # VPS showcase
     python scripts/package-release.py standard --platform=vps-cpu
+    python scripts/package-release.py englishos-cloud --definition-pack=build/definition-pack/definitions.sqlite
     python scripts/package-release.py --check                   # dry-run all tiers
 """
 
+import importlib.util
 import json
 import shutil
 import subprocess
@@ -306,7 +308,90 @@ def audit_output(out_dir: Path) -> None:
         sys.exit(1)
 
 
-def package(tier_name: str, dry_run: bool = False, platform_override: str | None = None):
+DEFINITION_PACK_MODULE = (
+    ROOT / "apps" / "extension" / "english-learning" / "dictionary" / "definition_pack.py"
+)
+
+
+def check_definition_pack(source: Path) -> dict:
+    """Open `source` with the dictionary's own reader; return its provenance.
+
+    A tier can ship a generated dictionary definition pack, a build output that
+    lives outside the collected trees (``build/definition-pack/`` by default).
+    It reaches the artifact only through this check and the copy in `package`,
+    so an artifact never carries a file the dictionary would refuse at boot,
+    and MANIFEST.json records which pack it is.
+    """
+    if not source.is_file():
+        raise SystemExit(f"definition pack not found: {source}")
+    spec = importlib.util.spec_from_file_location("eos_definition_pack_release", DEFINITION_PACK_MODULE)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)  # pure module
+    pack = mod.DefinitionPack(source)
+    try:
+        if not pack.available:
+            raise SystemExit(f"definition pack unusable: {source}: {pack.error}")
+        count = pack.meta.get("count")
+        if not count:
+            raise SystemExit(f"definition pack is empty: {source}")
+        meta = dict(pack.meta)
+    finally:
+        # The reader keeps its connection open for lookups; on Windows an open
+        # handle would keep the file locked for the rest of the run.
+        conn = getattr(pack, "_conn", None)
+        if conn is not None:
+            conn.close()
+    return {"entries": count, "generated_at": meta.get("generated_at"),
+            "model": meta.get("model"), "headword_filter": meta.get("headword_filter"),
+            "sha256": _sha256(source)}
+
+
+def _sha256(path: Path) -> str:
+    import hashlib
+
+    h = hashlib.sha256()
+    with path.open("rb") as fh:
+        for chunk in iter(lambda: fh.read(1 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def _tier_setting(tiers: dict, name: str, key: str):
+    """`key` from tier `name`, or inherited through its ``extends`` chain."""
+    seen: set[str] = set()
+    while name and name not in seen:
+        seen.add(name)
+        tier = tiers.get(name, {})
+        if key in tier:
+            return tier[key]
+        name = tier.get("extends")
+    return None
+
+
+def definition_pack_choice(tiers: dict, name: str, flags: list[str]) -> tuple[str | None, Path | None]:
+    """(destination in the artifact, source file) for a tier that declares
+    ``definition_pack``, itself or through ``extends``; (None, None) otherwise.
+
+    A declaring tier needs ``--definition-pack=<file>`` or an explicit
+    ``--no-definition-pack``: without the pack, every dictionary lookup in the
+    built image becomes a paid model call, which must never happen by omission.
+    """
+    dest = _tier_setting(tiers, name, "definition_pack")
+    if not dest:
+        return None, None
+    source = next((f.split("=", 1)[1] for f in flags if f.startswith("--definition-pack=")), "")
+    if source:
+        return dest, Path(source)
+    if "--no-definition-pack" in flags:
+        return None, None
+    raise SystemExit(
+        f"this tier ships a dictionary definition pack at {dest}: pass "
+        "--definition-pack=<definitions.sqlite> (built by scripts/build_definition_pack.py), "
+        "or --no-definition-pack to build without one")
+
+
+def package(tier_name: str, dry_run: bool = False, platform_override: str | None = None,
+            flags: list[str] | None = None):
     release = load_release()
     version = release.get("release", {}).get("version", "0.0.0")
     tier = resolve_tier(release, tier_name)
@@ -342,6 +427,12 @@ def package(tier_name: str, dry_run: bool = False, platform_override: str | None
     print(f"  Skills:  {len(tier['skills'])}")
     print(f"  Services:{len(tier['services']):>3}")
     print()
+
+    # Before the long work, so a missing pack fails in seconds.
+    pack_dest, pack_source = definition_pack_choice(release["tiers"], tier_name, flags or [])
+    pack_info = check_definition_pack(pack_source) if pack_source else None
+    if pack_info:
+        print(f"  Definition pack: {pack_info['entries']} entries -> {pack_dest}")
 
     # Safety checks
     print("Running safety checks...")
@@ -380,6 +471,19 @@ def package(tier_name: str, dry_run: bool = False, platform_override: str | None
 
     audit_output(out_dir)
 
+    # After the audit, which checks what the collector gathered: the pack's
+    # destination is gitignored in the repo, so a stray copy there would have
+    # been dropped by collect_files, and the artifact's only pack is this one.
+    if pack_info:
+        target = out_dir / pack_dest
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(pack_source, target)
+        # The hash is of what shipped: a pack rebuilt during the long collect
+        # above would otherwise be recorded under the checked file's hash.
+        if _sha256(target) != pack_info["sha256"]:
+            shutil.rmtree(out_dir, ignore_errors=True)
+            raise SystemExit(f"definition pack changed while packaging: {pack_source}")
+
     # Write manifest
     manifest = {
         "name": "emptyos",
@@ -392,8 +496,10 @@ def package(tier_name: str, dry_run: bool = False, platform_override: str | None
         "plugins_dropped_for_platform": tier.get("_platform_dropped", []),
         "skills": tier["skills"],
         "services": tier["services"],
-        "file_count": len(files),
+        "file_count": len(files) + (1 if pack_info else 0),
     }
+    if pack_info:
+        manifest["definition_pack"] = {"path": pack_dest, **pack_info}
     (out_dir / "MANIFEST.json").write_text(
         json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8"
     )
@@ -421,7 +527,8 @@ def main():
         release = load_release()
         tier_names = ", ".join(release.get("tiers", {}).keys())
         platform_names = ", ".join(release.get("platforms", {}).keys())
-        print("Usage: python scripts/package-release.py <tier> [--check] [--platform=<name>]")
+        print("Usage: python scripts/package-release.py <tier> [--check] [--platform=<name>] "
+              "[--definition-pack=<file> | --no-definition-pack]")
         print(f"Tiers: {tier_names}")
         if platform_names:
             print(f"Platforms: {platform_names}")
@@ -450,7 +557,7 @@ def main():
         return
 
     tier_name = args[0]
-    package(tier_name, dry_run=dry_run, platform_override=platform_override)
+    package(tier_name, dry_run=dry_run, platform_override=platform_override, flags=flags)
 
 
 if __name__ == "__main__":

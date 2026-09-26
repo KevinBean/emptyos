@@ -9,6 +9,8 @@ Pure functions only — no `self`, no kernel access, no I/O.
 from __future__ import annotations
 import re
 
+from emptyos.sdk.project_meta import KV_LINE, markdown_section
+
 
 # Subdirectories are created LAZILY on first write (self.write / mkdir with
 # parents=True at the write site) — never eagerly at project creation, so the
@@ -139,22 +141,15 @@ def scan_task_meta_block(lines: list[str], line_num: int) -> dict:
 # Live here (not in a helper module) so any helper can import them without a
 # helper-to-helper dependency (.claude/rules/multi-module-apps.md §4/§6).
 _NEXT_H2 = re.compile(r"^##\s+", re.MULTILINE)
-_KV_LINE = re.compile(r"\s*-\s+(\w+):\s*(.+)")
 _SPRINT_HEADING = re.compile(
     r"###\s+Sprint\s+(\d+):\s*(.+?)\s*\((\d{4}-\d{2}-\d{2})\s*[—–-]\s*(\d{4}-\d{2}-\d{2})\)"
 )
 
-
-def _parse_section(content: str, section_name: str) -> str:
-    """Extract text under a ## section heading (up to next ## or EOF)."""
-    pattern = re.compile(r"^##\s+" + re.escape(section_name) + r"\s*$", re.MULTILINE)
-    m = pattern.search(content)
-    if not m:
-        return ""
-    start = m.end()
-    next_heading = _NEXT_H2.search(content, start)
-    end = next_heading.start() if next_heading else len(content)
-    return content[start:end].strip()
+# Section + key-value primitives live in the SDK since the milestone parser moved
+# there (emptyos/sdk/project_meta.py). `_NEXT_H2` above stays for
+# dev_features' `_append_to_section`.
+_KV_LINE = KV_LINE
+_parse_section = markdown_section
 
 
 def _parse_sprints(content: str) -> list[dict]:

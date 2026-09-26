@@ -205,8 +205,10 @@ from emptyos.sdk.deep_loop import (
 )
 from emptyos.sdk.worktree import ensure_worktree, git_run, py_compile_files
 from emptyos.sdk.google_auth import PermanentAuthLatch, is_permanent_auth_error
+from emptyos.capabilities.spend_cap import SpendCapReached
 
 __all__ = [
+    "SpendCapReached",
     "DONE_PATTERN",
     "DUE_INLINE_PATTERN",
     "DUE_PATTERN",

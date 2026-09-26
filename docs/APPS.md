@@ -2,7 +2,7 @@
 
 # EmptyOS Apps
 
-> 72 apps · 26 plugins · 16 capabilities · release v0.7.0.
+> 72 apps · 26 plugins · 16 capabilities · release v0.7.1.
 >
 > The apps that ship in a public EmptyOS release (`core` + `standard` tiers).
 

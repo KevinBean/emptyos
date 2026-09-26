@@ -283,7 +283,15 @@ audio→scenes→video pipeline (podcast, music-video, footage slideshows).
   order is load-bearing**: `multitalk.py:350-351` maps `x_ref_attn_map[0]` to
   human 1 and `[1]` to human 2, so mask 1 drives `audio_1` and mask 2 drives
   `audio_2`. The harness builder does this and refuses a `multi` build without
-  them (`…/lipsync-test-20260916/harness/infinitetalk_workflow.py`).
+  them (`scripts/mv/lipsync/infinitetalk_workflow.py`, moved from the vault's
+  `lipsync-test-20260916/harness/` in 2026-09).
+
+- **ffmpeg `drawtext` crashed on fontconfig during the 〈說得太急〉 rescue
+  (2026-09-26); draw MV text as PIL overlays** — `scripts/mv/text_render.py`,
+  used by `cards.py` and `burn_subtitles.py`. A minimal `subtitles=` burn ran
+  fine the same day, so Music Studio's `mux_audio` is not affected; PIL is
+  preferred because it renders identically on every machine, which lets a
+  re-render be compared byte for byte.
 
 - **Slideshow needs per-segment timings, and single-file TTS gives none.** The
   `has_slideshow` gate is `timings AND scenes AND any(images)` — an empty

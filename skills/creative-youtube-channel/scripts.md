@@ -2,6 +2,9 @@
 # 3:30 Channel — Video, Shorts, Cover & Voice Scripts
 
 ## Generate Animated MV (AI Video Background)
+
+> 已退役（2026-09）：這是 AnimateDiff／靜態封面時期的做法。做 MV 一律從 `creative-mv-director` 開始（EmptyOS repo 的 `docs/MV-PRODUCTION-GUIDE.md`）。本段只留給純音樂視覺化影片參考。
+
 When user wants to create a video with AI-animated background:
 
 **Script**: `10_Projects/YouTube-Music-Channel/scripts/generate_animated_mv.py`
@@ -51,6 +54,9 @@ python scripts/generate_animated_mv.py --audio song.mp3 --cover cover.png --titl
 **Output**: ~50-80 MB for 2-4 minute songs
 
 ## Generate Multi-Scene MV (Advanced)
+
+> 已退役（2026-09）：這是 AnimateDiff／靜態封面時期的做法。做 MV 一律從 `creative-mv-director` 開始（EmptyOS repo 的 `docs/MV-PRODUCTION-GUIDE.md`）。本段只留給純音樂視覺化影片參考。
+
 When user wants a video with different animations for each song section:
 
 **Script**: `10_Projects/YouTube-Music-Channel/scripts/generate_multiscene_mv.py`

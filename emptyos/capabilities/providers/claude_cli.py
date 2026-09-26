@@ -252,6 +252,10 @@ class ClaudeCLIThinkProvider(NativelyAgenticProvider):
     def is_cloud(self) -> bool:
         return True
 
+    # Billed to a subscription, not per call: the monthly spend cap
+    # (emptyos/capabilities/spend_cap.py) does not count or block it.
+    metered = False
+
     # Auth is the local CLI's own session (typically a Max subscription) —
     # no API key passes through EmptyOS. Distinct from api-key/byok cloud.
     @property

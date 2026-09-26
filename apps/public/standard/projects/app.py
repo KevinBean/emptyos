@@ -994,17 +994,3 @@ class ProjectsApp(BaseApp):
     load_project_context = _reading.load_project_context
     list_projects        = _reading.list_projects
 
-
-# --- Helpers (outside class) ---
-
-
-class _FakeRequest:
-    """Minimal request object for call_app to web_route methods."""
-
-    def __init__(self, data: dict):
-        self._data = data
-        self.query_params = data
-        self.path_params = data
-
-    async def json(self):
-        return self._data

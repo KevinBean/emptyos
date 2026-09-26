@@ -145,6 +145,9 @@ IMPORT_CHECK_EXEMPT = {
     # FastAPI uses python-multipart internally for form/file uploads;
     # apps never import it directly
     "python-multipart",
+    # uvicorn serves /ws only when a WebSocket library is importable; it loads
+    # it itself, so nothing here imports it directly
+    "websockets",
     # pyinstaller / build tooling
     "pyinstaller",
     # transitive-but-pinned deps that surface only via downstream libs

@@ -52,6 +52,7 @@ from emptyos.capabilities.providers._tool_capable import (
     ToolCapableProvider,
     ToolUseBlock,
 )
+from emptyos.capabilities import cloud_gate
 from emptyos.sdk.agent_tools.base import Tool, feature_enabled
 from emptyos.sdk import tool_isolation, trace
 from emptyos.sdk.operation import OperationSpec, RetryPolicy, operation_tool_display
@@ -755,6 +756,14 @@ async def run_turn(
             )
 
         try:
+            # The loop calls the provider directly, past the capability chain,
+            # so the monthly spend cap is checked here — before every round-trip,
+            # since a long turn can cross the cap part-way through.
+            kernel = getattr(app_ref, "kernel", None)
+            app_id = getattr(getattr(app_ref, "manifest", None), "id", None)
+            blocked = cloud_gate.check(kernel, provider, "think", app_id)
+            if blocked:
+                raise cloud_gate.error(kernel, blocked, "think", f"agent turn via {provider.name}")
             turn = await provider.execute_tools(
                 messages=session.messages,
                 system=system,

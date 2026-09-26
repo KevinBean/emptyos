@@ -36,6 +36,9 @@ python scripts/session_board.py --write --json
   **generated** file (`author: ai`); never hand-edit it, rerun instead.
 - `--json` returns `data.tracks[]` (slug, lane, theme, age_days, title, purpose,
   threads[{text, kind}]), `data.plans[]`, `data.live[]` and `data.lanes` counts.
+  A plan's `tasks` counts rows by status using `scripts/plan_table.py`, the
+  parser `check_plan_staleness.py` uses; `?` is a row with no status word, and
+  `unseen` counts rows cut off below a row whose text wrapped (repair the plan).
 - `--live-minutes N` widens the live-session window (default 120).
 
 Lanes (first match wins, so every track is in exactly one lane):

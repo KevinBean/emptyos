@@ -117,6 +117,10 @@ class TestParseProduct:
 
         with open(root / "release.toml", "rb") as f:
             release = tomllib.load(f)
+        from helpers import public_snapshot
+
+        if p.tier not in release["tiers"] and public_snapshot():
+            pytest.skip("macro-studio tier absent from release.toml (the public snapshot prunes it)")
         tier = release["tiers"][p.tier]
         assert tier.get("private", False) is False
         assert tier["apps"] == ["operate"]

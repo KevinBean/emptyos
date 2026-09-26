@@ -629,7 +629,7 @@ def filter_to_tiers(temp_dir: Path, tier_names: tuple[str, ...]) -> None:
     if not any((report.dropped_apps, report.dropped_plugins, report.dropped_engines)):
         print("    nothing to drop")
 
-    dropped = drop_tests_bound_to(temp_dir, allowed_apps, allowed_engines)
+    dropped = drop_tests_bound_to(temp_dir, allowed_apps, allowed_engines, source_root=ROOT)
     if dropped:
         step(f"Drop tests bound to dropped apps: {len(dropped)}")
         for d in dropped:
@@ -1290,15 +1290,37 @@ def filter_commercial_services(temp_dir: Path) -> None:
     # bound tests. v0.5.4 shipped tests/test_unit_earthing_calc_ledger.py, which loads
     # services/earthing-calc/ledger.py by path — the service was gone, so the test
     # could only FileNotFoundError. Pruning a thing means pruning what tests it.
+    #
+    # Bound means a QUOTED path literal (`"englishos-cloud"`, `"services/x/..."`),
+    # on a line without `release-filter: optional`. A bare substring match
+    # dropped any test that merely named the service in prose: v0.7.1 would have
+    # shipped without test_unit_websocket_dependency.py, the regression test for
+    # the release's own fix, because its docstring says "englishos-cloud image".
     tests_dir = temp_dir / "tests"
     orphaned = []
     if dropped and tests_dir.is_dir():
+        # A reference is the name between path boundaries: a quote, a backtick
+        # (how a docstring cites a path), or a `/` (an f-string such as
+        # f"{ROOT}/englishos-cloud/x"), closed the same way or by a glob `*`.
+        # The split form ("services" / "earthing-calc") is matched too. Only
+        # plain prose ("the englishos-cloud image") stays unbound.
+        forms = []
+        for rel in dropped:
+            forms.append(r"""['"`/]%s['"`/*]""" % re.escape(rel))
+            parts = rel.split("/")
+            if len(parts) > 1:
+                forms.append(r"""\s*[/,]\s*""".join(r"""['"]%s['"]""" % re.escape(p) for p in parts))
+        bound = re.compile("|".join(forms))
         for t in sorted(tests_dir.rglob("*.py")):
             try:
                 text = t.read_text(encoding="utf-8", errors="ignore")
             except Exception:
                 continue
-            if any(rel in text for rel in dropped):
+            if any(
+                bound.search(line)
+                for line in text.splitlines()
+                if "release-filter: optional" not in line
+            ):
                 t.unlink()
                 orphaned.append(t.name)
     if orphaned:
@@ -1726,10 +1748,21 @@ def main() -> None:
         snapshot_to(temp_dir)
         sweep_cruft(temp_dir)
         if not args.all:
-            filter_to_tiers(temp_dir, PUBLIC_TIERS)
+            # Held app NAMES are secret; drop the internal prose that names them.
+            # Prose-only by necessity — the names are load-bearing in code (see
+            # HELD_REF_CODE_ALLOWLIST). This reduces disclosure, not closes it.
+            # Runs BEFORE the tier filter so its test-drop pass sees the scrubbed
+            # tree: a Python bridge whose node test the scrub removed is then
+            # dropped with it, rather than shipping to fail on the missing file.
+            # filter_docs goes first of all: it strips `public-exclude` blocks,
+            # and a held name inside one must not make the scrub drop the whole
+            # rule file (it dropped top-level-modules.md, which CLAUDE.md links).
+            #
             # Hold engineering/internal DOCS the same way the tier filter holds
             # engineering code (drop held-IP docs + strip public-exclude blocks).
             filter_docs(temp_dir)
+            scrub_prose_held_refs(temp_dir)
+            filter_to_tiers(temp_dir, PUBLIC_TIERS)
             # release.toml ships, and it is the SOURCE docs/TIERS.md is generated
             # from — so holding the doc while shipping the source is cosmetic.
             filter_release_toml(temp_dir)
@@ -1742,10 +1775,6 @@ def main() -> None:
             # engineering apps by id, so holding the apps while shipping the
             # catalog that names them is cosmetic.
             filter_suites_toml(temp_dir)
-            # Held app NAMES are secret; drop the internal prose that names them.
-            # Prose-only by necessity — the names are load-bearing in code (see
-            # HELD_REF_CODE_ALLOWLIST). This reduces disclosure, not closes it.
-            scrub_prose_held_refs(temp_dir)
             # Commercial service implementations (paid calc SaaS, multi-tenant
             # control plane, hosted learner container + curriculum) are held. The
             # architecture stays documented; the liftable code does not ship.

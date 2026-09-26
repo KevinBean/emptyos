@@ -207,6 +207,10 @@ class Capability:
 
     name: str = "base"
     consent_manager: CloudConsentManager | None = None
+    # Monthly spend cap (emptyos/capabilities/spend_cap.py); set by the registry.
+    spend_cap = None
+    # Notes-to-cloud rule (emptyos/capabilities/note_scope.py); set by the registry.
+    note_scope = None
 
     def __init__(self, providers: list[Provider] | None = None):
         self.providers: list[Provider] = providers or []
@@ -454,6 +458,44 @@ class Capability:
                     changed = True
         return new_kwargs if changed else kwargs
 
+    def _policy_block(self, provider: Provider, caller_app: str | None) -> str | None:
+        """Why a policy keeps `provider` out of this call: "spend_cap" (the
+        monthly cap, spend_cap.py), "notes" (the calling app sends notes and
+        the learner has not allowed that, note_scope.py), or None."""
+        if self.spend_cap is not None and self.spend_cap.blocks(self.name, provider):
+            return "spend_cap"
+        if self.note_scope is not None and self.note_scope.blocks(provider, caller_app):
+            return "notes"
+        return None
+
+    async def _skip_for_policy(
+        self, provider: Provider, caller_app: str | None
+    ) -> tuple[bool, str | None]:
+        """(skip, blamed): whether a policy keeps `provider` out, and which one
+        to report — only for a provider that was otherwise ready, since one
+        that is down anyway (no key, not running) would fail regardless."""
+        why = self._policy_block(provider, caller_app)
+        if why is None:
+            return False, None
+        try:
+            ready = await provider.available()
+        except Exception:
+            ready = False
+        return True, (why if ready else None)
+
+    def _policy_error(self, blamed: set[str], chain_label: str):
+        """The error for a chain that ran out of providers because of a policy.
+        The spend cap wins when both applied: it is the one the learner cannot
+        change."""
+        prefix = f"No available provider for capability '{self.name}' (chain={chain_label}): "
+        if "spend_cap" in blamed:
+            from emptyos.capabilities.spend_cap import SpendCapReached  # noqa: PLC0415
+
+            return SpendCapReached(prefix + self.spend_cap.reason())
+        from emptyos.capabilities.note_scope import NotesToCloudOff  # noqa: PLC0415
+
+        return NotesToCloudOff(prefix + self.note_scope.reason())
+
     async def _provider_ready(self, provider: Provider, **kwargs) -> bool:
         """Provider is available AND the consent gate approves invocation."""
         if not await provider.available():
@@ -490,6 +532,7 @@ class Capability:
         min_ability: str | None = None,
         prefer_provider: list[str] | str | None = None,
         only_provider: str | None = None,
+        caller_app: str | None = None,
         **kwargs,
     ) -> Result:
         """Try each provider in order.
@@ -521,9 +564,15 @@ class Capability:
         if prefer_provider:
             providers = self._reorder_by_preference(providers, prefer_provider)
         last_error: Exception | None = None
+        blamed: set[str] = set()
         for pass_num in (1, 2):
             for provider in providers:
                 if pass_num == 1 and provider.at_capacity:
+                    continue
+                skip, why = await self._skip_for_policy(provider, caller_app)
+                if skip:
+                    if why:
+                        blamed.add(why)
                     continue
                 if not await self._provider_ready(provider, **kwargs):
                     continue
@@ -578,6 +627,12 @@ class Capability:
         chain_label = only_provider or (
             bucket or (f"{domain}/{task_shape}" if domain and task_shape else domain) or "default"
         )
+        # A policy block outranks a later provider failure: the policy is what
+        # the learner can act on (or has to wait out), and its message keeps
+        # the prefix the server maps to the offline/opt-in response. The
+        # provider's own error stays attached as the cause.
+        if blamed:
+            raise self._policy_error(blamed, chain_label) from last_error
         if last_error is not None:
             raise RuntimeError(
                 f"Capability '{self.name}' failed (chain={chain_label}): "
@@ -595,6 +650,7 @@ class Capability:
         bucket: str | None = None,
         min_ability: str | None = None,
         prefer_provider: list[str] | str | None = None,
+        caller_app: str | None = None,
         **kwargs,
     ) -> AsyncGenerator[dict, None]:
         """Stream results from the first available provider (same two-pass pattern as execute).
@@ -617,9 +673,15 @@ class Capability:
         )
         if prefer_provider:
             providers = self._reorder_by_preference(providers, prefer_provider)
+        blamed: set[str] = set()
         for pass_num in (1, 2):
             for provider in providers:
                 if pass_num == 1 and provider.at_capacity:
+                    continue
+                skip, why = await self._skip_for_policy(provider, caller_app)
+                if skip:
+                    if why:
+                        blamed.add(why)
                     continue
                 if not await self._provider_ready(provider, **kwargs):
                     continue
@@ -658,6 +720,8 @@ class Capability:
         chain_label = (
             bucket or (f"{domain}/{task_shape}" if domain and task_shape else domain) or "default"
         )
+        if blamed:
+            raise self._policy_error(blamed, chain_label)
         raise RuntimeError(
             f"No available provider for capability '{self.name}' (chain={chain_label})"
         )
@@ -668,6 +732,7 @@ class Capability:
         domain: str | None = None,
         task_shape: str | None = None,
         bucket: str | None = None,
+        caller_app: str | None = None,
         **kwargs,
     ) -> list[dict]:
         """Call ALL available providers in parallel (across all domains). For benchmarking.
@@ -698,6 +763,18 @@ class Capability:
                 continue
             seen.add(vid)
             if not await p.available():
+                continue
+            why = self._policy_block(p, caller_app)
+            if why is not None:
+                reason = self.spend_cap.reason() if why == "spend_cap" else self.note_scope.reason()
+                skipped.append(
+                    {
+                        **p.variant_meta,
+                        "response": None,
+                        "latency_ms": 0,
+                        "error": f"skipped: {reason}",
+                    }
+                )
                 continue
             if (
                 getattr(p, "is_cloud", False)
@@ -801,6 +878,22 @@ class CapabilityRegistry:
     def __init__(self):
         self._capabilities: dict[str, Capability] = {}
         self._consent_manager: CloudConsentManager | None = None
+        self._spend_cap = None
+        self._note_scope = None
+
+    def set_note_scope(self, note_scope) -> None:
+        """Attach the notes-to-cloud rule (emptyos/capabilities/note_scope.py)
+        so every capability consults it; None detaches it."""
+        self._note_scope = note_scope
+        for cap in self._capabilities.values():
+            cap.note_scope = note_scope
+
+    def set_spend_cap(self, spend_cap) -> None:
+        """Attach the monthly spend cap (emptyos/capabilities/spend_cap.py) so
+        every capability consults it; None detaches it."""
+        self._spend_cap = spend_cap
+        for cap in self._capabilities.values():
+            cap.spend_cap = spend_cap
 
     def set_consent_manager(self, manager: CloudConsentManager):
         """Attach a consent manager so all capabilities use it for cloud calls."""
@@ -816,6 +909,10 @@ class CapabilityRegistry:
         capability.name = name
         if self._consent_manager is not None:
             capability.consent_manager = self._consent_manager
+        if self._spend_cap is not None:
+            capability.spend_cap = self._spend_cap
+        if self._note_scope is not None:
+            capability.note_scope = self._note_scope
         self._capabilities[name] = capability
 
     def get(self, name: str) -> Capability:

@@ -20,6 +20,27 @@ GIT_SUMMARY_SYSTEM = (
 )
 
 
+# Upper bound on commits a log request may ask for: a local sanity cap on
+# subprocess output, not a sourced value (the page asks for 20).
+LOG_COUNT_MAX = 500
+
+
+def _count_arg(raw, default: int) -> tuple[int | None, str | None]:
+    """A caller-supplied commit count, clamped to 1..LOG_COUNT_MAX, or an error.
+
+    Every route that puts a count into `git log` argv parses it here: an
+    unconverted value would be spliced in as an option (`-output=x` becomes
+    `git log --output=x`, a file write).
+    """
+    if raw is None or raw == "":
+        return default, None
+    try:
+        n = int(raw)
+    except (TypeError, ValueError, OverflowError):
+        return None, f"count must be an integer (clamped to 1-{LOG_COUNT_MAX})"
+    return max(1, min(n, LOG_COUNT_MAX)), None
+
+
 class GitApp(BaseApp):
     def _project_dir(self) -> str:
         return str(self.kernel.config.path.parent)
@@ -97,7 +118,10 @@ class GitApp(BaseApp):
         return self._parse_status_files(out)
 
     async def log_at(self, repo_path: str, count: int = 10) -> str:
-        out, _, _ = await self._git_at(repo_path, "log", "--oneline", f"-{count}")
+        # Also clamped here for direct callers (projects' extended.py); routes
+        # parse through _count_arg first. Lands in argv, so never unconverted.
+        n = max(1, min(int(count), LOG_COUNT_MAX))
+        out, _, _ = await self._git_at(repo_path, "log", "--oneline", f"-{n}")
         return out
 
     async def branches_at(self, repo_path: str, all: bool = False) -> list[dict]:
@@ -166,7 +190,9 @@ class GitApp(BaseApp):
 
     @web_route("GET", "/api/log")
     async def api_log(self, request):
-        count = int(request.query_params.get("count", "10"))
+        count, err = _count_arg(request.query_params.get("count"), 10)
+        if err:
+            return {"error": err}
         return {"log": await self.log_at(self._repo_path(request), count)}
 
     @web_route("GET", "/api/diff")
@@ -219,7 +245,9 @@ class GitApp(BaseApp):
     async def api_summary(self, request):
         """AI summary of recent commits."""
         path = self._repo_path(request)
-        count = int(request.query_params.get("count", "20"))
+        count, err = _count_arg(request.query_params.get("count"), 20)
+        if err:
+            return {"error": err}
         out, _, _ = await self._git_at(path, "log", "--oneline", f"-{count}")
         if not out.strip():
             return {"summary": "No commits found."}
@@ -234,7 +262,9 @@ class GitApp(BaseApp):
     @web_route("GET", "/api/log-detail")
     async def api_log_detail(self, request):
         path = self._repo_path(request)
-        count = int(request.query_params.get("count", "20"))
+        count, err = _count_arg(request.query_params.get("count"), 20)
+        if err:
+            return {"error": err}
         out, _, _ = await self._git_at(path, "log", f"-{count}", "--pretty=format:%H|%h|%an|%ar|%s")
         commits = []
         for line in out.strip().split("\n"):

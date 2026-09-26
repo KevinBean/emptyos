@@ -27,6 +27,7 @@ import time
 from collections.abc import Callable
 from typing import TYPE_CHECKING
 
+from emptyos.capabilities import cloud_gate
 from emptyos.sdk.trace import stamp_trace
 
 if TYPE_CHECKING:
@@ -425,6 +426,7 @@ async def think(
         bucket=bucket,
         min_ability=min_ability,
         only_provider=strict_provider,
+        caller_app=self.manifest.id,
         **kwargs,
     )
     latency = round((time.monotonic() - t0) * 1000)
@@ -766,7 +768,7 @@ async def _think_with_provider(
     msgs = kwargs.get("messages")
     prompt_len = len(prompt) if prompt else sum(len(m.get("content", "")) for m in (msgs or []))
     for p in cap.providers:
-        if p.name == provider_name and await p.available():
+        if p.name == provider_name and not cloud_gate.check(self.kernel, p, "think", self.manifest.id) and await p.available():
             t0 = time.monotonic()
             try:
                 value = await p.execute(prompt=prompt, **kwargs)
@@ -795,7 +797,7 @@ async def _think_with_provider(
     # Also check domain providers
     for domain_providers in cap._domains.values():
         for p in domain_providers:
-            if p.name == provider_name and await p.available():
+            if p.name == provider_name and not cloud_gate.check(self.kernel, p, "think", self.manifest.id) and await p.available():
                 t0 = time.monotonic()
                 try:
                     value = await p.execute(prompt=prompt, **kwargs)
@@ -921,7 +923,8 @@ async def think_stream(
         if target_provider:
             # Stream from the specific provider
             for p in list(cap.providers) + [pp for d in cap._domains.values() for pp in d]:
-                if p.name == target_provider and await p.available():
+                if (p.name == target_provider and not cloud_gate.check(self.kernel, p, "think", self.manifest.id)
+                        and await p.available()):
                     used_provider = p.name
                     is_cloud = getattr(p, "is_cloud", False)
                     p._current_load += 1
@@ -942,6 +945,7 @@ async def think_stream(
             task_shape=task_shape,
             bucket=bucket,
             min_ability=min_ability,
+            caller_app=self.manifest.id,
             **kwargs,
         ):
             if isinstance(chunk, dict):
@@ -960,7 +964,9 @@ async def think_stream(
 
 async def think_compare(self, prompt: str, **kwargs) -> list[dict]:
     """Send same prompt to ALL think providers in parallel. For benchmarking."""
-    return await self.kernel.capability("think").execute_compare(prompt=prompt, **kwargs)
+    return await self.kernel.capability("think").execute_compare(
+        prompt=prompt, caller_app=self.manifest.id, **kwargs
+    )
 
 
 async def select(

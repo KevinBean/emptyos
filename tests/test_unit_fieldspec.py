@@ -23,8 +23,15 @@ from pathlib import Path
 import pytest
 
 from emptyos.fieldspec import SpecError, render_domain, validate_declaration
+from helpers import public_snapshot
 
 ROOT = Path(__file__).resolve().parents[1]
+# cable-bonding is not in the public release; the tests that read it skip
+# there, so the rest of this file (the platform module's own tests) ships.
+CABLE_BONDING = ROOT / "apps/extension/engineering/cable-bonding"  # release-filter: optional
+needs_cable_bonding = pytest.mark.skipif(
+    not CABLE_BONDING.is_dir() and public_snapshot(), reason="cable-bonding app absent (public snapshot)"
+)
 
 
 @dataclass(frozen=True)
@@ -95,8 +102,9 @@ class TestDuplicateNames:
         with pytest.raises(SpecError, match="declared twice"):
             validate_declaration([_In("a", "V"), _In("a", "A")], units=UNITS)
 
+    @needs_cable_bonding
     def test_the_real_cable_bonding_declaration_has_no_duplicates(self):
-        spec = _load_spec("apps/extension/engineering/cable-bonding/spec.py", "cb_spec")
+        spec = _load_spec("apps/extension/engineering/cable-bonding/spec.py", "cb_spec")  # release-filter: optional
         names = [f.name for f in spec.INPUTS]
         assert len(names) == len(set(names))
 
@@ -181,6 +189,7 @@ class TestRenderDomain:
         `flat, trefoil` with less information than the prose it succeeded."""
         assert render_domain(0.0, 9.0, choices=("x", "y")) == "x, y"
 
+    @needs_cable_bonding
     def test_the_range_separator_is_the_one_the_documents_actually_use(self):
         """U+2026, measured from the documents rather than asserted.
 
@@ -192,7 +201,7 @@ class TestRenderDomain:
         said the opposite of what was cited — a decoratively cited constant, in
         a module whose own docstring warns about them.
         """
-        cb = ROOT / "apps/extension/engineering/cable-bonding/ALGORITHM.md"
+        cb = ROOT / "apps/extension/engineering/cable-bonding/ALGORITHM.md"  # release-filter: optional
         rows = [
             ln for ln in cb.read_text(encoding="utf-8").splitlines()
             if re.search(r"[0-9] . [0-9]", ln) and ln.startswith("|")
@@ -241,13 +250,14 @@ class TestTheExtractionStaysBehaviourOnly:
         ]
         assert not defined, f"fieldspec defines dataclasses: {defined}"
 
+    @needs_cable_bonding
     def test_the_two_packages_still_transpose_label_and_unit(self):
         """The concrete cost of a shared base class: every one of the
         declarations across the two packages is positional, and a mechanical
         reorder swaps two adjacent strings. The failure surfaces as a wrong
         ALGORITHM.md, which is the artifact the discipline exists to protect.
         """
-        cb = _load_spec("apps/extension/engineering/cable-bonding/spec.py", "cb2")
+        cb = _load_spec("apps/extension/engineering/cable-bonding/spec.py", "cb2")  # release-filter: optional
         tl = _load_spec("apps/public/standard/trust-loop/spec.py", "tl2")
         import dataclasses
 
@@ -257,10 +267,11 @@ class TestTheExtractionStaysBehaviourOnly:
         assert tl_order == ["name", "symbol", "unit", "label"]
         assert cb_order != tl_order
 
+    @needs_cable_bonding
     def test_the_two_packages_name_their_grouping_differently(self):
         """`group` and `slot` are not the same question — one is checked
         against the elements the engine reports a contribution for."""
-        cb = _load_spec("apps/extension/engineering/cable-bonding/spec.py", "cb3")
+        cb = _load_spec("apps/extension/engineering/cable-bonding/spec.py", "cb3")  # release-filter: optional
         tl = _load_spec("apps/public/standard/trust-loop/spec.py", "tl3")
         import dataclasses
 

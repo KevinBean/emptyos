@@ -209,7 +209,8 @@ the check is in `/eos-session-resume` Step 1.)
   plus three vocabulary checks that are free once the table is parsed
   (`done` with no disposition, an off-vocabulary status, an off-vocabulary
   disposition). Advisory — a plan is a human artifact, so the scanner surfaces
-  and never rewrites.
+  and never rewrites. Its table parser lives in `scripts/plan_table.py`, shared
+  with `scripts/session_board.py` (moved 2026-09-26).
 
   **Closure advice is withheld whenever the table did not fully parse** (added
   2026-09-12). `unclosed_plan` is the only finding here whose advice is

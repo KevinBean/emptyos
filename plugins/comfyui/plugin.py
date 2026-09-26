@@ -222,13 +222,37 @@ STYLE_PRESETS = {
         "sampler": "euler",
         "steps": 8,
     },
+    # Qwen-Image-2512 (Apache-2.0) — the local model that spells Chinese titles:
+    # put the title in the prompt. Do NOT pass `overlay_title` for Chinese — the
+    # overlay fonts are Latin-only and an overlay also tells the model to draw no
+    # text. The `is_qwen_image` marker routes _build_workflow down its own graph
+    # (see _build_qwen_image_workflow). Measured on the 16 GB card 2026-09-27
+    # (verdict + numbers: docs/OPEN-SOURCE-BORROWING-PLAN.md § QwenLM/Qwen-Image):
+    # 9/9 Chinese titles exact vs 0/9 for Klein 9B, ~16 s/image warm. Q3_K_M,
+    # not Q4_K_M: Q4 left ~0.8 GB of VRAM and stalled into shared memory. The DiT
+    # loads via the ComfyUI-GGUF custom node. Sampling settings (shift 3.1, and
+    # with the Lightning LoRA at strength 1: 4 steps, cfg 1, euler/simple) follow
+    # ComfyUI's own "Text to Image (Qwen-Image 2512)" blueprint; that blueprint
+    # names the fp32 LoRA, the bf16 file is the same weights at half the size.
+    # `accel_lora` is that step distillation, not a style LoRA.
+    "qwen-2512": {
+        "label": "Qwen-Image 2512 (Chinese text, commercial)",
+        "is_qwen_image": True,
+        "unet": "qwen-image-2512-Q3_K_M.gguf",
+        "clip": "qwen_2.5_vl_7b_fp8_scaled.safetensors",
+        "vae": "qwen_image_vae.safetensors",
+        "accel_lora": "Qwen-Image-2512-Lightning-4steps-V1.0-bf16.safetensors",
+        "steps": 4,
+        "cfg": 1.0,
+        "shift": 3.1,
+    },
 }
 
-# Appended to a FLUX.2 prompt when a text overlay is requested, so the model
-# leaves clean space for the real DrawText+ layer instead of baking in (usually
-# misspelled) letters — the distilled Klein models associate "brand"/"poster"
-# with text and hallucinate gibberish otherwise.
-FLUX2_TEXT_FREE_SUFFIX = (
+# Appended to a FLUX.2 or Qwen-Image prompt when a text overlay is requested, so
+# the model leaves clean space for the real DrawText+ layer instead of baking in
+# its own letters — the distilled Klein models associate "brand"/"poster" with
+# text and hallucinate gibberish, and Qwen would draw a second, competing title.
+TEXT_FREE_SUFFIX = (
     ", clean composition, generous negative space, no text, no letters, no words"
 )
 
@@ -1737,7 +1761,8 @@ class ComfyUIPlugin(BasePlugin):
         overlay_subtitle: str = "",
         overlay_font: str = "",
     ) -> dict:
-        """Build ComfyUI workflow. Handles FLUX.1/SDXL/SD1.5 + LoRA, FLUX.2 Klein.
+        """Build ComfyUI workflow. Handles FLUX.1/SDXL/SD1.5 + LoRA, FLUX.2 Klein,
+        and Qwen-Image (``is_qwen_image``; caller ``lora`` is not applied there).
 
         ``negative_extra`` is appended to the style's negative prompt so callers
         can steer the *negative* channel (e.g. "text, logos, watermarks") instead
@@ -1752,6 +1777,11 @@ class ComfyUIPlugin(BasePlugin):
         if style.get("is_flux2"):
             return self._build_flux2_workflow(
                 prompt, width, height, seed, style,
+                overlay_title, overlay_subtitle, overlay_font,
+            )
+        if style.get("is_qwen_image"):
+            return self._build_qwen_image_workflow(
+                prompt, width, height, seed, style, negative_extra,
                 overlay_title, overlay_subtitle, overlay_font,
             )
 
@@ -1856,7 +1886,7 @@ class ComfyUIPlugin(BasePlugin):
 
         text = prompt
         if overlay_title or overlay_subtitle:
-            text = f"{prompt}{FLUX2_TEXT_FREE_SUFFIX}"
+            text = f"{prompt}{TEXT_FREE_SUFFIX}"
 
         workflow = {
             "1": {"class_type": "UNETLoader", "inputs": {"unet_name": unet, "weight_dtype": "default"}},
@@ -1872,6 +1902,56 @@ class ComfyUIPlugin(BasePlugin):
         )
         img_ref = self._append_text_overlay(
             workflow, decoded, overlay_title, overlay_subtitle, overlay_font,
+        )
+        workflow["20"] = {"class_type": "SaveImage", "inputs": {"filename_prefix": self._dated_prefix("eos"), "images": img_ref}}
+        return workflow
+
+    def _build_qwen_image_workflow(
+        self,
+        prompt: str,
+        width: int,
+        height: int,
+        seed: int,
+        style: dict,
+        negative_extra: str = "",
+        overlay_title: str = "",
+        overlay_subtitle: str = "",
+        overlay_font: str = "",
+    ) -> dict:
+        """Qwen-Image graph — UnetLoaderGGUF + ``qwen_image`` CLIP + its own VAE,
+        optional Lightning LoRA, AuraFlow shift, KSampler. Unlike Klein this
+        model can render text itself, so a prompt may ask for a title; an
+        overlay request still gets the text-free suffix so the two don't clash.
+        ``negative_extra`` feeds the negative channel, which only bites at
+        cfg > 1 (the Lightning preset runs cfg 1).
+        """
+        text = prompt
+        if overlay_title or overlay_subtitle:
+            text = f"{prompt}{TEXT_FREE_SUFFIX}"
+
+        workflow = {
+            "1": {"class_type": "UnetLoaderGGUF", "inputs": {"unet_name": style["unet"]}},
+            "2": {"class_type": "CLIPLoader", "inputs": {
+                "clip_name": style["clip"], "type": "qwen_image", "device": "default"}},
+            "3": {"class_type": "VAELoader", "inputs": {"vae_name": style["vae"]}},
+            "4": {"class_type": "CLIPTextEncode", "inputs": {"clip": ["2", 0], "text": text}},
+            "5": {"class_type": "CLIPTextEncode", "inputs": {"clip": ["2", 0], "text": negative_extra or " "}},
+            "6": {"class_type": "EmptySD3LatentImage", "inputs": {"width": width, "height": height, "batch_size": 1}},
+        }
+        model = ["1", 0]
+        if style.get("accel_lora"):
+            workflow["7"] = {"class_type": "LoraLoaderModelOnly", "inputs": {
+                "model": model, "lora_name": style["accel_lora"], "strength_model": 1.0}}
+            model = ["7", 0]
+        workflow["8"] = {"class_type": "ModelSamplingAuraFlow", "inputs": {
+            "model": model, "shift": style.get("shift", 3.1)}}
+        workflow["9"] = {"class_type": "KSampler", "inputs": {
+            "model": ["8", 0], "positive": ["4", 0], "negative": ["5", 0], "latent_image": ["6", 0],
+            "seed": seed, "steps": style.get("steps", 4), "cfg": style.get("cfg", 1.0),
+            "sampler_name": "euler", "scheduler": "simple", "denoise": 1.0}}
+        workflow["10"] = {"class_type": "VAEDecode", "inputs": {"samples": ["9", 0], "vae": ["3", 0]}}
+        img_ref = self._append_text_overlay(
+            workflow, ["10", 0], overlay_title, overlay_subtitle, overlay_font,
         )
         workflow["20"] = {"class_type": "SaveImage", "inputs": {"filename_prefix": self._dated_prefix("eos"), "images": img_ref}}
         return workflow
@@ -2041,8 +2121,8 @@ class ComfyUIPlugin(BasePlugin):
         trusting the model to spell. Needs the comfyui_essentials custom node.
         ``image`` (the ``draw`` capability's input-image slot) routes to
         ``edit_image`` — the prompt becomes the edit instruction, ``style`` picks
-        the Klein model (default klein-9b). Use ``edit_image`` directly for
-        multi-reference.
+        the Klein model (default klein-9b; ``qwen-2512`` cannot edit and raises).
+        Use ``edit_image`` directly for multi-reference.
 
         ``seed`` of 0 (the default) keeps the historical per-call randomness, so
         existing callers are unaffected. Pass a value to make a still

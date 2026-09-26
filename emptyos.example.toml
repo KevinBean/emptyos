@@ -171,6 +171,22 @@ timezone = "UTC"
 # launcher = "C:/path/to/ComfyUI/run_nvidia_gpu.bat"
 # autostart = true
 #
+# MV post / lip-sync toolkit (scripts/mv/). Every key is optional: comfy_root is
+# derived from plugins.comfyui.launcher's folder, comfy_python and models_dir
+# from comfy_root, fonts from the OS font folder. CLI flags override all of it.
+# [mv_tools]
+# comfy_root = "C:/path/to/ComfyUI_windows_portable"
+# comfy_python = "C:/path/to/ComfyUI_windows_portable/python_embeded/python.exe"
+# models_dir = "C:/path/to/ComfyUI_windows_portable/ComfyUI/models"
+# comfy_host = "http://127.0.0.1:8188"   # default: plugins.comfyui.host
+# [mv_tools.fonts]
+# zh_sans = "C:/Windows/Fonts/msjh.ttc"
+# zh_serif = "C:/Windows/Fonts/NotoSerifSC-VF.ttf"
+# [mv_tools.infinitetalk]    # lip-sync model files exactly as ComfyUI lists them:
+#                            # its OS separator, so '\' on Windows (literal '...' strings)
+# base = 'wanvideo\wan2.1-i2v-14b-480p-Q4_K_S.gguf'
+# talk = 'wanvideo\InfiniteTalk\Wan2_1-InfiniteTalk_Single_Q8.gguf'
+#
 # [plugins.voice-api]
 # host = "http://localhost:8601"      # F5-TTS + Whisper service
 #
